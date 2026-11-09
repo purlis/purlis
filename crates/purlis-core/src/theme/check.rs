@@ -67,6 +67,10 @@ mod notice_ways_tests;
 #[path = "scrim_cursor_diff_tests.rs"]
 mod scrim_cursor_diff_tests;
 
+#[cfg(test)]
+#[path = "reported_tests.rs"]
+mod reported_tests;
+
 /// What a token of [`super::vocabulary::PLATFORM_DRAWN`] left to the platform is measured as
 /// when it is drawn on something: selected text the theme leaves alone keeps the words' own
 /// colour. One with no stand-in is the platform's, and a pair with it in is not measured.
@@ -1012,6 +1016,28 @@ pub const FITS: &[Fit] = &[
     },
 ];
 
+/// **The pairs the check reports and nothing else acts on** (#3735): measured as [`PAIRS`] are,
+/// as the theme is, in every named tint and at every hue between them, and said as a
+/// [`Finding::Contrast`], but no consent floor redraws a token for one, no import's tier walk
+/// moves a colour for one, and no person's colour is refused for one, because each of those reads
+/// [`PAIRS`] alone.
+///
+/// - A meter's fills on its track (#3674, `ui/meter/meter.css`): the subject in `accent.base`, the
+///   baseline in `state.waiting` and the previous version in `text.muted`, each a mark on
+///   `border.subtle` at 3:1 (WCAG 1.4.11), the track laid over the window and over a panel. The
+///   parts check holds them where a theme names a meter part ([`super::parts`]); this holds them
+///   for a palette alone. As consent floors they would redraw a theme's waiting colour as
+///   Classic's for a bar, and as pairs of [`PAIRS`] they would move an import's muted tier and
+///   refuse a person's accent.
+pub const REPORTED: &[Pair] = &[
+    p("accent.base", "border.subtle", 3.0).over("surface.base"),
+    p("state.waiting", "border.subtle", 3.0).over("surface.base"),
+    p("text.muted", "border.subtle", 3.0).over("surface.base"),
+    p("accent.base", "border.subtle", 3.0).over("surface.raised"),
+    p("state.waiting", "border.subtle", 3.0).over("surface.raised"),
+    p("text.muted", "border.subtle", 3.0).over("surface.raised"),
+];
+
 /// The tokens the selected row (`list.selected`) must never equal: the pointer's row, the tab
 /// you are on, and the window (#1672).
 const SELECTED_APART_FROM: [&str; 3] = ["surface.hover", "layer.selected", "surface.base"];
@@ -1071,14 +1097,15 @@ pub const NOTICE_WAY_POINTED: f64 = 0.22;
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum Finding {
-    /// A pair of [`PAIRS`] under its floor, with the ratio it has (to two places).
+    /// A pair of [`PAIRS`] or of [`REPORTED`] under its floor, with the ratio it has (to two
+    /// places).
     Contrast {
         tint: Option<&'static str>,
         pair: Pair,
         ratio: f64,
     },
-    /// A pair of [`PAIRS`] that clears its floor as it is and in every named tint and falls under
-    /// it at a hue between them (#4308): a workspace's own colour can be any hue. `degree` is the
+    /// A pair of [`PAIRS`] or of [`REPORTED`] that clears its floor as it is and in every named
+    /// tint and falls under it at a hue between them (#4308): a workspace's own colour can be any hue. `degree` is the
     /// hue it is lowest at, and `ratio` its contrast there (to two places).
     ContrastBetweenTints { degree: u16, pair: Pair, ratio: f64 },
     /// [`Finding::SelectedNotApart`], only at a hue between the named tints (#4406): the first
@@ -1389,6 +1416,7 @@ fn between_named_tints(
     };
     let mut near: Vec<&'static Pair> = PAIRS
         .iter()
+        .chain(REPORTED)
         .filter(|pair| !found(pair))
         .filter(|pair| floors::moves_with_hue(theme, pair))
         .collect();
@@ -1610,7 +1638,7 @@ fn card_apart(
 }
 
 fn check_one(theme: &ResolvedTheme, tint: Option<&'static str>, findings: &mut Vec<Finding>) {
-    for pair in PAIRS {
+    for pair in PAIRS.iter().chain(REPORTED) {
         let Some(ratio) = ratio(theme, pair) else {
             continue;
         };
@@ -1805,25 +1833,22 @@ pub(super) fn long(hex: &str) -> String {
 }
 
 fn byte(digits: &str, at: usize) -> f64 {
+    f64::from(byte_of(digits, at))
+}
+
+/// The byte two hex digits at `at` of `digits` write; 0 where there are none.
+fn byte_of(digits: &str, at: usize) -> u8 {
     digits
         .get(at..at + 2)
         .and_then(|two| u8::from_str_radix(two, 16).ok())
-        .map_or(0.0, f64::from)
+        .unwrap_or(0)
 }
 
-/// One channel of a colour, as the linear number WCAG's formula wants.
-fn channel(hex: &str, at: usize) -> f64 {
-    let value = byte(&long(hex), at * 2) / 255.0;
-    if value <= 0.04045 {
-        value / 12.92
-    } else {
-        ((value + 0.055) / 1.055).powf(2.4)
-    }
-}
-
-/// WCAG relative luminance.
+/// WCAG relative luminance: each channel as the linear number WCAG's formula wants.
 pub(super) fn luminance(hex: &str) -> f64 {
-    0.2126 * channel(hex, 0) + 0.7152 * channel(hex, 1) + 0.0722 * channel(hex, 2)
+    let digits = long(hex);
+    let channel = |at: usize| super::tint::linear_of(byte_of(&digits, at));
+    0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4)
 }
 
 /// WCAG contrast ratio, 1 (identical) to 21 (black on white). Alpha is ignored: a pair whose

@@ -13,6 +13,10 @@
 //! project at `<out>/<level>/project`, its chat's temporary folder at `<out>/<level>/tmp`, and
 //! each profile at `<out>/<harness>-<level>.sb`. Without it, the same is built in a temporary
 //! folder and only checked here.
+//!
+//! Besides those, each wrapped harness's profile in a project that keeps its chats to their own
+//! terminal (`own-terminal-only = true`) at `<out>/<harness>-strict.sb`, which the script applies
+//! to terminals it opens: none but the chat's own is read or written.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -29,6 +33,12 @@ const LEVELS: [(Level, &str, &str); 2] = [
     ),
     (Level::Floor, "floor", "schema = 1\n"),
 ];
+
+/// The project whose chats keep to their own terminal, at the full sandbox, and its folder.
+const STRICT: (&str, &str) = (
+    "strict",
+    "[sandbox]\nmode = \"on\"\negress = [\"model-providers\", \"forge\"]\nown-terminal-only = true\n",
+);
 
 /// Each wrapped harness and its profile's name.
 const HARNESSES: [(Harness, &str); 2] =
@@ -115,6 +125,22 @@ fn the_profiles_a_wrapped_chat_starts_under_are_written_out() {
         }
     }
     assert_eq!(written, 4, "each wrapped harness at each level");
+    let (name, manifest) = STRICT;
+    let root = out.join(name).join("project");
+    let tmp = out.join(name).join("tmp");
+    lay_out(&root, manifest);
+    fs::create_dir_all(&tmp).expect("a temporary folder");
+    for (harness, called) in HARNESSES {
+        let (at, profile) = emitted(harness, &root, &tmp, &machine);
+        assert_eq!(at, Level::Full, "{called} in the {name} project");
+        if cfg!(target_os = "macos") {
+            assert!(
+                profile.contains("(deny file-read-data file-write* file-ioctl (regex"),
+                "{called}-{name} keeps to its own terminal:\n{profile}"
+            );
+        }
+        fs::write(out.join(format!("{called}-{name}.sb")), profile).expect("the profile");
+    }
 }
 
 /// `/bin/ln from to` under `profile`: `Ok` where the link was made, else what `ln` said.

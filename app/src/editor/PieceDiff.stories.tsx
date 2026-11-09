@@ -54,7 +54,6 @@ function core(answer: unknown) {
 
 const meta = {
   component: PieceDiffTab,
-  parameters: { a11y: { context: { exclude: [".cm-editor"] } } },
   args: {
     plane: "/home/op/project" as unknown as PlaneId,
     cut: { workspace: "alpha", repo: "svc", piece: "fix-it" },

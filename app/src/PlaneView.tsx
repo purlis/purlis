@@ -85,6 +85,7 @@ import {
   paneCloseOf,
   OUTSIDE,
   OUTSIDE_TITLE,
+  pinMoved,
   perform,
   showId,
   stoppedRows,
@@ -467,7 +468,7 @@ import { hasTasks, type Ended, type Needing } from "./tabTasks";
 import { readUsed, type UsedAsk } from "./tasksUsed";
 import { finishedBucketOf, taskBucketOf } from "./taskBuckets";
 import { stateClock } from "./stateClock";
-import { useTabIds } from "./StripTablist";
+import { useTabIds } from "./ui/tabs/TabStrip";
 import { TASK_KEY_ROW, taskKeyOf } from "./taskKeys";
 import { paneStepOf } from "./moveKeys";
 import { paneToward } from "./panePlaces";
@@ -648,7 +649,7 @@ import { LEAST, LEAST_CHIP, leastAt, pinnedFirst, useRoom } from "./fits";
 import type { Naming } from "./tabFace";
 import { tabPanelOf, tabsPart } from "./ui/tabs/Tabs";
 import { panelRoot } from "./ui/panel/Panel";
-import { oneChatMidTurn, type Ending } from "./QuitWarning";
+import { oneChatInterrupted, type Ending } from "./QuitWarning";
 import { answerTaken, asksMoved, secretAskEntries } from "./asks";
 import type { Snoozing } from "./AsksSnooze";
 import type { SecretAskGiven } from "./SecretAskNotice";
@@ -1206,6 +1207,7 @@ export const PlaneView = memo(function PlaneView({
   const [pickerSecret, setPickerSecret] = useState<{
     asked: StartSecretAskNamed;
     refused: string;
+    profile: string;
   }>();
   /** Whether the picker's Secret ask is being answered, and what its last press was told. */
   const [pickerSecretBusy, setPickerSecretBusy] = useState(false);
@@ -1356,6 +1358,10 @@ export const PlaneView = memo(function PlaneView({
     files: readonly string[];
     /** What the chat was doing when it was asked about, as the board said (#1246). */
     doing: State;
+    /** What it waited on of its own then (#3878), which ending its program ends (#5782). */
+    ownWork?: OwnWork;
+    /** Whether a background turn ran in it then (#4562), which ending it interrupts (#5782). */
+    backgroundTurn: boolean;
     busy: boolean;
     trouble?: string;
   }>();
@@ -1667,10 +1673,24 @@ export const PlaneView = memo(function PlaneView({
    * pin is refused, or when it is unpinned.
    */
   const [madePins, setMadePins] = useState<string[]>([]);
-  const pinnedWorkspaces = useMemo(
-    () => [...storePins, ...madePins.filter((name) => !storePins.includes(name))],
-    [madePins, storePins],
-  );
+  /**
+   * **The pins' order as the person just put them** (#3128), from a chip's drag or its Move left
+   * or right, until the store's answer after the write says it: so a dropped chip stays where it
+   * was dropped for the round trip instead of going back and coming again. Let go when the write
+   * is refused, or when the store answers with none of this window's writes still on the way.
+   */
+  const [arranged, setArranged] = useState<readonly string[]>();
+  /** How many of this window's arrangements are still being written (`arrangePins`), and how
+   *  many have been: a read of the store asked before the last write landed is not its word. */
+  const arranging = useRef({ writing: 0, written: 0 });
+  const pinnedWorkspaces = useMemo(() => {
+    const held = [...storePins, ...madePins.filter((name) => !storePins.includes(name))];
+    if (arranged === undefined) return held;
+    return [
+      ...arranged.filter((name) => held.includes(name)),
+      ...held.filter((name) => !arranged.includes(name)),
+    ];
+  }, [arranged, madePins, storePins]);
   /**
    * **Dormant pins** (V91c as amended, NO-1): pins whose workspace is gone. They stay in the
    * machine store, in their place in the order, and are drawn as dormant chips that open nothing
@@ -2464,6 +2484,9 @@ export const PlaneView = memo(function PlaneView({
    */
   useEffect(() => {
     let gone = false;
+    /** The arrangements written when this read was asked: an answer to an older one may hold an
+     *  order from before the last of them (#3128). */
+    const asked = arranging.current.written;
     void commands
       .planePins(plane)
       .then((answer) => {
@@ -2475,6 +2498,10 @@ export const PlaneView = memo(function PlaneView({
         const said = answer.data as Partial<typeof answer.data> | null | undefined;
         const pins = Array.isArray(said?.workspaces) ? said.workspaces : [];
         setStorePins(pins);
+        // The store's word on the order, once it was asked after this window's last arrangement
+        // landed and nothing else is on its way.
+        if (arranging.current.writing === 0 && asked === arranging.current.written)
+          setArranged(undefined);
         setMadePins((was) => {
           const still = was.filter((name) => !pins.includes(name));
           return still.length === was.length ? was : still;
@@ -4503,7 +4530,7 @@ export const PlaneView = memo(function PlaneView({
         // the refusal's words: the picker fills it, and this start goes on.
         const asked = started.secret_ask ?? undefined;
         setPickerSecretSaid(undefined);
-        setPickerSecret(asked === undefined ? undefined : { asked, refused });
+        setPickerSecret(asked === undefined ? undefined : { asked, refused, profile });
         // A pool that is gone, stopped or not reached, as the core found it (#4536).
         const gone = started.pool_unavailable ?? undefined;
         setPickerPoolGone(gone === undefined ? undefined : { pool: gone, refused });
@@ -6321,6 +6348,48 @@ export const PlaneView = memo(function PlaneView({
       return { ok: true };
     },
     [plane],
+  );
+
+  /**
+   * **Puts the project's pins in `order`** (#3128): what a chip's drag and its Move left and right
+   * write, through the machine store's `arrange_workspace_pins`, which moves only the pins it
+   * names, so a dormant pin keeps its place. Drawn in that order at once, and the store asked
+   * again once it is written; a refusal is said, and the chips go back to the store's order.
+   */
+  const arrangePins = useCallback(
+    async (order: readonly string[]): Promise<Ran> => {
+      setArranged(order);
+      arranging.current.writing += 1;
+      const said = await commands
+        .arrangeWorkspacePins(plane, [...order])
+        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+      arranging.current.writing -= 1;
+      arranging.current.written += 1;
+      if (said.status === "error") {
+        if (arranging.current.writing === 0) setArranged(undefined);
+        setReport({ from: "workspace.pin", refused: true, words: said.error });
+        return { ok: false, refused: said.error };
+      }
+      setPinning((asked) => asked + 1);
+      // Settings › You › This machine lists the pins in their order (#1240).
+      machineChanged();
+      return { ok: true };
+    },
+    [plane],
+  );
+
+  /** **Moves a pin one place earlier or later** among the pins the plane still has, as the
+   *  chips draw them: a chip's Move left and Move right (#3128). */
+  const moveWorkspacePin = useCallback(
+    (workspace: string, by: -1 | 1): Promise<Ran> => {
+      const order = pinMoved(
+        strips.filter((name) => pinnedWorkspaces.includes(name)),
+        workspace,
+        by,
+      );
+      return order === undefined ? Promise.resolve({ ok: true }) : arrangePins(order);
+    },
+    [arrangePins, pinnedWorkspaces, strips],
   );
 
   /**
@@ -8359,6 +8428,10 @@ export const PlaneView = memo(function PlaneView({
         // `stateOf`, as the quit warning reads it: a shell nothing has reported on is `unknown`
         // too, since a harness started by hand in it could be mid-turn.
         doing: stateOf(chats.store.statesFor(chats.plane), session),
+        // Asked by the quit warning's test, which counts its own work and a background turn
+        // (#5782), not by its state alone.
+        ownWork: ownWorkOf(chats.store.statesFor(chats.plane), session),
+        backgroundTurn: chats.store.statesFor(chats.plane).backgroundTurns[session] === true,
         busy: false,
       });
     },
@@ -8709,6 +8782,7 @@ export const PlaneView = memo(function PlaneView({
       },
       pinTab,
       pinWorkspace,
+      moveWorkspacePin,
       pinProject: windowDoes.pinProject,
       focusWorkspace,
       createWorkspace,
@@ -8885,6 +8959,7 @@ export const PlaneView = memo(function PlaneView({
       pickSpot,
       pinTab,
       pinWorkspace,
+      moveWorkspacePin,
       rereadPanels,
       removeWorkspace,
       removeWorktree,
@@ -10811,12 +10886,15 @@ export const PlaneView = memo(function PlaneView({
               // The pins whose workspace is gone, which the title bar draws dormant (#3651).
               dormant: dormantPins,
               forget: (name: string) => void forgetDormantPin(name),
+              // A chip's drag (#3128): the pins in the order they were dropped in.
+              arrange: (order: readonly string[]) => void arrangePins(order),
               // Its stale repos, for their workspaces' chips (#3650).
               standing: staleClones.lines,
               focused,
             },
     }),
     [
+      arrangePins,
       dormantPins,
       forgetDormantPin,
       staleClones.lines,
@@ -10851,6 +10929,17 @@ export const PlaneView = memo(function PlaneView({
   // **When a chat moved is not the report's** (#4727): a busy chat moves many times a second,
   // and each report is the window's root drawn again. What ordered projects by it was the
   // project strip's show-more, which went with the strip (ADR 0054, amended 2026-10-23).
+  /** **Every chat the plane lists, by the workspace it files it in** (`OUTSIDE` for the root):
+   *  what a chip's working mark counts (#3127). */
+  const filedChats = useMemo(
+    () => [
+      ...(sidebar?.workspaces ?? []).flatMap((ws) =>
+        ws.chats.map((chat) => ({ session: chat.session, workspace: ws.name })),
+      ),
+      ...(sidebar?.unfiled ?? []).map((chat) => ({ session: chat.session, workspace: OUTSIDE })),
+    ],
+    [sidebar],
+  );
   /** Its sessions, for the status line's count of the ones running. */
   const quitSessions = useMemo(() => quitting.map((chat) => chat.session), [quitting]);
   // **Who it was sent to, and for which project, are part of what was sent** (#1037): a new
@@ -10864,7 +10953,9 @@ export const PlaneView = memo(function PlaneView({
         waitingIn: typeof waitingIn;
         quitting: Leaving[];
         doing: State[];
+        working: Readonly<Record<string, number>>;
         owning: (OwnWork | undefined)[];
+        turning: boolean[];
         queued: typeof queued;
         queue: readonly number[];
         fromQueue: ReturnType<typeof queued>;
@@ -10878,7 +10969,15 @@ export const PlaneView = memo(function PlaneView({
       // What each waits on of its own (#3878): the quit warning and Restart to update say it
       // ends (#5748).
       const owning = quitting.map((chat) => ownWorkOf(states, chat.session));
+      // Which a background turn runs in (#4562): ending it interrupts that turn (#5782).
+      const turning = quitting.map((chat) => states.backgroundTurns[chat.session] === true);
       const queue = states.needsYou;
+      // **How many chats are working in each workspace** (#3127): its chip's mark. A chat in its
+      // turn, its own work in flight included (`inItsTurn`), as a hook says it (ADR 0076). Every
+      // chat the plane lists, where it files it: a chat need not have a tab (#4758).
+      const working: Record<string, number> = {};
+      for (const { session, workspace } of filedChats)
+        if (inItsTurn(states, session)) working[workspace] = (working[workspace] ?? 0) + 1;
       const was = reported.current;
       const sameQueue = was?.queued === queued && sameList(was.queue, queue);
       if (
@@ -10888,8 +10987,10 @@ export const PlaneView = memo(function PlaneView({
         was.waitingIn === waitingIn &&
         was.quitting === quitting &&
         sameList(was.doing, doing) &&
+        sameCounts(was.working, working) &&
         // The same length as `doing`'s, each built off `quitting`, which is the same.
         was.owning.every((work, at) => sameOwnWork(work, owning[at])) &&
+        sameList(was.turning, turning) &&
         sameQueue
       )
         return;
@@ -10902,7 +11003,9 @@ export const PlaneView = memo(function PlaneView({
         waitingIn,
         quitting,
         doing,
+        working,
         owning,
+        turning,
         queued,
         queue,
         fromQueue,
@@ -10916,6 +11019,7 @@ export const PlaneView = memo(function PlaneView({
               waiting: Object.fromEntries(
                 [OUTSIDE, ...mine.workspaces.names].map((name) => [name, waitingIn(queue, name)]),
               ),
+              working,
             };
       onReport(plane, {
         ...mine,
@@ -10925,12 +11029,13 @@ export const PlaneView = memo(function PlaneView({
           ...chat,
           state: doing[at],
           ...(owning[at] && { ownWork: owning[at] }),
+          ...(turning[at] && { backgroundTurn: true }),
         })),
       });
     };
     report();
     return chats.store.subscribe(report);
-  }, [chats, quitting, mine, onReport, plane, queued, waitingIn]);
+  }, [chats, filedChats, quitting, mine, onReport, plane, queued, waitingIn]);
 
   const frontChat = frontTab && reopened.find((chat) => chat.session === chatOf(tabs, frontTab.id));
 
@@ -12668,7 +12773,15 @@ export const PlaneView = memo(function PlaneView({
                     title={`Start ${freshening.name} fresh?`}
                     says={`The project's instructions changed since it started (${freshening.files.join(", ")}). Its program ends, and it starts again on what is there now, as a new conversation.`}
                     answer="Start fresh"
-                    warns={oneChatMidTurn(freshening.name, freshening.doing)}
+                    warns={oneChatInterrupted({
+                      key: String(freshening.session),
+                      name: freshening.name,
+                      harness: null,
+                      cwd: null,
+                      state: freshening.doing,
+                      ownWork: freshening.ownWork,
+                      backgroundTurn: freshening.backgroundTurn,
+                    })}
                     trouble={freshening.trouble}
                     busy={freshening.busy}
                     onAnswer={() => void startFresh()}
@@ -12824,6 +12937,7 @@ export const PlaneView = memo(function PlaneView({
                         ? undefined
                         : {
                             ask: pickerAsk,
+                            profile: pickerSecret.profile,
                             variable: pickerSecret.asked.variable,
                             entries: () => secretAskEntries(plane, pickerAsk),
                             busy: pickerSecretBusy,
@@ -13066,6 +13180,17 @@ function sameStates(a: OwedStates, b: OwedStates): boolean {
 function tabsSaid(panels: readonly PanelView[] | undefined): string {
   return JSON.stringify(
     (panels ?? []).map(({ key, title, mark, order }) => [key, title, mark, order]),
+  );
+}
+
+/** Whether two counts by name say the same, so a report that changes neither is not sent. */
+function sameCounts(
+  one: Readonly<Record<string, number>>,
+  other: Readonly<Record<string, number>>,
+): boolean {
+  const names = Object.keys(one);
+  return (
+    names.length === Object.keys(other).length && names.every((name) => one[name] === other[name])
   );
 }
 

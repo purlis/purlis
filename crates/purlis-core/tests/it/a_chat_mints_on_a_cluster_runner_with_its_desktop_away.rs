@@ -273,19 +273,24 @@ fn a_paired_runner(
     minting: bool,
     desktop: &Pinned,
 ) -> (PoolPin, Paired) {
+    let requester = kubectl.whoami().expect("who this kubeconfig is");
     let mut spec = serde_json::json!({ "image": image });
+    let mut metadata = serde_json::json!({ "name": name });
     if minting {
         spec["forge"] = serde_json::json!({
             "appKeySecretRef": { "name": KEY_SECRET },
             "repos": ["acme/*"],
             "mintInCluster": true,
         });
+        // Whoever writes a Pool's forge names themselves on it, in the same write.
+        metadata["annotations"] =
+            serde_json::json!({ "runners.purlis.dev/forge-writer": requester });
     }
     // Retried: use on the key takes a moment to reach the policy.
     let pool = serde_json::json!({
         "apiVersion": "runners.purlis.dev/v1alpha1",
         "kind": "Pool",
-        "metadata": { "name": name },
+        "metadata": metadata,
         "spec": spec,
     });
     eventually("the Pool to be taken", || {
@@ -300,7 +305,6 @@ fn a_paired_runner(
     let pin = eventually("the pool names the operator's key", || {
         kubectl.pool_pin(name).ok()
     });
-    let requester = kubectl.whoami().expect("who this kubeconfig is");
     let uid = kubectl
         .claim(namespace, name, name, &requester, Keeping::Fresh)
         .expect("the claim is made");

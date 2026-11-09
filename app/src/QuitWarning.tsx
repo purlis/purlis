@@ -36,6 +36,11 @@ export type Ending = {
    * them too, so such a chat is asked about as one mid-turn is (#5748).
    */
   ownWork?: OwnWork;
+  /**
+   * **A background turn runs in it, over its wait on the person** (#4562): `state` reads
+   * `waiting`, and the chat is at work, so ending it interrupts that turn (#5782).
+   */
+  backgroundTurn?: boolean;
 };
 
 /**
@@ -105,7 +110,7 @@ export function EndingList({ chats }: { chats: readonly Ending[] }) {
         <li key={chat.key}>
           <span className="what">{chat.harness ?? "shell"}</span>
           <span>{chat.name}</span>
-          <EndingState state={chat.state} ownWork={chat.ownWork} />
+          <EndingState state={atWork(chat) ? "running" : chat.state} ownWork={chat.ownWork} />
           {several && chat.project && <code className="where">{chat.project}</code>}
           {chat.cwd && <code className="where">{chat.cwd}</code>}
         </li>
@@ -137,16 +142,23 @@ function EndingState({ state, ownWork }: { state: State; ownWork: OwnWork | unde
 }
 
 /**
- * Whether ending `chat` could interrupt something: it says it is mid-turn, it says nothing at
- * all, or its turn ended on work of its own still in flight (#5748).
+ * Whether ending `chat` could interrupt something: it says it is mid-turn, a background turn
+ * runs in it (#5782), it says nothing at all, or its turn ended on work of its own still in
+ * flight (#5748). The quit warning, Restart to update, the restart onto the session bus and
+ * Start fresh all ask by it.
  */
 export function wouldInterrupt(chat: Ending): boolean {
-  return chat.state === "running" || chat.state === "unknown" || waitsOnItsOwnWork(chat);
+  return atWork(chat) || chat.state === "unknown" || waitsOnItsOwnWork(chat);
+}
+
+/** Whether `chat` is in a turn: one it says it is in, or a background turn over its wait (#4562). */
+function atWork(chat: Ending): boolean {
+  return chat.state === "running" || chat.backgroundTurn === true;
 }
 
 /** Whether `chat`'s turn ended on work of its own still in flight (#3878). */
 function waitsOnItsOwnWork(chat: Ending): chat is Ending & { ownWork: OwnWork } {
-  return chat.state === "waiting" && chat.ownWork !== undefined;
+  return chat.state === "waiting" && chat.ownWork !== undefined && !atWork(chat);
 }
 
 /**
@@ -191,11 +203,24 @@ export function oneChatMidTurn(name: string, state: State): string | undefined {
 }
 
 /**
+ * **What ending `chat`'s program would interrupt**, by [`wouldInterrupt`]'s test, in the quit
+ * warning's words: a turn, a state it cannot tell, or the work of its own that ends with it
+ * (#5782). Nothing where ending it interrupts nothing. What Start fresh's question warns
+ * (`ChatAsk`, #1246).
+ */
+export function oneChatInterrupted(chat: Ending): string | undefined {
+  if (atWork(chat)) return oneChatMidTurn(chat.name, "running");
+  if (chat.state === "unknown") return oneChatMidTurn(chat.name, "unknown");
+  if (waitsOnItsOwnWork(chat)) return ownWorkSentence([chat]);
+  return undefined;
+}
+
+/**
  * What the chats about to be ended are doing: which are mid-turn, which cannot say, and what
  * of their own work ends with those whose turn ended on it (#5748).
  */
 export function MidTurnSaid({ chats }: { chats: readonly Ending[] }) {
-  const running = chats.filter((chat) => chat.state === "running");
+  const running = chats.filter(atWork);
   const unknown = chats.filter((chat) => chat.state === "unknown");
   const onTheirOwn = chats.filter(waitsOnItsOwnWork);
   return (

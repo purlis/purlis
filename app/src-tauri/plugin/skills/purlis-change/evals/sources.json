@@ -1,0 +1,193 @@
+{
+  "tier": "standard",
+  "neighbours": [
+    "purlis-repo-work"
+  ],
+  "prompts": [
+    {
+      "query": "The API bump touches core, web and mobile. Make it one cross-repo change so the three PRs stay together.",
+      "source": "ADR 0060's own example: \"a core API bump, and the two repos that consume it\"."
+    },
+    {
+      "query": "Start a purlis change called auth-v2 for the token rework across the backend and the SDK.",
+      "source": "Skill text: `purlis change create <slug> --why`; plausible phrasing a person types."
+    },
+    {
+      "query": "Add the sdk repo to the auth-v2 change, and it has to land after backend.",
+      "source": "Skill text: `purlis change add` with `--needs`."
+    },
+    {
+      "query": "Which repo should merge first for the billing change?",
+      "source": "Description (\"say which repo merges first\"); ADR 0060 §3, ordering."
+    },
+    {
+      "query": "Push all the branches of the logging change and open the linked pull requests.",
+      "source": "Skill text: `purlis change push`, which opens each request with the cross-link block."
+    },
+    {
+      "query": "Land the backend part of the auth-v2 change now, its checks are green.",
+      "source": "Skill text: `purlis change land <slug> --repo <repo>`, one member per run."
+    },
+    {
+      "query": "What is the schema-split change still waiting on?",
+      "source": "Description (\"what a change is waiting on\"); `purlis change show`."
+    },
+    {
+      "query": "The rename across api and cli went badly. Roll the whole thing back in both repos.",
+      "source": "Skill text: `purlis change revert`; ADR 0060 §8."
+    },
+    {
+      "query": "I'm changing the protocol in three repos at once — how do I keep that together in purlis?",
+      "source": "Description (\"one piece of work in a purlis workspace spans several repos\")."
+    },
+    {
+      "query": "Can you show me the cross-repo changes in this workspace?",
+      "source": "The tool `change_status` with no change named; `purlis change list`."
+    },
+    {
+      "query": "Keep the shared-types update and the two services that use it as one change, landed in order.",
+      "source": "ADR 0060's problem statement: \"nothing says the three are one piece of work, which must land first\"."
+    },
+    {
+      "query": "Land the next member of the payments change.",
+      "source": "Skill text §5; one member per run, in `needs` order."
+    },
+    {
+      "query": "Why won't purlis land the web member of the release-notes change?",
+      "source": "forges.md `purlis change land`: each gate's refusal is named; plausible phrasing a person types."
+    },
+    {
+      "query": "Take the docs repo out of the theming change — it turned out not to need anything.",
+      "source": "Skill text: `purlis change drop <slug> <repo> --why`."
+    },
+    {
+      "query": "Coordinate this migration across the db, api and worker repos so the PRs link to each other.",
+      "source": "forges.md `purlis change push`: the cross-link block in every request."
+    },
+    {
+      "query": "The merge queue took the core PR of the auth-v2 change. What now before the SDK can land?",
+      "source": "forges.md: a queued member is recorded by a later `land` of it."
+    },
+    {
+      "query": "Revert the logging change everywhere it landed and get the revert PRs up.",
+      "source": "Skill text: `revert-<slug>` is pushed and landed like any change."
+    },
+    {
+      "query": "Is the auth-v2 change partly landed? Which repos are in and which are left?",
+      "source": "ADR 0060 §4, a partial landing shown with the outstanding members named."
+    },
+    {
+      "query": "Squash-land the cli member of the rename change.",
+      "source": "Skill text: `purlis change land --squash`."
+    },
+    {
+      "query": "We're done with the billing change; forget it in purlis.",
+      "source": "Skill text: `purlis change forget <slug>`."
+    },
+    {
+      "query": "Set up a multi-repo change for the config format: the parser repo first, then the app and the plugin.",
+      "source": "Skill text: create, then add with `--needs`; plausible phrasing a person types."
+    },
+    {
+      "query": "Read the record of the schema-split change: why it exists and each repo's branch.",
+      "source": "The tool `change_status` with one change named."
+    },
+    {
+      "query": "Push my branch on the web repo and open a PR.",
+      "source": "Near miss (purlis-repo-work): one repo's branch; `purlis worktree push`.",
+      "belongs_to": "purlis-repo-work"
+    },
+    {
+      "query": "Work on the api repo: fix the failing test and commit it.",
+      "source": "Near miss (purlis-repo-work): its description, \"build, test, change and commit\".",
+      "belongs_to": "purlis-repo-work"
+    },
+    {
+      "query": "Run two branches of the cli repo side by side so I can compare.",
+      "source": "Near miss (purlis-repo-work): its description, \"several branches of one repo at once\".",
+      "belongs_to": "purlis-repo-work"
+    },
+    {
+      "query": "Clone the sdk repo into this workspace and build it.",
+      "source": "Near miss (purlis-repo-work): its §2, `purlis clone`.",
+      "belongs_to": "purlis-repo-work"
+    },
+    {
+      "query": "Commit what you changed in the backend branch folder.",
+      "source": "Near miss (purlis-repo-work): `purlis worktree commit` in one repo.",
+      "belongs_to": "purlis-repo-work"
+    },
+    {
+      "query": "Bring my feature branch on mobile up to date with main.",
+      "source": "Near miss (purlis-repo-work): `purlis worktree update` in one repo.",
+      "belongs_to": "purlis-repo-work"
+    },
+    {
+      "query": "How do I run the mobile repo's tests from this workspace?",
+      "source": "Near miss (purlis-repo-work): its §3, a repo's own conventions.",
+      "belongs_to": "purlis-repo-work"
+    },
+    {
+      "query": "Merge the docs PR on the website repo.",
+      "source": "Near miss (purlis-repo-work): one repo's request, no change.",
+      "belongs_to": "purlis-repo-work"
+    },
+    {
+      "query": "Make a new branch in the worker repo for the retry fix.",
+      "source": "Near miss (purlis-repo-work): a branch folder in one repo.",
+      "belongs_to": "purlis-repo-work"
+    },
+    {
+      "query": "Change the theme of the window to something darker.",
+      "source": "plausible phrasing a person types: \"change\" as a verb about the look."
+    },
+    {
+      "query": "What changed in this task? Show me its diff.",
+      "source": "plausible phrasing a person types: a task's Changes in the window, not a cross-repo change."
+    },
+    {
+      "query": "Revert my last commit in this repo.",
+      "source": "plausible phrasing a person types: a single-repo revert."
+    },
+    {
+      "query": "Write a changelog fragment for this fix.",
+      "source": "Mined from this repo's CLAUDE.md: `changes/<slug>.md` fragments; \"change\" as a file."
+    },
+    {
+      "query": "Summarize the changes in this pull request for the reviewer.",
+      "source": "plausible phrasing a person types: one request's diff."
+    },
+    {
+      "query": "Rename the payments repo to billing on GitHub.",
+      "source": "Mined session record 20260929-175343-repo-rename-security-alerts-and-the-48-issue-cle.md: a repo rename, no change."
+    },
+    {
+      "query": "Hand the migration work off to a new chat in the infra workspace.",
+      "source": "plausible phrasing a person types: a handoff, not a change."
+    },
+    {
+      "query": "Change my default workspace to infra.",
+      "source": "plausible phrasing a person types: \"change\" as a setting."
+    },
+    {
+      "query": "Upgrade purlis to the newest version.",
+      "source": "plausible phrasing a person types: an upgrade, not a change."
+    },
+    {
+      "query": "Show me which repos this workspace has cloned.",
+      "source": "plausible phrasing a person types: an inventory, not a change."
+    },
+    {
+      "query": "Rebase this PR onto main and force-push it.",
+      "source": "plausible phrasing a person types: one branch's git history."
+    },
+    {
+      "query": "Change the API's error format in this file.",
+      "source": "plausible phrasing a person types: a code edit in one file."
+    },
+    {
+      "query": "Save the project's files and push them.",
+      "source": "plausible phrasing a person types: `purlis save`, the project's own files."
+    }
+  ]
+}

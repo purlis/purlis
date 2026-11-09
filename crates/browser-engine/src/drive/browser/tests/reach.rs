@@ -535,6 +535,94 @@ fn a_frame_whose_tree_fails_stays_not_known_and_stands_on_no_ancestor() {
     assert_eq!(state.every_document("PAGE-1"), Err(Unjudged::Unread));
 }
 
+/// Some of the engine's events are lost, as when its events overflow what the connection holds,
+/// and the next event is taken in.
+fn events_lost(engine: &super::Engine) {
+    *super::super::lock(&engine.dropped) += 1;
+    engine.emit(
+        "Page.lifecycleEvent",
+        json!({"frameId":"PAGE-1","loaderId":"LOADER-1","name":"networkIdle","timestamp":1.0}),
+        Some("S-PAGE-1"),
+    );
+}
+
+#[test]
+fn once_the_engines_events_are_lost_a_frame_goes_by_its_tree_read_anew_and_by_none_until_then() {
+    // The payment frame went from other.test to third.test, and the engine's word of it was
+    // among the events lost.
+    let (judge, told) = judge(&["http://third.test/"]);
+    let (browser, engine) = browser_judged(judge);
+    let moved = "http://third.test/pay.html";
+    engine.on(move |sent, _| {
+        (sent.method == "Page.getFrameTree" && sent.session.as_deref() == Some("S-PAYMENT")).then(
+            || {
+                Ok(json!({"frameTree":{"frame":{"id":"PAYMENT-FRAME","parentId":"PAGE-1","name":"payment","url":moved,"securityOrigin":"http://third.test","mimeType":"text/html"}}}))
+            },
+        )
+    });
+    super::super::lock(&engine.model)
+        .slow
+        .insert("Page.getFrameTree".to_owned(), Duration::from_millis(1500));
+    let reads = || {
+        engine
+            .sent("Page.getFrameTree")
+            .iter()
+            .filter(|s| s.session.as_deref() == Some("S-PAYMENT"))
+            .count()
+    };
+    let before = reads();
+    events_lost(&engine);
+    wait_for("the frame's tree is asked for again", || reads() > before);
+    assert_eq!(
+        typed_into_the_frame(&browser).err(),
+        Some(crate::drive::Refusal::FrameUnread),
+        "not judged by the address it may have left"
+    );
+    assert!(engine.sent("Input.insertText").is_empty());
+    assert!(
+        whys(&told)
+            .iter()
+            .all(|(address, ..)| !address.starts_with("http://other.test")),
+        "{:?}",
+        whys(&told)
+    );
+    wait_for("the frame goes by its tree", || {
+        frame_address(&browser, "PAYMENT-FRAME") == moved
+    });
+    wait_for("the frame is known again", || {
+        super::super::lock(&browser.inner.state).documents_of("PAGE-1", "PAYMENT-FRAME")
+            == Ok(vec![moved.to_owned()])
+    });
+    let answer = typed_into_the_frame_as(&browser, 60).unwrap();
+    assert_eq!(answer.asked, vec!["new.test:443".to_owned()]);
+    assert!(engine.sent("Input.insertText").is_empty());
+}
+
+#[test]
+fn a_frame_a_tree_read_anew_no_longer_holds_is_gone() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    engine.emit(
+        "Page.frameAttached",
+        json!({"frameId":"ADS-FRAME","parentFrameId":"PAGE-1"}),
+        Some("S-PAGE-1"),
+    );
+    let there = || {
+        super::super::lock(&browser.inner.state)
+            .page("PAGE-1")
+            .is_some_and(|page| page.frames.contains_key("ADS-FRAME"))
+    };
+    wait_for("the frame is placed", there);
+    // Its word that it went is lost; the page's tree no longer holds it.
+    events_lost(&engine);
+    wait_for("the frame is gone", || !there());
+    wait_for("every frame is known again", || {
+        super::super::lock(&browser.inner.state)
+            .every_document("PAGE-1")
+            .is_ok()
+    });
+}
+
 #[test]
 fn a_blank_frame_inside_a_frame_not_known_is_not_known_either() {
     let (judge, _) = judge(&[]);
@@ -1014,6 +1102,7 @@ fn a_frames_origin_follows_the_webs_rules_for_its_address() {
         unread: false,
         security_origin: origin.to_owned(),
         sandboxed: None,
+        stale: 0,
     };
     let web = |address: &str| Origin::Web(address.to_owned());
     for (url, origin, document, judged) in [

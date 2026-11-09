@@ -1230,7 +1230,8 @@ mod tests {
         assert_eq!(under_floors(&drawn), Vec::<String>::new());
     }
 
-    /// The consent pairs and text tiers `theme` draws under their floors, untinted.
+    /// The consent pairs and text tiers `theme` draws under their floors, untinted: a pair the
+    /// check only reports (a meter's fill on its track, #3735) is neither.
     fn under_floors(theme: &theme::ResolvedTheme) -> Vec<String> {
         theme::check(theme)
             .findings
@@ -1238,11 +1239,12 @@ mod tests {
             .filter_map(|finding| match finding {
                 theme::Finding::Contrast {
                     tint: None, pair, ..
-                } if pair.front.starts_with("state.")
-                    || pair.front.starts_with("danger.")
-                    || pair.front.starts_with("needs-you.")
-                    || pair.front == theme::FAINT
-                    || theme::TEXT_TIERS.contains(&pair.front) =>
+                } if !theme::REPORTED.contains(pair)
+                    && (pair.front.starts_with("state.")
+                        || pair.front.starts_with("danger.")
+                        || pair.front.starts_with("needs-you.")
+                        || pair.front == theme::FAINT
+                        || theme::TEXT_TIERS.contains(&pair.front)) =>
                 {
                     Some(format!("{} on {}", pair.front, pair.back))
                 }

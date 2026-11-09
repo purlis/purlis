@@ -124,18 +124,51 @@ fn every_harness_says_its_own_budget_and_what_it_lists_of_a_skill() {
     let codex = Harness::Codex.skill_budget();
     let opencode = Harness::Opencode.skill_budget();
     assert_eq!((claude.skills, claude.chars), (60, 15_000));
-    for budget in [codex, opencode] {
-        assert_eq!((budget.skills, budget.chars), (30, 6_000));
-    }
+    // Every built-in's description together is at most 5,000 (spec #5714's Q37), so Codex's and
+    // opencode's defaults keep them all and about 3,000 for the plane's own skills. Codex's is
+    // under what it keeps of the skills hook, so it never warns.
+    assert_eq!((codex.skills, codex.chars), (30, 8_000));
+    assert_eq!((opencode.skills, opencode.chars), (30, 8_000));
     assert_eq!(claude.per_description, Some(1_536));
     assert_eq!(codex.per_description, Some(1_024));
     assert_eq!(opencode.per_description, None, "opencode cuts nothing");
-    // A Codex chat is briefed with each skill's path on its line.
+    // A Codex chat is briefed with where each skill's file is, which counts.
     assert!(codex.lists_paths);
     assert!(!claude.lists_paths && !opencode.lists_paths);
     // Claude Code's limit counts names and the lines they sit on too; the others are unmeasured.
     assert!(claude.per_line.is_some());
     assert_eq!((codex.per_line, opencode.per_line), (None, None));
+}
+
+/// **The shipped built-ins on Codex leave about 3,000 of its default 8,000 for the plane's skills**
+/// (spec #5714's Q38): each listed from where a chat's set lays them out, a skill set's folder
+/// under the app's data directory, whose path (about 140 characters) the briefing names once,
+/// not on every line.
+#[test]
+fn the_built_ins_codex_listing_leaves_room_for_the_planes_skills() {
+    let shipped = crate::harness::testing::bundled_plugin().join("skills");
+    let laid_out = std::path::Path::new(
+        "/Users/someone/Library/Application Support/dev.purlis.app/skill-sets",
+    )
+    .join("5".repeat(64))
+    .join("skills");
+    let skills: Vec<(purlis_skills::Skill, purlis_skills::Declared)> =
+        purlis_skills::read(&shipped)
+            .into_iter()
+            .map(|skill| {
+                let declared = purlis_skills::declared(&skill);
+                let folder = skill.path.parent().and_then(std::path::Path::file_name);
+                let path = laid_out
+                    .join(folder.expect("a folder"))
+                    .join(purlis_skills::FILE);
+                (purlis_skills::Skill { path, ..skill }, declared)
+            })
+            .collect();
+    assert!(skills.len() >= 17, "{}", skills.len());
+    let budget = Harness::Codex.skill_budget();
+    let spent = purlis_skills::budget::spent(skills.iter().map(|(s, d)| (s, d)), budget);
+    let left = budget.chars - spent.chars;
+    assert!(left >= 2_800, "{} of {} left", left, budget.chars);
 }
 
 #[test]
@@ -148,8 +181,10 @@ fn only_a_budget_past_codexs_own_limit_warns_and_it_says_what_codex_would_drop()
     };
     let said = codex.skill_limit_past(raised).expect("a warning");
     assert!(said.contains("15,000"), "{said}");
-    assert!(said.contains("8,000"), "{said}");
-    assert!(said.contains("leaves skills out"), "{said}");
+    // What Codex keeps of a hook's output (codex-cli 0.147.0, measured; ADR 0102 as amended
+    // 2026-11-09), and the skills it loses past it.
+    assert!(said.contains("10,000"), "{said}");
+    assert!(said.contains("cuts the skills in the middle"), "{said}");
     assert!(!said.contains("  "), "{said}");
     // opencode has no limit, and purlis hands Claude Code the one the budget needs.
     let huge = crate::skills::Budget {

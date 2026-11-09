@@ -2328,3 +2328,371 @@ fn mocha_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
 fn rspec_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
     refused_as_running_others("rspec");
 }
+
+// #5799: programs whose flags name a command. Refused whole where the program is the language
+// that runs it, or reads a file a chat wrote; offered without the flag otherwise.
+
+#[test]
+fn sed_runs_a_command_its_script_names_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("sed");
+}
+
+#[test]
+fn aria2c_runs_the_command_its_hooks_name_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("aria2c");
+}
+
+#[test]
+fn kustomize_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("kustomize");
+}
+
+/// `name args…` run by a chat raises no notice, and the chat hears the form it named and to leave
+/// it out.
+fn refused_for_its_flag(name: &str, args: &[&str], form: &str) {
+    let project = project();
+    let asks = Asks::new(project.path());
+    let mut want = printenv(project.path(), args);
+    want.command[0] = name.to_owned();
+    let frames = run_with(&the_chat(project.path()), want, &asks, Duration::ZERO);
+    assert!(asks.open_runs().is_empty(), "{name}: {frames:?}");
+    let (why, _) = refusal(&frames);
+    assert!(why.contains(form), "{name}: {why}");
+    assert!(why.contains(&format!("leave {form} out")), "{name}: {why}");
+}
+
+#[test]
+fn ssh_with_a_proxy_command_is_offered_no_run_grant_and_the_chat_hears_to_leave_it_out() {
+    refused_for_its_flag(
+        "ssh",
+        &["-oProxyCommand=sh -c x", "host", "uptime"],
+        "-o ProxyCommand",
+    );
+}
+
+#[test]
+fn rsync_with_a_remote_shell_is_offered_no_run_grant_and_the_chat_hears_to_leave_it_out() {
+    refused_for_its_flag("rsync", &["-avze", "x", "a", "host:b"], "-e");
+}
+
+#[test]
+fn psql_with_a_file_of_commands_is_offered_no_run_grant_and_the_chat_hears_to_leave_it_out() {
+    refused_for_its_flag("psql", &["-f", "x.sql"], "-f");
+}
+
+// #5833: more programs that run others, or run what a chat wrote.
+
+// #5833: programs that run the command after them, or a command they name.
+
+#[test]
+fn consul_template_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("consul-template");
+}
+
+#[test]
+fn railway_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("railway");
+}
+
+#[test]
+fn aws_runas_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("aws-runas");
+}
+
+#[test]
+fn vals_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("vals");
+}
+
+#[test]
+fn gomplate_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("gomplate");
+}
+
+#[test]
+fn envdir_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("envdir");
+}
+
+#[test]
+fn chpst_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("chpst");
+}
+
+#[test]
+fn systemd_run_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("systemd-run");
+}
+
+#[test]
+fn telepresence_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("telepresence");
+}
+
+#[test]
+fn run0_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("run0");
+}
+
+#[test]
+fn firejail_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("firejail");
+}
+
+#[test]
+fn flatpak_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("flatpak");
+}
+
+#[test]
+fn flatpak_spawn_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("flatpak-spawn");
+}
+
+#[test]
+fn rr_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("rr");
+}
+
+#[test]
+fn pkgx_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("pkgx");
+}
+
+#[test]
+fn flox_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("flox");
+}
+
+// #5833: programs that run what a file a chat wrote says.
+
+#[test]
+fn task_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("task");
+}
+
+#[test]
+fn skaffold_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("skaffold");
+}
+
+#[test]
+fn tilt_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("tilt");
+}
+
+#[test]
+fn dagger_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("dagger");
+}
+
+#[test]
+fn earthly_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("earthly");
+}
+
+#[test]
+fn act_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("act");
+}
+
+#[test]
+fn firebase_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("firebase");
+}
+
+#[test]
+fn netlify_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("netlify");
+}
+
+#[test]
+fn vercel_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("vercel");
+}
+
+#[test]
+fn wrangler_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("wrangler");
+}
+
+#[test]
+fn chezmoi_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("chezmoi");
+}
+
+#[test]
+fn mage_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("mage");
+}
+
+#[test]
+fn invoke_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("invoke");
+}
+
+#[test]
+fn fab_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("fab");
+}
+
+#[test]
+fn cdk8s_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("cdk8s");
+}
+
+// #5833: build tools and test runners, which build and run what a chat wrote.
+
+#[test]
+fn sbt_builds_and_runs_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("sbt");
+}
+
+#[test]
+fn mix_builds_and_runs_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("mix");
+}
+
+#[test]
+fn playwright_builds_and_runs_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("playwright");
+}
+
+#[test]
+fn cypress_builds_and_runs_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("cypress");
+}
+
+/// `phpunit` is refused before any Run grant is weighed, as every name `php` starts is: it runs
+/// what it is told, so it may be no tool either.
+#[test]
+fn phpunit_builds_and_runs_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    let mut want = printenv(project.path(), &["."]);
+    want.command[0] = "phpunit".to_owned();
+    let frames = run_with(&the_chat(project.path()), want, &asks, Duration::ZERO);
+    assert!(asks.open_runs().is_empty(), "{frames:?}");
+    assert!(
+        refusal(&frames).0.contains("runs whatever it is told"),
+        "{frames:?}"
+    );
+}
+
+#[test]
+fn gitlab_runner_builds_and_runs_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("gitlab-runner");
+}
+
+#[test]
+fn circleci_builds_and_runs_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("circleci");
+}
+
+#[test]
+fn stack_builds_and_runs_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("stack");
+}
+
+#[test]
+fn cabal_builds_and_runs_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("cabal");
+}
+
+#[test]
+fn dune_builds_and_runs_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("dune");
+}
+
+#[test]
+fn zig_builds_and_runs_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("zig");
+}
+
+#[test]
+fn lein_builds_and_runs_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("lein");
+}
+
+// The review of #5876: the closest kin of ssh and the programs that run the command after them.
+
+#[test]
+fn sshpass_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("sshpass");
+}
+
+#[test]
+fn autossh_runs_ssh_with_whatever_it_is_handed_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("autossh");
+}
+
+#[test]
+fn mosh_runs_the_ssh_command_it_names_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("mosh");
+}
+
+#[test]
+fn lftp_runs_commands_from_its_own_prompt_and_scripts_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("lftp");
+}
+
+/// The second review of #5876: under policy's lock a key the vault lacks is still asked for, but
+/// not for a command whose flag names a command, which no Allow could follow.
+#[test]
+fn locked_a_command_whose_flag_names_a_command_asks_for_no_key() {
+    let _policy = Policy::says(r#"{"sandbox": {"run-grants": false}}"#);
+    let project = project();
+    let asks = Asks::new(project.path());
+    let mut want = printenv(project.path(), &["-oProxyCommand=x", "host"]);
+    want.command[0] = "ssh".to_owned();
+    want.env = vec!["X=NOT_THERE_YET".into()];
+    let frames = run_with(&the_chat(project.path()), want, &asks, Duration::ZERO);
+    assert!(asks.open_runs().is_empty(), "{frames:?}");
+    assert_ne!(refusal(&frames).1, WAITING_ON_THE_PERSON, "{frames:?}");
+}
+
+// The sixth review of #5876: mysql's and mariadb's server-side and shell-like tools run what
+// their flags or files name, and none is a usual reason to hand a chat a key.
+
+#[test]
+fn mysql_server_side_and_shell_like_tools_run_what_they_name_so_they_are_offered_no_run_grant() {
+    for name in [
+        "mysql.server",
+        "mariadb.server",
+        "mysqld_safe",
+        "mariadbd-safe",
+        "mysqld_multi",
+        "mysql_install_db",
+        "mariadb-install-db",
+        "mysqlslap",
+        "mariadb-slap",
+        "mysqltest",
+        "mariadb-test",
+        "mysqlsh",
+        "mariadbd-multi",
+        "mysqltest_embedded",
+        "mariadb-test-embedded",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+// #5891, from the seventh review of #5876: the MySQL and MariaDB tools no row had read. Each is
+// refused whole: `mysqlhotcopy --method` names the copy program it has a shell run, the secure
+// installation is a script that runs the client its `--basedir` finds, and mariabackup runs
+// `qpress`, `rsync` and the plugins its flags name. None is a usual reason to hand a chat a key.
+
+#[test]
+fn mysql_hotcopy_secure_installation_and_backup_run_what_they_name_so_they_are_offered_no_run_grant()
+ {
+    for name in [
+        "mysqlhotcopy",
+        "mariadb-hotcopy",
+        "mysql_secure_installation",
+        "mariadb-secure-installation",
+        "mariabackup",
+        "mariadb-backup",
+    ] {
+        refused_as_running_others(name);
+    }
+}

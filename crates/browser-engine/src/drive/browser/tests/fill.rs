@@ -199,6 +199,30 @@ fn a_one_line_field_on_the_approved_origin_is_filled_and_its_value_kept_out() {
 }
 
 #[test]
+fn a_value_too_short_to_be_kept_out_is_refused_and_nothing_is_sent_to_the_page() {
+    let (browser, engine) = browser();
+    as_fields(&engine, "one_line", Twist::None);
+    let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
+    let run_before = engine.sent("Runtime.callFunctionOn").len();
+    let fill = SecretFill {
+        value: "ab".to_owned().into(),
+        ..fill_of(secret, "http://fixture.test")
+    };
+
+    let filled = filling(&browser, &fill);
+
+    match filled {
+        Err(Refusal::NotFilled(why)) => {
+            assert!(why.contains("shorter than 3 characters"), "{why}");
+            assert!(why.contains("nothing was filled"), "{why}");
+        }
+        other => panic!("refused otherwise: {}", ended_as(&other)),
+    }
+    assert_eq!(engine.sent("Runtime.callFunctionOn").len(), run_before);
+    assert_eq!(inserted(&engine), 0);
+}
+
+#[test]
 fn a_field_in_a_frame_on_another_origin_is_refused_before_anything_is_typed() {
     let (browser, engine) = browser();
     as_fields(&engine, "one_line", Twist::None);

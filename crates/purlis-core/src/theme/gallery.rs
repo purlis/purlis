@@ -38,14 +38,15 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, PoisonError};
 
 use super::folders::{Folders, Found, Reach};
 use super::levels::Choice;
 use super::levels::appear;
 use super::resolve::{Drawn, Offered, On};
 use super::{
-    Appearance, CLASSIC, Contrast, PURLIS, Resolved, SCHEMA_URL, THEME_JSON, ThemeOption, Values,
-    check_every, classic, is_folder_name, purlis, shipped,
+    Appearance, CLASSIC, Contrast, PURLIS, Resolved, SCHEMA_URL, THEME_JSON, Theme, ThemeOption,
+    Values, check_every, classic, is_folder_name, purlis, shipped,
 };
 use crate::extension::project::theme::Pick;
 
@@ -115,18 +116,13 @@ pub struct Card {
 impl Card {
     /// **The level of the theme folder it is** (#2516); `None` for a card that is no folder.
     pub fn level(&self) -> Option<Reach> {
-        match self.from {
-            From::Workspace => Some(Reach::Workspace),
-            From::Project => Some(Reach::Project),
-            From::Machine => Some(Reach::Machine),
-            From::BuiltIn | From::Extension { .. } => None,
-        }
+        level_of(&self.from)
     }
 
     /// **Whether this is the card `id` of the level `level`**: a theme folder's card is told
     /// from another of its name by its level, where one is named.
     pub fn is(&self, id: &str, level: Option<Reach>) -> bool {
-        self.id == id && (level.is_none() || self.level() == level)
+        names(&self.id, &self.from, id, level)
     }
 }
 
@@ -144,14 +140,29 @@ pub struct Shelf<'a> {
 /// first and Purlis Classic, the built-in themes; then the theme folders nearest level first and by name within one, a name two levels have
 /// once at each (#2516), then each extension's theme in force in the order the survey found
 /// them.
+///
+/// What a card says of a theme it draws is worked out once for each theme as it reads: a theme
+/// the last gallery read drew exactly as it draws now is said again from then ([`LastRead`]).
 pub fn cards(shelf: &Shelf<'_>) -> Vec<Card> {
-    let mut cards: Vec<Card> = [(PURLIS, purlis()), (CLASSIC, classic())]
+    let mut kept = LastRead::taken();
+    let cards = shelved(shelf)
+        .into_iter()
+        .map(|(id, from, resolved)| card(id, from, &resolved, &mut kept))
+        .collect();
+    kept.keep();
+    cards
+}
+
+/// **Every theme within `shelf`'s reach, as it reads**, in the order [`cards`] gives them: its
+/// id, where it comes from, and what the engine read.
+fn shelved(shelf: &Shelf<'_>) -> Vec<(String, From, Resolved)> {
+    let mut shelved: Vec<(String, From, Resolved)> = [(PURLIS, purlis()), (CLASSIC, classic())]
         .into_iter()
         .map(|(id, theme)| {
-            card(
+            (
                 id.to_owned(),
                 From::BuiltIn,
-                &Resolved {
+                Resolved {
                     theme: theme.clone(),
                     complaints: Vec::new(),
                     refused: false,
@@ -168,7 +179,7 @@ pub fn cards(shelf: &Shelf<'_>) -> Vec<Card> {
         let Found::Read(resolved) = shelf.folders.find_in(&name, level) else {
             continue;
         };
-        cards.push(card(name, from_level(level), &resolved));
+        shelved.push((name, from_level(level), resolved));
     }
     for one in shelf
         .offered
@@ -180,15 +191,15 @@ pub fn cards(shelf: &Shelf<'_>) -> Vec<Card> {
             name: one.name.clone(),
         }
         .value();
-        cards.push(card(
+        shelved.push((
             id,
             From::Extension {
                 extension: one.extension.clone(),
             },
-            &one.theme,
+            one.theme.clone(),
         ));
     }
-    cards
+    shelved
 }
 
 /// **The theme the card `id` names**, as the engine reads it within `shelf`'s reach: for a theme
@@ -337,6 +348,21 @@ pub fn folder_of(shelf: &Shelf<'_>, id: &str, level: Option<Reach>) -> Option<Pa
         .then_some(path)
 }
 
+/// Whether the card `card_id` from `from` is the one `id` of `level` names ([`Card::is`]).
+fn names(card_id: &str, from: &From, id: &str, level: Option<Reach>) -> bool {
+    card_id == id && (level.is_none() || level_of(from) == level)
+}
+
+/// The level of a theme folder from `from`; `None` for one that is no folder.
+fn level_of(from: &From) -> Option<Reach> {
+    match from {
+        From::Workspace => Some(Reach::Workspace),
+        From::Project => Some(Reach::Project),
+        From::Machine => Some(Reach::Machine),
+        From::BuiltIn | From::Extension { .. } => None,
+    }
+}
+
 /// What a card's level is called.
 fn from_level(level: Reach) -> From {
     match level {
@@ -346,19 +372,20 @@ fn from_level(level: Reach) -> From {
     }
 }
 
-/// The card for `resolved`, the theme `id` from `from`.
-fn card(id: String, from: From, resolved: &Resolved) -> Card {
+/// The card for `resolved`, the theme `id` from `from`; what it says of the theme it draws is
+/// taken from `kept` when it was worked out for that theme before.
+fn card(id: String, from: From, resolved: &Resolved, kept: &mut LastRead) -> Card {
     let said: Vec<String> = resolved
         .complaints
         .iter()
         .map(|one| one.said.clone())
         .collect();
-    let duplicable = !resolved.refused && matches!(from, From::BuiltIn | From::Machine);
+    let duplicable = is_duplicable(&from, resolved);
     let folder = matches!(from, From::Machine | From::Project | From::Workspace);
     let preview = matches!(from, From::BuiltIn) && super::is_preview(&id);
     if resolved.refused {
         return Card {
-            name: id.clone(),
+            name: named(&id, resolved),
             stamp: stamp_of(&said),
             id,
             from,
@@ -375,14 +402,14 @@ fn card(id: String, from: From, resolved: &Resolved) -> Card {
         };
     }
     let theme = &resolved.theme;
-    let floors = theme
-        .appearances
-        .iter()
-        .filter_map(|one| super::draw(one).held.map(|held| held.said()))
-        .collect();
+    let CardFacts {
+        warnings,
+        floors,
+        follows,
+    } = kept.of(theme);
     Card {
+        name: named(&id, resolved),
         id,
-        name: theme.name.clone(),
         from,
         preview,
         appearances: theme
@@ -396,13 +423,92 @@ fn card(id: String, from: From, resolved: &Resolved) -> Card {
             .collect(),
         options: theme.options.clone(),
         refused: false,
-        warnings: super::warnings_said(theme, &check_every(theme)),
+        warnings,
         floors,
-        follows: super::follow(theme, Appearance::Dark, Contrast::Standard).note,
+        follows,
         duplicable,
         folder,
         stamp: stamp_of(theme),
         said,
+    }
+}
+
+/// What a card of `resolved` is called: the theme's name, or its id when it is refused.
+fn named(id: &str, resolved: &Resolved) -> String {
+    if resolved.refused {
+        id.to_owned()
+    } else {
+        resolved.theme.name.clone()
+    }
+}
+
+/// Whether a folder of the person's own can extend `resolved`, from `from` ([`Card::duplicable`]).
+fn is_duplicable(from: &From, resolved: &Resolved) -> bool {
+    !resolved.refused && matches!(from, From::BuiltIn | From::Machine)
+}
+
+/// **What a card says of a theme it draws**: the check's warnings in every combination, the
+/// consent floors its appearances break, and what following the system does with it. The theme
+/// check is most of what reading a gallery costs.
+#[derive(Debug, Clone)]
+struct CardFacts {
+    warnings: Vec<String>,
+    floors: Vec<String>,
+    follows: Option<String>,
+}
+
+impl CardFacts {
+    fn of(theme: &Theme) -> Self {
+        Self {
+            warnings: super::warnings_said(theme, &check_every(theme)),
+            floors: theme
+                .appearances
+                .iter()
+                .filter_map(|one| super::draw(one).held.map(|held| held.said()))
+                .collect(),
+            follows: super::follow(theme, Appearance::Dark, Contrast::Standard).note,
+        }
+    }
+}
+
+/// **What the last gallery read said of each theme it drew**, so the next read checks only a
+/// theme that is new or draws otherwise: the window reads its gallery again on every choice,
+/// and the built-in themes are in every one. A theme is matched by all it is (`Theme`'s `==`),
+/// so a match draws exactly what was checked. Only the last read's themes are kept.
+static LAST: Mutex<Vec<(Theme, CardFacts)>> = Mutex::new(Vec::new());
+
+/// One read's use of [`LAST`]: the themes it found there and those it checked.
+struct LastRead {
+    before: Vec<(Theme, CardFacts)>,
+    now: Vec<(Theme, CardFacts)>,
+}
+
+impl LastRead {
+    /// Takes what the last read kept; a read alongside this one starts from nothing.
+    fn taken() -> Self {
+        let before = std::mem::take(&mut *LAST.lock().unwrap_or_else(PoisonError::into_inner));
+        Self {
+            before,
+            now: Vec::new(),
+        }
+    }
+
+    /// What a card says of `theme`: kept, or worked out now.
+    fn of(&mut self, theme: &Theme) -> CardFacts {
+        if let Some((_, checked)) = self.now.iter().find(|(one, _)| one == theme) {
+            return checked.clone();
+        }
+        let checked = match self.before.iter().position(|(one, _)| one == theme) {
+            Some(at) => self.before.swap_remove(at).1,
+            None => CardFacts::of(theme),
+        };
+        self.now.push((theme.clone(), checked.clone()));
+        checked
+    }
+
+    /// Keeps this read's themes for the next.
+    fn keep(self) {
+        *LAST.lock().unwrap_or_else(PoisonError::into_inner) = self.now;
     }
 }
 
@@ -436,31 +542,31 @@ pub fn duplicate(
     id: &str,
     level: Option<Reach>,
 ) -> Result<String, String> {
-    let card = cards(shelf)
+    // Found as [`cards`] finds it, without checking every theme of the gallery.
+    let (card_id, from, resolved) = shelved(shelf)
         .into_iter()
-        .find(|one| one.is(id, level))
+        .find(|(one, from, _)| names(one, from, id, level))
         .ok_or_else(|| format!("there is no theme {id} here, so nothing was made"))?;
-    if !card.duplicable {
+    let name = named(&card_id, &resolved);
+    if !is_duplicable(&from, &resolved) {
         return Err(format!(
-            "{} cannot be the theme one of yours extends: a theme of your own extends Purlis \
-             Classic or another of your own",
-            card.name
+            "{name} cannot be the theme one of yours extends: a theme of your own extends Purlis \
+             Classic or another of your own"
         ));
     }
     let document = serde_json::json!({
         "$schema": SCHEMA_URL,
-        "name": format!("{} (mine)", card.name),
-        "extends": card.id,
+        "name": format!("{name} (mine)"),
+        "extends": card_id,
     });
     let text = format!(
         "{}\n",
         serde_json::to_string_pretty(&document).map_err(|why| why.to_string())?
     );
-    let names = candidates(&card.id);
+    let names = candidates(&card_id);
     if names.is_empty() {
         return Err(format!(
-            "{} has no folder name a duplicate can be given, so nothing was made",
-            card.id
+            "{card_id} has no folder name a duplicate can be given, so nothing was made"
         ));
     }
     write::new_folder(config_root, &names, &text)

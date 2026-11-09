@@ -96,11 +96,16 @@ export type ReportedWorkspaces = {
   /** Forgets a dormant pin for good, with an Undo for this run in the Notices centre ("Forgot
    *  the pin to X"): the dormant notice's Forget, wherever it is drawn. */
   forget?: (workspace: string) => void;
+  /** Puts the pins in `order` (#3128): a chip's drag along the title bar. */
+  arrange?: (order: readonly string[]) => void;
   /** **What stands about its workspaces**, one line each (#3650): its stale repos, read by the
    *  project and listed in its Inbox, hung from each one's chip too, with the same ways. */
   standing?: readonly StandingNotice[];
   focused?: string;
   waiting: Readonly<Record<string, number>>;
+  /** **How many chats are working in each workspace** (#3127), by name, the root's under its own
+   *  (`actions.OUTSIDE`); a workspace with none is not here. Its chip's working mark. */
+  working?: Readonly<Record<string, number>>;
 };
 
 /** What a project asks the WINDOW to do, because the window is what holds projects. */

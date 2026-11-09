@@ -7,8 +7,9 @@
 //! on at all.
 
 use k8s_openapi::api::admissionregistration::v1::{
-    MatchResources, ParamRef, ValidatingAdmissionPolicy, ValidatingAdmissionPolicyBinding,
-    ValidatingAdmissionPolicyBindingSpec,
+    MatchResources, NamedRuleWithOperations, ParamRef, ValidatingAdmissionPolicy,
+    ValidatingAdmissionPolicyBinding, ValidatingAdmissionPolicyBindingSpec,
+    ValidatingAdmissionPolicySpec,
 };
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{LabelSelector, Time};
 use k8s_openapi::jiff::Timestamp;
@@ -156,31 +157,19 @@ fn a_binding_that_does_not_deny_with_purlis_policy_is_no_binding() {
     }
 }
 
-/// The binding puts the policy in force on everything it governs: one that narrows what it
-/// matches, or that takes parameters, is no binding.
+/// The bindings purlis installs give the policy no parameters: one that does is no binding.
 #[test]
-fn a_binding_that_narrows_what_the_policy_governs_is_no_binding() {
+fn a_binding_that_gives_the_policy_parameters_is_no_binding() {
     let claim = claim_made(Some("2026-10-17T10:00:31Z"));
-    let mut narrowed = in_force("2026-10-17T10:00:00Z");
-    narrowed.spec.match_resources = Some(MatchResources {
-        namespace_selector: Some(LabelSelector {
-            match_labels: Some([("team".to_owned(), "a".to_owned())].into()),
-            ..LabelSelector::default()
-        }),
-        ..MatchResources::default()
-    });
     let mut with_params = in_force("2026-10-17T10:00:00Z");
     with_params.spec.param_ref = Some(ParamRef {
         name: Some("params".into()),
         ..ParamRef::default()
     });
-    for binding in [narrowed, with_params] {
-        assert_eq!(
-            admission(&claim, since(&binding)),
-            Admission::PolicyNotInForce,
-            "{binding:?}"
-        );
-    }
+    assert_eq!(
+        admission(&claim, since(&with_params)),
+        Admission::PolicyNotInForce
+    );
 }
 
 fn ready(admission: Admission) -> (String, String, String) {
@@ -257,6 +246,109 @@ fn a_binding_changed_since_it_was_made_is_not_in_force() {
             in_force_since(Some(&policy), Some(&changed), POLICY),
             None,
             "{generation:?}"
+        );
+    }
+}
+
+/// A binding that names what it matches the way the API server would leave it unnamed.
+fn matching_everything() -> MatchResources {
+    MatchResources {
+        namespace_selector: Some(LabelSelector::default()),
+        object_selector: Some(LabelSelector::default()),
+        match_policy: Some("Equivalent".into()),
+        ..MatchResources::default()
+    }
+}
+
+#[test]
+fn a_binding_that_narrows_what_it_matches_is_not_in_force() {
+    let narrowed = |change: fn(&mut MatchResources)| {
+        let mut resources = matching_everything();
+        change(&mut resources);
+        let mut binding = in_force("2026-10-17T10:00:00Z");
+        binding.spec.match_resources = Some(resources);
+        binding
+    };
+    let some_namespaces = LabelSelector {
+        match_labels: Some([("team".to_owned(), "a".to_owned())].into()),
+        ..LabelSelector::default()
+    };
+    let one_rule = vec![NamedRuleWithOperations {
+        resources: Some(vec!["claims".into()]),
+        ..NamedRuleWithOperations::default()
+    }];
+    let bindings = [
+        ("a namespace selector", {
+            let mut b = narrowed(|_| {});
+            b.spec.match_resources.as_mut().unwrap().namespace_selector =
+                Some(some_namespaces.clone());
+            b
+        }),
+        ("an object selector", {
+            let mut b = narrowed(|_| {});
+            b.spec.match_resources.as_mut().unwrap().object_selector =
+                Some(some_namespaces.clone());
+            b
+        }),
+        ("resource rules", {
+            let mut b = narrowed(|_| {});
+            b.spec.match_resources.as_mut().unwrap().resource_rules = Some(one_rule.clone());
+            b
+        }),
+        ("excluded resource rules", {
+            let mut b = narrowed(|_| {});
+            b.spec
+                .match_resources
+                .as_mut()
+                .unwrap()
+                .exclude_resource_rules = Some(one_rule.clone());
+            b
+        }),
+        (
+            "an exact match policy",
+            narrowed(|r| r.match_policy = Some("Exact".into())),
+        ),
+    ];
+    for (what, binding) in bindings {
+        assert_eq!(
+            since(&binding),
+            None,
+            "a binding narrowed by {what} is in force"
+        );
+    }
+}
+
+#[test]
+fn a_binding_that_names_what_it_matches_as_everything_is_in_force() {
+    for resources in [MatchResources::default(), matching_everything()] {
+        let mut binding = in_force("2026-10-17T10:00:00Z");
+        binding.spec.match_resources = Some(resources.clone());
+        assert_eq!(
+            since(&binding),
+            Some(at("2026-10-17T10:00:00Z").0.checked_add(SETTLE).unwrap()),
+            "{resources:?}"
+        );
+    }
+}
+
+#[test]
+fn a_policy_that_lets_through_what_it_cannot_check_is_not_in_force() {
+    let binding = in_force("2026-10-17T10:00:00Z");
+    let with = |failure: Option<&str>| ValidatingAdmissionPolicy {
+        spec: Some(ValidatingAdmissionPolicySpec {
+            failure_policy: failure.map(str::to_owned),
+            ..ValidatingAdmissionPolicySpec::default()
+        }),
+        ..policy_made("2026-10-17T09:00:00Z")
+    };
+    assert_eq!(
+        in_force_since(Some(&with(Some("Ignore"))), Some(&binding), POLICY),
+        None
+    );
+    for failure in [Some("Fail"), None] {
+        assert!(
+            in_force_since(Some(&with(failure)), Some(&binding), POLICY).is_some(),
+            "{failure:?}"
         );
     }
 }

@@ -45,6 +45,23 @@ pub const KEY: &str = "key";
 /// the cluster's authorizer as `use` on a Pool is.
 pub const KEY_RESOURCE: &str = "forgekeys";
 
+/// **The annotation on a Pool naming who last wrote its `spec.forge`**, by the name the cluster
+/// knows them by. The policy on App keys holds it to whoever writes the forge, or the annotation
+/// itself, in that very write, so it names a person who held `use` on the key then; the operator
+/// asks again before each mint whether they still do ([`crate::mint`]).
+pub const FORGE_WRITER_ANNOTATION: &str = "runners.purlis.dev/forge-writer";
+
+/// Who last wrote `pool`'s forge, as [`FORGE_WRITER_ANNOTATION`] names them. None where it names
+/// no one.
+pub fn writer_of(pool: &Pool) -> Option<&str> {
+    pool.metadata
+        .annotations
+        .as_ref()?
+        .get(FORGE_WRITER_ANNOTATION)
+        .map(String::as_str)
+        .filter(|writer| !writer.is_empty())
+}
+
 /// The NetworkPolicy the operator makes in a runner namespace with a Claim on an opted-in Pool:
 /// its runners may reach the operator's mint port, on top of what upstream's own policy allows.
 pub const MINT_EGRESS_POLICY: &str = "purlis-forge-mint";

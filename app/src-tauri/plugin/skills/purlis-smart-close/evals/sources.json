@@ -1,0 +1,194 @@
+{
+  "tier": "strict",
+  "neighbours": [
+    "purlis-tidy-memory",
+    "purlis-handoff"
+  ],
+  "prompts": [
+    {
+      "query": "Smart close this chat.",
+      "source": "Skill text: description, \"when asked to smart close\"."
+    },
+    {
+      "query": "Wrap up: write the session record and close.",
+      "source": "Mined session record 20261104-041744-5019-end-leaves-the-ended-band-pr-5104.md (End… and Smart close)."
+    },
+    {
+      "query": "We're done here. Summarise the session for the next chat and end it.",
+      "source": "Skill text: \"a summary the next chat reads to pick up where this one stopped\"."
+    },
+    {
+      "query": "Write a session record of what we did today.",
+      "source": "Skill text: description, \"to write a session record\"."
+    },
+    {
+      "query": "Close this chat with a record so I can resume tomorrow.",
+      "source": "Mined session record 20260930-213238-si-1-si-8-plane-root-curation-crud-pane-ux-shell.md: \"Smart close (session records + resume)\"."
+    },
+    {
+      "query": "Before you go, fold the decisions into workspace.md and write the record.",
+      "source": "Mined session record 20261108-023505-5720-smart-close-and-compact-fold-into-workspace.md."
+    },
+    {
+      "query": "That's all for today. Leave notes for whoever picks this up next and close out.",
+      "source": "Skill text: \"How to resume\"; plausible phrasing a person types."
+    },
+    {
+      "query": "Write your session record, then report done.",
+      "source": "This ticket's own brief: \"write your session record, then report once\"."
+    },
+    {
+      "query": "End this session properly, with a summary in the workspace's sessions.",
+      "source": "Skill text: description, \"a summary of this session into its workspace's sessions/\"."
+    },
+    {
+      "query": "Let's call it a day. Record what's open and how to resume.",
+      "source": "Skill text: the record's \"Open\" and \"How to resume\" sections."
+    },
+    {
+      "query": "Close out this chat; the PR is merged.",
+      "source": "Mined session record 20261104-041744-5019-end-leaves-the-ended-band-pr-5104.md: a chat ended once its work landed; plausible phrasing a person types."
+    },
+    {
+      "query": "Save a summary of this session before we stop.",
+      "source": "plausible phrasing a person types."
+    },
+    {
+      "query": "Smart-close please.",
+      "source": "Skill text: its name, as typed."
+    },
+    {
+      "query": "I'm closing this tab. Capture where we stopped first.",
+      "source": "Mined session record 20261102-120712-4585-prototype-a-chat-s-actions-in-its-pane-acce.md: where Smart close lives among a tab's actions; plausible phrasing a person types."
+    },
+    {
+      "query": "Finish up: goal, done, decisions, open, how to resume.",
+      "source": "Skill text: the five sections of a record."
+    },
+    {
+      "query": "We're finished with this ticket. Wrap up the chat with a record.",
+      "source": "Skill text: description, \"wrap up or close this chat with a record\"."
+    },
+    {
+      "query": "Record this session for the workspace and end it.",
+      "source": "plausible phrasing a person types."
+    },
+    {
+      "query": "Stop here and leave a session record for the next chat.",
+      "source": "plausible phrasing a person types."
+    },
+    {
+      "query": "Done for now; write up the session and close.",
+      "source": "plausible phrasing a person types."
+    },
+    {
+      "query": "Close this purlis chat and keep what we learned in workspace.md.",
+      "source": "Skill text: \"Fold what lasts into workspace.md\"."
+    },
+    {
+      "query": "Before ending, write the record naming the branch folders we worked in.",
+      "source": "Skill text: \"Name the branch folders this chat worked in\"."
+    },
+    {
+      "query": "OK, that's it. Close the chat with a summary.",
+      "source": "plausible phrasing a person types."
+    },
+    {
+      "query": "Tidy this workspace's memory; there are duplicates.",
+      "source": "Near miss (purlis-tidy-memory): its description; decisions.md of spec #5714 Q30 (a memory base, when asked).",
+      "belongs_to": "purlis-tidy-memory"
+    },
+    {
+      "query": "Dedupe the steward persona's memory.",
+      "source": "Near miss (purlis-tidy-memory): Mined session record 20261107-020518-5504-dedupe-optimize-and-stats-score-candidates-.md.",
+      "belongs_to": "purlis-tidy-memory"
+    },
+    {
+      "query": "Prune stale entries from the smart-ide workspace's memory.",
+      "source": "Near miss (purlis-tidy-memory): its description, \"prune\".",
+      "belongs_to": "purlis-tidy-memory"
+    },
+    {
+      "query": "Fold the lessons in memory into workspace.md and drop what's stale.",
+      "source": "Near miss (purlis-tidy-memory): it folds durable lessons into workspace.md too, with no chat ending.",
+      "belongs_to": "purlis-tidy-memory"
+    },
+    {
+      "query": "Compact the memory of the smart-ide workspace.",
+      "source": "Near miss (purlis-tidy-memory): Mined session record 20261108-085457-5724-four-built-in-skills-renamed-losing-nothing.md (it was purlis-compact).",
+      "belongs_to": "purlis-tidy-memory"
+    },
+    {
+      "query": "Open a new chat to carry on the migration tomorrow, with a brief.",
+      "source": "Near miss (purlis-handoff): \"tomorrow\" and \"carry on\", but a new chat starts ({D} Q30).",
+      "belongs_to": "purlis-handoff"
+    },
+    {
+      "query": "Move this work to a new chat in the skills workspace.",
+      "source": "Near miss (purlis-handoff): its description.",
+      "belongs_to": "purlis-handoff"
+    },
+    {
+      "query": "Hand off the follow-up to another workspace.",
+      "source": "Near miss (purlis-handoff): its description.",
+      "belongs_to": "purlis-handoff"
+    },
+    {
+      "query": "Start a fresh chat for the next ticket and brief it.",
+      "source": "Near miss (purlis-handoff): a brief, not a record.",
+      "belongs_to": "purlis-handoff"
+    },
+    {
+      "query": "Compact the conversation.",
+      "source": "plausible phrasing a person types: the harness's own /compact, which the rename from purlis-compact kept apart (spec #5714)."
+    },
+    {
+      "query": "Close the modal when the person presses Escape.",
+      "source": "plausible phrasing a person types: \"close\" in UI code."
+    },
+    {
+      "query": "Summarise this PR's diff for its description.",
+      "source": "plausible phrasing a person types: a summary of a diff."
+    },
+    {
+      "query": "Close issue 5019 as completed.",
+      "source": "plausible phrasing a person types: closing an issue."
+    },
+    {
+      "query": "Write release notes for 0.5.1.",
+      "source": "plausible phrasing a person types: writing up, not a session."
+    },
+    {
+      "query": "Shut down the dev server.",
+      "source": "plausible phrasing a person types: stopping a program."
+    },
+    {
+      "query": "Add a session timeout to the login flow.",
+      "source": "plausible phrasing a person types: \"session\" in web code."
+    },
+    {
+      "query": "Store the session in a cookie.",
+      "source": "plausible phrasing a person types: \"session\" in web code."
+    },
+    {
+      "query": "Explain how this recursion terminates.",
+      "source": "plausible phrasing a person types: unrelated."
+    },
+    {
+      "query": "Record a screen capture of the bug.",
+      "source": "plausible phrasing a person types: \"record\" as video."
+    },
+    {
+      "query": "Close the database connection after each request.",
+      "source": "plausible phrasing a person types: \"close\" in code."
+    },
+    {
+      "query": "Wrap this function in a try/catch.",
+      "source": "plausible phrasing a person types: \"wrap\" in code."
+    },
+    {
+      "query": "Log the session id when a request fails.",
+      "source": "plausible phrasing a person types: \"session\" in logging."
+    }
+  ]
+}

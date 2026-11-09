@@ -131,6 +131,11 @@ pub struct Policy {
     /// ever narrows. An administrator's `socket-grants` lock turns it off besides
     /// ([`CertificateChecks`]).
     pub certificate_checks: bool,
+    /// `own-terminal-only`: on macOS, whether a wrapped chat keeps to the terminal it runs in
+    /// and opens no other terminal of this Mac, the person's own tabs among them, nor any it
+    /// would make itself ([`OWN_TERMINAL_ONLY`]). **Off unless the file says `true`**: the key
+    /// only ever narrows.
+    pub own_terminal_only: bool,
     /// Each persona's own grants: `[sandbox.personas.<name>]` in the committed file (#1362).
     pub personas: std::collections::BTreeMap<String, persona::Grants>,
 }
@@ -143,6 +148,7 @@ impl Policy {
             egress: Preset::DEFAULT.to_vec(),
             hosts: Vec::new(),
             certificate_checks: true,
+            own_terminal_only: false,
             personas: std::collections::BTreeMap::new(),
         }
     }
@@ -151,6 +157,14 @@ impl Policy {
 /// The key that turns the system's certificate check off for a project's chats: `false` is the
 /// one value that changes anything (R1, 2026-10-13).
 pub const CERTIFICATE_CHECKS: &str = "certificate-checks";
+
+/// **The key that keeps a project's wrapped chats to their own terminal** on macOS: `true` is
+/// the one value that changes anything. With it, a chat reads and types into the terminal it
+/// runs in and no other: not the person's other terminal tabs, not another chat's, and not one
+/// it makes itself, so `script`, `expect`, `tmux` and a Codex command run in a terminal of its
+/// own fail. Off, a chat also opens the terminals programs make. Linux's supervisor judges
+/// terminals itself and needs no key.
+pub const OWN_TERMINAL_ONLY: &str = "own-terminal-only";
 
 /// **Whether a sandboxed chat of a project has the system's certificate check, and why not**
 /// (the operator's ruling R1 of 2026-10-13, amending ADR 0093). On by default, on every
@@ -410,6 +424,8 @@ pub enum Refusal {
     BrowserSite(String, String),
     /// `certificate-checks` that is not `true` or `false`.
     CertificateChecksNotABool,
+    /// `own-terminal-only` that is not `true` or `false`: read as `true`, the narrow value.
+    OwnTerminalOnlyNotABool,
     /// A `policy` that is not `"never"` or `"local"`: read as `"never"`.
     PolicyUnknown,
     /// Something in `personas` that grants nothing ([`persona::read`]), as one sentence with
@@ -482,6 +498,11 @@ impl fmt::Display for Refusal {
                 "{TABLE}.{CERTIFICATE_CHECKS} in {FILE} is not true or false; certificate checks \
                  are off until it is"
             ),
+            Self::OwnTerminalOnlyNotABool => write!(
+                f,
+                "{TABLE}.{OWN_TERMINAL_ONLY} in {FILE} is not true or false; chats keep to their \
+                 own terminal until it is"
+            ),
             Self::PolicyUnknown => write!(
                 f,
                 "{TABLE}.{} in {FILE} is not \"never\" or \"local\", so it is read as \
@@ -511,6 +532,7 @@ impl Refusal {
             Self::HostsNotAList | Self::Host(..) => at(hosts::KEY),
             Self::BrowserSitesNotAList | Self::BrowserSite(..) => at(browser_sites::KEY),
             Self::CertificateChecksNotABool => at(CERTIFICATE_CHECKS),
+            Self::OwnTerminalOnlyNotABool => at(OWN_TERMINAL_ONLY),
             Self::PolicyUnknown => at(team::KEY),
             Self::Persona(said) => said.key.clone().unwrap_or_else(|| at(persona::KEY)),
             Self::ForgeHost(..) => vec!["forge".to_owned()],
@@ -617,6 +639,7 @@ impl Said {
                 && key != hosts::KEY
                 && key != browser_sites::KEY
                 && key != CERTIFICATE_CHECKS
+                && key != OWN_TERMINAL_ONLY
                 && key != persona::KEY
                 && key != services::EXPECTS
                 && key != team::KEY
@@ -678,6 +701,16 @@ impl Said {
                 false
             }
         };
+        // Off unless the file says `true`: what cannot be read is refused and read as on, the
+        // narrow value.
+        let own_terminal_only = match table.get(OWN_TERMINAL_ONLY) {
+            None => false,
+            Some(toml::Value::Boolean(on)) => *on,
+            Some(_) => {
+                refused.push(Refusal::OwnTerminalOnlyNotABool);
+                true
+            }
+        };
         let (personas, not) = persona::keyed(table.get(persona::KEY), FILE, known);
         refused.extend(not.into_iter().map(Refusal::Persona));
         // The forge preset lets a project's `[[forge]]` hosts through, but not one the sandbox
@@ -693,6 +726,7 @@ impl Said {
             egress,
             hosts,
             certificate_checks,
+            own_terminal_only,
             personas,
         };
         let (policy, unset) = if on {
@@ -835,7 +869,7 @@ impl Planted {
 /// have code run outside its sandbox the next time a person, an editor or another chat opens
 /// the directory. The project's manifests are held only where they could change a chat's
 /// sandbox ([`MANIFESTS`]).
-pub const PLANTED: [Planted; 89] = [
+pub const PLANTED: [Planted; 93] = [
     // A `.git` moved into place brings its own config and hooks.
     Planted::itself(".git"),
     Planted::and_below(".git/config"),
@@ -849,6 +883,12 @@ pub const PLANTED: [Planted; 89] = [
     Planted::and_below(".git/commondir"),
     Planted::and_below(".git/objects/info/alternates"),
     Planted::and_below(".git/info/attributes"),
+    // glab's own settings for the repository (`glab-cli/config.yml`: its host, and the editor,
+    // pager and browser it starts), and git's older remote definitions, which say what host a
+    // forge command line sees.
+    Planted::and_below(".git/glab-cli"),
+    Planted::and_below(".git/remotes"),
+    Planted::and_below(".git/branches"),
     // Each submodule's git directory, nested at any depth; and the directory that holds them,
     // so it is never moved into place whole.
     Planted::itself(".git/modules"),
@@ -858,6 +898,7 @@ pub const PLANTED: [Planted; 89] = [
     Planted::and_below(".git/modules/**/commondir"),
     Planted::and_below(".git/modules/**/objects/info/alternates"),
     Planted::and_below(".git/modules/**/info/attributes"),
+    Planted::and_below(".git/modules/**/glab-cli"),
     // Hook managers' directories, which a `core.hooksPath` commonly names (ruling V73d).
     Planted::and_below(".husky"),
     Planted::and_below(".githooks"),
@@ -1083,9 +1124,12 @@ pub fn manifests_held(root: &Path, cwd: Option<&Path>) -> Vec<Denial> {
 ///
 /// The folders there now are held by their paths, and every workspace's and persona's, there now
 /// or made later, by a pattern too, a path with a [`ANY_NAME`] part, which Claude Code reads as a glob and purlis's own
-/// wrap as a regular expression ([`seatbelt::denial_rules`]). Where a backend cannot hold a
+/// wrap as a regular expression ([`seatbelt::denial_rules`]). Where a backend does not hold a
 /// pattern, the levels a chat could have made reach no chat while it runs
-/// ([`crate::skills::levels`]). A clone is never named `skills` or `skills.local`
+/// ([`crate::skills::levels`]): Claude Code's own sandbox on Linux is one (#3097, ADR 0099 as
+/// amended 2026-11-09), and its test is
+/// `a_workspace_made_after_a_claude_code_chat_starts_hands_no_chat_its_skills`. A clone is
+/// never named `skills` or `skills.local`
 /// (`repocmd::clone::destination`), so no pattern holds a clone's root.
 pub fn skills_held(root: &Path) -> Vec<Denial> {
     let levels = [purlis_skills::PROJECT_DIR, purlis_skills::LOCAL_DIR];
@@ -1517,10 +1561,21 @@ pub fn git_folders_searched(root: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
+/// **The characters Claude Code reads as a pattern in a path its sandbox settings name**:
+/// measured on 2.1.300, a path holding one is matched as a glob, and writing it as a class
+/// (`[*]`) does not make it literal either.
+pub const PATTERN_CHARACTERS: [char; 4] = ['*', '?', '[', ']'];
+
 /// [`Denied::git_folder_pins`] for a chat of the plane at `root`: what
 /// [`planted::git_folder_pins`] finds in each of [`git_folders_searched`].
 pub fn git_folder_pins_of(root: &Path) -> Vec<PathBuf> {
     planted::git_folder_pins(&git_folders_searched(root))
+}
+
+/// [`git_folder_pins_of`], or the folder that held more entries than the search for
+/// repositories looks at, where one did ([`planted::Repositories::crowded`]).
+pub fn git_folder_pins_whole_of(root: &Path) -> Result<Vec<PathBuf>, PathBuf> {
+    planted::git_folder_pins_whole(&git_folders_searched(root))
 }
 
 impl Denied {
@@ -1593,6 +1648,16 @@ impl Denied {
             named: None,
             reach: Reach::AndBelow,
             any_case: false,
+        });
+        // …and the project's inventory of repos: the window's Clone of a repo by name clones,
+        // and records as the clone's remote, the URL it holds for that name.
+        paths.push(Denial {
+            class: Class::LaterCode,
+            path: root.join(crate::inventory::DIR),
+            access: Access::Write,
+            named: None,
+            reach: Reach::AndBelow,
+            any_case: true,
         });
         // …and the project's skills, wherever they reach chats (SK-9,
         // #2772): a chat's write of one is a draft the person accepts, never the file itself.
@@ -3611,6 +3676,9 @@ pub struct Widened {
     /// At the floor, the held folders a person let this chat write ([`grant::lift`]), each named
     /// whole. Every other copy of the name stays held where the sandbox can say so.
     pub lifted: Vec<PathBuf>,
+    /// Whether the chat keeps to its own terminal alone, on macOS: the project's
+    /// `own-terminal-only` ([`OWN_TERMINAL_ONLY`]). Nothing a person grants turns it off.
+    pub own_terminal_only: bool,
 }
 
 impl Widened {
@@ -3627,6 +3695,7 @@ impl Widened {
             // nothing a committed file can widen, since `true` is what an absent key means.
             // Policy has its say in [`Self::and_granted`].
             trust: policy.certificate_checks,
+            own_terminal_only: policy.own_terminal_only,
             sockets: Vec::new(),
             services: Vec::new(),
             ports: Vec::new(),
@@ -3893,13 +3962,14 @@ impl Compiled {
             );
         }
         // The certificate check as the project's file says it (R1), and as policy leaves it
-        // ([`Widened::and_granted`]).
+        // ([`Widened::and_granted`]); the stricter terminal rule as the file says it.
+        let written = Plane::read(root)
+            .said()
+            .unset
+            .unwrap_or_else(Policy::defaults);
         let widened = Widened {
-            trust: Plane::read(root)
-                .said()
-                .unset
-                .unwrap_or_else(Policy::defaults)
-                .certificate_checks,
+            trust: written.certificate_checks,
+            own_terminal_only: written.own_terminal_only,
             ..Widened::default()
         }
         .lifting(grant::still_lifted(
@@ -6435,6 +6505,15 @@ pub enum NotStarted {
     /// A config's commands change folder or name scripts more often than purlis follows
     /// ([`planted::MOST_MOVES`], [`planted::MOST_NAMED`]), so what they run is not known.
     Unread(Named),
+    /// A repository's git folder a Claude Code chat's sandbox holds as a whole
+    /// ([`Denied::git_folder_pins`]) has a character Claude Code reads as a pattern in its path
+    /// ([`PATTERN_CHARACTERS`]), so no rule purlis writes holds it as written.
+    GitFolderUnheld(PathBuf),
+    /// The folders a Claude Code chat's sandbox searches for repositories, to hold each one's git
+    /// folder as a whole ([`Denied::git_folder_pins`]), held more entries outside every
+    /// repository than the search looks at ([`planted::REPOSITORIES_LOOKED_AT`]): a repository
+    /// beyond them would not be held. The folder that held the most.
+    RepositoriesUnfound(PathBuf),
     /// What purlis keeps from a chat could not be told whole ([`Denied::untold`]), and why:
     /// a sandbox compiled from a list that may be short would keep less than purlis means to,
     /// so none is compiled and the chat is not started.
@@ -6629,6 +6708,28 @@ impl NotStarted {
                  was started. Move that command into a script of its own{}",
                 named.file.display(),
                 named.word,
+                if opt_out {
+                    ", or start this chat without the sandbox from the new-chat picker."
+                } else {
+                    "."
+                }
+            ),
+            Self::GitFolderUnheld(path) => format!(
+                "{lead}, and the repository at {} has `*`, `?`, `[` or `]` in its path, which \
+                 Claude Code's sandbox reads as a pattern, so purlis cannot hold its git folder \
+                 and nothing was started. Rename that folder{}",
+                path.display(),
+                if opt_out {
+                    ", or start this chat without the sandbox from the new-chat picker."
+                } else {
+                    "."
+                }
+            ),
+            Self::RepositoriesUnfound(path) => format!(
+                "{lead}, and {} holds more files and folders than purlis looks through to find \
+                 every repository in the project, so it cannot hold each one's git folder, and \
+                 nothing was started. Move what fills that folder out of the project{}",
+                path.display(),
                 if opt_out {
                     ", or start this chat without the sandbox from the new-chat picker."
                 } else {
@@ -7034,9 +7135,23 @@ pub(crate) fn applied_of(
     // a Claude Code chat purlis wraps finds none (#4083).
     let pinned;
     let compiled = if harness == Harness::ClaudeCode && !wrapped {
+        let pins = git_folder_pins_whole_of(root).map_err(NotStarted::RepositoriesUnfound)?;
+        // Claude Code reads a path holding a pattern's character as a pattern: such a git folder
+        // would not be held as written, so the chat is not started (fail closed).
+        if let Some(unheld) = pins.iter().find(|pin| {
+            pin.to_string_lossy()
+                .contains(|c| PATTERN_CHARACTERS.contains(&c))
+        }) {
+            let repository = unheld
+                .ancestors()
+                .find(|above| above.file_name().is_some_and(|name| name == ".git"))
+                .and_then(Path::parent)
+                .unwrap_or(unheld);
+            return Err(NotStarted::GitFolderUnheld(repository.to_path_buf()));
+        }
         pinned = Compiled {
             denied: Denied {
-                git_folder_pins: git_folder_pins_of(root),
+                git_folder_pins: pins,
                 ..compiled.denied.clone()
             },
             ..compiled.clone()
@@ -7899,6 +8014,8 @@ pub fn ahead_decided(
             | NotStarted::Uncompilable(_)
             | NotStarted::CoversItsGround { .. }
             | NotStarted::Unread(_)
+            | NotStarted::GitFolderUnheld(_)
+            | NotStarted::RepositoriesUnfound(_)
             | NotStarted::KeptUntold(_)
             | NotStarted::PlaneUnreadable
             | NotStarted::PlaneMissing

@@ -99,6 +99,14 @@ pub const CLAIM_VAR: &str = "PURLIS_CLAIM_UID";
 /// read that it has held since its first moment; nothing a runner says could tell it that.
 pub const MINTING_MARK: &str = "PURLIS_MINTING_POOL";
 
+/// **The annotation that says an upstream claim was made while its Pool named an App's key**,
+/// `"true"`, written as the operator makes the claim and never after ([`born_as_held`]). A kept
+/// claim's volume lives as long as its claim, so a runner whose home was made before its Pool
+/// named a key is told apart from one made after, even once its pod is made again from the
+/// current template and bears [`MINTING_MARK`]. The policy on what the operator writes lets it add
+/// this only as it makes the claim, and the policy on App keys lets nobody else write it.
+pub const BORN_MINTING_ANNOTATION: &str = "runners.purlis.dev/born-minting";
+
 /// What a runner's host is told its pool's `idleAfter` in (#3980): an environment variable, which
 /// a runner image from before it ignores, where a word on its command line would end it. The same
 /// name as `crates/purlis-core/src/clusterpool/idle.rs`.
@@ -720,6 +728,37 @@ pub fn keep_volumes_held(wanted: &mut SandboxClaim, held: Option<&SandboxClaim>)
             .spec
             .volume_claim_templates
             .clone_from(&held.spec.volume_claim_templates);
+    }
+}
+
+/// `wanted`, saying [`BORN_MINTING_ANNOTATION`] as the cluster holds it on `held`, the upstream claim
+/// as read, once there is one; before there is, as `pool` says now: `"true"` where it names an
+/// App's key. So the annotation is written once, as the claim is made, and every later apply
+/// carries what the claim was made with, neither adding, changing nor removing it.
+pub fn born_as_held(wanted: &mut SandboxClaim, pool: &Pool, held: Option<&SandboxClaim>) {
+    let born = match held {
+        Some(held) => held
+            .metadata
+            .annotations
+            .as_ref()
+            .and_then(|annotations| annotations.get(BORN_MINTING_ANNOTATION))
+            .cloned(),
+        None => pool.spec.forge.is_some().then(|| "true".to_owned()),
+    };
+    let annotations = wanted
+        .metadata
+        .annotations
+        .get_or_insert_with(Default::default);
+    match born {
+        Some(born) => {
+            annotations.insert(BORN_MINTING_ANNOTATION.to_owned(), born);
+        }
+        None => {
+            annotations.remove(BORN_MINTING_ANNOTATION);
+        }
+    }
+    if annotations.is_empty() {
+        wanted.metadata.annotations = None;
     }
 }
 

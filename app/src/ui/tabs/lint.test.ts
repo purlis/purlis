@@ -18,8 +18,11 @@ tester.run("purlis/tabs-family", rules["tabs-family"], {
     { code: `<li role="treeitem">x</li>` },
     { code: `<li role={open ? "treeitem" : "option"}>x</li>` },
     { code: `strip.querySelector('[role="tab"][aria-selected="true"]')` },
-    // The id helper beside the old tablist is not a tablist.
-    { code: `import { useTabIds } from "./StripTablist";` },
+    // A family's tab and tablist, worn by another family's button and container (#3134).
+    {
+      code: `<AsStripTab strip={strip} tabKey="a" selected>{(tab) => <RailProject {...tab} name="a" />}</AsStripTab>`,
+    },
+    { code: `<ActivityGroup {...row} {...tablist}>x</ActivityGroup>` },
     { code: `<span data-scope="rail">x</span>` },
     // A page's tabs, drawn by the family.
     {
@@ -36,10 +39,6 @@ tester.run("purlis/tabs-family", rules["tabs-family"], {
     {
       code: `const panel = { role: "tabpanel", "aria-labelledby": id };`,
       errors: [{ messageId: "role" }],
-    },
-    {
-      code: `import { StripTablist, useTabIds } from "./StripTablist";`,
-      errors: [{ messageId: "owner" }],
     },
     { code: `<span data-scope="tabs" data-part="tab" />`, errors: [{ messageId: "scope" }] },
     // A page's tablist written by hand, as a skill page would (#3668).

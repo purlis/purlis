@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Opens a page apart</title></head>
+<body>
+  <input id="said" aria-label="Say something">
+  <button type="button" id="apart">Open apart</button>
+  <script>
+    // A page on another site, opened with no way back to this one.
+    document.getElementById('apart').addEventListener('click', () => {
+      window.open('http://other.test/drawn-apart.html', '_blank', 'noopener');
+    });
+  </script>
+</body></html>

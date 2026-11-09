@@ -22,7 +22,8 @@
 # the cluster refuses a Claim from someone who may not use its pool.
 #
 # Upstream's claims on a purlis pool's warm pool, and warm pools of its template, are made by
-# the operator alone, so a runner from a pool is had only through a Claim (#2055).
+# the operator alone, so a runner from a pool is had only through a Claim (#2055). A stopped
+# Claim is run again by its requester alone.
 #
 # The second policy, purlis-runner-namespaces (#2055): only the operator makes a runner
 # namespace (purlis-runners-*) or changes who it is for, and the operator binds
@@ -35,8 +36,12 @@
 # controls; and its spec.podTemplate only while it is Suspended in a runner namespace (#3982).
 #
 # The fourth policy, purlis-forge (#4206): whoever writes a Pool's spec.forge needs `use` on the
-# key it names (forgekeys), and only a Claim's requester changes the repos it names. The operator
-# mints only for a Claim and a Pool made once its binding has settled.
+# key it names (forgekeys), and only a Claim's requester changes the repos it names. On a Pool that
+# mints, changing its image, turning its minting on and running it again once it is stopped take
+# `use` on its key too. A Pool that names a key says who wrote its forge
+# (runners.purlis.dev/forge-writer), by that writer's own name, and only the operator says, as it
+# makes an upstream claim, that it was born on a Pool naming a key (runners.purlis.dev/born-minting).
+# The operator mints only for a Claim and a Pool made once its binding has settled.
 #
 # The fifth policy, purlis-operator-deletes-only-a-retained-claim (#3981): the operator deletes
 # only a kept Claim, not stopped, that carries its own RetentionEnded condition.
@@ -47,6 +52,11 @@
 # The seventh policy, purlis-operator-writes-only-a-runners-shape (#3754): the operator writes
 # upstream's templates, claims and warm pools in a runner namespace alone, a template's pod only in
 # purlis's runner shape.
+#
+# The eighth policy, purlis-operator-writes-what-its-pool-says: the operator's template for a
+# Pool runs that Pool's image in every container, and a kept claim's volume is made in the
+# storage class its Pool names and keeps the class it was made in. Each Pool is its parameter,
+# so a template or claim named for no Pool is compared with none.
 ---
 # Source: purlis-cluster-operator/templates/forge-policy.yaml
 # Copyright 2026 Purlis
@@ -72,6 +82,34 @@ spec:
         apiVersions: ["*"]
         operations: [UPDATE]
         resources: [claims]
+      - apiGroups: [extensions.agents.x-k8s.io]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE]
+        resources: [sandboxclaims]
+  variables:
+    # Who a Pool says wrote its forge, as a list of at most one, so that none said matches none
+    # said; and who it said before this write.
+    - name: forgeWriter
+      expression: >-
+        has(object.metadata.annotations) &&
+        'runners.purlis.dev/forge-writer' in object.metadata.annotations ?
+        [object.metadata.annotations['runners.purlis.dev/forge-writer']] : []
+    - name: heldForgeWriter
+      expression: >-
+        request.operation == 'UPDATE' && has(oldObject.metadata.annotations) &&
+        'runners.purlis.dev/forge-writer' in oldObject.metadata.annotations ?
+        [oldObject.metadata.annotations['runners.purlis.dev/forge-writer']] : []
+    # Whether an upstream claim says it was born on a Pool naming a key, the same way.
+    - name: bornMinting
+      expression: >-
+        has(object.metadata.annotations) &&
+        'runners.purlis.dev/born-minting' in object.metadata.annotations ?
+        [object.metadata.annotations['runners.purlis.dev/born-minting']] : []
+    - name: heldBornMinting
+      expression: >-
+        request.operation == 'UPDATE' && has(oldObject.metadata.annotations) &&
+        'runners.purlis.dev/born-minting' in oldObject.metadata.annotations ?
+        [oldObject.metadata.annotations['runners.purlis.dev/born-minting']] : []
   validations:
     # Writing a Pool's spec.forge is spending the key it names, so the writer needs `use` on that
     # key. Any other change to a Pool, and taking its forge off, asks nothing.
@@ -84,16 +122,30 @@ spec:
       messageExpression: >-
         'You may not use the GitHub App key ' + object.spec.forge.appKeySecretRef.name + '. A cluster admin can grant use on it (forgekeys).'
       reason: Forbidden
-    # On a Pool that mints, its image holds the link keys the operator vouches for, so changing it
-    # is spending the key too.
+    # On a Pool that mints, its image holds the link keys the operator vouches for, so changing
+    # it is spending the key too, and so is turning minting on, which adopts the image the Pool
+    # already names, whoever set it.
     - expression: >-
         request.resource.resource != 'pools' || request.operation != 'UPDATE' ||
-        object.spec.image == oldObject.spec.image || !has(oldObject.spec.forge) ||
-        !oldObject.spec.forge.mintInCluster ||
+        !has(object.spec.forge) || !object.spec.forge.mintInCluster ||
+        (object.spec.image == oldObject.spec.image &&
+        has(oldObject.spec.forge) && oldObject.spec.forge.mintInCluster) ||
         authorizer.group('runners.purlis.dev').resource('forgekeys')
-        .name(oldObject.spec.forge.appKeySecretRef.name).check('use').allowed()
+        .name(object.spec.forge.appKeySecretRef.name).check('use').allowed()
       messageExpression: >-
-        'This pool mints with the GitHub App key ' + oldObject.spec.forge.appKeySecretRef.name + ', so changing its image takes use on that key (forgekeys).'
+        'This pool mints with the GitHub App key ' + object.spec.forge.appKeySecretRef.name + ', so changing its image, or turning its minting on, takes use on that key (forgekeys).'
+      reason: Forbidden
+    # A stopped Pool that mints gets no token minted for its runners, so running it again is
+    # spending its key: whoever may write the Pool but holds no `use` on the key may stop it, and
+    # no more. Revoking `use` on the key is what takes it away from a Pool's writers.
+    - expression: >-
+        request.resource.resource != 'pools' || request.operation != 'UPDATE' ||
+        !oldObject.spec.stopped || object.spec.stopped ||
+        !has(object.spec.forge) || !object.spec.forge.mintInCluster ||
+        authorizer.group('runners.purlis.dev').resource('forgekeys')
+        .name(object.spec.forge.appKeySecretRef.name).check('use').allowed()
+      messageExpression: >-
+        'This pool mints with the GitHub App key ' + object.spec.forge.appKeySecretRef.name + ', so running it again once it is stopped takes use on that key (forgekeys).'
       reason: Forbidden
     # The repos a claim names say what its runner's token may cover, within its Pool's allow-list.
     # Someone else who may patch claims in the namespace has no say in that, and nor has its
@@ -109,6 +161,37 @@ spec:
         .name(object.spec.pool).check('use').allowed())
       messageExpression: >-
         'Only ' + object.spec.requester + ', who asked for this claim, while they may use its pool, may change the repos it names.'
+      reason: Forbidden
+    # Whoever writes a Pool's forge, or who it says wrote it, says so in the same write, by their
+    # own name: the operator asks before each mint whether that person may still use the key.
+    # A Pool that names no key needs no writer, and taking its forge off asks nothing. Any other
+    # change to a Pool leaves both as they were and asks nothing.
+    - expression: >-
+        request.resource.resource != 'pools' ||
+        (request.operation == 'UPDATE' &&
+        (has(object.spec.forge) ?
+        has(oldObject.spec.forge) && object.spec.forge == oldObject.spec.forge :
+        !has(oldObject.spec.forge)) &&
+        variables.forgeWriter == variables.heldForgeWriter) ||
+        variables.forgeWriter == [request.userInfo.username] ||
+        (!has(object.spec.forge) &&
+        (variables.forgeWriter == [] || variables.forgeWriter == variables.heldForgeWriter))
+      messageExpression: >-
+        'A pool that names a GitHub App key says who wrote its forge: set its annotation runners.purlis.dev/forge-writer to ' + request.userInfo.username + ' in the same write.'
+      reason: Forbidden
+    # Whether an upstream claim was born on a Pool naming a key is what a mint asks of it: only
+    # the operator says it, as it makes the claim, and nobody adds, changes or removes it after.
+    # The operator's own writes are held further by the policy on what it writes.
+    - expression: >-
+        request.resource.resource != 'sandboxclaims' ||
+        (request.operation == 'CREATE' ?
+        variables.bornMinting == [] ||
+        request.userInfo.username ==
+        'system:serviceaccount:purlis-system:purlis-cluster-operator' :
+        variables.bornMinting == variables.heldBornMinting)
+      message: >-
+        Only purlis's cluster operator says whether a claim is born minting
+        (runners.purlis.dev/born-minting), as it makes the claim, and nobody changes it after.
       reason: Forbidden
 ---
 # Source: purlis-cluster-operator/templates/policy.yaml
@@ -131,8 +214,9 @@ spec:
     resourceRules:
       - apiGroups: [runners.purlis.dev]
         apiVersions: ["*"]
-        # Who may change the repos a claim names is the policy purlis-forge's (#4206).
-        operations: [CREATE]
+        # Who may change the repos a claim names is the policy purlis-forge's (#4206). An
+        # update is held only when it runs a stopped claim again.
+        operations: [CREATE, UPDATE]
         resources: [claims]
       # Upstream's objects, so that a runner from a purlis pool is had only through a Claim
       # (#2055): its warm pools and claims, on purlis's templates and warm pools, and purlis's
@@ -217,6 +301,16 @@ spec:
       messageExpression: >-
         'Only the purlis cluster operator makes the template of a purlis pool, or changes what it
         runs: ' + object.metadata.name + ' is named as one.'
+      reason: Forbidden
+    # A stopped claim's runner gets no key vouched for and no token minted, so running it again
+    # is its requester's alone: someone else who may patch claims in the namespace may stop it,
+    # and no more. Any other update is left alone, so a finalizer's removal never depends on it.
+    - expression: >-
+        request.resource.group != 'runners.purlis.dev' || request.operation != 'UPDATE' ||
+        !oldObject.spec.stopped || object.spec.stopped ||
+        request.userInfo.username == object.spec.requester
+      messageExpression: >-
+        'Only ' + object.spec.requester + ', who asked for this claim, may run it again once it is stopped.'
       reason: Forbidden
 ---
 # Source: purlis-cluster-operator/templates/retention-policy.yaml
@@ -352,10 +446,13 @@ spec:
         'Only the purlis cluster operator makes a runner namespace (purlis-runners-*), or changes who it is for.'
       reason: Forbidden
     # The operator's mark on a namespace opens its mint port to it (#4206), so no one else puts
-    # it on a namespace that is not a runner namespace.
+    # it on a namespace that is not a runner namespace. An update that leaves the marks as they
+    # were is let through, so a namespace marked before this policy held can still be deleted
+    # (its finalize and status updates) or have the mark taken off.
     - expression: >-
         request.resource.resource != 'namespaces' || variables.operator || variables.runners ||
-        variables.marks[0] != 'purlis-cluster-operator'
+        variables.marks[0] != 'purlis-cluster-operator' ||
+        request.operation == 'UPDATE' && variables.marks == variables.oldMarks
       messageExpression: >-
         'Only the purlis cluster operator marks a namespace as its own, and only a runner namespace.'
       reason: Forbidden
@@ -836,7 +933,9 @@ spec:
       message: purlis's cluster operator's template confines each container as purlis's runner is.
       reason: Forbidden
     # A claim's own labels and annotations: the operator adds its mark of the Claim once, and
-    # leaves everything else as it is, neither adding, changing nor removing any of it.
+    # leaves everything else as it is, neither adding, changing nor removing any of it. As it makes
+    # a claim, and only then, it may also say the claim is born on a Pool naming an App's key,
+    # which a mint asks of the claim: after that it is held as it was made, like the rest.
     - expression: >-
         request.resource.resource != 'sandboxclaims' ||
         (request.operation == 'UPDATE' ?
@@ -853,8 +952,98 @@ spec:
         has(object.metadata.annotations) && k in object.metadata.annotations))) :
         (!has(object.metadata.labels) &&
         (!has(object.metadata.annotations) || object.metadata.annotations.all(k,
-        k == 'runners.purlis.dev/claim-uid'))))
-      message: purlis's cluster operator writes only its own mark on a claim.
+        k == 'runners.purlis.dev/claim-uid' ||
+        (k == 'runners.purlis.dev/born-minting' &&
+        object.metadata.annotations[k] == 'true')))))
+      message: >-
+        purlis's cluster operator writes only its own mark on a claim, and whether it is born
+        minting only as it makes it.
+      reason: Forbidden
+---
+# Source: purlis-cluster-operator/templates/shape-policy.yaml
+# What the operator writes of upstream's objects, held to what its Pool says: a pool's template
+# runs the Pool's image in each of its containers, and a kept claim's volume is made in the
+# storage class the Pool names, or in the cluster's default when it names none. A mistake in the
+# operator, or its token used as it is, can neither swap a pool's image nor move a kept volume to
+# another class. The Pool is the policy's parameter: the binding matches every Pool, so each
+# write is judged once per Pool and each rule says nothing of a template or claim of another
+# Pool's. The API server reads the Pools itself, so neither the operator nor anyone else needs a
+# right on them for this to hold. With no Pool at all there is nothing to compare with, and a
+# write is admitted. Kept when the release is uninstalled, as the policy on Claims is.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: purlis-operator-writes-what-its-pool-says
+  labels:
+    app.kubernetes.io/name: purlis-cluster-operator
+    app.kubernetes.io/part-of: purlis
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: runners.purlis.dev/v1alpha1
+    kind: Pool
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [extensions.agents.x-k8s.io]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE]
+        resources: [sandboxclaims, sandboxtemplates]
+  matchConditions:
+    - name: by-the-operator
+      expression: >-
+        request.userInfo.username ==
+        'system:serviceaccount:purlis-system:purlis-cluster-operator'
+  variables:
+    # The name of this Pool's template and warm pool in a runner namespace.
+    - name: pools
+      expression: "'purlis-pool-' + params.metadata.name"
+    - name: pod
+      expression: object.spec.podTemplate.spec
+    # A storage class as a list of at most one, so that none named matches none named. A class
+    # the Pool sets to null is none named, as the operator reads it (dyn, since the Pool's schema
+    # types it as a string, which is never null to the type checker).
+    - name: poolsClass
+      expression: >-
+        has(params.spec.keptVolume) && has(params.spec.keptVolume.storageClassName) &&
+        dyn(params.spec.keptVolume.storageClassName) != null ?
+        [params.spec.keptVolume.storageClassName] : []
+    - name: claimsClass
+      expression: >-
+        has(object.spec.volumeClaimTemplates) && size(object.spec.volumeClaimTemplates) > 0 &&
+        has(object.spec.volumeClaimTemplates[0].spec.storageClassName) ?
+        [object.spec.volumeClaimTemplates[0].spec.storageClassName] : []
+    - name: heldClass
+      expression: >-
+        has(oldObject.spec.volumeClaimTemplates) && size(oldObject.spec.volumeClaimTemplates) > 0 &&
+        has(oldObject.spec.volumeClaimTemplates[0].spec.storageClassName) ?
+        [oldObject.spec.volumeClaimTemplates[0].spec.storageClassName] : []
+  validations:
+    # Every container of this Pool's template, the step that makes the link key among them, runs
+    # the Pool's image as it is now.
+    - expression: >-
+        request.resource.resource != 'sandboxtemplates' ||
+        object.metadata.name != variables.pools ||
+        (variables.pod.containers +
+        (has(variables.pod.initContainers) ? variables.pod.initContainers : []))
+        .all(c, has(c.image) && c.image == params.spec.image)
+      message: purlis's cluster operator's template runs its Pool's image.
+      reason: Forbidden
+    # A new kept volume is made in the class the Pool names now.
+    - expression: >-
+        request.resource.resource != 'sandboxclaims' || request.operation != 'CREATE' ||
+        object.spec.warmPoolRef.name != variables.pools ||
+        !has(object.spec.volumeClaimTemplates) ||
+        variables.claimsClass == variables.poolsClass
+      message: purlis's cluster operator makes a kept volume in the storage class its Pool names.
+      reason: Forbidden
+    # A kept volume keeps the class it was made in, whatever its Pool says since, since upstream
+    # makes a sandbox's volumes once. The same for every Pool, so it needs no name.
+    - expression: >-
+        request.resource.resource != 'sandboxclaims' || request.operation != 'UPDATE' ||
+        variables.claimsClass == variables.heldClass
+      message: purlis's cluster operator keeps a kept volume in the storage class it was made in.
       reason: Forbidden
 ---
 # Source: purlis-cluster-operator/templates/forge-policy.yaml
@@ -953,4 +1142,22 @@ metadata:
     helm.sh/resource-policy: keep
 spec:
   policyName: purlis-operator-writes-only-a-runners-shape
+  validationActions: [Deny]
+---
+# Source: purlis-cluster-operator/templates/shape-policy.yaml
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: purlis-operator-writes-what-its-pool-says
+  labels:
+    app.kubernetes.io/name: purlis-cluster-operator
+    app.kubernetes.io/part-of: purlis
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  policyName: purlis-operator-writes-what-its-pool-says
+  # Every Pool, each one the policy's parameter in turn. None at all admits the write.
+  paramRef:
+    selector: {}
+    parameterNotFoundAction: Allow
   validationActions: [Deny]

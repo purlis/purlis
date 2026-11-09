@@ -80,6 +80,7 @@ use std::path::{Path, PathBuf};
 use crate::settings::Refusal;
 
 pub mod args;
+pub mod command_flags;
 pub mod fill;
 pub mod host;
 pub mod login;
@@ -1898,11 +1899,107 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "vitest",
     "mocha",
     "rspec",
-    // Kept offered, Allow once on the exact command alone (#5799 holds the rest of this ruling):
-    // `kubectl`, `psql`, `ssh`, `scp`, `rsync` and the like are the usual reason a chat is handed
-    // a key at all. A kubeconfig's `exec:` plugin, `psql -f`'s `\!`, `ssh -o ProxyCommand` or
-    // `rsync -e` can run another program, but each is said in the command the person reads, or
-    // in a file the command names, which the notice's caution warns of.
+    // programs whose flags name a command (#5799): `sed`'s script runs one (GNU `e`), as `awk`'s
+    // and `m4`'s do; `aria2c` runs its `--on-download-*` hooks, which a `--conf-path` file or its
+    // RPC can set too; `kustomize` runs what a kustomization a chat wrote says, with its exec
+    // plugins and helm.
+    "sed",
+    "aria2c",
+    "kustomize",
+    // more of the family (#5833). Run the command after them, or one they name:
+    // `consul-template -exec`, `railway run`, `aws-runas`, `vals exec`, `gomplate -- cmd`,
+    // `envdir` and `chpst`, `systemd-run` and `run0` (systemd's own `sudo`), `telepresence … --`,
+    // `firejail`, `flatpak run` and `flatpak-spawn --host`, `rr record`, `pkgx` and
+    // `flox activate --`.
+    "consul-template",
+    "railway",
+    "aws-runas",
+    "vals",
+    "gomplate",
+    "envdir",
+    "chpst",
+    "systemd-run",
+    "run0",
+    "telepresence",
+    "firejail",
+    "flatpak",
+    "flatpak-spawn",
+    "rr",
+    "pkgx",
+    "flox",
+    // Run what a file a chat wrote says: a Taskfile, a skaffold.yaml, a Tiltfile, a dagger
+    // module, an Earthfile, a workflow `act` runs, `firebase emulators:exec`, `netlify dev` and
+    // `build`, `vercel build`, `wrangler`'s build, `chezmoi`'s scripts, a magefile, `invoke`'s
+    // and `fab`'s tasks, a cdk8s app.
+    "task",
+    "skaffold",
+    "tilt",
+    "dagger",
+    "earthly",
+    "act",
+    "firebase",
+    "netlify",
+    "vercel",
+    "wrangler",
+    "chezmoi",
+    "mage",
+    "invoke",
+    "fab",
+    "cdk8s",
+    // Build tools and test runners, which build and run what a chat wrote, and the CI runners
+    // that run a pipeline file locally. (`phpunit` is refused already, by `php`'s prefix.)
+    "sbt",
+    "mix",
+    "playwright",
+    "cypress",
+    "gitlab-runner",
+    "circleci",
+    "stack",
+    "cabal",
+    "dune",
+    "zig",
+    "lein",
+    // the closest kin of ssh (#5876's review): `sshpass` runs the command after it, `autossh`
+    // hands ssh whatever it is given, `mosh --ssh=` runs the command it names, and `lftp` runs
+    // commands from its own prompt and scripts, as `ftp` does.
+    "sshpass",
+    "autossh",
+    "mosh",
+    "lftp",
+    // mysql's and mariadb's server-side and shell-like tools (#5876's sixth review): a server
+    // start runs the server program and scripts its flags name, an install runs what its folders
+    // hold, `mysqlslap --pre-system` and a test file run a shell command, and `mysqlsh` runs code.
+    "mysql.server",
+    "mariadb.server",
+    "mysqld_safe",
+    "mariadbd-safe",
+    "mysqld_multi",
+    "mysql_install_db",
+    "mariadb-install-db",
+    "mysqlslap",
+    "mariadb-slap",
+    "mysqltest",
+    "mariadb-test",
+    "mysqlsh",
+    "mariadbd-multi",
+    "mysqltest_embedded",
+    "mariadb-test-embedded",
+    // the rest of the family (#5891, #5876's seventh review): `mysqlhotcopy --method` names the
+    // copy program it has a shell run, the secure installation is a script that runs the client
+    // its `--basedir` finds, and mariabackup runs `qpress`, `rsync` and the plugins its flags
+    // name. Server-side all three, none a usual reason to hand a chat a key.
+    "mysqlhotcopy",
+    "mariadb-hotcopy",
+    "mysql_secure_installation",
+    "mariadb-secure-installation",
+    "mariabackup",
+    "mariadb-backup",
+    // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
+    // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
+    // key at all. Only their forms that name a command, or a file that can, are refused
+    // (`ssh -o ProxyCommand`, `rsync -e`, `kubectl --kubeconfig`, `psql -f`, `zip -TT`,
+    // `wget --use-askpass` and the rest: [`command_flags`]). A granted run has no stdin and a
+    // home of its own, so what else it reads is in the command the person reads.
 ];
 
 /// **The programs a Run grant may be wider than one exact command for** (the person's ruling on
@@ -2092,15 +2189,30 @@ const MOST_VARIABLE_SHOWN: usize = 64;
 /// a flavour (`emacs-nox`, `sudo-rs`) and one of git's own programs (`git-shell`). Each form only takes away an Allow, so a name it
 /// catches by chance loses a notice and nothing more.
 fn not_for_a_run_grant(name: &str) -> bool {
-    let name = name.to_ascii_lowercase();
     let refused = |one: &str| {
         !one.is_empty() && (NOT_FOR_A_RUN_GRANT.contains(&one) || runs_what_it_is_told(one))
     };
-    let stem = name.split('.').next().unwrap_or_default();
     // git's own programs are git's: `git-shell` runs what it is told, `git-lfs` runs git.
-    if stem.starts_with("git-") {
+    let lower = name.to_ascii_lowercase();
+    if lower
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .starts_with("git-")
+    {
         return true;
     }
+    name_forms(name).iter().any(|one| refused(one))
+}
+
+/// **The names `name`'s program may be, as its builds are named** (#5424, #5876): itself
+/// lowercased, its stem before a `.` (`vim.basic`, `kubectl.docker`), without a version (`gcc-13`,
+/// `wget2`), a target's last part (`x86_64-linux-gnu-gcc`), a flavour's first (`emacs-nox`), and
+/// each of those without a GNU `g` or `gnu` (`gm4`, `gnumake`). A form caught by chance takes
+/// away an Allow and nothing more.
+pub(crate) fn name_forms(name: &str) -> Vec<String> {
+    let name = name.to_ascii_lowercase();
+    let stem = name.split('.').next().unwrap_or_default();
     let mut forms = vec![name.as_str(), stem];
     for one in [name.as_str(), stem] {
         let unversioned = without_version(one);
@@ -2119,12 +2231,17 @@ fn not_for_a_run_grant(name: &str) -> bool {
         .iter()
         .filter_map(|one| one.strip_prefix("gnu").or_else(|| one.strip_prefix('g')))
         .collect::<Vec<_>>();
-    forms.iter().chain(&gnu).any(|one| refused(one))
+    forms
+        .iter()
+        .chain(&gnu)
+        .filter(|one| !one.is_empty())
+        .map(|one| (*one).to_owned())
+        .collect()
 }
 
 /// `name` without a version at its end: `gcc-13`, `clang-17.0`, `gcc13` and `ld64` are `gcc`,
 /// `clang`, `gcc` and `ld`.
-fn without_version(name: &str) -> &str {
+pub(crate) fn without_version(name: &str) -> &str {
     let bare = name.trim_end_matches(|c: char| c.is_ascii_digit() || c == '.');
     let bare = bare.strip_suffix(['-', '_']).unwrap_or(bare);
     if bare.is_empty() { name } else { bare }
@@ -2763,6 +2880,9 @@ mod login_tests;
 
 #[cfg(test)]
 mod args_tests;
+
+#[cfg(test)]
+mod command_flags_tests;
 
 #[cfg(test)]
 mod fill_tests;

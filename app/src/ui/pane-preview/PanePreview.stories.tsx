@@ -10,7 +10,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect } from "storybook/test";
 import { type CSSProperties, type ReactNode, useLayoutEffect, useRef, useState } from "react";
-import { useTabIds } from "../../StripTablist";
+import { useTabIds } from "../tabs/TabStrip";
 import { TabCell, tabPart, tabsPart } from "../tabs/Tabs";
 import { StripTab, TabStripRow, useTabStrip } from "../tabs/TabStrip";
 import {

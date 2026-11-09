@@ -1620,16 +1620,19 @@ pub fn folders_moved(root: &Path, moved: impl Fn(&str) -> Option<String>) -> io:
 // ---- the vaults you let a persona's chats use (#1430) ---------------------------------------
 
 /// The vaults you let a persona's chats use in the project at `root` on this machine, beside
-/// what the vault registry tags. A file that cannot be read grants nothing.
+/// what the vault registry tags. A file that cannot be read grants nothing. Read as
+/// [`try_granted_vaults`] reads them (#5857): a field beside them that is off its shape takes none
+/// away, so what `authorise` allows is what a link's judge read.
 pub fn granted_vaults(root: &Path) -> Vec<VaultGrant> {
-    read(root).vaults_mine
+    try_granted_vaults(root).unwrap_or_default()
 }
 
 /// [`granted_vaults`], or why this machine's file can't be read (#5795): for a judge that must
 /// not take "not known" as "none". No file yet, or no config home to keep one in, grants nothing
-/// and is no error; a file that is there and does not read, or is not this shape, is one. An empty
-/// file is one too: purlis never writes one, so it is a file cut short, where `read` would take
-/// it as no grants.
+/// and is no error; a file that is there and does not read, is not one JSON object, or whose vault
+/// grants are not their shape, is one. An empty file is one too: purlis never writes one, so it is
+/// a file cut short, where `read` would take it as no grants. Only the vault grants are read
+/// (#5857): a field beside them that is off its shape says nothing of them.
 pub fn try_granted_vaults(root: &Path) -> io::Result<Vec<VaultGrant>> {
     let file = path(root);
     if file.as_os_str().is_empty() {
@@ -1640,9 +1643,18 @@ pub fn try_granted_vaults(root: &Path) -> io::Result<Vec<VaultGrant>> {
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(e) => return Err(e),
     };
-    serde_json::from_str::<OnDisk>(&text)
-        .map(|held| held.vaults_mine)
-        .map_err(io::Error::other)
+    let held: serde_json::Value = serde_json::from_str(&text).map_err(io::Error::other)?;
+    let Some(fields) = held.as_object() else {
+        return Err(io::Error::other(
+            "this machine's file is not one JSON object",
+        ));
+    };
+    match fields.get("vaults_mine") {
+        None => Ok(Vec::new()),
+        Some(grants) => {
+            <Vec<VaultGrant> as serde::Deserialize>::deserialize(grants).map_err(io::Error::other)
+        }
+    }
 }
 
 /// Lets `persona`'s chats in the project at `root` use `vault` on this machine: a refused

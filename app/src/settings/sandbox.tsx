@@ -66,6 +66,9 @@ const EGRESS = key("sandbox", "egress");
 /** `[sandbox] certificate-checks` (#1337): on unless the file says `false` (R1, 2026-10-13). */
 const CERTIFICATE_CHECKS = key("sandbox", "certificate-checks");
 
+/** `[sandbox] own-terminal-only`: off unless the file says `true`. */
+const OWN_TERMINAL_ONLY = key("sandbox", "own-terminal-only");
+
 /**
  * The presets in force as `shared` stands: those `egress` names, in the core's order; every
  * preset where the file names none, as the core reads a missing `egress` (ADR 0067 §3).
@@ -321,6 +324,25 @@ function certificateChecks(sandbox: SandboxState | undefined): Control {
   );
 }
 
+/** What the Stricter terminals switch closes, and what it breaks while it is on. */
+export const OWN_TERMINAL_ONLY_HELP =
+  "On a Mac, keeps a sandboxed Codex or opencode chat to the terminal it runs in, so it can't read or type into your other terminal tabs or another chat's terminal. Off by default. While it's on, a chat can't make a terminal of its own, so script, expect, tmux and Codex commands that run in a terminal fail. A Claude Code chat's commands get no terminal either way.";
+
+/**
+ * **`[sandbox] own-terminal-only`, one control, off by default.** The file only ever turns it
+ * on: `true` keeps everyone's wrapped chats in the project to their own terminal on macOS, and
+ * `false` says what a file that does not set it says.
+ */
+function ownTerminalOnly(): Control {
+  return onOffAt(
+    OWN_TERMINAL_ONLY,
+    "Stricter terminals",
+    OWN_TERMINAL_ONLY_HELP,
+    "not set — off",
+    false,
+  );
+}
+
 /** The sandbox's settings kept in the committed file, in the order the page draws them. */
 export function sandboxControls(
   sandbox: SandboxState | undefined,
@@ -330,6 +352,7 @@ export function sandboxControls(
     modeStatus(sandbox, yourLevel),
     internetAccess(sandbox?.presets ?? [], sandbox?.policy ?? null),
     certificateChecks(sandbox),
+    ownTerminalOnly(),
   ];
 }
 

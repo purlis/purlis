@@ -9582,15 +9582,22 @@ export type PlaneSaving = {
 	 */
 	merge?: SaveMerge | null,
 	/**
-	 *  How the person settles the block in a terminal, when it is a save's replay onto the
-	 *  remote that conflicted (qw382): the git commands, as a sentence; `null` otherwise.
+	 *  Where the block is a save's replay or bring-in that conflicted and no resolve is open: how
+	 *  Resolve settles it, as a sentence (#5824 F7); `null` otherwise.
 	 */
-	byHand?: string | null,
+	toResolve?: string | null,
 	/**
 	 *  What git is stopped part-way in, by kind: `merge`, `rebase`, `am`, `cherry-pick`,
 	 *  `revert`, `bisect`, or `conflicts` for unmerged files alone; `null` when it is not.
 	 */
 	stoppedBy?: string | null,
+	/**
+	 *  Since when a fetch of the target has failed while a request is open, and why (#5824 F8):
+	 *  the project may be further behind than `behind` says; `null` when it is not.
+	 */
+	stale?: SaveStale | null,
+	/**  The resolve open in its folder, while `stoppedBy` is `resolve`; `null` otherwise. */
+	resolving?: SaveResolving | null,
 };
 
 /**
@@ -12237,6 +12244,26 @@ export type SaveEntry = {
 	detail: string,
 };
 
+/**  A settings key both machines changed, with both values as TOML writes them (#5852). */
+export type SaveKey = {
+	file: string,
+	key: string,
+	/**  This machine's value; `null` where it removed the key. */
+	ours: string | null,
+	/**  The remote's value; `null` where it removed the key. */
+	theirs: string | null,
+};
+
+/**  The person's choice for one settings key both machines changed (#5852). */
+export type SaveKeyChoice = {
+	/**  The settings file it is in. */
+	file: string,
+	/**  The key's dotted path. */
+	key: string,
+	/**  Whether the remote's value is chosen; this machine's otherwise. */
+	theirs: boolean,
+};
+
 /**
  *  What a fresh look at a save's request found, for the question **Merge as it stands…**
  *  asks: the commit it is at and where it stands now. The press hands `head` and
@@ -12289,6 +12316,14 @@ export type SaveMerge = {
 	shown: string,
 };
 
+/**  A resolve open in its folder off to the side (#5824 F7). */
+export type SaveResolving = {
+	/**  Where the resolve folder is. */
+	folder: string,
+	/**  The settings keys both machines changed, each its own way, for the person to choose. */
+	keys: SaveKey[],
+};
+
 /**  How a press of Resolve, Continue or Abort on a save's conflict ended (qw382). */
 export type SaveSettled = {
 	/**
@@ -12306,6 +12341,14 @@ export type SaveSettled = {
 	files: string[],
 	/**  What it said it was doing, in order, the save's lines included. */
 	lines: string[],
+};
+
+/**  A project that could not be fetched while its request is open (#5824 F8). */
+export type SaveStale = {
+	/**  When the first failed fetch of the run was, in seconds since the epoch. */
+	since: number,
+	/**  Why the latest one failed, as a sentence fragment. */
+	why: string,
 };
 
 /**  The record a smart close ended on, as its view tab opens it (SI-8d). */
@@ -13092,6 +13135,12 @@ export type SigningCheck = {
 	email: string,
 	/**  The repository the commit is in. */
 	repo: string,
+	/**
+	 *  Whether `email`, not the key, is the likely reason it wasn't Verified (#5916): the forge
+	 *  said it doesn't know the key, yet the account lists this device's key and `email` isn't
+	 *  one of its verified ones. The window then offers the account's emails, not "add the key".
+	 */
+	email_is_why: boolean,
 };
 
 /**  What became of one account, after Replace key or Remove signing. */
@@ -13146,8 +13195,14 @@ export type SigningLane = {
 export type SigningOtherKey = {
 	/**  The forge's id of it, as text: it removes it. */
 	id: string,
-	/**  `purlis · <device>`. */
+	/**  `purlis · <device>`, or an older setup's `purlis on <machine>`. */
 	title: string,
+	/**  The device it is for: the title after `purlis · ` or `purlis on ` (#5918). */
+	device: string,
+	/**  The day the forge says it was added (`yyyy-mm-dd`), where it says. */
+	added: string | null,
+	/**  Whether an older setup titled it (`purlis on …`): the likely leftover. */
+	older_setup: boolean,
 };
 
 /**  How Sign and retry went for one branch folder. */
@@ -14510,6 +14565,11 @@ export type StatsRow = {
 	/**  Tokens spent inside them, or null where no run said its tokens. */
 	tokens: number | null,
 	ms: number,
+	/**
+	 *  Times a built-in skill should have started and did not (#5738): counted by harness, and
+	 *  0 in every other grouping.
+	 */
+	misses: number,
 };
 
 /**  Where a chat's stop stands. */

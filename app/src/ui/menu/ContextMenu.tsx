@@ -17,6 +17,7 @@
  */
 import {
   cloneElement,
+  createContext,
   isValidElement,
   useCallback,
   useEffect,
@@ -30,10 +31,24 @@ import {
   type ReactNode,
 } from "react";
 import { useMenuTriggerState } from "react-stately/useMenuTriggerState";
+import type { PointerType } from "@react-types/shared";
 import { OpenMenu } from "./Menu";
 
 /** The `contextmenu` events sent for Shift+F10 and the menu key, which open on the first row. */
 const FROM_THE_KEYS = new WeakSet<Event>();
+
+/** The presses that are the pointer's: a screen reader's ("virtual") and the keys' open a menu
+ *  on its first item. */
+const BY_THE_POINTER: ReadonlySet<PointerType> = new Set(["mouse", "pen", "touch"]);
+
+/** The `contextmenu` events a thing's own menu button sent, by the button (#3769). */
+const FROM_A_BUTTON = new WeakMap<Event, HTMLElement>();
+
+/**
+ * **The menu button a thing's open menu was opened from**, or none (#3769): what a row hands
+ * the buttons inside it, so its ⋯ says `aria-expanded` while the menu it opened is open.
+ */
+export const MenuOpenedFrom = createContext<HTMLElement | null>(null);
 
 /** Whether a key opens a context menu: Shift+F10 or the menu key. */
 export function asksForAMenu(event: { key: string; shiftKey: boolean }): boolean {
@@ -55,7 +70,8 @@ export interface ContextMenuOptions {
    *  here or around it, which is how a click a program asked for stays the program's. */
   onAsked?: (event: MouseEvent<HTMLElement>) => void;
   onOpenChange?: (isOpen: boolean) => void;
-  /** Called once it has closed: where the keyboard goes instead of back where it was. */
+  /** Called once it has closed: where the keyboard goes instead of back where it was. A menu
+   *  opened from a menu button gives the keyboard back to that button instead (#3769). */
   onClosed?: () => void;
 }
 
@@ -68,6 +84,8 @@ export interface ContextMenuOptions {
 export function useContextMenu({ menu, onAsked, onOpenChange, onClosed }: ContextMenuOptions): {
   handlers: Omit<Handlers, "onKeyDown">;
   menu: ReactNode;
+  /** The menu button it is open from, while it is open from one (#3769). */
+  openedFrom: HTMLElement | null;
 } {
   // Opened by a press of the pointer: the release of that press is not a row's.
   const [pressed, setPressed] = useState(false);
@@ -80,6 +98,9 @@ export function useContextMenu({ menu, onAsked, onOpenChange, onClosed }: Contex
   });
   // The element it was opened on, as the event that opened it found it.
   const [on, setOn] = useState<Element | null>(null);
+  // The menu button it was opened from, which the keyboard goes back to as it closes (#3769).
+  const [button, setButton] = useState<HTMLElement | null>(null);
+  const backTo = useRef<HTMLElement | null>(null);
   const trigger = useMemo(() => ({ current: on }), [on]);
   // Where it stood as it was opened: a scroll that has not moved it closes nothing.
   const placed = useRef<DOMRect | null>(null);
@@ -94,22 +115,34 @@ export function useContextMenu({ menu, onAsked, onOpenChange, onClosed }: Contex
         // Answered by a menu inside it, or kept for a program: this one stands back.
         if (event.nativeEvent.defaultPrevented) return;
         event.preventDefault();
+        const fromKeys = FROM_THE_KEYS.has(event.nativeEvent);
+        const from = FROM_A_BUTTON.get(event.nativeEvent) ?? null;
         setOn(event.currentTarget);
+        setButton(from);
+        backTo.current = from;
         placed.current = event.currentTarget.getBoundingClientRect();
-        setPressed(!FROM_THE_KEYS.has(event.nativeEvent));
+        // A button's press has been let go of already: no release is still to come.
+        setPressed(!fromKeys && from === null);
         state.setPoint({ x: event.clientX, y: event.clientY });
         // From the keys, on its first row; from the pointer (or a program's own way in, as a
         // terminal's), the menu itself takes the keyboard and no row is chosen yet.
-        state.open(FROM_THE_KEYS.has(event.nativeEvent) ? "first" : null);
+        state.open(fromKeys ? "first" : null);
       },
     },
+    openedFrom: state.isOpen ? button : null,
     menu: (
       <OpenMenu
         state={shown}
         triggerRef={trigger}
         // From the pointer, the menu itself takes the keyboard and no row is chosen yet.
         autoFocus={state.focusStrategy ?? true}
-        onClosed={onClosed}
+        onClosed={() => {
+          // Opened from a menu button: the keyboard goes back to it, as to any menu button's.
+          const back = backTo.current;
+          backTo.current = null;
+          if (back?.isConnected) back.focus({ preventScroll: true });
+          else onClosed?.();
+        }}
         placedByItsOpener
       >
         {state.isOpen && menu()}
@@ -135,6 +168,26 @@ export function askForAMenu(target: Element): void {
   });
   FROM_THE_KEYS.add(asked);
   target.dispatchEvent(asked);
+}
+
+/**
+ * **A thing's own menu button asks the thing for its menu** (#3769): a row's ⋯. The event goes
+ * up from the button, so the menu opens at the button's lower-left corner, and the keyboard goes
+ * back to the button as it closes. Pressed by the pointer, the menu itself takes the keyboard and
+ * no item is chosen, as a right-click opens it; pressed from the keys, it opens on its first item.
+ */
+export function askForAMenuFrom(button: HTMLElement, pointerType: PointerType): void {
+  const byPointer = BY_THE_POINTER.has(pointerType);
+  const at = button.getBoundingClientRect();
+  const asked = new globalThis.MouseEvent("contextmenu", {
+    bubbles: true,
+    cancelable: true,
+    clientX: at.left,
+    clientY: at.bottom,
+  });
+  FROM_A_BUTTON.set(asked, button);
+  if (!byPointer) FROM_THE_KEYS.add(asked);
+  button.dispatchEvent(asked);
 }
 
 /**

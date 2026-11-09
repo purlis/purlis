@@ -1611,7 +1611,16 @@ fn opted_in(name: &str, secret: &str, mint: bool) -> Pool {
         repos: vec!["e2e-org/*".to_owned()],
         mint_in_cluster: mint,
     });
-    Pool::new(name, spec)
+    let mut pool = Pool::new(name, spec);
+    // Written by the admin these tests run as, who says so in the same write.
+    pool.metadata.annotations = Some(
+        [(
+            purlis_cluster_operator::forge::FORGE_WRITER_ANNOTATION.to_owned(),
+            ADMIN.to_owned(),
+        )]
+        .into(),
+    );
+    pool
 }
 
 /// **The operator reads only the Secret the chart names** (#4204): asked as its own service
@@ -1781,15 +1790,23 @@ async fn admission_refuses_a_bad_allow_list_and_a_claims_wildcard() {
         client.clone(),
         &kube::api::ApiResource::erase::<Pool>(&()),
     );
-    let pool_with = |forge: serde_json::Value| -> kube::api::DynamicObject {
-        serde_json::from_value(serde_json::json!({
-            "apiVersion": "runners.purlis.dev/v1alpha1",
-            "kind": "Pool",
-            "metadata": { "name": "e2e-forge-bad" },
-            "spec": { "image": runner_image(), "forge": forge },
-        }))
-        .expect("a pool")
-    };
+    let writer = purlis_cluster_operator::forge::FORGE_WRITER_ANNOTATION;
+    let written_by =
+        |forge: serde_json::Value, by: serde_json::Value| -> kube::api::DynamicObject {
+            // No writer said is no annotation at all: an annotation's value is a string.
+            let mut metadata = serde_json::json!({ "name": "e2e-forge-bad" });
+            if !by.is_null() {
+                metadata["annotations"] = serde_json::json!({ writer: by });
+            }
+            serde_json::from_value(serde_json::json!({
+                "apiVersion": "runners.purlis.dev/v1alpha1",
+                "kind": "Pool",
+                "metadata": metadata,
+                "spec": { "image": runner_image(), "forge": forge },
+            }))
+            .expect("a pool")
+        };
+    let pool_with = |forge: serde_json::Value| written_by(forge, serde_json::json!(ADMIN));
     let key = serde_json::json!({ "name": APP_KEY_SECRET });
     let bad_repos = [
         serde_json::json!([]),
@@ -1825,13 +1842,25 @@ async fn admission_refuses_a_bad_allow_list_and_a_claims_wildcard() {
             .await;
         assert!(made.is_err(), "{forge} was taken");
     }
+    let good_forge = serde_json::json!({
+        "appKeySecretRef": { "name": APP_KEY_SECRET, "namespace": "kube-system" }, "repos": ["acme/*", "acme/.github", "other/app"], "mintInCluster": true,
+    });
+    // **A Pool naming a key says who wrote its forge, by the writer's own name**: none said, or
+    // someone else, is refused.
+    for by in [
+        serde_json::Value::Null,
+        serde_json::json!("e2e-someone-else"),
+    ] {
+        let made = pools
+            .create(
+                &PostParams::default(),
+                &written_by(good_forge.clone(), by.clone()),
+            )
+            .await;
+        assert!(refused_saying(&made, writer), "{by}: {made:?}");
+    }
     let good = pools
-        .create(
-            &PostParams::default(),
-            &pool_with(serde_json::json!({
-                "appKeySecretRef": { "name": APP_KEY_SECRET, "namespace": "kube-system" }, "repos": ["acme/*", "acme/.github", "other/app"], "mintInCluster": true,
-            })),
-        )
+        .create(&PostParams::default(), &pool_with(good_forge))
         .await
         .expect("a good allow-list is taken");
     assert_eq!(good.data["spec"]["forge"]["mintInCluster"], true);
@@ -1887,12 +1916,14 @@ async fn admission_refuses_a_bad_allow_list_and_a_claims_wildcard() {
     scratch.end().await;
 }
 
-/// **Only who asked for a Claim changes the repos it names** (#4204): a peer who may patch claims
-/// in the namespace could otherwise widen what the runner's token covers. Everything else they
-/// may do to it, and the operator's own patches, go on as they did.
+/// **Only who asked for a Claim changes the repos it names, or runs it again once it is
+/// stopped** (#4204): a peer who may patch claims in the namespace could otherwise widen what the
+/// runner's token covers, or undo a stop, which holds back its key and its tokens. Everything
+/// else they may do to it, stopping it among them, and the operator's own patches, go on as they
+/// did.
 #[tokio::test]
 #[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
-async fn only_a_claims_requester_changes_the_repos_it_names() {
+async fn only_a_claims_requester_changes_the_repos_it_names_or_runs_it_again() {
     let client = Client::try_default().await.expect("the cluster");
     let scratch = Scratch::new(&client, "e2e-forge-peer").await;
     let pools = Api::<Pool>::all(client.clone());
@@ -1999,6 +2030,16 @@ async fn only_a_claims_requester_changes_the_repos_it_names() {
     )
     .await
     .expect("a peer may still stop it");
+    let stopped =
+        |stopped: bool| Patch::Merge(serde_json::json!({ "spec": { "stopped": stopped } }));
+    let run_again = bea.patch("e2e-forge-peer", &params, &stopped(false)).await;
+    refused_in_words("a peer's running it again", run_again, "may run it again");
+    ada.patch("e2e-forge-peer", &params, &stopped(false))
+        .await
+        .expect("its requester runs it again");
+    bea.patch("e2e-forge-peer", &params, &stopped(true))
+        .await
+        .expect("a peer stops it again");
     let held = claims_in(&client, &scratch.name)
         .get("e2e-forge-peer")
         .await
@@ -2055,6 +2096,142 @@ async fn only_a_claims_requester_changes_the_repos_it_names() {
     for resource in [use_pool, use_binding] {
         let _ = Api::<kube::api::DynamicObject>::all_with(client.clone(), &resource)
             .delete("e2e-forge-peer-use", &DeleteParams::default())
+            .await;
+    }
+}
+
+/// **On a Pool that mints, running it again once stopped and turning its minting on take `use` on
+/// its key**: stopping is a gate on minting, and turning minting on adopts the image the Pool
+/// already names, whoever set it. Someone who may write Pools but holds no `use` on the key may
+/// stop one, or set the image of one that does not mint, and no more.
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn running_a_stopped_minting_pool_again_or_turning_its_minting_on_takes_use_on_its_key() {
+    let client = Client::try_default().await.expect("the cluster");
+    let pools = Api::<Pool>::all(client.clone());
+    let mut stopped_pool = opted_in("e2e-forge-stopped", APP_KEY_SECRET, true);
+    stopped_pool.spec.stopped = true;
+    for pool in [
+        stopped_pool,
+        opted_in("e2e-forge-adopt", APP_KEY_SECRET, false),
+    ] {
+        pools
+            .patch(
+                &pool.name_any(),
+                &PatchParams::apply("e2e").force(),
+                &Patch::Apply(&pool),
+            )
+            .await
+            .expect("the pool");
+    }
+    apply_rbac(
+        &client,
+        "ClusterRole",
+        None,
+        serde_json::json!({
+            "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "ClusterRole",
+            "metadata": { "name": "e2e-forge-writer" },
+            "rules": [{ "apiGroups": ["runners.purlis.dev"], "resources": ["pools"],
+                        "verbs": ["get", "patch"] }]
+        }),
+    )
+    .await;
+    apply_rbac(
+        &client,
+        "ClusterRoleBinding",
+        None,
+        serde_json::json!({
+            "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "ClusterRoleBinding",
+            "metadata": { "name": "e2e-forge-writer" },
+            "roleRef": { "apiGroup": "rbac.authorization.k8s.io", "kind": "ClusterRole", "name": "e2e-forge-writer" },
+            "subjects": [{ "apiGroup": "rbac.authorization.k8s.io", "kind": "User", "name": "e2e-wes" }]
+        }),
+    )
+    .await;
+    let wes = Api::<Pool>::all(acting_as("e2e-wes").await);
+    let params = PatchParams::default();
+    let stop = |stopped: bool| Patch::Merge(serde_json::json!({ "spec": { "stopped": stopped } }));
+    // A permission just bound takes the cluster a moment: stopping it again asks nothing.
+    eventually("wes may write pools", Duration::from_secs(30), || async {
+        wes.patch("e2e-forge-stopped", &params, &stop(true))
+            .await
+            .ok()
+    })
+    .await;
+    let run_again = wes.patch("e2e-forge-stopped", &params, &stop(false)).await;
+    refused_in_words("running it again without the key", run_again, "forgekeys");
+    // The image of a Pool that does not mint is anyone's who may write it; turning its minting
+    // on then adopts that image, so it takes the key.
+    let image = "example.test/other@sha256:1111111111111111111111111111111111111111111111111111111111111111";
+    wes.patch(
+        "e2e-forge-adopt",
+        &params,
+        &Patch::Merge(serde_json::json!({ "spec": { "image": image } })),
+    )
+    .await
+    .expect("the image of a pool that does not mint");
+    let turned_on = wes
+        .patch(
+            "e2e-forge-adopt",
+            &params,
+            // Named as its forge's writer in the same write, so the key alone is what is asked.
+            &Patch::Merge(serde_json::json!({
+                "metadata": { "annotations": { (purlis_cluster_operator::forge::FORGE_WRITER_ANNOTATION): "e2e-wes" } },
+                "spec": { "forge": { "mintInCluster": true } },
+            })),
+        )
+        .await;
+    refused_in_words(
+        "turning its minting on without the key",
+        turned_on,
+        "forgekeys",
+    );
+    let held = pools.get("e2e-forge-adopt").await.expect("the pool");
+    assert!(!held.spec.forge.expect("its forge").mint_in_cluster);
+
+    // With `use` on the key, both go through.
+    apply_rbac(
+        &client,
+        "ClusterRole",
+        None,
+        serde_json::json!({
+            "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "ClusterRole",
+            "metadata": { "name": "e2e-forge-writer" },
+            "rules": [
+                { "apiGroups": ["runners.purlis.dev"], "resources": ["pools"], "verbs": ["get", "patch"] },
+                { "apiGroups": ["runners.purlis.dev"], "resources": ["forgekeys"],
+                  "resourceNames": [APP_KEY_SECRET], "verbs": ["use"] }
+            ]
+        }),
+    )
+    .await;
+    eventually("wes may use the key", Duration::from_secs(30), || async {
+        wes.patch("e2e-forge-stopped", &params, &stop(false))
+            .await
+            .ok()
+    })
+    .await;
+    wes.patch(
+        "e2e-forge-adopt",
+        &params,
+        // Named as its forge's writer in the same write, so the key alone is what is asked.
+        &Patch::Merge(serde_json::json!({
+            "metadata": { "annotations": { (purlis_cluster_operator::forge::FORGE_WRITER_ANNOTATION): "e2e-wes" } },
+            "spec": { "forge": { "mintInCluster": true } },
+        })),
+    )
+    .await
+    .expect("its minting turned on by who may use the key");
+
+    for pool in ["e2e-forge-stopped", "e2e-forge-adopt"] {
+        let _ = pools.delete(pool, &DeleteParams::default()).await;
+    }
+    for resource in [
+        kube::api::ApiResource::erase::<k8s_openapi::api::rbac::v1::ClusterRoleBinding>(&()),
+        kube::api::ApiResource::erase::<k8s_openapi::api::rbac::v1::ClusterRole>(&()),
+    ] {
+        let _ = Api::<kube::api::DynamicObject>::all_with(client.clone(), &resource)
+            .delete("e2e-forge-writer", &DeleteParams::default())
             .await;
     }
 }
@@ -3058,7 +3235,8 @@ async fn doctor_needs_only_reads_and_says_what_a_reader_may_not_apply() {
             "metadata": { "name": "e2e-doctor-reads" },
             "rules": [
                 { "apiGroups": ["apiextensions.k8s.io"], "resources": ["customresourcedefinitions"], "verbs": ["get"] },
-                { "apiGroups": ["apps"], "resources": ["deployments"], "verbs": ["get"] }
+                { "apiGroups": ["apps"], "resources": ["deployments"], "verbs": ["get"] },
+                { "apiGroups": [""], "resources": ["namespaces"], "verbs": ["list"] }
             ]
         }),
     )
@@ -4663,6 +4841,52 @@ async fn the_operators_token_writes_upstreams_objects_only_in_a_runners_shape() 
             "{namespace}: {made:?}"
         );
     }
+    // **Whether a claim is born minting is said by the operator alone, as it makes the claim**:
+    // nobody adds, changes or removes it after, the operator and a cluster admin among them.
+    let born = purlis_cluster_operator::upstream::BORN_MINTING_ANNOTATION;
+    let born_saying = |word: &str, warm_pool: Option<&str>| -> SandboxClaim {
+        let mut made = upstream_claim.clone();
+        made.metadata = ObjectMeta {
+            name: Some("e2e-shape-born".to_owned()),
+            namespace: Some(runners()),
+            annotations: Some([(born.to_owned(), word.to_owned())].into()),
+            ..ObjectMeta::default()
+        };
+        if let Some(warm_pool) = warm_pool {
+            made.spec.warm_pool_ref.name = warm_pool.to_owned();
+        }
+        made.status = None;
+        made
+    };
+    Api::<SandboxClaim>::namespaced(as_operator.clone(), &runners())
+        .create(&dry, &born_saying("true", None))
+        .await
+        .expect("said as the operator makes the claim");
+    let made = Api::<SandboxClaim>::namespaced(as_operator.clone(), &runners())
+        .create(&dry, &born_saying("false", None))
+        .await;
+    assert!(refused_saying(&made, "only its own mark"), "{made:?}");
+    // Someone else's claim, on no purlis pool, so only that word refuses it.
+    let made = Api::<SandboxClaim>::namespaced(client.clone(), &runners())
+        .create(&dry, &born_saying("true", Some("e2e-not-purlis")))
+        .await;
+    assert!(refused_saying(&made, "born minting"), "{made:?}");
+    let dry_patch = PatchParams {
+        dry_run: true,
+        ..PatchParams::default()
+    };
+    for (who, writer) in [("the operator", &as_operator), ("an admin", &client)] {
+        let said = Api::<SandboxClaim>::namespaced(writer.clone(), &runners())
+            .patch(
+                "shape-1",
+                &dry_patch,
+                &Patch::Merge(
+                    serde_json::json!({ "metadata": { "annotations": { born: "true" } } }),
+                ),
+            )
+            .await;
+        assert!(refused_saying(&said, "born minting"), "{who}: {said:?}");
+    }
     let _ = pools.delete("e2e-shape", &DeleteParams::default()).await;
     scratch.end().await;
 }
@@ -4863,5 +5087,155 @@ async fn what_the_operator_makes_it_holds_as_applied() {
     assert!(updates.is_empty(), "{updates:#?}");
 
     let _ = pools.delete("e2e-applied", &DeleteParams::default()).await;
+    scratch.end().await;
+}
+
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn the_operators_token_writes_a_template_and_a_kept_volume_only_as_its_pool_says() {
+    use purlis_cluster_operator::upstream::{SandboxClaim, SandboxTemplate};
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-says").await;
+    let pools = small_pool(&client, "e2e-says").await;
+    let claims = claims_in(&client, &scratch.name);
+    claims
+        .create(&PostParams::default(), &claim("says-1", "e2e-says"))
+        .await
+        .expect("the claim");
+    // The operator's own template and claim were admitted: its runner runs.
+    vouched_pod(&claims, "says-1").await;
+
+    let as_operator = acting_as(SERVICE_ACCOUNT).await;
+    let name = purlis_cluster_operator::upstream::name_for("e2e-says");
+    let admins_templates = Api::<SandboxTemplate>::namespaced(client.clone(), &runners());
+    let templates = Api::<SandboxTemplate>::namespaced(as_operator.clone(), &runners());
+    let dry_create = PostParams {
+        dry_run: true,
+        ..PostParams::default()
+    };
+    // The operator patches its templates, and holds no right to replace one.
+    let dry = PatchParams {
+        dry_run: true,
+        ..PatchParams::default()
+    };
+    let as_patch = |template: SandboxTemplate| {
+        let mut value = serde_json::to_value(template).expect("a template's JSON");
+        if let Some(metadata) = value["metadata"].as_object_mut() {
+            // Neither the fields' managers nor a version it must still be at: only what it says.
+            metadata.remove("managedFields");
+            metadata.remove("resourceVersion");
+        }
+        Patch::Merge(value)
+    };
+    let image_now = pools.get("e2e-says").await.expect("the pool").spec.image;
+    let (repository, _) = image_now.split_once('@').expect("an image by digest");
+    let another = format!("{repository}@sha256:{}", "3".repeat(64));
+    let with_images = |held: &SandboxTemplate, runner: &str, step: &str| -> SandboxTemplate {
+        let mut value = serde_json::to_value(held).expect("JSON");
+        value["spec"]["podTemplate"]["spec"]["containers"][0]["image"] = runner.into();
+        value["spec"]["podTemplate"]["spec"]["initContainers"][0]["image"] = step.into();
+        serde_json::from_value(value).expect("a template")
+    };
+    // Another image than its Pool's, in the runner or in the step that makes the link key.
+    let held = admins_templates
+        .get(&name)
+        .await
+        .expect("the operator's template");
+    for (what, runner, step) in [
+        ("the runner", another.as_str(), image_now.as_str()),
+        ("the link key's step", image_now.as_str(), another.as_str()),
+    ] {
+        let written = templates
+            .patch(&name, &dry, &as_patch(with_images(&held, runner, step)))
+            .await;
+        assert!(
+            refused_saying(&written, "runs its Pool's image"),
+            "{what}: {written:?}"
+        );
+    }
+
+    // A kept volume in a class its Pool does not name is refused; none named, as the Pool
+    // names none, is not refused for its class.
+    let mut kept = Api::<SandboxClaim>::namespaced(client.clone(), &runners())
+        .get("says-1")
+        .await
+        .expect("the operator's upstream claim");
+    kept.metadata = ObjectMeta {
+        name: Some("e2e-says-kept".to_owned()),
+        namespace: Some(runners()),
+        ..ObjectMeta::default()
+    };
+    kept.status = None;
+    let in_class = |class: Option<&str>| -> SandboxClaim {
+        let mut value = serde_json::to_value(&kept).expect("JSON");
+        let mut volume = serde_json::json!({
+            "metadata": { "name": "purlis-kept" },
+            "spec": {
+                "accessModes": ["ReadWriteOnce"],
+                "resources": { "requests": { "storage": "1Gi" } },
+            },
+        });
+        if let Some(class) = class {
+            volume["spec"]["storageClassName"] = class.into();
+        }
+        value["spec"]["volumeClaimTemplates"] = serde_json::json!([volume]);
+        serde_json::from_value(value).expect("a claim")
+    };
+    let upstream_claims = Api::<SandboxClaim>::namespaced(as_operator.clone(), &runners());
+    let made = upstream_claims
+        .create(&dry_create, &in_class(Some("another-class")))
+        .await;
+    assert!(
+        refused_saying(&made, "storage class its Pool names"),
+        "{made:?}"
+    );
+    let made = upstream_claims.create(&dry_create, &in_class(None)).await;
+    assert!(
+        !refused_saying(&made, "storage class its Pool names"),
+        "{made:?}"
+    );
+
+    // Once the Pool's image changes, the operator's template with the new one is admitted, and
+    // one with the image it had is refused.
+    pools
+        .patch(
+            "e2e-says",
+            &PatchParams::default(),
+            &Patch::Merge(serde_json::json!({ "spec": { "image": another } })),
+        )
+        .await
+        .expect("the pool's image changes");
+    let renewed = eventually(
+        "the operator writes the template with the Pool's new image",
+        Duration::from_secs(120),
+        || async {
+            let held = admins_templates.get(&name).await.ok()?;
+            let pod = held.spec.pod_template.spec.as_ref()?;
+            let images: Vec<Option<String>> = pod
+                .containers
+                .iter()
+                .chain(pod.init_containers.iter().flatten())
+                .map(|c| c.image.clone())
+                .collect();
+            images
+                .iter()
+                .all(|image| image.as_deref() == Some(another.as_str()))
+                .then_some(held)
+        },
+    )
+    .await;
+    let written = templates
+        .patch(
+            &name,
+            &dry,
+            &as_patch(with_images(&renewed, &image_now, &image_now)),
+        )
+        .await;
+    assert!(
+        refused_saying(&written, "runs its Pool's image"),
+        "{written:?}"
+    );
+    let _ = claims.delete("says-1", &DeleteParams::foreground()).await;
+    let _ = pools.delete("e2e-says", &DeleteParams::default()).await;
     scratch.end().await;
 }

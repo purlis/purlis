@@ -3,7 +3,14 @@
 
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render as renderBare, screen, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render as renderBare,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
@@ -21,6 +28,10 @@ vi.mock("./SessionPane", () => ({
     <div data-testid="pane">session {session}</div>
   ),
 }));
+
+/** ⌘⏎ on a Mac, Ctrl+Enter elsewhere: the platform the test runs on. */
+const MAC = navigator.platform.startsWith("Mac");
+const CHORD = { key: "Enter", metaKey: MAC, ctrlKey: !MAC };
 
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
 
@@ -133,6 +144,13 @@ function core(how: { hold?: "answer" | "start"; refuse?: string } = {}) {
   return { asked, of, release: () => release() };
 }
 
+/** The dialog's main answer, whatever it says now. */
+const mainOf = (dialog: HTMLElement) => {
+  const main = dialog.querySelector<HTMLElement>('[data-dialog-action="main"]');
+  if (main === null) throw new Error("the dialog has no main answer");
+  return main;
+};
+
 async function startRefused() {
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: "New chat" }));
@@ -221,22 +239,187 @@ describe("a start missing its profile credential, in the Start dialog (#5137)", 
     expect(of("start_chat")[1].args).toMatchObject({ persona: "steward" });
   });
 
-  it("filled, never approves a profile picked since: that stays a press of its own", async () => {
-    const { of } = core();
+  it("filled while another profile is picked since, starts nothing and says whose key it filled", async () => {
+    const { of, release } = core({ hold: "answer" });
     render(<App />);
 
     const { user, dialog, body } = await startRefused();
-    await user.click(within(dialog).getByRole("radio", { name: /codex/ }));
     await user.type(within(body).getByLabelText("Value of anthropic"), "fr3sh-anthropic");
     await user.click(within(body).getByRole("button", { name: "Fill" }));
+    await waitFor(() => expect(of("answer_secret_ask")).toHaveLength(1));
+    await user.click(within(dialog).getByRole("radio", { name: /codex/ }));
+    // While the fill is sent, the dialog never asks for it to be filled again.
+    expect(dialog.textContent).not.toContain("Pick work-key again");
+    release();
 
-    expect(
-      await within(dialog).findByText(
-        "Filled anthropic. Approving this profile takes a press of its own.",
-      ),
-    ).toHaveAttribute("role", "alert");
+    expect(await within(dialog).findByText("Filled anthropic for work-key.")).toHaveAttribute(
+      "role",
+      "alert",
+    );
+    await new Promise((settle) => setTimeout(settle, 100));
     expect(of("approve_profile")).toEqual([]);
     expect(of("start_chat")).toHaveLength(1);
+  });
+
+  it("an answer the core refuses, with another profile picked since, is said all the same (#5670 review)", async () => {
+    const { of, release } = core({
+      hold: "answer",
+      refuse: "the vault providers is locked: unlock it, then fill again",
+    });
+    render(<App />);
+
+    const { user, dialog, body } = await startRefused();
+    await user.type(within(body).getByLabelText("Value of anthropic"), "fr3sh-anthropic");
+    await user.click(within(body).getByRole("button", { name: "Fill" }));
+    await waitFor(() => expect(of("answer_secret_ask")).toHaveLength(1));
+    await user.click(within(dialog).getByRole("radio", { name: /codex/ }));
+    release();
+
+    await waitFor(() =>
+      expect(
+        within(dialog)
+          .getAllByRole("alert")
+          .some((one) =>
+            one.textContent?.includes("the vault providers is locked: unlock it, then fill again"),
+          ),
+      ).toBe(true),
+    );
+  });
+
+  it("a hint for the hidden ask's own boxes is not said once another profile is picked (#5670 review)", async () => {
+    core();
+    render(<App />);
+
+    const { user, dialog, body } = await startRefused();
+    await user.click(within(body).getByRole("checkbox", { name: /^Remember/ }));
+    const purpose = within(body).queryByRole("textbox", { name: /for/i });
+    if (purpose) await user.clear(purpose);
+    await user.click(within(body).getByRole("button", { name: "Fill" }));
+    await waitFor(() => expect(dialog.textContent).toContain("or untick Remember."));
+    await user.click(within(dialog).getByRole("radio", { name: /codex/ }));
+
+    await waitFor(() => expect(within(dialog).queryByTestId("secret-ask")).toBeNull());
+    expect(dialog.textContent).not.toContain("or untick Remember.");
+  });
+
+  it("an answer refused with another profile picked since says first where to answer it again (#5670 review)", async () => {
+    const LOCKED = "the vault providers is locked: unlock it, then fill again";
+    const { of, release } = core({ hold: "answer", refuse: LOCKED });
+    render(<App />);
+
+    const { user, dialog, body } = await startRefused();
+    await user.type(within(body).getByLabelText("Value of anthropic"), "fr3sh-anthropic");
+    await user.click(within(body).getByRole("button", { name: "Fill" }));
+    await waitFor(() => expect(of("answer_secret_ask")).toHaveLength(1));
+    await user.click(within(dialog).getByRole("radio", { name: /codex/ }));
+    release();
+
+    await waitFor(() => {
+      const said =
+        within(dialog)
+          .getAllByRole("alert")
+          .find((one) => one.textContent?.includes(LOCKED))?.textContent ?? "";
+      expect(said).toContain("Pick work-key again to fill anthropic here.");
+      expect(said.indexOf("Pick work-key again")).toBeLessThan(said.indexOf(LOCKED));
+    });
+  });
+
+  it("a pick of another profile drops the refused profile's ask, and picking it back draws it again (#5670)", async () => {
+    core();
+    render(<App />);
+
+    const { user, dialog } = await startRefused();
+    await user.click(within(dialog).getByRole("radio", { name: /codex/ }));
+
+    await waitFor(() => expect(within(dialog).queryByTestId("secret-ask")).toBeNull());
+    // The refusal still shown is said to be the refused profile's.
+    // Said in the refusal's own alert, beside the words that point to the Inbox.
+    const refusal = within(dialog)
+      .getAllByRole("alert")
+      .find((one) => one.textContent?.includes("fill it from the Secret ask in the Inbox"));
+    expect(refusal).toHaveTextContent("Pick work-key again to fill anthropic here.");
+    await user.click(within(dialog).getByRole("radio", { name: /work-key/ }));
+    expect(
+      await within(dialog).findByRole("group", {
+        name: "devops asks for anthropic from vault providers",
+      }),
+    ).toBeTruthy();
+  });
+
+  it("holds ⏎ from a persona row, ⌘⏎ from a card and Start while its answer is sent (#5670)", async () => {
+    const { of, release } = core({ hold: "answer" });
+    render(<App />);
+
+    const { user, dialog, body } = await startRefused();
+    await user.type(within(body).getByLabelText("Value of anthropic"), "fr3sh-anthropic");
+    await user.click(within(body).getByRole("button", { name: "Fill" }));
+    await waitFor(() => expect(of("answer_secret_ask")).toHaveLength(1));
+
+    const row = within(dialog).getByRole("option", { name: "devops" });
+    fireEvent.keyDown(row, { key: "Enter" });
+    fireEvent.keyUp(row, { key: "Enter" });
+    const card = within(dialog).getByRole("radio", { name: /work-key/ });
+    fireEvent.keyDown(card, CHORD);
+    fireEvent.keyUp(card, CHORD);
+    const start = mainOf(dialog);
+    expect(start).toBeDisabled();
+    fireEvent.keyDown(within(dialog).getByRole("textbox", { name: /^Name/ }), CHORD);
+
+    await new Promise((settle) => setTimeout(settle, 50));
+    expect(of("start_chat")).toHaveLength(1);
+    release();
+    // The fill's own start goes on, once.
+    await waitFor(() => expect(of("start_chat")).toHaveLength(2));
+    await new Promise((settle) => setTimeout(settle, 50));
+    expect(of("start_chat")).toHaveLength(2);
+  });
+
+  it("⏎ and ⌘⏎ on the ask's own radios neither start nor answer: they are no harness card (#5670 review)", async () => {
+    const { of } = core();
+    render(<App />);
+
+    const { body } = await startRefused();
+    // A value typed, so a chord that reached the ask's Fill would answer.
+    await userEvent.setup().type(within(body).getByLabelText("Value of anthropic"), "fr3sh");
+    const choice = within(body).getAllByRole("radio")[0];
+    fireEvent.keyDown(choice, { key: "Enter" });
+    fireEvent.keyUp(choice, { key: "Enter" });
+    fireEvent.keyDown(choice, CHORD);
+    fireEvent.keyUp(choice, CHORD);
+
+    await new Promise((settle) => setTimeout(settle, 50));
+    expect(of("start_chat")).toHaveLength(1);
+    expect(of("answer_secret_ask")).toEqual([]);
+  });
+
+  it("while Not now is sent, Start is held and never says it is starting (#5670)", async () => {
+    const { of, release } = core({ hold: "answer" });
+    render(<App />);
+
+    const { user, dialog, body } = await startRefused();
+    await user.click(within(body).getByRole("button", { name: "Not now" }));
+    await waitFor(() => expect(of("answer_secret_ask")).toHaveLength(1));
+
+    const start = mainOf(dialog);
+    expect(start).toBeDisabled();
+    expect(start.textContent).toContain("Start chat");
+    expect(start.textContent).not.toContain("Starting");
+    release();
+    await waitFor(() => expect(within(dialog).getByRole("alert")).toHaveTextContent(DECLINED));
+  });
+
+  it("⌘⏎ in the value's box fills, and the start goes on once (#5670)", async () => {
+    const { of } = core();
+    render(<App />);
+
+    const { user, body } = await startRefused();
+    const box = within(body).getByLabelText("Value of anthropic");
+    await user.type(box, "fr3sh-anthropic");
+    fireEvent.keyDown(box, CHORD);
+
+    await waitFor(() => expect(of("start_chat")).toHaveLength(2));
+    expect(of("answer_secret_ask")).toHaveLength(1);
+    expect(of("answer_secret_ask")[0].args).toMatchObject({ value: "fr3sh-anthropic" });
   });
 
   it("cancelled while its answer is sent, starts nothing", async () => {

@@ -50,6 +50,12 @@ jobs:
     name: scale (${{ matrix.os }}, evidence only)
     # About twenty minutes of build, twenty-five of generation, and three app launches.
     timeout-minutes: 180
+    # Each step has its own bound as well, so a step that hangs gives the runner back within its
+    # own minutes, not the job's three hours (#5881). Each is at least about twice the slowest of
+    # 25 green runs per system on 2026-11-07 and 08 (macOS / Linux): checkout 53 / 39 s, npm ci
+    # 74 / 46 s, the release binaries 21 / 12 min, the project 14 / 2 min, the app 40 / 20 min,
+    # the hook and recall 33 / 14 min (on #5672's diagnostic branches; about 6 / 2 min otherwise),
+    # the window 9.4 / 1.7 min, each chat-events run 102 / 74 s.
     permissions:
       contents: read
     strategy:
@@ -66,11 +72,13 @@ jobs:
       # the app's fence holds it as it holds every other run's plane. Here and not in the job's
       # `env`, which cannot read the runner's own context.
       - name: Where the run's tree and its project are
+        timeout-minutes: 2
         shell: bash
         run: |
           echo "CHARTER_SCENARIO_RUN=$RUNNER_TEMP/scale-run" >> "$GITHUB_ENV"
           echo "PURLIS_SCALE_PLANE=$RUNNER_TEMP/scale-run/project" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 5
         with:
           persist-credentials: false
       # No swap file is added for the app's release build: with the app crate at `opt-level = 1`
@@ -85,14 +93,18 @@ jobs:
           tauri: true
           packages: xvfb dbus-x11
       - uses: ./.github/actions/rust-toolchain
+        timeout-minutes: 5
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        timeout-minutes: 5
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
       - uses: ./.github/actions/npm-ci
+        timeout-minutes: 10
         with:
           directory: app
       - name: The generator, purlis, and the harness the app's panes run, in release
+        timeout-minutes: 40
         run: cargo build --release --locked -p scale-project -p purlis-cli -p fake-harness
       # Spotlight kept off the project (#5672): the index row timed right after the project was
       # written swung from 42 to 95 s on macOS runners that build it in 19 to 31 s once quiet,
@@ -100,6 +112,7 @@ jobs:
       # it, and the run's tree carries the marker that keeps Spotlight out where it does not.
       - name: Spotlight kept off the run's tree
         if: runner.os == 'macOS'
+        timeout-minutes: 5
         shell: bash
         run: |
           mkdir -p "$CHARTER_SCENARIO_RUN"
@@ -109,6 +122,7 @@ jobs:
       # Written before the app is built, so the disk has the build's length to write it out before
       # the index row: `tools/scale-run.mjs` then waits for it to go quiet as well (#5672).
       - name: The project at the target size, from seed 5497, committed
+        timeout-minutes: 30
         shell: bash
         run: |
           set -euo pipefail
@@ -124,14 +138,17 @@ jobs:
       # build anyone is given. Release, with no bundle, as the timings need.
       - name: The app, in release, for the window's measurements
         id: built
+        timeout-minutes: 75
         run: npx tauri build --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json
         working-directory: app
       - name: The hook, recall and one git standing look
+        timeout-minutes: 60
         run: node tools/scale-run.mjs --project "$PURLIS_SCALE_PLANE" --os "$OS_WORD" --out scale-rows.jsonl
       # Each window run is its own app launch: WebdriverIO keeps one app for a run, and the two
       # chat-event runs differ in the app's environment. Each runs even if one before it broke.
       - name: The window on the project, its sidebar answer, watcher setup and idle CPU
         id: window
+        timeout-minutes: 20
         if: always() && steps.built.outcome == 'success'
         working-directory: app
         env:
@@ -142,6 +159,7 @@ jobs:
           pkill -f "$CHARTER_TARGET_DIR/purlis-app" || true
           ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}npm run e2e:scale
       - name: Chat events reaching the window, batched (#4883)
+        timeout-minutes: 10
         if: always() && steps.built.outcome == 'success'
         working-directory: app
         env:
@@ -153,6 +171,7 @@ jobs:
           pkill -f "$CHARTER_TARGET_DIR/purlis-app" || true
           ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}npm run e2e:scale
       - name: Chat events reaching the window, each telling sent as it comes (#4883)
+        timeout-minutes: 10
         if: always() && steps.built.outcome == 'success'
         working-directory: app
         env:
@@ -165,11 +184,13 @@ jobs:
           pkill -f "$CHARTER_TARGET_DIR/purlis-app" || true
           ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}npm run e2e:scale
       - name: This system's numbers, in the job summary
+        timeout-minutes: 5
         if: always()
         run: |
           touch scale-rows.jsonl
           node tools/scale-report.mjs --only "$OS_WORD" scale-rows.jsonl
       - if: always()
+        timeout-minutes: 5
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: scale-rows-${{ matrix.os }}

@@ -13,6 +13,8 @@
 //!   Agent identity keeps, nor any key while the project's file can't be read to tell.
 //! - **A vault the chat's persona isn't tagged for is warned of on the notice**, as a login's is,
 //!   and refused where policy takes the person's vault grants away.
+//! - **A key that is a link into a vault the chat's persona may not use is refused** before the
+//!   notice, as the read would refuse it ([`brokered::read_out_of_reach`], #5831).
 
 use crate::sandbox::policy::Locks;
 use crate::sandbox::tools::{fill, mint};
@@ -50,6 +52,12 @@ pub fn judged(
     let doc =
         crate::secrets::registry::load_registry(ctx).map_err(|why| why.message.to_string())?;
     crate::secrets::registry::vault_in(&doc, vault).map_err(|why| why.message.to_string())?;
+    // A key that is a link into a vault the persona may not use is refused here, before any
+    // notice: the read would refuse it once the person had allowed it (#5831, #5795).
+    if let Some(why) = brokered::read_out_of_reach(ctx, persona.unwrap_or_default(), vault, &[key])
+    {
+        return Err(why);
+    }
     let Some(not) = brokered::not_tagged(ctx, persona, vault) else {
         return Ok(None);
     };

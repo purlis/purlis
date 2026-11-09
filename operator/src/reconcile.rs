@@ -620,6 +620,9 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
     // The volume an upstream claim was made with stays as it is: upstream never changes it, and
     // refuses an apply that does (#2057).
     upstream::keep_volumes_held(&mut wanted, claim_full.as_ref());
+    // Whether its Pool named an App's key is said once, as the upstream claim is made, and kept
+    // as it was made with whatever the Pool says since: a mint asks it of the claim.
+    upstream::born_as_held(&mut wanted, &pool, claim_full.as_ref());
     let claim_held = claim_full.as_ref().map(|held| meta(held.clone()));
     let template_found = made_for(template_held.as_ref(), &runner);
     let warm_found = made_for(warm_held.as_ref(), &runner);

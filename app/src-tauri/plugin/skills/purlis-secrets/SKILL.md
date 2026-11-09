@@ -1,12 +1,12 @@
 ---
 name: purlis-secrets
-description: Use a credential held in a purlis vault — a database password, API token, kubeconfig, SSH key or server login — without its value entering the conversation. Use when a task needs a secret, when asked to store one, or before running any command that requires a credential.
+description: When a task needs a purlis vault's credential — a password, token or key — use it without its value entering the chat. Use when a command needs a secret, or to store one. Not for a site login (purlis-browser), a persona (purlis-persona), a repo (purlis-repo-work), a new chat (purlis-handoff) or memory (purlis-tidy-memory).
 ---
 
 # Using a purlis vault
 
 The rule this skill exists to keep: **use a secret, never reveal it.** A value that reaches
-the transcript has been disclosed: to the model's context, to whatever logs the session, and
+the transcript has been disclosed: to the model's context, to whatever logs the chat, and
 to anyone the transcript is later shared with. Deleting the message afterwards undoes none of
 that.
 
@@ -69,9 +69,11 @@ purlis secret set <vault> <key> --from-file <path>    # multi-line or verbatim: 
 ```
 
 An argument list is not private. It shows up in `ps`, in shell history and in this
-transcript. Ask the user to supply the value by stdin or a file, or to set it themselves.
+transcript. Never ask the person for a value to store: raise a Secret ask (above), and they
+fill it in purlis's window. Store one yourself only when you already hold it, such as a key a
+command generated.
 
-**In a sandboxed chat these are the user's:** `secret set`, `secret rm`, `secret audit`,
+**In a sandboxed chat these are the person's:** `secret set`, `secret rm`, `secret audit`,
 `vault add`, `vault remove` and `vault verify` are refused before anything is read, with a
 sentence naming the vault's tab in the app or the command for their own terminal. Pass that
 sentence on and wait; do not look for another way in.
@@ -80,19 +82,19 @@ sentence on and wait; do not look for another way in.
 
 A 1Password vault is read with a credential of its own: a service-account token, or the
 1Password app's sign-in. **You never ask for that token, handle it or store it.** Do not ask
-the user to paste it into the conversation, do not write it to a file or a shell profile, do
+the person to paste it into the conversation, do not write it to a file or a shell profile, do
 not `export` it, and do not pipe it into any command, `purlis vault add --token-stdin`
 included: inside a chat that command is refused, and it reads nothing.
 
 When a vault needs its token (it is being made, its token is missing, or it was refused),
-tell the user to give it to purlis themselves:
+tell the person to give it to purlis themselves:
 
 - **New vault** in the app, with 1Password chosen: it asks how the vault signs in, tests it,
   and keeps the token in the system keyring.
 - For a vault that exists: open **the vault's tab** in the app. It has the box for the token,
   and *Change how this vault signs in*.
 - On a machine with no window: `purlis vault add <name> --provider 1password --op-vault <NAME>
-  --token-stdin`, typed by the user in a terminal of their own, outside the app.
+  --token-stdin`, typed by the person in a terminal of their own, outside the app.
 
 Then wait for them to say it is done, and run your command again. No restart is needed.
 
@@ -112,7 +114,8 @@ purlis secret cp <vault> <key> <dest>     # persist it at 0600; <dest> must be a
 ```
 
 `<dest>` must be a **real file that does not exist yet**. purlis refuses a device, a FIFO, a
-directory or a symlink. It also refuses an existing file unless you pass `--force`. This is
+directory or a symlink. It also refuses an existing file unless you pass `--force`, which you pass only on the
+person's word in this chat. This is
 not pedantry: `purlis secret cp <vault> <key> /dev/stdout` would write the plaintext
 straight into this conversation. Do not go looking for a path that gets around the refusal.
 
@@ -136,25 +139,25 @@ The credential goes wherever the command sends it, and you choose that command.
 **In a sandboxed chat**, `purlis secret exec` is run by the app, and it runs **only a tool
 this chat's persona declares**: a program the project's settings name under
 `[sandbox.personas.<persona>] tools`, with that tool's own vault, key and hand-over, once the
-user has allowed the persona's tools on this machine. Run such a tool by its plain name
+person has allowed the persona's tools on this machine. Run such a tool by its plain name
 (`kubectl get pods`): the app hands it the credential. Any other command, a shell or an
 interpreter among them, is refused with a sentence that names the tool to declare; tell the
-user that sentence, and that they can run the command in their own terminal. A tool that needs
+person that sentence, and that they can run the command in their own terminal. A tool that needs
 several values (a user name and a password, a key and a secret) can be declared with all of
 them: `<program> = { vault = "<vault>", values = { <VAR> = { key = "<key>", as = "env" }, <VAR> =
 { key = "<key>", as = "file" } } }`. When a tool needs more than the one value it has, tell the
-user that form rather than looking for another way to the vault. The app also
-checks that this chat's persona may use the vault (the vault is tagged for it, or the user
+person that form rather than looking for another way to the vault. The app also
+checks that this chat's persona may use the vault (the vault is tagged for it, or the person
 allowed it for that persona on this machine), runs the tool in this chat's sandbox, and streams
 the output back with each value's literal text masked. Do not try to read the vault some other
 way.
-`secret get` and `secret cp` are refused in a sandboxed chat for every vault, whatever the user
+`secret get` and `secret cp` are refused in a sandboxed chat for every vault, whatever the person
 allowed: a sandboxed chat never reads a value itself. Use `purlis secret list <vault>` for the
 key names and `purlis secret exec` through a declared tool for a value. Anything else that would
 read the keyring is refused too; each refusal names what to run instead.
 
 **When the command cannot reach a host** ("Forbidden", a refused connection) and purlis adds that
-its sandbox refused a connection to a host, that host is not one this chat may reach. Tell the user
+its sandbox refused a connection to a host, that host is not one this chat may reach. Tell the person
 the host purlis named: a Notice in the Inbox, and on this chat's pane when it is on screen, lets
 them allow it. Once they have, the chat is started again with it, and you run the same command
 again. Do not retry it before then, and do not try to reach the host some other way.
@@ -162,13 +165,13 @@ again. Do not retry it before then, and do not try to reach the host some other 
 **A database client** (`psql`, `usql`, `mysql`, `redis-cli`) declared as the persona's tool
 works in a sandboxed chat with the command unchanged. Hand it the connection string from the vault with `--env` (`purlis secret exec <vault> --env DSN=<key> -- usql "$DSN"`): when the chat may
 reach that host and port, purlis points the value at a tunnel to it; when it may not, purlis says
-so and the user is offered Allow, as above. Do not rewrite the host or the port yourself.
+so and the person is offered Allow, as above. Do not rewrite the host or the port yourself.
 **ssh, and git over ssh,** need no vault: run them as you would, and they reach a host this chat
 may reach; one it may not is refused with the same Allow. Do not add a
 `ProxyCommand` or `-F` of your own.
 
 **When a vault is refused for this chat's persona**, the refusal names the ways forward. A Notice
-about it lets the user press *Allow*; once they have, purlis tells this chat what now runs (`purlis
+about it lets the person press *Allow*; once they have, purlis tells this chat what now runs (`purlis
 secret list <vault>` and this persona's declared tools with it), with no restart. Run that, not a
 direct read of a value. Or dispatch the work to the persona the vault is tagged for, with the
 command the refusal names. A chat's persona is fixed for its life: do not try to change it, and do
@@ -205,7 +208,7 @@ purlis persona secret exec --env TOKEN=<key> -- <command...>
 
 A persona can reach only its own vault. When a task needs a credential another persona
 holds, dispatch that step to that persona (`purlis dispatch --to <persona>`) rather than
-copying the secret across. A sub-agent of this chat is not that persona: it has this chat's
+copying the secret across. A helper of this chat is not that persona: it has this chat's
 vault.
 
 ## Hard rules
@@ -235,7 +238,7 @@ vault.
   Inside double quotes those are command substitution, not markdown: the shell runs them and
   publishes the output. Write the text to a file and pass `--body-file <path>`, or pipe it
   with `--body-file -` and a **quoted** heredoc (`<<'BODY'`). A published body cannot be
-  withdrawn. A leaked value has to be rotated, which is the operator's work, not yours.
+  withdrawn. A leaked value has to be rotated, which is the person's work, not yours.
 - **The same slip applies to purlis's own commands that persist prose.** These include
   `purlis persona remember <persona>` and `purlis workspace remember -w <workspace>`, `note`,
   `todo` and `vision`. A

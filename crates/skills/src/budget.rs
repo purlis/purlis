@@ -122,12 +122,37 @@ impl Spent {
     }
 }
 
-/// **What `skills`, each with what it declares, spend of `budget`**: one skill and its
-/// description's characters (cut at the harness's cap), with its path where the harness lists
-/// it and its name, `when_to_use` and line where the harness's limit counts them, for each the
-/// harness lists.
+/// **Who lists a skill to the chat's model**, which decides how its path counts where the
+/// harness lists paths.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListedBy {
+    /// purlis's briefing ([`crate::listing`]): a folder of skills is named once, and only a
+    /// skill in a folder named otherwise has its whole path on its line (spec #5714's Q38).
+    Purlis,
+    /// The harness itself, from where it found the skill: its whole path on its line.
+    Harness,
+}
+
+/// **What `skills`, each with what it declares, spend of `budget`** where purlis's briefing lists
+/// them ([`ListedBy::Purlis`]); [`spent_listed`] says each.
 pub fn spent<'a>(
     skills: impl IntoIterator<Item = (&'a Skill, &'a Declared)>,
+    budget: Budget,
+) -> Spent {
+    spent_listed(
+        skills
+            .into_iter()
+            .map(|(skill, declared)| (skill, declared, ListedBy::Purlis)),
+        budget,
+    )
+}
+
+/// **What `skills`, each with what it declares and who lists it, spend of `budget`**: one skill
+/// and its description's characters (cut at the harness's cap), with its path where the harness
+/// lists it, as whoever lists it names it, and its name, `when_to_use` and line where the
+/// harness's limit counts them, for each the harness lists.
+pub fn spent_listed<'a>(
+    skills: impl IntoIterator<Item = (&'a Skill, &'a Declared, ListedBy)>,
     budget: Budget,
 ) -> Spent {
     let mut out = Spent {
@@ -136,7 +161,9 @@ pub fn spent<'a>(
         manual: 0,
         budget,
     };
-    for (skill, declared) in skills {
+    // The folders purlis's briefing names once each ([`crate::read::listed_under`]).
+    let mut folders: Vec<&std::path::Path> = Vec::new();
+    for (skill, declared, by) in skills {
         if declared.manual {
             out.manual += 1;
             continue;
@@ -148,15 +175,33 @@ pub fn spent<'a>(
         };
         let chars =
             skill.description.chars().count() + joined.map_or(0, |more| more.chars().count());
-        let path = if budget.lists_paths {
-            skill.path.to_string_lossy().chars().count()
-        } else {
-            0
+        let under = match by {
+            ListedBy::Purlis => crate::read::listed_under(skill),
+            ListedBy::Harness => None,
+        };
+        let path = match (budget.lists_paths, under) {
+            (false, _) => 0,
+            (true, Some(folder)) if folders.contains(&folder) => 0,
+            (true, Some(folder)) => {
+                folders.push(folder);
+                folder.to_string_lossy().chars().count()
+            }
+            (true, None) => skill.path.to_string_lossy().chars().count(),
         };
         out.skills += 1;
         out.chars += budget.line(&skill.name, chars) + path;
     }
     out
+}
+
+/// **The characters of the folder the listing names `skill` under**, where `budget` lists paths
+/// and the listing names one ([`crate::read::listed_under`]): counted once for every skill in it,
+/// so no one skill's. A skill its harness lists (`by` [`ListedBy::Harness`]) is named with its
+/// whole path, so it has none.
+pub(crate) fn folder_named_once(skill: &Skill, budget: Budget, by: ListedBy) -> usize {
+    crate::read::listed_under(skill)
+        .filter(|_| budget.lists_paths && by == ListedBy::Purlis)
+        .map_or(0, |folder| folder.to_string_lossy().chars().count())
 }
 
 #[cfg(test)]

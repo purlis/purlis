@@ -289,9 +289,15 @@ export function BrowserView({ plane, program }: { plane: string; program: string
   }, [driving, program, send]);
 
   const pointAt = (e: { clientX: number; clientY: number }) => {
-    const box = canvas.current?.getBoundingClientRect();
-    if (box === undefined) return undefined;
-    return pagePoint({ x: e.clientX, y: e.clientY }, box, page.current);
+    const drawnOn = canvas.current;
+    if (drawnOn === null) return undefined;
+    const frame = { width: drawnOn.width, height: drawnOn.height };
+    return pagePoint(
+      { x: e.clientX, y: e.clientY },
+      drawnOn.getBoundingClientRect(),
+      frame,
+      page.current,
+    );
   };
 
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {

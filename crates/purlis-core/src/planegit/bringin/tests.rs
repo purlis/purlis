@@ -718,25 +718,25 @@ fn continue_settles_a_key_conflict_in_charter_toml_that_a_save_named() {
         BTreeMap::from([("charter.toml".to_owned(), vec!["sandbox.mode".to_owned()])])
     );
 
-    let stopped = super::super::resolve::start_merge(
-        &two.mine,
-        "release",
-        "refs/remotes/origin/release",
-        false,
-        &mut quiet(),
-    );
+    use super::super::resolvefolder as folder;
     assert_eq!(
-        stopped,
-        super::super::resolve::Settled::Stopped(vec!["charter.toml".to_owned()])
+        folder::cut(&two.mine, "release"),
+        Ok(vec!["charter.toml".to_owned()])
     );
-    write(&two.mine, "charter.toml", "[sandbox]\nmode = \"off\"\n");
-    // What SavingResolve hands Continue: the files the stop named and the standing's.
+    // What SavingResolve hands Continue: the files the stop named and the standing's, and the
+    // person's choice for the key, never markers in the file (#5852).
     let shown = standing.conflicts;
+    let ours = folder::Chosen {
+        file: "charter.toml".into(),
+        key: "sandbox.mode".into(),
+        theirs: false,
+    };
 
     assert_eq!(
-        super::super::resolve::carry_on(&two.mine, &shown, &mut quiet()),
+        super::super::resolve::carry_on(&two.mine, &shown, &[ours], &mut quiet()),
         super::super::resolve::Settled::Replayed
     );
+    assert!(read(&two.mine, "charter.toml").contains("mode = \"off\""));
     assert_eq!(
         run(&two.mine, &["log", "-1", "--format=%P"])
             .split(' ')
@@ -814,21 +814,17 @@ fn continue_rebuilds_the_memory_index_from_the_tree_the_person_settled() {
         })
     );
 
-    let stopped = super::super::resolve::start_merge(
-        &two.mine,
-        "release",
-        "refs/remotes/origin/release",
-        false,
-        &mut quiet(),
-    );
     assert_eq!(
-        stopped,
-        super::super::resolve::Settled::Stopped(vec![alpha.clone()])
+        super::super::resolvefolder::cut(&two.mine, "release"),
+        Ok(vec![alpha.clone()])
     );
-    run(&two.mine, &["rm", "-q", "--", &alpha]);
+    run(
+        &super::super::resolvefolder::path(&two.mine),
+        &["rm", "-q", "--", &alpha],
+    );
 
     assert_eq!(
-        super::super::resolve::carry_on(&two.mine, &[alpha], &mut quiet()),
+        super::super::resolve::carry_on(&two.mine, &[alpha], &[], &mut quiet()),
         super::super::resolve::Settled::Replayed
     );
     assert_eq!(read(&two.mine, &index), "# M\n- [Kept](kept.md)\n");

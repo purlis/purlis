@@ -263,6 +263,30 @@ test("a workflow listed as not shipping that publishes is an error", () => {
   assert.deepEqual(workflowErrors([{ name: listed, text: "      # gh release create v1\n      - run: cargo build -p a" }]), []);
 });
 
+test("a job that only calls a shipping workflow is that workflow's publish, and the caller's own jobs are still read", () => {
+  const listed = Object.keys(NOT_SHIPPING)[0];
+  const call = (target) =>
+    [
+      "jobs:",
+      "  checks:",
+      "    runs-on: ubuntu-24.04",
+      "    steps:",
+      "      - run: cargo build -p a",
+      "  image:",
+      "    needs: checks",
+      "    permissions:",
+      "      packages: write",
+      `    uses: ./.github/workflows/${target}`,
+    ].join("\n");
+  assert.deepEqual(workflowErrors([{ name: listed, text: call("operator-image.yml") }]), []);
+  // A call to a workflow nobody checks as shipping is still this one's publish.
+  const [found] = workflowErrors([{ name: listed, text: call("stories.yml") }]);
+  assert.match(found?.error ?? "", /publishes/);
+  // And a publish in another job of the caller is still found.
+  const both = `${call("operator-image.yml")}\n  push:\n    steps:\n      - run: docker push ghcr.io/purlis/x:y`;
+  assert.match(workflowErrors([{ name: listed, text: both }])[0]?.error ?? "", /publishes/);
+});
+
 test("a push to a registry on the job's own loopback publishes nothing", () => {
   const listed = Object.keys(NOT_SHIPPING)[0];
   for (const push of [

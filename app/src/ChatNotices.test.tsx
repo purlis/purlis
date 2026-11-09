@@ -71,7 +71,12 @@ let approved: string[];
 let updated: { session: number; files: string[] }[];
 let refuse: Partial<Record<string, string>>;
 /** What the core says each chat is doing (`chat_states`). */
-let states: { session: number; state: string }[];
+let states: {
+  session: number;
+  state: string;
+  own_work?: { helpers: number; workflows: number; monitors: number; shells: number };
+  background_turn?: boolean;
+}[];
 
 function core(): Asked[] {
   const asked: Asked[] = [];
@@ -676,6 +681,36 @@ describe("a chat the project's instructions changed under", () => {
 
   it("asks, saying the turn will be interrupted, on a chat that is mid-turn (#1246)", async () => {
     states = [{ session: 1, state: "running" }];
+    core();
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /Start chat one fresh/ }));
+
+    expect((await screen.findByRole("alertdialog")).textContent).toContain(
+      "one is mid-turn and will be interrupted.",
+    );
+  });
+
+  it("asks, saying what of its own work ends, on a chat waiting on its own work (#5782)", async () => {
+    states = [
+      {
+        session: 1,
+        state: "waiting",
+        own_work: { helpers: 0, workflows: 0, monitors: 1, shells: 1 },
+      },
+    ];
+    core();
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /Start chat one fresh/ }));
+
+    expect((await screen.findByRole("alertdialog")).textContent).toContain(
+      "one is waiting on its own work: 1 monitor and 1 background shell will end.",
+    );
+  });
+
+  it("asks, saying the turn will be interrupted, on a chat in a background turn (#5782)", async () => {
+    states = [{ session: 1, state: "waiting", background_turn: true }];
     core();
     render(<App />);
 

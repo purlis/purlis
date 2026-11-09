@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { chatMaySettle, SaveIndicator, SavingView } from "./SavingView";
+import { chatMaySettle, SaveIndicator, SavingView, staleSaid } from "./SavingView";
 import { ReadOnlySaid } from "./ReadOnlyLine";
 import type { PlaneSaving, RepoSaving, SaveEntry } from "./bindings";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
@@ -412,27 +412,21 @@ describe("SavingView", () => {
     ]);
   });
 
-  it("names where a save's replay conflicts, the commands that settle it, and never a chat", async () => {
-    // qw382: a chat may not rebase the project's root, so offering one sent the person round
-    // to Update and back. The way out is a terminal, with the commands said.
-    const byHand =
-      "To settle it, open a terminal here and run `git fetch`, then `git rebase @{u}`; edit each " +
-      "file git names, `git add` it and run `git rebase --continue`, then Save. `git rebase " +
-      "--abort` puts the project back as it was.";
+  it("names where a save's replay conflicts and offers Resolve, never a terminal's commands", async () => {
+    // #5824 F7: the conflict is settled in a resolve folder beside the project, from Resolve; no
+    // git command is left for the person to type.
     core([
       standing({
         stage: "blocked",
         blocked: "the remote changed the same lines in: notes.md",
         conflicts: ["notes.md"],
-        byHand,
+        toResolve: "Press Resolve in the Saving view to settle it in a resolve folder.",
       }),
     ]);
-    const asked: { plane: string; way: string }[] = [];
-    const listen = (event: Event) => asked.push((event as CustomEvent).detail);
-    window.addEventListener("charter-saving-way-out", listen);
     render(<SavingView plane={PLANE} />);
 
-    expect(await screen.findByText(byHand, { exact: false })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Resolve" })).toBeTruthy();
+    expect(screen.queryByText(/git rebase/)).toBeNull();
     expect(
       within(screen.getByRole("list", { name: "Where it conflicts" }))
         .getAllByRole("listitem")
@@ -442,10 +436,7 @@ describe("SavingView", () => {
     expect(
       screen.getByText("Blocked: the remote changed the same lines in: notes.md"),
     ).toBeTruthy();
-    await userEvent.click(screen.getByRole("button", { name: "Open terminal here" }));
-    window.removeEventListener("charter-saving-way-out", listen);
-
-    expect(asked).toEqual([{ plane: PLANE, way: "terminal" }]);
+    expect(screen.queryByRole("button", { name: "Open terminal here" })).toBeNull();
   });
 
   it("offers no chat for a rebase stopped part-way, even with every file added", async () => {
@@ -499,7 +490,7 @@ describe("SavingView", () => {
       false,
     ]);
     expect([null, "conflicts"].map(blocked)).toEqual([true, true]);
-    expect(chatMaySettle(standing({ stage: "blocked", byHand: "run git" }))).toBe(false);
+    expect(chatMaySettle(standing({ stage: "blocked", toResolve: "Press Resolve." }))).toBe(false);
   });
 
   it("says a save that stopped earlier is retried by Save, and offers Save", async () => {
@@ -817,5 +808,46 @@ describe("saving a read-only project (#826)", () => {
     const save = screen.getByRole("button", { name: "Save the project" });
     expect(save).toHaveAttribute("aria-disabled", "true");
     expect(tipOf(save)).toEqual(SENTENCE);
+  });
+});
+
+describe("a project that could not be fetched while its request is open (#5824 F8)", () => {
+  const WHY = "main could not be fetched: Could not resolve host: github.com";
+  const stale = { since: new Date(2026, 10, 8, 14, 2).getTime() / 1000, why: WHY };
+  const open = standing({ stage: "pr-open", pr: "https://github.com/acme/plane/pull/7", stale });
+
+  it("says since when, and why, in the title bar's pill and its name", () => {
+    render(<SaveIndicator saving={open} busy={false} onOpen={() => {}} onSave={vi.fn()} />);
+    const pill = screen.getByTestId("save-indicator-where");
+    expect(pill.textContent).toContain("· stale");
+    expect(pill.getAttribute("aria-label")).toContain(`Stale since `);
+    expect(pill.getAttribute("aria-label")).toContain(WHY);
+  });
+
+  it("says it in the Saving tab, and that the next look tries again", async () => {
+    core([open]);
+    render(<SavingView plane={PLANE} />);
+    const said = await screen.findByTestId("saving-stale");
+    expect(said.textContent).toMatch(
+      /^Stale since .+: main could not be fetched: .+\. The next look tries again\.$/,
+    );
+  });
+
+  it("names the time alone today, and the day with it before", () => {
+    const today = new Date(2026, 10, 8, 18, 0);
+    expect(staleSaid(stale, today)).not.toMatch(/Nov/);
+    expect(staleSaid(stale, new Date(2026, 10, 9, 9, 0))).toMatch(/8/);
+  });
+
+  it("says nothing of it once a fetch goes through", () => {
+    render(
+      <SaveIndicator
+        saving={{ ...open, stale: null }}
+        busy={false}
+        onOpen={() => {}}
+        onSave={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("save-indicator-where").textContent).not.toContain("stale");
   });
 });

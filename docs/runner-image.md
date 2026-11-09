@@ -99,7 +99,9 @@ own, as long as it keeps the contract below.
   ```
 
   For a stable release's image, end the identity with `@refs/tags/v<version>`. Add
-  `--source-digest <commit>` to check that it was built from a given commit.
+  `--source-digest <commit>` to check that it was built from a given commit: the provenance
+  names the commit the image was built from, since the release that builds it is started by
+  the push of that commit.
 
 - **Checked before it is pushed:** each architecture's image is built once, into a file. The
   contract below runs on the image loaded from that file, and only then is the same file pushed,

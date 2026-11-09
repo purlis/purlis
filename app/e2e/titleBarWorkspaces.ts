@@ -35,6 +35,30 @@ export async function chipsSeen(): Promise<{ names: string[]; current: string | 
   });
 }
 
+/**
+ * **Whether `workspace`'s chip wears the working mark** (#3127), the chat mark's ring in its slot,
+ * and the description a screen reader hears on the chip.
+ */
+export async function workingSeen(
+  workspace: string,
+): Promise<{ marked: boolean; description: string }> {
+  return browser.execute((name: string) => {
+    const chip = document.querySelector<HTMLElement>(
+      `[data-testid="title-bar"] [data-scope="titlebar"][data-part="workspace"][data-chip-of="${CSS.escape(name)}"]`,
+    );
+    const marked =
+      chip
+        ?.closest('[data-part="slot"]')
+        ?.querySelector('[data-scope="chat-mark"][data-variant="working"]') != null;
+    const description = (chip?.getAttribute("aria-describedby") ?? "")
+      .split(" ")
+      .filter(Boolean)
+      .map((id) => document.getElementById(id)?.textContent ?? "")
+      .join(" ");
+    return { marked, description };
+  }, workspace);
+}
+
 /** Opens the workspace popover, if it is not open, and waits for its rows. */
 async function opened(): Promise<void> {
   await browser.waitUntil(

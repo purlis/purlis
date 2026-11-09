@@ -32,7 +32,8 @@ const RUN_PINNED: [&str; 6] = [
     r#"--repo "$GITHUB_REPOSITORY""#,
     r#"--signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml""#,
     r#"--signer-digest "$GITHUB_WORKFLOW_SHA""#,
-    r#"--source-digest "$GITHUB_SHA""#,
+    // The commit `plan` chose and every job built (`SHA`, below), which the provenance names.
+    r#"--source-digest "$SHA""#,
     "--deny-self-hosted-runners",
     // On the stable channel only, and appended through this array.
     r#"ref=(--source-ref "$GITHUB_REF")"#,
@@ -60,6 +61,19 @@ fn run_pinned_verification(job: &Job) -> usize {
             job.name
         );
     }
+    // `SHA` is `plan`'s, in the job's own env, where no step can set another.
+    assert!(
+        job.body
+            .iter()
+            .any(|l| l == "      SHA: ${{ needs.plan.outputs.sha }}"),
+        "job `{}` pins the source commit to something other than plan's sha",
+        job.name
+    );
+    assert!(
+        !job.body.iter().any(|l| l.starts_with("          SHA:")),
+        "job `{}` has a step that sets its own SHA",
+        job.name
+    );
     assert!(
         text.contains(r#"[ "$CHANNEL" = stable ]"#) && text.contains(r#""${ref[@]}""#),
         "job `{}` pins the source ref on the stable channel:\n{text}",

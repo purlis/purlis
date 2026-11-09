@@ -447,6 +447,51 @@ describe("Settings › Project › Sandbox", () => {
     expect(page).not.toHaveTextContent("the system's certificate service.");
   });
 
+  it("draws stricter terminals off while the file does not set them, says what they close and break, and writes true to turn them on", async () => {
+    const { sent } = core();
+    const page = await atSandbox();
+    const strict = within(page).getByRole("switch", { name: "Stricter terminals" });
+    expect(strict).not.toBeChecked();
+    expect(page).toHaveTextContent(
+      "so it can't read or type into your other terminal tabs or another chat's terminal",
+    );
+    expect(page).toHaveTextContent(
+      "a chat can't make a terminal of its own, so script, expect, tmux and Codex commands that run in a terminal fail",
+    );
+
+    await userEvent.click(strict);
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0].edits).toEqual([
+      {
+        path: [{ key: "sandbox" }, { key: "own-terminal-only" }],
+        value: { kind: "bool", value: true },
+      },
+    ]);
+  });
+
+  it("draws a project that turned stricter terminals on as on, and Space turns them off", async () => {
+    const { sent } = core({
+      shared: [MODE_ON, field(["sandbox", "own-terminal-only"], { kind: "bool", value: true })],
+    });
+    const page = await atSandbox();
+
+    const strict = within(page).getByRole("switch", { name: "Stricter terminals" });
+    expect(strict).toBeChecked();
+
+    // From the keyboard: Space on the focused switch turns it off.
+    strict.focus();
+    await userEvent.keyboard(" ");
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0].edits).toEqual([
+      {
+        path: [{ key: "sandbox" }, { key: "own-terminal-only" }],
+        value: { kind: "bool", value: false },
+      },
+    ]);
+  });
+
   it("says who locked certificate checks off, with nothing to turn on", async () => {
     const { sent } = core({
       sandbox: state({

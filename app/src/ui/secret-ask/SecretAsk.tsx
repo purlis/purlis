@@ -21,7 +21,7 @@
  *   `control`, `value`, `scope-said`, `tool-line` and `foot` are a theme's to set; the rest lay
  *   it out.
  */
-import type { FocusEvent, ReactNode } from "react";
+import type { FocusEvent, KeyboardEvent, ReactNode } from "react";
 import { capMarks } from "../../combiningMarks";
 import { invisible } from "../../invisible";
 
@@ -65,10 +65,14 @@ function clearOfTheBar(event: FocusEvent<HTMLDivElement>) {
 export function SecretAskBody({
   label,
   children,
+  onKeyDown,
   "data-testid": testId,
 }: {
   label: string;
   children: ReactNode;
+  /** A key pressed in it, before whatever holds it hears it: a start's ask claims the dialog's
+   *  chord while its value box has the keyboard (#5670). */
+  onKeyDown?: (event: KeyboardEvent<HTMLDivElement>) => void;
   "data-testid"?: string;
 }) {
   return (
@@ -79,6 +83,7 @@ export function SecretAskBody({
       aria-label={label}
       data-testid={testId}
       onFocus={clearOfTheBar}
+      onKeyDown={onKeyDown}
     >
       {children}
     </div>

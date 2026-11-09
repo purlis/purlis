@@ -26,7 +26,7 @@ import { HOLDS_NOTHING, type BandHolds, type PaneNoticesShown } from "../../pane
 import { PANE_NOTICES } from "../../paneNoticesPref";
 import type { Offer } from "../../actions";
 import { ChatMark } from "../chat-mark/ChatMark";
-import { useTabIds, StripTablist } from "../../StripTablist";
+import { useTabIds } from "./TabStrip";
 import { panelRoot } from "../panel/Panel";
 import { TabCell, tabPart, tabsPart } from "./Tabs";
 import { expectFocusInSight, untilFocused } from "../../stories.testkit";
@@ -324,7 +324,14 @@ function PaneBand({
     >
       <header className="bar" {...tabsPart("strip")}>
         <div className="tabs" data-strip="Chats">
-          <StripTablist name="Chats" ids={TABS.map((_, at) => idOf(at))} />
+          {/* The strip's tablist as `TabStripRow` draws it: empty, owning the tabs by id. */}
+          <span
+            className="strip-tablist"
+            role="tablist"
+            aria-label="Chats"
+            aria-orientation="horizontal"
+            aria-owns={TABS.map((_, at) => idOf(at)).join(" ")}
+          />
           {TABS.map((name, at) => (
             <TabCell
               key={name}

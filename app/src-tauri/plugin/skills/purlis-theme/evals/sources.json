@@ -1,0 +1,193 @@
+{
+  "tier": "standard",
+  "neighbours": [
+    "purlis-repo-work",
+    "purlis-browser"
+  ],
+  "prompts": [
+    {
+      "query": "Make a purlis theme from our brand colour, a deep teal.",
+      "source": "Skill text: description, \"from a brand colour\"."
+    },
+    {
+      "query": "Change the purlis window's accent colour to green.",
+      "source": "Skill text: \"how the purlis window looks\"; plausible phrasing a person types."
+    },
+    {
+      "query": "Build me a purlis theme from this screenshot of our product.",
+      "source": "Skill text: description, \"an image or screenshot\"."
+    },
+    {
+      "query": "Turn this Figma frame into a purlis theme.",
+      "source": "Skill text: description, \"a Figma frame\"."
+    },
+    {
+      "query": "The purlis light theme's links are too faint; fix them.",
+      "source": "Mined session record 20261104-110745-4921-4918-theme-hc-input-edges-links-off-state-c.md: faint links and edges in a theme."
+    },
+    {
+      "query": "Check my workspace's purlis theme for contrast problems.",
+      "source": "Skill text: \"Checking a theme\"."
+    },
+    {
+      "query": "Export the project's purlis theme so I can share it with my team.",
+      "source": "Skill text: \"Sharing a theme\", `purlis theme export`."
+    },
+    {
+      "query": "Import the theme a colleague sent me and tweak its background.",
+      "source": "Skill text: description, \"an imported theme\"."
+    },
+    {
+      "query": "Make purlis look like a warm sepia paper notebook.",
+      "source": "Skill text: description, \"make purlis look a certain way\"."
+    },
+    {
+      "query": "Fork Purlis Classic into a new theme with a darker sidebar.",
+      "source": "Skill text: `purlis-classic`, a theme from another theme."
+    },
+    {
+      "query": "Give this workspace its own purlis theme so I can tell it apart from the others.",
+      "source": "Skill text: \"Where the theme goes is where this chat works\"."
+    },
+    {
+      "query": "Add a high-contrast appearance to our purlis theme.",
+      "source": "Skill text: \"one or more appearances (dark, light, high contrast)\"."
+    },
+    {
+      "query": "Draft a theme and show it live in the purlis window before I keep it.",
+      "source": "Skill text: \"a theme draft the window draws live\", Keep."
+    },
+    {
+      "query": "Revert the theme draft and try a cooler palette.",
+      "source": "Skill text: Keep, Revert and Compare on the draft's strip."
+    },
+    {
+      "query": "Is the theme in this project clean? Run purlis's theme check.",
+      "source": "Skill text: \"checked until it is clean\"."
+    },
+    {
+      "query": "Make the terminal colours in purlis easier to read on the dark theme.",
+      "source": "Mined session record 20261103-183243-4880-light-hc-stale-story-themes-fixture-regener.md: appearances and their terminal colours; plausible phrasing a person types."
+    },
+    {
+      "query": "Change how purlis looks: softer greys, less blue.",
+      "source": "Skill text: description, \"make purlis look a certain way\"; plausible phrasing a person types."
+    },
+    {
+      "query": "Create a light version of our dark purlis theme.",
+      "source": "Skill text: appearances; plausible phrasing a person types."
+    },
+    {
+      "query": "Share my purlis theme as a zip.",
+      "source": "Skill text: \"Sharing a theme\"."
+    },
+    {
+      "query": "The selection colour in the purlis terminal is invisible; fix the theme.",
+      "source": "plausible phrasing a person types: a token that reads badly."
+    },
+    {
+      "query": "Design a purlis theme my colour-blind teammates can read.",
+      "source": "plausible phrasing a person types."
+    },
+    {
+      "query": "Restyle the purlis window to match our company's logo.",
+      "source": "Skill text: description, \"from a brand colour, an image\"; plausible phrasing a person types."
+    },
+    {
+      "query": "Add a dark mode to the web app in the frontend repo.",
+      "source": "Near miss (purlis-repo-work): styling a repo the workspace owns (decisions.md of spec #5714 Q30).",
+      "belongs_to": "purlis-repo-work"
+    },
+    {
+      "query": "Change the primary button colour in our marketing site's CSS and commit it.",
+      "source": "Near miss (purlis-repo-work): a colour in a repo's code, committed.",
+      "belongs_to": "purlis-repo-work"
+    },
+    {
+      "query": "Update the Tailwind config in the dashboard repo to use our brand palette.",
+      "source": "Near miss (purlis-repo-work): a brand palette in a repo's code.",
+      "belongs_to": "purlis-repo-work"
+    },
+    {
+      "query": "Fix the contrast of the links in the docs site repo's stylesheet.",
+      "source": "Near miss (purlis-repo-work): contrast in a repo's stylesheet.",
+      "belongs_to": "purlis-repo-work"
+    },
+    {
+      "query": "Make the mobile app's splash screen use the new logo colours.",
+      "source": "Near miss (purlis-repo-work): a logo's colours in a repo's app.",
+      "belongs_to": "purlis-repo-work"
+    },
+    {
+      "query": "Log in to staging with the qa vault and screenshot the new dark mode.",
+      "source": "Near miss (purlis-browser): a site's look behind a vault login.",
+      "belongs_to": "purlis-browser"
+    },
+    {
+      "query": "Sign in to the admin panel as two users and compare how their dashboards look.",
+      "source": "Near miss (purlis-browser): several logged-in sessions.",
+      "belongs_to": "purlis-browser"
+    },
+    {
+      "query": "Log in to our design tool's website with the vault login and download the frame.",
+      "source": "Near miss (purlis-browser): a vault login to fetch a frame.",
+      "belongs_to": "purlis-browser"
+    },
+    {
+      "query": "Add a new token to a component family in app/src/ui of the purlis repo.",
+      "source": "Boundary (the plane's building-purlis-ui skill, decisions.md of spec #5714 Q30): code in a purlis checkout; a plain negative."
+    },
+    {
+      "query": "Write a story and a screenshot baseline for the new Notice variant in purlis's app.",
+      "source": "Boundary (the plane's building-purlis-ui skill, decisions.md of spec #5714 Q30): code in a purlis checkout; a plain negative."
+    },
+    {
+      "query": "Change the theme generator code in the purlis repo so it emits a new CSS property.",
+      "source": "Boundary (the plane's building-purlis-ui skill, decisions.md of spec #5714 Q30): code in a purlis checkout; a plain negative; the theme code, not a theme."
+    },
+    {
+      "query": "Change my code editor's colour theme to something darker.",
+      "source": "plausible phrasing a person types: another program's theme."
+    },
+    {
+      "query": "Pick a colour palette for a slide deck.",
+      "source": "plausible phrasing a person types: colours, not purlis."
+    },
+    {
+      "query": "What's the hex code for navy blue?",
+      "source": "plausible phrasing a person types: unrelated."
+    },
+    {
+      "query": "Make my zsh prompt colourful.",
+      "source": "plausible phrasing a person types: another program's look."
+    },
+    {
+      "query": "Write a CSS gradient for a hero banner.",
+      "source": "plausible phrasing a person types: colours in code."
+    },
+    {
+      "query": "Explain the WCAG contrast ratio formula.",
+      "source": "plausible phrasing a person types: contrast, no theme."
+    },
+    {
+      "query": "Summarise this pull request's changes.",
+      "source": "plausible phrasing a person types: unrelated."
+    },
+    {
+      "query": "Rename the theme variable in the Python script.",
+      "source": "plausible phrasing a person types: \"theme\" in code."
+    },
+    {
+      "query": "Set up syntax highlighting for Markdown in the editor.",
+      "source": "plausible phrasing a person types: colours in an editor."
+    },
+    {
+      "query": "Resize the screenshot to 800 pixels wide.",
+      "source": "plausible phrasing a person types: \"screenshot\" without a theme."
+    },
+    {
+      "query": "Convert this RGB value to HSL.",
+      "source": "plausible phrasing a person types: colours, not purlis."
+    }
+  ]
+}

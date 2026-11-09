@@ -51,7 +51,7 @@ pub use login::{LOGIN_WAIT, LoginEnded, origin_of};
 
 use drawing::Drawing;
 use takeover::{Lease, Typing};
-use world::Worlds;
+use world::{World, Worlds};
 
 /// DevTools as the driver needs it: the engine's connection, or a stand-in in tests.
 pub(crate) trait DevTools: Send + Sync {
@@ -232,6 +232,40 @@ pub(crate) const READ_VALUE: &str = r"function (field) {
   if (typeof field.value === 'string') return field.value;
   if (field.isContentEditable) return field.innerText;
   return '';
+}";
+
+/// The function that says how the element drawn at a point, `hit`, stands to the element an act
+/// is aimed at, `aimed`, both as they are in purlis's own world: `"holds"` where `hit` holds
+/// `aimed`, and `"labels"` where `hit` is in a label of `aimed` (one whose control it is, or one
+/// of its labels), and `""` otherwise. Both are read along the tree as it is drawn: from a slotted
+/// element to its slot, and from a shadow root to its host. A constant.
+pub(crate) const HOLDS_OR_LABELS: &str = r"function (hit, aimed) {
+  const up = (n) => n.assignedSlot || (n instanceof ShadowRoot ? n.host : n.parentNode);
+  for (let at = aimed; at; at = up(at)) {
+    if (at === hit) return 'holds';
+  }
+  const labels = aimed.labels ? Array.from(aimed.labels) : [];
+  for (let at = hit; at; at = up(at)) {
+    if (at instanceof HTMLLabelElement && (at.control === aimed || labels.includes(at))) {
+      return 'labels';
+    }
+  }
+  return '';
+}";
+
+/// The function that lists, given the element an act is aimed at as it is in purlis's own world,
+/// the elements a pseudo-element drawn at its point may stand for: it and every element that
+/// holds it, along the tree as it is drawn, and each of its labels with everything in them. A
+/// constant.
+pub(crate) const DRAWN_FOR: &str = r"function (aimed) {
+  const found = [];
+  for (let at = aimed; at; at = at.assignedSlot || (at instanceof ShadowRoot ? at.host : at.parentNode)) {
+    if (at instanceof Element) found.push(at);
+  }
+  for (const label of aimed.labels || []) {
+    found.push(label, ...label.querySelectorAll('*'));
+  }
+  return found;
 }";
 
 /// The script that says what the document has focused (#2014): a tag name, or nothing for the
@@ -447,13 +481,18 @@ struct Frame {
     /// where it decides: a blank or srcdoc document with no word of its own context, as one
     /// sandboxed without scripts may never have (#2018).
     sandboxed: Option<bool>,
+    /// The driver's count when some of the engine's events were lost while the driver knew this
+    /// frame, 0 where none have been since its frame tree was last read or the engine said it
+    /// navigated: a lost word of a navigation leaves `url` an address it may have left.
+    stale: u64,
 }
 
 impl Frame {
     /// Whether what this frame shows is not known: it stands on no ancestor's address until its
-    /// own session has said so (#4472).
+    /// own session has said so (#4472), nor on its own address while that may be one it has
+    /// left ([`Frame::stale`]).
     fn unknown(&self) -> bool {
-        self.unread && !at_web_address(&self.url)
+        self.stale != 0 || (self.unread && !at_web_address(&self.url))
     }
 
     /// **The origin this frame's document has**, by the web's rules for its address. A web
@@ -1099,6 +1138,9 @@ struct State {
     inspecting: Inspecting,
     /// The origin of the document each frame shows, as its own context has it.
     document_origins: DocumentOrigins,
+    /// How many of the engine's events the connection had lost when the driver last looked
+    /// ([`DevTools::dropped_events`]).
+    events_lost: u64,
 }
 
 /// **What the driver leaves to an Inspect** (#2028): the engine's word of these is the front
@@ -1631,6 +1673,7 @@ impl State {
             unread: owned_elsewhere,
             security_origin: String::new(),
             sandboxed: None,
+            stale: 0,
         });
         if parent.is_some() {
             entry.parent = parent;
@@ -1657,6 +1700,10 @@ impl State {
                     entry.security_origin = text("securityOrigin");
                 }
                 entry.unread = false;
+                // A read asked for once the events were lost says what the frame shows since.
+                if entry.stale <= since {
+                    entry.stale = 0;
+                }
             }
             Seen::Navigated => {
                 let moved = entry.session != session;
@@ -1667,6 +1714,7 @@ impl State {
                 entry.sandboxed = None;
                 entry.told = generation;
                 entry.unread = false;
+                entry.stale = 0;
                 page.shows = generation;
                 entry.generation = generation;
                 entry.loaded = generation;
@@ -1719,6 +1767,7 @@ impl State {
                 unread: true,
                 security_origin: String::new(),
                 sandboxed: None,
+                stale: 0,
             });
         entry.session = session.to_owned();
         entry.url = url.to_owned();
@@ -1733,6 +1782,52 @@ impl State {
     /// The engine says the target of `frame` is at `url` (#4472). The frame's own session may
     /// not be listening yet, and a move within a document is no new document, so this changes
     /// its address and nothing else.
+    /// **Some of the engine's events were lost**: a word that a frame navigated may be among
+    /// them, so no frame of any page is judged by the address the driver holds for it until a
+    /// frame tree read from now on says it again ([`Frame::stale`]). Answers every session, each
+    /// to be read anew.
+    fn events_lost(&mut self) -> Vec<String> {
+        self.generations += 1;
+        let lost = self.generations;
+        for frame in self
+            .pages
+            .iter_mut()
+            .flat_map(|page| page.frames.values_mut())
+        {
+            frame.stale = lost;
+        }
+        let mut sessions: Vec<String> = self.sessions.keys().cloned().collect();
+        sessions.sort();
+        sessions
+    }
+
+    /// The frames of `session` that were marked as of lost events before a frame tree read of it
+    /// began when the driver's count stood at `since`, and that the read does not hold:
+    /// `listed` names those it holds. Their word that they went may be among the events lost.
+    fn left_out_of_the_tree(
+        &self,
+        session: &str,
+        since: u64,
+        listed: &[String],
+    ) -> Vec<(String, String)> {
+        self.pages
+            .iter()
+            .flat_map(|page| {
+                page.frames
+                    .iter()
+                    .filter(|(id, frame)| {
+                        **id != page.target
+                            && frame.session == session
+                            && frame.stale != 0
+                            && frame.stale <= since
+                            && frame.told <= since
+                            && !listed.iter().any(|one| one == *id)
+                    })
+                    .map(|(id, _)| (page.target.clone(), id.clone()))
+            })
+            .collect()
+    }
+
     fn frame_told(&mut self, frame: &str, url: &str) {
         self.generations += 1;
         let told = self.generations;
@@ -1929,6 +2024,8 @@ enum FollowUp {
     Attach(String),
     Close(String),
     SetUp(String),
+    /// Some of the engine's events were lost: the session's frame tree is read anew.
+    ReadFrameTree(String),
     Release(String),
     /// The engine's own drag, told of only after the agent's drag that started it ended
     /// (#2839): cancelled at where that drag ended.
@@ -3000,25 +3097,32 @@ impl Browser {
     /// shadow roots included and frames' documents not; where the engine cannot say, it is taken
     /// to be, so the tree's own element stays.
     fn holds(&self, session: &str, outer: i64, inside: i64) -> bool {
-        let Ok(described) = self.devtools().call(
-            "DOM.describeNode",
-            json!({ "backendNodeId": outer, "depth": -1, "pierce": true }),
-            Some(session),
-        ) else {
-            return true;
-        };
+        self.holds_as_said(session, outer, inside).unwrap_or(true)
+    }
+
+    /// [`Browser::holds`], `None` where the engine does not say. What an element draws of its
+    /// own (`::before`, `::after`, a marker) is within it too.
+    fn holds_as_said(&self, session: &str, outer: i64, inside: i64) -> Option<bool> {
+        let described = self
+            .devtools()
+            .call(
+                "DOM.describeNode",
+                json!({ "backendNodeId": outer, "depth": -1, "pierce": true }),
+                Some(session),
+            )
+            .ok()?;
         let mut stack = vec![&described["node"]];
         while let Some(node) = stack.pop() {
             if node["backendNodeId"] == inside {
-                return true;
+                return Some(true);
             }
-            for list in ["children", "shadowRoots"] {
+            for list in ["children", "shadowRoots", "pseudoElements"] {
                 if let Some(nodes) = node[list].as_array() {
                     stack.extend(nodes);
                 }
             }
         }
-        false
+        Some(false)
     }
 
     /// Of `many`, the elements the tree marks focused on `target`'s page, the one its own
@@ -4087,7 +4191,340 @@ impl Browser {
             return Err(Refusal::NotShown(target.clone()));
         }
         self.not_kept_off_at(&at.target, &at.page_session, point)?;
+        self.drawn_at_is(target, at, point)?;
         Ok(point)
+    }
+
+    /// **Refuses an act at `point` of `at`'s page unless what is drawn there is the element
+    /// aimed at**: the element, something inside it, an element that holds it, a label of it, or
+    /// a pseudo-element one of those draws ([`Browser::stands_for`]). Anything else drawn over it
+    /// (another element of the page, or a frame drawn by a document around the element's own)
+    /// takes the press, and is refused as not shown, as is a point where what is drawn cannot be
+    /// told. An element around it is accepted: a press there goes to that element, which the
+    /// page may handle as the element's, and a press on a label reaches its control. A box drawn
+    /// as a checkbox over a hidden `<input>`, by the input's label or around it, is how many
+    /// pages draw one.
+    ///
+    /// What is drawn at the point is read in the page's own document, and followed, through
+    /// each frame with a document in a session of its own, into the element's: in each, what
+    /// is drawn is lifted, frame element by frame element, to the document the next step is in,
+    /// where it must be the frame element of the next frame, followed through however the page
+    /// draws it, or, in the element's own document, stand to the element as above.
+    fn drawn_at_is(&self, target: &Ref, at: &Located, (x, y): (f64, f64)) -> Result<(), Refusal> {
+        let not_shown = || Refusal::NotShown(target.clone());
+        // Each frame's parent and session, as the driver knows them.
+        let frames: HashMap<String, (Option<String>, String)> = {
+            let state = lock(&self.inner.state);
+            let page = state.page(&at.target).ok_or_else(not_shown)?;
+            page.frames
+                .iter()
+                .map(|(id, frame)| (id.clone(), (frame.parent.clone(), frame.session.clone())))
+                .collect()
+        };
+        let (mut session, mut x, mut y) = (at.page_session.clone(), x, y);
+        // Each step goes one session deeper, and no page holds more frames than it has.
+        for _ in 0..=frames.len() {
+            let (left, top) = self.scrolled(&session).ok_or_else(not_shown)?;
+            // What the engine draws inside an element of its own (a field's editor, a slider's
+            // thumb) is answered as that element; a box the pointer passes through
+            // (`pointer-events: none`) is not the hit, as the press passes through it too.
+            let hit = self
+                .devtools()
+                .call(
+                    "DOM.getNodeForLocation",
+                    json!({
+                        "x": (x + left).floor() as i64,
+                        "y": (y + top).floor() as i64,
+                        "includeUserAgentShadowDOM": false,
+                        "ignorePointerEventsNone": false,
+                    }),
+                    Some(&session),
+                )
+                .map_err(|_| not_shown())?;
+            let mut backend = hit
+                .get("backendNodeId")
+                .and_then(Value::as_i64)
+                .ok_or_else(not_shown)?;
+            let mut frame = hit
+                .get("frameId")
+                .and_then(Value::as_str)
+                .ok_or_else(not_shown)?
+                .to_owned();
+            // The frame with a session of its own the point goes into next, where the element
+            // is not in this session's documents.
+            let next = if session == at.node_session {
+                None
+            } else {
+                Some(
+                    at.boundaries
+                        .iter()
+                        .find(|(_, parent)| *parent == session)
+                        .map(|(frame, _)| frame.clone())
+                        .ok_or_else(not_shown)?,
+                )
+            };
+            let wanted = match &next {
+                Some(inner) => frames
+                    .get(inner)
+                    .and_then(|(parent, _)| parent.clone())
+                    .ok_or_else(not_shown)?,
+                None => at.frame.clone(),
+            };
+            // What is drawn in a frame of this session's is drawn, in the frame around it, as
+            // the frame's element.
+            for _ in 0..=frames.len() {
+                if frame == wanted {
+                    break;
+                }
+                let parent = frames
+                    .get(&frame)
+                    .and_then(|(parent, _)| parent.clone())
+                    .filter(|parent| frames.get(parent).is_some_and(|(_, s)| *s == session))
+                    .ok_or_else(not_shown)?;
+                backend = self
+                    .devtools()
+                    .call(
+                        "DOM.getFrameOwner",
+                        json!({ "frameId": frame }),
+                        Some(&session),
+                    )
+                    .ok()
+                    .and_then(|owner| owner.get("backendNodeId").and_then(Value::as_i64))
+                    .ok_or_else(not_shown)?;
+                frame = parent;
+            }
+            if frame != wanted {
+                return Err(not_shown());
+            }
+            let Some(inner) = next else {
+                return self
+                    .stands_for(at, backend)
+                    .then_some(())
+                    .ok_or_else(not_shown);
+            };
+            let holds = self
+                .devtools()
+                .call(
+                    "DOM.describeNode",
+                    json!({ "backendNodeId": backend }),
+                    Some(&session),
+                )
+                .ok()
+                .and_then(|described| {
+                    described
+                        .pointer("/node/frameId")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned)
+                });
+            if holds.as_deref() != Some(inner.as_str()) {
+                return Err(not_shown());
+            }
+            // A frame the page turns, scales or zooms is followed through how it is drawn, as an
+            // act is aimed through it (#2557).
+            let (inside, _) = self
+                .in_frame_drawn_at(&session, backend, (x, y))
+                .ok_or_else(not_shown)?;
+            let inner_session = frames
+                .get(&inner)
+                .map(|(_, session)| session.clone())
+                .ok_or_else(not_shown)?;
+            (session, (x, y)) = (inner_session, inside);
+        }
+        Err(not_shown())
+    }
+
+    /// Whether `hit`, drawn at the point an act on `at` is aimed at in `at`'s own document, is
+    /// the element, inside it, an element that holds it, or in a label of it, or a
+    /// pseudo-element one of those draws. Where the engine does not say, it is not.
+    fn stands_for(&self, at: &Located, hit: i64) -> bool {
+        if self.holds_as_said(&at.node_session, at.backend, hit) == Some(true) {
+            return true;
+        }
+        let Some(hit) = self.drawing_element(at, hit) else {
+            return false;
+        };
+        let session = at.node_session.as_str();
+        let said = self.in_world(session, &at.frame, |world| {
+            let mut objects = Vec::new();
+            for backend in [hit, at.backend] {
+                let resolved = self.devtools().call(
+                    "DOM.resolveNode",
+                    json!({ "backendNodeId": backend, "executionContextId": world.id }),
+                    Some(session),
+                );
+                match resolved.map(|r| r.pointer("/object/objectId").cloned()) {
+                    Ok(Some(Value::String(object))) => objects.push(object),
+                    other => {
+                        self.release(session, &objects);
+                        return other.map(|_| Value::Null);
+                    }
+                }
+            }
+            let read = self.devtools().call(
+                "Runtime.callFunctionOn",
+                json!({
+                    "uniqueContextId": world.unique,
+                    "functionDeclaration": HOLDS_OR_LABELS,
+                    "arguments": [{ "objectId": objects[0] }, { "objectId": objects[1] }],
+                    "returnByValue": true,
+                }),
+                Some(session),
+            );
+            self.release(session, &objects);
+            read
+        });
+        said.ok()
+            .and_then(|said| {
+                said.pointer("/result/value")
+                    .and_then(Value::as_str)
+                    .map(|how| how == "holds" || how == "labels")
+            })
+            .unwrap_or(false)
+    }
+
+    /// The element that draws `hit` in `at`'s own document: `hit` itself, or, where `hit` is a
+    /// pseudo-element (a label's `::before` drawn as a checkbox), the element it belongs to, of
+    /// the elements it may stand for ([`DRAWN_FOR`]). `None` where the engine does not say, or
+    /// the pseudo-element belongs to none of them.
+    fn drawing_element(&self, at: &Located, hit: i64) -> Option<i64> {
+        let session = at.node_session.as_str();
+        let described = self
+            .devtools()
+            .call(
+                "DOM.describeNode",
+                json!({ "backendNodeId": hit }),
+                Some(session),
+            )
+            .ok()?;
+        if described.pointer("/node/pseudoType").is_none() {
+            return Some(hit);
+        }
+        let group = "purlis-drawn-for";
+        let said = self.in_world(session, &at.frame, |world| {
+            let found = self.drawn_for(at, world, hit, group);
+            let _ = self.devtools().call(
+                "Runtime.releaseObjectGroup",
+                json!({ "objectGroup": group }),
+                Some(session),
+            );
+            found
+        });
+        said.ok()?.as_i64()
+    }
+
+    /// Of the elements the pseudo-element `hit` may stand for ([`DRAWN_FOR`]), read in `world`
+    /// with every object in `group`, the engine id of the one it belongs to, or null.
+    fn drawn_for(
+        &self,
+        at: &Located,
+        world: &World,
+        hit: i64,
+        group: &str,
+    ) -> Result<Value, CallError> {
+        let session = Some(at.node_session.as_str());
+        let aimed = self.devtools().call(
+            "DOM.resolveNode",
+            json!({
+                "backendNodeId": at.backend,
+                "executionContextId": world.id,
+                "objectGroup": group,
+            }),
+            session,
+        )?;
+        let Some(aimed) = aimed.pointer("/object/objectId").cloned() else {
+            return Ok(Value::Null);
+        };
+        let listed = self.devtools().call(
+            "Runtime.callFunctionOn",
+            json!({
+                "uniqueContextId": world.unique,
+                "functionDeclaration": DRAWN_FOR,
+                "arguments": [{ "objectId": aimed }],
+                "objectGroup": group,
+            }),
+            session,
+        )?;
+        let Some(list) = listed.pointer("/result/objectId").cloned() else {
+            return Ok(Value::Null);
+        };
+        let properties = self.devtools().call(
+            "Runtime.getProperties",
+            json!({ "objectId": list, "ownProperties": true }),
+            session,
+        )?;
+        let elements = properties["result"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|p| {
+                p["name"]
+                    .as_str()
+                    .is_some_and(|name| name.parse::<u32>().is_ok())
+            });
+        for object in elements.filter_map(|p| p.pointer("/value/objectId")) {
+            let described =
+                self.devtools()
+                    .call("DOM.describeNode", json!({ "objectId": object }), session)?;
+            let draws = described["node"]["pseudoElements"]
+                .as_array()
+                .is_some_and(|pseudo| pseudo.iter().any(|p| p["backendNodeId"] == hit));
+            if draws {
+                return Ok(described["node"]["backendNodeId"].clone());
+            }
+        }
+        Ok(Value::Null)
+    }
+
+    /// Lets the engine drop the objects of `session` purlis resolved.
+    fn release(&self, session: &str, objects: &[String]) {
+        for object in objects {
+            let _ = self.devtools().call(
+                "Runtime.releaseObject",
+                json!({ "objectId": object }),
+                Some(session),
+            );
+        }
+    }
+
+    /// The point of the frame's own document drawn at `point` of the document on `session`,
+    /// where the frame element `backend` of that document is drawn, and whether that element is
+    /// drawn upright at its own size (not turned, scaled or zoomed, by itself or anything around
+    /// it). `None` where the engine says nothing of where it is drawn, or it is drawn as no area.
+    fn in_frame_drawn_at(
+        &self,
+        session: &str,
+        backend: i64,
+        (x, y): (f64, f64),
+    ) -> Option<((f64, f64), bool)> {
+        let model = self
+            .devtools()
+            .call(
+                "DOM.getBoxModel",
+                json!({ "backendNodeId": backend }),
+                Some(session),
+            )
+            .ok()?;
+        let quad = |name: &str| -> Option<[f64; 8]> {
+            let numbers: Vec<f64> = model
+                .pointer(&format!("/model/{name}"))?
+                .as_array()?
+                .iter()
+                .map(Value::as_f64)
+                .collect::<Option<_>>()?;
+            numbers.try_into().ok()
+        };
+        let size = |name: &str| model.pointer(&format!("/model/{name}"))?.as_f64();
+        let (content, border) = (quad("content")?, quad("border")?);
+        let (width, height) = (size("width")?, size("height")?);
+        if upright(&border, width, height) {
+            return Some(((x - content[0], y - content[1]), true));
+        }
+        let drawing = Drawing::of(&border, width, height)?;
+        let (inside, at) = (
+            drawing.in_box((content[0], content[1]))?,
+            drawing.in_box((x, y))?,
+        );
+        Some(((at.0 - inside.0, at.1 - inside.1), false))
     }
 
     /// **Refuses the agent's input at `point` of `target`'s page, on `session`, where what is
@@ -4157,36 +4594,13 @@ impl Browser {
             };
             // Into the frame's own document, through its element's content box: only one drawn
             // upright at its own size is followed, and any other refused.
-            let model = self
-                .devtools()
-                .call(
-                    "DOM.getBoxModel",
-                    json!({ "backendNodeId": backend }),
-                    Some(&session),
-                )
-                .map_err(|_| refused())?;
-            let quad = |name: &str| -> Option<[f64; 8]> {
-                let numbers: Vec<f64> = model
-                    .pointer(&format!("/model/{name}"))?
-                    .as_array()?
-                    .iter()
-                    .map(Value::as_f64)
-                    .collect::<Option<_>>()?;
-                numbers.try_into().ok()
-            };
-            let size = |name: &str| model.pointer(&format!("/model/{name}"))?.as_f64();
-            let (Some(content), Some(border), Some(width), Some(height)) = (
-                quad("content"),
-                quad("border"),
-                size("width"),
-                size("height"),
-            ) else {
+            let ((inside_x, inside_y), true) = self
+                .in_frame_drawn_at(&session, backend, (x, y))
+                .ok_or_else(refused)?
+            else {
                 return Err(refused());
             };
-            if !upright(&border, width, height) {
-                return Err(refused());
-            }
-            (session, x, y) = (inner, x - content[0], y - content[1]);
+            (session, x, y) = (inner, inside_x, inside_y);
         }
         Err(refused())
     }
@@ -4254,6 +4668,11 @@ impl Browser {
                     Some(&at.node_session),
                 )
             })?;
+        }
+        if scroll && at.boundaries.is_empty() {
+            // The browser routes a press by where the page is drawn, and the page's own scroll
+            // handlers may move what is laid out: the scroll is drawn before it is aimed at.
+            self.drawn_twice(at);
         }
         let (mut place, mut centre) = self.placed_centre(target, at)?;
         if !scroll || at.boundaries.is_empty() {
@@ -4415,6 +4834,10 @@ impl Browser {
             let (x, y) = self.point(target, &at, true)?;
             let session = &at.page_session;
             self.mouse(session, "mouseMoved", x, y, 0, 0)?;
+            // A page may draw something else at the point once the mouse is over it: what is
+            // drawn there is read again once the mouse is there, as the last engine call before
+            // the press.
+            self.drawn_at_is(target, &at, (x, y))?;
             for count in 1..=clicks {
                 self.mouse(session, "mousePressed", x, y, count, 1)?;
                 self.mouse(session, "mouseReleased", x, y, count, 0)?;
@@ -4701,11 +5124,6 @@ impl Browser {
                 (DragTo::Element(r), None) => return Err(Refusal::NoSuchRef(r.clone())),
             };
             let session = &start_at.page_session;
-            // Where what a native drag carries may go when it drops (#2018): into whichever
-            // document is drawn at the drop, which may be any of the page's, whatever element
-            // the drag aims at.
-            self.read_sandboxes(&page);
-            let drops_into = lock(&self.inner.state).every_document(&page);
             // A native drag source starts the engine's own drag, which the engine hands over
             // while this drag lasts, and never after (#2136): once asked to, it is told to stop
             // however the drag ends.
@@ -4723,16 +5141,7 @@ impl Browser {
                     Some(session),
                 )
                 .map_err(refusal)
-                .and_then(|_| {
-                    self.dragging(
-                        &page,
-                        session,
-                        start,
-                        end,
-                        drops_into.as_deref().map_err(|why| *why),
-                        &mut taken,
-                    )
-                });
+                .and_then(|_| self.dragging(&page, session, start, end, &mut taken));
             let handed_back = self.devtools().call(
                 "Input.setInterceptDrags",
                 json!({ "enabled": false }),
@@ -4774,21 +5183,21 @@ impl Browser {
 
     /// Presses at `start`, moves to `end` with the button held and releases there; once the
     /// engine's own drag starts on the way, the rest of the way is its drag events, the drop at
-    /// `end` into the documents at `drops_into`. A drag that fails on the way, or is cut by the
-    /// person taking over, is cancelled and its button let go.
+    /// `end` judged by the documents the page shows as it starts and again as it drops. A drag
+    /// that fails on the way, or is cut by the person taking over, is cancelled and its button
+    /// let go.
     fn dragging(
         &self,
         target: &str,
         session: &str,
         start: (f64, f64),
         end: (f64, f64),
-        drops_into: Result<&[String], Unjudged>,
         taken: &mut bool,
     ) -> Result<Option<String>, Refusal> {
         self.mouse(session, "mouseMoved", start.0, start.1, 0, 0)?;
         self.mouse(session, "mousePressed", start.0, start.1, 1, 1)?;
         let mut carried = None;
-        let dragged = self.dragged_on(session, start, end, drops_into, target, &mut carried);
+        let dragged = self.dragged_on(session, start, end, target, &mut carried);
         *taken = carried.is_some();
         if dragged.is_err() || matches!(dragged, Ok(Some(_))) {
             self.let_go(session, end, carried.as_ref());
@@ -4803,7 +5212,6 @@ impl Browser {
         session: &str,
         start: (f64, f64),
         end: (f64, f64),
-        drops_into: Result<&[String], Unjudged>,
         target: &str,
         carried: &mut Option<Value>,
     ) -> Result<Option<String>, Refusal> {
@@ -4836,12 +5244,8 @@ impl Browser {
             if self.carries_kept_text(target, data) {
                 return Err(Refusal::DragKeptOut);
             }
-            let drops_into = self.known_documents(target, drops_into.map(<[String]>::to_vec))?;
-            if let Some(site) = self.sends_to_a_new_site(&drops_into) {
-                return Ok(Some(format!(
-                    "nothing was dropped: the drop would have gone to {site}, a site new to this \
-                     project, and purlis asked the person whether this browser may send to it"
-                )));
+            if let Some(held) = self.drop_held(target)? {
+                return Ok(Some(held));
             }
             let data = data.clone();
             let mut kind = "dragEnter";
@@ -4851,10 +5255,32 @@ impl Browser {
                 kind = "dragOver";
             }
             self.drag_event(session, kind, end.0, end.1, &data)?;
+            // The page may have shown other documents since the drag began, a frame it added
+            // in its drag's own events among them: the drop is judged by those it shows now.
+            if let Some(held) = self.drop_held(target)? {
+                return Ok(Some(held));
+            }
             self.drag_event(session, "drop", end.0, end.1, &data)?;
         }
         self.mouse(session, "mouseReleased", end.0, end.1, 1, 0)?;
         Ok(None)
+    }
+
+    /// **Whether a native drop on `target`'s page is held back** (#2018): what it carries goes
+    /// into whichever document is drawn at the drop, which may be any of those the page shows,
+    /// whatever element the drag aims at. They are read as they are now, each judged as
+    /// something sent to its site; a note where the judge asks about one, and a refusal where
+    /// one of them cannot be judged.
+    fn drop_held(&self, target: &str) -> Result<Option<String>, Refusal> {
+        self.read_sandboxes(target);
+        let documents = lock(&self.inner.state).every_document(target);
+        let documents = self.known_documents(target, documents)?;
+        Ok(self.sends_to_a_new_site(&documents).map(|site| {
+            format!(
+                "nothing was dropped: the drop would have gone to {site}, a site new to this \
+                 project, and purlis asked the person whether this browser may send to it"
+            )
+        }))
     }
 
     /// Cancels the engine's own drag where one carries `carried`, and lets the button go at
@@ -5383,6 +5809,12 @@ impl Browser {
                     }
                 }
             }
+            // What is painted, and each blanked element, is widened by the shadows drawn of it.
+            for (item, reach) in found.reach {
+                if let Some(rect) = boxes.get_mut(&(session.clone(), item)) {
+                    *rect = reach.around(rect);
+                }
+            }
         }
         Ok(())
     }
@@ -5830,6 +6262,12 @@ impl Inner {
         let mut left: Vec<String> = Vec::new();
         {
             let mut state = lock(&self.state);
+            // Where the engine's events overflowed, what the frames show is read anew.
+            let lost = self.devtools.dropped_events();
+            if lost > state.events_lost {
+                state.events_lost = lost;
+                follow.extend(state.events_lost().into_iter().map(FollowUp::ReadFrameTree));
+            }
             let params = &event.params;
             let text = |path: &str| {
                 params
@@ -6525,6 +6963,47 @@ impl Inner {
         let _ = said;
     }
 
+    /// **Reads `session`'s frame tree**: what each frame in it shows, unless the engine has said
+    /// it navigated since the read began. A read that fails leaves a frame at the address the
+    /// engine last said of it, and where it said none, or where events lost may have taken its
+    /// word of another, not known: it takes nothing until it says. A frame marked as of lost
+    /// events that the read does not hold is gone, its word that it went lost with them.
+    fn read_frame_tree(&self, session: &str) {
+        let since = lock(&self.state).generations;
+        if let Ok(tree) = self
+            .devtools
+            .call("Page.getFrameTree", json!({}), Some(session))
+        {
+            let mut state = lock(&self.state);
+            let mut listed = Vec::new();
+            let mut stack = vec![&tree["frameTree"]];
+            while let Some(node) = stack.pop() {
+                if let Some(id) = node["frame"]["id"].as_str() {
+                    listed.push(id.to_owned());
+                }
+                state.frame_seen(session, &node["frame"], Seen::Read { since });
+                if let Some(children) = node.get("childFrames").and_then(Value::as_array) {
+                    stack.extend(children);
+                }
+            }
+            let now = Instant::now();
+            for (target, frame) in state.left_out_of_the_tree(session, since, &listed) {
+                // One inside another left out went with it.
+                if !state
+                    .page(&target)
+                    .is_some_and(|page| page.frames.contains_key(&frame))
+                {
+                    continue;
+                }
+                let gone = state.frame_gone(&target, &frame);
+                if let Some(page) = state.page_mut(&target) {
+                    page.settle.frames_gone(session, &gone, now);
+                }
+            }
+        }
+        self.changed.notify_all();
+    }
+
     fn follow_up(&self, step: FollowUp) {
         let devtools = &*self.devtools;
         match step {
@@ -6586,21 +7065,9 @@ impl Inner {
                     json!({ "autoAttach": true, "waitForDebuggerOnStart": false, "flatten": true }),
                     on,
                 );
-                // A read that fails leaves a frame at the address the engine last said of it, and
-                // where it said none, not known: it takes nothing until it says.
-                let since = lock(&self.state).generations;
-                if let Ok(tree) = devtools.call("Page.getFrameTree", json!({}), on) {
-                    let mut state = lock(&self.state);
-                    let mut stack = vec![&tree["frameTree"]];
-                    while let Some(node) = stack.pop() {
-                        state.frame_seen(&session, &node["frame"], Seen::Read { since });
-                        if let Some(children) = node.get("childFrames").and_then(Value::as_array) {
-                            stack.extend(children);
-                        }
-                    }
-                }
-                self.changed.notify_all();
+                self.read_frame_tree(&session);
             }
+            FollowUp::ReadFrameTree(session) => self.read_frame_tree(&session),
             FollowUp::Judge { paused, outbound } => {
                 // Judged on a thread of its own, so a request is never held up behind another
                 // follow-up's calls; where that thread is gone, judged here.

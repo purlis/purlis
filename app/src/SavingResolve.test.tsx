@@ -76,16 +76,19 @@ describe("SaveConflict", () => {
     render(
       <SaveConflict
         plane={PLANE}
-        saving={standing({ conflicts: ["notes.md"], byHand: "To settle it, run git." })}
+        saving={standing({ conflicts: ["notes.md"], toResolve: "Press Resolve." })}
       />,
     );
 
-    expect(screen.getByRole("status").textContent).toContain("To settle it, run git.");
+    expect(screen.getByRole("status").textContent).toContain("resolve folder beside the project");
     expect(screen.queryByRole("button", { name: "Resolve in a chat" })).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Resolve" }));
 
     expect(sent).toEqual([
-      { cmd: "settle_save_conflict", args: { plane: PLANE, step: "start", files: ["notes.md"] } },
+      {
+        cmd: "settle_save_conflict",
+        args: { plane: PLANE, step: "start", files: ["notes.md"], keys: [] },
+      },
     ]);
     expect(await screen.findByText("git stopped on a conflict.")).toBeTruthy();
   });
@@ -110,7 +113,7 @@ describe("SaveConflict", () => {
     expect(sent).toEqual([
       {
         cmd: "settle_save_conflict",
-        args: { plane: PLANE, step: "continue", files: ["notes.md"] },
+        args: { plane: PLANE, step: "continue", files: ["notes.md"], keys: [] },
       },
     ]);
     expect(await screen.findByText("Resolved.")).toBeTruthy();
@@ -145,7 +148,7 @@ describe("SaveConflict", () => {
     expect(sent).toEqual([
       {
         cmd: "settle_save_conflict",
-        args: { plane: PLANE, step: "continue", files: ["charter.toml"] },
+        args: { plane: PLANE, step: "continue", files: ["charter.toml"], keys: [] },
       },
     ]);
   });
@@ -162,7 +165,7 @@ describe("SaveConflict", () => {
 
     expect(sent[0]).toEqual({
       cmd: "settle_save_conflict",
-      args: { plane: PLANE, step: "abort", files: ["notes.md"] },
+      args: { plane: PLANE, step: "abort", files: ["notes.md"], keys: [] },
     });
     expect(await screen.findByText(/still has conflict markers/)).toBeTruthy();
   });
@@ -227,5 +230,72 @@ describe("SaveConflict", () => {
 
     expect(sent.map((one) => one.args.step)).toEqual(["continue", "skip"]);
     expect(await screen.findByText("Resolved.")).toBeTruthy();
+  });
+});
+
+describe("SaveConflict, with a resolve open in its folder (#5824 F7)", () => {
+  const FOLDER = "/home/dev/plane/.purlis/resolve";
+  const RESOLVING: Partial<PlaneSaving> = {
+    blocked: "a resolve is open",
+    conflicts: ["notes.md"],
+    stoppedBy: "resolve",
+    resolving: { folder: FOLDER, keys: [] },
+  };
+
+  it("names the folder, offers a chat, Continue and Abort, and never says the project stopped", () => {
+    commandsSent();
+    render(<SaveConflict plane={PLANE} saving={standing(RESOLVING)} />);
+    expect(screen.getByText(new RegExp(`resolve folder ${FOLDER}`))).toBeTruthy();
+    expect(screen.queryByText(/is stopped/)).toBeNull();
+    for (const name of ["Resolve in a chat", "Continue", "Abort"]) {
+      expect(screen.getByRole("button", { name })).toBeTruthy();
+    }
+  });
+
+  it("asks for each settings key's value, and Continue sends the choice", async () => {
+    const sent = commandsSent({
+      settle_save_conflict: settled({ outcome: "refused", said: "not yet" }),
+    });
+    render(
+      <SaveConflict
+        plane={PLANE}
+        saving={standing({
+          ...RESOLVING,
+          conflicts: ["charter.toml"],
+          conflictKeys: { "charter.toml": ["sandbox.mode"] },
+          resolving: {
+            folder: FOLDER,
+            keys: [
+              { file: "charter.toml", key: "sandbox.mode", ours: '"workspace"', theirs: '"off"' },
+            ],
+          },
+        })}
+      />,
+    );
+    const group = screen.getByRole("radiogroup", { name: "sandbox.mode in charter.toml" });
+    // No chat for a settings key: only the person chooses it.
+    expect(screen.queryByRole("button", { name: "Resolve in a chat" })).toBeNull();
+    await userEvent.click(within(group).getByRole("radio", { name: 'The remote\'s: "off"' }));
+    await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(sent).toEqual([
+      {
+        cmd: "settle_save_conflict",
+        args: {
+          plane: PLANE,
+          step: "continue",
+          files: ["charter.toml"],
+          keys: [{ file: "charter.toml", key: "sandbox.mode", theirs: true }],
+        },
+      },
+    ]);
+  });
+
+  it("offers Skip once Continue finds nothing of this machine's left", async () => {
+    commandsSent({
+      settle_save_conflict: settled({ outcome: "empty", said: "Settled, nothing is left." }),
+    });
+    render(<SaveConflict plane={PLANE} saving={standing(RESOLVING)} />);
+    await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(await screen.findByRole("button", { name: "Skip" })).toBeTruthy();
   });
 });
