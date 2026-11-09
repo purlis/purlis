@@ -17,7 +17,8 @@ spellings, are refused whole, with no notice, as `mariabackup` and `mysqlhotcopy
   row at all.
 - **The server itself, its safe helper and the router** (`mysqld`, `mariadbd`,
   `mysqld_safe_helper`, `mariadbd-safe-helper`, `mysqlrouter` and its own tools)
-  and **`mysql_migrate_keyring`** (from the second review of #5990): `mysqld -b` names the
+  and **`mysql_migrate_keyring`** (from the second review of #5990, the safe helper from the
+  third): `mysqld -b` names the
   folder its plugins load from and `--early-plugin-load` names a plugin, the router's
   configuration names its plugins' folder, and the keyring migration loads components from a
   folder it is told. The safe helper runs the command its arguments name, as the user they

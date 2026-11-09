@@ -2761,7 +2761,7 @@ fn every_wsrep_sst_script_runs_a_transfer_program_so_it_is_offered_no_run_grant(
 /// its plugins' folder, and the keyring migration loads components from a folder it is told
 /// (round 2 of #5990's review).
 #[test]
-fn the_server_the_router_and_the_keyring_migration_load_code_they_are_told_so_are_offered_no_run_grant()
+fn the_server_its_helper_the_router_and_the_keyring_migration_run_what_they_are_told_so_are_offered_no_run_grant()
  {
     for name in [
         "mysqld",
