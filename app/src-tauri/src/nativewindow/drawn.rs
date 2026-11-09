@@ -26,8 +26,9 @@ pub struct NativeDrawn {
 #[cfg(feature = "e2e")]
 #[tauri::command]
 #[specta::specta]
-pub fn native_window_drawn(window: tauri::WebviewWindow) -> Result<NativeDrawn, String> {
+pub fn native_window_drawn(window: tauri::Webview) -> Result<NativeDrawn, String> {
     let theme = window
+        .window()
         .theme()
         .map_err(|err| format!("purlis could not read the window's appearance: {err}"))?;
     Ok(answered(theme, given_colour(&window)))
@@ -57,7 +58,7 @@ const READ_BACK: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// **The background colour the platform holds for `window`**, as red, green and blue.
 #[cfg(feature = "e2e")]
-fn given_colour(window: &tauri::WebviewWindow) -> Result<[u8; 3], String> {
+fn given_colour(window: &tauri::Webview) -> Result<[u8; 3], String> {
     let (read, colour) = std::sync::mpsc::channel();
     window
         .with_webview(move |webview| {
