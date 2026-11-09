@@ -12804,7 +12804,8 @@ fn run_on_team(held: &Held, id: &PlaneId, chat: u32, program: &str) {
             secret_exec: Wanted {
                 vault: "team".to_owned(),
                 command: vec![program.to_owned(), "--version".to_owned()],
-                env: vec!["TOKEN=TOKEN".to_owned()],
+                // By file: a Claude Code chat on Linux hands no value by env.
+                file: vec!["TOKEN=TOKEN".to_owned()],
                 ..Wanted::default()
             },
             ..Ask::default()

@@ -6018,7 +6018,8 @@ echo "proxied $(/usr/bin/curl -sS --max-time 10 --noproxy '' -p -x "$HTTPS_PROXY
     let listed = format!("127.0.0.1:{port}");
     let (asker, want) = as_tool(
         reaching(asker, &[listed.as_str()]),
-        wanted(root, "team", sh(&script)),
+        // By file: a Claude Code chat on Linux hands no value by env.
+        by_file(wanted(root, "team", sh(&script))),
     );
     let (reader, _keep) = held_open();
     let wire = Wire::default();
