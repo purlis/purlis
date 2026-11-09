@@ -62,7 +62,10 @@ fn in_force(binding: &ValidatingAdmissionPolicyBinding, policy: &str) -> bool {
 fn matches_everything(resources: &MatchResources) -> bool {
     let everything = |selector: &Option<LabelSelector>| {
         selector.as_ref().is_none_or(|selector| {
-            selector.match_labels.as_ref().is_none_or(|labels| labels.is_empty())
+            selector
+                .match_labels
+                .as_ref()
+                .is_none_or(|labels| labels.is_empty())
                 && selector
                     .match_expressions
                     .as_ref()
@@ -71,7 +74,10 @@ fn matches_everything(resources: &MatchResources) -> bool {
     };
     everything(&resources.namespace_selector)
         && everything(&resources.object_selector)
-        && resources.resource_rules.as_ref().is_none_or(|rules| rules.is_empty())
+        && resources
+            .resource_rules
+            .as_ref()
+            .is_none_or(|rules| rules.is_empty())
         && resources
             .exclude_resource_rules
             .as_ref()

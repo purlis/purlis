@@ -265,12 +265,14 @@ fn a_binding_that_narrows_what_it_matches_is_not_in_force() {
     let bindings = [
         ("a namespace selector", {
             let mut b = narrowed(|_| {});
-            b.spec.match_resources.as_mut().unwrap().namespace_selector = Some(some_namespaces.clone());
+            b.spec.match_resources.as_mut().unwrap().namespace_selector =
+                Some(some_namespaces.clone());
             b
         }),
         ("an object selector", {
             let mut b = narrowed(|_| {});
-            b.spec.match_resources.as_mut().unwrap().object_selector = Some(some_namespaces.clone());
+            b.spec.match_resources.as_mut().unwrap().object_selector =
+                Some(some_namespaces.clone());
             b
         }),
         ("resource rules", {
@@ -280,13 +282,24 @@ fn a_binding_that_narrows_what_it_matches_is_not_in_force() {
         }),
         ("excluded resource rules", {
             let mut b = narrowed(|_| {});
-            b.spec.match_resources.as_mut().unwrap().exclude_resource_rules = Some(one_rule.clone());
+            b.spec
+                .match_resources
+                .as_mut()
+                .unwrap()
+                .exclude_resource_rules = Some(one_rule.clone());
             b
         }),
-        ("an exact match policy", narrowed(|r| r.match_policy = Some("Exact".into()))),
+        (
+            "an exact match policy",
+            narrowed(|r| r.match_policy = Some("Exact".into())),
+        ),
     ];
     for (what, binding) in bindings {
-        assert_eq!(since(&binding), None, "a binding narrowed by {what} is in force");
+        assert_eq!(
+            since(&binding),
+            None,
+            "a binding narrowed by {what} is in force"
+        );
     }
 }
 
@@ -313,7 +326,10 @@ fn a_policy_that_lets_through_what_it_cannot_check_is_not_in_force() {
         }),
         ..policy_made("2026-10-17T09:00:00Z")
     };
-    assert_eq!(in_force_since(Some(&with(Some("Ignore"))), Some(&binding), POLICY), None);
+    assert_eq!(
+        in_force_since(Some(&with(Some("Ignore"))), Some(&binding), POLICY),
+        None
+    );
     for failure in [Some("Fail"), None] {
         assert!(
             in_force_since(Some(&with(failure)), Some(&binding), POLICY).is_some(),
