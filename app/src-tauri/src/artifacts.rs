@@ -1387,12 +1387,12 @@ pub async fn artifact_place(
         return Ok(());
     };
     match place {
-        None => webview.hide().map_err(|e| e.to_string()),
+        None => webview.hide().map_err(page_unreached),
         Some(place) => {
             let (position, size) = place.physical();
-            webview.set_position(position).map_err(|e| e.to_string())?;
-            webview.set_size(size).map_err(|e| e.to_string())?;
-            webview.show().map_err(|e| e.to_string())
+            webview.set_position(position).map_err(page_unreached)?;
+            webview.set_size(size).map_err(page_unreached)?;
+            webview.show().map_err(page_unreached)
         }
     }
 }
@@ -1406,7 +1406,7 @@ pub async fn artifact_enter(
     label: String,
 ) -> Result<(), String> {
     match child(&window, &artifacts, &label) {
-        Some(webview) => webview.set_focus().map_err(|e| e.to_string()),
+        Some(webview) => webview.set_focus().map_err(page_unreached),
         None => Ok(()),
     }
 }
@@ -1442,7 +1442,7 @@ pub async fn artifact_reload(
         Ok((standing, changed_by, generated, queries))
     })
     .await?;
-    webview.reload().map_err(|e| e.to_string())?;
+    webview.reload().map_err(page_unreached)?;
     Ok(ArtifactOpened {
         label,
         standing: standing.as_str().to_owned(),
@@ -1468,9 +1468,16 @@ pub async fn artifact_theme(
         return Ok(());
     };
     if artifacts.draw_in(&label, window.label(), sheet) {
-        webview.eval(THEME_CHANGED).map_err(|e| e.to_string())?;
+        webview.eval(THEME_CHANGED).map_err(page_unreached)?;
     }
     Ok(())
+}
+
+/// **What the window is told when the platform webview refuses a call on an artifact's
+/// page**: purlis's own sentence with what to do, never Tauri's words, which go to the log.
+fn page_unreached(error: tauri::Error) -> String {
+    tracing::warn!("purlis: an artifact's webview refused a call: {error}");
+    "purlis could not reach this artifact's page. Close its tab and open it again.".to_owned()
 }
 
 /// **Closes an artifact's webview**: its tab closed, or its frame went.
