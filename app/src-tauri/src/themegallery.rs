@@ -115,6 +115,100 @@ pub struct GalleryCard {
     pub folder: bool,
     /// Changes whenever what the theme draws changes: what its pictures are kept by.
     pub stamp: String,
+    /// **Each component part key the theme draws** (#2947), with its value and what sets it: the
+    /// theme, a theme it extends or an option's value; in key order, the options' last.
+    pub parts: Vec<GalleryPart>,
+}
+
+/// **One component part key a card's theme sets** (#2947).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct GalleryPart {
+    /// The whole key: `button.root.primary.hover.fill`.
+    pub key: String,
+    /// Its family and its part, as the parts manifest names them.
+    pub family: String,
+    pub part: String,
+    /// Its value as a theme writes it: `full`, `accent.base`, `[4, 12]`.
+    pub value: String,
+    pub from: GalleryPartFrom,
+}
+
+/// **What sets a part key**: the theme, a theme it extends, or a value of one of its options.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum GalleryPartFrom {
+    Theme,
+    /// By the name of the theme it extends that wrote it.
+    Extends {
+        theme: String,
+    },
+    /// By the option's label and the value's.
+    Option {
+        option: String,
+        value: String,
+    },
+}
+
+/// **The component parts manifest** (`purlis theme parts`, spec #2897), as Settings › Theme lists
+/// it (#2947): every family, its parts, variants and states, each with the manifest version it
+/// came in. Read from the manifest itself, so the window keeps no list of its own.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
+pub struct PartsManifest {
+    /// The manifest version the last release shipped.
+    pub version: u32,
+    pub states: Vec<ManifestEntry>,
+    pub families: Vec<ManifestFamily>,
+}
+
+/// A state, a part's or a variant's name, what it is, and the manifest version it came in.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
+pub struct ManifestEntry {
+    pub name: String,
+    pub description: String,
+    pub since: u32,
+}
+
+/// One family of the manifest.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
+pub struct ManifestFamily {
+    pub name: String,
+    pub description: String,
+    pub since: u32,
+    /// The states its wrapper marks, by name; rest is implied.
+    pub states: Vec<String>,
+    pub parts: Vec<ManifestPart>,
+    pub variants: Vec<ManifestEntry>,
+}
+
+/// One part of a family.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
+pub struct ManifestPart {
+    pub name: String,
+    pub description: String,
+    pub since: u32,
+    /// The properties a theme may set on it, by name.
+    pub properties: Vec<String>,
+}
+
+/// **The parts manifest** for Settings › Theme (#2947): what `purlis theme parts` prints, read
+/// once, off the window's thread (#1949). Nothing is written.
+#[tauri::command]
+#[specta::specta]
+pub async fn theme_parts() -> Result<PartsManifest, String> {
+    tauri::async_runtime::spawn_blocking(parts_read)
+        .await
+        .map_err(|err| format!("reading the parts manifest did not finish: {err}"))?
+}
+
+/// [`theme_parts`] without a runtime: the manifest, read the first time it is asked for.
+fn parts_read() -> Result<PartsManifest, String> {
+    static READ: std::sync::OnceLock<Result<PartsManifest, String>> = std::sync::OnceLock::new();
+    READ.get_or_init(parts_manifest).clone()
+}
+
+/// [`theme_parts`], read from the manifest as `purlis theme parts` prints it.
+fn parts_manifest() -> Result<PartsManifest, String> {
+    serde_json::from_value(theme::parts::manifest_json()).map_err(|err| err.to_string())
 }
 
 /// One appearance of a card.
@@ -187,6 +281,23 @@ impl From<Card> for GalleryCard {
             duplicable: card.duplicable,
             folder: card.folder,
             stamp: card.stamp,
+            parts: card
+                .parts
+                .into_iter()
+                .map(|one| GalleryPart {
+                    key: one.key,
+                    family: one.family,
+                    part: one.part,
+                    value: one.value,
+                    from: match one.from {
+                        gallery::PartFrom::Theme => GalleryPartFrom::Theme,
+                        gallery::PartFrom::Extends { theme } => GalleryPartFrom::Extends { theme },
+                        gallery::PartFrom::Option { option, value } => {
+                            GalleryPartFrom::Option { option, value }
+                        }
+                    },
+                })
+                .collect(),
         }
     }
 }

@@ -2892,3 +2892,23 @@ fn what_a_released_family_joined_later_is_in_its_lists_and_came_after_what_holds
         }
     }
 }
+
+#[test]
+fn a_part_value_is_said_in_a_themes_words() {
+    use super::parts::{Corner, Length, PartValue, Shadow};
+    let n = Length::Number;
+    assert_eq!(PartValue::Colour("accent.base").written(), "accent.base");
+    assert_eq!(PartValue::Shadow(Shadow::Raised).written(), "raised");
+    assert_eq!(PartValue::Length(n(12.0)).written(), "12");
+    assert_eq!(
+        PartValue::Length(Length::Token("space.2")).written(),
+        "space.2"
+    );
+    assert_eq!(PartValue::Corners([Corner::Full; 4]).written(), "full");
+    assert_eq!(PartValue::Padding(n(4.0), n(4.0)).written(), "4");
+    assert_eq!(PartValue::Padding(n(4.0), n(12.0)).written(), "[4, 12]");
+    assert_eq!(
+        PartValue::Inset([n(1.0), n(2.0), n(3.0)]).written(),
+        "[1, 2, 3]"
+    );
+}

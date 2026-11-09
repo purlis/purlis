@@ -109,6 +109,14 @@ pub struct OptionValue {
     layer: Layer,
 }
 
+impl OptionValue {
+    /// **The component parts this value lays over the theme's** (#2946), for Settings › Theme to
+    /// say which keys an option sets (#2947).
+    pub(super) fn parts(&self) -> &Parts {
+        &self.layer.parts
+    }
+}
+
 /// Token values, for every appearance and for single ones: whatever an appearance's `tokens`
 /// may hold, read by the same reader ([`tokens`]); and component parts, whatever a theme's
 /// `parts` may hold, read by its reader ([`parts::read`]).

@@ -43,6 +43,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   type CSSProperties,
   type KeyboardEvent,
   type ReactNode,
@@ -53,6 +54,8 @@ import {
   Button as AriaButton,
   ButtonContext as AriaButtonContext,
   Collection,
+  ListLayout,
+  Virtualizer,
   Tree as AriaTree,
   TreeHeader as AriaTreeHeader,
   TreeItem as AriaTreeItem,
@@ -134,6 +137,13 @@ export interface TreeProps<T extends object> extends Omit<
    * next chat starts, `current`), as a tree whose press chooses stops on its choice.
    */
   stopAt?: Key;
+  /**
+   * **A long tree draws only the rows in sight** (#2947): React Aria's own `Virtualizer` lays the
+   * open rows out one under another, each measured as it is drawn, and the tree is its own
+   * scroller, so its owner's `className` gives it a height. For a tree that may hold a thousand
+   * rows and more (the parts manifest); a tree whose folders the core caps draws whole.
+   */
+  drawnInPart?: boolean;
   /** **A key the owner takes before the tree's own**: true where it took it (Shift and the
    *  arrows picking rows). */
   onRowKey?: (event: KeyboardEvent<HTMLElement>) => boolean;
@@ -332,6 +342,7 @@ export function Tree<T extends object>({
   choosesMany = false,
   stopAt,
   onRowKey,
+  drawnInPart = false,
   ref,
   onExpandedChange,
   ...rest
@@ -340,6 +351,15 @@ export function Tree<T extends object>({
   const own = useCollectionElement(keys, said);
   const onKeyDownCapture = useTreeKeys(fixed, onRowKey);
   const drawing = useMemo(() => ({ size, twist, fixed, stopAt }), [size, twist, fixed, stopAt]);
+  const [laid, setLaid] = useState<Laid>(UNLAID);
+  // A tree drawn in part reads its room between rows and around them from its own CSS, as it is
+  // drawn, so the layout places rows where the stylesheet would.
+  const measure = useCallback((element: HTMLElement | null) => {
+    if (element === null) return;
+    const read = laidOf(element);
+    setLaid((was) => (was.gap === read.gap && was.padding === read.padding ? was : read));
+  }, []);
+  const measured = useMemo(() => mergeRefs<HTMLDivElement>(measure, own), [measure, own]);
   // What a dragged row carries is its own (`carries`, its value to React Aria). **A tree that
   // may drag is handed the hooks from its first draw, off until it drags** (#3532): React Aria
   // takes a tree's drag hooks once, so handing them over only as the drag turns on would make it
@@ -357,24 +377,70 @@ export function Tree<T extends object>({
     <div data-scope="tree" data-part="keys" onKeyDownCapture={onKeyDownCapture}>
       <RowScope.Provider value="tree">
         <TreeDrawing.Provider value={drawing}>
-          <AriaTree
-            {...rest}
-            // A tree that never folds keeps what its owner says is open.
-            onExpandedChange={fixed ? undefined : onExpandedChange}
-            ref={own}
-            dragAndDropHooks={mayDrag || draggable ? drag : undefined}
-            className={className}
-            style={style}
-            data-scope="tree"
-            data-part="body"
-            data-size={size}
-            data-twist={fixed ? "none" : twist}
-            data-fit={fit === "content" ? "content" : undefined}
-            renderEmptyState={empty === undefined ? undefined : () => empty}
-          />
+          <InPart drawnInPart={drawnInPart} laid={laid}>
+            <AriaTree
+              {...rest}
+              // A tree that never folds keeps what its owner says is open.
+              onExpandedChange={fixed ? undefined : onExpandedChange}
+              ref={drawnInPart ? measured : own}
+              dragAndDropHooks={mayDrag || draggable ? drag : undefined}
+              className={className}
+              style={style}
+              data-scope="tree"
+              data-part="body"
+              data-size={size}
+              data-twist={fixed ? "none" : twist}
+              data-fit={fit === "content" ? "content" : undefined}
+              renderEmptyState={empty === undefined ? undefined : () => empty}
+            />
+          </InPart>
         </TreeDrawing.Provider>
       </RowScope.Provider>
     </div>
+  );
+}
+
+/** The room a tree drawn in part keeps between its rows and around them, in px. */
+interface Laid {
+  gap: number;
+  padding: number;
+}
+
+/** What a tree is taken to keep before it is first drawn, and in a document with no layout. */
+const UNLAID: Laid = { gap: 0, padding: 0 };
+
+/** The room `element`, a tree's body, keeps as its stylesheet draws it. */
+function laidOf(element: HTMLElement): Laid {
+  const style = getComputedStyle(element);
+  const px = (value: string) => Number.parseFloat(value) || 0;
+  return { gap: px(style.rowGap), padding: px(style.paddingTop) };
+}
+
+/** A row's height before it is measured: a control's, the default row's. */
+const ROW_GUESS = 28;
+
+/**
+ * **The tree drawn in part, or whole**: in React Aria's `Virtualizer` with its list layout, each
+ * row measured as it is drawn, or as it is.
+ */
+function InPart({
+  drawnInPart,
+  laid,
+  children,
+}: {
+  drawnInPart: boolean;
+  laid: Laid;
+  children: ReactNode;
+}) {
+  const options = useMemo(
+    () => ({ estimatedRowHeight: ROW_GUESS, gap: laid.gap, padding: laid.padding }),
+    [laid],
+  );
+  if (!drawnInPart) return children;
+  return (
+    <Virtualizer layout={ListLayout} layoutOptions={options}>
+      {children}
+    </Virtualizer>
   );
 }
 

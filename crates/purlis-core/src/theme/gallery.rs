@@ -111,6 +111,37 @@ pub struct Card {
     pub folder: bool,
     /// Changes whenever anything the theme draws changes: what a picture of it is kept by.
     pub stamp: String,
+    /// **Each component part key the theme draws** (#2947), with its value as written and what
+    /// sets it: the theme itself, a theme it extends, or a value of one of its options. A key
+    /// two of them set is listed once for each. In key order, the themes' before the options'.
+    pub parts: Vec<CardPart>,
+}
+
+/// **One component part key a theme sets** (#2947): Settings › Theme lists it under its family
+/// and part from the parts manifest (`purlis theme parts`).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct CardPart {
+    /// The whole key: `button.root.primary.hover.fill`.
+    pub key: String,
+    /// Its family, as the manifest names it.
+    pub family: String,
+    /// Its part, as the manifest names it.
+    pub part: String,
+    /// Its value as a theme writes it: `full`, `accent.base`, `[4, 12]`.
+    pub value: String,
+    pub from: PartFrom,
+}
+
+/// **What sets a part key** of a theme.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum PartFrom {
+    /// The theme's own `parts`.
+    Theme,
+    /// The `parts` of a theme it extends, by that theme's name.
+    Extends { theme: String },
+    /// A value of one of its options (#2946), by the option's and the value's labels.
+    Option { option: String, value: String },
 }
 
 impl Card {
@@ -399,6 +430,7 @@ fn card(id: String, from: From, resolved: &Resolved, kept: &mut LastRead) -> Car
             follows: None,
             duplicable,
             folder,
+            parts: Vec::new(),
         };
     }
     let theme = &resolved.theme;
@@ -429,8 +461,46 @@ fn card(id: String, from: From, resolved: &Resolved, kept: &mut LastRead) -> Car
         duplicable,
         folder,
         stamp: stamp_of(theme),
+        parts: parts_of(theme),
         said,
     }
+}
+
+/// **Each part key `theme` draws** ([`Card::parts`]): its parts, the same in each of its
+/// appearances, each said as its own or the theme's it extends that wrote it; then each option
+/// value's, in the options' order; each in key order.
+fn parts_of(theme: &Theme) -> Vec<CardPart> {
+    let one = |key: &super::parts::Key, value: &super::parts::PartValue, from: PartFrom| CardPart {
+        key: key.to_string(),
+        family: key.family.to_owned(),
+        part: key.part.to_owned(),
+        value: value.written(),
+        from,
+    };
+    let own = theme.bases().first().into_iter().flat_map(|base| {
+        base.parts.iter().map(move |(key, value)| {
+            let from = match base.parts_by.get(key) {
+                Some(by) if *by != theme.name => PartFrom::Extends { theme: by.clone() },
+                _ => PartFrom::Theme,
+            };
+            one(key, value, from)
+        })
+    });
+    let options = theme.options.iter().flat_map(|option| {
+        option.values.iter().flat_map(move |value| {
+            value.parts().iter().map(move |(key, set)| {
+                one(
+                    key,
+                    set,
+                    PartFrom::Option {
+                        option: option.label.clone(),
+                        value: value.label.clone(),
+                    },
+                )
+            })
+        })
+    });
+    own.chain(options).collect()
 }
 
 /// What a card of `resolved` is called: the theme's name, or its id when it is refused.

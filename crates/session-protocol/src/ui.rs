@@ -1544,6 +1544,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     // pointer is on it. Nothing is written.
     "theme_card_drawn",
     "theme_gallery",
+    // The parts manifest it lists a card's parts under (#2947): what `purlis theme parts` prints.
+    "theme_parts",
     // The theme in force at a project and workspace, with no window and nothing watched
     // (#2697): what a link is served in place of `theme_in_force`.
     "theme_in_force_at",

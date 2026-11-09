@@ -780,6 +780,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "the settings set's filter count and a row's refusal, inline, per field: an alert on its " +
       "own, a polite line quiet under its form's summary in a form (#3291)",
   },
+  "settings/themeParts.tsx": {
+    count: 3,
+    why:
+      READING +
+      ". Settings › Theme's Parts row (#2947): reading the parts manifest, that it could not be " +
+      "read, and the filter's line where it finds no part, which the filter's own field clears",
+  },
   "settings/themeGallery.tsx": {
     count: 3,
     why:

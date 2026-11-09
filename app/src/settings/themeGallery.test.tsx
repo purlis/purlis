@@ -10,6 +10,7 @@ import { THEME_FOLDERS_CHANGED } from "../Extensions";
 import {
   SPECIMEN_BUSY,
   type GalleryCard,
+  type PartsManifest,
   type ThemeAt,
   type ThemeGallery,
   type WindowOption,
@@ -62,6 +63,7 @@ function card(over: Partial<GalleryCard> & Pick<GalleryCard, "id" | "name">): Ga
     duplicable: true,
     folder: true,
     stamp: "0",
+    parts: [],
     ...over,
   };
 }
@@ -82,7 +84,50 @@ const DUSK = card({
   id: "dusk",
   name: "Dusk",
   warnings: ["text.primary on surface.base: 1.02, under 4.5"],
+  parts: [
+    {
+      key: "button.root.corner-radius",
+      family: "button",
+      part: "root",
+      value: "full",
+      from: { kind: "option", option: "Pills", value: "On" },
+    },
+    {
+      key: "button.root.primary.hover.fill",
+      family: "button",
+      part: "root",
+      value: "accent.base",
+      from: { kind: "theme" },
+    },
+  ],
 });
+
+/** The parts manifest the core hands the window: two families, as `theme_parts` says them. */
+const MANIFEST: PartsManifest = {
+  version: 13,
+  states: [{ name: "hover", description: "The pointer is over it.", since: 1 }],
+  families: [
+    {
+      name: "button",
+      description: "A button, an icon button or a link button.",
+      since: 1,
+      states: ["hover", "pressed"],
+      parts: [
+        { name: "root", description: "The button itself.", since: 1, properties: ["fill"] },
+        { name: "label", description: "Its words.", since: 2, properties: ["text"] },
+      ],
+      variants: [],
+    },
+    {
+      name: "tabs",
+      description: "A session tab.",
+      since: 4,
+      states: ["hover", "selected"],
+      parts: [{ name: "tab", description: "One tab.", since: 14, properties: ["fill"] }],
+      variants: [],
+    },
+  ],
+};
 
 const TEAM = card({ id: "team", name: "Team", from: "project", duplicable: false });
 
@@ -169,6 +214,8 @@ function core(
           return "dusk-mine";
         case "theme_in_force":
           return { theme: DEFAULT_THEME, complaints: [], follows_system: false, options: [] };
+        case "theme_parts":
+          return MANIFEST;
         default:
           return null;
       }
@@ -261,7 +308,7 @@ describe("Settings › Theme's cards (#2331)", () => {
     expect(screen.getByText(/^Drawn here: Purlis Classic/)).toHaveTextContent("Purlis");
     // A card is named by its theme's name, and where it comes from is its description (#2911).
     expect(screen.getByRole("option", { name: "Dusk" })).toHaveAccessibleDescription(
-      "Yours, on this machine · 1 warning",
+      "Yours, on this machine · 1 warning · 2 part keys",
     );
   });
 
@@ -419,6 +466,63 @@ describe("under the chosen card (#2331)", () => {
     const check = await screen.findByRole("region", { name: "Theme check" });
     await waitFor(() =>
       expect(check).toHaveTextContent("text.primary on surface.base: 1.02, under 4.5"),
+    );
+  });
+
+  it("names the families it sets from the parts manifest, and lists every part under Show each part (#2947)", async () => {
+    core(shown({ yours: mine("dusk", null), drawn: "machine:dusk" }));
+    render(<Group at={null} />);
+    const parts = await screen.findByRole("region", { name: "Parts" });
+    await waitFor(() => expect(parts).toHaveTextContent("Dusk sets 2 keys of"));
+    expect(
+      within(parts).getByText("button", { selector: "[data-scope=badge]" }),
+    ).toHaveAccessibleDescription("A button, an icon button or a link button. 2 keys set.");
+    // Every family and part the manifest has, folded to the families until one is opened.
+    await userEvent.click(within(parts).getByRole("button", { name: "Show each part" }));
+    const tree = await within(parts).findByRole("treegrid", { name: "Every component part" });
+    const rows = () =>
+      within(tree)
+        .getAllByRole("row")
+        .map((one) => one.textContent);
+    expect(rows()).toEqual([
+      expect.stringContaining(
+        "buttonA button, an icon button or a link button. States: hover, pressed",
+      ),
+      expect.stringContaining("tabsA session tab. States: hover, selected"),
+    ]);
+    // A filter finds a key's value, and opens its family and part to show it.
+    await userEvent.type(within(parts).getByRole("searchbox", { name: "Filter parts" }), "accent");
+    await waitFor(() =>
+      expect(rows()).toEqual([
+        expect.stringContaining("2 set"),
+        expect.stringContaining("rootThe button itself. Sets: fill"),
+        expect.stringContaining("corner-radiusfullPills: On"),
+        expect.stringContaining("primary.hover.fillaccent.baseThe theme"),
+      ]),
+    );
+    // Folding a row the filter opened folds it; clearing the filter puts back what the person
+    // had open, every family folded, and none of what the filter opened.
+    await userEvent.click(within(tree).getByRole("button", { name: /Collapse.*button\.root/ }));
+    await waitFor(() => expect(rows()).toHaveLength(2));
+    await userEvent.clear(within(parts).getByRole("searchbox", { name: "Filter parts" }));
+    await waitFor(() => expect(rows()).toHaveLength(2));
+    await userEvent.type(within(parts).getByRole("searchbox", { name: "Filter parts" }), "tab");
+    await waitFor(() =>
+      expect(rows()).toEqual([
+        expect.stringContaining("tabs"),
+        expect.stringContaining("Next release"),
+      ]),
+    );
+  });
+
+  it("says a theme that sets no parts draws each control as its family does (#2947)", async () => {
+    core();
+    render(<Group at={null} />);
+    const parts = await screen.findByRole("region", { name: "Parts" });
+    await waitFor(() =>
+      expect(parts).toHaveTextContent(
+        "Purlis Classic sets no parts: every control is drawn as its family draws it.",
+      ),
     );
   });
 

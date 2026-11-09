@@ -2064,6 +2064,11 @@ export const commands = {
 	themeDuplicate: __WINDOW_ONLY_RESULT,
 	themeOpenFolder: __WINDOW_ONLY_RESULT,
 	themeChat: __WINDOW_ONLY_START_REFUSED,
+	/**
+	 *  **The parts manifest** for Settings › Theme (#2947): what `purlis theme parts` prints, read
+	 *  once, off the window's thread (#1949). Nothing is written.
+	 */
+	themeParts: () => typedError<PartsManifest, string>(__TAURI_INVOKE("theme_parts")),
 	themeDraftsOfChat: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **A link's close of chats that have theme drafts is handed to the window** (#2761): closing a
@@ -6529,7 +6534,31 @@ export type GalleryCard = {
 	folder: boolean,
 	/**  Changes whenever what the theme draws changes: what its pictures are kept by. */
 	stamp: string,
+	/**
+	 *  **Each component part key the theme draws** (#2947), with its value and what sets it: the
+	 *  theme, a theme it extends or an option's value; in key order, the options' last.
+	 */
+	parts: GalleryPart[],
 };
+
+/**  **One component part key a card's theme sets** (#2947). */
+export type GalleryPart = {
+	/**  The whole key: `button.root.primary.hover.fill`. */
+	key: string,
+	/**  Its family and its part, as the parts manifest names them. */
+	family: string,
+	part: string,
+	/**  Its value as a theme writes it: `full`, `accent.base`, `[4, 12]`. */
+	value: string,
+	from: GalleryPartFrom,
+};
+
+/**  **What sets a part key**: the theme, a theme it extends, or a value of one of its options. */
+export type GalleryPartFrom = { kind: "theme" } | 
+/**  By the name of the theme it extends that wrote it. */
+{ kind: "extends"; theme: string } | 
+/**  By the option's label and the value's. */
+{ kind: "option"; option: string; value: string };
 
 /**  How a number reads, as the window colours it — `purlis_core::usage::Tone`. */
 export type GaugeTone = "ok" | "warn" | "bad";
@@ -7855,6 +7884,33 @@ export type MadeAgain = {
 	old_home: OldHome,
 };
 
+/**  A state, a part's or a variant's name, what it is, and the manifest version it came in. */
+export type ManifestEntry = {
+	name: string,
+	description: string,
+	since: number,
+};
+
+/**  One family of the manifest. */
+export type ManifestFamily = {
+	name: string,
+	description: string,
+	since: number,
+	/**  The states its wrapper marks, by name; rest is implied. */
+	states: string[],
+	parts: ManifestPart[],
+	variants: ManifestEntry[],
+};
+
+/**  One part of a family. */
+export type ManifestPart = {
+	name: string,
+	description: string,
+	since: number,
+	/**  The properties a theme may set on it, by name. */
+	properties: string[],
+};
+
 /**  A persona's MCP server that could not start for a chat, as the Notice on its tab shows it. */
 export type McpFailed = {
 	plane: PlaneId,
@@ -9047,6 +9103,18 @@ export type Panels = {
 	 *  program started on every workspace focus would spend the 100 ms on a fork.
 	 */
 	contributed: PanelView[],
+};
+
+/**
+ *  **The component parts manifest** (`purlis theme parts`, spec #2897), as Settings › Theme lists
+ *  it (#2947): every family, its parts, variants and states, each with the manifest version it
+ *  came in. Read from the manifest itself, so the window keeps no list of its own.
+ */
+export type PartsManifest = {
+	/**  The manifest version the last release shipped. */
+	version: number,
+	states: ManifestEntry[],
+	families: ManifestFamily[],
 };
 
 /**  One percentage on the gauge, and the tone its threshold gives it. */
