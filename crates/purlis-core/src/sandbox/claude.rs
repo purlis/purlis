@@ -737,19 +737,25 @@ impl Settings {
 /// Each of those is also denied on the other side of a macOS firmlink (`/Users` and
 /// `/System/Volumes/Data/Users`, #1356), which resolving leaves as it is spelled.
 ///
-/// A denial of an entry alone is left out: a rule here holds what is below a path too, and
+/// A denial of a folder alone is left out: a rule here holds what is below a path too, and
 /// what is below such an entry is the chat's to write (#2752), as a later-code name that holds
-/// only itself is left out.
+/// only itself is left out. One of a file alone is kept, for nothing is below a file: a program
+/// held by its own name (a cluster pool's plugin, #3292) is held here as the profile holds it.
 fn names_of(denied: &[super::Denial]) -> Vec<(&super::Denial, std::path::PathBuf)> {
     denied
         .iter()
-        .filter(|denial| denial.reach == super::Reach::AndBelow)
+        .filter(|denial| denial.reach == super::Reach::AndBelow || not_a_folder(&denial.path))
         .flat_map(|denial| {
             names_for(&denial.path)
                 .into_iter()
                 .map(move |name| (denial, name))
         })
         .collect()
+}
+
+/// Whether `path`, followed through links, is there and is not a folder.
+fn not_a_folder(path: &Path) -> bool {
+    std::fs::metadata(path).is_ok_and(|meta| !meta.is_dir())
 }
 
 /// The spellings a rule on `path` for `denial` is written under: as it is, and, for one held

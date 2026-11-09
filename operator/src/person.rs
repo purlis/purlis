@@ -13,9 +13,10 @@ use crate::resources::{ClaimStatus, condition};
 use k8s_openapi::api::core::v1::{
     Namespace, PodSpec, ResourceQuota, ResourceQuotaSpec, ResourceRequirements,
 };
+use k8s_openapi::api::networking::v1::{NetworkPolicy, NetworkPolicySpec};
 use k8s_openapi::api::rbac::v1::{RoleBinding, RoleRef, Subject};
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
-use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+use k8s_openapi::apimachinery::pkg::apis::meta::v1::{LabelSelector, ObjectMeta, OwnerReference};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -388,6 +389,31 @@ pub fn quota_for(namespace: &str, quota: &Quota) -> ResourceQuota {
             ..ResourceQuotaSpec::default()
         }),
         status: None,
+    }
+}
+
+/// The name of the NetworkPolicy the operator makes in each runner namespace that lets its pods
+/// out only where another NetworkPolicy lets them ([`egress_denied`]).
+pub const DENY_EGRESS_POLICY: &str = "purlis-deny-egress";
+
+/// **What lets a runner namespace's pods out**: the NetworkPolicy the operator makes in
+/// `namespace` with it, controlled by `owners`, that selects every pod there for egress and lets
+/// none out. NetworkPolicies add up, so a runner goes out where upstream's policy for its template
+/// lets it, and to the mint port where `purlis-forge-mint` lets it, and nowhere else, whichever of
+/// those policies are there at the moment.
+pub fn egress_denied(namespace: &str, owners: Vec<OwnerReference>) -> NetworkPolicy {
+    NetworkPolicy {
+        metadata: ObjectMeta {
+            name: Some(DENY_EGRESS_POLICY.to_owned()),
+            namespace: Some(namespace.to_owned()),
+            owner_references: Some(owners),
+            ..ObjectMeta::default()
+        },
+        spec: Some(NetworkPolicySpec {
+            pod_selector: Some(LabelSelector::default()),
+            policy_types: Some(vec!["Egress".to_owned()]),
+            ..NetworkPolicySpec::default()
+        }),
     }
 }
 

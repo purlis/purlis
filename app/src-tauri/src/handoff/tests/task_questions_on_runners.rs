@@ -416,6 +416,7 @@ fn a_chat_with_tasks_still_working_here_is_not_moved_to_a_runner_and_is_told_wha
     let second = a_task_of(&held, &id, steward, "check staging");
     works(&held, first);
     works(&held, second);
+    let opened = host.openings().len();
 
     let why = held
         .move_chat(steward, Some(POOL.to_owned()))
@@ -426,4 +427,34 @@ fn a_chat_with_tasks_still_working_here_is_not_moved_to_a_runner_and_is_told_wha
         "This chat has 2 tasks still working on this machine, so it was not moved. End them, or \
          wait for their reports, then move it."
     );
+    // Refused before anything moved: the chat and its tasks are where they were, and no run
+    // was started for it anywhere.
+    for chat in [steward, first, second] {
+        assert_eq!(held.chats().pool_of(chat), None, "chat {chat}");
+    }
+    assert_eq!(host.openings().len(), opened, "nothing was started");
+}
+
+/// The same, with one task working: it is told of the one.
+#[test]
+fn a_chat_with_one_task_still_working_here_is_not_moved_and_is_told_of_the_one() {
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    let task = a_task_of(&held, &id, steward, "check prod");
+    works(&held, task);
+    let opened = host.openings().len();
+
+    let why = held
+        .move_chat(steward, Some(POOL.to_owned()))
+        .expect_err("not moved");
+
+    assert_eq!(
+        why,
+        "This chat has a task still working on this machine, so it was not moved. End the task, \
+         or wait for its report, then move it."
+    );
+    assert_eq!(held.chats().pool_of(steward), None);
+    assert_eq!(host.openings().len(), opened, "nothing was started");
 }

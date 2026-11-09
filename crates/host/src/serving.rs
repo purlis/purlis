@@ -177,6 +177,13 @@ pub async fn serve_answering(
     let _private = purlis_same_user::PrivateDirectory::open(folder)
         .map_err(unsafe_at("make its folder this user's alone", folder))?;
     let _lock = lock(place)?;
+    // The lock lives in a folder the system may clean of files nobody opened for days: a host
+    // that answers on the socket serves, whether or not its lock file is still there.
+    if answers(&place.socket) {
+        return Err(HostError::AlreadyServing {
+            socket: place.socket.clone(),
+        });
+    }
     // What the last host left running, settled before anyone is served (#2007): its lock is
     // ours now, so it is not writing its host record any more.
     let settling = hosting.clone();
@@ -587,6 +594,12 @@ fn lock(place: &Place) -> Result<File, HostError> {
         }),
         Err(TryLockError::Error(why)) => Err(unsafe_at("take its lock", &place.lock)(why)),
     }
+}
+
+/// **Whether a host listens on `socket` now**: something accepts a connection on it. A socket
+/// file a host that ended left behind refuses one, and so does a path with no socket.
+pub fn answers(socket: &Path) -> bool {
+    std::os::unix::net::UnixStream::connect(socket).is_ok()
 }
 
 /// The socket, bound where a host that ended left none, and made `0600`.

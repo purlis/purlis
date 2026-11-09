@@ -43,6 +43,7 @@ fn asker(root: &Path) -> Asker {
         folder: None,
         confines: None,
         harness: None,
+        ends_seen: None,
     }
 }
 

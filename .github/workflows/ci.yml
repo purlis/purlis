@@ -1549,6 +1549,12 @@ jobs:
       - name: A brokered run reaches the network only through its proxy, confined by Seatbelt
         if: steps.scope.outputs.run == 'true'
         run: tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- secrets::brokered::tests::under_seatbelt_a_brokered_child_reaches_the_network_only_through_its_proxy
+      # A server's connection a host hands on, received on macOS (#5849): its control buffer holds
+      # one descriptor exactly, so more than one is cut off there, and the slot is marked
+      # close-on-exec after the receive, which takes no flag for it here.
+      - name: A host hands on one connection, and nothing more, on macOS
+        if: steps.scope.outputs.run == 'true'
+        run: "tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- hookwire::serve::tests::"
       # The Keychain's own rule a held item rests on (V90a), in a keychain of the test's own:
       # read by the program that made it, and silently by no other.
       - name: A held keychain item is read silently by no other program

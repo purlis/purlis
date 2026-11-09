@@ -1796,6 +1796,39 @@ pub fn plugins_named(kept: &str) -> Result<Vec<String>, Refused> {
         .unwrap_or_default())
 }
 
+/// **`kept`, a kubeconfig as JSON ([`Kubectl::context_kept`]), with each credential plugin named
+/// by a bare name written as the absolute path `kubectl`'s runs find it at** ([`Kubectl::plugin_at`],
+/// #3292): the pool's copy then names the program its add found and held, and no later run looks
+/// it up on `PATH`. As it was where no plugin is named by a bare name.
+pub fn plugins_pinned(kept: &str, kubectl: &Kubectl) -> Result<String, Refused> {
+    let mut config: serde_json::Value = serde_json::from_str(kept)
+        .map_err(|_| Refused::Other("the kubeconfig's context is not one purlis reads".into()))?;
+    let mut pinned = false;
+    let users = config
+        .get_mut("users")
+        .and_then(serde_json::Value::as_array_mut);
+    for command in users
+        .into_iter()
+        .flatten()
+        .filter_map(|user| user.pointer_mut("/user/exec/command"))
+    {
+        let Some(named) = command.as_str().filter(|named| !named.contains('/')) else {
+            continue;
+        };
+        // One not found is left as it is named: the add refuses it, saying so.
+        let Some(found) = kubectl.plugin_at(named) else {
+            continue;
+        };
+        *command = serde_json::Value::String(found.display().to_string());
+        pinned = true;
+    }
+    if !pinned {
+        return Ok(kept.to_owned());
+    }
+    serde_json::to_string(&config)
+        .map_err(|_| Refused::Other("the kubeconfig's context is not one purlis reads".into()))
+}
+
 /// **What a claim of a pool is made as** ([`claim_and_pair`]): the cluster's Pool, the namespace
 /// the Claim is made in, its name, and the desktop it is marked as ([`DESKTOP_ANNOTATION`]).
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -79,7 +79,7 @@ pub fn start(
     let planned_as = Plan::from_wire(&confine.plan)?;
     let (plan, left_out) = started_here(planned, planned_as, alone, project_path);
     let root = project_path.to_path_buf();
-    let board = confine.asks.then(|| {
+    let board = (confine.asks && hosts_askable(planned, project_path)).then(|| {
         Asking {
             tell: {
                 let tell = Arc::clone(&tell);
@@ -255,6 +255,21 @@ fn askable_here(project_path: &Path, left_out: Vec<u16>) -> Vec<u16> {
         || locks.forbids_live_asks()
         || (!locks.keeps_scope(Level::Once) && !locks.keeps_scope(Level::Chat));
     if forbidden { Vec::new() } else { left_out }
+}
+
+/// **Whether a confinement's proxy may ask the window about a host**: always where the window on
+/// this machine planned it, which applied this machine's locks itself; for a plan relayed from
+/// another machine or one composed here, only while this machine's own administrator's policy
+/// (`Locks::of(project_path)`) leaves the live ask on and keeps an Allow at a one-chat scope,
+/// as [`askable_here`] holds a service. Otherwise its proxy refuses an unlisted host and the
+/// window is asked nothing.
+fn hosts_askable(planned: Planned, project_path: &Path) -> bool {
+    use super::grant::Level;
+    if planned == Planned::Here {
+        return true;
+    }
+    let locks = super::policy::Locks::of(project_path);
+    !locks.forbids_live_asks() && (locks.keeps_scope(Level::Once) || locks.keeps_scope(Level::Chat))
 }
 
 /// The services of `alone` that `composed` does not give, once each and in order (#2590).
