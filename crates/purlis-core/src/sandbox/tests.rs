@@ -8539,6 +8539,7 @@ fn a_cluster_pools_program_whose_package_is_inside_the_project_is_held_with_its_
         env: crate::secrets::Env::of(&[("XDG_CONFIG_HOME", &config.path().display().to_string())]),
         home: None,
         os: Os::Linux,
+        on_a_sandbox_only_profile: false,
     };
     let denied = Denied::of(&project, &machine);
     let held = |path: &std::path::Path, reach: Reach| {
