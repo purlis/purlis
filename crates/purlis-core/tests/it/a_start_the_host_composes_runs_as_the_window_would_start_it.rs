@@ -946,7 +946,7 @@ fn a_sandboxed_claude_code_start_leaves_a_workspace_made_while_it_runs_out_of_ev
     purlis_core::unsteered!();
     let project = Project::on("claude");
     let root = project.root();
-    let start = asking(|start| start.plane_skills = Some(false)); // RED-RUN
+    let start = asking(|start| start.plane_skills = Some(true));
 
     let launch = composed(&project, &start, &Host::default()).expect("composed");
 
