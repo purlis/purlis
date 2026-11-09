@@ -281,6 +281,53 @@ mod the_check {
         assert!(recorded.unspent().is_empty());
     }
 
+    /// Unread emails make no claim about the email: the window says only what it has seen.
+    #[test]
+    fn an_unknown_key_whose_accounts_emails_cant_be_read_is_not_put_down_to_the_email() {
+        let signer = Signer::generate().unwrap();
+        let recorded = recording("key_listed_emails_refused", &signer);
+        assert!(!email_is_why(
+            &recorded,
+            &github(),
+            &signer,
+            "octocat",
+            "unknown_key",
+            "someone@else.example",
+        ));
+    }
+
+    #[test]
+    fn an_unknown_key_whose_key_list_cant_be_read_is_not_put_down_to_the_email() {
+        let signer = Signer::generate().unwrap();
+        let recorded = recording("key_list_refused", &signer);
+        assert!(!email_is_why(
+            &recorded,
+            &github(),
+            &signer,
+            "octocat",
+            "unknown_key",
+            "someone@else.example",
+        ));
+        assert!(recorded.unspent().is_empty());
+    }
+
+    /// GitLab finds a key by its fingerprint, and its public list holds sign-in keys too: its
+    /// `unknown_key` is the key's, and nothing more is asked.
+    #[test]
+    fn gitlabs_unknown_key_is_never_put_down_to_the_email() {
+        let signer = Signer::generate().unwrap();
+        let recorded = gitlab_recording("auth_key_listed_then_emails", &signer);
+        assert!(!email_is_why(
+            &recorded,
+            &gitlab(),
+            &signer,
+            "sam",
+            "unknown_key",
+            "someone@else.example",
+        ));
+        assert_eq!(recorded.unspent().len(), 3);
+    }
+
     /// Another reason asks GitHub nothing more: the recording has no answer to give.
     #[test]
     fn another_reason_is_never_the_emails_doing_and_asks_nothing() {
@@ -541,7 +588,7 @@ fn githubs_verified_addresses_are_offered_primary_first_and_the_noreply_last() {
 #[test]
 fn gitlabs_confirmed_addresses_are_offered_and_an_unconfirmed_one_is_not() {
     let signer = Signer::generate().unwrap();
-    let recorded = gitlab_recording("emails", &signer);
+    let recorded = gitlab_recording("auth_key_listed_then_emails", &signer);
     let found = verified_emails(&recorded, &gitlab()).unwrap();
     let emails: Vec<_> = found.iter().map(|one| one.email.as_str()).collect();
     assert_eq!(emails, ["sam@example.org", "sam@billing.example.org"]);

@@ -88,7 +88,7 @@ type Check =
       picked?: string;
       why?: string;
     }
-  | { at: "nothing-pushed" }
+  | { at: "nothing-pushed"; email: string }
   | { at: "trouble"; why: string };
 
 type Now =
@@ -195,7 +195,7 @@ export function SigningSetupDialog({
           go({ step: "check", check: { at: "trouble", why: checked.error } });
         else if (checked.data.verified) go({ step: "done", email: checked.data.email });
         else if (checked.data.reason === "nothing_pushed")
-          go({ step: "check", check: { at: "nothing-pushed" } });
+          go({ step: "check", check: { at: "nothing-pushed", email: checked.data.email } });
         else if (aboutTheEmail(checked.data)) {
           const result = checked.data;
           go({ step: "check", check: { at: "email", result } });
@@ -668,9 +668,9 @@ function Body({
           )}
           {now.check.at === "nothing-pushed" && (
             <p role="status">
-              Signing is on: chat commits on this Mac are signed from now on. {forge} can only check
-              a commit that&apos;s there, so the ✓ shows once a chat pushes its first signed commit
-              to {login}&apos;s repos.
+              Signing is on: chat commits on this Mac are signed from now on, as{" "}
+              <code>{now.check.email}</code>. {forge} can only check a commit that&apos;s there, so
+              the ✓ shows once a chat pushes its first signed commit to {login}&apos;s repos.
             </p>
           )}
           {now.check.at === "trouble" && (
@@ -845,20 +845,18 @@ function EmailChoice({
   onPick: (email: string) => void;
 }) {
   const emails = check.emails?.emails;
-  const unmatched = !EMAIL_REASONS.includes(check.result.reason);
   return (
     <>
-      {unmatched ? (
+      {check.result.email_is_why ? (
         <p className="said-in-full">
           The key is on {login}, but{" "}
           {gitlab ? "your chat commits use" : "the test commit was made as"}{" "}
           <code>{check.result.email}</code>, which isn&apos;t a verified email on {login}. {forge}{" "}
-          picks the account to check a signature by the commit&apos;s email, so it didn&apos;t find
-          the key.
+          picks the account to check a signature by the commit&apos;s email.
         </p>
       ) : (
         <p className="said-in-full">
-          The key is on {forge}, but your chat commits use <code>{check.result.email}</code>, which
+          The key is on {login}, but your chat commits use <code>{check.result.email}</code>, which
           isn&apos;t a verified email on {login}. {forge} only verifies a commit whose email is one
           of yours.
         </p>

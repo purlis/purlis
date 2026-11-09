@@ -423,6 +423,7 @@ export const GitLabVerified: Story = {
         reason: "valid",
         email: "sam@example.org",
         repo: "platform/billing",
+        email_is_why: false,
       },
     });
     return () => clearMocks();

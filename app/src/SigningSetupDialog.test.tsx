@@ -517,13 +517,20 @@ describe("SigningSetupDialog on GitLab (#5629)", () => {
 
   it("with no signed commit pushed to GitLab yet, shows no ✓ and says when it will", async () => {
     state = { ...structuredClone(ON), accounts: [GITLAB] };
-    checked = { verified: false, reason: "nothing_pushed", email: "sam@example.org", repo: "" };
+    checked = {
+      verified: false,
+      reason: "nothing_pushed",
+      email: "sam@example.org",
+      repo: "",
+      email_is_why: false,
+    };
     const closed = vi.fn();
     render(<SigningSetupDialog forge={ON_GITLAB} onClose={closed} />);
     const dialog = await theDialog();
     expect(
       await within(dialog).findByText(/shows once a chat pushes its first signed commit/),
     ).toBeTruthy();
+    expect(dialog).toHaveTextContent("signed from now on, as sam@example.org.");
     expect(dialog).not.toHaveTextContent("Verified on GitLab ✓");
     await userEvent.click(within(dialog).getByRole("button", { name: "Done" }));
     expect(closed).toHaveBeenCalled();

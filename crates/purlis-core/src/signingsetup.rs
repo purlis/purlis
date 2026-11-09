@@ -429,11 +429,12 @@ pub fn check_with_a_test_commit(
 /// so where that email isn't one of the account's verified ones GitHub answers `unknown_key`
 /// (or `not_signing_key`) for a key the account does hold.
 ///
-/// True only where the forge's `reason` is one of those two, the account `login` lists
-/// `signer`'s key publicly, and `email` is not among its verified addresses. Where the addresses
-/// can't be read (a sign-in without `user:email`), the listed key alone says so. Where the key
-/// list can't be read, false: the key's own wording stands. The ✓ never comes from here
-/// (ADR 0116 §6); this only chooses what the window offers to fix.
+/// True only on GitHub, where the forge's `reason` is one of those two, the account `login`
+/// lists `signer`'s key publicly, and its verified addresses, read, don't hold `email`. Where
+/// either list can't be read, false: the window then claims nothing it hasn't seen, and the
+/// key's own wording stands. Not on GitLab, which finds a key by its fingerprint and whose public
+/// list holds keys for signing in too. The ✓ never comes from here (ADR 0116 §6); this only
+/// chooses what the window offers to fix.
 pub fn email_is_why(
     transport: &dyn Transport,
     forge: &Forge,
@@ -442,13 +443,12 @@ pub fn email_is_why(
     reason: &str,
     email: &str,
 ) -> bool {
-    if !matches!(reason, "unknown_key" | "not_signing_key") {
+    if forge.kind != Kind::GitHub || !matches!(reason, "unknown_key" | "not_signing_key") {
         return false;
     }
-    let listed = signingkeys::listed_publicly_over(transport, forge, login)
-        .is_ok_and(|listed| listed.this_device(signer).is_some());
-    listed
-        && verified_emails(transport, forge).map_or(true, |verified| {
+    signingkeys::listed_publicly_over(transport, forge, login)
+        .is_ok_and(|listed| listed.this_device(signer).is_some())
+        && verified_emails(transport, forge).is_ok_and(|verified| {
             !verified
                 .iter()
                 .any(|one| one.email.eq_ignore_ascii_case(email))

@@ -15944,6 +15944,12 @@ export type SigningCheck = {
 	email: string,
 	/**  The repository the commit is in. */
 	repo: string,
+	/**
+	 *  Whether `email`, not the key, is the likely reason it wasn't Verified (#5916): the forge
+	 *  said it doesn't know the key, yet the account lists this device's key and `email` isn't
+	 *  one of its verified ones. The window then offers the account's emails, not "add the key".
+	 */
+	email_is_why: boolean,
 };
 
 /**  What became of one account, after Replace key or Remove signing. */
