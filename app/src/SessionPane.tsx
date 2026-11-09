@@ -54,6 +54,7 @@ import { drawTerminalFont } from "./theme/terminalFont";
 import { scrollByDistance } from "./wheel";
 import { drawnReports, writePerFrame } from "./paneWrites";
 import { watchForFreeze } from "./freezeWatch5478"; // [DEBUG-5478]
+import { watchForCover } from "./coverWatch5478"; // [DEBUG-5478]
 import { useProjectShown } from "./projectShown";
 import { viewOpening } from "./slowLog";
 import { FIRST_PAGE, keepInView, pageHistory } from "./historyPages";
@@ -266,6 +267,13 @@ export function SessionPane({
     const refit = () => live.fit();
     // What a drag reckons the size this terminal would take from (`panePreview.gridIn`).
     const unmeasured = terminalInPane(where, () => ownCells(pane));
+    // [DEBUG-5478] What takes this pane's keys and mouse, if something does, goes to the log.
+    const uncovered = watchForCover(
+      where,
+      session,
+      () => terminal.current,
+      (line) => void commands.debug5478Log(line).catch(() => {}),
+    );
     let unqueue = () => {};
     const watching = new ResizeObserver(() => {
       unqueue = afterTheSlide(refit);
@@ -274,6 +282,7 @@ export function SessionPane({
 
     return () => {
       where.removeEventListener("mousedown", pastTheProgram, true);
+      uncovered(); // [DEBUG-5478]
       unmeasured();
       wheeling.dispose();
       undrawn();

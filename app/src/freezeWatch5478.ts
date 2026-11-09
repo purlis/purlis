@@ -14,6 +14,10 @@
  * {@link AT_MOST_EVERY_MS}, and fires one line to the diagnostic log through `debug5478Log`,
  * which the core prefixes `[DEBUG-5478]`.
  *
+ * **And looks again {@link FOLLOW_UP_MS} after a line** (#5478, 2026-11-09): one line more, `pane
+ * still frozen 30s on`, with the same fields, or `pane recovered after N s` where xterm drew what
+ * it was written since. A chat slow to echo recovers; only a `still frozen` line is a freeze.
+ *
  * It changes nothing the pane does: it listens, reads xterm's private state when it fires, and
  * wraps xterm's write loop only to note an exception before throwing it on.
  *
@@ -26,6 +30,9 @@ export const FROZEN_MS = 3_000;
 
 /** [DEBUG-5478] The least time between two lines of one pane. */
 export const AT_MOST_EVERY_MS = 60_000;
+
+/** [DEBUG-5478] How long after a line the watchdog looks again, to tell slow from frozen. */
+export const FOLLOW_UP_MS = 30_000;
 
 /** [DEBUG-5478] How often the watchdog looks. */
 const LOOK_EVERY_MS = 1_000;
@@ -101,6 +108,9 @@ export function watchForFreeze(
   const errors: string[] = [];
   /** Whether the pane is on screen: `null` until the observer says, or where there is none. */
   let intersecting: boolean | null = null;
+  /** The line last written, until it is looked at again: when, since when the pane waited,
+   *  and when xterm next drew all it was written, if it has. */
+  let followUp: { firedAt: number; since: number; drewAt?: number } | undefined;
 
   const waiting = (cause: "input" | "output") => {
     if (waitingSince !== undefined) return;
@@ -114,7 +124,10 @@ export function watchForFreeze(
   // focus redraws a row while a stalled write buffer holds everything else back.
   const drew = pane.onRender(() => {
     lastDrawn = clock.now();
-    if (unparsed === 0) waitingSince = undefined;
+    if (unparsed === 0) {
+      waitingSince = undefined;
+      if (followUp !== undefined) followUp.drewAt ??= lastDrawn;
+    }
   });
   const parsed = pane.onWriteParsed(() => {
     unparsed = 0;
@@ -185,7 +198,32 @@ export function watchForFreeze(
     })}`;
   };
 
+  const write = (said: string) => {
+    try {
+      log(said);
+    } catch {
+      // A line that cannot be written is let go: it is a record, never a reason to stop.
+    }
+  };
+
+  const lookAgain = (now: number) => {
+    if (followUp === undefined || now - followUp.firedAt < FOLLOW_UP_MS) return;
+    const { since, drewAt } = followUp;
+    followUp = undefined;
+    if (drewAt !== undefined) {
+      const after = Math.round((drewAt - since) / 100) / 10;
+      write(
+        `pane recovered after ${after} s: ${JSON.stringify({ session, recoveredMs: drewAt - since })}`,
+      );
+    } else {
+      write(
+        `pane still frozen ${FOLLOW_UP_MS / 1000}s on: ${line(now).slice("pane froze: ".length)}`,
+      );
+    }
+  };
+
   const look = () => {
+    lookAgain(clock.now());
     if (waitingSince === undefined) return;
     // Nothing is drawn while the window is hidden, or for a kept terminal no holder shows, on
     // purpose. A pane the observer says is off screen is still watched, and the line says so:
@@ -198,11 +236,8 @@ export function watchForFreeze(
     if (now - waitingSince < FROZEN_MS) return;
     if (lastFired !== undefined && now - lastFired < AT_MOST_EVERY_MS) return;
     lastFired = now;
-    try {
-      log(line(now));
-    } catch {
-      // A line that cannot be written is let go: it is a record, never a reason to stop.
-    }
+    write(line(now));
+    followUp = { firedAt: now, since: waitingSince };
     waitingSince = undefined;
   };
   const stop = clock.every(LOOK_EVERY_MS, look);

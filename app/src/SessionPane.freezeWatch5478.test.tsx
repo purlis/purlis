@@ -74,6 +74,8 @@ const later = (ms: number) =>
 
 /** The lines the window sent the diagnostic log. */
 let logged: string[] = [];
+/** The first lines of a freeze, without the look again 30s on. */
+const froze = () => logged.filter((line) => line.startsWith("pane froze: "));
 
 beforeEach(() => {
   made.length = 0;
@@ -183,13 +185,53 @@ describe("[DEBUG-5478] the freeze watchdog", () => {
       frame();
       await later(5_000);
     }
-    expect(logged).toHaveLength(1);
+    expect(froze()).toHaveLength(1);
 
     await later(10_000);
     await send("a minute on");
     frame();
     await later(4_000);
+    expect(froze()).toHaveLength(2);
+  });
+
+  it("looks again 30s after its line, and says the pane is still frozen", async () => {
+    const pane = await openPane();
+    vi.spyOn(pane, "write").mockImplementation(() => {});
+
+    await send("never drawn");
+    frame();
+    await later(4_000);
+    expect(logged).toHaveLength(1);
+    await later(25_000);
+    expect(logged).toHaveLength(1);
+    await later(6_000);
+
     expect(logged).toHaveLength(2);
+    expect(logged[1]).toMatch(/^pane still frozen 30s on: \{/);
+    const said = JSON.parse(logged[1].slice("pane still frozen 30s on: ".length)) as object;
+    expect(said).toMatchObject({ session: 7, isPaused: false, visibilityState: "visible" });
+  });
+
+  it("says a pane slow to draw recovered, and how long it took", async () => {
+    const pane = await openPane();
+    const stuck = vi.spyOn(pane, "write").mockImplementation(() => {});
+
+    await send("slow");
+    frame();
+    await later(4_000);
+    expect(logged).toHaveLength(1);
+    stuck.mockRestore();
+    await later(4_000);
+    await drawn(pane, "drawn at last\r\n");
+    await later(30_000);
+
+    expect(logged).toHaveLength(2);
+    expect(logged[1]).toMatch(
+      /^pane recovered after \d+(\.\d)? s: \{"session":7,"recoveredMs":\d+\}$/,
+    );
+    const ms = Number(/"recoveredMs":(\d+)/.exec(logged[1])?.[1]);
+    expect(ms).toBeGreaterThanOrEqual(8_000);
+    expect(ms).toBeLessThan(30_000);
   });
 
   it("writes its line while a write waits unparsed, though the cursor's row is redrawn", async () => {
