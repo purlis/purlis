@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794237234243,
+  "lastUpdate": 1794240428912,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -44898,6 +44898,48 @@ window.BENCHMARK_DATA = {
             "value": 101.3805455,
             "unit": "ms",
             "extra": "median of 5 runs: 100.890, 101.294, 101.381, 102.343, 102.402 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "be868ca49ef994beade7c755c2d27f3e5deade66",
+          "message": "Fix main stories: ReportDraftNotices › Read Opens The Draft redraws its purlis cells after #5937 (#5989)\n\n* Stories: ReportDraftNotices › Read Opens The Draft draws its purlis cells again after #5937\n\n#5703 drew its baselines before it merged main, which had just taken\n#5937: a text box in the purlis theme now draws its edge (#4475). The\npurlis cells of this story (dark, light, each compact; Chromium and\nWebKit) kept the edgeless boxes, so main's stories run failed on them\nfrom dd9b8dca43 on. Classic and high contrast cells were unchanged and\npass. Their stale baselines go here, so this pull request's run draws\nthem again in the pinned image.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M708E5VXVK2552BR0TAZQ0AP\nPurlis-Persona: steward\n\n* stories: ReportDraftNotices › Read Opens The Draft, purlis cells drawn in the pinned image\n\nTaken from run 42628185804 with tools/story-baselines-pull.mjs and\nreviewed: each shows the Body box with the edge #5937 gave it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M708E5VXVK2552BR0TAZQ0AP\nPurlis-Persona: steward\n\n* stories: ReportDraftNotices › Read Opens The Draft, purlis_dark WebKit drawn in the pinned image\n\nTaken from run 42630420925 and reviewed: the Body box carries its edge.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M708E5VXVK2552BR0TAZQ0AP\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-09T14:45:22Z",
+          "tree_id": "645cd372f5a87d10dedcd92a9c632e19f811e3a9",
+          "url": "https://github.com/purlis/purlis/commit/be868ca49ef994beade7c755c2d27f3e5deade66"
+        },
+        "date": 1794240423096,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5823875000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.562, 0.582, 0.582, 0.586, 0.586 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.529757999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.355, 16.482, 16.530, 16.639, 16.749 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.993697,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.467, 102.381, 102.994, 103.232, 103.820 ms"
           }
         ]
       }
