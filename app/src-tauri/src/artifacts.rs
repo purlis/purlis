@@ -368,6 +368,11 @@ impl Artifacts {
             .map(|one| (one.of.clone(), one.snapshot.clone(), one.declared.clone()))
     }
 
+    /// Whether `label` is an artifact webview purlis serves.
+    pub(crate) fn is_served(&self, label: &str) -> bool {
+        self.served().contains_key(label)
+    }
+
     /// Whether artifact webview `label` may go to `url`: within its own origin only, and never
     /// to a data file ([`serve::is_data`]), which is no document of the template.
     pub(crate) fn may_navigate(&self, label: &str, url: &tauri::Url) -> bool {
@@ -501,11 +506,30 @@ pub(crate) fn serve<R: Runtime>(
     }
     // The actions the page offers (#5972): drawn in purlis's bar, never done here.
     offers::heard(app, label, request.uri().path(), request.uri().query());
-    // A link the person followed in the page (#5956), attributed by the webview's label.
-    if let Some(followed) = crate::artifact_links::href_of(&request.uri().to_string())
-        .and_then(|href| artifacts.followed(label, &href))
-    {
-        crate::artifact_links::follow(app, label, followed);
+    // A link the person pressed in the page (#5956), attributed by the webview's label, and
+    // followed only with the one token purlis handed its open load (ADR 0122 §5).
+    if let Some(links) = app.try_state::<crate::artifact_links::Links>() {
+        use crate::artifact_links::{Heard, delivery, follow};
+        let heard = if artifacts.is_served(label) {
+            links.heard(label, &request.uri().to_string(), std::time::Instant::now())
+        } else {
+            Heard::Nothing
+        };
+        let hand = |load: &str, token: &str| {
+            if let Some(webview) = app.get_webview(label) {
+                let _ = webview.eval(delivery(load, token));
+            }
+        };
+        match heard {
+            Heard::Nothing => {}
+            Heard::Hand { load, token } => hand(&load, &token),
+            Heard::Follow { href, load, token } => {
+                hand(&load, &token);
+                if let Some(followed) = artifacts.followed(label, &href) {
+                    follow(app, label, followed);
+                }
+            }
+        }
     }
     if let Some((window, key)) = answered.key {
         // The window's own webview has the window's label.
@@ -621,7 +645,11 @@ pub(crate) fn close_window_children<R: Runtime>(app: &tauri::AppHandle<R>, windo
     let Some(artifacts) = app.try_state::<Artifacts>() else {
         return;
     };
+    let links = app.try_state::<crate::artifact_links::Links>();
     for label in artifacts.forget_window(window) {
+        if let Some(links) = &links {
+            links.forget(&label);
+        }
         if let Some(webview) = app.get_webview(&label) {
             let _ = webview.close();
         }
@@ -1495,6 +1523,9 @@ pub async fn artifact_close(
     let webview = child(&window, &artifacts, &label);
     artifacts.served().remove(&label);
     artifacts.unsubscribe_label(&label);
+    if let Some(links) = window.try_state::<crate::artifact_links::Links>() {
+        links.forget(&label);
+    }
     if let Some(webview) = webview {
         webview.close().map_err(|e| e.to_string())?;
     }
