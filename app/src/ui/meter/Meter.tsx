@@ -16,9 +16,10 @@
  * - **`MeterGroup`**: meters that compare, sharing one scale and one label column, so their
  *   lengths compare: the Grades tab's latest grade, with it, without it and its previous version.
  * - **`ProgressBar`**: how far something is (a running grade's chats done of N), or that it is
- *   going with no end known (`isIndeterminate`). Its value is said politely as it changes, at
- *   most once a second (`ui/said.ts`); an indeterminate bar's stripes move, and stand still
- *   under reduced motion, where they still say it is going.
+ *   going with no end known (`isIndeterminate`). Its label and value are said politely as they
+ *   change, at most once a second (`ui/said.ts`), its label alone while no end is known, so a
+ *   new stage is heard (#3731); an indeterminate bar's stripes move, and stand still under
+ *   reduced motion, where they still say it is going.
  *
  * **Drawn by its parts** (ADR 0103): the `root` (its `data-variant`), its `label`, its `track`,
  * the `fill` on it and its `value`. `meter.css` draws the family default and a theme's parts
@@ -201,11 +202,18 @@ export function ProgressBar({
           </>
         )}
       </AriaProgressBar>
-      <Said
-        words={isIndeterminate ? "" : typeof label === "string" ? `${label} ${words}` : words}
-      />
+      <Said words={saidOf(label, isIndeterminate ? undefined : words)} />
     </>
   );
+}
+
+/**
+ * **What a progress bar says**: its label and its value, or, going with no end known, its label
+ * alone, so a new stage is heard (#3731). A label that is not words says its value only.
+ */
+function saidOf(label: ReactNode, value: string | undefined): string {
+  if (typeof label !== "string") return value ?? "";
+  return value === undefined ? label : `${label} ${value}`;
 }
 
 /** A progress bar's value, said politely as it changes, at most once a second. */

@@ -26,8 +26,5 @@ export const rules = {
   "meter-family": meterFamily,
 };
 
-/** The files a rule is still off in, until their lanes move them. */
-export const off = {
-  // Get project's clone progress (#3674's follow-up): a native bar inside its status line.
-  "meter-family": ["src/GetProject.tsx"],
-};
+/** The files a rule is still off in, until their lanes move them: none, since #3731. */
+export const off = {};
