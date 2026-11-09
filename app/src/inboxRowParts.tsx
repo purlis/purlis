@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { SETTLE_MS } from "./TaskBlocksNotice";
 import { useWayPlaces } from "./wayPlaces";
 
@@ -53,10 +53,16 @@ export function useSettledPlace<T extends HTMLElement>(here: string) {
    * answer drawn on the row from the first (a decision's Allow) is read there, and never first
    * at the next frame.
    */
-  const drawnAt = (row: T | null) => {
+  // One function for the row's life: a new one each render would detach the row and attach it
+  // again on every commit, and whatever reads `drawn` in between would find no row (#6002).
+  const lastMovedAt = useRef(movedAt);
+  useLayoutEffect(() => {
+    lastMovedAt.current = movedAt;
+  });
+  const drawnAt = useCallback((row: T | null) => {
     drawn.current = row;
-    if (row !== null) movedAt();
-  };
+    if (row !== null) lastMovedAt.current();
+  }, []);
   return { drawn, drawnAt, tooSoon, readPlaces };
 }
 

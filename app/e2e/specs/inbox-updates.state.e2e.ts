@@ -86,7 +86,7 @@ async function doctorLineStands(): Promise<boolean> {
 }
 
 /** The permission ask as Asks draws it: what it says, and whether its Allow can be pressed. Its
- *  form stands behind its Answer link (#5651), which this opens where it is closed. */
+ *  answers stand on its row (#5998); an Answer, where one is drawn closed, is opened. */
 async function theAsk(): Promise<{ says: string; allow: boolean } | null> {
   return browser.execute((selector: string) => {
     const row = document.querySelector<HTMLElement>(selector);
