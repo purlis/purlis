@@ -18,9 +18,16 @@
 //! direct ssh to the listed port that does not go through the route, which the sandbox
 //! refuses. So the route is still the only way out.
 //!
-//! The proxy here is [`sandbox::Confinement::proxy_only`]'s, serving one exact loopback address
-//! and port. A project's hosts never name this machine ([`purlis_core::sandbox::hosts`]), and
-//! what the proxy decides is not what is under test here; what the sandbox lets through is.
+//! The confinement is [`sandbox::Confinement::serving`], what a wrapped chat's start makes
+//! (`plan`'s `Beside::Wrapped`): its proxy, its own `charter-chat-*` temp folder, and the route
+//! written there. Its proxy serves one exact loopback address and port: a project's hosts never
+//! name this machine ([`purlis_core::sandbox::hosts`]), and what the proxy decides is not what
+//! is under test here; what the sandbox lets through is.
+//!
+//! Claude Code chats are not run here: their sandbox is Claude Code's own (bubblewrap on
+//! Linux), built by Claude Code from the settings purlis writes, and their route is handed to
+//! each command it runs. That needs the real Claude Code
+//! (`claude_codes_own_sandbox_holds_the_settings_purlis_writes`).
 //!
 //! It binds ports and applies a sandbox, which a sandboxed agent cannot do, so it first runs on
 //! CI. On Linux the `rust` job runs it. On macOS it needs `sandbox-exec`, so it runs in the
@@ -40,6 +47,7 @@ use std::time::Duration;
 use purlis_core::harness::Harness;
 use purlis_core::sandbox::egress::Serving;
 use purlis_core::sandbox::reach::Reach;
+use purlis_core::sandbox::tunnel::SshRoute;
 use purlis_core::sandbox::{self, At, Confinement, Decided, Machine, Os, Words};
 
 /// Set in the child this test re-runs itself in, where `PURLIS_BINARY` names this build's
@@ -137,6 +145,7 @@ fn a_wrapped_chat(out: &Path) -> (sandbox::Applied, PathBuf) {
 fn in_the_chat(
     applied: &sandbox::Applied,
     confinement: &Confinement,
+    route: &SshRoute,
     cwd: &Path,
     script: &str,
 ) -> std::process::Output {
@@ -159,14 +168,17 @@ fn in_the_chat(
             },
         )
         .expect("the chat's line");
-    let route = applied
-        .ssh_route(Some(confinement))
-        .expect("the chat's ssh route");
+    // The chat's environment as a start finishes it (`hoststart`): a `PATH`, then the route's
+    // folder first on it.
+    let mut env = line.env;
+    if !env.iter().any(|(key, _)| key == "PATH") {
+        env.push(("PATH".to_owned(), "/usr/bin:/bin".to_owned()));
+    }
+    let env = route.first_on_path(env);
     support::command(&line.program)
         .args(&line.args)
         .current_dir(cwd)
-        .envs(line.env.iter().map(|(k, v)| (k.as_str(), v.as_str())))
-        .env("PATH", route.on_path("/usr/bin:/bin"))
+        .envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())))
         .output()
         .expect("the chat's line ran")
 }
@@ -215,7 +227,7 @@ fn a_wrapped_chats_ssh_is_carried_by_its_route_from_inside_its_sandbox_and_nothi
     let scratch = tempfile::tempdir().expect("a folder");
     let out = scratch.path().canonicalize().expect("a real folder");
     let (applied, root) = a_wrapped_chat(&out);
-    let confinement = Confinement::proxy_only(Serving::of(Reach::open(vec![format!(
+    let confinement = Confinement::serving(Serving::of(Reach::open(vec![format!(
         "127.0.0.1:{listed}"
     )])))
     .expect("the chat's proxy");
@@ -232,6 +244,7 @@ fn a_wrapped_chats_ssh_is_carried_by_its_route_from_inside_its_sandbox_and_nothi
     let carried = in_the_chat(
         &applied,
         &confinement,
+        route,
         &root,
         &format!("command -v ssh; ssh {QUIET} -p {listed} 127.0.0.1 true"),
     );
@@ -257,6 +270,7 @@ fn a_wrapped_chats_ssh_is_carried_by_its_route_from_inside_its_sandbox_and_nothi
     let refused = in_the_chat(
         &applied,
         &confinement,
+        route,
         &root,
         &format!("ssh {QUIET} -p {unlisted} 127.0.0.1 true"),
     );
@@ -276,6 +290,7 @@ fn a_wrapped_chats_ssh_is_carried_by_its_route_from_inside_its_sandbox_and_nothi
     let direct = in_the_chat(
         &applied,
         &confinement,
+        route,
         &root,
         &format!("{SSH} -F /dev/null {QUIET} -p {listed} 127.0.0.1 true"),
     );
@@ -291,6 +306,7 @@ fn a_wrapped_chats_ssh_is_carried_by_its_route_from_inside_its_sandbox_and_nothi
     );
     assert!(
         heard_unlisted.recv_timeout(Duration::from_secs(1)).is_err(),
-        "the unlisted host was connected to"
+        "the unlisted host was connected to: {}",
+        said(&refused)
     );
 }
