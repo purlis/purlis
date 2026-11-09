@@ -1015,3 +1015,44 @@ fn a_shadow_within_the_paint_or_on_text_that_shows_nothing_kept_out_does_not_wit
 
     assert!(shot.is_ok(), "{shot:?}");
 }
+
+/// The page says `said` in a line (node 123) inside a box (node 122) drawn through `filter`.
+fn the_line_is_drawn_through(engine: &super::Engine, filter: &str, said: &str) {
+    let mut page = Document::new("PAGE-1");
+    let around = page.element(122, None, "DIV");
+    page.node(around).laid_out = Some((None, vec![("filter".into(), filter.into())]));
+    let line = page.element(123, Some(around), "P");
+    page.text(124, line, said);
+    page.element(21, None, "INPUT");
+    draws(engine, "S-PAGE-1", &page, &[(123, [8.0, 8.0, 9.0, 9.0])]);
+}
+
+#[test]
+fn text_that_shows_what_was_kept_out_drawn_through_such_a_filter_withholds_the_screenshot() {
+    let (browser, engine) = browser();
+    the_line_is_drawn_through(
+        &engine,
+        "drop-shadow(rgb(0, 0, 0) 40px 40px 0px)",
+        "You said open sesame",
+    );
+    keep_out_the_secret(&browser);
+
+    let shot = browser.call(&id(1), Call::Screenshot { page: None });
+
+    assert!(matches!(shot, Err(Refusal::Withheld(_))), "{shot:?}");
+}
+
+#[test]
+fn text_that_shows_nothing_kept_out_drawn_through_such_a_filter_does_not_withhold_it() {
+    let (browser, engine) = browser();
+    the_line_is_drawn_through(
+        &engine,
+        "drop-shadow(rgb(0, 0, 0) 40px 40px 0px)",
+        "Welcome back",
+    );
+    keep_out_the_secret(&browser);
+
+    let shot = browser.call(&id(1), Call::Screenshot { page: None });
+
+    assert!(shot.is_ok(), "{shot:?}");
+}

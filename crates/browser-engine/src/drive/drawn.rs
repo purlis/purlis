@@ -16,10 +16,11 @@
 //! image, video and embedded object, and every element drawn with an image or a paint script:
 //! what they show cannot be read, so they are painted whatever they show.
 //!
-//! An answer purlis cannot read, a page that draws a reflection, one that draws a frame or a
-//! blanked element through a filter that may draw it elsewhere, one that draws a backdrop
-//! through a filter of its own (`backdrop-filter: url(…)`), or one that casts the shadow of a
-//! blanked element's or a painted text's letters past what is painted, withholds the screenshot.
+//! An answer purlis cannot read, a page that draws a reflection, one that draws a frame, a
+//! blanked element or a painted text through a filter that may draw it elsewhere, one that
+//! draws a backdrop through a filter of its own (`backdrop-filter: url(…)`), or one that casts
+//! the shadow of a blanked element's or a painted text's letters past what is painted,
+//! withholds the screenshot.
 
 use std::collections::HashSet;
 
@@ -43,8 +44,9 @@ pub(crate) const STYLES: [&str; 10] = [
     "-webkit-box-reflect",
 ];
 
-/// Filters that may draw an element away from its box: a frame or a blanked element drawn
-/// through one, itself or by an element it is in, withholds the screenshot.
+/// Filters that may draw an element away from its box: a frame, a blanked element or what is
+/// painted for the text it shows drawn through one, itself or by an element it is in, withholds
+/// the screenshot.
 const FILTERS_THAT_MOVE: [&str; 2] = ["url(", "drop-shadow"];
 
 /// How far past its box, in CSS pixels, a text's shadow may be drawn and still lie under the
@@ -288,20 +290,6 @@ fn read_document(
             out.frames.push(chain(at));
         }
     }
-    for (at, backend) in backends.iter().enumerate() {
-        if !(FRAMES.contains(&name(at)?.as_str()) || blanked.contains(backend)) {
-            continue;
-        }
-        let mut next = Some(at);
-        let mut steps = 0;
-        while let Some(up) = next {
-            if filtered[up] {
-                return Err(Unread("the page draws through a filter"));
-            }
-            steps += 1;
-            next = parent(up).filter(|_| steps <= count);
-        }
-    }
     // Text laid out that holds a text kept out, whole or split over elements: the innermost
     // node whose text, read in order, holds it. Each node comes after the one it is in, and an
     // element whose text already holds one passes no text on.
@@ -378,6 +366,25 @@ fn read_document(
             && let Some(list) = drop_down(at)?
         {
             paint(list, out);
+        }
+    }
+    // A frame, a blanked element and what is painted for what it shows are drawn through no
+    // filter that may draw them elsewhere, by themselves or by an element they are in.
+    let mut walked = painted.clone();
+    for (at, backend) in backends.iter().enumerate() {
+        if FRAMES.contains(&name(at)?.as_str()) || blanked.contains(backend) {
+            walked.insert(at);
+        }
+    }
+    for at in &walked {
+        let mut next = Some(*at);
+        let mut steps = 0;
+        while let Some(up) = next {
+            if filtered[up] {
+                return Err(Unread("the page draws through a filter"));
+            }
+            steps += 1;
+            next = parent(up).filter(|_| steps <= count);
         }
     }
     // A blanked element, and text painted for what it shows, cast no shadow past the paint: a
