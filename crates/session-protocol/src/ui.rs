@@ -350,6 +350,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     "reopen_finished_task",
     "curate",
     "relaunch",
+    // Discuss in an artifact's bar (#5957, ADR 0120 §5): a chat about the page, typed unsent.
+    "artifact_discuss",
     // Starts again.
     "restart_chat_without_sandbox",
     "restart_chat",

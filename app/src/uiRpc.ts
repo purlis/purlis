@@ -41,6 +41,7 @@ export const commands = {
 	artifactRepin: __WINDOW_ONLY_RESULT,
 	artifactUnpin: __WINDOW_ONLY_RESULT,
 	artifactApprove: __WINDOW_ONLY_RESULT,
+	artifactDiscuss: __WINDOW_ONLY_START_REFUSED,
 	/**  What the window says about this launch and the session bus: nothing, on a launch with it. */
 	sessionBus: () => __TAURI_INVOKE<{
 	/**  The line it draws: why there is no bus, and what is off for the run. */

@@ -14,6 +14,7 @@
 
 pub mod approval;
 pub mod data;
+pub mod discuss;
 pub mod fresh;
 pub mod pins;
 pub mod script;
