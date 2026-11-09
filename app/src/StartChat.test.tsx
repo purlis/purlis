@@ -2624,7 +2624,8 @@ describe("the start's Secret ask, with what else the dialog offers (#5670 review
 
   it("an answer that fails says so, and lets the ask be answered again", async () => {
     const onSaid = vi.fn();
-    const onAnswer = vi.fn(() => Promise.reject(new Error("the app went away")));
+    // A message that ends in a full stop is said with one.
+    const onAnswer = vi.fn(() => Promise.reject(new Error("the app went away.")));
     render(
       <StartChat
         options={options()}
@@ -2641,7 +2642,7 @@ describe("the start's Secret ask, with what else the dialog offers (#5670 review
 
     await waitFor(() =>
       expect(onSaid).toHaveBeenCalledWith(
-        "purlis could not send your answer: the app went away. Try again.",
+        "purlis could not send your answer: the app went away. Type the value again and press Fill.",
       ),
     );
     expect(screen.getByRole("button", { name: "Fill" })).not.toHaveAttribute("aria-disabled");

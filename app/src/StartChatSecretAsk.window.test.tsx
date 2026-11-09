@@ -261,6 +261,31 @@ describe("a start missing its profile credential, in the Start dialog (#5137)", 
     expect(of("start_chat")).toHaveLength(1);
   });
 
+  it("an answer the core refuses, with another profile picked since, is said all the same (#5670 review)", async () => {
+    const { of, release } = core({
+      hold: "answer",
+      refuse: "the vault providers is locked: unlock it, then fill again",
+    });
+    render(<App />);
+
+    const { user, dialog, body } = await startRefused();
+    await user.type(within(body).getByLabelText("Value of anthropic"), "fr3sh-anthropic");
+    await user.click(within(body).getByRole("button", { name: "Fill" }));
+    await waitFor(() => expect(of("answer_secret_ask")).toHaveLength(1));
+    await user.click(within(dialog).getByRole("radio", { name: /codex/ }));
+    release();
+
+    await waitFor(() =>
+      expect(
+        within(dialog)
+          .getAllByRole("alert")
+          .some((one) =>
+            one.textContent?.includes("the vault providers is locked: unlock it, then fill again"),
+          ),
+      ).toBe(true),
+    );
+  });
+
   it("a pick of another profile drops the refused profile's ask, and picking it back draws it again (#5670)", async () => {
     core();
     render(<App />);

@@ -563,7 +563,7 @@ export function StartChat({
       .catch((why: unknown) => {
         if (open.current)
           onSaidOf(
-            `purlis could not send your answer: ${why instanceof Error ? why.message : String(why)}. Try again.`,
+            `purlis could not send your answer: ${(why instanceof Error ? why.message : String(why)).replace(/\.$/, "")}. Type the value again and press Fill.`,
           );
       })
       .finally(() => setAnswering(false));
@@ -944,7 +944,9 @@ export function StartChat({
             {refusalSaid && (
               <p className="honest mid-turn" role="alert">
                 {refusalSaid}
-                {/* Said with it, so a screen reader hears whose ask it is (#5670 review). */}
+                {/* Said with it, so a screen reader hears what the ask's last press was told and
+                  whose ask it is, while the ask waits for its own profile (#5670 review). */}
+                {ask === undefined && secretAsk?.said !== undefined && ` ${secretAsk.said}`}
                 {askElsewhere !== undefined && ` ${askElsewhere}`}
               </p>
             )}
