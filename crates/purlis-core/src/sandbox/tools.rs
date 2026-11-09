@@ -1994,6 +1994,23 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "mariadb-secure-installation",
     "mariabackup",
     "mariadb-backup",
+    // and the last of them (#5931, #5929's second review): `mysql_plugin` starts the server its
+    // `-m` or `-b` finds with the plugins its `-p` names, and runs the program its
+    // `--my-print-defaults` names; `mysql_upgrade` runs the client and `mysqlcheck` with the files
+    // of settings and plugins it is handed. Percona's backup tools are mariabackup's kin, and
+    // the server's state transfer scripts (`wsrep_sst_*`, refused by their prefix, below) run the
+    // transfer program their arguments name. Server-side all, none a usual reason to hand a chat
+    // a key.
+    "mysql_plugin",
+    "mariadb-plugin",
+    "mysql_upgrade",
+    "mariadb-upgrade",
+    "xtrabackup",
+    "innobackupex",
+    "xbstream",
+    "xbcloud",
+    "xbcloud_osenv",
+    "xbcrypt",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused
@@ -2192,14 +2209,12 @@ fn not_for_a_run_grant(name: &str) -> bool {
     let refused = |one: &str| {
         !one.is_empty() && (NOT_FOR_A_RUN_GRANT.contains(&one) || runs_what_it_is_told(one))
     };
-    // git's own programs are git's: `git-shell` runs what it is told, `git-lfs` runs git.
+    // git's own programs are git's: `git-shell` runs what it is told, `git-lfs` runs git. The
+    // server's state transfer scripts, each release adding some, run what their arguments name
+    // (#5931).
     let lower = name.to_ascii_lowercase();
-    if lower
-        .split('.')
-        .next()
-        .unwrap_or_default()
-        .starts_with("git-")
-    {
+    let stem = lower.split('.').next().unwrap_or_default();
+    if stem.starts_with("git-") || stem.starts_with("wsrep_sst_") {
         return true;
     }
     name_forms(name).iter().any(|one| refused(one))

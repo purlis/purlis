@@ -2696,3 +2696,60 @@ fn mysql_hotcopy_secure_installation_and_backup_run_what_they_name_so_they_are_o
         refused_as_running_others(name);
     }
 }
+
+// #5931, from the second review of #5929: the MySQL and MariaDB tools and their kin that no row
+// read, or read only by the long forms of the flags that name a program. Each is refused whole.
+
+/// `mysql_plugin` starts the server it finds (`-m`, `--mysqld`, `-b`) with the plugins of a
+/// folder it is told (`-p`), and `--my-print-defaults` names a program it runs.
+#[test]
+fn mysql_plugin_runs_the_server_and_programs_its_flags_name_so_it_is_offered_no_run_grant() {
+    for name in ["mysql_plugin", "mariadb-plugin"] {
+        refused_as_running_others(name);
+    }
+}
+
+/// `mysql_upgrade` runs the client and `mysqlcheck` with the files of settings and plugins it
+/// is handed, as the server's administrator.
+#[test]
+fn mysql_upgrade_runs_the_client_with_what_it_is_handed_so_it_is_offered_no_run_grant() {
+    for name in ["mysql_upgrade", "mariadb-upgrade"] {
+        refused_as_running_others(name);
+    }
+}
+
+/// Percona's backup tools, as mariabackup is: `xtrabackup` runs the programs and plugins its
+/// flags name, and its kin read and write the streams and keys it makes.
+#[test]
+fn percona_xtrabackup_and_its_kin_run_what_they_name_so_they_are_offered_no_run_grant() {
+    for name in [
+        "xtrabackup",
+        "xtrabackup-80",
+        "innobackupex",
+        "xbstream",
+        "xbcloud",
+        "xbcloud_osenv",
+        "xbcrypt",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The server's state transfer scripts, by their prefix: each is a shell script that runs the
+/// transfer program its arguments name, and new ones come with each release.
+#[test]
+fn every_wsrep_sst_script_runs_a_transfer_program_so_it_is_offered_no_run_grant() {
+    for name in [
+        "wsrep_sst_rsync",
+        "wsrep_sst_rsync_wan",
+        "wsrep_sst_mariabackup",
+        "wsrep_sst_xtrabackup-v2",
+        "wsrep_sst_mysqldump",
+        "wsrep_sst_backup",
+        "wsrep_sst_common",
+        "wsrep_sst_clone",
+        "WSREP_SST_RSYNC",
+    ] {
+        refused_as_running_others(name);
+    }
+}
