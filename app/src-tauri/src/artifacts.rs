@@ -1230,7 +1230,7 @@ mod tests {
         let page = r#"<script type="application/json" id="purlis">{"api":1,"data":["data.json"]}</script><script>go()</script>"#;
         let (_root, ws, pin) = pinned_board(&[("index.html", page), ("data.json", r#"{"n":1}"#)]);
         let config = tempfile::tempdir().unwrap();
-        let snapshot = serve::Snapshot::read(&ws.join("artifacts/board")).unwrap();
+        let snapshot = serve::Snapshot::read(&ws.join("artifacts/board"), "board").unwrap();
         let declared = declared_by(&snapshot);
         assert_eq!(
             declared.as_ref().map(|d| d.data.clone()),
