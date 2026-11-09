@@ -501,7 +501,7 @@ export const RouterScorecard: Story = {
       "Graded 2026-10-27 09:12 UTC, on the library at 3f9a2c1d7e40",
     );
     await expect(canvas.getByRole("heading", { name: "lint-rs" })).toBeInTheDocument();
-    await tabInto(() => canvas.getByTestId("router-grade-scorecard"), 40);
+    await tabInto(() => canvas.getByTestId("router-grade-scorecard"));
     expectFocusInSight();
   },
 };
@@ -519,7 +519,7 @@ export const RouterGradePlanPage: Story = {
     await expect(
       canvas.getByRole("button", { name: "Start grading · 18 chats" }),
     ).toBeInTheDocument();
-    await tabInto(() => canvas.getByTestId("router-grade-plan"), 40);
+    await tabInto(() => canvas.getByTestId("router-grade-plan"));
     expectFocusInSight();
   },
 };
