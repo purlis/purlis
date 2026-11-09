@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794253927348,
+  "lastUpdate": 1794256542014,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -45108,6 +45108,48 @@ window.BENCHMARK_DATA = {
             "value": 101.94062600000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.502, 101.379, 101.941, 102.110, 103.651 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "b5702d947987515d5b9c1e288ba486de85e3b20c",
+          "message": "SK-11: org controls for skill sources — allow/block, minimum age, audit (#2774) (#6032)\n\n* SK-11: an org's project holds skill installs to its allow/block lists and a minimum age, and audits them (#2774)\n\nA [skill_policy] table in charter.toml makes a project an org's: installs and updates\nare held to its allow and block lists of sources and single skills and to a minimum\ncommit age (7 days by default; exact commits exempted in the same table), at the\nreview and again at the install or update. Every install, update and removal of a\nskill installed from a source is audited as skill.install / skill.update /\nskill.remove in the event log through the window; the command line, which cannot\nwrite that log, refuses such a change on an org's project and names the Skill studio.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70Q8EF0Z2QM3W77N6DVR4VS\nPurlis-Persona: steward\n\n* SK-11 review: extension reviews, restore and undo held and audited; fail closed on an unparseable file (#2774)\n\n- An extension source's reviews (one, a set, every, an update) say the org's refusal\n  before anything is accepted, as the git source's do.\n- Restoring a skill installed from a source is held to the lists and audited as an\n  install; undoing an update set is audited as an update to the earlier pins.\n- A charter.toml that does not parse and names skill_policy refuses; an unreadable\n  lockfile refuses a removal on an org's project.\n- min_age_exempt matches a commit in either case and a revision exactly; counts go\n  through counts::counted; a reader's complaint is said; an empty skill is refused.\n- The window's audit error no longer says 'so nothing was' twice.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70Q8EF0Z2QM3W77N6DVR4VS\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-09T19:58:34Z",
+          "tree_id": "e7261da2e866310a9a3c0fec28b8e411130b1dcb",
+          "url": "https://github.com/purlis/purlis/commit/b5702d947987515d5b9c1e288ba486de85e3b20c"
+        },
+        "date": 1794256535421,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6759605,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.652, 0.666, 0.676, 0.679, 0.704 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.632337999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.518, 16.629, 16.632, 16.650, 16.815 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.805683,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.572, 101.655, 102.806, 102.884, 103.600 ms"
           }
         ]
       }
