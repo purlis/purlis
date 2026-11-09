@@ -259,6 +259,156 @@ describe("a pinned artifact", function () {
 });
 
 /**
+ * **Managing pins from the window** (#5953): an `.html` page of a branch rendered privately, with
+ * Pin to workspace beside it; the dialog that pins it, copying it into the workspace's
+ * `artifacts/`; the icon's menu moving it and unpinning it through its own dialog. Each write is
+ * read back off the pins file on disk, where the project's save shares it from.
+ */
+describe("managing pins from the window", () => {
+  const REPORT = "Weekly report";
+  let plane = "";
+  let branch = "";
+  let artifacts = "";
+
+  /** The pins file's folders, in their order, as written on disk. */
+  function foldersPinned(): string[] {
+    try {
+      return [
+        ...readFileSync(join(artifacts, "pins.toml"), "utf8").matchAll(/folder = "([^"]+)"/g),
+      ].map((found) => found[1]);
+    } catch {
+      return [];
+    }
+  }
+
+  /** Sends the `contextmenu` a right-click sends to the first match of `selector`. */
+  async function sendContextMenu(selector: string): Promise<boolean> {
+    return browser.execute((css: string) => {
+      const el = document.querySelector(css);
+      if (!(el instanceof HTMLElement)) return false;
+      const box = el.getBoundingClientRect();
+      el.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          clientX: Math.round(box.left + box.width / 2),
+          clientY: Math.round(box.top + box.height / 2),
+        }),
+      );
+      return true;
+    }, selector);
+  }
+
+  before(async () => {
+    plane = (await ask<string[]>("open_planes"))[0];
+    artifacts = pinned(plane);
+    branch = join(plane, "workspaces", "alpha", ".worktrees", "svc", "fix-login");
+    mkdirSync(join(branch, "pin-me"), { recursive: true });
+    writeFileSync(
+      join(branch, "pin-me", "weekly.html"),
+      `<!doctype html><title>${REPORT}</title><p>Closed this week: 9</p>`,
+    );
+    await focusWorkspace("alpha");
+  });
+
+  after(async () => {
+    if (await $('[role="dialog"], [role="alertdialog"]').isDisplayed())
+      await browser.keys(["Escape"]);
+    for (const name of [`weekly.html · fix-login`]) {
+      if ((await tabNames()).includes(name))
+        await $(`${TABS} button[aria-label="Close ${name}"]`).click();
+    }
+    rmSync(join(branch, "pin-me"), { recursive: true, force: true });
+    rmSync(artifacts, { recursive: true, force: true });
+  });
+
+  it("renders a branch's .html page privately, with Pin to workspace beside it", async () => {
+    await browser.execute(() => {
+      const mac = navigator.platform.startsWith("Mac");
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "p",
+          metaKey: mac,
+          ctrlKey: !mac,
+          shiftKey: !mac,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+    await browser.keys("weekly.html");
+    const hit = await $('[role="listbox"][aria-label="Files"] [role="option"]');
+    await hit.waitForExist({ timeout: 20_000 });
+    await browser.keys(["Enter"]);
+    await browser.waitUntil(async () => (await inFront()) === "weekly.html · fix-login", {
+      timeout: 20_000,
+      timeoutMsg: "the page's file tab never came forward",
+    });
+    await $('[role="region"][aria-label="weekly.html"]').waitForExist({ timeout: 20_000 });
+    await browser.waitUntil(async () => (await artifactWebviews()).length === 1, {
+      timeout: 20_000,
+      timeoutMsg: "the page was not laid in a webview of its own",
+    });
+    await expect($("button=Pin to workspace…")).toBeDisplayed();
+    // Nothing is pinned by showing it.
+    expect(foldersPinned()).toEqual(["backlog-state"]);
+  });
+
+  it("pins it through its dialog, copied into the workspace's artifacts/", async () => {
+    await $("button=Pin to workspace…").click();
+    const dialog = await $('[role="dialog"][aria-labelledby="pin-to-workspace"]');
+    await dialog.waitForDisplayed({ timeout: 20_000 });
+    // Whom it reaches, said either way: everyone in the project, or this machine alone.
+    await expect(dialog).toHaveText(
+      expect.stringMatching(/Visible to everyone in |stays on this machine/),
+    );
+    await expect(dialog).toHaveText(expect.stringContaining("artifacts/weekly-report/"));
+    await expect(await dialog.$('[aria-label="Name"], input')).toHaveValue(REPORT);
+    await dialog.$('button[data-dialog-action="main"]').click();
+
+    await browser.waitUntil(async () => foldersPinned().includes("weekly-report"), {
+      timeout: 20_000,
+      timeoutMsg: "the pin was never written to the pins file",
+    });
+    expect(readFileSync(join(artifacts, "weekly-report", "index.html"), "utf8")).toContain(REPORT);
+    await $(`${GROUP} button[aria-label="${REPORT}"]`).waitForExist({ timeout: 20_000 });
+  });
+
+  it("moves an icon from its menu, writing the order to the pins file", async () => {
+    expect(foldersPinned()).toEqual(["backlog-state", "weekly-report"]);
+    expect(await sendContextMenu(`${GROUP} button[aria-label="${REPORT}"]`)).toBe(true);
+    const menu = await $('[role="menu"]');
+    await menu.waitForDisplayed({ timeout: 20_000 });
+    await menu.$('[role="menuitem"]=Move up').click();
+    await browser.waitUntil(async () => foldersPinned()[0] === "weekly-report", {
+      timeout: 20_000,
+      timeoutMsg: `the order was never written; it is ${foldersPinned().join(", ")}`,
+    });
+  });
+
+  it("unpins only on the dialog's answer, and the folder stays", async () => {
+    expect(await sendContextMenu(`${GROUP} button[aria-label="${REPORT}"]`)).toBe(true);
+    const menu = await $('[role="menu"]');
+    await menu.waitForDisplayed({ timeout: 20_000 });
+    await menu.$('[role="menuitem"]=Unpin from workspace…').click();
+    const dialog = await $('[role="alertdialog"]');
+    await dialog.waitForDisplayed({ timeout: 20_000 });
+    await expect(dialog).toHaveText(expect.stringContaining(`Unpin ${REPORT} from alpha`));
+    expect(foldersPinned()).toContain("weekly-report");
+    await dialog.$("button=Unpin").click();
+    await browser.waitUntil(async () => !foldersPinned().includes("weekly-report"), {
+      timeout: 20_000,
+      timeoutMsg: "the pin was never taken off the pins file",
+    });
+    await browser.waitUntil(
+      async () => !(await $(`${GROUP} button[aria-label="${REPORT}"]`).isExisting()),
+      { timeout: 20_000, timeoutMsg: "the icon stayed on the bar" },
+    );
+    expect(readFileSync(join(artifacts, "weekly-report", "index.html"), "utf8")).toContain(REPORT);
+  });
+});
+
+/**
  * **A pinned artifact with script** (#5959, ADR 0120 §4): shown without its script until the
  * person approves it in purlis's bar, never in the page; an approval that holds through new data
  * and is asked again for any change to the template. What the page's script does once it runs is
@@ -266,8 +416,6 @@ describe("a pinned artifact", function () {
  * proved in `artifacts.rs`, and the record in `purlis artifact approve-status`'s tests.
  */
 describe("a pinned artifact with script", function () {
-  this.timeout(180_000);
-
   const LIVE = "Live board";
   const SCRIPTED = `<!doctype html><title>${LIVE}</title><h1 id=n>0</h1><script src=app.js></script>`;
   let folder = "";

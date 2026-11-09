@@ -14,6 +14,7 @@
 
 pub mod approval;
 pub mod data;
+pub mod fresh;
 pub mod links;
 pub mod pins;
 pub mod script;
@@ -453,10 +454,101 @@ pub fn pinned_by(workspace: &Path, id: &str) -> Option<String> {
         .map(crate::personas::one_line)
 }
 
+/// The longest folder name [`free_folder`] makes.
+const FOLDER_MOST: usize = 48;
+
+/// **The name a pin of a page with text `page` is offered** (#5953): its `<title>`, else the
+/// folder's name. The person may change it before pinning.
+pub fn suggested_name(page: &str, folder: &str) -> String {
+    title_in(page).unwrap_or_else(|| folder.to_string())
+}
+
+/// **A folder in the workspace's `artifacts/` that is free to take a page named `name`**
+/// (#5953): the name in lowercase ASCII letters and digits joined by `-`, and `-2`, `-3`… after
+/// it while a folder of that name is there. `page` for a name with nothing plain in it.
+pub fn free_folder(workspace: &Path, name: &str) -> String {
+    let mut plain = String::new();
+    for c in name.chars() {
+        if c.is_ascii_alphanumeric() {
+            plain.push(c.to_ascii_lowercase());
+        } else if !plain.is_empty() && !plain.ends_with('-') {
+            plain.push('-');
+        }
+    }
+    let mut stem: String = plain
+        .trim_end_matches('-')
+        .chars()
+        .take(FOLDER_MOST)
+        .collect();
+    stem = stem.trim_end_matches('-').to_string();
+    if stem.is_empty() {
+        stem = "page".to_string();
+    }
+    let dir = workspace.join(DIR);
+    let taken = |folder: &str| dir.join(folder).symlink_metadata().is_ok();
+    if !taken(&stem) {
+        return stem;
+    }
+    (2..)
+        .map(|n| format!("{stem}-{n}"))
+        .find(|folder| !taken(folder))
+        .expect("some number is free")
+}
+
+/// **Puts a page into a new artifact folder** (#5953, spec story 15): `page` becomes
+/// `artifacts/<folder>/index.html` of the workspace at `workspace`, so a page from anywhere
+/// can be pinned. Never over a folder that is there: that is refused, and nothing is written.
+pub fn adopt(root: &Path, workspace: &Path, folder: &str, page: &str) -> Result<(), String> {
+    if let Some(why) = folder_refusal(folder) {
+        return Err(why);
+    }
+    let shown = crate::personas::one_line(folder);
+    let dir = workspace.join(DIR);
+    std::fs::create_dir_all(&dir).map_err(|e| {
+        format!(
+            "purlis could not make {DIR}/ in the workspace ({})",
+            crate::rewrite::os_words(&e)
+        )
+    })?;
+    let at = dir.join(folder);
+    match std::fs::create_dir(&at) {
+        Ok(()) => {}
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+            return Err(format!(
+                "there is already a folder '{shown}' in {DIR}/; choose another name"
+            ));
+        }
+        Err(e) => {
+            return Err(format!(
+                "purlis could not make '{shown}' in {DIR}/ ({})",
+                crate::rewrite::os_words(&e)
+            ));
+        }
+    }
+    // The folder is new and the workspace's own, so it holds nothing a link could lead out of.
+    crate::rewrite::replace(
+        root,
+        &at.join(PAGE),
+        page.as_bytes(),
+        crate::rewrite::Mode::Kept,
+    )
+    .map_err(|e| {
+        let _ = std::fs::remove_dir(&at);
+        format!(
+            "purlis could not write the page into '{shown}' ({})",
+            crate::rewrite::os_words(&e)
+        )
+    })
+}
+
 /// The page's `<title>`, as a pin's name: its first one, whitespace folded, cut to
 /// [`NAME_MOST`] characters. None when it has none.
 fn title_of(page: &Path) -> Option<String> {
-    let text = std::fs::read_to_string(page).ok()?;
+    title_in(&std::fs::read_to_string(page).ok()?)
+}
+
+/// [`title_of`], of a page's text.
+fn title_in(text: &str) -> Option<String> {
     let lower = text.to_ascii_lowercase();
     let open = lower.find("<title")?;
     let start = open + lower[open..].find('>')? + 1;
@@ -532,6 +624,52 @@ mod tests {
         assert_eq!(pinned_by(ws, "abc123").as_deref(), Some("Ada"));
         assert_eq!(pinned_by(ws, "def456").as_deref(), Some("Grace"));
         assert_eq!(pinned_by(ws, "nothere"), None);
+    }
+
+    #[test]
+    fn a_free_folder_is_the_name_made_plain_and_never_one_already_there() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path();
+        assert_eq!(free_folder(ws, "Backlog state"), "backlog-state");
+        assert_eq!(free_folder(ws, "  Weekly / ../ report!  "), "weekly-report");
+        assert_eq!(free_folder(ws, "Café"), "caf");
+        assert_eq!(free_folder(ws, "..."), "page");
+        std::fs::create_dir_all(ws.join(DIR).join("backlog-state")).unwrap();
+        std::fs::create_dir_all(ws.join(DIR).join("backlog-state-2")).unwrap();
+        assert_eq!(free_folder(ws, "Backlog state"), "backlog-state-3");
+        assert!(folder_refusal(&free_folder(ws, &"x".repeat(200))).is_none());
+    }
+
+    #[test]
+    fn a_page_is_adopted_into_a_new_folder_and_never_over_one_already_there() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path();
+        adopt(ws, ws, "report", "<title>Report</title>").unwrap();
+        let page = ws.join(DIR).join("report").join(PAGE);
+        assert_eq!(
+            std::fs::read_to_string(&page).unwrap(),
+            "<title>Report</title>"
+        );
+        assert!(resolve(ws, "report").is_ok());
+
+        let again = adopt(ws, ws, "report", "<p>other</p>").unwrap_err();
+        assert!(again.contains("already"), "{again}");
+        assert_eq!(
+            std::fs::read_to_string(&page).unwrap(),
+            "<title>Report</title>",
+            "nothing is written over a folder that is there"
+        );
+        assert!(adopt(ws, ws, "../out", "x").is_err());
+        assert!(!ws.join("out").exists());
+    }
+
+    #[test]
+    fn a_page_s_text_names_its_pin_from_its_title_or_its_folder() {
+        assert_eq!(
+            suggested_name("<title> Backlog\n state </title>", "backlog"),
+            "Backlog state"
+        );
+        assert_eq!(suggested_name("<p>no title</p>", "backlog"), "backlog");
     }
 
     #[test]
