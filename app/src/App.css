@@ -3589,7 +3589,19 @@ body {
   font-size: var(--font-size-sm);
 }
 
-/* A finished task's buttons and a browser's marks never give way: the name does. */
+/* **A finished row obeys a chat row's rule** (#1499): as wide as the list and no wider. Its
+   buttons and a browser's marks never give way, each whole: where they do not fit beside the
+   name they go under it, wrapping within the row's width, so the list never scrolls sideways
+   (`chats-list.e2e.ts` measures it at the region's least width). */
+.chats-section :is(.finished-task, .chat-browser) {
+  flex-wrap: wrap;
+}
+
+.chats-section :is(.finished-task, .chat-browser) [data-part="trail"] {
+  flex-wrap: wrap;
+  max-inline-size: 100%;
+}
+
 .chats-section :is(.finished-task, .chat-browser) [data-part="trail"] > * {
   flex: none;
 }

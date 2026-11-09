@@ -293,6 +293,18 @@ describe("the Chats list's words wear text roles (#1920)", () => {
     }
   });
 
+  it("puts a finished task's buttons under its name where they do not fit, so the list never scrolls sideways", () => {
+    const section = draw();
+    const row = rowAround(section.querySelector('.finished-task [data-part="label"]'));
+    expect(row).not.toBeNull();
+    const trail = (row as Element).querySelector('[data-part="trail"]') as Element;
+    // The row wraps onto a line of its own for them, and they wrap within its width (#1499):
+    // `chats-list.e2e.ts` measures the list at the region's least width in the real engine.
+    expect(drawnWith(row as Element, "flex-wrap")).toBe("wrap");
+    expect(drawnWith(trail, "flex-wrap")).toBe("wrap");
+    expect(drawnWith(trail, "max-inline-size")).toBe("100%");
+  });
+
   it("draws a finished task quieter than a chat: its name, its fold and its note secondary", async () => {
     const section = draw();
 
