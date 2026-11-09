@@ -346,10 +346,8 @@ impl Artifacts {
         // What the page declares is read again with its bytes (#5961), and so is whether that
         // data was generated here.
         let declared = declared_by(&snapshot);
-        let generated = data::generated(
-            &artifact::resolve(&of.dir, &of.folder)?,
-            declared.as_ref(),
-        );
+        let generated =
+            data::generated(&artifact::resolve(&of.dir, &of.folder)?, declared.as_ref());
         if let Some(one) = self.served().get_mut(label) {
             one.snapshot = snapshot;
             one.declared = declared;
@@ -851,7 +849,16 @@ pub async fn artifact_open(
         pin,
         standing,
     };
-    let label = lay(&window, &artifacts, host, snapshot, of, sheet, declared, place)?;
+    let served = Served {
+        window: window.label().to_owned(),
+        host,
+        snapshot,
+        of,
+        theme: sheet,
+        declared,
+        load: None,
+    };
+    let label = lay(&window, &artifacts, served, place)?;
     Ok(ArtifactOpened {
         label,
         standing: standing.as_str().to_owned(),
@@ -1117,8 +1124,17 @@ pub async fn artifact_preview_open(
         pin: String::new(),
         standing: Standing::NotHere,
     };
+    let served = Served {
+        window: window.label().to_owned(),
+        host,
+        snapshot,
+        of,
+        theme: sheet,
+        declared: None,
+        load: None,
+    };
     Ok(ArtifactOpened {
-        label: lay(&window, &artifacts, host, snapshot, of, sheet, None, place)?,
+        label: lay(&window, &artifacts, served, place)?,
         standing: Standing::NotHere.as_str().to_owned(),
         changed_by: None,
         // A preview declares no data of its own: there is nothing to have generated.
@@ -1126,31 +1142,17 @@ pub async fn artifact_preview_open(
     })
 }
 
-/// Makes the webview of what `snapshot` serves from `host`, at `place` in `window`: its label.
+/// Makes the webview of what `served` serves, at `place` in `window`: its label. `served`
+/// names `window` as the one it is served to.
 fn lay(
     window: &tauri::Window,
     artifacts: &Artifacts,
-    host: String,
-    snapshot: serve::Snapshot,
-    of: Of,
-    sheet: String,
-    declared: Option<data::Declared>,
+    served: Served,
     place: ArtifactPlace,
 ) -> Result<String, String> {
     let label = label(artifacts.made.fetch_add(1, Ordering::Relaxed) + 1);
-    let own = origin(&host);
-    artifacts.served().insert(
-        label.clone(),
-        Served {
-            window: window.label().to_owned(),
-            host,
-            snapshot,
-            of,
-            theme: sheet,
-            declared,
-            load: None,
-        },
-    );
+    let own = origin(&served.host);
+    artifacts.served().insert(label.clone(), served);
     let url: tauri::Url = format!("{own}/")
         .parse()
         .map_err(|e| format!("purlis could not name the artifact's page: {e}"))?;
