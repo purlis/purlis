@@ -6634,35 +6634,6 @@ nav.piece-files-head {
   animation: purlis-reveal var(--motion-duration-reveal) var(--motion-easing-enter);
 }
 
-/* **A popover or a menu opening** — the show-more menus, the context menus, the persona card,
-   and whatever anchored surface is added next, because the rule hangs off Radix's own popper
-   wrapper rather than off a class. It comes a quarter of a rem out of the side it is anchored
-   to, which is what says what opened it. A dialog's own opening is the dialog family's
-   (`ui/dialog/dialog.css`). */
-@keyframes charter-arrive {
-  from {
-    opacity: 0;
-    translate: var(--arrive-from);
-  }
-}
-
-[data-radix-popper-content-wrapper] > [data-state="open"] {
-  --arrive-from: 0 -0.25rem;
-  animation: charter-arrive var(--motion-duration-enter) var(--motion-easing-enter);
-}
-
-[data-radix-popper-content-wrapper] > [data-side="top"] {
-  --arrive-from: 0 0.25rem;
-}
-
-[data-radix-popper-content-wrapper] > [data-side="left"] {
-  --arrive-from: 0.25rem 0;
-}
-
-[data-radix-popper-content-wrapper] > [data-side="right"] {
-  --arrive-from: -0.25rem 0;
-}
-
 /* The same knock on a row of a list (#1484), where the mark is the hand and has no ring to
    swell: the hand itself does, twice, and only on the change (`StateShown`'s `arrived`). */
 @keyframes charter-knock {
