@@ -18,10 +18,10 @@
  * - **A state never changes its height** (#2800): under the pointer, chosen or under the
  *   keyboard it changes a fill, an edge or a ring, never a padding or a line.
  */
-import type { ReactNode } from "react";
+import { useContext, useState, type ReactNode } from "react";
 import { Ellipsis } from "lucide-react";
 import { IconButton } from "../button/Button";
-import { askForAMenu } from "../menu/ContextMenu";
+import { askForAMenuFrom, MenuOpenedFrom } from "../menu/ContextMenu";
 import { ListRow, type ListRowProps } from "./List";
 import { RowActions, RowLabel, RowSummary, RowTrail } from "./Row";
 
@@ -85,19 +85,33 @@ export function ListCardRow<T extends object>({
   );
 }
 
+/** The presses that are the pointer's: a screen reader's ("virtual") and the keys' open on the
+ *  first item. */
+const BY_THE_POINTER = new Set(["mouse", "pen", "touch"]);
+
 /**
  * **A row's ⋯** (#3669): it opens the row's own menu (`menu` on the row), at the button, the
- * menu a right-click or Shift+F10 opens. Named for the row it belongs to.
+ * menu a right-click or Shift+F10 opens. Named for the row it belongs to. Pressed by the pointer,
+ * the menu takes the keyboard with no item chosen; from the keys, on its first item. It says
+ * `aria-expanded` while the menu it opened is open, and has the keyboard back as it closes
+ * (#3769).
  */
 export function RowMenuButton({ name }: { name: string }) {
+  // Its own element, held as state so the render that follows its mounting can compare it.
+  const [self, setSelf] = useState<HTMLButtonElement | null>(null);
+  const from = useContext(MenuOpenedFrom);
   return (
     <IconButton
+      ref={setSelf}
       size="sm"
       variant="ghost"
       aria-label={`More for ${name}`}
       aria-haspopup="menu"
+      aria-expanded={from !== null && from === self}
       icon={<Ellipsis aria-hidden="true" />}
-      onPress={(press) => askForAMenu(press.target)}
+      onPress={(press) =>
+        askForAMenuFrom(press.target as HTMLElement, BY_THE_POINTER.has(press.pointerType))
+      }
       data-way="menu"
     />
   );

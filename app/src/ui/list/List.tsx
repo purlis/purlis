@@ -69,6 +69,7 @@ import {
 import { mergeProps, mergeRefs, useLocale } from "react-aria";
 import {
   askForAMenu,
+  MenuOpenedFrom,
   asksForAMenu,
   useContextMenu,
   type ContextMenuOptions,
@@ -91,6 +92,13 @@ export const ListSize = createContext<RowSize>("md");
 export const ListFolds = createContext<Map<string, ((open: boolean) => void) | undefined>>(
   new Map(),
 );
+
+/**
+ * **Whether the list chooses** (`selectionMode`, #3769): its fold rows then say they are never
+ * chosen (`isDisabled`, with the list's `disabledBehavior="selection"`), so a press or a key
+ * still folds them and Select all leaves them out.
+ */
+export const ListChooses = createContext(false);
 
 /**
  * **An attribute React Aria does not hand a row, written on its cell** (`aria-expanded` on a row
@@ -207,24 +215,31 @@ export function useRowMenu(menu: RowMenu | undefined) {
   const own = useContextMenu(
     menu === undefined ? { menu: NO_MENU } : typeof menu === "function" ? { menu } : menu,
   );
-  return menu === undefined ? { handlers: {}, menu: null } : own;
+  return menu === undefined ? { handlers: {}, menu: null, openedFrom: null } : own;
+}
+
+/** What a row's menu hands what the row holds: the menu, and the button it is open from. */
+export interface RowMenuHeld {
+  menu: ReactNode;
+  openedFrom: Element | null;
 }
 
 /**
  * **What a row's element holds**: its words, its menu while it is open, and its tooltip's
- * anchor and tooltip, which shows while the keyboard is on the row.
+ * anchor and tooltip, which shows while the keyboard is on the row. The buttons in it hear which
+ * of them its menu is open from (`MenuOpenedFrom`, #3769).
  */
 export function rowHolds<S extends { isFocusVisible: boolean }>(
   children: ReactNode | ((state: S) => ReactNode),
-  menu: ReactNode,
+  menu: RowMenuHeld,
   tip: RowTipped,
 ): (state: S) => ReactNode {
   return (state: S) => (
-    <>
+    <MenuOpenedFrom.Provider value={menu.openedFrom}>
       {typeof children === "function" ? children(state) : children}
-      {menu}
+      {menu.menu}
       {tip.drawn(state.isFocusVisible)}
-    </>
+    </MenuOpenedFrom.Provider>
   );
 }
 
@@ -336,7 +351,7 @@ export function ListOption<T extends object>({
     >
       {(state) => (
         <InOption.Provider value={true}>
-          {hold(rowHolds(children, own.menu, tipped)(state))}
+          {hold(rowHolds(children, own, tipped)(state))}
         </InOption.Provider>
       )}
     </AriaListBoxItem>
@@ -403,6 +418,7 @@ export function List<T extends object>({
   ...rest
 }: ListProps<T>) {
   const own = useCollectionElement(keys, ref);
+  const chooses = rest.selectionMode !== undefined && rest.selectionMode !== "none";
   const [folds] = useState(() => new Map<string, ((open: boolean) => void) | undefined>());
   const foldKeys = useFoldKeys(folds);
   const onKeyDownCapture = (event: ReactKeyboardEvent<HTMLElement>) => {
@@ -419,27 +435,31 @@ export function List<T extends object>({
     // before React Aria's row hears them (`useFoldKeys`).
     <div data-scope="list" data-part="keys" onKeyDownCapture={onKeyDownCapture}>
       <ListFolds.Provider value={folds}>
-        <RowScope.Provider value="list">
-          <ListSize.Provider value={size}>
-            <AriaGridList
-              {...rest}
-              // A row that folds runs only its fold (`Fold.tsx`).
-              onAction={
-                onAction === undefined
-                  ? undefined
-                  : (key) => {
-                      if (!folds.has(String(key))) onAction(key);
-                    }
-              }
-              ref={own}
-              className={className}
-              data-scope="list"
-              data-part="body"
-              data-size={size}
-              renderEmptyState={empty === undefined ? undefined : () => empty}
-            />
-          </ListSize.Provider>
-        </RowScope.Provider>
+        <ListChooses.Provider value={chooses}>
+          <RowScope.Provider value="list">
+            <ListSize.Provider value={size}>
+              <AriaGridList
+                {...rest}
+                // A list that chooses never chooses a fold's row, and still reaches and runs it.
+                disabledBehavior={rest.disabledBehavior ?? (chooses ? "selection" : undefined)}
+                // A row that folds runs only its fold (`Fold.tsx`).
+                onAction={
+                  onAction === undefined
+                    ? undefined
+                    : (key) => {
+                        if (!folds.has(String(key))) onAction(key);
+                      }
+                }
+                ref={own}
+                className={className}
+                data-scope="list"
+                data-part="body"
+                data-size={size}
+                renderEmptyState={empty === undefined ? undefined : () => empty}
+              />
+            </ListSize.Provider>
+          </RowScope.Provider>
+        </ListChooses.Provider>
       </ListFolds.Provider>
     </div>
   );
@@ -490,7 +510,7 @@ export function ListRow<T extends object>({
       data-variant={variant}
       data-size={size}
     >
-      {(state) => hold(rowHolds(children, own.menu, tipped)(state))}
+      {(state) => hold(rowHolds(children, own, tipped)(state))}
     </AriaGridListItem>
   );
 }

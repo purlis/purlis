@@ -543,7 +543,7 @@ export function TreeRow<T extends object>({
             <>
               {state.id === stopAt && <TakesTheStop at={state.id} state={state.state} />}
               {twist === "lead" && toggle}
-              {rowHolds(content, owned.menu, tipped)(state)}
+              {rowHolds(content, owned, tipped)(state)}
               {twist === "trail" && toggle}
               {state.allowsDragging && <NoDrag />}
             </>

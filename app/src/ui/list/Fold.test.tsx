@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { useState } from "react";
+import type { Selection } from "react-aria-components";
 import { Button } from "../button/Button";
 import { List, ListRow } from "./List";
 import { ListFoldSection, ListRun } from "./Fold";
@@ -217,5 +218,120 @@ describe("the fold's look", () => {
     const fold = readFileSync(join(process.cwd(), "src/ui/list/Fold.tsx"), "utf8");
     expect(fold).not.toMatch(/Chevron|▸|▾/);
     expect(fold).toMatch(/import \{ TwistMark \} from "\.\.\/tree\/Tree"/);
+  });
+});
+
+/** **Folds in a list that chooses** (#3769): a section and a run in a list of many to choose. */
+function Choosing({ onChosen }: { onChosen: (keys: string[]) => void }) {
+  const [chosen, setChosen] = useState<Selection>(new Set());
+  return (
+    <List
+      aria-label="Skills"
+      size="sm"
+      selectionMode="multiple"
+      selectedKeys={chosen}
+      onSelectionChange={(keys) => {
+        setChosen(keys);
+        onChosen(keys === "all" ? ["all"] : [...keys].map(String).sort());
+      }}
+    >
+      <ListFoldSection id="in" title="In this chat" count={4}>
+        <ListRow id="deploy" textValue="deploy">
+          <RowLabel>deploy</RowLabel>
+        </ListRow>
+        <ListRun
+          id="built-in"
+          items={BUILT_IN}
+          defaultFolded={false}
+          says={(count) => `${count} built-in skills`}
+          closing={{ says: "They ship with purlis.", children: null }}
+        >
+          {(name) => (
+            <ListRow key={name} id={name} textValue={name}>
+              <RowLabel>{name}</RowLabel>
+            </ListRow>
+          )}
+        </ListRun>
+      </ListFoldSection>
+    </List>
+  );
+}
+
+describe("folds in a list that chooses (#3769)", () => {
+  it("folds on a press of its row and chooses nothing", async () => {
+    const onChosen = vi.fn();
+    render(<Choosing onChosen={onChosen} />);
+    await userEvent.click(row("In this chat, 4"));
+    expect(cellOf(row("In this chat, 4"))).toHaveAttribute("aria-expanded", "false");
+    expect(noRow("deploy")).toBeNull();
+    expect(onChosen).not.toHaveBeenCalled();
+    expect(row("In this chat, 4")).not.toHaveAttribute("aria-selected", "true");
+  });
+
+  it("folds on Enter and Space from the keys, still reached, and chooses nothing", async () => {
+    const onChosen = vi.fn();
+    render(<Choosing onChosen={onChosen} />);
+    await userEvent.tab();
+    expect(row("In this chat, 4")).toHaveFocus();
+    await userEvent.keyboard(" ");
+    expect(cellOf(row("In this chat, 4"))).toHaveAttribute("aria-expanded", "false");
+    await userEvent.keyboard("{Enter}");
+    expect(cellOf(row("In this chat, 4"))).toHaveAttribute("aria-expanded", "true");
+    expect(onChosen).not.toHaveBeenCalled();
+  });
+
+  it("leaves its fold rows and a run's closing line out of Select all", async () => {
+    const onChosen = vi.fn();
+    render(<Choosing onChosen={onChosen} />);
+    await userEvent.click(row("deploy"));
+    await userEvent.keyboard("{Meta>}a{/Meta}{Control>}a{/Control}");
+    const rows = screen.getAllByRole("row");
+    const chosen = rows.filter((one) => one.getAttribute("aria-selected") === "true");
+    expect(chosen.map((one) => one.textContent)).toEqual(["deploy", ...BUILT_IN]);
+    for (const fold of ["In this chat, 4", "3 built-in skills", "They ship with purlis."])
+      expect(row(fold)).not.toHaveAttribute("aria-selected", "true");
+  });
+});
+
+/** A run inside a section, its fold held by its owner or by itself. */
+function RunInASection({ held }: { held: boolean }) {
+  const [runFolded, setRunFolded] = useState(true);
+  return (
+    <List aria-label="Skills" size="sm">
+      <ListFoldSection id="in" title="In this chat" count={3}>
+        <ListRun
+          id="built-in"
+          items={BUILT_IN}
+          says={(count) => `${count} built-in skills`}
+          {...(held ? { folded: runFolded, onFoldedChange: setRunFolded } : {})}
+        >
+          {(name) => (
+            <ListRow key={name} id={name} textValue={name}>
+              <RowLabel>{name}</RowLabel>
+            </ListRow>
+          )}
+        </ListRun>
+      </ListFoldSection>
+    </List>
+  );
+}
+
+describe("a run inside a section that folds (#3769)", () => {
+  it("keeps its unfolding across its section's fold when its owner holds it", async () => {
+    render(<RunInASection held />);
+    await userEvent.click(row("3 built-in skills"));
+    expect(row("browser")).toBeInTheDocument();
+    await userEvent.click(row("In this chat, 3"));
+    await userEvent.click(row("In this chat, 3"));
+    expect(row("browser")).toBeInTheDocument();
+  });
+
+  it("starts folded again as its section unfolds when nothing holds it: the family keeps no state", async () => {
+    render(<RunInASection held={false} />);
+    await userEvent.click(row("3 built-in skills"));
+    expect(row("browser")).toBeInTheDocument();
+    await userEvent.click(row("In this chat, 3"));
+    await userEvent.click(row("In this chat, 3"));
+    expect(noRow("browser")).toBeNull();
   });
 });

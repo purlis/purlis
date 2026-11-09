@@ -125,6 +125,46 @@ describe("a card row", () => {
     expect(await screen.findByRole("menu", { name: "grilling" })).toBeInTheDocument();
   });
 
+  it("opens its menu at the ⋯ by the pointer with no item chosen, says so, and comes back to the ⋯ (#3769)", async () => {
+    render(<Skills />);
+    const more = screen.getByRole("button", { name: "More for grilling" });
+    expect(more).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(more);
+    const menu = await screen.findByRole("menu", { name: "grilling" });
+    expect(more).toHaveAttribute("aria-expanded", "true");
+    // The menu itself has the keyboard, and no item is chosen yet, as a right-click opens it.
+    await waitFor(() => expect(menu).toHaveFocus());
+    expect(within(menu).getByRole("menuitem")).not.toHaveFocus();
+    // Its menu sits at the ⋯, not at the row's corner.
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    await waitFor(() => expect(more).toHaveFocus());
+    expect(more).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("runs an item pressed in the menu its ⋯ opened by the pointer (#3769)", async () => {
+    render(<Skills />);
+    await userEvent.click(screen.getByRole("button", { name: "More for grilling" }));
+    const menu = await screen.findByRole("menu", { name: "grilling" });
+    await userEvent.click(within(menu).getByRole("menuitem", { name: "Open in Skill studio" }));
+    expect(screen.getByRole("status")).toHaveTextContent("Chose open");
+  });
+
+  it("opens its menu on its first item from the keys on the ⋯, and comes back to the ⋯ (#3769)", async () => {
+    render(<Skills />);
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowRight}{ArrowRight}");
+    const more = screen.getByRole("button", { name: "More for grilling" });
+    expect(more).toHaveFocus();
+    await userEvent.keyboard("{Enter}");
+    const menu = await screen.findByRole("menu", { name: "grilling" });
+    await waitFor(() => expect(within(menu).getByRole("menuitem")).toHaveFocus());
+    expect(more).toHaveAttribute("aria-expanded", "true");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    await waitFor(() => expect(more).toHaveFocus());
+  });
+
   it("draws no ⋯ where it has no menu", () => {
     render(<Skills />);
     expect(within(row("deploy")).queryByRole("button")).toBeNull();
