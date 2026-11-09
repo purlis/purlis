@@ -67,6 +67,11 @@ export function stories(): TestProjectInlineConfiguration[] {
   return cells().map((cell) => ({
     extends: true,
     plugins: [storybookTest({ configDir: here(".") })],
+    // **A story draws in part as the window does** (#2947): React Stately's virtualizer draws
+    // every row where `NODE_ENV` is `test` unless `VIRT_ON` is set, and reads that from
+    // `process`, which a browser does not have. Set here, the stories measure what the window
+    // draws, and no story reads a `process` that is not there.
+    define: { "process.env.VIRT_ON": JSON.stringify("1") },
     test: {
       name: `stories ${cell.name}`,
       provide: { storyCell: cell, storyMonospace: monospace },
