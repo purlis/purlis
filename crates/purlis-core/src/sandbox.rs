@@ -2025,6 +2025,23 @@ impl Denied {
     }
 }
 
+/// **The programs every cluster pool on `machine` runs, as each pool's add found them**
+/// (#3292): what a chat's sandbox holds for no chat to write ([`cluster_programs_held`]), read
+/// from the pools' record in `machine`'s config home. Empty where it has none.
+///
+/// A chat's sandbox is compiled as it starts, so one started before a pool was added holds
+/// none of that pool's programs: the window compares this with what each running chat holds,
+/// and asks the person to restart the chats left behind (#1750).
+pub fn cluster_programs(machine: &Machine) -> Vec<PathBuf> {
+    crate::machine::rooted(
+        machine.env.get(crate::machine::HOME_VAR).map(Into::into),
+        machine.env.get("XDG_CONFIG_HOME").map(Into::into),
+        machine.home.clone(),
+    )
+    .map(|config_root| crate::runners::cluster_holds(&config_root))
+    .unwrap_or_default()
+}
+
 /// **The programs every cluster pool's kubectl runs, held for no chat to write** (#3292): each
 /// as named, every link on the way and its real file, each with the folder it is in, and the
 /// package its real file belongs to ([`package_root`]) with all that is in it, inside the
@@ -2032,13 +2049,10 @@ impl Denied {
 /// writes, and for one that is the home or a folder above it,
 /// which an add refuses now but one from before that refusal may have kept.
 fn cluster_programs_held(root: &Path, machine: &Machine) -> Vec<Denial> {
-    let Some(config_root) = crate::machine::rooted(
-        machine.env.get(crate::machine::HOME_VAR).map(Into::into),
-        machine.env.get("XDG_CONFIG_HOME").map(Into::into),
-        machine.home.clone(),
-    ) else {
+    let programs = cluster_programs(machine);
+    if programs.is_empty() {
         return Vec::new();
-    };
+    }
     let mut held: Vec<Denial> = Vec::new();
     let mut hold = |path: PathBuf, reach: Reach| {
         if !held.iter().any(|it| it.path == path && it.reach == reach) {
@@ -2054,7 +2068,7 @@ fn cluster_programs_held(root: &Path, machine: &Machine) -> Vec<Denial> {
     };
     let project = real(root);
     let home = machine.home.as_deref().map(real);
-    for program in crate::runners::cluster_holds(&config_root) {
+    for program in programs {
         let package = package_root(&real(&program));
         if let Some(folder) = program.parent().filter(|folder| folder.parent().is_some()) {
             hold(folder.to_path_buf(), Reach::Itself);
