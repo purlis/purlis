@@ -907,3 +907,30 @@ fn a_merged_index_keeps_a_heading_between_lines_and_a_link_to_another_folder() {
          - [D](d.md)\n- [Shared](../../_shared/memory/x.md)\n"
     );
 }
+
+/// **A memory store one side removed stays removed** (#5864 review): with no memory file left in
+/// the merged store and its index gone from one side, the index is left out, not written again
+/// as a bare header, so a persona removed safely does not come back as its `MEMORY.md`.
+#[test]
+fn a_memory_store_one_side_removed_stays_removed_when_a_request_brings_in() {
+    let store = "personas/devops/memory";
+    let index = format!("{store}/MEMORY.md");
+    let two = Two::new(&[
+        (&index, "# Memory Index\n\n- [Alpha](alpha.md)\n"),
+        (&format!("{store}/alpha.md"), "# Alpha\n"),
+        ("notes.md", "base\n"),
+    ]);
+    run(&two.mine, &["rm", "-q", "-r", "personas/devops"]);
+    commit(&two.mine, "remove devops");
+    write(&two.theirs, "notes.md", "theirs\n");
+    two.land_theirs("theirs");
+
+    assert_eq!(
+        bring_in(&two.mine, "release", false, When::Moved),
+        BroughtIn::Moved(1)
+    );
+
+    assert!(!two.mine.join(&index).exists());
+    let tree = run(&two.mine, &["ls-tree", "-r", "--name-only", "HEAD"]);
+    assert!(!tree.contains("personas/devops"), "{tree}");
+}

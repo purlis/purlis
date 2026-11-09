@@ -3753,6 +3753,61 @@ fn a_push_mode_replay_rebuilds_a_memory_index_both_machines_added_to_with_no_uni
     }
 }
 
+/// A memory store this machine removed stays removed after a push-mode replay (#5864 review):
+/// the replay leaves its index out rather than writing a bare header back.
+#[test]
+fn a_push_mode_replay_keeps_a_removed_memory_store_removed() {
+    let fixture = Fixture::plane();
+    let store = fixture.root.join("personas/devops/memory");
+    std::fs::create_dir_all(&store).unwrap();
+    std::fs::write(store.join("one.md"), "# One\n").unwrap();
+    std::fs::write(
+        store.join("MEMORY.md"),
+        "# Memory Index\n\n- [One](one.md)\n",
+    )
+    .unwrap();
+    run(&fixture.root, &["add", "-A"]);
+    run(&fixture.root, &["commit", "-q", "-m", "one memory"]);
+    let bare = fixture.with_a_remote();
+    run(
+        &fixture.root,
+        &[
+            "push",
+            "-q",
+            &bare.display().to_string(),
+            "HEAD:refs/heads/main",
+        ],
+    );
+
+    // Somebody else changes something else and pushes first.
+    let theirs = fixture.root.parent().unwrap().join("theirs");
+    run(
+        fixture.root.parent().unwrap(),
+        &[
+            "clone",
+            "-q",
+            &bare.display().to_string(),
+            &theirs.display().to_string(),
+        ],
+    );
+    run(&theirs, &["config", "user.name", "Other"]);
+    run(&theirs, &["config", "user.email", "other@example.invalid"]);
+    std::fs::write(theirs.join("notes.md"), "theirs\n").unwrap();
+    run(&theirs, &["add", "-A"]);
+    run(&theirs, &["commit", "-q", "-m", "theirs"]);
+    run(&theirs, &["push", "-q", "origin", "main"]);
+
+    // This machine removes the persona's memory, and saves.
+    run(&fixture.root, &["rm", "-q", "-r", "personas/devops"]);
+    let (code, said) = fixture.just_save();
+
+    assert_eq!(code, 0, "{said}");
+    assert!(said.contains("Pushed main"), "{said}");
+    assert!(!store.join("MEMORY.md").exists());
+    let tree = run(&fixture.root, &["ls-tree", "-r", "--name-only", "HEAD"]);
+    assert!(!tree.contains("personas/devops"), "{tree}");
+}
+
 fn append(path: &Path, text: &str) {
     use std::io::Write;
     std::fs::OpenOptions::new()
