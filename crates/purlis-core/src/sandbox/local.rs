@@ -557,6 +557,35 @@ fn read(root: &Path) -> OnDisk {
         .unwrap_or_default()
 }
 
+/// What a write keeps of this machine's file where the whole does not read (#5906): **the vault
+/// grants alone**, where they read on their own as [`try_granted_vaults`] reads them, so the next
+/// write never takes away a grant the window shows and `authorise` honours. Nothing else is kept:
+/// some fields only hold beside another (a dispatch grant beside what this machine knows of its
+/// persona, its workspace or the commit it is bound to), and keeping one without the other would put
+/// back in force what the other kept out (review of #5934). The nevers an earlier build left are
+/// carried as before.
+fn salvaged(text: &str) -> OnDisk {
+    let whole = serde_json::from_str::<serde_json::Value>(text).ok();
+    // Said only of an object with a field off its shape: an empty or cut-short file starts again
+    // quietly, as it always did.
+    if whole.as_ref().is_some_and(serde_json::Value::is_object) {
+        tracing::warn!(
+            "purlis: this machine's sandbox file has a field off its shape; it starts again, \
+             keeping its vault grants"
+        );
+    }
+    let vaults_mine = whole
+        .and_then(|held| held.get("vaults_mine").cloned())
+        .and_then(|grants| serde_json::from_value(grants).ok())
+        .unwrap_or_default();
+    OnDisk {
+        vaults_mine,
+        // What starts again never takes a never an earlier build left here with it.
+        dispatch_never: legacy_nevers_in(text),
+        ..OnDisk::default()
+    }
+}
+
 /// Reads this machine's file, changes it and writes it back, under purlis's named lock for them.
 fn change(root: &Path, how: impl FnOnce(&mut OnDisk)) -> io::Result<()> {
     let file = path(root);
@@ -582,15 +611,13 @@ fn write_new(file: &Path, how: impl FnOnce(&mut OnDisk)) -> io::Result<()> {
     #[cfg(not(unix))]
     std::fs::create_dir_all(&dir)?;
     update_kept(&dir, file, |now| {
-        // A file that is not this shape reads as empty, as [`read`] reads it: the count
-        // starts again rather than refusing every chat start that would add to it.
-        let mut held: OnDisk = now
-            .and_then(|text| serde_json::from_str(text).ok())
-            .unwrap_or_else(|| OnDisk {
-                // What starts again never takes a never an earlier build left here with it.
-                dispatch_never: now.and_then(legacy_nevers_in),
-                ..OnDisk::default()
-            });
+        // A file that is not this shape starts again, as [`read`] reads it: the count starts
+        // again rather than refusing every chat start that would add to it. Its vault grants are
+        // kept (#5906).
+        let mut held: OnDisk = match now {
+            Some(text) => serde_json::from_str(text).unwrap_or_else(|_| salvaged(text)),
+            None => OnDisk::default(),
+        };
         how(&mut held);
         serde_json::to_string_pretty(&held)
             .map(|text| Some(format!("{text}\n")))

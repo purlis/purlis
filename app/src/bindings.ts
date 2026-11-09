@@ -849,9 +849,13 @@ export const commands = {
 	 *  **The person answers the ask to allow a program `id`** (ADR 0112, #5239): the run that waits
 	 *  on it goes on, or hears it was not allowed, and a chat whose command stopped waiting is nudged.
 	 *  A field is filled by a value typed (`values`) or an entry picked (`links`, #5080), and
-	 *  `remember` holds the lines the person ticked Remember for and read.
+	 *  `remember` holds the lines the person ticked Remember for and read. Answers what the person
+	 *  reads beside the press where there is one: Keep blocked on a vault the persona already holds
+	 *  (#5890).
 	 */
-	answerRunGrant: (plane: PlaneId, id: number, press: RunGrantPress, values: RunValue[], links: RunLink[], remember: RunNeedLine[]) => typedError<null, string>(__TAURI_INVOKE("answer_run_grant", { plane, id, press, values, links, remember })),
+	answerRunGrant: (plane: PlaneId, id: number, press: RunGrantPress, values: RunValue[], links: RunLink[], remember: RunNeedLine[]) => typedError<{
+	said: string,
+} | null, string>(__TAURI_INVOKE("answer_run_grant", { plane, id, press, values, links, remember })),
 	/**
 	 *  **The person fills Secret ask `id` with an entry they keep** (#5073): the asked key becomes a
 	 *  Linked entry reading `key` in `vault`, never a copy, and every command that waits on it runs

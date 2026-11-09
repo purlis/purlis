@@ -456,6 +456,23 @@ describe("a start missing its profile credential, in the Start dialog (#5137)", 
     expect(of("start_chat")).toHaveLength(1);
   });
 
+  it("an answer the core refuses after a typed value says to type it again, as a send that fails does (#5902)", async () => {
+    const LOCKED = "the vault providers is locked: unlock it, then fill again";
+    core({ refuse: LOCKED });
+    render(<App />);
+
+    const { user, dialog, body } = await startRefused();
+    await user.type(within(body).getByLabelText("Value of anthropic"), "fr3sh-anthropic");
+    await user.click(within(body).getByRole("button", { name: "Fill" }));
+
+    await waitFor(() =>
+      expect(within(dialog).getByRole("alert")).toHaveTextContent(
+        `${LOCKED}. Type the value again and press Fill.`,
+      ),
+    );
+    expect(within(body).getByLabelText("Value of anthropic")).toHaveValue("");
+  });
+
   it("answered, every list of the project's asks is read again before the start comes back", async () => {
     const { asked } = core({ hold: "start" });
     render(<App />);

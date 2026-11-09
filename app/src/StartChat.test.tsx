@@ -7,7 +7,13 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { useState } from "react";
 import { userEvent } from "@testing-library/user-event";
 import type { StartOptions, StartRunsOn } from "./bindings";
-import { StartChat, typedIn, type RunsOnInPicker } from "./StartChat";
+import {
+  StartChat,
+  pickerAnswerUnsent,
+  refusedSaid,
+  typedIn,
+  type RunsOnInPicker,
+} from "./StartChat";
 import { profileCommand, profilePage } from "./settings/profileAddress";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { ChatsHere, fixedChats } from "./chatState";
@@ -2464,7 +2470,10 @@ describe("the start's Secret ask, with what else the dialog offers (#5670 review
   const ask = (
     over: {
       busy?: boolean;
-      onAnswer?: (option: unknown, given: () => unknown) => Promise<"filled" | "refused">;
+      onAnswer?: (
+        option: unknown,
+        given: () => unknown,
+      ) => Promise<"filled" | "refused" | "unsent">;
     } = {},
   ) => ({
     ask: secretAsk({ persona: "steward", vault: "providers", key: "anthropic" }),
@@ -2680,6 +2689,37 @@ describe("the start's Secret ask, with what else the dialog offers (#5670 review
     );
   });
 
+  it("a Not now that fails with a value typed in the box says to press Not now again, never to retype (review of #5934)", async () => {
+    const onSaid = vi.fn();
+    render(
+      <StartChat
+        options={options()}
+        trouble="nothing was started"
+        secretAsk={{
+          ...ask({
+            onAnswer: (_option, given) => {
+              given();
+              return Promise.reject(new Error("the app went away"));
+            },
+          }),
+          onSaid,
+        }}
+        onStart={vi.fn()}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Value of anthropic"), "fr3sh");
+    await user.click(screen.getByRole("button", { name: "Not now" }));
+
+    await waitFor(() =>
+      expect(onSaid).toHaveBeenCalledWith(
+        "purlis could not send your answer: the app went away. Press Not now again.",
+      ),
+    );
+  });
+
   it("a fill that sent no typed value and fails says to press Fill again, with nothing to retype", async () => {
     const onSaid = vi.fn();
     render(
@@ -2746,8 +2786,40 @@ describe("the start's Secret ask, with what else the dialog offers (#5670 review
     await act(async () => fail(new Error("the app went away")));
 
     await waitFor(() =>
-      expect(screen.getByRole("alert")).toHaveTextContent("purlis could not send your answer"),
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "purlis could not send your answer: the app went away. Type the value again and press Fill.",
+      ),
     );
+    // Where to answer it again comes first, then what its answer was told (#5902).
+    const said = screen.getByRole("alert").textContent ?? "";
+    const pick = said.indexOf(`Pick ${ONE.profiles[0].name} again to fill anthropic here.`);
+    expect(pick).toBeGreaterThan(-1);
+    expect(pick).toBeLessThan(said.indexOf("purlis could not send your answer"));
+  });
+
+  it("an answer that sent nothing never says an older line as its own once another profile is picked (#5902)", async () => {
+    const OLDER = "purlis could not send your answer: the app went away. Press Fill again.";
+    render(
+      <StartChat
+        options={options({
+          profiles: [ONE.profiles[0], { ...ONE.profiles[0], name: "other", is_default: false }],
+        })}
+        trouble="nothing was started"
+        secretAsk={{
+          ...ask({ onAnswer: () => Promise.resolve("unsent" as const) }),
+          said: OLDER,
+        }}
+        onStart={vi.fn()}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Fill" }));
+    await user.click(screen.getByRole("radio", { name: /^other/ }));
+
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Pick "));
+    expect(screen.getByRole("alert")).not.toHaveTextContent(OLDER);
   });
 
   it("a fill that comes back while the window is still busy goes on once it is not", async () => {
@@ -2786,5 +2858,31 @@ describe("whether a send read a typed value (#5670 review)", () => {
     expect(typedIn({ picked: { vault: "providers", key: "anthropic" } })).toBe(false);
     expect(typedIn({ typed: "" })).toBe(false);
     expect(typedIn({})).toBe(false);
+  });
+});
+
+const FILL = { id: "fill", label: "Fill" };
+
+describe("the picker's Secret ask's answer, as PlaneView sends it (#5902)", () => {
+  it("sends nothing, and says nothing, with no ask or while one is being answered", () => {
+    const shown = secretAsk({ persona: "devops", vault: "providers", key: "anthropic" });
+    expect(pickerAnswerUnsent(undefined, {}, false)).toBe("unsent");
+    expect(pickerAnswerUnsent(shown, undefined, false)).toBe("unsent");
+    expect(pickerAnswerUnsent(shown, {}, true)).toBe("unsent");
+    expect(pickerAnswerUnsent(shown, {}, false)).toBeUndefined();
+  });
+
+  it("says to type a refused typed value again, after the refusal's own mark", () => {
+    const locked = "the vault providers is locked: unlock it, then fill again";
+    expect(refusedSaid(locked, true, FILL)).toBe(`${locked}. Type the value again and press Fill.`);
+    expect(refusedSaid(`${locked}.`, true, FILL)).toBe(
+      `${locked}. Type the value again and press Fill.`,
+    );
+    expect(refusedSaid("Is the vault unlocked?", true, FILL)).toBe(
+      "Is the vault unlocked? Type the value again and press Fill.",
+    );
+    expect(refusedSaid(locked, false, FILL)).toBe(locked);
+    // Not now stores nothing, so nothing is to be typed again (review of #5934).
+    expect(refusedSaid(locked, true, { id: "keep", label: "Not now" })).toBe(locked);
   });
 });

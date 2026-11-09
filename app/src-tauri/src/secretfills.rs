@@ -410,9 +410,20 @@ pub fn kept_said(key: &str, origin: &str, reason: Option<&str>) -> String {
     )
 }
 
+/// What [`judged`] found of a fill it lets through.
+struct Judged {
+    /// The field's web origin.
+    origin: String,
+    /// What the person is warned of on its notice.
+    warnings: Vec<String>,
+    /// The persona whose vaults it read as: the one the chat was started as, which its notice
+    /// reads as too, so the two cannot drift apart (#5910).
+    reads_as: Option<String>,
+}
+
 /// **Whether `asked` may be put to the person, and what the notice warns of**: the field's frame
 /// has a web origin, the field takes typing, and the project lets the key be offered.
-fn judged(held: &Held, session: u32, asked: &FillAsked) -> Result<(String, Vec<String>), String> {
+fn judged(held: &Held, session: u32, asked: &FillAsked) -> Result<Judged, String> {
     let target = &asked.target;
     let Some(origin) = asked.field.origin.clone() else {
         return Err(format!(
@@ -438,7 +449,11 @@ fn judged(held: &Held, session: u32, asked: &FillAsked) -> Result<(String, Vec<S
             .collect();
     warnings.extend(frame_warning(&origin, asked.page.as_deref()));
     warnings.extend(asked.pool.as_deref().map(runner_warning));
-    Ok((origin, warnings))
+    Ok(Judged {
+        origin,
+        warnings,
+        reads_as: persona,
+    })
 }
 
 /// **The runner of `pool` a chat's fill may go to** (#5122; SF-12, ADR 0089): only one shown to be
@@ -502,7 +517,11 @@ pub fn asked(
     gone: &dyn Fn() -> bool,
 ) -> Result<Allowed, String> {
     let started = std::time::Instant::now();
-    let (origin, warnings) = judged(held, session, asked)?;
+    let Judged {
+        origin,
+        warnings,
+        reads_as,
+    } = judged(held, session, asked)?;
     // SF-5: a multi-line text box or an editable area asks each time, whatever was allowed.
     let multi_line = asked.field.kind != FieldKind::OneLine;
     // On a runner, only one shown to be the person's own, before anyone is asked (#5122).
@@ -571,10 +590,7 @@ pub fn asked(
                 line: None,
                 no_always: None,
                 vault_too: false,
-                reads_as: held
-                    .chats()
-                    .persona_of(session)
-                    .and_then(|persona| persona.started_as),
+                reads_as,
             },
         );
         match heard(held, fills, wait, gone)? {
