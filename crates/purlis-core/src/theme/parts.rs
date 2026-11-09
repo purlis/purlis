@@ -1374,41 +1374,73 @@ fn shown_in(states: &[State]) -> String {
 /// edges where they stand out. Two pairs drawn alike are measured once.
 pub(super) fn allow_from_primary(theme: &ResolvedTheme) -> Vec<AllowLook> {
     let mut found = Vec::new();
-    for family in MANIFEST {
-        let Some(grants) = family
-            .variants
-            .iter()
-            .find(|variant| variant.consent == Some(Consent::Grants))
-        else {
-            continue;
-        };
+    for (family, pairs) in allow_pairs() {
         let on = grounds(theme, family);
-        let primaries: Vec<(Vec<State>, Drawn)> = shown_sets(family, PRIMARY)
-            .into_iter()
-            .map(|states| {
-                let look = drawn(&[], family, PRIMARY, &states);
-                (states, look)
-            })
-            .collect();
-        let mut seen: Vec<(Drawn, Drawn)> = Vec::new();
-        for allow_in in shown_sets(family, grants.name) {
-            let allow = drawn(&[], family, grants.name, &allow_in);
-            for (primary_in, primary) in &primaries {
-                let pair = (allow.clone(), primary.clone());
-                if seen.contains(&pair) {
-                    continue;
-                }
-                found.push(AllowLook {
-                    allow: allow_in.clone(),
-                    primary: primary_in.clone(),
-                    apart: look_apart(theme, &on, &allow, primary, false),
-                    fills: [primary.fill, allow.fill],
-                });
-                seen.push(pair);
-            }
+        for one in pairs {
+            found.push(AllowLook {
+                allow: one.allow_in.clone(),
+                primary: one.primary_in.clone(),
+                apart: look_apart(theme, &on, &one.allow, &one.primary, false),
+                fills: [one.primary.fill, one.allow.fill],
+            });
         }
     }
     found
+}
+
+/// One pair of looks Allow and the primary are drawn in by the family defaults, with the states
+/// that draw each.
+struct AllowPair {
+    allow_in: Vec<State>,
+    primary_in: Vec<State>,
+    allow: Drawn,
+    primary: Drawn,
+}
+
+/// **Every distinct pair of default looks of Allow and the primary**, by family: what
+/// [`allow_from_primary`] measures. The defaults are no theme's, so the pairs are found once; a
+/// launch measures them in every tint (#2994).
+fn allow_pairs() -> &'static [(&'static Family, Vec<AllowPair>)] {
+    static PAIRS: OnceLock<Vec<(&'static Family, Vec<AllowPair>)>> = OnceLock::new();
+    PAIRS.get_or_init(|| {
+        let mut all = Vec::new();
+        for family in MANIFEST {
+            let Some(grants) = family
+                .variants
+                .iter()
+                .find(|variant| variant.consent == Some(Consent::Grants))
+            else {
+                continue;
+            };
+            let primaries: Vec<(Vec<State>, Drawn)> = shown_sets(family, PRIMARY)
+                .into_iter()
+                .map(|states| {
+                    let look = drawn(&[], family, PRIMARY, &states);
+                    (states, look)
+                })
+                .collect();
+            let mut pairs: Vec<AllowPair> = Vec::new();
+            for allow_in in shown_sets(family, grants.name) {
+                let allow = drawn(&[], family, grants.name, &allow_in);
+                for (primary_in, primary) in &primaries {
+                    if pairs
+                        .iter()
+                        .any(|one| one.allow == allow && one.primary == *primary)
+                    {
+                        continue;
+                    }
+                    pairs.push(AllowPair {
+                        allow_in: allow_in.clone(),
+                        primary_in: primary_in.clone(),
+                        allow: allow.clone(),
+                        primary: primary.clone(),
+                    });
+                }
+            }
+            all.push((family, pairs));
+        }
+        all
+    })
 }
 
 /// `variant` of `family` as its defaults draw it while `states` hold, said: for the tests that
@@ -3098,6 +3130,21 @@ fn nearer_across(
 ) -> Option<Vec<State>> {
     #[cfg(test)]
     if ALIKE_ONLY.with(std::cell::Cell::get) {
+        return None;
+    }
+    // Where no rule colours the root of either, both draw their defaults in every look, and no
+    // pair of defaults is nearer than the nearest of them: nothing to measure, at no cost.
+    let colours = |name: &str| {
+        rules.iter().any(|rule| {
+            std::ptr::eq(rule.family, family)
+                && rule.part == 0
+                && rule.variant.is_none_or(|one| one == name)
+                && [Prop::Fill, Prop::Text, Prop::BorderColour]
+                    .iter()
+                    .any(|property| rule.values.contains_key(property))
+        })
+    };
+    if !colours(variant) && !colours(PRIMARY) {
         return None;
     }
     let words = family
