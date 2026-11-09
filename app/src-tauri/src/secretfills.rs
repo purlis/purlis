@@ -990,8 +990,7 @@ pub fn answer(
     // not use while the notice waited is allowed nothing, writes no line and grants no vault. The
     // notice stays up, as for every press refused, and shows the person why.
     let ctx = Ctx::new(root, Env::from_process());
-    let _ = &wait.reads_as;
-    let reads_as = wait.persona.as_deref().unwrap_or_default();
+    let reads_as = wait.reads_as.as_deref().unwrap_or_default();
     if let Some(why) = brokered::read_out_of_reach(&ctx, reads_as, &wait.vault, &[&wait.key]) {
         return Err(crate::loginasks::refused_at_the_press_said(&why));
     }

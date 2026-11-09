@@ -943,7 +943,7 @@ fn refused_out_of_reach(root: &Path, wait: &LoginWait) -> Result<(), String> {
     let drawn = &wait.proposal;
     let Some(why) = out_of_reach(
         &ctx,
-        &drawn.persona,
+        &wait.reads_as,
         &drawn.vault,
         drawn.user_key.as_deref(),
         &drawn.key,
