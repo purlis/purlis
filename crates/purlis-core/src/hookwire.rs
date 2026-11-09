@@ -1563,6 +1563,13 @@ pub enum Ask {
     /// act, and nothing else**, so no part of what is shown or made is the chat's. No ticket,
     /// for [`Self::Removal`]'s reason.
     ProposeSkillSet(Box<ProposeSkillSetAsk>),
+    /// **A pin of an artifact folder a chat proposes** (#5963, ADR 0120 §1): what the
+    /// `artifact_propose_pin` tool and `purlis artifact pin` hand over in a chat. Held for the
+    /// person beside [`Self::Propose`]'s, and pinned only by their press of Pin to workspace in
+    /// the window. **It names a folder and what to call it, and no workspace**: the workspace is
+    /// the app's record of the chat whose token the line carries. No ticket, for
+    /// [`Self::Removal`]'s reason. Boxed: it may carry a command.
+    ProposePin(Box<ProposePinAsk>),
     /// Drive one of this chat's browsers (#2013): what a chat's browser tools hand over. The app
     /// decides whether the chat may have a browser at all (the one Ask that sets its posture),
     /// starts its browser in the session host with what it may reach, and hands the act on. It
@@ -1789,6 +1796,15 @@ pub struct ProposeSkillSetAsk {
     /// The chat asking, from [`CHAT_ENV`]: the chat whose token the line must carry.
     pub chat: u32,
     pub change: crate::skills::verbs::set::SetChange,
+}
+
+/// **A pin a chat proposes** ([`Ask::ProposePin`], #5963). Judged by the app against the
+/// chat's workspace when it is asked, and again when the person pins it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ProposePinAsk {
+    /// The chat asking, from [`CHAT_ENV`]: the chat whose token the line must carry.
+    pub chat: u32,
+    pub pin: crate::artifact::proposal::Proposed,
 }
 
 /// Something a chat asks the person to remove ([`crate::removalask`], qw356).
@@ -2658,6 +2674,7 @@ impl Ask {
             Self::ReportDraft(draft) => draft.chat,
             Self::ProposeLimit(proposed) => proposed.chat,
             Self::ProposeSkillSet(proposed) => proposed.chat,
+            Self::ProposePin(proposed) => proposed.chat,
             Self::Browse(browse) => browse.chat,
             Self::ThemePreview(asks) => asks.chat,
             Self::ThemeDraft(draft) => draft.chat,

@@ -300,6 +300,8 @@ fn arguments(tool: &str, todo: &str) -> Value {
         browser if purlis_core::browsertools::is_one(browser) => json!({}),
         // The theme specimen (#2330) is the app's to draw, from its own fixture.
         "theme_preview" => json!({ "theme": "purlis-classic" }),
+        // A proposed pin (#5963) is the app's to hold, and writes nothing of the project's.
+        "artifact_propose_pin" => json!({ "folder": "board" }),
         other => panic!("no arguments for {other}: add it to this test"),
     }
 }

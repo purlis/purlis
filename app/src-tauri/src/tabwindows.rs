@@ -381,7 +381,7 @@ pub fn project_closed<R: Runtime>(app: &AppHandle<R>, plane: &PlaneId) {
 /// tab window to send back from, then destroyed.
 fn shut<R: Runtime>(app: &AppHandle<R>, showing: &Showing, label: &str) {
     showing.tab_window_gone(label);
-    if let Some(window) = app.get_webview_window(label) {
+    if let Some(window) = app.get_window(label) {
         let _ = window.destroy();
     }
 }

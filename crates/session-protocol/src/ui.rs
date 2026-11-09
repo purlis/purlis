@@ -350,6 +350,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     "reopen_finished_task",
     "curate",
     "relaunch",
+    // Discuss in an artifact's bar (#5957, ADR 0120 §5): a chat about the page, typed unsent.
+    "artifact_discuss",
     // Starts again.
     "restart_chat_without_sandbox",
     "restart_chat",
@@ -1111,6 +1113,55 @@ pub const WINDOW_ONLY: &[&str] = &[
     // holds, for a bug report the person copies from About in their own window. The report
     // carries the slow-answer log, which is the window's alone, so the facts beside it are too.
     "diagnostics_here",
+    // A pinned artifact in its tab (#5952, ADR 0120): a native webview of the window's own,
+    // laid over the tab's frame. Nothing a link serves can hold one, so only the window asks.
+    "artifact_pins",
+    "artifact_about",
+    "artifact_open",
+    "artifact_place",
+    "artifact_enter",
+    // Its page loaded again when its folder changed, and drawn in the window's theme (#5955).
+    "artifact_reload",
+    "artifact_theme",
+    "artifact_close",
+    // Managing pins from the window (#5953): only the person's press pins or reorders, and an
+    // .html file's private preview is a webview of the window's own.
+    "artifact_pin_ask",
+    "artifact_pin",
+    "artifact_reorder",
+    "artifact_preview_open",
+    // A chat's proposed pin (#5963): only the person pins it, from its Pin to workspace dialog,
+    // and no chat answers its own proposal.
+    "proposed_pin",
+    "pin_proposed",
+    // Repin and Unpin from a missing or too-large artifact's tab (#5954), and Unpin from
+    // workspace in a pin's menu (#5953): they write the workspace's pins file, which only the
+    // person in their own window does.
+    "artifact_repin",
+    "artifact_unpin",
+    // Approving an artifact's script (#5959, ADR 0120 §4): the person's press in its bar, of
+    // what their own window was served. No link may approve on their behalf.
+    "artifact_approve",
+    // Granting an approved artifact its plane-wide queries (#5969, ADR 0120 §7): a grant of
+    // its own, the person's press in its bar. No link may grant it on their behalf.
+    "artifact_grant_plane",
+    // Regenerate (#5962, ADR 0120 §6): the person's yes to the code a pin's command runs, and
+    // the run it starts in the session host. Only their own window approves or starts one.
+    "artifact_regenerate_about",
+    "artifact_regenerate_approve",
+    "artifact_regenerate",
+    // History (#5966): an artifact as of a version, in a webview of the window's own, and two
+    // versions compared. Only the window opens one.
+    "artifact_history",
+    "artifact_open_as_of",
+    "artifact_compare",
+    // Opening a link an artifact's page followed (#5956, ADR 0120 §5): the person's answer in
+    // their own window, to what that window's artifact reported.
+    "artifact_link_open",
+    // A scenario test's stand-ins for the page's click and the browser (#5956): the `e2e` build
+    // only, and its window alone.
+    "artifact_link_follow",
+    "artifact_links_opened",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on

@@ -37,7 +37,9 @@ path = "src/main.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+# `unstable` is Tauri's multiwebview: an artifact is a child webview of the window, laid over
+# its tab (#5952, ADR 0120 §3).
+tauri = { version = "2", features = ["tray-icon", "unstable"] }
 tauri-plugin-opener = "2"
 tauri-plugin-notification = "2"
 purlis-core.workspace = true
@@ -60,6 +62,8 @@ changelog.workspace = true
 # create` stamps it into the manifest and the two implementations must stamp the same field.
 # The same spelling `purlis-cli` uses, so one version of chrono is in the tree.
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+# An artifact page names the data file it asks for percent-encoded (#5961); the core's version.
+percent-encoding = "2"
 serde.workspace = true
 serde_json.workspace = true
 specta = { version = "=2.0.0-rc.25", features = ["derive", "function"] }
@@ -156,7 +160,7 @@ e2e = [
 
 [dev-dependencies]
 # Tauri's mock runtime, to invoke commands through the app's real ACL (`ipc.rs`, ADR 0052).
-tauri = { version = "2", features = ["test", "tray-icon"] }
+tauri = { version = "2", features = ["test", "tray-icon", "unstable"] }
 # Fenced for `cargo test --workspace`, which is the invocation that compiles and runs this
 # crate's tests — and the one named in charter-app#129.
 purlis-core = { workspace = true, features = ["fenced", "test-support"] }

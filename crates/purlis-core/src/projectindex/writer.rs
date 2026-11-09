@@ -539,8 +539,10 @@ fn plan(
     batch: &[(&Source, String)],
     recorded: Vec<BTreeMap<String, Recorded>>,
 ) -> Vec<Planned> {
-    let listed = in_parallel(batch, |(source, _)| {
-        crate::memstore::read_files(root, &source.dir)
+    let listed = in_parallel(batch, |(source, _)| match source.kind {
+        // A workspace's pinned artifacts, through the pin's gate (#5968).
+        Kind::Artifacts => crate::artifact::search::pages(root, &source.dir),
+        _ => crate::memstore::read_files(root, &source.dir),
     });
     let mut files: Vec<(usize, PathBuf, String, Option<Recorded>)> = Vec::new();
     let mut gone: Vec<Vec<i64>> = Vec::new();
@@ -556,8 +558,9 @@ fn plan(
         gone.push(recorded.into_values().map(|r| r.id).collect());
         unread_of.push(unread);
     }
-    let changes = in_parallel(&files, |(_, path, rel, was)| {
-        change(path, rel, was.as_ref())
+    let changes = in_parallel(&files, |(at, path, rel, was)| match batch[*at].0.kind {
+        Kind::Artifacts => artifact_change(root, path, rel, was.as_ref()),
+        _ => change(path, rel, was.as_ref()),
     });
     let mut planned: Vec<Planned> = batch
         .iter()
@@ -636,6 +639,53 @@ fn change(path: &Path, rel: &str, was: Option<&Recorded>) -> Option<Change> {
             text_words: words::indexed(&words::scanned(&text)),
             title,
             date,
+            size,
+            mtime,
+            hash,
+        },
+    })
+}
+
+/// What the sweep writes for the pinned artifact whose page is `page` (#5968): its folder read
+/// again through its gate every time, since a change to any file of it, or to its pin's name,
+/// moves no stat of the page. Its row's hash is of its name and what its pages show, so an
+/// artifact whose words did not change keeps its row.
+fn artifact_change(root: &Path, page: &Path, rel: &str, was: Option<&Recorded>) -> Option<Change> {
+    let Some(one) = crate::artifact::search::indexed(root, page) else {
+        return was.map(|was| Change::Delete(was.id));
+    };
+    let size = i64::try_from(one.size).unwrap_or(i64::MAX);
+    let mtime = std::fs::metadata(page)
+        .ok()
+        .and_then(|meta| meta.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_nanos() as i64);
+    let hash = {
+        use sha2::Digest;
+        let mut hash = sha2::Sha256::new();
+        hash.update(one.name.as_bytes());
+        hash.update([0]);
+        hash.update(one.text.as_bytes());
+        crate::extension::hex(&hash.finalize())
+    };
+    if let Some(was) = was
+        && was.hash == hash
+    {
+        return Some(Change::Touch {
+            id: was.id,
+            size,
+            mtime,
+        });
+    }
+    let title = words::scanned(&one.name);
+    Some(Change::Write {
+        was: was.map(|was| was.id),
+        row: Row {
+            rel: rel.to_string(),
+            title_words: words::indexed(&title),
+            text_words: words::indexed(&words::scanned(&one.text)),
+            title,
+            date: None,
             size,
             mtime,
             hash,

@@ -2679,6 +2679,36 @@ pub fn proposed_change(
     name_of: &dyn Fn(u32) -> Option<String>,
 ) -> Shown {
     use crate::proposals::Now;
+    // A proposed pin (#5963): Review… opens Pin to workspace, which alone pins it; never Apply.
+    if one.pin.is_some() {
+        let mut options = Vec::new();
+        if matches!(now, Now::Made { .. }) {
+            options.push(refuses(crate::pinproposals::REVIEW, "Review…"));
+        }
+        options.push(refuses(DISMISS, "Dismiss"));
+        return Shown {
+            session: one.session,
+            ask: proposal_key(one.id),
+            says: said_inertly(&crate::pinproposals::says(one, now)),
+            options,
+            source: AskSource::ProposedChange,
+            chain: Vec::new(),
+            answer: AnswerPath::ProposedChange {
+                id: one.id,
+                path: one.path.clone(),
+            },
+            since: None,
+            held_until: None,
+            writes: None,
+            lines: None,
+            last_message: None,
+            login: None,
+            fill: None,
+            earlier_messages: None,
+            secret: None,
+            run: None,
+        };
+    }
     let path = &one.path;
     let mut opens = false;
     let (says, writes, applies) = match now {
