@@ -21,7 +21,9 @@ use kube::api::{
     Api, DeleteParams, ListParams, LogParams, ObjectMeta, Patch, PatchParams, PostParams,
 };
 use kube::{Client, ResourceExt};
+use purlis_cluster_operator::forge::FORGE_WRITER_ANNOTATION;
 use purlis_cluster_operator::mint::{self, CHALLENGE_PATH, TOKEN_PATH};
+use purlis_cluster_operator::upstream::{BORN_MINTING_ANNOTATION, SandboxClaim};
 use purlis_cluster_operator::{Claim, ClaimForge, ClaimSpec, Pool, PoolForge, PoolSpec, SecretRef};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -611,13 +613,18 @@ async fn a_vouched_runner_gets_a_token_covering_exactly_the_intersection_and_eve
     .await;
     let writer = acting_as(WRITER).await;
     let as_writer = Api::<Pool>::all(writer.clone());
-    let pool = Pool::new(
+    let mut pool = Pool::new(
         POOL,
         pool_spec(
             KEY_SECRET,
             &["acme/app", "acme/web", "acme/docs", "other/*"],
         ),
     );
+    // Its writer says so, by their own name, in the write that sets its forge.
+    pool.metadata.annotations = Some(BTreeMap::from([(
+        FORGE_WRITER_ANNOTATION.to_owned(),
+        WRITER.to_owned(),
+    )]));
     let refused = eventually(
         "the policy to refuse the writer",
         Duration::from_secs(30),
@@ -666,6 +673,19 @@ async fn a_vouched_runner_gets_a_token_covering_exactly_the_intersection_and_eve
         )
         .await;
     assert!(other_key.is_err(), "{other_key:?}");
+    // **Who wrote a Pool's forge is said on it, by their own name**: nobody takes it off a Pool
+    // that names a key, or names someone else in it.
+    for said in [Value::Null, json!(ADA)] {
+        let patch = Patch::Merge(
+            json!({ "metadata": { "annotations": { FORGE_WRITER_ANNOTATION: said } } }),
+        );
+        let refused = as_writer.patch(POOL, &PatchParams::default(), &patch).await;
+        assert!(
+            matches!(&refused, Err(kube::Error::Api(status))
+                if status.code == 403 && status.message.contains(FORGE_WRITER_ANNOTATION)),
+            "{said}: {refused:?}"
+        );
+    }
 
     grant(
         &admin,
@@ -736,6 +756,35 @@ async fn a_vouched_runner_gets_a_token_covering_exactly_the_intersection_and_eve
             .to_owned()
     };
     let (runner_ns, pod) = (line("runner namespace"), line("pod"));
+    // **Its upstream claim says it was born on a Pool naming a key**, and nobody else adds,
+    // changes or removes that, a cluster admin among them.
+    let upstream_claims = Api::<SandboxClaim>::namespaced(admin.clone(), &runner_ns);
+    let born = upstream_claims
+        .get(CLAIM)
+        .await
+        .expect("its upstream claim");
+    assert_eq!(
+        born.metadata
+            .annotations
+            .as_ref()
+            .and_then(|annotations| annotations.get(BORN_MINTING_ANNOTATION))
+            .map(String::as_str),
+        Some("true")
+    );
+    let unborn = upstream_claims
+        .patch(
+            CLAIM,
+            &PatchParams::default(),
+            &Patch::Merge(
+                json!({ "metadata": { "annotations": { BORN_MINTING_ANNOTATION: null } } }),
+            ),
+        )
+        .await;
+    assert!(
+        matches!(&unborn, Err(kube::Error::Api(status))
+            if status.code == 403 && status.message.contains("born minting")),
+        "{unborn:?}"
+    );
     // A statement needs only the pod's first step ended: the runner may yet be starting.
     let out = eventually("the runner to run", Duration::from_secs(120), || {
         let (runner_ns, pod) = (runner_ns.clone(), pod.clone());
@@ -1057,8 +1106,9 @@ async fn a_vouched_runner_gets_a_token_covering_exactly_the_intersection_and_eve
     )
     .await;
 
-    // A Pool no longer opted in mints nothing, whatever the desktop's record says.
-    Api::<Pool>::all(admin.clone())
+    // A Pool no longer opted in mints nothing, whatever the desktop's record says. Written by its
+    // forge's writer, who holds `use` on the key and is named on it.
+    as_writer
         .patch(
             POOL,
             &PatchParams::default(),
@@ -1067,7 +1117,7 @@ async fn a_vouched_runner_gets_a_token_covering_exactly_the_intersection_and_eve
         .await
         .expect("the Pool");
     refused_saying(&ask(&pin, &link_key, CLAIM, APP), "opt in");
-    Api::<Pool>::all(admin.clone())
+    as_writer
         .patch(
             POOL,
             &PatchParams::default(),
@@ -1156,11 +1206,14 @@ async fn a_vouched_runner_gets_a_token_covering_exactly_the_intersection_and_eve
         .patch(
             EARLIER,
             &PatchParams::default(),
-            &Patch::Merge(json!({ "spec": { "forge": {
-                "appKeySecretRef": { "name": KEY_SECRET },
-                "repos": ["acme/*"],
-                "mintInCluster": true,
-            } } })),
+            &Patch::Merge(json!({
+                "metadata": { "annotations": { FORGE_WRITER_ANNOTATION: WRITER } },
+                "spec": { "forge": {
+                    "appKeySecretRef": { "name": KEY_SECRET },
+                    "repos": ["acme/*"],
+                    "mintInCluster": true,
+                } },
+            })),
         )
         .await
         .expect("the Pool opts in");
@@ -1199,6 +1252,22 @@ async fn a_vouched_runner_gets_a_token_covering_exactly_the_intersection_and_eve
     })
     .await;
     assert!(image_refused.contains("image"), "{image_refused}");
+    // **Revoking `use` on the key stops minting for the Pools its holder wrote**, at the next
+    // mint: the operator asks it of whoever the Pool names as its forge's writer.
+    let refused = eventually(
+        "the writer's right to go at the mint",
+        Duration::from_secs(30),
+        || {
+            let (pin, link_key) = (pin.clone(), link_key.clone());
+            async move {
+                let answered = ask(&pin, &link_key, CLAIM, APP);
+                (answered.1["refused"].as_str() == Some(mint::NOT_WRITTEN_BY_A_KEY_USER))
+                    .then_some(answered)
+            }
+        },
+    )
+    .await;
+    refused_saying(&refused, mint::NOT_WRITTEN_BY_A_KEY_USER);
 
     // The operator's mark opens the port, so no one else puts it on another namespace.
     let marked = namespaces
@@ -1242,6 +1311,35 @@ async fn a_vouched_runner_gets_a_token_covering_exactly_the_intersection_and_eve
         .await
         .expect("made again");
     refused_saying(&ask(&pin, &link_key, CLAIM, APP), "made before");
+    // **A runner whose upstream claim says nothing of its birth mints nothing**, as one made
+    // before the operator said it: its Claim is to be made again. Only with the policy on App
+    // keys unbound can anyone take the word off.
+    bindings
+        .delete("purlis-forge", &DeleteParams::default())
+        .await
+        .expect("deleted again");
+    eventually(
+        "the word on its upstream claim to come off",
+        Duration::from_secs(30),
+        || {
+            let upstream_claims = upstream_claims.clone();
+            async move {
+                let patch = Patch::Merge(
+                    json!({ "metadata": { "annotations": { BORN_MINTING_ANNOTATION: null } } }),
+                );
+                upstream_claims
+                    .patch(CLAIM, &PatchParams::default(), &patch)
+                    .await
+                    .ok()
+            }
+        },
+    )
+    .await;
+    refused_saying(&ask(&pin, &link_key, CLAIM, APP), mint::NOT_BORN_MINTING);
+    bindings
+        .create(&PostParams::default(), &again)
+        .await
+        .expect("made again");
     assert_eq!(
         asked.lock().expect("the record").tokens.len(),
         tokens_before,

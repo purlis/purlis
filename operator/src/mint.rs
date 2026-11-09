@@ -16,7 +16,8 @@
 //! that still holds. Then, read now, never remembered ([`may_mint`]): the Claim and its Pool were
 //! made under the policy on App keys, the Pool is opted in, neither is stopped or going, and a
 //! token would cover something; and the cluster is asked, before each mint, whether the requester
-//! may still `use` the Pool. Only then is the App's Secret read, held to the `app` asked for, and
+//! may still `use` the Pool, and whether whoever wrote the Pool's forge may still `use` its key
+//! ([`key_use_review`]). Only then is the App's Secret read, held to the `app` asked for, and
 //! the token asked of GitHub ([`crate::github`]), limited to [`crate::github::MINTABLE`]. Each mint and refusal is in the log, with no
 //! token (a refusal of an asker who proved nothing at most once a minute as a warning); nothing
 //! about a token is written to the API server.
@@ -34,14 +35,17 @@
 //! **The port answers a runner only from its pod's own address** ([`pod_may_mint`]), holds one
 //! address to [`limits::MOST_FROM_ONE_SOURCE`] of its connections, and mints for one Claim
 //! [`limits::MOST_MINTS`] times in [`limits::MINTS_WITHIN`] at most ([`limits::Paces`]). A token
-//! whose answer could not be written is revoked ([`undelivered`]).
+//! whose answer could not be written is revoked ([`undelivered`]). It mints only for a runner
+//! whose upstream claim was made while its Pool named an App's key ([`born_minting`]).
 
 pub mod limits;
 
 use crate::admission::{Admission, FORGE_POLICY, POLICY, admission, in_force_since};
 use crate::forge::{self, Covered};
 use crate::github::GitHub;
+use crate::person::CLAIM_UID_ANNOTATION;
 use crate::resources::{Claim, ClaimMint, Pool};
+use crate::upstream::{BORN_MINTING_ANNOTATION, SandboxClaim};
 use crate::vouch::{self, MountedKeys, SigningKey, SigningKeys};
 use k8s_openapi::api::admissionregistration::v1::{
     ValidatingAdmissionPolicy, ValidatingAdmissionPolicyBinding,
@@ -52,8 +56,8 @@ use k8s_openapi::api::authorization::v1::{
 use k8s_openapi::api::core::v1::{Pod, Service};
 use k8s_openapi::api::networking::v1::NetworkPolicy;
 use k8s_openapi::jiff::Timestamp;
-use kube::Client;
 use kube::api::{Api, PostParams};
+use kube::{Client, ResourceExt};
 use limits::{AtMostEvery, Paces, PerSource, plain};
 use ring::agreement::{self, EphemeralPrivateKey, UnparsedPublicKey, X25519};
 use ring::{hkdf, hmac};
@@ -104,6 +108,20 @@ pub const NOT_VOUCHED: &str = "the operator vouches for no such key on that clai
 /// What a runner made before its Pool named an App's key is told.
 pub const NOT_MARKED: &str = "this runner was made before its pool named an App's key, so it mints \
      nothing: claim a new runner";
+
+/// What a runner is told whose upstream claim was made while its Pool named no App's key
+/// ([`born_minting`]): a kept runner's home can be older than its Pool's key, and making the Claim
+/// again is what makes it a home of its own.
+pub const NOT_BORN_MINTING: &str = "this runner's claim was made before its pool named an App's \
+     key, so it mints nothing: delete the claim and make it again";
+
+/// What a runner is told whose Pool does not say who wrote its forge, or whose writer may no
+/// longer `use` its App key ([`key_use_review`]): revoking that right takes the key away from the
+/// Pools its holder wrote.
+pub const NOT_WRITTEN_BY_A_KEY_USER: &str = "whoever wrote this pool's forge may not use its App \
+     key, or the pool does not say who did, so it mints nothing: write the pool's forge again as \
+     someone who may use the key (forgekeys), with runners.purlis.dev/forge-writer set to their \
+     name";
 
 /// What a runner is told whose request came from another address than its pod's: a network that
 /// rewrites pod source addresses (SNAT between pods) cannot use the port.
@@ -431,6 +449,24 @@ pub fn pod_may_mint(
     Ok(())
 }
 
+/// **Whether the runner's upstream claim was made while its Pool named an App's key**: `upstream`,
+/// the claim the operator made under the Claim's name in the runner's namespace, is there, names
+/// `claim` by its uid, and says so ([`crate::upstream::BORN_MINTING_ANNOTATION`]). A claim made
+/// before this was written says nothing, and is refused as one made before its Pool named a key.
+pub fn born_minting(upstream: Option<&SandboxClaim>, claim: &Claim) -> Result<(), String> {
+    let annotations = upstream.and_then(|upstream| upstream.metadata.annotations.as_ref());
+    let said = |name: &str| annotations.and_then(|annotations| annotations.get(name));
+    let of_this_claim = claim
+        .metadata
+        .uid
+        .as_ref()
+        .is_some_and(|uid| said(CLAIM_UID_ANNOTATION) == Some(uid));
+    if !of_this_claim || said(BORN_MINTING_ANNOTATION).map(String::as_str) != Some("true") {
+        return Err(NOT_BORN_MINTING.to_owned());
+    }
+    Ok(())
+}
+
 /// **The token to revoke** once an answer was written, or failed to be: `minted`, the token the
 /// answer held, where `written` failed, since then it reached no one. A refusal holds none.
 pub fn undelivered<T>(written: &std::io::Result<()>, minted: Option<T>) -> Option<T> {
@@ -577,6 +613,39 @@ pub fn use_review(requester: &str, pool: &str) -> SubjectAccessReview {
         },
         ..SubjectAccessReview::default()
     }
+}
+
+/// **A question for the cluster's authorizer: may whoever wrote `pool`'s forge still `use` its App
+/// key?** `use` on `forgekeys` named for the Secret, as the policy on App keys asks it of a Pool's
+/// writer. Asked of the writer by name alone, as [`use_review`] is: a right they hold only through
+/// a group is not seen, which refuses rather than allows. Refused before anything is asked where
+/// the Pool names no key, or no writer ([`forge::writer_of`]).
+pub fn key_use_review(pool: &Pool) -> Result<SubjectAccessReview, String> {
+    let (Some(forge), Some(writer)) = (pool.spec.forge.as_ref(), forge::writer_of(pool)) else {
+        return Err(NOT_WRITTEN_BY_A_KEY_USER.to_owned());
+    };
+    Ok(SubjectAccessReview {
+        spec: SubjectAccessReviewSpec {
+            user: Some(writer.to_owned()),
+            resource_attributes: Some(ResourceAttributes {
+                group: Some("runners.purlis.dev".to_owned()),
+                resource: Some(forge::KEY_RESOURCE.to_owned()),
+                name: Some(forge.app_key_secret_ref.name.clone()),
+                verb: Some("use".to_owned()),
+                ..ResourceAttributes::default()
+            }),
+            ..SubjectAccessReviewSpec::default()
+        },
+        ..SubjectAccessReview::default()
+    })
+}
+
+/// Whether the authorizer's answer to a review allows, and nothing denies.
+pub fn allowed(review: &SubjectAccessReview) -> bool {
+    review
+        .status
+        .as_ref()
+        .is_some_and(|status| status.allowed && status.denied != Some(true))
 }
 
 /// The NetworkPolicy that lets the pods of the runner namespace `namespace` reach the operator's
@@ -896,6 +965,12 @@ impl Serving {
             .map_err(|_| read_failed("pool"))?
             .ok_or("the claim's pool is gone")?;
         pod_may_mint(pod.as_ref(), &runner.key_hex, &pool.spec.image, peer)?;
+        // The upstream claim has the Claim's name, in the runner namespace the statement names.
+        let upstream = Api::<SandboxClaim>::namespaced(client.clone(), &runner.runner_namespace)
+            .get_opt(&claim.name_any())
+            .await
+            .map_err(|_| read_failed("runner's claim"))?;
+        born_minting(upstream.as_ref(), claim)?;
         let bindings = Api::<ValidatingAdmissionPolicyBinding>::all(client.clone());
         let claims_binding = bindings
             .get_opt(POLICY)
@@ -932,12 +1007,20 @@ impl Serving {
             )
             .await
             .map_err(|_| "the cluster could not be asked who may use the pool".to_owned())?;
-        let status = review.status.as_ref();
-        if !status.is_some_and(|status| status.allowed && status.denied != Some(true)) {
+        if !allowed(&review) {
             return Err(format!(
                 "{} may not use the pool {}, by name",
                 claim.spec.requester, claim.spec.pool
             ));
+        }
+        // And whoever wrote the Pool's forge, so revoking their `use` on the key stops its
+        // minting at the next mint.
+        let review = Api::<SubjectAccessReview>::all(client.clone())
+            .create(&PostParams::default(), &key_use_review(&pool)?)
+            .await
+            .map_err(|_| "the cluster could not be asked who may use the App key".to_owned())?;
+        if !allowed(&review) {
+            return Err(NOT_WRITTEN_BY_A_KEY_USER.to_owned());
         }
         let key = forge::key_of(forge::read_secret(client, &grant.secret).await)
             .map_err(|why| format!("the pool's App key {}: {why}", grant.secret))?;

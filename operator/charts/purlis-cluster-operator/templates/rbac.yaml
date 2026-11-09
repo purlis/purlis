@@ -54,8 +54,8 @@ rules:
     resources: [validatingadmissionpolicies]
     resourceNames: [purlis-claims-use-their-pool, purlis-runner-namespaces, purlis-forge]
     verbs: [get]
-  # Asked before each mint: may this Claim's requester still use its Pool (#4206)? It answers
-  # questions and grants nothing.
+  # Asked before each mint: may this Claim's requester still use its Pool, and may whoever wrote
+  # the Pool's forge still use its key (#4206)? It answers questions and grants nothing.
   - apiGroups: [authorization.k8s.io]
     resources: [subjectaccessreviews]
     verbs: [create]
@@ -71,7 +71,8 @@ rules:
   # Upstream's objects a claim becomes, in its requester's runner namespace: watched, so a
   # claim is looked at again when one of them changes or goes; each read by name first, since
   # the operator changes only objects it made, then made or applied server-side, and deleted
-  # by uid by a deleted claim's finalizer (#2055).
+  # by uid by a deleted claim's finalizer (#2055). A runner's upstream claim is read again before
+  # each mint, for whether it was made while its Pool named a key.
   - apiGroups: [extensions.agents.x-k8s.io]
     resources: [sandboxclaims, sandboxtemplates, sandboxwarmpools]
     verbs: [create, delete, get, list, patch, watch]

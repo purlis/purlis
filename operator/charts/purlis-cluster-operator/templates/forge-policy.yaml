@@ -6,6 +6,13 @@ and binding of their own: the operator mints only for a Claim and a Pool made on
 settled, so nothing written before these rules held can reach a token. Kept when the release is
 uninstalled, as the policy on Claims is.
 
+A Pool that names a key says who wrote its forge, in its annotation runners.purlis.dev/forge-writer,
+set in the same write to the writer's own name: the operator asks before each mint whether that
+person may still `use` the key, so revoking it stops minting for every Pool they wrote. Whether an
+upstream claim in a runner namespace was born on a Pool naming a key
+(runners.purlis.dev/born-minting) only the operator says, as it makes the claim, and nobody
+changes it after.
+
 On a Pool that mints, changing its image, turning its minting on and running it again once it is
 stopped each take `use` on its key too: stopping is a gate on minting, and revoking `use` on the
 key is what takes the key away from whoever may write the Pool.
@@ -38,6 +45,34 @@ spec:
         apiVersions: ["*"]
         operations: [UPDATE]
         resources: [claims]
+      - apiGroups: [extensions.agents.x-k8s.io]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE]
+        resources: [sandboxclaims]
+  variables:
+    # Who a Pool says wrote its forge, as a list of at most one, so that none said matches none
+    # said; and who it said before this write.
+    - name: forgeWriter
+      expression: >-
+        has(object.metadata.annotations) &&
+        'runners.purlis.dev/forge-writer' in object.metadata.annotations ?
+        [object.metadata.annotations['runners.purlis.dev/forge-writer']] : []
+    - name: heldForgeWriter
+      expression: >-
+        request.operation == 'UPDATE' && has(oldObject.metadata.annotations) &&
+        'runners.purlis.dev/forge-writer' in oldObject.metadata.annotations ?
+        [oldObject.metadata.annotations['runners.purlis.dev/forge-writer']] : []
+    # Whether an upstream claim says it was born on a Pool naming a key, the same way.
+    - name: bornMinting
+      expression: >-
+        has(object.metadata.annotations) &&
+        'runners.purlis.dev/born-minting' in object.metadata.annotations ?
+        [object.metadata.annotations['runners.purlis.dev/born-minting']] : []
+    - name: heldBornMinting
+      expression: >-
+        request.operation == 'UPDATE' && has(oldObject.metadata.annotations) &&
+        'runners.purlis.dev/born-minting' in oldObject.metadata.annotations ?
+        [oldObject.metadata.annotations['runners.purlis.dev/born-minting']] : []
   validations:
     # Writing a Pool's spec.forge is spending the key it names, so the writer needs `use` on that
     # key. Any other change to a Pool, and taking its forge off, asks nothing.
@@ -89,6 +124,37 @@ spec:
         .name(object.spec.pool).check('use').allowed())
       messageExpression: >-
         'Only ' + object.spec.requester + ', who asked for this claim, while they may use its pool, may change the repos it names.'
+      reason: Forbidden
+    # Whoever writes a Pool's forge, or who it says wrote it, says so in the same write, by their
+    # own name: the operator asks before each mint whether that person may still use the key.
+    # A Pool that names no key needs no writer, and taking its forge off asks nothing. Any other
+    # change to a Pool leaves both as they were and asks nothing.
+    - expression: >-
+        request.resource.resource != 'pools' ||
+        (request.operation == 'UPDATE' &&
+        (has(object.spec.forge) ?
+        has(oldObject.spec.forge) && object.spec.forge == oldObject.spec.forge :
+        !has(oldObject.spec.forge)) &&
+        variables.forgeWriter == variables.heldForgeWriter) ||
+        variables.forgeWriter == [request.userInfo.username] ||
+        (!has(object.spec.forge) &&
+        (variables.forgeWriter == [] || variables.forgeWriter == variables.heldForgeWriter))
+      messageExpression: >-
+        'A pool that names a GitHub App key says who wrote its forge: set its annotation runners.purlis.dev/forge-writer to ' + request.userInfo.username + ' in the same write.'
+      reason: Forbidden
+    # Whether an upstream claim was born on a Pool naming a key is what a mint asks of it: only
+    # the operator says it, as it makes the claim, and nobody adds, changes or removes it after.
+    # The operator's own writes are held further by the policy on what it writes.
+    - expression: >-
+        request.resource.resource != 'sandboxclaims' ||
+        (request.operation == 'CREATE' ?
+        variables.bornMinting == [] ||
+        request.userInfo.username ==
+        'system:serviceaccount:{{ .Release.Namespace }}:purlis-cluster-operator' :
+        variables.bornMinting == variables.heldBornMinting)
+      message: >-
+        Only purlis's cluster operator says whether a claim is born minting
+        (runners.purlis.dev/born-minting), as it makes the claim, and nobody changes it after.
       reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1

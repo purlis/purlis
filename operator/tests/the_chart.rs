@@ -192,8 +192,10 @@ const POLICY_HEADER: &str = "# Copyright 2026 Purlis
 # The fourth policy, purlis-forge (#4206): whoever writes a Pool's spec.forge needs `use` on the
 # key it names (forgekeys), and only a Claim's requester changes the repos it names. On a Pool that
 # mints, changing its image, turning its minting on and running it again once it is stopped take
-# `use` on its key too. The operator mints only for a Claim and a Pool made once its binding has
-# settled.
+# `use` on its key too. A Pool that names a key says who wrote its forge
+# (runners.purlis.dev/forge-writer), by that writer's own name, and only the operator says, as it
+# makes an upstream claim, that it was born on a Pool naming a key (runners.purlis.dev/born-minting).
+# The operator mints only for a Claim and a Pool made once its binding has settled.
 #
 # The fifth policy, purlis-operator-deletes-only-a-retained-claim (#3981): the operator deletes
 # only a kept Claim, not stopped, that carries its own RetentionEnded condition.

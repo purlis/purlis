@@ -267,7 +267,8 @@ spec:
   maxAge: 336h
   # limits:                # optional; see "What a team sets for a pool's limits"
   #   signInWait: { default: 20, highest: 60 }
-  # forge:                 # optional; see "Minting GitHub App tokens in the cluster"
+  # forge:                 # optional; see "Minting GitHub App tokens in the cluster", and
+  #                        # its writer named in metadata.annotations, as that section shows
   #   appKeySecretRef: { name: org-app }
   #   repos: [acme/*]
   #   mintInCluster: true
@@ -874,7 +875,7 @@ it holds, but for the one Role below where the chart names a key:
 | `runners.purlis.dev` | `claims` | get, list, watch, patch (its finalizer), delete (a kept Claim whose retention has ended, as a policy holds it) |
 | `runners.purlis.dev` | `claims/status` | patch |
 | `runners.purlis.dev` | `pools/status` | patch |
-| `authorization.k8s.io` | `subjectaccessreviews` | create (may a Claim's requester still use its Pool, before each mint) |
+| `authorization.k8s.io` | `subjectaccessreviews` | create (before each mint: may a Claim's requester still use its Pool, and may whoever wrote the Pool's forge still use its key) |
 | `networking.k8s.io` | `networkpolicies` | create; get and patch only `purlis-forge-mint` |
 | core | `pods` | get |
 | core | `namespaces` | create, get (`kube-system` too, for the cluster's uid) |
@@ -998,11 +999,14 @@ helm upgrade purlis-cluster-operator <chart> --namespace purlis-system --reuse-v
 ```
 
 ```yaml
-# 4. The Pool says so.
+# 4. The Pool says so, and says who wrote its forge: you, by the name the cluster signs you in as
+#    (`kubectl auth whoami`), in the same write.
 apiVersion: runners.purlis.dev/v1alpha1
 kind: Pool
 metadata:
   name: team
+  annotations:
+    runners.purlis.dev/forge-writer: admin@example.com   # required with spec.forge; your own name
 spec:
   image: ghcr.io/purlis/purlis-runner@sha256:<digest>
   forge:
@@ -1037,9 +1041,25 @@ spec:
   On a Pool that mints, changing `spec.image` takes the same right, since the image holds the link
   keys the operator vouches for. Turning a Pool's minting on adopts the image it already names,
   whoever set it, so it takes the same right too. Taking `spec.forge` off a Pool asks nothing. A wildcard RBAC rule
-  on `runners.purlis.dev` holds every key. The right is asked as a Pool is written: revoking it stops
-  further writes, and to stop a Pool already written, set it `stopped` (running it again takes the
-  same right), or delete it.
+  on `runners.purlis.dev` holds every key. The right is asked as a Pool is written, and again before
+  each mint of whoever last wrote the Pool's forge: **revoking `use` on a key stops minting for every
+  Pool that person wrote, at its next mint**, as well as their further writes. To stop a Pool at
+  once whoever wrote it, set it `stopped` (running it again takes the same right), or delete it.
+- **A Pool that names a key says who wrote its forge**, in its annotation
+  `runners.purlis.dev/forge-writer`, by the name the cluster signs that person in as. Whoever sets or
+  changes `spec.forge`, or the annotation, sets it to their own name in that same write, as step 4
+  shows; the policy `purlis-forge` refuses the write otherwise. A Pool with no `spec.forge` needs
+  none. On a Pool already written, as one from before this was asked, the person who holds `use`
+  on its key names themselves:
+
+  ```sh
+  kubectl annotate pool team runners.purlis.dev/forge-writer="$(kubectl auth whoami -o jsonpath='{.status.userInfo.username}')" --overwrite
+  ```
+
+  Until a Pool names a writer who may `use` its key, it mints nothing, and its runners are told to
+  have its forge written again by someone who may. The writer is asked of by name, as a requester
+  is: **a right on the key held only through a group is refused. Grant `use` on the key to the
+  person by name.**
 - **`Claim.spec.forge.repos`** names the repos of the workspaces the desktop sends, each exactly
   `owner/name`: a wildcard is refused at admission. As a chat starts on the runner the desktop adds
   the github.com repos of that chat's workspace, as who the kubeconfig signs in as, and the runner's
@@ -1085,6 +1105,7 @@ read at that moment:
   says nothing of which claims there are;
 - the Claim and the Pool made after the policy `purlis-forge` settled. **A Pool or Claim made before
   never mints: delete it and make it again**, since what it says was not held to that policy;
+- the runner's upstream claim made while its Pool named a key (below);
 - the runner's pod running its Pool's image as it is now, and the request coming from one of that
   pod's own addresses. **The operator answers a runner only from its pod's own address, so a network
   that rewrites pod source addresses (SNAT between pods) cannot use the mint port**;
@@ -1094,6 +1115,8 @@ read at that moment:
   revoked right stops new tokens at once. A Claim records no groups, so this is asked of the person
   by name: **a right held only through a group is refused. Grant `use` to the person by name** on a
   Pool that mints;
+- **whoever wrote the Pool's forge still allowed `use` on its key**, asked the same way, by the name
+  the Pool's `runners.purlis.dev/forge-writer` says (above);
 - the Secret's key parsed, its `app` the one asked for;
 - no more than 5 tokens minted for the Claim in the last minute. Past that the runner is told how
   many seconds to wait, and its run goes to the desktop as any refused mint does. Only a mint that
@@ -1146,6 +1169,16 @@ holds for such tools alone. Any other tool's vault value still comes from the de
   the sandbox, saying why, a terminal shell the person opens alone being allowed. The operator mints only
   for a pod made with it. **Naming a key on a Pool changes its runners' template, as changing its image
   does: a runner made before gets no token and is no longer vouched for, so claim a new one.**
+- **A runner's claim says from its making whether its Pool named a key.** The operator writes
+  `runners.purlis.dev/born-minting: "true"` on the upstream claim it makes for a Claim on a Pool that
+  names a key, and nothing on one that does not; no one, the operator included, adds, changes or
+  removes it after. A kept runner's home outlives its pod, so a pod made again from the Pool's
+  current template is marked while its home is from before the key: **the operator mints only for
+  a runner whose upstream claim says so. A Claim made before its Pool named a key gets no token;
+  delete it and make it again.** **Upgrading: a kept runner made before this version is refused tokens
+  until its Claim is made again**, since its upstream claim says nothing of its birth. So is a fresh
+  one still running from before, until its Claim is made again or its runner goes idle and is run
+  again, which makes its upstream claim anew.
 - **The token stays in the runner's memory**, and goes when its chat ends: the runner revokes it
   with GitHub. A revoke that fails, or a runner stopped first, leaves it to expire within its hour.
 

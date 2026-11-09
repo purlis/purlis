@@ -772,7 +772,7 @@ fn spending_an_app_key_takes_use_on_it() {
             .collect::<String>()
     };
     let validations = spec["validations"].as_array().expect("validations");
-    assert_eq!(validations.len(), 4, "{spec}");
+    assert_eq!(validations.len(), 6, "{spec}");
     assert_eq!(
         flat(&validations[0]["expression"]),
         "request.resource.resource!='pools'||!has(object.spec.forge)||(request.operation=='UPDATE'&&has(oldObject.spec.forge)&&object.spec.forge==oldObject.spec.forge)||authorizer.group('runners.purlis.dev').resource('forgekeys').name(object.spec.forge.appKeySecretRef.name).check('use').allowed()"
@@ -793,6 +793,66 @@ fn spending_an_app_key_takes_use_on_it() {
         flat(&validations[3]["expression"]),
         "request.resource.resource!='claims'||(has(object.spec.forge)?has(oldObject.spec.forge)&&object.spec.forge==oldObject.spec.forge:!has(oldObject.spec.forge))||(request.userInfo.username==object.spec.requester&&authorizer.group('runners.purlis.dev').resource('pools').name(object.spec.pool).check('use').allowed())"
     );
+    let variables: Vec<(String, String)> = spec["variables"]
+        .as_array()
+        .expect("variables")
+        .iter()
+        .map(|v| {
+            (
+                v["name"].as_str().expect("a name").to_owned(),
+                flat(&v["expression"]),
+            )
+        })
+        .collect();
+    let annotation = |name: &str, object: &str, guard: &str| {
+        format!(
+            "{guard}has({object}.metadata.annotations)&&'{name}'in{object}.metadata.annotations?[{object}.metadata.annotations['{name}']]:[]"
+        )
+    };
+    let writer = purlis_cluster_operator::forge::FORGE_WRITER_ANNOTATION;
+    let born = purlis_cluster_operator::upstream::BORN_MINTING_ANNOTATION;
+    let held = "request.operation=='UPDATE'&&";
+    assert_eq!(
+        variables,
+        [
+            ("forgeWriter".to_owned(), annotation(writer, "object", "")),
+            (
+                "heldForgeWriter".to_owned(),
+                annotation(writer, "oldObject", held)
+            ),
+            ("bornMinting".to_owned(), annotation(born, "object", "")),
+            (
+                "heldBornMinting".to_owned(),
+                annotation(born, "oldObject", held)
+            ),
+        ]
+    );
+    // Whoever writes a Pool's forge, or the annotation naming its writer, names themselves in it in
+    // that write: the operator asks before each mint whether that person may still use the key.
+    // A Pool that names no key needs no writer, and taking its forge off asks nothing.
+    assert_eq!(
+        flat(&validations[4]["expression"]),
+        "request.resource.resource!='pools'||(request.operation=='UPDATE'&&(has(object.spec.forge)?has(oldObject.spec.forge)&&object.spec.forge==oldObject.spec.forge:!has(oldObject.spec.forge))&&variables.forgeWriter==variables.heldForgeWriter)||variables.forgeWriter==[request.userInfo.username]||(!has(object.spec.forge)&&(variables.forgeWriter==[]||variables.forgeWriter==variables.heldForgeWriter))"
+    );
+    // Whether an upstream claim was born on a Pool naming a key: said by the operator alone, as it
+    // makes the claim, and by nobody after. Upstream's controller and a cluster's admins may write
+    // upstream's claims too.
+    assert_eq!(
+        flat(&validations[5]["expression"]),
+        "request.resource.resource!='sandboxclaims'||(request.operation=='CREATE'?variables.bornMinting==[]||request.userInfo.username=='system:serviceaccount:purlis-system:purlis-cluster-operator':variables.bornMinting==variables.heldBornMinting)"
+    );
+    let rules = spec["matchConstraints"]["resourceRules"]
+        .as_array()
+        .expect("its rules");
+    assert!(
+        rules.iter().any(
+            |rule| strings(&rule["apiGroups"]) == ["extensions.agents.x-k8s.io"]
+                && strings(&rule["resources"]) == ["sandboxclaims"]
+                && strings(&rule["operations"]) == ["CREATE", "UPDATE"]
+        ),
+        "{rules:?}"
+    );
+    assert!(spec.get("matchConditions").is_none(), "it holds everyone");
     let binding = documents
         .iter()
         .find(|d| {
@@ -901,7 +961,8 @@ fn what_the_operator_writes_of_upstreams_is_held_to_a_runners_shape() {
          !has(object.spec.volumeClaimTemplates[0].spec.volumeAttributesClassName)&&\
          !has(object.spec.volumeClaimTemplates[0].spec.volumeMode))))"
     );
-    // Its own mark on a claim, added once; all else there neither added, changed nor removed.
+    // Its own mark on a claim, added once, and whether the claim is born minting, said only as it
+    // is made; all else there neither added, changed nor removed.
     let marks: String = validations[7].split_whitespace().collect();
     assert_eq!(
         marks,
@@ -920,7 +981,13 @@ fn what_the_operator_writes_of_upstreams_is_held_to_a_runners_shape() {
          has(object.metadata.annotations)&&kinobject.metadata.annotations))):\
          (!has(object.metadata.labels)&&\
          (!has(object.metadata.annotations)||object.metadata.annotations.all(k,\
-         k=='runners.purlis.dev/claim-uid'))))"
+         k=='runners.purlis.dev/claim-uid'||\
+         (k=='runners.purlis.dev/born-minting'&&\
+         object.metadata.annotations[k]=='true')))))"
+    );
+    assert_eq!(
+        purlis_cluster_operator::upstream::BORN_MINTING_ANNOTATION,
+        "runners.purlis.dev/born-minting"
     );
     // The fixed label, from any writer, on a purlis pool's claim.
     let claims_policy = policy_named(&documents, purlis_cluster_operator::POLICY);
