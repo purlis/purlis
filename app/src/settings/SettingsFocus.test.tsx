@@ -156,7 +156,7 @@ async function onTheCurrentGroup(group?: string) {
   await waitFor(() => {
     const current = within(nav())
       .getAllByRole("button")
-      .find((one) => one.getAttribute("aria-current") === "true");
+      .find((one) => one.getAttribute("aria-current") === "page");
     expect(current).toBeDefined();
     if (group !== undefined) expect(current).toHaveAccessibleName(group);
     expect(document.activeElement).toBe(current);
@@ -373,7 +373,7 @@ function Holder({ place, group, front }: { place: string; group: string; front?:
     <div className={front === undefined ? undefined : front ? "pane view focused" : "pane view"}>
       <div ref={own}>
         <nav className="ui-settings-nav" aria-label={`Groups of ${group}`}>
-          <button type="button" aria-current="true">
+          <button type="button" aria-current="page">
             {group}
           </button>
         </nav>

@@ -1086,7 +1086,7 @@ describe("Settings at a workspace's level, as a view", () => {
 
 describe("Edit as JSON (NO-7, #1232)", () => {
   const editLink = () =>
-    within(screen.getByRole("group", { name: "Edit as JSON" })).getByRole("button", {
+    within(screen.getByRole("navigation", { name: "Edit as JSON" })).getByRole("button", {
       name: "workspace.json",
     });
   const box = () => screen.findByRole("textbox", { name: "workspace.json, as JSON" });
@@ -1100,7 +1100,7 @@ describe("Edit as JSON (NO-7, #1232)", () => {
     await userEvent.click(editLink());
 
     await holds(MANIFEST);
-    expect(screen.queryByRole("group", { name: "Edit as TOML" })).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "Edit as TOML" })).toBeNull();
   });
 
   it("saves the whole text through the core, against the text the edit began from", async () => {
@@ -1179,7 +1179,7 @@ describe("a standing refusal at the Workspace level (NO-7, #1232)", () => {
 
     expect(within(nav()).getByRole("button", { name: "Appearance" })).toHaveAttribute(
       "aria-current",
-      "true",
+      "page",
     );
     await waitFor(() => expect(screen.getByLabelText("Icons")).toHaveFocus());
   });

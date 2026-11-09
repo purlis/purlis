@@ -14,10 +14,4 @@
  */
 // prettier-ignore
 export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
-  "settings/RawToml.tsx": [
-    "<button className=\"ui-settings-raw-file\">",
-  ],
-  "settings/components.tsx": [
-    "<button className={one.sub ? \"ui-settings-nav-item ui-settings-sub\" : \"ui-settings-nav-item\"}>",
-  ],
 };

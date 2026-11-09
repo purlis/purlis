@@ -65,6 +65,9 @@ export interface ViewPage {
   countSaid?: string;
   /** A rule before it: it starts a group of its own (the studio's Harness skills, Routing). */
   startsGroup?: boolean;
+  /** A page of the one above it, set in under it (a harness profile's, under Harness &
+   *  profiles in Settings, ST-4). */
+  sub?: boolean;
 }
 
 /** The keys that walk the navigation, and where each goes from `at` of `last + 1` pages. */
@@ -117,10 +120,14 @@ function ViewNavItem({
       data-pressed={isPressed || undefined}
       data-focus-visible={isFocusVisible || undefined}
       data-starts-group={page.startsGroup || undefined}
+      data-sub={page.sub || undefined}
     >
       <span data-scope="view-nav" data-part="label">
         {page.label}
-      </span>{" "}
+      </span>
+      {/* A space between the name and its count, so a reader says two words; none without one,
+          so the page is named by its name alone. */}
+      {page.count !== undefined && page.count > 0 && " "}
       {page.count !== undefined && page.count > 0 && (
         <Count variant={page.waiting ? "waiting" : "neutral"} said={page.countSaid}>
           {page.count}

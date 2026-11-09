@@ -221,7 +221,7 @@ async function openGroup(label: string): Promise<void> {
           const button = [...document.querySelectorAll<HTMLElement>(`${nav} button`)].find(
             (one) => one.textContent?.trim() === wanted,
           );
-          if (button?.getAttribute("aria-current") === "true") return true;
+          if (button?.getAttribute("aria-current") === "page") return true;
           button?.click();
           return false;
         },

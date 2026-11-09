@@ -324,9 +324,9 @@ describe("a page per harness profile", () => {
     await waitFor(() => expect(pages()).toContain("work"));
     const at = pages().indexOf("Harness & profiles");
     expect(pages().slice(at, at + 3)).toEqual(["Harness & profiles", "work", "alt"]);
-    expect(within(nav()).getByRole("button", { name: "work" })).toHaveClass("ui-settings-sub");
-    expect(within(nav()).getByRole("button", { name: "Harness & profiles" })).not.toHaveClass(
-      "ui-settings-sub",
+    expect(within(nav()).getByRole("button", { name: "work" })).toHaveAttribute("data-sub");
+    expect(within(nav()).getByRole("button", { name: "Harness & profiles" })).not.toHaveAttribute(
+      "data-sub",
     );
   });
 

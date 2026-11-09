@@ -10,10 +10,9 @@ import {
   type ReactNode,
   type Ref,
 } from "react";
-import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import { Info, ListFilter } from "lucide-react";
 import { Select } from "../ui/select/Select";
-import { useTabStop } from "../roving";
+import { ViewNav } from "../ui/panel/ViewFrame";
 import { Button } from "../ui/button/Button";
 import { Checkbox, CheckboxGroup, RovingCheckbox } from "../ui/choice/Checkbox";
 import {
@@ -77,9 +76,9 @@ export type GroupOffer = { id: string; label: string; sub?: boolean };
  * radio pattern asks: a level is a view and writes nothing, so nothing holds the pick for a
  * button. The caller may draw the new level with a layout of its own (`SettingsTab` does), so
  * the switcher the keyboard left is gone; the one drawn next takes the focus back on the level
- * picked, and only then. The nav is buttons in
- * one Tab stop, moved through with the arrow keys (`roving.ts`, as the explorer's rows are), and
- * the chosen one says so with `aria-current`.
+ * picked, and only then. The nav is the panel family's page navigation (`ViewNav`, #2930): one
+ * Tab stop, moved through with the arrow keys, Home and End, chosen with Enter, Space or a press,
+ * and the chosen group says so with `aria-current="page"` and the family's mark.
  *
  * **The filter** (SE-21, V89c) sits above the nav: a search box, labelled, whose words the
  * caller narrows its groups by — the layout draws what it is handed. While it holds words, a
@@ -126,10 +125,6 @@ export function SettingsLayout({
   /** The tab's own element, for what is looked for in this tab and not the whole window. */
   holder?: Ref<HTMLDivElement>;
 }) {
-  const stop = useTabStop(
-    group,
-    groups.map((one) => one.id),
-  );
   const switcher = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     if (arrowedTo !== level) return;
@@ -194,24 +189,9 @@ export function SettingsLayout({
         <p className="sr-only" role="status" aria-live="polite" aria-label="Settings found">
           {said}
         </p>
-        <RovingFocusGroup.Root asChild orientation="vertical" {...stop}>
-          <nav className="ui-settings-nav" aria-label="Groups">
-            {groups.map((one) => (
-              <RovingFocusGroup.Item key={one.id} asChild tabStopId={one.id}>
-                <button
-                  type="button"
-                  className={
-                    one.sub ? "ui-settings-nav-item ui-settings-sub" : "ui-settings-nav-item"
-                  }
-                  aria-current={one.id === group ? "true" : undefined}
-                  onClick={() => onGroupChange(one.id)}
-                >
-                  {one.label}
-                </button>
-              </RovingFocusGroup.Item>
-            ))}
-          </nav>
-        </RovingFocusGroup.Root>
+        <div className="ui-settings-nav">
+          <ViewNav label="Groups" pages={groups} page={group} onPage={onGroupChange} />
+        </div>
         {foot}
       </div>
       <div className="ui-settings-body">

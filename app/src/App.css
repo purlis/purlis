@@ -7080,48 +7080,11 @@ nav.piece-files-head {
   color: var(--text-muted);
 }
 
-/* The left nav: one button per group, the shown one marked. */
+/* The left nav: the panel family's page navigation (`ViewNav`, #2930), which draws its
+   groups. */
 .ui-settings-nav {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
-}
-
-/* The nav's groups, and the Edit as TOML links at its foot (SE-19): one look. */
-.ui-settings-nav button,
-.ui-settings-raw button {
-  padding: var(--space-2) var(--space-4);
-  color: var(--text-secondary);
-  text-align: left;
-  background: none;
-  border: 0;
-  border-radius: var(--radius-md);
-  font: inherit;
-  cursor: pointer;
-}
-
-.ui-settings-nav button:hover,
-.ui-settings-raw button:hover {
-  background: var(--surface-hover);
-}
-
-/* The group shown (#1682): a selected row, drawn as every tree and list draws one (`.ui-row`,
-   #1672) — `list.selected` and its edge, told by a shape and not by colour alone. */
-.ui-settings-nav button[aria-current="true"],
-.ui-settings-raw button[aria-current="true"] {
-  color: var(--text-primary);
-  background: var(--list-selected);
-  box-shadow: inset 2px 0 0 var(--list-selected-edge);
-}
-
-.ui-settings-nav button[aria-current="true"]:dir(rtl),
-.ui-settings-raw button[aria-current="true"]:dir(rtl) {
-  box-shadow: inset -2px 0 0 var(--list-selected-edge);
-}
-
-/* A page of the group above it (ST-4): a harness profile's, set in under Harness & profiles. */
-.ui-settings-nav button.ui-settings-sub {
-  padding-left: var(--space-6);
 }
 
 /* **Edit as TOML** (SE-19, V89d): one link per file at the foot of the nav, set apart from the
@@ -7163,8 +7126,6 @@ nav.piece-files-head {
   min-width: 0;
 }
 
-.ui-settings-nav button:focus-visible,
-.ui-settings-raw button:focus-visible,
 .ui-setting-reset:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-offset);

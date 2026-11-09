@@ -130,8 +130,8 @@ What keeps it from becoming the library this file forbids:
   and says only whether it is filled, in a `SettingRow`'s control slot.
   The slot is how a row composes what the set does not draw, as `Browse…` beside a path is.
 - **Each piece is a thin layer over a primitive already in the window, and says which.**
-  The level switcher is the segmented control; the nav is buttons under Radix roving focus
-  (`roving.ts`, as the explorer's rows); `Choice` is the radio group, the option cards, the
+  The level switcher is the segmented control; the nav, and the Edit as TOML files at its foot,
+  are the panel family's page navigation (`ViewNav`, #2930); `Choice` is the radio group, the option cards, the
   select family's `Select` (`ui/select/Select.tsx`), the switch, a checkbox, or a group of
   checkboxes or chips, each from [the choice families](#the-choice-families); `Field` is the field
   family's box, or the slider.
@@ -412,9 +412,10 @@ own `min-width: max-content` beside the class.
 **Every button, icon button and button drawn as a link is `Button`, `IconButton` or
 `ToggleButton`** (`app/src/ui/button/Button.tsx`, #2904, ADR 0104), on React Aria's `Button` and
 `ToggleButton`. No screen draws a `<button>` of its own for one, and none wears the old
-`.ui-button*` classes: `eslint.config.js` refuses both (`purlis/button-family`, an error). A raw
-`<button>` left is another family's control, said by its role or its family's class (the rule's
-`otherFamilies`).
+`.ui-button*` classes: `eslint.config.js` refuses both (`purlis/button-family`, an error). No raw
+`<button>` is let through as another family's control any more (#2930): the last ones, a tab's
+close, the settings nav and its Edit as TOML files, moved onto their families. The rule's
+`otherFamilies` option stays for a family that is added before its controls move.
 
 | Prop | Says |
 | --- | --- |

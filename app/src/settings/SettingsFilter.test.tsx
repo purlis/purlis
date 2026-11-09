@@ -89,7 +89,7 @@ describe("filtering the Settings tab by name", () => {
     await userEvent.type(box(), "the line you are reading");
 
     expect(inNav()).toEqual(["Editor"]);
-    expect(group("Editor")).toHaveAttribute("aria-current", "true");
+    expect(group("Editor")).toHaveAttribute("aria-current", "page");
     expect(shown()).toHaveAccessibleName("Editor");
     expect(screen.getByRole("radiogroup", { name: "Your editor" })).toBeInTheDocument();
     expect(sliders()).toEqual([]);
@@ -177,7 +177,7 @@ describe("filtering the Settings tab by name", () => {
       "Profiles",
       "Previews",
     ]);
-    expect(group("Editor")).toHaveAttribute("aria-current", "true");
+    expect(group("Editor")).toHaveAttribute("aria-current", "page");
     expect(count()).toHaveTextContent(/^$/);
   });
 

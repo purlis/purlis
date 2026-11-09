@@ -5,6 +5,7 @@ import { lazy, Suspense, useEffect, useId, useRef, useState } from "react";
 import type { TextEditorHandle } from "../editor/TextEditor";
 import type { Shown } from "./fileControls";
 import { Button } from "../ui/button/Button";
+import { ViewNav } from "../ui/panel/ViewFrame";
 
 /** The editor, and the merge view a file changed on disk opens: CodeMirror, in a chunk of its
  *  own fetched when a file is first edited, never in the window's main bundle (#987). */
@@ -84,25 +85,20 @@ export function RawLinks({
   editing: string | undefined;
   onEdit: (id: string) => void;
 }) {
-  const label = useId();
+  const as = `Edit as ${files[0]?.as ?? "TOML"}`;
   return (
-    <div className="ui-settings-raw" role="group" aria-labelledby={label}>
-      <p className="ui-settings-raw-label" id={label}>
-        {`Edit as ${files[0]?.as ?? "TOML"}`}
+    // The panel family's page navigation (`ViewNav`, #2930), as the groups above it are: one Tab
+    // stop, the arrows between the files, and the file on screen `aria-current="page"`.
+    <div className="ui-settings-raw">
+      <p className="ui-settings-raw-label" aria-hidden="true">
+        {as}
       </p>
-      {files.map((one) => (
-        <button
-          key={one.id}
-          type="button"
-          className="ui-settings-raw-file"
-          // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-          tabIndex={0}
-          aria-current={one.id === editing ? "true" : undefined}
-          onClick={() => onEdit(one.id)}
-        >
-          <code>{named(one.file)}</code>
-        </button>
-      ))}
+      <ViewNav
+        label={as}
+        pages={files.map((one) => ({ id: one.id, label: named(one.file) }))}
+        page={editing ?? ""}
+        onPage={onEdit}
+      />
     </div>
   );
 }
