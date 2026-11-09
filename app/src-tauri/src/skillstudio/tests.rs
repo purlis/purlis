@@ -419,6 +419,7 @@ fn a_skills_totals_name_what_it_ran_on_as_a_person_calls_it_and_say_a_start_that
                 asks: 1,
                 tokens: Some(40),
                 ms: 900,
+                misses: 0,
             },
             StatsRow {
                 group: StatsGroup::NotRecorded,
@@ -430,6 +431,7 @@ fn a_skills_totals_name_what_it_ran_on_as_a_person_calls_it_and_say_a_start_that
                 asks: 0,
                 tokens: None,
                 ms: 0,
+                misses: 0,
             },
         ]
     );
@@ -739,8 +741,8 @@ fn the_studio_says_the_budget_and_what_its_scope_writes_as_its_router_3692() {
         said(&at_root.budget),
         [
             ("Claude Code".to_owned(), 60, 15_000),
-            ("Codex".to_owned(), 30, 6_000),
-            ("opencode".to_owned(), 30, 6_000),
+            ("Codex".to_owned(), 30, 8_000),
+            ("opencode".to_owned(), 30, 8_000),
         ]
     );
     assert!(at_root.past_limits.is_empty());
@@ -808,5 +810,41 @@ fn make_room_counts_a_skills_runs_of_the_last_30_days_and_none_older() {
             },
         ],
         "30 days before 6 November is 7 October at midnight"
+    );
+}
+
+#[test]
+fn a_built_ins_totals_by_harness_count_its_misses_beside_its_runs_and_a_harness_with_misses_alone()
+{
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(root.join(purlis_core::plane::MANIFEST), "schema = 2\n").unwrap();
+    let log = root.join("personas/_skills");
+    std::fs::create_dir_all(&log).unwrap();
+    std::fs::write(
+        log.join("2026-11.box.jsonl"),
+        "{\"harness\": \"claude\", \"level\": \"built-in\", \"persona\": \"ops\", \
+         \"run\": \"01JB0000000000000000000001\", \"skill\": \"purlis:purlis-secrets\", \
+         \"started_by\": \"skill-tool\", \"ts\": \"2026-11-01T09:00:00+00:00\", \"workspace\": null}\n\
+         {\"missed\": \"purlis-secrets\", \"signal\": \"correction\", \"harness\": \"claude\", \
+         \"ts\": \"2026-11-01T09:01:00+00:00\"}\n\
+         {\"missed\": \"purlis-secrets\", \"signal\": \"correction\", \"harness\": \"codex\", \
+         \"ts\": \"2026-11-01T09:02:00+00:00\"}\n\
+         {\"missed\": \"purlis-handoff\", \"signal\": \"correction\", \"harness\": \"codex\", \
+         \"ts\": \"2026-11-01T09:03:00+00:00\"}\n",
+    )
+    .unwrap();
+
+    let by_harness: Vec<(StatsGroup, u32, u32)> = stats(root, "purlis-secrets")
+        .by_harness
+        .into_iter()
+        .map(|row| (row.group, row.runs, row.misses))
+        .collect();
+    assert_eq!(
+        by_harness,
+        [
+            (StatsGroup::Named("Claude Code".to_owned()), 1, 1),
+            (StatsGroup::Named("Codex".to_owned()), 0, 1),
+        ]
     );
 }

@@ -1,0 +1,196 @@
+{
+  "tier": "strict",
+  "neighbours": [
+    "purlis-tidy-memory",
+    "purlis-repo-work",
+    "purlis-persona"
+  ],
+  "prompts": [
+    {
+      "query": "Remove the qa-legacy workspace, but don't lose what it learned.",
+      "source": "Skill text: description, \"Remove a purlis workspace ... without losing what it learned\"."
+    },
+    {
+      "query": "Delete the volaticloud persona.",
+      "source": "Mined session record 20261019-073303-browser-flow-session-host-profiles-and-runners-p.md: one of this project's QA personas, left mentioning a retired install; plausible phrasing a person types."
+    },
+    {
+      "query": "Retire the easydmarc persona; promote anything worth keeping.",
+      "source": "Skill text: description, \"retire\", and \"Promote\"."
+    },
+    {
+      "query": "We don't need the git-ci-cd workspace any more. Clean it up.",
+      "source": "Skill text: description, \"clean up\"; a real workspace of this project."
+    },
+    {
+      "query": "Archive the old reporting workspace and get rid of it.",
+      "source": "plausible phrasing a person types."
+    },
+    {
+      "query": "Remove the default workspace; it's empty.",
+      "source": "plausible phrasing a person types."
+    },
+    {
+      "query": "Delete this persona and move its useful memories to shared.",
+      "source": "Skill text: \"Promote\" (`purlis persona remember <persona> --shared`)."
+    },
+    {
+      "query": "Get rid of the prototype-inbox workspace.",
+      "source": "Mined session record 20261102-120712-4585-prototype-a-chat-s-actions-in-its-pane-acce.md: prototype work that ends; plausible phrasing a person types."
+    },
+    {
+      "query": "Before removing the themes workspace, audit its memory and todos.",
+      "source": "Skill text: \"Audit\" (`purlis workspace recall`, `purlis ws todo`)."
+    },
+    {
+      "query": "Retire the designer persona; its work moved to the frontend persona.",
+      "source": "plausible phrasing a person types."
+    },
+    {
+      "query": "Clean up the personas we no longer use.",
+      "source": "plausible phrasing a person types."
+    },
+    {
+      "query": "Can I delete the skills workspace without losing its decisions?",
+      "source": "Skill text: \"Removing it deletes all of that\"; a real workspace of this project."
+    },
+    {
+      "query": "Remove workspace spike-2; the spike is over.",
+      "source": "plausible phrasing a person types."
+    },
+    {
+      "query": "Drop the grader persona; nobody uses it.",
+      "source": "plausible phrasing a person types."
+    },
+    {
+      "query": "Delete the sandbox-test workspace and its todos.",
+      "source": "Skill text: \"A todo that still matters moves to the workspace that will do it\"."
+    },
+    {
+      "query": "Retire this workspace now that its vision is delivered.",
+      "source": "purlis-handoff's text: \"a workspace whose vision says it is delivered\"."
+    },
+    {
+      "query": "Remove the reviewer persona from the project.",
+      "source": "plausible phrasing a person types."
+    },
+    {
+      "query": "Wind down the billing workspace: keep what matters, then remove it.",
+      "source": "Skill text: the three steps in order."
+    },
+    {
+      "query": "Purge the old charter-migration workspace.",
+      "source": "Mined session record 20260929-175406-the-charter-repo-became-a-plane-only-repo-python.md: the charter migration, finished."
+    },
+    {
+      "query": "This persona was a mistake. Delete it.",
+      "source": "plausible phrasing a person types."
+    },
+    {
+      "query": "Remove the workspace for the finished 0.4 release, saving its lessons first.",
+      "source": "Mined session record 20260930-213238-si-1-si-8-plane-root-curation-crud-pane-ux-shell.md: v0.4.0 released."
+    },
+    {
+      "query": "Uninstall the ops persona and its curation actions.",
+      "source": "Skill text: \"Audit\" a persona (`purlis persona curation list`)."
+    },
+    {
+      "query": "Prune the stale entries in the smart-ide workspace's memory.",
+      "source": "Near miss (purlis-tidy-memory): decisions.md of spec #5714 Q30, \"removal only in safe remove\"; pruning memory is tidying.",
+      "belongs_to": "purlis-tidy-memory"
+    },
+    {
+      "query": "Dedupe the steward persona's memory.",
+      "source": "Near miss (purlis-tidy-memory): Mined session record 20261107-020518-5504-dedupe-optimize-and-stats-score-candidates-.md.",
+      "belongs_to": "purlis-tidy-memory"
+    },
+    {
+      "query": "Remove the duplicate notes from this workspace's memory.",
+      "source": "Near miss (purlis-tidy-memory): \"remove\", but of memories, not the workspace.",
+      "belongs_to": "purlis-tidy-memory"
+    },
+    {
+      "query": "Clean up the 61 stale branch folders in smart-ide.",
+      "source": "Near miss (purlis-repo-work): Mined session record 20261101-201032-worktree-cleanup-in-smart-ide-0-of-61-stale-piec.md.",
+      "belongs_to": "purlis-repo-work"
+    },
+    {
+      "query": "Remove this branch folder now that the PR is merged.",
+      "source": "Near miss (purlis-repo-work): Mined session record 20261104-234805-finished-folders-ignored-links-finished-task-fol.md, finished branch folders (`purlis worktree done`).",
+      "belongs_to": "purlis-repo-work"
+    },
+    {
+      "query": "Delete the target folder in this branch folder to free disk space.",
+      "source": "Near miss (purlis-repo-work): Mined session record 20261107-093137-workspace-gate-names-the-10-most-recently-used-w.md, \"removing this worktree's `target/`\".",
+      "belongs_to": "purlis-repo-work"
+    },
+    {
+      "query": "Delete the merged branches in the purlis repo.",
+      "source": "Near miss (purlis-repo-work): repo housekeeping.",
+      "belongs_to": "purlis-repo-work"
+    },
+    {
+      "query": "Create a new persona for release management.",
+      "source": "Near miss (purlis-persona): its description, \"create one\".",
+      "belongs_to": "purlis-persona"
+    },
+    {
+      "query": "Which persona owns the theme work now?",
+      "source": "Near miss (purlis-persona): \"deciding which persona a piece of work belongs to\".",
+      "belongs_to": "purlis-persona"
+    },
+    {
+      "query": "Edit the steward persona's charter to add a scoping rule.",
+      "source": "Near miss (purlis-persona): a persona's charter.",
+      "belongs_to": "purlis-persona"
+    },
+    {
+      "query": "Remove the unused imports in this file.",
+      "source": "plausible phrasing a person types: \"remove\" in code."
+    },
+    {
+      "query": "Delete the accounts that never verified their email.",
+      "source": "plausible phrasing a person types: \"delete\" in data."
+    },
+    {
+      "query": "Retire the v1 API endpoints after the migration.",
+      "source": "plausible phrasing a person types: \"retire\" in code."
+    },
+    {
+      "query": "Uninstall the old version of node.",
+      "source": "plausible phrasing a person types: \"uninstall\" a tool."
+    },
+    {
+      "query": "Remove the feature flag for the new checkout.",
+      "source": "plausible phrasing a person types: \"remove\" in code."
+    },
+    {
+      "query": "Delete the docker volumes and start over.",
+      "source": "plausible phrasing a person types: \"delete\" local state."
+    },
+    {
+      "query": "Clean up the console.log calls.",
+      "source": "plausible phrasing a person types: \"clean up\" in code."
+    },
+    {
+      "query": "Drop the legacy_orders table.",
+      "source": "plausible phrasing a person types: \"drop\" in a database."
+    },
+    {
+      "query": "Remove the workspace switcher from the mobile nav.",
+      "source": "plausible phrasing a person types: \"workspace\" in UI code."
+    },
+    {
+      "query": "Delete the test channel in our Slack workspace.",
+      "source": "plausible phrasing a person types: someone else's workspace."
+    },
+    {
+      "query": "Rename the email column.",
+      "source": "plausible phrasing a person types: unrelated."
+    },
+    {
+      "query": "Archive old GitHub issues labelled wontfix.",
+      "source": "plausible phrasing a person types: \"archive\" on a forge."
+    }
+  ]
+}

@@ -1,0 +1,194 @@
+[
+  {
+    "query": "Make a new workspace for the billing migration.",
+    "should_trigger": true
+  },
+  {
+    "query": "Create a workspace called infra-audit with the terraform repo in it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Start a fresh purlis workspace for the Q1 roadmap work, its goal is planning the release train.",
+    "should_trigger": true
+  },
+  {
+    "query": "Fork this workspace so I can try a different approach without touching it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Duplicate the smart-ide workspace as smart-ide-experiments.",
+    "should_trigger": true
+  },
+  {
+    "query": "Fork reporting into reporting-v2 and clone its repos right away.",
+    "should_trigger": true
+  },
+  {
+    "query": "Share this workspace with the team.",
+    "should_trigger": true
+  },
+  {
+    "query": "Publish my workspace memory so my teammates can read it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Make the volaticloud workspace live.",
+    "should_trigger": true
+  },
+  {
+    "query": "Make this workspace private again, stop sharing its memory.",
+    "should_trigger": true
+  },
+  {
+    "query": "Rename the git-ci-cd workspace to ci-pipelines.",
+    "should_trigger": true
+  },
+  {
+    "query": "This workspace's name is wrong, call it payments instead.",
+    "should_trigger": true
+  },
+  {
+    "query": "Rebuild the reporting workspace on my new laptop from its manifest.",
+    "should_trigger": true
+  },
+  {
+    "query": "I cloned the plane on another machine; restore the smart-ide workspace with its repos and branches.",
+    "should_trigger": true
+  },
+  {
+    "query": "Record which repos and branches this workspace has so it can be restored later.",
+    "should_trigger": true
+  },
+  {
+    "query": "Snapshot the workspace before I fork it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Set qa as the default workspace for new sessions.",
+    "should_trigger": true
+  },
+  {
+    "query": "Clear the default workspace, I don't want sessions landing anywhere.",
+    "should_trigger": true
+  },
+  {
+    "query": "Switch this terminal session to the reporting workspace.",
+    "should_trigger": true
+  },
+  {
+    "query": "Save the plane and push it.",
+    "should_trigger": true
+  },
+  {
+    "query": "purlis save my memory changes with a message about the spec decisions.",
+    "should_trigger": true
+  },
+  {
+    "query": "Can you create a live workspace for the design system and switch into it?",
+    "should_trigger": true
+  },
+  {
+    "query": "Make a copy of this workspace, including its todos and memory, for the new hire.",
+    "should_trigger": true
+  },
+  {
+    "query": "Set up a new purlis workspace for spec 5714 work and pick it for this session.",
+    "should_trigger": true
+  },
+  {
+    "query": "Remove the qa-legacy workspace, we're done with it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Delete the old reporting workspace but keep what it learned.",
+    "should_trigger": false
+  },
+  {
+    "query": "Retire this workspace, its vision is delivered.",
+    "should_trigger": false
+  },
+  {
+    "query": "Archive and get rid of the smart-ide-experiments workspace.",
+    "should_trigger": false
+  },
+  {
+    "query": "Tidy this workspace's memory, there are lots of duplicates.",
+    "should_trigger": false
+  },
+  {
+    "query": "Prune the stale memories in the reporting workspace.",
+    "should_trigger": false
+  },
+  {
+    "query": "Compact the workspace memory and fold the lessons into workspace.md.",
+    "should_trigger": false
+  },
+  {
+    "query": "Hand this bug off to a new chat in the infra workspace.",
+    "should_trigger": false
+  },
+  {
+    "query": "Open a chat in the payments workspace to look into the refund issue.",
+    "should_trigger": false
+  },
+  {
+    "query": "Move this work to another workspace, I'll pick it up there.",
+    "should_trigger": false
+  },
+  {
+    "query": "Fork the purlis repo on GitHub so I can open a PR from my account.",
+    "should_trigger": false
+  },
+  {
+    "query": "Cut a new branch folder for issue 5732 in this workspace.",
+    "should_trigger": false
+  },
+  {
+    "query": "Commit and push my changes in the purlis repo.",
+    "should_trigger": false
+  },
+  {
+    "query": "Rename the feature branch to fix-login.",
+    "should_trigger": false
+  },
+  {
+    "query": "Rename the variable workspaceId to workspaceKey across the codebase.",
+    "should_trigger": false
+  },
+  {
+    "query": "Create a new VS Code workspace file for this monorepo.",
+    "should_trigger": false
+  },
+  {
+    "query": "Add a Slack workspace integration to the app.",
+    "should_trigger": false
+  },
+  {
+    "query": "Set up npm workspaces in this package.json.",
+    "should_trigger": false
+  },
+  {
+    "query": "Fork the process and wait for the child to exit.",
+    "should_trigger": false
+  },
+  {
+    "query": "Restore the database from last night's backup.",
+    "should_trigger": false
+  },
+  {
+    "query": "Save this file and run the tests.",
+    "should_trigger": false
+  },
+  {
+    "query": "Publish the npm package to the registry.",
+    "should_trigger": false
+  },
+  {
+    "query": "Make the GitHub repository public.",
+    "should_trigger": false
+  },
+  {
+    "query": "Take a snapshot of the VM before the upgrade.",
+    "should_trigger": false
+  }
+]

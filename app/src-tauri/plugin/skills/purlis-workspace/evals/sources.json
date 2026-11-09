@@ -1,0 +1,217 @@
+{
+  "tier": "strict",
+  "neighbours": [
+    "purlis-safe-remove",
+    "purlis-tidy-memory",
+    "purlis-handoff",
+    "purlis-repo-work"
+  ],
+  "prompts": [
+    {
+      "query": "Make a new workspace for the billing migration.",
+      "source": "Skill text: description, \"make, create or start a new workspace\"; the briefing's workspace gate (briefing.rs, \"create a new workspace\")."
+    },
+    {
+      "query": "Create a workspace called infra-audit with the terraform repo in it.",
+      "source": "Skill text: \"Create\", repos named after the name (`purlis workspace create <name> <repo>`)."
+    },
+    {
+      "query": "Start a fresh purlis workspace for the Q1 roadmap work, its goal is planning the release train.",
+      "source": "Skill text: \"always with a vision\"; the briefing's \"also ask what it's for\"."
+    },
+    {
+      "query": "Fork this workspace so I can try a different approach without touching it.",
+      "source": "Ticket #5732: \"fork this\"."
+    },
+    {
+      "query": "Duplicate the smart-ide workspace as smart-ide-experiments.",
+      "source": "main.rs: `workspace fork` has the alias `duplicate`; a real workspace of this project."
+    },
+    {
+      "query": "Fork reporting into reporting-v2 and clone its repos right away.",
+      "source": "Skill text: \"Fork\", `--restore`."
+    },
+    {
+      "query": "Share this workspace with the team.",
+      "source": "Ticket #5732: \"share this workspace\"."
+    },
+    {
+      "query": "Publish my workspace memory so my teammates can read it.",
+      "source": "Ticket #5732: \"publish my memory\"."
+    },
+    {
+      "query": "Make the volaticloud workspace live.",
+      "source": "Skill text: \"Live and `purlis save` publish\"; a real workspace of this project."
+    },
+    {
+      "query": "Make this workspace private again, stop sharing its memory.",
+      "source": "live.rs: `workspace live --off` makes it LOCAL."
+    },
+    {
+      "query": "Rename the git-ci-cd workspace to ci-pipelines.",
+      "source": "Mined session record 20261107-104458-pr-5591-5551-review-fixes-volume-trash-on-linux-.md: workspace rename; plausible phrasing a person types."
+    },
+    {
+      "query": "This workspace's name is wrong, call it payments instead.",
+      "source": "Skill text: \"Rename\"; plausible phrasing a person types."
+    },
+    {
+      "query": "Rebuild the reporting workspace on my new laptop from its manifest.",
+      "source": "Skill text: description, \"rebuild a workspace from its manifest or on another machine\"."
+    },
+    {
+      "query": "I cloned the plane on another machine; restore the smart-ide workspace with its repos and branches.",
+      "source": "restore.rs: \"committed precisely so a teammate can restore somebody else's workspace\"."
+    },
+    {
+      "query": "Record which repos and branches this workspace has so it can be restored later.",
+      "source": "Skill text: \"snapshot\"; main.rs: \"Capture this workspace's repos and branches into its committed manifest\"."
+    },
+    {
+      "query": "Snapshot the workspace before I fork it.",
+      "source": "Skill text: \"Run `purlis workspace snapshot <src>` first\"."
+    },
+    {
+      "query": "Set qa as the default workspace for new sessions.",
+      "source": "main.rs: `workspace default`, \"the workspace a session lands on\"."
+    },
+    {
+      "query": "Clear the default workspace, I don't want sessions landing anywhere.",
+      "source": "select.rs: `workspace default --clear`."
+    },
+    {
+      "query": "Switch this terminal session to the reporting workspace.",
+      "source": "main.rs: `workspace use`, \"Select a workspace for this terminal and session\"."
+    },
+    {
+      "query": "Save the plane and push it.",
+      "source": "Skill text: description, \"save and push the plane\"; briefing.rs: \"Commit + push it with `purlis save`\"."
+    },
+    {
+      "query": "purlis save my memory changes with a message about the spec decisions.",
+      "source": "briefing.rs: the uncommitted memory line, \"Commit + push it with `purlis save`\"."
+    },
+    {
+      "query": "Can you create a live workspace for the design system and switch into it?",
+      "source": "brokered.rs: create_refused, `--live` and `--use` refused in a sandboxed chat; the rule the skill carries."
+    },
+    {
+      "query": "Make a copy of this workspace, including its todos and memory, for the new hire.",
+      "source": "main.rs: fork is \"pre-loaded with its charter, memory, todos and manifest\"."
+    },
+    {
+      "query": "Set up a new purlis workspace for spec 5714 work and pick it for this session.",
+      "source": "Skill text: \"Create\", `--use`; plausible phrasing a person types."
+    },
+    {
+      "query": "Remove the qa-legacy workspace, we're done with it.",
+      "source": "Near miss (purlis-safe-remove): removal belongs to safe remove (ticket #5732, \"Not for removing a workspace\").",
+      "belongs_to": "purlis-safe-remove"
+    },
+    {
+      "query": "Delete the old reporting workspace but keep what it learned.",
+      "source": "Near miss (purlis-safe-remove): purlis-safe-remove's description, \"without losing what it learned\".",
+      "belongs_to": "purlis-safe-remove"
+    },
+    {
+      "query": "Retire this workspace, its vision is delivered.",
+      "source": "Near miss (purlis-safe-remove): purlis-safe-remove's description, \"retire\".",
+      "belongs_to": "purlis-safe-remove"
+    },
+    {
+      "query": "Archive and get rid of the smart-ide-experiments workspace.",
+      "source": "Near miss (purlis-safe-remove): purlis-safe-remove's description, \"archive\".",
+      "belongs_to": "purlis-safe-remove"
+    },
+    {
+      "query": "Tidy this workspace's memory, there are lots of duplicates.",
+      "source": "Near miss (purlis-tidy-memory): ticket #5732, \"tidying memory (tidy-memory)\".",
+      "belongs_to": "purlis-tidy-memory"
+    },
+    {
+      "query": "Prune the stale memories in the reporting workspace.",
+      "source": "Near miss (purlis-tidy-memory): purlis-tidy-memory's description, \"prune\".",
+      "belongs_to": "purlis-tidy-memory"
+    },
+    {
+      "query": "Compact the workspace memory and fold the lessons into workspace.md.",
+      "source": "Near miss (purlis-tidy-memory): purlis-tidy-memory's description, \"fold durable lessons into workspace.md\".",
+      "belongs_to": "purlis-tidy-memory"
+    },
+    {
+      "query": "Hand this bug off to a new chat in the infra workspace.",
+      "source": "Near miss (purlis-handoff): ticket #5732, \"moving work to another chat (handoff)\".",
+      "belongs_to": "purlis-handoff"
+    },
+    {
+      "query": "Open a chat in the payments workspace to look into the refund issue.",
+      "source": "Near miss (purlis-handoff): purlis-handoff's description, \"open or start a chat for something\".",
+      "belongs_to": "purlis-handoff"
+    },
+    {
+      "query": "Move this work to another workspace, I'll pick it up there.",
+      "source": "Near miss (purlis-handoff): purlis-handoff's description, \"move work to another workspace\".",
+      "belongs_to": "purlis-handoff"
+    },
+    {
+      "query": "Fork the purlis repo on GitHub so I can open a PR from my account.",
+      "source": "Near miss (purlis-repo-work): \"fork\" of a repo, not a workspace.",
+      "belongs_to": "purlis-repo-work"
+    },
+    {
+      "query": "Cut a new branch folder for issue 5732 in this workspace.",
+      "source": "Near miss (purlis-repo-work): purlis-repo-work's branch folders (`purlis worktree`).",
+      "belongs_to": "purlis-repo-work"
+    },
+    {
+      "query": "Commit and push my changes in the purlis repo.",
+      "source": "Near miss (purlis-repo-work): \"commit and push\", in a repo rather than the plane.",
+      "belongs_to": "purlis-repo-work"
+    },
+    {
+      "query": "Rename the feature branch to fix-login.",
+      "source": "Near miss (purlis-repo-work): \"rename\", of a branch.",
+      "belongs_to": "purlis-repo-work"
+    },
+    {
+      "query": "Rename the variable workspaceId to workspaceKey across the codebase.",
+      "source": "plausible phrasing a person types: \"rename\" and \"workspace\" in code."
+    },
+    {
+      "query": "Create a new VS Code workspace file for this monorepo.",
+      "source": "plausible phrasing a person types: another tool's workspace."
+    },
+    {
+      "query": "Add a Slack workspace integration to the app.",
+      "source": "plausible phrasing a person types: someone else's workspace."
+    },
+    {
+      "query": "Set up npm workspaces in this package.json.",
+      "source": "plausible phrasing a person types: \"workspaces\" in a build tool."
+    },
+    {
+      "query": "Fork the process and wait for the child to exit.",
+      "source": "plausible phrasing a person types: \"fork\" in code."
+    },
+    {
+      "query": "Restore the database from last night's backup.",
+      "source": "plausible phrasing a person types: \"restore\" in data."
+    },
+    {
+      "query": "Save this file and run the tests.",
+      "source": "plausible phrasing a person types: \"save\" in an editor."
+    },
+    {
+      "query": "Publish the npm package to the registry.",
+      "source": "plausible phrasing a person types: \"publish\" a package."
+    },
+    {
+      "query": "Make the GitHub repository public.",
+      "source": "plausible phrasing a person types: \"share\" on a forge."
+    },
+    {
+      "query": "Take a snapshot of the VM before the upgrade.",
+      "source": "plausible phrasing a person types: \"snapshot\" in infrastructure."
+    }
+  ]
+}

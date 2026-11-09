@@ -1,0 +1,194 @@
+{
+  "tier": "standard",
+  "neighbours": [
+    "purlis-repo-work",
+    "purlis-tidy-memory",
+    "purlis-theme"
+  ],
+  "prompts": [
+    {
+      "query": "Update purlis to the newest version.",
+      "source": "Skill text: description, \"when asked to update or upgrade purlis\"."
+    },
+    {
+      "query": "Is there a newer purlis out?",
+      "source": "Skill text: description, \"whether a newer purlis is published\"."
+    },
+    {
+      "query": "What did the latest purlis release add?",
+      "source": "Skill text: \"Say what the version brought\"."
+    },
+    {
+      "query": "Upgrade purlis.",
+      "source": "Skill text: its name, as typed (it was purlis-update; Mined session record 20261108-085457-5724-four-built-in-skills-renamed-losing-nothing.md)."
+    },
+    {
+      "query": "Switch purlis to the dev channel.",
+      "source": "Skill text: `purlis update --channel stable    # or: dev`."
+    },
+    {
+      "query": "What's new in purlis 1.4?",
+      "source": "Skill text: description, \"what a version added\"."
+    },
+    {
+      "query": "How do I start using the feature the last purlis version added?",
+      "source": "Skill text: description, \"how to adopt a new purlis feature\"."
+    },
+    {
+      "query": "Will installing the purlis update end my running chats?",
+      "source": "Skill text: \"installing ends every running chat\"."
+    },
+    {
+      "query": "Which purlis version am I running, and what came out since?",
+      "source": "Skill text: \"This skill is the version you are running\"."
+    },
+    {
+      "query": "Move this machine back to stable purlis releases.",
+      "source": "Skill text: the release channel; plausible phrasing a person types."
+    },
+    {
+      "query": "Run purlis update to bump purlis to the latest release.",
+      "source": "Skill text: \"`purlis update` is only the half about this plane's content\"; a person's wrong guess."
+    },
+    {
+      "query": "Show me purlis's news for the versions I skipped.",
+      "source": "Skill text: \"relays what `purlis news` says each version brought\"."
+    },
+    {
+      "query": "Install the purlis update for me.",
+      "source": "Skill text: \"Do not try to install it for them\"; plausible phrasing a person types."
+    },
+    {
+      "query": "My purlis says an update is available; what's in it?",
+      "source": "Skill text: \"the status line at the bottom of the window offers it\"."
+    },
+    {
+      "query": "What purlis version does this plane pin, and how do I move the pin?",
+      "source": "Skill text: \"What this plane pins\"."
+    },
+    {
+      "query": "Get me on the newest purlis build.",
+      "source": "plausible phrasing a person types."
+    },
+    {
+      "query": "Has purlis shipped anything new this week?",
+      "source": "Mined session record 20261102-160949-skill-studio-docs-page-and-news-entry-2786-pr-48.md: a version's news entry; plausible phrasing a person types."
+    },
+    {
+      "query": "Tell me what changed in purlis since I last upgraded.",
+      "source": "Skill text: \"Say what the version brought\"; plausible phrasing a person types."
+    },
+    {
+      "query": "How do I check for a purlis update now instead of waiting?",
+      "source": "Skill text: \"Check now\" in the update dialog."
+    },
+    {
+      "query": "Bump purlis to the release that fixed the browser login.",
+      "source": "plausible phrasing a person types."
+    },
+    {
+      "query": "Is my purlis out of date?",
+      "source": "plausible phrasing a person types."
+    },
+    {
+      "query": "Which new purlis features should I start using after this upgrade?",
+      "source": "Skill text: description, \"how to adopt a new purlis feature\"."
+    },
+    {
+      "query": "Upgrade React to 19 in the web repo and fix what breaks.",
+      "source": "Near miss (purlis-repo-work): \"upgrade\" in a repo the workspace owns (spec #5714, the name collision behind the rename).",
+      "belongs_to": "purlis-repo-work"
+    },
+    {
+      "query": "Update the dependencies in the api repo and run its tests.",
+      "source": "Near miss (purlis-repo-work): \"update\" in a repo.",
+      "belongs_to": "purlis-repo-work"
+    },
+    {
+      "query": "Bump the Rust toolchain in the backend repo.",
+      "source": "Near miss (purlis-repo-work): \"bump\" in a repo.",
+      "belongs_to": "purlis-repo-work"
+    },
+    {
+      "query": "Pull the latest main into my branch folder of the api repo.",
+      "source": "Near miss (purlis-repo-work): \"latest\" in a branch folder.",
+      "belongs_to": "purlis-repo-work"
+    },
+    {
+      "query": "Update this workspace's memory: merge the duplicates and drop what's stale.",
+      "source": "Near miss (purlis-tidy-memory): \"update\" on memory.",
+      "belongs_to": "purlis-tidy-memory"
+    },
+    {
+      "query": "Tidy the steward persona's memory.",
+      "source": "Near miss (purlis-tidy-memory): its description.",
+      "belongs_to": "purlis-tidy-memory"
+    },
+    {
+      "query": "Update the purlis theme so the sidebar is darker.",
+      "source": "Near miss (purlis-theme): \"update\" on a theme.",
+      "belongs_to": "purlis-theme"
+    },
+    {
+      "query": "The new purlis default theme is too bright; make me a softer one.",
+      "source": "Near miss (purlis-theme): \"new\" purlis, but a look.",
+      "belongs_to": "purlis-theme"
+    },
+    {
+      "query": "Update the README with the new install steps.",
+      "source": "plausible phrasing a person types: \"update\" on a file."
+    },
+    {
+      "query": "Upgrade the Postgres database to version 16 on staging.",
+      "source": "plausible phrasing a person types: another program's upgrade."
+    },
+    {
+      "query": "Update Homebrew and its packages.",
+      "source": "plausible phrasing a person types: another program's update."
+    },
+    {
+      "query": "What's new in Python 3.14?",
+      "source": "plausible phrasing a person types: another program's news."
+    },
+    {
+      "query": "Upgrade Node on my machine.",
+      "source": "plausible phrasing a person types: another program's upgrade."
+    },
+    {
+      "query": "Update the changelog for this release.",
+      "source": "plausible phrasing a person types: \"release\" in a repo's docs."
+    },
+    {
+      "query": "Write the release notes for our app's 2.0.",
+      "source": "plausible phrasing a person types: another app's release."
+    },
+    {
+      "query": "Check whether macOS has a system update.",
+      "source": "plausible phrasing a person types: another program's update."
+    },
+    {
+      "query": "Update the copyright year in every file.",
+      "source": "plausible phrasing a person types: \"update\" in code."
+    },
+    {
+      "query": "Upgrade the npm packages with known vulnerabilities.",
+      "source": "plausible phrasing a person types: another program's upgrade."
+    },
+    {
+      "query": "Set issue 42's status to done.",
+      "source": "plausible phrasing a person types: unrelated."
+    },
+    {
+      "query": "Refresh the page data after a save.",
+      "source": "plausible phrasing a person types: \"refresh\" in code."
+    },
+    {
+      "query": "What changed between these two commits?",
+      "source": "plausible phrasing a person types: \"what changed\" in a repo."
+    },
+    {
+      "query": "Update Claude Code to the latest version.",
+      "source": "plausible phrasing a person types: a harness's own update, not purlis's."
+    }
+  ]
+}

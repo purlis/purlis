@@ -969,19 +969,15 @@ fn a_repo_or_harness_skill_of_a_built_in_skills_name_loads_beside_it_and_is_a_cl
 fn a_built_in_skill_named_with_either_prefix_is_the_built_in_one_and_a_missing_one_says_so() {
     let plane = Plane::new();
     let built_in = plane.root.join("../plugin/skills");
-    skill(
-        &built_in,
-        "purlis-working-in-a-clone",
-        &whole("purlis-working-in-a-clone"),
-    );
+    skill(&built_in, "purlis-repo-work", &whole("purlis-repo-work"));
 
     let set = plane.as_persona(
         None,
         "steward",
         &[
-            "charter:working-in-a-clone",
-            "purlis:working-in-a-clone",
-            "purlis:purlis-working-in-a-clone",
+            "charter:repo-work",
+            "purlis:repo-work",
+            "purlis:purlis-repo-work",
             "purlis:gone",
         ],
         Some(&built_in),
@@ -990,7 +986,7 @@ fn a_built_in_skill_named_with_either_prefix_is_the_built_in_one_and_a_missing_o
 
     assert_eq!(
         effective(&set),
-        [("purlis-working-in-a-clone", Origin::BuiltIn, false)]
+        [("purlis-repo-work", Origin::BuiltIn, false)]
     );
     assert_eq!(
         left_out(&set),

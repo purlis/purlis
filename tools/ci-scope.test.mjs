@@ -572,6 +572,8 @@ const NAMED_NOT_READ = {
   "crates/purlis-core/src/files/find.rs": "a fuzzy match's sample path, matched as text",
   "crates/purlis-core/tests/it/a_file_is_found_by_fuzzy_name.rs":
     "sample paths written into a fixture repository",
+  "crates/skill-grader/tests/it/a_change_grades_only_the_built_ins_it_touches.rs":
+    "a changed path the grader's selection is asked about, matched as text",
 };
 
 // A Rust test that walks the window's sources but is not run when Rust is out of scope, and why:
