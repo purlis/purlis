@@ -1099,6 +1099,7 @@ pub(crate) async fn skill_source_browse(
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_install_review(
+    views: tauri::State<'_, crate::views::Views>,
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
     source: SkillSource,
@@ -1106,9 +1107,12 @@ pub(crate) async fn skill_install_review(
     level: SkillLevel,
 ) -> Result<InstallReview, String> {
     let held = planes.held(&plane)?;
+    let executor = views.executor();
     crate::off_the_window("reviewing the install", move || {
         flag_on()?;
-        let review = source::review(held.root(), &source.core(), &names, &(&level).into())?;
+        let at = (&level).into();
+        let mut review = source::review(held.root(), &source.core(), &names, &at)?;
+        linted(&executor, held.root(), &at, &mut review.skills);
         Ok(InstallReview::from(&review))
     })
     .await
@@ -1120,6 +1124,7 @@ pub(crate) async fn skill_install_review(
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_install_set_review(
+    views: tauri::State<'_, crate::views::Views>,
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
     source: SkillSource,
@@ -1127,12 +1132,17 @@ pub(crate) async fn skill_install_set_review(
     level: SkillLevel,
 ) -> Result<InstallSetReview, String> {
     let held = planes.held(&plane)?;
+    let executor = views.executor();
     crate::off_the_window("reviewing the install", move || {
         flag_on()?;
+        let at = (&level).into();
         Ok(
-            match source::review_set(held.root(), &source.core(), &names, &(&level).into())? {
-                source::SetReview::Review { review, there } => InstallSetReview::Review {
-                    review: (&review).into(),
+            match source::review_set(held.root(), &source.core(), &names, &at)? {
+                source::SetReview::Review { mut review, there } => InstallSetReview::Review {
+                    review: {
+                        linted(&executor, held.root(), &at, &mut review.skills);
+                        (&review).into()
+                    },
                     there: there.iter().map(|one| esc(one)).collect(),
                 },
                 source::SetReview::TooMuch(too_much) => InstallSetReview::TooMuch {
@@ -1280,18 +1290,44 @@ pub(crate) async fn skill_updates(
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_update_review(
+    views: tauri::State<'_, crate::views::Views>,
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
     level: SkillLevel,
     name: String,
 ) -> Result<UpdateReview, String> {
     let held = planes.held(&plane)?;
+    let executor = views.executor();
     crate::off_the_window("reviewing the update", move || {
         flag_on()?;
-        let update = source::update_review(held.root(), &(&level).into(), &name)?;
+        let at = (&level).into();
+        let mut update = source::update_review(held.root(), &at, &name)?;
+        linted(
+            &executor,
+            held.root(),
+            &at,
+            std::iter::once(&mut update.review).chain(&mut update.brought),
+        );
         Ok(update_shown(&update))
     })
     .await
+}
+
+/// **What the studio's lints say of `skills`, said in their review's lint lines** (#3090, ADR
+/// 0101 §1): each extension's that declares `skill-lint` here, asked of the skills landing at
+/// `level`, beside purlis's own, as the live lint asks them. None where the extensions cannot be
+/// read: the review is purlis's own then, as the live lint is.
+pub(crate) fn linted<'s>(
+    executor: &purlis_core::executor::Executor,
+    root: &std::path::Path,
+    level: &purlis_core::skills::verbs::Level,
+    skills: impl IntoIterator<Item = &'s mut source::SkillReview>,
+) {
+    purlis_core::skills::studio::with_studio(executor, root, |studio| {
+        if let Some(studio) = studio {
+            studio.lint_reviewed(skills, level);
+        }
+    });
 }
 
 /// An update's review as the window shows it.

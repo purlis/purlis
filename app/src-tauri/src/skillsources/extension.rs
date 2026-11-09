@@ -253,8 +253,11 @@ pub(crate) async fn skill_extension_install_review(
     crate::off_the_window("reviewing the install", move || {
         flag_on()?;
         let root = held.root();
+        let at = (&level).into();
         let (review, read) = studied(&executor, root, |studio| {
-            ext::review(studio, root, &id, &names, &(&level).into())
+            let (mut review, read) = ext::review(studio, root, &id, &names, &at)?;
+            studio.lint_reviewed(&mut review.skills, &at);
+            Ok((review, read))
         })?;
         hold(
             For::Install {
@@ -286,8 +289,11 @@ pub(crate) async fn skill_extension_install_set_review(
     crate::off_the_window("reviewing the install", move || {
         flag_on()?;
         let root = held.root();
+        let at = (&level).into();
         let (set, read) = studied(&executor, root, |studio| {
-            ext::review_set(studio, root, &id, &names, &(&level).into())
+            let (mut set, read) = ext::review_set(studio, root, &id, &names, &at)?;
+            studio.lint_reviewed(&mut set.review.skills, &at);
+            Ok((set, read))
         })?;
         hold(
             For::Install {
@@ -407,7 +413,12 @@ pub(crate) async fn skill_extension_update_review(
         let root = held.root();
         let at = (&level).into();
         let (update, read) = studied(&executor, root, |studio| {
-            ext::update_review(studio, root, &at, &name)
+            let (mut update, read) = ext::update_review(studio, root, &at, &name)?;
+            studio.lint_reviewed(
+                std::iter::once(&mut update.review).chain(&mut update.brought),
+                &at,
+            );
+            Ok((update, read))
         })?;
         hold(
             For::Update {

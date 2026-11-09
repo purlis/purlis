@@ -182,6 +182,20 @@ impl<'a> Studio<'a> {
             .collect()
     }
 
+    /// **The lints of each extension that declares `skill-lint`, said in a source review**
+    /// (#3090, ADR 0101 §1): of each of `skills`, landing at `level`, beside purlis's own
+    /// ([`crate::skills::source::linted`]). Each is asked as the live lint asks it, with no list's
+    /// time: a review is read once, and the person waits on it anyway.
+    pub fn lint_reviewed<'s>(
+        &self,
+        skills: impl IntoIterator<Item = &'s mut crate::skills::source::SkillReview>,
+        level: &crate::skills::verbs::Level,
+    ) {
+        let lints = self.lints();
+        let lints: Vec<&dyn SkillLint> = lints.iter().map(|lint| lint as &dyn SkillLint).collect();
+        crate::skills::source::linted(skills, level, &lints);
+    }
+
     /// **The lints of each extension that declares `skill-lint`, as a studio list asks them**
     /// (#3940): answered from what each said of the same files before, and asked only within
     /// the list's time ([`ListLints`]).

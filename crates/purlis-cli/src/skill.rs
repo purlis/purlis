@@ -932,6 +932,23 @@ fn templated<T>(
     })
 }
 
+/// **What the studio's lints say of `skills`, said in their review's lint lines** (#3090, ADR 0101
+/// §1): each extension's that declares `skill-lint` here, asked of the skills landing at `level`
+/// beside purlis's own, as the window's review asks them. None where the extensions cannot be
+/// read.
+fn linted<'s>(
+    root: &Path,
+    level: &Level,
+    skills: impl IntoIterator<Item = &'s mut source::SkillReview>,
+) {
+    let executor = Executor::with_built_in(purlis_core::extension::BuiltIn::of_this_program());
+    purlis_core::skills::studio::with_studio(&executor, root, |studio| {
+        if let Some(studio) = studio {
+            studio.lint_reviewed(skills, level);
+        }
+    });
+}
+
 /// **A chat's edit or new skill, left as a draft** (#5815; spec #2762 decisions 26 and 38):
 /// `purlis skill edit <name> --from <file>` and `purlis skill new`, checked as at the person's
 /// terminal, then handed to the app, which keeps the new `SKILL.md` in the Skill studio's Drafts
@@ -1766,13 +1783,18 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, CliError> {
             if from_an_extension(root, &level, &name) {
                 return update_from_an_extension(&mut cx, &level, &name, yes);
             }
-            let update = match source::update_review(root, &level, &name) {
+            let mut update = match source::update_review(root, &level, &name) {
                 Ok(update) => update,
                 Err(why) => {
                     voice::err(esc(&why).to_string());
                     return Ok(1);
                 }
             };
+            linted(
+                root,
+                &level,
+                std::iter::once(&mut update.review).chain(&mut update.brought),
+            );
             print!("{}", update_text(&update));
             if !yes
                 && !asked(&format!(
@@ -2761,13 +2783,14 @@ fn install(
             Err(why) => Err(why),
         },
     };
-    let review = match review {
+    let mut review = match review {
         Ok(review) => review,
         Err(why) => {
             voice::err(esc(&why).to_string());
             return Ok(1);
         }
     };
+    linted(root, level, &mut review.skills);
     let shown = Shown {
         from: &source.to_string(),
         at: review.commit.short(),
@@ -2885,7 +2908,7 @@ fn install_from_an_extension(
             Named::All => source::extension::review_every(studio, root, id, &settled.skips, level)
                 .map(|(set, held)| (!set.review.skills.is_empty()).then_some((set.review, held))),
         };
-        let (review, held) = match read {
+        let (mut review, held) = match read {
             Ok(Some(read)) => read,
             Ok(None) => {
                 voice::info(format!(
@@ -2899,6 +2922,7 @@ fn install_from_an_extension(
                 return Ok(1);
             }
         };
+        studio.lint_reviewed(&mut review.skills, level);
         let pinned_to = format!("revision {}", review.revision.as_str());
         let shown = Shown {
             from: &format!("the extension {id}"),
@@ -3497,13 +3521,17 @@ fn update_from_an_extension(
             voice::err(NO_EXTENSIONS_HERE);
             return Ok(1);
         };
-        let (update, held) = match source::extension::update_review(studio, root, level, name) {
+        let (mut update, held) = match source::extension::update_review(studio, root, level, name) {
             Ok(read) => read,
             Err(why) => {
                 voice::err(esc(&why).to_string());
                 return Ok(1);
             }
         };
+        studio.lint_reviewed(
+            std::iter::once(&mut update.review).chain(&mut update.brought),
+            level,
+        );
         print!("{}", update_text(&update));
         if !yes
             && !asked(&format!(
