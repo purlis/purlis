@@ -532,6 +532,8 @@ macro_rules! app_commands {
                 remotequestion::keep_recorded_remote,
                 staleclones::stale_clones,
                 staleclones::fix_stale_clone,
+                clonevouch::clones_to_vouch,
+                clonevouch::vouch_clone,
                 workspaces::workspace_create,
                 live::workspace_live_preview,
                 live::workspace_live,

@@ -1562,6 +1562,8 @@ export const commands = {
 	 */
 	staleClones: (plane: PlaneId) => typedError<StaleClones, string>(__TAURI_INVOKE("stale_clones", { plane })),
 	fixStaleClone: __WINDOW_ONLY_RESULT,
+	clonesToVouch: __WINDOW_ONLY_RESULT,
+	vouchClone: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Make a workspace: `charter workspace create <name>`, with the vision when one was typed.
 	 * 
@@ -4540,6 +4542,20 @@ export type CloneRefused = {
 	said: string,
 	/**  The server the person needs to sign in to, where that is why (#4079). */
 	sign_in: string | null,
+};
+
+/**  A clone of the project's workspaces that purlis did not clone and the person has not trusted. */
+export type CloneToVouch = {
+	workspace: string,
+	/**  Its folder, relative to the project. */
+	folder: string,
+	/**
+	 *  The one `<host>/<owner>/<repo>` its remote names now; `null` when it names more than one,
+	 *  which is never trusted until origin has one address.
+	 */
+	place: string | null,
+	/**  Every address its remote names now, each once. */
+	places: string[],
 };
 
 /**  What [`CLOSE_HANDED`] carries: the project and the chats a link's close would end. */

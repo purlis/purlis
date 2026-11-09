@@ -3461,6 +3461,18 @@ export const commands = {
 	/**  The person's Fix on a stale repo's Notice: answers what was done, or what blocks it. */
 	fixStaleClone: (plane: PlaneId, workspace: string, repo: string, fix: StaleFix, shown: string | null) => typedError<string, string>(__TAURI_INVOKE("fix_stale_clone", { plane, workspace, repo, fix, shown })),
 	/**
+	 *  Every clone of the project's workspaces made outside purlis and not trusted yet.
+	 * 
+	 *  On a blocking thread: it asks git a question or two per clone, and reaches no network. None
+	 *  in a test build: the config home a test's window would read is outside its fence.
+	 */
+	clonesToVouch: (plane: PlaneId) => typedError<CloneToVouch[], string>(__TAURI_INVOKE("clones_to_vouch", { plane })),
+	/**
+	 *  The person's Trust this clone: records the clone at `folder` (relative to the project) at
+	 *  `place`, the address the Notice showed. Answers the address trusted, or why nothing was.
+	 */
+	vouchClone: (plane: PlaneId, folder: string, place: string) => typedError<string, string>(__TAURI_INVOKE("vouch_clone", { plane, folder, place })),
+	/**
 	 *  Make a workspace: `charter workspace create <name>`, with the vision when one was typed.
 	 * 
 	 *  **The name is checked by the core and by nothing in the window.** `wscmd::create` runs
@@ -7466,6 +7478,20 @@ export type CloneRefused = {
 	said: string,
 	/**  The server the person needs to sign in to, where that is why (#4079). */
 	sign_in: string | null,
+};
+
+/**  A clone of the project's workspaces that purlis did not clone and the person has not trusted. */
+export type CloneToVouch = {
+	workspace: string,
+	/**  Its folder, relative to the project. */
+	folder: string,
+	/**
+	 *  The one `<host>/<owner>/<repo>` its remote names now; `null` when it names more than one,
+	 *  which is never trusted until origin has one address.
+	 */
+	place: string | null,
+	/**  Every address its remote names now, each once. */
+	places: string[],
 };
 
 /**  What [`CLOSE_HANDED`] carries: the project and the chats a link's close would end. */

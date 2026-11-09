@@ -49,6 +49,7 @@ use crate::worktree::git;
 pub mod remote;
 #[cfg(test)]
 pub(crate) mod tests;
+pub mod vouch;
 
 /// The argument that starts the app's binary as the credential helper.
 pub const HELPER_ARG: &str = "purlis-git-credential";
@@ -177,11 +178,19 @@ pub const REMOTE_CHANGED: &str = "the remote of this repository changed since pu
     it, so the automatic save did not push. Confirm it in the window: save it from there";
 
 /// What an automatic push answers from a clone purlis has no remote recorded for, on a machine
-/// with no forge CLI to push it with: the person saves it once from the window, which confirms
-/// the remote and records it (#1848).
-pub const NOT_SAVED_FROM_THE_WINDOW: &str = "purlis has not saved this repository from the \
-    window yet, so the automatic save did not push. Save it once from the window: from then on \
+/// with no forge CLI to push it with: the person trusts it in the window, a project by saving it
+/// once from there, a workspace's clone by its Trust this clone ([`vouch`]) (#1848).
+pub const NOT_SAVED_FROM_THE_WINDOW: &str = "purlis has not trusted this repository's remote \
+    yet, so the automatic save did not push. Trust it in the window: save a project once from \
+    there, or press Trust this clone on a workspace's clone made outside purlis. From then on \
     automatic saves push with your purlis sign-in";
+
+/// What a push from a workspace's clone answers when purlis did not clone it and the person has
+/// not trusted it ([`vouch`]), on a machine with no forge CLI to push it with: a Save from the
+/// window never trusts a clone as a side effect.
+pub const NOT_TRUSTED: &str = "purlis did not clone this repository and you have not trusted it, \
+    so the save did not push with your purlis sign-in. If you made this clone yourself, press \
+    Trust this clone on its notice in the window, which names its remote, then save again";
 
 /// What a push answers from a clone whose remote pushes to another address than it fetches
 /// from: purlis signs in for one remote, not two (#1851).
@@ -229,20 +238,51 @@ pub(crate) fn helper_for_fetch_with(
     }
 }
 
+/// How far the person's own press confirms the remote a push on this thread goes to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Confirmed {
+    /// An automatic push: held to the record.
+    No,
+    /// The window's Save of a workspace's clone: it records a new remote only for a clone that
+    /// has a record already (purlis cloned it, or the person trusted it, [`vouch`]).
+    Trusted,
+    /// The window's Save of the project itself: it records the remote it pushes to.
+    Any,
+}
+
 thread_local! {
-    static CONFIRMED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static CONFIRMED: std::cell::Cell<Confirmed> = const { std::cell::Cell::new(Confirmed::No) };
 }
 
 /// Runs `then` with the pushes it makes on this thread confirmed by the person (the window's own
-/// Save), when `confirmed`: each records the remote it pushes to ([`helper_for_push`]).
+/// Save of the project), when `confirmed`: each records the remote it pushes to
+/// ([`helper_for_push`]).
 pub fn confirmed_if<T>(confirmed: bool, then: impl FnOnce() -> T) -> T {
-    struct Restore(bool);
+    confirmed_as(
+        if confirmed {
+            Confirmed::Any
+        } else {
+            Confirmed::No
+        },
+        then,
+    )
+}
+
+/// Runs `then` with the pushes it makes on this thread confirmed by the person's Save of a
+/// workspace's clone: a clone with a record has its new remote recorded, and one with none (made
+/// outside purlis, not trusted yet) is pushed as an automatic push is, never recorded.
+pub fn confirmed_if_trusted<T>(then: impl FnOnce() -> T) -> T {
+    confirmed_as(Confirmed::Trusted, then)
+}
+
+fn confirmed_as<T>(confirmed: Confirmed, then: impl FnOnce() -> T) -> T {
+    struct Restore(Confirmed);
     impl Drop for Restore {
         fn drop(&mut self) {
             CONFIRMED.with(|held| held.set(self.0));
         }
     }
-    let before = CONFIRMED.with(|held| held.replace(confirmed || held.get()));
+    let before = CONFIRMED.with(|held| held.replace(confirmed.max(held.get())));
     let _restore = Restore(before);
     then()
 }
@@ -251,12 +291,15 @@ pub fn confirmed_if<T>(confirmed: bool, then: impl FnOnce() -> T) -> T {
 ///
 /// Where the window's git would get purlis's own helper ([`for_the_window`]), the helper is held
 /// to the remote recorded for the clone in the config home ([`PUSH_REMOTES`]). A push the person
-/// confirmed ([`confirmed_if`]) records `url`. Any other push gets the helper only when `url` is
-/// the one recorded. With a different one recorded it gets `Err` with [`REMOTE_CHANGED`] and
-/// pushes nothing. With none recorded yet (a clone from before the record, or made outside the
-/// window) it gets the forge CLI's helper, as before purlis had its own: an automatic push never
-/// records, so a remote a chat rewrote is never trusted on first use. On a machine with no such
-/// CLI it gets `Err` with [`NOT_SAVED_FROM_THE_WINDOW`] rather than a helper that is not there.
+/// confirmed ([`confirmed_if`]) records `url`; one confirmed as a workspace clone's Save
+/// ([`confirmed_if_trusted`]) records it only where the clone has a record already. Any other
+/// push gets the helper only when `url` is the one recorded. With a different one recorded it
+/// gets `Err` with [`REMOTE_CHANGED`] and pushes nothing. With none recorded yet (a clone from
+/// before the record, or made outside the window) it gets the forge CLI's helper, as before
+/// purlis had its own: an automatic push never records, so a remote a chat rewrote is never
+/// trusted on first use. On a machine with no such CLI it gets `Err` with
+/// [`NOT_SAVED_FROM_THE_WINDOW`] ([`NOT_TRUSTED`] for a workspace clone's Save) rather than a
+/// helper that is not there.
 /// Elsewhere it is [`super::helper_for`] as it is.
 pub fn helper_for_push(
     forge: &super::Forge,
@@ -299,9 +342,15 @@ pub(crate) fn helper_for_push_with(
     let key = crate::sandbox::local::clone_key(clone);
     let mut recorded = read_push_remotes(&window.config_root);
     let confirmed = CONFIRMED.with(std::cell::Cell::get);
+    let records = match recorded.get(&key) {
+        Some(held) if *held == place => return Ok(own),
+        Some(_) => confirmed >= Confirmed::Trusted,
+        // A clone with no record is trusted by its own stated act ([`vouch`]), never by a Save
+        // of it from the window.
+        None => confirmed == Confirmed::Any,
+    };
     match recorded.get(&key) {
-        Some(held) if *held == place => Ok(own),
-        _ if confirmed => {
+        _ if records => {
             recorded.insert(key, place);
             // A record that cannot be written is not a reason to refuse the push the person
             // asked for; their next Save records it again.
@@ -309,6 +358,7 @@ pub(crate) fn helper_for_push_with(
             Ok(own)
         }
         Some(_) => Err(REMOTE_CHANGED),
+        None if !has_cli(forge.kind) && confirmed == Confirmed::Trusted => Err(NOT_TRUSTED),
         None if !has_cli(forge.kind) => Err(NOT_SAVED_FROM_THE_WINDOW),
         None => Ok(super::cli_helper_for(forge)),
     }
