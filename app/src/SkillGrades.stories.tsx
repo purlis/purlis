@@ -22,7 +22,7 @@ import {
 import { inWorkspace, skillRowId, type GradingAt } from "./skillStudio";
 import { skill, studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
-import { expectFocusInSight, untilFocusInSight, tabInto } from "./stories.testkit";
+import { expectFocusInSight, untilFocusInSight, untilFocusWithin } from "./stories.testkit";
 import type {
   GradeRow,
   GradeScorecard,
@@ -378,6 +378,20 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/**
+ * Tab, until the keyboard is inside `target`, at most `steps` times. Always ends in
+ * `untilFocusWithin`, landed or not, so the frame React Aria scrolls the focused cell into sight
+ * on is drawn before a check reads where the focus is (#4103, #4672).
+ */
+async function tabInto(target: () => Element | null, steps = 60): Promise<void> {
+  for (let step = 0; step < steps; step++) {
+    const into = target();
+    if (into !== null && into.contains(document.activeElement)) break;
+    await userEvent.tab();
+  }
+  await untilFocusWithin(target, "the keyboard reaches it by Tab");
+}
+
 /** deploy's grades, the latest of which ran its outcome evals too. */
 const BOTH: GradeRow[] = GRADES.map((one, at) =>
   at === 0 ? { ...one, outcome_arms: { with: 75, without: 20, previous: null } } : one,
@@ -386,7 +400,7 @@ const BOTH: GradeRow[] = GRADES.map((one, at) =>
 /**
  * **Checks, graded, both kinds** (ruling of 2026-11-02): the latest grade in one sentence, a card
  * per kind with its question, its technical name and its bars, every grade with how it ended, and
- * the after-each-edit row. Tab reaches a grade's Scorecard.
+ * the after-each-edit row. Tab reaches the grades, and → walks the latest one to its Scorecard.
  */
 export const Grades: Story = {
   args: { grades: BOTH, evals: 2 },
@@ -407,9 +421,21 @@ export const Grades: Story = {
     const open = within(list).getByRole("button", {
       name: "Scorecard of the grade of 2026-10-28 10:00 UTC",
     });
-    await tabInto(() => open);
+    // The table is one stop for Tab: it lands on the latest grade's row. A second Tab leaves the
+    // table: React Aria first moves the keyboard to its last control, the oldest grade's What ran,
+    // below the fold, so the browser's Tab goes on from there. The story's simulated Tab went on
+    // from the row it began on, to the Scorecard: a path no person takes, through a step below
+    // what is pictured (#4098). Within the
+    // row, → walks its cells to the Scorecard, each read on the frame after the press, which is
+    // when a cell hands the keyboard to its control (React Aria's `useGridCell`).
+    await tabInto(() => list);
+    for (let step = 0; step < 12 && !open.contains(document.activeElement); step++) {
+      await userEvent.keyboard("{ArrowRight}");
+      await new Promise<void>((frame) => requestAnimationFrame(() => frame()));
+    }
+    await untilFocusWithin(() => open, "→ along the latest grade to its Scorecard");
     // The table's cell is scrolled in by React Aria a frame later, late in WebKit (#4026).
-    await untilFocusInSight("Tab to the Scorecard below the checks");
+    await untilFocusInSight("→ to the Scorecard below the checks");
   },
 };
 
