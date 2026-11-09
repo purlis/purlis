@@ -369,6 +369,11 @@ pub struct UpdateReview {
 }
 
 impl UpdateReview {
+    /// **Every skill it reviews**: the one updated, then each it brings along.
+    pub fn skills_mut(&mut self) -> impl Iterator<Item = &mut SkillReview> {
+        std::iter::once(&mut self.review).chain(&mut self.brought)
+    }
+
     /// What accepting it says.
     pub fn accepted(&self) -> Accepted {
         let mut all = vec![self.review.clone()];

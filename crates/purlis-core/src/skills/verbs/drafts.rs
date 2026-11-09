@@ -179,6 +179,10 @@ struct Record {
     /// Minted with the record; `None` in a draft from before it, which goes by its id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     mint: Option<String>,
+    /// **The extension's template it was made from** (#3091), as New skill… offered it; `None`
+    /// for a chat's draft, and in one from before it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    template: Option<String>,
 }
 
 /// **A draft skill**, as the studio lists it.
@@ -197,6 +201,9 @@ pub struct Draft {
     /// What its grades are marked with (#2780, `grades::draft::Mark::id`): its own, where the
     /// next draft of the skill has the same id.
     pub mint: String,
+    /// **The extension's template it was made from**, as New skill… offered it (#3091); `None`
+    /// for one a chat started.
+    pub template: Option<String>,
 }
 
 /// One file of a draft: what the project holds there now, and what the draft makes it.
@@ -342,6 +349,56 @@ fn record_of(state: &Path, id: &str) -> Result<Option<Record>, String> {
 /// the draft. Refused where the change does not apply, or the draft would hold more than
 /// [`MOST_FILES`] files. Nothing in the project is written.
 pub fn take(root: &Path, chat: u32, file: &SkillFile, change: &Change) -> Result<String, String> {
+    taken(root, Drafter::Chat(chat), file, change)
+}
+
+/// Who a draft's change is by: a chat, or New skill… from an extension's template.
+enum Drafter<'a> {
+    Chat(u32),
+    Template(&'a str),
+}
+
+/// **Keeps a new skill `name` at `level`, whose `SKILL.md` an extension's template answered as
+/// `text`, as a draft** (#3091, ADR 0101 §1): a third party's text waits for the person to try
+/// and accept, as a chat's does, and says the template it came from, `template`. Refused where a
+/// draft of that skill waits already: the template never writes over it. Nothing in the project
+/// is written.
+pub fn keep_new(
+    root: &Path,
+    level: &Level,
+    name: &str,
+    text: &str,
+    template: &str,
+) -> Result<String, String> {
+    if let Ok(state) = app_state(root)
+        && record_of(&state, &id_of(level, name))?.is_some()
+    {
+        return Err(format!(
+            "a draft of {name} waits in Drafts already: accept or discard it there first"
+        ));
+    }
+    let file = SkillFile {
+        level: level.clone(),
+        folder: name.to_owned(),
+        inner: purlis_skills::FILE.to_owned(),
+    };
+    taken(
+        root,
+        Drafter::Template(template),
+        &file,
+        &Change::Whole {
+            content: text.to_owned(),
+        },
+    )
+}
+
+/// [`take`], by `by`.
+fn taken(
+    root: &Path,
+    by: Drafter<'_>,
+    file: &SkillFile,
+    change: &Change,
+) -> Result<String, String> {
     file.level
         .rel()
         .ok_or_else(|| format!("{} is no level of this project", file.level))?;
@@ -357,6 +414,7 @@ pub fn take(root: &Path, chat: u32, file: &SkillFile, change: &Change) -> Result
             chat: None,
             bases: BTreeMap::new(),
             mint: Some(random_id()?),
+            template: None,
         },
     };
     if !record.bases.contains_key(&file.inner) && record.bases.len() >= MOST_FILES {
@@ -389,7 +447,15 @@ pub fn take(root: &Path, chat: u32, file: &SkillFile, change: &Change) -> Result
     } else {
         record.bases.entry(file.inner.clone()).or_insert(base_now);
     }
-    record.chat = Some(chat);
+    match by {
+        // A chat's write makes the draft the chat's: the template it started from is no longer
+        // what it holds.
+        Drafter::Chat(chat) => {
+            record.chat = Some(chat);
+            record.template = None;
+        }
+        Drafter::Template(template) => record.template = Some(template.to_owned()),
+    }
     // The draft's own folders are made below its `files/`.
     write_at(&state, &drafted_rel, drafted.as_deref(), &after, 3)
         .map_err(|why| super::not_written(&format!("the draft of {}", file.folder), why))?;
@@ -463,6 +529,7 @@ fn one_in(root: &Path, state: &Path, id: &str) -> Result<Draft, String> {
         chat: record.chat,
         new,
         files,
+        template: record.template,
     })
 }
 
@@ -524,10 +591,17 @@ pub fn accept(cx: &mut Ctx<'_>, id: &str) -> Result<PathBuf, String> {
     let draft = one(plane, id)?;
     let name = draft.name.clone();
     if draft.stale() {
-        return Err(format!(
-            "{name} changed in the project since the chat drafted it, so nothing was accepted: \
-             reject the draft, or ask the chat to draft it again"
-        ));
+        // A template's draft has no chat to ask (#3091): New skill… makes it again.
+        return Err(match &draft.template {
+            Some(_) if draft.chat.is_none() => format!(
+                "{name} changed in the project since its template drafted it, so nothing was \
+                 accepted: reject the draft, or make it again with New skill…"
+            ),
+            _ => format!(
+                "{name} changed in the project since the chat drafted it, so nothing was \
+                 accepted: reject the draft, or ask the chat to draft it again"
+            ),
+        });
     }
     let instructions = match draft.instructions() {
         Some(text) => text.to_owned(),

@@ -133,7 +133,8 @@ pub enum SkillCommand {
         )]
         template: TemplateArg,
         /// Start from a template an extension offers instead: the extension's id, then the
-        /// template's.
+        /// template's. What it answers is kept as a draft in the Skill studio, for you to try
+        /// and accept, never made at once.
         #[arg(long, num_args = 2, value_names = ["EXTENSION", "TEMPLATE"])]
         extension_template: Option<Vec<String>>,
         #[command(flatten)]
@@ -932,6 +933,17 @@ fn templated<T>(
     })
 }
 
+/// **What the studio's lints say of `skills`, said in their review's lint lines** (#3090): as
+/// the window's review asks them ([`purlis_core::skills::studio::lint_reviews`]).
+fn linted<'s>(
+    root: &Path,
+    level: &Level,
+    skills: impl IntoIterator<Item = &'s mut source::SkillReview>,
+) {
+    let executor = Executor::with_built_in(purlis_core::extension::BuiltIn::of_this_program());
+    purlis_core::skills::studio::lint_reviews(&executor, root, level, skills);
+}
+
 /// **A chat's edit or new skill, left as a draft** (#5815; spec #2762 decisions 26 and 38):
 /// `purlis skill edit <name> --from <file>` and `purlis skill new`, checked as at the person's
 /// terminal, then handed to the app, which keeps the new `SKILL.md` in the Skill studio's Drafts
@@ -1382,7 +1394,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, CliError> {
             template,
             &extension_template,
             |templates, template| {
-                verbs::create(
+                verbs::new_skill(
                     &mut cx,
                     &at.level(),
                     &name,
@@ -1769,13 +1781,14 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, CliError> {
             if from_an_extension(root, &level, &name) {
                 return update_from_an_extension(&mut cx, &level, &name, yes);
             }
-            let update = match source::update_review(root, &level, &name) {
+            let mut update = match source::update_review(root, &level, &name) {
                 Ok(update) => update,
                 Err(why) => {
                     voice::err(esc(&why).to_string());
                     return Ok(1);
                 }
             };
+            linted(root, &level, update.skills_mut());
             print!("{}", update_text(&update));
             if !yes
                 && !asked(&format!(
@@ -2764,13 +2777,14 @@ fn install(
             Err(why) => Err(why),
         },
     };
-    let review = match review {
+    let mut review = match review {
         Ok(review) => review,
         Err(why) => {
             voice::err(esc(&why).to_string());
             return Ok(1);
         }
     };
+    linted(root, level, &mut review.skills);
     let shown = Shown {
         from: &source.to_string(),
         at: review.commit.short(),
@@ -2888,7 +2902,7 @@ fn install_from_an_extension(
             Named::All => source::extension::review_every(studio, root, id, &settled.skips, level)
                 .map(|(set, held)| (!set.review.skills.is_empty()).then_some((set.review, held))),
         };
-        let (review, held) = match read {
+        let (mut review, held) = match read {
             Ok(Some(read)) => read,
             Ok(None) => {
                 voice::info(format!(
@@ -2902,6 +2916,7 @@ fn install_from_an_extension(
                 return Ok(1);
             }
         };
+        studio.lint_reviewed(&mut review.skills, level);
         let pinned_to = format!("revision {}", review.revision.as_str());
         let shown = Shown {
             from: &format!("the extension {id}"),
@@ -3500,13 +3515,14 @@ fn update_from_an_extension(
             voice::err(NO_EXTENSIONS_HERE);
             return Ok(1);
         };
-        let (update, held) = match source::extension::update_review(studio, root, level, name) {
+        let (mut update, held) = match source::extension::update_review(studio, root, level, name) {
             Ok(read) => read,
             Err(why) => {
                 voice::err(esc(&why).to_string());
                 return Ok(1);
             }
         };
+        studio.lint_reviewed(update.skills_mut(), level);
         print!("{}", update_text(&update));
         if !yes
             && !asked(&format!(
