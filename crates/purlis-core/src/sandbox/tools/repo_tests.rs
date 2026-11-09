@@ -339,3 +339,86 @@ fn a_declared_git_runs_only_with_the_arguments_its_args_let_in() {
     tool.args = Some(vec!["status".to_owned()]);
     assert!(run(&ready(&tool)).is_ok());
 }
+
+#[test]
+fn a_config_that_names_a_program_by_a_relative_path_or_where_a_chat_writes_never_runs() {
+    let place = Place::new();
+    let clone = place.root.join("ws/repo");
+    let scratch = place.scratch.join("x.sh");
+    let scratch = scratch.display();
+    for config in [
+        "[filter \"lfs\"]\n\tclean = ./tools/clean %f\n".to_owned(),
+        "[filter \"x\"]\n\tsmudge = tools/smudge\n".to_owned(),
+        "[filter \"x\"]\n\tprocess = sh -c ./p\n".to_owned(),
+        "[diff \"x\"]\n\ttextconv = ./conv\n".to_owned(),
+        "[diff]\n\texternal = bin/diff\n".to_owned(),
+        "[merge \"x\"]\n\tdriver = ./merge %O %A %B\n".to_owned(),
+        "[credential]\n\thelper = !./helper\n".to_owned(),
+        "[credential \"https://example.com\"]\n\thelper = \"!f() { ./h; }; f\"\n".to_owned(),
+        "[core]\n\tfsmonitor = ./.fsmonitor\n".to_owned(),
+        "[core]\n\tsshCommand = ssh -i ./key\n".to_owned(),
+        "[core]\n\teditor = ./ed\n".to_owned(),
+        "[core]\n\tpager = ./pg\n".to_owned(),
+        "[core]\n\taskPass = ./ask\n".to_owned(),
+        "[pager]\n\tlog = ./pg\n".to_owned(),
+        "[gpg]\n\tprogram = ./gpg\n".to_owned(),
+        "[gpg \"ssh\"]\n\tprogram = ./ssh-keygen\n".to_owned(),
+        "[alias]\n\tst = !./st\n".to_owned(),
+        "[sequence]\n\teditor = ./ed\n".to_owned(),
+        "[remote \"origin\"]\n\tuploadpack = ./up\n".to_owned(),
+        format!("[core]\n\tfsmonitor = {scratch}\n"),
+        format!("[credential]\n\thelper = !{scratch} get\n"),
+    ] {
+        git_folder(&clone.join(".git"), &config);
+        assert!(place.judged(&clone, false).is_err(), "{config}");
+    }
+    let outside = place.outside.join("helper");
+    write(&outside, "");
+    for config in [
+        // The standard LFS filter, a program found on the run's own search path.
+        "[filter \"lfs\"]\n\tclean = git-lfs clean -- %f\n\tprocess = git-lfs filter-process\n\
+         \trequired = true\n"
+            .to_owned(),
+        "[credential]\n\thelper = osxkeychain\n".to_owned(),
+        "[core]\n\tfsmonitor = true\n\tpager = less -R\n".to_owned(),
+        "[alias]\n\tst = status --short\n".to_owned(),
+        "[core]\n\teditor = ~/bin/ed\n".to_owned(),
+        format!("[credential]\n\thelper = !{} get\n", outside.display()),
+        // Not a program: a URL or a path git only reads.
+        "[remote \"origin\"]\n\turl = https://example.com/a/b.git\n".to_owned(),
+        "[url \"https://example.com/\"]\n\tinsteadOf = gh:\n".to_owned(),
+    ] {
+        git_folder(&clone.join(".git"), &config);
+        assert_eq!(place.judged(&clone, false), Ok(()), "{config}");
+    }
+}
+
+#[test]
+fn a_declared_git_never_continues_a_rebase_cherry_pick_or_revert() {
+    let said = |words: &[&str]| {
+        words
+            .iter()
+            .map(|one| (*one).to_owned())
+            .collect::<Vec<_>>()
+    };
+    for words in [
+        &["rebase", "--continue"][..],
+        &["rebase", "--skip"],
+        &["rebase", "--edit-todo"],
+        &["cherry-pick", "--continue"],
+        &["cherry-pick", "--skip"],
+        &["revert", "--continue"],
+        &["--no-pager", "revert", "--skip"],
+    ] {
+        assert!(refused_git(&said(words)).is_some(), "{words:?}");
+    }
+    for words in [
+        &["rebase", "--abort"][..],
+        &["cherry-pick", "--abort"],
+        &["log", "--skip=3"],
+        &["rev-list", "--skip", "2", "HEAD"],
+        &["merge", "--continue"],
+    ] {
+        assert!(refused_git(&said(words)).is_none(), "{words:?}");
+    }
+}

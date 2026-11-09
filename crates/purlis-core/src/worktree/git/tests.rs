@@ -566,7 +566,7 @@ fn every_program_the_repository_names_is_held_and_its_filter_is_no_longer_requir
 }
 
 #[test]
-fn every_hook_the_repository_configures_is_turned_off_by_its_name() {
+fn every_hook_any_scope_configures_is_turned_off_by_its_name() {
     // A hook named in config (newer git) is not looked up through `core.hooksPath`, so it
     // is turned off by its own name. A name the repository gives an event or a command is
     // enough: an event added to the operator's own hook is the repository's choice too.
@@ -594,17 +594,23 @@ fn every_hook_the_repository_configures_is_turned_off_by_its_name() {
                 .to_vec()
         )
     );
-    // The operator's own hooks, and purlis's command line, are left alone.
+    // The operator's own hooks are turned off too, as their hooks folder is; purlis's own
+    // command line names none, and is left alone.
     assert_eq!(
         held_programs(
             false,
             &listing(&[
                 ("global", "hook.op.command", "./op"),
-                ("global", "hook.op.event", "pre-commit"),
+                ("global", "hook.op.event", "reference-transaction"),
+                ("system", "hook.sys.event", "post-checkout"),
                 ("command", "hook.cli.command", "./cli"),
             ]),
         ),
-        Some(Vec::new())
+        Some(
+            ["hook.op.enabled=false", "hook.sys.enabled=false"]
+                .map(str::to_owned)
+                .to_vec()
+        )
     );
     // A name a command line cannot carry refuses the call.
     assert_eq!(
