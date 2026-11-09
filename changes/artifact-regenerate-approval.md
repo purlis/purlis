@@ -1,0 +1,3 @@
+### Added
+
+- A pinned artifact whose pin names a command has Regenerate in its bar. The command runs in purlis's session host, in a sandbox with no network that writes only a scratch folder, and only the data files the page declares are put in place, all or none. The first run asks you to approve the code the command runs (its skill's folder, or its script's), and it asks again whenever that code changes, even when the command reads the same. A failed run keeps the data shown and says when it was last good, with the end of the run's output. `purlis artifact regenerate <pin> --check` says where a pin's command stands on this machine. Not on Windows.

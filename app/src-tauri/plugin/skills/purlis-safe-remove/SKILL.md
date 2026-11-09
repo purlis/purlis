@@ -21,9 +21,10 @@ A workspace:
 purlis workspace recall -w <name>       # its memory, oldest first
 purlis ws todo -w <name>                # its open todos
 purlis status -w <name>                 # its repos: uncommitted, unpushed, open branch folders
+purlis artifact list -w <name>          # its pinned artifacts, the pages its team sees
 ```
 
-and its `workspace.md`.
+and its `workspace.md`, and every folder in `workspaces/<name>/artifacts/`, pinned or not.
 
 A persona:
 
@@ -33,7 +34,8 @@ purlis persona recall <name>            # its memory
 purlis persona curation list <name>     # the curation actions it declares
 ```
 
-Done when every memory, every open todo and every repo with unpushed work has a verdict.
+Done when every memory, every open todo, every repo with unpushed work and every artifact has a
+verdict.
 
 ## 2. Promote
 
@@ -41,7 +43,9 @@ A **durable learning** is one that is still true and still useful after the subj
 decision and its reason, a gotcha, a verified fact about a system. Write each where the
 `purlis-remember` skill says a fact goes, or into the plane's docs when it describes the plane
 itself. A todo that still matters moves to the
-workspace that will do it (`purlis ws todo -w <other> "<text>"`). A repo's unpushed work is
+workspace that will do it (`purlis ws todo -w <other> "<text>"`). An artifact the team still
+uses is copied into `workspaces/<other>/artifacts/<folder>/` of the workspace that will keep it
+and pinned there with `purlis artifact pin -w <other> <folder>`. A repo's unpushed work is
 the person's call: name it and ask them with `ask_operator`.
 
 Show the person what you promoted, what you are leaving behind and why, and ask them about

@@ -1044,7 +1044,7 @@ fn merge_rules(run: &mut Run, root: &Path) {
 /// machines appending to them never conflict (`docs/plane-format.md`, `.gitattributes`). A memory
 /// store's `MEMORY.md` has none: every merge and replay purlis makes rebuilds it from its
 /// memories (#5824 F4, #5864).
-const MERGE_RULES: [&str; 8] = [
+const MERGE_RULES: [&str; 9] = [
     "personas/_dispatch/*.jsonl merge=union",
     "personas/_skills/*.jsonl merge=union",
     "workspaces/*/pieces/*.jsonl merge=union",
@@ -1053,6 +1053,8 @@ const MERGE_RULES: [&str; 8] = [
     "workspaces/*/todos/MEMORY.md merge=union",
     "workspaces/*/sessions/index.md merge=union",
     "sessions/index.md merge=union",
+    // One pin per line, so two people's pins union into one valid list (ADR 0122, #5950).
+    "workspaces/*/artifacts/pins.toml merge=union",
 ];
 
 /// The managed block, exactly as the plane format records it, under the markers the plane at

@@ -78,12 +78,15 @@ fn appearance_to_set(
 #[tauri::command]
 #[specta::specta]
 pub fn draw_native_window(
-    window: tauri::WebviewWindow,
+    // The asking webview, not a `WebviewWindow`: a window that holds an artifact's child
+    // webview is no longer one (#5952).
+    webview: tauri::Webview,
     appearance: String,
     background: String,
     follows_system: bool,
 ) -> Result<(), String> {
     let native = Native::parse(&appearance, &background)?;
+    let window = webview.window();
     let focused = window.is_focused().unwrap_or(false);
     if let Some(theme) = appearance_to_set(native, follows_system, focused) {
         window
@@ -92,6 +95,7 @@ pub fn draw_native_window(
     }
     window
         .set_background_color(Some(colour_of(native)))
+        .and_then(|()| webview.set_background_color(Some(colour_of(native))))
         .map_err(|err| format!("purlis could not draw the window's colour: {err}"))
 }
 
