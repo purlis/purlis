@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794223847282,
+  "lastUpdate": 1794227611364,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -44688,6 +44688,48 @@ window.BENCHMARK_DATA = {
             "value": 101.87773250000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.690, 101.699, 101.878, 102.758, 102.797 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f48c68292cbdc7f967dbffc952847e44f552fcc4",
+          "message": "A chat pane no longer freezes half-drawn: the alt screen keeps to the terminal's rows, and stuck writes start the pane again (#5478) (#5982)\n\n* Chat pane: the alternate screen keeps to the terminal's rows, and a terminal that stops parsing starts again (#5478)\n\nxterm.js 6.0.0's Buffer.resize shrinks a buffer's maxLength only when it holds lines, and the\nalternate screen is emptied whenever the normal one comes back. A pane made shorter on the\nnormal screen left the alt screen able to hold the old row count; a program on the alt screen\nthen gave it history, and a later resize left the screen's foot past its last line. print then\nread an undefined row (TypeError ... setCellFromCodepoint) inside xterm's write loop, which never\nran again: no session_drawn, the host stopped at its 64 KiB watermark, the pane froze.\n\n- altScreenRows.ts: after each resize an empty alt screen takes the terminal's rows as its\n  length (the line upstream Buffer.resize still lacks; #5598 only guards print).\n- stuckWrites.ts: a write that throws, or stays unparsed 5 s while the window is visible,\n  starts the terminal and view again (a kept one is let go of), as noEcho's restart does.\n- [DEBUG-5478] line also says which screen and its cursor/base/length.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZVT69DG4R3JVPPJRQB7MCR\nPurlis-Persona: steward\n\n* Chat pane: the new modules, their tests and the changelog fragment (#5478)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZVT69DG4R3JVPPJRQB7MCR\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-09T11:48:06Z",
+          "tree_id": "6e718ecc784cb087a890438ed38a0cdb6f2d8e10",
+          "url": "https://github.com/purlis/purlis/commit/f48c68292cbdc7f967dbffc952847e44f552fcc4"
+        },
+        "date": 1794227606369,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6985965000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.680, 0.687, 0.699, 0.712, 0.725 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.664493,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.504, 16.649, 16.664, 16.792, 16.816 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.1436645,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.288, 101.405, 102.144, 102.538, 102.721 ms"
           }
         ]
       }
