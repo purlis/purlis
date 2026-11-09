@@ -660,6 +660,7 @@ on:
 | `Namespace` | `purlis-runners-<hash>` | the requester's runner namespace. `<hash>` is the first 16 hex digits of the SHA-256 of the requester, exactly as the Claim names them, so a desktop can work out the name itself. Labelled `pod-security.kubernetes.io/enforce: restricted` ([below](#what-a-runners-pod-may-be)) and `app.kubernetes.io/managed-by: purlis-cluster-operator`, and annotated `runners.purlis.dev/requester` with the requester: the operator uses a namespace of that name only when it carries both, for this requester, and the Claim otherwise says `NamespaceInTheWay` and waits |
 | `RoleBinding` | `purlis-runner-owner` | the cluster role `purlis-runner-owner`, which the chart installs, for the requester alone: a `User`, or the `ServiceAccount` a `system:serviceaccount:<namespace>:<name>` requester names. The role allows `get`, `list` and `watch` on pods, `create` and `get` on `pods/exec`, and `get` on `pods/log`: what a desktop needs to pair with and link to the runner over `kubectl exec`, and to read its log. Nothing else: the requester makes, changes and deletes nothing there |
 | `ResourceQuota` | `purlis-person` | the chart's `perPerson.quota`: `claims` as `count/sandboxclaims.extensions.agents.x-k8s.io`, `cpu` as `requests.cpu`, `memory` as `requests.memory`, `memoryLimit` as `limits.memory`, `ephemeralStorage` as `requests.ephemeral-storage` and `storage` as `requests.storage`. Applied again whenever it differs from the chart's value, so a changed value reaches each person as their Claims are next looked at |
+| `NetworkPolicy` | `purlis-deny-egress` | every pod of the namespace, for egress, with no rule: NetworkPolicies add up, so a runner goes out only where upstream's policy for its template, or `purlis-forge-mint`, lets it, whichever of them stands at the moment. Made before anything else runs there |
 
 **The policy on runner namespaces holds them at admission.** A second ValidatingAdmissionPolicy,
 `purlis-runner-namespaces`, installed beside the policy on Claims (`operator/deploy/policy.yaml`)
@@ -675,6 +676,7 @@ and kept when the release is uninstalled, as that one is:
   start `system:` or as the service account a `system:serviceaccount:<namespace>:<name>`
   requester names, and never the operator itself;
 - the operator makes or changes a quota only in a runner namespace, and only `purlis-person`.
+- the operator makes or changes a network policy in a runner namespace only as `purlis-forge-mint`, the way out to the mint's port, or as `purlis-deny-egress`, which selects every pod for egress and lets none out.
 
 The operator uses a runner namespace only while that policy's binding is in force, and only one
 made after it was, 30 seconds after the binding was made, as with Claims. It makes one only then,
@@ -860,7 +862,7 @@ it holds, but for the one Role below where the chart names a key:
 | `runners.purlis.dev` | `claims/status` | patch |
 | `runners.purlis.dev` | `pools/status` | patch |
 | `authorization.k8s.io` | `subjectaccessreviews` | create (may a Claim's requester still use its Pool, before each mint) |
-| `networking.k8s.io` | `networkpolicies` | create; get and patch only `purlis-forge-mint` |
+| `networking.k8s.io` | `networkpolicies` | create; get and patch only `purlis-forge-mint` and `purlis-deny-egress` |
 | core | `pods` | get |
 | core | `namespaces` | create, get (`kube-system` too, for the cluster's uid) |
 | core | `resourcequotas` | create; get and patch only `purlis-person` |

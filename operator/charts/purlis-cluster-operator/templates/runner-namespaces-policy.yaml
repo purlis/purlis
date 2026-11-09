@@ -3,7 +3,8 @@
 {{/*
 Each person's runner namespace, purlis-runners-<hash> (#2055): only the cluster operator makes
 one, or changes who it is for; and the operator binds purlis-runner-owner, and caps a person
-with purlis-person, and opens the way to its mint port with purlis-forge-mint, only there, for the one person the namespace is for. Kept when the release is uninstalled, as the
+with purlis-person, opens the way to its mint port with purlis-forge-mint, and lets pods out only
+where a NetworkPolicy lets them with purlis-deny-egress, only there, for the one person the namespace is for. Kept when the release is uninstalled, as the
 policy on Claims is.
 */ -}}
 apiVersion: admissionregistration.k8s.io/v1
@@ -108,18 +109,22 @@ spec:
       messageExpression: >-
         'The purlis cluster operator makes the quota purlis-person, in a runner namespace alone.'
       reason: Forbidden
-    # The operator makes one NetworkPolicy, in a runner namespace alone, and what it says is its
-    # way to the mint port (#4206): a way out, to its own pods, on that port, and nothing else.
+    # The operator makes two NetworkPolicies, in a runner namespace alone: its way to the mint
+    # port (#4206), a way out, to its own pods, on that port, and nothing else; and the one that
+    # lets every pod there out only where another lets it, which opens nothing.
     - expression: >-
         request.resource.resource != 'networkpolicies' || !variables.operator ||
-        variables.runners && object.metadata.name == 'purlis-forge-mint' &&
+        variables.runners && (object.metadata.name == 'purlis-forge-mint' &&
         object.spec.policyTypes == ['Egress'] && !has(object.spec.ingress) &&
         size(object.spec.egress) == 1 && size(object.spec.egress[0].to) == 1 &&
         object.spec.egress[0].to[0].namespaceSelector.matchLabels['kubernetes.io/metadata.name'] == '{{ .Release.Namespace }}' &&
         object.spec.egress[0].to[0].podSelector.matchLabels['app.kubernetes.io/name'] == 'purlis-cluster-operator' &&
-        size(object.spec.egress[0].ports) == 1 && object.spec.egress[0].ports[0].port == 8443
+        size(object.spec.egress[0].ports) == 1 && object.spec.egress[0].ports[0].port == 8443 ||
+        object.metadata.name == 'purlis-deny-egress' && object.spec.policyTypes == ['Egress'] &&
+        !has(object.spec.ingress) && !has(object.spec.egress) &&
+        !has(object.spec.podSelector.matchLabels) && !has(object.spec.podSelector.matchExpressions))
       messageExpression: >-
-        'The purlis cluster operator makes the NetworkPolicy purlis-forge-mint, in a runner namespace alone, to its own mint port alone.'
+        'The purlis cluster operator makes the NetworkPolicies purlis-forge-mint, to its own mint port alone, and purlis-deny-egress, which opens nothing, in a runner namespace alone.'
       reason: Forbidden
     # A runner namespace the operator makes admits only pods meeting the restricted Pod Security
     # Standard (#3824).

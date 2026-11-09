@@ -2929,6 +2929,119 @@ async fn a_refused_claims_running_runner_keeps_its_template_and_network_policy()
     }
 }
 
+/// The label selector `selector` says, as the API server reads one in a list.
+fn selector_text(
+    selector: &k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector,
+) -> String {
+    let mut terms: Vec<String> = selector
+        .match_labels
+        .iter()
+        .flatten()
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect();
+    for expression in selector.match_expressions.iter().flatten() {
+        let values = expression.values.clone().unwrap_or_default().join(",");
+        terms.push(match expression.operator.as_str() {
+            "In" => format!("{} in ({values})", expression.key),
+            "NotIn" => format!("{} notin ({values})", expression.key),
+            "Exists" => expression.key.clone(),
+            "DoesNotExist" => format!("!{}", expression.key),
+            other => panic!("an operator a selector does not hold: {other}"),
+        });
+    }
+    terms.join(",")
+}
+
+/// A runner namespace's pods go out only where a NetworkPolicy lets them: the operator's
+/// `purlis-deny-egress`, made with the namespace and controlled by it, lets none out, and
+/// upstream's policy for the runner's template selects the runner and says where it goes.
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn a_runner_goes_out_only_where_a_network_policy_lets_it() {
+    use k8s_openapi::api::networking::v1::NetworkPolicy;
+    use purlis_cluster_operator::person::DENY_EGRESS_POLICY;
+    use purlis_cluster_operator::upstream::name_for;
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-egress").await;
+    let pools = Api::<Pool>::all(client.clone());
+    let pool = Pool::new("e2e-egress", PoolSpec::new(runner_image()));
+    pools
+        .patch(
+            "e2e-egress",
+            &PatchParams::apply("e2e").force(),
+            &Patch::Apply(&pool),
+        )
+        .await
+        .expect("the pool");
+    let claims = claims_in(&client, &scratch.name);
+    claims
+        .create(&PostParams::default(), &claim("egress-1", "e2e-egress"))
+        .await
+        .expect("the claim");
+    eventually("the claim is ready", Duration::from_secs(300), || async {
+        let claim = claims.get("egress-1").await.ok()?;
+        (ready_of(&claim)?.0 == "True").then_some(())
+    })
+    .await;
+    let running = pods_selected(&client, &runner_selector(&client, "egress-1").await).await;
+    assert_eq!(running.len(), 1);
+    let runner = running[0].name_any();
+
+    let policies = Api::<NetworkPolicy>::namespaced(client.clone(), &runners());
+    let denied = policies
+        .get(DENY_EGRESS_POLICY)
+        .await
+        .expect("the operator's policy on egress");
+    let runner_uid = Api::<Namespace>::all(client.clone())
+        .get(&runners())
+        .await
+        .expect("the runner namespace")
+        .uid();
+    assert!(
+        denied
+            .owner_references()
+            .iter()
+            .any(|o| o.kind == "Namespace"
+                && o.controller == Some(true)
+                && Some(&o.uid) == runner_uid.as_ref()),
+        "{denied:?}"
+    );
+    assert_eq!(
+        serde_json::to_value(denied.spec.as_ref().expect("its spec")).expect("JSON"),
+        serde_json::json!({ "podSelector": {}, "policyTypes": ["Egress"] })
+    );
+
+    // Upstream's policy for the template selects the runner, and lets it out somewhere.
+    let theirs = policies
+        .get(&format!("{}-network-policy", name_for("e2e-egress")))
+        .await
+        .expect("upstream's policy for the template");
+    let spec = theirs.spec.expect("its spec");
+    assert!(
+        spec.policy_types
+            .iter()
+            .flatten()
+            .any(|kind| kind == "Egress"),
+        "upstream's policy says nothing of egress: {spec:?}"
+    );
+    assert!(
+        !spec.egress.clone().unwrap_or_default().is_empty(),
+        "upstream's policy lets the runner out nowhere: {spec:?}"
+    );
+    let selected = pods_selected(
+        &client,
+        &selector_text(&spec.pod_selector.clone().unwrap_or_default()),
+    )
+    .await;
+    assert!(
+        selected.iter().any(|pod| pod.name_any() == runner),
+        "upstream's policy does not select the runner {runner}: {spec:?}"
+    );
+
+    let _ = pools.delete("e2e-egress", &DeleteParams::default()).await;
+    scratch.end().await;
+}
+
 /// Doctor (#2236) run by someone who may only read what it reads: it still answers every check,
 /// so it needs no right to change anything, and it says they may not apply the install.
 #[tokio::test]

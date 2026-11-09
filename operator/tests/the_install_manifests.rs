@@ -198,7 +198,7 @@ fn the_operator_may_do_exactly_what_it_needs() {
             (
                 "networking.k8s.io",
                 "networkpolicies",
-                "purlis-forge-mint",
+                "purlis-forge-mint,purlis-deny-egress",
                 "get,patch"
             ),
             (
@@ -743,6 +743,16 @@ fn a_runner_namespace_and_what_the_operator_binds_and_caps_there_are_guarded_at_
             validations[4]
         );
     }
+    // And the one that lets its pods out only where another lets them: it opens nothing.
+    let denied = "object.metadata.name=='purlis-deny-egress'&&object.spec.policyTypes==['Egress']&&\
+                  !has(object.spec.ingress)&&!has(object.spec.egress)&&\
+                  !has(object.spec.podSelector.matchLabels)&&\
+                  !has(object.spec.podSelector.matchExpressions)";
+    assert!(
+        validations[4].contains(denied),
+        "{denied}: {}",
+        validations[4]
+    );
     // Made by the operator alone; who it is for changed by no one else.
     assert_eq!(
         validations[0],

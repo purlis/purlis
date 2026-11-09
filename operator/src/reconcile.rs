@@ -446,11 +446,22 @@ async fn runner_namespace_ready(
             .await?
         }
     };
+    // Its pods go out only where a NetworkPolicy lets them, made before anything runs there, so
+    // none has open egress while upstream's policy for its template is not there yet or for a
+    // moment not there at all.
+    let wanted = person::egress_denied(&name, runner_owner(&runner));
+    made_or_applied(
+        &Api::<NetworkPolicy>::namespaced(client.clone(), &name),
+        wanted.clone(),
+        |held| held.spec == wanted.spec,
+    )
+    .await?;
     Ok(Ok((runner, held)))
 }
 
-/// `wanted` as the cluster holds it: made where nothing holds its name, applied server-side
-/// where what is held does not say what it should (`says`), and otherwise left as it is. For an
+/// `wanted` as the cluster holds it: made where nothing holds its name, then held as applied
+/// ([`held_as_applied`]), applied server-side where what is held does not say what it should
+/// (`says`), and otherwise left as it is. For an
 /// object whose fields are all atomic, as a role binding's are.
 async fn made_or_applied<K>(api: &Api<K>, wanted: K, says: impl Fn(&K) -> bool) -> Result<K, Error>
 where
