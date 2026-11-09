@@ -6,6 +6,7 @@
 //! Kept out of `main.rs` on purpose: that file is where every command's variant meets, and
 //! this one adds a single line there.
 
+use crate::clierror::CliError;
 use clap::Subcommand;
 use purlis_core::piececmd;
 use purlis_core::pieces::{Declaration, Who};
@@ -176,7 +177,7 @@ pub enum WorktreeCommand {
     },
 }
 
-pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
+pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, CliError> {
     let root = here.plane.root().to_path_buf();
     let now = chrono::Utc::now();
     // In a chat, by its stable id too (#3901): its `done` or `abandon` hands over a branch

@@ -19,6 +19,7 @@
 //! person only with their yes to Agent drafts. The person reads it, edits it and files it there.
 //! Nothing is filed from a chat.
 
+use crate::clierror::CliError;
 use std::io::{IsTerminal, Read, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -106,7 +107,13 @@ pub fn run(command: &ReportCommand) -> ExitCode {
             decide(&reports, &source, evidence, &draft, route, args)
         }
         Outcome::Refused(Refusal::Unusable(said)) => refused(&said),
-        other => refused(&format!("the draft was not made: {other:?}")),
+        Outcome::Refused(refusal) => refused(&format!("the draft was not made: {refusal:?}")),
+        // A person's words are drafted or refused: anything else is a state this command has no
+        // arm for (#5862).
+        other => CliError::internal(format!(
+            "charter report: a draft was asked for and the Reports module answered {other:?}"
+        ))
+        .exit(),
     }
 }
 
@@ -336,9 +343,15 @@ fn send(reports: &Reports, source: &Caller, evidence: Evidence, shown: &str) -> 
             );
             ExitCode::FAILURE
         }
-        other => {
-            eprintln!("charter report: purlis did not file it: {other:?}");
+        Outcome::Refused(refusal) => {
+            eprintln!("charter report: purlis did not file it: {refusal:?}");
             ExitCode::FAILURE
         }
+        // A filing is sent or refused: anything else is a state this command has no arm for
+        // (#5862).
+        other => CliError::internal(format!(
+            "charter report: a draft was filed and the Reports module answered {other:?}"
+        ))
+        .exit(),
     }
 }

@@ -1839,6 +1839,55 @@ fn the_list_prints_each_task_s_persona_name_place_state_and_age() {
 }
 
 #[test]
+fn an_app_answering_another_question_is_an_internal_failure_that_layer_one_drafts() {
+    // #5862: an answer this command has no arm for is purlis's own failure, as `brokered`'s is
+    // (#5697): it exits 70, and the hook's payload for it drafts a Report. A usage error of the
+    // same command exits 1 and is never drafted. No plane is read.
+    let tmp = tempfile::tempdir().expect("a directory");
+    let (app, _reading, _asked) =
+        an_app_answering_tasks(&tmp, |_| Answer::Task(Box::new(Answered::Noted)));
+    let drafted = |args: &[&str], out: &Output| {
+        purlis_core::caught::of_hook(
+            purlis_core::caught::COMMAND_WORD,
+            &serde_json::json!({
+                "hook_event_name": "PostToolUseFailure",
+                "tool_name": "Bash",
+                "tool_input": {"command": format!("purlis {}", args.join(" "))},
+                "error": format!(
+                    "Exit code {}\n{}",
+                    out.status.code().unwrap_or_default(),
+                    text(&out.stderr)
+                ),
+            }),
+        )
+    };
+
+    for args in [&["dispatch", "list"][..], &["dispatch", "cancel", "9"]] {
+        let out = purlis_as(tmp.path(), Some(&app), ASKING, args, "");
+
+        assert_eq!(
+            out.status.code(),
+            Some(i32::from(purlis_core::caught::INTERNAL_EXIT)),
+            "{args:?}"
+        );
+        assert!(
+            text(&out.stderr).starts_with(
+                "purlis: internal failure: purlis dispatch: the purlis app answered the "
+            ),
+            "{args:?}: {}",
+            text(&out.stderr)
+        );
+        let caught = drafted(args, &out).expect("layer 1 drafts it");
+        assert_eq!(caught.call, format!("purlis {}", args.join(" ")));
+    }
+
+    let usage = ["dispatch", "tell", "--all", "one", "two"];
+    let out = purlis_as(tmp.path(), Some(&app), ASKING, &usage, "");
+    assert_eq!(out.status.code(), Some(1), "{}", text(&out.stderr));
+    assert_eq!(drafted(&usage, &out), None);
+}
+
+#[test]
 fn a_read_prints_what_the_task_said_and_ran_and_a_refused_one_says_why() {
     // #1981: the app's answer, printed whole and quoted, under purlis's own sentence.
     let tmp = daily();

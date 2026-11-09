@@ -35,6 +35,7 @@ pub fn exit_on_a_panic(first: Option<&str>) {
 /// Ends this command as an internal failure: `why` on standard error, then [`INTERNAL_EXIT`].
 /// For a state the command has no arm for, such as an answer from the app it did not ask for.
 pub fn failed(why: &str) -> ! {
-    let _ = writeln!(std::io::stderr(), "purlis: internal failure: {why}");
-    std::process::exit(i32::from(INTERNAL_EXIT));
+    let failure = crate::clierror::CliError::internal(why);
+    let _ = writeln!(std::io::stderr(), "{failure}");
+    std::process::exit(i32::from(failure.code()));
 }

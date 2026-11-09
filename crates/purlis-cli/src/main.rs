@@ -34,6 +34,7 @@ mod brokered;
 mod browsing;
 mod change;
 mod check;
+mod clierror;
 mod curation;
 mod dispatch;
 mod extcmd;
@@ -3659,7 +3660,7 @@ fn reset_active_after_removal(
     )
 }
 
-fn run(command: Command) -> Result<u8, String> {
+fn run(command: Command) -> Result<u8, clierror::CliError> {
     let here = Here::read()?;
     match command {
         // Answered in `main`, before this: it is the one command whose exit code is not a
@@ -3724,17 +3725,14 @@ fn run(command: Command) -> Result<u8, String> {
             println!("{}", here.plane.root().display());
         }
         Command::Propose { file, from } => {
-            return brokered::propose(here.plane.root(), &file, &from);
+            return Ok(brokered::propose(here.plane.root(), &file, &from)?);
         }
         Command::Workspace(WorkspaceCommand::Current) => {
             // The name alone on stdout, for a script; the rung that decided it on stderr, for
             // the person asking why (#999). Both off ONE resolution, as `status` does, so the
             // reason given is the rung that produced the name.
             if let Some(by) = here.plane_root(None) {
-                return Err(purlis_core::active::plane_root_refusal(
-                    here.plane.root(),
-                    by,
-                ));
+                return Err(purlis_core::active::plane_root_refusal(here.plane.root(), by).into());
             }
             let chosen =
                 purlis_core::active::workspace(&here.asking(None, here.workspace_env.as_deref()));
@@ -3806,7 +3804,9 @@ fn run(command: Command) -> Result<u8, String> {
             return Ok(harness_show(here.plane.root(), &name));
         }
         Command::Workspace(WorkspaceCommand::List) => {
-            let mut names = here.plane.workspaces().map_err(|e| e.to_string())?;
+            let mut names = here.plane.workspaces().map_err(|e| {
+                clierror::CliError::internal(format!("workspaces/ could not be listed: {e}"))
+            })?;
             // The workspace `resolve` TERMINATES on is always listable, whether or not its
             // directory is there: a plane where nobody selected anything resolves to a name
             // this listing did not contain, and the table then marked no row at all
@@ -3849,11 +3849,15 @@ fn run(command: Command) -> Result<u8, String> {
             // A workspace charter does not have is not one this scaffolds: `vision` shows or
             // replaces, and inventing the directory is what made a bad `-w` silent.
             if !ws.dir().is_dir() {
-                return Err(format!("no workspace '{}'", ws.name()));
+                return Err(format!("no workspace '{}'", ws.name()).into());
             }
             match text.as_deref().filter(|t| !t.is_empty()) {
                 Some(text) => {
-                    ws.set_vision(text).map_err(|e| e.to_string())?;
+                    ws.set_vision(text).map_err(|e| {
+                        clierror::CliError::internal(format!(
+                            "workspace.md could not be written: {e}"
+                        ))
+                    })?;
                     voice::ok(format!(
                         "Vision set for '{0}' → workspaces/{0}/workspace.md",
                         ws.name()
@@ -3870,11 +3874,11 @@ fn run(command: Command) -> Result<u8, String> {
         Command::Recall(args) => return memory::recall(&here, args),
         Command::Persona(command) => return memory::persona(&here, command),
         Command::Worktree(command) => return piece::run(&here, command),
-        Command::Check(command) => return check::run(&here, command),
-        Command::Change(command) => return change::run(&here, command),
-        Command::Curation(command) => return curation::run(here.plane.root(), command),
+        Command::Check(command) => return Ok(check::run(&here, command)?),
+        Command::Change(command) => return Ok(change::run(&here, command)?),
+        Command::Curation(command) => return Ok(curation::run(here.plane.root(), command)?),
         Command::Skill(command) => return skill::run(here.plane.root(), command),
-        Command::Session(command) => return session::run(&here, command),
+        Command::Session(command) => return Ok(session::run(&here, command)?),
         Command::Workspace(WorkspaceCommand::Remember {
             text,
             title,
@@ -5858,10 +5862,7 @@ fn main() -> ExitCode {
     };
     match run(command) {
         Ok(code) => ExitCode::from(code),
-        Err(message) => {
-            eprintln!("purlis: {message}");
-            ExitCode::FAILURE
-        }
+        Err(failure) => failure.exit(),
     }
 }
 
