@@ -426,10 +426,10 @@ mod tests {
         // Data is inert JSON; even markup there is never a page of the template.
         std::fs::write(folder.join("data/page.html"), "<script>x()</script>").unwrap();
         std::fs::write(folder.join("app.js"), "x()").unwrap();
-        assert!(!Snapshot::read(folder).unwrap().holds_script());
+        assert!(!Snapshot::read(folder, "board").unwrap().holds_script());
 
         std::fs::write(folder.join("chart.svg"), "<svg onload='x()'/>").unwrap();
-        assert!(Snapshot::read(folder).unwrap().holds_script());
+        assert!(Snapshot::read(folder, "board").unwrap().holds_script());
     }
 
     #[test]

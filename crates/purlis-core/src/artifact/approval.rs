@@ -280,7 +280,7 @@ mod tests {
         }
 
         fn snapshot(&self) -> Snapshot {
-            Snapshot::read(&self.workspace.join("artifacts/board")).unwrap()
+            Snapshot::read(&self.workspace.join("artifacts/board"), "board").unwrap()
         }
 
         fn standing(&self, pin: &str) -> Standing {
@@ -363,7 +363,7 @@ mod tests {
             fork.join("artifacts/board"),
         )
         .unwrap();
-        let snapshot = Snapshot::read(&fork.join("artifacts/board")).unwrap();
+        let snapshot = Snapshot::read(&fork.join("artifacts/board"), "board").unwrap();
         assert_eq!(
             standing(Some(&here.config), &fork, "board", PIN, &snapshot),
             Standing::New
@@ -419,7 +419,7 @@ mod tests {
         std::fs::create_dir_all(here.workspace.join("artifacts/other")).unwrap();
         let other = here.workspace.join("artifacts/other");
         std::fs::write(other.join("index.html"), "<script>x()</script>").unwrap();
-        let shown = Snapshot::read(&other).unwrap();
+        let shown = Snapshot::read(&other, "other").unwrap();
         approve(
             &here.config,
             &here.workspace,

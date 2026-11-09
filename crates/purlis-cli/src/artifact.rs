@@ -234,10 +234,13 @@ fn standing_line(
     use artifact::approval::{self, Standing};
     let pin = &item.pin;
     let folder = purlis_core::personas::one_line(&pin.folder);
+    if let Some(why) = &item.too_large {
+        return format!("{folder}  too-large  -  {why}");
+    }
     let read = match &item.missing {
         Some(why) => Err(why.clone()),
         None => artifact::resolve(workspace, &pin.folder)
-            .and_then(|real| artifact::serve::Snapshot::read(&real)),
+            .and_then(|real| artifact::serve::Snapshot::read(&real, &pin.folder)),
     };
     let snapshot = match read {
         Ok(snapshot) => snapshot,
