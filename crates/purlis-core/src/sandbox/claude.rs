@@ -166,18 +166,6 @@ pub(super) fn above_what_may_be_lifted(home: &Path) -> Vec<PathBuf> {
 /// its profile.
 pub const TERMINALS: &str = "/dev/ttys*";
 
-/// **What `/proc` shows of another process that a chat's own tools never read, on Linux**: its
-/// environment, its memory and the files it holds open. Claude Code's Read, Grep and Glob tools
-/// run in its own process, outside the sandbox its commands run in, so a run purlis brokers for
-/// the chat, which holds a value in its environment or a file it was handed, is kept from them by
-/// these rules. Each by a glob, at any depth below `/proc` (a thread's `task/<tid>/` too).
-pub const PROC_UNREAD: [&str; 4] = [
-    "/proc/**/environ",
-    "/proc/**/mem",
-    "/proc/**/fd/**",
-    "/proc/**/map_files/**",
-];
-
 /// The home's git config, a later-code name the floor holds ([`super::PLANTED`]). On Linux,
 /// Claude Code's sandbox puts a denied path that does not exist out of reach of a read as well,
 /// and git stops on a config it cannot read, so no git command would run in the chat. Made
@@ -250,13 +238,6 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
         deny_read.push(TERMINALS.to_owned());
         read_rules.push(format!("Read(/{TERMINALS})"));
         edit_rules.push(format!("Edit(/{TERMINALS})"));
-    }
-    // On Linux, another process's environment, memory and open files, from its own tools, at
-    // either level ([`PROC_UNREAD`]).
-    if compiled.os == Os::Linux {
-        for unread in PROC_UNREAD {
-            read_rules.push(format!("Read(/{unread})"));
-        }
     }
     // The later-code class (ruling V73b), by name at any depth: added to the names Claude
     // Code's own sandbox already keeps commands from writing, never in their place. What these

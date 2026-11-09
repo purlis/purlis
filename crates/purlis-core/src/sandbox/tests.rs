@@ -2815,29 +2815,6 @@ fn on_linux_a_keyring_vault_refusal_offers_the_opt_out_and_moving_the_vault() {
 }
 
 #[test]
-fn on_linux_a_claude_code_chats_own_tools_never_read_another_processs_environment_or_files() {
-    // Its Read, Grep and Glob tools run outside the sandbox its commands run in, and a brokered
-    // run holds a value in its environment or a file it was handed.
-    for level in [Level::Full, Level::Floor] {
-        let settings = claude::settings(&Compiled {
-            level,
-            ..compiled(Denied::default(), Os::Linux)
-        })
-        .expect("compiles");
-        for rule in [
-            "Read(//proc/**/environ)",
-            "Read(//proc/**/mem)",
-            "Read(//proc/**/fd/**)",
-            "Read(//proc/**/map_files/**)",
-        ] {
-            assert!(settings.deny.contains(&rule.to_owned()), "{level:?} {rule}");
-        }
-    }
-    let mac = claude::settings(&compiled(Denied::default(), Os::MacOs)).expect("compiles");
-    assert!(!mac.deny.iter().any(|rule| rule.contains("/proc/")));
-}
-
-#[test]
 fn claude_code_is_denied_submodule_git_config_and_hook_managers_at_any_depth() {
     // Measured on 2.1.288: a `**` in the middle of a `denyWrite` glob holds at any depth.
     let settings = claude::settings(&compiled(Denied::default(), Os::MacOs)).expect("compiles");
