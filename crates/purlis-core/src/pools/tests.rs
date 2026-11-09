@@ -3193,6 +3193,46 @@ mod cluster {
     }
 
     #[test]
+    fn a_plugin_named_by_its_bare_name_is_kept_in_the_pools_copy_by_the_path_it_was_found_at() {
+        use std::os::unix::fs::PermissionsExt;
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        // Found on the PATH its runs are given: the folder kubectl is in.
+        let plugin = cluster.dir.path().join("bin").join("auth-plugin");
+        std::fs::write(&plugin, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&plugin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        cluster.write(
+            "context.yaml",
+            &serde_json::json!({"apiVersion": "v1", "kind": "Config", "users": [
+                {"name": "ada", "user": {"exec": {"command": "auth-plugin", "args": ["token"]}}}
+            ]})
+            .to_string(),
+        );
+        let claim = claim_name(OURS, "team");
+        cluster.vouch("ada", &claim, &claim, cluster.runner.key);
+        add_cluster(
+            config.path(),
+            &cluster.kubectl(),
+            &team(&cluster),
+            &desktop(),
+            Duration::ZERO,
+        )
+        .unwrap();
+        let kept: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(runners::kubeconfig_kept_at(config.path(), "team")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            kept.pointer("/users/0/user/exec/command"),
+            Some(&serde_json::json!(plugin.display().to_string())),
+            "{kept}"
+        );
+        assert_eq!(
+            kept.pointer("/users/0/user/exec/args"),
+            Some(&serde_json::json!(["token"]))
+        );
+    }
+
+    #[test]
     fn a_removal_waits_for_an_add_of_the_pool_still_under_way() {
         let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
         added(config.path(), &cluster);
