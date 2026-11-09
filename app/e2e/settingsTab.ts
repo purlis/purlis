@@ -58,9 +58,9 @@ export async function openProjectSettings(): Promise<void> {
  * one shown. Settings is open already ({@link openProjectSettings}).
  *
  * Each control is asked for by its role (CLAUDE.md): said outright, or the native element whose
- * implicit role it is and which says no other. The selectors are written out plainly in the page's
- * own function, as every spec's are: the third run of #6037 had them passed in as arguments and
- * joined with `:is()`, and the walk never found a group on WebKitGTK, though both matched in jsdom.
+ * implicit role it is and which says no other. The group shown says so with `aria-current`, read
+ * as any value but `false`: Settings' groups moved onto the panel family's view nav, which says
+ * `page` where the old list said `true` (#2930).
  */
 export async function settingsAt(level: string, group: string): Promise<void> {
   await browser.execute((called: string) => {
@@ -84,7 +84,8 @@ export async function settingsAt(level: string, group: string): Promise<void> {
           ),
         ].find((one) => one.textContent?.trim() === called);
         button?.click();
-        return button?.getAttribute("aria-current") === "true";
+        const current = button?.getAttribute("aria-current");
+        return current !== null && current !== undefined && current !== "false";
       }, group),
     { timeout: 20_000, interval: 250, timeoutMsg: `Settings never showed ${level} › ${group}` },
   );
