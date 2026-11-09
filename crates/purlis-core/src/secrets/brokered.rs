@@ -1248,10 +1248,6 @@ fn run_granted(
     if is_a_tool && (locked.is_some() || tools::limits_its_arguments(listed, &command[0])) {
         return Err((1, why));
     }
-    // A flag that names a command is not offered (#5799), by the name the chat gave and by the
-    // program a link leads to.
-    let names_a_command =
-        |name: &str| tools::command_flags::names_a_command(name, &command[1..]).map_or(Ok(()), Err);
     // Policy first (#5243): whatever was given before, nothing runs under a Run grant while it
     // locks them, and nobody is offered an Allow. A key the command misses can still be stored,
     // whichever lock holds, for any program that could have been allowed without it: one notice
@@ -1265,13 +1261,6 @@ fn run_granted(
         let Ok(ready) = grantable(asker, persona, &asked, listed, &unlocked, &writes) else {
             return Err((1, locked));
         };
-        // Nor a key for a command whose flag names a command, which no Allow could follow
-        // (#5876's second review).
-        if names_a_command(&command_name(&command[0])).is_err()
-            || names_a_command(&command_name(&ready.program.to_string_lossy())).is_err()
-        {
-            return Err((1, locked));
-        }
         if not_its_vault && missing.run_gate.is_some_and(|gate| gate.kept_blocked) {
             return Err((1, locked));
         }
@@ -1313,10 +1302,8 @@ fn run_granted(
             (1, said)
         }
     };
-    names_a_command(&command_name(&command[0])).map_err(refused)?;
     let ready = grantable(asker, persona, &asked, listed, &locks, &writes)
         .map_err(|refused_as| refused(format!("{why} ({refused_as})")))?;
-    names_a_command(&command_name(&ready.program.to_string_lossy())).map_err(refused)?;
     // A command its run would refuse is not offered.
     tools::allows(&ready, &command[1..]).map_err(refused)?;
     let bound = bound_of(asker, wanted, command, &ready);
@@ -3190,8 +3177,9 @@ pub(crate) fn serve_recorded(
 ) {
     // Counted as soon as the run is served: a chat that ends from here on keeps no GitHub App
     // token minted for it (#3808).
-    let _ = asker.ends_seen;
-    let ends_seen = crate::forge::apptoken::ends_so_far();
+    let ends_seen = asker
+        .ends_seen
+        .unwrap_or_else(crate::forge::apptoken::ends_so_far);
     // A runner's journal names the program, never a vault (#2838): the refusal's words name
     // vaults, so a service logs neither.
     let program = wanted
