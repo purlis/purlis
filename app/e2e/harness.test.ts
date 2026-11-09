@@ -2,16 +2,27 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { execFileSync } from "node:child_process";
-import { readdirSync, statSync } from "node:fs";
+import {
+  chmodSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import { describe, expect, it } from "vitest";
 import {
   copyFixturePlane,
   LONG_ASKED_COMMAND,
+  SCENARIO_CONVERSATION,
   singleQuoted,
   theRunsEnvironment,
   THE_RUNS_GIT_IDENTITY,
+  writeReportingShell,
 } from "./harness.js";
 
 /**
@@ -84,5 +95,67 @@ describe("a copy of a fixture plane", () => {
     walk(join(root, "workspaces"));
     walk(join(root, ".charter"));
     expect(times.size).toBe(1);
+  });
+});
+
+/**
+ * **The reporting harness names its conversation on every hook it reports, where it names one**
+ * (#5900). A Codex chat runs sandboxed at the floor, where a hook line the app does not take in
+ * time is lost, not spooled: a stand-in that named its conversation only in its first hook had
+ * nothing left to restart on when the app was slow to start and missed that one line.
+ *
+ * Run with a `charter` that writes down each hook and what it was handed, and a harness that runs
+ * each `--hook` it is given, so the shell's own hooks are what is read.
+ */
+describe("the hooks the reporting harness reports", () => {
+  function hooksOf(namesItsConversation: boolean): { hook: string; told: string }[] {
+    const scratch = mkdtempSync(join(tmpdir(), "reporting-shell-"));
+    const heard = join(scratch, "heard");
+    const charter = join(scratch, "charter");
+    writeFileSync(
+      charter,
+      `#!/bin/sh\n[ "$1" = hook ] && printf '%s\\t%s\\n' "$2" "$(cat)" >> ${singleQuoted(heard)}\nexit 0\n`,
+    );
+    const harness = join(scratch, "fake-harness");
+    writeFileSync(
+      harness,
+      '#!/bin/sh\nwhile [ $# -gt 0 ]; do\n  [ "$1" = --hook ] && { sh -c "$2"; shift; }\n  shift\ndone\n',
+    );
+    chmodSync(charter, 0o755);
+    chmodSync(harness, 0o755);
+    try {
+      execFileSync(writeReportingShell(harness, charter, namesItsConversation), {
+        stdio: "ignore",
+      });
+      return readFileSync(heard, "utf8")
+        .split("\n")
+        .filter((line) => line !== "")
+        .map((line) => {
+          const [hook, told] = line.split("\t");
+          return { hook, told };
+        });
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  }
+
+  it("names the conversation on each of them where it names one", () => {
+    const named = hooksOf(true).map(({ hook, told }) => ({
+      hook,
+      conversation: told === "" ? undefined : JSON.parse(told).session_id,
+    }));
+    expect(named).toEqual(
+      ["sessionstart", "userpromptsubmit", "stop"].map((hook) => ({
+        hook,
+        conversation: SCENARIO_CONVERSATION,
+      })),
+    );
+  });
+
+  it("hands them nothing where it names none", () => {
+    expect(hooksOf(false)).toEqual([
+      { hook: "userpromptsubmit", told: "" },
+      { hook: "stop", told: "" },
+    ]);
   });
 });
