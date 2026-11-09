@@ -223,7 +223,8 @@ export const MenuByThePointer: Story = {
     const menu = await screen.findByRole("menu", { name: "grilling" });
     await waitFor(() => expect(more).toHaveAttribute("aria-expanded", "true"));
     await untilFocused(() => menu, "⋯: the menu itself has the keyboard");
-    await expect(within(menu).getByRole("menuitem")).not.toHaveAttribute("data-focused");
+    for (const item of within(menu).getAllByRole("menuitem"))
+      await expect(item, "⋯: no item is chosen").not.toHaveAttribute("data-focused");
     const at = more.getBoundingClientRect();
     const placed = menu.getBoundingClientRect();
     await expect(Math.abs(placed.top - at.bottom), "⋯: the menu opens at the ⋯").toBeLessThan(
