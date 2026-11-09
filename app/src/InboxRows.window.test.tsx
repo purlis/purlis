@@ -155,6 +155,15 @@ describe("every line of the Inbox's views is a row, without a border (#5649)", (
     ]);
   });
 
+  it("marks the chat each ask names Waiting on you, as its row and its tab do (#6012)", () => {
+    draw("asks");
+    for (const row of rows()) {
+      const mark = part(row, "title")?.querySelector('[data-scope="chat-mark"][data-part="root"]');
+      expect(mark).toHaveAttribute("data-variant", "needs");
+      expect(mark?.querySelector('[data-part="badge"] svg')).toHaveClass("lucide-hand");
+    }
+  });
+
   it("draws Mine as rows: done, failed or a report by its mark, its time at the right, a × to dismiss", () => {
     draw("updates");
     const listed = rows();

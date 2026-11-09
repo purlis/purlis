@@ -52,19 +52,39 @@
   block-size: calc(var(--space-4) + var(--space-1));
 }
 
-/* Each state's colour, on the glyph only (a shape as well, `ChatMark`). Idle and ended stay the
-   badge's muted grey. */
+/* Each Chat state's one colour (ADR 0121 decision 17, #6012), on the glyph only, a shape as well
+   (`ChatMark`). The same token `shownState.CHAT_STATE_SAID` names, so a line that says the state
+   beside its word draws it in the same colour. */
 [data-scope="chat-mark"][data-part="root"][data-variant="needs"] [data-part="badge"] {
   color: var(--needs-you-base);
+}
+
+[data-scope="chat-mark"][data-part="root"][data-variant="stuck"] [data-part="badge"] {
+  color: var(--state-unreadable);
 }
 
 [data-scope="chat-mark"][data-part="root"][data-variant="failed"] [data-part="badge"] {
   color: var(--state-failed);
 }
 
-[data-scope="chat-mark"][data-part="root"]:is([data-variant="working"], [data-variant="waiting"])
-  [data-part="badge"] {
+[data-scope="chat-mark"][data-part="root"][data-variant="working"] [data-part="badge"] {
   color: var(--state-running);
+}
+
+[data-scope="chat-mark"][data-part="root"][data-variant="waiting"] [data-part="badge"] {
+  color: var(--state-waiting);
+}
+
+[data-scope="chat-mark"][data-part="root"][data-variant="idle"] [data-part="badge"] {
+  color: var(--accent-base);
+}
+
+[data-scope="chat-mark"][data-part="root"][data-variant="ended"] [data-part="badge"] {
+  color: var(--state-success);
+}
+
+[data-scope="chat-mark"][data-part="root"][data-variant="cant-tell"] [data-part="badge"] {
+  color: var(--text-muted);
 }
 
 /* **The hand knocks twice when a chat starts needing you** (`ChatMark`), and a ring swells around

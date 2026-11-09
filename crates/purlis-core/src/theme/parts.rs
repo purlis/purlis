@@ -3902,6 +3902,7 @@ const STANDS_ON: &[(&str, &[&str])] = &[
             "badge",
             "button",
             "card",
+            "chat-mark",
             "checkbox",
             "field",
             "notice",

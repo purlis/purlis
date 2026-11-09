@@ -184,15 +184,15 @@ describe("a task", () => {
 describe("a harness purlis has heard nothing from", () => {
   it("says the program is running and what is not known, by the harness's name", () => {
     expect(said({ board: "unknown", harness: "opencode" })).toBe(
-      "dots running (no detail from opencode)",
+      "unseen running (no detail from opencode)",
     );
     expect(said({ board: "unknown", harness: "opencode", task: OWED })).toBe(
-      "dots running (no detail from opencode)",
+      "unseen running (no detail from opencode)",
     );
   });
 
   it("names no harness where none is known", () => {
-    expect(said({ board: "unknown", harness: null })).toBe("dots running (no detail)");
+    expect(said({ board: "unknown", harness: null })).toBe("unseen running (no detail)");
   });
 
   it("still says what the app itself knows", () => {
@@ -204,8 +204,8 @@ describe("a harness purlis has heard nothing from", () => {
 });
 
 describe("a shell tab", () => {
-  it("draws nothing until something reports a state for it", () => {
-    expect(shownState(of({ board: undefined, harness: null }))).toBeUndefined();
+  it("says it can't tell until something reports a state for it (#6012)", () => {
+    expect(shownState(of({ board: undefined, harness: null })).mark).toBe("cant-tell");
   });
 });
 

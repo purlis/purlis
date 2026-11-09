@@ -2532,6 +2532,13 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* **The Chat state of the chat an ask names** (#6012): its badge alone before the chat's name,
+   on the row's own ground. */
+.inbox-ask .inbox-chat-state {
+  --chat-mark-ground: transparent;
+  margin-inline-end: var(--space-2);
+  vertical-align: middle;
+}
 .inbox-ask-top > .inbox-where {
   flex: none;
   max-width: 50%;

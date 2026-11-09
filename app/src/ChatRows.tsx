@@ -24,7 +24,7 @@ import {
   type ShownOf,
 } from "./ChatPersonaState";
 import { ViewMark } from "./Views";
-import { MARK_SAID, shownState, type RowFacts, type Shown } from "./shownState";
+import { CHAT_STATE_SAID, shownState, type RowFacts, type Shown } from "./shownState";
 import { StateShown } from "./StateShown";
 import { needsSaid } from "./tabTasks";
 import { Tooltip } from "./ui/tooltip/Tooltip";
@@ -63,7 +63,7 @@ export const ChatShownState = memo(function ChatShownState({
   if (shown === undefined) return null;
   if (heardOnly) return <span className="hidden-words">{shown.word}</span>;
   // The one state's glyph (#5340), so this line never disagrees with the mark beside it.
-  const said = shown.mark === null ? shown : { ...shown, ...MARK_SAID[shown.mark] };
+  const said = { ...shown, ...CHAT_STATE_SAID[shown.mark] };
   return <StateShown shown={said} changed={changed} markOnly={markOnly} />;
 });
 
