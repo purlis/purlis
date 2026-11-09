@@ -2676,3 +2676,23 @@ fn mysql_server_side_and_shell_like_tools_run_what_they_name_so_they_are_offered
         refused_as_running_others(name);
     }
 }
+
+// #5891, from the seventh review of #5876: the MySQL and MariaDB tools no row had read. Each is
+// refused whole: `mysqlhotcopy --method` names the copy program it has a shell run, the secure
+// installation is a script that runs the client its `--basedir` finds, and mariabackup runs
+// `qpress`, `rsync` and the plugins its flags name. None is a usual reason to hand a chat a key.
+
+#[test]
+fn mysql_hotcopy_secure_installation_and_backup_run_what_they_name_so_they_are_offered_no_run_grant()
+ {
+    for name in [
+        "mysqlhotcopy",
+        "mariadb-hotcopy",
+        "mysql_secure_installation",
+        "mariadb-secure-installation",
+        "mariabackup",
+        "mariadb-backup",
+    ] {
+        refused_as_running_others(name);
+    }
+}

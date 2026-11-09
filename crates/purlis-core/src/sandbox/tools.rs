@@ -1984,6 +1984,16 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "mariadbd-multi",
     "mysqltest_embedded",
     "mariadb-test-embedded",
+    // the rest of the family (#5891, #5876's seventh review): `mysqlhotcopy --method` names the
+    // copy program it has a shell run, the secure installation is a script that runs the client
+    // its `--basedir` finds, and mariabackup runs `qpress`, `rsync` and the plugins its flags
+    // name. Server-side all three, none a usual reason to hand a chat a key.
+    "mysqlhotcopy",
+    "mariadb-hotcopy",
+    "mysql_secure_installation",
+    "mariadb-secure-installation",
+    "mariabackup",
+    "mariadb-backup",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused

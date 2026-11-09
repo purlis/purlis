@@ -682,3 +682,110 @@ fn a_bracket_inside_a_host_does_not_hide_the_colon_that_ends_it() {
     );
     offered("scp", &["-J b f [::1]:p", "-J b f u@[fe80::1]:p"]);
 }
+
+// #5892, from the ninth review of #5876: ssh pastes a jump list unquoted into the command its
+// shell runs, brackets and all, so a bracketed host holds only an IPv6 address's characters and
+// is never a glob of anything else.
+
+#[test]
+fn a_bracketed_jump_host_holds_only_an_ipv6_addresss_characters() {
+    refused(
+        "ssh",
+        "-J",
+        &[
+            &["-J", "a,[.-_]", "host"],
+            &["-J", "[g::1]", "host"],
+            &["-J", "u@[fe80::1_x]:22", "host"],
+        ],
+    );
+    refused("ssh", "-o ProxyJump", &[&["-o", "ProxyJump=[a-b]", "host"]]);
+    refused(
+        "scp",
+        "a destination a shell would read",
+        &[&["-J", "b", "f", "[a_b]:p"]],
+    );
+    offered(
+        "ssh",
+        &[
+            "-J [::ffff:10.0.0.1]:22 host",
+            "-J a,u@[2001:DB8::1] host",
+            "-o ProxyJump=[::1] host",
+        ],
+    );
+}
+
+// #5893, from the ninth review of #5876: ssh expands its `%` tokens (`%h`, `%r`, `%n`, `%p`) in
+// a jump's whole command, and only `%%` stands for a `%` itself. A scoped link-local jump host is
+// offered only spelled so, inside its brackets, as the last hop (the hops before it are pasted
+// into the next ssh's jump and expanded again), and nowhere else.
+
+#[test]
+fn a_scoped_link_local_jump_host_is_offered_only_with_its_zone_spelled_as_ssh_reads_it() {
+    offered(
+        "ssh",
+        &[
+            "-J u@[fe80::1%%en0] host",
+            "-J a,[fe80::1%%eth0.100]:2222 host",
+            "-J [FEBF::1%%br-lan_2] host",
+            "-o ProxyJump=b,deploy@[fe80::1%%en0] host",
+        ],
+    );
+    refused(
+        "ssh",
+        "-J",
+        &[
+            // a single `%` forms a token: `%r` is the user `-l` names
+            &["-J", "[fe80::1%r]", "-l", "$(x)", "host"],
+            &["-J", "[fe80::1%en0]", "host"],
+            // expanded again in the next ssh's jump
+            &["-J", "[fe80::1%%en0],a", "host"],
+            &["-J", "[fe80::1%%lo0],[fe80::2%%en0]", "host"],
+            // not link-local
+            &["-J", "[2001:db8::1%%en0]", "host"],
+            &["-J", "[fec0::1%%en0]", "host"],
+            &["-J", "[fe8::1%%en0]", "host"],
+            // outside brackets, empty, twice, or holding what else
+            &["-J", "fe80::1%%en0", "host"],
+            &["-J", "[fe80::1%%]", "host"],
+            &["-J", "[%%en0]", "host"],
+            &["-J", "[fe80::1%%en0%%x]", "host"],
+            &["-J", "[fe80::1%%e%n]", "host"],
+            &["-J", "[fe80::1%%e$n]", "host"],
+            &["-J", "[fe80::1%%e[n]", "host"],
+            &["-J", "u%%x@[fe80::1%%en0]", "host"],
+            &["-J", "[fe80::1%%en0]:2%%2", "host"],
+            &["-J", "ssh://[fe80::1%%en0]", "host"],
+            &["-J", "SSH://[fe80::1%%en0]", "host"],
+        ],
+    );
+    refused(
+        "ssh",
+        "-o Hostname",
+        &[&["-o", "Hostname=[fe80::1%%en0]", "host"]],
+    );
+    refused(
+        "ssh",
+        "a destination a shell would read",
+        &[&["-J", "b", "[fe80::1%%en0]"]],
+    );
+}
+
+// The second review of #5929: brackets in a jump's user are a glob too, since ssh pastes the
+// user as `-l user` unquoted; and a zone is let through in no `ssh://` hop, with a user or not.
+
+#[test]
+fn a_jump_users_brackets_and_a_zone_in_an_ssh_uri_with_a_user_are_offered_no_run_grant() {
+    refused(
+        "ssh",
+        "-J",
+        &[
+            &["-J", "[x]@host", "host"],
+            &["-J", "a]@host", "host"],
+            &["-J", "[x]@[fe80::1%%en0]", "host"],
+            &["-J", "ssh://u@[fe80::1%%en0]", "host"],
+            &["-J", "a,ssh://u@[fe80::1%%en0]", "host"],
+        ],
+    );
+    refused("ssh", "-o ProxyJump", &[&["-o", "ProxyJump=[x]@b", "host"]]);
+    offered("ssh", &["-J u@[::1] host", "-J ssh://u@[::1]:22 host"]);
+}
