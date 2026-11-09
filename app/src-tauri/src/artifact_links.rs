@@ -15,9 +15,13 @@
 //!   template it served for the very `href` the page reported
 //!   ([`purlis_core::artifact::links::written`]), so a link the page's script built or rewrote
 //!   is refused, even when an approved page forges the report.
-//! - **`https:` only.** `file:`, `smb:`, `http:`, `javascript:`, another app's scheme, and
-//!   `purlis:` (whose links into purlis are a ticket of their own) are refused with a sentence
-//!   the window shows. So is a link carrying a name or a password.
+//! - **`https:` to the browser.** `file:`, `smb:`, `http:`, `javascript:` and another app's
+//!   scheme are refused with a sentence the window shows. So is a link carrying a name or a
+//!   password.
+//! - **`purlis:` navigates inside purlis, never acts** (#5967): the core reads it into a place
+//!   of a closed list ([`purlis_core::artifact::places`]) and refuses anything else, an action
+//!   included; [`crate::artifact_places`] checks the place is in the artifact's project, and the
+//!   window goes there without asking, as a press on its own row would.
 //! - **The person decides** ([`artifact_link_open`]): the window asks, with the host and the
 //!   whole URL; Open opens it, and Always open also keeps the host on this machine
 //!   ([`purlis_core::artifact::links::always_open`], Machine tier). What is opened is what the
@@ -26,9 +30,12 @@
 use std::collections::HashMap;
 use std::sync::{Mutex, PoisonError};
 
-use purlis_core::artifact::links;
+use purlis_core::artifact::{links, places};
 use serde::Serialize;
 use tauri::{Emitter, Manager, Runtime, Url};
+
+use crate::artifact_places::{self, Goes};
+use crate::planes::{PlaneId, Planes};
 
 /// purlis's script in every artifact page: a person's click on a link that leaves the page
 /// is stopped and told to purlis on the page's own origin. A click a script made follows
@@ -59,20 +66,24 @@ pub(crate) const PATH: &str = "/.purlis/link";
 /// about or refuses.
 pub(crate) const ARTIFACT_LINK: &str = "artifact-link";
 
-/// What [`ARTIFACT_LINK`] carries: the artifact webview's label, and either the link to ask
-/// about (its whole URL and its host) or the sentence that refused it.
+/// What [`ARTIFACT_LINK`] carries: the artifact webview's label, and one of the link to ask
+/// about (its whole URL and its host), the place in purlis to go to (#5967), or the sentence
+/// that refused it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
 pub struct ArtifactLink {
     pub label: String,
     pub url: Option<String>,
     pub host: Option<String>,
     pub refused: Option<String>,
+    pub goes: Option<Goes>,
 }
 
 /// A link the page's person followed, as the artifact's webview reported it.
 pub(crate) struct Followed {
     /// The window the page is in.
     pub(crate) window: String,
+    /// The project the artifact is of.
+    pub(crate) plane: PlaneId,
     /// The page's own origin, as its webview spells it.
     pub(crate) own: String,
     /// The link's `href`, as the page holds it.
@@ -86,6 +97,8 @@ pub(crate) struct Followed {
 pub(crate) enum Link {
     /// An `https:` link to `host`: opened in the browser, asked first.
     Browser { url: String, host: String },
+    /// A `purlis:` link to a place in purlis, gone to without asking: it only navigates.
+    Place(places::Place),
     /// Not opened, and the sentence that says why.
     Refused(String),
 }
@@ -113,12 +126,11 @@ pub(crate) fn classify(own: &str, href: &str, written: bool) -> Option<Link> {
     }
     match to.scheme() {
         "https" => {}
-        "purlis" => {
-            return Some(Link::Refused(
-                "purlis does not follow its own links from an artifact yet, so it did not open \
-                 this one"
-                    .into(),
-            ));
+        places::SCHEME => {
+            return Some(match places::place(href) {
+                Ok(place) => Link::Place(place),
+                Err(why) => Link::Refused(why),
+            });
         }
         other => {
             return Some(Link::Refused(format!(
@@ -193,13 +205,43 @@ pub(crate) fn follow<R: Runtime>(app: &tauri::AppHandle<R>, label: &str, followe
     let Some(link) = classify(&followed.own, &followed.href, followed.written) else {
         return;
     };
+    let refused = |why: String| ArtifactLink {
+        label: label.to_owned(),
+        url: None,
+        host: None,
+        refused: Some(why),
+        goes: None,
+    };
     let said = match link {
-        Link::Refused(why) => ArtifactLink {
-            label: label.to_owned(),
-            url: None,
-            host: None,
-            refused: Some(why),
-        },
+        Link::Refused(why) => refused(why),
+        Link::Place(place) => {
+            // Read off the page's thread: an issue's chat is found by folding the work log.
+            let (app, label) = (app.clone(), label.to_owned());
+            tauri::async_runtime::spawn_blocking(move || {
+                let said = match place_in(&app, &followed.plane, place) {
+                    Ok(goes) => ArtifactLink {
+                        label,
+                        url: None,
+                        host: None,
+                        refused: None,
+                        goes: Some(goes),
+                    },
+                    Err(why) => ArtifactLink {
+                        label,
+                        url: None,
+                        host: None,
+                        refused: Some(why),
+                        goes: None,
+                    },
+                };
+                let _ = app.emit_to(
+                    tauri::EventTarget::webview(followed.window.as_str()),
+                    ARTIFACT_LINK,
+                    said,
+                );
+            });
+            return;
+        }
         Link::Browser { url, host } => {
             let config = purlis_core::machine::config_root();
             if links::always_opens(config.as_deref(), &host) {
@@ -224,6 +266,7 @@ pub(crate) fn follow<R: Runtime>(app: &tauri::AppHandle<R>, label: &str, followe
                 url: Some(url),
                 host: Some(host),
                 refused: None,
+                goes: None,
             }
         }
     };
@@ -232,6 +275,25 @@ pub(crate) fn follow<R: Runtime>(app: &tauri::AppHandle<R>, label: &str, followe
         ARTIFACT_LINK,
         said,
     );
+}
+
+/// **Where the window goes for `place`**, checked against project `plane` as it is now.
+fn place_in<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    plane: &PlaneId,
+    place: places::Place,
+) -> Result<Goes, String> {
+    let planes = app
+        .try_state::<Planes>()
+        .ok_or_else(|| "purlis has no project open, so it did not follow the link".to_owned())?;
+    let held = planes.held(plane)?;
+    artifact_places::goes(
+        place,
+        &artifact_places::Project {
+            root: held.root(),
+            chats: held.chats(),
+        },
+    )
 }
 
 /// Opens `url` in the system browser; in a scenario test's build, notes it instead.
@@ -388,7 +450,33 @@ mod tests {
                 "{href}"
             );
         }
-        assert!(refused("purlis://workspace/alpha").contains("does not follow its own links"));
+    }
+
+    #[test]
+    fn a_purlis_link_written_in_the_page_goes_to_its_place() {
+        assert_eq!(
+            classify(OWN, "purlis://workspace/alpha", true),
+            Some(Link::Place(places::Place::Workspace {
+                workspace: "alpha".into()
+            }))
+        );
+        assert_eq!(
+            classify(OWN, "purlis://todo/alpha/fix-login", true),
+            Some(Link::Place(places::Place::Todo {
+                workspace: "alpha".into(),
+                todo: "fix-login".into()
+            }))
+        );
+    }
+
+    #[test]
+    fn a_purlis_link_naming_an_action_or_made_by_the_page_s_script_is_refused() {
+        assert!(refused("purlis://run/regenerate").contains("`run` is none of them"));
+        assert!(refused("purlis://todo/alpha/fix-login/done").contains("(`done`)"));
+        assert!(matches!(
+            classify(OWN, "purlis://workspace/alpha", false),
+            Some(Link::Refused(why)) if why.contains("its script made this one")
+        ));
     }
 
     #[test]

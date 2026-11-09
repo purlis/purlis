@@ -1146,6 +1146,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     "artifact_regenerate_about",
     "artifact_regenerate_approve",
     "artifact_regenerate",
+    // History (#5966): an artifact as of a version, in a webview of the window's own, and two
+    // versions compared. Only the window opens one.
+    "artifact_history",
+    "artifact_open_as_of",
+    "artifact_compare",
     // Opening a link an artifact's page followed (#5956, ADR 0120 §5): the person's answer in
     // their own window, to what that window's artifact reported.
     "artifact_link_open",

@@ -151,7 +151,14 @@ use crate::skills::grade;
 ///   (`output`, as text) and its exit `status` ([`Executor::check`]). Its answer is not a line of
 ///   JSON but what the program prints on stdout, SARIF 2.1.0, and its exit status, read whole as a
 ///   command's are.
-pub const PROTOCOL: u32 = 6;
+/// - **7** (#5971, ADR 0120 §9) — a query's question: `query`, holding the query's `name`, the
+///   `workspace` it reads (`null` for a plane-scoped one) and its `params`, answered `data` and,
+///   when there is a next page, `cursor` ([`Executor::query`]).
+/// - **8** (#5973, ADR 0120 §9) — no request or answer changes: it is the version a manifest names
+///   to declare `contributes.artifacts`, templates purlis reads from the extension's own folder
+///   and never asks its program about ([`crate::extension::artifacts`]). A program that declares
+///   them is asked everything else in 7's words.
+pub const PROTOCOL: u32 = 8;
 
 /// The most of a check's output a Check reporter is handed (#5410). A check's output is a log,
 /// and past this it is one no converter needs whole: refused rather than cut, since a cut log
@@ -246,6 +253,9 @@ pub fn how_it_runs(manifest: &extension::Manifest) -> String {
     }
     if manifest.studio.is_some() {
         when.push("when the Skill studio asks it about a skill".to_owned());
+    }
+    if !manifest.queries.is_empty() {
+        when.push("when an artifact's page reads one of its queries".to_owned());
     }
     if manifest.reports_checks() {
         when.push(format!(
@@ -375,6 +385,14 @@ enum Asked<'a> {
     /// *Turn this check's output into SARIF* (protocol 6, #5410): what it printed, and its exit
     /// status.
     Check { output: &'a str, status: i32 },
+    /// *Answer query `<name>`* (protocol 7, #5971): the workspace it reads, none for a
+    /// plane-scoped one, and its parameters, checked. Waits its turn behind a question in
+    /// flight, as an event does: two pages' queries of one extension are not a double click.
+    Query {
+        name: &'a str,
+        workspace: Option<&'a str>,
+        params: &'a serde_json::Map<String, serde_json::Value>,
+    },
     /// A studio question (protocol 3, ADR 0101). Waits its turn behind a question in flight, as
     /// an event does: the studio asks several things of one extension at once. `until` is when
     /// its answer must be in by, its wait and its start inside it, where its asker holds a
@@ -423,6 +441,15 @@ pub(crate) trait Talk {
 /// program has yet to answer.
 #[cfg(unix)]
 const LOOK_FOR_A_STOP: Duration = Duration::from_millis(100);
+
+/// Why a query's question gave no data ([`Executor::query`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum QueryFailed {
+    /// It was not answered within the deadline, its wait for its turn included.
+    Late(String),
+    /// Anything else, said as every refusal is.
+    Failed(String),
+}
 
 /// What telling an extension about an event came back with ([`Executor::tell`]).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -638,6 +665,62 @@ impl Executor {
             |_| serde_json::Value::Null,
         )
         .map(|put| put.section.unwrap_or_default())
+    }
+
+    /// **Ask `extension`'s program to answer its query `name`** (protocol 7, ADR 0120 §9, #5971),
+    /// or say why charter did not: the same gate, bounds and watch on the plane every question
+    /// takes. Refused for a query the extension does not declare under the `queries`
+    /// capability. `workspace` is the one it reads, none for a plane-scoped query, and `params`
+    /// are already checked against what it declares it takes
+    /// ([`crate::extension::queries::ask`]).
+    ///
+    /// `Ok` is the answer's `data` and its `cursor`, when it has one; what the data holds is the
+    /// page's to read, as the query's `result` describes it. A question not answered within the
+    /// deadline, its wait for its turn included, is [`QueryFailed::Late`].
+    pub fn query(
+        &self,
+        config_root: &Path,
+        project: &extension::project::Choices,
+        extension: &str,
+        name: &str,
+        workspace: Option<&str>,
+        params: &serde_json::Map<String, serde_json::Value>,
+    ) -> Result<(serde_json::Value, Option<String>), QueryFailed> {
+        let began = Instant::now();
+        let reply = self
+            .put(
+                config_root,
+                project,
+                extension,
+                Asked::Query {
+                    name,
+                    workspace,
+                    params,
+                },
+                |_| serde_json::Value::Null,
+            )
+            .map_err(|why| {
+                if began.elapsed() >= self.deadline {
+                    QueryFailed::Late(why)
+                } else {
+                    QueryFailed::Failed(why)
+                }
+            })?
+            .reply
+            .unwrap_or_default();
+        let data = reply.get("data").cloned().ok_or_else(|| {
+            QueryFailed::Failed(format!("'{extension}' answered its query with no 'data'"))
+        })?;
+        let cursor = match reply.get("cursor") {
+            None | Some(serde_json::Value::Null) => None,
+            Some(serde_json::Value::String(cursor)) => Some(cursor.clone()),
+            Some(_) => {
+                return Err(QueryFailed::Failed(format!(
+                    "'{extension}' answered a 'cursor' that is not text"
+                )));
+            }
+        };
+        Ok((data, cursor))
     }
 
     /// Ask `extension`'s program about `view`, or say why charter will not.
@@ -964,6 +1047,18 @@ impl Executor {
                 }
                 (None, None)
             }
+            Asked::Query { name, .. } => {
+                if !declared
+                    .capabilities
+                    .contains(&extension::Capability::Queries)
+                    || !declared.queries.iter().any(|query| query.name == name)
+                {
+                    return Err(format!(
+                        "'{extension}' declares no query {name:?}, so purlis does not ask it"
+                    ));
+                }
+                (None, None)
+            }
             Asked::Briefing(_) => {
                 if declared.briefing.is_none() {
                     return Err(format!(
@@ -1022,7 +1117,7 @@ impl Executor {
         // one that says it only reads — so that anything it changes is reported.
         let may_write: &[String] = match (&commanded, asked) {
             (Some(command), _) if !command.writes => &[],
-            (None, Asked::Check { .. }) => &[],
+            (None, Asked::Check { .. } | Asked::Query { .. }) => &[],
             _ => &declared.writes,
         };
         let writes = match project.plane() {
@@ -1090,7 +1185,7 @@ impl Executor {
             },
         };
         let _held = match asked {
-            Asked::Event(_) | Asked::Studio { .. } => self.hold_within(
+            Asked::Event(_) | Asked::Studio { .. } | Asked::Query { .. } => self.hold_within(
                 extension,
                 bound
                     .until
@@ -1173,6 +1268,21 @@ impl Executor {
             // Every key but `charter` and `error` is the question's own answer, read against its
             // closed shape by `extension::studio`, which refuses a key it does not know.
             let reply = reply_open(extension, &line, protocol).map_err(with_report)?;
+            return Ok(Put {
+                blocks: None,
+                reply: Some(reply),
+                section: None,
+                whole: None,
+                gate,
+                round_trip,
+                overreach,
+                actions: found.manifest.actions.clone(),
+                offer: None,
+            });
+        }
+        if let Asked::Query { .. } = asked {
+            let reply =
+                reply_of(extension, &line, protocol, &["data", "cursor"]).map_err(with_report)?;
             return Ok(Put {
                 blocks: None,
                 reply: Some(reply),
@@ -2546,6 +2656,22 @@ fn request_line(
         }
         Asked::Briefing(chat) => {
             doc.insert("briefing".into(), chat.clone());
+        }
+        // A query is its name, the workspace it reads and its parameters, and nothing more of
+        // the plane: an extension that wants more reads it, as it runs as the operator (#5971).
+        Asked::Query {
+            name,
+            workspace,
+            params,
+        } => {
+            doc.insert(
+                "query".into(),
+                serde_json::json!({
+                    "name": name,
+                    "workspace": workspace,
+                    "params": params,
+                }),
+            );
         }
         // A studio question is its capability and its `ask`, which carries what purlis hands it
         // of a skill: nothing of the project is a path it is handed (ADR 0101 §2).

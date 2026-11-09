@@ -1,8 +1,10 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import type { Offer } from "./actions";
+import { placeOffer, type Goes } from "./artifactPlaces";
 import { commands } from "./bindings";
 import { CodeBlock } from "./ui/code/CodeBlock";
 import { Dialog } from "./ui/dialog/Dialog";
@@ -15,27 +17,49 @@ import { Dialog } from "./ui/dialog/Dialog";
  * always open), or asks here. The question shows the host and the whole address, and offers
  * Open and Always open; what opens is what the page reported, held by the core, never an
  * address this window names. A refused link says why.
+ *
+ * A `purlis://` link (#5967) asks nothing: the core has read it into a place in purlis and
+ * checked it is there, and the window goes to it by its own row ({@link placeOffer}), which only
+ * navigates.
  */
 
 /** What the window hears when a person follows a link in an artifact's page. */
 export const ARTIFACT_LINK = "artifact-link";
 
-/** The link to ask about (its whole address and host), or the sentence that refused it. */
+/** The link to ask about (its whole address and host), the place in purlis to go to, or the
+ *  sentence that refused it. */
 export type ArtifactLinkFollowed = {
   label: string;
   url: string | null;
   host: string | null;
   refused: string | null;
+  goes?: Goes | null;
 };
 
-/** **The link question for artifact webview `label`'s page**: nothing until it follows one. */
-export function ArtifactLinks({ label }: { label: string }) {
+/**
+ * **The link question for artifact webview `label`'s page**: nothing until it follows one.
+ * `onPress` runs the row a link into purlis goes by, as the palette runs one.
+ */
+export function ArtifactLinks({
+  label,
+  onPress,
+}: {
+  label: string;
+  onPress?: (offer: Offer) => void;
+}) {
   const [link, setLink] = useState<ArtifactLinkFollowed | null>(null);
+  const press = useRef(onPress);
+  useEffect(() => {
+    press.current = onPress;
+  }, [onPress]);
   useEffect(() => {
     let stop: (() => void) | undefined;
     let gone = false;
     listen<ArtifactLinkFollowed>(ARTIFACT_LINK, (event) => {
-      if (event.payload.label === label) setLink(event.payload);
+      if (event.payload.label !== label) return;
+      const goes = event.payload.goes;
+      if (goes !== null && goes !== undefined) press.current?.(placeOffer(goes));
+      else setLink(event.payload);
     }).then(
       (unlisten) => {
         if (gone) unlisten();

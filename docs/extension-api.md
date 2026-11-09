@@ -226,3 +226,86 @@ stderr. Each tool the SARIF names replaces that tool's earlier results for the b
 kept as the reporter's fault, which the review draws as a Notice naming the extension. The results
 recorded before stay, and its next answer that is recorded takes the fault away. The probe that
 proves all of this is `crates/check-probe`.
+
+## Queries (protocol 7)
+
+**`queries` answers an artifact's page reading the extension's data** (ADR 0120 §9, #5971). It is
+known on every purlis, and an extension that declares it is watched, not confined. It needs a
+program (`runs`) and `version` 7, and declares each query under `contributes.queries`:
+
+```json
+{
+  "version": 7,
+  "id": "slack",
+  "name": "Slack",
+  "capabilities": ["queries"],
+  "state": "state",
+  "contributes": {
+    "runs": "bin/slack",
+    "queries": [
+      {
+        "name": "unread",
+        "description": "Unread messages in the workspace's channels.",
+        "scope": "workspace",
+        "fresh_seconds": 60,
+        "parameters": { "type": "object", "properties": { "channel": { "type": "string" } } },
+        "result": { "type": "object" },
+        "widens": { "channel": "a channel the workspace does not follow" }
+      }
+    ]
+  }
+}
+```
+
+A page reads it as `slack.unread@1`. **The question** is one JSON line; `workspace` is `null` for
+a plane-scoped query, and `params` hold only what the query declares, of its types:
+
+```json
+{ "charter": 7, "extension": "slack", "query": { "name": "unread", "workspace": "alpha", "params": { "channel": "eng" } }, "writes": [] }
+```
+
+**The answer** is `{ "charter": 7, "data": … }`, with `"cursor": "<text>"` when there is a next
+page, or an `error`. It has 5 seconds; a late one is the page's `timeout`.
+
+**An answer left in the facts file is used without starting the program** while it is younger
+than `fresh_seconds`, for a query asked with no parameters: `<state>/facts.json` holds
+`{"workspaces": {"<ws>": {"queries": {"<name>": {"data": …, "at": <unix seconds>}}}}}`, and
+`{"queries": {"<name>": …}}` for a plane-scoped query. A page subscribed to the query is asked
+again each `fresh_seconds`. The probe that proves this is `query-probe`, the extension probe's
+second manifest.
+
+## Artifact templates (protocol 8)
+
+**`artifacts` ships pages a person may pin to a workspace** (ADR 0120 §9, #5973). It is known on
+every purlis, needs `version` 8 and no program, and declares at most 8 templates under
+`contributes.artifacts`, each a folder inside the extension holding its `index.html`:
+
+```json
+{
+  "version": 8,
+  "id": "slack",
+  "name": "Slack",
+  "capabilities": ["artifacts", "queries"],
+  "contributes": {
+    "runs": "bin/slack",
+    "artifacts": [
+      { "name": "inbox", "title": "Slack inbox", "folder": "artifacts/inbox", "icon": "mail" }
+    ],
+    "queries": [ … ]
+  }
+}
+```
+
+`name` is the template's id after `slack.`; `title` is what the pin is called unless the person
+names it; `icon`, one of purlis's icons, is optional. **purlis asks the program nothing about a
+template**: protocol 8 changes no question or answer, and an extension that also answers queries
+is asked them as in protocol 7.
+
+`purlis artifact templates` lists what this machine's approved extensions offer the workspace, and
+`purlis artifact pin --template slack.inbox` **copies the template into the workspace's
+`artifacts/slack.inbox/` and pins it there** as any page is pinned: refused when it is over the size
+cap or holds something shaped like a secret, never written over a folder already there, and its
+script approved by each person on their own machine. Its data files are not copied. From then on
+it is the workspace's page, shared with it; a teammate without the extension sees it with
+`needs-extension` where its queries' data would be. **Not on Windows**, where purlis starts no
+extension. The probe that proves this is `artifact-probe`, the extension probe's third manifest.

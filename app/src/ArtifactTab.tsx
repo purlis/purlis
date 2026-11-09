@@ -8,6 +8,7 @@ import {
   commands,
   type ArtifactAbout,
   type ArtifactOpened,
+  type ArtifactOpenedAsOf,
   type ArtifactPlace,
   type ArtifactTheme,
   type PlaneId,
@@ -24,6 +25,7 @@ import {
   type ArtifactApprovalChanged,
   type ArtifactKeyPressed,
 } from "./artifacts";
+import { ArtifactHistory, AsOfStanding, openAsOf, type AsOf } from "./ArtifactHistory";
 import { ArtifactLinks } from "./ArtifactLinks";
 import { ArtifactOffers } from "./ArtifactOffers";
 import type { Offer } from "./actions";
@@ -112,6 +114,13 @@ export function ArtifactTab({
   const approvals = useApprovalsHeard(workspace, folder);
   const template = useViewChanged([plane], templateOf(workspace, folder));
   const data = useViewChanged([plane], artifactDataIn(workspace, folder));
+  // Shown as of a version from its History (#5966): nothing on it reloads or runs live.
+  const [asOf, setAsOf] = useState<AsOf | null>(null);
+  const [then, setThen] = useState<ArtifactOpenedAsOf | null>(null);
+  const showAsOf = (to: AsOf | null) => {
+    setThen(null);
+    setAsOf(to);
+  };
   return (
     <section
       className="view-pane view-alone artifact-tab"
@@ -140,12 +149,22 @@ export function ArtifactTab({
             Not generated on this machine
           </span>
         )}
+        {asOf === null ? null : <AsOfStanding then={then} onBack={() => showAsOf(null)} />}
         <ArtifactRegenerate plane={plane} workspace={workspace} folder={folder} name={name} />
+        {missing === undefined || missing === null ? (
+          <ArtifactHistory
+            plane={plane}
+            workspace={workspace}
+            folder={folder}
+            name={name}
+            onAsOf={showAsOf}
+          />
+        ) : null}
         {!unpinned && about.said?.missing === null && about.said.too_large === null ? (
           <DiscussButton plane={plane} workspace={workspace} folder={folder} />
         ) : null}
       </header>
-      {opened === null ? null : <ArtifactLinks label={opened.label} />}
+      {opened === null ? null : <ArtifactLinks label={opened.label} onPress={onPress} />}
       {unpinned ? (
         <EmptyState
           headline={`${name} is unpinned`}
@@ -183,11 +202,15 @@ export function ArtifactTab({
       ) : about.said === undefined ? null : (
         <div className="artifact-edge" data-standing={edgeOf(opened)} data-testid="artifact-edge">
           <ArtifactFrame
-            key={`${approvals}:${template}`}
+            key={asOf === null ? `${approvals}:${template}` : `as-of:${asOf.id}`}
             name={name}
-            opens={`${plane}\u0000${workspace}\u0000${folder}`}
-            open={(first, theme) => commands.artifactOpen(plane, workspace, folder, first, theme)}
-            dataChanged={data}
+            opens={`${plane}\u0000${workspace}\u0000${folder}\u0000${asOf?.id ?? ""}`}
+            open={
+              asOf === null
+                ? (first, theme) => commands.artifactOpen(plane, workspace, folder, first, theme)
+                : openAsOf(plane, workspace, folder, asOf, setThen)
+            }
+            dataChanged={asOf === null ? data : 0}
             onOpened={setOpened}
             wayOut={remedies}
           />
@@ -249,6 +272,8 @@ function standingSaid(opened: ArtifactOpened): string | null {
       return `${opened.changed_by ?? "Someone"} changed its pin since you approved it, so it is shown without its script`;
     case "not-here":
       return "Shown without its script: scripted artifacts do not run on this system yet";
+    case "as-of":
+      return "This version's script is not the one you approved, so it is shown without it";
     default:
       return null;
   }

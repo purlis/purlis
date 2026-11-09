@@ -65,7 +65,7 @@ export function OffersDrawn({
     <>
       <span role="group" aria-label={`Offered by ${name}`} className="artifact-bar-offers">
         {drawn.map((one) => (
-          <Drawn
+          <OfferButton
             key={one.key}
             one={one}
             onPress={(offer, asks) =>
@@ -91,7 +91,7 @@ export function OffersDrawn({
 }
 
 /** One offer, as a button in the catalogue's words, or the sentence that refused it. */
-function Drawn({
+function OfferButton({
   one,
   onPress,
 }: {

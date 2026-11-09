@@ -8983,6 +8983,19 @@ nav.piece-files-head {
   white-space: pre-wrap;
 }
 
+/* An artifact's History (#5966): its two pickers side by side, and what a comparison found. */
+.artifact-history-picks {
+  display: flex;
+  gap: var(--space-2);
+  margin-block-start: var(--space-2);
+}
+
+.artifact-history-changes {
+  margin: var(--space-1) 0 var(--space-2);
+  padding-inline-start: var(--space-4);
+  overflow-wrap: anywhere;
+}
+
 /* **The frame's edge, which the page cannot draw** (#5959, ADR 0120 §3): around the frame the
    page's webview is laid over, so it stays outside the page. Its colour is where the page's
    script stands: none or not run, asking, or approved and running. */
