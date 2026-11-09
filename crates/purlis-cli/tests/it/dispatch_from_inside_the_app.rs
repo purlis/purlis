@@ -1878,7 +1878,8 @@ fn an_app_answering_another_question_is_an_internal_failure_that_layer_one_draft
             text(&out.stderr)
         );
         let caught = drafted(args, &out).expect("layer 1 drafts it");
-        assert_eq!(caught.call, format!("purlis {}", args.join(" ")));
+        // Named by its command words alone, never its arguments (caught.rs).
+        assert_eq!(caught.call, format!("purlis {}", args[..2].join(" ")));
     }
 
     let usage = ["dispatch", "tell", "--all", "one", "two"];
