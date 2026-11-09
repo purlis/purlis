@@ -8,7 +8,6 @@
   carries on a rebase, cherry-pick or revert.
 - **A Claude Code chat starts only where its sandbox can hold every repository.** It is not
   started where a repository's path has `*`, `?`, `[` or `]`, or where a folder outside the
-  repositories holds more than purlis looks through; the refusal names the folder. On Linux its
-  own tools never read another process's environment or open files under `/proc`.
+  repositories holds more than purlis looks through; the refusal names the folder.
 - **No grant reaches the system's name lookup** by Linux's system message bus,
   `com.apple.mDNSResponder`, or port 53 or 853.
