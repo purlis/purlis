@@ -7237,6 +7237,47 @@ fn a_piece_of_own_work_is_recorded_as_its_tool_starts_it_and_the_turn_s_end_corr
 }
 
 #[test]
+fn a_shell_or_monitor_its_tool_starts_has_its_host_note_the_chat_s_strays_and_nothing_else_does_5806()
+ {
+    use purlis_core::hookwire::Output;
+    use purlis_core::ownwork::pieces::{Kind, Piece};
+    let host = Pretend::default();
+    let chats = Chats::on_host(Box::new(|_| {}), Box::new(host.clone()), no_project());
+    let session = chats
+        .start(&chat("/bin/sh", "c", None), SIZE)
+        .expect("starts");
+    let started = |kind, id: &str| {
+        chats.heard_own_output(&said_of_its_own(
+            session,
+            Output::OwnWorkStarted {
+                piece: Piece::new(kind, id, "npm test").expect("a piece"),
+            },
+        ));
+    };
+
+    started(Kind::Shell, "b1");
+    started(Kind::Monitor, "m1");
+    // A helper, a workflow or a wake-up is the harness's own, in its own process: nothing
+    // of it leaves the harness's group.
+    started(Kind::Subagent, "a1");
+    started(Kind::WakeUp, "w1");
+
+    let noted: Vec<String> = host
+        .terminal()
+        .into_iter()
+        .filter(|said| said.starts_with("noted strays"))
+        .collect();
+    assert_eq!(
+        noted,
+        vec![
+            format!("noted strays {session}"),
+            format!("noted strays {session}")
+        ]
+    );
+    chats.close(session).expect("closed");
+}
+
+#[test]
 fn a_turn_under_way_is_recorded_from_its_prompt_to_its_end_and_clear_forgets_everything_5750() {
     use purlis_core::hookwire::{Conversation, Output, Report};
     use purlis_core::state::{Detail, Event, Started};
