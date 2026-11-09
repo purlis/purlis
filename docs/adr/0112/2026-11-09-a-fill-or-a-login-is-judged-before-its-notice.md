@@ -17,8 +17,14 @@ written or granted, and before a site the person typed is followed, so a link ma
 waits is seen there. Allow once, this chat or Always then allows nothing, writes no line and grants
 no vault, and the person reads on the notice that nothing was allowed and why, told to them as
 "you". The notice stays up, as it does for every press refused, so what it says is read: Keep
-blocked ends it, or its time runs out and the chat hears that nobody answered, a runner chat on its
-next turn. A refused press is never told to a chat as an Allow.
+blocked ends it, or its time runs out and the chat hears that nobody answered, a runner chat's
+login on the chat's next turn. A refused press is never told to a chat as an Allow.
+
+A chat that suggests a fill or a login from a vault its persona may not use yet hears at once, and
+without the person, whether the key it named is a link into a vault it may not use, where before
+it heard so only after the person allowed it. It names the key and the vault itself, and hears no
+other vault's name and no value (D-5246-8), so this is taken as the cost of never asking the person
+to allow what can only be refused.
 
 The read is judged as before, before and after it, so this adds a refusal earlier for a key the
 read would refuse, and takes none away. A chat on no persona hears that it runs as no persona, as at

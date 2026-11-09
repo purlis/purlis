@@ -1440,3 +1440,30 @@ fn a_narrowed_chats_login_is_refused_a_link_its_started_persona_may_not_read() {
 
     says_out_of_reach(&refused);
 }
+
+/// A site the person typed is never followed for a login refused at the press (#5831): purlis
+/// opens no browser to find its form, and the person reads why.
+#[test]
+fn a_typed_site_is_not_followed_for_a_login_linked_out_of_reach_while_its_notice_waits() {
+    let dir = project("[sandbox]\nmode = \"on\"\n");
+    let root = dir.path();
+    let grants = Grants::default();
+    let (id, proposal, heard) = raised(root, &grants, "https://shop.example.test/login");
+    linked_out_of_reach(root);
+    let digest = proposal.digest();
+    let asked = Asked {
+        typed: Some("app.example.test"),
+        ..press(id, Press::Once, &digest)
+    };
+
+    let said = answered_finding(root, &grants, &Audited::default(), &asked, &|_| {
+        panic!("no site is followed for a login refused")
+    })
+    .map(|_| ())
+    .expect_err("refused");
+
+    assert!(said.starts_with("Nothing was allowed: "), "{said}");
+    says_out_of_reach(&said);
+    assert_eq!(grants.waiting().len(), 1, "the notice stays");
+    assert!(heard.try_recv().is_err(), "the chat still waits");
+}

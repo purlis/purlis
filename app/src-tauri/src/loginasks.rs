@@ -804,7 +804,7 @@ fn judged(
         Some(declared) if proposal.is_where(declared) => return Ok(None),
         Some(declared) => proposal.replacing(root, declared, held)?,
     };
-    finish(root, &locks, proposal, reads_as).map(Some)
+    finish(root, &locks, proposal, reads_as, str::to_owned).map(Some)
 }
 
 /// **Why `persona`, whose vaults the chat reads, may read neither the login's user key nor its
@@ -824,19 +824,21 @@ fn out_of_reach(
 }
 
 /// What the person is offered on `proposal`, under `locks`, for a chat whose vaults are
-/// `reads_as`'s.
+/// `reads_as`'s; a key out of reach refused in the words `out_of_reach_said` makes of the read's.
 fn finish(
     root: &Path,
     locks: &Locks,
     proposal: Proposal,
     reads_as: &str,
+    out_of_reach_said: fn(&str) -> String,
 ) -> Result<Judged, String> {
     let ctx = Ctx::new(root, Env::from_process());
     let doc = purlis_core::secrets::registry::load_registry(&ctx)
         .map_err(|why| why.message.to_string())?;
     purlis_core::secrets::registry::vault_in(&doc, &proposal.vault)
         .map_err(|why| why.message.to_string())?;
-    // Judged again as it is drawn or pressed: a link made while the notice waits is seen.
+    // Judged again as it is drawn or pressed: a link made while the notice waits is seen, and said
+    // as its reader is told it, the chat as it is raised and the person as they press.
     if let Some(why) = out_of_reach(
         &ctx,
         reads_as,
@@ -844,7 +846,7 @@ fn finish(
         proposal.user_key.as_deref(),
         &proposal.key,
     ) {
-        return Err(why);
+        return Err(out_of_reach_said(&why));
     }
     let vault_too = brokered::not_tagged(&ctx, Some(&proposal.persona), &proposal.vault).is_some();
     let mut proposal = proposal;
@@ -982,8 +984,6 @@ pub fn answer(
             if wait.proposal.digest() != shown {
                 return Err(CHANGED.to_owned());
             }
-            // Nothing is followed in a browser for a login refused (#5831).
-            refused_out_of_reach(root, &wait)?;
             Some(wait.proposal.at(root, typed, finds, &grants.held())?)
         }
     };
@@ -1062,9 +1062,14 @@ pub fn answer(
             fresh.replacing(root, &declared, &grants.held())?
         }
     };
-    // A link made since the judge above is refused by `finish`, and told the person as above.
-    let judged = finish(root, &locks, fresh, &wait.reads_as)
-        .map_err(|why| refused_out_of_reach(root, &wait).err().unwrap_or(why))?;
+    // A link made since the judge above is refused by `finish`, in the person's words as above.
+    let judged = finish(
+        root,
+        &locks,
+        fresh,
+        &wait.reads_as,
+        refused_at_the_press_said,
+    )?;
     let changed = judged.proposal.digest() != wait.proposal.digest();
     // Always writes a line, and the line is shown before it's written. A warning the notice
     // didn't show is shown before a press counts; one it showed was read.
