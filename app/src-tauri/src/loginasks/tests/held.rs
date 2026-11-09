@@ -109,9 +109,20 @@ impl Project {
     fn raised(&self, chat: u32) -> (u32, mpsc::Receiver<Heard>) {
         let root = self.held.root();
         let site = suggested("https://shop.example.test/");
-        let judged = super::super::judged(root, "qa", "shop-login", &site, &on_its_page, None, &[])
-            .expect("asked")
-            .expect("an ask");
+        let judged = super::super::judged(
+            root,
+            Whose {
+                grants: "qa",
+                reads_as: "qa",
+            },
+            "shop-login",
+            &site,
+            &on_its_page,
+            None,
+            &[],
+        )
+        .expect("asked")
+        .expect("an ask");
         self.held
             .login_grants()
             .raise(LoginWait {
@@ -123,6 +134,7 @@ impl Project {
                 vault_too: judged.vault_too,
                 no_always: judged.no_always,
                 pool: Some("ci".to_owned()),
+                reads_as: "qa".to_owned(),
             })
             .expect("raised")
     }

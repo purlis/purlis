@@ -58,8 +58,19 @@ fn judged(
     suggested: &Suggested,
     held: &[Tool],
 ) -> Result<Judged, String> {
-    super::judged(root, persona, login, suggested, &on_its_page, None, held)
-        .map(|judged| judged.expect("an undeclared login is asked about"))
+    super::judged(
+        root,
+        Whose {
+            grants: persona,
+            reads_as: persona,
+        },
+        login,
+        suggested,
+        &on_its_page,
+        None,
+        held,
+    )
+    .map(|judged| judged.expect("an undeclared login is asked about"))
 }
 
 fn raised(root: &Path, grants: &Grants, site: &str) -> (u32, Proposal, mpsc::Receiver<Heard>) {
@@ -73,9 +84,20 @@ fn raised_finding(
     site: &str,
     finds: FindsForm<'_>,
 ) -> (u32, Proposal, mpsc::Receiver<Heard>) {
-    let judged = super::judged(root, "qa", "shop-login", &suggested(site), finds, None, &[])
-        .expect("asked")
-        .expect("an ask");
+    let judged = super::judged(
+        root,
+        Whose {
+            grants: "qa",
+            reads_as: "qa",
+        },
+        "shop-login",
+        &suggested(site),
+        finds,
+        None,
+        &[],
+    )
+    .expect("asked")
+    .expect("an ask");
     let proposal = judged.proposal.clone();
     let (id, heard) = grants
         .raise(LoginWait {
@@ -87,6 +109,7 @@ fn raised_finding(
             vault_too: judged.vault_too,
             no_always: judged.no_always,
             pool: None,
+            reads_as: "qa".to_owned(),
         })
         .expect("raised");
     (id, proposal, heard)
@@ -264,6 +287,7 @@ fn a_second_call_never_replaces_the_proposal_shown() {
         vault_too: false,
         no_always: None,
         pool: None,
+        reads_as: "qa".to_owned(),
     });
     assert!(refused.is_err());
     assert_eq!(grants.waiting()[0].proposal, proposal);
@@ -358,6 +382,7 @@ fn a_warning_that_came_up_while_the_notice_was_drawn_is_drawn_before_a_press_cou
             vault_too: false,
             no_always: None,
             pool: None,
+            reads_as: "qa".to_owned(),
         })
         .expect("raised");
     assert!(grants.allow(other_id, "qa", other, true));
@@ -691,7 +716,10 @@ fn a_page_that_cant_be_followed_to_its_form_is_never_asked_about() {
     let dir = project("");
     let refused = super::judged(
         dir.path(),
-        "qa",
+        Whose {
+            grants: "qa",
+            reads_as: "qa",
+        },
         "shop-login",
         &suggested("https://app.example.test/"),
         &|_| Ok("http://auth.example.test/login".to_owned()),
@@ -795,7 +823,10 @@ fn declared_shop(root: &Path) -> Tool {
 fn raised_replacing(root: &Path, grants: &Grants) -> (u32, Proposal, mpsc::Receiver<Heard>) {
     let judged = super::judged(
         root,
-        "qa",
+        Whose {
+            grants: "qa",
+            reads_as: "qa",
+        },
         "shop-login",
         &suggested("https://app.example.test/"),
         &on_auth,
@@ -815,6 +846,7 @@ fn raised_replacing(root: &Path, grants: &Grants) -> (u32, Proposal, mpsc::Recei
             vault_too: judged.vault_too,
             no_always: judged.no_always,
             pool: None,
+            reads_as: "qa".to_owned(),
         })
         .expect("raised");
     (id, proposal, heard)
@@ -825,7 +857,10 @@ fn a_call_naming_the_site_a_login_has_is_no_ask() {
     let dir = recorded();
     let judged = super::judged(
         dir.path(),
-        "qa",
+        Whose {
+            grants: "qa",
+            reads_as: "qa",
+        },
         "shop-login",
         &suggested("https://app.example.test/"),
         &on_its_page,
@@ -996,7 +1031,10 @@ fn a_declared_login_is_judged_before_any_page_is_followed() {
     let declared = declared_shop(dir.path());
     let same = super::judged(
         dir.path(),
-        "qa",
+        Whose {
+            grants: "qa",
+            reads_as: "qa",
+        },
         "shop-login",
         &suggested("https://app.example.test/"),
         &finds,
@@ -1011,7 +1049,10 @@ fn a_declared_login_is_judged_before_any_page_is_followed() {
     };
     let refused = super::judged(
         dir.path(),
-        "qa",
+        Whose {
+            grants: "qa",
+            reads_as: "qa",
+        },
         "shop-login",
         &other_key,
         &finds,
@@ -1030,7 +1071,10 @@ fn a_declared_login_on_its_own_page_fills_as_declared_where_the_page_cant_be_fol
     let dir = recorded();
     let judged = super::judged(
         dir.path(),
-        "qa",
+        Whose {
+            grants: "qa",
+            reads_as: "qa",
+        },
         "shop-login",
         &suggested("https://app.example.test/"),
         &|_| Err("no login form appeared".to_owned()),
@@ -1194,7 +1238,10 @@ fn a_login_with_a_key_out_of_reach_is_refused_before_its_notice() {
 
     let refused = super::judged(
         dir.path(),
-        "qa",
+        Whose {
+            grants: "qa",
+            reads_as: "qa",
+        },
         "shop-login",
         &suggested("https://shop.example.test/login"),
         &|_| panic!("no page is followed for a login that is refused"),
@@ -1207,32 +1254,142 @@ fn a_login_with_a_key_out_of_reach_is_refused_before_its_notice() {
     says_out_of_reach(&refused);
 }
 
-/// A link made while the notice waits is judged at the press: Always writes no line and grants
-/// nothing for a login whose read would be refused.
+/// A link made while the notice waits is judged at the press: Always is allowed nothing, writes
+/// no line, and grants qa none of the vault it would have, and the chat hears the read's words.
 #[test]
 fn a_login_linked_out_of_reach_while_its_notice_waits_is_refused_at_the_press() {
     let dir = project("[sandbox]\nmode = \"on\"\n");
+    let root = dir.path();
+    std::fs::write(root.join("p.json"), r#"{"username":"u"}"#).expect("vault prod");
     let grants = Grants::default();
-    let (id, proposal, heard) = raised(dir.path(), &grants, "https://shop.example.test/login");
-    linked_out_of_reach(dir.path());
-    let before = file_of(dir.path());
+    let from_prod = Suggested {
+        vault: "prod".to_owned(),
+        ..suggested("https://shop.example.test/login")
+    };
+    let judged = super::judged(
+        root,
+        Whose {
+            grants: "qa",
+            reads_as: "qa",
+        },
+        "shop-login",
+        &from_prod,
+        &on_its_page,
+        None,
+        &[],
+    )
+    .expect("asked")
+    .expect("an ask");
+    assert!(judged.vault_too, "Always would grant qa vault prod");
+    let proposal = judged.proposal.clone();
+    let (id, heard) = grants
+        .raise(LoginWait {
+            id: 0,
+            session: 7,
+            chat: CHAT_7.map(str::to_owned),
+            proposal: judged.proposal,
+            since: 1,
+            vault_too: judged.vault_too,
+            no_always: judged.no_always,
+            pool: None,
+            reads_as: "qa".to_owned(),
+        })
+        .expect("raised");
+    // While it waits, prod's password is linked into vault `ops-only`, which qa may not use.
+    std::fs::write(
+        root.join("vaults.json"),
+        r#"{"vaults":{
+            "qa":{"provider":"plain-file","config":{"file":"q.json"},"persona":"qa"},
+            "prod":{"provider":"plain-file","config":{"file":"p.json"},"persona":"ops"},
+            "ops-only":{"provider":"plain-file","config":{"file":"x.json"},"persona":"ops"}
+        }}"#,
+    )
+    .expect("a registry");
+    std::fs::write(root.join("x.json"), r#"{"password":"n0t-yours"}"#).expect("ops-only");
+    let ctx = Ctx::new(root, Env::from_process());
+    let prod = purlis_core::secrets::cmd::provider(&ctx, "prod").expect("vault prod");
+    purlis_core::secrets::links::link(&ctx, &prod, "password", "ops-only", "password")
+        .expect("linked");
+    let before = file_of(root);
     let audited = Audited::default();
 
-    let refused = answered(
-        dir.path(),
+    let pressed = answered(
+        root,
         &grants,
         &audited,
         &press(id, Press::Always, &proposal.digest()),
+    )
+    .expect("answered");
+
+    let Pressed::Done { said } = pressed else {
+        panic!("refused, not drawn again: {pressed:?}");
+    };
+    assert!(said.starts_with("Nothing was allowed: "), "{said}");
+    assert!(
+        said.contains("password in vault prod reads an entry of a vault qa may not use"),
+        "{said}"
+    );
+    let Ok(Heard::Refused(told)) = heard.try_recv() else {
+        panic!("the chat hears the refusal");
+    };
+    assert!(told.contains("password in vault prod"), "{told}");
+    for words in [&said, &told] {
+        assert!(!words.contains("ops-only"), "names no other vault: {words}");
+        assert!(!words.contains("n0t-yours"), "never the value: {words}");
+    }
+    assert_eq!(file_of(root), before, "no line written");
+    assert!(tool_of(&grants, "shop-login").is_none(), "nothing allowed");
+    assert!(
+        purlis_core::sandbox::local::granted_vaults(root).is_empty(),
+        "no vault granted"
+    );
+    assert!(grants.waiting().is_empty(), "the notice went");
+}
+
+/// A chat started as ops and narrowed to qa's grants reads ops's vaults, as its read judges a link
+/// (#5831): a link into a vault ops may use is no reason to refuse its login's notice.
+#[test]
+fn a_narrowed_chats_login_is_judged_as_the_persona_it_was_started_as() {
+    let dir = project("[sandbox]\nmode = \"on\"\n");
+    linked_out_of_reach(dir.path());
+
+    let judged = super::judged(
+        dir.path(),
+        Whose {
+            grants: "qa",
+            reads_as: "ops",
+        },
+        "shop-login",
+        &suggested("https://shop.example.test/login"),
+        &on_its_page,
+        None,
+        &[],
+    );
+
+    assert!(matches!(judged, Ok(Some(_))), "asked about: {judged:?}");
+}
+
+/// And the other way: a chat started as qa and narrowed to ops's grants is refused a link into a
+/// vault qa may not use, though ops may use it.
+#[test]
+fn a_narrowed_chats_login_is_refused_a_link_its_started_persona_may_not_read() {
+    let dir = project("[sandbox]\nmode = \"on\"\n");
+    linked_out_of_reach(dir.path());
+
+    let refused = super::judged(
+        dir.path(),
+        Whose {
+            grants: "ops",
+            reads_as: "qa",
+        },
+        "shop-login",
+        &suggested("https://shop.example.test/login"),
+        &|_| panic!("no page is followed for a login that is refused"),
+        None,
+        &[],
     )
     .map(|_| ())
     .expect_err("refused");
 
     says_out_of_reach(&refused);
-    assert_eq!(file_of(dir.path()), before, "no line written");
-    assert!(tool_of(&grants, "shop-login").is_none(), "nothing allowed");
-    assert!(heard.try_recv().is_err(), "the chat still waits");
-    assert!(
-        purlis_core::sandbox::local::granted_vaults(dir.path()).is_empty(),
-        "no vault granted"
-    );
 }

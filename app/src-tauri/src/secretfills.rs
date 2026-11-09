@@ -100,6 +100,10 @@ pub struct FillWait {
     pub no_always: Option<String>,
     /// The persona needs its vault allowed too: what Always then also does.
     pub vault_too: bool,
+    /// **The persona whose vaults the fill reads**: the one the chat was started as, narrowed or
+    /// not, as the read judges a link (#5831). Its key is judged as this persona again as the
+    /// notice is pressed.
+    pub reads_as: Option<String>,
 }
 
 impl FillWait {
@@ -161,6 +165,9 @@ pub enum Heard {
     Kept(Option<String>),
     /// The chat closed, or it's no longer asked.
     Gone,
+    /// Refused as the person pressed, in words the chat reads: its key became a link into a
+    /// vault its persona may not use while the notice waited (#5831).
+    Refused(String),
 }
 
 /// A key on an origin for one chat: by chat's number and id, vault, key and origin.
@@ -567,6 +574,10 @@ pub fn asked(
                 line: None,
                 no_always: None,
                 vault_too: false,
+                reads_as: held
+                    .chats()
+                    .persona_of(session)
+                    .and_then(|persona| persona.started_as),
             },
         );
         match heard(held, fills, wait, gone)? {
@@ -577,6 +588,7 @@ pub fn asked(
             }
             Heard::Kept(reason) => return Err(kept_said(&asked.key, &origin, reason.as_deref())),
             Heard::Gone => return Err(NOT_ANSWERED.to_owned()),
+            Heard::Refused(why) => return Err(why),
         }
     }
     let value = read(held, session, asked, &origin, started, gone)?;
@@ -978,6 +990,7 @@ pub fn answer(
         Press::Chat => Level::Chat,
         Press::Always => Level::You,
     };
+    let _held_back = (&wait.reads_as, Heard::Refused(String::new()));
     let locks = Locks::of(root);
     if let Some(why) = locks.scope_removed(level) {
         return Err(why);

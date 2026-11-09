@@ -56,6 +56,9 @@ pub struct LoginWait {
     pub no_always: Option<String>,
     /// The pool whose runner the chat is on: it isn't waiting, and is told.
     pub pool: Option<String>,
+    /// **The persona whose vaults the login reads**: the one the chat was started as, narrowed or
+    /// not, as the read judges a link (#5831); `proposal.persona` is whose tools Always writes in.
+    pub reads_as: String,
 }
 
 /// What a chat's waiting call hears.
@@ -67,6 +70,16 @@ pub enum Heard {
     Kept(Option<String>),
     /// The chat closed, or it's no longer asked.
     Gone,
+    /// Refused as the person pressed, in words the chat reads: a key became a link into a vault
+    /// its persona may not use while the notice waited (#5831).
+    Refused(String),
+}
+
+/// **What the person reads where a press is refused for a key out of reach** (#5831): nothing was
+/// allowed, and the read's own words, which name the key and the chat's vault alone.
+pub(crate) fn refused_at_the_press_said(why: &str) -> String {
+    let stop = if why.ends_with('.') { "" } else { "." };
+    format!("Nothing was allowed: {why}{stop}")
 }
 
 /// A login the person allowed for a chat: nothing of it is on disk.
@@ -485,7 +498,9 @@ fn asked_about_the_login(
     if held.chats().sandboxed_by_its_host(session) {
         return None;
     }
-    let (_, unconfined) = held.chats().login_asker(held.root(), session)?;
+    let (asker, unconfined) = held.chats().login_asker(held.root(), session)?;
+    // Whose vaults it reads, as the read judges a link: the persona it was started as (#5831).
+    let reads_as = asker.persona.unwrap_or_default();
     // Whose login grants it reads, and whose tools Always writes in: a narrowed chat's are the
     // persona it was narrowed to (the decision of 2026-11-06).
     let persona = held
@@ -536,7 +551,10 @@ fn asked_about_the_login(
     };
     let wait = match judged(
         held.root(),
-        &persona,
+        Whose {
+            grants: &persona,
+            reads_as: &reads_as,
+        },
         login,
         suggested,
         finds,
@@ -557,6 +575,7 @@ fn asked_about_the_login(
             proposal: judged.proposal,
             vault_too: judged.vault_too,
             no_always: judged.no_always,
+            reads_as,
         },
         Err(why) => return no(why),
     };
@@ -586,6 +605,7 @@ fn asked_about_the_login(
             None => kept_said(login, reason.as_deref()),
         }),
         Ended::Heard(Heard::Gone) | Ended::Closed => no(NOT_ANSWERED.to_owned()),
+        Ended::Heard(Heard::Refused(why)) => no(why),
         Ended::NotAnswered => {
             held.chats().asks_may_have_moved();
             no(NOT_ANSWERED.to_owned())
@@ -716,15 +736,28 @@ struct Judged {
 ///
 /// Where `persona` declares `login` already (#4996), a suggestion of another site replaces its
 /// site, and one of the very site it has is no ask at all: `None`.
+/// **Whose a login is** (#5831): whose tools Always writes in, a narrowed chat's the persona it was
+/// narrowed to, and whose vaults the chat reads, the persona it was started as, as the read judges
+/// a link.
+#[derive(Debug, Clone, Copy)]
+struct Whose<'a> {
+    grants: &'a str,
+    reads_as: &'a str,
+}
+
 fn judged(
     root: &Path,
-    persona: &str,
+    whose: Whose<'_>,
     login: &str,
     suggested: &Suggested,
     finds: FindsForm<'_>,
     declared: Option<&Tool>,
     held: &[Tool],
 ) -> Result<Option<Judged>, String> {
+    let Whose {
+        grants: persona,
+        reads_as,
+    } = whose;
     let locks = Locks::of(root);
     if let Some(why) = locks.refuses_tool(persona, login) {
         return Err(why);
@@ -735,6 +768,7 @@ fn judged(
         .map_err(|why| why.message.to_string())?;
     purlis_core::secrets::registry::vault_in(&doc, &suggested.vault)
         .map_err(|why| why.message.to_string())?;
+    let _ = reads_as;
     if let Some(why) = out_of_reach(
         &ctx,
         persona,
@@ -772,10 +806,11 @@ fn judged(
         Some(declared) if proposal.is_where(declared) => return Ok(None),
         Some(declared) => proposal.replacing(root, declared, held)?,
     };
-    finish(root, &locks, proposal).map(Some)
+    finish(root, &locks, proposal, reads_as).map(Some)
 }
 
-/// **Why `persona` may read neither the login's user key nor its password** (#5831): one is a link
+/// **Why `persona`, whose vaults the chat reads, may read neither the login's user key nor its
+/// password** (#5831): one is a link
 /// into a vault it may not use, which the read would refuse once the person had allowed it
 /// ([`brokered::read_out_of_reach`], #5795). Judged before the notice is raised and as it is
 /// pressed, so no notice asks for, nor Always writes or grants a vault for, a login refused.
@@ -790,14 +825,21 @@ fn out_of_reach(
     brokered::read_out_of_reach(ctx, persona, vault, &keys)
 }
 
-/// What the person is offered on `proposal`, under `locks`.
-fn finish(root: &Path, locks: &Locks, proposal: Proposal) -> Result<Judged, String> {
+/// What the person is offered on `proposal`, under `locks`, for a chat whose vaults are
+/// `reads_as`'s.
+fn finish(
+    root: &Path,
+    locks: &Locks,
+    proposal: Proposal,
+    reads_as: &str,
+) -> Result<Judged, String> {
     let ctx = Ctx::new(root, Env::from_process());
     let doc = purlis_core::secrets::registry::load_registry(&ctx)
         .map_err(|why| why.message.to_string())?;
     purlis_core::secrets::registry::vault_in(&doc, &proposal.vault)
         .map_err(|why| why.message.to_string())?;
     // Judged again as it is drawn or pressed: a link made while the notice waits is seen.
+    let _ = reads_as;
     if let Some(why) = out_of_reach(
         &ctx,
         &proposal.persona,
@@ -999,7 +1041,7 @@ pub fn answer(
             fresh.replacing(root, &declared, &grants.held())?
         }
     };
-    let judged = finish(root, &locks, fresh)?;
+    let judged = finish(root, &locks, fresh, &wait.reads_as)?;
     let changed = judged.proposal.digest() != wait.proposal.digest();
     // Always writes a line, and the line is shown before it's written. A warning the notice
     // didn't show is shown before a press counts; one it showed was read.

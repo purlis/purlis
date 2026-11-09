@@ -2,19 +2,22 @@
 
 Follows [a link is judged when it is read](2026-11-08-a-link-is-judged-when-it-is-read.md), and
 replaces its closing paragraph, which left a fill's and a login's own notice unjudged (#5831).
-Decided under the operator's standing order to take the recommended path (D-5831-1 to D-5831-3),
+Decided under the operator's standing order to take the recommended path (D-5831-1 to D-5831-6),
 recorded here as a delegated decision.
 
-A fill's or a login's notice is raised only for keys its persona may read. Before either is put to
+A fill's or a login's notice is raised only for keys its chat may read. Before either is put to
 the person, each key it would read, a login's user key and password both, is judged as the read
-judges it: one that is a link into a vault the persona may not use refuses the ask, with the
-read's own words, and no notice is raised. A login is judged so before its page is followed to its
-form, since that needs no browser.
+judges it: as the persona the chat was started as, narrowed or not, which is whose vaults it reads.
+A key that is a link into a vault that persona may not use refuses the ask, in the read's own
+words, and no notice is raised. A login is judged so before its page is followed to its form,
+since that needs no browser.
 
-It is judged again as the notice is pressed, a fill's as its judge runs again and a login's as it
-is drawn again for the press, so a link made while the notice waits is seen there. Allow once, this
-chat or Always then writes no line and grants no vault for a fill or a login that could only be
-refused.
+Each is judged again as its notice is pressed, before anything is audited, written or granted, so a
+link made while the notice waits is seen there. Allow once, this chat or Always then allows
+nothing, writes no line and grants no vault. The notice goes, the person reads that nothing was
+allowed and why, and the chat hears the same refusal at once rather than waiting out the notice.
+Keep blocked is pressed as before.
 
-The read is judged as before, before and after it, so this adds a refusal earlier and takes none
-away. A chat on no persona hears that it runs as no persona, as at the read.
+The read is judged as before, before and after it, so this adds a refusal earlier for a key the
+read would refuse, and takes none away. A chat on no persona hears that it runs as no persona, as at
+the read.
