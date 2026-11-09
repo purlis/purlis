@@ -142,7 +142,8 @@ fn the_listing_gives_each_query_its_shape_scope_and_since() {
     assert_eq!(todo["scope"], "workspace");
     assert_eq!(todo["since"], CATALOGUE[0].since);
     assert_eq!(todo["parameters"]["properties"]["done"]["type"], "boolean");
-    assert_eq!(todo["result"]["type"], "string");
+    assert_eq!(todo["result"]["type"], "object");
+    assert_eq!(todo["widens"]["done"], CATALOGUE[0].widens[0].1);
     assert!(todo.get("deprecated").is_none() && todo.get("replaces").is_none());
 }
 
@@ -156,4 +157,49 @@ fn a_query_s_parameters_are_its_mcp_tool_s_schema() {
             query.id()
         );
     }
+}
+
+#[test]
+fn every_query_s_result_shape_is_the_one_the_fixture_pins() {
+    let pinned = pinned();
+    let results = pinned["results"].as_object().expect("results");
+    assert_eq!(results.len(), CATALOGUE.len(), "one shape per query");
+    for query in CATALOGUE.iter() {
+        assert_eq!(
+            results.get(&query.id()),
+            Some(&(query.result)()),
+            "{}: a result shape moves only on purpose, with the fixture",
+            query.id()
+        );
+        assert_ne!(
+            (query.result)()["type"],
+            "string",
+            "{}: a query answers data, not text",
+            query.id()
+        );
+    }
+}
+
+#[test]
+fn a_widening_parameter_is_one_its_query_takes() {
+    for query in CATALOGUE.iter() {
+        for (name, what) in query.widens {
+            assert!(
+                query.parameters()["properties"].get(name).is_some(),
+                "{}: {name} is no parameter of it",
+                query.id()
+            );
+            assert!(!what.is_empty());
+        }
+    }
+}
+
+#[test]
+fn an_id_is_found_as_written_and_only_a_deprecated_or_replaced_one_warns() {
+    let (todo, warning) = find("purlis.todo_list").expect("found");
+    assert_eq!(todo.name, "todo_list");
+    assert_eq!(warning, None);
+    assert!(find("purlis.todo_lists").is_none());
+    assert!(find("todo_list").is_none());
+    assert!(find("PURLIS.todo_list").is_none());
 }

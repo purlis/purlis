@@ -39,8 +39,10 @@ fn plain(query: &Query) -> String {
     if let Some(why) = query.deprecated {
         head.push_str(&format!(" · deprecated: {why}"));
     }
-    let result = (query.result)();
-    let result = query_type(&result);
+    for (name, what) in query.widens {
+        head.push_str(&format!(" · widens {name}: {what}"));
+    }
+    let result = query_type(&(query.result)());
     format!(
         "{head}\n  {} → {result}\n  {}\n",
         parameters(&query.parameters()),
@@ -77,6 +79,15 @@ fn parameters(schema: &Value) -> String {
     }
 }
 
-fn query_type(schema: &Value) -> &str {
-    schema["type"].as_str().unwrap_or("any")
+/// A schema's type: `object`, or `object | null` for a list of them.
+fn query_type(schema: &Value) -> String {
+    match &schema["type"] {
+        Value::String(one) => one.clone(),
+        Value::Array(many) => many
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>()
+            .join(" | "),
+        _ => "any".to_owned(),
+    }
 }

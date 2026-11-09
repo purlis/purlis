@@ -49,6 +49,8 @@ pub const MOST_BYTES: u64 = 4 << 20;
 pub struct Declared {
     pub api: u32,
     pub data: Vec<String>,
+    /// The catalogue queries it calls (#5969, [`super::calls`]).
+    pub queries: Vec<super::calls::Call>,
 }
 
 /// **What the page `markup` declares**, or nothing when it declares nothing. A block that is
@@ -88,7 +90,11 @@ pub fn declared(markup: &str) -> Result<Option<Declared>, String> {
         }
         Some(_) => return Err("its \"data\" is not a list of names".into()),
     }
-    Ok(Some(Declared { api, data }))
+    let queries = match doc.get("queries") {
+        None => Vec::new(),
+        Some(queries) => super::calls::parse(queries)?,
+    };
+    Ok(Some(Declared { api, data, queries }))
 }
 
 /// Whether `name` names a data file inside a folder, as written: `data.json` or under `data/`,
@@ -277,6 +283,7 @@ mod tests {
         Declared {
             api: 1,
             data: names.iter().map(|n| (*n).to_owned()).collect(),
+            queries: Vec::new(),
         }
     }
 
@@ -295,6 +302,15 @@ mod tests {
             declared(&page(r#"{"api": 1}"#)).unwrap(),
             Some(declaring(&[]))
         );
+    }
+
+    #[test]
+    fn a_page_declares_the_queries_it_calls_in_the_same_block() {
+        let markup = page(r#"{ "api": 1, "queries": { "purlis.todo_list@1": ["done"] } }"#);
+        let declared = declared(&markup).unwrap().unwrap();
+        assert_eq!(declared.queries.len(), 1);
+        assert_eq!(declared.queries[0].declared_as(), "purlis.todo_list@1");
+        assert_eq!(declared.queries[0].params, ["done"]);
     }
 
     #[test]
@@ -330,6 +346,8 @@ mod tests {
             r#"{"api": 1, "data": ["data/%2e%2e/x"]}"#,
             r#"{"api": 1, "data": ["DATA.JSON"]}"#,
             r#"{"api": 1, "data": [1]}"#,
+            r#"{"api": 1, "queries": {"purlis.nothing@1": []}}"#,
+            r#"{"api": 1, "queries": ["purlis.todo_list@1"]}"#,
         ] {
             let why = declared(&page(block));
             assert!(why.is_err(), "{block}: {why:?}");
