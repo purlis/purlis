@@ -47,7 +47,17 @@ export function useSettledPlace<T extends HTMLElement>(here: string) {
   const readPlaces = () => {
     movedAt();
   };
-  return { drawn, tooSoon, readPlaces };
+  /**
+   * **The row as a callback ref, its answers read where they stand once it is on the page**
+   * (#5998): the list family attaches a row a commit after its drawing is said (`onDrawn`), so an
+   * answer drawn on the row from the first (a decision's Allow) is read there, and never first
+   * at the next frame.
+   */
+  const drawnAt = (row: T | null) => {
+    drawn.current = row;
+    if (row !== null) movedAt();
+  };
+  return { drawn, drawnAt, tooSoon, readPlaces };
 }
 
 /**

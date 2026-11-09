@@ -508,21 +508,12 @@ export function Ask({
     // A login's notice drawn anew has to be read anew (#4595).
     ask.answer.via === "browser-login" || ask.answer.via === "secret-fill" ? ask.answer.shown : "",
   ].join("\n");
-  const { drawn, tooSoon, readPlaces } = useSettledPlace<HTMLElement>(here);
+  const { drawn, drawnAt, tooSoon, readPlaces } = useSettledPlace<HTMLElement>(here);
   // **New until seen** (#6002): its accent bar, until it has been in sight for about a second.
   const [isNew, seenDrawnNow] = useSeenRow(askSeenKey(ask), drawn);
   /** **The keyboard goes into the form its Answer opens** (#5651): onto its box, or its first
    *  answer. A task's box takes it itself once its question is read (`useAnswerQuestion`). */
   const focusForm = useRef(false);
-  /**
-   * **Its answers are read where they stand once its row is on the page** (#5998): the list
-   * family attaches the row a commit after its drawing is said (`onDrawn`), so a decision's
-   * Allow, drawn on the row from the first, is read there, and never first at the next frame.
-   */
-  const drawnAt = (row: HTMLElement | null) => {
-    drawn.current = row;
-    if (row !== null) readPlaces();
-  };
   /** After each drawing of its row (the list family draws it a commit after this, #3123): where
    *  its answers stand is read, and a form its Answer just opened takes the keyboard. */
   const drawnNow = () => {
