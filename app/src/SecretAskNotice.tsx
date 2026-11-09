@@ -273,14 +273,11 @@ export function SecretAskNotice({
     return `${whom} filled or declined, and the key's name. Never the value.`;
   })();
 
-  // **A start's ask claims the dialog's chord while its value box has the keyboard** (#5670): ⌘⏎
-  // there fills, as Fill does, and never presses the dialog's Start, which the same ask would
-  // refuse again. Anywhere else in the dialog the chord is the dialog's.
+  // **A start's ask claims the dialog's chord** (#5670): ⌘⏎ anywhere in it fills, as Fill does
+  // (and says what is missing first), and never presses the dialog's Start, which the same ask
+  // would refuse again. Outside it the chord is the dialog's.
   const claimChord = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!start || !chordSends(event.nativeEvent)) return;
-    const target = event.target;
-    if (!(target instanceof Node)) return;
-    if (![...boxes.current.values()].some((box) => box.contains(target))) return;
     event.preventDefault();
     event.stopPropagation();
     if (!event.repeat) press(action, true);

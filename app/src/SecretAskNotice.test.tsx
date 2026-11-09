@@ -163,7 +163,7 @@ describe("a start's ask, in the Start dialog (#5137)", () => {
     expect(heard).not.toHaveBeenCalled();
   });
 
-  it("claims ⌘⏎ only in a start's value box: elsewhere, and in the Inbox, the key goes on (#5670)", () => {
+  it("claims ⌘⏎ anywhere in a start's ask, and nowhere in the Inbox's (#5670)", () => {
     const onAnswer = vi.fn();
     const heard = vi.fn();
     const { unmount } = render(
@@ -176,8 +176,11 @@ describe("a start's ask, in the Start dialog (#5137)", () => {
         />
       </div>,
     );
+    // Anywhere in a start's ask the chord is the ask's: Start would be refused on it again.
     fireEvent.keyDown(screen.getByTestId("secret-ask"), CHORD);
-    expect(heard).toHaveBeenCalledTimes(1);
+    expect(heard).not.toHaveBeenCalled();
+    expect(onAnswer).toHaveBeenCalledTimes(1);
+    onAnswer.mockClear();
     unmount();
 
     render(
@@ -186,7 +189,7 @@ describe("a start's ask, in the Start dialog (#5137)", () => {
       </div>,
     );
     fireEvent.keyDown(screen.getByLabelText("Value of STRIPE_API_KEY"), CHORD);
-    expect(heard).toHaveBeenCalledTimes(2);
+    expect(heard).toHaveBeenCalledTimes(1);
     expect(onAnswer).not.toHaveBeenCalled();
   });
 });

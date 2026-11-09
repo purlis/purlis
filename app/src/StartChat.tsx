@@ -534,6 +534,7 @@ export function StartChat({
   // dialog's own flag answers from the press, before the window's busy comes back.
   const [answering, setAnswering] = useState(false);
   const askBusy = answering || secretAsk?.busy === true;
+  // As of the latest render, for a start called from a press made in an earlier one.
   const byKey =
     !approves && withoutSandbox === null && !unavailable && !starting && !savingLimit && !askBusy;
   // **A filled Secret ask goes on where ⏎ would** (#5137): with what the dialog shows when the
@@ -560,6 +561,9 @@ export function StartChat({
   };
   useEffect(() => {
     if (filled === undefined || wentOn.current >= filled.fill) return;
+    // A fill that lands while its answer is still held waits for the hold to end, never spending
+    // its one turn on a start that could not go (#5670 review).
+    if (askBusy) return;
     wentOn.current = filled.fill;
     if (byKey && profile === filled.profile) plainStart(runsOnPick);
   });
@@ -612,6 +616,15 @@ export function StartChat({
           ? `Not started. The sandbox cannot hold this chat here: read why below, then press ${START_WITHOUT_SANDBOX}.`
           : undefined
       : undefined;
+  // **A saved limit starts from the render its save comes back in** (#5670 review), never from
+  // the press's: an ask answered since holds it, and the save's start is dropped.
+  const [savedLimit, setSavedLimit] = useState(0);
+  const wentSaved = useRef(0);
+  useEffect(() => {
+    if (wentSaved.current >= savedLimit) return;
+    wentSaved.current = savedLimit;
+    start();
+  });
   // Raising a limit starts the chat too, so it is offered only where that is a plain start of the
   // profile it was refused on: never an approval or a start without the sandbox (ADR 0097 §6).
   const raises =
@@ -677,7 +690,11 @@ export function StartChat({
     const option = target.closest<HTMLElement>('[role="option"][data-key]');
     const row = option !== null && list.current?.contains(option) ? option : null;
     const filterBox = target instanceof HTMLInputElement && target.type === "search";
-    const card = target instanceof HTMLInputElement && target.type === "radio";
+    // A harness card, and never a radio of the Secret ask's drawn in the details (#5670 review).
+    const card =
+      target instanceof HTMLInputElement &&
+      target.type === "radio" &&
+      cards.current?.contains(target) === true;
     if (!row && !filterBox && !card) return;
     // ⌘⏎ on a card: the card's own press handling keeps the key from the dialog's chord, so it
     // is answered here, once, on the chord's terms (N26).
@@ -712,6 +729,8 @@ export function StartChat({
   // The filter names the row its ↑ and ↓ picked (`aria-activedescendant`), so a screen reader
   // says the pick as it moves. The row's id is React Aria's, read from the row once it is drawn.
   const panes = useRef<HTMLDivElement>(null);
+  /** The harness cards' section: ⏎ on a radio starts only from there. */
+  const cards = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const box = panes.current?.querySelector<HTMLInputElement>('input[type="search"]');
     if (!box) return;
@@ -959,10 +978,12 @@ export function StartChat({
                 action="Save to the pool and start"
                 working={savingLimit ? "Saving…" : starting ? "Starting…" : undefined}
                 onApply={(values) => {
+                  // Nothing is saved, and so nothing started, while the ask's answer is sent.
+                  if (askBusy) return;
                   setSavingLimit(true);
                   void onRaiseLimit(values).then((saved) => {
                     setSavingLimit(false);
-                    if (saved && open.current) start();
+                    if (saved && open.current) setSavedLimit((was) => was + 1);
                   });
                 }}
               />
@@ -1004,7 +1025,7 @@ export function StartChat({
 
           {/* Busy while each row's details are read (#4736): a screen reader, and a scenario
               spec, can tell the rows are not final yet. */}
-          <div className="start-chat-section" aria-busy={pending}>
+          <div className="start-chat-section" aria-busy={pending} ref={cards}>
             <h3 className="start-chat-label" id={harnessLabel}>
               Harness
             </h3>

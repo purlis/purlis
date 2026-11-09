@@ -303,6 +303,21 @@ describe("a start missing its profile credential, in the Start dialog (#5137)", 
     expect(of("start_chat")).toHaveLength(2);
   });
 
+  it("⏎ and ⌘⏎ on the ask's own radios start nothing: they are no harness card (#5670 review)", async () => {
+    const { of } = core();
+    render(<App />);
+
+    const { body } = await startRefused();
+    const choice = within(body).getAllByRole("radio")[0];
+    fireEvent.keyDown(choice, { key: "Enter" });
+    fireEvent.keyUp(choice, { key: "Enter" });
+    fireEvent.keyDown(choice, CHORD);
+    fireEvent.keyUp(choice, CHORD);
+
+    await new Promise((settle) => setTimeout(settle, 50));
+    expect(of("start_chat")).toHaveLength(1);
+  });
+
   it("while Not now is sent, Start is held and never says it is starting (#5670)", async () => {
     const { of, release } = core({ hold: "answer" });
     render(<App />);

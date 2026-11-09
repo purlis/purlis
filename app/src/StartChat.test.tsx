@@ -2459,3 +2459,90 @@ describe("the start's Secret ask while the window sends its answer (#5670)", () 
     expect(onStart).not.toHaveBeenCalled();
   });
 });
+
+describe("the start's Secret ask, with what else the dialog offers (#5670 review)", () => {
+  const ask = (over: { busy?: boolean; onAnswer?: () => Promise<"filled" | "refused"> } = {}) => ({
+    ask: secretAsk({ persona: "steward", vault: "providers", key: "anthropic" }),
+    profile: "claude",
+    variable: "ANTHROPIC_API_KEY",
+    entries: () => Promise.resolve([]),
+    busy: over.busy ?? false,
+    onAnswer: over.onAnswer ?? (() => Promise.resolve("refused" as const)),
+    onSaid: () => {},
+  });
+  const offer = {
+    pool: "builds",
+    hits: [
+      {
+        key: "profileSize",
+        plain: "Most a profile may send: size",
+        unit: "MiB",
+        in_force: 128,
+        team_suggests: false,
+        needed: 150,
+        suggested: 192,
+      },
+    ],
+  };
+
+  it("a limit saved while the ask's answer is sent starts nothing after it", async () => {
+    const onStart = vi.fn();
+    let saved: (ok: boolean) => void = () => {};
+    const onRaiseLimit = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          saved = resolve;
+        }),
+    );
+    const draw = (busy: boolean) => (
+      <StartChat
+        options={options()}
+        trouble="it needs 150 MiB"
+        limitOffer={offer}
+        limitProfile="claude"
+        onRaiseLimit={onRaiseLimit}
+        secretAsk={ask({ busy })}
+        onStart={onStart}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    );
+    const { rerender } = render(draw(false));
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Save to the pool and start" }));
+    await waitFor(() => expect(onRaiseLimit).toHaveBeenCalledTimes(1));
+    rerender(draw(true));
+    await act(async () => saved(true));
+
+    expect(onStart).not.toHaveBeenCalled();
+  });
+
+  it("a fill that comes back while the window is still busy goes on once it is not", async () => {
+    const onStart = vi.fn();
+    let answered: (ended: "filled") => void = () => {};
+    const onAnswer = () =>
+      new Promise<"filled">((resolve) => {
+        answered = resolve;
+      });
+    const draw = (busy: boolean) => (
+      <StartChat
+        options={options()}
+        trouble="nothing was started"
+        secretAsk={ask({ busy, onAnswer })}
+        onStart={onStart}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    );
+    const { rerender } = render(draw(false));
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Value of anthropic"), "fr3sh");
+    await user.click(screen.getByRole("button", { name: "Fill" }));
+    rerender(draw(true));
+    await act(async () => answered("filled"));
+    expect(onStart).not.toHaveBeenCalled();
+    rerender(draw(false));
+
+    await waitFor(() => expect(onStart).toHaveBeenCalledTimes(1));
+  });
+});
