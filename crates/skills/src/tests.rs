@@ -1939,3 +1939,272 @@ fn each_levels_word_reads_back_as_its_origin() {
     }
     assert_eq!(Origin::from_level("local project"), None);
 }
+
+// ---- another workspace's skill, by its workspace (SK-5a, #2933) -------------------------------
+
+/// The folder of a skill as a test plane holds it, relative to the plane.
+fn folder_in(set: &SkillSet, plane: &Plane, name: &str) -> Vec<String> {
+    set.effective
+        .iter()
+        .filter(|e| e.skill.name == name)
+        .map(|e| {
+            e.skill
+                .path
+                .parent()
+                .unwrap()
+                .strip_prefix(&plane.root)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/")
+        })
+        .collect()
+}
+
+#[test]
+fn an_entry_written_workspaces_slash_its_name_colon_a_skill_names_that_workspaces_skill() {
+    assert_eq!(
+        Reference::parse(" workspaces/ops : deploy "),
+        Some(Reference::Workspace {
+            workspace: "ops".to_owned(),
+            name: "deploy".to_owned()
+        })
+    );
+    assert_eq!(
+        Reference::parse("workspaces/ops:deploy").map(|r| r.to_string()),
+        Some("workspaces/ops:deploy".to_owned())
+    );
+    for nothing in [
+        "workspaces/:deploy",
+        "workspaces/ops/x:deploy",
+        "workspaces/..:deploy",
+        "workspaces/ops:",
+    ] {
+        assert_eq!(Reference::parse(nothing), None, "{nothing:?}");
+    }
+    assert!(
+        !Reference::parse("workspaces/ops:deploy")
+            .unwrap()
+            .names_plane("deploy"),
+        "a bare name alone is the chat's own workspace's"
+    );
+}
+
+#[test]
+fn a_persona_chat_in_any_workspace_gets_the_skill_another_workspace_holds_by_its_name() {
+    let plane = Plane::new();
+    skill(&plane.workspace("ops"), "deploy", &whole("deploy"));
+    skill(&plane.workspace("ops"), "rollback", &whole("rollback"));
+
+    for workspace in [None, Some("smart-ide"), Some("ops")] {
+        let set = plane.as_persona(
+            workspace,
+            "steward",
+            &["workspaces/ops:deploy"],
+            None,
+            Some(&[]),
+        );
+        assert_eq!(
+            effective(&set)
+                .into_iter()
+                .filter(|(name, ..)| *name == "deploy")
+                .collect::<Vec<_>>(),
+            [("deploy", Origin::Workspace, false)],
+            "{workspace:?}"
+        );
+        assert_eq!(
+            folder_in(&set, &plane, "deploy"),
+            ["workspaces/ops/skills/deploy"],
+            "{workspace:?}"
+        );
+        assert!(
+            set.from_the_harness.is_empty() && !set.left_out.iter().any(|l| l.name.contains(':')),
+            "{workspace:?}: {:?} {:?}",
+            set.from_the_harness,
+            set.left_out
+        );
+    }
+    let elsewhere = plane.as_persona(
+        Some("smart-ide"),
+        "steward",
+        &["workspaces/ops:deploy"],
+        None,
+        Some(&[]),
+    );
+    assert!(
+        !effective(&elsewhere)
+            .iter()
+            .any(|(name, ..)| *name == "rollback"),
+        "only the skill it names comes along, not the rest of that workspace's"
+    );
+}
+
+#[test]
+fn another_workspaces_skill_reaches_no_chat_that_is_not_the_persona_naming_it() {
+    let plane = Plane::new();
+    skill(&plane.workspace("ops"), "deploy", &whole("deploy"));
+
+    assert!(plane.set(Some("smart-ide")).effective.is_empty());
+    assert!(plane.set(None).effective.is_empty());
+    assert!(
+        plane
+            .as_persona(Some("smart-ide"), "ops-lead", &[], None, None)
+            .effective
+            .is_empty()
+    );
+}
+
+#[test]
+fn a_local_copy_of_the_named_workspace_wins_over_its_shared_one_while_git_keeps_it() {
+    let plane = Plane::new();
+    skill(&plane.workspace("ops"), "deploy", &whole("deploy"));
+    skill(&plane.workspace_local("ops"), "deploy", &whole("deploy"));
+
+    let set = plane.as_persona(
+        Some("smart-ide"),
+        "steward",
+        &["workspaces/ops:deploy"],
+        None,
+        None,
+    );
+
+    assert_eq!(effective(&set), [("deploy", Origin::Workspace, true)]);
+    assert_eq!(
+        left_out(&set),
+        [(
+            "deploy",
+            Origin::Workspace,
+            false,
+            "hidden by the local workspace skill of this name".to_owned()
+        )]
+    );
+}
+
+#[test]
+fn a_persona_copy_beats_the_named_one_which_beats_the_chats_own_workspace_and_the_project() {
+    let plane = Plane::new();
+    skill(&plane.project(), "deploy", &whole("deploy"));
+    plane.grant("deploy", "grant = \"all\"\n");
+    skill(&plane.workspace("smart-ide"), "deploy", &whole("deploy"));
+    skill(&plane.workspace("ops"), "deploy", &whole("deploy"));
+
+    let named = plane.as_persona(
+        Some("smart-ide"),
+        "steward",
+        &["workspaces/ops:deploy"],
+        None,
+        None,
+    );
+    assert_eq!(
+        folder_in(&named, &plane, "deploy"),
+        ["workspaces/ops/skills/deploy"],
+        "the copy the persona named beats the chat's own workspace's"
+    );
+    assert_eq!(
+        left_out(&named)
+            .into_iter()
+            .map(|(_, origin, _, why)| (origin, why))
+            .collect::<Vec<_>>(),
+        [
+            (
+                Origin::Project,
+                "hidden by the workspace skill of this name".to_owned()
+            ),
+            (
+                Origin::Workspace,
+                "hidden by another workspace skill of this name".to_owned()
+            ),
+        ]
+    );
+
+    skill(&plane.persona("steward"), "deploy", &whole("deploy"));
+    let own = plane.as_persona(
+        Some("smart-ide"),
+        "steward",
+        &["workspaces/ops:deploy"],
+        None,
+        None,
+    );
+    assert_eq!(effective(&own), [("deploy", Origin::Persona, false)]);
+}
+
+#[test]
+fn a_named_workspace_or_skill_that_is_not_there_is_left_out_saying_which() {
+    let plane = Plane::new();
+    skill(&plane.workspace("ops"), "deploy", &whole("deploy"));
+
+    let set = plane.as_persona(
+        Some("smart-ide"),
+        "steward",
+        &["workspaces/nowhere:deploy", "workspaces/ops:release"],
+        None,
+        Some(&[]),
+    );
+
+    assert!(set.effective.is_empty(), "{:?}", set.effective);
+    assert!(set.from_the_harness.is_empty(), "{:?}", set.from_the_harness);
+    assert_eq!(
+        set.left_out
+            .iter()
+            .map(|l| (l.name.as_str(), l.origin, l.reason.clone()))
+            .collect::<Vec<_>>(),
+        [
+            (
+                "workspaces/nowhere:deploy",
+                Origin::Workspace,
+                Reason::NoSuchWorkspace
+            ),
+            (
+                "workspaces/ops:release",
+                Origin::Workspace,
+                Reason::NotInItsWorkspace
+            ),
+        ]
+    );
+    assert_eq!(
+        Reason::NoSuchWorkspace.to_string(),
+        "its persona names it, and the project has no workspace of that name"
+    );
+    assert_eq!(
+        Reason::NotInItsWorkspace.to_string(),
+        "its persona names it, and that workspace has no skill of this name"
+    );
+}
+
+#[test]
+fn a_named_workspace_made_while_a_chat_ran_hands_its_skill_to_no_chat() {
+    let plane = Plane::new();
+    skill(&plane.workspace("ops"), "deploy", &whole("deploy"));
+    let names = [Reference::parse("workspaces/ops:deploy").unwrap()];
+    let ops = plane.root.join("workspaces").join("ops");
+    let made = move |owner: &Path| (owner == ops).then(|| "made while a chat ran".to_owned());
+
+    let set = skill_set(
+        Some(&plane.root),
+        &Machine {
+            built_in: None,
+            kept_local: Some(&|_| Ok(())),
+            harness: None,
+            made_since: Some(&made),
+        },
+        &Chat {
+            workspace: Some("smart-ide"),
+            persona: Some("steward"),
+            names: &names,
+            turned_off: &[],
+            harness: HarnessSkills {
+                route: Route::Plugin,
+            },
+        },
+    );
+
+    assert!(set.effective.is_empty(), "{:?}", set.effective);
+    assert_eq!(
+        left_out(&set),
+        [(
+            "deploy",
+            Origin::Workspace,
+            false,
+            "made while a chat ran".to_owned()
+        )]
+    );
+}

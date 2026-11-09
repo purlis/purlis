@@ -80,7 +80,8 @@ pub use read::{
 };
 use reference::Seen;
 pub use reference::{
-    BUILT_IN_PREFIXES, OLD_BUILT_IN_PREFIX, OnMachine, RENAMED, Reference, name_now, old_names_in,
+    BUILT_IN_PREFIXES, OLD_BUILT_IN_PREFIX, OnMachine, RENAMED, Reference, WORKSPACE_PREFIX,
+    name_now, old_names_in,
 };
 pub use router::{
     Candidate, Candidates, Hidden, HiddenWhy, INDEX, Index, Line, Router, Routing, StillOver,
@@ -343,6 +344,12 @@ pub enum Reason {
     /// A built-in skill the chat's persona names, that no built-in skill is: a typo, or a name
     /// from another version of purlis.
     NoSuchBuiltIn,
+    /// Another workspace's skill the chat's persona names (`workspaces/<ws>:<name>`, SK-5a),
+    /// where the project has no workspace of that name.
+    NoSuchWorkspace,
+    /// Another workspace's skill the chat's persona names (`workspaces/<ws>:<name>`, SK-5a),
+    /// where that workspace has no skill of that name, shared or local.
+    NotInItsWorkspace,
     /// A harness or repo skill the project turned off for this harness's chats, which purlis
     /// asks the harness to leave out.
     OffForTheHarness,
@@ -471,6 +478,12 @@ impl std::fmt::Display for Reason {
             Self::NoSuchBuiltIn => {
                 f.write_str("its persona names it, and purlis has no built-in skill of this name")
             }
+            Self::NoSuchWorkspace => f.write_str(
+                "its persona names it, and the project has no workspace of that name",
+            ),
+            Self::NotInItsWorkspace => f.write_str(
+                "its persona names it, and that workspace has no skill of this name",
+            ),
             Self::OffForTheHarness => f.write_str("turned off for this project's chats"),
             Self::ReservedName => f.write_str(
                 "a name starting with purlis- is purlis's own, so this skill never loads: rename it",
@@ -1046,6 +1059,7 @@ pub fn skill_set(plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -
         if let Some(persona) = chat.persona {
             persona_levels(&mut set, plane, machine, persona, route);
         }
+        named_workspaces(&mut set, plane, machine, chat, route);
         let workspace = chat.workspace.filter(|ws| plain(ws));
         if let Some(ws) = workspace {
             for local in [true, false] {
@@ -1056,6 +1070,7 @@ pub fn skill_set(plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -
                         (plane, &dir),
                         (Origin::Workspace, local),
                         route,
+                        None,
                         |skill| {
                             if let Some(why) = &made {
                                 return Some(Reason::MadeWhileAChatRan(why.clone()));
@@ -1079,6 +1094,7 @@ pub fn skill_set(plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -
                 (plane, &dir),
                 (Origin::Project, local),
                 route,
+                None,
                 |skill| {
                     let folder = folder_of_skill(skill);
                     if local && let Some(why) = kept_here(machine, folder) {
@@ -1095,7 +1111,7 @@ pub fn skill_set(plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -
             );
         }
     }
-    named_elsewhere(&mut set, machine, chat.names);
+    named_elsewhere(&mut set, plane, machine, chat.names);
     set.effective
         .sort_by(|a, b| a.skill.name.cmp(&b.skill.name));
     widest_first(&mut set.left_out);
@@ -1123,7 +1139,7 @@ fn built_in_level(set: &mut SkillSet, machine: &Machine<'_>, route: Route) {
         return;
     };
     let root = dir.parent().unwrap_or(dir);
-    level(set, (root, dir), (Origin::BuiltIn, false), route, |_| None);
+    level(set, (root, dir), (Origin::BuiltIn, false), route, None, |_| None);
 }
 
 /// `persona`'s local skills, then its shared ones, in the plane at `plane`, into `set`.
@@ -1142,6 +1158,55 @@ fn persona_levels(
                 (plane, &dir),
                 (Origin::Persona, local),
                 route,
+                None,
+                |skill| {
+                    if let Some(why) = &made {
+                        return Some(Reason::MadeWhileAChatRan(why.clone()));
+                    }
+                    if local {
+                        kept_here(machine, folder_of_skill(skill))
+                    } else {
+                        None
+                    }
+                },
+            );
+        }
+    }
+}
+
+/// **The skills of other workspaces `chat`'s persona names** (`workspaces/<ws>:<name>`, SK-5a,
+/// #2933; ADR 0099 as amended 2026-11-10), into `set`, each workspace's local copy, then its
+/// shared one, read as that workspace's own chats read them: after the persona's levels, so a
+/// persona copy wins, and before the chat's own workspace and the project, so the copy the
+/// persona named by its workspace is the one the chat gets. A workspace the chat works in is
+/// read as its own level, and only the named skill of any other is read. One that is not there
+/// is left out by [`named_elsewhere`].
+fn named_workspaces(
+    set: &mut SkillSet,
+    plane: &Path,
+    machine: &Machine<'_>,
+    chat: &Chat<'_>,
+    route: Route,
+) {
+    for reference in chat.names {
+        let Reference::Workspace { workspace, name } = reference else {
+            continue;
+        };
+        if chat.workspace == Some(workspace.as_str()) {
+            continue;
+        }
+        let owner = plane.join(WORKSPACES_DIR).join(workspace);
+        let made = made_since(machine, &owner);
+        for local in [true, false] {
+            let Some(dir) = level_dir(plane, &Whose::Workspace(workspace.clone()), local) else {
+                continue;
+            };
+            level(
+                set,
+                (plane, &dir),
+                (Origin::Workspace, local),
+                route,
+                Some(name),
                 |skill| {
                     if let Some(why) = &made {
                         return Some(Reason::MadeWhileAChatRan(why.clone()));
@@ -1195,10 +1260,47 @@ fn reach(folder: &Path, workspace: &str, off: &[String], name: &str) -> Option<R
 /// there is none of is left out (where the built-in skills were read); a harness skill is the
 /// harness's to load where `machine` has it or could not tell, and left out where it looked and
 /// found none. A plane skill named and found in no level is a harness skill to look for, since the
-/// harness may have it by that name.
-fn named_elsewhere(set: &mut SkillSet, machine: &Machine<'_>, names: &[Reference]) {
+/// harness may have it by that name. Another workspace's skill (SK-5a) is the plane's alone: one
+/// no copy of is in the set is left out, saying whether the workspace or the skill is not there.
+fn named_elsewhere(
+    set: &mut SkillSet,
+    plane: Option<&Path>,
+    machine: &Machine<'_>,
+    names: &[Reference],
+) {
     for reference in names {
         let said = reference.to_string();
+        if let Reference::Workspace { workspace, name } = reference {
+            let Some(plane) = plane else {
+                continue;
+            };
+            let owner = plane.join(WORKSPACES_DIR).join(workspace);
+            let in_owner = |folder: &Path| folder.starts_with(&owner);
+            let copied = set
+                .effective
+                .iter()
+                .any(|e| e.skill.name == *name && in_owner(folder_of_skill(&e.skill)))
+                || set
+                    .left_out
+                    .iter()
+                    .any(|l| (l.name == *name && in_owner(&l.folder)) || l.name == said);
+            if copied {
+                continue;
+            }
+            let there = std::fs::symlink_metadata(&owner).is_ok_and(|meta| meta.is_dir());
+            set.left_out.push(LeftOut {
+                name: said,
+                origin: Origin::Workspace,
+                local: false,
+                folder: owner,
+                reason: if there {
+                    Reason::NotInItsWorkspace
+                } else {
+                    Reason::NoSuchWorkspace
+                },
+            });
+            continue;
+        }
         let held = |set: &SkillSet| {
             set.effective.iter().any(|e| e.skill.name == said)
                 || set.left_out.iter().any(|l| l.name == said)
@@ -1292,7 +1394,8 @@ fn widest_first(left_out: &mut [LeftOut]) {
 
 /// Every folder in `dir`, one level's, into `set`: each whole skill the chat gets, unless a
 /// skill of its name is already in the set or `held` says why not; every other folder left out
-/// with its reason. Folders are taken in the order of their names, so a tie inside one level
+/// with its reason. With `only`, the skill of that name alone, and no other folder of the level
+/// is listed at all (another workspace's skill a persona names, SK-5a). Folders are taken in the order of their names, so a tie inside one level
 /// always goes the same way.
 ///
 /// `dir` is under `root`, the folder it is reached from without following a link
@@ -1302,6 +1405,7 @@ fn level(
     (root, dir): (&Path, &Path),
     (origin, local): (Origin, bool),
     route: Route,
+    only: Option<&str>,
     held: impl Fn(&Skill) -> Option<Reason>,
 ) {
     let Ok(rel) = dir.strip_prefix(root) else {
@@ -1311,7 +1415,9 @@ fn level(
     folders.sort_by(|a, b| folder_of(a).cmp(folder_of(b)));
     for folder in folders {
         let skill = match folder {
+            Ok(skill) if only.is_some_and(|only| only != skill.name) => continue,
             Ok(skill) => skill,
+            Err(_) if only.is_some() => continue,
             Err((folder, missing)) => {
                 set.left_out.push(LeftOut {
                     name: folder

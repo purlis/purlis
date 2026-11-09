@@ -26,6 +26,11 @@ pub const RENAMED: &[(&str, &str)] = &[
     ("purlis-add-curation-action", "purlis-curation-action"),
 ];
 
+/// **What an entry that names another workspace's skill starts with** (SK-5a, #2933):
+/// `workspaces/<ws>:<name>`, the plane's own path to the workspace, then the skill's name. No
+/// plugin's name holds a `/`, so it names no harness skill.
+pub const WORKSPACE_PREFIX: &str = "workspaces/";
+
 /// One entry of a persona's `skills:` list.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Reference {
@@ -38,6 +43,10 @@ pub enum Reference {
     /// workspace's, or a project skill, whatever it was granted), else the harness's own skill
     /// of that name.
     Named(String),
+    /// `workspaces/<ws>:<name>`: the workspace skill `name` of the workspace `ws`, which reaches
+    /// the persona's chats in every workspace, not only in `ws` (SK-5a, #2933; ADR 0099 as
+    /// amended 2026-11-10). A bare `<name>` reaches only the chat's own workspace's.
+    Workspace { workspace: String, name: String },
 }
 
 impl Reference {
@@ -60,6 +69,14 @@ impl Reference {
         let (prefix, name) = (prefix.trim(), name.trim());
         if prefix.is_empty() || name.is_empty() {
             return None;
+        }
+        if let Some(workspace) = prefix.strip_prefix(WORKSPACE_PREFIX) {
+            let workspace = workspace.trim();
+            return crate::plain(workspace)
+                .then(|| Self::Workspace {
+                    workspace: workspace.to_owned(),
+                    name: name.to_owned(),
+                });
         }
         Some(if BUILT_IN_PREFIXES.contains(&prefix) {
             Self::BuiltIn(built_in_named(name))
@@ -203,13 +220,16 @@ pub(crate) enum Seen {
 }
 
 /// How a persona's `skills:` list says it: `purlis:<name>` for a built-in skill (whichever prefix
-/// was written), `<plugin>:<name>`, or `<name>`.
+/// was written), `<plugin>:<name>`, `workspaces/<ws>:<name>`, or `<name>`.
 impl std::fmt::Display for Reference {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::BuiltIn(name) => write!(f, "{}:{name}", BUILT_IN_PREFIXES[0]),
             Self::Harness { plugin, name } => write!(f, "{plugin}:{name}"),
             Self::Named(name) => f.write_str(name),
+            Self::Workspace { workspace, name } => {
+                write!(f, "{WORKSPACE_PREFIX}{workspace}:{name}")
+            }
         }
     }
 }
