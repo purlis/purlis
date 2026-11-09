@@ -81,9 +81,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: READING,
   },
   // Why a pinned artifact cannot be opened (#5952): its folder gone, or its read refused. Read
-  // once as the tab opens; closing and pressing its icon again is the retry.
+  // once as the tab opens; closing and pressing its icon again is the retry. Since #5954 a
+  // missing, too-large or refused one carries Repin and Unpin as its way out, a refused Repin or
+  // Unpin is said in the core's sentence beside those two, which are its retry, and an unpinned
+  // one says so with nothing left to do but close the tab.
   "ArtifactTab.tsx": {
-    count: 2,
+    count: 5,
     why: READ_ONCE,
   },
   "About.tsx": {

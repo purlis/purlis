@@ -64,16 +64,17 @@ export function ArtifactGroup({
               ? PERSONA_ICONS[pin.icon]
               : ChartLine;
             const chosen = pin.folder === current;
+            const unopenable = pin.missing ?? pin.too_large;
             return (
               <RovingFocusGroup.Item key={pin.id} asChild tabStopId={pin.folder} active={chosen}>
                 <ActivityItem
                   variant="bar"
                   selected={chosen}
-                  tip={pin.missing === null ? `Open ${pin.name}` : pin.missing}
+                  tip={unopenable === null ? `Open ${pin.name}` : unopenable}
                   aria-label={pin.name}
                   aria-current={chosen ? "page" : undefined}
                   data-artifact={pin.folder}
-                  data-missing={pin.missing === null ? undefined : true}
+                  data-missing={unopenable === null ? undefined : true}
                   onClick={() => onOpen(pin)}
                   icon={<Glyph aria-hidden="true" />}
                 />

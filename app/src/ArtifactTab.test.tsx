@@ -10,18 +10,31 @@ import type { ArtifactAbout } from "./bindings";
 import { ArtifactTab } from "./ArtifactTab";
 import { ARTIFACT_KEY, artifactOf, artifactView, coveredByAnOverlay } from "./artifacts";
 
-const ABOUT: ArtifactAbout = { name: "Backlog state", pinned_by: "Ada", missing: null };
+const ABOUT: ArtifactAbout = {
+  name: "Backlog state",
+  pinned_by: "Ada",
+  missing: null,
+  too_large: null,
+};
 
 type Call = { cmd: string; args: Record<string, unknown> };
 
 /** The core, answering an artifact's commands, with what each was asked. */
-function core(about: ArtifactAbout = ABOUT) {
+function core(
+  about: ArtifactAbout = ABOUT,
+  after: (cmd: string) => ArtifactAbout | undefined = () => undefined,
+) {
   const calls: Call[] = [];
+  let now = about;
   mockIPC(
     (cmd, args) => {
       if (!cmd.startsWith("artifact_")) return null;
       calls.push({ cmd, args: args as Record<string, unknown> });
-      if (cmd === "artifact_about") return about;
+      if (cmd === "artifact_repin" || cmd === "artifact_unpin") {
+        now = after(cmd) ?? now;
+        return null;
+      }
+      if (cmd === "artifact_about") return now;
       if (cmd === "artifact_open") return "artifact-7";
       return null;
     },
@@ -164,8 +177,70 @@ describe("an artifact's tab", () => {
     const calls = core({ ...ABOUT, missing: "there is no folder 'backlog-state' in artifacts/" });
     render(<Tab />);
     const said = await screen.findByTestId("artifact-missing");
-    expect(said).toHaveTextContent("there is no folder 'backlog-state' in artifacts/");
+    expect(said).toHaveTextContent("There is no folder 'backlog-state' in artifacts/");
     expect(asked(calls, "artifact_open")).toHaveLength(0);
+  });
+
+  it("names the missing page's path and repins it once it is back", async () => {
+    const calls = core(
+      { ...ABOUT, missing: "there is no folder 'backlog-state' in artifacts/" },
+      () => ABOUT,
+    );
+    render(<Tab />);
+    const said = await screen.findByTestId("artifact-missing");
+    expect(said).toHaveTextContent("Backlog state is missing");
+    expect(said).toHaveTextContent("artifacts/backlog-state/index.html");
+    expect(screen.getByRole("button", { name: "Unpin" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Repin" }));
+
+    await waitFor(() => expect(asked(calls, "artifact_open")).toHaveLength(1));
+    expect(asked(calls, "artifact_repin")[0]?.args).toMatchObject({
+      workspace: "alpha",
+      folder: "backlog-state",
+    });
+    expect(screen.queryByTestId("artifact-missing")).toBeNull();
+  });
+
+  it("says a repin that is refused, and stays as it was", async () => {
+    core({ ...ABOUT, missing: "there is no folder 'backlog-state' in artifacts/" });
+    mockIPC(
+      (cmd) => {
+        if (cmd === "artifact_repin") throw "there is no folder 'backlog-state' in artifacts/";
+        if (cmd === "artifact_about")
+          return { ...ABOUT, missing: "there is no folder 'backlog-state' in artifacts/" };
+        return null;
+      },
+      { shouldMockEvents: true },
+    );
+    render(<Tab />);
+    await userEvent.click(await screen.findByRole("button", { name: "Repin" }));
+    const refused = await screen.findByRole("alert");
+    expect(refused).toHaveTextContent(
+      "purlis could not repin Backlog state: there is no folder 'backlog-state' in artifacts/",
+    );
+    expect(screen.getByTestId("artifact-missing")).toBeInTheDocument();
+  });
+
+  it("says a page over the size cap with both sizes, opens nothing, and unpins it", async () => {
+    const over =
+      "'backlog-state' is 9.0 MB, over the 8.0 MB an artifact may be, so none of it is shown";
+    const calls = core({ ...ABOUT, too_large: over });
+    render(<Tab />);
+    const said = await screen.findByTestId("artifact-too-large");
+    expect(said).toHaveTextContent("Backlog state is too large to open");
+    expect(said).toHaveTextContent("9.0 MB, over the 8.0 MB");
+    expect(screen.getByRole("button", { name: "Repin" })).toBeInTheDocument();
+    expect(asked(calls, "artifact_open")).toHaveLength(0);
+
+    await userEvent.click(screen.getByRole("button", { name: "Unpin" }));
+
+    await screen.findByText("Backlog state is unpinned");
+    expect(asked(calls, "artifact_unpin")[0]?.args).toMatchObject({
+      workspace: "alpha",
+      folder: "backlog-state",
+    });
+    expect(screen.queryByRole("button", { name: "Repin" })).toBeNull();
   });
 });
 

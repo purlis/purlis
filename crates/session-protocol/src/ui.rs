@@ -1093,6 +1093,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     "artifact_place",
     "artifact_enter",
     "artifact_close",
+    // Repin and Unpin from a missing or too-large artifact's tab (#5954): they write the
+    // workspace's pins file, which only the person in their own window does.
+    "artifact_repin",
+    "artifact_unpin",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on

@@ -263,6 +263,8 @@ pub struct ArtifactPinShown {
     pub icon: String,
     /// Why its folder cannot be opened, when it cannot.
     pub missing: Option<String>,
+    /// Its folder is over the size cap: the sentence naming both sizes.
+    pub too_large: Option<String>,
 }
 
 /// What an artifact tab's bar says about it before anything runs.
@@ -273,6 +275,8 @@ pub struct ArtifactAbout {
     pub pinned_by: Option<String>,
     /// Why it cannot be opened, when it cannot.
     pub missing: Option<String>,
+    /// Its folder is over the size cap: the sentence naming both sizes.
+    pub too_large: Option<String>,
 }
 
 fn workspace_of(
@@ -311,6 +315,7 @@ pub async fn artifact_pins(
                 name: listed.pin.name,
                 icon: listed.pin.icon,
                 missing: listed.missing,
+                too_large: listed.too_large,
             })
             .collect())
     })
@@ -340,9 +345,62 @@ pub async fn artifact_about(
             pinned_by: artifact::pinned_by(&at, &listed.pin.id),
             name: listed.pin.name,
             missing: listed.missing,
+            too_large: listed.too_large,
         })
     })
     .await
+}
+
+/// **Repin**: pins artifact folder `folder` again as it is pinned, its name, icon, command and
+/// working folder kept, so the folder is checked anew (there, inside `artifacts/`, within the
+/// size cap, nothing shaped like a secret). The way out of a missing or too-large artifact once
+/// its folder is back or smaller; the refusal's sentence when it is not.
+#[tauri::command]
+#[specta::specta]
+pub async fn artifact_repin(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    workspace: String,
+    folder: String,
+) -> Result<(), String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    let at = workspace_of(&planes, &plane, &workspace)?;
+    blocking(move || {
+        let pins = artifact::read(&at)?;
+        let Some(pin) = pins.pins.into_iter().find(|one| one.folder == folder) else {
+            return Err(format!(
+                "'{}' is not pinned to this workspace any more",
+                purlis_core::personas::one_line(&folder)
+            ));
+        };
+        artifact::pin(
+            &root,
+            &at,
+            &artifact::Request {
+                folder: pin.folder,
+                name: Some(pin.name),
+                icon: Some(pin.icon),
+                command: pin.command,
+                cwd: pin.cwd,
+            },
+        )
+        .map(|_| ())
+    })
+    .await
+}
+
+/// **Unpin**: takes artifact folder `folder`'s pin off the workspace; its files stay.
+#[tauri::command]
+#[specta::specta]
+pub async fn artifact_unpin(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    workspace: String,
+    folder: String,
+) -> Result<(), String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    let at = workspace_of(&planes, &plane, &workspace)?;
+    blocking(move || artifact::unpin(&root, &at, &folder).map(|_| ())).await
 }
 
 /// **Opens a pinned artifact over its tab's frame**: the folder read once, a webview of its own
@@ -372,7 +430,7 @@ pub async fn artifact_open(
         let real = artifact::resolve(&at, &read_folder)?;
         Ok((
             serve::origin_host(&at, &read_folder),
-            serve::Snapshot::read(&real)?,
+            serve::Snapshot::read(&real, &read_folder)?,
         ))
     })
     .await?;
@@ -484,7 +542,7 @@ mod tests {
             std::fs::create_dir_all(at.parent().unwrap()).unwrap();
             std::fs::write(at, text).unwrap();
         }
-        serve::Snapshot::read(dir.path()).unwrap()
+        serve::Snapshot::read(dir.path(), "board").unwrap()
     }
 
     fn served(pairs: &[(&str, &str, &str)]) -> Artifacts {
