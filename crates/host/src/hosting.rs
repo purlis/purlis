@@ -154,6 +154,12 @@ pub trait Beside {
     fn armed(&self, skills: Vec<session::ArmedSkill>) {
         let _ = skills;
     }
+    /// **Told the skills its persona names that the program being composed starts without
+    /// here** (1.80, SK-5d, #2977): answered to its start alone, so its window says them on its
+    /// tab.
+    fn not_there(&self, not: session::SkillsNotThere) {
+        let _ = not;
+    }
 }
 
 /// What a confinement's board holds now, read each time it is asked ([`Beside::reach_of`]).
@@ -2409,6 +2415,7 @@ impl Hosting {
                         alone: start.alone.clone(),
                     })),
                     armed: Mutex::default(),
+                    not_there: Mutex::default(),
                 };
                 let composed = hosting.inner.compose.compose(&ToCompose {
                     project: &at.project,
@@ -2425,15 +2432,23 @@ impl Hosting {
                     .armed
                     .into_inner()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                composed.map(|spec| (spec, armed))
+                let not_there = beside
+                    .not_there
+                    .into_inner()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                composed.map(|spec| (spec, armed, not_there))
             })
             .await
             .map_err(|why| why.to_string())
             .and_then(|composed| composed)
         };
-        let (spec, armed) = match composed {
+        let (spec, armed, not_there) = match composed {
             // A launch the window composed says its own skills: only a start composed here.
-            Ok((spec, armed)) => (spec, armed.filter(|_| start.launch.is_none())),
+            Ok((spec, armed, not_there)) => (
+                spec,
+                armed.filter(|_| start.launch.is_none()),
+                not_there.filter(|_| start.launch.is_none()),
+            ),
             Err(why) => {
                 forget(&channel);
                 self.end_confinements_of(&program);
@@ -2615,6 +2630,7 @@ impl Hosting {
             sandbox: Some(sandbox),
             prompt_key: prompt_key.filter(|_| answers_a_launch),
             armed_skills: armed.filter(|_| answers_a_launch).map(Box::new),
+            skills_not_there: not_there.filter(|_| answers_a_launch).map(Box::new),
         })
     }
 
@@ -2779,6 +2795,7 @@ impl Hosting {
             sandbox: Some(session::RunSandbox::Off),
             prompt_key: None,
             armed_skills: None,
+            skills_not_there: None,
         })
     }
 
@@ -3552,6 +3569,8 @@ struct ForTheProgram {
     named: Mutex<Option<NamedTo>>,
     /// The skills its composition said it armed it with (#4218), where it said.
     armed: Mutex<Option<Vec<session::ArmedSkill>>>,
+    /// The skills its composition said it starts without here (#2977), where some are.
+    not_there: Mutex<Option<session::SkillsNotThere>>,
 }
 
 /// The id a start gave the confinement composed for it, the link it is named to (#2407), the
@@ -3570,6 +3589,13 @@ impl Beside for ForTheProgram {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) =
             Some(session::ArmedSkill::bounded(skills));
+    }
+
+    fn not_there(&self, not: session::SkillsNotThere) {
+        *self
+            .not_there
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = not.bounded();
     }
 
     fn confine(&self, plan: &session::ConfinePlan) -> Result<session::Confined, String> {
