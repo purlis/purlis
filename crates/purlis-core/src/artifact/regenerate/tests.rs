@@ -104,6 +104,18 @@ fn a_script_in_no_skill_is_approved_by_its_own_folder() {
 }
 
 #[test]
+fn an_interpreter_named_by_its_path_is_never_the_script() {
+    let here = Here::new();
+    std::fs::create_dir_all(here.workspace.join("tools")).unwrap();
+    std::fs::write(here.workspace.join("tools/make.sh"), "echo").unwrap();
+    let resolved = here.resolve("/bin/sh tools/make.sh").unwrap();
+    assert_eq!(resolved.program, "/bin/sh");
+    assert_eq!(resolved.code, here.workspace.join("tools"));
+    let why = here.resolve("/bin/sh -c 'cat /etc/hosts'").unwrap_err();
+    assert!(why.contains("names none"), "{why}");
+}
+
+#[test]
 fn a_change_to_the_resolved_code_asks_again_though_the_command_is_the_same() {
     for (file, text) in [
         ("scripts/run.mjs", "write(); steal()"),
@@ -320,4 +332,91 @@ fn error_output_is_its_tail_with_secrets_masked() {
     assert!(shown.len() <= MOST_ERROR_BYTES + 64, "{}", shown.len());
     assert!(shown.contains("failed with "), "{shown}");
     assert!(!shown.contains(&token), "{shown}");
+}
+
+fn scratch_of(here: &Here) -> Scratch {
+    let at = here.root.join("scratch");
+    std::fs::create_dir_all(&at).unwrap();
+    Scratch::made(&at).unwrap()
+}
+
+#[test]
+fn the_launch_is_the_command_wrapped_with_no_network_and_writes_to_its_scratch_alone() {
+    let here = Here::new();
+    let resolved = here.resolve(COMMAND).unwrap();
+    let scratch = scratch_of(&here);
+    let launch = launch(&here.root, &resolved, &scratch).unwrap();
+
+    let line = [vec![launch.program.clone()], launch.args.clone()].concat();
+    let tail: Vec<&str> = line.iter().rev().take(3).map(String::as_str).collect();
+    assert_eq!(
+        tail,
+        ["--week", "../../skills/report/scripts/run.mjs", "node"],
+        "{line:?}"
+    );
+    assert!(line.iter().any(|w| w == "/bin/sh"), "{line:?}");
+    assert_eq!(launch.cwd, here.workspace);
+    assert!(
+        launch
+            .set
+            .contains(&(OUT_ENV.to_owned(), scratch.out.display().to_string()))
+    );
+
+    if cfg!(target_os = "macos") {
+        let profile = &launch.args[1];
+        assert!(
+            !profile.contains("network-outbound"),
+            "no network: {profile}"
+        );
+        assert!(!profile.contains(&format!("(subpath \"{}\")", here.workspace.display())));
+    }
+}
+
+/// The wrapped line run for real: what it writes in its out folder is there, and a write into
+/// the artifact's folder is refused by the sandbox. macOS only, where `sandbox-exec` applies the
+/// profile; a test process already inside a sandbox cannot apply another, so it says so and
+/// stops.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_run_writes_its_out_folder_and_never_the_artifacts() {
+    let here = Here::new();
+    std::fs::create_dir_all(here.workspace.join("tools")).unwrap();
+    let target = here.folder().join("data.json");
+    std::fs::write(
+        here.workspace.join("tools/make.sh"),
+        format!(
+            "echo '{{\"n\": 1}}' > \"$PURLIS_ARTIFACT_OUT/data.json\"\necho bad > '{}' || echo refused >&2\n",
+            target.display()
+        ),
+    )
+    .unwrap();
+    let resolved = here.resolve("/bin/sh tools/make.sh").unwrap();
+    let scratch = scratch_of(&here);
+    let launch = launch(&here.root, &resolved, &scratch).unwrap();
+    let ran = crate::forklock::output(
+        std::process::Command::new(&launch.program)
+            .args(&launch.args)
+            .current_dir(&launch.cwd)
+            .envs(launch.set.iter().cloned()),
+    )
+    .unwrap();
+    let said = String::from_utf8_lossy(&ran.stderr);
+    if said.contains("sandbox_apply") {
+        use std::io::Write as _;
+        let _ = writeln!(
+            std::io::stderr(),
+            "skipped: this test already runs in a sandbox ({said})"
+        );
+        return;
+    }
+    assert!(ran.status.success(), "{said}");
+    assert_eq!(
+        std::fs::read_to_string(scratch.out.join("data.json"))
+            .unwrap()
+            .trim(),
+        r#"{"n": 1}"#
+    );
+    assert!(!target.exists(), "the artifact's folder is not written");
+    let log = std::fs::read_to_string(&scratch.log).unwrap();
+    assert!(log.contains("refused"), "{log}");
 }

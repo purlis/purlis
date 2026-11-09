@@ -91,6 +91,7 @@ mod host;
 mod inboxupdates;
 mod machineprofiles;
 mod personaskills;
+mod regenerate;
 mod routergrade;
 mod signingsetup;
 mod signinwatch;

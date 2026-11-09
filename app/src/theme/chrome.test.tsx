@@ -79,6 +79,7 @@ import { Palette } from "../Palette";
 import { PanelList } from "../PanelList";
 import { PersonaProfile } from "../PersonaProfile";
 import { PoolSignInConfirm } from "../PoolSignInConfirm";
+import { ArtifactRegenerate } from "../ArtifactRegenerate";
 import { MidTurn, QuitWarning, type Ending } from "../QuitWarning";
 import { RelaunchAsk } from "../RelaunchAsk";
 import { RemoveFromWorkspace } from "../RemoveFromWorkspace";
@@ -454,6 +455,16 @@ const SKILL: StudioSkill = {
 function dialogCore() {
   mockIPC((cmd) => {
     switch (cmd) {
+      // A pinned artifact's Regenerate, whose code changed since it was approved (#5962).
+      case "artifact_regenerate_about":
+        return {
+          has_command: true,
+          refused: null,
+          standing: "changed",
+          code: "/plane/skills/report",
+          fingerprint: "ab".repeat(32),
+          last_good: null,
+        };
       case "signing_state":
         return {
           on: false,
@@ -1357,6 +1368,14 @@ const DIALOGS: Opened[] = [
           onCancel={nothing}
         />,
       ),
+  },
+  {
+    name: "Regenerate asking before it runs code that changed",
+    file: "ArtifactRegenerate.tsx",
+    open: async () => {
+      render(<ArtifactRegenerate plane="p" workspace="alpha" folder="board" name="Board" />);
+      await userEvent.click(await screen.findByRole("button", { name: "Regenerate" }));
+    },
   },
   {
     name: "a pool sign-in to confirm",

@@ -5,7 +5,7 @@
 //!
 //! - **What is approved is the code the command resolves to, never its text** ([`resolve`]).
 //!   The command is one program and its words, with no shell between: the first word that
-//!   names a file from the pin's working folder is its script, and the script's code is its
+//!   names a file inside the plane, from the pin's working folder, is its script, and the script's code is its
 //!   skill's folder (the nearest folder above it, inside the plane, holding a `SKILL.md`), or
 //!   else the script's own folder. Every path and byte of that folder is fingerprinted
 //!   ([`fingerprint`]), so an edit to the script, or to anything beside it that it could load,
@@ -69,6 +69,10 @@ const SHELL_WORDS: [&str; 10] = ["|", "||", "&&", ";", "&", ">", ">>", "<", "<<"
 /// Not on Windows, where they do not, so it is refused rather than run unconfined.
 pub const RUNS_HERE: bool = cfg!(not(windows));
 
+/// What a press of Regenerate is told where it does not run ([`RUNS_HERE`]).
+pub const NOT_HERE: &str = "Regenerate runs in the sandbox a chat's commands run in, and this \
+     platform has none, so nothing was run";
+
 /// What a pin's command resolves to: what runs, where, and the code a person approves.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Resolved {
@@ -90,11 +94,7 @@ pub struct Resolved {
 /// sentence saying why it runs nothing.
 pub fn resolve(root: &Path, workspace: &Path, pin: &Pin) -> Result<Resolved, String> {
     if !RUNS_HERE {
-        return Err(
-            "Regenerate runs in the sandbox a chat's commands run in, and this platform has \
-             none, so nothing was run"
-                .into(),
-        );
+        return Err(NOT_HERE.into());
     }
     let Some(command) = pin.command.as_deref().filter(|c| !c.trim().is_empty()) else {
         return Err(format!(
@@ -120,10 +120,11 @@ pub fn resolve(root: &Path, workspace: &Path, pin: &Pin) -> Result<Resolved, Str
         .canonicalize()
         .map_err(|e| format!("the workspace is not there ({})", os(&e)))?;
     let cwd = working_folder(&workspace, pin.cwd.as_deref())?;
+    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
     let script = words
         .iter()
         .filter(|w| !w.starts_with('-'))
-        .find_map(|w| script_at(&cwd, w))
+        .find_map(|w| script_at(&root, &cwd, w))
         .ok_or_else(|| {
             format!(
                 "Regenerate approves the script a command runs, and `{}` names none from its \
@@ -131,7 +132,6 @@ pub fn resolve(root: &Path, workspace: &Path, pin: &Pin) -> Result<Resolved, Str
                 one_line(command)
             )
         })?;
-    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
     let code = code_folder(&root, &script);
     let fingerprint = fingerprint(&code)?;
     Ok(Resolved {
@@ -163,13 +163,15 @@ fn working_folder(workspace: &Path, cwd: Option<&str>) -> Result<PathBuf, String
     Ok(real)
 }
 
-/// The file `word` names from `cwd`, where it names one, once every link is followed.
-fn script_at(cwd: &Path, word: &str) -> Option<PathBuf> {
+/// The file `word` names from `cwd`, where it names one inside the plane at `root`, once every
+/// link is followed. A file outside the plane (an interpreter such as `/bin/sh`, or a system
+/// file) is never the script.
+fn script_at(root: &Path, cwd: &Path, word: &str) -> Option<PathBuf> {
     if word.is_empty() || word.contains('\0') {
         return None;
     }
     let real = cwd.join(word).canonicalize().ok()?;
-    real.is_file().then_some(real)
+    (real.is_file() && real.starts_with(root)).then_some(real)
 }
 
 /// The folder a script's approval covers: the nearest one above it, inside the plane, holding
@@ -522,6 +524,142 @@ pub fn shown_errors(output: &[u8]) -> String {
     }
     shown.push_str(&tail[at..]);
     shown
+}
+
+/// The variable naming the file a run's output, both streams, is written to: only shown.
+pub const LOG_ENV: &str = "PURLIS_ARTIFACT_LOG";
+
+/// How long a run may take before purlis stops it.
+pub const MOST_SECONDS: u64 = 300;
+
+/// The folders and file of one run, all inside its scratch folder: the only place it writes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Scratch {
+    /// Where it writes its data files, by their declared names ([`OUT_ENV`]).
+    pub out: PathBuf,
+    /// Its own temporary folder.
+    pub tmp: PathBuf,
+    /// Its output ([`LOG_ENV`]).
+    pub log: PathBuf,
+}
+
+impl Scratch {
+    /// The scratch layout under `scratch`, made: `out/`, `tmp/` and the log's place.
+    pub fn made(scratch: &Path) -> Result<Self, String> {
+        let real = scratch
+            .canonicalize()
+            .map_err(|e| format!("purlis could not make the run's folder ({})", os(&e)))?;
+        let made = Self {
+            out: real.join("out"),
+            tmp: real.join("tmp"),
+            log: real.join("run.log"),
+        };
+        for dir in [&made.out, &made.tmp] {
+            std::fs::create_dir(dir)
+                .map_err(|e| format!("purlis could not make the run's folder ({})", os(&e)))?;
+        }
+        Ok(made)
+    }
+}
+
+/// What the window hands the session host to start: the command wrapped in its sandbox.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Launch {
+    pub program: String,
+    pub args: Vec<String>,
+    /// The pin's working folder: read, never written.
+    pub cwd: PathBuf,
+    /// Variables set for it.
+    pub set: Vec<(String, String)>,
+}
+
+/// The fixed script the wrapped line runs: the command's own words, passed as its arguments and
+/// never read by a shell as text, with both its streams written to [`LOG_ENV`].
+const RUNS: &str = "exec \"$@\" >\"$PURLIS_ARTIFACT_LOG\" 2>&1";
+
+/// **The run of `resolved`, wrapped in its sandbox** (ADR 0120 §6, amended 2026-11-09): the
+/// profile a chat's commands run in (Seatbelt on macOS, purlis's own wrap on Linux, from
+/// [`crate::sandbox::seatbelt::profile`]) with this plane's denials, **no network** (no proxy
+/// port and no socket is named in it), and **writes to `scratch` alone**: its out folder, its
+/// temporary folder and its log. On Linux the wrap is purlis's own program, checked as a chat's
+/// is ([`crate::sandbox::program::checked_wrap`]).
+pub fn launch(root: &Path, resolved: &Resolved, scratch: &Scratch) -> Result<Launch, String> {
+    let machine = crate::sandbox::Machine::this();
+    let purlis = match machine.os {
+        crate::sandbox::Os::Linux => {
+            let writes = scratch.out.parent().unwrap_or(&scratch.out).to_path_buf();
+            let wrap = crate::sandbox::program::checked_wrap(
+                root,
+                crate::sandbox::program::Chat {
+                    cwd: &writes,
+                    writable: std::slice::from_ref(&scratch.tmp),
+                    env: &[],
+                },
+            )
+            .map_err(|why| format!("purlis could not start its sandbox ({why})"))?;
+            Some(wrap)
+        }
+        _ => None,
+    };
+    launch_on(root, resolved, scratch, purlis.as_deref(), &machine)
+}
+
+fn launch_on(
+    root: &Path,
+    resolved: &Resolved,
+    scratch: &Scratch,
+    purlis: Option<&Path>,
+    machine: &crate::sandbox::Machine,
+) -> Result<Launch, String> {
+    if !RUNS_HERE {
+        return Err("Regenerate runs in a sandbox this platform does not have".into());
+    }
+    let denied = crate::sandbox::Denied::of(root, machine);
+    if denied.unread.is_some() || denied.untold.is_some() {
+        return Err(
+            "purlis could not tell everything a run must be kept from reading, so nothing was \
+             run"
+            .into(),
+        );
+    }
+    let writes = scratch
+        .out
+        .parent()
+        .ok_or("the run's folder has no place")?
+        .to_path_buf();
+    let profile = crate::sandbox::seatbelt::profile(
+        &denied.paths,
+        &crate::sandbox::seatbelt::Own::default(),
+        &writes,
+        &scratch.tmp,
+        &[],
+        None,
+    )
+    .map_err(|why| format!("purlis could not write the run's sandbox ({why})"))?;
+    let rest = [
+        vec![
+            "-c".to_owned(),
+            RUNS.to_owned(),
+            "purlis-regenerate".to_owned(),
+            resolved.program.clone(),
+        ],
+        resolved.args.clone(),
+    ]
+    .concat();
+    let (program, args) =
+        crate::sandbox::wrapper::line(machine.os, purlis, profile, "/bin/sh".to_owned(), rest)
+            .map_err(str::to_owned)?;
+    let path = |p: &Path| p.display().to_string();
+    Ok(Launch {
+        program,
+        args,
+        cwd: resolved.cwd.clone(),
+        set: vec![
+            (OUT_ENV.to_owned(), path(&scratch.out)),
+            (LOG_ENV.to_owned(), path(&scratch.log)),
+            ("TMPDIR".to_owned(), path(&scratch.tmp)),
+        ],
+    })
 }
 
 /// Where data file `name` is inside `folder`.

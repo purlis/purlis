@@ -85,6 +85,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
   // missing, too-large or refused one carries Repin and Unpin as its way out, a refused Repin or
   // Unpin is said in the core's sentence beside those two, which are its retry, and an unpinned
   // one says so with nothing left to do but close the tab.
+  "ArtifactRegenerate.tsx": {
+    count: 2,
+    why:
+      "Regenerate's line in an artifact's bar: where its data stands, and a run's failure said " +
+      "beside the button that is its retry (#5962)",
+  },
   "ArtifactTab.tsx": {
     count: 5,
     why: READ_ONCE,
