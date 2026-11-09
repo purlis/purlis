@@ -1022,6 +1022,14 @@ fn every_harness_denies_a_chat_writing_the_persons_harness_approvals_or_the_decl
         declarations.display(),
         denied.paths
     );
+    // The inventory of repos too: a Clone by name clones the URL it records.
+    let inventory = plane.path().join(crate::inventory::DIR);
+    assert!(
+        paths(&denied, Class::LaterCode, Access::Write).contains(&inventory),
+        "{} not held: {:?}",
+        inventory.display(),
+        denied.paths
+    );
     // Read, never written: the start that checks them may run where the chat's reads are held.
     for held in records.iter().chain([&declarations]) {
         assert!(

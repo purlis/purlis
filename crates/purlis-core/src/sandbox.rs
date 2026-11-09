@@ -1601,6 +1601,16 @@ impl Denied {
             reach: Reach::AndBelow,
             any_case: false,
         });
+        // …and the project's inventory of repos: the window's Clone of a repo by name clones,
+        // and records as the clone's remote, the URL it holds for that name.
+        paths.push(Denial {
+            class: Class::LaterCode,
+            path: root.join(crate::inventory::DIR),
+            access: Access::Write,
+            named: None,
+            reach: Reach::AndBelow,
+            any_case: true,
+        });
         // …and the project's skills, wherever they reach chats (SK-9,
         // #2772): a chat's write of one is a draft the person accepts, never the file itself.
         // Always on a runner (#3084): its chats reach them by their desktop's word, which this

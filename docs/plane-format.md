@@ -1357,6 +1357,9 @@ key refuses.
   (`charter/commands.py:218`, `:366`, `:641`, `:880`; `charter/statusline.py:792`;
   `charter/doctor.py:3674`), and `charter/inventory.py:265` `find`.
 - **Git:** committed (nothing ignores `inventory/`).
+- **No chat's sandbox writes `inventory/`**, at either level: the window's Clone of a repo by
+  name clones the URL a record holds and records it as the clone's remote, so only the person,
+  `purlis discover` run outside a chat, and the app write it (`sandbox::Denied::of`).
 - **Encoding details:** `json.dumps(doc, indent=2, ensure_ascii=False) + "\n"` via
   `write_text` (`charter/inventory.py:315`) — not atomic, no lock; the parent directory is
   created first (`charter/inventory.py:314`). Records are **sorted by `name`**
