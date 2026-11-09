@@ -1223,9 +1223,9 @@ fn the_vault_grants_off_their_shape_do_not_read() {
     }
 }
 
-/// A write to this machine's file keeps every field that still reads (#5906): a field off its
-/// shape is dropped on the way, never the vault grants beside it, so a grant the window shows is
-/// not taken away by the next, unrelated write.
+/// A write to this machine's file that starts it again keeps its vault grants (#5906): a field off
+/// its shape takes the rest with it, as before, but never the vault grants beside it, so a grant
+/// the window shows is not taken away by the next, unrelated write.
 #[test]
 fn an_unrelated_write_keeps_the_vault_grants_beside_a_field_off_its_shape() {
     let project = a_project("");
