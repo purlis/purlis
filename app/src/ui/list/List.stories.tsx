@@ -883,8 +883,11 @@ export const ComposingInARowsBox: Story = {
     await waitFor(() => expect(box()).toHaveValue("ni hao"));
     await userEvent.keyboard("{Escape}");
     await untilFocused(() => host, "Composing: Esc once it is done gives the keyboard to its row");
-    await tabsOutAndBack(list, host, userEvent, "Composing");
-    await userEvent.keyboard("{ArrowRight}");
+    await userEvent.keyboard("{ArrowDown}");
+    const test = within(list).getByRole("row", { name: "Run cargo test" });
+    await untilFocused(() => test, "Composing: ↓ on the row goes to the row below");
+    await tabsOutAndBack(list, test, userEvent, "Composing");
+    await userEvent.keyboard("{ArrowUp}{ArrowRight}");
     await untilFocused(box, "Composing: the box holds the keyboard for the picture");
     expectFocusInSight();
   },
@@ -961,14 +964,10 @@ export const ASelectInARow: Story = {
     await userEvent.keyboard("{ArrowLeft}");
     await untilFocused(() => token, "A select in a row: ← goes back to its row");
     await userEvent.keyboard("{ArrowDown}");
-    await untilFocused(
-      () => within(list).getByRole("row", { name: "Run cargo test" }),
-      "A select in a row: ↓ on the row goes to the row below",
-    );
-    await userEvent.keyboard("{ArrowUp}");
-    await untilFocused(() => token, "A select in a row: ↑ comes back to its row");
-    await tabsOutAndBack(list, token, userEvent, "A select in a row");
-    await userEvent.keyboard("{ArrowRight}");
+    const test = within(list).getByRole("row", { name: "Run cargo test" });
+    await untilFocused(() => test, "A select in a row: ↓ on the row goes to the row below");
+    await tabsOutAndBack(list, test, userEvent, "A select in a row");
+    await userEvent.keyboard("{ArrowUp}{ArrowRight}");
     await untilFocused(select, "A select in a row: its button holds the keyboard for the picture");
     expectFocusInSight();
   },
