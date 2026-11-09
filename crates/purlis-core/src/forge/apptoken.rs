@@ -1065,6 +1065,10 @@ thread_local! {
     /// A test's own mint, in place of GitHub, for the calls on its thread.
     pub(crate) static MINT_HERE: std::cell::RefCell<Option<TestMint>> =
         const { std::cell::RefCell::new(None) };
+    /// The count of chat ends ([`For::ends_seen`]) the last mint on this thread through
+    /// [`MINT_HERE`] was asked with: what decides whether its token is kept.
+    pub(crate) static MINTED_SEEING: std::cell::Cell<Option<Option<u64>>> =
+        const { std::cell::Cell::new(None) };
 }
 
 /// **The config home whose record of the window's clones a mint reads** ([`For::config_root`]):
@@ -1095,6 +1099,10 @@ pub fn token_from_vault(
             .map(Zeroizing::new)
             .map_err(|e| e.message.to_string())
     };
+    #[cfg(test)]
+    if MINT_HERE.with(|mint| mint.borrow().is_some()) {
+        MINTED_SEEING.with(|seeing| seeing.set(Some(chat.ends_seen)));
+    }
     #[cfg(test)]
     if let Some(minted) = MINT_HERE.with(|mint| {
         mint.borrow()

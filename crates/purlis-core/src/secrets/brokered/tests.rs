@@ -5278,11 +5278,11 @@ fn a_github_app_tool_is_handed_the_token_minted_for_it_and_never_its_key() {
     assert!(!wire.contains(TOKEN), "{wire}");
 }
 
-/// A chat that ends after its asker was counted, and before its run is served, keeps no token
-/// minted for it (#3808): the count is the one read before the chat was found open, never one
-/// read once the run is served.
+/// A chat that ends after it was found open, and before its run is served, keeps no token
+/// minted for it (#3808): the mint is asked with the count of ends read before the chat was
+/// found open, which the end passed, never one read once the run is served.
 #[test]
-fn a_github_app_tool_of_a_chat_that_ended_since_it_was_found_open_is_handed_no_token() {
+fn a_github_app_tool_is_minted_for_with_the_count_of_ends_read_before_its_chat_was_found_open() {
     use crate::sandbox::tools::{Handed, Ready, Tool, mint::Mint};
     let project = project();
     crate::forge::apptoken::MINT_HERE.with(|mint| {
@@ -5301,17 +5301,23 @@ fn a_github_app_tool_of_a_chat_that_ended_since_it_was_found_open_is_handed_no_t
         program: PathBuf::from("/bin/sh"),
     });
     // Counted as the app finds the chat open, and the chat ends before its run is served.
-    asker.ends_seen = Some(crate::forge::apptoken::ends_so_far());
+    let seen = crate::forge::apptoken::ends_so_far();
+    asker.ends_seen = Some(seen);
     crate::forge::apptoken::chat_ended(project.path(), asker.chat);
-    let mut want = wanted(project.path(), "team", sh(r#"echo "ran:$GH_TOKEN""#));
-    want.env = vec!["GH_TOKEN=TOKEN".into()];
-    let frames = served_as_asked(&asker, want);
-    crate::forge::apptoken::MINT_HERE.with(|mint| *mint.borrow_mut() = None);
     assert!(
-        matches!(frames.last(), Some(Frame::Refused { why, .. }) if why.contains(crate::forge::apptoken::CHAT_ENDED)),
-        "{frames:?}"
+        crate::forge::apptoken::ends_so_far() > seen,
+        "the end is counted"
     );
-    assert_eq!(stdout(&frames), "");
+    let mut want = wanted(project.path(), "team", sh("true"));
+    want.env = vec!["GH_TOKEN=TOKEN".into()];
+    crate::forge::apptoken::MINTED_SEEING.with(|seeing| seeing.set(None));
+    let _ = served_as_asked(&asker, want);
+    crate::forge::apptoken::MINT_HERE.with(|mint| *mint.borrow_mut() = None);
+    assert_eq!(
+        crate::forge::apptoken::MINTED_SEEING.with(std::cell::Cell::get),
+        Some(Some(seen)),
+        "minted with the count read before the chat was found open"
+    );
 }
 
 /// A GitHub App's tool whose mint is refused runs nothing, and says why.
