@@ -4,19 +4,25 @@
 //! `purlis-cluster-operator doctor` (#2236): what a cluster lacks before purlis's cluster
 //! operator is installed, one line per finding, each naming the next step.
 //!
+//! It also says where a cluster already holds something the install would refuse later: a
+//! namespace outside `purlis-runners-*` that carries the operator's own mark, which opens the
+//! operator's mint port to it.
+//!
 //! It asks the cluster's API server with the credentials of whoever runs it (their kubeconfig's
 //! current context) and changes nothing: every request is a read, plus `SelfSubjectAccessReview`,
 //! the question `kubectl auth can-i` asks, which the API server answers and keeps nothing of.
 //!
 //! The checks run against a [`Cluster`]: [`Kube`] is the real one, and tests hand in their own.
 
+use crate::person::{MANAGED_BY, NAMESPACE_PREFIX};
 use crate::upstream::{CONTROLLER_DIGEST, VERSION};
 use k8s_openapi::api::apps::v1::Deployment;
 use k8s_openapi::api::authorization::v1::{
     ResourceAttributes, SelfSubjectAccessReview, SelfSubjectAccessReviewSpec,
 };
+use k8s_openapi::api::core::v1::Namespace;
 use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition;
-use kube::api::{Api, PostParams};
+use kube::api::{Api, ListParams, PostParams};
 use kube::config::Kubeconfig;
 use std::fmt;
 use std::future::Future;
@@ -110,6 +116,8 @@ pub trait Cluster {
         group: &str,
         resource: &str,
     ) -> impl Future<Output = Result<bool, Unanswered>> + Send;
+    /// The names of the namespaces that carry the operator's own mark, [`MANAGED_BY`].
+    fn marked_namespaces(&self) -> impl Future<Output = Result<Vec<String>, Unanswered>> + Send;
 }
 
 /// One thing the cluster lacks, and the next step.
@@ -200,7 +208,8 @@ fn ask_again(error: &str) -> String {
     )
 }
 
-/// Every check, in order: Kubernetes, upstream agent-sandbox, the rights to apply the install.
+/// Every check, in order: Kubernetes, upstream agent-sandbox, the rights to apply the install,
+/// and the namespaces that carry the operator's mark.
 pub async fn check(cluster: &impl Cluster) -> Report {
     let mut report = Report::default();
     report.holds(format!("asked {}", cluster.asked()));
@@ -218,6 +227,7 @@ pub async fn check(cluster: &impl Cluster) -> Report {
     }
     upstream(&mut report, cluster).await;
     rights(&mut report, cluster).await;
+    marks(&mut report, cluster).await;
     report
 }
 
@@ -443,6 +453,39 @@ async fn rights(report: &mut Report, cluster: &impl Cluster) {
     );
 }
 
+/// A namespace outside `purlis-runners-*` carrying the operator's mark: the mark opens the
+/// operator's mint port to the namespace, and the policy on runner namespaces lets no one put it
+/// there, so one found is from before the policy held and is told to drop it.
+async fn marks(report: &mut Report, cluster: &impl Cluster) {
+    let (key, value) = MANAGED_BY;
+    let marked = match cluster.marked_namespaces().await {
+        Ok(marked) => marked,
+        Err(Unanswered::Forbidden) => {
+            report.lacks(
+                format!("permission to list namespaces, to see whether any outside {NAMESPACE_PREFIX}* carries the operator's mark ({key}={value})"),
+                "run doctor as a cluster admin, or ask one for list on namespaces",
+            );
+            return;
+        }
+        Err(Unanswered::Failed(error)) => {
+            report.lacks(
+                "an answer about which namespaces carry the operator's mark",
+                ask_again(&error),
+            );
+            return;
+        }
+    };
+    for name in marked
+        .iter()
+        .filter(|name| !name.starts_with(NAMESPACE_PREFIX))
+    {
+        report.lacks(
+            format!("the operator's mark on runner namespaces alone: namespace {name}, outside {NAMESPACE_PREFIX}*, carries {key}={value}, which opens the operator's mint port to it"),
+            format!("remove the label (kubectl label namespace {name} {key}-)"),
+        );
+    }
+}
+
 /// The real cluster, through a kube client with the credentials of whoever runs doctor.
 pub struct Kube {
     client: kube::Client,
@@ -545,5 +588,19 @@ impl Cluster for Kube {
             .await
             .map_err(unanswered)?;
         Ok(answered.status.is_some_and(|status| status.allowed))
+    }
+
+    async fn marked_namespaces(&self) -> Result<Vec<String>, Unanswered> {
+        let (key, value) = MANAGED_BY;
+        let namespaces = Api::<Namespace>::all(self.client.clone());
+        let marked = namespaces
+            .list(&ListParams::default().labels(&format!("{key}={value}")))
+            .await
+            .map_err(unanswered)?;
+        Ok(marked
+            .items
+            .into_iter()
+            .filter_map(|namespace| namespace.metadata.name)
+            .collect())
     }
 }

@@ -375,8 +375,9 @@ fn a_claim_is_admitted_only_for_someone_the_cluster_lets_use_its_pool() {
     assert_eq!(rules.len(), 2, "{spec}");
     assert_eq!(strings(&rules[0]["apiGroups"]), ["runners.purlis.dev"]);
     assert_eq!(strings(&rules[0]["resources"]), ["claims"]);
-    // CREATE alone: who may change the repos it names is the policy on App keys' (#4206).
-    assert_eq!(strings(&rules[0]["operations"]), ["CREATE"]);
+    // Who may change the repos it names is the policy on App keys' (#4206); an update is held
+    // only when it runs a stopped claim again.
+    assert_eq!(strings(&rules[0]["operations"]), ["CREATE", "UPDATE"]);
     let validations = spec["validations"].as_array().expect("validations");
     assert_eq!(validations.len(), 6, "{spec}");
     let expression = |at: usize| {
@@ -394,6 +395,12 @@ fn a_claim_is_admitted_only_for_someone_the_cluster_lets_use_its_pool() {
     assert_eq!(
         expression(1),
         "request.resource.group!='runners.purlis.dev'||request.operation!='CREATE'||object.spec.requester==request.userInfo.username"
+    );
+    // A stopped claim gets no key vouched for and no token minted: only its requester runs it
+    // again, and any other update, a finalizer's removal among them, is not asked.
+    assert_eq!(
+        expression(5),
+        "request.resource.group!='runners.purlis.dev'||request.operation!='UPDATE'||!oldObject.spec.stopped||object.spec.stopped||request.userInfo.username==object.spec.requester"
     );
 
     let binding = documents
@@ -680,11 +687,14 @@ fn a_runner_namespace_and_what_the_operator_binds_and_caps_there_are_guarded_at_
          (!('pod-security.kubernetes.io/enforce-version'inobject.metadata.labels)||\
          object.metadata.labels['pod-security.kubernetes.io/enforce-version']=='latest')"
     );
-    // Its mark opens the mint port, so no one else marks another namespace (#4206).
+    // Its mark opens the mint port, so no one else marks another namespace (#4206); an update
+    // that leaves the marks as they were, a namespace's finalize and status among them, gets
+    // through, so one marked before the policy held can still be deleted.
     assert_eq!(
         validations[1],
         "request.resource.resource!='namespaces'||variables.operator||variables.runners||\
-         variables.marks[0]!='purlis-cluster-operator'"
+         variables.marks[0]!='purlis-cluster-operator'||\
+         request.operation=='UPDATE'&&variables.marks==variables.oldMarks"
     );
     let validations: Vec<String> = validations
         .iter()
@@ -762,18 +772,25 @@ fn spending_an_app_key_takes_use_on_it() {
             .collect::<String>()
     };
     let validations = spec["validations"].as_array().expect("validations");
-    assert_eq!(validations.len(), 3, "{spec}");
+    assert_eq!(validations.len(), 4, "{spec}");
     assert_eq!(
         flat(&validations[0]["expression"]),
         "request.resource.resource!='pools'||!has(object.spec.forge)||(request.operation=='UPDATE'&&has(oldObject.spec.forge)&&object.spec.forge==oldObject.spec.forge)||authorizer.group('runners.purlis.dev').resource('forgekeys').name(object.spec.forge.appKeySecretRef.name).check('use').allowed()"
     );
-    // On a Pool that mints, the image holds the link keys, so it takes `use` on the key too.
+    // On a Pool that mints, the image holds the link keys, so changing it takes `use` on the key
+    // too, and so does turning minting on, which adopts the image someone else may have set.
     assert_eq!(
         flat(&validations[1]["expression"]),
-        "request.resource.resource!='pools'||request.operation!='UPDATE'||object.spec.image==oldObject.spec.image||!has(oldObject.spec.forge)||!oldObject.spec.forge.mintInCluster||authorizer.group('runners.purlis.dev').resource('forgekeys').name(oldObject.spec.forge.appKeySecretRef.name).check('use').allowed()"
+        "request.resource.resource!='pools'||request.operation!='UPDATE'||!has(object.spec.forge)||!object.spec.forge.mintInCluster||(object.spec.image==oldObject.spec.image&&has(oldObject.spec.forge)&&oldObject.spec.forge.mintInCluster)||authorizer.group('runners.purlis.dev').resource('forgekeys').name(object.spec.forge.appKeySecretRef.name).check('use').allowed()"
     );
+    // Stopping is a gate on minting: running a stopped Pool that mints again takes `use` on its
+    // key, so revoking that right takes the key away from the Pool's other writers.
     assert_eq!(
         flat(&validations[2]["expression"]),
+        "request.resource.resource!='pools'||request.operation!='UPDATE'||!oldObject.spec.stopped||object.spec.stopped||!has(object.spec.forge)||!object.spec.forge.mintInCluster||authorizer.group('runners.purlis.dev').resource('forgekeys').name(object.spec.forge.appKeySecretRef.name).check('use').allowed()"
+    );
+    assert_eq!(
+        flat(&validations[3]["expression"]),
         "request.resource.resource!='claims'||(has(object.spec.forge)?has(oldObject.spec.forge)&&object.spec.forge==oldObject.spec.forge:!has(oldObject.spec.forge))||(request.userInfo.username==object.spec.requester&&authorizer.group('runners.purlis.dev').resource('pools').name(object.spec.pool).check('use').allowed())"
     );
     let binding = documents

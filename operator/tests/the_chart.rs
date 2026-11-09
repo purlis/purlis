@@ -176,7 +176,8 @@ const POLICY_HEADER: &str = "# Copyright 2026 Purlis
 # the cluster refuses a Claim from someone who may not use its pool.
 #
 # Upstream's claims on a purlis pool's warm pool, and warm pools of its template, are made by
-# the operator alone, so a runner from a pool is had only through a Claim (#2055).
+# the operator alone, so a runner from a pool is had only through a Claim (#2055). A stopped
+# Claim is run again by its requester alone.
 #
 # The second policy, purlis-runner-namespaces (#2055): only the operator makes a runner
 # namespace (purlis-runners-*) or changes who it is for, and the operator binds
@@ -189,8 +190,10 @@ const POLICY_HEADER: &str = "# Copyright 2026 Purlis
 # controls; and its spec.podTemplate only while it is Suspended in a runner namespace (#3982).
 #
 # The fourth policy, purlis-forge (#4206): whoever writes a Pool's spec.forge needs `use` on the
-# key it names (forgekeys), and only a Claim's requester changes the repos it names. The operator
-# mints only for a Claim and a Pool made once its binding has settled.
+# key it names (forgekeys), and only a Claim's requester changes the repos it names. On a Pool that
+# mints, changing its image, turning its minting on and running it again once it is stopped take
+# `use` on its key too. The operator mints only for a Claim and a Pool made once its binding has
+# settled.
 #
 # The fifth policy, purlis-operator-deletes-only-a-retained-claim (#3981): the operator deletes
 # only a kept Claim, not stopped, that carries its own RetentionEnded condition.

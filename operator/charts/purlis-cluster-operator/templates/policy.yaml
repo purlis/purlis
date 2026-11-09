@@ -16,8 +16,9 @@ spec:
     resourceRules:
       - apiGroups: [runners.purlis.dev]
         apiVersions: ["*"]
-        # Who may change the repos a claim names is the policy purlis-forge's (#4206).
-        operations: [CREATE]
+        # Who may change the repos a claim names is the policy purlis-forge's (#4206). An
+        # update is held only when it runs a stopped claim again.
+        operations: [CREATE, UPDATE]
         resources: [claims]
       # Upstream's objects, so that a runner from a purlis pool is had only through a Claim
       # (#2055): its warm pools and claims, on purlis's templates and warm pools.
@@ -90,6 +91,16 @@ spec:
       message: >-
         An upstream claim on the warm pool of a purlis pool sets no env, lifecycle, or pod labels or
         annotations: the purlis pool and its Claim say what the runner gets and how long it lives.
+      reason: Forbidden
+    # A stopped claim's runner gets no key vouched for and no token minted, so running it again
+    # is its requester's alone: someone else who may patch claims in the namespace may stop it,
+    # and no more. Any other update is left alone, so a finalizer's removal never depends on it.
+    - expression: >-
+        request.resource.group != 'runners.purlis.dev' || request.operation != 'UPDATE' ||
+        !oldObject.spec.stopped || object.spec.stopped ||
+        request.userInfo.username == object.spec.requester
+      messageExpression: >-
+        'Only ' + object.spec.requester + ', who asked for this claim, may run it again once it is stopped.'
       reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1

@@ -22,7 +22,8 @@
 # the cluster refuses a Claim from someone who may not use its pool.
 #
 # Upstream's claims on a purlis pool's warm pool, and warm pools of its template, are made by
-# the operator alone, so a runner from a pool is had only through a Claim (#2055).
+# the operator alone, so a runner from a pool is had only through a Claim (#2055). A stopped
+# Claim is run again by its requester alone.
 #
 # The second policy, purlis-runner-namespaces (#2055): only the operator makes a runner
 # namespace (purlis-runners-*) or changes who it is for, and the operator binds
@@ -35,8 +36,10 @@
 # controls; and its spec.podTemplate only while it is Suspended in a runner namespace (#3982).
 #
 # The fourth policy, purlis-forge (#4206): whoever writes a Pool's spec.forge needs `use` on the
-# key it names (forgekeys), and only a Claim's requester changes the repos it names. The operator
-# mints only for a Claim and a Pool made once its binding has settled.
+# key it names (forgekeys), and only a Claim's requester changes the repos it names. On a Pool that
+# mints, changing its image, turning its minting on and running it again once it is stopped take
+# `use` on its key too. The operator mints only for a Claim and a Pool made once its binding has
+# settled.
 #
 # The fifth policy, purlis-operator-deletes-only-a-retained-claim (#3981): the operator deletes
 # only a kept Claim, not stopped, that carries its own RetentionEnded condition.
@@ -89,16 +92,30 @@ spec:
       messageExpression: >-
         'You may not use the GitHub App key ' + object.spec.forge.appKeySecretRef.name + '. A cluster admin can grant use on it (forgekeys).'
       reason: Forbidden
-    # On a Pool that mints, its image holds the link keys the operator vouches for, so changing it
-    # is spending the key too.
+    # On a Pool that mints, its image holds the link keys the operator vouches for, so changing
+    # it is spending the key too, and so is turning minting on, which adopts the image the Pool
+    # already names, whoever set it.
     - expression: >-
         request.resource.resource != 'pools' || request.operation != 'UPDATE' ||
-        object.spec.image == oldObject.spec.image || !has(oldObject.spec.forge) ||
-        !oldObject.spec.forge.mintInCluster ||
+        !has(object.spec.forge) || !object.spec.forge.mintInCluster ||
+        (object.spec.image == oldObject.spec.image &&
+        has(oldObject.spec.forge) && oldObject.spec.forge.mintInCluster) ||
         authorizer.group('runners.purlis.dev').resource('forgekeys')
-        .name(oldObject.spec.forge.appKeySecretRef.name).check('use').allowed()
+        .name(object.spec.forge.appKeySecretRef.name).check('use').allowed()
       messageExpression: >-
-        'This pool mints with the GitHub App key ' + oldObject.spec.forge.appKeySecretRef.name + ', so changing its image takes use on that key (forgekeys).'
+        'This pool mints with the GitHub App key ' + object.spec.forge.appKeySecretRef.name + ', so changing its image, or turning its minting on, takes use on that key (forgekeys).'
+      reason: Forbidden
+    # A stopped Pool that mints gets no token minted for its runners, so running it again is
+    # spending its key: whoever may write the Pool but holds no `use` on the key may stop it, and
+    # no more. Revoking `use` on the key is what takes it away from a Pool's writers.
+    - expression: >-
+        request.resource.resource != 'pools' || request.operation != 'UPDATE' ||
+        !oldObject.spec.stopped || object.spec.stopped ||
+        !has(object.spec.forge) || !object.spec.forge.mintInCluster ||
+        authorizer.group('runners.purlis.dev').resource('forgekeys')
+        .name(object.spec.forge.appKeySecretRef.name).check('use').allowed()
+      messageExpression: >-
+        'This pool mints with the GitHub App key ' + object.spec.forge.appKeySecretRef.name + ', so running it again once it is stopped takes use on that key (forgekeys).'
       reason: Forbidden
     # The repos a claim names say what its runner's token may cover, within its Pool's allow-list.
     # Someone else who may patch claims in the namespace has no say in that, and nor has its
@@ -136,8 +153,9 @@ spec:
     resourceRules:
       - apiGroups: [runners.purlis.dev]
         apiVersions: ["*"]
-        # Who may change the repos a claim names is the policy purlis-forge's (#4206).
-        operations: [CREATE]
+        # Who may change the repos a claim names is the policy purlis-forge's (#4206). An
+        # update is held only when it runs a stopped claim again.
+        operations: [CREATE, UPDATE]
         resources: [claims]
       # Upstream's objects, so that a runner from a purlis pool is had only through a Claim
       # (#2055): its warm pools and claims, on purlis's templates and warm pools.
@@ -210,6 +228,16 @@ spec:
       message: >-
         An upstream claim on the warm pool of a purlis pool sets no env, lifecycle, or pod labels or
         annotations: the purlis pool and its Claim say what the runner gets and how long it lives.
+      reason: Forbidden
+    # A stopped claim's runner gets no key vouched for and no token minted, so running it again
+    # is its requester's alone: someone else who may patch claims in the namespace may stop it,
+    # and no more. Any other update is left alone, so a finalizer's removal never depends on it.
+    - expression: >-
+        request.resource.group != 'runners.purlis.dev' || request.operation != 'UPDATE' ||
+        !oldObject.spec.stopped || object.spec.stopped ||
+        request.userInfo.username == object.spec.requester
+      messageExpression: >-
+        'Only ' + object.spec.requester + ', who asked for this claim, may run it again once it is stopped.'
       reason: Forbidden
 ---
 # Source: purlis-cluster-operator/templates/retention-policy.yaml
@@ -345,10 +373,13 @@ spec:
         'Only the purlis cluster operator makes a runner namespace (purlis-runners-*), or changes who it is for.'
       reason: Forbidden
     # The operator's mark on a namespace opens its mint port to it (#4206), so no one else puts
-    # it on a namespace that is not a runner namespace.
+    # it on a namespace that is not a runner namespace. An update that leaves the marks as they
+    # were is let through, so a namespace marked before this policy held can still be deleted
+    # (its finalize and status updates) or have the mark taken off.
     - expression: >-
         request.resource.resource != 'namespaces' || variables.operator || variables.runners ||
-        variables.marks[0] != 'purlis-cluster-operator'
+        variables.marks[0] != 'purlis-cluster-operator' ||
+        request.operation == 'UPDATE' && variables.marks == variables.oldMarks
       messageExpression: >-
         'Only the purlis cluster operator marks a namespace as its own, and only a runner namespace.'
       reason: Forbidden

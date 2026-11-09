@@ -1884,12 +1884,14 @@ async fn admission_refuses_a_bad_allow_list_and_a_claims_wildcard() {
     scratch.end().await;
 }
 
-/// **Only who asked for a Claim changes the repos it names** (#4204): a peer who may patch claims
-/// in the namespace could otherwise widen what the runner's token covers. Everything else they
-/// may do to it, and the operator's own patches, go on as they did.
+/// **Only who asked for a Claim changes the repos it names, or runs it again once it is
+/// stopped** (#4204): a peer who may patch claims in the namespace could otherwise widen what the
+/// runner's token covers, or undo a stop, which holds back its key and its tokens. Everything
+/// else they may do to it, stopping it among them, and the operator's own patches, go on as they
+/// did.
 #[tokio::test]
 #[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
-async fn only_a_claims_requester_changes_the_repos_it_names() {
+async fn only_a_claims_requester_changes_the_repos_it_names_or_runs_it_again() {
     let client = Client::try_default().await.expect("the cluster");
     let scratch = Scratch::new(&client, "e2e-forge-peer").await;
     let pools = Api::<Pool>::all(client.clone());
@@ -1996,6 +1998,16 @@ async fn only_a_claims_requester_changes_the_repos_it_names() {
     )
     .await
     .expect("a peer may still stop it");
+    let stopped =
+        |stopped: bool| Patch::Merge(serde_json::json!({ "spec": { "stopped": stopped } }));
+    let run_again = bea.patch("e2e-forge-peer", &params, &stopped(false)).await;
+    refused_in_words("a peer's running it again", run_again, "may run it again");
+    ada.patch("e2e-forge-peer", &params, &stopped(false))
+        .await
+        .expect("its requester runs it again");
+    bea.patch("e2e-forge-peer", &params, &stopped(true))
+        .await
+        .expect("a peer stops it again");
     let held = claims_in(&client, &scratch.name)
         .get("e2e-forge-peer")
         .await
@@ -2052,6 +2064,134 @@ async fn only_a_claims_requester_changes_the_repos_it_names() {
     for resource in [use_pool, use_binding] {
         let _ = Api::<kube::api::DynamicObject>::all_with(client.clone(), &resource)
             .delete("e2e-forge-peer-use", &DeleteParams::default())
+            .await;
+    }
+}
+
+/// **On a Pool that mints, running it again once stopped and turning its minting on take `use` on
+/// its key**: stopping is a gate on minting, and turning minting on adopts the image the Pool
+/// already names, whoever set it. Someone who may write Pools but holds no `use` on the key may
+/// stop one, or set the image of one that does not mint, and no more.
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn running_a_stopped_minting_pool_again_or_turning_its_minting_on_takes_use_on_its_key() {
+    let client = Client::try_default().await.expect("the cluster");
+    let pools = Api::<Pool>::all(client.clone());
+    let mut stopped_pool = opted_in("e2e-forge-stopped", APP_KEY_SECRET, true);
+    stopped_pool.spec.stopped = true;
+    for pool in [
+        stopped_pool,
+        opted_in("e2e-forge-adopt", APP_KEY_SECRET, false),
+    ] {
+        pools
+            .patch(
+                &pool.name_any(),
+                &PatchParams::apply("e2e").force(),
+                &Patch::Apply(&pool),
+            )
+            .await
+            .expect("the pool");
+    }
+    apply_rbac(
+        &client,
+        "ClusterRole",
+        None,
+        serde_json::json!({
+            "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "ClusterRole",
+            "metadata": { "name": "e2e-forge-writer" },
+            "rules": [{ "apiGroups": ["runners.purlis.dev"], "resources": ["pools"],
+                        "verbs": ["get", "patch"] }]
+        }),
+    )
+    .await;
+    apply_rbac(
+        &client,
+        "ClusterRoleBinding",
+        None,
+        serde_json::json!({
+            "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "ClusterRoleBinding",
+            "metadata": { "name": "e2e-forge-writer" },
+            "roleRef": { "apiGroup": "rbac.authorization.k8s.io", "kind": "ClusterRole", "name": "e2e-forge-writer" },
+            "subjects": [{ "apiGroup": "rbac.authorization.k8s.io", "kind": "User", "name": "e2e-wes" }]
+        }),
+    )
+    .await;
+    let wes = Api::<Pool>::all(acting_as("e2e-wes").await);
+    let params = PatchParams::default();
+    let stop = |stopped: bool| Patch::Merge(serde_json::json!({ "spec": { "stopped": stopped } }));
+    // A permission just bound takes the cluster a moment: stopping it again asks nothing.
+    eventually("wes may write pools", Duration::from_secs(30), || async {
+        wes.patch("e2e-forge-stopped", &params, &stop(true))
+            .await
+            .ok()
+    })
+    .await;
+    let run_again = wes.patch("e2e-forge-stopped", &params, &stop(false)).await;
+    refused_in_words("running it again without the key", run_again, "forgekeys");
+    // The image of a Pool that does not mint is anyone's who may write it; turning its minting
+    // on then adopts that image, so it takes the key.
+    let image = "example.test/other@sha256:1111111111111111111111111111111111111111111111111111111111111111";
+    wes.patch(
+        "e2e-forge-adopt",
+        &params,
+        &Patch::Merge(serde_json::json!({ "spec": { "image": image } })),
+    )
+    .await
+    .expect("the image of a pool that does not mint");
+    let turned_on = wes
+        .patch(
+            "e2e-forge-adopt",
+            &params,
+            &Patch::Merge(serde_json::json!({ "spec": { "forge": { "mintInCluster": true } } })),
+        )
+        .await;
+    refused_in_words(
+        "turning its minting on without the key",
+        turned_on,
+        "forgekeys",
+    );
+    let held = pools.get("e2e-forge-adopt").await.expect("the pool");
+    assert!(!held.spec.forge.expect("its forge").mint_in_cluster);
+
+    // With `use` on the key, both go through.
+    apply_rbac(
+        &client,
+        "ClusterRole",
+        None,
+        serde_json::json!({
+            "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "ClusterRole",
+            "metadata": { "name": "e2e-forge-writer" },
+            "rules": [
+                { "apiGroups": ["runners.purlis.dev"], "resources": ["pools"], "verbs": ["get", "patch"] },
+                { "apiGroups": ["runners.purlis.dev"], "resources": ["forgekeys"],
+                  "resourceNames": [APP_KEY_SECRET], "verbs": ["use"] }
+            ]
+        }),
+    )
+    .await;
+    eventually("wes may use the key", Duration::from_secs(30), || async {
+        wes.patch("e2e-forge-stopped", &params, &stop(false))
+            .await
+            .ok()
+    })
+    .await;
+    wes.patch(
+        "e2e-forge-adopt",
+        &params,
+        &Patch::Merge(serde_json::json!({ "spec": { "forge": { "mintInCluster": true } } })),
+    )
+    .await
+    .expect("its minting turned on by who may use the key");
+
+    for pool in ["e2e-forge-stopped", "e2e-forge-adopt"] {
+        let _ = pools.delete(pool, &DeleteParams::default()).await;
+    }
+    for resource in [
+        kube::api::ApiResource::erase::<k8s_openapi::api::rbac::v1::ClusterRoleBinding>(&()),
+        kube::api::ApiResource::erase::<k8s_openapi::api::rbac::v1::ClusterRole>(&()),
+    ] {
+        let _ = Api::<kube::api::DynamicObject>::all_with(client.clone(), &resource)
+            .delete("e2e-forge-writer", &DeleteParams::default())
             .await;
     }
 }
@@ -2857,7 +2997,8 @@ async fn doctor_needs_only_reads_and_says_what_a_reader_may_not_apply() {
             "metadata": { "name": "e2e-doctor-reads" },
             "rules": [
                 { "apiGroups": ["apiextensions.k8s.io"], "resources": ["customresourcedefinitions"], "verbs": ["get"] },
-                { "apiGroups": ["apps"], "resources": ["deployments"], "verbs": ["get"] }
+                { "apiGroups": ["apps"], "resources": ["deployments"], "verbs": ["get"] },
+                { "apiGroups": [""], "resources": ["namespaces"], "verbs": ["list"] }
             ]
         }),
     )

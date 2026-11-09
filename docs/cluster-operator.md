@@ -121,9 +121,14 @@ It names the cluster it asked (your context and its API server), then checks, in
   `kubectl auth can-i` asks it. Without `escalate` and `bind`, Kubernetes refuses the install's
   cluster roles and their bindings unless you already hold every right the install's cluster
   roles grant, so doctor reports them missing.
+- **The operator's mark on runner namespaces alone**: a namespace outside `purlis-runners-*`
+  that carries the label `app.kubernetes.io/managed-by=purlis-cluster-operator` is a finding
+  naming it, since that label opens the operator's mint port to the namespace. Its next step is
+  to remove the label (`kubectl label namespace <name> app.kubernetes.io/managed-by-`).
 
 It exits 1 when anything is missing and 0 when nothing is, so a script can gate the install on
-it. It only reads: it gets the version, the definitions and the controller's deployment, and asks
+it. It only reads: it gets the version, the definitions and the controller's deployment, lists
+the namespaces that carry that label, and asks
 the API server what you may do (`SelfSubjectAccessReview`), which the server answers and keeps
 nothing of. What you may not read, or may not ask, is a finding naming the right to ask for.
 
@@ -474,7 +479,11 @@ spec:
   as far as the operator can tell: it goes by who last applied the sandbox's mode, which any
   client may name itself as, and a runner suspended by hand while it was already stopped runs
   again with the rest. Once a stopped pool runs again, its warm pools keep its `warmReplicas`
-  warm again.
+  warm again. **Stopping halts new runners and mints**: a stopped Claim's runner has no key
+  vouched for and gets no token, so only the Claim's `requester` sets it back to `false`, and on
+  a Pool that mints only someone with `use` on its key does
+  ([below](#minting-github-app-tokens-in-the-cluster)). Someone else who may patch it may still
+  stop it. To take a key away from a Pool's writers, revoke their `use` on the key.
 - **A Claim stays in its namespace; its runner does not.** The runner, and everything the
   operator makes for it, is in the requester's own namespace, `purlis-runners-<hash>`
   ([below](#each-persons-namespace)).
@@ -671,6 +680,9 @@ and kept when the release is uninstalled, as that one is:
 - a namespace named `purlis-runners-*` is made only by the operator's service account, and no
   one else changes its `app.kubernetes.io/managed-by` label or `runners.purlis.dev/requester`
   annotation, through the namespace or its `status` and `finalize`;
+- no one else puts that label on any other namespace. An update that leaves the operator's
+  label and annotation as they were gets through, so a namespace labelled by hand before the
+  policy held can still be deleted; `doctor` names such a namespace;
 - the operator makes no other namespace;
 - the operator makes or changes a role binding only in a runner namespace, only
   `purlis-runner-owner` of the cluster role `purlis-runner-owner`, and only for one subject: the
@@ -1023,9 +1035,11 @@ spec:
   ```
 
   On a Pool that mints, changing `spec.image` takes the same right, since the image holds the link
-  keys the operator vouches for. Taking `spec.forge` off a Pool asks nothing. A wildcard RBAC rule
+  keys the operator vouches for. Turning a Pool's minting on adopts the image it already names,
+  whoever set it, so it takes the same right too. Taking `spec.forge` off a Pool asks nothing. A wildcard RBAC rule
   on `runners.purlis.dev` holds every key. The right is asked as a Pool is written: revoking it stops
-  further writes, and to stop a Pool already written, change or delete the Pool.
+  further writes, and to stop a Pool already written, set it `stopped` (running it again takes the
+  same right), or delete it.
 - **`Claim.spec.forge.repos`** names the repos of the workspaces the desktop sends, each exactly
   `owner/name`: a wildcard is refused at admission. As a chat starts on the runner the desktop adds
   the github.com repos of that chat's workspace, as who the kubeconfig signs in as, and the runner's
