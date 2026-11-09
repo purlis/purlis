@@ -1373,6 +1373,9 @@ fn findings(theme: &Theme) -> Vec<String> {
         .map(|finding| match finding {
             Finding::Contrast { pair, .. } => format!("{} on {}", pair.front, pair.back),
             Finding::Ansi { token, .. } => format!("{token} on terminal.background"),
+            Finding::CardNotApart { card, ground, .. } => {
+                format!("a card row in {card} on {ground}")
+            }
             other => format!("{other:?}"),
         })
         .collect()
@@ -1455,11 +1458,19 @@ mod every_shipped_fixture_imports_with_no_avoidable_finding_and_its_hues_apart {
             "Tide.itermcolors" => &["terminal.ansi.black on terminal.background"],
             // A VS Code theme's comment is drawn as its author wrote it, on the diff's washes it
             // does not name (#4424): the check says so, and the import does not walk it.
+            // Its card rows meet the side panel (#5979): it names no widget ground, so the raised
+            // ground the import derives is 1.01 from the window's, as Classic's own is 1.02, and
+            // with no parts a card row is drawn on it. The check says so; the import leaves it.
+            // Its comment clears a mark's 3:1 on its own editor ground and not words' 4.5:1.
             "ember.jsonc" => &[
+                "a card row in surface.raised on surface.base",
                 "syntax.comment on diff.deleted-text",
                 "syntax.comment on diff.inserted-text",
+                "syntax.comment on terminal.background",
             ],
+            // The raised ground derived from its one background is 1.04 from it (#5979).
             "moss" => &[
+                "a card row in surface.raised on surface.base",
                 "terminal.ansi.black on terminal.background",
                 "terminal.ansi.bright-black on terminal.background",
             ],
@@ -1768,4 +1779,25 @@ fn a_terminal_colour_s_warning_names_the_palette_entry_that_holds_it() {
             .all(|line| !line.contains("palette-0")),
         "{said:?}"
     );
+}
+
+#[test]
+fn every_shipped_fixture_draws_faint_terminal_text_as_words_and_fainter_than_its_own() {
+    // A source names its terminal's words and ground, never its faint text (#3768): the theme
+    // drawn from it fades the words halfway to the ground, as xterm did, and back toward the
+    // words only as far as reading at 4.5:1 takes.
+    for (kind, name, bytes) in FIXTURES {
+        let theme = drawn(&import(*kind, name, bytes).expect("imported"));
+        for one in &theme.appearances {
+            let ground = one.value("terminal.background");
+            let faint = check::contrast(one.value("terminal.faint"), ground);
+            let words = check::contrast(one.value("terminal.foreground"), ground);
+            assert!(faint >= 4.5, "{name} {}: faint at {faint:.2}", one.id);
+            assert!(
+                faint < words,
+                "{name} {}: faint {faint:.2}, words {words:.2}",
+                one.id
+            );
+        }
+    }
 }

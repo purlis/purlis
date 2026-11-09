@@ -366,7 +366,9 @@ fn the_check_covers_every_appearance_and_option_combination_and_names_each() {
 fn a_contrast_failure_only_one_option_value_makes_is_found_in_that_combination_alone() {
     let theme = loaded(&json!({
         "name": "Faint",
-        "appearances": [{ "id": "dark", "appearance": "dark" }],
+        // Over Classic, whose card rows stand apart where the families' defaults would not (#5979).
+        "extends": "purlis-classic",
+        "appearances": [{ "id": "dark" }],
         "options": [{
             "id": "quiet", "kind": "toggle", "label": "Quiet text", "default": false,
             "on": { "tokens": { "text.primary": "#2a2a2a" } }

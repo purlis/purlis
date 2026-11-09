@@ -71,6 +71,7 @@ them:
 | `terminal.ansi.*`                      | the eight, and the eight bright                                                                 |                                                                                                   |
 | `icon.*`                               | `folder` `motive` `grey` `red` `orange` `yellow` `green` `teal` `blue` `purple` `pink`          | a file's or a folder's icon in a tree; the only colours an icon theme names (FM-3)                 |
 | `terminal.*` (#2327)                   | `selection-foreground` `selection-inactive` `scrollbar` `scrollbar-hover` `scrollbar-active`    | selected text (`platform`: each cell keeps its colour), a selection while the pane is unfocused, and the terminal's scrollbar at rest, under the pointer and held |
+| `terminal.*` (#3768)                   | `faint`                                                                                         | faint (SGR 2) text in the terminal's own colour, held at 4.5:1 on its ground; `App.css` draws it over xterm's half-opacity fade, which a program's own colour keeps |
 | `syntax.*`                             | `keyword` `string` `number` `constant` `comment` `function` `type` `property` `attribute` `tag` `heading` `invalid` `variable` `operator` `punctuation` | code in the light editor (`editor/look.ts`), one colour per role, each with an italic and a bold flag |
 | `markdown.*`                           | `link` `code` `code-block` `quote` `heading`                                                    | a markdown render: a memory, a todo, a session record, a release's notes (`.release-notes`)       |
 | `selection.*`, `caret`, `placeholder`  | `background` `text`                                                                             | the window's text selection and its words, a field's caret and its placeholder; `platform` leaves each to the platform |
@@ -451,7 +452,8 @@ asked for), whatever the system's appearance. Where its values come from:
   ground an input or a button stands on, WCAG 1.4.11, #4921), and the dialog, the popover and
   the tooltip draw none (their parts); a box a value is typed or picked in draws its own edge,
   `border.input`, Purlis's faint tier at 3:1 or more on every ground it stands on, since its fill
-  is the window's own ground (#4475); Allow keeps
+  is the window's own ground (#4475), and Classic's a step from its control edge to clear the
+  same (#5979); Allow keeps
   its accent edge and its lock. **The primary is filled**: `accent.fill` `#6d58bb` with white
   words (`accent.fill-text`), 5.6:1, and `#745fc3` under the pointer, 5.0:1, in dark, light and
   high contrast alike, with no edge (`accent.fill-edge`, transparent: a token, since a part on

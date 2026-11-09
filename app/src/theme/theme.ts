@@ -239,6 +239,10 @@ export const TOKENS = [
   // because xterm is handed an object.
   "terminal.background",
   "terminal.foreground",
+  // **Faint (SGR 2) text in the terminal's own colour** (#3768). xterm fades it to half its
+  // words, under 4.5:1 on a light terminal, so `App.css` draws those cells in this token; faint
+  // text a program colours itself keeps xterm's fade.
+  "terminal.faint",
   "terminal.cursor",
   "terminal.cursor-accent",
   "terminal.selection",

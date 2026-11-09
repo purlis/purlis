@@ -964,6 +964,7 @@ fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
     }
     vocabulary::follow_muted(&mut named, &base.values);
     vocabulary::follow_kin(&mut named, &base.values);
+    vocabulary::follow_faint(&mut named, &base.values);
     let values: BTreeMap<&'static str, String> = TOKENS
         .iter()
         .map(|token| {
