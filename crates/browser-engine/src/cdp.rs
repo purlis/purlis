@@ -250,12 +250,40 @@ struct Shared {
     taps: Mutex<Vec<Tapping>>,
 }
 
-/// A call's message on its way to the engine's pipe, by the call's id.
+/// A call's message on its way to the engine's pipe, by the call's id. Its bytes are wiped as
+/// it goes, written or not: a call can carry a value filled into a page.
 struct Outgoing {
     id: u64,
     bytes: Vec<u8>,
     /// Sent on a tap: written whatever waits, its answer the tap's.
     tapped: bool,
+}
+
+impl Drop for Outgoing {
+    fn drop(&mut self) {
+        zeroize::Zeroize::zeroize(&mut self.bytes);
+    }
+}
+
+/// `message` serialised and ended by its NUL, in one buffer sized for it first, so that no
+/// copy of it is left behind by a buffer that grew.
+fn framed(message: &Value) -> Vec<u8> {
+    struct Counting(usize);
+    impl Write for Counting {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.0 += bytes.len();
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut counting = Counting(0);
+    serde_json::to_writer(&mut counting, message).expect("a JSON value serialises");
+    let mut bytes = Vec::with_capacity(counting.0 + 1);
+    serde_json::to_writer(&mut bytes, message).expect("a JSON value serialises");
+    bytes.push(0);
+    bytes
 }
 
 /// One DevTools connection over the engine's pipe.
@@ -351,8 +379,7 @@ impl Connection {
         if let Some(session) = session {
             message["sessionId"] = Value::from(session);
         }
-        let mut bytes = serde_json::to_vec(&message).expect("a JSON value serialises");
-        bytes.push(0);
+        let bytes = framed(&message);
         // Written by the writer; this call waits only for its answer, within its limit, however
         // long the writing takes (#2123).
         match self.to_engine.try_send(Outgoing {
@@ -437,8 +464,7 @@ impl Connection {
         }
         let message =
             json!({ "id": own, "method": method, "params": params, "sessionId": session });
-        let mut bytes = serde_json::to_vec(&message).expect("a JSON value serialises");
-        bytes.push(0);
+        let bytes = framed(&message);
         match self.to_engine.try_send(Outgoing {
             id: own,
             bytes,
@@ -1000,5 +1026,28 @@ impl<R: Read> Frames<R> {
                 Err(why) => return Err(why),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_call_is_framed_in_one_buffer_that_never_grew() {
+        let message = json!({
+            "id": 7,
+            "method": "Input.insertText",
+            "params": { "text": "a value long enough to outgrow a first small buffer ".repeat(20) },
+        });
+        let bytes = framed(&message);
+        let mut expected = serde_json::to_vec(&message).unwrap();
+        expected.push(0);
+        assert_eq!(bytes, expected);
+        assert_eq!(
+            bytes.capacity(),
+            bytes.len(),
+            "the buffer was sized once, for the call"
+        );
     }
 }
