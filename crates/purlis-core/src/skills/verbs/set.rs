@@ -406,7 +406,12 @@ pub fn delete_set(
     // An org's project audits the removal of each skill installed from a source (SK-11), once
     // every one is checked and before the first is touched.
     for one in &planned {
-        if let Some(audited) = source::policy::removal(plane, &one.member.level, &one.member.name) {
+        if let Some(audited) = source::policy::of_installed(
+            plane,
+            source::policy::Act::Remove,
+            &one.member.level,
+            &one.member.name,
+        )? {
             cx.audited(&audited)
                 .map_err(|why| format!("{why}, so nothing was deleted"))?;
         }
@@ -614,6 +619,16 @@ pub fn restore_set_as(
                  have one name, so none was brought back",
                 lands.1, lands.0
             ));
+        }
+    }
+    // A skill installed from a source comes back only where the org's controls allow it, and its
+    // coming back is audited as an install (SK-11), once every one is checked.
+    for (one, _) in set {
+        if let Some(audited) = source::policy::hold_restored(plane, &one.level, &one.name)
+            .map_err(|why| format!("{why}, so none was brought back"))?
+        {
+            cx.audited(&audited)
+                .map_err(|why| format!("{why}, so none was brought back"))?;
         }
     }
     // What came back, where it landed, and whether the file beside it came from a commit.

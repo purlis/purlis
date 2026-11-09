@@ -358,7 +358,9 @@ fn review_in(
     level: &Level,
 ) -> Result<Review, String> {
     let mut skills = review::reviews_of(source, names, &met_at(plane, level))?;
-    review::mark(&mut skills, plane, level, &Origin::Extension(id.to_owned()));
+    let origin = Origin::Extension(id.to_owned());
+    held_to_policy(plane, &origin, &skills, revision)?;
+    review::mark(&mut skills, plane, level, &origin);
     Ok(Review {
         extension: id.to_owned(),
         revision: revision.clone(),
@@ -426,6 +428,7 @@ fn set_review_of(
         // An extension's source has no read limit past one skill's own, so a set always fits.
         Set::TooMuch(TooMuch { why, .. }) => return Err(why),
     };
+    held_to_policy(plane, &origin, &skills, &asked.revision)?;
     review::mark(&mut skills, plane, level, &origin);
     let held = asked.held();
     Ok((
@@ -507,8 +510,35 @@ pub fn update_review(
             "{name} is pinned to its source's newest revision already"
         ));
     }
-    let update = reviewed_update(plane, level, name, &locked, &asked, newer, None)?;
+    let update = reviewed_update(plane, level, name, &locked, &asked, newer.clone(), None)?;
+    // The org's controls, said in the review before it is accepted (SK-11).
+    super::policy::hold(
+        plane,
+        &locked.source,
+        std::iter::once(locked.at_source())
+            .chain(update.brought.iter().map(|one| one.name.as_str())),
+        &newer,
+        || None,
+    )?;
     Ok((update, asked.held()))
+}
+
+/// **Refused where the org's controls refuse any of `skills`** of the extension's source at
+/// `revision` ([`super::policy`]), so its review says why before anything is accepted. A
+/// revision cannot say when it was made.
+fn held_to_policy(
+    plane: &Path,
+    origin: &Origin,
+    skills: &[SkillReview],
+    revision: &Revision,
+) -> Result<(), String> {
+    super::policy::hold(
+        plane,
+        origin,
+        skills.iter().map(|one| one.name.as_str()),
+        &Pin::Revision(revision.clone()),
+        || None,
+    )
 }
 
 /// **Accepts an update** of the installed skill `name` at `level` to what `accepted` says, from

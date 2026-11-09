@@ -1558,7 +1558,9 @@ pub fn delete(cx: &mut Ctx<'_>, level: &Level, name: &str) -> Result<Kept, Strin
         ));
     }
     // An org's project audits the removal of a skill installed from a source (SK-11).
-    if let Some(audited) = super::source::policy::removal(plane, level, name) {
+    if let Some(audited) =
+        super::source::policy::of_installed(plane, super::source::policy::Act::Remove, level, name)?
+    {
         cx.audited(&audited)
             .map_err(|why| format!("{why}, so {name} was not deleted"))?;
     }
@@ -2151,6 +2153,14 @@ pub fn restore(
         Some(new) => under_checked(cx, deleted, new)?,
     }
     let dir = level_is_there(plane, &deleted.level)?;
+    // A skill installed from a source comes back only where the org's controls allow it, and
+    // its coming back is audited as an install (SK-11).
+    if let Some(audited) = super::source::policy::hold_restored(plane, &deleted.level, name)
+        .map_err(|why| format!("{why}, so {name} was not restored"))?
+    {
+        cx.audited(&audited)
+            .map_err(|why| format!("{why}, so {name} was not restored"))?;
+    }
     let folder = dir.join(&deleted.folder);
     let folder_rel = rel(plane, &folder);
     let toml_rel = rel(plane, &beside(&folder));

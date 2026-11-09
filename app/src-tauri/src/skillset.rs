@@ -293,7 +293,7 @@ pub(crate) async fn skill_set_restore(
             })
             .collect::<Result<_, String>>()?;
         let core = source.as_ref().map(|one| (one.core(), one.kept.into()));
-        heard(held.root(), |cx| {
+        heard_audited(&held, |cx| {
             set::restore_set_as(cx, &set_of, core.as_ref().map(|(one, which)| (one, *which)))
         })
     })
@@ -650,7 +650,7 @@ pub(crate) async fn skill_set_update_undo(
     let done = crate::off_the_window("undoing the update", move || {
         flag_on()?;
         let mut refused = false;
-        let said = heard(held.root(), |cx| {
+        let said = heard_audited(&held, |cx| {
             set_update::undo_update_set(cx, &taken.undo).map_err(|why| {
                 refused = matches!(why, set_update::NotUndone::Refused(_));
                 why.to_string()

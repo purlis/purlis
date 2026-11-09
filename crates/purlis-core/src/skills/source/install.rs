@@ -277,7 +277,7 @@ pub(super) fn install_from(
     cx.audited(&super::policy::Audited::new(
         super::policy::Act::Install,
         level,
-        copies.iter().map(|one| one.1.clone()).collect(),
+        copies.iter().map(|(_, name, ..)| name.clone()).collect(),
         origin,
         pin,
     ))

@@ -3262,16 +3262,21 @@ impl Hooks {
         root: &Path,
         audited: &purlis_core::skills::source::policy::Audited,
     ) -> Result<(), String> {
-        self.audit(
-            root,
-            None,
-            audited.kind(),
-            audited.body(),
-            (
-                "changed",
-                "skill install, update and removal on this project",
-            ),
-        )
+        // Said inside the core's sentence, which names what was not done.
+        let events = self
+            .events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+            .ok_or("purlis's event log is not open on this machine")?;
+        events
+            .record(Entry::Audited {
+                plane: root.to_path_buf(),
+                number: None,
+                kind: audited.kind().to_owned(),
+                body: audited.body(),
+            })
+            .map_err(|why| format!("the event log refused it: {why}"))
     }
 
     /// **Audits a dispatch grant or revoke** (#1437) in the host's event log, under chat

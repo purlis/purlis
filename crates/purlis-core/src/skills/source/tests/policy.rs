@@ -420,3 +420,100 @@ fn a_newer_commit_younger_than_the_minimum_age_is_not_updated_to() {
         "{refused}"
     );
 }
+
+#[test]
+fn a_settings_file_that_does_not_parse_and_names_the_table_refuses() {
+    let (remote, _) = remote_made_days_ago(30);
+    let tmp = org_plane("[skill_policy\nmin_age_days = 0\n");
+    let refused = review(
+        tmp.path(),
+        &remote.source(),
+        &["notify".to_owned()],
+        &Level::project(),
+    )
+    .unwrap_err();
+    assert!(refused.contains("could not be read"), "{refused}");
+}
+
+#[test]
+fn an_age_of_one_day_is_said_in_the_singular() {
+    let (remote, _) = remote_made_days_ago(0);
+    let tmp = org_plane(&allowing(&remote.url(), "min_age_days = 1\n"));
+    let refused = review(
+        tmp.path(),
+        &remote.source(),
+        &["notify".to_owned()],
+        &Level::project(),
+    )
+    .unwrap_err();
+    assert!(
+        refused.contains("at least 1 day old") && refused.contains("in 1 day"),
+        "{refused}"
+    );
+}
+
+#[test]
+fn a_deleted_installed_skill_comes_back_only_where_allowed_and_is_audited_as_an_install() {
+    let (remote, commit) = remote_made_days_ago(20);
+    let url = remote.url();
+    let tmp = org_plane(&allowing(&url, ""));
+    let root = tmp.path();
+    let source = remote.source();
+    let review = review(root, &source, &["notify".to_owned()], &Level::project()).unwrap();
+    on(root, |cx| {
+        cx_audited(cx, |cx| {
+            install(cx, &source, &Level::project(), &review.accepted(), None)
+        })
+    })
+    .0
+    .unwrap();
+    on(root, |cx| {
+        cx_audited(cx, |cx| {
+            crate::skills::verbs::delete(cx, &Level::project(), "notify")
+        })
+    })
+    .0
+    .unwrap();
+    let deleted = crate::skills::verbs::deleted(root).pop().unwrap();
+
+    // Blocked since: it stays deleted.
+    std::fs::write(
+        root.join("charter.toml"),
+        format!(
+            "schema = 1\n\n{}",
+            allowing(
+                &url,
+                &format!("block = [{{ source = \"{url}\", skill = \"notify\" }}]\n")
+            )
+        ),
+    )
+    .unwrap();
+    let refused = on(root, |cx| {
+        cx_audited(cx, |cx| crate::skills::verbs::restore(cx, &deleted, None))
+    })
+    .0
+    .unwrap_err();
+    assert!(
+        refused.contains("block list") && refused.contains("was not restored"),
+        "{refused}"
+    );
+
+    std::fs::write(
+        root.join("charter.toml"),
+        format!("schema = 1\n\n{}", allowing(&url, "")),
+    )
+    .unwrap();
+    let mut audited = Vec::new();
+    on(root, |cx| {
+        audited_into(cx, &mut audited, |cx| {
+            crate::skills::verbs::restore(cx, &deleted, None)
+        })
+    })
+    .0
+    .unwrap();
+    let said: Vec<(&str, String)> = audited
+        .iter()
+        .map(|one| (one.kind(), one.pin.clone()))
+        .collect();
+    assert_eq!(said, [("skill.install", commit)]);
+}

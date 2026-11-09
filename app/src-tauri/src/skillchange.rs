@@ -746,9 +746,7 @@ pub(crate) async fn skill_restore(
         flag_on()?;
         let deleted: verbs::Deleted = serde_json::from_str(&id)
             .map_err(|_| "That deleted skill is not one this project lists.".to_owned())?;
-        heard(held.root(), |cx| {
-            verbs::restore(cx, &deleted, under.as_deref())
-        })
+        heard_audited(&held, |cx| verbs::restore(cx, &deleted, under.as_deref()))
     })
     .await
 }

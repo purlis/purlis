@@ -96,7 +96,10 @@ impl Rule {
         };
         Some(Rule {
             source,
-            skill: written.skill.map(|skill| skill.trim().to_owned()),
+            skill: match written.skill.map(|skill| skill.trim().to_owned()) {
+                Some(skill) if skill.is_empty() => return None,
+                skill => skill,
+            },
         })
     }
 
@@ -142,14 +145,17 @@ pub struct Policy {
     exempt: Vec<String>,
 }
 
-/// The sentence a table that cannot be read refuses with.
-fn unreadable(plane: &Path) -> String {
+/// The sentence a table that cannot be read refuses with, `why` what the reader said of it.
+fn unreadable(plane: &Path, why: &str) -> String {
     format!(
-        "this project's [{TABLE}] in {} could not be read, so nothing is installed or updated \
-         until it is fixed",
+        "this project's [{TABLE}] in {} could not be read ({why}), so nothing is installed or \
+         updated until it is fixed",
         Which::Shared.file_at(plane)
     )
 }
+
+/// What an entry of `allow` or `block` that names no one source is refused as.
+const NO_SOURCE: &str = "an entry names neither one source nor one extension, or an empty skill";
 
 /// **The controls of the project at `plane`**: `None` where its shared settings file holds no
 /// `[skill_policy]`, and why where it holds one that cannot be read, or this machine's file
@@ -166,40 +172,46 @@ pub fn of(plane: &Path) -> Result<Option<Policy>, String> {
     let LayerText::Text(text) = crate::settings::layer_text(plane, Which::Shared) else {
         return Ok(None);
     };
-    let Ok(doc) = toml::from_str::<toml::Table>(&text) else {
-        // A file that does not parse holds no table purlis can see; its other readers say so.
-        return Ok(None);
+    let doc = match toml::from_str::<toml::Table>(&text) {
+        Ok(doc) => doc,
+        // A file that does not parse and may hold the table fails closed: its controls cannot
+        // be told from none. One that never names it is a project without controls, and its
+        // other readers say what is wrong with it.
+        Err(why) if text.contains(TABLE) => {
+            return Err(unreadable(plane, why.message()));
+        }
+        Err(_) => return Ok(None),
     };
     let Some(table) = doc.get(TABLE) else {
         return Ok(None);
     };
-    let written: WrittenPolicy = table.clone().try_into().map_err(|_| unreadable(plane))?;
+    let written: WrittenPolicy = table
+        .clone()
+        .try_into()
+        .map_err(|why: toml::de::Error| unreadable(plane, why.message()))?;
     let rules = |list: Vec<Written>| -> Result<Vec<Rule>, String> {
         list.into_iter()
-            .map(|one| Rule::of(one).ok_or_else(|| unreadable(plane)))
+            .map(|one| Rule::of(one).ok_or_else(|| unreadable(plane, NO_SOURCE)))
             .collect()
     };
     let exempt = written
         .min_age_exempt
         .iter()
-        .map(|one| one.trim().to_ascii_lowercase())
+        .map(|one| one.trim().to_owned())
         .collect();
     Ok(Some(Policy {
         allow: written.allow.map(rules).transpose()?,
         block: rules(written.block)?,
         min_age: DAY
             * u32::try_from(written.min_age_days.unwrap_or(DEFAULT_MIN_AGE_DAYS))
-                .map_err(|_| unreadable(plane))?,
+                .map_err(|_| unreadable(plane, "min_age_days is too large"))?,
         exempt,
     }))
 }
 
 /// `n` days, as a sentence says it.
 fn days_said(n: u64) -> String {
-    match n {
-        1 => "1 day".to_owned(),
-        n => format!("{n} days"),
-    }
+    crate::counts::counted(n, "day", "days")
 }
 
 impl Policy {
@@ -229,14 +241,19 @@ impl Policy {
     /// **Whether what `pin` names is old enough** to install, made at `made` (seconds since
     /// 1970, `None` where the source cannot say), as of `now`.
     pub fn old_enough(&self, pin: &Pin, made: Option<u64>, now: SystemTime) -> Result<(), String> {
-        if self.min_age.is_zero() || self.exempt.iter().any(|one| one == pin.as_str()) {
+        // A commit is named in either case; a revision is the extension's own, exactly.
+        let exempt = |one: &String| match pin {
+            Pin::Commit(commit) => one.eq_ignore_ascii_case(commit.as_str()),
+            Pin::Revision(revision) => one == revision.as_str(),
+        };
+        if self.min_age.is_zero() || self.exempt.iter().any(exempt) {
             return Ok(());
         }
-        let days = self.min_age.as_secs() / DAY.as_secs();
+        let days = days_said(self.min_age.as_secs() / DAY.as_secs());
         let Some(made) = made else {
             return Err(format!(
                 "{} cannot say when it was made, and this project installs only what is at least \
-                 {days} days old",
+                 {days} old",
                 pin.short()
             ));
         };
@@ -248,7 +265,7 @@ impl Policy {
         let wait = (self.min_age - age).as_secs().div_ceil(DAY.as_secs());
         Err(format!(
             "{} was committed {} ago, and this project installs only commits at least {days} \
-             days old: it can be installed in {}",
+             old: it can be installed in {}",
             pin.short(),
             days_said(age.as_secs() / DAY.as_secs()),
             days_said(wait)
@@ -379,20 +396,57 @@ pub const NOT_AUDITED_HERE: &str = "this project audits every skill install, upd
                                     and only the purlis window writes the audit's log: make the \
                                     change in the Skill studio";
 
-/// **The audit of removing the skill `name` at `level`**, where it was installed from a source:
-/// `None` for one made here, whose removal is no part of the skill supply.
-pub(in crate::skills) fn removal(
+/// **The audit of `act` on the skill `name` at `level`**, by the pin its lockfile keeps:
+/// `None` for one made here, which is no part of the skill supply. A lockfile that cannot be
+/// read is refused on an org's project, which could not tell; elsewhere nothing is audited.
+pub(in crate::skills) fn of_installed(
+    plane: &Path,
+    act: Act,
+    level: &crate::skills::verbs::Level,
+    name: &str,
+) -> Result<Option<Audited>, String> {
+    let held = match super::lock::read(plane, super::lock::Kept::of(level)) {
+        Ok(held) => held,
+        Err(why) if of(plane)?.is_some() => return Err(why),
+        Err(_) => return Ok(None),
+    };
+    Ok(held
+        .lock
+        .skills
+        .iter()
+        .find(|one| one.is(level, name))
+        .map(|locked| {
+            Audited::new(
+                act,
+                level,
+                vec![name.to_owned()],
+                &locked.source,
+                &locked.pin,
+            )
+        }))
+}
+
+/// **Holds a skill coming back to `level` as `name` to the controls** where it was installed
+/// from a source: its source and name to the lists, as an install's are. Its commit is the one
+/// it was pinned to, already past any age, so the age is not asked again.
+pub(in crate::skills) fn hold_restored(
     plane: &Path,
     level: &crate::skills::verbs::Level,
     name: &str,
-) -> Option<Audited> {
-    let held = super::lock::read(plane, super::lock::Kept::of(level)).ok()?;
-    let locked = held.lock.skills.iter().find(|one| one.is(level, name))?;
-    Some(Audited::new(
-        Act::Remove,
+) -> Result<Option<Audited>, String> {
+    let Some(policy) = of(plane)? else {
+        return Ok(None);
+    };
+    let held = super::lock::read(plane, super::lock::Kept::of(level))?;
+    let Some(locked) = held.lock.skills.iter().find(|one| one.is(level, name)) else {
+        return Ok(None);
+    };
+    policy.admits(&locked.source, locked.at_source())?;
+    Ok(Some(Audited::new(
+        Act::Install,
         level,
         vec![name.to_owned()],
         &locked.source,
         &locked.pin,
-    ))
+    )))
 }
