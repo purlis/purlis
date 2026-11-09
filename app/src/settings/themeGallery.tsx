@@ -31,6 +31,7 @@ import { askThemeChat } from "./links";
 import { useReadOnlySaid } from "../ReadOnlyLine";
 import type { LiveSetting, SettingsGroup } from "./groups";
 import { OptionsList } from "./themeOptions";
+import { isOwn, ThemePartsRead } from "./themeParts";
 import { useOnScreen, useSpecimen } from "./themeSpecimens";
 import { Button } from "../ui/button/Button";
 import { Tooltip } from "../ui/tooltip/Tooltip";
@@ -79,6 +80,7 @@ export function themeRows(group: string, at: ThemeAt | null): LiveSetting[] {
     galleryRow(group, at),
     appearanceRow(group, at),
     optionsRow(group, at),
+    partsRow(group, at),
     checkRow(group, at),
     folderRow(group, at),
   ];
@@ -545,6 +547,10 @@ function Cards({
               : card.warnings.length > 0
                 ? `${card.warnings.length} ${card.warnings.length === 1 ? "warning" : "warnings"}`
                 : undefined,
+            // What it sets of the component parts (#2947), which the Parts row lists.
+            ownKeys(card) > 0
+              ? `${ownKeys(card)} part ${ownKeys(card) === 1 ? "key" : "keys"}`
+              : undefined,
           ].filter((one): one is string => one !== undefined);
           return (
             <ListOption
@@ -593,6 +599,11 @@ function SourceBadge({ badge }: { badge: Badge }) {
       </LevelBadge>
     </Tooltip>
   );
+}
+
+/** How many part keys a card's theme sets itself, or its options do (#2947). */
+function ownKeys(card: GalleryCard): number {
+  return card.parts.filter(isOwn).length;
 }
 
 /** The most appearances a card shows a picture of; the rest are said. */
@@ -802,6 +813,40 @@ function optionsRow(group: string, at: ThemeAt | null): LiveSetting {
             ))}
           </div>
         ),
+      };
+    },
+  };
+}
+
+/**
+ * **The component parts the chosen theme sets** (#2947), listed from the parts manifest: the
+ * families it sets, and under Show each part every family and part purlis has, with each key
+ * the theme or one of its options sets (`themeParts.tsx`).
+ */
+function partsRow(group: string, at: ThemeAt | null): LiveSetting {
+  return {
+    id: `${group}.parts`,
+    label: "Parts",
+    help: "The component parts the chosen theme sets, from the parts manifest: every family and part, the states each draws, the version it came in, and what sets each value.",
+    writes: "nothing",
+    useControl: function useThemeParts() {
+      const read = useGallery(at);
+      const gallery = answered(read) ? read : undefined;
+      const card = gallery === undefined ? undefined : chosenCard(gallery);
+      return {
+        grouped: true,
+        control: (ids) =>
+          card === undefined || card.refused ? (
+            <p id={ids.id} className="ui-setting-help">
+              {gallery?.theirs != null
+                ? THEIRS_NO_CARD
+                : card?.refused
+                  ? `${card.name} is refused, so it draws no parts of its own.`
+                  : "Reading the themes…"}
+            </p>
+          ) : (
+            <ThemePartsRead name={card.name} set={card.parts} ids={ids} />
+          ),
       };
     },
   };

@@ -34,12 +34,6 @@ import { selectNamed } from "./ui/select/select.testkit";
 
 afterEach(cleanup);
 
-/** Each Radix package the window draws with, and whether what it draws is over the window. None
- *  draws over it now: every overlay is a family's, on React Aria (#2906). */
-const KINDS: Record<string, "over" | "says nothing to answer" | "in place"> = {
-  "@radix-ui/react-roving-focus": "in place",
-};
-
 /** The files that put something outside where they are drawn, by React's own portal. */
 const PORTALS = [
   // What stands beside the Files view's title and its actions, into its region's head (#3343).
@@ -65,15 +59,11 @@ const sources = sourceFiles(isView).map((file) => ({
 
 describe("every way the window draws something over itself", () => {
   it("is a kind the rule was written for", () => {
-    const used = new Set<string>();
-    for (const { text } of sources)
-      for (const found of text.matchAll(new RegExp(`from "${RADIX_FROM}([a-z-]+)"`, "g")))
-        used.add(`@radix-ui/react-${found[1]}`);
-    // A package not listed is a kind nobody has decided about: say what it draws in `KINDS`.
-    expect([...used].filter((kind) => !(kind in KINDS))).toEqual([]);
-    // **Nothing the window draws over itself is Radix's**: a kind that draws over the window is
-    // a family's, on React Aria, whose surface asks whether its project is shown.
-    expect(Object.entries(KINDS).filter(([, what]) => what !== "in place")).toEqual([]);
+    // **Nothing the window draws over itself is Radix's** (#2930): Radix is gone, and every kind
+    // that draws over the window is a family's, on React Aria, whose surface asks whether its
+    // project is shown.
+    const radix = sources.filter(({ text }) => new RegExp(`from "${RADIX_FROM}`).test(text));
+    expect(radix.map(({ file }) => file)).toEqual([]);
   });
 
   it("is drawn by one of those, and by no portal of the window's own", () => {

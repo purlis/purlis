@@ -275,7 +275,7 @@ describe("Dismiss all on Mine (#5650)", () => {
   it("stands an Undo after one line's Dismiss too", async () => {
     const { asked } = launch();
     const view = await mineListed();
-    const line = screen.getByText("Fix the build: done").closest("li") as HTMLElement;
+    const line = screen.getByText("Fix the build: done").closest('[role="row"]') as HTMLElement;
 
     await userEvent.click(within(line).getByRole("button", { name: /^Dismiss/ }));
 

@@ -198,7 +198,7 @@ fn the_operator_may_do_exactly_what_it_needs() {
             (
                 "networking.k8s.io",
                 "networkpolicies",
-                "purlis-forge-mint",
+                "purlis-forge-mint,purlis-deny-egress",
                 "get,patch"
             ),
             (
@@ -379,7 +379,7 @@ fn a_claim_is_admitted_only_for_someone_the_cluster_lets_use_its_pool() {
     // only when it runs a stopped claim again.
     assert_eq!(strings(&rules[0]["operations"]), ["CREATE", "UPDATE"]);
     let validations = spec["validations"].as_array().expect("validations");
-    assert_eq!(validations.len(), 7, "{spec}");
+    assert_eq!(validations.len(), 8, "{spec}");
     let expression = |at: usize| {
         validations[at]["expression"]
             .as_str()
@@ -399,7 +399,7 @@ fn a_claim_is_admitted_only_for_someone_the_cluster_lets_use_its_pool() {
     // A stopped claim gets no key vouched for and no token minted: only its requester runs it
     // again, and any other update, a finalizer's removal among them, is not asked.
     assert_eq!(
-        expression(6),
+        expression(7),
         "request.resource.group!='runners.purlis.dev'||request.operation!='UPDATE'||!oldObject.spec.stopped||object.spec.stopped||request.userInfo.username==object.spec.requester"
     );
 
@@ -532,7 +532,7 @@ fn an_upstream_claim_or_warm_pool_on_a_purlis_pools_objects_is_admitted_from_the
     );
     assert_eq!(
         strings(&rules[1]["resources"]),
-        ["sandboxclaims", "sandboxwarmpools"]
+        ["sandboxclaims", "sandboxtemplates", "sandboxwarmpools"]
     );
     assert_eq!(strings(&rules[1]["operations"]), ["CREATE", "UPDATE"]);
     let validations = spec["validations"].as_array().expect("validations");
@@ -565,6 +565,44 @@ fn an_upstream_claim_or_warm_pool_on_a_purlis_pools_objects_is_admitted_from_the
         );
         assert_eq!(validations[at]["reason"], "Forbidden");
     }
+}
+
+/// **A purlis pool's template is the operator's alone**: only the operator makes a template
+/// under the name it gives a pool's, and only it changes such a template's spec. Others' updates
+/// that leave the spec as it is pass, as upstream's controller labels every template.
+#[test]
+fn a_purlis_pools_template_is_made_and_its_spec_changed_by_the_operator_alone() {
+    let documents = documents("policy.yaml");
+    let policy = policy_named(&documents, purlis_cluster_operator::POLICY);
+    let spec = &policy["spec"];
+    let rules = spec["matchConstraints"]["resourceRules"]
+        .as_array()
+        .expect("rules");
+    let upstream = rules
+        .iter()
+        .find(|rule| strings(&rule["apiGroups"]) == ["extensions.agents.x-k8s.io"])
+        .expect("the rule on upstream's objects");
+    assert!(strings(&upstream["resources"]).contains(&"sandboxtemplates".to_owned()));
+    assert_eq!(strings(&upstream["operations"]), ["CREATE", "UPDATE"]);
+    let ours = purlis_cluster_operator::upstream::name_for("");
+    let operator = "system:serviceaccount:purlis-system:purlis-cluster-operator";
+    let wanted = format!(
+        "request.resource.resource!='sandboxtemplates'||\
+         request.userInfo.username=='{operator}'||\
+         !object.metadata.name.startsWith('{ours}')||\
+         request.operation=='UPDATE'&&object.spec==oldObject.spec"
+    );
+    let validation = spec["validations"]
+        .as_array()
+        .expect("validations")
+        .iter()
+        .find(|v| {
+            v["expression"]
+                .as_str()
+                .is_some_and(|e| e.split_whitespace().collect::<String>() == wanted)
+        })
+        .unwrap_or_else(|| panic!("no validation {wanted} in {spec}"));
+    assert_eq!(validation["reason"], "Forbidden");
 }
 
 /// The ValidatingAdmissionPolicy `name` among `documents`, and its binding, which denies.
@@ -715,6 +753,16 @@ fn a_runner_namespace_and_what_the_operator_binds_and_caps_there_are_guarded_at_
             validations[4]
         );
     }
+    // And the one that lets its pods out only where another lets them: it opens nothing.
+    let denied = "object.metadata.name=='purlis-deny-egress'&&object.spec.policyTypes==['Egress']&&\
+                  !has(object.spec.ingress)&&!has(object.spec.egress)&&\
+                  !has(object.spec.podSelector.matchLabels)&&\
+                  !has(object.spec.podSelector.matchExpressions)";
+    assert!(
+        validations[4].contains(denied),
+        "{denied}: {}",
+        validations[4]
+    );
     // Made by the operator alone; who it is for changed by no one else.
     assert_eq!(
         validations[0],

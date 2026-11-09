@@ -34,6 +34,7 @@ use k8s_openapi::api::admissionregistration::v1::{
 use k8s_openapi::api::core::v1::{Namespace, Pod, ResourceQuota};
 use k8s_openapi::api::networking::v1::NetworkPolicy;
 use k8s_openapi::api::rbac::v1::RoleBinding;
+use k8s_openapi::apimachinery::pkg::apis::meta::v1::ManagedFieldsEntry;
 use kube::api::{
     Api, ApiResource, DeleteParams, DynamicObject, ObjectMeta, PartialObjectMeta, Patch,
     PatchParams, PostParams, Preconditions,
@@ -446,11 +447,22 @@ async fn runner_namespace_ready(
             .await?
         }
     };
+    // Its pods go out only where a NetworkPolicy lets them, made before anything runs there, so
+    // none has open egress while upstream's policy for its template is not there yet or for a
+    // moment not there at all.
+    let wanted = person::egress_denied(&name, runner_owner(&runner));
+    made_or_applied(
+        &Api::<NetworkPolicy>::namespaced(client.clone(), &name),
+        wanted.clone(),
+        |held| held.spec == wanted.spec,
+    )
+    .await?;
     Ok(Ok((runner, held)))
 }
 
-/// `wanted` as the cluster holds it: made where nothing holds its name, applied server-side
-/// where what is held does not say what it should (`says`), and otherwise left as it is. For an
+/// `wanted` as the cluster holds it: made where nothing holds its name, then held as applied
+/// ([`held_as_applied`]), applied server-side where what is held does not say what it should
+/// (`says`), and otherwise left as it is. For an
 /// object whose fields are all atomic, as a role binding's are.
 async fn made_or_applied<K>(api: &Api<K>, wanted: K, says: impl Fn(&K) -> bool) -> Result<K, Error>
 where
@@ -458,15 +470,18 @@ where
 {
     let name = wanted.name_any();
     match api.get_opt(&name).await? {
-        None => Ok(api
-            .create(
-                &PostParams {
-                    field_manager: Some(FIELD_MANAGER.to_owned()),
-                    ..PostParams::default()
-                },
-                &wanted,
-            )
-            .await?),
+        None => {
+            let made = api
+                .create(
+                    &PostParams {
+                        field_manager: Some(FIELD_MANAGER.to_owned()),
+                        ..PostParams::default()
+                    },
+                    &wanted,
+                )
+                .await?;
+            held_as_applied(api, made).await
+        }
         Some(held) if says(&held) => Ok(held),
         Some(_) => Ok(api
             .patch(
@@ -1341,13 +1356,74 @@ async fn vouch_for(
     Ok((vouching, pod))
 }
 
+/// **An object's field ownership with the operator's fields held as applied**, given what the
+/// cluster records of it (`metadata.managedFields`) right after the operator made it: the
+/// `Update` entry its create left for [`FIELD_MANAGER`] becomes an `Apply` entry with the same
+/// fields, as Kubernetes' `csaupgrade` does, so a later server-side apply that leaves a field
+/// out takes it out. `None` when there is nothing to change: no such entry, or the operator
+/// already holds the object as applied. Others' entries, and the operator's on a subresource,
+/// are left as they are.
+pub fn managed_as_applied(fields: &[ManagedFieldsEntry]) -> Option<Vec<ManagedFieldsEntry>> {
+    let ours = |entry: &ManagedFieldsEntry, operation: &str| {
+        entry.manager.as_deref() == Some(FIELD_MANAGER)
+            && entry.operation.as_deref() == Some(operation)
+            && entry.subresource.as_deref().unwrap_or_default().is_empty()
+    };
+    if fields.iter().any(|entry| ours(entry, "Apply"))
+        || !fields.iter().any(|entry| ours(entry, "Update"))
+    {
+        return None;
+    }
+    Some(
+        fields
+            .iter()
+            .cloned()
+            .map(|mut entry| {
+                if ours(&entry, "Update") {
+                    entry.operation = Some("Apply".to_owned());
+                }
+                entry
+            })
+            .collect(),
+    )
+}
+
+/// `made`, which the operator has just made through `api`, written back with its fields held as
+/// applied ([`managed_as_applied`]). The write names the resource version it was worked out
+/// from, so it never overwrites a change made since; on such a change, upstream's controller
+/// labelling a template it has just seen, it is read again and tried again, a few times.
+async fn held_as_applied<K>(api: &Api<K>, made: K) -> Result<K, Error>
+where
+    K: Resource + Clone + DeserializeOwned + Serialize + Debug,
+{
+    let name = made.name_any();
+    let mut held = made;
+    for _ in 0..3 {
+        let Some(fields) = managed_as_applied(held.managed_fields()) else {
+            return Ok(held);
+        };
+        let patch = serde_json::json!({
+            "metadata": { "resourceVersion": held.resource_version(), "managedFields": fields },
+        });
+        match api
+            .patch(&name, &PatchParams::default(), &Patch::Merge(&patch))
+            .await
+        {
+            Ok(patched) => return Ok(patched),
+            Err(kube::Error::Api(status)) if status.code == 409 => held = api.get(&name).await?,
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(held)
+}
+
 /// An object's metadata, which is all [`made_for`] and [`made_for_claim`] read of it.
 fn meta<K: Resource>(object: K) -> ObjectMeta {
     object.meta().clone()
 }
 
-/// `wanted` written to the cluster as it was found: made when nothing holds its name, and
-/// applied server-side to the object the operator made, by its uid (and the resource version
+/// `wanted` written to the cluster as it was found: made when nothing holds its name, then held
+/// as applied ([`held_as_applied`]), and applied server-side to the object the operator made, by its uid (and the resource version
 /// `wanted` names, if any), so an object made again or changed under that name since it was
 /// looked at is refused and looked at again. Never called for an object in the way.
 async fn write_ours<K>(api: &Api<K>, mut wanted: K, found: Found) -> Result<K, Error>
@@ -1358,15 +1434,18 @@ where
     match found {
         // Made, not applied: if someone made an object under the name since it was looked at,
         // the cluster refuses this, and the next pass finds it in the way.
-        Found::Nothing => Ok(api
-            .create(
-                &PostParams {
-                    field_manager: Some(FIELD_MANAGER.to_owned()),
-                    ..PostParams::default()
-                },
-                &wanted,
-            )
-            .await?),
+        Found::Nothing => {
+            let made = api
+                .create(
+                    &PostParams {
+                        field_manager: Some(FIELD_MANAGER.to_owned()),
+                        ..PostParams::default()
+                    },
+                    &wanted,
+                )
+                .await?;
+            held_as_applied(api, made).await
+        }
         Found::Ours { uid } => {
             wanted.meta_mut().uid = Some(uid);
             Ok(api

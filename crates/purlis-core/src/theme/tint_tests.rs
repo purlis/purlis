@@ -447,10 +447,13 @@ fn every_tint_a_theme_may_name_keeps_classic_s_contrast_up_to_one_channel_s_roun
     // stood on its floor and the channels' rounding took a hundredth or two off. The check
     // says so.
     for appearance in ["dark", "light"] {
+        // Over Classic, so its card rows are Classic's own and not the families' defaults on
+        // Classic's palette, which meet the side panel (#5979).
         let theme = drawn(&json!({
             "name": "Everything",
+            "extends": "purlis-classic",
             "tint": { "tokens": vocabulary::TINTABLE },
-            "appearances": [{ "id": appearance, "appearance": appearance }]
+            "appearances": [{ "id": appearance }]
         }));
         for finding in check(&theme).findings {
             let Finding::Contrast {
@@ -1237,10 +1240,13 @@ fn every_tint_a_theme_may_name_keeps_classic_s_floors_exactly_at_every_hue() {
     // the check holds clears its floor at each palette hue and at every whole degree of a
     // workspace's own colour, as it does untinted.
     for appearance in ["dark", "light"] {
+        // Over Classic, so its card rows are Classic's own and not the families' defaults on
+        // Classic's palette, which meet the side panel (#5979).
         let theme = drawn(&json!({
             "name": "Everything",
+            "extends": "purlis-classic",
             "tint": { "tokens": vocabulary::TINTABLE },
-            "appearances": [{ "id": appearance, "appearance": appearance }]
+            "appearances": [{ "id": appearance }]
         }));
         assert_eq!(check(&theme).findings, [], "{appearance}");
         assert_eq!(held_but_allow_from_primary(&theme), None, "{appearance}");

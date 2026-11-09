@@ -23,6 +23,11 @@
 //! - **A layer** is token values for every appearance (`tokens`), and optionally token values for
 //!   one appearance by its id (`appearances`), drawn over the first. A token's value is hex or a
 //!   name in the theme's palette, the grammar an appearance's tokens have.
+//! - **A layer may carry component parts** (`parts`, #2946): the same keys, values and bounds as
+//!   the theme's own `parts` ([`super::parts`]), for every appearance, laid over the theme's key by
+//!   key in the options' order, so a later option's key wins. A key purlis does not have is said
+//!   and left out, and a value outside its bound refuses the theme, each naming the option; the
+//!   sizes are held in both densities in every combination of option values.
 //! - **There are no free-number options**: an option is a toggle or a choice, and a value is a
 //!   layer of tokens, never a number the person types.
 //! - **The theme check covers every combination** of appearance and option values, so a theme
@@ -39,6 +44,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::{Map, Value};
 
 use super::format::{Tokens, is_name, tokens};
+use super::parts::{self, Parts};
 use super::{Complaint, ResolvedTheme, stringify};
 
 /// The most appearance × option combinations a theme may have: what the theme check covers.
@@ -103,21 +109,34 @@ pub struct OptionValue {
     layer: Layer,
 }
 
+impl OptionValue {
+    /// **The component parts this value lays over the theme's** (#2946), for Settings › Theme to
+    /// say which keys an option sets (#2947).
+    pub(super) fn parts(&self) -> &Parts {
+        &self.layer.parts
+    }
+}
+
 /// Token values, for every appearance and for single ones: whatever an appearance's `tokens`
-/// may hold, read by the same reader ([`tokens`]).
+/// may hold, read by the same reader ([`tokens`]); and component parts, whatever a theme's
+/// `parts` may hold, read by its reader ([`parts::read`]).
 #[derive(Debug, Clone, Default, PartialEq)]
 struct Layer {
     tokens: Tokens,
     appearances: BTreeMap<String, Tokens>,
+    parts: Parts,
 }
 
 impl Layer {
     /// The layer over `theme`, one of its appearances: its tokens for every appearance, then
-    /// its tokens for this one.
+    /// its tokens for this one, and its parts over the theme's.
     fn onto(&self, theme: &mut ResolvedTheme) {
         self.tokens.onto(theme);
         if let Some(own) = self.appearances.get(&theme.id) {
             own.onto(theme);
+        }
+        if !self.parts.is_empty() {
+            theme.parts = parts::over(&theme.parts, self.parts.clone());
         }
     }
 }
@@ -235,6 +254,35 @@ pub(super) fn every(options: &[ThemeOption]) -> Vec<Values> {
     all
 }
 
+/// **The parts of every combination of option values that sets any**, over the theme's own
+/// `parts`, each with the values that make it (`<option> <value>`, in the options' order), for
+/// the sizes to be held in both densities in each (#2946). None when no option carries parts.
+pub(super) fn parts_of_every(theme: &Parts, options: &[ThemeOption]) -> Vec<(String, Parts)> {
+    let carries =
+        |option: &ThemeOption| option.values.iter().any(|one| !one.layer.parts.is_empty());
+    if !options.iter().any(carries) {
+        return Vec::new();
+    }
+    every(options)
+        .into_iter()
+        .map(|values| {
+            let mut drawn = theme.clone();
+            let mut named = Vec::new();
+            for option in options {
+                let Some(value) = values.get(&option.id).and_then(|id| option.value(id)) else {
+                    continue;
+                };
+                if !value.layer.parts.is_empty() {
+                    drawn = parts::over(&drawn, value.layer.parts.clone());
+                    named.push(format!("{} {}", option.id, value.id));
+                }
+            }
+            (named.join(", "), drawn)
+        })
+        .filter(|(named, _)| !named.is_empty())
+        .collect()
+}
+
 /// `child`'s options over `parent`'s: one with a parent's id takes its place, a new one is added
 /// after them.
 pub(super) fn over(parent: &[ThemeOption], child: Vec<ThemeOption>) -> Vec<ThemeOption> {
@@ -328,10 +376,10 @@ const OPTION_KEYS: &[&str] = &[
 ];
 
 /// The keys of a choice's value.
-const VALUE_KEYS: &[&str] = &["id", "label", "tokens", "appearances"];
+const VALUE_KEYS: &[&str] = &["id", "label", "tokens", "appearances", "parts"];
 
 /// The keys of a layer: a toggle's `on`, and one appearance's in `appearances`.
-const LAYER_KEYS: &[&str] = &["tokens", "appearances"];
+const LAYER_KEYS: &[&str] = &["tokens", "appearances", "parts"];
 
 fn read_one(
     one: &Map<String, Value>,
@@ -419,7 +467,7 @@ fn read_one(
                 ),
                 Some(_) => {
                     complaints.push(Complaint::said(format!(
-                        "on in option {id} is a layer of token values"
+                        "on in option {id} is a layer of token values and component parts"
                     )));
                     Layer::default()
                 }
@@ -631,6 +679,15 @@ fn layer(
             "appearances in {at} is an object of appearance ids to layers"
         ))),
     }
+    // Its parts, read as a theme's are: what each says is said naming the layer.
+    let (mut refused, mut left_out) = (Vec::new(), Vec::new());
+    let parts = parts::read(from.get("parts"), &mut refused, &mut left_out);
+    let naming = |one: Complaint| Complaint {
+        said: format!("{at}: {}", one.said),
+        ..one
+    };
+    complaints.extend(refused.into_iter().map(naming));
+    notes.extend(left_out.into_iter().map(naming));
     // A toggle's `on` holds only a layer's keys; a choice's value holds its own as well, which
     // its reader says.
     if alone {
@@ -643,5 +700,6 @@ fn layer(
     Layer {
         tokens: every,
         appearances,
+        parts,
     }
 }

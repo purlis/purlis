@@ -28,7 +28,11 @@
  * (`sortable.tsx`). This layer is how it is drawn.
  */
 import { useState, type ComponentPropsWithRef, type PointerEvent, type ReactNode } from "react";
+import { Button as AriaButton, type ButtonProps as AriaButtonProps } from "react-aria-components";
+import { Minus, X } from "lucide-react";
 import type { Picture } from "../../layoutPicture";
+import { pressable, renderPressed, usePressTip } from "../pressable";
+import { Tipped } from "../tooltip/Tooltip";
 
 /** The tab's variants, in the order the manifest names them. */
 export const TAB_VARIANTS = ["chat", "view", "file", "background"] as const;
@@ -179,5 +183,59 @@ export function TabCell({
           default. Out of the row, so it takes no room. */}
       <span data-scope="tabs" data-part="indicator" aria-hidden="true" />
     </span>
+  );
+}
+
+/**
+ * **A tab's close** (#2930): the `×` that closes a tab's layout and ends nothing (#4756), or a
+ * task's own tab's `−`, which sends its talk back to its row (#1489). The tabs family's `closer`
+ * part on React Aria's `Button`, through the press every pressable family shares
+ * (`ui/pressable.tsx`); `tabs.css` draws it.
+ *
+ * - **Named by its row** (`label`, the catalogue's words), its glyph hidden; `note` is its
+ *   tooltip's second line.
+ * - **A Tab stop on the front tab only** (`reachable`, #5341): the strip is one stop, so a `×` per
+ *   tab in the sequence would be fifty stops again.
+ * - **A background tab's never takes the keyboard** (#5445): pressed, it closes a tab behind the
+ *   one in front, and the keyboard stays where it was. The front tab's takes it, and its close
+ *   puts the keyboard in what comes to the front (#5392).
+ */
+export function TabCloser({
+  label,
+  note,
+  minimise = false,
+  reachable = false,
+  onPress,
+}: {
+  label: string;
+  note?: string;
+  /** A task's own tab's `−` rather than a close's `×`. */
+  minimise?: boolean;
+  /** The front tab's: the one close in the keyboard's order. */
+  reachable?: boolean;
+  onPress: () => void;
+}) {
+  const tip = usePressTip(label, note, true, false);
+  const { native, aria, own } = pressable(
+    {
+      "aria-label": label,
+      tabIndex: reachable ? 0 : -1,
+      preventFocusOnPress: !reachable,
+      onPress,
+    },
+    tip,
+  );
+  const Glyph = minimise ? Minus : X;
+  return (
+    <Tipped surface={tip.surface}>
+      <AriaButton
+        {...(aria as AriaButtonProps)}
+        {...tabPart("closer")}
+        data-minimise={minimise ? "" : undefined}
+        render={renderPressed(native, tip, own)}
+      >
+        <Glyph aria-hidden="true" />
+      </AriaButton>
+    </Tipped>
   );
 }

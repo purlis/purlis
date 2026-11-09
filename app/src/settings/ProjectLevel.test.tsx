@@ -1148,7 +1148,9 @@ describe("the Project level of a read-only project (#826)", () => {
     const raw = (name: string) => screen.findByRole("textbox", { name: `${name}, as TOML` });
     const editAsToml = (name: string) =>
       userEvent.click(
-        within(screen.getByRole("group", { name: "Edit as TOML" })).getByRole("button", { name }),
+        within(screen.getByRole("navigation", { name: "Edit as TOML" })).getByRole("button", {
+          name,
+        }),
       );
 
     await editAsToml("charter.local.toml");

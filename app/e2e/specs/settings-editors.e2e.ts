@@ -3,7 +3,7 @@
 
 import { $, browser, expect } from "@wdio/globals";
 import { closesTheTabsItOpens } from "../reach.js";
-import { SETTINGS_GROUPS, openProjectSettings } from "../settingsTab.js";
+import { SETTINGS_GROUPS, openProjectSettings, openRawFile } from "../settingsTab.js";
 
 /**
  * **Settings' editors, in the real WebView** (DS-10, #1842; spec #1832's seam 3):
@@ -28,28 +28,6 @@ type Box = {
   width: number;
   height: number;
 };
-
-/** Opens `file` from the Edit as TOML links at the nav's foot. The group is named by its
- *  visible label (`aria-labelledby`), which no CSS selector reads, so it is found by its words. */
-async function openRawFile(file: string): Promise<void> {
-  await browser.waitUntil(
-    async () =>
-      browser.execute((wanted: string) => {
-        const group = [...document.querySelectorAll<HTMLElement>('[role="group"]')].find(
-          (one) =>
-            document.getElementById(one.getAttribute("aria-labelledby") ?? "")?.textContent ===
-            "Edit as TOML",
-        );
-        const link = [...(group?.querySelectorAll<HTMLElement>("button") ?? [])].find(
-          (one) => one.textContent?.trim() === wanted,
-        );
-        if (link === undefined) return false;
-        link.click();
-        return true;
-      }, file),
-    { timeout: 20_000, interval: 250, timeoutMsg: `Edit as TOML offered no ${file}` },
-  );
-}
 
 /** The editor of charter.toml, measured against the section it is drawn in. */
 async function editorMeasured() {

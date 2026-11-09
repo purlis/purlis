@@ -92,6 +92,24 @@ export function onAsksMoved(reader: (plane: string) => void): () => void {
   };
 }
 
+/**
+ * **The chats of `rows` not snoozed** (#5999, ADR 0121 decision 14): a chat in the board's queue
+ * whose every ask Snooze all put away is neither counted nor told to the other windows, whose ✋
+ * would count it. One that has asked something new since, or of a project whose list is not read
+ * yet, stays.
+ */
+export function notSnoozed<Row extends { plane: string; session: number }>(
+  rows: readonly Row[],
+  held: Readonly<Record<string, QuestionsHeld>>,
+): Row[] {
+  return rows.filter(({ plane, session }) => {
+    const list = held[plane];
+    if (list === undefined) return true;
+    const ofIt = (one: Shown) => one.session === session;
+    return list.asks.some(ofIt) || !(list.snoozed ?? []).some(ofIt);
+  });
+}
+
 /** Each project's asks, by its id: the last whole list the core derived for it. */
 export function useAsks(planes: readonly string[]): {
   held: Record<string, readonly Shown[]>;

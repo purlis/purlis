@@ -512,10 +512,8 @@ describe("a window holding more than one project", () => {
     // TWO's own Asks, with nothing of its own waiting: a line for ONE, which answers nothing.
     // The side opens on Asks (#5644).
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
-    // This project's scope is empty and says what waits wider (qw359): one press lists it.
-    expect(await within(inbox).findByText("1 waits in all projects.")).toBeInTheDocument();
-    await userEvent.click(within(inbox).getByRole("button", { name: "Show all projects" }));
-    const others = await within(inbox).findByRole("region", {
+    // It opens on All projects (#5999, ADR 0121 decision 4), so ONE's line is there at once.
+    const others = await within(inbox).findByRole("rowgroup", {
       name: "Other projects in this window",
     });
     expect(others).toHaveTextContent("one · 1 waiting on you");
@@ -531,7 +529,7 @@ describe("a window holding more than one project", () => {
     const there = await screen.findByRole("tabpanel", { name: "Asks" });
     await within(there).findByRole("button", { name: "Go to chat one.1" });
     expect(
-      within(there).queryByRole("region", { name: "Other projects in this window" }),
+      within(there).queryByRole("rowgroup", { name: "Other projects in this window" }),
     ).toBeNull();
   });
 

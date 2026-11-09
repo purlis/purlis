@@ -71,6 +71,7 @@ them:
 | `terminal.ansi.*`                      | the eight, and the eight bright                                                                 |                                                                                                   |
 | `icon.*`                               | `folder` `motive` `grey` `red` `orange` `yellow` `green` `teal` `blue` `purple` `pink`          | a file's or a folder's icon in a tree; the only colours an icon theme names (FM-3)                 |
 | `terminal.*` (#2327)                   | `selection-foreground` `selection-inactive` `scrollbar` `scrollbar-hover` `scrollbar-active`    | selected text (`platform`: each cell keeps its colour), a selection while the pane is unfocused, and the terminal's scrollbar at rest, under the pointer and held |
+| `terminal.*` (#3768)                   | `faint`                                                                                         | faint (SGR 2) text in the terminal's own colour, held at 4.5:1 on its ground; `App.css` draws it over xterm's half-opacity fade, which a program's own colour keeps |
 | `syntax.*`                             | `keyword` `string` `number` `constant` `comment` `function` `type` `property` `attribute` `tag` `heading` `invalid` `variable` `operator` `punctuation` | code in the light editor (`editor/look.ts`), one colour per role, each with an italic and a bold flag |
 | `markdown.*`                           | `link` `code` `code-block` `quote` `heading`                                                    | a markdown render: a memory, a todo, a session record, a release's notes (`.release-notes`)       |
 | `selection.*`, `caret`, `placeholder`  | `background` `text`                                                                             | the window's text selection and its words, a field's caret and its placeholder; `platform` leaves each to the platform |
@@ -225,10 +226,10 @@ other subtle rule in the window.
 
 **One tree style, and a selected row that looks selected** (#1672). Every tree in the window —
 the Chats tree, the explorer, the Changes view and a file tab's files — is drawn by the shared
-tree row (`.ui-tree` and `.ui-row.ui-tree-row` in `primitives/collections.css`, DS-3, every tree
-moved onto it by DS-11 and DS-12), and not by a shared component (ADR 0037): each tree keeps its
-own markup and keys, and the class draws its levels, its guides, its selected row and where the
-keyboard is. The `.tree` class in `App.css` that drew them before is gone.
+tree row, once `.ui-tree` and `.ui-row.ui-tree-row` in `primitives/collections.css` (DS-3, every
+tree moved onto it by DS-11 and DS-12) and the tree family's since #2911 and #3198, which draws
+its levels, its guides, its selected row and where the keyboard is. The `.tree` class in
+`App.css` that drew them before is gone, and so is `collections.css` (#2930).
 
 - **A level is one step in and one straight guide**, VS Code's: a hairline in `tree.guide` down
   the whole level, under the row it hangs from. Each row says its level (`aria-level`, or
@@ -451,7 +452,8 @@ asked for), whatever the system's appearance. Where its values come from:
   ground an input or a button stands on, WCAG 1.4.11, #4921), and the dialog, the popover and
   the tooltip draw none (their parts); a box a value is typed or picked in draws its own edge,
   `border.input`, Purlis's faint tier at 3:1 or more on every ground it stands on, since its fill
-  is the window's own ground (#4475); Allow keeps
+  is the window's own ground (#4475), and Classic's a step from its control edge to clear the
+  same (#5979); Allow keeps
   its accent edge and its lock. **The primary is filled**: `accent.fill` `#6d58bb` with white
   words (`accent.fill-text`), 5.6:1, and `#745fc3` under the pointer, 5.0:1, in dark, light and
   high contrast alike, with no edge (`accent.fill-edge`, transparent: a token, since a part on
@@ -1026,7 +1028,7 @@ theme.json, following the system", or that it stays in its one appearance (#2615
 - **Open folder** opens the card's theme folder in the file manager: the folder the engine
   places for the card, never a path the window sent.
 - **The keyboard and a screen reader**: the cards are a listbox, one Tab stop, the chosen card
-  the stop at rest (`roving.ts`); selection does not follow the focus, so moving through the
+  the stop at rest (the list family's); selection does not follow the focus, so moving through the
   cards writes nothing. Nothing in the group takes the focus by itself.
 - The machine default, an option's value, a duplicate and Open folder are the window's alone
   (`WINDOW_ONLY`); the gallery's reads are served on a link, as `theme_in_force_at` is: the
@@ -1779,8 +1781,8 @@ the focus rings, #2867):
   and a strip's cap on a tab are each that box's own.
 - **`controls.guard.test.ts`** fails on a native control that is not its family's and does not
   wear its class (`docs/ui-primitives.md`, "Every control is a family's"): a `<button>` or a
-  Radix trigger without `asChild` (a list's row or a tree's row, `ui-row` or `ui-tree-row`; a
-  button is the button family's `Button`, a segment the choice family's), an `<input>` or
+  Radix trigger without `asChild` (none: a button is the button family's `Button`, a segment the
+  choice family's, a list's or a tree's row the list or tree family's, #2930), an `<input>` or
   `<textarea>` (none: a box is the field family's `TextField` or `TextArea`, a checkbox or a
   radio the choice family's), a `<select>` (none: the select family's `Select`), a `<table>`
   (none: the table family's `Table` or `ControlTable`, #2911), and a Radix menu's content and rows (none: the menu family's). **It holds two

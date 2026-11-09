@@ -31,6 +31,7 @@ import { forgetThisLaunch } from "./regions";
 import { stripNamed } from "./test-strips";
 import { heard } from "./frame.testkit";
 import { onTheWire } from "./chatEvents.testkit";
+import { findTree, rowNamed, rowsOf } from "./ui/tree/tree.testkit";
 
 /**
  * **While you were away: one summary in place of a pile of Notices** (#1514, V100-65), against
@@ -333,8 +334,8 @@ const onScreen = () =>
 async function drawn(rows: FinishedTask[] = []) {
   const held = core([chat(1), chat(2), task(4, "talk")], rows);
   render(<App />);
-  const tree = await screen.findByRole("tree", { name: "Chats of this project" });
-  await waitFor(() => expect(within(tree).getAllByRole("treeitem").length).toBeGreaterThan(1));
+  const tree = await findTree("Chats of this project");
+  await waitFor(() => expect(rowsOf(tree).length).toBeGreaterThan(1));
   await settle();
   return { ...held, tree };
 }
@@ -541,9 +542,7 @@ describe("while you were away (#1514)", () => {
         name: "1 failed: check staging, a task of steward 1",
       }),
     );
-    await waitFor(() =>
-      expect(within(held.tree).getByRole("button", { name: /^check staging/ })).toHaveFocus(),
-    );
+    await waitFor(() => expect(rowNamed(held.tree, "check staging")).toHaveFocus());
   });
 
   // #4304: a screen reader's press is a click and nothing before it. It lands on the first row,
@@ -599,7 +598,7 @@ describe("while you were away (#1514)", () => {
 
     expect(summary()).toBeNull();
     expect(screen.getByTestId("needs-you-button")).toHaveAccessibleName("3 chats need you");
-    expect(within(held.tree).getByRole("button", { name: /^check staging/ })).toBeTruthy();
+    expect(rowNamed(held.tree, "check staging")).toBeTruthy();
   });
 
   it("is drawn no more once what it counted has gone, and the next time away starts anew", async () => {
@@ -767,9 +766,9 @@ describe("the Inbox's updates (#1693)", () => {
 
     const updates = within(await openInbox()).getByRole("region", { name: "Updates" });
     expect(
-      within(updates)
-        .getAllByRole("listitem")
-        .map((row) => row.getAttribute("data-kind")),
+      [...updates.querySelectorAll('[role="row"][data-key]')].map((row) =>
+        row.getAttribute("data-kind"),
+      ),
     ).toEqual(["task-failed", "task-done"]);
   });
 

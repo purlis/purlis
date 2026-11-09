@@ -101,7 +101,9 @@ function Updated({
 
 /** The update of the pair `said` names. */
 const updateOf = (said: RegExp) =>
-  screen.getAllByRole("listitem").find((row) => said.test(row.textContent ?? "")) as HTMLElement;
+  screen
+    .getAllByRole("row")
+    .find((row) => row.hasAttribute("data-key") && said.test(row.textContent ?? "")) as HTMLElement;
 
 describe("what the item says", () => {
   it("says who wanted whom, and how often, for which workspace", () => {
@@ -276,9 +278,15 @@ describe("a grant is never sent from a row that just moved", () => {
   it("sends no Allow reached and pressed from the keyboard just after the row was drawn", async () => {
     const answered: string[] = [];
     render(<Updated refused={[refusal()]} answer={(_, how) => answered.push(how)} />);
+    // Ruling B (#3123): Mark all read and Dismiss all, then the list's one Tab stop, its line;
+    // → walks the line's own controls to its Allow.
     await user.tab();
-    await user.keyboard("{ArrowDown}{ArrowDown}");
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: ALLOW }));
+    await user.tab();
+    await user.tab();
+    const allow = screen.getByRole("button", { name: ALLOW });
+    for (let step = 0; step < 6 && document.activeElement !== allow; step += 1)
+      await user.keyboard("{ArrowRight}");
+    expect(document.activeElement).toBe(allow);
     await user.keyboard("{Enter}");
     expect(answered).toEqual([]);
     expect(screen.getByRole("status")).toHaveTextContent("nothing was allowed");
@@ -367,12 +375,16 @@ describe("a grant is never sent from a row that just moved", () => {
     }
   });
 
-  it("never lands the keyboard on Allow by itself: it comes in on the update", async () => {
+  it("never lands the keyboard on Allow by itself: it comes in on the update (#3123)", async () => {
     const answered: string[] = [];
     render(<Updated refused={[refusal()]} answer={(_, how) => answered.push(how)} />);
     await read();
+    // Mark all read and Dismiss all, then the list of updates, which the keyboard comes into on
+    // the update itself, never one of its answers.
     await user.tab();
-    expect(document.activeElement?.tagName).not.toBe("BUTTON");
+    await user.tab();
+    await user.tab();
+    expect(document.activeElement?.getAttribute("role")).toBe("row");
     await user.keyboard("{Enter}");
     expect(answered).toEqual([]);
   });
@@ -398,7 +410,10 @@ function Held() {
 describe("the list, read from the core and answered through it", () => {
   /** The pairs drawn, top to bottom. */
   const rows = () =>
-    screen.queryAllByRole("listitem").map((row) => row.querySelector(".ask-says")?.textContent);
+    screen
+      .queryAllByRole("row")
+      .filter((row) => row.hasAttribute("data-key"))
+      .map((row) => row.querySelector(".ask-says")?.textContent);
 
   it("keeps the core's order, which no later refusal moves", async () => {
     mockIPC((cmd) =>

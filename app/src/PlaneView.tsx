@@ -230,7 +230,7 @@ import { Notice, NoticeInCentre, NoticeOf } from "./Notice";
 import { ReadOnlyLine, ReadOnlyMendable, ReadOnlySaid, useReadOnly } from "./ReadOnlyLine";
 import { LivesHere } from "./LivesHere";
 import { InboxAlerts, type WindowAlerts } from "./InboxAlerts";
-import type { Elsewhere } from "./InboxElsewhere";
+import { handCount, handSaid, type Elsewhere } from "./InboxElsewhere";
 import { sayAboutThisMachine, useAboutThisMachine } from "./windowprefs";
 import { drawWhatIsInForce } from "./Extensions";
 import { useScreenReaderMode } from "./screenReader";
@@ -731,6 +731,7 @@ import { ChatPersonaState } from "./ChatPersonaState";
 import { carryPaneBand, forgetPaneBand, forgetPaneBands, paneBand } from "./noticeSettle";
 import { useWorkedHere } from "./workedHere";
 import { newTabRows } from "./newTabList";
+import { newAsks, newNotices, newUpdates, useChatOnScreenSeen, useSeen } from "./seen";
 
 /** Whether two lists of the right side's extension panels draw the same tabs. */
 const samePanels = (a: readonly PanelTab[], b: readonly PanelTab[]) =>
@@ -5124,17 +5125,15 @@ export const PlaneView = memo(function PlaneView({
     },
     [failedTasks, plane, showChat],
   );
-  /** **The chat on screen and focused has been seen** (#5340): what failed of it leaves its mark. */
-  useFailuresSeen(
-    plane,
+  /** The chat of the focused pane of the tab in front: the chat on screen. */
+  const chatOnScreen =
     tabs.inFront === undefined
       ? undefined
       : shownIn(tabs, tabs.inFront).find(
           (one) => one.pane === tabs.byId[tabs.inFront ?? -1]?.focused,
-        )?.session,
-    failedTasks,
-    inFront,
-  );
+        )?.session;
+  /** **The chat on screen and focused has been seen** (#5340): what failed of it leaves its mark. */
+  useFailuresSeen(plane, chatOnScreen, failedTasks, inFront);
   /** A finished row was opened to be read: where it is a failure its session is flagged for,
    *  it has been looked at (#1491). */
   const lookedAtFinished = useCallback(
@@ -11162,6 +11161,11 @@ export const PlaneView = memo(function PlaneView({
   const noticesHold = useDismissHold();
   /** The bell's count (#5646): the unread lines From your chats, those just dismissed left out. */
   const bell = unreadMine(keptUpdates?.filter((one) => !updatesHold.held.has(heldUpdate(one.key))));
+  /** **What is New** (#6002, ADR 0121 decisions 10 and 11): seen, not received; the chat on
+   *  screen in a focused window has nothing New. */
+  const { seen, see, rows: seenRows } = useSeen(plane, waiting);
+  useChatOnScreenSeen(see, chatOnScreen, inFront, waiting, keptUpdates);
+  const [noticeCauses, setNoticeCauses] = useState<readonly string[]>([]);
 
   /**
    * **The chats in no pane** (#4759, spec #4750): listed, and in no tab of any window of the
@@ -11370,6 +11374,8 @@ export const PlaneView = memo(function PlaneView({
    * its chat in a new session, and the pane moves on to it before the ask is read as gone.
    */
   const touchOnPane = useAnsweredWhenGone(plane, waiting);
+  /** The ✋'s count: every open project's asks, and how many are outside this one (#5999). */
+  const hand = handCount(plane, waiting?.length ?? 0, elsewhere);
   /**
    * **Snooze all on Asks** (#5647): the core keeps what each chat held, and lists a snoozed
    * chat's asks apart until it asks something new; every list of this project's asks is read
@@ -12037,6 +12043,7 @@ export const PlaneView = memo(function PlaneView({
                     <Inbox
                       part="asks"
                       plane={plane}
+                      seen={seenRows}
                       asks={waiting}
                       onGo={goToAsking}
                       elsewhere={elsewhere}
@@ -12062,6 +12069,7 @@ export const PlaneView = memo(function PlaneView({
                     <Inbox
                       part="updates"
                       plane={plane}
+                      seen={seenRows}
                       asks={waiting}
                       onGo={goToAsking}
                       updates={inboxUpdates}
@@ -12080,6 +12088,8 @@ export const PlaneView = memo(function PlaneView({
                     <Inbox
                       part="notices"
                       plane={plane}
+                      seen={seenRows}
+                      onNoticeCauses={setNoticeCauses}
                       asks={waiting}
                       onGo={goToAsking}
                       notices={standing}
@@ -12139,6 +12149,15 @@ export const PlaneView = memo(function PlaneView({
                 // is there while the side is put away (B-8). Changes counts what git has uncommitted.
                 // The Lower icons' are drawn the same way, so they are there while their half of the
                 // Panel is away (P-9, #1739): Changes' count, and Repos' only once a clone is behind.
+                // **What is New in each view** (#6002): a pip beside its badge, until seen.
+                fresh={{
+                  asks: newAsks(waiting, seen),
+                  updates: newUpdates(
+                    keptUpdates?.filter((one) => !updatesHold.held.has(heldUpdate(one.key))),
+                    seen,
+                  ),
+                  notices: newNotices(noticeCauses, seen),
+                }}
                 badges={{
                   repos: gap && (
                     <ActivityCount
@@ -12171,19 +12190,10 @@ export const PlaneView = memo(function PlaneView({
                       )}
                     </QueueRead>
                   ),
-                  // The asks waiting here (#1692, I-2): the ✋'s count for this project, in its tone, on
-                  // the bar, so it is there while the side is put away.
-                  asks: (
-                    <ActivityCount
-                      count={waiting?.length ?? 0}
-                      said={
-                        waiting?.length === 1
-                          ? "1 thing waits on you"
-                          : `${waiting?.length ?? 0} things wait on you`
-                      }
-                      tone="needs-you"
-                    />
-                  ),
+                  // The ✋'s count (#1692, I-2; ADR 0121 decision 4): every open project's asks, in
+                  // its tone, on the bar, so it is there while the side is put away. Those outside
+                  // this project are said as "+N elsewhere"; Asks' scope never narrows it.
+                  asks: <ActivityCount count={hand.total} said={handSaid(hand)} tone="needs-you" />,
                   // The unread lines From your chats (#5646, ADR 0119): the bell's count, in the plain
                   // colours, since a result is news of the person's own work and asks nothing.
                   // Project is never counted.
@@ -13468,7 +13478,7 @@ function giveViewTheKeyboard(view: ViewId): void {
     ? document.querySelector<HTMLElement>(`${panel} input[type="search"]`)
     : // A tree of the tree family is its own stop until a row has had the keyboard (#2911).
       (document.querySelector<HTMLElement>(
-        `${panel} :is([role="tree"] [tabindex="0"], [role="treegrid"][tabindex="0"], [role="treegrid"] [tabindex="0"])`,
+        `${panel} :is([role="treegrid"][tabindex="0"], [role="treegrid"] [tabindex="0"])`,
       ) ??
       // The Inbox's first ask, past the scope switch above its list (qw359).
       document.querySelector<HTMLElement>(`${panel} .inbox-list [tabindex="0"]`) ??

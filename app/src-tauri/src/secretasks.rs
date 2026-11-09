@@ -1164,6 +1164,7 @@ pub fn asked(
         folder: open.cwd.clone(),
         confines: held.chats().confines_now(asked.chat),
         harness: open.harness,
+        ends_seen: None,
     };
     // A chat on a pool's runner runs its commands there, where no Run grant reaches: a program
     // it names ahead is asked about as any Secret ask is (D-5244-4). Judged by the link the line

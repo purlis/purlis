@@ -64,7 +64,9 @@ use super::opened;
 use super::options::{self, MOST_COMBINATIONS};
 use super::tint;
 use super::typed::Typed;
-use super::vocabulary::{PLATFORM, TOKENS, follow_kin, follow_muted, is_colour, is_platform};
+use super::vocabulary::{
+    PLATFORM, TOKENS, follow_faint, follow_kin, follow_muted, is_colour, is_platform,
+};
 use super::{
     Appearance, CLASSIC, Complaint, PURLIS, Resolved, ResolvedTheme, Theme, built_in_for, classic,
     is_format_2, load_format_1, load_motion, purlis, stringify,
@@ -479,10 +481,14 @@ impl Library {
             .first()
             .map(|one| one.parts.clone())
             .unwrap_or_default();
-        let parts = super::parts::over(
-            &parents_parts,
-            super::parts::read(from.get("parts"), &mut complaints, &mut notes),
-        );
+        let own_parts = super::parts::read(from.get("parts"), &mut complaints, &mut notes);
+        // Who wrote each key: the parent's say, then this theme's own keys (#2947).
+        let mut parts_by = appearances
+            .first()
+            .map(|one| one.parts_by.clone())
+            .unwrap_or_default();
+        parts_by.extend(own_parts.keys().map(|key| (*key, name.clone())));
+        let parts = super::parts::over(&parents_parts, own_parts);
         let mut seen: BTreeSet<String> = BTreeSet::new();
         for (at, raw) in given.iter().enumerate() {
             let Some(one) = raw.as_object() else {
@@ -550,6 +556,7 @@ impl Library {
             one.fonts.clone_from(&fonts);
             one.tint.clone_from(&tint);
             one.parts.clone_from(&parts);
+            one.parts_by.clone_from(&parts_by);
         }
         // A part's size is held in both densities, which are known once every appearance is.
         let mut unfit: Vec<String> = Vec::new();
@@ -557,6 +564,18 @@ impl Library {
             for said in super::parts::fits(&parts, &one.geometry, &one.compact) {
                 if !unfit.contains(&said) {
                     unfit.push(said);
+                }
+            }
+        }
+        // And in every combination of option values whose layers carry parts (#2946), each
+        // said with the values that make it.
+        for (named, parts) in options::parts_of_every(&parts, &options) {
+            for one in &appearances {
+                for said in super::parts::fits(&parts, &one.geometry, &one.compact) {
+                    let said = format!("with {named}: {said}");
+                    if !unfit.contains(&said) {
+                        unfit.push(said);
+                    }
                 }
             }
         }
@@ -1001,6 +1020,7 @@ fn appearance(
     );
     follow_muted(&mut given.colours, &base.values);
     follow_kin(&mut given.colours, &base.values);
+    follow_faint(&mut given.colours, &base.values);
     let mut values = base.values.clone();
     values.extend(given.colours);
     let mut sizes = base.geometry.clone();
@@ -1031,6 +1051,7 @@ fn appearance(
         options: Vec::new(),
         tint: base.tint.clone(),
         parts: base.parts.clone(),
+        parts_by: base.parts_by.clone(),
         least: super::Least::Standard,
     })
 }
@@ -1053,6 +1074,7 @@ impl Tokens {
         let mut colours = self.colours.clone();
         follow_muted(&mut colours, &theme.values);
         follow_kin(&mut colours, &theme.values);
+        follow_faint(&mut colours, &theme.values);
         theme.values.extend(colours);
         self.typed.onto(&mut theme.typed);
         if !self.geometry.is_empty() {

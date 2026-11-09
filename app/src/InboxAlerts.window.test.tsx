@@ -282,7 +282,7 @@ describe("each alert in the Inbox", () => {
     await waitFor(() =>
       expect(within(groups).getByRole("button", { name: "General" })).toHaveAttribute(
         "aria-current",
-        "true",
+        "page",
       ),
     );
     // The settings the core's rows name (#1289) are controls this group draws: the default

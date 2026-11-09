@@ -1459,7 +1459,6 @@ const CLASSLESS: readonly string[] = [
  * is listed so a new one is looked at.
  */
 const WITHIN: readonly string[] = [
-  ".chats-section li:has(> .ui-row[data-revealed])",
   // A pane's consent (`paneFrame.css`, #3142): it holds an Allow, and is on the warning wash
   // whatever its tone, a translucent wash over the terminal's fill, which the button family lists.
   '.pane-top\n  [data-scope="notice"][data-part="root"][data-placement="pane"]:has([data-variant="grants"])',

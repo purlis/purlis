@@ -1494,6 +1494,19 @@ export const commands = {
 	 */
 	setAsideInboxFindings: (plane: PlaneId, keys: string[]) => typedError<InboxUpdate_Serialize[], string>(__TAURI_INVOKE("set_aside_inbox_findings", { plane, keys })),
 	/**
+	 *  **What the person has seen** (#6002, ADR 0121 decisions 10 and 11): the keys of the
+	 *  project's asks, Notices and updates the window said were seen. One the window lists that is
+	 *  not here is **New**. None where this machine keeps no data home.
+	 */
+	inboxSeen: (plane: PlaneId) => typedError<string[], string>(__TAURI_INVOKE("inbox_seen", { plane })),
+	/**
+	 *  **Notes `keys` seen** (#6002): each row visible in an open view for about a second, or
+	 *  whose chat was on screen in a focused window. One seen before is left as it is. **And where
+	 *  `asks` is given**, the asks standing now by the same keys, every ask seen that is not among
+	 *  them is forgotten, so the same ask asked again is New. Answers what [`inbox_seen`] does.
+	 */
+	seeInbox: (plane: PlaneId, keys: string[], asks: string[] | null) => typedError<string[], string>(__TAURI_INVOKE("see_inbox", { plane, keys, asks })),
+	/**
 	 *  The window says whether it has `plane`'s Inbox open (#1694): while it is, and the window
 	 *  is focused with the project in front, no notification is sent about that project's asks.
 	 */
@@ -4649,6 +4662,11 @@ export const commands = {
 	 *  says the approval its profile needs, where it needs one (#3968).
 	 */
 	themeChat: (at: ThemeAt, theme: string | null, from: string | null, columns: number, rows: number) => typedError<Curating, StartRefused>(__TAURI_INVOKE("theme_chat", { at, theme, from, columns, rows })),
+	/**
+	 *  **The parts manifest** for Settings › Theme (#2947): what `purlis theme parts` prints, read
+	 *  once, off the window's thread (#1949). Nothing is written.
+	 */
+	themeParts: () => typedError<PartsManifest, string>(__TAURI_INVOKE("theme_parts")),
 	/**
 	 *  The theme drafts of the chat `session`, as the window asks before it closes that chat: each
 	 *  draft, where Keep puts it. Empty for a chat with none. The window's alone: it names the chat
@@ -9441,7 +9459,31 @@ export type GalleryCard = {
 	folder: boolean,
 	/**  Changes whenever what the theme draws changes: what its pictures are kept by. */
 	stamp: string,
+	/**
+	 *  **Each component part key the theme draws** (#2947), with its value and what sets it: the
+	 *  theme, a theme it extends or an option's value; in key order, the options' last.
+	 */
+	parts: GalleryPart[],
 };
+
+/**  **One component part key a card's theme sets** (#2947). */
+export type GalleryPart = {
+	/**  The whole key: `button.root.primary.hover.fill`. */
+	key: string,
+	/**  Its family and its part, as the parts manifest names them. */
+	family: string,
+	part: string,
+	/**  Its value as a theme writes it: `full`, `accent.base`, `[4, 12]`. */
+	value: string,
+	from: GalleryPartFrom,
+};
+
+/**  **What sets a part key**: the theme, a theme it extends, or a value of one of its options. */
+export type GalleryPartFrom = { kind: "theme" } | 
+/**  By the name of the theme it extends that wrote it. */
+{ kind: "extends"; theme: string } | 
+/**  By the option's label and the value's. */
+{ kind: "option"; option: string; value: string };
 
 /**  How a number reads, as the window colours it — `purlis_core::usage::Tone`. */
 export type GaugeTone = "ok" | "warn" | "bad";
@@ -10767,6 +10809,33 @@ export type MadeAgain = {
 	old_home: OldHome,
 };
 
+/**  A state, a part's or a variant's name, what it is, and the manifest version it came in. */
+export type ManifestEntry = {
+	name: string,
+	description: string,
+	since: number,
+};
+
+/**  One family of the manifest. */
+export type ManifestFamily = {
+	name: string,
+	description: string,
+	since: number,
+	/**  The states its wrapper marks, by name; rest is implied. */
+	states: string[],
+	parts: ManifestPart[],
+	variants: ManifestEntry[],
+};
+
+/**  One part of a family. */
+export type ManifestPart = {
+	name: string,
+	description: string,
+	since: number,
+	/**  The properties a theme may set on it, by name. */
+	properties: string[],
+};
+
 /**  A persona's MCP server that could not start for a chat, as the Notice on its tab shows it. */
 export type McpFailed = {
 	plane: PlaneId,
@@ -11959,6 +12028,18 @@ export type Panels = {
 	 *  program started on every workspace focus would spend the 100 ms on a fork.
 	 */
 	contributed: PanelView[],
+};
+
+/**
+ *  **The component parts manifest** (`purlis theme parts`, spec #2897), as Settings › Theme lists
+ *  it (#2947): every family, its parts, variants and states, each with the manifest version it
+ *  came in. Read from the manifest itself, so the window keeps no list of its own.
+ */
+export type PartsManifest = {
+	/**  The manifest version the last release shipped. */
+	version: number,
+	states: ManifestEntry[],
+	families: ManifestFamily[],
 };
 
 /**  One percentage on the gauge, and the tone its threshold gives it. */

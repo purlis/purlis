@@ -699,12 +699,115 @@ fn a_container_that_is_not_confined_as_it_was_made_is_refused() {
             "shareable memory",
             Box::new(|c| c["HostConfig"]["IpcMode"] = "shareable".into()),
         ),
+        (
+            "a group added",
+            Box::new(|c| c["HostConfig"]["GroupAdd"] = serde_json::json!(["docker"])),
+        ),
+        (
+            "a device cgroup rule",
+            Box::new(|c| c["HostConfig"]["DeviceCgroupRules"] = serde_json::json!(["c 1:3 mr"])),
+        ),
+        (
+            "kept from the out-of-memory killer",
+            Box::new(|c| c["HostConfig"]["OomScoreAdj"] = (-1000).into()),
+        ),
+        (
+            "a cgroup parent of its own",
+            Box::new(|c| c["HostConfig"]["CgroupParent"] = "/".into()),
+        ),
+        (
+            "a larger /dev/shm",
+            Box::new(|c| c["HostConfig"]["ShmSize"] = (8_u64 << 30).into()),
+        ),
+        (
+            "an unmasked /proc",
+            Box::new(|c| c["HostConfig"]["MaskedPaths"] = serde_json::json!([])),
+        ),
+        (
+            "writable kernel paths",
+            Box::new(|c| c["HostConfig"]["ReadonlyPaths"] = serde_json::json!([])),
+        ),
+        (
+            "a field the check does not know",
+            Box::new(|c| c["HostConfig"]["Frobnicate"] = true.into()),
+        ),
     ];
     for (case, change) in cases {
         assert!(
             check(&with(|c| change(c)), &made()).is_err(),
             "{case} passed the check"
         );
+    }
+}
+
+/// What Docker writes for the fields the check holds to their defaults, as a full `docker
+/// inspect` prints them beside the fields the recorded hosts were cut to.
+fn written_in_full(one: &mut serde_json::Value, made: &Made) {
+    let shm = made.runner.limits.shm_mib() * 1024 * 1024;
+    let host = &mut one["HostConfig"];
+    host["GroupAdd"] = serde_json::Value::Null;
+    host["DeviceCgroupRules"] = serde_json::Value::Null;
+    host["OomScoreAdj"] = 0.into();
+    host["CgroupParent"] = "".into();
+    host["ShmSize"] = shm.into();
+    host["Init"] = true.into();
+    host["Ulimits"] = serde_json::json!([]);
+    host["MaskedPaths"] = serde_json::json!(["/proc/kcore", "/proc/keys"]);
+    host["ReadonlyPaths"] = serde_json::json!(["/proc/bus", "/proc/sys"]);
+    host["LogConfig"] = serde_json::json!({"Type": "json-file", "Config": {}});
+    host["RestartPolicy"] = serde_json::json!({"Name": "no", "MaximumRetryCount": 0});
+}
+
+#[test]
+fn a_container_with_every_field_as_docker_writes_it_passes_the_check() {
+    assert_eq!(
+        check(&with(|one| written_in_full(one, &made())), &made()),
+        Ok(())
+    );
+}
+
+#[test]
+fn a_podman_container_with_every_field_as_podman_writes_it_passes_the_check() {
+    for host in ["podman-rootful", "podman-rootless"] {
+        let mut full = recorded(host, "made");
+        let made = made_as_recorded(&full);
+        written_in_full(&mut full[0], &made);
+        let config = &mut full[0]["HostConfig"];
+        config["Cgroups"] = "default".into();
+        config["CgroupManager"] = "systemd".into();
+        config["CgroupParent"] = "machine.slice".into();
+        config["CgroupConf"] = serde_json::Value::Null;
+        config["Ulimits"] = serde_json::json!([
+            {"Name": "RLIMIT_NOFILE", "Soft": 1_048_576, "Hard": 1_048_576},
+            {"Name": "RLIMIT_NPROC", "Soft": 4_194_304, "Hard": 4_194_304}
+        ]);
+        let passed = checked_on_its_engine(host, &full);
+        assert!(passed.is_ok(), "{host}: {passed:?}");
+        for (what, field, value) in [
+            ("no cgroup", "Cgroups", serde_json::json!("disabled")),
+            (
+                "a cgroup setting of its own",
+                "CgroupConf",
+                serde_json::json!({"memory.max": "max"}),
+            ),
+            (
+                "a cgroup parent of its own",
+                "CgroupParent",
+                serde_json::json!("/"),
+            ),
+            (
+                "kept from the out-of-memory killer",
+                "OomScoreAdj",
+                serde_json::json!(-1000),
+            ),
+        ] {
+            let mut loosened = full.clone();
+            loosened[0]["HostConfig"][field] = value;
+            assert!(
+                checked_on_its_engine(host, &loosened).is_err(),
+                "{host}: {what} passed"
+            );
+        }
     }
 }
 

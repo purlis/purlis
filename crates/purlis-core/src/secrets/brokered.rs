@@ -1485,6 +1485,10 @@ pub struct Asker {
     /// The harness the app started the chat on, where it knows one (#1353): what a block of the
     /// run names as the chat's, never a word the line carried.
     pub harness: Option<crate::harness::Harness>,
+    /// The count of chat ends ([`crate::forge::apptoken::ends_so_far`]) read before the chat was
+    /// found open, where the caller looked it up: a chat that ends from then on keeps no GitHub
+    /// App token minted for it (#3808). `None` counts from when the run is served.
+    pub ends_seen: Option<u64>,
 }
 
 /// Why nothing is run where purlis has no sandbox to run it in: neither macOS nor Linux. The
@@ -3210,7 +3214,9 @@ pub(crate) fn serve_recorded(
 ) {
     // Counted as soon as the run is served: a chat that ends from here on keeps no GitHub App
     // token minted for it (#3808).
-    let ends_seen = crate::forge::apptoken::ends_so_far();
+    let ends_seen = asker
+        .ends_seen
+        .unwrap_or_else(crate::forge::apptoken::ends_so_far);
     // A runner's journal names the program, never a vault (#2838): the refusal's words name
     // vaults, so a service logs neither.
     let program = wanted

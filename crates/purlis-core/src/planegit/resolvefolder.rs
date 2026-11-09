@@ -7,7 +7,7 @@
 //! tree and a quit left the root mid-merge. Now nothing multi-step ever runs at the root:
 //!
 //! - [`cut`] makes the **resolve folder**, a linked worktree of the plane at the state folder's
-//!   `resolve/` ([`path`]), on the temporary branch [`BRANCH`]. Its files are the merge of the
+//!   `resolve/` ([`folder`]), on the temporary branch [`BRANCH`]. Its files are the merge of the
 //!   plane's commits and the remote's target as `git merge-tree` writes it, what purlis
 //!   generates already rebuilt ([`super::bringin::plan`]); each file a person wrote that
 //!   conflicts holds git's markers, and the folder's index holds its three sides as unmerged
@@ -27,7 +27,7 @@
 //!
 //! **A quit at any point leaves the root untouched**: before the record is written there is no
 //! resolve, and a folder without one is removed by the next [`cut`]; after it, the folder is
-//! found again by the next look ([`held`]).
+//! found again by the next look ([`resolving`]).
 //!
 //! The window runs every git command here, under no chat's sandbox, each one the person's press.
 
@@ -36,15 +36,64 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use super::resolve::{Conflicts, Settled, markers_in};
 use super::{
     Claim, WRITE, bringin, forget_replayed_push, git, git_dir_of, is_object_name, line_of, ondisk,
     replay, sandbox_would_stop, tail,
 };
 use crate::repocmd::{Say, Sink};
 
-/// Each conflicted path's sides: stage, mode and object.
-type Sides = BTreeMap<String, Vec<(u8, String, String)>>;
+/// One side of a conflicted path, as git's index holds it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Stage {
+    /// 1 the merge base, 2 ours, 3 theirs.
+    number: u8,
+    mode: String,
+    object: String,
+}
+
+/// Each conflicted path's sides.
+type Sides = BTreeMap<String, Vec<Stage>>;
+
+/// How a press of Resolve, Continue, Skip or Abort ended.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Settled {
+    /// This machine's commits and the remote's are one line now. What is left is the push
+    /// ([`super::resolve::push_after`]).
+    Replayed,
+    /// These files conflict, and a resolve folder holds them for the person or a chat.
+    Stopped(Vec<String>),
+    /// What is settled brings nothing the remote lacks: Skip drops this machine's side, as a
+    /// replay drops a commit left empty.
+    Empty,
+    /// The resolve folder, or a stop an older build left at the root, is gone, and nothing else
+    /// changed.
+    Aborted,
+    /// Nothing was changed, and why, as a sentence for the person.
+    Refused(String),
+}
+
+/// The files of a conflict, by who may settle them.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Conflicts {
+    /// Files git marked the conflict in, still unsettled: a person's or a chat's to edit.
+    pub marked: Vec<String>,
+    /// Files git could not mark the conflict in, still unsettled: a binary file, a file one
+    /// side deleted, a link or a submodule. The person settles each in a terminal, by choosing
+    /// a side and staging it.
+    pub by_hand: Vec<String>,
+    /// The settings file, where both sides changed keys each their own way (#5852): the person
+    /// chooses each key's value in the window, and no marker is ever written into it.
+    pub keyed: Vec<String>,
+}
+
+/// Whether `text` has a line that starts with one of git's conflict markers: the opener, the
+/// closer, or the common ancestor's (`diff3`, `zdiff3`). The separator alone is not one, since
+/// a Markdown heading is underlined the same way.
+pub fn markers_in(text: &[u8]) -> bool {
+    text.split(|b| *b == b'\n').any(|line| {
+        line.starts_with(b"<<<<<<<") || line.starts_with(b">>>>>>>") || line.starts_with(b"|||||||")
+    })
+}
 
 /// The file in the plane's git directory that holds what the window knows of an open resolve.
 pub const RECORD: &str = "purlis-resolve.json";
@@ -68,13 +117,13 @@ const NONE_OPEN: &str =
 
 /// **Where the resolve folder of the plane at `root` is**: `resolve/` in its state folder, never
 /// under `$PURLIS_HOME`, since it is a checkout of this plane.
-pub fn path(root: &Path) -> PathBuf {
+pub fn folder(root: &Path) -> PathBuf {
     crate::names::state(root).join(FOLDER)
 }
 
 /// What the window holds about an open resolve ([`RECORD`]).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Held {
+pub struct Resolving {
     /// The branch the plane saves into.
     pub target: String,
     /// The plane's HEAD when Resolve was pressed.
@@ -90,14 +139,14 @@ pub struct Held {
     /// The settings file's keys both sides changed, each its own way (#5852): the person's to
     /// choose in the window. Empty where none.
     #[serde(default)]
-    pub keys: Vec<HeldKey>,
+    pub keys: Vec<ResolvingKey>,
     /// When it was cut, in seconds since the epoch.
     pub at: u64,
 }
 
 /// A settings key both sides changed, each its own way, with both values as TOML writes them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct HeldKey {
+pub struct ResolvingKey {
     /// The settings file it is in.
     pub file: String,
     /// The key's dotted path.
@@ -114,10 +163,19 @@ pub struct HeldKey {
 pub struct Chosen {
     pub file: String,
     pub key: String,
-    pub theirs: bool,
+    pub side: Side,
 }
 
-impl Held {
+/// Which side of a conflict a choice keeps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Side {
+    /// This machine's.
+    Ours,
+    /// The remote's.
+    Theirs,
+}
+
+impl Resolving {
     /// Whether every value is in the shape this module writes: each ends up in git's argv.
     fn holds(&self) -> bool {
         let path_ok = |path: &String| {
@@ -147,9 +205,9 @@ impl Held {
 }
 
 /// **The resolve open in the plane at `root`**, or `None`: its record, while the folder is there.
-pub fn held(root: &Path) -> Option<Held> {
+pub fn resolving(root: &Path) -> Option<Resolving> {
     match open(root) {
-        Open::Held(held) => Some(held),
+        Open::Resolving(resolving) => Some(resolving),
         Open::None | Open::NotOurs(_) => None,
     }
 }
@@ -159,7 +217,7 @@ enum Open {
     /// No resolve, or a record with no folder.
     None,
     /// A resolve, its folder the one cut for it.
-    Held(Held),
+    Resolving(Resolving),
     /// A record and a folder whose gitfile is not the one cut for it, and why: nothing runs git
     /// in it.
     NotOurs(String),
@@ -167,18 +225,18 @@ enum Open {
 
 /// The resolve open at `root`, checked: its record, and its folder's gitfile the one cut for it.
 fn open(root: &Path) -> Open {
-    let Some(held) = std::fs::read_to_string(git_dir_of(root).join(RECORD))
+    let Some(resolving) = std::fs::read_to_string(git_dir_of(root).join(RECORD))
         .ok()
-        .and_then(|text| serde_json::from_str::<Held>(&text).ok())
-        .filter(Held::holds)
+        .and_then(|text| serde_json::from_str::<Resolving>(&text).ok())
+        .filter(Resolving::holds)
     else {
         return Open::None;
     };
-    if std::fs::symlink_metadata(path(root).join(".git")).is_err() {
+    if std::fs::symlink_metadata(folder(root).join(".git")).is_err() {
         return Open::None;
     }
     match folder_is_ours(root) {
-        Ok(()) => Open::Held(held),
+        Ok(()) => Open::Resolving(resolving),
         Err(why) => Open::NotOurs(why),
     }
 }
@@ -194,7 +252,7 @@ const NOT_OURS: &str = "The resolve folder's link to this project's git is not t
 fn folder_is_ours(root: &Path) -> Result<(), String> {
     use std::io::Read;
     let not_ours = || NOT_OURS.to_owned();
-    let gitfile = path(root).join(".git");
+    let gitfile = folder(root).join(".git");
     if !std::fs::symlink_metadata(&gitfile).is_ok_and(|meta| meta.is_file()) {
         return Err(not_ours());
     }
@@ -206,7 +264,7 @@ fn folder_is_ours(root: &Path) -> Result<(), String> {
         .trim_end_matches(['\n', '\r'])
         .strip_prefix("gitdir: ")
         .ok_or_else(not_ours)?;
-    let named = path(root).join(named);
+    let named = folder(root).join(named);
     let real = |path: &Path| std::fs::canonicalize(path).map_err(|_| not_ours());
     let entry = real(&named)?;
     let common = line_of(
@@ -232,7 +290,7 @@ fn folder_is_ours(root: &Path) -> Result<(), String> {
 /// The files of the open resolve, by who may settle them, as they stand in the folder now.
 pub fn conflicts(root: &Path) -> Option<Conflicts> {
     match open(root) {
-        Open::Held(held) => Some(sorted(&path(root), &held)),
+        Open::Resolving(resolving) => Some(sorted(&folder(root), &resolving)),
         // Still open, so the window offers Abort; nothing is read from the folder.
         Open::NotOurs(_) => Some(Conflicts::default()),
         Open::None => None,
@@ -265,11 +323,11 @@ pub(super) fn cut(root: &Path, target: &str) -> Result<Vec<String>, String> {
     }
     let tree = bringin::tree_of(root, &plan)?;
     let stages = unmerged_sides(root, &ours, &theirs)?;
-    let folder = path(root);
+    let folder = folder(root);
     let made = (|| {
         std::fs::create_dir_all(folder.parent().unwrap_or(root)).map_err(|e| e.to_string())?;
         let folder_arg = folder.to_string_lossy();
-        ok(git::run_untimed(
+        succeeded(git::run_untimed(
             root,
             &[
                 "worktree",
@@ -283,7 +341,7 @@ pub(super) fn cut(root: &Path, target: &str) -> Result<Vec<String>, String> {
             ],
         ))?;
         // Untimed: it checks out a tree.
-        ok(git::run_untimed(
+        succeeded(git::run_untimed(
             &folder,
             &["read-tree", "--reset", "-u", &tree],
         ))?;
@@ -297,7 +355,7 @@ pub(super) fn cut(root: &Path, target: &str) -> Result<Vec<String>, String> {
         for file in plan.keys.keys() {
             let around = settings_around(root, &ours, &theirs, file)?;
             written_in(&folder, file, &around.text)?;
-            keys.extend(around.keys.into_iter().map(|key| HeldKey {
+            keys.extend(around.keys.into_iter().map(|key| ResolvingKey {
                 file: file.clone(),
                 key: key.key,
                 ours: key.ours,
@@ -311,8 +369,13 @@ pub(super) fn cut(root: &Path, target: &str) -> Result<Vec<String>, String> {
                 continue;
             };
             info.push_str(&format!("0 {zero}\t{path}\0"));
-            for (stage, mode, object) in sides {
-                info.push_str(&format!("{mode} {object} {stage}\t{path}\0"));
+            for Stage {
+                number,
+                mode,
+                object,
+            } in sides
+            {
+                info.push_str(&format!("{mode} {object} {number}\t{path}\0"));
             }
         }
         let indexed = git::run_with_input(
@@ -339,7 +402,7 @@ pub(super) fn cut(root: &Path, target: &str) -> Result<Vec<String>, String> {
             })
             .cloned()
             .collect();
-        let held = Held {
+        let resolving = Resolving {
             target: target.to_owned(),
             ours: ours.clone(),
             theirs: theirs.clone(),
@@ -349,7 +412,7 @@ pub(super) fn cut(root: &Path, target: &str) -> Result<Vec<String>, String> {
             keys,
             at: super::now() as u64,
         };
-        write_record(root, &held)
+        write_record(root, &resolving)
     })();
     match made {
         Ok(()) => Ok(plan.person),
@@ -368,8 +431,8 @@ pub fn start(root: &Path, say: Sink) -> Settled {
         Ok(branch) => branch,
         Err(refused) => return refused,
     };
-    if let Some(held) = held(root) {
-        return Settled::Stopped(held.conflicted);
+    if let Some(resolving) = resolving(root) {
+        return Settled::Stopped(resolving.conflicted);
     }
     say(Say::Info(
         format!("Fetching `{branch}` from the remote …").into(),
@@ -397,8 +460,8 @@ pub(super) fn start_fetched(root: &Path, say: Sink) -> Settled {
         Ok(branch) => branch,
         Err(refused) => return refused,
     };
-    if let Some(held) = held(root) {
-        return Settled::Stopped(held.conflicted);
+    if let Some(resolving) = resolving(root) {
+        return Settled::Stopped(resolving.conflicted);
     }
     let theirs = format!("refs/remotes/origin/{branch}");
     if super::count(root, &format!("HEAD..{theirs}")) == Some(0) {
@@ -432,7 +495,7 @@ pub(super) fn start_fetched(root: &Path, say: Sink) -> Settled {
     } else {
         say(Say::Info("Replaying this project's own commits …".into()));
         match replay::replay(root, "HEAD", &theirs, plane.sign.value, WRITE) {
-            replay::Replayed::Onto(tip) => {
+            Ok(tip) => {
                 return match move_root(root, &tip) {
                     Ok(()) => {
                         forget_replayed_push(root);
@@ -442,25 +505,9 @@ pub(super) fn start_fetched(root: &Path, say: Sink) -> Settled {
                     Err(why) => Settled::Refused(why),
                 };
             }
-            replay::Replayed::Conflict(_) => {}
-            replay::Replayed::Unsigned(signer) => {
-                return Settled::Refused(format!(
-                    "Nothing was started: a replayed commit could not be signed: {signer}."
-                ));
-            }
-            replay::Replayed::OutOfTime => {
-                return Settled::Refused(
-                    "Nothing was started: the replay did not finish in time. The project is \
-                     exactly as it was."
-                        .into(),
-                );
-            }
-            replay::Replayed::Failed(said) => {
-                return Settled::Refused(format!(
-                    "Nothing was started: git could not replay them: {}.",
-                    crate::personas::one_line(&said)
-                ));
-            }
+            // What a person wrote conflicts: the folder is cut for it, below.
+            Err(replay::Unreplayed::Conflict(_)) => {}
+            Err(stopped) => return Settled::Refused(said_unreplayed(stopped, When::Starting)),
         }
     }
     say(Say::Info(
@@ -518,15 +565,15 @@ pub fn carry_on(root: &Path, shown: &[String], keys: &[Chosen], say: Sink) -> Se
     if let Err(why) = super::git_files_refused(root) {
         return Settled::Refused(format!("Nothing was carried on: {why}."));
     }
-    let held = match open(root) {
-        Open::Held(held) => held,
+    let resolving = match open(root) {
+        Open::Resolving(resolving) => resolving,
         Open::NotOurs(why) => return Settled::Refused(why),
         Open::None => return Settled::Refused(NONE_OPEN.into()),
     };
-    let folder = path(root);
+    let folder = folder(root);
     let outside: Vec<&String> = shown
         .iter()
-        .filter(|path| !held.conflicted.contains(*path))
+        .filter(|path| !resolving.conflicted.contains(*path))
         .collect();
     if !outside.is_empty() {
         return Settled::Refused(format!(
@@ -535,23 +582,27 @@ pub fn carry_on(root: &Path, shown: &[String], keys: &[Chosen], say: Sink) -> Se
             if outside.len() == 1 { "is" } else { "are" },
         ));
     }
-    let tree = match settled_tree(root, &folder, &held, keys) {
+    let tree = match settled_tree(root, &folder, &resolving, keys) {
         Ok(tree) => tree,
         Err(refused) => return refused,
     };
     // Settled as the remote has it: nothing of this machine's is left, and Skip is the way on.
-    if line_of(root, &["rev-parse", &format!("{}^{{tree}}", held.theirs)]).as_deref()
+    if line_of(
+        root,
+        &["rev-parse", &format!("{}^{{tree}}", resolving.theirs)],
+    )
+    .as_deref()
         == Some(tree.as_str())
     {
         return Settled::Empty;
     }
     say(Say::Info("Committing the merge …".into()));
     let plane = crate::planesave::Settings::read(root).plane;
-    let subject = format!("Bring {} into this machine's saves", held.target);
+    let subject = format!("Bring {} into this machine's saves", resolving.target);
     let merge = match bringin::commit_tree(
         root,
         &tree,
-        &[&held.ours, &held.theirs],
+        &[&resolving.ours, &resolving.theirs],
         &subject,
         plane.sign.value,
     ) {
@@ -563,7 +614,7 @@ pub fn carry_on(root: &Path, shown: &[String], keys: &[Chosen], say: Sink) -> Se
             ));
         }
     };
-    match moved_onto(root, &held, &merge, plane.sign.value) {
+    match moved_onto(root, &resolving, &merge, plane.sign.value) {
         Ok(()) => {
             clear(root);
             forget_replayed_push(root);
@@ -580,27 +631,30 @@ pub fn skip(root: &Path) -> Settled {
     let Some(_claim) = Claim::of(root) else {
         return Settled::Refused(BUSY.into());
     };
-    let held = match open(root) {
-        Open::Held(held) => held,
+    let resolving = match open(root) {
+        Open::Resolving(resolving) => resolving,
         Open::NotOurs(why) => return Settled::Refused(why),
         Open::None => return Settled::Refused(NONE_OPEN.into()),
     };
-    let folder = path(root);
+    let folder = folder(root);
     // Skip keeps this machine's value for no key: each stands as the remote's.
-    let keys: Vec<Chosen> = held
+    let keys: Vec<Chosen> = resolving
         .keys
         .iter()
         .map(|key| Chosen {
             file: key.file.clone(),
             key: key.key.clone(),
-            theirs: true,
+            side: Side::Theirs,
         })
         .collect();
-    let tree = match settled_tree(root, &folder, &held, &keys) {
+    let tree = match settled_tree(root, &folder, &resolving, &keys) {
         Ok(tree) => tree,
         Err(refused) => return refused,
     };
-    let theirs_tree = line_of(root, &["rev-parse", &format!("{}^{{tree}}", held.theirs)]);
+    let theirs_tree = line_of(
+        root,
+        &["rev-parse", &format!("{}^{{tree}}", resolving.theirs)],
+    );
     if theirs_tree.as_deref() != Some(tree.as_str()) {
         return Settled::Refused(
             "Skip drops only a side that has nothing left to bring, and what is settled still \
@@ -609,7 +663,7 @@ pub fn skip(root: &Path) -> Settled {
         );
     }
     let plane = crate::planesave::Settings::read(root).plane;
-    match moved_onto(root, &held, &held.theirs, plane.sign.value) {
+    match moved_onto(root, &resolving, &resolving.theirs, plane.sign.value) {
         Ok(()) => {
             clear(root);
             forget_replayed_push(root);
@@ -625,7 +679,7 @@ pub fn abort(root: &Path) -> Settled {
     let Some(_claim) = Claim::of(root) else {
         return Settled::Refused(BUSY.into());
     };
-    if held(root).is_none() && !path(root).exists() {
+    if resolving(root).is_none() && !folder(root).exists() {
         return Settled::Refused(
             "No resolve is open in this project, so there is nothing to abort.".into(),
         );
@@ -638,14 +692,14 @@ pub fn abort(root: &Path) -> Settled {
 /// The two sides of the open resolve, by their commit subjects: the remote's, then this
 /// machine's.
 pub fn sides(root: &Path) -> Option<(String, String)> {
-    let held = held(root)?;
+    let resolving = resolving(root)?;
     let subject = |id: &str| {
         git::run(root, &["log", "-1", "--format=%s", id, "--"], git::READ)
             .ok()
             .filter(git::Run::ok)
             .map(|run| run.line().trim().to_string())
     };
-    Some((subject(&held.theirs)?, subject(&held.ours)?))
+    Some((subject(&resolving.theirs)?, subject(&resolving.ours)?))
 }
 
 /// The tree the folder comes to once every file in conflict is settled and staged, or the
@@ -653,15 +707,15 @@ pub fn sides(root: &Path) -> Option<(String, String)> {
 fn settled_tree(
     root: &Path,
     folder: &Path,
-    held: &Held,
+    resolving: &Resolving,
     chosen: &[Chosen],
 ) -> Result<String, Settled> {
-    let left = sorted(folder, held);
+    let left = sorted(folder, resolving);
     if !left.by_hand.is_empty() {
         return Err(Settled::Refused(said_by_hand(folder, &left.by_hand)));
     }
     // Every key in conflict is chosen before anything is staged.
-    let unchosen: Vec<String> = held
+    let unchosen: Vec<String> = resolving
         .keys
         .iter()
         .filter(|key| left.keyed.contains(&key.file))
@@ -679,8 +733,8 @@ fn settled_tree(
         )));
     }
     // Settled already, and staged: by the person in a terminal there.
-    for path in &held.conflicted {
-        if left.marked.contains(path) || held.by_hand.contains(path) || held.keyed(path) {
+    for path in &resolving.conflicted {
+        if left.marked.contains(path) || resolving.by_hand.contains(path) || resolving.keyed(path) {
             continue;
         }
         if staged_text(folder, path).is_some_and(|text| markers_in(&text)) {
@@ -688,7 +742,7 @@ fn settled_tree(
         }
     }
     // Only the files in conflict change: everything else is as the folder was cut.
-    let changed = names(
+    let changed = paths_listed(
         folder,
         &[
             "diff-index",
@@ -696,13 +750,13 @@ fn settled_tree(
             "--no-renames",
             "--name-only",
             "-z",
-            &held.tree,
+            &resolving.tree,
             "--",
         ],
     );
     let elsewhere: Vec<&String> = changed
         .iter()
-        .filter(|path| !held.conflicted.contains(*path))
+        .filter(|path| !resolving.conflicted.contains(*path))
         .collect();
     if !elsewhere.is_empty() {
         return Err(Settled::Refused(format!(
@@ -737,10 +791,10 @@ fn settled_tree(
     for file in &left.keyed {
         let theirs_for: Vec<String> = chosen
             .iter()
-            .filter(|c| &c.file == file && c.theirs)
+            .filter(|c| &c.file == file && c.side == Side::Theirs)
             .map(|c| c.key.clone())
             .collect();
-        let text = settings_chosen(root, &held.ours, &held.theirs, file, &theirs_for)
+        let text = settings_chosen(root, &resolving.ours, &resolving.theirs, file, &theirs_for)
             .map_err(|why| Settled::Refused(format!("`{file}` could not be settled: {why}.")))?;
         staged_as(folder, file, &text).map_err(|why| {
             Settled::Refused(format!(
@@ -763,8 +817,8 @@ fn settled_tree(
     let tree = written_tree(folder)?;
     // The memory indexes, written again from the tree the person settled (#5824 F4), so no line
     // names a memory they deleted, and one they kept is listed.
-    let indexes =
-        bringin::indexes_settled_between(root, &tree, &held.ours, &held.theirs).map_err(|why| {
+    let indexes = bringin::indexes_settled_between(root, &tree, &resolving.ours, &resolving.theirs)
+        .map_err(|why| {
             Settled::Refused(format!(
                 "Nothing was carried on: purlis could not write a memory index: {}.",
                 crate::personas::one_line(&why)
@@ -957,51 +1011,72 @@ fn settings_chosen(
 /// Move the root onto `onto` with one `reset --keep`: first replaying onto it, off to the side,
 /// what was saved at the root since the folder was cut. `Err` is the sentence for the person;
 /// nothing moved, and the folder is kept.
-fn moved_onto(root: &Path, held: &Held, onto: &str, sign: bool) -> Result<(), String> {
+fn moved_onto(root: &Path, resolving: &Resolving, onto: &str, sign: bool) -> Result<(), String> {
     let here = line_of(root, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap_or_default();
-    if here != held.target {
+    if here != resolving.target {
         return Err(format!(
             "The project is on `{here}` now, and the resolve was for `{}`. Nothing moved; the \
              resolve folder is kept.",
-            held.target
+            resolving.target
         ));
     }
     let head = line_of(root, &["rev-parse", "--verify", "-q", "HEAD"]).unwrap_or_default();
-    let onto = if head == held.ours {
+    let onto = if head == resolving.ours {
         onto.to_owned()
     } else {
-        match replay::replay(root, "HEAD", onto, sign, WRITE) {
-            replay::Replayed::Onto(tip) => tip,
-            replay::Replayed::Conflict(files) => {
-                return Err(format!(
-                    "This machine saved since Resolve began, and that save changes {} the way \
-                     the settled merge does not. Nothing moved: Abort, then Resolve again.",
-                    files.join(", ")
-                ));
-            }
-            replay::Replayed::Unsigned(signer) => {
-                return Err(format!(
-                    "A save made since Resolve began could not be signed again: {signer}. \
-                     Nothing moved; the resolve folder is kept."
-                ));
-            }
-            replay::Replayed::OutOfTime => {
-                return Err(
-                    "Carrying this machine's newer saves onto the merge did not finish in time. \
-                     Nothing moved; the resolve folder is kept."
-                        .into(),
-                );
-            }
-            replay::Replayed::Failed(said) => {
-                return Err(format!(
-                    "This machine's newer saves could not be carried onto the merge: {}. \
-                     Nothing moved; the resolve folder is kept.",
-                    crate::personas::one_line(&said)
-                ));
-            }
-        }
+        replay::replay(root, "HEAD", onto, sign, WRITE)
+            .map_err(|stopped| said_unreplayed(stopped, When::Moving))?
     };
     move_root(root, &onto)
+}
+
+/// When a replay ran, for what its stop is said as.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum When {
+    /// Resolve, replaying this machine's commits onto the fetched target.
+    Starting,
+    /// Continue, carrying what was saved since Resolve began onto the settled merge.
+    Moving,
+}
+
+/// **The one mapping of a replay that stopped**, for the person (#5886): what happened, and that
+/// nothing moved.
+fn said_unreplayed(stopped: replay::Unreplayed, when: When) -> String {
+    use replay::Unreplayed;
+    match (when, stopped) {
+        // Resolve cuts a resolve folder for a conflict before it says any stop: the
+        // `Err(replay::Unreplayed::Conflict(_)) => {}` arm of [`start_fetched`] comes first.
+        (When::Starting, Unreplayed::Conflict(_)) => {
+            unreachable!("Resolve cuts a folder for a replay's conflict and never says it")
+        }
+        (When::Starting, Unreplayed::Unsigned(signer)) => {
+            format!("Nothing was started: a replayed commit could not be signed: {signer}.")
+        }
+        (When::Starting, Unreplayed::OutOfTime) => "Nothing was started: the replay did not \
+             finish in time. The project is exactly as it was."
+            .into(),
+        (When::Starting, Unreplayed::Failed(said)) => format!(
+            "Nothing was started: git could not replay them: {}.",
+            crate::personas::one_line(&said)
+        ),
+        (When::Moving, Unreplayed::Conflict(files)) => format!(
+            "This machine saved since Resolve began, and that save changes {} the way the \
+             settled merge does not. Nothing moved: Abort, then Resolve again.",
+            files.join(", ")
+        ),
+        (When::Moving, Unreplayed::Unsigned(signer)) => format!(
+            "A save made since Resolve began could not be signed again: {signer}. Nothing \
+             moved; the resolve folder is kept."
+        ),
+        (When::Moving, Unreplayed::OutOfTime) => "Carrying this machine's newer saves onto the \
+             merge did not finish in time. Nothing moved; the resolve folder is kept."
+            .into(),
+        (When::Moving, Unreplayed::Failed(said)) => format!(
+            "This machine's newer saves could not be carried onto the merge: {}. Nothing \
+             moved; the resolve folder is kept.",
+            crate::personas::one_line(&said)
+        ),
+    }
 }
 
 /// **The one move of the root**: `reset --keep` onto `onto`, from the window only. `Err` is the
@@ -1046,6 +1121,9 @@ fn move_root(root: &Path, onto: &str) -> Result<(), String> {
 
 /// The files `git reset --keep` said are in its way: changed and not committed, or untracked
 /// where the merge writes a file.
+///
+/// Read by git's English words, which every call has: the runner gives git `LC_ALL=C` and no
+/// other locale (`worktree::git`, #5886).
 fn in_the_way(err: &str) -> Vec<String> {
     let mut out = BTreeSet::new();
     let mut listing = false;
@@ -1075,7 +1153,7 @@ fn in_the_way(err: &str) -> Vec<String> {
 
 /// Remove whatever an open or half-cut resolve left: the folder, its branch and the record.
 fn clear(root: &Path) {
-    let folder = path(root);
+    let folder = folder(root);
     // git runs on the folder only while its gitfile is the one cut for it.
     if folder.exists() && folder_is_ours(root).is_ok() {
         let folder_arg = folder.to_string_lossy();
@@ -1097,9 +1175,9 @@ fn clear(root: &Path) {
     let _ = std::fs::remove_file(git_dir_of(root).join(RECORD));
 }
 
-fn write_record(root: &Path, held: &Held) -> Result<(), String> {
+fn write_record(root: &Path, resolving: &Resolving) -> Result<(), String> {
     let path = git_dir_of(root).join(RECORD);
-    let text = serde_json::to_string_pretty(held).map_err(|e| e.to_string())?;
+    let text = serde_json::to_string_pretty(resolving).map_err(|e| e.to_string())?;
     let dir = path.parent().unwrap_or(root);
     crate::rewrite::replace(dir, &path, text.as_bytes(), crate::rewrite::Mode::Private)
         .map_err(|why| why.to_string())
@@ -1128,7 +1206,7 @@ fn unmerged_sides(root: &Path, ours: &str, theirs: &str) -> Result<Sides, String
 
 /// `<mode> <object> <stage>\t<path>` entries, by path.
 fn stages_of<'a>(entries: impl Iterator<Item = &'a str>) -> Sides {
-    let mut out: BTreeMap<String, Vec<(u8, String, String)>> = BTreeMap::new();
+    let mut out: Sides = BTreeMap::new();
     for entry in entries.filter(|entry| !entry.is_empty()) {
         let Some((meta, path)) = entry.split_once('\t') else {
             continue;
@@ -1136,11 +1214,11 @@ fn stages_of<'a>(entries: impl Iterator<Item = &'a str>) -> Sides {
         if let [mode, object, stage] = meta.split(' ').collect::<Vec<_>>()[..]
             && let Ok(stage) = stage.parse::<u8>()
         {
-            out.entry(path.to_owned()).or_default().push((
-                stage,
-                mode.to_owned(),
-                object.to_owned(),
-            ));
+            out.entry(path.to_owned()).or_default().push(Stage {
+                number: stage,
+                mode: mode.to_owned(),
+                object: object.to_owned(),
+            });
         }
     }
     out
@@ -1156,12 +1234,12 @@ fn unmerged(folder: &Path) -> Sides {
 }
 
 /// The files still unmerged in the folder, by who may settle them.
-fn sorted(folder: &Path, held: &Held) -> Conflicts {
+fn sorted(folder: &Path, resolving: &Resolving) -> Conflicts {
     let mut out = Conflicts::default();
     for (path, sides) in unmerged(folder) {
-        if held.keyed(&path) {
+        if resolving.keyed(&path) {
             out.keyed.push(path);
-        } else if held.by_hand.contains(&path) || marks_nothing(folder, &path, &sides) {
+        } else if resolving.by_hand.contains(&path) || marks_nothing(folder, &path, &sides) {
             out.by_hand.push(path);
         } else {
             out.marked.push(path);
@@ -1172,15 +1250,15 @@ fn sorted(folder: &Path, held: &Held) -> Conflicts {
 
 /// Whether git could not mark the conflict in `path`: a side is missing, an entry is a link or a
 /// submodule, or a side is binary as git judges it (a NUL in its first 8000 bytes).
-fn marks_nothing(folder: &Path, path: &str, sides: &[(u8, String, String)]) -> bool {
+fn marks_nothing(folder: &Path, path: &str, sides: &[Stage]) -> bool {
     let _ = path;
-    let side = |n: u8| sides.iter().find(|(stage, _, _)| *stage == n);
+    let side = |n: u8| sides.iter().find(|stage| stage.number == n);
     let (Some(ours), Some(theirs)) = (side(2), side(3)) else {
         return true;
     };
     if sides
         .iter()
-        .any(|(_, mode, _)| mode == "120000" || mode == "160000")
+        .any(|stage| stage.mode == "120000" || stage.mode == "160000")
     {
         return true;
     }
@@ -1190,7 +1268,7 @@ fn marks_nothing(folder: &Path, path: &str, sides: &[(u8, String, String)]) -> b
             .filter(git::Run::ok)
             .is_none_or(|run| run.out.bytes().take(8000).any(|b| b == 0))
     };
-    binary(&ours.2) || binary(&theirs.2)
+    binary(&ours.object) || binary(&theirs.object)
 }
 
 /// What is staged at `path` (stage 0), or `None`.
@@ -1217,11 +1295,11 @@ fn read_plain(folder: &Path, path: &str) -> Result<(std::fs::File, bool, Vec<u8>
     let (file, runs) = match ondisk::opened(folder, path) {
         ondisk::OnDisk::File(file, runs) => (file, runs),
         ondisk::OnDisk::SecondName => {
-            let held = Ok(vec![ondisk::Held {
+            let resolving = Ok(vec![ondisk::Held {
                 path: path.to_owned(),
                 why: ondisk::Why::SecondName,
             }]);
-            return Err(ondisk::refused_ahead(&held)
+            return Err(ondisk::refused_ahead(&resolving)
                 .map(|refusal| {
                     format!(
                         "A settled file is not the one file on disk: {} Settle it again as one \
@@ -1289,7 +1367,8 @@ fn said_markers(path: &str, how: &str) -> String {
     )
 }
 
-fn names(dir: &Path, args: &[&str]) -> Vec<String> {
+/// The paths a git call lists, NUL-separated; none where it failed.
+fn paths_listed(dir: &Path, args: &[&str]) -> Vec<String> {
     git::run(dir, args, git::READ)
         .ok()
         .filter(git::Run::ok)
@@ -1303,7 +1382,8 @@ fn names(dir: &Path, args: &[&str]) -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn ok(ran: Result<git::Run, git::GitUnavailable>) -> Result<(), String> {
+/// A git call that ran and exited 0, or what went wrong in git's words.
+fn succeeded(ran: Result<git::Run, git::GitUnavailable>) -> Result<(), String> {
     match ran {
         Ok(run) if run.ok() => Ok(()),
         Ok(run) => Err(tail(&run)),

@@ -12,6 +12,7 @@ import { useState } from "react";
 import { expect, waitFor, within } from "storybook/test";
 import { FileCode, FileText, Folder, FolderGit2, GitBranch } from "lucide-react";
 import { expectFocusInSight, untilFocused } from "../../stories.testkit";
+import { Button } from "../button/Button";
 import { RowLabel, RowLead, RowTrail } from "../list/Row";
 import { Tree, TreePending, TreeRow, type Key } from "./Tree";
 
@@ -312,5 +313,124 @@ export const DropTargets: Story = {
       getComputedStyle(canvas.getByRole("treegrid", { name: "Dropped on a folder" }))
         .backgroundColor,
     );
+  },
+};
+
+/**
+ * **An open row with controls of its own** (#3198, the Chats list's chat with its hand): → moves
+ * into the row's controls, as the APG treegrid's → does on an expanded row, and ← comes back to
+ * the row; ↓ goes on to its first child. An open row with none moves → to its first child. Its
+ * controls are out of the Tab order: the tree is one stop.
+ */
+export const ControlsInAnOpenRow: Story = {
+  render: () => (
+    <div style={{ inlineSize: "18rem" }}>
+      <Tree aria-label="Sessions" size="sm" defaultExpandedKeys={["steward", "plain"]}>
+        <TreeRow
+          id="steward"
+          textValue="steward 1"
+          content={
+            <>
+              <RowLabel>steward 1</RowLabel>
+              <RowTrail>
+                <Button size="sm" excludeFromTabOrder>
+                  Go
+                </Button>
+              </RowTrail>
+            </>
+          }
+        >
+          <TreeRow
+            id="task"
+            textValue="check staging"
+            content={<RowLabel>check staging</RowLabel>}
+          />
+        </TreeRow>
+        <TreeRow id="plain" textValue="steward 2" content={<RowLabel>steward 2</RowLabel>}>
+          <TreeRow id="plain-task" textValue="tidy up" content={<RowLabel>tidy up</RowLabel>} />
+        </TreeRow>
+      </Tree>
+    </div>
+  ),
+  play: async ({ canvas, userEvent }) => {
+    const tree = canvas.getByRole("treegrid", { name: "Sessions" });
+    const row = (name: string) => within(tree).getByRole("row", { name });
+    await userEvent.tab();
+    await untilFocused(() => row("steward 1"), "Controls: Tab lands on the first row");
+    await userEvent.keyboard("{ArrowRight}");
+    await untilFocused(
+      () => within(row("steward 1")).getByRole("button", { name: "Go" }),
+      "Controls: Right moves into the open row's control",
+    );
+    expectFocusInSight();
+    await userEvent.keyboard("{ArrowLeft}");
+    await untilFocused(() => row("steward 1"), "Controls: Left comes back to the row");
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(() => row("check staging"), "Controls: Down goes on to its first child");
+    await userEvent.keyboard("{ArrowDown}{ArrowRight}");
+    await untilFocused(() => row("tidy up"), "Controls: Right on a row with none moves into it");
+    expectFocusInSight();
+  },
+};
+
+/** Sixty groups of twenty rows each: 1,260 rows, every group open. */
+const GROUPS = Array.from({ length: 60 }, (_, group) => ({
+  id: `group-${group + 1}`,
+  name: `group ${group + 1}`,
+  rows: Array.from({ length: 20 }, (_, row) => ({
+    id: `group-${group + 1}.row-${row + 1}`,
+    name: `row ${row + 1} of group ${group + 1}`,
+  })),
+}));
+
+/**
+ * **A long tree drawn in part** (`drawnInPart`, #2947): 1,260 open rows in a scroller a few rows
+ * high, of which only those in sight are in the document. Tab lands on the first row, End goes to
+ * the last, which is drawn and brought into sight, and Home back to the first.
+ */
+export const DrawnInPart: Story = {
+  render: () => (
+    <div style={{ inlineSize: "18rem" }}>
+      <Tree
+        aria-label="Every row"
+        size="sm"
+        drawnInPart
+        className="max-h-60"
+        items={GROUPS}
+        expandedKeys={GROUPS.map((group) => group.id)}
+      >
+        {(group) => (
+          <TreeRow id={group.id} textValue={group.name} content={<RowLabel>{group.name}</RowLabel>}>
+            {group.rows.map((row) => (
+              <TreeRow
+                key={row.id}
+                id={row.id}
+                textValue={row.name}
+                content={<RowLabel>{row.name}</RowLabel>}
+              />
+            ))}
+          </TreeRow>
+        )}
+      </Tree>
+    </div>
+  ),
+  play: async ({ canvas, userEvent }) => {
+    const tree = canvas.getByRole("treegrid", { name: "Every row" });
+    const row = (name: string) => within(tree).getByRole("row", { name });
+    await waitFor(() => expect(within(tree).getAllByRole("row").length).toBeGreaterThan(0));
+    expect(within(tree).getAllByRole("row").length).toBeLessThan(100);
+    await userEvent.tab();
+    await untilFocused(() => row("group 1"), "In part: Tab lands on the first row");
+    expectFocusInSight();
+    await userEvent.keyboard("{End}");
+    await untilFocused(
+      () => row("row 20 of group 60"),
+      "In part: End moves to the last row, drawn though it was not",
+    );
+    expectFocusInSight();
+    expect(within(tree).getAllByRole("row").length).toBeLessThan(100);
+    await userEvent.keyboard("{Home}");
+    await untilFocused(() => row("group 1"), "In part: Home moves back to the first row");
+    expectFocusInSight();
   },
 };

@@ -27,6 +27,7 @@ import { tipOf } from "./ui/tooltip/tooltip.testkit";
 import { heard } from "./frame.testkit";
 import { aBatchOf } from "./chatEvents.testkit";
 import { CHAT_EVENTS } from "./chatEvents";
+import { findRow, findTree, keysOn, queryRow, rowAround, rowsOf } from "./ui/tree/tree.testkit";
 
 /**
  * **A session waiting on its tasks says so, counts them, and is flagged only for what
@@ -259,12 +260,10 @@ function core(open: OpenChat[], rows: FinishedTask[] = []) {
   };
 }
 
-const section = () => screen.findByRole("tree", { name: "Chats of this project" });
+const section = () => findTree("Chats of this project");
 
 const row = (tree: HTMLElement, name: string) => {
-  const found = within(tree)
-    .getAllByRole("treeitem")
-    .find((one) => one.querySelector(".session")?.textContent === name);
+  const found = rowsOf(tree).find((one) => one.querySelector(".session")?.textContent === name);
   if (found === undefined) throw new Error(`no row is named ${name}`);
   return found;
 };
@@ -293,9 +292,12 @@ const says = (on: HTMLElement) => {
 /** What a row's card says of its tasks, or nothing where it says none (#1675). */
 const count = async (on: HTMLElement) => (await cardOf(on)).facts.Tasks;
 
+/** The tree, once it lists `names` chats: their rows, and not their finished tasks' (#3198). */
 const rows = async (names: number) => {
   const tree = await section();
-  await waitFor(() => expect(within(tree).getAllByRole("treeitem")).toHaveLength(names));
+  await waitFor(() =>
+    expect(rowsOf(tree).filter((one) => one.classList.contains("chat"))).toHaveLength(names),
+  );
   return tree;
 };
 
@@ -518,7 +520,7 @@ describe("a limit, said where it binds (#1498)", () => {
     const heard = (event: Event) => linked.push((event as CustomEvent).detail);
     window.addEventListener("charter-settings-link", heard);
     try {
-      // The pointer's (#3759): out of the tree, which owns its rows alone.
+      // A control of the row's (#3198), reached by → from it.
       await userEvent.click(
         within(line).getByRole("button", { name: "Dispatch settings", hidden: true }),
       );
@@ -526,11 +528,9 @@ describe("a limit, said where it binds (#1498)", () => {
       window.removeEventListener("charter-settings-link", heard);
     }
     expect(linked).toEqual([{ plane: PLANE, link: { group: "project.dispatch" } }]);
-    // The row says the whole sentence, where a screen reader is (#3759).
-    expect(line.closest("li")?.querySelector('[role="treeitem"]')).toHaveAttribute(
-      "aria-description",
-      SAID,
-    );
+    // The row says the whole sentence, where a screen reader is (#3759): after its persona and
+    // state (#3198), the line being one of the row's own.
+    expect(rowAround(line)?.getAttribute("aria-description")).toContain(SAID);
     // A task's own row says nothing of its asker's limit.
     expect(screen.queryByTestId("at-limit-2")).toBeNull();
 
@@ -561,7 +561,7 @@ describe("a limit, said where it binds (#1498)", () => {
 
     // The card down: the row's own description.
     expect(steward.getAttribute("aria-describedby")).toBeNull();
-    expect(steward).toHaveAttribute("aria-description", SAID);
+    expect(steward.getAttribute("aria-description")).toContain(SAID);
 
     // The keyboard rests on the row: its card says the sentence, and describes the row.
     await userEvent.keyboard("{Shift}");
@@ -674,7 +674,7 @@ describe("what a finishing task does to its session's row", () => {
     render(<App />);
     const tree = await rows(2);
     move(1, "running", 2, [1], { needs: [failure] });
-    const failedRow = await within(tree).findByRole("button", { name: /^check staging/ });
+    const failedRow = await findRow(tree, "check staging");
 
     await go();
 
@@ -700,12 +700,10 @@ describe("what a finishing task does to its session's row", () => {
     const { move } = core([chat(1), task(2, "check prod")], [FAILED]);
     render(<App />);
     const tree = await rows(2);
-    await within(tree).findByRole("button", { name: /^check staging/ });
+    await findRow(tree, "check staging");
     // Folded: the task under it and its finished rows are not drawn.
-    const twist = tree.querySelector<HTMLElement>('.ui-tree-twist[data-fold="open"]');
-    if (twist === null) throw new Error("the session's row does not fold");
-    await userEvent.click(twist);
-    expect(within(tree).queryByRole("button", { name: /^check staging/ })).toBeNull();
+    await keysOn(row(tree, "steward 1"), "{ArrowLeft}");
+    expect(queryRow(tree, "check staging")).toBeNull();
     move(1, "running", 2, [1], { needs: [failure] });
 
     await go();
@@ -715,12 +713,10 @@ describe("what a finishing task does to its session's row", () => {
     );
 
     // Opened once, for that asking: folded again by the person, it stays folded.
-    const again = tree.querySelector<HTMLElement>('.ui-tree-twist[data-fold="open"]');
-    if (again === null) throw new Error("the session's row does not fold");
-    await userEvent.click(again);
+    await keysOn(row(tree, "steward 1"), "{ArrowLeft}");
     move(2, "running", 5, [1]);
     move(2, "waiting", 6, [1]);
-    expect(within(tree).queryByRole("button", { name: /^check staging/ })).toBeNull();
+    expect(queryRow(tree, "check staging")).toBeNull();
   });
 
   it("clears the one failure it went to, and leaves the others their hand", async () => {
@@ -732,7 +728,7 @@ describe("what a finishing task does to its session's row", () => {
     const { move, asked } = core([chat(1)], [OTHER, FAILED]);
     render(<App />);
     const tree = await rows(1);
-    await within(tree).findByRole("button", { name: /^check staging/ });
+    await findRow(tree, "check staging");
     move(1, "running", 2, [1], {
       needs: [{ ...failure, id: OTHER.id, task: "check prod", why: "No route." }, failure],
     });
@@ -793,14 +789,14 @@ describe("what a finishing task does to its session's row", () => {
     const tree = await rows(1);
     move(1, "running", 2, [1], { needs: [failure] });
 
-    await userEvent.click(await within(tree).findByRole("button", { name: /^check staging/ }));
+    await userEvent.click(await findRow(tree, "check staging"));
 
     await waitFor(() =>
       expect(asked("task_failure_seen")).toEqual([{ plane: PLANE, session: 1, id: FAILED.id }]),
     );
     // A row that is no failure its session is flagged for tells the core nothing.
-    await userEvent.click(await within(tree).findByRole("button", { name: /Finished \(1\)/ }));
-    await userEvent.click(await within(tree).findByRole("button", { name: /^live check/ }));
+    await userEvent.click(await findRow(tree, "Finished (1)"));
+    await userEvent.click(await findRow(tree, /^live check/));
     expect(asked("task_failure_seen")).toHaveLength(1);
   });
 });

@@ -82,6 +82,26 @@ export async function pressWithTheEnginesPointer(element: Element): Promise<bool
   return true;
 }
 
+/** The global the story tests put the engine's keyboard on (`.storybook/at-rest.setup.ts`). */
+export const ENGINE_KEYS_GLOBAL = "__PURLIS_STORY_ENGINE_KEYS__";
+
+/**
+ * **Keys on the engine's own keyboard** (#5993), which a story's `userEvent` is not: that one only
+ * dispatches events, and does nothing the browser does for a key it has no copy of, such as ↑ and
+ * ↓ moving a box of lines' caret a line. `keys` are written as `userEvent.keyboard`'s are. Says
+ * whether it pressed them: only a story test can, never Storybook's own page.
+ */
+export async function keysOnTheEnginesKeyboard(keys: string): Promise<boolean> {
+  const press = (globalThis as Record<string, unknown>)[ENGINE_KEYS_GLOBAL];
+  if (typeof press !== "function") {
+    if (cellInTest() !== undefined)
+      throw new Error("a story test has no engine's keyboard (.storybook/at-rest.setup.ts)");
+    return false;
+  }
+  await (press as (keys: string) => Promise<void>)(keys);
+  return true;
+}
+
 /** The short window the operator's complaint was of (#3389): about 500 px tall. */
 export const SHORT_WINDOW = { width: 800, height: 500 } as const;
 

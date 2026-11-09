@@ -70,6 +70,7 @@ fn did<T>(root: &Path, change: impl FnOnce(&mut Ctx<'_>) -> T) -> (T, Vec<Say>) 
         built_in: None,
         by: By::Command,
         say: &mut say,
+        audit: None,
     });
     (answer, lines)
 }

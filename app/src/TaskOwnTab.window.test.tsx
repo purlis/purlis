@@ -23,9 +23,10 @@ import { chatsOf } from "./laidOut";
 import { aTabForEachChat, leadOf, onScreenOf } from "./laidOut.testkit";
 import { forgetKeyboard } from "./paneKeyboard";
 import { forgetThisLaunch } from "./regions";
-import { askToEnd } from "./menus.testkit";
+import { askToEnd, paneMore } from "./menus.testkit";
 import { stripNamed } from "./test-strips";
 import { hoverTipOf } from "./ui/tooltip/tooltip.testkit";
+import { findTree, rowsOf } from "./ui/tree/tree.testkit";
 
 /**
  * **A task gets a tab of its own only when asked, and a pane beside its session** (#1489,
@@ -284,9 +285,9 @@ function core(open: Listed[], { running = [], spared = [], updated = [], fresh }
   return { asked, open };
 }
 
-const section = () => screen.findByRole("tree", { name: "Chats of this project" });
+const section = () => findTree("Chats of this project");
 
-const rows = (tree: HTMLElement) => within(tree).getAllByRole("treeitem");
+const rows = (tree: HTMLElement) => rowsOf(tree);
 const row = (tree: HTMLElement, name: string) => {
   const found = rows(tree).find((one) => one.querySelector(".session")?.textContent === name);
   if (found === undefined) throw new Error(`no row is named ${name}`);
@@ -308,7 +309,7 @@ const tab = (name: string) => {
 /** The cell of the strip a tab is drawn in: the tab, its chip and its one button. */
 const cell = (name: string) => tab(name).closest<HTMLElement>(".tab") as HTMLElement;
 /** The one button at the end of a tab's cell: a session's close, or a task's minimise. */
-const ender = (name: string) => cell(name).querySelector<HTMLElement>("button.closer");
+const ender = (name: string) => cell(name).querySelector<HTMLElement>('button[data-part="closer"]');
 
 const onScreen = () =>
   screen.queryAllByTestId("pane").map((pane) => Number(pane.getAttribute("data-session")));
@@ -886,7 +887,7 @@ describe("nothing drawn on a task's tab ends it (fix round 1, M2)", () => {
       const { tree, asked } = await drawn(withTasks(), changed);
       await toOwnTab(tree, "talk");
 
-      await userEvent.click(screen.getByRole("button", { name: "More for talk" }));
+      await userEvent.click(paneMore("talk"));
       const row = await screen.findByRole("menuitem", { name: "Start fresh" });
       expect(row.getAttribute("aria-disabled")).toBe("true");
       expect(row).toHaveAccessibleDescription(expect.stringContaining("This chat is a task"));
@@ -905,7 +906,7 @@ describe("nothing drawn on a task's tab ends it (fix round 1, M2)", () => {
       });
       await toOwnTab(tree, "talk");
 
-      await userEvent.click(screen.getByRole("button", { name: "More for talk" }));
+      await userEvent.click(paneMore("talk"));
       await pick("Start fresh");
       const question = await screen.findByRole("alertdialog");
       expect(commandsOf(asked, "start_chat_fresh")).toEqual([]);
@@ -925,7 +926,7 @@ describe("nothing drawn on a task's tab ends it (fix round 1, M2)", () => {
     const { tree, asked } = await drawn(withTasks());
     await toOwnTab(tree, "talk");
 
-    await userEvent.click(screen.getByRole("button", { name: "More for talk" }));
+    await userEvent.click(paneMore("talk"));
     await pick("Restart");
 
     // Asked where an end of the task is asked (#1488): on its own breadcrumb's line, with
@@ -952,7 +953,7 @@ describe("nothing drawn on a task's tab ends it (fix round 1, M2)", () => {
     await waitFor(() => expect(tabNames()).toEqual(["left behind"]));
     expect(crumbsSaid()).toEqual([]);
 
-    await userEvent.click(screen.getByRole("button", { name: "More for left behind" }));
+    await userEvent.click(paneMore("left behind"));
     await pick(/^Stop and get its report/);
     const end = await screen.findByRole("alertdialog");
     expect(screen.queryByRole("group", { name: /left behind/ })).toBeNull();
@@ -960,7 +961,7 @@ describe("nothing drawn on a task's tab ends it (fix round 1, M2)", () => {
     await userEvent.click(within(end).getByRole("button", { name: /^(Keep|Cancel)/ }));
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
 
-    await userEvent.click(screen.getByRole("button", { name: "More for left behind" }));
+    await userEvent.click(paneMore("left behind"));
     await pick("Restart");
     const restart = await screen.findByRole("alertdialog", { name: "Restart left behind?" });
     expect(commandsOf(asked, "ask_chat_restart")).toEqual([]);
@@ -1089,7 +1090,7 @@ describe("what the core is told is on screen (M1, M4)", () => {
     expect(tab("steward 1").getAttribute("aria-selected")).toBe("true");
 
     // steward 1 is started again on its conversation: the same tab, in front, is chat 21's.
-    await userEvent.click(screen.getByRole("button", { name: "More for steward 1" }));
+    await userEvent.click(paneMore("steward 1"));
     await pick("Restart");
     await waitFor(() => expect(open[0].session).toBe(21));
 

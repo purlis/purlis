@@ -127,7 +127,7 @@ async function atProject() {
 
 /** A file's link, by the name it shows, in the links at the foot of the nav. */
 const link = (name: string) =>
-  within(screen.getByRole("group", { name: "Edit as TOML" })).getByRole("button", { name });
+  within(screen.getByRole("navigation", { name: "Edit as TOML" })).getByRole("button", { name });
 const editAsToml = (name: string) => userEvent.click(link(name));
 /** The file's text, once its editor has arrived (a chunk of its own); in the merge view, the
  *  edit's side. */
@@ -147,7 +147,7 @@ describe("Edit as TOML", () => {
     core();
     await atProject();
 
-    const links = screen.getByRole("group", { name: "Edit as TOML" });
+    const links = screen.getByRole("navigation", { name: "Edit as TOML" });
     expect(
       within(links)
         .getAllByRole("button")
@@ -165,7 +165,7 @@ describe("Edit as TOML", () => {
 
     await holds("charter.toml", SHARED_TEXT);
     expect(screen.queryByRole("region", { name: "General" })).toBeNull();
-    expect(link("charter.toml")).toHaveAttribute("aria-current", "true");
+    expect(link("charter.toml")).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("button", { name: "Save charter.toml" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Discard" })).toBeDisabled();
   });

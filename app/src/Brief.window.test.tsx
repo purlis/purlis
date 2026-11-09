@@ -17,6 +17,7 @@ import App from "./App";
 import type { FinishedTask, OpenChat, TaskBrief } from "./bindings";
 import { forgetThisLaunch } from "./regions";
 import { aTabForEachChat } from "./laidOut.testkit";
+import { findRow, findTree, keysOn, rowsOf } from "./ui/tree/tree.testkit";
 
 /**
  * **The brief a task was sent can be read, against the whole window** (#1494, V100-45).
@@ -189,11 +190,9 @@ function core(answer: TaskBrief | string = brief()) {
   };
 }
 
-const section = () => screen.findByRole("tree", { name: "Chats of this project" });
+const section = () => findTree("Chats of this project");
 const row = (tree: HTMLElement, name: string) => {
-  const found = within(tree)
-    .getAllByRole("treeitem")
-    .find((one) => one.querySelector(".session")?.textContent === name);
+  const found = rowsOf(tree).find((one) => one.querySelector(".session")?.textContent === name);
   if (found === undefined) throw new Error(`no row is named ${name}`);
   return found;
 };
@@ -440,12 +439,14 @@ describe("Brief, on a finished task's row", () => {
   it("opens the same panel by the row's record, and the keyboard goes back to the button", async () => {
     const said = core(brief({ name: "check staging" }));
     render(<App />);
-    const group = await screen.findByRole("group", { name: "Finished tasks of steward 4" });
+    const tree = await section();
+    const row = await findRow(tree, "check staging");
 
-    const button = within(group).getByRole("button", { name: "Brief of check staging" });
+    // A button of its row (#3198): → from the row reaches it, as a row's controls are reached.
+    const button = within(row).getByRole("button", { name: "Brief of check staging" });
     expect(button).toHaveTextContent("Brief");
-    expect(button.getAttribute("tabindex")).toBe("0");
-    button.focus();
+    await keysOn(row, "{ArrowRight}");
+    expect(button).toHaveFocus();
     await userEvent.keyboard("{Enter}");
 
     const dialog = await panel("check staging");

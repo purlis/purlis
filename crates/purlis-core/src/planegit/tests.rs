@@ -3601,7 +3601,7 @@ fn reading_where_unsaved_work_sits_never_writes_the_index_a_save_needs() {
 // --------------------------------------------------------------------------------------- //
 
 #[test]
-fn two_machines_appending_to_the_same_log_and_index_both_save_by_the_union_merge_rules() {
+fn two_machines_appending_to_one_log_and_index_union_the_log_and_rebuild_the_index() {
     let fixture = Fixture::plane();
     // The rules `init` writes, committed as a plane carries them.
     crate::scaffold::ensure_gitattributes(&fixture.root.join(".gitattributes")).unwrap();
@@ -3614,6 +3614,15 @@ fn two_machines_appending_to_the_same_log_and_index_both_save_by_the_union_merge
     std::fs::write(
         fixture.root.join("personas/steward/memory/MEMORY.md"),
         "- [one](one.md)\n",
+    )
+    .unwrap();
+    // The memories the index names, here and on each machine below (one.md, theirs.md,
+    // mine.md): a save rebuilds the index from the memory files the merged tree holds, and a
+    // rebuilt index lists only memories that exist (#5824 F4, #5864). An index line with no
+    // file behind it would be dropped, not kept.
+    std::fs::write(
+        fixture.root.join("personas/steward/memory/one.md"),
+        "# one\n",
     )
     .unwrap();
     run(&fixture.root, &["add", "-A"]);
@@ -3653,6 +3662,12 @@ fn two_machines_appending_to_the_same_log_and_index_both_save_by_the_union_merge
         &theirs.join("personas/steward/memory/MEMORY.md"),
         "- [theirs](theirs.md)\n",
     );
+    std::fs::write(
+        theirs.join("personas/steward/memory/theirs.md"),
+        "# theirs\n",
+    )
+    .unwrap();
+    run(&theirs, &["add", "-A"]);
     run(&theirs, &["commit", "-q", "-am", "theirs"]);
     run(&theirs, &["push", "-q", "origin", "main"]);
 
@@ -3665,6 +3680,11 @@ fn two_machines_appending_to_the_same_log_and_index_both_save_by_the_union_merge
         &fixture.root.join("personas/steward/memory/MEMORY.md"),
         "- [mine](mine.md)\n",
     );
+    std::fs::write(
+        fixture.root.join("personas/steward/memory/mine.md"),
+        "# mine\n",
+    )
+    .unwrap();
     let (code, said) = fixture.just_save();
 
     assert_eq!(code, 0, "{said}");
@@ -3675,6 +3695,176 @@ fn two_machines_appending_to_the_same_log_and_index_both_save_by_the_union_merge
         index.contains("theirs.md") && index.contains("mine.md"),
         "{index}"
     );
+}
+
+#[test]
+fn a_push_mode_replay_rebuilds_a_memory_index_both_machines_added_to_with_no_union_rule() {
+    let fixture = Fixture::plane();
+    // No `.gitattributes`: nothing merges the index by lines.
+    let store = fixture.root.join("personas/steward/memory");
+    std::fs::create_dir_all(&store).unwrap();
+    std::fs::write(store.join("one.md"), "# One\n").unwrap();
+    std::fs::write(
+        store.join("MEMORY.md"),
+        "# Memory Index\n\n- [One](one.md)\n",
+    )
+    .unwrap();
+    run(&fixture.root, &["add", "-A"]);
+    run(&fixture.root, &["commit", "-q", "-m", "one memory"]);
+    let bare = fixture.with_a_remote();
+    run(
+        &fixture.root,
+        &[
+            "push",
+            "-q",
+            &bare.display().to_string(),
+            "HEAD:refs/heads/main",
+        ],
+    );
+
+    // Somebody else remembers something and pushes first.
+    let theirs = fixture.root.parent().unwrap().join("theirs");
+    run(
+        fixture.root.parent().unwrap(),
+        &[
+            "clone",
+            "-q",
+            &bare.display().to_string(),
+            &theirs.display().to_string(),
+        ],
+    );
+    run(&theirs, &["config", "user.name", "Other"]);
+    run(&theirs, &["config", "user.email", "other@example.invalid"]);
+    let their_store = theirs.join("personas/steward/memory");
+    std::fs::write(their_store.join("theirs.md"), "# Theirs\n").unwrap();
+    append(&their_store.join("MEMORY.md"), "- [Theirs](theirs.md)\n");
+    run(&theirs, &["add", "-A"]);
+    run(&theirs, &["commit", "-q", "-m", "theirs"]);
+    run(&theirs, &["push", "-q", "origin", "main"]);
+
+    // This machine remembers something else, and saves.
+    std::fs::write(store.join("mine.md"), "# Mine\n").unwrap();
+    append(&store.join("MEMORY.md"), "- [Mine](mine.md)\n");
+    let (code, said) = fixture.just_save();
+
+    assert_eq!(code, 0, "{said}");
+    assert!(said.contains("Pushed main"), "{said}");
+    let index = std::fs::read_to_string(store.join("MEMORY.md")).unwrap();
+    assert!(!index.contains("<<<<<<<"), "{index}");
+    for memory in ["one.md", "theirs.md", "mine.md"] {
+        assert_eq!(index.matches(memory).count(), 1, "{memory} in {index}");
+    }
+}
+
+/// A memory store this machine removed stays removed after a push-mode replay (#5864 review):
+/// the replay leaves its index out rather than writing a bare header back.
+#[test]
+fn a_push_mode_replay_keeps_a_removed_memory_store_removed() {
+    let fixture = Fixture::plane();
+    let store = fixture.root.join("personas/devops/memory");
+    std::fs::create_dir_all(&store).unwrap();
+    std::fs::write(store.join("one.md"), "# One\n").unwrap();
+    std::fs::write(
+        store.join("MEMORY.md"),
+        "# Memory Index\n\n- [One](one.md)\n",
+    )
+    .unwrap();
+    run(&fixture.root, &["add", "-A"]);
+    run(&fixture.root, &["commit", "-q", "-m", "one memory"]);
+    let bare = fixture.with_a_remote();
+    run(
+        &fixture.root,
+        &[
+            "push",
+            "-q",
+            &bare.display().to_string(),
+            "HEAD:refs/heads/main",
+        ],
+    );
+
+    // Somebody else changes something else and pushes first.
+    let theirs = fixture.root.parent().unwrap().join("theirs");
+    run(
+        fixture.root.parent().unwrap(),
+        &[
+            "clone",
+            "-q",
+            &bare.display().to_string(),
+            &theirs.display().to_string(),
+        ],
+    );
+    run(&theirs, &["config", "user.name", "Other"]);
+    run(&theirs, &["config", "user.email", "other@example.invalid"]);
+    std::fs::write(theirs.join("notes.md"), "theirs\n").unwrap();
+    run(&theirs, &["add", "-A"]);
+    run(&theirs, &["commit", "-q", "-m", "theirs"]);
+    run(&theirs, &["push", "-q", "origin", "main"]);
+
+    // This machine removes the persona's memory, and saves.
+    run(&fixture.root, &["rm", "-q", "-r", "personas/devops"]);
+    let (code, said) = fixture.just_save();
+
+    assert_eq!(code, 0, "{said}");
+    assert!(said.contains("Pushed main"), "{said}");
+    assert!(!store.join("MEMORY.md").exists());
+    let tree = run(&fixture.root, &["ls-tree", "-r", "--name-only", "HEAD"]);
+    assert!(!tree.contains("personas/devops"), "{tree}");
+}
+
+/// **Both sides' extra rules survive a replay** (#5864 review): where the remote and this
+/// machine each added a rule this build does not write to the `.gitattributes` block, a
+/// push-mode replay keeps both, not only the local pick's.
+#[test]
+fn a_rule_only_the_remote_holds_survives_a_replay_where_both_sides_changed_the_block() {
+    let fixture = Fixture::plane();
+    let rules = fixture.root.join(".gitattributes");
+    crate::scaffold::ensure_gitattributes(&rules).unwrap();
+    run(&fixture.root, &["add", "-A"]);
+    run(&fixture.root, &["commit", "-q", "-m", "the rules"]);
+    let bare = fixture.with_a_remote();
+    run(
+        &fixture.root,
+        &[
+            "push",
+            "-q",
+            &bare.display().to_string(),
+            "HEAD:refs/heads/main",
+        ],
+    );
+    // A rule added on the block's last rule line, as a newer build would.
+    let with_rule = |path: &Path, rule: &str| {
+        let text = std::fs::read_to_string(path).unwrap();
+        let last = "sessions/index.md merge=union\n";
+        let at = text.rfind(last).unwrap() + last.len();
+        std::fs::write(path, format!("{}{rule}\n{}", &text[..at], &text[at..])).unwrap();
+    };
+
+    let theirs = fixture.root.parent().unwrap().join("theirs");
+    run(
+        fixture.root.parent().unwrap(),
+        &[
+            "clone",
+            "-q",
+            &bare.display().to_string(),
+            &theirs.display().to_string(),
+        ],
+    );
+    run(&theirs, &["config", "user.name", "Other"]);
+    run(&theirs, &["config", "user.email", "other@example.invalid"]);
+    with_rule(&theirs.join(".gitattributes"), "theirs/*.jsonl merge=union");
+    run(&theirs, &["commit", "-q", "-am", "theirs"]);
+    run(&theirs, &["push", "-q", "origin", "main"]);
+
+    with_rule(&rules, "mine/*.jsonl merge=union");
+    let (code, said) = fixture.just_save();
+
+    assert_eq!(code, 0, "{said}");
+    assert!(said.contains("Pushed main"), "{said}");
+    let text = std::fs::read_to_string(&rules).unwrap();
+    assert!(!text.contains("<<<<<<<"), "{text}");
+    for rule in ["theirs/*.jsonl merge=union", "mine/*.jsonl merge=union"] {
+        assert_eq!(text.matches(rule).count(), 1, "{rule} in {text}");
+    }
 }
 
 fn append(path: &Path, text: &str) {
@@ -5250,7 +5440,7 @@ fn resolve_continue(fixture: &Fixture, shown: &[&str]) -> resolve::Settled {
 
 /// The resolve folder a Resolve cut for `fixture` (#5824 F7): where the conflict is settled.
 fn folder(fixture: &Fixture) -> PathBuf {
-    resolvefolder::path(&fixture.root)
+    resolvefolder::folder(&fixture.root)
 }
 
 /// The subject of the merge a Resolve commits.
@@ -5371,7 +5561,10 @@ fn continue_stages_only_the_files_in_conflict() {
         matches!(&staged, resolve::Settled::Refused(why) if why.contains("`other.md`")),
         "{staged:?}"
     );
-    assert!(resolvefolder::held(&fixture.root).is_some(), "still open");
+    assert!(
+        resolvefolder::resolving(&fixture.root).is_some(),
+        "still open"
+    );
 }
 
 #[test]
@@ -5496,7 +5689,7 @@ fn a_binary_conflict_is_the_persons_to_settle_and_continue_waits_for_it() {
     assert!(refused_with(&refused, "terminal"), "{refused:?}");
 
     // The person keeps this machine's side in the folder and stages it: carried on as staged.
-    let settling = resolvefolder::path(&scene.fixture.root);
+    let settling = resolvefolder::folder(&scene.fixture.root);
     run(&settling, &["checkout", "--ours", "--", "logo.bin"]);
     run(&settling, &["add", "--", "logo.bin"]);
     assert_eq!(
@@ -5525,7 +5718,7 @@ fn a_file_one_side_deleted_is_never_carried_on_with_the_other_sides_copy() {
     let refused = resolve_continue(&scene.fixture, &["a.md"]);
     assert!(refused_with(&refused, "`a.md`"), "{refused:?}");
     assert!(
-        resolvefolder::held(&scene.fixture.root).is_some(),
+        resolvefolder::resolving(&scene.fixture.root).is_some(),
         "still open"
     );
 }
@@ -5546,7 +5739,11 @@ fn a_change_git_carried_through_a_rename_is_kept_and_continue_accepts_it() {
         resolve_start(&scene.fixture),
         resolve::Settled::Stopped(vec!["a.md".into()])
     );
-    write(&resolvefolder::path(&scene.fixture.root), "a.md", b"both\n");
+    write(
+        &resolvefolder::folder(&scene.fixture.root),
+        "a.md",
+        b"both\n",
+    );
 
     assert_eq!(
         resolve_continue(&scene.fixture, &["a.md"]),
@@ -5564,7 +5761,7 @@ fn a_cleanly_merged_file_staged_otherwise_stops_continue() {
         write(dir, "b.md", b"mine\n");
     });
     resolve_start(&scene.fixture);
-    let settling = resolvefolder::path(&scene.fixture.root);
+    let settling = resolvefolder::folder(&scene.fixture.root);
     write(&settling, "a.md", b"both\n");
     write(&settling, "b.md", b"something else\n");
     run(&settling, &["add", "--", "b.md"]);
@@ -5595,7 +5792,7 @@ fn a_line_of_several_commits_stops_once_on_every_conflict() {
         resolve_start(&scene.fixture),
         resolve::Settled::Stopped(vec!["x.md".into(), "y.md".into()])
     );
-    let settling = resolvefolder::path(&scene.fixture.root);
+    let settling = resolvefolder::folder(&scene.fixture.root);
     write(&settling, "x.md", b"both\n");
     // One file settled is not all of them.
     assert!(refused_with(
@@ -5621,7 +5818,7 @@ fn a_conflicted_file_turned_into_a_link_is_not_staged() {
     scene.theirs("theirs", |dir| write(dir, "a.md", b"theirs\n"));
     scene.mine("mine", |dir| write(dir, "a.md", b"mine\n"));
     resolve_start(&scene.fixture);
-    let settling = resolvefolder::path(&scene.fixture.root);
+    let settling = resolvefolder::folder(&scene.fixture.root);
     std::fs::remove_file(settling.join("a.md")).unwrap();
     std::os::unix::fs::symlink("README.md", settling.join("a.md")).unwrap();
 
@@ -5648,7 +5845,7 @@ fn file_names_that_start_with_a_dash_or_hold_a_newline_are_staged_as_names() {
     };
     files.sort();
     assert_eq!(files, vec!["-x.md".to_string(), odd.to_string()]);
-    let settling = resolvefolder::path(&scene.fixture.root);
+    let settling = resolvefolder::folder(&scene.fixture.root);
     write(&settling, "-x.md", b"both\n");
     write(&settling, odd, b"both\n");
     assert_eq!(
@@ -5665,7 +5862,7 @@ fn a_common_ancestor_marker_left_in_a_file_stops_continue() {
     scene.mine("mine", |dir| write(dir, "a.md", b"mine\n"));
     resolve_start(&scene.fixture);
     write(
-        &resolvefolder::path(&scene.fixture.root),
+        &resolvefolder::folder(&scene.fixture.root),
         "a.md",
         b"mine\n||||||| base\none\n",
     );
@@ -5683,7 +5880,7 @@ fn a_settling_that_brings_nothing_of_this_machines_is_skipped() {
     resolve_start(&scene.fixture);
     // Settled as the remote has it: this machine's side has nothing left.
     write(
-        &resolvefolder::path(&scene.fixture.root),
+        &resolvefolder::folder(&scene.fixture.root),
         "a.md",
         b"theirs\n",
     );
@@ -5757,13 +5954,17 @@ fn skip_never_drops_a_side_that_still_changes_files() {
         &resolve::skip(&scene.fixture.root),
         "conflict markers"
     ));
-    write(&resolvefolder::path(&scene.fixture.root), "a.md", b"both\n");
+    write(
+        &resolvefolder::folder(&scene.fixture.root),
+        "a.md",
+        b"both\n",
+    );
     assert!(refused_with(
         &resolve::skip(&scene.fixture.root),
         "nothing left to bring"
     ));
     assert!(
-        resolvefolder::held(&scene.fixture.root).is_some(),
+        resolvefolder::resolving(&scene.fixture.root).is_some(),
         "still open"
     );
 }
@@ -5781,7 +5982,7 @@ fn a_project_that_stores_crlf_line_endings_can_continue() {
         resolve::Settled::Stopped(_)
     ));
     write(
-        &resolvefolder::path(&scene.fixture.root),
+        &resolvefolder::folder(&scene.fixture.root),
         "a.md",
         b"both\r\n",
     );
@@ -5883,6 +6084,7 @@ fn skill_change(root: &Path, change: impl FnOnce(&mut crate::skills::verbs::Ctx<
         built_in: None,
         by: crate::skills::verbs::By::Command,
         say: &mut say,
+        audit: None,
     });
     said
 }
@@ -6229,7 +6431,7 @@ fn a_settled_conflict() -> Scene {
         resolve::Settled::Stopped(vec!["a.md".into()])
     );
     write(
-        &resolvefolder::path(&scene.fixture.root),
+        &resolvefolder::folder(&scene.fixture.root),
         "a.md",
         b"settled under two names\n",
     );
@@ -6239,7 +6441,7 @@ fn a_settled_conflict() -> Scene {
 impl Scene {
     /// The resolve folder a Resolve cut (#5824 F7).
     fn settling(&self) -> PathBuf {
-        resolvefolder::path(&self.fixture.root)
+        resolvefolder::folder(&self.fixture.root)
     }
 
     /// Whether the project's object store holds the blob of what the folder's `a.md` holds now.
@@ -6257,7 +6459,10 @@ impl Scene {
     /// nothing pushed, and the root never stopped.
     fn still_stopped(&self, head: &str, remote: &str) {
         let root = &self.fixture.root;
-        assert!(resolvefolder::held(root).is_some(), "the resolve went on");
+        assert!(
+            resolvefolder::resolving(root).is_some(),
+            "the resolve went on"
+        );
         assert!(gitstate::stopped(root).is_none(), "the root stopped");
         assert_eq!(
             gitstate::unmerged(&self.settling()),

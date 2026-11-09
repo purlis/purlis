@@ -154,11 +154,12 @@ fn a_codex_chat_hands_its_own_question_prompt_to_purlis_before_it_is_asked_besid
 }
 
 #[test]
-fn a_codex_chat_is_told_its_skills_by_a_session_start_hook_of_their_own() {
+fn a_codex_chat_is_told_its_briefing_in_four_session_start_hooks_of_their_own() {
     // Measured on codex-cli 0.147.0 (ADR 0102, amended 2026-11-09): Codex keeps 10,000
     // bytes of each `SessionStart` hook's output, the first and last 5,000, and cuts the
     // middle; each hook is its own developer message with its own 10,000. The listing is a hook
-    // of its own, after the briefing's, so it is never the briefing's cut middle.
+    // of its own, after the briefing's, so it is never the briefing's cut middle (#5841), and so
+    // are the briefing's notes and what others say to the chat, quoted (#5935).
     let StateHooks::ThisSessionOnly { args, .. } =
         adapter().arm(kit(), None, &crate::harness_plugin::Chosen::new(), None)
     else {
@@ -184,7 +185,9 @@ fn a_codex_chat_is_told_its_skills_by_a_session_start_hook_of_their_own() {
         commands,
         [
             "'/bin/charter' hook sessionstart",
-            "'/bin/charter' hook sessionstart-skills"
+            "'/bin/charter' hook sessionstart-notes",
+            "'/bin/charter' hook sessionstart-skills",
+            "'/bin/charter' hook sessionstart-quoted",
         ]
     );
 }

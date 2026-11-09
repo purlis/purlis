@@ -309,6 +309,11 @@ const AN_ASK_COMES_WITHIN: std::time::Duration = std::time::Duration::from_secs(
 /// beside it, which must be a connected unix socket. None for anything else, more descriptors
 /// among it; whatever descriptors came are closed.
 ///
+/// How many descriptors one ask is received with room for: a host sends one, and any more are
+/// received to be closed.
+#[cfg(unix)]
+const DESCRIPTORS_ROOM: usize = 16;
+
 /// The slot is received and marked close-on-exec with no program started in between
 /// ([`crate::forklock::while_descriptors_are_made`]): macOS takes no flag for it on the receive,
 /// so a program started on another thread between the two would inherit it. The wait for the ask
@@ -325,8 +330,11 @@ fn taken_from(handing: &std::os::unix::net::UnixStream) -> Option<(ServeAsk, Slo
     #[cfg(any(target_os = "linux", target_os = "android"))]
     let flags = flags | RecvFlags::CMSG_CLOEXEC;
     let mut line = [0u8; 256];
-    // Room for the one descriptor: a host that sent more is told by the kernel's truncation.
-    let mut space = [std::mem::MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(1))];
+    // Room for more than the one descriptor, so that each one a host sent with its ask is owned
+    // here and closed: macOS puts every descriptor of a message in this process before it cuts
+    // the message to the room it has. More than the room is told by the kernel's truncation.
+    let mut space =
+        [std::mem::MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(DESCRIPTORS_ROOM))];
     let mut control = RecvAncillaryBuffer::new(&mut space);
     let (got, fds, marked) = crate::forklock::while_descriptors_are_made(|| {
         let got = recvmsg(
@@ -350,11 +358,7 @@ fn taken_from(handing: &std::os::unix::net::UnixStream) -> Option<(ServeAsk, Slo
         (got, fds, marked)
     });
     let got = got.ok()?;
-    // More came than the one descriptor: the rest were never received, and the ask is refused.
-    if !marked || got.flags.contains(ReturnFlags::CTRUNC) {
-        return None;
-    }
-    let [fd] = <[std::os::fd::OwnedFd; 1]>::try_from(fds).ok()?;
+    let fd = the_one(fds, marked, got.flags.contains(ReturnFlags::CTRUNC))?;
     let said = std::str::from_utf8(line.get(..got.bytes)?)
         .ok()?
         .strip_suffix('\n')?;
@@ -363,6 +367,24 @@ fn taken_from(handing: &std::os::unix::net::UnixStream) -> Option<(ServeAsk, Slo
     // A connected unix socket, and nothing else.
     slot.peer_addr().ok()?;
     Some((ask, slot))
+}
+
+/// **The one descriptor a host handed on**, of the `fds` that came, each marked close-on-exec
+/// where `marked`: none where more came, among them more than the receive had room for
+/// (`truncated`, the kernel's `MSG_CTRUNC`), or where one could not be marked. Every one that is
+/// not handed back is closed.
+#[cfg(unix)]
+fn the_one(
+    fds: Vec<std::os::fd::OwnedFd>,
+    marked: bool,
+    truncated: bool,
+) -> Option<std::os::fd::OwnedFd> {
+    // More came than the one descriptor: the rest were never received, and the ask is refused.
+    if !marked || truncated {
+        return None;
+    }
+    let [fd] = <[std::os::fd::OwnedFd; 1]>::try_from(fds).ok()?;
+    Some(fd)
 }
 
 /// Whether `handing` has something to read, or has ended, within `within`.

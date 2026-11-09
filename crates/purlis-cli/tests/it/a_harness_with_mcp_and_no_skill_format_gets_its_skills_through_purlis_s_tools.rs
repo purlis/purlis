@@ -28,6 +28,9 @@ use serde_json::{Value, json};
 
 const CHAT: u32 = 7;
 
+/// How long the test waits for the server's answer, or for the load's run to reach the host.
+const PATIENCE: Duration = Duration::from_secs(30);
+
 /// The repo's fake harness, built beside this test's `purlis` when it is not there yet.
 fn fake_harness() -> PathBuf {
     let beside = Path::new(support::PURLIS)
@@ -115,6 +118,23 @@ impl Model {
 
 #[test]
 fn a_harness_purlis_has_no_adapter_for_finds_and_loads_a_skill_over_mcp_and_the_load_opens_a_run() {
+    finds_and_loads_a_skill_over_mcp(Duration::ZERO);
+}
+
+/// **A host slower than the load's hook waits still sees the load open one run** (#5913): the
+/// hook waits a quarter of a second for the host to take its line, then spools it and the load
+/// answers (ADR 0075 §7), so the host may still be recording the line when the answer arrives.
+/// Half a second is past that wait (`hookwire`'s `A_NOTICE_TAKES_AT_MOST`) and inside the second
+/// a drain waits for a copy the host is recording (`A_LIVE_LINE_IS_WAITED_FOR_AT_MOST`), the
+/// order that once read no run at all. Should either move, the test still passes on any order;
+/// it only stops forcing this one.
+#[test]
+fn a_load_answered_before_the_host_took_its_line_still_opens_one_run() {
+    finds_and_loads_a_skill_over_mcp(Duration::from_millis(500));
+}
+
+/// The fallback route end to end, with a host that takes `host_takes` to hear a tool line.
+fn finds_and_loads_a_skill_over_mcp(host_takes: Duration) {
     let p = project();
     let root = p.path().canonicalize().expect("the project");
     // The host, listening as the app does.
@@ -137,6 +157,7 @@ fn a_harness_purlis_has_no_adapter_for_finds_and_loads_a_skill_over_mcp_and_the_
         saved: Box::new(|_| {}),
         refused: Box::new(|_| Ok(())),
         tool: Box::new(move |call| {
+            std::thread::sleep(host_takes);
             let _ = into.lock().unwrap().send(call);
             Ok(())
         }),
@@ -170,9 +191,7 @@ fn a_harness_purlis_has_no_adapter_for_finds_and_loads_a_skill_over_mcp_and_the_
         .spawn()
         .expect("the fake harness starts");
     let (stream, _) = relayed.accept().expect("the harness relays its server");
-    stream
-        .set_read_timeout(Some(Duration::from_secs(30)))
-        .expect("a deadline");
+    stream.set_read_timeout(Some(PATIENCE)).expect("a deadline");
     let mut model = Model {
         out: stream.try_clone().expect("the socket twice"),
         lines: BufReader::new(stream).lines(),
@@ -223,12 +242,19 @@ fn a_harness_purlis_has_no_adapter_for_finds_and_loads_a_skill_over_mcp_and_the_
     );
     assert!(loaded.ends_with("Run ship.sh.\n"), "{loaded}");
 
-    // The load's run, on the line a tool hook sends, from inside the chat.
-    let mut told: Vec<ToolCall> = heard.try_iter().collect();
-    told.extend(support::spooled_running(&hooks, CHAT, |line| match line {
+    // The load's run, on the line a tool hook sends, from inside the chat (#5913). The load
+    // answers once the host took the line, or once its hook stopped waiting and spooled it, so
+    // the line is in the spool, drained first, or with the host's hearing. A copy the host is
+    // still recording is waited for by the drain and not handed on (#952), and the host has
+    // heard it by then; a copy the drain hands on is the line, and the host hearing it late is
+    // not a second run, so it is not waited for.
+    let mut told: Vec<ToolCall> = support::spooled_running(&hooks, CHAT, |line| match line {
         spool::Spooled::Tool(call) => Some(call),
         _ => None,
-    }));
+    });
+    if told.is_empty() {
+        told.extend(heard.recv_timeout(PATIENCE).ok());
+    }
     assert_eq!(told.len(), 1, "{told:?}");
     let line = &told[0];
     assert_eq!(line.chat, CHAT);

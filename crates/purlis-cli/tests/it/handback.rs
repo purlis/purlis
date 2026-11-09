@@ -188,6 +188,42 @@ fn a_report_kept_for_a_workspace_is_learned_by_the_next_chat_that_starts_there()
 }
 
 #[test]
+fn a_codex_chat_learns_a_kept_report_from_its_quoted_hook_and_not_its_briefing() {
+    // #5935: Codex keeps 10,000 bytes of each hook's output, so a Codex chat is told the
+    // reports kept for it in a hook of their own, after its briefing, and takes them there once.
+    use purlis_core::active::Place;
+    let plane = a_plane();
+    let ops = Place::Workspace("ops".to_owned());
+    handback::leave(plane.path(), For::Place(&ops), &a_report("done")).unwrap();
+    let codex = [
+        ("CHARTER_WORKSPACE", "ops"),
+        (purlis_core::hookwire::HARNESS_ENV, "codex"),
+    ];
+
+    let briefing = hook_as(plane.path(), "sessionstart", "9", &codex);
+    assert!(!briefing.contains("reported back"), "{briefing}");
+    assert_eq!(
+        handback::waiting(plane.path(), For::Place(&ops)).len(),
+        1,
+        "still kept for the quoted hook"
+    );
+
+    let quoted = hook_as(
+        plane.path(),
+        purlis_core::harness::codex::QUOTED_WORD,
+        "9",
+        &codex,
+    );
+    let context = context_of(&quoted, "SessionStart");
+    assert!(context.contains("`steward 3`"), "{context}");
+    assert!(context.ends_with("> done"), "{context}");
+    assert!(
+        handback::waiting(plane.path(), For::Place(&ops)).is_empty(),
+        "learned once"
+    );
+}
+
+#[test]
 fn a_report_kept_for_the_plane_root_is_learned_by_the_next_chat_started_there_and_no_other() {
     // SI-1b: a root chat that handed off and closed. Its report waits for the plane root, not
     // for whichever workspace the ladder would have named.

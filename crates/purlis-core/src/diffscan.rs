@@ -866,9 +866,9 @@ fn pushed_within(
     let changes_the_allowlist = !ask(&["rev-list", "--full-history", "--no-merges"])?
         .trim()
         .is_empty()
-        || ask(&["rev-list", "--full-history", "--min-parents=2", "--parents"])?
+        || ask(&["rev-list", "--full-history", "--min-parents=2"])?
             .lines()
-            .any(|line| merge_writes_its_own_allowlist(repo, line));
+            .any(|merge| merge_writes_its_own_allowlist(repo, merge));
     // Which commit each diff is, so the lines around a change are read from its files.
     let marker = format!("--format={COMMIT_MARKER}%H");
     fn log<'a>(verb: &'a str, merges: &'a str, marker: &'a str, more: &[&'a str]) -> Vec<&'a str> {
@@ -948,15 +948,16 @@ fn pushed_within(
     Ok(scan)
 }
 
-/// Whether the merge `line` names (`<merge> <parent>…`, as `rev-list --parents` writes it) holds
-/// an allowlist, under any of its names, that none of its parents holds: a resolution of its own.
-/// A line this cannot read is taken as one, so the push is refused rather than let by.
-fn merge_writes_its_own_allowlist(repo: &Path, line: &str) -> bool {
-    let mut ids = line.split_whitespace();
-    let Some(merge) = ids.next() else {
-        return false;
+/// Whether `merge` (a line of `rev-list`, one commit) holds an allowlist, under any of its names,
+/// that none of its parents holds: a resolution of its own. Its parents are read from the commit
+/// itself: those `rev-list --parents` prints beside a path are the ones history simplification
+/// leaves, and a side that never touched the allowlist drops out of them (#6035). A merge whose
+/// parents this cannot read is taken as one, so the push is refused rather than let by.
+fn merge_writes_its_own_allowlist(repo: &Path, merge: &str) -> bool {
+    let merge = merge.trim();
+    let Some(parents) = parents_of(repo, merge) else {
+        return true;
     };
-    let parents: Vec<&str> = ids.collect();
     if parents.len() < 2 {
         return true;
     }
@@ -979,6 +980,23 @@ fn merge_writes_its_own_allowlist(repo: &Path, line: &str) -> bool {
         let own = blob(merge, path);
         parents.iter().all(|parent| blob(parent, path) != own)
     })
+}
+
+/// The parents `commit` itself names, or nothing when git cannot read it as one commit.
+fn parents_of(repo: &Path, commit: &str) -> Option<Vec<String>> {
+    if commit.is_empty() || commit.starts_with('-') {
+        return None;
+    }
+    let run = git::run_in_hook(
+        repo,
+        &["rev-list", "--parents", "--no-walk", commit, "--"],
+        git::READ,
+    )
+    .ok()
+    .filter(|run| run.code == Some(0))?;
+    let line = String::from_utf8_lossy(&run.out).into_owned();
+    let mut ids = line.split_whitespace();
+    (ids.next()? == commit).then(|| ids.map(str::to_owned).collect())
 }
 
 /// How many commits `range` (revisions as `rev-list` takes them) holds in `repo`.
@@ -2972,6 +2990,58 @@ mod tests {
             let scan = pushed_knowing(&repo, &update(&merge, NOTHING), known).unwrap();
 
             assert!(!scan.changes_the_allowlist, "merged onto {ours}");
+        }
+    }
+
+    #[test]
+    fn a_merge_of_a_merge_whose_sides_never_touched_the_allowlist_does_not_change_it() {
+        // #6035: with a path, `rev-list --parents` prints the parents history simplification
+        // leaves, and a side that never touched the allowlist drops out of the line.
+        let (_dir, repo) = repo();
+        allowlist_at_head(&repo, DOCS_EMAIL);
+        let published = testgit::run(&repo, &["rev-parse", "HEAD"])
+            .out
+            .trim()
+            .to_owned();
+        testgit::run(&repo, &["checkout", "-q", "-b", "one"]);
+        std::fs::write(repo.join("one"), "1\n").unwrap();
+        let one = commit_all(&repo, "one");
+        testgit::run(&repo, &["checkout", "-q", "-b", "two", &published]);
+        std::fs::write(repo.join("two"), "2\n").unwrap();
+        commit_all(&repo, "two");
+        testgit::run(&repo, &["merge", "-q", "--no-edit", "--no-ff", &one]);
+        let inner = testgit::run(&repo, &["rev-parse", "HEAD"])
+            .out
+            .trim()
+            .to_owned();
+        testgit::run(&repo, &["checkout", "-q", "--detach", &published]);
+        std::fs::write(repo.join("three"), "3\n").unwrap();
+        commit_all(&repo, "three");
+        testgit::run(&repo, &["merge", "-q", "--no-edit", "--no-ff", &inner]);
+        let outer = testgit::run(&repo, &["rev-parse", "HEAD"])
+            .out
+            .trim()
+            .to_owned();
+
+        let scan = pushed_knowing(&repo, &update(&outer, NOTHING), &[published]).unwrap();
+
+        assert!(!scan.changes_the_allowlist);
+    }
+
+    #[test]
+    fn a_merge_line_that_cannot_be_read_as_one_merge_is_taken_as_a_change() {
+        let (_dir, repo) = repo();
+        std::fs::write(repo.join("README"), "x\n").unwrap();
+        let only = commit_all(&repo, "one parent of none");
+
+        for line in [
+            "",
+            "not-a-commit",
+            "--all",
+            &format!("{only} {only}"),
+            &only,
+        ] {
+            assert!(merge_writes_its_own_allowlist(&repo, line), "{line:?}");
         }
     }
 

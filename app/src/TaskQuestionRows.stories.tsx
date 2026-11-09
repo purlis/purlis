@@ -125,7 +125,7 @@ type Story = StoryObj<typeof meta>;
 
 const rowOf = (canvas: HTMLElement, name: string) => {
   const found = within(canvas)
-    .getAllByRole("treeitem")
+    .getAllByRole("row")
     .find((one) => one.querySelector(".session")?.textContent === name);
   if (found === undefined) throw new Error(`no row is named ${name}`);
   return found;

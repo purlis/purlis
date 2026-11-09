@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
-import { IN_ITS_CHAT, answerTaken, answerThrough, asksMoved, useAsks } from "./asks";
+import { IN_ITS_CHAT, answerTaken, answerThrough, asksMoved, notSnoozed, useAsks } from "./asks";
 import type { Shown } from "./bindings";
 import { OPEN_BROWSER_ASK, type OpenBrowserAsk } from "./browserNeedsYou";
 import { OPEN_PROPOSAL_ASK } from "./proposedChangeOpen";
@@ -808,5 +808,38 @@ describe("a secret ask's Fill with an entry (#5240)", () => {
     };
     await answerTaken("p", ask, "fill", undefined, "", { vault: "own", key: "STRIPE" }, "words");
     expect(asked).toEqual([{ plane: "p", id: 3, vault: "own", key: "STRIPE", remember: "words" }]);
+  });
+});
+
+describe("what a window tells the others waits (#5999)", () => {
+  const ask = (session: number): Shown => ({
+    session,
+    ask: `ask-${session}`,
+    says: "Run cargo test",
+    options: [],
+    source: "permission",
+    chain: [],
+    answer: { via: "hook" },
+  });
+  const rows = [
+    { plane: "/a", session: 1 },
+    { plane: "/a", session: 2 },
+    { plane: "/b", session: 1 },
+  ];
+
+  it("leaves out a chat whose every ask is snoozed", () => {
+    const held = {
+      "/a": { asks: [ask(1)], with_asking_chat: [], snoozed: [ask(2)] },
+      "/b": { asks: [ask(1)], with_asking_chat: [], snoozed: [] },
+    };
+    expect(notSnoozed(rows, held)).toEqual([
+      { plane: "/a", session: 1 },
+      { plane: "/b", session: 1 },
+    ]);
+  });
+
+  it("keeps a snoozed chat that has asked something new, and a project not read yet", () => {
+    const held = { "/a": { asks: [ask(2)], with_asking_chat: [], snoozed: [ask(2)] } };
+    expect(notSnoozed(rows, held)).toEqual(rows);
   });
 });

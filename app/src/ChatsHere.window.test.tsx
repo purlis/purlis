@@ -10,6 +10,7 @@ import { forgetReadsOutsideChatsHere, readsOutsideChatsHere } from "./chatState"
 import { forgetDismissals } from "./dismissals";
 import { aTabForEachChat } from "./laidOut.testkit";
 import { forgetThisLaunch } from "./regions";
+import { findTree } from "./ui/tree/tree.testkit";
 
 /**
  * **Every chat state the window draws is read below `ChatsHere`** (#1037). A component that
@@ -125,7 +126,7 @@ describe("the chats the window draws (#1037)", () => {
 
     // The chat's tab, its row and its task's row are drawn: each reads its chat's state.
     await screen.findByTestId("pane");
-    const chats = await screen.findByRole("tree", { name: /chats/i });
+    const chats = await findTree(/chats/i);
     await within(chats).findAllByText(/claude 4/);
 
     expect(readsOutsideChatsHere()).toBe(0);

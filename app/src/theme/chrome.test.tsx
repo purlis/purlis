@@ -118,6 +118,7 @@ import { MoveIntoReposConfirm } from "../MoveIntoReposConfirm";
 import { BUILT_IN, DEFAULT_THEME, drawIn, drawTint, inForce, tinted } from "./theme";
 import { themeInForce } from "./inForce.testkit";
 import { aTabForEachChat } from "../laidOut.testkit";
+import { findRow, findTree } from "../ui/tree/tree.testkit";
 
 vi.mock("../SessionPane", () => ({
   SessionPane: ({ session }: { session: number }) => (
@@ -1782,7 +1783,7 @@ const DIALOGS: Opened[] = [
           onOpen={nothing}
         />,
       );
-      await userEvent.hover(await screen.findByRole("treeitem"));
+      await userEvent.hover(await findRow(await findTree("Chats of this project"), /./));
       await screen.findByRole("tooltip", {}, { timeout: 3000 });
     },
   },
@@ -2020,8 +2021,7 @@ async function fromTheMenuOf(key: string, item: string) {
  *  role what it holds has (a refused tab name's is an alert). */
 const openDialogs = () =>
   document.querySelectorAll(
-    '[role="dialog"], [role="alertdialog"], [data-radix-popper-content-wrapper], ' +
-      '[data-scope="popover"][data-part="root"]',
+    '[role="dialog"], [role="alertdialog"], [data-scope="popover"][data-part="root"]',
   );
 
 /**

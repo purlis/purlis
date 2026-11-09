@@ -480,3 +480,133 @@ fn a_folder_read_again_after_a_change_says_what_the_check_finds_now() {
         warnings_said(&read.theme, &check_every(&read.theme))
     );
 }
+
+#[test]
+fn a_card_lists_each_part_key_its_theme_sets_with_its_value_as_written() {
+    let places = Places::new();
+    put(
+        &places.machine(),
+        "rounded",
+        &json!({
+            "name": "Rounded",
+            "extends": "purlis",
+            "parts": {
+                "button.root.corner-radius": "full",
+                "button.root.primary.hover.fill": "accent.base",
+                "tabs.tab.padding": [4, 12],
+                "tabs.tab.corner-radius": [6, 6, 0, 0]
+            }
+        }),
+    );
+    let folders = places.folders();
+    let cards = gallery::cards(&shelf(&folders, Reach::Machine, &[]));
+    let rounded = cards.iter().find(|one| one.id == "rounded").unwrap();
+    let said = |key: &str| {
+        rounded.parts.iter().find(|one| one.key == key).map(|one| {
+            (
+                one.family.as_str(),
+                one.part.as_str(),
+                one.value.as_str(),
+                &one.from,
+            )
+        })
+    };
+    let theme = &gallery::PartFrom::Theme;
+    assert_eq!(
+        said("button.root.corner-radius"),
+        Some(("button", "root", "full", theme))
+    );
+    assert_eq!(
+        said("button.root.primary.hover.fill"),
+        Some(("button", "root", "accent.base", theme))
+    );
+    assert_eq!(
+        said("tabs.tab.padding"),
+        Some(("tabs", "tab", "[4, 12]", theme))
+    );
+    assert_eq!(
+        said("tabs.tab.corner-radius"),
+        Some(("tabs", "tab", "[6, 6, 0, 0]", theme))
+    );
+    // What Purlis, which it extends, sets is drawn too, and said to be Purlis's.
+    let purlis = cards.iter().find(|one| one.id == "purlis").unwrap();
+    assert!(!purlis.parts.is_empty());
+    for one in &purlis.parts {
+        assert_eq!(one.from, gallery::PartFrom::Theme, "Purlis's own: {one:?}");
+        let extended = gallery::CardPart {
+            from: gallery::PartFrom::Extends {
+                theme: "Purlis".to_owned(),
+            },
+            ..one.clone()
+        };
+        assert!(rounded.parts.contains(&extended), "{one:?}");
+    }
+}
+
+#[test]
+fn a_card_of_a_theme_that_sets_no_parts_of_its_own_says_whose_it_draws() {
+    let places = Places::new();
+    put(&places.machine(), "plain", &dusk("Plain", "#101010"));
+    let folders = places.folders();
+    let cards = gallery::cards(&shelf(&folders, Reach::Machine, &[]));
+    let plain = cards.iter().find(|one| one.id == "plain").unwrap();
+    let classic = cards.iter().find(|one| one.id == "purlis-classic").unwrap();
+    assert!(!classic.parts.is_empty());
+    assert_eq!(plain.parts.len(), classic.parts.len());
+    for (one, its) in plain.parts.iter().zip(&classic.parts) {
+        assert_eq!((&one.key, &one.value), (&its.key, &its.value));
+        assert_eq!(
+            one.from,
+            gallery::PartFrom::Extends {
+                theme: "Purlis Classic".to_owned()
+            }
+        );
+    }
+}
+
+#[test]
+fn a_card_says_which_option_value_sets_a_part_key() {
+    let places = Places::new();
+    put(
+        &places.machine(),
+        "pills",
+        &json!({
+            "name": "Pills",
+            "extends": "purlis",
+            "parts": { "button.root.corner-radius": 4 },
+            "options": [{
+                "id": "pills", "kind": "toggle", "label": "Pills", "default": false,
+                "on": { "parts": { "button.root.corner-radius": "full" } }
+            }]
+        }),
+    );
+    let folders = places.folders();
+    let cards = gallery::cards(&shelf(&folders, Reach::Machine, &[]));
+    let pills = cards.iter().find(|one| one.id == "pills").unwrap();
+    let radius: Vec<(&str, &gallery::PartFrom)> = pills
+        .parts
+        .iter()
+        .filter(|one| one.key == "button.root.corner-radius")
+        .map(|one| (one.value.as_str(), &one.from))
+        .collect();
+    let on = pills.options[0]
+        .values
+        .iter()
+        .find(|one| one.id == "on")
+        .unwrap()
+        .label
+        .clone();
+    assert_eq!(
+        radius,
+        [
+            ("4", &gallery::PartFrom::Theme),
+            (
+                "full",
+                &gallery::PartFrom::Option {
+                    option: "Pills".to_owned(),
+                    value: on
+                }
+            ),
+        ]
+    );
+}

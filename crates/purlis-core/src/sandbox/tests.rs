@@ -2301,6 +2301,42 @@ fn one(class: Class, path: &str, access: Access) -> Denial {
     }
 }
 
+/// A program held by its own name (a cluster pool's plugin, #3292) is held from a Claude Code
+/// chat's commands and its Edit tool by that name, as the full profile holds it; the folder it is
+/// in, held alone too, is not: what is below a folder held alone is the chat's.
+#[test]
+fn a_claude_code_chat_is_held_from_writing_a_program_held_by_its_own_name() {
+    let dir = tempfile::tempdir().expect("a folder");
+    let bin = dir.path().canonicalize().expect("real").join("bin");
+    std::fs::create_dir(&bin).expect("a folder");
+    let program = bin.join("kubelogin");
+    std::fs::write(&program, "#!/bin/sh\n").expect("a program");
+    let alone = |path: &std::path::Path| Denial {
+        reach: Reach::Itself,
+        ..one(Class::LaterCode, &path.display().to_string(), Access::Write)
+    };
+    let settings = claude::settings(&compiled(
+        Denied {
+            paths: vec![alone(&program), alone(&bin)],
+            ..Denied::default()
+        },
+        Os::MacOs,
+    ))
+    .expect("compiles");
+    let deny_write = deny_write(&settings);
+    let program = program.display().to_string();
+    assert!(deny_write.contains(&program), "{deny_write:?}");
+    assert!(
+        settings.deny.contains(&format!("Edit(/{program})")),
+        "{:?}",
+        settings.deny
+    );
+    assert!(
+        !deny_write.contains(&bin.display().to_string()),
+        "the folder's own rule would hold what is below it: {deny_write:?}"
+    );
+}
+
 #[test]
 fn a_claude_code_chat_is_sandboxed_with_no_way_out_and_no_silent_fallback() {
     let settings = claude::settings(&compiled(Denied::default(), Os::MacOs)).expect("compiles");
@@ -8471,6 +8507,54 @@ fn a_chat_writes_none_of_the_programs_a_cluster_pools_kubectl_runs_nor_their_pac
             Reach::AndBelow
         ),
         "{:?}",
+        denied.paths
+    );
+}
+
+/// A pool's plugin whose package is a folder inside the chat's project is held with all below
+/// it, as one anywhere else is: the chat writes the rest of its project, never that package.
+#[cfg(unix)]
+#[test]
+fn a_cluster_pools_program_whose_package_is_inside_the_project_is_held_with_its_package() {
+    let config = tempfile::tempdir().expect("a config home");
+    let plane = tempfile::tempdir().expect("a plane");
+    let project = super::real(plane.path());
+    let package = project.join("tools").join("kube");
+    std::fs::create_dir_all(&package).expect("a package");
+    let plugin = package.join("plugin");
+    std::fs::write(&plugin, "#!/bin/sh\n").expect("a plugin");
+    let folder =
+        purlis_same_user::PrivateDirectory::open(&crate::machine::dir(config.path())).unwrap();
+    let file = serde_json::json!({ "version": 1, "runners": [], "pools": [{
+        "name": "team", "kind": "cluster", "kubeconfig": "/home/op/.kube/config",
+        "context": "team", "pool": "default", "namespace": "ada",
+        "operatorKey": format!("ed25519:{}", "ab".repeat(32)),
+        "cluster": "3e9a4b2c-7d10-4f5e-8a6b-9c0d1e2f3a4b",
+        "holds": [plugin.display().to_string()],
+    }]});
+    folder
+        .replace_file(crate::machine::RUNNERS_FILE, file.to_string().as_bytes())
+        .unwrap();
+    let machine = Machine {
+        env: crate::secrets::Env::of(&[("XDG_CONFIG_HOME", &config.path().display().to_string())]),
+        home: None,
+        os: Os::Linux,
+        on_a_sandbox_only_profile: false,
+    };
+    let denied = Denied::of(&project, &machine);
+    let held = |path: &std::path::Path, reach: Reach| {
+        denied.paths.iter().any(|it| {
+            it.class == Class::LaterCode
+                && it.access == Access::Write
+                && it.path == path
+                && it.reach == reach
+        })
+    };
+    assert!(held(&plugin, Reach::Itself), "{:?}", denied.paths);
+    assert!(held(&package, Reach::AndBelow), "{:?}", denied.paths);
+    assert!(
+        !denied.paths.iter().any(|it| it.path == project),
+        "the project itself is the chat's: {:?}",
         denied.paths
     );
 }

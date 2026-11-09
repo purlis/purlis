@@ -609,8 +609,9 @@ async fn an_upstream_object_the_operator_did_not_make_is_left_as_it_is_until_it_
         .await
         .expect("the pool");
     // The runner namespace the operator makes, made by a claim on another pool if it is not
-    // there yet; then a template in it under the name the operator would use, made by hand:
-    // no owner.
+    // there yet; then a template in it under the name the operator would use, with no owner.
+    // Only the operator's service account makes a template under that name, so it is made as
+    // that account, as an earlier operator may have left one.
     let claims = Api::<Claim>::namespaced(client.clone(), &scratch.name);
     let namespaces = Api::<Namespace>::all(client.clone());
     if namespaces
@@ -653,18 +654,20 @@ async fn an_upstream_object_the_operator_did_not_make_is_left_as_it_is_until_it_
     let templates = Api::<SandboxTemplate>::namespaced(client.clone(), &runners());
     let mut by_hand = upstream::template_for(&pool, &runners(), vec![]);
     by_hand.metadata.owner_references = None;
-    let containers = &mut by_hand
-        .spec
-        .pod_template
-        .spec
-        .as_mut()
-        .expect("a pod")
-        .containers;
-    containers[0].name = "by-hand".into();
-    let made = templates
+    // A spec of its own, in the runner's shape, so that writing the operator's over it shows.
+    let mut value = serde_json::to_value(&by_hand).expect("JSON");
+    let env = &mut value["spec"]["podTemplate"]["spec"]["containers"][0]["env"];
+    if !env.is_array() {
+        *env = serde_json::json!([]);
+    }
+    env.as_array_mut()
+        .expect("its env")
+        .push(serde_json::json!({ "name": "E2E_BY_HAND", "value": "1" }));
+    let by_hand: SandboxTemplate = serde_json::from_value(value).expect("a template");
+    let made = Api::<SandboxTemplate>::namespaced(acting_as(SERVICE_ACCOUNT).await, &runners())
         .create(&PostParams::default(), &by_hand)
         .await
-        .expect("the template made by hand");
+        .expect("the template made with no owner");
     claims
         .create(&PostParams::default(), &claim("ada-1", "e2e-in-the-way"))
         .await
@@ -2759,6 +2762,91 @@ async fn an_upstream_claim_on_a_purlis_pool_made_directly_is_refused() {
     scratch.end().await;
 }
 
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn a_purlis_pools_template_made_or_changed_directly_is_refused() {
+    use purlis_cluster_operator::upstream::{SandboxTemplate, name_for, template_for};
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-direct-template").await;
+    let pools = Api::<Pool>::all(client.clone());
+    let pool = Pool::new("e2e-direct-template", PoolSpec::new(runner_image()));
+    pools
+        .patch(
+            "e2e-direct-template",
+            &PatchParams::apply("e2e").force(),
+            &Patch::Apply(&pool),
+        )
+        .await
+        .expect("the pool");
+    let dry = PostParams {
+        dry_run: true,
+        ..PostParams::default()
+    };
+    // Even the cluster admin makes no template under the name the operator gives a pool's.
+    let ours = name_for("e2e-direct-template");
+    let templates = Api::<SandboxTemplate>::namespaced(client.clone(), &scratch.name);
+    let mut direct = template_for(&pool, &scratch.name, vec![]);
+    direct.metadata.owner_references = None;
+    refused_in_words(
+        "a template under a purlis pool's name",
+        templates.create(&dry, &direct).await,
+        "Only the purlis cluster operator makes the template of a purlis pool",
+    );
+    // A template under another name is upstream's own.
+    let mut theirs = direct.clone();
+    theirs.metadata.name = Some("a-team-template".to_owned());
+    templates
+        .create(&dry, &theirs)
+        .await
+        .expect("a template under another name is admitted");
+
+    // The operator's template, made for a Claim: its spec is changed by the operator alone, while
+    // its labels, which upstream's controller writes, may change.
+    Api::<Claim>::namespaced(client.clone(), &scratch.name)
+        .create(
+            &PostParams::default(),
+            &claim("ada-1", "e2e-direct-template"),
+        )
+        .await
+        .expect("the claim");
+    let templates = Api::<SandboxTemplate>::namespaced(client.clone(), &runners());
+    eventually(
+        "the operator makes the pool's template",
+        Duration::from_secs(120),
+        || async { templates.get_opt(&ours).await.ok()?.map(|_| ()) },
+    )
+    .await;
+    let dry_patch = PatchParams {
+        dry_run: true,
+        ..PatchParams::default()
+    };
+    refused_in_words(
+        "the operator's template changed by the admin",
+        templates
+            .patch(
+                &ours,
+                &dry_patch,
+                &Patch::Merge(serde_json::json!({
+                    "spec": { "podTemplate": { "spec": { "automountServiceAccountToken": true } } },
+                })),
+            )
+            .await,
+        "Only the purlis cluster operator makes the template of a purlis pool",
+    );
+    templates
+        .patch(
+            &ours,
+            &dry_patch,
+            &Patch::Merge(serde_json::json!({ "metadata": { "labels": { "e2e": "labelled" } } })),
+        )
+        .await
+        .expect("a label on the operator's template is admitted");
+    let _ = pools
+        .delete("e2e-direct-template", &DeleteParams::default())
+        .await;
+    scratch.end().await;
+}
+
 /// Whether the claim `name`'s upstream claim is made, in the runner namespace (#2055).
 async fn upstream_claim_made(client: &Client, name: &str) -> bool {
     Api::<purlis_cluster_operator::upstream::SandboxClaim>::namespaced(client.clone(), &runners())
@@ -3016,6 +3104,119 @@ async fn a_refused_claims_running_runner_keeps_its_template_and_network_policy()
     if let Err(panic) = outcome {
         std::panic::resume_unwind(panic);
     }
+}
+
+/// The label selector `selector` says, as the API server reads one in a list.
+fn selector_text(
+    selector: &k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector,
+) -> String {
+    let mut terms: Vec<String> = selector
+        .match_labels
+        .iter()
+        .flatten()
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect();
+    for expression in selector.match_expressions.iter().flatten() {
+        let values = expression.values.clone().unwrap_or_default().join(",");
+        terms.push(match expression.operator.as_str() {
+            "In" => format!("{} in ({values})", expression.key),
+            "NotIn" => format!("{} notin ({values})", expression.key),
+            "Exists" => expression.key.clone(),
+            "DoesNotExist" => format!("!{}", expression.key),
+            other => panic!("an operator a selector does not hold: {other}"),
+        });
+    }
+    terms.join(",")
+}
+
+/// A runner namespace's pods go out only where a NetworkPolicy lets them: the operator's
+/// `purlis-deny-egress`, made with the namespace and controlled by it, lets none out, and
+/// upstream's policy for the runner's template selects the runner and says where it goes.
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn a_runner_goes_out_only_where_a_network_policy_lets_it() {
+    use k8s_openapi::api::networking::v1::NetworkPolicy;
+    use purlis_cluster_operator::person::DENY_EGRESS_POLICY;
+    use purlis_cluster_operator::upstream::name_for;
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-egress").await;
+    let pools = Api::<Pool>::all(client.clone());
+    let pool = Pool::new("e2e-egress", PoolSpec::new(runner_image()));
+    pools
+        .patch(
+            "e2e-egress",
+            &PatchParams::apply("e2e").force(),
+            &Patch::Apply(&pool),
+        )
+        .await
+        .expect("the pool");
+    let claims = claims_in(&client, &scratch.name);
+    claims
+        .create(&PostParams::default(), &claim("egress-1", "e2e-egress"))
+        .await
+        .expect("the claim");
+    eventually("the claim is ready", Duration::from_secs(300), || async {
+        let claim = claims.get("egress-1").await.ok()?;
+        (ready_of(&claim)?.0 == "True").then_some(())
+    })
+    .await;
+    let running = pods_selected(&client, &runner_selector(&client, "egress-1").await).await;
+    assert_eq!(running.len(), 1);
+    let runner = running[0].name_any();
+
+    let policies = Api::<NetworkPolicy>::namespaced(client.clone(), &runners());
+    let denied = policies
+        .get(DENY_EGRESS_POLICY)
+        .await
+        .expect("the operator's policy on egress");
+    let runner_uid = Api::<Namespace>::all(client.clone())
+        .get(&runners())
+        .await
+        .expect("the runner namespace")
+        .uid();
+    assert!(
+        denied
+            .owner_references()
+            .iter()
+            .any(|o| o.kind == "Namespace"
+                && o.controller == Some(true)
+                && Some(&o.uid) == runner_uid.as_ref()),
+        "{denied:?}"
+    );
+    assert_eq!(
+        serde_json::to_value(denied.spec.as_ref().expect("its spec")).expect("JSON"),
+        serde_json::json!({ "podSelector": {}, "policyTypes": ["Egress"] })
+    );
+
+    // Upstream's policy for the template selects the runner, and lets it out somewhere.
+    let theirs = policies
+        .get(&format!("{}-network-policy", name_for("e2e-egress")))
+        .await
+        .expect("upstream's policy for the template");
+    let spec = theirs.spec.expect("its spec");
+    assert!(
+        spec.policy_types
+            .iter()
+            .flatten()
+            .any(|kind| kind == "Egress"),
+        "upstream's policy says nothing of egress: {spec:?}"
+    );
+    assert!(
+        !spec.egress.clone().unwrap_or_default().is_empty(),
+        "upstream's policy lets the runner out nowhere: {spec:?}"
+    );
+    let selected = pods_selected(
+        &client,
+        &selector_text(&spec.pod_selector.clone().unwrap_or_default()),
+    )
+    .await;
+    assert!(
+        selected.iter().any(|pod| pod.name_any() == runner),
+        "upstream's policy does not select the runner {runner}: {spec:?}"
+    );
+
+    let _ = pools.delete("e2e-egress", &DeleteParams::default()).await;
+    scratch.end().await;
 }
 
 /// Doctor (#2236) run by someone who may only read what it reads: it still answers every check,
@@ -4792,6 +4993,100 @@ async fn a_runner_namespace_enforces_restricted_pod_security_and_its_runner_is_a
     let _ = pools
         .delete("e2e-restricted", &DeleteParams::default())
         .await;
+    scratch.end().await;
+}
+
+/// What the operator makes for a Claim it holds as applied server-side from the first: no entry
+/// of its field manager on any of them records an `Update`, so a later apply that leaves a field
+/// out takes it out.
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn what_the_operator_makes_it_holds_as_applied() {
+    use k8s_openapi::api::networking::v1::NetworkPolicy;
+    use k8s_openapi::api::rbac::v1::RoleBinding;
+    use kube::Resource;
+    use purlis_cluster_operator::FIELD_MANAGER;
+    use purlis_cluster_operator::upstream::{
+        SandboxClaim, SandboxTemplate, SandboxWarmPool, name_for,
+    };
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-applied").await;
+    let pools = Api::<Pool>::all(client.clone());
+    let pool = Pool::new("e2e-applied", PoolSpec::new(runner_image()));
+    pools
+        .patch(
+            "e2e-applied",
+            &PatchParams::apply("e2e").force(),
+            &Patch::Apply(&pool),
+        )
+        .await
+        .expect("the pool");
+    let claims = claims_in(&client, &scratch.name);
+    claims
+        .create(&PostParams::default(), &claim("applied-1", "e2e-applied"))
+        .await
+        .expect("the claim");
+    eventually("the claim is ready", Duration::from_secs(300), || async {
+        let claim = claims.get("applied-1").await.ok()?;
+        (ready_of(&claim)?.0 == "True").then_some(())
+    })
+    .await;
+
+    fn updates_of<K: Resource>(what: &str, object: &K) -> Vec<String> {
+        object
+            .meta()
+            .managed_fields
+            .iter()
+            .flatten()
+            .filter(|entry| {
+                entry.manager.as_deref() == Some(FIELD_MANAGER)
+                    && entry.operation.as_deref() == Some("Update")
+                    && entry.subresource.as_deref().unwrap_or_default().is_empty()
+            })
+            .map(|entry| format!("{what}: {entry:?}"))
+            .collect()
+    }
+    let object = name_for("e2e-applied");
+    let runner = runners();
+    let mut updates = Vec::new();
+    updates.extend(updates_of(
+        "template",
+        &Api::<SandboxTemplate>::namespaced(client.clone(), &runner)
+            .get(&object)
+            .await
+            .expect("the template"),
+    ));
+    updates.extend(updates_of(
+        "warm pool",
+        &Api::<SandboxWarmPool>::namespaced(client.clone(), &runner)
+            .get(&object)
+            .await
+            .expect("the warm pool"),
+    ));
+    updates.extend(updates_of(
+        "upstream claim",
+        &Api::<SandboxClaim>::namespaced(client.clone(), &runner)
+            .get("applied-1")
+            .await
+            .expect("the upstream claim"),
+    ));
+    updates.extend(updates_of(
+        "role binding",
+        &Api::<RoleBinding>::namespaced(client.clone(), &runner)
+            .get(purlis_cluster_operator::person::OWNER_ROLE)
+            .await
+            .expect("the role binding"),
+    ));
+    updates.extend(updates_of(
+        "policy on egress",
+        &Api::<NetworkPolicy>::namespaced(client.clone(), &runner)
+            .get(purlis_cluster_operator::person::DENY_EGRESS_POLICY)
+            .await
+            .expect("the policy on egress"),
+    ));
+    assert!(updates.is_empty(), "{updates:#?}");
+
+    let _ = pools.delete("e2e-applied", &DeleteParams::default()).await;
     scratch.end().await;
 }
 

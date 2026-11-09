@@ -200,6 +200,8 @@ pub(super) struct Plan {
     conflicted: bool,
     /// The files to write over it, as plane-relative paths.
     pub(super) settled: BTreeMap<String, String>,
+    /// The files to take out of it: a memory index whose store one side removed (#5864).
+    removed: BTreeSet<String>,
     /// The files left in conflict that a person wrote, sorted.
     pub(super) person: Vec<String>,
     /// Of those, the settings file, with the keys both sides changed ([`Conflicted::keys`]).
@@ -295,6 +297,10 @@ impl Plan {
                 .settled
                 .iter()
                 .any(|(path, text)| blob(root, &self.tree, path).as_deref() != Some(text.as_str()))
+            || self
+                .removed
+                .iter()
+                .any(|path| blob(root, &self.tree, path).is_some())
     }
 }
 
@@ -361,6 +367,7 @@ pub(super) fn plan_between(
         tree,
         conflicted: !conflicted.is_empty(),
         settled: BTreeMap::new(),
+        removed: BTreeSet::new(),
         person: Vec::new(),
         keys: BTreeMap::new(),
         marked: BTreeMap::new(),
@@ -393,12 +400,12 @@ pub(super) fn plan_between(
                     crate::scaffold::rules_set_aside(text, RULES_SET_ASIDE)
                 })? {
                     Apart::Clean(text) => {
-                        // A rule the remote's block holds that this build does not write stays,
-                        // as a newer build's would: the remote's is the later word. The block
-                        // keeps the place it had.
-                        let kept = blob(root, theirs, path)
-                            .map(|text| crate::scaffold::rules_in(&text))
-                            .unwrap_or_default();
+                        // A rule either side's block holds that this build does not write stays,
+                        // as a newer build's would, merged as a set: both sides' rules, less one
+                        // a side took out since the base. In a replay `theirs` is the local pick
+                        // and `ours` the remote, so neither side's word is lost (#5864). The
+                        // block keeps the place it had.
+                        let kept = rules_kept(root, path, &base, ours, theirs);
                         let with =
                             crate::scaffold::rules_put_back(&text, RULES_SET_ASIDE, root, &kept);
                         plan.settled.insert(path.clone(), with);
@@ -417,6 +424,25 @@ pub(super) fn plan_between(
         rebuilt(root, &mut plan, &what, &base, theirs)?;
     }
     Ok(plan)
+}
+
+/// The rules of the `.gitattributes` blocks of `ours` and `theirs` at `path`, merged as a set
+/// from `base`: each side's in its order, less any rule the base held that a side took out.
+fn rules_kept(root: &Path, path: &str, base: &str, ours: &str, theirs: &str) -> Vec<String> {
+    let rules = |rev: &str| {
+        blob(root, rev, path)
+            .map(|text| crate::scaffold::rules_in(&text))
+            .unwrap_or_default()
+    };
+    let (base, ours, theirs) = (rules(base), rules(ours), rules(theirs));
+    let mut kept: Vec<String> = Vec::new();
+    for rule in ours.iter().chain(&theirs) {
+        let dropped = base.contains(rule) && !(ours.contains(rule) && theirs.contains(rule));
+        if !dropped && !kept.contains(rule) {
+            kept.push(rule.clone());
+        }
+    }
+    kept
 }
 
 /// Merge the settings file at `path` key by key into `plan` (#5824 F5, F6): settled where no
@@ -636,8 +662,16 @@ fn rebuilt(
             );
         }
         Generated::Memory(store) => {
-            let (index, text) = memory_index(root, &plan.tree, store, base, &plan.ours, theirs);
-            plan.settled.insert(index, text);
+            match memory_index(root, &plan.tree, store, base, &plan.ours, theirs) {
+                (index, Some(text)) => {
+                    plan.settled.insert(index, text);
+                }
+                (index, None) => {
+                    if blob(root, &plan.tree, &index).is_some() {
+                        plan.removed.insert(index);
+                    }
+                }
+            }
         }
         Generated::Charter(_) | Generated::Rules => {}
     }
@@ -647,7 +681,7 @@ fn rebuilt(
 /// The tree `plan` comes to: git's, with what was settled written over it. Built in an index of
 /// its own, so what the plane has staged is never touched.
 pub(super) fn tree_of(root: &Path, plan: &Plan) -> Result<String, String> {
-    if plan.settled.is_empty() {
+    if plan.settled.is_empty() && plan.removed.is_empty() {
         return Ok(plan.tree.clone());
     }
     let dir = tempfile::tempdir().map_err(|e| e.to_string())?;
@@ -673,6 +707,9 @@ pub(super) fn tree_of(root: &Path, plan: &Plan) -> Result<String, String> {
         }
         let info = format!("100644,{},{path}", hashed.line().trim());
         in_index(&["update-index", "--add", "--cacheinfo", &info])?;
+    }
+    for path in &plan.removed {
+        in_index(&["update-index", "--force-remove", "--", path])?;
     }
     Ok(in_index(&["write-tree"])?.line().trim().to_owned())
 }
@@ -841,7 +878,8 @@ pub(super) fn commit_tree_as(
             }
         }
         Ok(run) if run.code.is_none() => Err(Unmade::OutOfTime),
-        // `commit-tree` says the signer failed in its own words, with or without git's line.
+        // `commit-tree` says the signer failed in its own words, with or without git's line,
+        // in English: every git call runs with `LC_ALL=C` (`worktree::git`, #5886).
         Ok(run)
             if sign
                 && (run.err.contains(super::UNWRITTEN) || run.err.contains("failed to sign")) =>
@@ -855,6 +893,8 @@ pub(super) fn commit_tree_as(
 
 /// A memory store's index, as its path and its text, written from the memory files of `tree`
 /// with the lines HEAD, `theirs` and `base` have for them ([`crate::memstore::index_merged`]).
+/// No text where the store holds no memory file and a side removed the index since `base`: the
+/// store was removed, and a bare header written back would bring it back (#5864).
 fn memory_index(
     root: &Path,
     tree: &str,
@@ -862,13 +902,18 @@ fn memory_index(
     base: &str,
     ours: &str,
     theirs: &str,
-) -> (String, String) {
+) -> (String, Option<String>) {
     let index = format!("{store}/{}", crate::memstore::INDEX);
-    let side = |rev: &str| blob(root, rev, &index).unwrap_or_default();
     let memories: Vec<(String, String)> = files_in(root, tree, store)
         .into_iter()
         .filter(|(name, _)| name != crate::memstore::INDEX && name.ends_with(".md"))
         .collect();
+    let had = |rev: &str| blob(root, rev, &index);
+    if memories.is_empty() && had(base).is_some() && (had(ours).is_none() || had(theirs).is_none())
+    {
+        return (index, None);
+    }
+    let side = |rev: &str| had(rev).unwrap_or_default();
     // A workspace's memories are named by the time they were written; a persona's are not.
     let by_name = store.starts_with("workspaces/");
     let text = crate::memstore::index_merged(
@@ -877,7 +922,7 @@ fn memory_index(
         &memories,
         by_name,
     );
-    (index, text)
+    (index, Some(text))
 }
 
 /// **The memory indexes of a merge a person settled** (#5824 F4): for each store either side
@@ -901,7 +946,10 @@ pub(super) fn indexes_settled_between(
     let mut out = BTreeMap::new();
     for what in sources_in(&touched) {
         if let Generated::Memory(store) = what {
-            let (index, text) = memory_index(root, tree, &store, &base, ours, theirs);
+            // A removed store's index is left as the person settled it.
+            let (index, Some(text)) = memory_index(root, tree, &store, &base, ours, theirs) else {
+                continue;
+            };
             if blob(root, tree, &index).as_deref() != Some(text.as_str()) {
                 out.insert(index, text);
             }

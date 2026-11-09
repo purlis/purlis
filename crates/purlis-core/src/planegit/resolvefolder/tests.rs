@@ -52,7 +52,7 @@ fn a_conflict_is_settled_in_a_resolve_folder_and_the_root_never_stops() {
 
     assert_eq!(cut(&two.mine, "release"), Ok(vec!["shared.md".to_owned()]));
 
-    let folder = path(&two.mine);
+    let folder = folder(&two.mine);
     root_is_as_it_was(&two, &before);
     // The folder holds the merge: the remote's file in, and the person's conflict marked, with
     // git's own unmerged sides in its index.
@@ -111,7 +111,7 @@ fn a_conflict_is_settled_in_a_resolve_folder_and_the_root_never_stops() {
         "Bring release into this machine's saves"
     );
     assert!(!folder.exists());
-    assert!(held(&two.mine).is_none());
+    assert!(resolving(&two.mine).is_none());
     assert!(
         crate::testgit::run(&two.mine, &["rev-parse", "--verify", "-q", BRANCH])
             .out
@@ -125,11 +125,11 @@ fn a_quit_mid_resolve_leaves_the_root_untouched_and_the_folder_is_found_again() 
     let two = conflicting();
     let before = two.head();
     cut(&two.mine, "release").unwrap();
-    write(&path(&two.mine), "shared.md", "one, both\ntwo\nthree\n");
+    write(&folder(&two.mine), "shared.md", "one, both\ntwo\nthree\n");
 
     // A quit: nothing in this process is kept, and what is on disk is all the next start reads.
     root_is_as_it_was(&two, &before);
-    let found = held(&two.mine).expect("the resolve is found again");
+    let found = resolving(&two.mine).expect("the resolve is found again");
     assert_eq!(found.conflicted, vec!["shared.md".to_owned()]);
     assert_eq!(found.ours, before);
 
@@ -146,17 +146,17 @@ fn a_folder_left_by_a_cut_a_quit_stopped_is_removed_by_the_next_resolve() {
     cut(&two.mine, "release").unwrap();
     // The record never written: the quit came before the folder was ready.
     std::fs::remove_file(two.mine.join(".git").join(RECORD)).unwrap();
-    assert!(held(&two.mine).is_none());
+    assert!(resolving(&two.mine).is_none());
 
     assert_eq!(cut(&two.mine, "release"), Ok(vec!["shared.md".to_owned()]));
-    assert!(held(&two.mine).is_some());
+    assert!(resolving(&two.mine).is_some());
 }
 
 #[test]
 fn a_chat_writing_at_the_root_during_a_resolve_is_kept_and_a_clash_is_named() {
     let two = conflicting();
     cut(&two.mine, "release").unwrap();
-    write(&path(&two.mine), "shared.md", "one, both\ntwo\nthree\n");
+    write(&folder(&two.mine), "shared.md", "one, both\ntwo\nthree\n");
     // A chat writes at the root meanwhile: a new file, and a file the merge changes.
     write(&two.mine, "chat.md", "a chat's words\n");
     write(&two.mine, "theirs.md", "a chat wrote here first\n");
@@ -168,7 +168,7 @@ fn a_chat_writing_at_the_root_during_a_resolve_is_kept_and_a_clash_is_named() {
         "{refused:?}"
     );
     assert_eq!(read(&two.mine, "theirs.md"), "a chat wrote here first\n");
-    assert!(held(&two.mine).is_some(), "the folder is kept");
+    assert!(resolving(&two.mine).is_some(), "the folder is kept");
 
     // The chat's clash undone: Continue goes on, and the chat's own file stays as it wrote it.
     std::fs::remove_file(two.mine.join("theirs.md")).unwrap();
@@ -184,7 +184,7 @@ fn a_chat_writing_at_the_root_during_a_resolve_is_kept_and_a_clash_is_named() {
 fn a_save_made_at_the_root_during_a_resolve_is_carried_onto_the_merge() {
     let two = conflicting();
     cut(&two.mine, "release").unwrap();
-    write(&path(&two.mine), "shared.md", "one, both\ntwo\nthree\n");
+    write(&folder(&two.mine), "shared.md", "one, both\ntwo\nthree\n");
     write(&two.mine, "later.md", "saved while resolving\n");
     commit(&two.mine, "later");
 
@@ -207,13 +207,13 @@ fn abort_removes_the_folder_and_changes_nothing_at_the_root() {
     let two = conflicting();
     let before = two.head();
     cut(&two.mine, "release").unwrap();
-    write(&path(&two.mine), "shared.md", "half settled\n");
+    write(&folder(&two.mine), "shared.md", "half settled\n");
 
     assert_eq!(abort(&two.mine), Settled::Aborted);
 
     root_is_as_it_was(&two, &before);
-    assert!(!path(&two.mine).exists());
-    assert!(held(&two.mine).is_none());
+    assert!(!folder(&two.mine).exists());
+    assert!(resolving(&two.mine).is_none());
     assert_eq!(run(&two.mine, &["status", "--porcelain"]), "");
     assert!(matches!(abort(&two.mine), Settled::Refused(_)));
 }
@@ -223,7 +223,7 @@ fn a_file_settled_outside_the_conflict_is_refused_and_nothing_moves() {
     let two = conflicting();
     let before = two.head();
     cut(&two.mine, "release").unwrap();
-    let folder = path(&two.mine);
+    let folder = folder(&two.mine);
     write(&folder, "shared.md", "one, both\ntwo\nthree\n");
     write(&folder, "other.md", "changed in the folder\n");
     run(&folder, &["add", "other.md"]);
@@ -245,7 +245,7 @@ fn a_binary_conflict_is_settled_by_hand_in_the_folder() {
     write(&two.theirs, "blob.bin", "theirs\0");
     two.land_theirs("theirs");
     cut(&two.mine, "release").unwrap();
-    let folder = path(&two.mine);
+    let folder = folder(&two.mine);
     assert_eq!(
         conflicts(&two.mine).unwrap().by_hand,
         vec!["blob.bin".to_owned()]
@@ -268,7 +268,7 @@ fn a_binary_conflict_is_settled_by_hand_in_the_folder() {
 fn skip_drops_this_machines_side_where_what_is_settled_brings_nothing() {
     let two = conflicting();
     cut(&two.mine, "release").unwrap();
-    let folder = path(&two.mine);
+    let folder = folder(&two.mine);
     write(&folder, "shared.md", &SHARED.replace("one", "one, theirs"));
     std::fs::remove_file(folder.join("mine.md")).unwrap();
     run(&folder, &["rm", "-q", "--cached", "mine.md"]);
@@ -301,7 +301,7 @@ fn resolve_replays_a_push_mode_planes_commits_with_no_rebase_and_moves_once() {
         "mine\ntheirs"
     );
     assert_eq!(read(&two.mine, "unsaved.md"), "a chat's words\n");
-    assert!(!path(&two.mine).exists());
+    assert!(!folder(&two.mine).exists());
 }
 
 #[test]
@@ -314,13 +314,13 @@ fn resolve_cuts_a_folder_for_a_conflict_and_a_second_press_finds_the_same_one() 
         Settled::Stopped(vec!["shared.md".to_owned()])
     );
     root_is_as_it_was(&two, &before);
-    write(&path(&two.mine), "shared.md", "settled already\n");
+    write(&folder(&two.mine), "shared.md", "settled already\n");
 
     assert_eq!(
         start_fetched(&two.mine, &mut said),
         Settled::Stopped(vec!["shared.md".to_owned()])
     );
-    assert_eq!(read(&path(&two.mine), "shared.md"), "settled already\n");
+    assert_eq!(read(&folder(&two.mine), "shared.md"), "settled already\n");
     let standing = crate::planegit::standing(&two.mine);
     assert_eq!(standing.stopped_by, Some(crate::planegit::RESOLVING));
     assert_eq!(standing.conflicts, vec!["shared.md".to_owned()]);
@@ -340,7 +340,7 @@ fn resolve_in_a_request_mode_cuts_a_folder_and_brings_in_by_itself_what_does_not
         start_fetched(&two.mine, &mut said),
         Settled::Stopped(vec!["shared.md".to_owned()])
     );
-    write(&path(&two.mine), "shared.md", "one, both\ntwo\nthree\n");
+    write(&folder(&two.mine), "shared.md", "one, both\ntwo\nthree\n");
     assert_eq!(
         carry_on(&two.mine, &shown(&["shared.md"]), &[], &mut said),
         Settled::Replayed
@@ -384,7 +384,7 @@ fn a_charter_toml_key_conflict_is_settled_in_the_resolve_folder_with_no_marker()
         Ok(vec!["charter.toml".to_owned()])
     );
 
-    let folder = path(&two.mine);
+    let folder = folder(&two.mine);
     let written = read(&folder, "charter.toml");
     assert!(
         !written.contains("<<<<<<<") && !written.contains(">>>>>>>"),
@@ -404,8 +404,8 @@ fn a_charter_toml_key_conflict_is_settled_in_the_resolve_folder_with_no_marker()
         })
     );
     assert_eq!(
-        held(&two.mine).unwrap().keys,
-        vec![HeldKey {
+        resolving(&two.mine).unwrap().keys,
+        vec![ResolvingKey {
             file: "charter.toml".into(),
             key: "sandbox.mode".into(),
             ours: Some("\"workspace\"".into()),
@@ -435,7 +435,7 @@ fn a_charter_toml_key_conflict_is_settled_in_the_resolve_folder_with_no_marker()
     let theirs = Chosen {
         file: "charter.toml".into(),
         key: "sandbox.mode".into(),
-        theirs: true,
+        side: Side::Theirs,
     };
     assert_eq!(
         carry_on(&two.mine, &[], &[theirs], &mut said),
@@ -461,7 +461,7 @@ fn a_resolve_folder_whose_gitfile_is_repointed_is_refused_and_the_root_is_untouc
     let two = conflicting();
     let before = two.head();
     cut(&two.mine, "release").unwrap();
-    let folder = path(&two.mine);
+    let folder = folder(&two.mine);
     write(&folder, "shared.md", "one, both\ntwo\nthree\n");
     let root_git = two.mine.join(".git");
     std::fs::write(
@@ -471,7 +471,7 @@ fn a_resolve_folder_whose_gitfile_is_repointed_is_refused_and_the_root_is_untouc
     .unwrap();
     let index = std::fs::read(root_git.join("index")).unwrap();
 
-    assert!(held(&two.mine).is_none());
+    assert!(resolving(&two.mine).is_none());
     // Still shown as open, so the window offers Abort, with nothing read from the folder.
     assert_eq!(conflicts(&two.mine), Some(Conflicts::default()));
     for refused in [

@@ -206,6 +206,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`skills.local/` — the project's local skills](#skillslocal--the-projects-local-skills)
   - [`skills.lock` — the project's installed skills](#skillslock--the-projects-installed-skills)
   - [`[[skill_sources]]` — the sources a project browses](#skill_sources--the-sources-a-project-browses)
+  - [`[skill_policy]` — the org's controls over skill sources](#skill_policy--the-orgs-controls-over-skill-sources)
   - [`skills.local.lock` — the installs at local levels](#skillslocallock--the-installs-at-local-levels)
   - [`$TMPDIR/purlis-skill-source-<random>/` — a fetched skill source](#tmpdirpurlis-skill-source-random--a-fetched-skill-source)
   - [`workspaces/<ws>/skills/` and `personas/<name>/skills/` — workspace and persona skills](#workspaceswsskills-and-personasnameskills--workspace-and-persona-skills)
@@ -1257,8 +1258,6 @@ key refuses.
   workspaces/*/pieces/*.jsonl merge=union
   workspaces/*/changes/log/*.jsonl merge=union
   workspaces/*/work/*.jsonl merge=union
-  personas/*/memory/MEMORY.md merge=union
-  workspaces/*/memory/MEMORY.md merge=union
   workspaces/*/todos/MEMORY.md merge=union
   workspaces/*/sessions/index.md merge=union
   sessions/index.md merge=union
@@ -1269,9 +1268,15 @@ key refuses.
   write (a newer build's), and commits the file with the rest of the save, so the plane's other
   machines take it from the target. A plane with no block gets one from `reinit`, which, like
   `init`, writes exactly this build's rules. A chat's sandbox may hold the file, and the window's next save then takes it.
-  A memory store's `MEMORY.md` keeps its rule only for a plain rebase, which replays one commit
-  at a time and rebuilds nothing (a save in `push` mode): every merge purlis makes rebuilds the
-  index instead, and never reads git's union of it (#5824 F4).
+  A memory store's `MEMORY.md` has no rule (#5864): every merge purlis makes rebuilds the
+  index instead, and never reads git's union of it (#5824 F4), and so does a save in `push`
+  mode, whose replay merges each of its commits as a merge does (`planegit/replay.rs`). An
+  older build still writes the two memory rules: its whole save puts them back in the block
+  and commits them, and this build's saves then keep them, as they keep any rule this build
+  does not write, though nothing of this build reads them. Where the older build's save does
+  not write the block (a chat's sandbox holds `.gitattributes`), that build has no union rule
+  for a memory index, so two machines appending to one `MEMORY.md` stop its push-mode save on
+  a conflict cleanly: nothing is lost, and the person settles it.
 
   In a request mode (`pr`, `pr-merge`), a target that moved under an open request is brought
   in by one merge commit, by a save and by the app's look, where the request needs it: git's
@@ -1482,9 +1487,13 @@ outside the project and removes it when the flow ends, so it adds none of them (
   geometry token `radius.control` (operator ruling 2026-10-25, #3177, #3113), then
   `accent.wash-hover`, the chosen title-bar chip under the pointer (#3345), and
   `needs-you.count` and `needs-you.count-text`, the hot count on an activity bar (#3098), then
-  `border.input`, the edge of a box a value is typed or picked in (#4475). A theme folder
+  `border.input`, the edge of a box a value is typed or picked in (#4475), then
+  `terminal.faint`, the terminal's faint (SGR 2) text in its own colour (#3768). A theme folder
   written before them draws as it did: each follows the token that drew its part before
-  (`crates/purlis-core/docs/themes.md`, "Tokens added after themes existed").
+  (`crates/purlis-core/docs/themes.md`, "Tokens added after themes existed"), except
+  `terminal.faint`, which was its words at half opacity, no colour a token can give: one that
+  names its terminal's words or ground and leaves it out draws them faded toward that ground,
+  held at 4.5:1.
 
 ### `skills/` — the project's skills
 
@@ -1703,6 +1712,35 @@ of that name at that level replaces it.
 | `vault` | string | optional, with `key` | The vault a private source signs in with. Read from `charter.local.toml` only. | experimental | ADR 0100 §5 |
 | `key` | string | optional, with `vault` | The entry in that vault holding the token. Never the token. | experimental | ADR 0100 §5 |
 | `user` | string | optional, default `x-access-token` | The user name sent beside the token, for a forge that wants one. | experimental | ADR 0100 §5 |
+
+### `[skill_policy]` — the org's controls over skill sources
+
+- **Format:** one TOML table in `charter.toml`, keys below and no other.
+- **Status:** **purlis only** (SK-11, #2774; ADR 0100 §6, amended 2026-11-09), **experimental**
+  while the `skill-studio` flag is on.
+- **Tier:** Plane — in `charter.toml`, committed. It is never read from `charter.local.toml`: a
+  table there refuses every install and update until it is taken out, so one machine cannot
+  loosen what the team set.
+- **Written by:** a person, by hand or through a reviewed change to `charter.toml`. purlis never
+  writes it.
+- **Read by:** `purlis_core::skills::source::policy::of`, with a real TOML parser and these keys
+  alone, failing closed: a table that cannot be read refuses every install and update, and says
+  so in one sentence. **A project whose `charter.toml` holds the table is an org's**: its
+  installs and updates are held to it at the review (so the review says why), and again at the
+  install or update itself; and every install, update and removal of a skill installed from a
+  source is recorded in this machine's event log as `skill.install`, `skill.update` or
+  `skill.remove` (level, skills, source, commit; never a folder of this machine or a URL's
+  query) before it is made. Only the window writes that log, so on such a project
+  `purlis skill install | update | rm` of an installed skill is refused and names the Skill
+  studio.
+- **Git:** as `charter.toml`.
+
+| Key | Type | Required / default | Meaning | Status | Source |
+|---|---|---|---|---|---|
+| `allow` | array of tables | optional; absent = every source not blocked | The sources and skills that may be installed. Each is `{ source = "<url>" }` or `{ extension = "<id>" }`, with `skill = "<name>"` for that one skill alone. A URL matches without a trailing `/` or `.git`, and with any case in its scheme and host. Given, anything it does not cover is refused, a skill brought along included. | experimental | ADR 0100 §6 |
+| `block` | array of tables | optional, default none | The same shape. A block wins over an allow. | experimental | ADR 0100 §6 |
+| `min_age_days` | integer | optional, default `7` | How old a commit must be, by its committer time, to be installed or updated to. `0` turns the age off. A source that cannot say when (an extension's revision) is refused while it is on. | experimental | ADR 0100 §6 |
+| `min_age_exempt` | array of strings | optional, default none | Full commits (or an extension's revisions) installed younger all the same: the one way past the age, as a reviewed change of the team's file. | experimental | ADR 0100 §6 |
 
 ### `skills.local.lock` — the installs at local levels
 
@@ -8579,6 +8617,7 @@ refuses a `<data>` under a project or inside any git work tree.
 | `<data>/inbox/<project key>.json` | Machine, device-bound, transient | Written since #1693. The Inbox's updates of the project: one JSON array, rewritten whole under a lock on its folder, `0600`, each kept a day and at most 200; one this build can't read is written over. Written by the window only, never on a runner; left out of a fresh runner's proof all the same (#5029) | the app (`purlis_core::inboxupdates`) |
 | `<data>/inbox/<project key>.snoozed.json` | Machine, device-bound | Written since #5647 (ADR 0119). **Snooze all**'s record for the project: one JSON object from a snoozed chat's session number to the keys of the asks it held when it was snoozed, at most 200 chats and 100 asks each, rewritten whole under the same lock as the updates beside it, `0600`. A chat is let go of as soon as it holds an ask its record has not, and by Show them now or Undo; nothing lets go of it on a timer. Never written into the plane and never sent; one this build can't read reads as nothing snoozed and is written over. Written by the window only | the app (`purlis_core::inboxupdates`) |
 | `<data>/inbox/<project key>.baseline.json` | Machine, device-bound | Written since #5648 (ADR 0119). **The first-open baseline** for the project: one JSON object, `at` (when the project first opened on this machine, seconds since 1970), `fresh` (whether that open counted what was already there as seen: false where this machine had any record of the project already: its updates file (which stays once its updates age out), its snooze record, anything of its sandbox told, or what the window's layout file keeps of it (an arrangement, a view's own or a dismissed Notice, under `projects` or `dismissed`), so updating purlis clears no unread line and sets no standing finding aside) and `findings` (the doctor findings already there, by the causes the window's doctor line dismisses them by, at most 200, set once by the window's first doctor report after a fresh open; `null` until then; each is dismissed in the layout file until it changes). Made once and never again for the project; an update that happened before `at` is listed From the project, read. A fresh open also records the project's hosts and Internet access presets as told in this machine's sandbox record (`app/sandbox.json`'s file, above), never its dispatch grants or browser sites, which recording would put in force. Rewritten whole under the same lock as the updates beside it, `0600`. Never written into the plane and never sent; one this build can't read reads as no record. Written by the window only | the app (`purlis_core::inboxupdates`) |
+| `<data>/inbox/<project key>.seen.json` | Machine, device-bound | Written since #6002 (ADR 0121 decisions 10 and 11). **What the person has seen** of the project: one JSON object from a key the window makes (`ask:<session>:<ask>`, `notice:<cause>`, `update:<key>`) to when it was first seen (seconds since 1970). One the window lists that is not in it is **New**, drawn with an accent bar and a "new" pip on its view's icon. Seen, not received: a key is added once its row has been visible in an open view for about a second, or its chat has been on screen in a focused window; an ask no longer standing is let go of, so the same ask asked again is New. At most 1000 keys, what was seen longest ago going first. Rewritten whole under the same lock as the updates beside it, `0600`, only when it changes. Never written into the plane and never sent; one this build can't read reads as nothing seen and is written over. Written by the window only | the app (`purlis_core::inboxupdates`) |
 | `<runtime or temp>/purlis-serve/<16 hex>/<port>.sock` | Machine, device-bound, transient | Written since #2019. **A chat's server's socket**: a sandboxed chat allowed to serve on a port listens here, in a folder of its own named by 16 hex of its id's SHA-256, inside `purlis-serve/` in `XDG_RUNTIME_DIR`, or this process's temp folder; both folders `0700` and this user's, or nothing is served. purlis's front door on the port carries each request to it. Never committed, never sent, not backed up. Rebuildable: a server makes its socket as it starts | `purlis_core::sandbox::door`, `purlis listen` |
 | `<data>/docker-settings/run-<random>/config.json` | Machine, device-bound, transient | Written since #2752 (the person's ruling of 2026-10-20). **A checked copy of Docker's settings for one run of `docker`**: each command purlis runs for a Docker pool (`docker run`, `inspect`, `pull`, `exec` for a runner's link) gets one, made fresh from `$DOCKER_CONFIG/config.json` or `~/.docker/config.json` in a folder of its own, `0600` in a `0700` folder under `<data>/docker-settings/` (`0700`), named by `DOCKER_CONFIG`, and removed once the run has ended. It holds `auths` as Docker keeps it, and `credsStore` and `credHelpers` only where the helper they name is in one of Docker's own folders (where its installers put `docker`), and nothing else: no CLI plugin folder or hook, no context, no host. The run's engine is pinned beside it (`DOCKER_HOST`: the window's own, else `/var/run/docker.sock`, else the installer's socket in the home, each only where, as it resolves, it is in a folder only root writes or one no chat writes), `DOCKER_CONTEXT` is not handed on and `docker context` is not followed, and its `PATH` is Docker's own folders and the system's. Each run holds `run.lock` in its folder for as long as it goes; a `run-*` folder not changed for a day whose lock no run holds was left by a run that ended outright, and is swept as a run is prepared and as the app starts (#2893). Never committed, never sent, not backed up. A chat's sandbox denies reading and writing all of `<data>/docker-settings/`. Rebuildable: derived from Docker's own settings at each run | `purlis_core::dockerpool::settings`, for each run of `docker` |
 | `<data>/browsers/<program>/` | Machine, device-bound, transient | Written since #2012 (spec #2008). A running browser's own data folder, one per browser, named by its id in the session host, `0700`, under `<data>/browsers/`, which is `0700` and, since #2021, carries macOS's backup exclusion; while the browser runs, what it holds is readable by any process of this user: the engine's profile (with password saving, autofill and crash reports off in its preferences) and its own home; its engine's log is beside it (below). **Fresh:** the host removes it once the browser has ended, and its engine has ended before that, and a browser never starts from another's; one a host that ended outright left behind is not swept yet (#2204). Its engine is installed in `<data>/engines/chrome-for-testing/` (below). Never committed, never sent, not backed up. A chat's sandbox denies reading and writing all of `<data>/browsers/` (ADR 0067 §5, class 3); a chat started without the sandbox is not held to that | `purlisd` makes and removes it; the engine writes inside it |

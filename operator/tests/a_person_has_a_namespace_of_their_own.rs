@@ -526,3 +526,27 @@ fn no_runner_namespace_is_made_while_the_policys_binding_settles() {
         RunnerNamespace::Theirs(Box::new(made))
     );
 }
+
+/// Every pod of a runner namespace goes out only where a NetworkPolicy lets it: upstream's policy
+/// for its template, and the way to the mint port. One the operator makes with the namespace, and
+/// controlled by it, so this holds whichever of upstream's policies are there at the moment.
+#[test]
+fn a_runner_namespace_lets_its_pods_out_only_where_a_network_policy_lets_them() {
+    let runner = made_at("2026-10-29T10:00:00Z");
+    let owners = upstream::runner_owner(&runner);
+    assert_eq!(owners.len(), 1, "{runner:?}");
+    let policy = person::egress_denied("purlis-runners-b5fc85e55755f9e0", owners.clone());
+    assert_eq!(
+        policy.metadata.name.as_deref(),
+        Some(person::DENY_EGRESS_POLICY)
+    );
+    assert_eq!(
+        policy.metadata.namespace.as_deref(),
+        Some("purlis-runners-b5fc85e55755f9e0")
+    );
+    assert_eq!(policy.metadata.owner_references, Some(owners));
+    assert_eq!(
+        serde_json::to_value(policy.spec.expect("its spec")).expect("JSON"),
+        json!({ "podSelector": {}, "policyTypes": ["Egress"] })
+    );
+}

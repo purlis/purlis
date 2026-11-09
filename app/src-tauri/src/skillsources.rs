@@ -22,7 +22,7 @@ use purlis_core::skills::source::{
 };
 use purlis_core::skills::tree;
 
-use crate::skillchange::{SkillChanged, SkillGrant, SkillLevel, flag_on, heard};
+use crate::skillchange::{SkillChanged, SkillGrant, SkillLevel, flag_on, heard, heard_audited};
 
 /// A source's text as the window shows it: every invisible character escaped.
 fn esc(text: &str) -> String {
@@ -1204,7 +1204,7 @@ pub(crate) async fn skill_install(
         flag_on()?;
         let accepted = Accepted::try_from(&reviewed)?;
         let grant: Option<purlis_core::skills::Grant> = grant.map(Into::into);
-        heard(held.root(), |cx| {
+        heard_audited(&held, |cx| {
             source::install_named(
                 cx,
                 &source.core(),
@@ -1332,7 +1332,7 @@ pub(crate) async fn skill_update(
         flag_on()?;
         let accepted = Accepted::try_from(&reviewed)?;
         let grant: Option<purlis_core::skills::Grant> = grant.map(Into::into);
-        heard(held.root(), |cx| {
+        heard_audited(&held, |cx| {
             source::update(cx, &(&level).into(), &name, &accepted, grant.as_ref())
         })
     })

@@ -582,6 +582,7 @@ fn vault_with_a_seed() -> (tempfile::TempDir, brokered::Asker) {
         folder: None,
         confines: None,
         harness: None,
+        ends_seen: None,
     };
     (dir, asker)
 }

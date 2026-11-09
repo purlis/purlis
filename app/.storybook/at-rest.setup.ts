@@ -28,17 +28,19 @@
  * is an input too, and React Aria takes it as the modality's. Moved after the modality is set, every
  * story would start from a pointer's, and a focused control draw no ring.
  *
- * **And the engine's press, for a story** (`pressWithTheEnginesPointer` in
- * `src/stories.testkit.ts`): set here, as importing `vitest/browser` in a story's file can break
+ * **And the engine's press and keyboard, for a story** (`pressWithTheEnginesPointer` and
+ * `keysOnTheEnginesKeyboard` in `src/stories.testkit.ts`): set here, as importing `vitest/browser` in a story's file can break
  * jest-dom's matcher types across the program (#4098).
  */
 import { setInteractionModality } from "react-aria";
 import { beforeEach } from "vitest";
 import { userEvent } from "vitest/browser";
-import { ENGINE_PRESS_GLOBAL } from "../src/stories.testkit";
+import { ENGINE_KEYS_GLOBAL, ENGINE_PRESS_GLOBAL } from "../src/stories.testkit";
 
 (globalThis as Record<string, unknown>)[ENGINE_PRESS_GLOBAL] = (element: Element) =>
   userEvent.click(element);
+(globalThis as Record<string, unknown>)[ENGINE_KEYS_GLOBAL] = (keys: string) =>
+  userEvent.keyboard(keys);
 
 beforeEach(async () => {
   const root = document.documentElement;

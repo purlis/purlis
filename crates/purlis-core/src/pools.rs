@@ -2366,6 +2366,9 @@ pub fn add_cluster(
     let context = taken_from
         .context_kept()
         .map_err(|why| Refused::Other(why.to_string()))?;
+    // Each plugin by the path it is found at now, so no later run looks it up on `PATH`.
+    let context = crate::clusterpool::plugins_pinned(&context, &taken_from)
+        .map_err(|why| Refused::Other(why.to_string()))?;
     let held = programs_run(
         &taken_from,
         &context,

@@ -1770,3 +1770,33 @@ fn a_workspaces_settings_on_a_read_only_project_are_not_written() {
         assert_eq!(text(&ws, "workspace.json"), before);
     }
 }
+
+#[test]
+fn a_persona_host_added_from_settings_is_written_one_per_line_in_order() {
+    let now = "[sandbox.personas.steward]\nhosts = [\"zeta.example\"]\n";
+    let after = edited(
+        now,
+        &[set(
+            &["sandbox", "personas", "steward", "hosts"],
+            Value::List(vec!["zeta.example".into(), "alpha.example".into()]),
+        )],
+    )
+    .unwrap();
+    assert_eq!(
+        after,
+        "[sandbox.personas.steward]\nhosts = [\n    \"alpha.example\",\n    \"zeta.example\",\n]\n"
+    );
+}
+
+#[test]
+fn a_list_no_set_names_is_written_as_the_form_gave_it() {
+    let after = edited(
+        "",
+        &[set(
+            &["sandbox", "extra"],
+            Value::List(vec!["b".into(), "a".into()]),
+        )],
+    )
+    .unwrap();
+    assert_eq!(after, "[sandbox]\nextra = [\"b\", \"a\"]\n");
+}

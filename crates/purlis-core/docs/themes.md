@@ -111,6 +111,25 @@ free-number options.
 ]
 ```
 
+**An option's value may carry component parts** (#2946): a `parts` object beside its `tokens`,
+in a toggle's `on` and in a choice's value, with the same keys, values and bounds as the theme's
+own [`parts`](#component-parts). They are drawn over the theme's parts in every appearance, key by
+key, in the options' order, so a later option's key wins over an earlier one's and over the
+theme's:
+
+```json
+"options": [
+  { "id": "pills", "kind": "toggle", "label": "Round buttons", "default": false,
+    "on": { "parts": { "button.root.corner-radius": "full" } } }
+]
+```
+
+A key purlis does not have is said and left out, and a value outside its bound refuses the theme,
+each naming the option. A part's size is held in both densities in every combination of option
+values that sets parts, and one that does not fit is refused with the values that make it
+(`with short on, roomy on: …`). The floors and the consent rules hold in every combination the
+check measures, as they hold for the theme's own parts.
+
 An option nothing chose draws its default. The person chooses values in Settings › Theme, and a
 project or a LIVE workspace may commit them with its default theme, by each option's id:
 `[theme] options = { accent = "teal" }` in `charter.toml`, `settings.theme.options` in a
@@ -272,7 +291,10 @@ popover's filter row, list and footer. A theme sets parts in a top-level `parts`
 
 `purlis theme parts` prints every family, part, variant, state and property there is, with each
 bound, as JSON: what the purlis-theme skill, the gallery and an editor read. The schema completes each
-key. A theme that extends another starts from its parent's parts and layers its own over them,
+key. Settings › Theme's Parts row lists the manifest itself: the families the chosen theme sets,
+and under Show each part every family and part with its states and the version it came in, each
+key the theme draws under its part with its value and what sets it: the theme, a theme it extends
+or one of its options. Nothing there is a list of its own. A theme that extends another starts from its parent's parts and layers its own over them,
 key by key. A property typed in its CSS spelling (`border-color`) is told the name it means.
 
 **The manifest's version is a release's.** Its `version` is the last version a release shipped,
@@ -513,12 +535,21 @@ names:
 - Allow is distinguishable from Keep blocked (`secondary`) by its edge, and as plain as Keep
   blocked: in every state it is drawn on Keep blocked's fill;
 - no part draws Allow or danger nearer the primary than the family's defaults draw it in the
-  same theme, measured on what a person reads as the look as it shows on each surface;
+  same theme, measured on what a person reads as the look as it shows on each surface; and Allow
+  or danger in each look it shows (at rest, in each state but disabled and in each set of states
+  that hold at once) is held against the primary in each other look it shows, since a person
+  sees one hovered or focused control beside others at rest (#2994): no pair nearer than the
+  family's defaults bring the two in any pair of their looks. A pair that breaks it names both looks
+  (`Allow never takes the primary look: Allow under the pointer beside the primary at rest`), and
+  the primary falls back in its own look there when Allow's default is not enough;
 - danger's words stay apart from the accent and from the primary's words.
 
 **A theme's tokens alone keep Allow apart from the primary** (#2948): the button family's
-defaults, drawn from the theme's tokens, are measured the same way, at rest and in each state, as
-written and in each of the theme's own tints. A theme whose tokens bring the two together is
+defaults, drawn from the theme's tokens, are measured the same way, Allow in each look it shows
+against the primary in each look it shows (#2994), as written and in each of the theme's own
+tints. A toggle's pressed look is the plain and the ghost button's alone (#3255): the primary, an
+Allow and danger are never pressed as one, so none of them shares it. A theme whose tokens bring
+the two together is
 drawn with purlis's own fill for the primary, and Allow's own fill only when that is not enough,
 under the consent floors' Notice.
 
@@ -784,12 +815,18 @@ its `ratio`, and `under` when the back is a wash laid over another token, and `b
 that token is a wash laid over another in turn; a pair the check only reports, which no
 consent floor, import tier or person's colour acts on, is one of these too: a meter's fills,
 `accent.base`, `state.waiting` and `text.muted`, on its track, `border.subtle`, over
-`surface.base` and over `surface.raised`, at 3:1), `ansi` (a terminal colour too close to the
+`surface.base` and over `surface.raised`, at 3:1, and a text box's edge, `border.input`, on
+`surface.base`, `surface.raised` and `surface.overlay`, at 3:1, and each syntax role on the
+editor's own ground, `terminal.background`, at 4.5:1 as words, where the check holds it at a
+mark's 3:1; a pair under both floors is said once, at 3:1), `ansi` (a terminal colour too close to the
 terminal's background: `token`, `ratio`, `floor`) or `selected-not-apart` (the selected row
 drawn exactly as `other`), `card-not-apart` (a side view's card row whose fill, `card`, steps
 only `ratio` from the side panel's, `ground`, under the `floor` of 1.05, with no edge that
-clears a hairline's 1.2 there, in a theme whose parts, its own or inherited, choose a card
-row's look or a side panel's fill; the check only reports it and redraws nothing),
+clears a hairline's 1.2 there, as the theme's parts, its own or inherited, draw the two, or
+as the families do by default for a palette alone, a card row in `surface.raised` on a side
+panel in `surface.base`, where the palette gives either ground, or the frame under them, a
+colour of its own: Purlis Classic's grounds without its card row are the families' default, not
+the theme's choice; the check only reports it and redraws nothing),
 `notice-way-not-apart` (a notice card's secondary way whose fill, at rest or `pointed` at, is
 only `distance` from the `variant` card's `ground` in OKLab, under the `floor` of 0.02: the
 fill a theme's button parts give it, or else the card's own mix of `control.base` toward
@@ -1006,7 +1043,22 @@ textarea, a select and a combobox, where `border.control` stays the edge of a pl
 whose fill is the ground it stands on, as Purlis draws `surface.sunken`, is told apart only by its
 edge, which WCAG 2.2 holds at 3:1 (1.4.11): Purlis draws it in its faint tier, and high
 contrast's in its control's edge. It follows `border.control` in `vocabulary::KIN`, so a theme
-that sets neither draws its boxes as it did.
+that sets neither draws its boxes as it did. The check reports a box's edge under 3:1 on the
+window, a panel or a dialog for every theme, and redraws nothing for it (#5979); Purlis Classic
+draws its own a step darker than its control edge in light, and lighter in dark, to clear it.
+
+Then `terminal.faint` (#3768): the terminal's faint (SGR 2) text drawn in its own colour. xterm
+draws it as the words at half opacity, under 4.5:1 on every light terminal (black at half on
+white is about 3.95:1), and its contrast floor adjusts no faint text in the terminal's own
+colour, so the window draws those cells in this token instead. Faint text a program colours
+itself keeps xterm's fade. The check holds it at 4.5:1 on `terminal.background`, like the
+words. The words at half opacity are no colour a token can give, so it follows no other token
+in `vocabulary::KIN`: a theme, an option or an import that names its terminal's words or its
+ground and not its faint text draws it as those words halfway to that ground, as xterm faded
+them, and back toward the words only as far as reading at 4.5:1 takes
+(`vocabulary::follow_faint`), never a parent's grey made for another ground. One that names
+neither keeps the faint text of the theme it extends. Purlis draws it in its `quiet` grey in dark, Purlis Classic as its words
+faded toward its ground, and every built-in appearance at 4.5:1 or more, high contrast at 7:1.
 
 Over Purlis, whose primary is filled and whose controls draw no edge, a theme keeps Purlis's
 values unless it names them. `radius.control` is Classic's `radius.md`, 4, where a theme names
@@ -1191,6 +1243,7 @@ Tuned after the table (#2589): a VS Code theme names a colour for nearly every r
 | `selection.text` | when the theme's `selection.background` is filled and the table left it: `editor.foreground`, `foreground` |
 | `text.muted` | the one of `editorLineNumber.foreground`, `disabledForeground` that reads most on `surface.base` |
 | `text.faint` | left out when it reads louder than `text.quiet` on `surface.base` |
+| `border.input` | when the table left it and it does not read at 3:1 on a box's grounds: toward `editor.foreground`, then `foreground` |
 
 Its `tokenColors` fill the syntax tokens. A rule's scope fills a token when it is one of the
 token's scopes or under one (`keyword.control` is `keyword`'s), the nearest scope winning and,
@@ -1321,6 +1374,7 @@ Tuned after the table (#2589), in this order. base16 makes some roles one colour
 | `terminal.ansi.bright-black` | toward `base04`, then `base05` |
 | `text.secondary` | toward `base05` |
 | `placeholder` | toward `base05` |
+| `border.input` | when the table left it and it does not read at 3:1 on a box's grounds: toward `base05` |
 | `danger.base` | toward `base05` |
 | `accent.base` | toward `base05` |
 | `focus.ring` | toward `base05` |
@@ -1481,6 +1535,7 @@ Tuned as a base16 scheme is, after the table (#2589):
 | `terminal.ansi.bright-black` | toward `base04`, then `base05` |
 | `text.secondary` | toward `base05` |
 | `placeholder` | toward `base05` |
+| `border.input` | when the table left it and it does not read at 3:1 on a box's grounds: toward `base05` |
 | `danger.base` | toward `base05` |
 | `accent.base` | toward `base05` |
 | `focus.ring` | toward `base05` |
@@ -1613,6 +1668,7 @@ Tuned after the table (#2589). The terminal's own colours (its background, its w
 | `selection.text` | when the theme's `selection.background` is filled and the table left it: `Foreground Color` |
 | `text.muted` | toward `Foreground Color` |
 | `syntax.comment` | toward `Foreground Color` |
+| `border.input` | when the table left it and it does not read at 3:1 on a box's grounds: toward `Foreground Color` |
 | `danger.base` | toward `Foreground Color` |
 | `accent.base` | toward `Foreground Color` |
 | `focus.ring` | toward `Foreground Color` |
@@ -1733,6 +1789,7 @@ Tuned as an iTerm2 preset is, after the table (#2589):
 | `selection.text` | when the theme's `selection.background` is filled and the table left it: `foreground` |
 | `text.muted` | toward `foreground` |
 | `syntax.comment` | toward `foreground` |
+| `border.input` | when the table left it and it does not read at 3:1 on a box's grounds: toward `foreground` |
 | `danger.base` | toward `foreground` |
 | `accent.base` | toward `foreground` |
 | `focus.ring` | toward `foreground` |

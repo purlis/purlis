@@ -23,6 +23,7 @@ import { RailIcon } from "./FileIcon";
 import {
   ActivityCount,
   ActivityDot,
+  ActivityNew,
   ActivityGroup,
   ActivityItem,
   type ActivityVariant,
@@ -174,6 +175,30 @@ export function ActivityBar({
 
 /** A count on a view's tab (B-8, R119, R120): the activity family's own (`ui/activity`). */
 export { ActivityCount, ActivityDot };
+
+/**
+ * **A "new" pip beside each view's badge** (#6002, ADR 0121 decision 10): `fresh` is how many
+ * rows of each view are New. A view with none keeps its badge as it is; one with some has the
+ * pip after it, and "N new" said after the badge's own sentence.
+ */
+export function withNew(
+  badges: Partial<Record<ViewId, ReactNode>>,
+  fresh: Partial<Record<ViewId, number>>,
+): Partial<Record<ViewId, ReactNode>> {
+  const out = { ...badges };
+  for (const [view, count] of Object.entries(fresh) as [ViewId, number][]) {
+    if (count <= 0) continue;
+    const badge = badges[view];
+    const drawn = badge !== undefined && badge !== null && badge !== false;
+    out[view] = (
+      <>
+        {badge}
+        <ActivityNew said={`${drawn ? ", " : ""}${count} new`} />
+      </>
+    );
+  }
+  return out;
+}
 
 /**
  * Each of purlis's own views' mark, by what it IS. A `Record` over `OwnViewId`, so a view added

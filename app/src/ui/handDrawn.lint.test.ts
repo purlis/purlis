@@ -9,7 +9,6 @@
  */
 import { ESLint } from "eslint";
 import { describe, expect, it } from "vitest";
-import { LINTED_FAMILIES } from "../../eslint.ui-rules.js";
 
 const eslint = new ESLint({ cwd: process.cwd() });
 
@@ -59,23 +58,14 @@ describe("the window's lint on a screen (#3129)", () => {
   });
 
   it.each([
-    // The strip's own controls, by the tabs family's class (#3012).
+    `<button type="button" className="ui-settings-nav-item">Text</button>`,
+    `<button type="button" className="ui-settings-raw-file">charter.toml</button>`,
+    // A tab's close is the tabs family's `TabCloser` (#2930), and a list's row the list
+    // family's: neither class lets a raw button through any more.
     `<button type="button" className="ui-tabs-control closer">x</button>`,
-  ])("lets another family's control through by that family's class: %s", async (code) => {
-    expect(await broken(`export const X = () => ${code};`)).toEqual([]);
-  });
-
-  it("names, in each family's rawButtons, only that family's own classes (#3523)", async () => {
-    for (const family of LINTED_FAMILIES) {
-      const { rawButtons } = (await import(`./${family}/lint.js`)) as {
-        rawButtons?: { classes?: string[] };
-      };
-      // A family's own class is `ui-<family>-…`; the list's row is the list's `ui-row` (DS-12).
-      for (const name of rawButtons?.classes ?? [])
-        expect(name, family).toMatch(
-          family === "list" ? /^ui-(?:list-|row$)/ : new RegExp(`^ui-${family}-`),
-        );
-    }
+    `<button type="button" className="ui-row">x</button>`,
+  ])("refuses a raw button by a class that once let it through: %s", async (code) => {
+    expect(await broken(`export const X = () => ${code};`)).toContain("purlis/button-family");
   });
 
   it("lets the families' members through", async () => {

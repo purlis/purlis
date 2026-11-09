@@ -62,6 +62,7 @@ import {
   TextField as AriaTextField,
 } from "react-aria-components";
 import { submits } from "./submitKey";
+import { keptOnTheWayUp } from "../list/rowKeys";
 import { reveal } from "../reveal";
 import { Tooltip } from "../tooltip/Tooltip";
 import { useWindowLeft } from "../windowLeft";
@@ -755,7 +756,13 @@ function elementProps<E extends HTMLElement>(props: Common<E>, left: () => boole
     "aria-controls": props["aria-controls"],
     "aria-activedescendant": props["aria-activedescendant"],
     "aria-autocomplete": props["aria-autocomplete"],
-    onKeyDown: props.onKeyDown,
+    // **In a list's row, its keys are its own** (#3123, `ui/list/rowKeys.ts`): once its own
+    // handler has heard a key, the row and the list never act on Enter, Space, a letter, Home,
+    // End or Esc typed in it.
+    onKeyDown: (event: KeyboardEvent<E>) => {
+      props.onKeyDown?.(event);
+      keptOnTheWayUp(event);
+    },
     onKeyUp: props.onKeyUp,
     onFocus: props.onFocus,
     onBlur: (event: FocusEvent<E>) => {

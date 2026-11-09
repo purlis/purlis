@@ -131,7 +131,7 @@ describe("a link into Settings", () => {
 
     await fromTheDoctor();
 
-    await waitFor(() => expect(group("Saving")).toHaveAttribute("aria-current", "true"));
+    await waitFor(() => expect(group("Saving")).toHaveAttribute("aria-current", "page"));
     expect(level("Project")).toBeChecked();
     expect(screen.getByRole("region", { name: "Saving" })).toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "Doctor" })).not.toBeInTheDocument();
@@ -142,7 +142,7 @@ describe("a link into Settings", () => {
     render(<App />);
     await screen.findByRole("tab", { name: /plane/ });
     await fromTheDoctor();
-    await waitFor(() => expect(group("Saving")).toHaveAttribute("aria-current", "true"));
+    await waitFor(() => expect(group("Saving")).toHaveAttribute("aria-current", "page"));
     await userEvent.click(group("General"));
     // Another tab in front: the project's Saving tab.
     await palette("Saving…");
@@ -152,7 +152,7 @@ describe("a link into Settings", () => {
 
     await waitFor(() => expect(settingsTabs()[0]).toHaveAttribute("aria-selected", "true"));
     expect(level("Project")).toBeChecked();
-    expect(group("Saving")).toHaveAttribute("aria-current", "true");
+    expect(group("Saving")).toHaveAttribute("aria-current", "page");
     expect(settingsTabs()).toHaveLength(1);
   });
 
@@ -162,7 +162,7 @@ describe("a link into Settings", () => {
     await fromTheDoctor();
     await waitFor(() => expect(group("Saving")).toBeInTheDocument());
     await userEvent.click(
-      within(screen.getByRole("group", { name: "Edit as TOML" })).getByRole("button", {
+      within(screen.getByRole("navigation", { name: "Edit as TOML" })).getByRole("button", {
         name: "charter.toml",
       }),
     );
@@ -172,7 +172,7 @@ describe("a link into Settings", () => {
 
     await fromTheDoctor();
 
-    await waitFor(() => expect(group("Saving")).toHaveAttribute("aria-current", "true"));
+    await waitFor(() => expect(group("Saving")).toHaveAttribute("aria-current", "page"));
     expect(screen.getByRole("region", { name: "Saving" })).toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "charter.toml, as TOML" })).toBeNull();
   });
@@ -189,7 +189,7 @@ describe("a link into Settings", () => {
 
     await fromTheDoctor();
 
-    await waitFor(() => expect(group("Saving")).toHaveAttribute("aria-current", "true"));
+    await waitFor(() => expect(group("Saving")).toHaveAttribute("aria-current", "page"));
     expect(filterBox()).toHaveValue("");
   });
 
@@ -234,7 +234,7 @@ describe("a notice about this machine that names a setting", () => {
     await userEvent.click(within(machine).getByRole("button", { name: "Fix it in Settings" }));
 
     await waitFor(() => expect(level("You")).toBeChecked());
-    expect(group("Text")).toHaveAttribute("aria-current", "true");
+    expect(group("Text")).toHaveAttribute("aria-current", "page");
   });
 });
 
@@ -286,19 +286,19 @@ describe("each level", () => {
     await screen.findByRole("tab", { name: /plane/ });
     // Reached through a link and the level switcher, whatever Settings… opens at.
     await fromTheDoctor();
-    await waitFor(() => expect(group("Saving")).toHaveAttribute("aria-current", "true"));
+    await waitFor(() => expect(group("Saving")).toHaveAttribute("aria-current", "page"));
     await userEvent.click(level("You"));
-    await waitFor(() => expect(group("Text")).toHaveAttribute("aria-current", "true"));
+    await waitFor(() => expect(group("Text")).toHaveAttribute("aria-current", "page"));
     await userEvent.click(group("Editor"));
 
     await userEvent.click(level("Project"));
-    await waitFor(() => expect(group("Saving")).toHaveAttribute("aria-current", "true"));
+    await waitFor(() => expect(group("Saving")).toHaveAttribute("aria-current", "page"));
     await userEvent.click(group("Sandbox"));
     await userEvent.click(level("You"));
 
-    await waitFor(() => expect(group("Editor")).toHaveAttribute("aria-current", "true"));
+    await waitFor(() => expect(group("Editor")).toHaveAttribute("aria-current", "page"));
     await userEvent.click(level("Project"));
-    await waitFor(() => expect(group("Sandbox")).toHaveAttribute("aria-current", "true"));
+    await waitFor(() => expect(group("Sandbox")).toHaveAttribute("aria-current", "page"));
   });
 });
 
@@ -312,7 +312,7 @@ describe("the Saving view's notice about a request mode no forge serves (NO-7, #
 
     await userEvent.click(within(line).getByRole("button", { name: "Change the mode" }));
 
-    await waitFor(() => expect(group("Saving")).toHaveAttribute("aria-current", "true"));
+    await waitFor(() => expect(group("Saving")).toHaveAttribute("aria-current", "page"));
     expect(level("Project")).toBeChecked();
     await waitFor(() => expect(screen.getByLabelText("Mode")).toHaveFocus());
   });

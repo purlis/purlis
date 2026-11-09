@@ -183,6 +183,31 @@ async fn a_second_host_leaves_the_one_serving_alone() {
     assert!(connect(&place, Scope::LocalUi, &credential).await.is_ok());
 }
 
+/// A host whose lock file the system's temporary-file cleaning removed while it serves is still
+/// the one serving: a second host finds it answering on its socket and leaves it alone.
+#[tokio::test]
+async fn a_second_host_leaves_the_one_serving_alone_when_its_lock_file_is_gone() {
+    let dir = tempfile::tempdir().unwrap();
+    let place = place_in(dir.path());
+    let (_stop, _host) = hosting(&place, None).await;
+    let credential = Credential::read(&place.credentials, Scope::LocalUi).unwrap();
+    std::fs::remove_file(&place.lock).unwrap();
+
+    let second = serve(
+        &place,
+        None,
+        Hosting::new(ComposesNothing),
+        || panic!("a second host became ready"),
+        async {},
+    )
+    .await;
+    assert!(
+        matches!(second, Err(HostError::AlreadyServing { .. })),
+        "{second:?}"
+    );
+    assert!(connect(&place, Scope::LocalUi, &credential).await.is_ok());
+}
+
 /// #2114: the host of another config home, its socket named apart in the same folder, serves
 /// beside the one serving, each with its own lock and credentials.
 #[tokio::test]

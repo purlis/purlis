@@ -280,3 +280,36 @@ fn a_lifted_folder_reaches_the_floors_profile() {
         crate::sandbox::seatbelt::floor_profile(&[], &[], &own, &[], None).expect("a profile");
     assert!(profile.contains("(require-not (subpath \"/Users/a/.config/gh\"))"));
 }
+
+/// The Linux wrap judges the profile Seatbelt reads (#1065): a git folder is never made, moved or
+/// linked into place by its name anywhere below a chat's folder, in any case, while a name that
+/// only begins with it is the chat's.
+#[test]
+fn the_linux_wrap_refuses_a_git_folder_made_by_its_name_below_a_chats_folder() {
+    use purlis_linux_sandbox::profile::{FileOp, Kind, Op, Profile};
+    let dir = tempfile::tempdir().expect("a folder");
+    let root = crate::sandbox::real(dir.path());
+    let mut text = format!(
+        "(version 1)\n(deny default)\n(allow file-write* (subpath {}))\n",
+        crate::sandbox::seatbelt::string(&root.display().to_string()).expect("a string")
+    );
+    for rule in crate::sandbox::seatbelt::planted_rules(&root).expect("rules") {
+        text.push_str(&rule);
+        text.push('\n');
+    }
+    let profile = Profile::parse(&text).expect("a profile purlis writes");
+    let create = |path: &std::path::Path, kind: Kind| {
+        profile.allows(&Op::File {
+            what: FileOp::Create,
+            path,
+            kind,
+        })
+    };
+    for git in [".git", "a/b/.git", "a/.GiT"] {
+        let git = root.join(git);
+        assert!(!create(&git, Kind::Directory), "{}", git.display());
+        assert!(!create(&git, Kind::Symlink), "{}", git.display());
+    }
+    assert!(create(&root.join("a/.github"), Kind::Directory));
+    assert!(create(&root.join("a/.git/objects"), Kind::Directory));
+}

@@ -257,9 +257,11 @@ fn managed_merge_rules_that_differ_settle_as_this_builds_and_keep_a_persons_line
         text.contains("workspaces/*/todos/MEMORY.md merge=union"),
         "{text}"
     );
-    // The remote's rule this build does not write stays, as a newer build's would; this
-    // machine's own stale one goes. The block keeps its place, under the person's first lines.
-    assert!(!text.contains("older merge"), "{text}");
+    // A rule this build does not write stays from either side, as a newer build's would, and
+    // one both sides took out of the base goes (#5864 review: both sides' rules, merged as a
+    // set). The block keeps its place, under the person's first lines.
+    assert!(!text.contains("old merge=union\n# <<<"), "{text}");
+    assert!(text.contains("older merge=union"), "{text}");
     assert!(text.contains("newer merge=union"), "{text}");
     let at = |line: &str| text.find(line).unwrap_or_else(|| panic!("{line}: {text}"));
     assert!(
@@ -729,7 +731,7 @@ fn continue_settles_a_key_conflict_in_charter_toml_that_a_save_named() {
     let ours = folder::Chosen {
         file: "charter.toml".into(),
         key: "sandbox.mode".into(),
-        theirs: false,
+        side: folder::Side::Ours,
     };
 
     assert_eq!(
@@ -819,7 +821,7 @@ fn continue_rebuilds_the_memory_index_from_the_tree_the_person_settled() {
         Ok(vec![alpha.clone()])
     );
     run(
-        &super::super::resolvefolder::path(&two.mine),
+        &super::super::resolvefolder::folder(&two.mine),
         &["rm", "-q", "--", &alpha],
     );
 
@@ -906,4 +908,31 @@ fn a_merged_index_keeps_a_heading_between_lines_and_a_link_to_another_folder() {
         "# M\n\n## Projects\n- [A, retitled](a.md)\n- [C](c.md)\n\n## People\n- [B](b.md)\n\
          - [D](d.md)\n- [Shared](../../_shared/memory/x.md)\n"
     );
+}
+
+/// **A memory store one side removed stays removed** (#5864 review): with no memory file left in
+/// the merged store and its index gone from one side, the index is left out, not written again
+/// as a bare header, so a persona removed safely does not come back as its `MEMORY.md`.
+#[test]
+fn a_memory_store_one_side_removed_stays_removed_when_a_request_brings_in() {
+    let store = "personas/devops/memory";
+    let index = format!("{store}/MEMORY.md");
+    let two = Two::new(&[
+        (&index, "# Memory Index\n\n- [Alpha](alpha.md)\n"),
+        (&format!("{store}/alpha.md"), "# Alpha\n"),
+        ("notes.md", "base\n"),
+    ]);
+    run(&two.mine, &["rm", "-q", "-r", "personas/devops"]);
+    commit(&two.mine, "remove devops");
+    write(&two.theirs, "notes.md", "theirs\n");
+    two.land_theirs("theirs");
+
+    assert_eq!(
+        bring_in(&two.mine, "release", false, When::Moved),
+        BroughtIn::Moved(1)
+    );
+
+    assert!(!two.mine.join(&index).exists());
+    let tree = run(&two.mine, &["ls-tree", "-r", "--name-only", "HEAD"]);
+    assert!(!tree.contains("personas/devops"), "{tree}");
 }

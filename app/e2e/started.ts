@@ -120,9 +120,7 @@ export async function bringChatForward(session: number): Promise<void> {
     .waitUntil(
       async () =>
         browser.execute((n: number) => {
-          const row = document.querySelector<HTMLElement>(
-            `[role="treeitem"].chat[data-session="${n}"]`,
-          );
+          const row = document.querySelector<HTMLElement>(`[role="row"].chat[data-session="${n}"]`);
           row?.click();
           return row !== null;
         }, session),

@@ -333,6 +333,48 @@ fn a_definition_under_a_one_of_told_apart_by_a_constant_may_widen() {
 }
 
 #[test]
+fn a_branch_of_a_one_of_told_apart_by_a_constant_may_widen_in_place() {
+    // A choice's value gains an optional key (#2946): the branch accepts all it accepted, and the
+    // constants that tell the branches apart are the same, so no value meets two of them.
+    let after = changed(|it| {
+        it["$defs"]["option"]["oneOf"][1]["properties"]["values"]["items"]["properties"]["glow"] =
+            json!({ "type": "boolean" });
+    });
+    assert_eq!(narrowings(&schema(), &after), Vec::<String>::new());
+    // A branch that accepts less in place is a narrowing as anywhere else.
+    let after = changed(|it| {
+        it["$defs"]["option"]["oneOf"][0]["required"]
+            .as_array_mut()
+            .expect("required")
+            .push(json!("description"));
+    });
+    assert_eq!(
+        narrowings(&schema(), &after),
+        ["/$defs/option/oneOf/0/required: \"description\" is newly required"]
+    );
+    // A constant that tells them apart changed, or a branch gone, is still not judged.
+    for change in [
+        |it: &mut Value| {
+            it["$defs"]["option"]["oneOf"][1]["properties"]["kind"] = json!({ "const": "pick" })
+        },
+        |it: &mut Value| {
+            it["$defs"]["option"]["oneOf"]
+                .as_array_mut()
+                .expect("branches")
+                .pop();
+        },
+    ] {
+        let after = changed(change);
+        assert!(
+            narrowings(&schema(), &after)
+                .iter()
+                .any(|one| one.starts_with("/$defs/option/oneOf")),
+            "{after}"
+        );
+    }
+}
+
+#[test]
 fn a_new_named_key_of_a_closed_object_is_judged_against_the_patterns_that_accepted_it() {
     let before = changed(|it| {
         it["properties"]["extras"] = json!({

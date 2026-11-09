@@ -779,6 +779,12 @@ fn apply(root: &mut toml_edit::Table, edit: &Edit) -> Result<(), String> {
         }
         Some(value) => {
             let mut fresh = to_edit(value);
+            // A set's list is written as every writer of one writes it (#5853).
+            if let toml_edit::Value::Array(list) = &mut fresh
+                && is_a_set(&edit.path)
+            {
+                crate::tomlmerge::as_set(list);
+            }
             match table.get_mut(last) {
                 // In place, with the spacing and the comment the old value had.
                 Some(toml_edit::Item::Value(old)) if !old.is_inline_table() => {
@@ -799,6 +805,19 @@ fn apply(root: &mut toml_edit::Table, edit: &Edit) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// Whether the key at `path` holds a set ([`crate::tomlmerge::SETS`]): a path through a list of
+/// tables never does.
+fn is_a_set(path: &[Step]) -> bool {
+    let keys: Option<Vec<&str>> = path
+        .iter()
+        .map(|step| match step {
+            Step::Key(key) => Some(key.as_str()),
+            Step::Index(_) => None,
+        })
+        .collect();
+    keys.is_some_and(|keys| crate::tomlmerge::is_set(&keys))
 }
 
 /// The table `steps` lead to from `table` — a `[section]` or an inline `{ … }`, which is how a

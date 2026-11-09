@@ -1260,6 +1260,7 @@ mod skills {
             built_in: None,
             by: purlis_core::skills::verbs::By::Window,
             say: &mut say,
+            audit: None,
         };
         for name in names {
             purlis_core::skills::verbs::delete(&mut cx, &Level::project(), name).unwrap();
@@ -1366,6 +1367,7 @@ mod skills {
             built_in: None,
             by: purlis_core::skills::verbs::By::Window,
             say: &mut say,
+            audit: None,
         };
         purlis_core::skills::verbs::restore(&mut cx, &tdd, None).unwrap();
         let lock = Mutex::new(());

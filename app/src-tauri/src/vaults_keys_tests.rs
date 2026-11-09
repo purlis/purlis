@@ -35,6 +35,7 @@ fn a_chats_key_listing_raises_the_vault_notice_until_allowed_and_then_names_the_
         folder: None,
         confines: Some(purlis_core::sandbox::Confines::default()),
         harness: None,
+        ends_seen: None,
     };
     let told = std::sync::Mutex::new(Vec::new());
     let tell = |one: crate::vaultroute::VaultRefused| told.lock().unwrap().push(one.vault);

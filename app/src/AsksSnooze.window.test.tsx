@@ -16,6 +16,7 @@ import { aTabForEachChat } from "./laidOut.testkit";
 import { forgetThisLaunch } from "./regions";
 import { forgetInbox } from "./inboxRules";
 import { forgetProjectViews } from "./projectViews";
+import { findTree } from "./ui/tree/tree.testkit";
 
 /**
  * **Snooze all on Asks** (#5647, spec #5638, ADR 0119), on the real window with the core
@@ -192,7 +193,8 @@ const press = userEvent.setup({ advanceTimers: (ms) => vi.advanceTimersByTime(ms
 
 const asksView = () => screen.findByRole("tabpanel", { name: "Asks" });
 /** The chats Asks lists, by the heading of each group. */
-const listed = () => [...document.querySelectorAll(".inbox-chat > h3")].map((h) => h.textContent);
+const listed = () =>
+  [...document.querySelectorAll('.inbox-chat [role="rowheader"]')].map((h) => h.textContent);
 /** The hand on the title bar, by what it counts. */
 const hand = (count: number) =>
   screen.queryAllByRole("button", {
@@ -274,7 +276,7 @@ describe("Snooze all on Asks (#5647)", () => {
       await within(view).findByText("2 asks snoozed until their chats ask again."),
     ).toBeInTheDocument();
     // The Chats view reads the board, which still has both chats waiting.
-    const chats = await screen.findByRole("tree", { name: "Chats of this project" });
+    const chats = await findTree("Chats of this project");
     await waitFor(() => expect(within(chats).getAllByText("needs you")).toHaveLength(2));
 
     await press.click(within(view).getByRole("button", { name: "Show them now" }));
@@ -319,7 +321,7 @@ describe("Snooze all on Asks (#5647)", () => {
     raise(permission(1, "ask-1b", "Run cargo build"));
 
     await waitFor(() => expect(listed()).toEqual(["steward 1"]));
-    const back = screen.getByRole("region", { name: "steward 1" });
+    const back = screen.getByRole("rowgroup", { name: "steward 1" });
     expect(within(back).getByText("Run cargo test")).toBeInTheDocument();
     expect(within(back).getByText("Run cargo build")).toBeInTheDocument();
     expect(

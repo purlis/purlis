@@ -2027,9 +2027,9 @@ impl Denied {
 
 /// **The programs every cluster pool's kubectl runs, held for no chat to write** (#3292): each
 /// as named, every link on the way and its real file, each with the folder it is in, and the
-/// package its real file belongs to ([`package_root`]) with all that is in it, but for a package
-/// that holds the project at `root` or is inside it, which the chat writes, as
-/// [`Compiled::hold_programs`] leaves it, and for one that is the home or a folder above it,
+/// package its real file belongs to ([`package_root`]) with all that is in it, inside the
+/// project at `root` too, but for a package that is the project or holds it, which the chat
+/// writes, and for one that is the home or a folder above it,
 /// which an add refuses now but one from before that refusal may have kept.
 fn cluster_programs_held(root: &Path, machine: &Machine) -> Vec<Denial> {
     let Some(config_root) = crate::machine::rooted(
@@ -2060,7 +2060,9 @@ fn cluster_programs_held(root: &Path, machine: &Machine) -> Vec<Denial> {
             hold(folder.to_path_buf(), Reach::Itself);
         }
         hold(program, Reach::Itself);
-        let around_project = project.starts_with(&package) || package.starts_with(&project);
+        // A package inside the project is held as any other is: the chat writes the rest of its
+        // project. One that is the project or holds it is held by its program alone.
+        let around_project = project.starts_with(&package);
         // A row an add from before this check kept: never the home or a folder above it.
         let around_home = home.as_ref().is_some_and(|home| home.starts_with(&package));
         if !around_project && !around_home && package.parent().is_some() {
@@ -3771,7 +3773,9 @@ pub fn install_root(program: &Path) -> PathBuf {
 /// **The package a program file belongs to**, as far as its path says (#2071): the whole of a
 /// Homebrew keg (`Cellar/<formula>`), an npm package (`node_modules/<name>`, or
 /// `node_modules/@scope/<name>`), a pipx venv (`venvs/<name>`) or a toolchain
-/// (`toolchains/<name>`); else the folder the file is in.
+/// (`toolchains/<name>`); else a Python virtual environment the file is in the `bin` (or
+/// `Scripts`) of, by the `pyvenv.cfg` beside that folder, whatever it is called; else the folder
+/// the file is in.
 pub fn package_root(file: &Path) -> PathBuf {
     let parts: Vec<_> = file.components().collect();
     for (at, part) in parts.iter().enumerate().rev() {
@@ -3790,8 +3794,16 @@ pub fn package_root(file: &Path) -> PathBuf {
             return parts[..at + keep].iter().collect();
         }
     }
-    file.parent()
-        .map_or_else(|| file.to_path_buf(), Path::to_path_buf)
+    let Some(folder) = file.parent() else {
+        return file.to_path_buf();
+    };
+    let in_scripts = folder
+        .file_name()
+        .is_some_and(|name| name == "bin" || name == "Scripts");
+    match folder.parent() {
+        Some(venv) if in_scripts && venv.join("pyvenv.cfg").is_file() => venv.to_path_buf(),
+        _ => folder.to_path_buf(),
+    }
 }
 
 /// The policy for one chat, resolved to this machine and ready for a harness's compiler: the

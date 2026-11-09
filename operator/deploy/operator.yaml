@@ -122,14 +122,15 @@ rules:
   - apiGroups: [authorization.k8s.io]
     resources: [subjectaccessreviews]
     verbs: [create]
-  # A runner namespace's way to the mint port (#4206), for a Claim on an opted-in Pool, as the
-  # policy on runner namespaces holds it: made, then read and brought back, by name only.
+  # A runner namespace's way to the mint port (#4206), for a Claim on an opted-in Pool, and the
+  # policy that lets its pods out only where another lets them, as the policy on runner
+  # namespaces holds them: made, then read and brought back, by name only.
   - apiGroups: [networking.k8s.io]
     resources: [networkpolicies]
     verbs: [create]
   - apiGroups: [networking.k8s.io]
     resources: [networkpolicies]
-    resourceNames: [purlis-forge-mint]
+    resourceNames: [purlis-forge-mint, purlis-deny-egress]
     verbs: [get, patch]
   # Upstream's objects a claim becomes, in its requester's runner namespace: watched, so a
   # claim is looked at again when one of them changes or goes; each read by name first, since

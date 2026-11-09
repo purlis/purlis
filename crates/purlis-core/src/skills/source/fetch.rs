@@ -566,6 +566,15 @@ impl super::SkillSource for Fetched {
         super::Origin::Git(self.source.remote.clone()).label()
     }
 
+    /// The commit's committer time, as its object says it.
+    fn made(&self) -> Option<u64> {
+        self.scratch
+            .git(&["show", "-s", "--format=%ct", self.commit.as_str()])
+            .ok()
+            .filter(git::Run::ok)
+            .and_then(|run| run.line().trim().parse().ok())
+    }
+
     /// The tree git holds of the folder at the commit: every file in it, those an install leaves
     /// out too, as a publish wrote them, in the source's own object format.
     fn folder_tree(&self, skill: &Found, files: &[SourceFile]) -> String {

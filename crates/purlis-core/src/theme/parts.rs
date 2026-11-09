@@ -1306,11 +1306,14 @@ fn look_apart(theme: &ResolvedTheme, on: &[String], a: &Drawn, b: &Drawn, words:
 const PRIMARY: &str = "primary";
 
 /// **Allow against the primary as a theme's tokens draw them** (#2948): one measure for each
-/// state an answer that grants is drawn in. The token-level floor ([`super::floors`]) holds it.
+/// pair of looks an answer that grants and the primary are drawn in, each in any state it shows
+/// (#2994). The token-level floor ([`super::floors`]) holds it.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct AllowLook {
-    /// The state, `None` at rest.
-    pub state: Option<State>,
+    /// The states Allow is drawn in, none at rest.
+    pub allow: Vec<State>,
+    /// The states the primary is drawn in beside it, none at rest.
+    pub primary: Vec<State>,
     /// How far apart the two looks are drawn ([`look_apart`]).
     pub apart: f64,
     /// The primary's fill token, then Allow's: what a floor that fails draws as purlis's own.
@@ -1331,46 +1334,176 @@ pub(super) fn allow_grounds() -> impl Iterator<Item = &'static str> {
         .flat_map(|family| family.grounds.iter().copied())
 }
 
+/// **Every look `variant` of `family` shows a person** (#2994): at rest, in each state it is drawn
+/// in but disabled (exempt, and never answered), and in each set of them that holds at once. A
+/// state only other variants are drawn in ([`DRAWN_ONLY`]: a toggle's pressed look) is no look of
+/// this one.
+fn shown_sets(family: &Family, variant: &str) -> Vec<Vec<State>> {
+    singles_of(family)
+        .into_iter()
+        .chain(combined(family))
+        .filter(|states| family.draws(variant, states))
+        .collect()
+}
+
+/// **How a sentence says a look's states**: "at rest", or each state as a person sees it.
+fn shown_in(states: &[State]) -> String {
+    if states.is_empty() {
+        return "at rest".to_owned();
+    }
+    let said: Vec<&str> = states
+        .iter()
+        .map(|state| match state {
+            State::Hover => "under the pointer",
+            State::Pressed => "pressed",
+            State::Selected => "chosen",
+            State::Focused => "with the keyboard on it",
+            State::Disabled => "unavailable",
+            State::Open => "open",
+            State::Invalid => "refused",
+        })
+        .collect();
+    said.join(" and ")
+}
+
 /// **How far Allow is drawn from the primary by the family defaults alone**, in `theme`: for
-/// every family with an answer that grants, at rest and in each state whose look differs from
-/// it, measured as the parts check measures looks ([`look_apart`]): the fills as each shows on
-/// every ground the family is drawn on, the nearest ground counting, and the edges where they
-/// stand out. A selected toggle is left out: an answer that grants is never a toggle.
+/// every family with an answer that grants, Allow in each look it shows against the primary in
+/// each look it shows ([`shown_sets`], #2994), since a person sees one hovered or focused control
+/// beside others at rest. Measured as the parts check measures looks ([`look_apart`]): the fills
+/// as each shows on every ground the family is drawn on, the nearest ground counting, and the
+/// edges where they stand out. Two pairs drawn alike are measured once.
 pub(super) fn allow_from_primary(theme: &ResolvedTheme) -> Vec<AllowLook> {
     let mut found = Vec::new();
-    for family in MANIFEST {
-        let Some(grants) = family
-            .variants
-            .iter()
-            .find(|variant| variant.consent == Some(Consent::Grants))
-        else {
-            continue;
-        };
-        let mut seen: Vec<(Drawn, Drawn)> = Vec::new();
-        for state in std::iter::once(None).chain(
-            STATES
-                .into_iter()
-                .filter(|state| {
-                    family.states.contains(state)
-                        && !matches!(state, State::Selected | State::Disabled)
-                })
-                .map(Some),
-        ) {
-            let states: Vec<State> = state.into_iter().collect();
-            let allow = drawn(&[], family, grants.name, &states);
-            let primary = drawn(&[], family, PRIMARY, &states);
-            if seen.contains(&(allow.clone(), primary.clone())) {
-                continue;
-            }
+    for (family, pairs) in allow_pairs() {
+        let on = grounds(theme, family);
+        for one in pairs {
             found.push(AllowLook {
-                state,
-                apart: look_apart(theme, &grounds(theme, family), &allow, &primary, false),
-                fills: [primary.fill, allow.fill],
+                allow: one.allow_in.clone(),
+                primary: one.primary_in.clone(),
+                apart: look_apart(theme, &on, &one.allow, &one.primary, false),
+                fills: [one.primary.fill, one.allow.fill],
             });
-            seen.push((allow, primary));
         }
     }
     found
+}
+
+/// One pair of looks Allow and the primary are drawn in by the family defaults, with the states
+/// that draw each.
+struct AllowPair {
+    allow_in: Vec<State>,
+    primary_in: Vec<State>,
+    allow: Drawn,
+    primary: Drawn,
+}
+
+/// **Every distinct pair of default looks of Allow and the primary**, by family: what
+/// [`allow_from_primary`] measures. The defaults are no theme's, so the pairs are found once; a
+/// launch measures them in every tint (#2994).
+fn allow_pairs() -> &'static [(&'static Family, Vec<AllowPair>)] {
+    static PAIRS: OnceLock<Vec<(&'static Family, Vec<AllowPair>)>> = OnceLock::new();
+    PAIRS.get_or_init(|| {
+        let mut all = Vec::new();
+        for family in MANIFEST {
+            let Some(grants) = family
+                .variants
+                .iter()
+                .find(|variant| variant.consent == Some(Consent::Grants))
+            else {
+                continue;
+            };
+            let primaries: Vec<(Vec<State>, Drawn)> = shown_sets(family, PRIMARY)
+                .into_iter()
+                .map(|states| {
+                    let look = drawn(&[], family, PRIMARY, &states);
+                    (states, look)
+                })
+                .collect();
+            let mut pairs: Vec<AllowPair> = Vec::new();
+            for allow_in in shown_sets(family, grants.name) {
+                let allow = drawn(&[], family, grants.name, &allow_in);
+                for (primary_in, primary) in &primaries {
+                    if pairs
+                        .iter()
+                        .any(|one| one.allow == allow && one.primary == *primary)
+                    {
+                        continue;
+                    }
+                    pairs.push(AllowPair {
+                        allow_in: allow_in.clone(),
+                        primary_in: primary_in.clone(),
+                        allow: allow.clone(),
+                        primary: primary.clone(),
+                    });
+                }
+            }
+            all.push((family, pairs));
+        }
+        all
+    })
+}
+
+/// `variant` of `family` as its defaults draw it while `states` hold, said: for the tests that
+/// find a pair of looks by what each draws.
+#[cfg(test)]
+pub(super) fn default_look(family: &Family, variant: &str, states: &[State]) -> String {
+    format!("{:?}", drawn(&[], family, variant, states))
+}
+
+/// **Each consent look `theme`'s held parts draw nearer the primary in another state than the
+/// family defaults do** (#2994), one line each: none once the floors are held.
+#[cfg(test)]
+pub(super) fn allow_near_primary_across(theme: &ResolvedTheme) -> Vec<String> {
+    let rules = &held_once(theme).0;
+    let mut found = Vec::new();
+    for family in MANIFEST {
+        let on = grounds(theme, family);
+        for variant in family
+            .variants
+            .iter()
+            .filter(|one| matches!(one.consent, Some(Consent::Grants | Consent::Danger)))
+        {
+            for states in shown_sets(family, variant.name) {
+                if let Some(beside) =
+                    nearer_across(theme, &on, rules, family, variant.name, &states)
+                {
+                    found.push(format!(
+                        "{}.{} {} beside the primary {}",
+                        family.name,
+                        variant.name,
+                        shown_in(&states),
+                        shown_in(&beside)
+                    ));
+                }
+            }
+        }
+    }
+    found
+}
+
+/// **The nearest danger's words come to the primary's** as the family defaults draw them in
+/// `theme`, danger in any look it shows against the primary in any look it shows (#2994).
+#[cfg(test)]
+pub(super) fn danger_words_from_primary(theme: &ResolvedTheme) -> f64 {
+    let mut nearest = f64::INFINITY;
+    for family in MANIFEST {
+        for variant in family
+            .variants
+            .iter()
+            .filter(|one| one.consent == Some(Consent::Danger))
+        {
+            for states in shown_sets(family, variant.name) {
+                let danger = drawn(&[], family, variant.name, &states);
+                for beside in shown_sets(family, PRIMARY) {
+                    let primary = drawn(&[], family, PRIMARY, &beside);
+                    if let Some(distance) = apart(theme, danger.words[0], primary.words[0]) {
+                        nearest = nearest.min(distance);
+                    }
+                }
+            }
+        }
+    }
+    nearest
 }
 
 /// A variant's button colours as the engine holds them, for the test that holds them to
@@ -1538,6 +1671,42 @@ pub enum PartValue {
     Word(&'static str),
     /// Top, sides, bottom (#2914).
     Inset([Length; 3]),
+}
+
+impl PartValue {
+    /// **The value in a theme's words** (#2947): a word or a token as it is (`full`,
+    /// `accent.base`, `raised`), a number in figures, and a list in brackets (`[4, 12]`); where
+    /// every side or corner takes the same, the one value, which a theme may write for them all.
+    pub fn written(&self) -> String {
+        fn length(one: &Length) -> String {
+            match one {
+                Length::Number(number) => geometry::show(*number),
+                Length::Token(token) => (*token).to_owned(),
+            }
+        }
+        fn corner(one: &Corner) -> String {
+            match one {
+                Corner::Full => "full".to_owned(),
+                Corner::Length(one) => length(one),
+            }
+        }
+        fn listed(all: Vec<String>) -> String {
+            match all.as_slice() {
+                [first, rest @ ..] if rest.iter().all(|one| one == first) => first.clone(),
+                _ => format!("[{}]", all.join(", ")),
+            }
+        }
+        match self {
+            Self::Colour(token) | Self::Word(token) => (*token).to_owned(),
+            Self::Shadow(Shadow::None) => "none".to_owned(),
+            Self::Shadow(Shadow::Raised) => "raised".to_owned(),
+            Self::Shadow(Shadow::Overlay) => "overlay".to_owned(),
+            Self::Length(one) => length(one),
+            Self::Corners(four) => listed(four.iter().map(corner).collect()),
+            Self::Padding(block, inline) => listed(vec![length(block), length(inline)]),
+            Self::Inset(three) => listed(three.iter().map(length).collect()),
+        }
+    }
 }
 
 /// **A theme's component parts**, every key and its value: empty for a theme that names none.
@@ -2974,8 +3143,100 @@ fn plain_count_at(family: &Family) -> Option<usize> {
 enum Consented {
     /// The consent variant draws its default.
     Own(String, Option<f64>),
-    /// The consent variant draws its default, and so does `other` when that is not enough.
-    Both(String, &'static str),
+    /// The consent variant draws its default, and so does `other`, in the states it was measured
+    /// in, when that is not enough.
+    Both(String, &'static str, Vec<State>),
+}
+
+/// **The primary's look a consent variant is drawn too near across states, if any** (#2994):
+/// `variant` while `states` hold, against the primary in every other look it shows
+/// ([`shown_sets`]), since a person sees one hovered or focused control beside others at rest.
+/// Measured as one state is ([`look_apart`], danger's words counting). A pair is too near when it
+/// is nearer than the family's defaults draw the two in any pair of their looks: the nearest the
+/// family itself brings them is what it holds as apart, so a pair the defaults happen to draw far
+/// apart asks no more of a theme than that. Danger's words are held apart from the primary's in
+/// each pair as in one state. The primary's states, if any.
+fn nearer_across(
+    theme: &ResolvedTheme,
+    on: &[String],
+    rules: &[Rule],
+    family: &Family,
+    variant: &str,
+    states: &[State],
+) -> Option<Vec<State>> {
+    #[cfg(test)]
+    if ALIKE_ONLY.with(std::cell::Cell::get) {
+        return None;
+    }
+    // Where no rule colours the root of either, both draw their defaults in every look, and no
+    // pair of defaults is nearer than the nearest of them: nothing to measure, at no cost.
+    let colours = |name: &str| {
+        rules.iter().any(|rule| {
+            std::ptr::eq(rule.family, family)
+                && rule.part == 0
+                && rule.variant.is_none_or(|one| one == name)
+                && [Prop::Fill, Prop::Text, Prop::BorderColour]
+                    .iter()
+                    .any(|property| rule.values.contains_key(property))
+        })
+    };
+    if !colours(variant) && !colours(PRIMARY) {
+        return None;
+    }
+    let words = family
+        .variants
+        .iter()
+        .any(|one| one.name == variant && one.consent == Some(Consent::Danger));
+    let primary_in = shown_sets(family, PRIMARY);
+    // The nearest the defaults bring the two, over their looks drawn alike once each.
+    let mut defaults: Vec<Drawn> = Vec::new();
+    for one in shown_sets(family, variant) {
+        let look = drawn(&[], family, variant, &one);
+        if !defaults.contains(&look) {
+            defaults.push(look);
+        }
+    }
+    let mut default_primaries: Vec<Drawn> = Vec::new();
+    for one in &primary_in {
+        let look = drawn(&[], family, PRIMARY, one);
+        if !default_primaries.contains(&look) {
+            default_primaries.push(look);
+        }
+    }
+    let least = defaults
+        .iter()
+        .flat_map(|look| {
+            default_primaries
+                .iter()
+                .map(move |primary| look_apart(theme, on, look, primary, words))
+        })
+        .fold(f64::INFINITY, f64::min);
+    let look = drawn(rules, family, variant, states);
+    let default_look = drawn(&[], family, variant, states);
+    // Two looks of the primary drawn alike, by the theme and by the defaults, are measured once.
+    let mut seen: Vec<(Drawn, Drawn)> = Vec::new();
+    for beside in primary_in {
+        if beside.as_slice() == states {
+            continue;
+        }
+        let primary = drawn(rules, family, PRIMARY, &beside);
+        let default_primary = drawn(&[], family, PRIMARY, &beside);
+        let pair = (primary, default_primary);
+        if seen.contains(&pair) {
+            continue;
+        }
+        let (primary, default_primary) = &pair;
+        let words_near = words
+            && apart(theme, default_look.words[0], default_primary.words[0])
+                .is_none_or(|distance| distance >= super::DANGER_APART)
+            && apart(theme, look.words[0], primary.words[0])
+                .is_some_and(|distance| distance < super::DANGER_APART);
+        if words_near || look_apart(theme, on, &look, primary, words) < least - NO_NEARER {
+            return Some(beside);
+        }
+        seen.push(pair);
+    }
+    None
 }
 
 fn consent_broken(
@@ -2995,6 +3256,7 @@ fn consent_broken(
     let words = variant.consent == Some(Consent::Danger);
     let nearer = look_apart(theme, on, &look, &primary, words)
         < look_apart(theme, on, &default_look, &default_primary, words) - NO_NEARER;
+    let states_owned = states.to_vec();
     match variant.consent? {
         Consent::Grants => {
             let own = edge(rules, family, variant.name, &look);
@@ -3021,6 +3283,7 @@ fn consent_broken(
                 return Some(Consented::Both(
                     "Allow is distinguishable from Keep blocked by its edge".to_owned(),
                     keep_blocked_name,
+                    states_owned.clone(),
                 ));
             }
             // Allow is as plain as Keep blocked: told apart by its edge and its lock alone.
@@ -3030,12 +3293,25 @@ fn consent_broken(
                 return Some(Consented::Both(
                     "Allow is drawn on Keep blocked's fill".to_owned(),
                     keep_blocked_name,
+                    states_owned.clone(),
                 ));
             }
             if nearer {
                 return Some(Consented::Both(
                     "Allow never takes the primary look".to_owned(),
                     PRIMARY,
+                    states_owned,
+                ));
+            }
+            if let Some(beside) = nearer_across(theme, on, rules, family, variant.name, states) {
+                return Some(Consented::Both(
+                    format!(
+                        "Allow never takes the primary look: Allow {} beside the primary {}",
+                        shown_in(states),
+                        shown_in(&beside)
+                    ),
+                    PRIMARY,
+                    beside,
                 ));
             }
         }
@@ -3082,12 +3358,25 @@ fn consent_broken(
                      primary's"
                         .to_owned(),
                     PRIMARY,
+                    states_owned,
                 ));
             }
             if nearer {
                 return Some(Consented::Both(
                     "danger is distinguishable from primary".to_owned(),
                     PRIMARY,
+                    states_owned,
+                ));
+            }
+            if let Some(beside) = nearer_across(theme, on, rules, family, variant.name, states) {
+                return Some(Consented::Both(
+                    format!(
+                        "danger is distinguishable from primary: danger {} beside the primary {}",
+                        shown_in(states),
+                        shown_in(&beside)
+                    ),
+                    PRIMARY,
+                    beside,
                 ));
             }
         }
@@ -3457,6 +3746,22 @@ fn every_tint() -> bool {
     }
 }
 
+/// **What falls of `theme` with the consent floors measured in one state at a time**, as before
+/// #2994: for the tests that show what measuring across states adds.
+#[cfg(test)]
+pub(super) fn fallen_alike(theme: &ResolvedTheme) -> Vec<Fell> {
+    ALIKE_ONLY.with(|one| one.set(true));
+    let fell = held(theme).1;
+    ALIKE_ONLY.with(|one| one.set(false));
+    fell
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Set only by [`fallen_alike`].
+    static ALIKE_ONLY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 /// **What falls of `theme` with every family measured in every tint**, for the test that holds a
 /// family measured as written alone to the same.
 #[cfg(test)]
@@ -3734,7 +4039,16 @@ const STANDS_ON: &[(&str, &[&str])] = &[
     (
         "tree",
         &[
-            "badge", "button", "count", "message", "meter", "notice", "popover", "tooltip",
+            "badge",
+            "button",
+            "chat-mark",
+            "count",
+            "grip",
+            "message",
+            "meter",
+            "notice",
+            "popover",
+            "tooltip",
         ],
     ),
     (
@@ -3943,7 +4257,7 @@ fn broken_on(
             {
                 match consent_broken(one, &on, rules, family, variant, states) {
                     Some(Consented::Own(floor, ratio)) => return Some((floor, ratio)),
-                    Some(Consented::Both(floor, _)) => return Some((floor, None)),
+                    Some(Consented::Both(floor, _, _)) => return Some((floor, None)),
                     None => {}
                 }
             }
@@ -4498,12 +4812,12 @@ impl Held<'_> {
                             self.fall(variant.name, states, floor, ratio);
                         }
                     }
-                    Some(Consented::Both(floor, other)) => {
+                    Some(Consented::Both(floor, other, other_in)) => {
                         if !own_default {
                             self.fall(variant.name, states, floor.clone(), None);
                         }
                         if consent_broken(one, &on, self.rules, family, variant, states).is_some() {
-                            self.fall(other, states, floor, None);
+                            self.fall(other, &other_in, floor, None);
                         }
                     }
                 }
@@ -5230,10 +5544,13 @@ pub(super) struct CardOnSide {
     pub ground: &'static str,
 }
 
-/// What [`CardOnSide`] says of `theme`, where its parts, its own or inherited, choose a card
-/// row's look or a side panel's fill. For a palette alone it is not yet held, as a meter's fill
-/// on its track is ([`super::check::REPORTED`], #3735): a theme that chooses neither draws its
-/// cards on the family's raised ground, wherever its palette puts it.
+/// What [`CardOnSide`] says of `theme`: as its parts, its own or inherited, draw a card row and
+/// a side panel, or as the families do by default for a palette alone, which puts its cards on
+/// the raised ground wherever its palette puts it (#5979). `None` for a palette that chooses
+/// neither and leaves both grounds, and the frame the panel lies on, as Purlis Classic draws
+/// them: those are Classic's grounds without Classic's card row, the families' default and not
+/// the theme's choice, which a theme that writes a few colours of its own would hear of for
+/// nothing it wrote.
 pub(super) fn card_on_side(theme: &ResolvedTheme) -> Option<CardOnSide> {
     let chosen = theme.parts.keys().any(|key| {
         (key.family == "list" && key.variant == Some("card"))
@@ -5242,9 +5559,6 @@ pub(super) fn card_on_side(theme: &ResolvedTheme) -> Option<CardOnSide> {
                 && key.property == Prop::Fill
                 && key.variant.is_none_or(|variant| variant == "side"))
     });
-    if !chosen {
-        return None;
-    }
     let held = held_once(theme);
     let rules = &held.0;
     let list = family("list").expect("the list family");
@@ -5256,11 +5570,20 @@ pub(super) fn card_on_side(theme: &ResolvedTheme) -> Option<CardOnSide> {
     } else {
         list.border_width > 0.0
     };
-    Some(CardOnSide {
+    let on = CardOnSide {
         card: card.fill,
         edge: (edged && card.border != TRANSPARENT).then_some(card.border),
         ground: drawn(rules, panel, "side", &[]).fill,
-    })
+    };
+    let classic = super::built_in_for(theme.appearance);
+    let as_classic = ["surface.deep", on.card, on.ground]
+        .into_iter()
+        .all(|token| {
+            theme
+                .value(token)
+                .eq_ignore_ascii_case(classic.value(token))
+        });
+    (chosen || !as_classic).then_some(on)
 }
 
 /// **A notice card's secondary way and what it stands on** (#4210): each variant's card ground,

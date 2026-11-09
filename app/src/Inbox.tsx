@@ -10,16 +10,13 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import { LoaderCircle } from "lucide-react";
-import { useTabStop } from "./roving";
 import { type Offered, type PlaneId, type Shown } from "./bindings";
 import {
   ElsewhereGroup,
   elsewhereKey,
-  elsewhereStops,
-  hereKey,
-  hereStops,
+  elsewherePlaces,
+  herePlaces,
   OtherProjects,
   othersWaiting,
   QuietNotices,
@@ -65,12 +62,14 @@ import { Button } from "./ui/button/Button";
 import { PanelSectionTitle } from "./ui/panel/Panel";
 import { RESULTS } from "./ActionResultNotice";
 import { EmptyState } from "./ui/empty-state/EmptyState";
+import { List, ListRowSection } from "./ui/list/List";
 import { SnoozeAll, type Snoozing } from "./AsksSnooze";
 
 import { chainSaid, NothingDone } from "./inboxRowParts";
 import { capMarks } from "./combiningMarks";
-import { Ask, Empty, EmptyScope, SCOPE_LABEL, shapeOf, stopIds } from "./InboxAsks";
-import { heldBy, UpdateList, type UpdateRow, type Updates, updateStops } from "./InboxUpdatesList";
+import { ASKS, Ask, Empty, EmptyScope, placeIds, SCOPE_LABEL, shapeOf } from "./InboxAsks";
+import { heldBy, UpdateList, type UpdateRow, type Updates, updatePlaces } from "./InboxUpdatesList";
+import { SeenRowsOf, type SeenRows } from "./seenRows";
 export { chainSaid } from "./inboxRowParts";
 export { grants, NOTICE_MOVED_JUST_NOW } from "./noticeSettle";
 
@@ -78,6 +77,7 @@ export { grants, NOTICE_MOVED_JUST_NOW } from "./noticeSettle";
 export {
   ALLOW_OR_KEEP,
   ALLOWED_LATELY,
+  ASKS,
   ASK_FOLD_LINES,
   hiddenSaid,
   landOnGroup,
@@ -159,11 +159,11 @@ export const NOTICES = "Notices";
  * drawn as text, and the only controls are the fixed words of the answers it offers.
  *
  * **A switch at the top picks whose asks are listed** (qw359, `inboxScope.ts`): every project's
- * this window knows of, this project's (the default) or those of the workspace in front on the
- * strip, each with its count, the pick kept for the project as the Chats view's is. Only the
- * scopes the window can list are offered. A scope with nothing in it says how many wait in the
- * nearest wider one, with one press to widen. Notices and updates are the project's and are
- * listed whatever the scope.
+ * this window knows of (the default, ADR 0121 decision 4), this project's or those of the
+ * workspace in front on the strip, each with its count, the pick kept for the project as the
+ * Chats view's is. Only the scopes the window can list are offered. A scope with nothing in it
+ * says how many wait in the nearest wider one, with one press to widen. Notices and updates are
+ * the project's and are listed whatever the scope.
  *
  * **A row reads in three ranks** (qw359, `InboxRow.tsx`): what needs you, strongest; where it
  * is (project · workspace · persona), quieter; its kind and how long it has waited, smallest
@@ -205,6 +205,8 @@ export function Inbox({
   windowLines,
   onNotices,
   onTrouble,
+  onNoticeCauses,
+  seen,
   onNoticeAnswer,
   elsewhere,
   here,
@@ -265,6 +267,10 @@ export function Inbox({
   onNotices?: (count: number) => void;
   /** How many Notices the list holds that say something needs fixing (#5645). */
   onTrouble?: (count: number) => void;
+  /** Hears the causes of the Notices it lists (#6002): what of them is New. */
+  onNoticeCauses?: (causes: readonly string[]) => void;
+  /** The project's seen record (`seen.ts`), which its rows read to draw what is New (#6002). */
+  seen?: SeenRows;
   /** A Notice answering the person's own press arrived (`ANSWERS`, D-1695-3). */
   onNoticeAnswer?: () => void;
   /** What waits where this project's registry cannot see (#1695): chats in other windows'
@@ -441,37 +447,28 @@ export function Inbox({
   const shapes = new Map(
     rows.flatMap((group) => group.asks).map((ask) => [askKey(ask), shapeOfAsk(ask)]),
   );
-  // **One Tab stop for the list** (`docs/ui-primitives.md`, ADR 0037): the window's roving
-  // focus, so ↑ and ↓, Home and End move through the asks and their buttons in order.
-  const askRows = drawsAsks ? rows : [];
-  const stops = [
+  // **What is drawn above each row, in order** (#1693, #1695): an ask's links and answers, a
+  // chat elsewhere's, an update's. A row stands under what is above it, and an Allow on it waits
+  // to settle whenever that changes (`useSettledPlace`), whatever draws the rows.
+  // Not read yet, this project draws no ask: what waits elsewhere is still listed (qw359).
+  const askRows = drawsAsks && asks !== undefined ? rows : [];
+  const places = [
     ...askRows
       .flatMap((group) => group.asks)
       .flatMap((ask) => {
         const shape = shapes.get(askKey(ask)) ?? shapeOfAsk(ask);
         const key = askKey(ask);
-        return stopIds(key, shape, shape.answers ? shape.offers : [], answering.has(key));
+        return placeIds(key, shape, shape.answers ? shape.offers : [], answering.has(key));
       }),
-    ...(drawsAsks ? elsewhereStops(askingShown) : []),
-    ...(drawsAsks ? hereStops(othersShown) : []),
-    ...(drawsUpdates ? updateStops(updatesShown) : []),
+    ...(drawsAsks ? elsewherePlaces(askingShown) : []),
+    ...(drawsAsks ? herePlaces(othersShown) : []),
+    ...(drawsUpdates ? updatePlaces(updatesShown) : []),
   ];
-  // The keyboard comes in on the first ask, or the first update where none asks: an item, and
-  // never one of its buttons or Mark all read.
-  const firstAsk = askRows[0]?.asks[0];
-  const firstUpdate = drawsUpdates ? updatesShown?.rows?.[0]?.update : undefined;
-  const stop = useTabStop(
-    firstAsk !== undefined
-      ? askKey(firstAsk)
-      : drawsAsks && askingShown[0] !== undefined
-        ? elsewhereKey(askingShown[0])
-        : drawsAsks && othersShown[0] !== undefined
-          ? hereKey(othersShown[0].plane)
-          : firstUpdate === undefined
-            ? undefined
-            : `update:${firstUpdate.key}`,
-    stops,
-  );
+  /** Whether Asks lists any row: an ask of this project's, a chat elsewhere, another project. */
+  const anyAsk =
+    askRows.length > 0 ||
+    (elsewhere !== undefined && askingShown.length > 0) ||
+    (elsewhere?.onOpen !== undefined && othersShown.length > 0);
 
   const leave = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "Escape") return;
@@ -483,7 +480,8 @@ export function Inbox({
   /**
    * **The keyboard stays in the list after an answer** (#1700): an ask answered here leaves
    * the list, and the button the keyboard was on goes with it. Focus on an element that goes is
-   * focus on the page, where the next key does nothing, so it comes back to the first item.
+   * focus on the page, where the next key does nothing, so it comes back to the first row: the
+   * row itself, never one of its answers.
    * Only then: an element the keyboard left for the page while it is still drawn (a press on
    * nothing) is the person's own move, and the list never takes the keyboard back for it.
    */
@@ -495,7 +493,7 @@ export function Inbox({
     lastOn.current = null;
     const on = document.activeElement;
     if (on !== null && on !== document.body) return;
-    listAt.current?.querySelector<HTMLElement>("li.inbox-ask, li.inbox-update")?.focus();
+    listAt.current?.querySelector<HTMLElement>('[role="row"][data-key]')?.focus();
   });
 
   const [noticed, setNoticed] = useState(0);
@@ -517,7 +515,7 @@ export function Inbox({
     [onNotices, onTrouble],
   );
 
-  return (
+  const drawn = (
     // A part is named by its view's tab panel (#3330), so only the whole list names itself.
     <section
       className="inbox"
@@ -579,231 +577,242 @@ export function Inbox({
       {drawsAsks && <DismissUndo hold={ignoring} cause="ask-ignored" said={ignoredSaid} />}
       {/* What was just dismissed, while its Undo stands (#5650). */}
       {(part === "updates" || part === "notices") && <DismissUndo hold={hold} />}
-      <RovingFocusGroup.Root asChild orientation="vertical" loop={false} {...stop}>
-        <div
-          className="inbox-list"
-          ref={listAt}
-          onKeyDown={leave}
-          onFocus={(event) => {
-            lastOn.current = event.target;
-          }}
-          onBlur={(event) => {
-            // Leaving for somewhere else lets go; an element taken away is still remembered.
-            if (event.relatedTarget !== null && !listAt.current?.contains(event.relatedTarget))
-              lastOn.current = null;
-          }}
-        >
-          {/* **What an answer said that the person must read** (#5890): Keep blocked on a vault
-              the chat's persona already holds does not stop its runs, and says where to. Above
-              whatever waits, until dismissed, since the row it was pressed on has gone. Drawn with the
-              asks, under every scope filter, on purpose: it names its chat, and the person who
-              pressed must read it. */}
-          {drawsAsks && recent.some((one) => one.said !== undefined) && (
-            <NoticeList>
-              {recent.map((one) =>
-                one.said === undefined ? null : (
-                  <Notice
-                    key={`${one.at}:${chainSaid(one.chain)}:${one.says}`}
-                    cause={`answer-said:${one.at}:${chainSaid(one.chain)}:${one.says}`}
-                    // As the refused vault's own Notice says the same sentence: news.
-                    tone="news"
-                    // Where the sentence sends the person to the Allowed list, a press goes
-                    // there (#5939); Dismiss stays beside it.
-                    link={
-                      one.allowedList === true
-                        ? {
-                            label: OPEN_ALLOWED_LIST,
-                            onPress: () => askSettingsLink(plane, ALLOWED_LIST),
-                          }
-                        : undefined
-                    }
-                    onDismiss={() => dismissSaid(plane, one)}
-                  >
-                    <strong>{chainSaid(one.chain)}</strong>
-                    {": "}
-                    {capMarks(one.said).text}
-                  </Notice>
-                ),
-              )}
-            </NoticeList>
-          )}
-          {!drawsAsks ? null : asks === undefined ? (
-            // Not read yet is not empty; what the window already knows waits wider is offered.
-            <EmptyScope said={NOT_READ_YET} wider={wider} onWiden={widen} />
-          ) : rows.length === 0 && askingShown.length === 0 && othersShown.length === 0 ? (
-            wider === undefined ? (
-              <Empty
-                recent={recent.slice(0, MOST_ANSWERED)}
-                allowed={allowedLately}
-                quiet={quiet.length > 0 ? quietSaid(quiet) : undefined}
-              />
-            ) : (
-              <EmptyScope
-                said={`Nothing is waiting on you in ${scopeOf(scope)}.`}
-                wider={wider}
-                onWiden={widen}
-              />
-            )
+      {/* **Asks and Updates are the list family's** (#3123, ruling B): ↑ and ↓ move between the
+          rows, ← and → through a row's own links and answers, a reply box keeps its own keys,
+          and typing finds no row (`ui/list/rowKeys.ts`). Each is one Tab stop. */}
+      <div
+        className="inbox-list"
+        ref={listAt}
+        onKeyDown={leave}
+        onFocus={(event) => {
+          lastOn.current = event.target;
+        }}
+        onBlur={(event) => {
+          // Leaving for somewhere else lets go; an element taken away is still remembered.
+          if (event.relatedTarget !== null && !listAt.current?.contains(event.relatedTarget))
+            lastOn.current = null;
+        }}
+      >
+        {/* **What an answer said that the person must read** (#5890): Keep blocked on a vault
+            the chat's persona already holds does not stop its runs, and says where to. Above
+            whatever waits, until dismissed, since the row it was pressed on has gone. Drawn with the
+            asks, under every scope filter, on purpose: it names its chat, and the person who
+            pressed must read it. */}
+        {drawsAsks && recent.some((one) => one.said !== undefined) && (
+          <NoticeList>
+            {recent.map((one) =>
+              one.said === undefined ? null : (
+                <Notice
+                  key={`${one.at}:${chainSaid(one.chain)}:${one.says}`}
+                  cause={`answer-said:${one.at}:${chainSaid(one.chain)}:${one.says}`}
+                  // As the refused vault's own Notice says the same sentence: news.
+                  tone="news"
+                  // Where the sentence sends the person to the Allowed list, a press goes
+                  // there (#5939); Dismiss stays beside it.
+                  link={
+                    one.allowedList === true
+                      ? {
+                          label: OPEN_ALLOWED_LIST,
+                          onPress: () => askSettingsLink(plane, ALLOWED_LIST),
+                        }
+                      : undefined
+                  }
+                  onDismiss={() => dismissSaid(plane, one)}
+                >
+                  <strong>{chainSaid(one.chain)}</strong>
+                  {": "}
+                  {capMarks(one.said).text}
+                </Notice>
+              ),
+            )}
+          </NoticeList>
+        )}
+        {!drawsAsks ? null : asks === undefined ? (
+          // Not read yet is not empty; what the window already knows waits wider is offered.
+          <EmptyScope said={NOT_READ_YET} wider={wider} onWiden={widen} />
+        ) : rows.length === 0 && askingShown.length === 0 && othersShown.length === 0 ? (
+          wider === undefined ? (
+            <Empty
+              recent={recent.slice(0, MOST_ANSWERED)}
+              allowed={allowedLately}
+              quiet={quiet.length > 0 ? quietSaid(quiet) : undefined}
+            />
           ) : (
-            rows.map((group) => (
-              <section
+            <EmptyScope
+              said={`Nothing is waiting on you in ${scopeOf(scope)}.`}
+              wider={wider}
+              onWiden={widen}
+            />
+          )
+        ) : null}
+        {drawsAsks && anyAsk && (
+          <List aria-label={ASKS} className="inbox-rows" disallowTypeAhead>
+            {askRows.map((group) => (
+              <ListRowSection
                 key={group.session}
+                id={`chat:${group.session}`}
                 className="inbox-chat"
-                aria-label={chainSaid(group.chain)}
+                title={
+                  <span className="inbox-chain">
+                    {(() => {
+                      const persona = personaOf?.(group.session);
+                      return persona ? <PersonaMark persona={persona} /> : null;
+                    })()}
+                    {chainSaid(group.chain)}
+                  </span>
+                }
+                named
                 data-session={group.session}
               >
-                <h3 className="inbox-chain">
-                  {(() => {
-                    const persona = personaOf?.(group.session);
-                    return persona ? <PersonaMark persona={persona} /> : null;
-                  })()}
-                  {chainSaid(group.chain)}
-                </h3>
-                <ul>
-                  {group.asks.map((ask) => (
-                    <Ask
-                      key={askKey(ask)}
-                      plane={plane}
-                      ask={ask}
-                      dispatches={(asks ?? []).filter(
-                        (one) => one.session === ask.session && one.source === "dispatch",
-                      )}
-                      shape={shapes.get(askKey(ask)) ?? shapeOfAsk(ask)}
-                      open={answering.has(askKey(ask))}
-                      onOpen={(open) => answerOpen(askKey(ask), open)}
-                      where={whereOf(ask.session)}
-                      now={now}
-                      onGo={() => onGo(ask.session)}
-                      onAnswered={onAnswered}
-                      onIgnore={ignore === undefined ? undefined : () => ignore(ask)}
-                      onTouched={(answer) => touch(ask, answer)}
-                      above={stops.slice(0, stops.indexOf(askKey(ask))).join("\n")}
-                    />
-                  ))}
-                </ul>
-              </section>
-            ))
-          )}
-          {drawsAsks &&
-            elsewhere !== undefined &&
-            askingShown.map((item) => (
-              <ElsewhereGroup key={elsewhereKey(item)} item={item} onPress={elsewhere.onPress} />
+                {group.asks.map((ask) => (
+                  <Ask
+                    key={askKey(ask)}
+                    plane={plane}
+                    ask={ask}
+                    dispatches={(asks ?? []).filter(
+                      (one) => one.session === ask.session && one.source === "dispatch",
+                    )}
+                    shape={shapes.get(askKey(ask)) ?? shapeOfAsk(ask)}
+                    open={answering.has(askKey(ask))}
+                    onOpen={(open) => answerOpen(askKey(ask), open)}
+                    where={whereOf(ask.session)}
+                    now={now}
+                    onGo={() => onGo(ask.session)}
+                    onAnswered={onAnswered}
+                    onIgnore={ignore === undefined ? undefined : () => ignore(ask)}
+                    onTouched={(answer) => touch(ask, answer)}
+                    above={places.slice(0, places.indexOf(askKey(ask))).join("\n")}
+                  />
+                ))}
+              </ListRowSection>
             ))}
-          {drawsAsks && elsewhere?.onOpen !== undefined && othersShown.length > 0 && (
-            <OtherProjects others={othersShown} onOpen={elsewhere.onOpen} now={now} />
-          )}
-          {/* **A chat that cannot say it waits is the ✋'s** (#1695, FROM_THE_HAND): in Asks,
+            {elsewhere !== undefined &&
+              askingShown.map((item) => (
+                <ElsewhereGroup key={elsewhereKey(item)} item={item} onPress={elsewhere.onPress} />
+              ))}
+            {elsewhere?.onOpen !== undefined && othersShown.length > 0 && (
+              <OtherProjects others={othersShown} onOpen={elsewhere.onOpen} now={now} />
+            )}
+          </List>
+        )}
+        {/* **A chat that cannot say it waits is the ✋'s** (#1695, FROM_THE_HAND): in Asks,
               where the hand lands, after what waits elsewhere (#5644). Never counted on the
               status line, so the Notices' count is the same wherever it is listed. */}
-          {part === "asks" && elsewhere !== undefined && quiet.length > 0 && (
-            <NoticeList>
-              <QuietNotices plane={plane} quiet={quiet} onPress={elsewhere.onPress} />
-            </NoticeList>
-          )}
-          {drawsNotices &&
-            (notices !== undefined ||
-              (part === undefined && quiet.length > 0) ||
-              windowLines !== undefined) && (
-              <section
-                className="inbox-notices"
-                aria-label={NOTICES}
-                hidden={
-                  noticed === 0 &&
-                  windowLinesCount === 0 &&
-                  resultsCount === 0 &&
-                  (reading === undefined || reading.length === 0)
-                }
-                ref={noticesAt}
-              >
-                <div className="inbox-updates-head">
-                  <PanelSectionTitle level={3} className="inbox-chain">
-                    {NOTICES}
-                  </PanelSectionTitle>
-                  {/* **Dismiss all** (#5650): each listed Notice's own Dismiss, the Notices
+        {part === "asks" && elsewhere !== undefined && quiet.length > 0 && (
+          <NoticeList>
+            <QuietNotices plane={plane} quiet={quiet} onPress={elsewhere.onPress} />
+          </NoticeList>
+        )}
+        {drawsNotices &&
+          (notices !== undefined ||
+            (part === undefined && quiet.length > 0) ||
+            windowLines !== undefined) && (
+            <section
+              className="inbox-notices"
+              aria-label={NOTICES}
+              hidden={
+                noticed === 0 &&
+                windowLinesCount === 0 &&
+                resultsCount === 0 &&
+                (reading === undefined || reading.length === 0)
+              }
+              ref={noticesAt}
+            >
+              <div className="inbox-updates-head">
+                <PanelSectionTitle level={3} className="inbox-chain">
+                  {NOTICES}
+                </PanelSectionTitle>
+                {/* **Dismiss all** (#5650): each listed Notice's own Dismiss, the Notices
                       without one left standing; an Undo stands where the view holds it. */}
-                  {part === "notices" && noticesClear !== undefined && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      tooltip={DISMISS_ALL_TIP}
-                      onPress={() => {
-                        const { keys, out } = noticesClear.take();
-                        holdOrCarryOut(hold, keys, out);
-                      }}
-                      className="inbox-go"
-                    >
-                      {DISMISS_ALL}
-                    </Button>
-                  )}
-                </div>
-                <NothingDone said={noticesSaid} />
-                {/* What may yet list a Notice here, each with its own mark (#5325): not read yet
-                  is not nothing to say. */}
-                {reading?.map((said) => (
-                  <p key={said} className="pending" aria-busy="true">
-                    <LoaderCircle className="node-icon spinning" aria-hidden="true" />
-                    {said}
-                  </p>
-                ))}
-                {/* The window's own lines, listed first: the window draws its one list here. */}
-                {placeWindowLines !== undefined && (
-                  <div className="inbox-window-lines" ref={placeWindowLines} />
-                )}
-                <NoticeWayGuard value={noticesAllow}>
-                  <NoticeList
-                    onCount={counted}
-                    onAnswer={onNoticeAnswer}
-                    hold={part === "notices" ? hold : undefined}
-                    onClear={setNoticesClear}
+                {part === "notices" && noticesClear !== undefined && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    tooltip={DISMISS_ALL_TIP}
+                    onPress={() => {
+                      const { keys, out } = noticesClear.take();
+                      holdOrCarryOut(hold, keys, out);
+                    }}
+                    className="inbox-go"
                   >
-                    {notices}
-                    {elsewhere !== undefined && part === undefined && (
-                      <QuietNotices plane={plane} quiet={quiet} onPress={elsewhere.onPress} />
-                    )}
-                  </NoticeList>
-                </NoticeWayGuard>
-                {/* **Results** (#3344): what the person's actions answered, newest first, each the
-              notice that stood at the top of the content, with the same ways on. */}
-                {placeResults !== undefined && (
-                  <section aria-label={RESULTS} hidden={resultsCount === 0}>
-                    <PanelSectionTitle level={3} className="inbox-chain">
-                      {RESULTS}
-                    </PanelSectionTitle>
-                    <div className="inbox-results" ref={placeResults} />
-                  </section>
+                    {DISMISS_ALL}
+                  </Button>
                 )}
-              </section>
-            )}
-          {/* The teammate Notices, under Project alone (#5646): never counted, so no `onCount`
-              reaches the status line. */}
-          {drawsUpdates && updatesShown !== undefined && (
-            <UpdateList updates={updatesShown} stops={stops}>
-              {part === "updates" && from === "project" && fromTheProject !== undefined && (
-                <NoticeList
-                  onCount={(_, listed) => setTeammates(listed)}
-                  hold={hold}
-                  onClear={setTeammatesClear}
-                >
-                  {fromTheProject}
-                </NoticeList>
+              </div>
+              <NothingDone said={noticesSaid} />
+              {/* What may yet list a Notice here, each with its own mark (#5325): not read yet
+                  is not nothing to say. */}
+              {reading?.map((said) => (
+                <p key={said} className="pending" aria-busy="true">
+                  <LoaderCircle className="node-icon spinning" aria-hidden="true" />
+                  {said}
+                </p>
+              ))}
+              {/* The window's own lines, listed first: the window draws its one list here. */}
+              {placeWindowLines !== undefined && (
+                <div className="inbox-window-lines" ref={placeWindowLines} />
               )}
-            </UpdateList>
+              <NoticeWayGuard value={noticesAllow}>
+                <NoticeList
+                  onCount={counted}
+                  onCauses={onNoticeCauses}
+                  onAnswer={onNoticeAnswer}
+                  hold={part === "notices" ? hold : undefined}
+                  onClear={setNoticesClear}
+                >
+                  {notices}
+                  {elsewhere !== undefined && part === undefined && (
+                    <QuietNotices plane={plane} quiet={quiet} onPress={elsewhere.onPress} />
+                  )}
+                </NoticeList>
+              </NoticeWayGuard>
+              {/* **Results** (#3344): what the person's actions answered, newest first, each the
+              notice that stood at the top of the content, with the same ways on. */}
+              {placeResults !== undefined && (
+                <section aria-label={RESULTS} hidden={resultsCount === 0}>
+                  <PanelSectionTitle level={3} className="inbox-chain">
+                    {RESULTS}
+                  </PanelSectionTitle>
+                  <div className="inbox-results" ref={placeResults} />
+                </section>
+              )}
+            </section>
           )}
-          {part === "updates" &&
-            (updatesShown?.rows ?? []).length === 0 &&
-            (from === "mine" || fromTheProject === undefined || teammates === 0) && (
-              <EmptyState headline={NOTHING_FROM[from]} />
+        {/* The teammate Notices, under Project alone (#5646): never counted, so no `onCount`
+              reaches the status line. */}
+        {drawsUpdates && updatesShown !== undefined && (
+          <UpdateList updates={updatesShown} places={places}>
+            {part === "updates" && from === "project" && fromTheProject !== undefined && (
+              <NoticeList
+                onCount={(_, listed) => setTeammates(listed)}
+                hold={hold}
+                onClear={setTeammatesClear}
+              >
+                {fromTheProject}
+              </NoticeList>
             )}
-          {part === "notices" &&
-            noticed === 0 &&
-            windowLinesCount === 0 &&
-            resultsCount === 0 &&
-            (reading === undefined || reading.length === 0) && (
-              <EmptyState headline={NOTHING_STANDS} />
-            )}
-        </div>
-      </RovingFocusGroup.Root>
+          </UpdateList>
+        )}
+        {part === "updates" &&
+          (updatesShown?.rows ?? []).length === 0 &&
+          (from === "mine" || fromTheProject === undefined || teammates === 0) && (
+            <EmptyState headline={NOTHING_FROM[from]} />
+          )}
+        {part === "notices" &&
+          noticed === 0 &&
+          windowLinesCount === 0 &&
+          resultsCount === 0 &&
+          (reading === undefined || reading.length === 0) && (
+            <EmptyState headline={NOTHING_STANDS} />
+          )}
+      </div>
     </section>
+  );
+  // **What its rows read of what is New** (#6002): the project's seen record, where it is given.
+  return seen === undefined ? (
+    drawn
+  ) : (
+    <SeenRowsOf.Provider value={seen}>{drawn}</SeenRowsOf.Provider>
   );
 }
 

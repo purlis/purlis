@@ -71,3 +71,70 @@ fn a_waiting_bar_lost_on_its_track_leaves_the_waiting_colour_as_the_theme_writes
     assert_eq!(held, None);
     assert_eq!(drawn.value("state.waiting"), theme.value("state.waiting"));
 }
+
+/// The grounds a box is drawn on (#4475): the window, a panel and a dialog.
+const BOX_GROUNDS: [&str; 3] = ["surface.base", "surface.raised", "surface.overlay"];
+
+#[test]
+fn a_palette_whose_box_edge_is_lost_on_its_ground_gets_a_finding_on_each_and_is_drawn_as_written() {
+    // A text box's edge, `border.input`, in each ground's own colour: the box has no edge there.
+    for ground in BOX_GROUNDS {
+        let colour = classic().first().value(ground).to_owned();
+        let theme = dark(json!({ "border.input": colour }));
+        let report = check(&theme);
+        assert!(
+            report.findings.iter().any(|one| matches!(one,
+                Finding::Contrast { tint: None, pair, .. }
+                    if pair.front == "border.input" && pair.back == ground && pair.floor == 3.0)),
+            "border.input on {ground}: {:#?}",
+            report.findings
+        );
+        let (drawn, _) = floors::hold(&theme);
+        assert_eq!(drawn.value("border.input"), colour, "{ground}");
+    }
+}
+
+/// What the check said of `front` on `back`, as the theme is, with each floor it was held to.
+fn floors_found(report: &Report, front: &str, back: &str) -> Vec<f64> {
+    report
+        .findings
+        .iter()
+        .filter_map(|one| match one {
+            Finding::Contrast {
+                tint: None, pair, ..
+            } if pair.front == front && pair.back == back && pair.under.is_none() => {
+                Some(pair.floor)
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn code_a_mark_can_be_told_by_but_not_read_as_words_is_reported_and_drawn_as_written() {
+    // A keyword at about 3.5:1 on the editor's own ground: told apart as a mark, at the check's
+    // 3:1, and under the 4.5:1 code is read at as words (#3796, #5979).
+    let theme = dark(json!({
+        "terminal.background": "#000000",
+        "syntax.keyword": "#5a5a5a",
+    }));
+    let report = check(&theme);
+    assert_eq!(
+        floors_found(&report, "syntax.keyword", "terminal.background"),
+        [4.5]
+    );
+    let (drawn, _) = floors::hold(&theme);
+    assert_eq!(drawn.value("syntax.keyword"), "#5a5a5a");
+}
+
+#[test]
+fn code_under_a_mark_s_floor_is_said_once_at_that_floor() {
+    let theme = dark(json!({
+        "terminal.background": "#000000",
+        "syntax.keyword": "#222222",
+    }));
+    assert_eq!(
+        floors_found(&check(&theme), "syntax.keyword", "terminal.background"),
+        [3.0]
+    );
+}

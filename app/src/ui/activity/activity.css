@@ -224,6 +224,21 @@
   background-color: var(--danger-base);
 }
 
+/* **Something New in its view** (#6002, ADR 0121 decision 10): a pip in the accent colour at the
+   item's bottom right, ringed in the bar's ground as a count is, apart from the count above it. */
+[data-scope="activity"][data-part="pip"] {
+  position: absolute;
+  inset-block-end: var(--space-2);
+  inset-inline-end: var(--space-2);
+  box-sizing: border-box;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: var(--radius-full);
+  background-color: var(--accent-base);
+  box-shadow: 0 0 0 2px var(--activity-ground, var(--surface-deep));
+  pointer-events: none;
+}
+
 /* What the count says, for the item's description: read out, not drawn. */
 [data-scope="activity"][data-part="said"] {
   position: absolute;

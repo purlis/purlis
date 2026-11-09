@@ -14,7 +14,8 @@ import { aCardIsUp } from "./chatCard";
 import { CARD_LEAVE_MS, ChatsSection, ON_MEMORY_SAID } from "./ChatsSection";
 import { ChatsHere, fixedChats, moved, nothingKnown } from "./chatState";
 import { chatsTree, type ListedChat } from "./chatsTree";
-import { expectFocusInSight, untilFocused } from "./stories.testkit";
+import type { ChatBrowser, FinishedTask } from "./bindings";
+import { expectFocusInSight, untilFocused, untilFocusWithin } from "./stories.testkit";
 import { panelRoot } from "./ui/panel/Panel";
 
 /** A chat as the core lists it, open in a tab. */
@@ -151,11 +152,11 @@ function HandInItsPanel() {
 }
 
 /**
- * **The rolled-up hand** (#3523): beside the row of a chat whose task below needs the person,
- * the button family's quiet icon button, its hand in the needs-you colour, named by where it
- * goes, as its tooltip says. It is out of the arrows' way (`tabIndex` -1), and the pointer's
- * alone (`aria-hidden`, #3658): the tree owns only its rows, and the row says which chat below
- * needs you. The picture is the two rows at rest.
+ * **The rolled-up hand** (#3523): at the end of the row of a chat whose task below needs the
+ * person, the button family's quiet icon button, its hand in the needs-you colour, named by where
+ * it goes, as its tooltip says. A control of the row (#3198): out of the Tab order, reached by →
+ * from the row, as the tree family's grid reaches a row's controls. The picture is the two rows
+ * at rest.
  */
 export const RolledUpHand: Story = {
   render: () => <HandInItsPanel />,
@@ -166,10 +167,25 @@ export const RolledUpHand: Story = {
     await expect(button).toHaveAttribute("data-scope", "button");
     await expect(button).toHaveAttribute("data-variant", "quiet");
     await expect(button).toHaveAttribute("tabindex", "-1");
-    await expect(button.closest('[aria-hidden="true"]')).not.toBeNull();
+    await expect(button.closest('[aria-hidden="true"]')).toBeNull();
     await expect(button.getAttribute("aria-label")).toMatch(/^Go to live check of staging/);
     // A target of at least 24px, as the family's sm is (WCAG 2.5.8).
     await expect(button.getBoundingClientRect().height).toBeGreaterThanOrEqual(24);
+    // The keyboard's way: Tab to the list's one stop, the row, and → onto its hand.
+    const row = button.closest<HTMLElement>('[role="row"]');
+    await expect(row).not.toBeNull();
+    for (let step = 0; step < 12 && document.activeElement !== row; step += 1)
+      await userEvent.tab();
+    await untilFocused(() => row, "the row with the hand");
+    await userEvent.keyboard("{ArrowRight}");
+    await untilFocused(() => button, "the hand");
+    expectFocusInSight();
+    // ← goes back to the row, and Tab leaves the list.
+    await userEvent.keyboard("{ArrowLeft}");
+    await untilFocused(() => row, "the row again");
+    expectFocusInSight();
+    // At rest for the picture: the keyboard off the rows, so no ring is mid-draw.
+    (document.activeElement as HTMLElement | null)?.blur();
   },
 };
 
@@ -201,7 +217,7 @@ function ArrivingInItsPanel() {
 }
 
 /** The rows the list draws. */
-const rowsIn = (canvas: HTMLElement) => canvas.querySelectorAll('[role="treeitem"]').length;
+const rowsIn = (canvas: HTMLElement) => canvas.querySelectorAll('[role="row"]').length;
 
 /** One pointer for a whole walk, which says what it leaves as it moves, as a real one does:
  *  each call of the bare `userEvent` starts a pointer of its own, from nowhere. */
@@ -289,7 +305,7 @@ export const HeldAcrossTheGapToTheCard: Story = {
   parameters: { screenshot: false },
   play: async ({ canvasElement }) => {
     const user = userEvent.setup();
-    const row = canvasElement.querySelector<HTMLElement>('[role="treeitem"][data-session="1"]');
+    const row = canvasElement.querySelector<HTMLElement>('[role="row"][data-session="1"]');
     await expect(row).not.toBeNull();
     const inUse = keepTheWindowInUse();
     const clock = parkTheCardsWait();
@@ -324,20 +340,22 @@ export const HeldAcrossTheGapToTheCard: Story = {
       ).toHaveAttribute("data-holding");
       await expect(rowsIn(canvasElement), "the rows changed while the list was held").toBe(2);
 
-      // The gap between the row and its card, and what the page draws there: not the list.
+      // The gap between the row and its card. On the tree family (#3198) part of it is the
+      // tree's own inset, which is the list's, and past it the view's inset, which is not; where
+      // the middle of the gap falls is the theme's spacing.
       const from = (row as HTMLElement).getBoundingClientRect();
       const to = card.getBoundingClientRect();
       await expect(to.left - from.right).toBeGreaterThan(1);
       const y = from.top + from.height / 2;
       const gap = (from.right + to.left) / 2;
-      await expect(
-        canvasElement.querySelector(".chats-list")?.contains(document.elementFromPoint(gap, y)),
-      ).toBe(false);
+      const overTheList =
+        canvasElement.querySelector(".chats-list")?.contains(document.elementFromPoint(gap, y)) ===
+        true;
 
-      // Onto the gap: the pointer has left the list, and the hold waits for it.
+      // Onto the gap: still held. Where the pointer has left the list, the hold waits for it.
       await pointAt(user, gap, y);
       await drawn();
-      await expect(clock.waiting()).toBeGreaterThan(0);
+      if (!overTheList) await expect(clock.waiting()).toBeGreaterThan(0);
       await expect(rowsIn(canvasElement)).toBe(2);
       // Then onto the card, which is the list's: still held, however long that took.
       await pointAt(user, to.left + 8, to.top + 8);
@@ -394,38 +412,43 @@ function SaidUnderInItsPanel() {
 
 /** The tree's row of `session`. */
 const rowOf = (canvas: HTMLElement, session: number) =>
-  canvas.querySelector<HTMLElement>(`[role="treeitem"][data-session="${session}"]`);
+  canvas.querySelector<HTMLElement>(`[role="row"][data-session="${session}"]`);
 
 /**
  * **A row at its task limit, and its dispatch waiting on memory** (#1498, #1617, #3759): the
  * line under the row says which limit binds, with the link to Dispatch settings, and the next
- * says what waits on memory. Both are the pointer's and the eye's: the tree owns its rows alone
- * (axe's `aria-required-children`, with no rule turned off), so the row says the limit's whole
- * sentence, which names where it is changed, and what waits. Tab goes from the row out of the
- * list, past them. The picture is the two lines under the first row.
+ * says what waits on memory. Both are in the row (#3198): the row says the limit's whole
+ * sentence, and what waits, after its persona and state; the link is a control of the row,
+ * reached by → from it, and Tab goes from the row out of the list. The picture is the two lines
+ * under the first row.
  */
 export const AtItsTaskLimit: Story = {
   render: () => <SaidUnderInItsPanel />,
   play: async ({ canvasElement }) => {
     const row = rowOf(canvasElement, 1);
     await expect(row).not.toBeNull();
-    await expect(row).toHaveAttribute(
-      "aria-description",
+    await expect(row?.getAttribute("aria-description")).toContain(
       `${UNDER[0].atLimit?.said} 1 dispatch waits on memory. ${ON_MEMORY_SAID}`,
     );
     const link = canvasElement.querySelector<HTMLElement>(".at-limit-settings");
     await expect(link).not.toBeNull();
     await expect(link).toHaveTextContent("Dispatch settings");
     await expect(link).toHaveAttribute("tabindex", "-1");
-    await expect((link as HTMLElement).closest('[aria-hidden="true"]')).not.toBeNull();
+    await expect((link as HTMLElement).closest('[aria-hidden="true"]')).toBeNull();
+    await expect((link as HTMLElement).closest('[role="row"]')).toBe(row);
 
-    // The keyboard's way: past the view's head, the row is the list's one stop, and Tab goes on
-    // past its lines.
+    // The keyboard's way: past the view's head, the row is the list's one stop; → reaches the
+    // link in it (#3198), ← comes back, and Tab goes on out of the list.
     for (let step = 0; step < 12 && document.activeElement !== row; step += 1) {
       await userEvent.tab();
     }
     await untilFocused(() => rowOf(canvasElement, 1), "the first row");
     expectFocusInSight();
+    await userEvent.keyboard("{ArrowRight}");
+    await untilFocused(() => link, "Dispatch settings");
+    expectFocusInSight();
+    await userEvent.keyboard("{ArrowLeft}");
+    await untilFocused(() => rowOf(canvasElement, 1), "the first row again");
     await userEvent.tab();
     await waitFor(() =>
       expect(canvasElement.querySelector(".chats-list")?.contains(document.activeElement)).toBe(
@@ -446,8 +469,8 @@ export const RestartSaid: Story = {
   play: async ({ canvasElement }) => {
     const said = within(canvasElement).getByRole("status", { name: "Restarts" });
     await expect(said).toHaveTextContent(RESTART);
-    await expect(said.closest('[role="tree"]')).toBeNull();
-    await expect(rowOf(canvasElement, 2)).toHaveAttribute("aria-description", RESTART);
+    await expect(said.closest('[role="treegrid"]')).toBeNull();
+    await expect(rowOf(canvasElement, 2)?.getAttribute("aria-description")).toContain(RESTART);
     const line = canvasElement.querySelector<HTMLElement>(".restart-said");
     await expect(line).toHaveTextContent(RESTART);
     await expect(line).toHaveAttribute("aria-hidden", "true");
@@ -565,6 +588,145 @@ export const ArrivedNewAndNoted: Story = {
     expectFocusInSight();
     // A focused row opens its tip after a delay, so a picture taken now catches it open or not.
     // The picture is the four rows: let the keyboard go before it is taken.
+    (document.activeElement as HTMLElement | null)?.blur();
+  },
+};
+
+/** A session, the task it asked for, its browser, and what its earlier tasks came to: one
+ *  failed, which stands alone, and two done, folded into one row (#3198). */
+const WHOLE = chatsTree([
+  listed(1, { name: "steward 1" }),
+  listed(2, { name: "check staging", persona: "devops", parent: 1, mode: "task", tab: false }),
+]);
+
+const BROWSER: ChatBrowser = {
+  session: 1,
+  name: "b1",
+  program: "B1",
+  unended: false,
+  pinned: false,
+  was: null,
+  login: null,
+  driver: null,
+  pool: null,
+  secrets: [],
+};
+
+const ENDED = (id: string, name: string, more: Partial<FinishedTask> = {}): FinishedTask => ({
+  id,
+  asker: 1,
+  name,
+  chat: null,
+  did_not_start: false,
+  attempts: 0,
+  waits: null,
+  persona: "devops",
+  how: "done",
+  outcome: "done",
+  folds: true,
+  report: `${name}: all good.`,
+  changed: null,
+  ended: null,
+  place: "smart-ide",
+  branch: null,
+  reopens: true,
+  not_reopened: null,
+  ...more,
+});
+
+const FINISHED = new Map([
+  [
+    1,
+    [
+      ENDED("t1", "count rows", { how: "failed", outcome: "failed", folds: false }),
+      ENDED("t2", "tidy up"),
+      ENDED("t3", "read the logs"),
+    ],
+  ],
+]);
+
+/** The session with everything a row can hold under it, in the side panel. */
+function WholeInItsPanel() {
+  return (
+    <ChatsHere.Provider value={fixedChats({ ...nothingKnown, bySession: { 2: "running" } })}>
+      <div
+        {...panelRoot("side")}
+        aria-label="Navigation"
+        role="region"
+        style={{ display: "flex", flexDirection: "column", inlineSize: 300, blockSize: 360 }}
+      >
+        <ChatsSection
+          rows={WHOLE}
+          front={1}
+          onOpen={() => {}}
+          finished={FINISHED}
+          browsers={new Map([[1, [{ browser: BROWSER, chat: "steward 1" }]]])}
+          onBrowser={() => {}}
+        />
+      </div>
+    </ChatsHere.Provider>
+  );
+}
+
+/**
+ * **A session with a task, a browser and finished tasks, as rows of the tree** (#3198): its
+ * browser, then its task, then the failed task that stands alone, then the "Finished (2)" row the
+ * done ones fold into. The arrows walk them all; Enter on the failed one shows its report under
+ * its line; → goes on into its buttons and ← comes back; → opens "Finished (2)" and ↓ moves into
+ * it. The picture is the rows at rest.
+ */
+export const WithATaskABrowserAndFinished: Story = {
+  render: () => <WholeInItsPanel />,
+  play: async ({ canvasElement }) => {
+    const rows = () => within(canvasElement).getAllByRole("row");
+    const named = (name: string) => () =>
+      rows().find((one) => one.getAttribute("aria-label") === name) ?? null;
+    await expect(rows().map((one) => one.getAttribute("aria-label"))).toEqual([
+      "steward 1",
+      "Browser b1",
+      "check staging",
+      "count rows",
+      "Finished (2)",
+    ]);
+    // The list's one stop is the chat in front.
+    for (let step = 0; step < 12 && document.activeElement !== named("steward 1")(); step += 1)
+      await userEvent.tab();
+    await untilFocused(named("steward 1"), "steward 1");
+    for (const name of ["Browser b1", "check staging", "count rows"]) {
+      await userEvent.keyboard("{ArrowDown}");
+      await untilFocused(named(name), name);
+      expectFocusInSight();
+    }
+    // The failed task's report, under its line, on Enter.
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(
+        within(canvasElement).getByRole("region", { name: "Report of count rows" }),
+      ).toHaveTextContent("count rows: all good."),
+    );
+    // Its buttons, by →, and back to the row by ←.
+    await userEvent.keyboard("{ArrowRight}");
+    await untilFocusWithin(named("count rows"), "a button of count rows");
+    await expect(document.activeElement).not.toBe(named("count rows")());
+    expectFocusInSight();
+    await userEvent.keyboard("{ArrowLeft}");
+    await untilFocused(named("count rows"), "count rows again");
+    // Shut again, so the picture is the rows at rest.
+    await userEvent.keyboard("{Enter}");
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(named("Finished (2)"), "Finished (2)");
+    // → opens it; ↓ goes on to its first row (→ on the open row would go into its own Clear
+    // finished, as the APG treegrid's → does).
+    await userEvent.keyboard("{ArrowRight}");
+    await waitFor(() => expect(named("tidy up")()).not.toBeNull());
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(named("tidy up"), "tidy up");
+    expectFocusInSight();
+    // ← goes back to "Finished (2)", and ← again shuts it.
+    await userEvent.keyboard("{ArrowLeft}");
+    await untilFocused(named("Finished (2)"), "Finished (2) again");
+    await userEvent.keyboard("{ArrowLeft}");
+    await waitFor(() => expect(named("tidy up")()).toBeNull());
     (document.activeElement as HTMLElement | null)?.blur();
   },
 };

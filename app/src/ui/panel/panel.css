@@ -284,11 +284,11 @@
   column-gap: var(--space-4);
 }
 
-/* **A tree's rows in a view are a view's rows** too (the Chats view, #3342): 30px, and scrolled
-   into sight below the top and a group's name. Over the tree row's own height
-   (`primitives/collections.css`), which this sheet comes after. */
-[data-scope="panel-section"][data-frame] .ui-tree-row {
-  --ui-row-height: calc(var(--size-control) + var(--space-1));
+/* **The Chats view's rows are a view's rows** too (#3342, on the tree family since #3198): 30px,
+   and scrolled into sight below the top and a group's name. Its own: the Explorer's trees keep
+   the tree family's sizes. */
+[data-scope="panel-section"][data-frame].chats-section [data-scope="tree"][data-part="root"] {
+  min-block-size: calc(var(--size-control) + var(--space-1));
   scroll-margin-block-start: var(--panel-section-row-clear);
 }
 
@@ -504,6 +504,11 @@ li:has(> [data-scope="view-nav"][data-part="item"][data-starts-group]) {
   margin-block-start: var(--space-4);
   padding-block-start: var(--space-4);
   border-block-start: 1px solid var(--border-subtle);
+}
+
+/* A page of the one above it: set in a step under it, out of no box but its own. */
+[data-scope="view-nav"][data-part="item"][data-sub] {
+  padding-inline-start: var(--space-6);
 }
 
 /* Under the pointer: the pointer's ground and the primary words. */

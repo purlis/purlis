@@ -31,6 +31,7 @@ fn card(id: &str, from: From) -> Card {
         duplicable: false,
         folder: true,
         stamp: String::new(),
+        parts: Vec::new(),
     }
 }
 

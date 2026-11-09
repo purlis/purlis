@@ -76,7 +76,7 @@ export const REVEALED_MS = 1500;
 
 /** The row of chat `session` inside `within`, or nothing while it is not drawn. */
 export function chatRowOf(within: ParentNode | null, session: number): HTMLElement | null {
-  return within?.querySelector<HTMLElement>(`[role="treeitem"][data-session="${session}"]`) ?? null;
+  return within?.querySelector<HTMLElement>(`[role="row"][data-session="${session}"]`) ?? null;
 }
 
 /**
@@ -104,10 +104,26 @@ export function rowsAbove(rows: readonly ChatRow[], asker: number): number[] {
   return above;
 }
 
+/** The chat's row a row of the Chats tree is under, the nearest above it at a shallower level
+ *  that is a chat's (`ChatsSection`'s `chat`), or nothing at the top. */
+function chatAbove(row: HTMLElement): HTMLElement | null {
+  const rows = [
+    ...(row.closest('[role="treegrid"]')?.querySelectorAll<HTMLElement>('[role="row"]') ?? []),
+  ];
+  let level = Number(row.getAttribute("aria-level") ?? "1");
+  for (let up = rows.indexOf(row) - 1; up >= 0; up -= 1) {
+    const above = Number(rows[up].getAttribute("aria-level") ?? "1");
+    if (above >= level) continue;
+    if (rows[up].classList.contains("chat")) return rows[up];
+    level = above;
+  }
+  return null;
+}
+
 /**
- * The button of the finished row of `task` under the chat called `asker`, inside `within`, or
- * nothing while it is not drawn. Found by what the list says of itself: its group is labelled
- * `Finished tasks of <asker>`, and a row's name is its task's.
+ * The finished row of `task` under the chat called `asker`, inside `within`, or nothing while it
+ * is not drawn (#3198): a row of the tree named by its task, under that chat's row, or under its
+ * "Finished (n)" row.
  */
 export function finishedRowOf(
   within: ParentNode | null,
@@ -115,22 +131,19 @@ export function finishedRowOf(
   task: string,
 ): HTMLElement | null {
   if (within === null) return null;
-  for (const group of within.querySelectorAll<HTMLElement>('[role="group"][aria-label]')) {
-    if (group.getAttribute("aria-label") !== `Finished tasks of ${asker}`) continue;
-    for (const row of group.querySelectorAll<HTMLElement>("button.finished-name")) {
-      if (row.querySelector(".session")?.textContent === task) return row;
-    }
+  for (const row of within.querySelectorAll<HTMLElement>('[role="row"].finished-task')) {
+    if (row.getAttribute("aria-label") !== task) continue;
+    if (chatAbove(row)?.getAttribute("aria-label") === asker) return row;
   }
   return null;
 }
 
-/** The button of the finished row whose dispatch record is `id`, inside `within`, or nothing
- *  while it is not drawn (`FinishedTasks` marks each row with it). */
+/** The finished row whose dispatch record is `id`, inside `within`, or nothing while it is not
+ *  drawn (`FinishedTasks` marks each row with it). */
 export function finishedRowById(within: ParentNode | null, id: string): HTMLElement | null {
   if (within === null) return null;
-  for (const row of within.querySelectorAll<HTMLElement>(".finished-task[data-task-id]")) {
-    if (row.getAttribute("data-task-id") === id)
-      return row.querySelector<HTMLElement>("button.finished-name");
+  for (const row of within.querySelectorAll<HTMLElement>('[role="row"][data-task-id]')) {
+    if (row.getAttribute("data-task-id") === id) return row;
   }
   return null;
 }

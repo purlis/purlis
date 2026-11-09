@@ -70,6 +70,8 @@ function pagesOf(needs: number): ViewPage[] {
     { id: "sources", label: "Sources" },
     { id: "deleted", label: "Deleted" },
     { id: "harness", label: "Harness skills", startsGroup: true },
+    // A page of the one above it, set in under it (`sub`, as a harness profile's in Settings).
+    { id: "claude", label: "Claude Code", sub: true },
     { id: "routing", label: "Routing" },
   ];
 }

@@ -26,12 +26,13 @@ import { aTabForEachChat } from "./laidOut.testkit";
 import { GLOBAL } from "./windowprefs";
 import type { ChatMarkProps } from "./ui/chat-mark/ChatMark";
 import { goToWorkspace, rowSays, stripNamed } from "./test-strips";
-import { findByTip, getByTip, tipOf } from "./ui/tooltip/tooltip.testkit";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 import { heard } from "./frame.testkit";
 import { aBatchOf } from "./chatEvents.testkit";
 import { CHAT_EVENTS } from "./chatEvents";
 import { CHANGE, FIRST_LINE } from "./QuizBand";
 import { CLOSE_QUIZ } from "./TaskQuiz";
+import { findTree, heard as heardOf, rowAround, rowsOf } from "./ui/tree/tree.testkit";
 
 /** Updates, opened from the right bar (#5644): the updates the Inbox listed after its asks. */
 async function showUpdates() {
@@ -406,10 +407,10 @@ function core(open: (OpenChat & { workspace: string })[], finished: FinishedTask
   };
 }
 
-const section = () => screen.findByRole("tree", { name: "Chats of this project" });
+const section = () => findTree("Chats of this project");
 
-/** The shared collections sheet, in the `components` layer above `App.css` (DS-3). */
-const components = cascadeOf("primitives/collections.css");
+/** The tree family's sheet, in the `components` layer above `App.css` (#2911, #3198). */
+const components = cascadeOf("ui/tree/tree.css");
 
 /** What the window draws `element` with: the components layer's declaration where it has one,
  *  since that layer is above `App.css`'s whatever the specificity, and `App.css`'s where not. */
@@ -418,16 +419,12 @@ const drawnAs = (element: Element, property: string, state: Drawn = {}) =>
 
 /** Each row of the section as `level name`, top to bottom. */
 const shape = (tree: HTMLElement) =>
-  within(tree)
-    .getAllByRole("treeitem")
-    .map(
-      (row) => `${row.getAttribute("aria-level")} ${row.querySelector(".session")?.textContent}`,
-    );
+  rowsOf(tree).map(
+    (row) => `${row.getAttribute("aria-level")} ${row.querySelector(".session")?.textContent}`,
+  );
 
 const row = (tree: HTMLElement, name: string) => {
-  const found = within(tree)
-    .getAllByRole("treeitem")
-    .find((one) => one.querySelector(".session")?.textContent === name);
+  const found = rowsOf(tree).find((one) => one.querySelector(".session")?.textContent === name);
   if (found === undefined) throw new Error(`no row is named ${name}`);
   return found;
 };
@@ -836,9 +833,25 @@ const threeDeep = () => [
   chat(4, "alpha"),
 ];
 
-/** The hand a row wears for a chat below it: a button beside the row, in the row's item. */
+/** The hand a row wears for a chat below it: a control of the row's own (#3198). */
 const rolledUp = (tree: HTMLElement, name: string) =>
-  row(tree, name).closest("li")?.querySelector<HTMLElement>("button.rolled-up") ?? null;
+  row(tree, name).querySelector<HTMLElement>("button.rolled-up");
+
+/** The ⋯ on chat `name`'s pane's head, and not the one on its row. */
+const paneMore = (name: string) => {
+  const found = screen
+    .getAllByRole("button", { name: `More for ${name}` })
+    .find((one) => rowAround(one) === null);
+  if (found === undefined) throw new Error(`${name}'s pane has no ⋯`);
+  return found;
+};
+
+/** A row's twist: the tree family's, React Aria's toggle of its rows (#3198). */
+const twistOf = (tree: HTMLElement, name: string) => {
+  const found = row(tree, name).querySelector<HTMLElement>('[data-part="twist"]');
+  if (found === null) throw new Error(`${name} has no twist`);
+  return found;
+};
 
 /** The same, where a test is about pressing it. */
 const theRolledUp = (tree: HTMLElement, name: string) => {
@@ -873,21 +886,29 @@ describe("the needs-you mark rolling up the tree (#1448)", () => {
     expect(rolledUp(tree, "drop commons")).toBeNull();
   });
 
-  it("leaves the tree owning only its rows while a row wears the hand (#3658)", async () => {
+  it("makes the hand a control of its row, named and reached by → from it (#3658, #3198)", async () => {
     const { move } = core(threeDeep());
     render(<App />);
     const tree = await section();
     await waitFor(() => expect(shape(tree)).toHaveLength(4));
 
     move(3, "waiting", 10, [3]);
-    expect(rolledUp(tree, "steward 1")).not.toBeNull();
+    const steward = row(tree, "steward 1");
+    const hand = rolledUp(tree, "steward 1");
+    expect(hand).not.toBeNull();
 
-    // axe's `aria-required-children`: a tree owns treeitems and groups. The hand is the
-    // pointer's alone, and the row says which chat below needs you.
-    expect(within(tree).queryAllByRole("button")).toEqual([]);
-    expect(row(tree, "steward 1").getAttribute("aria-description")).toBe(
-      "devops 3 below it needs you",
-    );
+    // In a cell of its row, where a treegrid lets a control be (axe's
+    // `aria-required-children`), named, and out of the Tab order: the arrows reach it.
+    expect(rowAround(hand)).toBe(steward);
+    expect(hand?.closest("[aria-hidden]")).toBeNull();
+    expect(hand).toHaveAccessibleName("Go to devops 3 below steward 1, which needs you");
+    expect(hand?.getAttribute("tabindex")).toBe("-1");
+    act(() => steward.focus());
+    for (let step = 0; step < 8 && document.activeElement !== hand; step += 1)
+      await userEvent.keyboard("{ArrowRight}");
+    expect(document.activeElement).toBe(hand);
+    // And the row says which chat below needs you.
+    expect(steward.getAttribute("aria-description")).toMatch(/\. devops 3 below it needs you\.$/);
   });
 
   it("still shows on a row folded again over a chat two levels down that needs you", async () => {
@@ -900,7 +921,7 @@ describe("the needs-you mark rolling up the tree (#1448)", () => {
 
     // The grandchild asks (its path is opened, #1675), and the person folds its rows away.
     move(3, "waiting", 10, [3]);
-    await userEvent.click(getByTip("Fold the chats under steward 1", tree));
+    await userEvent.click(twistOf(tree, "steward 1"));
     expect(shape(tree)).toEqual(["1 steward 1", "1 steward 4"]);
     expect(row(tree, "steward 1").getAttribute("aria-expanded")).toBe("false");
 
@@ -912,7 +933,7 @@ describe("the needs-you mark rolling up the tree (#1448)", () => {
     render(<App />);
     const tree = await section();
     await waitFor(() => expect(shape(tree)).toHaveLength(4));
-    await userEvent.click(getByTip("Fold the chats under steward 1", tree));
+    await userEvent.click(twistOf(tree, "steward 1"));
     move(3, "waiting", 10, [3]);
 
     await userEvent.click(theRolledUp(tree, "steward 1"));
@@ -1050,7 +1071,7 @@ describe("what needs you (#1448)", () => {
     const said = await within(inbox).findByText(
       /its report has nowhere to go because drop commons has closed or its program has ended/,
     );
-    expect(said.closest("li")?.getAttribute("data-kind")).toBe("report-undelivered");
+    expect(said.closest('[role="row"]')?.getAttribute("data-kind")).toBe("report-undelivered");
   });
 
   it("puts the update away and never the ask of a chat that also asks something", async () => {
@@ -1067,7 +1088,7 @@ describe("what needs you (#1448)", () => {
     await screen.findByRole("tabpanel", { name: "Asks" });
     const inbox = await showUpdates();
     const said = await within(inbox).findByText(/its report has nowhere to go because/);
-    const row = said.closest("li");
+    const row = said.closest<HTMLElement>('[role="row"]');
     if (row === null) throw new Error("the update has no row");
     const dismiss = within(row).getByRole("button", { name: /^Dismiss: / });
     // An icon button's tooltip is its name, then its hint (#5649: Dismiss is the row's ×).
@@ -1103,10 +1124,10 @@ describe("one list per chat, on the row, the pane and the palette (#4753)", () =
     // Not a short list: the chat's rows, and the ways to end it.
     expect(byRightClick).toEqual(expect.arrayContaining(["Rename chat…", "Open", "Stop", "End…"]));
 
-    const more = own.closest("li")?.querySelector<HTMLElement>(".chat-more button");
+    const more = own.querySelector<HTMLElement>(".chat-more button");
     if (more == null) throw new Error("steward 1's row has no ⋯");
-    // The pointer's and the eye's: out of the tab order, and the row says it once.
-    expect(more.closest("[aria-hidden]")).not.toBeNull();
+    // A control of the row's (#3198): out of the Tab order, reached by → from the row.
+    expect(rowAround(more)).toBe(own);
     expect(more.getAttribute("tabindex")).toBe("-1");
     expect(await listed(() => userEvent.click(more))).toEqual(byRightClick);
 
@@ -1116,7 +1137,7 @@ describe("one list per chat, on the row, the pane and the palette (#4753)", () =
     });
     expect(byKeys).toEqual(byRightClick);
 
-    const pane = screen.getByRole("button", { name: "More for steward 1" });
+    const pane = paneMore("steward 1");
     expect(await listed(() => userEvent.click(pane))).toEqual(byRightClick);
   });
 
@@ -1221,7 +1242,7 @@ describe("stopping a chat (#1448)", () => {
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
 
     // The chat's own pane, in front: its ⋯ is the chat's list.
-    await userEvent.click(screen.getByRole("button", { name: "More for steward 1" }));
+    await userEvent.click(paneMore("steward 1"));
     await screen.findByRole("menu");
     const ways = await openSubmenus("Stop");
     expect(
@@ -1274,23 +1295,18 @@ describe("how the tree reads to a screen reader (#1448)", () => {
 
     move(3, "waiting", 10, [3]);
 
-    expect(row(tree, "steward 1").getAttribute("aria-description")).toBe(
-      "devops 3 below it needs you",
-    );
-    expect(row(tree, "drop commons").getAttribute("aria-description")).toBe(
-      "devops 3 below it needs you",
-    );
-    // The chat itself wears the mark, whose name says it; no description repeats it.
-    expect(row(tree, "devops 3").getAttribute("aria-description")).toBeNull();
-    expect(row(tree, "steward 4").getAttribute("aria-description")).toBeNull();
-    // The fold is the pointer's: the row says expanded and folds on the arrows, so the button
-    // is not a second thing to read.
-    const fold = getByTip("Fold the chats under steward 1", tree);
-    expect(fold.getAttribute("aria-hidden")).toBe("true");
-    // Inside the row, and no control of its own: nothing for the keyboard to reach.
-    expect(fold.tagName).toBe("SPAN");
-    expect(fold.closest('[role="treeitem"]')).toBe(row(tree, "steward 1"));
-    expect(within(tree).queryByRole("button", { name: /Fold the chats/ })).toBeNull();
+    // After its persona and state (#3198), each row above says which chat below needs you.
+    const below = /\. devops 3 below it needs you\.$/;
+    expect(row(tree, "steward 1").getAttribute("aria-description")).toMatch(below);
+    expect(row(tree, "drop commons").getAttribute("aria-description")).toMatch(below);
+    // The chat itself wears the mark, which its state says; no description repeats it.
+    expect(row(tree, "devops 3").getAttribute("aria-description")).not.toMatch(/below it/);
+    expect(row(tree, "steward 4").getAttribute("aria-description")).not.toMatch(/below it/);
+    // The fold is the tree family's twist (#3198): React Aria's toggle in the row, which the
+    // row says as expanded and folds on the arrows, never a Tab stop.
+    const fold = twistOf(tree, "steward 1");
+    expect(rowAround(fold)).toBe(row(tree, "steward 1"));
+    expect(fold.getAttribute("tabindex")).toBe("-1");
   });
 
   // #3886: the card's `aria-describedby` overrides the row's `aria-description`, so what the
@@ -1310,7 +1326,7 @@ describe("how the tree reads to a screen reader (#1448)", () => {
     expect(card()).toBeNull();
     expect(steward.getAttribute("aria-describedby")).toBeNull();
     expect(steward.getAttribute("aria-description")).toMatch(
-      /^devops 3 below it needs you\. 2 dispatches wait on memory\. This machine is short on memory: .* The Dispatches tab lists them under Not started\.$/,
+      /^steward, [^.]*\. devops 3 below it needs you\. 2 dispatches wait on memory\. This machine is short on memory: .* The Dispatches tab lists them under Not started\.$/,
     );
 
     // The keyboard rests on the row: the card comes up, describes the row, and says it all,
@@ -1736,7 +1752,7 @@ describe("a chat's state, as a word and a shape (#1484)", () => {
     await waitFor(() => expect(shape(tree)).toHaveLength(2));
     move(2, "running", 10);
     await question(2, "with");
-    fireEvent.click(getByTip("Fold the chats under steward 1", tree));
+    await userEvent.click(twistOf(tree, "steward 1"));
 
     await waitFor(() => expect(within(row(tree, "steward 1")).getByText("1 asking")).toBeTruthy());
     expect(rolledUp(tree, "steward 1")).toBeNull();
@@ -1757,7 +1773,7 @@ describe("a chat's state, as a word and a shape (#1484)", () => {
     await waitFor(() => expect(says(row(tree, "talk")).word).toBe("working"));
     move(2, "done", 11);
     // Its one task is over, so the session folded by itself (#1499): opened by hand.
-    fireEvent.click(getByTip("Show the chats under steward 1", tree));
+    await userEvent.click(twistOf(tree, "steward 1"));
 
     const done = { word: "done", shape: "dash" };
     expect(says(row(tree, "talk"))).toEqual(done);
@@ -1771,7 +1787,7 @@ describe("a chat's state, as a word and a shape (#1484)", () => {
     render(<App />);
     const tree = await section();
     // Its one task is over, so the session folded by itself (#1499): opened by hand.
-    fireEvent.click(await findByTip("Show the chats under steward 1", tree));
+    await userEvent.click(await waitFor(() => twistOf(tree, "steward 1")));
     await waitFor(() => expect(shape(tree)).toHaveLength(2));
     const both = async (state: { word: string; shape: string }) => {
       expect(says(row(tree, "talk"))).toEqual(state);
@@ -2040,26 +2056,26 @@ describe("one tree style, in the Chats tree and the explorer (#1672)", () => {
       expect(shape(tree)).toEqual(["1 steward 1", "2 drop commons", "3 steward 3"]),
     );
     // The Explorer view is mounted beside Chats and hidden while Chats is open (#1673).
-    // The explorer is the tree family's since #2911 (`ui/tree`); the Chats tree is still the
-    // shared tree (DS-11) until it moves too.
+    // Both are the tree family's: the explorer since #2911, the Chats tree since #3198.
     const explorer = await screen.findByRole("treegrid", {
       name: "Repos and branches",
       hidden: true,
     });
-    expect(tree).toHaveClass("ui-tree");
+    expect(tree).toHaveAttribute("data-scope", "tree");
     expect(explorer).toHaveAttribute("data-scope", "tree");
 
-    // The Chats tree is flat: each row draws a guide per level above it, in the tree's steps.
-    expect(drawnAs(row(tree, "steward 1"), "--ui-tree-depth")).toBe("0");
-    expect(drawnAs(row(tree, "drop commons"), "--ui-tree-depth")).toBe("1");
-    expect(drawnAs(row(tree, "steward 3"), "--ui-tree-depth")).toBe("2");
-    expect(drawnAs(row(tree, "steward 3"), "background-image")).toContain("var(--tree-guide)");
+    // Each row is one step in a level, by its depth, which the family draws its guides from.
+    const depth = (name: string) => row(tree, name).style.getPropertyValue("--tree-depth");
+    expect([depth("steward 1"), depth("drop commons"), depth("steward 3")]).toEqual([
+      "0",
+      "1",
+      "2",
+    ]);
     expect(drawnAs(row(tree, "steward 3"), "padding-inline-start")).toBe(
-      "calc((var(--ui-tree-drawn) + 1) * var(--ui-tree-step))",
+      drawnAs(within(explorer).getAllByRole("row")[0], "padding-inline-start"),
     );
-    // And the item that holds a row draws nothing of the tree's: no second indent.
-    const item = row(tree, "steward 3").closest("li") as HTMLElement;
-    expect(drawnAs(item, "padding-inline-start")).toBeUndefined();
+    // And no row is drawn inside another: no second indent.
+    expect(rowAround(row(tree, "steward 3").parentElement)).toBeNull();
 
     // The explorer is nested, its rows stepped by their own `aria-level`. Its levels were this
     // fixture's chats until the explorer stopped drawing chats (#1673), and a chat fixture has
@@ -2074,7 +2090,7 @@ describe("the chat in front, as the Chats tree draws it (#1672)", () => {
     render(<App />);
     const tree = await section();
     await waitFor(() => expect(shape(tree)).toEqual(["1 steward 1", "1 steward 2"]));
-    expect(tree).toHaveClass("ui-tree");
+    expect(tree).toHaveAttribute("data-scope", "tree");
 
     const front = row(tree, "steward 1");
     const other = row(tree, "steward 2");
@@ -2108,7 +2124,7 @@ describe("the chat in front, as the Chats tree draws it (#1672)", () => {
     );
     expect(drawnAs(other, "background", { focusVisible: true })).not.toBe("var(--list-selected)");
     // Selected and not focused: the fill and the edge, and no ring.
-    expect(drawnAs(front, "outline")).toBeUndefined();
+    expect(drawnAs(front, "outline")).toBe("none");
     // Both at once: each is still there.
     expect(drawnAs(front, "outline", { focusVisible: true })).toBe(
       "var(--focus-ring-width) solid var(--focus-ring)",
@@ -2128,9 +2144,10 @@ describe("a tidy Chats list (DS-11, #1843)", () => {
     const tree = await section();
     await waitFor(() => expect(shape(tree)).toHaveLength(3));
 
-    for (const one of within(tree).getAllByRole("treeitem")) {
+    for (const one of rowsOf(tree)) {
       const name = one.querySelector(".session")?.textContent ?? "";
-      expect(one, name).toHaveClass("ui-row", "ui-tree-row");
+      expect(one, name).toHaveAttribute("data-scope", "tree");
+      expect(one, name).toHaveAttribute("data-part", "root");
       // Named by its chat, at its level, and one stop of the roving group (the arrows').
       expect(one.textContent, name).toContain(name);
       expect(one).toHaveAccessibleName(new RegExp(`^${name}\\b`));
@@ -2138,16 +2155,13 @@ describe("a tidy Chats list (DS-11, #1843)", () => {
       expect(one.getAttribute("data-session"), name).not.toBeNull();
       expect(["0", "-1"], name).toContain(one.getAttribute("tabindex"));
       // The shared row's height and no padding of the Chats list's own above or below it.
-      expect(drawnAs(one, "min-block-size"), name).toBe("var(--ui-row-height)");
+      // The tree family's small row, a side view's (#3198): the chrome's height.
+      expect(drawnAs(one, "min-block-size"), name).toBe("var(--size-chrome)");
       expect(drawnAs(one, "padding-block"), name).toBe("0");
       expect(drawnWith(one, "padding"), name).toBeUndefined();
     }
     // The tree's first row is the one Tab reaches; the others wait for the arrows.
-    expect(
-      within(tree)
-        .getAllByRole("treeitem")
-        .filter((one) => one.tabIndex === 0),
-    ).toHaveLength(1);
+    expect(rowsOf(tree).filter((one) => one.tabIndex === 0)).toHaveLength(1);
   });
 
   it("leads each row with the persona's mark, or a shell's, the state a dot on it (#3342)", async () => {
@@ -2156,10 +2170,10 @@ describe("a tidy Chats list (DS-11, #1843)", () => {
     const tree = await section();
     await waitFor(() => expect(shape(tree)).toHaveLength(2));
 
-    const rows = within(tree).getAllByRole("treeitem");
+    const rows = rowsOf(tree);
     for (const one of rows) {
       const name = one.querySelector(".session")?.textContent ?? "";
-      const lead = one.querySelector(".ui-row-lead") as HTMLElement;
+      const lead = one.querySelector('[data-part="lead"]') as HTMLElement;
       // The lead holds the persona's mark with the state on it, in a column as wide on every row.
       expect(
         [...lead.children].map((part) => part.getAttribute("data-scope")),
@@ -2202,10 +2216,12 @@ describe("a tidy Chats list (DS-11, #1843)", () => {
 
     const steward = row(tree, "steward 1").querySelector('[data-part="who"] .persona-mark');
     await waitFor(() => expect(tipOf(steward)).toBe("steward, working"));
-    const terminal = within(tree)
-      .getAllByRole("treeitem")
+    const terminal = rowsOf(tree)
       .map((one) => one.querySelector('[data-part="who"] [data-part="mark"] > svg'))
       .find((one) => one !== null);
+    // Read from inside the tree (#3198), as a grid's marks are (`tipInTable`): a treegrid hands
+    // the keyboard coming from outside it back to its row, so the row has it first.
+    act(() => rowAround(terminal)?.focus());
     expect(tipOf(terminal)).toBe("terminal, working");
   });
 
@@ -2243,14 +2259,14 @@ describe("a tidy Chats list (DS-11, #1843)", () => {
     await waitFor(() => expect(shape(tree)).toEqual(["1 steward 1", "2 devops 2", "1 steward 3"]));
     // No empty placeholder on a leaf, and none of the old fold at all.
     expect(tree.querySelector(".twist")).toBeNull();
-    expect(row(tree, "steward 1").querySelectorAll(".ui-tree-twist")).toHaveLength(1);
+    expect(row(tree, "steward 1").querySelectorAll('[data-part="twist"]')).toHaveLength(1);
     for (const leaf of ["devops 2", "steward 3"]) {
-      expect(row(tree, leaf).querySelector(".ui-tree-twist"), leaf).toBeNull();
+      expect(row(tree, leaf).querySelector('[data-part="twist"]'), leaf).toBeNull();
       expect(row(tree, leaf).getAttribute("aria-expanded"), leaf).toBeNull();
     }
     // The parent says it is open, and its twist hangs in the step before its name.
     expect(row(tree, "steward 1").getAttribute("aria-expanded")).toBe("true");
-    const twist = row(tree, "steward 1").querySelector(".ui-tree-twist") as HTMLElement;
+    const twist = twistOf(tree, "steward 1");
     expect(drawnAs(twist, "position")).toBe("absolute");
 
     await userEvent.click(twist);
@@ -2316,11 +2332,14 @@ describe("a tidy Chats list (DS-11, #1843)", () => {
     const view = screen.getByTestId("chats-section");
 
     // A name: one tree step, the marks' column and the row's gap in. The e2e measures it.
-    expect(drawnWith(view, "--chats-name-at")).toBe(
-      "calc(var(--space-5) + var(--chats-mark) + var(--space-3))",
+    // On the tree family (#3198): the tree's inset, a small row's own, one step and the gap.
+    expect(drawnWith(view, "--chats-name-at")?.replace(/\s+/g, " ")).toBe(
+      "calc( var(--space-2) + var(--space-3) + var(--space-5) + var(--space-1) + var(--chats-mark) + var(--space-3) )",
     );
-    expect(components(tree, "--ui-tree-step")).toBe("var(--space-5)");
-    expect(components(row(tree, "steward 1"), "--ui-row-gap")).toBe("var(--space-3)");
+    expect(components(tree, "padding")).toBe("var(--space-2)");
+    expect(components(tree, "--tree-step")).toBe("calc(var(--space-5) + var(--space-1))");
+    expect(components(row(tree, "steward 1"), "--tree-pad")).toBe("var(--space-3)");
+    expect(components(row(tree, "steward 1"), "column-gap")).toBe("var(--space-3)");
     // The filter: the field family's box with a leading glass (#1856, #2905), handed the marks'
     // column and size for its glass, and the gap that starts its text at the names, past its
     // hairline.
@@ -2449,19 +2468,24 @@ describe("a chat's row is one line, with a hover card (#1675)", () => {
       // One line, and no second line: the name, then the state, which is drawn first and
       // heard after the name, then the persona's badge at the row's end (DS-11).
       expect(one.querySelector(".line.two")).toBeNull();
-      // The twist is the pointer's, out of the accessibility tree (#4764).
-      const parts = [...one.children].filter((part) => !part.matches(".ui-tree-twist"));
-      expect(parts.map((part) => part.className)).toEqual([
-        "ui-row-label session ui-text-body",
-        "ui-row-lead",
-        "ui-row-trail",
+      // The tree family's row (#3198): its mark, its name and its end, in its one cell. The
+      // twist is React Aria's toggle beside them.
+      const cell = one.querySelector('[role="gridcell"]') as HTMLElement;
+      const parts = [...cell.querySelectorAll(":scope > [data-part]")].filter(
+        (part) => !part.matches('[data-part="twist"], [hidden]'),
+      );
+      expect(parts.map((part) => part.getAttribute("data-part"))).toEqual([
+        "lead",
+        "label",
+        "trail",
       ]);
-      expect(drawnAs(parts[1], "order")).toBe("-1");
-      // The persona's mark leads, with the state on it, and both are said (#3342).
-      expect(parts[1].children[0]).toHaveAttribute("data-scope", "chat-mark");
-      expect(parts[1].querySelector('[data-part="who"] .persona-mark')).not.toBeNull();
+      // The persona's mark leads, with the state on it, and both are said (#3342): the row is
+      // named by its chat, and its description says the persona and the state after it.
+      expect(parts[0].children[0]).toHaveAttribute("data-scope", "chat-mark");
+      expect(parts[0].querySelector('[data-part="who"] .persona-mark')).not.toBeNull();
       const persona = name.split(" ")[0];
-      expect(one).toHaveAccessibleName(`${name} ${persona}, working`);
+      expect(one).toHaveAccessibleName(name);
+      expect(heardOf(one)).toBe(`${name} ${persona}, working`);
       // The state is its mark on the row; its word is out of sight.
       const word = one.querySelector('[data-part="word"]') as HTMLElement;
       expect(word.textContent).toBe("working");
@@ -2661,10 +2685,11 @@ describe("a chat's row is one line, with a hover card (#1675)", () => {
 
     // Open: the tasks are rows a level in, each under the session's guide.
     expect(shape(tree)).toEqual(["1 steward 1", "2 devops 2", "2 devops 3", "2 devops 4"]);
-    expect(drawnAs(row(tree, "devops 3"), "background-image")).toContain("var(--tree-guide)");
+    // A level in, under the session's guide, which the family draws from its depth.
+    expect(row(tree, "devops 3").style.getPropertyValue("--tree-depth")).toBe("1");
     expect(row(tree, "steward 1").querySelector(".task-count")).toBeNull();
 
-    await userEvent.click(getByTip("Fold the chats under steward 1", tree));
+    await userEvent.click(twistOf(tree, "steward 1"));
 
     expect(shape(tree)).toEqual(["1 steward 1"]);
     const count = row(tree, "steward 1").querySelector(".task-count");
@@ -2679,7 +2704,7 @@ describe("a chat's row is one line, with a hover card (#1675)", () => {
     render(<App />);
     const tree = await section();
     await waitFor(() => expect(shape(tree)).toHaveLength(2));
-    await userEvent.click(getByTip("Fold the chats under steward 1", tree));
+    await userEvent.click(twistOf(tree, "steward 1"));
     expect(shape(tree)).toEqual(["1 steward 1"]);
     // The pointer leaves the list, which holds no arrival back then (V100-47).
     fireEvent.pointerLeave(tree.closest(".chats-list") as HTMLElement);
@@ -2697,7 +2722,7 @@ describe("a chat's row is one line, with a hover card (#1675)", () => {
     render(<App />);
     const tree = await section();
     await waitFor(() => expect(shape(tree)).toHaveLength(4));
-    await userEvent.click(getByTip("Fold the chats under steward 1", tree));
+    await userEvent.click(twistOf(tree, "steward 1"));
     expect(shape(tree)).toEqual(["1 steward 1", "1 steward 4"]);
 
     move(3, "waiting", 10, [3]);
@@ -2706,7 +2731,7 @@ describe("a chat's row is one line, with a hover card (#1675)", () => {
       expect(shape(tree)).toEqual(["1 steward 1", "2 drop commons", "3 devops 3", "1 steward 4"]),
     );
     // Opened once, for the asking: a fold set again afterwards is the person's, and holds.
-    await userEvent.click(getByTip("Fold the chats under steward 1", tree));
+    await userEvent.click(twistOf(tree, "steward 1"));
     expect(shape(tree)).toEqual(["1 steward 1", "1 steward 4"]);
     move(3, "waiting", 11, [3]);
     expect(shape(tree)).toEqual(["1 steward 1", "1 steward 4"]);

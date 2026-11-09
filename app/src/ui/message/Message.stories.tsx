@@ -6,7 +6,8 @@
  * variant A draws them, borderless rows in a 320 px side view on the side panel's own ground.
  * Each state's mark (waiting, done, failed, a report, plain), a read line, a row with its × over
  * its time, its links, a reply answered in the row behind its Answer link, closed and open
- * (#5651), a result read in place, and a consent's waiting edge. Walked by the
+ * (#5651), a result read in place, a consent's waiting edge, and a New row's accent bar (#6002).
+ * Walked by the
  * keyboard, held to axe and compared with its baseline in Chromium and WebKit
  * (`docs/component-stories.md`).
  */
@@ -27,6 +28,7 @@ import { expect, userEvent, within } from "storybook/test";
 import { expectFocusInSight } from "../../stories.testkit";
 import { Button, ButtonRow, IconButton } from "../button/Button";
 import { TextArea } from "../field/Field";
+import { List } from "../list/List";
 import { Panel } from "../panel/Panel";
 import {
   MessageBody,
@@ -61,6 +63,7 @@ function Row({
   formId,
   read,
   consent,
+  isNew,
   onDismiss,
 }: {
   tone: MessageTone;
@@ -75,6 +78,7 @@ function Row({
   formId?: string;
   read?: boolean;
   consent?: boolean;
+  isNew?: boolean;
   onDismiss?: () => void;
 }) {
   return (
@@ -83,6 +87,7 @@ function Row({
       icon={icon}
       read={read}
       consent={consent}
+      isNew={isNew}
       aria-label={title}
       dismiss={
         onDismiss === undefined ? undefined : (
@@ -276,6 +281,67 @@ export const ConsentInTheRow: Story = {
   },
 };
 
+/** **New rows** (#6002, ADR 0121 decision 10): an ask and a consent not seen yet, each with the
+ *  accent bar at its start (the consent's beside its waiting edge), over a line already seen. */
+export const NewRows: Story = {
+  render: () => (
+    <View>
+      <Row
+        tone="waiting"
+        isNew
+        icon={<ShieldQuestion />}
+        title="auth-fix"
+        time="now"
+        meta="Asks your permission · web"
+        words="Run cargo test --workspace"
+        links={
+          <Button size="sm" variant="quiet-link" data-lead="">
+            Answer
+          </Button>
+        }
+      />
+      <Row
+        tone="waiting"
+        consent
+        isNew
+        icon={<ShieldQuestion />}
+        title="steward 4"
+        time="now"
+        meta="Waiting on you"
+        words="The sandbox blocked a host: api.example.com"
+        form={
+          <ButtonRow size="sm">
+            <Button variant="grants">Allow</Button>
+            <Button variant="secondary">Keep blocked</Button>
+          </ButtonRow>
+        }
+      />
+      <Row
+        tone="done"
+        icon={<CircleCheck />}
+        title="Release notes"
+        time="1h"
+        meta="Task finished · docs"
+        words="Wrote the notes for 0.9."
+      />
+    </View>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    // A New row says so to a reader first, and a row already seen does not.
+    await expect(canvas.getByRole("listitem", { name: "auth-fix" })).toHaveTextContent(/^New: /);
+    await expect(canvas.getByRole("listitem", { name: "Release notes" })).not.toHaveTextContent(
+      "New:",
+    );
+    await userEvent.tab();
+    await expect(canvas.getByRole("button", { name: "Answer" })).toHaveFocus();
+    await expectFocusInSight();
+    await userEvent.tab();
+    await expect(canvas.getByRole("button", { name: "Allow" })).toHaveFocus();
+    await expectFocusInSight();
+  },
+};
+
 /** **An ask answered in the row, behind its Answer link** (#5651): Answer opens its reply box
  *  with the keyboard in it, and reads Cancel while it is open. */
 function AskAnsweredHere({ opened = false }: { opened?: boolean }) {
@@ -433,6 +499,77 @@ export const ResultReadInPlace: Story = {
     await userEvent.keyboard("{Enter}");
     await expect(read).toHaveAttribute("aria-expanded", "true");
     await expect(canvas.getByText(/a borrowed value/)).toBeVisible();
+    await expectFocusInSight();
+  },
+};
+
+/** Two messages as rows of the list family's list of rows that act (#3123). */
+function InAList() {
+  const [said, setSaid] = useState<string>();
+  return (
+    <Panel variant="side">
+      <div style={{ inlineSize: "320px" }}>
+        <List aria-label="Asks" disallowTypeAhead>
+          {["steward 3", "steward 5"].map((who) => (
+            <MessageRow
+              key={who}
+              as="row"
+              id={who}
+              textValue={who}
+              tone="waiting"
+              icon={<ShieldQuestion />}
+              dismiss={
+                <IconButton
+                  icon={<X />}
+                  size="sm"
+                  variant="quiet"
+                  aria-label={`Dismiss ${who}`}
+                  onPress={() => setSaid(`Dismissed ${who}`)}
+                />
+              }
+            >
+              <MessageTop title={who} time={<time>2m</time>} />
+              <MessageMeta>Asks your permission</MessageMeta>
+              <MessageBody>Run cargo test</MessageBody>
+              <MessageLinks>
+                <Button size="sm" variant="quiet-link" onPress={() => setSaid(`Answer ${who}`)}>
+                  Answer
+                </Button>
+              </MessageLinks>
+            </MessageRow>
+          ))}
+        </List>
+      </div>
+      {said !== undefined && <p role="status">{said}</p>}
+    </Panel>
+  );
+}
+
+/**
+ * **A message as a list's row** (`as="row"`, #3123): the row is the message's own root, drawn
+ * by the message family, with the list's keyboard: one Tab stop on its first row, ↓ to the next,
+ * → through its own link and its ×, Enter presses the one focused. Its ring is drawn inside it,
+ * its mark keeps its tint and its × takes its time's place as it holds the keyboard. The picture
+ * is the second row under the keyboard.
+ */
+export const AsAListRow: Story = {
+  render: () => <InAList />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const [first, second] = canvas.getAllByRole("row");
+    await userEvent.tab();
+    await expect(first).toHaveFocus();
+    await userEvent.keyboard("{ArrowDown}");
+    await expect(second).toHaveFocus();
+    await expectFocusInSight();
+    await userEvent.keyboard("{ArrowRight}");
+    await expect(within(second).getByRole("button", { name: "Answer" })).toHaveFocus();
+    await userEvent.keyboard("{ArrowRight}");
+    await expect(within(second).getByRole("button", { name: "Dismiss steward 5" })).toHaveFocus();
+    await userEvent.keyboard("{Enter}");
+    await expect(canvas.getByRole("status")).toHaveTextContent("Dismissed steward 5");
+    await userEvent.keyboard("{ArrowLeft}{ArrowLeft}");
+    await expect(second).toHaveFocus();
     await expectFocusInSight();
   },
 };

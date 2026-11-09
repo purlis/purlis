@@ -214,6 +214,10 @@ pub fn update_set(cx: &mut Ctx<'_>, set: &[Updating]) -> Result<Undo, String> {
         }
     }
     let locks = moved_locks(plane, &planned)?;
+    for one in &planned {
+        cx.audited(&one.audited())
+            .map_err(|why| format!("{why}, so no skill was updated"))?;
+    }
     let mut wrote: Vec<Wrote> = Vec::new();
     for one in &planned {
         match write_planned(plane, one) {
@@ -351,6 +355,32 @@ pub fn undo_update_set(cx: &mut Ctx<'_>, undo: &Undo) -> Result<(), NotUndone> {
         return Err(NotUndone::Refused(
             "a grant the update widened changed since, so nothing was undone".to_owned(),
         ));
+    }
+    // An undo moves each pin back: on an org's project, an update to it, audited (SK-11).
+    for moved in &undo.locks {
+        for after in moved
+            .after
+            .skills
+            .iter()
+            .filter(|entry| !moved.before.skills.contains(entry))
+        {
+            let Some(before) = moved
+                .before
+                .skills
+                .iter()
+                .find(|one| one.is(&after.level.0, &after.name))
+            else {
+                continue;
+            };
+            cx.audited(&super::super::policy::Audited::new(
+                super::super::policy::Act::Update,
+                &before.level.0,
+                vec![before.name.clone()],
+                &before.source,
+                &before.pin,
+            ))
+            .map_err(|why| NotUndone::Refused(format!("{why}, so nothing was undone")))?;
+        }
     }
     let mut left = take_back_all(&undo.wrote);
     left.extend(entries_back(plane, &undo.locks));

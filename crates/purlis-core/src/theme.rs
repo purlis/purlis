@@ -307,6 +307,10 @@ pub struct ResolvedTheme {
     /// theme that names none, which draws every family as its default.
     #[serde(skip)]
     pub parts: parts::Parts,
+    /// **The theme that wrote each key of its parts**, by name (#2947): itself, or a theme it
+    /// extends, so Settings › Theme says which keys are its own.
+    #[serde(skip)]
+    pub parts_by: BTreeMap<parts::Key, String>,
     /// The contrast it is drawn for, at least (#2925): more when the person asked for it, which
     /// raised its colours ([`least::raise`]) and raises its parts' reading floors.
     #[serde(skip)]
@@ -624,6 +628,7 @@ fn built_in_of(text: &str) -> Theme {
                 options: Vec::new(),
                 tint: Tint::default(),
                 parts: parts.clone(),
+                parts_by: parts.keys().map(|key| (*key, name.clone())).collect(),
                 least: Least::Standard,
             }
         })
@@ -964,6 +969,7 @@ fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
     }
     vocabulary::follow_muted(&mut named, &base.values);
     vocabulary::follow_kin(&mut named, &base.values);
+    vocabulary::follow_faint(&mut named, &base.values);
     let values: BTreeMap<&'static str, String> = TOKENS
         .iter()
         .map(|token| {
@@ -1010,6 +1016,7 @@ fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
             options: Vec::new(),
             tint: Tint::default(),
             parts: parts::Parts::new(),
+            parts_by: BTreeMap::new(),
             least: Least::Standard,
         }),
         complaints: notes,

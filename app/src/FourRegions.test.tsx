@@ -205,6 +205,11 @@ function core(
     if (cmd === "alerts_everywhere") return alerts;
     if (cmd === "asks_waiting") return { plane: PLANE, asks: waitingAsks };
     if (cmd === "inbox_updates") return keptUpdates;
+    if (cmd === "inbox_seen") return seenRecord;
+    if (cmd === "see_inbox") {
+      seenRecord = [...(seenRecord ?? []), ...(a.keys as string[])];
+      return seenRecord;
+    }
     if (cmd === "sandbox_state") return sandboxState;
     return null;
   };
@@ -273,6 +278,8 @@ let waitingAsks: unknown[] = [];
 
 /** The updates the core keeps for the project (#1693). A test sets it before `core()`. */
 let keptUpdates: unknown[] = [];
+/** What the core's seen record answers (#6002): `null`, as a core that has none to say. */
+let seenRecord: string[] | null = null;
 
 /** What the core says of the project's sandbox (#5646). A test sets it before `core()`. */
 let sandboxState: unknown = null;
@@ -326,6 +333,7 @@ beforeEach(() => {
   repos = [];
   waitingAsks = [];
   keptUpdates = [];
+  seenRecord = null;
   sandboxState = null;
   mockEvents = false;
 });
@@ -1480,6 +1488,23 @@ describe("the right side's activity bar", () => {
     expect(tab("Asks")).toHaveAccessibleDescription("2 things wait on you");
   });
 
+  it("puts a new pip on Asks while an ask there has not been seen, and none for one seen (#6002)", async () => {
+    waitingAsks = [asking(3, "Run cargo test"), asking(4, "Run npm test")];
+    seenRecord = ["ask:3:ask-3"];
+    core();
+    render(<App />);
+    await screen.findByRole("tabpanel", { name: "Asks" });
+    await waitFor(() =>
+      expect(tab("Asks")).toHaveAccessibleDescription("2 things wait on you, 1 new"),
+    );
+    expect(tab("Asks").querySelector('[data-part="pip"]')).not.toBeNull();
+    // The other ask's row is in sight in the open view: about a second later it has been seen.
+    await waitFor(() => expect(tab("Asks").querySelector('[data-part="pip"]')).toBeNull(), {
+      timeout: 4000,
+    });
+    expect(tab("Asks")).toHaveAccessibleDescription("2 things wait on you");
+  });
+
   it("counts the unread Mine lines on the bell, in the plain colours, and never a Project one (#5646)", async () => {
     const at = Math.floor(Date.now() / 1000) - 60;
     const line = (key: string, kind: string, read: boolean) => ({
@@ -1592,7 +1617,7 @@ describe("the right side's activity bar", () => {
     });
 
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
-    const first = within(inbox).getByRole("listitem");
+    const first = inbox.querySelector<HTMLElement>('[role="row"].inbox-ask') as HTMLElement;
     await waitFor(() => expect(first).toHaveFocus());
     expect(within(first).getByText("Run cargo test")).toBeInTheDocument();
   });
@@ -1607,7 +1632,7 @@ describe("the right side's activity bar", () => {
     await userEvent.click(hand);
 
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
-    expect(within(inbox).getByRole("region", { name: "steward 3" })).toBeInTheDocument();
+    expect(within(inbox).getByRole("rowgroup", { name: "steward 3" })).toBeInTheDocument();
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
@@ -1644,8 +1669,8 @@ describe("the right side's activity bar", () => {
     fireEvent.focus(window);
 
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
-    const group = within(inbox).getByRole("region", { name: "steward 4" });
-    await waitFor(() => expect(within(group).getByRole("listitem")).toHaveFocus());
+    const group = within(inbox).getByRole("rowgroup", { name: "steward 4" });
+    await waitFor(() => expect(group.querySelector('[role="row"].inbox-ask')).toHaveFocus());
   });
 
   it("lands a notification about several chats on the first still waiting (#1989)", async () => {
@@ -1662,8 +1687,8 @@ describe("the right side's activity bar", () => {
     fireEvent.focus(window);
 
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
-    const group = within(inbox).getByRole("region", { name: "steward 4" });
-    await waitFor(() => expect(within(group).getByRole("listitem")).toHaveFocus());
+    const group = within(inbox).getByRole("rowgroup", { name: "steward 4" });
+    await waitFor(() => expect(group.querySelector('[role="row"].inbox-ask')).toHaveFocus());
   });
 
   it("lists the asks on Asks, and the updates on Updates, each apart (#5644)", async () => {
@@ -1683,7 +1708,7 @@ describe("the right side's activity bar", () => {
     render(<App />);
 
     const asks = await screen.findByRole("tabpanel", { name: "Asks" });
-    expect(await within(asks).findByRole("region", { name: "steward 3" })).toBeInTheDocument();
+    expect(await within(asks).findByRole("rowgroup", { name: "steward 3" })).toBeInTheDocument();
     expect(within(asks).queryByText("The sandbox now allows api.example.com")).toBeNull();
 
     await userEvent.click(tab("Updates"));
@@ -1693,7 +1718,7 @@ describe("the right side's activity bar", () => {
     expect(
       await within(updates).findByText("The sandbox now allows api.example.com"),
     ).toBeInTheDocument();
-    expect(within(updates).queryByRole("region", { name: "steward 3" })).toBeNull();
+    expect(within(updates).queryByRole("rowgroup", { name: "steward 3" })).toBeNull();
   });
 
   it("counts a new ask on the hand and leaves the open view as it is (#5644)", async () => {

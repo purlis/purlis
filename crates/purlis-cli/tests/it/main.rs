@@ -65,6 +65,7 @@ mod core_diagnostics;
 mod curation;
 mod dispatch_from_inside_the_app;
 mod doctor;
+mod each_of_a_codex_chats_session_start_hooks_fits_what_codex_keeps;
 mod every_command_charter_names_is_one_it_has;
 mod every_memory_write_a_shipped_text_teaches_names_its_scope;
 mod every_shipped_skill_passes_the_built_in_checks;

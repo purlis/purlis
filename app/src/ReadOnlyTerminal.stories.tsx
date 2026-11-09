@@ -50,6 +50,32 @@ function SavedChat() {
   );
 }
 
+/** A chat whose harness wrote faint (SGR 2) words in the terminal's own colour (#3768). */
+const FAINT = [
+  "> what changed since yesterday?",
+  "",
+  "\u001b[2m  thinking: reading the last three commits\u001b[22m",
+  "Two fixes landed: the pane's find bar and the copy of a whole screen.",
+  "\u001b[2m  (2 files changed, 41 lines)\u001b[22m",
+].join("\r\n");
+
+/** A saved chat with faint words in it. */
+function FaintChat() {
+  return (
+    <div style={{ inlineSize: 640 }}>
+      <ReadOnlyTerminal
+        screen={FAINT}
+        label="Chat 2 of the 28 Oct grade of deploy"
+        note="It takes no input and can't be resumed."
+        cols={72}
+        rows={6}
+        fontSize={13}
+        clipboard={{ writeText: async () => {} }}
+      />
+    </div>
+  );
+}
+
 const meta = { component: SavedChat } satisfies Meta<typeof SavedChat>;
 
 export default meta;
@@ -91,5 +117,44 @@ export const SavedGradeChat: Story = {
     await userEvent.keyboard(mac() ? "{Meta>}a{/Meta}" : "{Control>}a{/Control}");
     await userEvent.keyboard(mac() ? "{Meta>}c{/Meta}" : "{Control>}c{/Control}");
     await waitFor(() => expect(canvas.getByTestId("copied")).toHaveTextContent("Copied"));
+  },
+};
+
+/** The colour `--terminal-faint` comes out as where it is drawn, as the browser computes it. */
+function faintColour(): string {
+  const probe = document.createElement("span");
+  probe.style.color = "var(--terminal-faint)";
+  document.body.append(probe);
+  const colour = getComputedStyle(probe).color;
+  probe.remove();
+  return colour;
+}
+
+/**
+ * **Faint words** (#3768): a harness's faint (SGR 2) words in the terminal's own colour are drawn
+ * in the theme's `terminal.faint`, which reads at 4.5:1 on the terminal in every cell, where
+ * xterm would draw its words at half opacity. axe holds the contrast; the play holds that the
+ * faint cells take the token and stay one Tab stop.
+ */
+export const FaintWords: Story = {
+  render: () => <FaintChat />,
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const screen = canvas.getByRole("region", { name: "Chat 2 of the 28 Oct grade of deploy" });
+    const lines = within(screen).getByRole("list", {
+      name: "Chat 2 of the 28 Oct grade of deploy, line by line",
+    });
+    await waitFor(() =>
+      expect(within(lines).getAllByRole("listitem")[1]).toHaveTextContent("thinking"),
+    );
+    const faint = await waitFor(() => {
+      const cells = [...canvasElement.querySelectorAll(".xterm-rows .xterm-dim")];
+      expect(cells.length).toBeGreaterThan(0);
+      return cells;
+    });
+    const drawn = faintColour();
+    for (const cell of faint) await expect(getComputedStyle(cell).color).toBe(drawn);
+    await userEvent.tab();
+    await untilFocused(() => screen, "the saved chat");
+    expectFocusInSight();
   },
 };
