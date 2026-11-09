@@ -75,6 +75,7 @@ const VERIFIED: SigningCheck = {
   reason: "valid",
   email: "octocat@example.com",
   repo: "octocat/hello",
+  email_is_why: false,
 };
 
 let state: SigningState;
@@ -347,6 +348,8 @@ describe("SigningSetupDialog", () => {
     const why = await within(dialog).findByRole("alert");
     expect(why.textContent).toContain("doesn't know this key as a signing key on octocat");
     expect(dialog).not.toHaveTextContent("Verified on GitHub ✓");
+    // The email the test commit was made as is named, whatever the reason (#5916).
+    expect(dialog).toHaveTextContent("The test commit was made as octocat@example.com.");
     checked = VERIFIED;
     await userEvent.click(within(dialog).getByRole("button", { name: "Check again" }));
     expect(await within(dialog).findByText("Verified on GitHub ✓")).toBeTruthy();
@@ -403,6 +406,37 @@ describe("the Check step's email (#5631)", () => {
     ]);
     // Checked once more, after the choice.
     expect(commandsSent("signing_check").length).toBe(2);
+  });
+
+  it("a key GitHub says it doesn't know, though the account lists it, is put down to the commit email, and offers the account's emails, not Add it (#5916)", async () => {
+    state = { ...structuredClone(ON), accounts: [{ ...ACCOUNT, may_add: true }] };
+    checked = {
+      ...VERIFIED,
+      verified: false,
+      reason: "unknown_key",
+      email: "o@other.example",
+      email_is_why: true,
+    };
+    render(<SigningSetupDialog onClose={vi.fn()} />);
+    const dialog = await theDialog();
+    const choices = await within(dialog).findByRole("radiogroup", { name: "Sign chat commits as" });
+    expect(dialog).toHaveTextContent(
+      "The key is on octocat, but the test commit was made as o@other.example, which isn't a verified email on octocat.",
+    );
+    expect(dialog).toHaveTextContent(
+      "GitHub picks the account to check a signature by the commit's email",
+    );
+    expect(dialog).not.toHaveTextContent("Add it, then check again");
+    expect(dialog).not.toHaveTextContent("doesn't know this key");
+    expect(dialog).not.toHaveTextContent("Verified on GitHub ✓");
+    expect(within(choices).getByRole("radio", { name: "octocat@example.com" })).toBeChecked();
+    checked = VERIFIED;
+    await userEvent.click(within(dialog).getByRole("button", { name: "Use this email" }));
+    expect(await within(dialog).findByText("Verified on GitHub ✓")).toBeTruthy();
+    expect(commandsSent("signing_use_email")[0]?.args).toEqual({
+      forge: ON_GITHUB,
+      email: "octocat@example.com",
+    });
   });
 
   it("with no verified email, links to the forge's email settings and gives no ✓", async () => {

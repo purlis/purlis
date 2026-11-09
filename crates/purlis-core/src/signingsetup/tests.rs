@@ -231,6 +231,74 @@ mod the_check {
         assert_eq!(checked.reason, "unverified_email");
     }
 
+    /// GitHub picks the account to verify an SSH signature against by the commit's email, so a
+    /// key on the account and an email that isn't one of its verified ones reads as a key
+    /// GitHub doesn't know (#5916).
+    #[test]
+    fn an_unknown_key_listed_on_the_account_under_an_unverified_email_is_the_emails_doing() {
+        let signer = Signer::generate().unwrap();
+        for reason in ["unknown_key", "not_signing_key"] {
+            let recorded = recording("key_listed_then_emails", &signer);
+            let why = email_is_why(
+                &recorded,
+                &github(),
+                &signer,
+                "octocat",
+                reason,
+                "someone@else.example",
+            );
+            assert!(why, "{reason}");
+            assert!(recorded.unspent().is_empty());
+        }
+    }
+
+    #[test]
+    fn an_unknown_key_under_a_verified_email_is_not_the_emails_doing() {
+        let signer = Signer::generate().unwrap();
+        let recorded = recording("key_listed_then_emails", &signer);
+        assert!(!email_is_why(
+            &recorded,
+            &github(),
+            &signer,
+            "octocat",
+            "unknown_key",
+            "Work@Example.org",
+        ));
+    }
+
+    #[test]
+    fn an_unknown_key_the_account_does_not_list_is_the_keys_doing() {
+        let signer = Signer::generate().unwrap();
+        let recorded = recording("key_not_listed", &signer);
+        assert!(!email_is_why(
+            &recorded,
+            &github(),
+            &signer,
+            "octocat",
+            "unknown_key",
+            "someone@else.example",
+        ));
+        assert!(recorded.unspent().is_empty());
+    }
+
+    /// Another reason asks GitHub nothing more: the recording has no answer to give.
+    #[test]
+    fn another_reason_is_never_the_emails_doing_and_asks_nothing() {
+        let signer = Signer::generate().unwrap();
+        let recorded = recording("key_not_listed", &signer);
+        for reason in ["valid", "unverified_email", "expired_key", "other_key"] {
+            assert!(!email_is_why(
+                &recorded,
+                &github(),
+                &signer,
+                "octocat",
+                reason,
+                "someone@else.example",
+            ));
+        }
+        assert_eq!(recorded.unspent().len(), 1);
+    }
+
     /// The test commit is the object git itself writes for the same fields, byte for byte: what
     /// GitHub rebuilds from them and checks the signature over.
     #[test]

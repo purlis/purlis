@@ -71,6 +71,7 @@ function theCore({
     reason: "valid",
     email: "octocat@example.com",
     repo: "octocat/hello",
+    email_is_why: false,
   },
   waitRefused,
   shownRefused,
@@ -278,6 +279,7 @@ export const CheckNotVerified: Story = {
         reason: "unverified_email",
         email: "octo@studio.local",
         repo: "octocat/hello",
+        email_is_why: false,
       },
     });
     return () => clearMocks();
@@ -286,6 +288,61 @@ export const CheckNotVerified: Story = {
     const dialog = await theDialog();
     const picked = await within(dialog).findByRole("radio", { name: "octocat@example.com" });
     await expect(picked).toBeChecked();
+    await userEvent.tab();
+    expectFocusInSight();
+    await expect(within(dialog).getByRole("button", { name: "Use this email" })).toBeEnabled();
+  },
+};
+
+/** **Check, a key GitHub doesn't know**: the account lists no key of this Mac's, so the reason is
+ *  the key's, and the email the test commit was made as is named (#5916). */
+export const CheckKeyNotOnAccount: Story = {
+  beforeEach: () => {
+    theCore({
+      state: { ...ON, accounts: [{ ...ACCOUNT, may_add: true }] },
+      added: "added",
+      checked: {
+        verified: false,
+        reason: "unknown_key",
+        email: "octocat@example.com",
+        repo: "octocat/hello",
+        email_is_why: false,
+      },
+    });
+    return () => clearMocks();
+  },
+  play: async () => {
+    const dialog = await theDialog();
+    await within(dialog).findByText(/doesn't know this key as a signing key/);
+    await expect(dialog).toHaveTextContent("The test commit was made as octocat@example.com.");
+    await userEvent.tab();
+    expectFocusInSight();
+  },
+};
+
+/** **Check, the key unmatched by the email**: GitHub said it doesn't know a key the account lists,
+ *  because the test commit's email isn't one of the account's; the account's to choose, never
+ *  "add it" (#5916). */
+export const CheckKeyUnmatchedByEmail: Story = {
+  beforeEach: () => {
+    theCore({
+      state: { ...ON, accounts: [{ ...ACCOUNT, may_add: true }] },
+      added: "added",
+      checked: {
+        verified: false,
+        reason: "unknown_key",
+        email: "octo@studio.local",
+        repo: "octocat/hello",
+        email_is_why: true,
+      },
+    });
+    return () => clearMocks();
+  },
+  play: async () => {
+    const dialog = await theDialog();
+    const picked = await within(dialog).findByRole("radio", { name: "octocat@example.com" });
+    await expect(picked).toBeChecked();
+    await expect(dialog).toHaveTextContent("picks the account to check a signature");
     await userEvent.tab();
     expectFocusInSight();
     await expect(within(dialog).getByRole("button", { name: "Use this email" })).toBeEnabled();
@@ -303,6 +360,7 @@ export const NoVerifiedEmail: Story = {
         reason: "unverified_email",
         email: "octo@studio.local",
         repo: "octocat/hello",
+        email_is_why: false,
       },
       emails: { emails: [], settings: "https://github.com/settings/emails" },
     });
@@ -386,7 +444,13 @@ export const GitLabNothingPushed: Story = {
     theCore({
       state: { ...ON, accounts: [GITLAB] },
       added: "added",
-      checked: { verified: false, reason: "nothing_pushed", email: "sam@example.org", repo: "" },
+      checked: {
+        verified: false,
+        reason: "nothing_pushed",
+        email: "sam@example.org",
+        repo: "",
+        email_is_why: false,
+      },
     });
     return () => clearMocks();
   },

@@ -424,6 +424,37 @@ pub fn check_with_a_test_commit(
     })
 }
 
+/// **Whether the commit's email, not the key, is the likely reason Check wasn't Verified**
+/// (#5916): GitHub picks the account to verify an SSH signature against by the commit's email,
+/// so where that email isn't one of the account's verified ones GitHub answers `unknown_key`
+/// (or `not_signing_key`) for a key the account does hold.
+///
+/// True only where the forge's `reason` is one of those two, the account `login` lists
+/// `signer`'s key publicly, and `email` is not among its verified addresses. Where the addresses
+/// can't be read (a sign-in without `user:email`), the listed key alone says so. Where the key
+/// list can't be read, false: the key's own wording stands. The ✓ never comes from here
+/// (ADR 0116 §6); this only chooses what the window offers to fix.
+pub fn email_is_why(
+    transport: &dyn Transport,
+    forge: &Forge,
+    signer: &Signer,
+    login: &str,
+    reason: &str,
+    email: &str,
+) -> bool {
+    if !matches!(reason, "unknown_key" | "not_signing_key") {
+        return false;
+    }
+    let listed = signingkeys::listed_publicly_over(transport, forge, login)
+        .is_ok_and(|listed| listed.this_device(signer).is_some());
+    listed
+        && verified_emails(transport, forge).map_or(true, |verified| {
+            !verified
+                .iter()
+                .any(|one| one.email.eq_ignore_ascii_case(email))
+        })
+}
+
 /// **A repository to check in, where setup was opened with none**: the account's own most
 /// recently pushed, which its sign-in may write to. `None` where it owns none.
 pub fn a_repo_to_check_in(

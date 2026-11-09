@@ -83,6 +83,10 @@ pub struct SigningCheck {
     pub email: String,
     /// The repository the commit is in.
     pub repo: String,
+    /// Whether `email`, not the key, is the likely reason it wasn't Verified (#5916): the forge
+    /// said it doesn't know the key, yet the account lists this device's key and `email` isn't
+    /// one of its verified ones. The window then offers the account's emails, not "add the key".
+    pub email_is_why: bool,
 }
 
 /// How adding the key went.
@@ -404,6 +408,7 @@ pub async fn signing_check(
                         reason: "nothing_pushed".to_string(),
                         email: who.email,
                         repo: String::new(),
+                        email_is_why: false,
                     });
                 };
                 let checked = signingsetup::check_a_pushed_commit(
@@ -417,11 +422,21 @@ pub async fn signing_check(
             }
         };
         note_verified(&account, checked.verified.then(|| who.email.clone()));
+        let email_is_why = !checked.verified
+            && signingsetup::email_is_why(
+                transport.as_ref(),
+                &forge,
+                &key,
+                &account.login,
+                &checked.reason,
+                &who.email,
+            );
         Ok(SigningCheck {
             verified: checked.verified,
             reason: checked.reason,
             email: who.email,
             repo,
+            email_is_why,
         })
     })
     .await
