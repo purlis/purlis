@@ -25,6 +25,7 @@ import { PersonaGrantsNotice } from "./PersonaGrantsNotice";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
 import { SigningRefusalNotice } from "./SigningRefusal";
 import { TasksSharingNotice } from "./TasksSharingNotice";
+import { BrowserAskNotice } from "./BrowserAskNotice";
 import { BrowserLoginNotice } from "./BrowserLoginNotice";
 import { WorkspaceRemovalNotice } from "./WorkspaceRemovalNotice";
 import { ProposedChangeNotice } from "./ProposedChangeNotice";
@@ -388,6 +389,9 @@ export function ChatNotices({
       <WorkspaceRemovalNotice plane={plane} session={session} asks={drawn} onWay={onAnswer} />
       {/* A change this chat proposed to purlis's own configuration (#1975): only you apply it. */}
       <ProposedChangeNotice plane={plane} session={session} asks={drawn} onWay={onAnswer} />
+      {/* What this chat's browser may reach, and the sites new to the project it held back: the
+          chat waits on your answer, so it is asked where you look at the chat. */}
+      <BrowserAskNotice plane={plane} session={session} asks={drawn} onWay={onAnswer} />
       {/* A browser login this chat suggested (#4595): only your press fills it. */}
       <BrowserLoginNotice plane={plane} session={session} asks={drawn} onWay={onAnswer} />
       {/* A secret this chat asks purlis to fill (#5115): only your press fills it. */}
