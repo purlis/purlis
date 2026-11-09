@@ -300,7 +300,7 @@ impl Left {
             }
             Self::Conflict(files) => format!(
                 "Nothing was updated: this project's own commits and the incoming ones change \
-                 the same lines in {}. {AS_IT_WAS} {BY_HAND}",
+                 the same lines in {}. {AS_IT_WAS} {TO_RESOLVE}",
                 named(files)
             ),
             Self::Unsigned(signer) => format!(
@@ -386,11 +386,10 @@ fn capitalised(text: &str) -> String {
 }
 
 /// How the person settles a conflict between the project's own commits and the remote's
-/// (qw382): a chat may not rebase the project's root, so the commands are named, for a
-/// terminal opened there. One sentence for the Update's answer and the Saving view's.
-pub const BY_HAND: &str = "To settle it, open a terminal here and run `git fetch`, then `git \
-     rebase @{u}`; edit each file git names, `git add` it and run `git rebase --continue`, then \
-     Save. `git rebase --abort` puts the project back as it was.";
+/// (qw382, #5824 F7): Resolve, which merges them in a resolve folder beside the project and never
+/// stops the project itself. One sentence for the Update's answer and the Saving view's.
+pub const TO_RESOLVE: &str = "Press Resolve in the Saving view to settle it in a resolve folder \
+     beside the project; nothing here stops meanwhile.";
 
 /// Up to five files in backticks, and how many more.
 fn named(files: &[String]) -> String {

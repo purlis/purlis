@@ -17,7 +17,8 @@
 //! - `merge --ff-only`: one atomic step, as `reset --keep` is: it checks out one tree and moves
 //!   the branch, or refuses having moved nothing. It never makes a merge, so it never leaves
 //!   `MERGE_HEAD`, and a kill in it leaves no stop to recover.
-//! - `rebase --abort` and `rebase --quit`: one step that puts a stop away.
+//! - `rebase --abort`, `rebase --quit` and `merge --abort`: one step that puts a stop away, as
+//!   the window's Abort does for a stop a build from before #5824 F7 left at the root.
 
 use std::path::{Path, PathBuf};
 
@@ -32,21 +33,13 @@ const SCANNED: [&str; 4] = [
     "src/doctor/fix",
 ];
 
-/// The lines still allowed, each with why. Every one is a debt with somewhere to go.
-const ALLOWED: [(&str, &str, &str); 1] = [(
-    "src/planegit.rs",
-    r#"rebase.extend(["rebase", onto]);"#,
-    "rebase_onto: a push-mode save's retry, Update and Resolve replay the plane's own commits \
-     with it, and a conflict stops it for Resolve to settle. Resolve moves off to the side in \
-     #5824 F7 (lane C); until then the step is marked, and one cut off is recovered (F3)",
-)];
+/// The lines still allowed, each with why. Empty since #5855: every debt here was paid, and a
+/// new line is a new decision, argued in the diff that adds it.
+const ALLOWED: [(&str, &str, &str); 0] = [];
 
-/// Whole files allowed, each with why.
-const ALLOWED_FILES: [(&str, &str); 1] = [(
-    "src/planegit/resolve.rs",
-    "Resolve settles a conflict in a merge or rebase stopped at the root. #5824 F7 (lane C) \
-     replaces it with a resolve folder off to the side",
-)];
+/// Whole files allowed, each with why. Empty since #5824 F7: Resolve settles in a folder off to
+/// the side.
+const ALLOWED_FILES: [(&str, &str); 0] = [];
 
 fn crate_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -118,7 +111,7 @@ fn offending(lines: &[String], at: usize) -> Option<&str> {
         line.contains(flag) || (line == format!("\"{verb}\",") && next.starts_with(flag))
     };
     let allowed_everywhere = match *verb {
-        "merge" => with("\"--ff-only\""),
+        "merge" => with("\"--ff-only\"") || with("\"--abort\""),
         "rebase" => with("\"--abort\"") || with("\"--quit\""),
         _ => false,
     };

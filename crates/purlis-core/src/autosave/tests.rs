@@ -27,9 +27,10 @@ fn standing(stage: Stage, changed: &[&str], pushes: bool) -> Standing {
         tracked: false,
         head: String::new(),
         secrets: Vec::new(),
-        rebase_by_hand: false,
+        resolve_offered: false,
         stopped_by: None,
         merge: None,
+        stale: None,
     }
 }
 

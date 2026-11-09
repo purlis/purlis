@@ -164,14 +164,65 @@ pub struct PlaneSaving {
     /// none is open or the mode does not merge it.
     #[specta(optional)]
     pub merge: Option<SaveMerge>,
-    /// How the person settles the block in a terminal, when it is a save's replay onto the
-    /// remote that conflicted (qw382): the git commands, as a sentence; `null` otherwise.
+    /// Where the block is a save's replay or bring-in that conflicted and no resolve is open: how
+    /// Resolve settles it, as a sentence (#5824 F7); `null` otherwise.
     #[specta(optional)]
-    pub by_hand: Option<String>,
+    pub to_resolve: Option<String>,
     /// What git is stopped part-way in, by kind: `merge`, `rebase`, `am`, `cherry-pick`,
     /// `revert`, `bisect`, or `conflicts` for unmerged files alone; `null` when it is not.
     #[specta(optional)]
     pub stopped_by: Option<String>,
+    /// Since when a fetch of the target has failed while a request is open, and why (#5824 F8):
+    /// the project may be further behind than `behind` says; `null` when it is not.
+    #[specta(optional)]
+    pub stale: Option<SaveStale>,
+    /// The resolve open in its folder, while `stoppedBy` is `resolve`; `null` otherwise.
+    #[specta(optional)]
+    pub resolving: Option<SaveResolving>,
+}
+
+/// The person's choice for one settings key both machines changed (#5852).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveKeyChoice {
+    /// The settings file it is in.
+    pub file: String,
+    /// The key's dotted path.
+    pub key: String,
+    /// Whether the remote's value is chosen; this machine's otherwise.
+    pub theirs: bool,
+}
+
+/// A resolve open in its folder off to the side (#5824 F7).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveResolving {
+    /// Where the resolve folder is.
+    pub folder: String,
+    /// The settings keys both machines changed, each its own way, for the person to choose.
+    pub keys: Vec<SaveKey>,
+}
+
+/// A settings key both machines changed, with both values as TOML writes them (#5852).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveKey {
+    pub file: String,
+    pub key: String,
+    /// This machine's value; `null` where it removed the key.
+    pub ours: Option<String>,
+    /// The remote's value; `null` where it removed the key.
+    pub theirs: Option<String>,
+}
+
+/// A project that could not be fetched while its request is open (#5824 F8).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveStale {
+    /// When the first failed fetch of the run was, in seconds since the epoch.
+    pub since: u32,
+    /// Why the latest one failed, as a sentence fragment.
+    pub why: String,
 }
 
 /// The plane's save standing.
@@ -289,10 +340,27 @@ pub fn saving_of(root: &Path) -> PlaneSaving {
         .to_owned();
     PlaneSaving {
         remote,
-        by_hand: standing
-            .rebase_by_hand
-            .then(|| planegit::BY_HAND.to_owned()),
+        to_resolve: standing
+            .resolve_offered
+            .then(|| planegit::TO_RESOLVE.to_owned()),
         stopped_by: standing.stopped_by.map(str::to_owned),
+        resolving: planegit::resolvefolder::held(root).map(|held| SaveResolving {
+            folder: planegit::resolvefolder::path(root).display().to_string(),
+            keys: held
+                .keys
+                .into_iter()
+                .map(|key| SaveKey {
+                    file: key.file,
+                    key: key.key,
+                    ours: key.ours,
+                    theirs: key.theirs,
+                })
+                .collect(),
+        }),
+        stale: standing.stale.clone().map(|stale| SaveStale {
+            since: u32::try_from(stale.since).unwrap_or(u32::MAX),
+            why: stale.why,
+        }),
         merge: standing
             .merge
             .clone()
@@ -472,10 +540,11 @@ pub async fn settle_save_conflict(
     plane: PlaneId,
     step: String,
     files: Vec<String>,
+    keys: Vec<SaveKeyChoice>,
 ) -> Result<SaveSettled, String> {
     let held = planes.held(&plane)?;
     let root = held.root().to_path_buf();
-    let done = tauri::async_runtime::spawn_blocking(move || settle(&root, &step, &files))
+    let done = tauri::async_runtime::spawn_blocking(move || settle(&root, &step, &files, &keys))
         .await
         .map_err(|err| format!("it did not finish: {err}"))??;
     if done.outcome != "refused" {
@@ -485,15 +554,28 @@ pub async fn settle_save_conflict(
 }
 
 /// [`settle_save_conflict`], without a runtime.
-pub fn settle(root: &Path, step: &str, files: &[String]) -> Result<SaveSettled, String> {
+pub fn settle(
+    root: &Path,
+    step: &str,
+    files: &[String],
+    keys: &[SaveKeyChoice],
+) -> Result<SaveSettled, String> {
     use planegit::resolve::{self, Settled};
     let mut lines: Vec<String> = Vec::new();
+    let chosen: Vec<planegit::resolvefolder::Chosen> = keys
+        .iter()
+        .map(|key| planegit::resolvefolder::Chosen {
+            file: key.file.clone(),
+            key: key.key.clone(),
+            theirs: key.theirs,
+        })
+        .collect();
     let settled = {
         let mut say = |line: Say| lines.push(line.to_string());
         match step {
             // The window's own git (#752): its sign-in, offered to the recorded remote alone.
             "start" => crate::forgeaccounts::window_git(|| resolve::start(root, &mut say)),
-            "continue" => resolve::carry_on(root, files, &mut say),
+            "continue" => resolve::carry_on(root, files, &chosen, &mut say),
             "skip" => resolve::skip(root),
             "abort" => resolve::abort(root),
             other => {
@@ -508,22 +590,24 @@ pub fn settle(root: &Path, step: &str, files: &[String]) -> Result<SaveSettled, 
         Settled::Replayed => ("saved", pushed_after(root, &mut lines), Vec::new()),
         Settled::Stopped(files) => (
             "stopped",
-            "git stopped on a conflict. Settle the files below, in a chat or by hand, then \
-             Continue. Abort puts the project back where it was."
-                .to_owned(),
+            format!(
+                "The files below conflict. Settle them in the resolve folder {}, in a chat or \
+                 by hand, then Continue. Abort removes the folder and changes nothing here.",
+                planegit::resolvefolder::path(root).display()
+            ),
             files,
         ),
         Settled::Empty => (
             "empty",
-            "Settled, this commit of the project's own changes nothing the remote does not \
-             already have. Skip drops it and carries the replay on; Abort puts the project \
-             back where it was."
+            "Settled, this machine's side brings nothing the remote does not already have. \
+             Skip drops it and moves the project onto the remote's; Abort removes the resolve \
+             folder and changes nothing."
                 .to_owned(),
             Vec::new(),
         ),
         Settled::Aborted => (
             "aborted",
-            "Aborted: the project is back where it was before Resolve.".to_owned(),
+            "Aborted: the resolve folder is removed, and the project is as it was.".to_owned(),
             Vec::new(),
         ),
         Settled::Refused(why) => ("refused", why, Vec::new()),

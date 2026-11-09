@@ -337,19 +337,19 @@ fn a_save_refused_answers_the_refusal_in_the_cores_words() {
 }
 
 #[test]
-fn a_conflicts_step_is_one_of_three_and_none_runs_where_no_rebase_is_stopped() {
+fn a_conflicts_step_is_one_of_three_and_none_runs_where_no_resolve_is_open() {
     let dir = tempfile::tempdir().expect("a directory");
 
-    let unknown = settle(dir.path(), "merge", &[]).expect_err("not a step");
+    let unknown = settle(dir.path(), "merge", &[], &[]).expect_err("not a step");
     assert!(
         unknown.contains("start, continue, skip or abort"),
         "{unknown}"
     );
     for step in ["continue", "skip", "abort"] {
-        let got = settle(dir.path(), step, &[]).expect("answered");
+        let got = settle(dir.path(), step, &[], &[]).expect("answered");
         assert_eq!(got.outcome, "refused", "{step}");
         assert!(
-            got.said.contains("No rebase or merge is stopped"),
+            got.said.contains("No resolve is open"),
             "{step}: {}",
             got.said
         );
