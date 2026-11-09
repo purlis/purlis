@@ -768,10 +768,9 @@ fn judged(
         .map_err(|why| why.message.to_string())?;
     purlis_core::secrets::registry::vault_in(&doc, &suggested.vault)
         .map_err(|why| why.message.to_string())?;
-    let _ = reads_as;
     if let Some(why) = out_of_reach(
         &ctx,
-        persona,
+        reads_as,
         &suggested.vault,
         suggested.user_key.as_deref(),
         &suggested.key,
@@ -839,10 +838,9 @@ fn finish(
     purlis_core::secrets::registry::vault_in(&doc, &proposal.vault)
         .map_err(|why| why.message.to_string())?;
     // Judged again as it is drawn or pressed: a link made while the notice waits is seen.
-    let _ = reads_as;
     if let Some(why) = out_of_reach(
         &ctx,
-        &proposal.persona,
+        reads_as,
         &proposal.vault,
         proposal.user_key.as_deref(),
         &proposal.key,
@@ -988,6 +986,24 @@ pub fn answer(
         };
         return Ok(Pressed::Done {
             said: said.to_owned(),
+        });
+    }
+    // Judged as the read judges it (#5831): a key that became a link into a vault the persona may
+    // not use while the notice waited is allowed nothing, and the chat hears why.
+    let ctx = Ctx::new(root, Env::from_process());
+    let drawn = &wait.proposal;
+    if let Some(why) = out_of_reach(
+        &ctx,
+        &wait.reads_as,
+        &drawn.vault,
+        drawn.user_key.as_deref(),
+        &drawn.key,
+    ) {
+        if !grants.end(id, Heard::Refused(why.clone())) {
+            return Err(NO_MORE.to_owned());
+        }
+        return Ok(Pressed::Done {
+            said: refused_at_the_press_said(&why),
         });
     }
     // A field left empty names no site: it never falls back to the one the chat suggested.
