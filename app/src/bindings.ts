@@ -726,8 +726,15 @@ export const commands = {
 	 *  **Keep blocked** on a refused vault's Notice: puts it away, and grants nothing. The chat's
 	 *  next turn is told in one line not to retry, with `reason`, what the person typed for it, if
 	 *  anything (#1987). Its next try at the vault raises nothing, for as long as the chat is open.
+	 * 
+	 *  **On a vault its persona already holds** (#5801), the chat's runs on it are not held, so
+	 *  neither the chat nor the person is told it was kept blocked: the chat hears that its persona
+	 *  may use the vault and not to use it unless the person says to, and the press answers what
+	 *  the person reads beside it, which says where the vault is held. None otherwise.
 	 */
-	keepVaultBlocked: (plane: PlaneId, session: number, vault: string, reason: string | null) => typedError<null, string>(__TAURI_INVOKE("keep_vault_blocked", { plane, session, vault, reason })),
+	keepVaultBlocked: (plane: PlaneId, session: number, vault: string, reason: string | null) => typedError<{
+	said: string,
+} | null, string>(__TAURI_INVOKE("keep_vault_blocked", { plane, session, vault, reason })),
 	/**
 	 *  **Puts a refused vault's Notice away, and tells the chat nothing** (#1987): Dispatch to
 	 *  {persona}… on it, where the work goes to the vault's own persona. Nothing was kept blocked
