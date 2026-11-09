@@ -3254,6 +3254,31 @@ impl Hooks {
         )
     }
 
+    /// **Audits an install, an update or a removal of skills on an org's project** (SK-11,
+    /// #2774) in the host's event log, made durable before it answers. Refused where this
+    /// machine has no event log open: on such a project no skill changes unrecorded.
+    pub fn record_skill_change(
+        &self,
+        root: &Path,
+        audited: &purlis_core::skills::source::policy::Audited,
+    ) -> Result<(), String> {
+        // Said inside the core's sentence, which names what was not done.
+        let events = self
+            .events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+            .ok_or("purlis's event log is not open on this machine")?;
+        events
+            .record(Entry::Audited {
+                plane: root.to_path_buf(),
+                number: None,
+                kind: audited.kind().to_owned(),
+                body: audited.body(),
+            })
+            .map_err(|why| format!("the event log refused it: {why}"))
+    }
+
     /// **Audits a dispatch grant or revoke** (#1437) in the host's event log, under chat
     /// `number` where it was allowed from one, and made durable before it answers. Refused
     /// where this machine has no event log open: a grant nobody recorded is never made.

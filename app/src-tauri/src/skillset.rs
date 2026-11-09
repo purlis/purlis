@@ -12,7 +12,7 @@ use purlis_core::skills::verbs::{self, set};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-use crate::skillchange::{SkillGrant, SkillLevel, SkillPinner, flag_on, heard};
+use crate::skillchange::{SkillGrant, SkillLevel, SkillPinner, flag_on, heard, heard_audited};
 use crate::skillhistory::SkillLifecycle;
 use crate::skillsources::{SkillSource, SourceRemote};
 
@@ -247,7 +247,7 @@ pub(crate) async fn skill_set_delete(
         let members: Vec<set::Member> = members.iter().map(SkillSetMember::core).collect();
         let remote = remove_source.as_ref().map(SourceRemote::core);
         let mut gone = Vec::new();
-        let said = heard(held.root(), |cx| {
+        let said = heard_audited(&held, |cx| {
             gone = set::delete_set(cx, &members, from.as_deref(), remote.as_ref())?;
             Ok(())
         })?;
@@ -293,7 +293,7 @@ pub(crate) async fn skill_set_restore(
             })
             .collect::<Result<_, String>>()?;
         let core = source.as_ref().map(|one| (one.core(), one.kept.into()));
-        heard(held.root(), |cx| {
+        heard_audited(&held, |cx| {
             set::restore_set_as(cx, &set_of, core.as_ref().map(|(one, which)| (one, *which)))
         })
     })
@@ -586,7 +586,7 @@ pub(crate) async fn skill_set_update(
             )?;
         }
         let mut undo = None;
-        let said = heard(root, |cx| {
+        let said = heard_audited(&held, |cx| {
             undo = Some(set_update::update_set(cx, &set)?);
             Ok(())
         })?;
@@ -650,7 +650,7 @@ pub(crate) async fn skill_set_update_undo(
     let done = crate::off_the_window("undoing the update", move || {
         flag_on()?;
         let mut refused = false;
-        let said = heard(held.root(), |cx| {
+        let said = heard_audited(&held, |cx| {
             set_update::undo_update_set(cx, &taken.undo).map_err(|why| {
                 refused = matches!(why, set_update::NotUndone::Refused(_));
                 why.to_string()

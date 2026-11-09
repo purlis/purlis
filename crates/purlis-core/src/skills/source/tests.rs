@@ -192,6 +192,7 @@ fn on<T>(root: &Path, change: impl FnOnce(&mut Ctx<'_>) -> T) -> (T, Vec<Say>) {
         built_in: None,
         by: By::Command,
         say: &mut say,
+        audit: None,
     });
     (answer, lines)
 }
@@ -2970,6 +2971,9 @@ fn a_persona_skill_from_a_source_carries_its_label_in_the_personas_rows() {
 
 /// Several updates as one change (#5354).
 mod update_set;
+
+/// The org's controls (SK-11, #2774).
+mod policy;
 
 #[cfg(unix)]
 mod extension;

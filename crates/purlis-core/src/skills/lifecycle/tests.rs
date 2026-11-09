@@ -49,6 +49,7 @@ fn did<T>(root: &Path, change: impl FnOnce(&mut Ctx<'_>) -> T) -> T {
         built_in: None,
         by: By::Command,
         say: &mut say,
+        audit: None,
     })
 }
 
@@ -270,6 +271,7 @@ fn archiving_a_narrower_copy_says_the_wider_one_now_loads() {
             built_in: None,
             by: By::Command,
             say: &mut say,
+            audit: None,
         },
         &Level::workspace("ops"),
         "deploy",

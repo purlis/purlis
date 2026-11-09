@@ -458,7 +458,17 @@ pub fn update_review(plane: &Path, level: &Level, name: &str) -> Result<UpdateRe
         Pin::Commit(commit) => fetched.files_at(plane, commit, &locked.folder)?,
         Pin::Revision(_) => None,
     };
-    reviewed_update(plane, level, name, locked, &fetched, newer, pinned)
+    let review = reviewed_update(plane, level, name, locked, &fetched, newer.clone(), pinned)?;
+    // The org's controls, said in the review before it is accepted (SK-11).
+    super::policy::hold(
+        plane,
+        &locked.source,
+        std::iter::once(locked.at_source())
+            .chain(review.brought.iter().map(|one| one.name.as_str())),
+        &newer,
+        || fetched.made(),
+    )?;
+    Ok(review)
 }
 
 /// **The review of updating `locked`, the skill `name` at `level`, to what `source` holds at
@@ -616,6 +626,19 @@ impl Planned {
         self.brought.iter().map(|one| one.name.clone()).collect()
     }
 
+    /// What an org's project audits of it ([`super::policy`]): the skill and each it brings.
+    pub(super) fn audited(&self) -> super::policy::Audited {
+        super::policy::Audited::new(
+            super::policy::Act::Update,
+            &self.level,
+            std::iter::once(self.name.clone())
+                .chain(self.brought_names())
+                .collect(),
+            &self.locked.source,
+            &self.newer,
+        )
+    }
+
     /// What its grant widens.
     pub(super) fn widenings(&self) -> &[Widening] {
         &self.widenings
@@ -733,6 +756,15 @@ pub(super) fn plan_from(
                 .to_owned(),
         );
     }
+    // The org's controls, asked of the newer commit and of every skill it brings (SK-11).
+    super::policy::hold(
+        plane,
+        &locked.source,
+        reviewed.iter().map(|one| one.name.as_str()),
+        &newer,
+        || source.made(),
+    )
+    .map_err(|why| format!("{why}, so nothing was updated"))?;
     let dir = tree::folder_parts(&locked.folder)
         .ok_or_else(|| format!("{:?} is no folder", locked.folder))?;
     let (found, _) = source.skills()?;
@@ -938,6 +970,8 @@ pub(super) fn write_update(
 ) -> Result<PathBuf, String> {
     let plane = cx.plane;
     let (held, at) = locked_at(plane, level, name)?;
+    cx.audited(&planned.audited())
+        .map_err(|why| format!("{why}, so nothing was updated"))?;
     let wrote = write_planned(plane, planned)?;
     let mut lock = held.lock.clone();
     lock.skills[at] = planned.entry();

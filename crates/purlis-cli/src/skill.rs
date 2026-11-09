@@ -1009,6 +1009,7 @@ fn drafted_from_a_chat(
                 built_in,
                 by: By::Command,
                 say: &mut said,
+                audit: None,
             };
             let checked = templated(
                 root,
@@ -1172,6 +1173,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, CliError> {
             built_in: built_in.as_deref(),
             by: By::Command,
             say: &mut said,
+            audit: None,
         };
         // An export changes no skill, so it finishes and expires nothing either.
         if writes {
@@ -1204,6 +1206,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, CliError> {
         built_in: built_in.as_deref(),
         by: By::Command,
         say: &mut said,
+        audit: None,
     };
     // A delete a crash or a quit cut short is finished or undone before any change (SK-35).
     // And the skills this machine kept deleted past their time are removed (SK-33), but before a

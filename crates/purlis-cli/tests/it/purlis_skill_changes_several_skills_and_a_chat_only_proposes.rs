@@ -482,6 +482,7 @@ impl Project {
             built_in: None,
             by: purlis_core::skills::verbs::By::Command,
             say: &mut say,
+            audit: None,
         };
         for name in names {
             purlis_core::skills::verbs::delete(&mut cx, &Level::project(), name).unwrap();

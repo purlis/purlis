@@ -19,6 +19,7 @@ fn did<T>(root: &Path, change: impl FnOnce(&mut Ctx<'_>) -> T) -> T {
         built_in: None,
         by: By::Command,
         say: &mut say,
+        audit: None,
     })
 }
 

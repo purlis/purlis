@@ -776,3 +776,60 @@ fn update_prints_the_grade_the_newer_commit_carries() {
         "{said}"
     );
 }
+
+/// SK-11 (#2774): on a project whose shared settings hold `[skill_policy]`, an unlisted source
+/// and a commit younger than the minimum age are each refused with their reason, before the
+/// review is asked about; and what passes both is still refused here, as only the window writes
+/// the audit's log.
+#[test]
+fn an_org_project_refuses_an_unlisted_source_a_young_commit_and_an_unaudited_install() {
+    let project = Project::new();
+    let root = project.root();
+    let url = project.url();
+    let install = [
+        "skill", "install", &url, "notify", "--folder", "skills", "--yes",
+    ];
+
+    std::fs::write(
+        root.join("charter.toml"),
+        "schema = 1\n\n[skill_policy]\nallow = [{ source = \"https://github.com/acme/skills\" }]\n",
+    )
+    .unwrap();
+    let unlisted = project.run(&install, "");
+    assert_eq!(unlisted.status.code(), Some(1), "{}", text(&unlisted));
+    assert!(
+        text(&unlisted).contains("is not on this project's allow list of skill sources"),
+        "{}",
+        text(&unlisted)
+    );
+
+    std::fs::write(
+        root.join("charter.toml"),
+        format!("schema = 1\n\n[skill_policy]\nallow = [{{ source = \"{url}\" }}]\n"),
+    )
+    .unwrap();
+    let young = project.run(&install, "");
+    assert_eq!(young.status.code(), Some(1), "{}", text(&young));
+    assert!(
+        text(&young).contains("was committed 0 days ago")
+            && text(&young).contains("at least 7 days old"),
+        "{}",
+        text(&young)
+    );
+
+    std::fs::write(
+        root.join("charter.toml"),
+        format!(
+            "schema = 1\n\n[skill_policy]\nallow = [{{ source = \"{url}\" }}]\nmin_age_days = 0\n"
+        ),
+    )
+    .unwrap();
+    let unaudited = project.run(&install, "");
+    assert_eq!(unaudited.status.code(), Some(1), "{}", text(&unaudited));
+    assert!(
+        text(&unaudited).contains("make the change in the Skill studio"),
+        "{}",
+        text(&unaudited)
+    );
+    assert!(!root.join("skills/notify").exists());
+}

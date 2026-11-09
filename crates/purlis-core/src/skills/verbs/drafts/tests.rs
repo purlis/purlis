@@ -82,6 +82,7 @@ fn accepted(root: &Path, id: &str) -> (Result<PathBuf, String>, Vec<Say>) {
             built_in: None,
             by: super::super::By::Window,
             say: &mut say,
+            audit: None,
         },
         id,
     );

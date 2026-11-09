@@ -34,6 +34,7 @@ pub mod install;
 pub mod listed;
 pub mod lock;
 pub mod outgoing;
+pub mod policy;
 pub mod publish;
 pub mod review;
 pub mod update;
@@ -91,6 +92,12 @@ pub trait SkillSource {
     /// **Whose a grade it carries is**: the short word a person knows it by ([`Origin::label`]).
     fn whose(&self) -> String {
         self.shown()
+    }
+    /// **When what it answers was made**, in seconds since 1970, that an org's minimum age is
+    /// held to ([`policy`]): a git source's commit's committer time. `None` where it cannot say,
+    /// which an org's minimum age refuses.
+    fn made(&self) -> Option<u64> {
+        None
     }
 }
 

@@ -2172,6 +2172,13 @@ installed from. An installed skill is a pinned copy, updated only through a revi
 (ADR 0100). It is not a **marketplace**.
 _Avoid_: marketplace, registry, feed
 
+**Skill policy**:
+An org's controls over its skill sources: `[skill_policy]` in a project's committed settings,
+with an allow and a block list of sources and single skills, a minimum commit age and the commits
+exempt from it. A project that holds one is an **org's project**: its installs, updates and
+removals of installed skills are audited, in the window (ADR 0100, amended 2026-11-09).
+_Avoid_: org plane (until SD-14 says what an org is), managed sources
+
 **Install review**:
 The page that shows what installing a skill from a skill source would add before anything is
 copied: where it **Lands in**, where it **Reaches**, what it adds, its files and what comes along
