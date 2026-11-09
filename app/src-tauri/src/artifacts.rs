@@ -14,7 +14,7 @@
 //! - **Its own origin per artifact** ([`origin`]): one per folder of a workspace.
 //! - **It navigates only within its own origin** ([`Artifacts::may_navigate`], which the
 //!   navigation wall asks for an artifact's webview), and opens no window.
-//! - **Esc and F6 hand the keyboard back to purlis** ([`KEYS`]): purlis's own script in the page
+//! - **Esc and F6 hand the keyboard back to purlis** ([`PAGE_SCRIPT`]): purlis's own script in the page
 //!   asks its own origin for `/.purlis/key/<key>`, which purlis answers by focusing the window's
 //!   own webview and telling it which key ([`ARTIFACT_KEY`]). An approved page can forge that
 //!   request, and it moves only the focus.
@@ -23,8 +23,19 @@
 //!   ([`artifact::approval`]). Approval is [`artifact_approve`]: window-only, of exactly the pin
 //!   and the fingerprint this webview was served, never what the window says; every window of
 //!   the plane hears it ([`APPROVALS_CHANGED`]) and loads its page again.
+//! - **It reloads when its data changes** ([`artifact_reload`], #5955): the window hears the
+//!   change from the plane's watch, the folder is read again with where it stands, and the page
+//!   is loaded again from the new bytes. purlis's script in the page ([`PAGE_SCRIPT`]) puts it
+//!   back where it was scrolled. A change to its template tears the page down instead (#5959).
+//!   The standing is read again with the bytes, so a template that changed in the same burst is
+//!   never served under the approval of the one before.
+//! - **It is drawn in purlis's theme** ([`artifact_theme`], #5955): the window hands over the
+//!   theme it draws, and the page is served it as a stylesheet of its own origin
+//!   ([`serve::THEME_SHEET`]), which the CSP already admits: `color-scheme` purlis's appearance,
+//!   not the operating system's, and each colour token a `--purlis-` custom property.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, PoisonError};
 
@@ -71,19 +82,17 @@ fn host_of(host: &str) -> &str {
 /// of its webview and which key (`escape`, `f6`, `f6-back`).
 pub(crate) const ARTIFACT_KEY: &str = "artifact-key";
 
-/// purlis's script in every artifact page: Esc and F6 (Shift+F6 back) are purlis's keys, not
-/// the page's. It asks its own origin, which the CSP lets an image do and nothing else.
-const KEYS: &str = r#"(() => {
-  addEventListener("keydown", (e) => {
-    const key = e.key === "Escape" ? "escape" : e.key === "F6" ? (e.shiftKey ? "f6-back" : "f6") : null;
-    if (key === null) return;
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    new Image().src = "/.purlis/key/" + key;
-  }, true);
-})();"#;
+/// **purlis's script in every artifact page** (`artifact-page.js`, tested in
+/// `app/src/artifactPage.test.ts`): Esc and F6 (Shift+F6 back) are purlis's keys, not the
+/// page's; purlis's theme sheet is linked before anything of the page's; and the scroll is kept
+/// across a reload. It asks its own origin only, which the CSP lets an image and a stylesheet do.
+const PAGE_SCRIPT: &str = include_str!("artifact-page.js");
 
-/// The keys [`KEYS`] reports.
+/// What purlis runs in an artifact's page when the window's theme changed: the script's own
+/// function, which asks for the theme sheet again.
+const THEME_CHANGED: &str = "window.__purlisTheme?.()";
+
+/// The keys [`PAGE_SCRIPT`] reports.
 const KEY_NAMES: [&str; 3] = ["escape", "f6", "f6-back"];
 
 /// What every window of a plane hears when an artifact's approval on this machine changed: the
@@ -97,16 +106,17 @@ pub struct ArtifactApprovalChanged {
     pub folder: String,
 }
 
-/// One artifact webview: whose window it is in, its origin's host, what it is served, and
-/// which pin of which folder that is, standing how.
+/// One artifact webview: whose window it is in, its origin's host, what it is served, which pin
+/// of which folder that is, standing how, and the theme sheet it is drawn in.
 struct Served {
     window: String,
     host: String,
     snapshot: serve::Snapshot,
     of: Of,
+    theme: String,
 }
 
-/// The artifact a webview shows, as it was read when it was opened.
+/// The artifact a webview shows, as it was read when it was opened, or last read again.
 #[derive(Clone)]
 struct Of {
     plane: PlaneId,
@@ -149,7 +159,14 @@ impl Artifacts {
         let (status, body, kind) = match own {
             None => (StatusCode::NOT_FOUND, Vec::new(), "text/plain"),
             Some(one) => {
-                if let Some(rest) = path.strip_prefix(serve::OWN_PATH) {
+                if path == serve::THEME_SHEET {
+                    let sheet = one.theme.clone().into_bytes();
+                    (
+                        StatusCode::OK,
+                        sheet,
+                        serve::content_type(serve::THEME_SHEET),
+                    )
+                } else if let Some(rest) = path.strip_prefix(serve::OWN_PATH) {
                     let pressed = rest.strip_prefix("key/").filter(|k| KEY_NAMES.contains(k));
                     key = pressed.map(|k| (one.window.clone(), k.to_owned()));
                     (StatusCode::NO_CONTENT, Vec::new(), "text/plain")
@@ -187,6 +204,44 @@ impl Artifacts {
         self.served()
             .get(label)
             .is_some_and(|one| one.window == window)
+    }
+
+    /// **Reads artifact webview `label`'s folder again** (in window `window`), and where it
+    /// stands with it (`config` is this machine's config home), so its next load is served the
+    /// bytes on disk now under the CSP their standing allows. Nothing changes when it cannot be
+    /// read: the page keeps what it was served, and the bar says why from the pins.
+    fn read_again(
+        &self,
+        label: &str,
+        window: &str,
+        config: Option<&Path>,
+    ) -> Result<Standing, String> {
+        let of = self
+            .served()
+            .get(label)
+            .filter(|one| one.window == window)
+            .map(|one| one.of.clone())
+            .ok_or_else(|| "the artifact is not open in this window".to_owned())?;
+        let (pin, snapshot) = read_pinned(&of.dir, &of.folder)?;
+        let standing = approval::standing(config, &of.dir, &of.folder, &pin, &snapshot);
+        if let Some(one) = self.served().get_mut(label) {
+            one.snapshot = snapshot;
+            one.of.pin = pin;
+            one.of.standing = standing;
+        }
+        Ok(standing)
+    }
+
+    /// **Draws artifact webview `label` (in window `window`) in `sheet`**: whether it changed.
+    fn draw_in(&self, label: &str, window: &str, sheet: String) -> bool {
+        let mut served = self.served();
+        match served.get_mut(label).filter(|one| one.window == window) {
+            Some(one) if one.theme != sheet => {
+                one.theme = sheet;
+                true
+            }
+            _ => false,
+        }
     }
 
     /// What artifact webview `label` of window `window` was served: the artifact, and the
@@ -293,6 +348,47 @@ impl ArtifactPlace {
     }
 }
 
+/// **The theme the window draws, handed to an artifact's page** (#5955): its appearance
+/// (`dark` or `light`) and its colour tokens' values, by token (`surface.base`).
+#[derive(Debug, Clone, Deserialize, specta::Type)]
+pub struct ArtifactTheme {
+    pub appearance: String,
+    pub values: BTreeMap<String, String>,
+}
+
+/// **When an artifact's data was last updated** (#5955, `purlis_core::artifact::fresh`).
+#[derive(Debug, Clone, Serialize, specta::Type)]
+pub struct ArtifactFresh {
+    /// Milliseconds since 1970.
+    pub at: f64,
+    /// When it is drawn stale, in milliseconds since 1970.
+    pub stale_at: f64,
+    /// Where the time was read: `declared` by the data, `committed` or `written`.
+    pub source: String,
+}
+
+impl ArtifactFresh {
+    fn of(folder: &Path) -> Option<Self> {
+        let fresh = artifact::fresh::of(folder)?;
+        let ms = |seconds: i64| seconds as f64 * 1000.0;
+        Some(Self {
+            at: ms(fresh.at),
+            stale_at: ms(fresh.stale_at()),
+            source: match fresh.source {
+                artifact::fresh::Source::Declared => "declared",
+                artifact::fresh::Source::Committed => "committed",
+                artifact::fresh::Source::Written => "written",
+            }
+            .to_owned(),
+        })
+    }
+
+    /// The freshness of pinned folder `folder` of `workspace`, when it resolves.
+    fn of_pin(workspace: &Path, folder: &str) -> Option<Self> {
+        Self::of(&artifact::resolve(workspace, folder).ok()?)
+    }
+}
+
 /// One pin, as the activity bar's artifact group draws it.
 #[derive(Debug, Clone, Serialize, specta::Type)]
 pub struct ArtifactPinShown {
@@ -307,6 +403,8 @@ pub struct ArtifactPinShown {
     pub live: bool,
     /// Its folder is over the size cap: the sentence naming both sizes.
     pub too_large: Option<String>,
+    /// When its data was last updated, when that can be read.
+    pub fresh: Option<ArtifactFresh>,
 }
 
 /// What an artifact tab's bar says about it before anything runs.
@@ -319,6 +417,26 @@ pub struct ArtifactAbout {
     pub missing: Option<String>,
     /// Its folder is over the size cap: the sentence naming both sizes.
     pub too_large: Option<String>,
+    /// When its data was last updated, when that can be read.
+    pub fresh: Option<ArtifactFresh>,
+}
+
+/// **Pinned folder `folder` of `workspace`, read**: its pin's id and its files; refused once it
+/// is pinned no more.
+fn read_pinned(workspace: &Path, folder: &str) -> Result<(String, serve::Snapshot), String> {
+    let pins = artifact::read(workspace)?;
+    let Some(pin) = pins.pins.iter().find(|pin| pin.folder == folder) else {
+        return Err(not_pinned(folder));
+    };
+    let snapshot = serve::Snapshot::read(&artifact::resolve(workspace, folder)?, folder)?;
+    Ok((pin.id.clone(), snapshot))
+}
+
+fn not_pinned(folder: &str) -> String {
+    format!(
+        "'{}' is not pinned to this workspace any more",
+        purlis_core::personas::one_line(folder)
+    )
 }
 
 fn workspace_of(
@@ -354,6 +472,11 @@ pub async fn artifact_pins(
         Ok(artifact::list(&at)?
             .into_iter()
             .map(|listed| ArtifactPinShown {
+                fresh: listed
+                    .missing
+                    .is_none()
+                    .then(|| ArtifactFresh::of_pin(&at, &listed.pin.folder))
+                    .flatten(),
                 id: listed.pin.id,
                 folder: listed.pin.folder,
                 name: listed.pin.name,
@@ -381,12 +504,14 @@ pub async fn artifact_about(
     blocking(move || {
         let pins = artifact::list(&at)?;
         let Some(listed) = pins.into_iter().find(|one| one.pin.folder == folder) else {
-            return Err(format!(
-                "'{}' is not pinned to this workspace any more",
-                purlis_core::personas::one_line(&folder)
-            ));
+            return Err(not_pinned(&folder));
         };
         Ok(ArtifactAbout {
+            fresh: listed
+                .missing
+                .is_none()
+                .then(|| ArtifactFresh::of_pin(&at, &folder))
+                .flatten(),
             pinned_by: artifact::pinned_by(&at, &listed.pin.id),
             name: listed.pin.name,
             missing: listed.missing,
@@ -469,6 +594,9 @@ pub struct ArtifactOpened {
 /// this machine read with it (its script runs only when approved), a webview of its own made
 /// at `place` in the asking window, and its label answered. Nothing is focused: the keyboard
 /// stays where the person has it.
+// A command's arguments are what the window passes by name: the bindings carry each one, and
+// the two states Tauri hands in are not the window's.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 #[specta::specta]
 pub async fn artifact_open(
@@ -479,29 +607,23 @@ pub async fn artifact_open(
     workspace: String,
     folder: String,
     place: ArtifactPlace,
+    theme: ArtifactTheme,
 ) -> Result<ArtifactOpened, String> {
     let at = workspace_of(&planes, &plane, &workspace)?;
+    let sheet = serve::theme_sheet(&theme.appearance, &theme.values)?;
     let dir = at.clone();
     let read_folder = folder.clone();
     let config = purlis_core::machine::config_root();
     let (host, snapshot, pin, standing, changed_by) = blocking(move || {
-        let pins = artifact::read(&at)?;
-        let Some(pin) = pins.pins.iter().find(|pin| pin.folder == read_folder) else {
-            return Err(format!(
-                "'{}' is not pinned to this workspace any more",
-                purlis_core::personas::one_line(&read_folder)
-            ));
-        };
-        let real = artifact::resolve(&at, &read_folder)?;
-        let snapshot = serve::Snapshot::read(&real, &read_folder)?;
-        let standing = approval::standing(config.as_deref(), &at, &read_folder, &pin.id, &snapshot);
+        let (pin, snapshot) = read_pinned(&at, &read_folder)?;
+        let standing = approval::standing(config.as_deref(), &at, &read_folder, &pin, &snapshot);
         let changed_by = (standing == Standing::PinChanged)
-            .then(|| artifact::pinned_by(&at, &pin.id))
+            .then(|| artifact::pinned_by(&at, &pin))
             .flatten();
         Ok((
             serve::origin_host(&at, &read_folder),
             snapshot,
-            pin.id.clone(),
+            pin,
             standing,
             changed_by,
         ))
@@ -515,7 +637,7 @@ pub async fn artifact_open(
         pin,
         standing,
     };
-    let label = lay(&window, &artifacts, host, snapshot, of, place)?;
+    let label = lay(&window, &artifacts, host, snapshot, of, sheet, place)?;
     Ok(ArtifactOpened {
         label,
         standing: standing.as_str().to_owned(),
@@ -665,6 +787,8 @@ fn shown(pin: artifact::Pin, live: bool) -> ArtifactPinShown {
         missing: None,
         live,
         too_large: None,
+        // Read with the pins again: every window hears they moved.
+        fresh: None,
     }
 }
 
@@ -747,7 +871,9 @@ pub async fn artifact_preview_open(
     plane: PlaneId,
     page: ArtifactPage,
     place: ArtifactPlace,
+    theme: ArtifactTheme,
 ) -> Result<ArtifactOpened, String> {
+    let sheet = serve::theme_sheet(&theme.appearance, &theme.values)?;
     let root = planes.held(&plane)?.root().to_path_buf();
     let dir = root.clone();
     let workspace = page.workspace.clone();
@@ -777,7 +903,7 @@ pub async fn artifact_preview_open(
         standing: Standing::NotHere,
     };
     Ok(ArtifactOpened {
-        label: lay(&window, &artifacts, host, snapshot, of, place)?,
+        label: lay(&window, &artifacts, host, snapshot, of, sheet, place)?,
         standing: Standing::NotHere.as_str().to_owned(),
         changed_by: None,
     })
@@ -790,6 +916,7 @@ fn lay(
     host: String,
     snapshot: serve::Snapshot,
     of: Of,
+    sheet: String,
     place: ArtifactPlace,
 ) -> Result<String, String> {
     let label = label(artifacts.made.fetch_add(1, Ordering::Relaxed) + 1);
@@ -801,6 +928,7 @@ fn lay(
             host,
             snapshot,
             of,
+            theme: sheet,
         },
     );
     let url: tauri::Url = format!("{own}/")
@@ -811,7 +939,7 @@ fn lay(
         tauri::webview::WebviewBuilder::new(&label, tauri::WebviewUrl::CustomProtocol(url))
             .on_navigation(move |to| to.as_str().starts_with(&leave))
             .on_new_window(crate::navguard::no_new_window)
-            .initialization_script(KEYS)
+            .initialization_script(PAGE_SCRIPT)
             .incognito(true)
             .focused(false)
             .devtools(false)
@@ -909,6 +1037,64 @@ pub async fn artifact_enter(
     }
 }
 
+/// **Loads an artifact's page again from its folder as it is now** (#5955): the window heard
+/// that its data changed. The folder is read again with where it stands on this machine, which
+/// is answered for the bar, and the page is put back where it was scrolled. A folder that cannot
+/// be read leaves the page as it was, and says why.
+#[tauri::command]
+#[specta::specta]
+pub async fn artifact_reload(
+    window: tauri::Window,
+    artifacts: tauri::State<'_, Artifacts>,
+    label: String,
+) -> Result<ArtifactOpened, String> {
+    let Some(webview) = child(&window, &artifacts, &label) else {
+        return Err("that artifact is not open in this window any more".into());
+    };
+    let owner = window.label().to_owned();
+    let app = window.app_handle().clone();
+    let read_label = label.clone();
+    let config = purlis_core::machine::config_root();
+    let (standing, changed_by) = blocking(move || {
+        let artifacts = app
+            .try_state::<Artifacts>()
+            .ok_or_else(|| "no artifact is open".to_owned())?;
+        let standing = artifacts.read_again(&read_label, &owner, config.as_deref())?;
+        let changed_by = (standing == Standing::PinChanged)
+            .then(|| artifacts.served_to(&read_label, &owner))
+            .flatten()
+            .and_then(|(of, _)| artifact::pinned_by(&of.dir, &of.pin));
+        Ok((standing, changed_by))
+    })
+    .await?;
+    webview.reload().map_err(|e| e.to_string())?;
+    Ok(ArtifactOpened {
+        label,
+        standing: standing.as_str().to_owned(),
+        changed_by,
+    })
+}
+
+/// **Draws an artifact's page in the theme the window draws now** (#5955): its sheet is
+/// written again, and the page asks for it again when it changed.
+#[tauri::command]
+#[specta::specta]
+pub async fn artifact_theme(
+    window: tauri::Window,
+    artifacts: tauri::State<'_, Artifacts>,
+    label: String,
+    theme: ArtifactTheme,
+) -> Result<(), String> {
+    let sheet = serve::theme_sheet(&theme.appearance, &theme.values)?;
+    let Some(webview) = child(&window, &artifacts, &label) else {
+        return Ok(());
+    };
+    if artifacts.draw_in(&label, window.label(), sheet) {
+        webview.eval(THEME_CHANGED).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// **Closes an artifact's webview**: its tab closed, or its frame went.
 #[tauri::command]
 #[specta::specta]
@@ -952,6 +1138,7 @@ mod tests {
                         ("img/a.png", "png"),
                     ]),
                     of: of(Standing::ScriptFree),
+                    theme: format!(":root {{ color-scheme: dark; }} /* {host} */"),
                 },
             );
         }
@@ -1150,6 +1337,169 @@ mod tests {
         assert!(artifacts.owned_by("artifact-2", "window-1"));
         assert!(!artifacts.owned_by("artifact-1", "main"));
         assert!(!artifacts.owned_by("artifact-2", "main"));
+    }
+
+    #[test]
+    fn the_theme_is_served_as_a_stylesheet_of_the_page_s_own_origin_under_the_csp() {
+        let artifacts = served(&[("artifact-1", "main", "aaa"), ("artifact-2", "main", "bbb")]);
+        let answered = artifacts.answer("artifact-1", &get(&at("aaa", "/.purlis/theme.css?17")));
+        let response = answered.response;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers()["Content-Type"],
+            "text/css; charset=utf-8"
+        );
+        assert_eq!(
+            response.headers()["Content-Security-Policy"],
+            serve::csp(&origin("aaa"), false).as_str()
+        );
+        assert_eq!(
+            String::from_utf8_lossy(response.body()),
+            ":root { color-scheme: dark; } /* aaa */"
+        );
+        let crossed = artifacts.answer("artifact-1", &get(&at("bbb", "/.purlis/theme.css")));
+        assert_eq!(crossed.response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn a_new_theme_is_drawn_once_and_only_by_the_artifact_s_own_window() {
+        let artifacts = served(&[("artifact-1", "main", "aaa")]);
+        assert!(!artifacts.draw_in("artifact-1", "window-2", "light".to_owned()));
+        assert!(artifacts.draw_in("artifact-1", "main", "light".to_owned()));
+        assert!(
+            !artifacts.draw_in("artifact-1", "main", "light".to_owned()),
+            "unchanged"
+        );
+        let sheet = artifacts.answer("artifact-1", &get(&at("aaa", "/.purlis/theme.css")));
+        assert_eq!(sheet.response.body(), b"light");
+    }
+
+    /// A workspace with artifact `page` pinned, its page saying `said`.
+    fn workspace(said: &str) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("artifacts/page");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("index.html"), said).unwrap();
+        std::fs::write(
+            dir.path().join("artifacts/pins.toml"),
+            "version = 1\npin = [\n  { id = \"a00000000001\", folder = \"page\", name = \"Page\", icon = \"chart\", order = 1 },\n]\n",
+        )
+        .unwrap();
+        dir
+    }
+
+    fn opened(workspace: &Path) -> Artifacts {
+        let artifacts = Artifacts::default();
+        let (pin, snapshot) = read_pinned(workspace, "page").unwrap();
+        artifacts.served().insert(
+            "artifact-1".to_owned(),
+            Served {
+                window: "main".to_owned(),
+                host: "aaa".to_owned(),
+                snapshot,
+                of: Of {
+                    dir: workspace.to_path_buf(),
+                    folder: "page".to_owned(),
+                    pin,
+                    ..of(Standing::ScriptFree)
+                },
+                theme: String::new(),
+            },
+        );
+        artifacts
+    }
+
+    fn served_page(artifacts: &Artifacts) -> Vec<u8> {
+        artifacts
+            .answer("artifact-1", &get(&at("aaa", "/")))
+            .response
+            .into_body()
+    }
+
+    #[test]
+    fn a_reload_serves_the_folder_as_it_is_now_and_not_as_it_was_at_the_press() {
+        let dir = workspace("<h1>12 open</h1>");
+        let artifacts = opened(dir.path());
+        std::fs::write(
+            dir.path().join("artifacts/page/index.html"),
+            "<h1>9 open</h1>",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("artifacts/page/data.json"), "{}").unwrap();
+        assert_eq!(
+            served_page(&artifacts),
+            b"<h1>12 open</h1>",
+            "until it is read again"
+        );
+
+        artifacts.read_again("artifact-1", "main", None).unwrap();
+
+        assert_eq!(served_page(&artifacts), b"<h1>9 open</h1>");
+        let data = artifacts.answer("artifact-1", &get(&at("aaa", "/data.json")));
+        assert_eq!(data.response.status(), StatusCode::OK);
+    }
+
+    #[test]
+    fn a_reload_that_cannot_read_the_folder_keeps_what_the_page_was_served() {
+        let dir = workspace("<h1>12 open</h1>");
+        let artifacts = opened(dir.path());
+        // Another window's reload of it reads nothing.
+        std::fs::write(
+            dir.path().join("artifacts/page/index.html"),
+            "<h1>9 open</h1>",
+        )
+        .unwrap();
+        assert!(
+            artifacts
+                .read_again("artifact-1", "window-2", None)
+                .is_err()
+        );
+        assert_eq!(served_page(&artifacts), b"<h1>12 open</h1>");
+        // Unpinned since.
+        std::fs::write(dir.path().join("artifacts/pins.toml"), "version = 1\n").unwrap();
+        let why = artifacts
+            .read_again("artifact-1", "main", None)
+            .unwrap_err();
+        assert!(why.contains("not pinned"), "{why}");
+        assert_eq!(served_page(&artifacts), b"<h1>12 open</h1>");
+    }
+
+    #[test]
+    fn a_reload_reads_where_the_page_stands_again_so_a_changed_template_runs_no_script() {
+        let dir = workspace("<h1>12 open</h1><script>draw()</script>");
+        let artifacts = opened(dir.path());
+        standing_of(&artifacts, "artifact-1", Standing::Approved);
+        let csp = |artifacts: &Artifacts| {
+            artifacts
+                .answer("artifact-1", &get(&at("aaa", "/")))
+                .response
+                .headers()["Content-Security-Policy"]
+                .to_str()
+                .unwrap()
+                .to_owned()
+        };
+        assert_eq!(csp(&artifacts), serve::csp(&origin("aaa"), true));
+
+        // Its data and its template both moved in one burst: the template is no longer the
+        // one approved, so the reload serves it with no script.
+        std::fs::write(dir.path().join("artifacts/page/data.json"), "{}").unwrap();
+        std::fs::write(
+            dir.path().join("artifacts/page/index.html"),
+            "<h1>9 open</h1><script>steal()</script>",
+        )
+        .unwrap();
+        let standing = artifacts.read_again("artifact-1", "main", None).unwrap();
+
+        assert!(!standing.runs(), "{standing:?}");
+        assert_eq!(csp(&artifacts), serve::csp(&origin("aaa"), false));
+    }
+
+    #[test]
+    fn purlis_s_page_script_is_the_one_its_test_runs() {
+        assert!(PAGE_SCRIPT.contains("/.purlis/key/"));
+        assert!(PAGE_SCRIPT.contains(serve::THEME_SHEET));
+        assert!(THEME_CHANGED.contains("__purlisTheme"));
+        assert!(PAGE_SCRIPT.contains("__purlisTheme"));
     }
 
     #[test]

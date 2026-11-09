@@ -1,12 +1,12 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { emit } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ArtifactAbout, ArtifactOpened } from "./bindings";
+import type { ArtifactAbout, ArtifactOpened, PlaneChanged } from "./bindings";
 import { ArtifactTab } from "./ArtifactTab";
 import {
   APPROVALS_CHANGED,
@@ -16,19 +16,23 @@ import {
   coveredByAnOverlay,
   templateOf,
 } from "./artifacts";
+import { CLASSIC_THEME, DEFAULT_THEME } from "./theme/theme";
 
 const ABOUT: ArtifactAbout = {
   name: "Backlog state",
   pinned_by: "Ada",
   missing: null,
   too_large: null,
+  fresh: null,
 };
 
 type Call = { cmd: string; args: Record<string, unknown> };
 
-/** The core, answering an artifact's commands, with what each was asked. */
+/** The core, answering an artifact's commands, with what each was asked. `about` is read at
+ *  each ask, so a test may change what the core says; `after` is what it says once Repin or
+ *  Unpin was pressed. */
 function core(
-  about: ArtifactAbout = ABOUT,
+  about: ArtifactAbout | (() => ArtifactAbout) = ABOUT,
   opened: Partial<ArtifactOpened> = {},
   after: (cmd: string) => ArtifactAbout | undefined = () => undefined,
 ) {
@@ -42,8 +46,8 @@ function core(
         now = after(cmd) ?? now;
         return null;
       }
-      if (cmd === "artifact_about") return now;
-      if (cmd === "artifact_open")
+      if (cmd === "artifact_about") return typeof now === "function" ? now() : now;
+      if (cmd === "artifact_open" || cmd === "artifact_reload")
         return { label: "artifact-7", standing: "script-free", changed_by: null, ...opened };
       return null;
     },
@@ -67,7 +71,25 @@ function Tab({ waits = false, onAsk = () => {} }: { waits?: boolean; onAsk?: () 
   );
 }
 
+/** The plane's watch says `paths` of workspace `workspace` changed, as artifacts. */
+async function changed(workspace: string, ...paths: string[]) {
+  const told: PlaneChanged = {
+    plane: "p",
+    changes: paths.map((path) => ({
+      kind: "artifacts",
+      workspace,
+      persona: null,
+      path: `workspaces/${workspace}/artifacts/${path}`,
+    })),
+    answers: [{ answer: "git" }, { answer: "views" }],
+  };
+  await act(async () => {
+    await emit("plane-changed", told);
+  });
+}
+
 afterEach(() => {
+  document.documentElement.removeAttribute("style");
   cleanup();
   clearMocks();
   vi.restoreAllMocks();
@@ -180,6 +202,92 @@ describe("an artifact's tab", () => {
     await new Promise((settle) => setTimeout(settle, 20));
     expect(frame).not.toHaveFocus();
     expect(elsewhere).toHaveFocus();
+  });
+
+  it("loads its page again in place when its own data changes, and not for another's", async () => {
+    const calls = core();
+    render(<Tab />);
+    await waitFor(() => expect(asked(calls, "artifact_open")).toHaveLength(1));
+
+    await changed("alpha", "backlog-state/data.json");
+    await vi.waitFor(() =>
+      expect(asked(calls, "artifact_reload").map((one) => one.args.label)).toEqual(["artifact-7"]),
+    );
+    await changed("alpha", "backlog-state/data/weeks.json");
+    await vi.waitFor(() => expect(asked(calls, "artifact_reload")).toHaveLength(2));
+
+    await changed("alpha", "release/data.json");
+    await changed("beta", "backlog-state/data.json");
+    await new Promise((settle) => setTimeout(settle, 20));
+    expect(asked(calls, "artifact_reload")).toHaveLength(2);
+    // In place: the same webview, never closed and opened again for its data.
+    expect(asked(calls, "artifact_open")).toHaveLength(1);
+    expect(asked(calls, "artifact_close")).toHaveLength(0);
+  });
+
+  it("says on its bar where it stands as a reload read it", async () => {
+    const standing: Partial<ArtifactOpened> = {};
+    const calls = core(ABOUT, standing);
+    render(<Tab />);
+    await waitFor(() => expect(asked(calls, "artifact_open")).toHaveLength(1));
+    const edge = screen.getByTestId("artifact-edge");
+    await waitFor(() => expect(edge).toHaveAttribute("data-standing", "plain"));
+
+    // Its template took script with its data, in one burst: the core reads it as new here.
+    standing.standing = "new";
+    await changed("alpha", "backlog-state/data.json");
+    await waitFor(() => expect(edge).toHaveAttribute("data-standing", "asks"));
+  });
+
+  it("hands its page the theme the window draws, and each one it draws after", async () => {
+    const root = document.documentElement;
+    const [one, other] = [
+      DEFAULT_THEME.values["surface.base"],
+      CLASSIC_THEME.values["surface.base"],
+    ];
+    expect(one).not.toBe(other);
+    root.style.setProperty("--surface-base", one);
+    root.style.colorScheme = "light";
+    const calls = core();
+    render(<Tab />);
+    await waitFor(() => expect(asked(calls, "artifact_open")).toHaveLength(1));
+    expect(asked(calls, "artifact_open")[0].args.theme).toEqual({
+      appearance: "light",
+      values: { "surface.base": one },
+    });
+
+    root.style.setProperty("--surface-base", other);
+    root.style.colorScheme = "dark";
+    await vi.waitFor(() =>
+      expect(asked(calls, "artifact_theme").at(-1)?.args).toEqual({
+        label: "artifact-7",
+        theme: { appearance: "dark", values: { "surface.base": other } },
+      }),
+    );
+  });
+
+  it("says on purlis's bar when its data was last updated", async () => {
+    const at = Date.now() - 3 * 60 * 60 * 1000;
+    core({ ...ABOUT, fresh: { at, stale_at: at + 86_400_000, source: "declared" } });
+    render(<Tab />);
+    await waitFor(() =>
+      expect(screen.getByTestId("artifact-bar")).toHaveTextContent("Updated 3 hours ago"),
+    );
+  });
+
+  it("says it cannot be opened once its pin goes, and closes its page", async () => {
+    let about = ABOUT;
+    const calls = core(() => about);
+    render(<Tab />);
+    await waitFor(() => expect(asked(calls, "artifact_open")).toHaveLength(1));
+
+    about = { ...ABOUT, missing: "'backlog-state' is not pinned to this workspace any more" };
+    await changed("alpha", "pins.toml");
+
+    expect(await screen.findByTestId("artifact-missing")).toHaveTextContent("not pinned");
+    await vi.waitFor(() =>
+      expect(asked(calls, "artifact_close").map((one) => one.args.label)).toEqual(["artifact-7"]),
+    );
   });
 
   it("says why it cannot be opened, and opens nothing", async () => {

@@ -1092,6 +1092,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "artifact_open",
     "artifact_place",
     "artifact_enter",
+    // Its page loaded again when its folder changed, and drawn in the window's theme (#5955).
+    "artifact_reload",
+    "artifact_theme",
     "artifact_close",
     // Managing pins from the window (#5953): only the person's press pins or reorders, and an
     // .html file's private preview is a webview of the window's own.

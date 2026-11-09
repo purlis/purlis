@@ -1,11 +1,11 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ArtifactPinShown } from "./bindings";
+import type { ArtifactFresh, ArtifactPinShown } from "./bindings";
 import { ArtifactGroup, MOST_DRAWN } from "./ArtifactGroup";
 
 const pin = (folder: string, name: string, icon = "chart"): ArtifactPinShown => ({
@@ -16,6 +16,16 @@ const pin = (folder: string, name: string, icon = "chart"): ArtifactPinShown => 
   missing: null,
   live: true,
   too_large: null,
+  fresh: null,
+});
+
+const HOUR = 60 * 60 * 1000;
+
+/** Updated `hours` ago, stale `staleIn` hours from now. */
+const updated = (hours: number, staleIn: number): ArtifactFresh => ({
+  at: Date.now() - hours * HOUR,
+  stale_at: Date.now() + staleIn * HOUR,
+  source: "written",
 });
 
 const PINS = [pin("backlog-state", "Backlog state"), pin("release", "Release", "rocket")];
@@ -23,6 +33,7 @@ const PINS = [pin("backlog-state", "Backlog state"), pin("release", "Release", "
 afterEach(() => {
   cleanup();
   clearMocks();
+  vi.useRealTimers();
 });
 
 describe("the activity bar's artifacts", () => {
@@ -124,6 +135,59 @@ describe("the activity bar's artifacts", () => {
       <ArtifactGroup plane="p" workspace={undefined} pins={PINS} onOpen={() => {}} />,
     );
     expect(outside.container).toBeEmptyDOMElement();
+  });
+
+  it("says in its tooltip when each artifact's data was last updated", async () => {
+    const pins = [{ ...pin("backlog-state", "Backlog state"), fresh: updated(3, 21) }];
+    render(<ArtifactGroup plane="p" workspace="alpha" pins={pins} onOpen={() => {}} />);
+    await userEvent.tab();
+    expect(screen.getByRole("button", { name: "Backlog state" })).toHaveFocus();
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "Open Backlog state. Updated 3 hours ago",
+    );
+  });
+
+  it("dims the icon of an artifact whose data is stale, and only that one", () => {
+    const pins = [
+      { ...pin("backlog-state", "Backlog state"), fresh: updated(30, -6) },
+      { ...pin("release", "Release"), fresh: updated(1, 23) },
+      pin("unknown", "Unknown"),
+    ];
+    render(<ArtifactGroup plane="p" workspace="alpha" pins={pins} onOpen={() => {}} />);
+    expect(screen.getByRole("button", { name: "Backlog state" })).toHaveAttribute("data-dimmed");
+    expect(screen.getByRole("button", { name: "Release" })).not.toHaveAttribute("data-dimmed");
+    expect(screen.getByRole("button", { name: "Unknown" })).not.toHaveAttribute("data-dimmed");
+  });
+
+  it("dims an icon when its data turns stale, with nothing else changing", () => {
+    vi.useFakeTimers();
+    const pins = [{ ...pin("backlog-state", "Backlog state"), fresh: updated(23, 1) }];
+    render(<ArtifactGroup plane="p" workspace="alpha" pins={pins} onOpen={() => {}} />);
+    const icon = screen.getByRole("button", { name: "Backlog state" });
+    expect(icon).not.toHaveAttribute("data-dimmed");
+    act(() => {
+      vi.advanceTimersByTime(HOUR + 1000);
+    });
+    expect(icon).toHaveAttribute("data-dimmed");
+  });
+
+  it("draws nothing, and throws nothing, for a core that answers no list at all", async () => {
+    let asked = 0;
+    mockIPC((cmd) => {
+      if (cmd === "artifact_pins") asked += 1;
+      return null;
+    });
+    render(
+      <>
+        <p>Beside it</p>
+        <ArtifactGroup plane="p" workspace="alpha" onOpen={() => {}} />
+      </>,
+    );
+    await waitFor(() => expect(asked).toBe(1));
+    await new Promise((settle) => setTimeout(settle, 20));
+    // A throw would have taken the whole tree down with it.
+    expect(screen.getByText("Beside it")).toBeInTheDocument();
+    expect(screen.queryByRole("toolbar")).toBeNull();
   });
 
   it("asks the core for the workspace's pins", async () => {

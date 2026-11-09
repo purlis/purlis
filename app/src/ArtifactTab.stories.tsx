@@ -10,7 +10,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, within } from "storybook/test";
 import { mockIPC } from "@tauri-apps/api/mocks";
-import type { ArtifactAbout, ArtifactOpened, ArtifactPinShown } from "./bindings";
+import type { ArtifactAbout, ArtifactFresh, ArtifactOpened, ArtifactPinShown } from "./bindings";
 import { ArtifactGroup } from "./ArtifactGroup";
 import { ArtifactTab } from "./ArtifactTab";
 import { expectFocusInSight } from "./stories.testkit";
@@ -21,6 +21,15 @@ const ABOUT: ArtifactAbout = {
   pinned_by: "Ada Lovelace",
   missing: null,
   too_large: null,
+  fresh: null,
+};
+
+const HOUR = 60 * 60 * 1000;
+
+/** Updated `hours` ago, and stale a day after. */
+const updated = (hours: number): ArtifactFresh => {
+  const at = Date.now() - hours * HOUR;
+  return { at, stale_at: at + 24 * HOUR, source: "declared" };
 };
 
 function answers(about: ArtifactAbout, opened: Partial<ArtifactOpened> = {}) {
@@ -132,6 +141,15 @@ export const Waits: Story = {
   },
 };
 
+/** Its data was updated three hours ago: the bar says so (#5955). */
+export const Fresh: Story = {
+  beforeEach: () => answers({ ...ABOUT, fresh: updated(3) }),
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    await expect(await page.findByText("Updated 3 hours ago")).toBeInTheDocument();
+  },
+};
+
 /** Its folder is gone: why, where its page belongs, no frame, and Repin and Unpin. */
 export const Missing: Story = {
   beforeEach: () =>
@@ -177,6 +195,7 @@ const pin = (folder: string, name: string, icon: string): ArtifactPinShown => ({
   missing: null,
   live: true,
   too_large: null,
+  fresh: null,
 });
 
 /** The left bar's artifact group: after a divider, below purlis's own icons. */
@@ -278,5 +297,41 @@ export const IconMenu: StoryObj<typeof ArtifactGroup> = {
     expectFocusInSight();
     await userEvent.keyboard("{Escape}");
     await expect(page.getByRole("button", { name: "Page 1" })).toHaveFocus();
+  },
+};
+
+/** Freshness on the bar (#5955): Backlog state's data is two days old, so its icon is dimmed;
+ *  Release's is an hour old. Each says when in its tooltip. */
+export const StaleOnTheBar: StoryObj<typeof ArtifactGroup> = {
+  render: () => (
+    <ActivityBarFrame
+      variant="bar"
+      className="activity-column"
+      data-side="left"
+      top={
+        <ArtifactGroup
+          plane="p"
+          workspace="alpha"
+          pins={[
+            { ...pin("backlog-state", "Backlog state", "chart"), fresh: updated(48) },
+            { ...pin("release", "Release", "rocket"), fresh: updated(1) },
+          ]}
+          onOpen={() => {}}
+        />
+      }
+      bottom={null}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    const stale = page.getByRole("button", { name: "Backlog state" });
+    await expect(stale).toHaveAttribute("data-dimmed");
+    await expect(page.getByRole("button", { name: "Release" })).not.toHaveAttribute("data-dimmed");
+    await userEvent.tab();
+    await expect(stale).toHaveFocus();
+    expectFocusInSight();
+    // A tooltip is drawn in a layer of the document's own, outside the story's canvas.
+    const tooltip = await within(canvasElement.ownerDocument.body).findByRole("tooltip");
+    await expect(tooltip).toHaveTextContent("Updated 2 days ago");
   },
 };

@@ -31,6 +31,8 @@ export const commands = {
 	artifactOpen: __WINDOW_ONLY_RESULT,
 	artifactPlace: __WINDOW_ONLY_RESULT,
 	artifactEnter: __WINDOW_ONLY_RESULT,
+	artifactReload: __WINDOW_ONLY_RESULT,
+	artifactTheme: __WINDOW_ONLY_RESULT,
 	artifactClose: __WINDOW_ONLY_RESULT,
 	artifactPinAsk: __WINDOW_ONLY_RESULT,
 	artifactPin: __WINDOW_ONLY_RESULT,
@@ -3085,6 +3087,18 @@ export type ArtifactAbout = {
 	missing: string | null,
 	/**  Its folder is over the size cap: the sentence naming both sizes. */
 	too_large: string | null,
+	/**  When its data was last updated, when that can be read. */
+	fresh: ArtifactFresh | null,
+};
+
+/**  **When an artifact's data was last updated** (#5955, `purlis_core::artifact::fresh`). */
+export type ArtifactFresh = {
+	/**  Milliseconds since 1970. */
+	at: number | null,
+	/**  When it is drawn stale, in milliseconds since 1970. */
+	stale_at: number | null,
+	/**  Where the time was read: `declared` by the data, `committed` or `written`. */
+	source: string,
 };
 
 /**
@@ -3162,6 +3176,8 @@ export type ArtifactPinShown = {
 	live: boolean,
 	/**  Its folder is over the size cap: the sentence naming both sizes. */
 	too_large: string | null,
+	/**  When its data was last updated, when that can be read. */
+	fresh: ArtifactFresh | null,
 };
 
 /**
@@ -3174,6 +3190,15 @@ export type ArtifactPlace = {
 	width: number | null,
 	height: number | null,
 	ratio: number | null,
+};
+
+/**
+ *  **The theme the window draws, handed to an artifact's page** (#5955): its appearance
+ *  (`dark` or `light`) and its colour tokens' values, by token (`surface.base`).
+ */
+export type ArtifactTheme = {
+	appearance: string,
+	values: { [key in string]: string },
 };
 
 /**
@@ -4009,7 +4034,7 @@ export type CertificateCheck = {
  *  What one changed path is part of, as the window's readers divide the plane
  *  ([`purlis_core::planechange::Kind`], which this mirrors for the bindings).
  */
-export type ChangeKind = "project" | "harness" | "workspace" | "todos" | "memory" | "sessions" | "persona" | "skills" | "git" | "chats";
+export type ChangeKind = "project" | "harness" | "workspace" | "todos" | "artifacts" | "memory" | "sessions" | "persona" | "skills" | "git" | "chats";
 
 /**
  *  Where one change's member list is in a changes view, sent with its blocks

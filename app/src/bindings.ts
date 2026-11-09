@@ -38,7 +38,7 @@ export const commands = {
 	 *  at `place` in the asking window, and its label answered. Nothing is focused: the keyboard
 	 *  stays where the person has it.
 	 */
-	artifactOpen: (plane: PlaneId, workspace: string, folder: string, place: ArtifactPlace) => typedError<ArtifactOpened, string>(__TAURI_INVOKE("artifact_open", { plane, workspace, folder, place })),
+	artifactOpen: (plane: PlaneId, workspace: string, folder: string, place: ArtifactPlace, theme: ArtifactTheme) => typedError<ArtifactOpened, string>(__TAURI_INVOKE("artifact_open", { plane, workspace, folder, place, theme })),
 	/**
 	 *  **Moves an artifact's webview to its frame's place**, or hides it (`None`): its tab went
 	 *  behind another, or something purlis draws is over its frame.
@@ -52,6 +52,18 @@ export const commands = {
 } | null) => typedError<null, string>(__TAURI_INVOKE("artifact_place", { label, place })),
 	/**  **Puts the keyboard in an artifact's page**: the person entered its frame. */
 	artifactEnter: (label: string) => typedError<null, string>(__TAURI_INVOKE("artifact_enter", { label })),
+	/**
+	 *  **Loads an artifact's page again from its folder as it is now** (#5955): the window heard
+	 *  that its data changed. The folder is read again with where it stands on this machine, which
+	 *  is answered for the bar, and the page is put back where it was scrolled. A folder that cannot
+	 *  be read leaves the page as it was, and says why.
+	 */
+	artifactReload: (label: string) => typedError<ArtifactOpened, string>(__TAURI_INVOKE("artifact_reload", { label })),
+	/**
+	 *  **Draws an artifact's page in the theme the window draws now** (#5955): its sheet is
+	 *  written again, and the page asks for it again when it changed.
+	 */
+	artifactTheme: (label: string, theme: ArtifactTheme) => typedError<null, string>(__TAURI_INVOKE("artifact_theme", { label, theme })),
 	/**  **Closes an artifact's webview**: its tab closed, or its frame went. */
 	artifactClose: (label: string) => typedError<null, string>(__TAURI_INVOKE("artifact_close", { label })),
 	/**
@@ -76,7 +88,7 @@ export const commands = {
 	 *  alone, read once, served from an origin of its own under the same CSP as an artifact's, with
 	 *  no script and nothing beside it. Nothing is pinned and nothing is written.
 	 */
-	artifactPreviewOpen: (plane: PlaneId, page: ArtifactPage, place: ArtifactPlace) => typedError<ArtifactOpened, string>(__TAURI_INVOKE("artifact_preview_open", { plane, page, place })),
+	artifactPreviewOpen: (plane: PlaneId, page: ArtifactPage, place: ArtifactPlace, theme: ArtifactTheme) => typedError<ArtifactOpened, string>(__TAURI_INVOKE("artifact_preview_open", { plane, page, place, theme })),
 	/**
 	 *  **Repin**: pins artifact folder `folder` again as it is pinned, its name, icon, command and
 	 *  working folder kept, so the folder is checked anew (there, inside `artifacts/`, within the
@@ -5998,6 +6010,18 @@ export type ArtifactAbout = {
 	missing: string | null,
 	/**  Its folder is over the size cap: the sentence naming both sizes. */
 	too_large: string | null,
+	/**  When its data was last updated, when that can be read. */
+	fresh: ArtifactFresh | null,
+};
+
+/**  **When an artifact's data was last updated** (#5955, `purlis_core::artifact::fresh`). */
+export type ArtifactFresh = {
+	/**  Milliseconds since 1970. */
+	at: number | null,
+	/**  When it is drawn stale, in milliseconds since 1970. */
+	stale_at: number | null,
+	/**  Where the time was read: `declared` by the data, `committed` or `written`. */
+	source: string,
 };
 
 /**
@@ -6075,6 +6099,8 @@ export type ArtifactPinShown = {
 	live: boolean,
 	/**  Its folder is over the size cap: the sentence naming both sizes. */
 	too_large: string | null,
+	/**  When its data was last updated, when that can be read. */
+	fresh: ArtifactFresh | null,
 };
 
 /**
@@ -6087,6 +6113,15 @@ export type ArtifactPlace = {
 	width: number | null,
 	height: number | null,
 	ratio: number | null,
+};
+
+/**
+ *  **The theme the window draws, handed to an artifact's page** (#5955): its appearance
+ *  (`dark` or `light`) and its colour tokens' values, by token (`surface.base`).
+ */
+export type ArtifactTheme = {
+	appearance: string,
+	values: { [key in string]: string },
 };
 
 /**
@@ -6922,7 +6957,7 @@ export type CertificateCheck = {
  *  What one changed path is part of, as the window's readers divide the plane
  *  ([`purlis_core::planechange::Kind`], which this mirrors for the bindings).
  */
-export type ChangeKind = "project" | "harness" | "workspace" | "todos" | "memory" | "sessions" | "persona" | "skills" | "git" | "chats";
+export type ChangeKind = "project" | "harness" | "workspace" | "todos" | "artifacts" | "memory" | "sessions" | "persona" | "skills" | "git" | "chats";
 
 /**
  *  Where one change's member list is in a changes view, sent with its blocks

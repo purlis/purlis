@@ -43,6 +43,8 @@ macro_rules! app_commands {
                 artifacts::artifact_open,
                 artifacts::artifact_place,
                 artifacts::artifact_enter,
+                artifacts::artifact_reload,
+                artifacts::artifact_theme,
                 artifacts::artifact_close,
                 artifacts::artifact_pin_ask,
                 artifacts::artifact_pin,

@@ -11,6 +11,7 @@ import {
   ARTIFACT_PINS_MOVED,
   MOST_DRAWN,
   drawnAndMore,
+  freshness,
   movedBy,
   pinOrderAfterDrop,
   type ArtifactPinsMoved,
@@ -58,6 +59,10 @@ const MORE = "artifacts-more";
  * - **Unpin from workspace…** on its menu asks first, then takes it off the pins file; its
  *   folder stays.
  *
+ * **Each icon says when its data was last updated** (#5955), in its tooltip, and is dimmed once
+ * that is stale (`purlis_core::artifact::fresh`), at the moment it turns, with nothing else
+ * changing. The pins are read again on any change to the workspace's artifacts.
+ *
  * Nothing is drawn while the workspace has no pins, nor outside every workspace.
  */
 export function ArtifactGroup({
@@ -79,6 +84,7 @@ export function ArtifactGroup({
   const asked = usePins(plane, given === undefined ? workspace : undefined);
   const pins = given ?? asked;
   const { drawn, more } = drawnAndMore(pins);
+  const now = useNowAt(drawn.map((pin) => pin.fresh?.stale_at ?? null));
   const ids = useMemo(() => pins.map((pin) => pin.id), [pins]);
   const [unpinning, setUnpinning] = useState<ArtifactPinShown>();
   const [trouble, setTrouble] = useState<string>();
@@ -119,6 +125,7 @@ export function ArtifactGroup({
               {drawn.map((pin) => {
                 const chosen = pin.folder === current;
                 const unopenable = pin.missing ?? pin.too_large;
+                const fresh = freshness(pin.fresh, now);
                 return (
                   <SortableTab key={pin.id} id={pin.id}>
                     {({ sortable, style }) => (
@@ -145,7 +152,13 @@ export function ArtifactGroup({
                             <ActivityItem
                               variant="bar"
                               selected={chosen}
-                              tip={unopenable === null ? `Open ${pin.name}` : unopenable}
+                              dimmed={fresh?.stale}
+                              tip={
+                                unopenable ??
+                                (fresh === undefined
+                                  ? `Open ${pin.name}`
+                                  : `Open ${pin.name}. ${fresh.said}`)
+                              }
                               aria-label={pin.name}
                               aria-current={chosen ? "page" : undefined}
                               aria-describedby={sortable.attributes["aria-describedby"]}
@@ -339,3 +352,20 @@ function usePins(plane: PlaneId, workspace: string | undefined): readonly Artifa
 }
 
 const NONE: readonly ArtifactPinShown[] = [];
+
+/**
+ * **Now, drawn again at each of `times` still to come** (milliseconds since 1970): an icon is
+ * dimmed the moment its data turns stale, not at the next change that happens to draw the bar.
+ */
+function useNowAt(times: readonly (number | null)[]): number {
+  const [now, setNow] = useState(() => Date.now());
+  const next = Math.min(...times.filter((at): at is number => at !== null && at > now));
+  useEffect(() => {
+    if (!Number.isFinite(next)) return;
+    // A timer's delay is held in 32 bits: a time further off is waited for in steps.
+    const wait = Math.min(next - Date.now(), 2 ** 31 - 1);
+    const timer = setTimeout(() => setNow(Date.now()), Math.max(0, wait));
+    return () => clearTimeout(timer);
+  }, [next]);
+  return now;
+}
