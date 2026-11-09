@@ -194,25 +194,29 @@ export const DotOnNotices: Story = {
     const dot = canvas.getByRole("button", { name: /^Show the notice on the status bar/ });
     await expect(dot.querySelector("svg")).not.toBeNull();
     const item = canvas.getByTestId("status-alerts");
-    const [d, i, b, bell] = [
-      dot,
-      item,
-      canvas.getByTestId("status-line"),
-      item.querySelector('[data-part="icon"] svg') as Element,
-    ].map((one) => one.getBoundingClientRect());
+    const bar = canvas.getByTestId("status-line");
+    const icon = item.querySelector('[data-part="icon"] svg');
+    await expect(icon).not.toBeNull();
+    const slot = dot.parentElement as HTMLElement;
+    const [d, s, bell] = [dot, slot, icon as Element].map((one) => one.getBoundingClientRect());
     const disc = discOf(dot);
     await expect(Math.round(d.width)).toBeGreaterThanOrEqual(24);
     await expect(Math.round(d.height)).toBeGreaterThanOrEqual(24);
+    // A 16px disc, as round as it is wide.
     await expect(Math.round(disc.width)).toBe(16);
-    // At the bell's top leading corner: its middle before the bell and above the bell's own.
+    await expect(Math.round(disc.height)).toBe(16);
+    await expect(getComputedStyle(dot).backgroundClip).toBe("padding-box");
+    // At the bell's top leading corner: its middle before the bell and above the bell's own,
+    // reaching into the bell, but no more than a quarter of the way, so the bell is read.
     await expect(centre(disc)).toBeLessThan(bell.left);
     await expect(disc.top + disc.height / 2).toBeLessThan(bell.top + bell.height / 2);
-    // The bell is read: the disc reaches no more than a quarter of the way into it.
+    await expect(disc.right).toBeGreaterThan(bell.left);
     await expect(disc.right).toBeLessThanOrEqual(bell.left + bell.width / 4 + 0.5);
-    // Before the item's words, and its clear border over nothing before the item's slot.
-    await expect(d.right).toBeLessThan(i.right);
-    // Whole inside the bar, which clips what leaves it: the disc and its target.
-    await expect(d.top).toBeGreaterThanOrEqual(b.top);
+    // Its clear border over nothing before its slot.
+    await expect(d.left).toBeGreaterThanOrEqual(s.left);
+    // Whole inside the bar's clip (inside its top border), the disc and its target.
+    const b = bar.getBoundingClientRect();
+    await expect(d.top).toBeGreaterThanOrEqual(b.top + bar.clientTop);
     await expect(d.bottom).toBeLessThanOrEqual(b.bottom);
   },
 };

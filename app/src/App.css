@@ -3992,6 +3992,15 @@ body {
   flex: none;
 }
 
+/* **The dot's room** (#5889), kept before the item with the dot or without, so nothing moves: the
+   dot (`status.css`) is drawn 20px into the slot, its 24px box less its 4px clear border, and the
+   bell starts the item's `--space-3` in, so this leaves the dot over a fifth of the bell (0.2em of
+   the bar's words, the bell's size) and the bell read. A reserve the geometry guard names
+   (`RESERVES`), since a px dot is placed against a bell the text size places. */
+.status-notices {
+  padding-inline-start: max(0px, calc(20px - var(--space-3) - 0.2em));
+}
+
 .chip-card [data-f6-card]:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: calc(var(--focus-ring-width) * -1);
