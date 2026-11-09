@@ -179,6 +179,10 @@ pub(super) fn metrics(width: u16, height: u16) -> Value {
     json!({ "width": width, "height": height, "deviceScaleFactor": 0, "mobile": false })
 }
 
+/// Whether letting go of the middle button pastes the primary selection where the focus is: on
+/// Linux.
+const MIDDLE_RELEASE_PASTES: bool = cfg!(target_os = "linux");
+
 /// The smallest and largest page a size may give, in CSS pixels.
 const SIZES: std::ops::RangeInclusive<u16> = 200..=4096;
 
@@ -551,9 +555,11 @@ impl Browser {
                 }
                 // Letting go of the middle button pastes the primary selection where the focus
                 // is, on Linux: the field is blanked and read before it, as for a paste by key,
-                // and what went in is kept as a paste is. Elsewhere it puts nothing in, and the
-                // reads find the field as it was.
-                let pastes = *kind == MouseKind::Released && *button == MouseButton::Middle;
+                // and what went in is kept as a paste is. Elsewhere it is sent as any release
+                // is (a middle click there opens a link in a new tab).
+                let pastes = MIDDLE_RELEASE_PASTES
+                    && *kind == MouseKind::Released
+                    && *button == MouseButton::Middle;
                 let field = if pastes {
                     self.field_edited(&target, &session, read, landed_in, by)?
                 } else {
