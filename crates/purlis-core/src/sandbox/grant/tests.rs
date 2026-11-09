@@ -555,6 +555,7 @@ fn a_chats_own_grants_reach_its_compiled_sandbox_and_no_other_start() {
             env: crate::secrets::Env::of(&[]),
             home: Some(project.home.clone()),
             os: Os::MacOs,
+            on_a_sandbox_only_profile: false,
         },
     )
     .expect("compiles");
@@ -932,6 +933,7 @@ fn a_claude_code_chat_is_given_nothing_for_a_grant_to_serve_on_a_port() {
             env: crate::secrets::Env::of(&[]),
             home: Some(project.home.clone()),
             os: Os::MacOs,
+            on_a_sandbox_only_profile: false,
         },
     )
     .expect("compiles");
@@ -981,6 +983,7 @@ fn a_grant_above_the_data_home_leaves_the_app_state_denied_to_writes() {
         env: crate::secrets::Env::of(&[("PURLIS_DATA_HOME", named_data.as_str())]),
         home: Some(project.home.clone()),
         os: Os::MacOs,
+        on_a_sandbox_only_profile: false,
     };
     assert_eq!(
         crate::sandbox::Homes::charter_data(&machine),

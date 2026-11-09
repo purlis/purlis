@@ -2041,6 +2041,7 @@ fn a_machine() -> purlis_core::sandbox::Machine {
         home: None,
         // Where every harness has a sandbox charter compiles.
         os: purlis_core::sandbox::Os::MacOs,
+        on_a_sandbox_only_profile: false,
     }
 }
 

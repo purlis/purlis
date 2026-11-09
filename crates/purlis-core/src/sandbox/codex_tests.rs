@@ -383,6 +383,7 @@ fn a_codex_chat_runs_in_its_profiles_folder_and_the_operators_home_follows_codex
         ]),
         home: Some(home.path().to_path_buf()),
         os: Os::MacOs,
+        on_a_sandbox_only_profile: false,
     };
     for plane in [&one, &two] {
         let applied = codex_start(plane.path(), &machine)
@@ -643,6 +644,7 @@ fn a_codex_chat_on_no_profile_for_sandboxed_chats_is_refused_with_the_way_out() 
         env: crate::secrets::Env::of(&[]),
         home: None,
         os: Os::MacOs,
+        on_a_sandbox_only_profile: false,
     };
     let applied = codex_start(plane.path(), &machine)
         .expect("starts")

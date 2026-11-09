@@ -116,6 +116,7 @@ fn a_wrapped_chat_never_writes_the_hook_socket_s_folder() {
         env: crate::secrets::Env::of(&[]),
         home: Some(std::path::PathBuf::from("/home/op")),
         os: crate::sandbox::Os::MacOs,
+        on_a_sandbox_only_profile: false,
     };
     let denied = crate::sandbox::Denied::of(&root, &machine).paths;
     let mut with_grant = super::Own::default();
@@ -191,6 +192,7 @@ fn a_hook_socket_in_the_per_user_fallback_folder_is_never_the_wrapped_chat_s_to_
         env: crate::secrets::Env::of(&[]),
         home: Some(std::path::PathBuf::from("/home/op")),
         os: crate::sandbox::Os::MacOs,
+        on_a_sandbox_only_profile: false,
     };
     let denied = crate::sandbox::Denied::of(&root, &machine).paths;
     let folder = tmp.join("charter-op-0123456789abcdef");

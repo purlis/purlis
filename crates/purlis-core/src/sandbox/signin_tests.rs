@@ -19,6 +19,7 @@ fn machine(home: &Path) -> Machine {
         env: crate::secrets::Env::of(&[]),
         home: Some(home.to_path_buf()),
         os: Os::MacOs,
+        on_a_sandbox_only_profile: false,
     }
 }
 

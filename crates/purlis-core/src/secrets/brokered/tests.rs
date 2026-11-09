@@ -73,6 +73,7 @@ fn machine() -> Machine {
         env: Env::of(&[]),
         home: None,
         os: Os::this(),
+        on_a_sandbox_only_profile: false,
     }
 }
 
@@ -806,6 +807,7 @@ fn a_codex_chats_run_is_denied_the_operators_codex_home_as_the_chat_is() {
         env: Env::of(&[]),
         home: Some(home.path().canonicalize().unwrap()),
         os: Os::MacOs,
+        on_a_sandbox_only_profile: false,
     };
     let codex_home = home.path().canonicalize().unwrap().join(".codex");
     let confines = confines_of(Harness::Codex, &root, &machine);
@@ -2646,6 +2648,7 @@ fn what_a_sandboxed_chat_is_compiled_to_denies_it_every_place_a_listing_would_re
             env: Env::of(&[]),
             home: Some(home.clone()),
             os: Os::this(),
+            on_a_sandbox_only_profile: false,
         };
         // Off macOS and Linux, the wrap of Codex and of opencode is refused, by name, and
         // there is no chat to deny anything.
