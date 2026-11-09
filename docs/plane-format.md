@@ -1261,6 +1261,7 @@ key refuses.
   workspaces/*/todos/MEMORY.md merge=union
   workspaces/*/sessions/index.md merge=union
   sessions/index.md merge=union
+  workspaces/*/artifacts/pins.toml merge=union
   ```
 
   **An existing plane takes a new rule with its next whole save** (#5338): a save rewrites a
@@ -3002,14 +3003,71 @@ them (#5427, ADR 0078 §7, session protocol 1.78), which the file diff reads as 
 - **Encoding details:** as at the plane root. Decided by ADR 0098, built by #2324: a theme folder
   needs no approval.
 
+### `workspaces/<ws>/artifacts/` — the workspace's artifacts
+
+- **Format:** one folder per artifact, `artifacts/<folder>/`, holding its template: an
+  `index.html` and whatever it loads beside it. Beside the folders, the pins file
+  `artifacts/pins.toml` (below). `<folder>` is one plain name: letters, digits, `.`, `-` and
+  `_`, never starting with a dot.
+- **Status:** **purlis only** (spec #5948, ADR 0120, #5950). A reserved name in a workspace, so
+  no extension may keep a folder under it and no repository there is taken for a clone.
+- **Tier:** Plane when LIVE, Clone state when LOCAL — the templates and the pins file travel
+  with the workspace. **Data files** (below) are Clone state either way: each person's own,
+  written on their machine.
+- **Written by:** the person, a chat or a skill (the templates and data files); the pins file
+  only by `purlis artifact pin | unpin | reorder` (`crates/purlis-core/src/artifact/`), under a
+  lock on the folder, whole by rename.
+- **Read by:** `purlis artifact list`, and the window's activity bar (ADR 0120 §2).
+- **Git:** follows the workspace — un-ignored by the LIVE block's `artifacts` pair, and the
+  data files re-ignored by the two lines after it; kept on disk for a LOCAL one.
+  `workspaces/*/artifacts/pins.toml` is merged by git's `union` driver (the merge rules).
+- **Data files** are an artifact folder's `data.json` and everything under its `data/`
+  folder: the names the plane declares for them, so the ignore list and the template's
+  fingerprint agree on what is data without reading any file. A template may read them; they
+  are inert JSON, never committed.
+- **The pins file**, `artifacts/pins.toml`, TOML:
+
+  ```toml
+  version = 1
+  pin = [
+    { id = "3f9c2a1b7d4e", folder = "backlog-state", name = "Backlog", icon = "chart", order = 1, command = "purlis skill run backlog-sync", cwd = "." },
+  ]
+  ```
+
+  - `version`: `1`. A file with a higher version is read but never rewritten: a write is
+    refused with a sentence naming the version, so an older purlis cannot drop what a newer
+    one wrote.
+  - `pin`: an array of inline tables, **one pin per line**, each line ending with a comma.
+    That shape is what the `union` merge driver needs: two people who each pin an artifact
+    add one line each, and git keeps both lines in a valid array.
+  - Each pin: `id` (twelve lowercase hex digits), `folder`, `name` (one line, at most 60
+    characters; suggested from the template's `<title>`, else the folder), `icon` (one of the
+    icon names a persona may take, `personamark::ICONS`, never an image of the page's), `order`
+    (a positive integer), and optionally `command` (the command that writes its data, one line)
+    and `cwd` (its working folder, workspace-relative, plain components, no `..`).
+  - **The id is the pin's identity, drawn from its folder, command and working folder**: the
+    first twelve hex digits of the SHA-256 of `folder`, `command` and `cwd` joined by NUL. So a
+    change to any of the three is a **new pin** (ADR 0120 §1): pinning a folder again with
+    another command replaces its pin with one under a new id, and two people who pinned the same
+    folder with the same command hold one pin.
+  - Keys purlis does not know, on the file or on a pin, are kept as they are on every write.
+  - Read sorted by `order`, then `id`. Two lines with one id (a union of two edits of one pin)
+    are one pin, the later line's. Written sorted; a new pin takes the next order after the
+    last, and `reorder` numbers the pins it is given 1, 2, 3, … and the rest after them.
+  - A pin's folder must be a folder inside the workspace's `artifacts/` holding an
+    `index.html`, reached through no link that leads out of `artifacts/`, and `artifacts/`
+    itself inside the workspace. A pin that is not is refused with a sentence and nothing is
+    written; `list` shows a pin whose folder has gone (not yet pulled, or removed) as missing.
+  - Unpinning removes the pin's line; the folder stays.
+
 ### `workspaces/<ws>/<folder>/` — a folder an extension keeps in a workspace
 
 - **Format:** whatever the extension writes there. purlis reads none of it.
 - **Status:** **purlis only** (purlis#343, ADR 0053). `<folder>` is the one name an
   approved extension declares as `contributes.events.workspace_folder`: letters, digits, `-`
   and `_`, and never one of purlis's own names in a workspace (`workspace.md`,
-  `workspace.json`, `memory`, `todos`, `refs`, `pieces`, `worktrees`, `themes`, `README.md`,
-  `CLAUDE.md`, `AGENTS.md`, `manifest.json`).
+  `workspace.json`, `memory`, `todos`, `refs`, `pieces`, `worktrees`, `themes`, `artifacts`,
+  `README.md`, `CLAUDE.md`, `AGENTS.md`, `manifest.json`).
 - **Tier:** None — the extension's own folder; purlis reads none of it.
 - **Written by:** the extension's own program, which runs as the operator. purlis does not
   create it.
@@ -3247,7 +3305,7 @@ them (#5427, ADR 0078 §7, session protocol 1.78), which the file diff reads as 
     `# >>> purlis live workspaces (managed by \`purlis workspace live\`) >>>` and
     `# <<< purlis live workspaces <<<`. Either pair is read, and the block is rewritten in
     place under the project's pair the next time it is written (V93g, V93i).
-  - Fifteen lines per LIVE workspace, workspaces sorted by name
+  - Nineteen lines per LIVE workspace, workspaces sorted by name
     (`charter/workspace.py:1396`–`1401`):
     `!/workspaces/<n>/workspace.json`, `!/workspaces/<n>/workspace.md`,
     `!/workspaces/<n>/memory`, `!/workspaces/<n>/memory/**`,
@@ -3255,8 +3313,12 @@ them (#5427, ADR 0078 §7, session protocol 1.78), which the file diff reads as 
     `!/workspaces/<n>/work`, `!/workspaces/<n>/work/**`,
     `!/workspaces/<n>/sessions`, `!/workspaces/<n>/sessions/**`,
     `!/workspaces/<n>/skills`, `!/workspaces/<n>/skills/**`,
+    `!/workspaces/<n>/artifacts`, `!/workspaces/<n>/artifacts/**`,
+    `/workspaces/<n>/artifacts/*/data.json`, `/workspaces/<n>/artifacts/*/data/`,
     `!/workspaces/<n>/changes`, `!/workspaces/<n>/changes/**`,
-    `/workspaces/<n>/changes/log/`. The `work` pair (ADR 0088 §3), the `sessions` pair
+    `/workspaces/<n>/changes/log/`. The `artifacts` pair and the two lines that re-ignore its
+    data files (ADR 0120, #5950) are purlis's: a workspace's artifact templates and pins file
+    follow it, and each person's data files never travel. The `work` pair (ADR 0088 §3), the `sessions` pair
     (ADR 0064) and the `skills` pair (ADR 0099, #2767) are purlis's: a workspace's work links,
     session records and skills follow it, LIVE or LOCAL, and its `skills.local/` stays ignored
     either way. A block written before them is brought up to date by `reinit`, as any older
@@ -3282,7 +3344,7 @@ them (#5427, ADR 0078 §7, session protocol 1.78), which the file diff reads as 
     (`charter/workspace.py:1360`).
   - What a LIVE workspace actually stages is `_ws_meta_paths`
     (`charter/commands_workspace.py:1094`, list built at `charter/commands_workspace.py:1116`): `workspace.json`, `workspace.md`, `memory`,
-    `todos`, `sessions` and `skills` (purlis; each only if it exists) and `changes` only when `change.has_records`
+    `todos`, `sessions`, `skills` and `artifacts` (purlis; each only if it exists) and `changes` only when `change.has_records`
     (`charter/commands_workspace.py:1119`). The two lists must agree and only a test holds
     them together.
   - **In purlis, going LOCAL also untracks** what the block had published
