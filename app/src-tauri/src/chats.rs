@@ -6859,6 +6859,12 @@ impl Chats {
                 let Some(piece) = piece.clone().sound() else {
                     return;
                 };
+                // A shell or a monitor runs in a session of its own, out of the harness's group:
+                // noted now, while the harness runs, it ends with the harness however that ends
+                // (#5806). The hook is the cause; nothing the harness printed is read.
+                if matches!(piece.kind, pieces::Kind::Shell | pieces::Kind::Monitor) {
+                    self.sessions.note_strays(output.chat);
+                }
                 self.own_changed(output.chat, |own| pieces::started(&mut own.pieces, piece));
             }
             Output::OwnWorkInFlight { pieces: said } => {

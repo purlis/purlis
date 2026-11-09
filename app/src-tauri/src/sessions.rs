@@ -376,6 +376,17 @@ impl SessionHost for Sessions {
         Sessions::process_id(self, id)
     }
 
+    /// Listed on a thread of its own: on macOS the listing is a `ps` run, and the hook that
+    /// asks must not wait on it.
+    fn note_strays(&self, id: u32) {
+        let Ok(program) = self.with(id, |running| Ok(running.session.program())) else {
+            return;
+        };
+        let _ = std::thread::Builder::new()
+            .name("charter-noting-strays".into())
+            .spawn(move || program.note_strays());
+    }
+
     fn running(&self) -> Vec<u32> {
         let mut ids: Vec<u32> = lock(&self.running).keys().copied().collect();
         ids.sort_unstable();

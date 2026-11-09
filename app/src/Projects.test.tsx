@@ -294,6 +294,13 @@ const projectTabs = () =>
         }`,
     );
 
+/** The chat tab in front, in the project in front. */
+const selectedChatTab = () =>
+  within(stripNamed("Tabs"))
+    .getAllByRole("tab")
+    .find((tab) => tab.getAttribute("aria-selected") === "true")
+    ?.querySelector(".tab-name")?.textContent;
+
 /** How many terminals the first chat of `plane` has open: one while its pane is drawn, none
  *  once it is closed, and never fewer, which would be one closed twice. */
 const open = (plane: string) => {
@@ -1243,6 +1250,32 @@ describe("a project that is not in front stays drawn, off the window", () => {
     expect(await screen.findByRole("dialog", { name: "Doctor" })).toBeInTheDocument();
     expect(started(planes[0])).toBe(built);
     expect(open(planes[0])).toBe(1);
+  });
+
+  it("brings the chat a clicked notification is about forward, in its project (#6003)", async () => {
+    const planes = ["/home/dev/p0", "/home/dev/p1"];
+    const { asked, notified } = core({
+      launch: null,
+      restore: { planes, active: 0, dropped: [] },
+      chats: {
+        [planes[0]]: [chat({ session: 1, name: "p0.1" })],
+        [planes[1]]: [chat({ session: 1, name: "p1.1" }), chat({ session: 2, name: "p1.2" })],
+      },
+      asks: { [planes[1]]: [2] },
+    });
+    render(<App />);
+    await waitFor(() => expect(chatTabs()).toEqual(["p0.1"]));
+    await waitFor(() =>
+      expect(asked.some((one) => one.cmd === "asks_waiting" && one.args.plane === planes[1])).toBe(
+        true,
+      ),
+    );
+    await act(async () => {});
+
+    act(() => notified(planes[1], 2));
+
+    await waitFor(() => expect(projectTabs()).toEqual(["p0", "p1*"]));
+    await waitFor(() => expect(selectedChatTab()).toBe("p1.2"));
   });
 
   it("closes a chat's terminal once when its project is no longer kept, and once when it is closed", async () => {

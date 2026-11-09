@@ -134,6 +134,20 @@ impl Strays {
         self.0.is_empty()
     }
 
+    /// Adds `more` to these, each process once: one listed in both under the same start is
+    /// the same process.
+    pub fn join(&mut self, more: Self) {
+        for stray in more.0 {
+            if !self
+                .0
+                .iter()
+                .any(|known| known.pid == stray.pid && known.started == stray.started)
+            {
+                self.0.push(stray);
+            }
+        }
+    }
+
     /// Hangs up on each, and on the group of each that leads one.
     pub fn hang_up(&self) {
         self.signal(rustix::process::Signal::HUP);

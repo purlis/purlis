@@ -309,6 +309,10 @@ fn every_command() -> Vec<Command> {
             program: CHAT.into(),
             note: session::ProgramNote(serde_json::json!({"chat": 3})),
         },
+        // What a chat's harness started outside its group, noted to end with it (1.80, #5806).
+        Command::NoteStrays {
+            program: CHAT.into(),
+        },
         // The desktop taken out of a runner's peers (1.25, #2525).
         Command::Unpair,
         // A desktop's profile kept on its runner (1.43, #2049).
@@ -609,6 +613,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "programs_of",
             "quit",
             "note_program",
+            "note_strays",
             "take_over",
             "browser_input",
             "size_browser",

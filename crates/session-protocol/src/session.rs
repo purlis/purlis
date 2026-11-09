@@ -512,9 +512,23 @@ use crate::view::{Limits, Views};
 /// the runner by its key, so a sign-in asked over it reaches that runner and no other, where one
 /// run through the cluster's own `kubectl exec` reaches the pod of a name. A host before 1.79 is
 /// signed in on as before.
+///
+/// 1.80 has a host note what a chat's harness started outside its process group
+/// ([`Command::NoteStrays`], #5806): asked as the harness's hook says it started a background
+/// shell or a monitor, so those end with the harness however it ends, on its own or on a
+/// signal from outside, where before only an end the host made reached them. An older host
+/// refuses it `unknown_command`, so it is not asked, and such a chat's strays end only with an
+/// end the host makes, as before.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 79,
+    minor: 80,
+};
+
+/// The version that first notes a chat's strays ([`Command::NoteStrays`], #5806): none is
+/// asked of a host before.
+pub const KNOWS_NOTE_STRAYS: Version = Version {
+    major: 1,
+    minor: 80,
 };
 
 /// The version that first signs a profile in over the desktop's link to its runner
@@ -1329,6 +1343,13 @@ pub enum Command {
     /// the one before, and [`NO_SUCH_CHAT`] for a program the host does not hold. The window's
     /// alone ([`crate::grants::Power::Reattach`]).
     NoteProgram { program: String, note: ProgramNote },
+    /// **Note what `program` has started outside its process group so far** (1.80, #5806), so
+    /// it ends with the program however the program ends: the window asks as the harness's hook
+    /// says it started a background shell or a monitor. Nothing for a program whose start did
+    /// not ask its strays to end with it, or that has ended. Answered [`Answer::Done`] once
+    /// noted; refused [`NO_SUCH_CHAT`] for a program the host does not hold. The window's
+    /// alone ([`crate::grants::Power::Reattach`]).
+    NoteStrays { program: String },
     /// **Where the host's own event log ends now** (1.41, #3393): its device and the `seq` of
     /// its last line, 0 for none, answered [`Answer::LogEnd`]: the cursor a client that holds
     /// none of it subscribes from, so it is pushed what is written from now on. Refused
@@ -2911,6 +2932,7 @@ wire_words!(Command {
     UndoTurn => "undo_turn",
     CancelEngineDownload => "cancel_engine_download",
     NoteProgram => "note_program",
+    NoteStrays => "note_strays",
     LogEnd => "log_end",
     AskGrade => "ask_grade",
     AnswerGrade => "answer_grade",
@@ -2959,7 +2981,7 @@ impl Command {
             Command::LogIn { .. } | Command::FillSecret { .. } => Power::LogIn,
             Command::Inspect { .. } | Command::InspectorInput { .. } => Power::Inspect,
             Command::ProgramsOf { .. } => Power::ProgramsOf,
-            Command::NoteProgram { .. } => Power::Reattach,
+            Command::NoteProgram { .. } | Command::NoteStrays { .. } => Power::Reattach,
             Command::Quit => Power::Quit,
             Command::TakeBack { .. } => Power::TakeBack,
             Command::NameWindow { .. } => Power::NameWindow,
@@ -3538,7 +3560,8 @@ impl Lane {
             | Command::Close { program }
             | Command::Readiness { program }
             // A note follows what the window did to the program before it.
-            | Command::NoteProgram { program, .. } => Some(Lane::Program(program.clone())),
+            | Command::NoteProgram { program, .. }
+            | Command::NoteStrays { program } => Some(Lane::Program(program.clone())),
             // A confinement's own commands keep their order: an Allow, then what it holds.
             Command::Confine(confine) => Some(Lane::Confinement(confine.confinement.clone())),
             Command::LetGoOfConfinement { confinement }
@@ -4164,6 +4187,14 @@ impl Client {
         self.done(Command::NoteProgram {
             program: program.into(),
             note,
+        })
+        .await
+    }
+
+    /// Notes what `program` has started outside its process group so far (1.80, #5806).
+    pub async fn note_strays(&self, program: &str) -> Result<(), CallError> {
+        self.done(Command::NoteStrays {
+            program: program.into(),
         })
         .await
     }
