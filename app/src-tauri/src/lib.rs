@@ -3976,6 +3976,12 @@ pub fn run() {
                 if windows::is_charter_window(webview.label()) {
                     artifacts::close_window_children(webview.app_handle(), webview.label());
                 }
+                // An artifact's page that loads again loses the port its last load had (#5961).
+                if artifacts::is_artifact(webview.label())
+                    && let Some(served) = webview.try_state::<artifacts::Artifacts>()
+                {
+                    served.reloaded(webview.label());
+                }
             }
         })
         .setup(|app| {

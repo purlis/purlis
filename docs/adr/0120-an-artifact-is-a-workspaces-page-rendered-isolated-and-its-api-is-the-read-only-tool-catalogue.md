@@ -204,3 +204,9 @@ Each change is an amendment file of its own, written when this record is accepte
 - **A sandboxed iframe in the window's document.** Rejected on the prototype's evidence (§3): on
   WebKit an endless loop in it froze the window, and the window's `frame-src` let it navigate to
   another artifact. It would also have needed `frame-src` opened in the window's own CSP.
+
+## Amendments
+
+The amendments to this decision are files of their own in [`0120/`](0120/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
+section added to this record.

@@ -23,13 +23,20 @@
 //!   ([`artifact::approval`]). Approval is [`artifact_approve`]: window-only, of exactly the pin
 //!   and the fingerprint this webview was served, never what the window says; every window of
 //!   the plane hears it ([`APPROVALS_CHANGED`]) and loads its page again.
+//! - **An approved page reads its own data through one port per load** (ADR 0120 §7, #5961):
+//!   purlis's script in the page ([`PORT`]) hands it `purlis.port`, a `MessagePort`, and carries
+//!   what it is asked to purlis on its own origin's `/.purlis/port/<load>/…`, attributed by the
+//!   webview's label. A load's port opens with its first word and is revoked when the page loads
+//!   again ([`Artifacts::reloaded`]); an answer for a load that is gone is never delivered. Each
+//!   read is gated again when it is asked: the pin and approval read again, and only a data file
+//!   the page declared ([`artifact::data`]), answered in the catalogue's envelope.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, PoisonError};
 
 use purlis_core::artifact::approval::{self, Standing};
-use purlis_core::artifact::{self, serve};
+use purlis_core::artifact::{self, data, serve};
 use serde::{Deserialize, Serialize};
 use tauri::http::{Request, Response, StatusCode};
 use tauri::{Emitter, Manager, Runtime};
@@ -86,6 +93,52 @@ const KEYS: &str = r#"(() => {
 /// The keys [`KEYS`] reports.
 const KEY_NAMES: [&str; 3] = ["escape", "f6", "f6-back"];
 
+/// **purlis's script in every artifact page that hands it its port** (#5961): `purlis.port`, a
+/// `MessagePort` made for this load. The page posts `{ id, read: "<data file>" }` on it and
+/// hears `{ id, data | error: { kind }, at }`. The load is named by a random word of its own,
+/// opened first and then carried on each ask, as an image of its own origin, which is all the CSP
+/// lets it reach; the answer comes back through [`ANSWER`], for this load's word only.
+const PORT: &str = r#"(() => {
+  const load = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+  const channel = new MessageChannel();
+  const own = channel.port1;
+  const send = (path) => { new Image().src = "/.purlis/port/" + load + "/" + path; };
+  let open = false;
+  const waiting = [];
+  const opening = new Image();
+  opening.onload = opening.onerror = () => { open = true; waiting.splice(0).forEach(send); };
+  opening.src = "/.purlis/port/" + load + "/open";
+  own.onmessage = (event) => {
+    const asked = event.data;
+    const id = asked !== null && typeof asked === "object" ? asked.id : undefined;
+    if (!Number.isSafeInteger(id) || id < 0 || typeof asked.read !== "string") {
+      own.postMessage({ id: Number.isSafeInteger(id) ? id : null, error: { kind: "refused" }, at: new Date().toISOString().replace(/\.\d+Z$/, "Z") });
+      return;
+    }
+    const path = "read/" + id + "?" + encodeURIComponent(asked.read);
+    if (open) send(path); else waiting.push(path);
+  };
+  Object.defineProperty(window, "__purlisPort", { value: (to, answer) => { if (to === load) own.postMessage(answer); } });
+  Object.defineProperty(window, "purlis", { value: Object.freeze({ api: 1, port: channel.port2 }) });
+})();"#;
+
+/// The function [`PORT`] leaves for purlis to hand a load its answer with.
+const ANSWER: &str = "__purlisPort";
+
+/// Whether `word` is a load's word as [`PORT`] makes one: 32 lowercase hex digits.
+fn is_load(word: &str) -> bool {
+    word.len() == 32 && word.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// One read a page asked for on its port: the webview, its load, the page's id and the name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Ask {
+    pub(crate) label: String,
+    pub(crate) load: String,
+    pub(crate) id: u64,
+    pub(crate) name: String,
+}
+
 /// What every window of a plane hears when an artifact's approval on this machine changed: the
 /// workspace and folder, so each tab of it loads its page again.
 pub(crate) const APPROVALS_CHANGED: &str = "artifact-approvals-changed";
@@ -104,6 +157,10 @@ struct Served {
     host: String,
     snapshot: serve::Snapshot,
     of: Of,
+    /// What its page declared it reads, read from the bytes served.
+    declared: Option<data::Declared>,
+    /// The word of the load whose port is open, if one is.
+    load: Option<String>,
 }
 
 /// The artifact a webview shows, as it was read when it was opened.
@@ -129,6 +186,40 @@ pub(crate) struct Answered {
     pub(crate) response: Response<Vec<u8>>,
     /// `(window, key)`: the page pressed one of purlis's keys.
     pub(crate) key: Option<(String, String)>,
+    /// A read the page asked for on its open port.
+    pub(crate) ask: Option<Ask>,
+}
+
+impl Served {
+    /// What the page said on its port, `rest` after `/.purlis/port/`: `<load>/open` opens the
+    /// load's port, closing any other; `<load>/read/<id>?<name>` asks, on the open port only.
+    fn port(&mut self, label: &str, rest: &str, query: Option<&str>) -> Option<Ask> {
+        let (load, said) = rest.split_once('/')?;
+        if !is_load(load) {
+            return None;
+        }
+        if said == "open" {
+            self.load = Some(load.to_owned());
+            return None;
+        }
+        if self.load.as_deref() != Some(load) {
+            return None;
+        }
+        let id = said.strip_prefix("read/")?;
+        if id.is_empty() || !id.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        let name = percent_encoding::percent_decode_str(query.unwrap_or(""))
+            .decode_utf8()
+            .ok()?
+            .into_owned();
+        Some(Ask {
+            label: label.to_owned(),
+            load: load.to_owned(),
+            id: id.parse().ok()?,
+            name,
+        })
+    }
 }
 
 impl Artifacts {
@@ -142,16 +233,20 @@ impl Artifacts {
         let uri = request.uri();
         let host = host_of(uri.host().unwrap_or("")).to_owned();
         let path = uri.path();
-        let served = self.served();
-        let own = served.get(label).filter(|one| one.host == host);
+        let mut served = self.served();
+        let own = served.get_mut(label).filter(|one| one.host == host);
         let mut key = None;
-        let runs = own.is_some_and(|one| one.of.standing.runs());
+        let mut ask = None;
+        let runs = own.as_ref().is_some_and(|one| one.of.standing.runs());
         let (status, body, kind) = match own {
             None => (StatusCode::NOT_FOUND, Vec::new(), "text/plain"),
             Some(one) => {
                 if let Some(rest) = path.strip_prefix(serve::OWN_PATH) {
                     let pressed = rest.strip_prefix("key/").filter(|k| KEY_NAMES.contains(k));
                     key = pressed.map(|k| (one.window.clone(), k.to_owned()));
+                    if let Some(port) = rest.strip_prefix("port/") {
+                        ask = one.port(label, port, uri.query());
+                    }
                     (StatusCode::NO_CONTENT, Vec::new(), "text/plain")
                 } else {
                     match serve::key(path)
@@ -172,7 +267,31 @@ impl Artifacts {
             .header("Referrer-Policy", "no-referrer")
             .body(body)
             .unwrap_or_else(|_| Response::new(Vec::new()));
-        Answered { response, key }
+        Answered { response, key, ask }
+    }
+
+    /// **Webview `label`'s page loads again**: the port its last load opened is revoked, so
+    /// nothing it asked is answered and no answer for it is delivered.
+    pub(crate) fn reloaded(&self, label: &str) {
+        if let Some(one) = self.served().get_mut(label) {
+            one.load = None;
+        }
+    }
+
+    /// Whether `load` is still the load of webview `label` whose port is open.
+    fn still_open(&self, label: &str, load: &str) -> bool {
+        self.served()
+            .get(label)
+            .is_some_and(|one| one.load.as_deref() == Some(load))
+    }
+
+    /// What answering `ask` needs, read while its port is still open: the artifact, the bytes
+    /// served, and what its page declared.
+    fn for_ask(&self, ask: &Ask) -> Option<(Of, serve::Snapshot, Option<data::Declared>)> {
+        self.served()
+            .get(&ask.label)
+            .filter(|one| one.load.as_deref() == Some(ask.load.as_str()))
+            .map(|one| (one.of.clone(), one.snapshot.clone(), one.declared.clone()))
     }
 
     /// Whether artifact webview `label` may go to `url`: within its own origin only.
@@ -226,6 +345,9 @@ pub(crate) fn serve<R: Runtime>(
             .unwrap_or_else(|_| Response::new(Vec::new()));
     };
     let answered = artifacts.answer(label, request);
+    if let Some(ask) = answered.ask {
+        answer_ask(app.clone(), ask);
+    }
     if let Some((window, key)) = answered.key {
         // The window's own webview has the window's label.
         if let Some(own) = app.get_webview(&window) {
@@ -241,6 +363,74 @@ pub(crate) fn serve<R: Runtime>(
         );
     }
     answered.response
+}
+
+/// **Answers a read a page asked for on its port** (#5961), off the scheme's thread, and hands
+/// the answer to the page only while the load that asked is still the open one.
+fn answer_ask<R: Runtime>(app: tauri::AppHandle<R>, ask: Ask) {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(artifacts) = app.try_state::<Artifacts>() else {
+            return;
+        };
+        let Some((of, snapshot, declared)) = artifacts.for_ask(&ask) else {
+            return;
+        };
+        let config = purlis_core::machine::config_root();
+        let answer = read_asked(
+            config.as_deref(),
+            &of,
+            &snapshot,
+            declared.as_ref(),
+            &ask.name,
+        );
+        if !artifacts.still_open(&ask.label, &ask.load) {
+            return;
+        }
+        let Some(webview) = app.get_webview(&ask.label) else {
+            return;
+        };
+        let _ = webview.eval(delivery(&ask, &answer));
+    });
+}
+
+/// **The answer to a page asking for data file `name`**, gated again at the ask: the pin is
+/// still the one served and its standing on this machine still runs the page's script, or it
+/// is `not-approved`; then [`data::read`].
+fn read_asked(
+    config: Option<&std::path::Path>,
+    of: &Of,
+    snapshot: &serve::Snapshot,
+    declared: Option<&data::Declared>,
+    name: &str,
+) -> purlis_core::catalogue::Answer {
+    use purlis_core::catalogue::{Answer, ErrorKind};
+    let now = chrono::Utc::now();
+    let pinned = artifact::read(&of.dir)
+        .ok()
+        .and_then(|pins| pins.pins.into_iter().find(|pin| pin.folder == of.folder))
+        .filter(|pin| pin.id == of.pin);
+    let runs = pinned.is_some()
+        && approval::standing(config, &of.dir, &of.folder, &of.pin, snapshot).runs();
+    if !runs {
+        return Answer::error(ErrorKind::NotApproved, now);
+    }
+    match artifact::resolve(&of.dir, &of.folder) {
+        Ok(folder) => data::read(&folder, declared, name, now),
+        Err(_) => Answer::error(ErrorKind::Failed, now),
+    }
+}
+
+/// The script that hands `answer` to the load that asked: data, as JSON, never markup.
+fn delivery(ask: &Ask, answer: &purlis_core::catalogue::Answer) -> String {
+    let mut said = answer.to_json();
+    if let Some(fields) = said.as_object_mut() {
+        fields.insert("id".into(), serde_json::json!(ask.id));
+    }
+    format!(
+        "window.{ANSWER} && window.{ANSWER}({}, {});",
+        serde_json::Value::String(ask.load.clone()),
+        said
+    )
 }
 
 /// Closes every artifact webview of window `window`: the window went, or its page loads again.
@@ -395,6 +585,17 @@ pub struct ArtifactOpened {
     pub standing: String,
     /// Who made the pin it now has, for `pin-changed`, from the plane's history.
     pub changed_by: Option<String>,
+    /// Whether the data its page declared was generated on this machine (#5961): false when it
+    /// declares data files and none is here, which the bar says.
+    pub generated: bool,
+}
+
+/// What the page `snapshot` opens on declared it reads; an unreadable declaration is none.
+fn declared_by(snapshot: &serve::Snapshot) -> Option<data::Declared> {
+    let page = snapshot.get(artifact::PAGE)?;
+    data::declared(&String::from_utf8_lossy(page))
+        .ok()
+        .flatten()
 }
 
 /// **Opens a pinned artifact over its tab's frame**: the folder read once, where it stands on
@@ -416,7 +617,7 @@ pub async fn artifact_open(
     let dir = at.clone();
     let read_folder = folder.clone();
     let config = purlis_core::machine::config_root();
-    let (host, snapshot, pin, standing, changed_by) = blocking(move || {
+    let (host, snapshot, pin, standing, changed_by, declared, generated) = blocking(move || {
         let pins = artifact::read(&at)?;
         let Some(pin) = pins.pins.iter().find(|pin| pin.folder == read_folder) else {
             return Err(format!(
@@ -430,12 +631,16 @@ pub async fn artifact_open(
         let changed_by = (standing == Standing::PinChanged)
             .then(|| artifact::pinned_by(&at, &pin.id))
             .flatten();
+        let declared = declared_by(&snapshot);
+        let generated = data::generated(&real, declared.as_ref());
         Ok((
             serve::origin_host(&at, &read_folder),
             snapshot,
             pin.id.clone(),
             standing,
             changed_by,
+            declared,
+            generated,
         ))
     })
     .await?;
@@ -455,6 +660,8 @@ pub async fn artifact_open(
                 pin,
                 standing,
             },
+            declared,
+            load: None,
         },
     );
     let url: tauri::Url = format!("{own}/")
@@ -466,6 +673,7 @@ pub async fn artifact_open(
             .on_navigation(move |to| to.as_str().starts_with(&leave))
             .on_new_window(crate::navguard::no_new_window)
             .initialization_script(KEYS)
+            .initialization_script(PORT)
             .incognito(true)
             .focused(false)
             .devtools(false)
@@ -479,6 +687,7 @@ pub async fn artifact_open(
         label,
         standing: standing.as_str().to_owned(),
         changed_by,
+        generated,
     })
 }
 
@@ -610,6 +819,8 @@ mod tests {
                         ("img/a.png", "png"),
                     ]),
                     of: of(Standing::ScriptFree),
+                    declared: None,
+                    load: None,
                 },
             );
         }
@@ -780,6 +991,220 @@ mod tests {
         assert!(artifacts.owned_by("artifact-2", "window-1"));
         assert!(!artifacts.owned_by("artifact-1", "main"));
         assert!(!artifacts.owned_by("artifact-2", "main"));
+    }
+
+    const LOAD_A: &str = "0123456789abcdef0123456789abcdef";
+    const LOAD_B: &str = "fedcba9876543210fedcba9876543210";
+
+    fn said(artifacts: &Artifacts, label: &str, path: &str) -> Option<Ask> {
+        let answered = artifacts.answer(label, &get(&at("aaa", path)));
+        assert_eq!(answered.response.status(), StatusCode::NO_CONTENT, "{path}");
+        answered.ask
+    }
+
+    fn read_path(load: &str, id: u64, name: &str) -> String {
+        format!("/.purlis/port/{load}/read/{id}?{name}")
+    }
+
+    #[test]
+    fn a_load_s_port_opens_with_its_first_word_and_answers_that_load_only() {
+        let artifacts = served(&[("artifact-1", "main", "aaa")]);
+        // Nothing is asked before the load opened its port.
+        assert_eq!(
+            said(&artifacts, "artifact-1", &read_path(LOAD_A, 1, "data.json")),
+            None
+        );
+        assert_eq!(
+            said(
+                &artifacts,
+                "artifact-1",
+                &format!("/.purlis/port/{LOAD_A}/open")
+            ),
+            None
+        );
+        assert_eq!(
+            said(
+                &artifacts,
+                "artifact-1",
+                &read_path(LOAD_A, 7, "data%2Frows.json")
+            ),
+            Some(Ask {
+                label: "artifact-1".to_owned(),
+                load: LOAD_A.to_owned(),
+                id: 7,
+                name: "data/rows.json".to_owned(),
+            })
+        );
+        assert!(artifacts.still_open("artifact-1", LOAD_A));
+        // Another load's word is not this port.
+        assert_eq!(
+            said(&artifacts, "artifact-1", &read_path(LOAD_B, 1, "data.json")),
+            None
+        );
+        for malformed in [
+            "/.purlis/port/short/open".to_owned(),
+            format!("/.purlis/port/{LOAD_A}/read/x?data.json"),
+            format!("/.purlis/port/{LOAD_A}/read/?data.json"),
+            format!("/.purlis/port/{LOAD_A}/write/1?data.json"),
+            format!("/.purlis/port/{LOAD_A}/read/1?%ff"),
+        ] {
+            assert_eq!(
+                said(&artifacts, "artifact-1", &malformed),
+                None,
+                "{malformed}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_reload_revokes_the_port_and_its_answers_and_the_new_load_gets_a_new_one() {
+        let artifacts = served(&[("artifact-1", "main", "aaa")]);
+        said(
+            &artifacts,
+            "artifact-1",
+            &format!("/.purlis/port/{LOAD_A}/open"),
+        );
+        let asked = said(&artifacts, "artifact-1", &read_path(LOAD_A, 1, "data.json")).unwrap();
+
+        artifacts.reloaded("artifact-1");
+        assert!(!artifacts.still_open("artifact-1", LOAD_A));
+        assert!(
+            artifacts.for_ask(&asked).is_none(),
+            "an answer for a gone load is never read"
+        );
+        assert_eq!(
+            said(&artifacts, "artifact-1", &read_path(LOAD_A, 2, "data.json")),
+            None
+        );
+
+        said(
+            &artifacts,
+            "artifact-1",
+            &format!("/.purlis/port/{LOAD_B}/open"),
+        );
+        assert!(said(&artifacts, "artifact-1", &read_path(LOAD_B, 1, "data.json")).is_some());
+        assert_eq!(
+            said(&artifacts, "artifact-1", &read_path(LOAD_A, 3, "data.json")),
+            None
+        );
+    }
+
+    #[test]
+    fn a_port_is_its_own_webview_s_never_another_artifact_s() {
+        let artifacts = served(&[("artifact-1", "main", "aaa"), ("artifact-2", "main", "bbb")]);
+        said(
+            &artifacts,
+            "artifact-1",
+            &format!("/.purlis/port/{LOAD_A}/open"),
+        );
+        // The second artifact speaks the first one's word, on its own origin and on the first's.
+        let theirs = artifacts.answer(
+            "artifact-2",
+            &get(&at("bbb", &read_path(LOAD_A, 1, "data.json"))),
+        );
+        assert_eq!(theirs.ask, None);
+        let crossed = artifacts.answer(
+            "artifact-2",
+            &get(&at("aaa", &read_path(LOAD_A, 1, "data.json"))),
+        );
+        assert_eq!(crossed.response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(crossed.ask, None);
+        assert!(!artifacts.still_open("artifact-2", LOAD_A));
+    }
+
+    #[test]
+    fn an_answer_is_handed_to_its_load_as_json_data_with_the_page_s_id() {
+        let ask = Ask {
+            label: "artifact-1".to_owned(),
+            load: LOAD_A.to_owned(),
+            id: 3,
+            name: "data.json".to_owned(),
+        };
+        let at = chrono::DateTime::parse_from_rfc3339("2026-11-09T12:00:00Z")
+            .unwrap()
+            .into();
+        let answer = purlis_core::catalogue::Answer::data(
+            serde_json::json!({ "title": "</script><script>alert(1)</script>\u{2028}" }),
+            at,
+        );
+        let script = delivery(&ask, &answer);
+        let prefix = format!("window.{ANSWER} && window.{ANSWER}(\"{LOAD_A}\", ");
+        let json = script
+            .strip_prefix(&prefix)
+            .unwrap()
+            .strip_suffix(");")
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(json).unwrap(),
+            serde_json::json!({
+                "id": 3,
+                "data": { "title": "</script><script>alert(1)</script>\u{2028}" },
+                "at": "2026-11-09T12:00:00Z",
+            })
+        );
+    }
+
+    /// A plane with workspace `alpha` holding artifact folder `board`, pinned.
+    fn pinned_board(files: &[(&str, &str)]) -> (tempfile::TempDir, std::path::PathBuf, String) {
+        let root = tempfile::tempdir().unwrap();
+        let ws = root.path().join("workspaces/alpha");
+        let folder = ws.join("artifacts/board");
+        std::fs::create_dir_all(&folder).unwrap();
+        for (path, text) in files {
+            let at = folder.join(path);
+            std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+            std::fs::write(at, text).unwrap();
+        }
+        let request = artifact::Request {
+            folder: "board".to_owned(),
+            ..artifact::Request::default()
+        };
+        let pin = match artifact::pin(root.path(), &ws, &request).unwrap() {
+            artifact::Pinned::New(pin) => pin.id,
+            other => panic!("{other:?}"),
+        };
+        (root, ws, pin)
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn a_read_is_gated_again_when_asked_by_the_pin_and_this_machine_s_approval() {
+        let page = r#"<script type="application/json" id="purlis">{"api":1,"data":["data.json"]}</script><script>go()</script>"#;
+        let (_root, ws, pin) = pinned_board(&[("index.html", page), ("data.json", r#"{"n":1}"#)]);
+        let config = tempfile::tempdir().unwrap();
+        let snapshot = serve::Snapshot::read(&ws.join("artifacts/board")).unwrap();
+        let declared = declared_by(&snapshot);
+        assert_eq!(
+            declared.as_ref().map(|d| d.data.clone()),
+            Some(vec!["data.json".to_owned()])
+        );
+        let of = Of {
+            plane: serde_json::from_str("\"plane\"").unwrap(),
+            workspace: "alpha".to_owned(),
+            dir: ws.clone(),
+            folder: "board".to_owned(),
+            pin: pin.clone(),
+            standing: Standing::Approved,
+        };
+        let kind = |answer: purlis_core::catalogue::Answer| answer.outcome.map_err(|k| k.as_str());
+        let ask = |config: Option<&std::path::Path>, name: &str| {
+            kind(read_asked(config, &of, &snapshot, declared.as_ref(), name))
+        };
+
+        // Not approved on this machine, or no config home to hold an approval: nothing is read.
+        assert_eq!(ask(Some(config.path()), "data.json"), Err("not-approved"));
+        assert_eq!(ask(None, "data.json"), Err("not-approved"));
+
+        approval::approve(config.path(), &ws, "board", &pin, snapshot.fingerprint()).unwrap();
+        assert_eq!(
+            ask(Some(config.path()), "data.json"),
+            Ok(serde_json::json!({ "n": 1 }))
+        );
+        assert_eq!(ask(Some(config.path()), "index.html"), Err("not-approved"));
+
+        // Its pin changed since it was opened: a new pin, not approved.
+        artifact::unpin(_root.path(), &ws, "board").unwrap();
+        assert_eq!(ask(Some(config.path()), "data.json"), Err("not-approved"));
     }
 
     #[test]

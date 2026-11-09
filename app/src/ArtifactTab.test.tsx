@@ -30,7 +30,13 @@ function core(about: ArtifactAbout = ABOUT, opened: Partial<ArtifactOpened> = {}
       calls.push({ cmd, args: args as Record<string, unknown> });
       if (cmd === "artifact_about") return about;
       if (cmd === "artifact_open")
-        return { label: "artifact-7", standing: "script-free", changed_by: null, ...opened };
+        return {
+          label: "artifact-7",
+          standing: "script-free",
+          changed_by: null,
+          generated: true,
+          ...opened,
+        };
       return null;
     },
     { shouldMockEvents: true },
@@ -245,6 +251,29 @@ describe("an artifact with script (#5959)", () => {
       ),
     );
     expect(screen.queryByRole("button", { name: "Approve script" })).toBeNull();
+  });
+
+  it("says on its bar when the data its page reads was not generated on this machine", async () => {
+    core(ABOUT, { standing: "approved", generated: false });
+    render(<Tab />);
+    await waitFor(() =>
+      expect(screen.getByTestId("artifact-data")).toHaveTextContent(
+        "Not generated on this machine",
+      ),
+    );
+    expect(screen.getByTestId("artifact-bar")).toContainElement(
+      screen.getByTestId("artifact-data"),
+    );
+  });
+
+  it("says nothing of its data once it was generated here", async () => {
+    const calls = core(ABOUT, { standing: "approved", generated: true });
+    render(<Tab />);
+    await waitFor(() => expect(asked(calls, "artifact_open")).toHaveLength(1));
+    await waitFor(() =>
+      expect(screen.getByTestId("artifact-standing")).toHaveTextContent("Script approved"),
+    );
+    expect(screen.queryByTestId("artifact-data")).toBeNull();
   });
 
   it("loads its page again when its approval changes in any window, and not for another's", async () => {
