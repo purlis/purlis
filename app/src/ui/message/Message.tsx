@@ -114,21 +114,19 @@ export function MessageRow({
   const element: ElementType = row ? ListRowDrawn : as;
   return createElement(
     element,
-    {
-      ...parted({
-        ...(row
-          ? { ...rest, textValue, onDrawn, ref: inside.attach }
-          : mergeProps(rest, hoverProps, focusWithinProps)),
-        "data-hovered": isHovered ? "" : undefined,
-        "data-focus-within": (row ? inside.inside : focusedWithin) ? "" : undefined,
-        "data-scope": "message",
-        "data-part": "root",
-        "data-variant": tone,
-        "data-read": read ? "" : undefined,
-        "data-consent": consent ? "" : undefined,
-        "data-dismiss": dismiss === undefined || dismiss === null ? undefined : "",
-      }),
-    },
+    parted({
+      ...(row
+        ? { ...rest, textValue, onDrawn, ref: inside.attach }
+        : mergeProps(rest, hoverProps, focusWithinProps)),
+      "data-hovered": isHovered ? "" : undefined,
+      "data-focus-within": (row ? inside.inside : focusedWithin) ? "" : undefined,
+      "data-scope": "message",
+      "data-part": "root",
+      "data-variant": tone,
+      "data-read": read ? "" : undefined,
+      "data-consent": consent ? "" : undefined,
+      "data-dismiss": dismiss === undefined || dismiss === null ? undefined : "",
+    }),
     <span data-scope="message" data-part="mark" aria-hidden="true">
       {icon}
     </span>,

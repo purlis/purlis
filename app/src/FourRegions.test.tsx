@@ -1592,7 +1592,7 @@ describe("the right side's activity bar", () => {
     });
 
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
-    const first = within(inbox).getByRole("listitem");
+    const first = inbox.querySelector<HTMLElement>('[role="row"].inbox-ask') as HTMLElement;
     await waitFor(() => expect(first).toHaveFocus());
     expect(within(first).getByText("Run cargo test")).toBeInTheDocument();
   });
@@ -1607,7 +1607,7 @@ describe("the right side's activity bar", () => {
     await userEvent.click(hand);
 
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
-    expect(within(inbox).getByRole("region", { name: "steward 3" })).toBeInTheDocument();
+    expect(within(inbox).getByRole("rowgroup", { name: "steward 3" })).toBeInTheDocument();
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
@@ -1644,8 +1644,8 @@ describe("the right side's activity bar", () => {
     fireEvent.focus(window);
 
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
-    const group = within(inbox).getByRole("region", { name: "steward 4" });
-    await waitFor(() => expect(within(group).getByRole("listitem")).toHaveFocus());
+    const group = within(inbox).getByRole("rowgroup", { name: "steward 4" });
+    await waitFor(() => expect(group.querySelector('[role="row"].inbox-ask')).toHaveFocus());
   });
 
   it("lands a notification about several chats on the first still waiting (#1989)", async () => {
@@ -1662,8 +1662,8 @@ describe("the right side's activity bar", () => {
     fireEvent.focus(window);
 
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
-    const group = within(inbox).getByRole("region", { name: "steward 4" });
-    await waitFor(() => expect(within(group).getByRole("listitem")).toHaveFocus());
+    const group = within(inbox).getByRole("rowgroup", { name: "steward 4" });
+    await waitFor(() => expect(group.querySelector('[role="row"].inbox-ask')).toHaveFocus());
   });
 
   it("lists the asks on Asks, and the updates on Updates, each apart (#5644)", async () => {
@@ -1683,7 +1683,7 @@ describe("the right side's activity bar", () => {
     render(<App />);
 
     const asks = await screen.findByRole("tabpanel", { name: "Asks" });
-    expect(await within(asks).findByRole("region", { name: "steward 3" })).toBeInTheDocument();
+    expect(await within(asks).findByRole("rowgroup", { name: "steward 3" })).toBeInTheDocument();
     expect(within(asks).queryByText("The sandbox now allows api.example.com")).toBeNull();
 
     await userEvent.click(tab("Updates"));
@@ -1693,7 +1693,7 @@ describe("the right side's activity bar", () => {
     expect(
       await within(updates).findByText("The sandbox now allows api.example.com"),
     ).toBeInTheDocument();
-    expect(within(updates).queryByRole("region", { name: "steward 3" })).toBeNull();
+    expect(within(updates).queryByRole("rowgroup", { name: "steward 3" })).toBeNull();
   });
 
   it("counts a new ask on the hand and leaves the open view as it is (#5644)", async () => {

@@ -48,37 +48,38 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** The list is one Tab stop: Tab lands on the row, ↓ goes on (past its Show all, where it has
- *  one) to its Answer and its Go to chat, Enter on Answer opens the reply strip with the caret in
- *  it (#5651), and Shift+Tab leaves the list. */
+/** The list is one Tab stop: Tab lands on the row, → goes on through its own controls (past its
+ *  Show all, where it has one) to its Answer and its Go to chat (#3123, ruling B), Enter on Answer
+ *  opens the reply strip with the caret in it (#5651), Esc gives the keyboard back to the row, and
+ *  Shift+Tab leaves the list. */
 async function theReplyBoxIsReached(canvasElement: HTMLElement) {
-  const card = () => canvasElement.querySelector("li.inbox-ask");
+  const card = () => canvasElement.querySelector<HTMLElement>('[role="row"].inbox-ask');
   await userEvent.tab();
   await untilFocused(card, "Tab lands on the card");
   expectFocusInSight();
-  await userEvent.keyboard("{ArrowDown}");
-  // Words that wrap past three lines fold first: their Show all is the row's next stop.
+  await userEvent.keyboard("{ArrowRight}");
+  // Words that wrap past three lines fold first: their Show all is the row's first control.
   if ((document.activeElement?.textContent ?? "").startsWith("Show all"))
-    await userEvent.keyboard("{ArrowDown}");
+    await userEvent.keyboard("{ArrowRight}");
   await untilFocused(
     () => within(canvasElement).getByRole("button", { name: "Answer steward 6" }),
-    "↓ reaches Answer, the first of the row's links",
+    "→ reaches Answer, the first of the row's links",
   );
   expectFocusInSight();
-  await userEvent.keyboard("{ArrowDown}");
+  await userEvent.keyboard("{ArrowRight}");
   await untilFocused(
     () => within(canvasElement).getByRole("button", { name: "Go to chat steward 6" }),
-    "↓ reaches Go to chat among the row's links",
+    "→ reaches Go to chat among the row's links",
   );
   expectFocusInSight();
-  await userEvent.keyboard("{ArrowUp}{Enter}");
+  await userEvent.keyboard("{ArrowLeft}{Enter}");
   await untilFocused(
     () => within(canvasElement).getByRole("textbox", { name: "Reply to steward 6" }),
     "Enter on Answer opens the reply strip with the caret in it",
   );
   expectFocusInSight();
   await userEvent.keyboard("{Escape}");
-  await untilFocused(card, "Esc leaves the strip for the card");
+  await untilFocused(card, "Esc leaves the strip for its row");
   expectFocusInSight();
   await userEvent.tab({ shift: true });
   await waitFor(() => expect(card()?.contains(document.activeElement)).toBe(false));
@@ -116,8 +117,8 @@ const LONG = `I'm waiting for #5141 to merge before the last part of #5160. Unti
 
 I've sent you a note saying this. When you tell me #5141 has merged, I'll rebase onto main, do that last part, run tsc and eslint, and push.`;
 
-/** **A long message** (#5649): folded at three lines behind Show all · N lines, which ↓ reaches
- *  first; opened, it shows whole, and ↓ goes on to Answer, which opens the reply strip (#5651). */
+/** **A long message** (#5649): folded at three lines behind Show all · N lines, which → reaches
+ *  first; opened, it shows whole, and → goes on to Answer, which opens the reply strip (#5651). */
 export const ALongMessage: Story = {
   args: { last_message: LONG },
   play: async ({ canvasElement }) => {
@@ -125,8 +126,8 @@ export const ALongMessage: Story = {
     await expect(card.getAllByText("Still to do:")[0]?.tagName).toBe("STRONG");
     const show = () => card.getByRole("button", { name: /^Show all · \d+ lines$/ });
     await userEvent.tab();
-    await userEvent.keyboard("{ArrowDown}");
-    await untilFocused(show, "↓ reaches Show all, the row's first stop");
+    await userEvent.keyboard("{ArrowRight}");
+    await untilFocused(show, "→ reaches Show all, the row's first control");
     expectFocusInSight();
     await userEvent.keyboard("{Enter}");
     await untilFocused(
@@ -134,10 +135,10 @@ export const ALongMessage: Story = {
       "Enter opens it whole",
     );
     expectFocusInSight();
-    await userEvent.keyboard("{ArrowDown}");
+    await userEvent.keyboard("{ArrowRight}");
     await untilFocused(
       () => card.getByRole("button", { name: "Answer steward 6" }),
-      "↓ goes on to Answer",
+      "→ goes on to Answer",
     );
     await userEvent.keyboard("{Enter}");
     await untilFocused(

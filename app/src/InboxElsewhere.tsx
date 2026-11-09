@@ -115,6 +115,7 @@ export function OtherProjects({
     <ListRowSection
       id="here"
       className="inbox-chat inbox-elsewhere"
+      data-others=""
       title={<span className="inbox-chain">{OTHER_PROJECTS}</span>}
     >
       {others.map((one) => (

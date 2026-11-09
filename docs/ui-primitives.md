@@ -1228,7 +1228,8 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
 | Member | What it is |
 | --- | --- |
 | `ListBox`, `ListOption`, `ListSection` | **A list to choose from** (the WAI-ARIA listbox): a persona to start a chat with, a theme, a search hit, a skill. A choice of one follows the arrows; `onAction` runs the one picked; `layout="grid"` lays its options out as cards the arrows walk in two directions; an option `unavailable` says so (`aria-disabled`) and keeps the keyboard, so why is read |
-| `List`, `ListRow`, `ListRowSection` | **A list of rows that act** (a grid of one column): a panel's todos, a vault's rows. A row runs something (`onAction`), may be chosen, and may hold its own buttons, which ← and → reach |
+| `List`, `ListRow`, `ListRowSection` | **A list of rows that act** (a grid of one column): a panel's todos, a vault's rows, the Inbox's asks and updates. A row runs something (`onAction`), may be chosen, and may hold its own buttons, which ← and → reach, and text boxes, which keep their own keys (below) |
+| `ListRowDrawn` | **A row another family draws** (#3123): its element is that family's root, with that family's parts and look (a message of the Inbox's views, `MessageRow as="row"`), and the list gives it a row's role, its keyboard and React Aria's state attributes, writing no part of its own. It is named and described by its own parts (`aria-labelledby`, `aria-describedby`, which React Aria hands no row), and `onDrawn` hears each drawing of it once it is in the document: React Aria draws a list's rows a commit after the components that make them, so whatever reads a row as it is drawn (where its answers stand, #3167) is told there, never in an effect of its own |
 | `RowLead`, `RowLabel`, `RowDescription`, `RowTrail`, `RowBelow` (`Row.tsx`) | A row's slots, the same in a list, a tree and a table: its marks, its words (one line, cut with an ellipsis), the one line about it in the quiet tier, its end (a count, its own actions), and a line under its words inside it (what a search matched in its body, why the core refused it). **In an option, its words are its name and its one line its description** (React Aria's `label` and `description` slots), so a reader hears the name alone and then what it is, never the row's content run together. **A `RowBelow` with `clamp` and `tipWhenCut` says its whole words in its row's tooltip while the clamp cuts them** (#4711), under the pointer and while the keyboard is on the row, and nothing while they fit, the tooltip being the row's description while it is shown (a list's row is named by its `textValue` alone). One to a row, and a list's row's alone (`ListRow`, `ListOption`) |
 | `ListCardRow`, `RowMenuButton` (`CardRow.tsx`); `RowSummary`, `RowActions` (`Row.tsx`) | **A card row** (#3669, the sidebar Skills view's variant C): a row of a `List` drawn as a small card (`variant="card"`), as tall as its lines. Its first line is its name, its tag, its own actions (Use) and its **⋯**, which opens the row's own menu (`menu`), the one a right-click and Shift+F10 open, at the ⋯: pressed by the pointer the menu takes the keyboard with no item chosen, from the keys on its first item, and either way the ⋯ says `aria-expanded` while it is open and has the keyboard back as it closes (`askForAMenuFrom`, #3769); then **two lines about it** (`RowSummary`), its description cut cleanly after the second line, or a reason in its place in the waiting colour (it needs the person) or the quiet tier (it is left out); then its **action line** (`RowActions`), its one fix. The whole of its summary is its tooltip. ← and → reach Use, the ⋯ and the fix; a press on it runs it. A state changes a fill or a ring, never its height; it fits a 260 px side view |
 | `ListFoldSection`, `ListRun` (`Fold.tsx`) | **What folds** (#3670, in a `List`): a group whose name folds its rows, and a run of rows folded to one quiet line. A group's name is a row the keyboard reaches, with the tree's twist (`TwistMark`), its count at its end and an optional `waiting` tone (Needs you); Enter, Space, → and ← fold and unfold it, `aria-expanded` on its cell says which (a grid's row takes none), and it may start folded, its owner holding what is folded (`folded`, `onFoldedChange`). A run (`ListRun`, folded by default) is one row in the quiet tier, a mark and "N …"; pressing it unfolds its rows in place, then its closing line ("They ship with purlis…", with what may be done). A row of the run that must show (`standsOut`: it needs the person, it clashes, it matches the filter) is drawn on its own, outside the fold. Folding moves only what is under it, and a fold's row runs nothing of the list's `onAction`. In a list that chooses, a fold's row and a run's closing line are never chosen and Select all leaves them out; they are still reached and still fold (#3769). Folding a section unmounts what is under it: a run inside it keeps its fold only where its owner holds it (`folded`), and the family keeps no state of its own (#3769) |
@@ -1253,6 +1254,22 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
   list's edges** (`space.2`), so a pill never touches the panel the list is joined to.
 - **The keyboard is React Aria's**: one Tab stop, the row last focused; ↑ and ↓ move and stop at
   the ends; Home and End; typing finds a row by its `textValue`; Enter and Space choose or run.
+  **Typing to find a row can be turned off** (`disallowTypeAhead`, the Inbox's asks and updates,
+  #3123): a letter then moves nowhere, and a Space after it folds a fold's row at once.
+  **A control in a row that takes the keyboard makes its row the list's own** (#3123), however it
+  got there (a script moving the keyboard into a form just opened, a screen reader's cursor), so
+  the list never pulls the keyboard back to another row a frame later; a key's own move and a Tab
+  into the list stay React Aria's.
+- **A text box in a row keeps its own keys** (`rowKeys.ts`, #3123): → reaches it from its row as
+  it reaches a button; in it ← and →, Home and End, PageUp and PageDown move its caret, a letter,
+  Space and Enter are typed or are its own (its handler hears them, the row and the list never do,
+  so Enter runs no row), and ⌘A selects its words; ↑ and ↓ move its caret between a box's lines,
+  and go to the row above or below from its first or last line or from a box of one line; Tab
+  moves on to the row's next control while it has one; Esc gives the keyboard back to its row,
+  keeping what was typed, and Esc on the row is the list's (`onEscape`). A chord with Enter (⌘⏎, a
+  form's send) goes on up to whatever answers it. The arrows are kept by the list's own capture
+  handler (`data-part="keys"`), the rest by the field family's boxes once their own handler has
+  heard them, where React Aria's row hears them.
   **A list that chooses several** (`selectionMode="multiple"`, a `Checkbox` in the row's lead with
   `slot="selection"`) takes a click or Space to tick a row, Shift-click and Shift+↑ ↓ for a range,
   and ⌘A (Ctrl+A off macOS) for every row, which a list that draws its rows a screen at a time
@@ -1283,10 +1300,12 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
   with the pointer's pill and the keyboard's ring, its count the `count` part; a run's quiet line
   and its closing line are the `run` part. → and ← reach them through an element around the list
   that draws nothing (`data-part="keys"`, as a tree's), heard before React Aria's row.
-- **Stories hold it** (`List.stories.tsx`, `CardRow.stories.tsx`, `Fold.stories.tsx`): a list to choose from under its
-  filter, a list a field aims at, rows that act with a row's own button and its menu, a grid of
-  cards, the Skills view's card rows and its groups folded and unfolded, a filter finding a folded
-  built-in, and an empty one, in Chromium and WebKit, with axe.
+- **Stories hold it** (`List.stories.tsx`, `CardRow.stories.tsx`, `Fold.stories.tsx`, and
+  `Message.stories.tsx` for a row another family draws): a list to choose from under its filter, a
+  list a field aims at, rows that act with a row's own button and its menu, a text box in a row
+  with typing to find off, a grid of cards, the Skills view's card rows and its groups folded and
+  unfolded, a filter finding a folded built-in, messages as a list's rows, and an empty one, in
+  Chromium and WebKit, with axe.
 
 ## The table family
 
@@ -3022,11 +3041,14 @@ region (_Put the Attention region away_).
 `Shift` and a letter is no byte, so it is the window's while a chat has the keyboard, as
 `Ctrl+Shift+E` is. It shows Asks, the right side's first view, and gives the keyboard to its first ask, never to one of
 the ask's buttons, so the key and a stray Enter after it answer nothing. The title bar's ✋ does
-the same. The Inbox is one Tab stop, on the window's own roving focus (`useTabStop`): ↑ and ↓
-move from an ask to its buttons and on to the next ask, Home and End go to the ends, Enter
-presses the focused button as it does anywhere, and Escape gives the keyboard back to the chat in
-front. A dispatch's Notice drawn in it keeps its own buttons as Tab stops. There is no key of a
-single letter (I-11).
+the same. Asks is one Tab stop, a list of rows that act of [the list family](#the-list-family)
+(#3123, ruling B, the WAI-ARIA grid): ↑ and ↓ move between the asks and the rows of what waits
+elsewhere, ← and → through an ask's own links, answers and boxes (a dispatch's Notice drawn in it
+included), Home and End go to the first and last ask, Enter presses the focused button as it does
+anywhere, a reply or a reason box keeps its own keys and Esc in it gives the keyboard back to its
+ask, and Escape on an ask gives the keyboard back to the chat in front. Updates is a list of its
+own, after its Mark all read and Dismiss all. Typing finds no row: there is no key of a single
+letter (I-11).
 
 **A switch at its top picks whose asks it lists**: All projects, This project (the default) or
 This workspace, each with its count. It is the Chats view's own scope switch (`ScopeSwitch.tsx`,
