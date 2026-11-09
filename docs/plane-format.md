@@ -3017,7 +3017,8 @@ them (#5427, ADR 0078 §7, session protocol 1.78), which the file diff reads as 
 - **Written by:** the person, a chat or a skill (the templates and data files); the pins file
   only by `purlis artifact pin | unpin | reorder` (`crates/purlis-core/src/artifact/`), under a
   lock on the folder, whole by rename.
-- **Read by:** `purlis artifact list`, and the window's activity bar (ADR 0120 §2).
+- **Read by:** `purlis artifact list`, and the window's activity bar (ADR 0120 §2); a data file
+  also by its own page, when the page declares it and is approved (`artifact::data`, #5961).
 - **Git:** follows the workspace — un-ignored by the LIVE block's `artifacts` pair, and the
   data files re-ignored by the two lines after it; kept on disk for a LOCAL one.
   `workspaces/*/artifacts/pins.toml` is merged by git's `union` driver (the merge rules).
