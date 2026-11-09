@@ -818,3 +818,28 @@ fn the_pairs_kept_for_a_token_are_every_pair_that_names_it_once_and_in_order() {
         assert_eq!(super::pairs_naming(token), scanned, "{token}");
     }
 }
+
+#[test]
+fn every_built_in_draws_faint_terminal_text_as_words_and_fainter_than_the_terminal_s_own() {
+    // Faint (SGR 2) text in the terminal's own colour is drawn in `terminal.faint` (#3768): xterm
+    // fades it to half its words' colour, under 4.5:1 on every light terminal, and adjusts it for
+    // no contrast floor. Every appearance of Purlis and of Purlis Classic draws it as words, and
+    // still fainter than the words beside it.
+    for theme in purlis().appearances.iter().chain(&classic().appearances) {
+        let ground = theme.value("terminal.background");
+        let faint = super::contrast(theme.value("terminal.faint"), ground);
+        let words = super::contrast(theme.value("terminal.foreground"), ground);
+        assert!(
+            faint >= 4.5,
+            "{} {}: faint at {faint:.2}",
+            theme.name,
+            theme.id
+        );
+        assert!(
+            faint < words,
+            "{} {}: faint {faint:.2}, words {words:.2}",
+            theme.name,
+            theme.id
+        );
+    }
+}

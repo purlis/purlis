@@ -126,6 +126,7 @@
 
         "terminal.background": "#191917",
         "terminal.foreground": "#dddcd6",
+        "terminal.faint": "#858480",
         "terminal.cursor": "#dddcd6",
         "terminal.cursor-accent": "#191917",
         "terminal.selection": "#52c4a655",
@@ -336,6 +337,7 @@
 
         "terminal.background": "#fcfbf8",
         "terminal.foreground": "#1f1e1a",
+        "terminal.faint": "#73726e",
         "terminal.cursor": "#1f1e1a",
         "terminal.cursor-accent": "#fcfbf8",
         "terminal.selection": "#086a5640",

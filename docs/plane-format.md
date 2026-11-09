@@ -1481,9 +1481,12 @@ outside the project and removes it when the flow ends, so it adds none of them (
   geometry token `radius.control` (operator ruling 2026-10-25, #3177, #3113), then
   `accent.wash-hover`, the chosen title-bar chip under the pointer (#3345), and
   `needs-you.count` and `needs-you.count-text`, the hot count on an activity bar (#3098), then
-  `border.input`, the edge of a box a value is typed or picked in (#4475). A theme folder
+  `border.input`, the edge of a box a value is typed or picked in (#4475), then
+  `terminal.faint`, the terminal's faint (SGR 2) text in its own colour (#3768). A theme folder
   written before them draws as it did: each follows the token that drew its part before
-  (`crates/purlis-core/docs/themes.md`, "Tokens added after themes existed").
+  (`crates/purlis-core/docs/themes.md`, "Tokens added after themes existed"), except
+  `terminal.faint`, which was its words at half opacity, no colour a token can give: one that
+  leaves it out takes the theme it extends', as it does any terminal colour.
 
 ### `skills/` — the project's skills
 

@@ -1791,3 +1791,24 @@ fn a_terminal_colour_s_warning_names_the_palette_entry_that_holds_it() {
         "{said:?}"
     );
 }
+
+#[test]
+fn every_shipped_fixture_draws_faint_terminal_text_as_words_and_fainter_than_its_own() {
+    // A source names its terminal's words and ground, never its faint text (#3768): the import
+    // fades the words halfway to the ground, as xterm did, and back toward the words only as far
+    // as reading at 4.5:1 takes.
+    for (kind, name, bytes) in FIXTURES {
+        let theme = drawn(&import(*kind, name, bytes).expect("imported"));
+        for one in &theme.appearances {
+            let ground = one.value("terminal.background");
+            let faint = check::contrast(one.value("terminal.faint"), ground);
+            let words = check::contrast(one.value("terminal.foreground"), ground);
+            assert!(faint >= 4.5, "{name} {}: faint at {faint:.2}", one.id);
+            assert!(
+                faint < words,
+                "{name} {}: faint {faint:.2}, words {words:.2}",
+                one.id
+            );
+        }
+    }
+}

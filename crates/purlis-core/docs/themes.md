@@ -1014,6 +1014,17 @@ that sets neither draws its boxes as it did. The check reports a box's edge unde
 window, a panel or a dialog for every theme, and redraws nothing for it (#5979); Purlis Classic
 draws its own a step darker than its control edge in light, and lighter in dark, to clear it.
 
+Then `terminal.faint` (#3768): the terminal's faint (SGR 2) text drawn in its own colour. xterm
+draws it as the words at half opacity, under 4.5:1 on every light terminal (black at half on
+white is about 3.95:1), and its contrast floor adjusts no faint text in the terminal's own
+colour, so the window draws those cells in this token instead. Faint text a program colours
+itself keeps xterm's fade. The check holds it at 4.5:1 on `terminal.background`, like the
+words. The words at half opacity are no colour a token can give, so this one follows no other:
+a theme that leaves it out takes the theme it extends', as it does every terminal colour, and
+an import fades its own words toward its own ground as far as reading at 4.5:1 allows (its
+recipe, below). Purlis draws it in its `quiet` grey in dark, Purlis Classic as its words
+faded toward its ground, and every built-in appearance at 4.5:1 or more, high contrast at 7:1.
+
 Over Purlis, whose primary is filled and whose controls draw no edge, a theme keeps Purlis's
 values unless it names them. `radius.control` is Classic's `radius.md`, 4, where a theme names
 neither.
@@ -1197,6 +1208,7 @@ Tuned after the table (#2589): a VS Code theme names a colour for nearly every r
 | `selection.text` | when the theme's `selection.background` is filled and the table left it: `editor.foreground`, `foreground` |
 | `text.muted` | the one of `editorLineNumber.foreground`, `disabledForeground` that reads most on `surface.base` |
 | `text.faint` | left out when it reads louder than `text.quiet` on `surface.base` |
+| `terminal.faint` | `terminal.foreground` halfway to `terminal.background`, and toward `terminal.foreground` until it reads at 4.5:1 there |
 
 Its `tokenColors` fill the syntax tokens. A rule's scope fills a token when it is one of the
 token's scopes or under one (`keyword.control` is `keyword`'s), the nearest scope winning and,
@@ -1327,6 +1339,7 @@ Tuned after the table (#2589), in this order. base16 makes some roles one colour
 | `terminal.ansi.bright-black` | toward `base04`, then `base05` |
 | `text.secondary` | toward `base05` |
 | `placeholder` | toward `base05` |
+| `terminal.faint` | `terminal.foreground` halfway to `terminal.background`, and toward `terminal.foreground` until it reads at 4.5:1 there |
 | `danger.base` | toward `base05` |
 | `accent.base` | toward `base05` |
 | `focus.ring` | toward `base05` |
@@ -1487,6 +1500,7 @@ Tuned as a base16 scheme is, after the table (#2589):
 | `terminal.ansi.bright-black` | toward `base04`, then `base05` |
 | `text.secondary` | toward `base05` |
 | `placeholder` | toward `base05` |
+| `terminal.faint` | `terminal.foreground` halfway to `terminal.background`, and toward `terminal.foreground` until it reads at 4.5:1 there |
 | `danger.base` | toward `base05` |
 | `accent.base` | toward `base05` |
 | `focus.ring` | toward `base05` |
@@ -1619,6 +1633,7 @@ Tuned after the table (#2589). The terminal's own colours (its background, its w
 | `selection.text` | when the theme's `selection.background` is filled and the table left it: `Foreground Color` |
 | `text.muted` | toward `Foreground Color` |
 | `syntax.comment` | toward `Foreground Color` |
+| `terminal.faint` | `terminal.foreground` halfway to `terminal.background`, and toward `terminal.foreground` until it reads at 4.5:1 there |
 | `danger.base` | toward `Foreground Color` |
 | `accent.base` | toward `Foreground Color` |
 | `focus.ring` | toward `Foreground Color` |
@@ -1739,6 +1754,7 @@ Tuned as an iTerm2 preset is, after the table (#2589):
 | `selection.text` | when the theme's `selection.background` is filled and the table left it: `foreground` |
 | `text.muted` | toward `foreground` |
 | `syntax.comment` | toward `foreground` |
+| `terminal.faint` | `terminal.foreground` halfway to `terminal.background`, and toward `terminal.foreground` until it reads at 4.5:1 there |
 | `danger.base` | toward `foreground` |
 | `accent.base` | toward `foreground` |
 | `focus.ring` | toward `foreground` |

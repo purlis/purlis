@@ -2129,6 +2129,20 @@ body {
   background-color: var(--terminal-background);
 }
 
+/* **Faint text in the terminal's own colour is drawn in `terminal.faint`** (#3768), which the
+   theme holds at 4.5:1 on the terminal's ground. xterm 6's DOM renderer draws a faint (SGR 2)
+   cell as its words at half opacity, under 4.5:1 on every light terminal, and its
+   `minimumContrastRatio` never adjusts a faint cell in the default colour. Its rule is in the
+   `<style>` it injects, unlayered, which beats every rule in a layer, so only `!important`
+   reaches it. A cell a program colours carries an `xterm-fg-` class (a palette colour, or the
+   inverted default) or a `color:` of its own (a true colour, or one `minimumContrastRatio`
+   adjusted), and keeps xterm's fade. */
+.xterm
+  .xterm-rows
+  .xterm-dim:not([class*="xterm-fg-"]):not([style^="color:"]):not([style*=";color:"]) {
+  color: var(--terminal-faint) !important;
+}
+
 /* The window below the bar, when there is no project in it: the opener, full width. The
    four regions have their own layout below. */
 .body {

@@ -87,6 +87,7 @@ pub const TOKENS: &[&str] = &[
     "overlay.shadow",
     "terminal.background",
     "terminal.foreground",
+    "terminal.faint",
     "terminal.cursor",
     "terminal.cursor-accent",
     "terminal.selection",

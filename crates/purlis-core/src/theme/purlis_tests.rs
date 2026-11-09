@@ -567,6 +567,7 @@ const LIGHT_STEPPED: Stepped<'static> = &[
     ("placeholder", "surface.hover", 4.5),
     ("text.faint", "surface.hover", 3.0),
     ("border.input", "surface.overlay", 3.0),
+    ("terminal.faint", "terminal.background", 4.5),
 ];
 
 /// **`dark` reflected by light's one rule** ([`light_rule`]), then each colour of `stepped`
@@ -667,6 +668,7 @@ const LIGHT_HIGH_CONTRAST_STEPPED: Stepped<'static> = &[
     ("text.faint", "list.selected", 4.5),
     ("state.success", "surface.hover", 7.0),
     ("state.success", "list.selected", 7.0),
+    ("terminal.faint", "terminal.background", 7.0),
 ];
 
 /// **Light high contrast's colours held apart** (#4921), past its steps: the success colour,

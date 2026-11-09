@@ -981,7 +981,15 @@ pub enum Recipe {
     /// Left out when it reads louder on the window than `other`, so it follows the tier above
     /// it: a fainter tier is never drawn louder than the one it sits under.
     NoLouderThan(&'static str),
+    /// **Faint terminal text** (#3768), when the theme's terminal has its own words and ground
+    /// and the table left the token: the words halfway to the ground, as xterm fades them, and
+    /// back toward the words, a hundredth at a time, only as far as reading at [`FAINT_READS`] on
+    /// the ground takes.
+    Faded,
 }
+
+/// What faint terminal text reads at on the terminal's ground: words' floor.
+pub const FAINT_READS: f64 = 4.5;
 
 /// The points [`Recipe::Toward`] tries on each step of its way.
 pub const TOWARD_STEPS: u32 = 10;
@@ -1159,6 +1167,10 @@ pub fn recipes(kind: SourceKind) -> Vec<(&'static str, Recipe)> {
         SourceKind::Zip | SourceKind::DesignTokens => (&[], &[], &[]),
     };
     let mut out = own.to_vec();
+    // A source that is tuned names its terminal's words and ground, and never its faint text.
+    if !own.is_empty() {
+        out.push(("terminal.faint", Recipe::Faded));
+    }
     if !foreground.is_empty() {
         for token in HUES.iter().chain(ansi) {
             out.push((*token, Recipe::Toward(foreground)));
@@ -1197,6 +1209,10 @@ pub fn recipes_markdown(kind: SourceKind) -> String {
             Recipe::NoLouderThan(other) => {
                 format!("left out when it reads louder than `{other}` on `surface.base`")
             }
+            Recipe::Faded => format!(
+                "`terminal.foreground` halfway to `terminal.background`, and toward \
+                 `terminal.foreground` until it reads at {FAINT_READS}:1 there"
+            ),
         };
         out.push_str(&format!("| `{token}` | {said} |\n"));
     }
@@ -1290,6 +1306,23 @@ fn tune(
                     tokens.insert(token.to_owned(), named(key, hex));
                 }
             }
+            Recipe::Faded => {
+                if tokens.contains_key(token)
+                    || !tokens.contains_key("terminal.foreground")
+                    || !tokens.contains_key("terminal.background")
+                {
+                    continue;
+                }
+                let Some(theme) = resolved(tokens) else {
+                    return;
+                };
+                if let Some(faded) = faded(
+                    theme.value("terminal.foreground"),
+                    theme.value("terminal.background"),
+                ) {
+                    tokens.insert(token.to_owned(), Value::from(faded));
+                }
+            }
             Recipe::NoLouderThan(other) => {
                 if !tokens.contains_key(token) {
                     continue;
@@ -1304,6 +1337,16 @@ fn tune(
             }
         }
     }
+}
+
+/// [`Recipe::Faded`]'s colour for `words` on `ground`, both opaque: `None` for any other.
+fn faded(words: &str, ground: &str) -> Option<String> {
+    if words.len() != 7 || ground.len() != 7 {
+        return None;
+    }
+    (50..=100)
+        .map(|share| super::check::mix(words, ground, f64::from(share) / 100.0))
+        .find(|point| super::check::contrast(point, ground) >= FAINT_READS)
 }
 
 /// How `colour` reads on the opaque `window`: its contrast, laid over the window when it has

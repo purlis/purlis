@@ -268,6 +268,9 @@ pub const PAIRS: &[Pair] = &[
     p("text.primary", "attention.surface", 4.5),
     p("text.muted", "attention.surface", 4.5),
     p("terminal.foreground", "terminal.background", 4.5),
+    // Faint (SGR 2) text in the terminal's own colour (#3768), which the window draws in its own
+    // token: xterm would fade the words to half and hold them to no floor.
+    p("terminal.faint", "terminal.background", 4.5),
     // A find in a pane draws its matches as the cells' background, under the terminal's text.
     p("terminal.foreground", "terminal.find-match", 4.5),
     p("terminal.foreground", "terminal.find-match-active", 4.5),
