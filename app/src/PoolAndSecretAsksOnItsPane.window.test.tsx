@@ -191,7 +191,10 @@ describe("a chat's pool and secret asks on its own pane", () => {
 
     await userEvent.click(within(row).getByRole("button", { name: "Answer" }));
     const box = await within(frame()).findByLabelText("Value of STRIPE_API_KEY");
-    await userEvent.type(box, "sk_test_123");
+    // Focused, not clicked: in jsdom every box is 0 by 0 at the corner, so the panels' own
+    // pointer hit test takes a click there for its sidebar separator's.
+    act(() => box.focus());
+    await userEvent.keyboard("sk_test_123");
     await userEvent.click(within(frame()).getByTestId("sa-primary"));
 
     await waitFor(() =>
