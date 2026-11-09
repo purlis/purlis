@@ -984,6 +984,8 @@ pub fn answer(
             if wait.proposal.digest() != shown {
                 return Err(CHANGED.to_owned());
             }
+            // Nothing is followed in a browser for a login refused (#5831).
+            refused_out_of_reach(root, &wait)?;
             Some(wait.proposal.at(root, typed, finds, &grants.held())?)
         }
     };
