@@ -20,12 +20,15 @@
  *   beside it moves.
  */
 import {
+  useRef,
   useState,
   type ComponentPropsWithRef,
   type FocusEvent,
+  type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
 } from "react";
+import { mergeProps, useToolbar } from "react-aria";
 import { Tooltip } from "../tooltip/Tooltip";
 import { useWindowLeft } from "../windowLeft";
 
@@ -233,6 +236,42 @@ export function ActivityGroup({
 }) {
   return (
     <div {...rest} data-scope="activity-bar" data-part="group">
+      {children}
+    </div>
+  );
+}
+
+/**
+ * **A group of a bar's items that open tabs, not views** (#5952): a toolbar of buttons,
+ * React Aria's (`useToolbar`). The arrows walk it along `orientation` and Tab leaves it, so it
+ * is one Tab stop, and coming back puts the keyboard on the item it left.
+ *
+ * **An item being carried keeps its keys**: while an item is marked `data-dragging`, its
+ * arrows are its drag's (`sortable.tsx`, `keepsTheFocus`), so the toolbar leaves them alone.
+ */
+export function ActivityToolbar({
+  children,
+  orientation,
+  "aria-label": label,
+  ...rest
+}: Omit<ComponentPropsWithRef<"div">, "style" | "role" | "aria-orientation" | "ref"> & {
+  orientation: "vertical" | "horizontal";
+  "aria-label": string;
+  [data: `data-${string}`]: string | number | boolean | undefined;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const { toolbarProps } = useToolbar({ orientation, "aria-label": label }, ref);
+  const walk = toolbarProps.onKeyDownCapture;
+  const own = {
+    ...toolbarProps,
+    onKeyDownCapture: (event: KeyboardEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement;
+      if (target.closest("[data-dragging]") !== null) return;
+      walk?.(event);
+    },
+  };
+  return (
+    <div {...mergeProps(rest, own)} ref={ref} data-scope="activity-bar" data-part="group">
       {children}
     </div>
   );

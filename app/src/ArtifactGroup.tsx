@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
-import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import { closestCenter, DndContext } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { ChartLine, Ellipsis } from "lucide-react";
@@ -22,7 +21,6 @@ import { PERSONA_ICONS } from "./PersonaMark";
 import { UnpinArtifact } from "./PinToWorkspace";
 import { useViewChanged } from "./planeChanged";
 import { projectName } from "./projectName";
-import { useTabStop } from "./roving";
 import {
   DOWN_THE_RAIL,
   SortableTab,
@@ -30,15 +28,12 @@ import {
   stripAccessibility,
   useStripSensors,
 } from "./sortable";
-import { ActivityGroup, ActivityItem } from "./ui/activity/ActivityItem";
+import { ActivityItem, ActivityToolbar } from "./ui/activity/ActivityItem";
 import { ContextMenu } from "./ui/menu/ContextMenu";
 import { Menu, MenuItem, MenuTrigger } from "./ui/menu/Menu";
 import { Separator } from "./ui/separator/Separator";
 
 export { MOST_DRAWN };
-
-/** The tab stop of the group's show-more. */
-const MORE = "artifacts-more";
 
 /**
  * **A workspace's pinned artifacts on the left activity bar** (ADR 0122 §2, #5952): a group of
@@ -94,10 +89,6 @@ export function ArtifactGroup({
     () => stripAccessibility("artifact", (id) => pins.find((pin) => pin.id === id)?.name ?? ""),
     [pins],
   );
-  const stop = useTabStop(current, [
-    ...drawn.map((pin) => pin.folder),
-    ...(more.length > 0 ? [MORE] : []),
-  ]);
   if (workspace === undefined || pins.length === 0) return null;
   const reorder = (order: readonly string[] | undefined) => {
     if (order === undefined) return;
@@ -116,105 +107,98 @@ export function ArtifactGroup({
         }}
       >
         <SortableContext items={drawn.map((pin) => pin.id)} strategy={verticalListSortingStrategy}>
-          <RovingFocusGroup.Root asChild orientation="vertical" loop={false} {...stop}>
-            <ActivityGroup
-              role="toolbar"
-              aria-orientation="vertical"
-              aria-label="Artifacts"
-              className="activity-bar artifact-group"
-            >
-              {drawn.map((pin) => {
-                const chosen = pin.folder === current;
-                const unopenable = pin.missing ?? pin.too_large;
-                const fresh = freshness(pin.fresh, now);
-                return (
-                  <SortableTab key={pin.id} id={pin.id}>
-                    {({ sortable, style }) => (
-                      <span
-                        ref={sortable.setNodeRef}
-                        style={style as CSSProperties}
-                        className="artifact-slot"
+          <ActivityToolbar
+            orientation="vertical"
+            aria-label="Artifacts"
+            className="activity-bar artifact-group"
+          >
+            {drawn.map((pin) => {
+              const chosen = pin.folder === current;
+              const unopenable = pin.missing ?? pin.too_large;
+              const fresh = freshness(pin.fresh, now);
+              return (
+                <SortableTab key={pin.id} id={pin.id}>
+                  {({ sortable, style }) => (
+                    <span
+                      ref={sortable.setNodeRef}
+                      style={style as CSSProperties}
+                      className="artifact-slot"
+                    >
+                      <ContextMenu
+                        menu={() => (
+                          <PinMenu
+                            pin={pin}
+                            ids={ids}
+                            onOpen={() => onOpen(pin)}
+                            onMove={(by) => reorder(movedBy(ids, pin.id, by))}
+                            onUnpin={() => {
+                              setTrouble(undefined);
+                              setUnpinning(pin);
+                            }}
+                          />
+                        )}
                       >
-                        <ContextMenu
-                          menu={() => (
-                            <PinMenu
-                              pin={pin}
-                              ids={ids}
-                              onOpen={() => onOpen(pin)}
-                              onMove={(by) => reorder(movedBy(ids, pin.id, by))}
-                              onUnpin={() => {
-                                setTrouble(undefined);
-                                setUnpinning(pin);
-                              }}
-                            />
+                        <ActivityItem
+                          variant="bar"
+                          selected={chosen}
+                          dimmed={fresh?.stale}
+                          tip={
+                            unopenable ??
+                            (fresh === undefined
+                              ? `Open ${pin.name}`
+                              : `Open ${pin.name}. ${fresh.said}`)
+                          }
+                          aria-label={pin.name}
+                          aria-current={chosen ? "page" : undefined}
+                          aria-describedby={badgeDescribes(
+                            pin,
+                            sortable.attributes["aria-describedby"],
                           )}
-                        >
-                          <RovingFocusGroup.Item asChild tabStopId={pin.folder} active={chosen}>
-                            <ActivityItem
-                              variant="bar"
-                              selected={chosen}
-                              dimmed={fresh?.stale}
-                              tip={
-                                unopenable ??
-                                (fresh === undefined
-                                  ? `Open ${pin.name}`
-                                  : `Open ${pin.name}. ${fresh.said}`)
-                              }
-                              aria-label={pin.name}
-                              aria-current={chosen ? "page" : undefined}
-                              aria-describedby={badgeDescribes(
-                                pin,
-                                sortable.attributes["aria-describedby"],
-                              )}
-                              data-artifact={pin.folder}
-                              data-missing={unopenable === null ? undefined : true}
-                              data-dragging={sortable.isDragging || undefined}
-                              {...sortable.listeners}
-                              onKeyDown={(event) => {
-                                // An icon that is up is being carried: its keys are the drag's.
-                                keepsTheFocus(event, sortable.isDragging);
-                                sortable.listeners?.onKeyDown?.(event);
-                              }}
-                              onClick={() => onOpen(pin)}
-                              icon={glyphOf(pin)}
-                              count={<ArtifactBadge pin={pin} stale={fresh?.stale ?? false} />}
-                            />
-                          </RovingFocusGroup.Item>
-                        </ContextMenu>
-                      </span>
-                    )}
-                  </SortableTab>
-                );
-              })}
-              {more.length > 0 && (
-                <MenuTrigger>
-                  <RovingFocusGroup.Item asChild tabStopId={MORE} active={false}>
-                    <ActivityItem
-                      variant="bar"
-                      selected={false}
-                      tip="The artifacts past the first eight"
-                      aria-label={`${more.length} more artifacts`}
-                      data-artifact-more=""
-                      icon={<Ellipsis aria-hidden="true" />}
-                    />
-                  </RovingFocusGroup.Item>
-                  <Menu
-                    aria-label="More artifacts"
-                    onAction={(key) => {
-                      const pin = more.find((one) => one.id === key);
-                      if (pin !== undefined) onOpen(pin);
-                    }}
-                  >
-                    {more.map((pin) => (
-                      <MenuItem key={pin.id} id={pin.id} textValue={pin.name}>
-                        {pin.name}
-                      </MenuItem>
-                    ))}
-                  </Menu>
-                </MenuTrigger>
-              )}
-            </ActivityGroup>
-          </RovingFocusGroup.Root>
+                          data-artifact={pin.folder}
+                          data-missing={unopenable === null ? undefined : true}
+                          data-dragging={sortable.isDragging || undefined}
+                          {...sortable.listeners}
+                          onKeyDown={(event) => {
+                            // An icon that is up is being carried: its keys are the drag's.
+                            keepsTheFocus(event, sortable.isDragging);
+                            sortable.listeners?.onKeyDown?.(event);
+                          }}
+                          onClick={() => onOpen(pin)}
+                          icon={glyphOf(pin)}
+                          count={<ArtifactBadge pin={pin} stale={fresh?.stale ?? false} />}
+                        />
+                      </ContextMenu>
+                    </span>
+                  )}
+                </SortableTab>
+              );
+            })}
+            {more.length > 0 && (
+              <MenuTrigger>
+                <ActivityItem
+                  variant="bar"
+                  selected={false}
+                  tip="The artifacts past the first eight"
+                  aria-label={`${more.length} more artifacts`}
+                  data-artifact-more=""
+                  icon={<Ellipsis aria-hidden="true" />}
+                />
+                <Menu
+                  aria-label="More artifacts"
+                  onAction={(key) => {
+                    const pin = more.find((one) => one.id === key);
+                    if (pin !== undefined) onOpen(pin);
+                  }}
+                >
+                  {more.map((pin) => (
+                    <MenuItem key={pin.id} id={pin.id} textValue={pin.name}>
+                      {pin.name}
+                    </MenuItem>
+                  ))}
+                </Menu>
+              </MenuTrigger>
+            )}
+          </ActivityToolbar>
         </SortableContext>
       </DndContext>
       {unpinning !== undefined && (

@@ -70,12 +70,21 @@ describe("the activity bar's artifacts", () => {
   });
 
   it("is walked by the arrows with one Tab stop", async () => {
-    render(<ArtifactGroup plane="p" workspace="alpha" pins={PINS} onOpen={() => {}} />);
+    render(
+      <>
+        <ArtifactGroup plane="p" workspace="alpha" pins={PINS} onOpen={() => {}} />
+        <button type="button">After</button>
+      </>,
+    );
     const [first, second] = screen.getAllByRole("button");
     await userEvent.tab();
     expect(first).toHaveFocus();
-    expect(second).toHaveAttribute("tabindex", "-1");
     await userEvent.keyboard("{ArrowDown}");
+    expect(second).toHaveFocus();
+    // Tab leaves the group from any icon, and Shift+Tab comes back to the one it left.
+    await userEvent.tab();
+    expect(screen.getByRole("button", { name: "After" })).toHaveFocus();
+    await userEvent.tab({ shift: true });
     expect(second).toHaveFocus();
   });
 
