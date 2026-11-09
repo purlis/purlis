@@ -296,19 +296,24 @@ footer[data-scope="status-bar"] {
    for a warning (#3649), each with its shape in the window's ground.
 
    **A 24px target** (WCAG 2.5.8): unlike a chip's dot, it is a Tab stop of its own, and nothing
-   else on the bar reaches it. Its box is 24px, the 16px dot drawn in its middle: a clear border
-   of 4px around it, which the dot's fill is clipped inside, and its ring drawn inside that fill.
-   It sits on the item's leading corner, flush with the item's top and whole inside the bar, which
-   keeps no padding above its items since they ring inside themselves (#1922). Keyed on the dot's parts, never
-   on `data-kind`, which another status item carries too (the title bar's Updates pill).
+   else on the bar reaches it. Its box is 24px, the 16px dot drawn in it: a clear border around
+   it, which the dot's fill is clipped inside, and its focus ring drawn just inside that box.
+   Keyed on the dot's parts, never on `data-kind`, which another status item carries too (the
+   title bar's Updates pill).
+
+   **At the bell's top leading corner, the bell read beside it** (#5889): the bar is the item's
+   height (#1922), so a dot in the middle of its box, flush with the item's top, lay over the
+   bell. Its clear border is 2px above it and 6px below, so the dot stands at the bar's top, and
+   the Notices slot keeps room before the item (`.status-notices`), so the dot ends a fifth of the
+   bell in. Its box stays whole inside the bar, which clips what leaves it.
    --------------------------------------------------------------------------------------------- */
 
 [data-part^="dot"][data-scope="status-item"] {
   position: absolute;
   z-index: 1;
   inset-block-start: 0;
-  /* No further out than the end's gap, so its clear border never covers the item before. */
-  inset-inline-start: calc(var(--space-1) * -1);
+  /* At the slot's start, inside the room the slot keeps for it: over nothing before the item. */
+  inset-inline-start: 0;
   display: grid;
   place-items: center;
   box-sizing: border-box;
@@ -316,7 +321,11 @@ footer[data-scope="status-bar"] {
   block-size: 24px;
   padding: 0;
   border: 4px solid transparent;
-  border-radius: var(--radius-full);
+  border-block-start-width: 2px;
+  border-block-end-width: 6px;
+  /* Each corner less its two borders is 8px, so the fill is a 16px circle: 12px across at
+     every corner, 10px down at the top and 14px at the bottom, as shares of the 24px box. */
+  border-radius: 50% / 41.667% 41.667% 58.333% 58.333%;
   background-clip: padding-box;
   box-shadow: inset 0 0 0 2px var(--surface-deep);
   cursor: default;

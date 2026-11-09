@@ -174,22 +174,49 @@ export const DismissedByEsc: Story = {
   },
 };
 
-/** **The dot**, while the card is hidden: ● over the Notices item's leading corner, its count
- *  still read beside it, inside the bar. */
+/** The dot's drawn disc: its box inside the clear border its 24px target keeps around it. */
+function discOf(dot: HTMLElement): DOMRect {
+  const box = dot.getBoundingClientRect();
+  const drawn = getComputedStyle(dot);
+  const left = box.left + parseFloat(drawn.borderLeftWidth);
+  const top = box.top + parseFloat(drawn.borderTopWidth);
+  const right = box.right - parseFloat(drawn.borderRightWidth);
+  const bottom = box.bottom - parseFloat(drawn.borderBottomWidth);
+  return new DOMRect(left, top, right - left, bottom - top);
+}
+
+/** **The dot**, while the card is hidden: ● at the bell's top leading corner, the bell still
+ *  read beside it (#5889), its count read beside that, whole inside the bar at its height
+ *  (#1922), and a 24px target (WCAG 2.5.8). */
 export const DotOnNotices: Story = {
   args: { startOpen: false },
   play: async ({ canvas }) => {
     const dot = canvas.getByRole("button", { name: /^Show the notice on the status bar/ });
     await expect(dot.querySelector("svg")).not.toBeNull();
-    const [d, i, b] = [
-      dot,
-      canvas.getByTestId("status-alerts"),
-      canvas.getByTestId("status-line"),
-    ].map((one) => one.getBoundingClientRect());
-    await expect(centre(d)).toBeLessThan(i.left + 12);
-    await expect(d.top).toBeLessThan(i.top + 4);
-    // Whole inside the bar, which clips what leaves it.
-    await expect(d.top).toBeGreaterThanOrEqual(b.top);
+    const item = canvas.getByTestId("status-alerts");
+    const bar = canvas.getByTestId("status-line");
+    const icon = item.querySelector('[data-part="icon"] svg');
+    await expect(icon).not.toBeNull();
+    const slot = dot.parentElement as HTMLElement;
+    const [d, s, bell] = [dot, slot, icon as Element].map((one) => one.getBoundingClientRect());
+    const disc = discOf(dot);
+    await expect(Math.round(d.width)).toBeGreaterThanOrEqual(24);
+    await expect(Math.round(d.height)).toBeGreaterThanOrEqual(24);
+    // A 16px disc, as round as it is wide.
+    await expect(Math.round(disc.width)).toBe(16);
+    await expect(Math.round(disc.height)).toBe(16);
+    await expect(getComputedStyle(dot).backgroundClip).toBe("padding-box");
+    // At the bell's top leading corner: its middle before the bell and above the bell's own,
+    // reaching into the bell, but no more than a quarter of the way, so the bell is read.
+    await expect(centre(disc)).toBeLessThan(bell.left);
+    await expect(disc.top + disc.height / 2).toBeLessThan(bell.top + bell.height / 2);
+    await expect(disc.right).toBeGreaterThan(bell.left);
+    await expect(disc.right).toBeLessThanOrEqual(bell.left + bell.width / 4 + 0.5);
+    // Its clear border over nothing before its slot.
+    await expect(d.left).toBeGreaterThanOrEqual(s.left);
+    // Whole inside the bar's clip (inside its top border), the disc and its target.
+    const b = bar.getBoundingClientRect();
+    await expect(d.top).toBeGreaterThanOrEqual(b.top + bar.clientTop);
     await expect(d.bottom).toBeLessThanOrEqual(b.bottom);
   },
 };
