@@ -377,6 +377,64 @@ fn opening_a_plane_removes_an_older_charters_stale_temp() {
     assert!(!stale.exists(), "the leftover is still there");
 }
 
+/// #5849: a sandbox block a chat's hook found is told to the window, for its Notice, before it
+/// is kept in the network record, so a record that waits on its lock never holds a Notice back.
+#[test]
+fn a_sandbox_block_is_told_to_the_window_before_it_is_kept_in_the_network_record() {
+    use purlis_core::hookwire::SandboxBlocked;
+    use purlis_core::sandboxblock::{Block, Kind, Operation, record::Record};
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = a_plane(&dir.path().join("plane"));
+    let data = dir.path().join("data");
+    // Every line the record holds, of every project: the plane's own key is not this test's to
+    // spell.
+    let kept = {
+        let folder = data.join(purlis_core::sandboxblock::record::DIR);
+        move || -> usize {
+            std::fs::read_dir(&folder).map_or(0, |files| {
+                files
+                    .filter_map(Result::ok)
+                    .filter_map(|file| std::fs::read_to_string(file.path()).ok())
+                    .map(|text| text.lines().filter(|line| !line.trim().is_empty()).count())
+                    .sum()
+            })
+        }
+    };
+    let kept_as_told: Arc<Mutex<Vec<usize>>> = Arc::default();
+    let planes = planes()
+        .recording_network(Some(Record::in_data(&data)))
+        .telling_blocks({
+            let kept = kept.clone();
+            let kept_as_told = Arc::clone(&kept_as_told);
+            Arc::new(move |_| kept_as_told.lock().unwrap().push(kept()))
+        });
+    let id = planes.open(&root);
+    let held = planes.held(&id).expect("it is held");
+
+    held.hooks().heard_from_a_hook(
+        SandboxBlocked {
+            chat: 3,
+            sandbox_blocked: Block {
+                operation: Operation::Connect,
+                kind: Kind::Host,
+                ours: false,
+            },
+            harness: None,
+            target: Some("example.com".to_owned()),
+            read_back: false,
+            suggested: None,
+        }
+        .into(),
+    );
+
+    assert_eq!(
+        *kept_as_told.lock().unwrap(),
+        vec![0],
+        "told once, with nothing of it kept yet"
+    );
+    assert_eq!(kept(), 1, "kept once the window was told");
+}
+
 /// SC-7: opening a plane collects the per-session files no chat has written for
 /// `retention::KEEP_FOR` — and a plane already open, whose chats are running, is not swept.
 #[test]

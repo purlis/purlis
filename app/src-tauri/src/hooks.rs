@@ -3515,6 +3515,20 @@ impl Hooks {
         *self.blocked.lock().unwrap_or_else(PoisonError::into_inner) = Some(blocks);
     }
 
+    /// Tells whoever [`Self::when_blocked`] named `block`, as a block a chat's hook sent and the
+    /// throttle let through is told: for a test of what a held plane does with one.
+    #[cfg(test)]
+    pub(crate) fn heard_from_a_hook(&self, block: HeardBlock) {
+        let blocks = self
+            .blocked
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if let Some(blocks) = blocks {
+            blocks(block);
+        }
+    }
+
     /// What hears a sandbox block from outside a chat's own hook (#1663): purlis's own proxy
     /// beside a chat it wraps tells each host it refused here, and it takes the road a hook's
     /// block takes. None with nothing listening.
