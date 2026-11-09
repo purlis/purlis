@@ -60,11 +60,16 @@ export function againSaid(typed: boolean, label: string): string {
 }
 
 /** What the picker's Secret ask says of a refused answer (#5902): the refusal, and, where it read
- *  a value typed, which its box gave up, to type it again, after the refusal's own mark. */
-export function refusedSaid(refused: string, typed: boolean, label: string): string {
-  if (!typed) return refused;
+ *  a value typed, which its box gave up, to type it again, after the refusal's own mark. Never
+ *  after Not now (`keep`), which stores nothing. */
+export function refusedSaid(
+  refused: string,
+  typed: boolean,
+  option: { id: string; label: string },
+): string {
+  if (!typed || option.id === "keep") return refused;
   const ended = /[.?!]$/.test(refused) ? refused : `${refused}.`;
-  return `${ended} ${againSaid(true, label)}`;
+  return `${ended} ${againSaid(true, option.label)}`;
 }
 
 /** **Whether the picker's Secret ask's answer goes unsent** (#5902): with no ask, or while one is
@@ -608,7 +613,7 @@ export function StartChat({
       .catch((why: unknown) => {
         if (!open.current) return;
         const what = (why instanceof Error ? why.message : String(why)).replace(/\.$/, "");
-        const again = againSaid(typed, option.label);
+        const again = againSaid(typed && option.id !== "keep", option.label);
         setSaidOfAnswer(true);
         onSaidOf(`purlis could not send your answer: ${what}. ${again}`);
       })

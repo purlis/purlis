@@ -2689,6 +2689,37 @@ describe("the start's Secret ask, with what else the dialog offers (#5670 review
     );
   });
 
+  it("a Not now that fails with a value typed in the box says to press Not now again, never to retype (review of #5934)", async () => {
+    const onSaid = vi.fn();
+    render(
+      <StartChat
+        options={options()}
+        trouble="nothing was started"
+        secretAsk={{
+          ...ask({
+            onAnswer: (_option, given) => {
+              given();
+              return Promise.reject(new Error("the app went away"));
+            },
+          }),
+          onSaid,
+        }}
+        onStart={vi.fn()}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Value of anthropic"), "fr3sh");
+    await user.click(screen.getByRole("button", { name: "Not now" }));
+
+    await waitFor(() =>
+      expect(onSaid).toHaveBeenCalledWith(
+        "purlis could not send your answer: the app went away. Press Not now again.",
+      ),
+    );
+  });
+
   it("a fill that sent no typed value and fails says to press Fill again, with nothing to retype", async () => {
     const onSaid = vi.fn();
     render(
@@ -2830,6 +2861,8 @@ describe("whether a send read a typed value (#5670 review)", () => {
   });
 });
 
+const FILL = { id: "fill", label: "Fill" };
+
 describe("the picker's Secret ask's answer, as PlaneView sends it (#5902)", () => {
   it("sends nothing, and says nothing, with no ask or while one is being answered", () => {
     const shown = secretAsk({ persona: "devops", vault: "providers", key: "anthropic" });
@@ -2841,15 +2874,15 @@ describe("the picker's Secret ask's answer, as PlaneView sends it (#5902)", () =
 
   it("says to type a refused typed value again, after the refusal's own mark", () => {
     const locked = "the vault providers is locked: unlock it, then fill again";
-    expect(refusedSaid(locked, true, "Fill")).toBe(
+    expect(refusedSaid(locked, true, FILL)).toBe(`${locked}. Type the value again and press Fill.`);
+    expect(refusedSaid(`${locked}.`, true, FILL)).toBe(
       `${locked}. Type the value again and press Fill.`,
     );
-    expect(refusedSaid(`${locked}.`, true, "Fill")).toBe(
-      `${locked}. Type the value again and press Fill.`,
-    );
-    expect(refusedSaid("Is the vault unlocked?", true, "Fill")).toBe(
+    expect(refusedSaid("Is the vault unlocked?", true, FILL)).toBe(
       "Is the vault unlocked? Type the value again and press Fill.",
     );
-    expect(refusedSaid(locked, false, "Fill")).toBe(locked);
+    expect(refusedSaid(locked, false, FILL)).toBe(locked);
+    // Not now stores nothing, so nothing is to be typed again (review of #5934).
+    expect(refusedSaid(locked, true, { id: "keep", label: "Not now" })).toBe(locked);
   });
 });

@@ -4613,7 +4613,7 @@ export const PlaneView = memo(function PlaneView({
           got.named,
         );
         if (refused !== undefined) {
-          setPickerSecretSaid(refusedSaid(refused, typedIn(got), option.label));
+          setPickerSecretSaid(refusedSaid(refused, typedIn(got), option));
           return "refused";
         }
         setPickerSecret(undefined);
