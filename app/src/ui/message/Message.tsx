@@ -29,21 +29,44 @@
  */
 import {
   createElement,
+  useCallback,
+  useMemo,
   useState,
   type ComponentPropsWithRef,
+  type ElementType,
   type ReactNode,
   type Ref,
 } from "react";
-import { mergeProps, useFocusWithin, useHover } from "react-aria";
+import { mergeProps, mergeRefs, useFocusWithin, useHover } from "react-aria";
 import { ButtonRow } from "../button/Button";
+import { ListRowDrawn } from "../list/List";
 import { parted } from "../partClasses";
 
 /** The family's variants, in the order the manifest names them: a row's state. */
 export const MESSAGE_TONES = ["waiting", "done", "failed", "report", "plain"] as const;
 export type MessageTone = (typeof MESSAGE_TONES)[number];
 
-/** The elements a row is drawn as: an item of a list, or a box a list moves itself. */
-type MessageElement = "li" | "div" | "article";
+/** The elements a row is drawn as: an item of a list, or a box a list moves itself; or `row`,
+ *  a row of the list family's list of rows that act (`List`), which it is the look of (#3123). */
+type MessageElement = "li" | "div" | "article" | "row";
+
+/**
+ * **Whether the keyboard is on a row or inside it**, for a row the list family draws: React Aria
+ * hands a row's own focus handlers to nothing a screen gives it, so it is heard where it lands.
+ */
+function useFocusInside(given: Ref<HTMLElement> | undefined) {
+  const [inside, setInside] = useState(false);
+  const heard = useCallback((element: HTMLElement | null) => {
+    if (element === null) return;
+    element.addEventListener("focusin", () => setInside(true));
+    element.addEventListener("focusout", (event) => {
+      const to = event.relatedTarget;
+      setInside(to instanceof Node && element.contains(to));
+    });
+  }, []);
+  const attach = useMemo(() => mergeRefs<HTMLElement>(heard, given ?? null), [heard, given]);
+  return { inside, attach };
+}
 
 /**
  * **One message, as a row of its view.** `icon` is its mark's glyph (a `lucide-react` icon);
@@ -59,10 +82,17 @@ export function MessageRow({
   read = false,
   consent = false,
   children,
+  textValue,
+  onDrawn,
   ...rest
 }: Omit<ComponentPropsWithRef<"li">, "style" | "ref"> & {
   ref?: Ref<HTMLElement>;
   as?: MessageElement;
+  /** As a list's row (`as="row"`): what it is called where nothing names it. */
+  textValue?: string;
+  /** As a list's row: heard after each drawing of it, once it is in the document
+   *  (`ListRowDrawn`). */
+  onDrawn?: () => void;
   tone: MessageTone;
   icon: ReactNode;
   dismiss?: ReactNode;
@@ -77,20 +107,28 @@ export function MessageRow({
   const { hoverProps, isHovered } = useHover({});
   const [focusedWithin, setFocusedWithin] = useState(false);
   const { focusWithinProps } = useFocusWithin({ onFocusWithinChange: setFocusedWithin });
-  // `createElement` passes JSX's runtime by, so the part's classes are drawn here (#4351).
+  const row = as === "row";
+  const inside = useFocusInside(rest.ref);
+  // `createElement` passes JSX's runtime by, so the part's classes are drawn here (#4351). As a
+  // list's row, React Aria marks it under the pointer itself, and the keyboard is heard on it.
+  const element: ElementType = row ? ListRowDrawn : as;
   return createElement(
-    as,
-    parted({
-      ...mergeProps(rest, hoverProps, focusWithinProps),
-      "data-hovered": isHovered ? "" : undefined,
-      "data-focus-within": focusedWithin ? "" : undefined,
-      "data-scope": "message",
-      "data-part": "root",
-      "data-variant": tone,
-      "data-read": read ? "" : undefined,
-      "data-consent": consent ? "" : undefined,
-      "data-dismiss": dismiss === undefined || dismiss === null ? undefined : "",
-    }),
+    element,
+    {
+      ...parted({
+        ...(row
+          ? { ...rest, textValue, onDrawn, ref: inside.attach }
+          : mergeProps(rest, hoverProps, focusWithinProps)),
+        "data-hovered": isHovered ? "" : undefined,
+        "data-focus-within": (row ? inside.inside : focusedWithin) ? "" : undefined,
+        "data-scope": "message",
+        "data-part": "root",
+        "data-variant": tone,
+        "data-read": read ? "" : undefined,
+        "data-consent": consent ? "" : undefined,
+        "data-dismiss": dismiss === undefined || dismiss === null ? undefined : "",
+      }),
+    },
     <span data-scope="message" data-part="mark" aria-hidden="true">
       {icon}
     </span>,

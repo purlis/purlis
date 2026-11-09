@@ -41,6 +41,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -76,6 +77,7 @@ import {
 } from "../menu/ContextMenu";
 import { InOption, RowScope, type RowSize } from "./Row";
 import { useListRowTip, type RowTipped } from "./RowTip";
+import { isEscapeInABox, keptOnTheWayDown } from "./rowKeys";
 import type { Tip } from "../tooltip/Tooltip";
 
 export type { Key, Selection };
@@ -123,20 +125,23 @@ const TYPING_WINDOW = 1000;
  * hears them (a capture handler on an element around the list runs first). Any other key, and a
  * key on anything inside a row, is React Aria's.
  */
-function useFoldKeys(folds: Map<string, ((open: boolean) => void) | undefined>) {
+function useFoldKeys(
+  folds: Map<string, ((open: boolean) => void) | undefined>,
+  findsByTyping: boolean,
+) {
   const { direction } = useLocale();
   // When a letter was last typed: a Space within React Aria's typing window goes on finding a row
-  // by its words, and folds nothing.
+  // by its words, and folds nothing. A list that finds nothing by typing has no such window.
   const typed = useRef(Number.NEGATIVE_INFINITY);
   return (event: ReactKeyboardEvent<HTMLElement>) => {
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    const row = event.target;
+    if (!(row instanceof HTMLElement) || row.getAttribute("role") !== "row") return;
     if (event.key.length === 1 && event.key !== " ") {
-      typed.current = event.timeStamp;
+      if (findsByTyping) typed.current = event.timeStamp;
       return;
     }
     if (event.key === " " && event.timeStamp - typed.current < TYPING_WINDOW) return;
-    const row = event.target;
-    if (!(row instanceof HTMLElement) || row.getAttribute("role") !== "row") return;
     const toggle = folds.get(row.getAttribute("data-fold") ?? "");
     if (toggle === undefined) return;
     const open = row.hasAttribute("data-expanded");
@@ -420,9 +425,21 @@ export function List<T extends object>({
   const own = useCollectionElement(keys, ref);
   const chooses = rest.selectionMode !== undefined && rest.selectionMode !== "none";
   const [folds] = useState(() => new Map<string, ((open: boolean) => void) | undefined>());
-  const foldKeys = useFoldKeys(folds);
+  const foldKeys = useFoldKeys(folds, rest.disallowTypeAhead !== true);
   const onKeyDownCapture = (event: ReactKeyboardEvent<HTMLElement>) => {
-    if (onEscape !== undefined && event.key === "Escape" && !event.nativeEvent.isComposing) {
+    // **A text box in a row keeps its caret's arrows** (#3123, `rowKeys.ts`): the browser moves
+    // its caret, and the row never walks its controls with them.
+    if (keptOnTheWayDown(event)) {
+      event.stopPropagation();
+      return;
+    }
+    if (
+      onEscape !== undefined &&
+      event.key === "Escape" &&
+      !event.nativeEvent.isComposing &&
+      // Esc in a row's text box gives the keyboard back to its row first.
+      !isEscapeInABox(event)
+    ) {
       event.preventDefault();
       event.stopPropagation();
       onEscape();
@@ -515,6 +532,54 @@ export function ListRow<T extends object>({
   );
 }
 
+export interface ListRowDrawnProps<T extends object> extends Omit<
+  AriaGridListItemProps<T>,
+  "className" | "style" | "children"
+> {
+  /** What it draws: another family's parts, which are its look. */
+  children: ReactNode;
+  /**
+   * **Heard after each drawing of the row**, once what it draws is in the document. React Aria
+   * draws a list's rows apart from the components that make them, a commit later, so an effect
+   * of the component that makes a row would read the row as it was. What has to read the row as
+   * it is drawn (where its answers stand, #3167) is told here.
+   */
+  onDrawn?: () => void;
+  /** The other family's classes (`parted`): never a look of the screen's. */
+  className?: string;
+  ref?: Ref<HTMLDivElement>;
+  /** That family's `data-scope`, `data-part` and `data-variant`, as they are. */
+  [data: `data-${string}`]: string | number | boolean | undefined;
+}
+
+/**
+ * **A row another family draws** (#3123): a message of the Inbox's views (`MessageRow`), whose
+ * row is its own root. The list gives it a row's role, its keyboard (↑ and ↓ to the rows above
+ * and below, ← and → through its own controls, a text box in it keeping its own keys,
+ * `rowKeys.ts`) and React Aria's state attributes (`data-hovered`, `data-focus-visible`); it
+ * draws nothing, and writes no part of its own: the parts on it are the other family's, and so
+ * is its look, its ring included. Its cell is drawn `display: contents`, so what it holds is laid
+ * out as the other family lays out its root's children.
+ */
+export function ListRowDrawn<T extends object>({
+  onDrawn,
+  children,
+  ...props
+}: ListRowDrawnProps<T>) {
+  return (
+    <AriaGridListItem {...props}>
+      {children}
+      {onDrawn !== undefined && <Drawn then={onDrawn} />}
+    </AriaGridListItem>
+  );
+}
+
+/** Runs `then` after each commit of the row it stands in, as part of the row. */
+function Drawn({ then }: { then: () => void }) {
+  useLayoutEffect(() => then());
+  return null;
+}
+
 /** **A group of rows under its name** (a day's todos): the name is the section's `header`. */
 export function ListRowSection<T extends object>({
   title,
@@ -524,6 +589,7 @@ export function ListRowSection<T extends object>({
   children,
   "aria-label": label,
   id,
+  ...data
 }: {
   title?: ReactNode;
   /** The name is data (a file's, a day's), drawn as it is written; else purlis's own label. */
@@ -535,9 +601,12 @@ export function ListRowSection<T extends object>({
   children: ReactNode;
   "aria-label"?: string;
   id?: Key;
+  /** `data-*` attributes reach the element as they are (the chat a group is, #3123). */
+  [attribute: `data-${string}`]: string | number | boolean | undefined;
 }) {
   return (
     <AriaGridListSection<T>
+      {...data}
       id={id}
       className={className}
       aria-label={label}
