@@ -385,7 +385,11 @@ fn card_on(panel: u8, card: u8) -> ResolvedTheme {
 }
 
 fn card_step_at(theme: &ResolvedTheme, drawn: &ResolvedTheme) -> f64 {
-    card_step(drawn, parts::card_on_side(theme)).0
+    card_step(
+        drawn,
+        parts::card_on_side(theme).expect("a card on its panel"),
+    )
+    .0
 }
 
 /// Each panel's nearest card that clears [`CARD_STEP`] as written.

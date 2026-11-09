@@ -1355,7 +1355,7 @@ pub(super) struct Standing {
 /// **Each [`Stands`] a tint can move** as `theme` draws it: one with a token the recipe turns.
 pub(super) fn standing(
     theme: &ResolvedTheme,
-    on: super::parts::CardOnSide,
+    card: Option<super::parts::CardOnSide>,
     ways: super::parts::NoticeWays,
 ) -> Vec<Standing> {
     let turned = |token: &str| theme.tint.tabs().contains(&token);
@@ -1378,7 +1378,10 @@ pub(super) fn standing(
             });
         }
     }
-    if ["surface.deep", on.card, on.ground].into_iter().any(turned) || on.edge.is_some_and(turned) {
+    if let Some(on) = card
+        && (["surface.deep", on.card, on.ground].into_iter().any(turned)
+            || on.edge.is_some_and(turned))
+    {
         let (step, edge) = card_step(theme, on);
         let edged = |floor: f64| edge.is_some_and(|edge| edge >= floor);
         all.push(Standing {
@@ -1440,7 +1443,7 @@ fn already_found(findings: &[Finding], what: Stands) -> bool {
 /// ([`NEAR_A_FLOOR`], [`NEAR_A_STEP`], [`NEAR_IN_OKLAB`]).
 fn between_named_tints(
     theme: &ResolvedTheme,
-    card: super::parts::CardOnSide,
+    card: Option<super::parts::CardOnSide>,
     ways: super::parts::NoticeWays,
     findings: &mut Vec<Finding>,
 ) {
@@ -1649,14 +1652,18 @@ fn card_step(theme: &ResolvedTheme, on: super::parts::CardOnSide) -> (f64, Optio
 
 /// **Whether a side view's card row stands apart from its panel** (#3774): its fill a step from
 /// the panel's ([`CARD_STEP`]), or an edge a hairline from it ([`CARD_EDGE`]) ([`card_step`]).
-/// Held for every theme, as its parts draw the two or as the families do by default
-/// ([`super::parts::card_on_side`], #5979), and only reported, as [`REPORTED`] is.
+/// Held for every theme that chooses the two or a ground of either, as its parts draw them or as
+/// the families do by default ([`super::parts::card_on_side`], #5979), and only reported, as
+/// [`REPORTED`] is.
 fn card_apart(
     theme: &ResolvedTheme,
     tint: Option<&'static str>,
-    on: super::parts::CardOnSide,
+    on: Option<super::parts::CardOnSide>,
     findings: &mut Vec<Finding>,
 ) {
+    let Some(on) = on else {
+        return;
+    };
     let (step, edge) = card_step(theme, on);
     if step < CARD_STEP && !edge.is_some_and(|edge| edge >= CARD_EDGE) {
         findings.push(Finding::CardNotApart {

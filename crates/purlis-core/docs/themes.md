@@ -793,7 +793,9 @@ drawn exactly as `other`), `card-not-apart` (a side view's card row whose fill, 
 only `ratio` from the side panel's, `ground`, under the `floor` of 1.05, with no edge that
 clears a hairline's 1.2 there, as the theme's parts, its own or inherited, draw the two, or
 as the families do by default for a palette alone, a card row in `surface.raised` on a side
-panel in `surface.base`; the check only reports it and redraws nothing),
+panel in `surface.base`, where the palette gives either ground, or the frame under them, a
+colour of its own: Purlis Classic's grounds without its card row are the families' default, not
+the theme's choice; the check only reports it and redraws nothing),
 `notice-way-not-apart` (a notice card's secondary way whose fill, at rest or `pointed` at, is
 only `distance` from the `variant` card's `ground` in OKLab, under the `floor` of 0.02: the
 fill a theme's button parts give it, or else the card's own mix of `control.base` toward

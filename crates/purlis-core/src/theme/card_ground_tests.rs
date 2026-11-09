@@ -54,7 +54,7 @@ fn not_apart(
 fn every_built_in_appearance_draws_its_side_view_s_cards_a_step_from_the_panel() {
     for theme in every_built_in() {
         assert_eq!(not_apart(theme), [], "{} {}", theme.name, theme.id);
-        let on = super::super::parts::card_on_side(theme);
+        let on = super::super::parts::card_on_side(theme).expect("both choose their cards");
         let step = contrast(theme.value(on.card), theme.value(on.ground));
         assert!(
             step >= CARD_STEP,
@@ -168,4 +168,18 @@ fn a_palette_alone_whose_cards_meet_the_panel_is_reported_in_every_tint() {
         "{:?}",
         not_apart(over.theme.first())
     );
+}
+
+#[test]
+fn a_theme_that_leaves_its_grounds_to_classic_is_not_told_of_a_card_row_it_did_not_choose() {
+    // Classic's grounds without Classic's card row are the families' default (#5979): a theme
+    // that writes an accent of its own and no ground hears nothing of its cards.
+    let loaded = load(&json!({
+        "name": "Accent only",
+        "appearances": [{ "id": "dark", "appearance": "dark", "tokens": {
+            "accent.base": "#52c4a6",
+        } }],
+    }));
+    assert!(!loaded.refused, "{:?}", loaded.complaints);
+    assert_eq!(not_apart(loaded.theme.first()), []);
 }

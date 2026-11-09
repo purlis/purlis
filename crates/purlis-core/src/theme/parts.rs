@@ -5231,8 +5231,19 @@ pub(super) struct CardOnSide {
 
 /// What [`CardOnSide`] says of `theme`: as its parts, its own or inherited, draw a card row and
 /// a side panel, or as the families do by default for a palette alone, which puts its cards on
-/// the raised ground wherever its palette puts it (#5979).
-pub(super) fn card_on_side(theme: &ResolvedTheme) -> CardOnSide {
+/// the raised ground wherever its palette puts it (#5979). `None` for a palette that chooses
+/// neither and leaves both grounds, and the frame the panel lies on, as Purlis Classic draws
+/// them: those are Classic's grounds without Classic's card row, the families' default and not
+/// the theme's choice, which a theme that writes a few colours of its own would hear of for
+/// nothing it wrote.
+pub(super) fn card_on_side(theme: &ResolvedTheme) -> Option<CardOnSide> {
+    let chosen = theme.parts.keys().any(|key| {
+        (key.family == "list" && key.variant == Some("card"))
+            || (key.family == "panel"
+                && key.part == "root"
+                && key.property == Prop::Fill
+                && key.variant.is_none_or(|variant| variant == "side"))
+    });
     let held = held_once(theme);
     let rules = &held.0;
     let list = family("list").expect("the list family");
@@ -5244,11 +5255,20 @@ pub(super) fn card_on_side(theme: &ResolvedTheme) -> CardOnSide {
     } else {
         list.border_width > 0.0
     };
-    CardOnSide {
+    let on = CardOnSide {
         card: card.fill,
         edge: (edged && card.border != TRANSPARENT).then_some(card.border),
         ground: drawn(rules, panel, "side", &[]).fill,
-    }
+    };
+    let classic = super::built_in_for(theme.appearance);
+    let as_classic = ["surface.deep", on.card, on.ground]
+        .into_iter()
+        .all(|token| {
+            theme
+                .value(token)
+                .eq_ignore_ascii_case(classic.value(token))
+        });
+    (chosen || !as_classic).then_some(on)
 }
 
 /// **A notice card's secondary way and what it stands on** (#4210): each variant's card ground,
