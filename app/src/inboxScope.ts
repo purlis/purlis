@@ -5,8 +5,8 @@ import { useSyncExternalStore } from "react";
 import { keepFacet, keptFacet, onProjectViews, type Facet } from "./projectViews";
 
 /**
- * **Which asks the Inbox lists** (qw359): every project's this window knows of, this project's
- * (the default), or those of the workspace in front on the strip. At the plane root the
+ * **Which asks the Inbox lists** (qw359): every project's this window knows of (the default, ADR
+ * 0121 decision 4), this project's, or those of the workspace in front on the strip. At the plane root the
  * workspace's are the asks of the chats filed in no workspace.
  *
  * Only what waits on the person is narrowed. A project's Notices and its updates are the
@@ -21,14 +21,28 @@ export const INBOX_SCOPES: readonly { scope: InboxScope; says: string; of: strin
   { scope: "workspace", says: "This workspace", of: "this workspace" },
 ];
 
-/** The scope an Inbox is drawn in where the person picked none. */
-export const DEFAULT_INBOX_SCOPE: InboxScope = "project";
+/**
+ * **The scope Asks opens on where the person picked none**: every project's (ADR 0121 decision
+ * 4), so an ask from another open project is listed without a press. A narrower pick narrows
+ * the list and never the ✋, which counts every project's.
+ */
+export const DEFAULT_INBOX_SCOPE: InboxScope = "all";
+
+/**
+ * **The scope every list has**: the project's. What a list is drawn in where the scope picked is
+ * not one it offers (Updates has no every project's), and the Browsers grid's default (#2027).
+ */
+export const PROJECT_SCOPE: InboxScope = "project";
+
+/** Each facet's scope where the person picked none. */
+const DEFAULT_OF: Partial<Record<Facet, InboxScope>> = { inbox: DEFAULT_INBOX_SCOPE };
+const defaultOf = (facet: Facet): InboxScope => DEFAULT_OF[facet] ?? PROJECT_SCOPE;
 
 const isScope = (held: unknown): held is InboxScope =>
   INBOX_SCOPES.some((one) => one.scope === held);
 
 /**
- * **The scope the person last picked for `plane`**, or the project's.
+ * **The scope the person last picked for `plane`**, or every project's.
  *
  * Kept where the Chats view keeps its own (`chatsScope.ts`): per project on this machine, in
  * `layout.json` v2 under the project's `inbox.scope` (`projectViews.ts`). It is how this person
@@ -50,21 +64,22 @@ export function useInboxScope(plane: string | undefined): InboxScope {
 }
 
 /**
- * **The scope kept as `facet`'s `scope` for `plane`**, or the project's: the Inbox's and the
- * Browsers grid's (#2027) are the one switch, each kept under its own facet.
+ * **The scope kept as `facet`'s `scope` for `plane`**, or that facet's default: the Inbox's
+ * and the Browsers grid's (#2027) are the one switch, each kept under its own facet. The Inbox's
+ * default is every project's; the grid's is the project's.
  */
 export function keptScopeOf(plane: string | undefined, facet: Facet): InboxScope {
   const held = keptFacet(plane, facet);
-  if (held === null || typeof held !== "object" || Array.isArray(held)) return DEFAULT_INBOX_SCOPE;
+  if (held === null || typeof held !== "object" || Array.isArray(held)) return defaultOf(facet);
   const scope = Object.prototype.hasOwnProperty.call(held, "scope")
     ? (held as Record<string, unknown>).scope
     : undefined;
-  return isScope(scope) ? scope : DEFAULT_INBOX_SCOPE;
+  return isScope(scope) ? scope : defaultOf(facet);
 }
 
-/** Keeps `scope` as `facet`'s `scope` for `plane`. The default is kept as nothing. */
+/** Keeps `scope` as `facet`'s `scope` for `plane`. Its default is kept as nothing. */
 export function keepScopeOf(plane: string | undefined, facet: Facet, scope: InboxScope): void {
-  keepFacet(plane, facet, scope === DEFAULT_INBOX_SCOPE ? undefined : { scope });
+  keepFacet(plane, facet, scope === defaultOf(facet) ? undefined : { scope });
 }
 
 /** How many asks each scope lists; a scope that is not offered has no count. */
@@ -72,11 +87,11 @@ export type ScopeCounts = Partial<Record<InboxScope, number>>;
 
 /**
  * **The scope an Inbox is drawn in**: the one picked where it is offered, else the project's,
- * which every Inbox has. A window that names no workspace offers no workspace scope, so a pick
- * kept for one falls back and is not lost.
+ * which every Inbox has. A window that names no workspace offers no workspace scope, and
+ * Updates no every project's, so a pick kept for one falls back and is not lost.
  */
 export function scopeDrawn(picked: InboxScope, counts: ScopeCounts): InboxScope {
-  return counts[picked] === undefined ? DEFAULT_INBOX_SCOPE : picked;
+  return counts[picked] === undefined ? PROJECT_SCOPE : picked;
 }
 
 /**

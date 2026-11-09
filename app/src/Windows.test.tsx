@@ -386,8 +386,7 @@ describe("needs you, across windows", () => {
     const hand = await screen.findByRole("button", { name: "1 chat needs you" });
     await userEvent.click(hand);
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
-    // This project's scope is empty and says what waits wider (qw359): one press lists it.
-    await userEvent.click(await within(inbox).findByRole("button", { name: "Show all projects" }));
+    // It opens on All projects (#5999, ADR 0121 decision 4), so the chat is listed at once.
     const group = await within(inbox).findByRole("region", { name: "two.3 · alpha · two" });
     expect(within(group).getByText("In another window")).toBeInTheDocument();
     await userEvent.click(within(group).getByRole("button", { name: /^Go to chat two\.3/ }));
