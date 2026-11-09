@@ -1531,6 +1531,12 @@ pub fn git_folder_pins_of(root: &Path) -> Vec<PathBuf> {
     planted::git_folder_pins(&git_folders_searched(root))
 }
 
+/// [`git_folder_pins_of`], or the folder that held more entries than the search for
+/// repositories looks at, where one did ([`planted::Repositories::crowded`]).
+pub fn git_folder_pins_whole_of(root: &Path) -> Result<Vec<PathBuf>, PathBuf> {
+    planted::git_folder_pins_whole(&git_folders_searched(root))
+}
+
 impl Denied {
     /// **These denials, and what waits to be told to a chat on its next turn**
     /// (`<state>/handbacks/`, D-T59-19): the reports of the chats it dispatched, and purlis's
@@ -6446,6 +6452,11 @@ pub enum NotStarted {
     /// ([`Denied::git_folder_pins`]) has a character Claude Code reads as a pattern in its path
     /// ([`PATTERN_CHARACTERS`]), so no rule purlis writes holds it as written.
     GitFolderUnheld(PathBuf),
+    /// The folders a Claude Code chat's sandbox searches for repositories, to hold each one's git
+    /// folder as a whole ([`Denied::git_folder_pins`]), held more entries outside every
+    /// repository than the search looks at ([`planted::REPOSITORIES_LOOKED_AT`]): a repository
+    /// beyond them would not be held. The folder that held the most.
+    RepositoriesUnfound(PathBuf),
     /// What purlis keeps from a chat could not be told whole ([`Denied::untold`]), and why:
     /// a sandbox compiled from a list that may be short would keep less than purlis means to,
     /// so none is compiled and the chat is not started.
@@ -6650,6 +6661,17 @@ impl NotStarted {
                 "{lead}, and the repository at {} has `*`, `?`, `[` or `]` in its path, which \
                  Claude Code's sandbox reads as a pattern, so purlis cannot hold its git folder \
                  and nothing was started. Rename that folder{}",
+                path.display(),
+                if opt_out {
+                    ", or start this chat without the sandbox from the new-chat picker."
+                } else {
+                    "."
+                }
+            ),
+            Self::RepositoriesUnfound(path) => format!(
+                "{lead}, and {} holds more files and folders than purlis looks through to find \
+                 every repository in the project, so it cannot hold each one's git folder, and \
+                 nothing was started. Move what fills that folder out of the project{}",
                 path.display(),
                 if opt_out {
                     ", or start this chat without the sandbox from the new-chat picker."
@@ -7056,7 +7078,7 @@ pub(crate) fn applied_of(
     // a Claude Code chat purlis wraps finds none (#4083).
     let pinned;
     let compiled = if harness == Harness::ClaudeCode && !wrapped {
-        let pins = git_folder_pins_of(root);
+        let pins = git_folder_pins_whole_of(root).map_err(NotStarted::RepositoriesUnfound)?;
         // Claude Code reads a path holding a pattern's character as a pattern: such a git folder
         // would not be held as written, so the chat is not started (fail closed).
         if let Some(unheld) = pins.iter().find(|pin| {
@@ -7936,6 +7958,7 @@ pub fn ahead_decided(
             | NotStarted::CoversItsGround { .. }
             | NotStarted::Unread(_)
             | NotStarted::GitFolderUnheld(_)
+            | NotStarted::RepositoriesUnfound(_)
             | NotStarted::KeptUntold(_)
             | NotStarted::PlaneUnreadable
             | NotStarted::PlaneMissing

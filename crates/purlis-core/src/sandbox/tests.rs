@@ -3400,6 +3400,15 @@ fn a_claude_code_chat_is_not_started_where_a_held_git_folder_has_glob_characters
     );
 }
 
+#[test]
+fn a_claude_code_chat_is_not_started_where_the_search_for_repositories_is_crowded_out() {
+    let path = Path::new("/p/notes");
+    let said = NotStarted::RepositoriesUnfound(path.to_path_buf()).to_string();
+    assert!(said.contains("/p/notes"), "{said}");
+    assert!(said.contains("Move what fills that folder"), "{said}");
+    assert!(said.contains("nothing was started"), "{said}");
+}
+
 /// The Claude Code settings a chat in `cwd` of the sandboxed plane at `root` is armed with.
 fn claude_settings_in(root: &Path, cwd: &Path) -> claude::Settings {
     let applied = for_start(Harness::ClaudeCode, root, &machine(Os::MacOs), &|_| true)
