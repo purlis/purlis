@@ -136,7 +136,8 @@ function TheBar({
           />
         </span>
       </header>
-      <p role="status" style={{ margin: 0 }}>
+      {/* The story's own word, by its test id: a drag's live region is a status too. */}
+      <p role="status" data-testid="story-said" style={{ margin: 0 }}>
         {said}
       </p>
       {workingAt.length > 0 && (
@@ -435,7 +436,9 @@ export const Reorder: Story = {
     first.dispatchEvent(
       new PointerEvent("pointerdown", { ...at(from.left + 8), button: 0, buttons: 1 }),
     );
-    for (const x of [from.left + 14, from.left + 40, past.right - 6])
+    // Carried until its middle is over its neighbour's middle: the drop place is the neighbour's.
+    const over = from.left + 8 + (past.left + past.width / 2 - (from.left + from.width / 2));
+    for (const x of [from.left + 14, from.left + 40, over])
       document.dispatchEvent(new PointerEvent("pointermove", { ...at(x), buttons: 1 }));
     // Mid-drag: no chip has changed its size, and the neighbour stepped aside for the drop place.
     await waitFor(() =>
@@ -445,9 +448,11 @@ export const Reorder: Story = {
     await waitFor(() =>
       expect(Math.round(second.getBoundingClientRect().left)).toBeLessThan(Math.round(past.left)),
     );
-    document.dispatchEvent(new PointerEvent("pointerup", { ...at(past.right - 6), buttons: 0 }));
+    document.dispatchEvent(new PointerEvent("pointerup", { ...at(over), buttons: 0 }));
     await waitFor(() => expect(names()).toEqual(["charter", "smart-ide", "skills"]));
-    await expect(canvas.getByRole("status")).toHaveTextContent("Pins: charter, smart-ide, skills");
+    await expect(canvas.getByTestId("story-said")).toHaveTextContent(
+      "Pins: charter, smart-ide, skills",
+    );
     // The drop chose nothing: smart-ide is still the workspace in front.
     await expect(chipsOf(bar)[1]).toHaveAttribute("aria-current", "true");
     await expect(widths()).toEqual([before[1], before[0], before[2]]);
@@ -531,7 +536,7 @@ export const Root: Story = {
     const rest = getComputedStyle(root).backgroundColor;
     await userEvent.click(root);
     await waitFor(() => expect(root).toHaveAttribute("aria-current", "true"));
-    await expect(canvas.getByRole("status")).toHaveTextContent(`Went to ${OUTSIDE}`);
+    await expect(canvas.getByTestId("story-said")).toHaveTextContent(`Went to ${OUTSIDE}`);
     await expect(chipsOf(bar).some((one) => one.hasAttribute("aria-current"))).toBe(false);
     await userEvent.hover(canvas.getByText(`Went to ${OUTSIDE}`));
     await waitFor(() => expect(root).not.toHaveAttribute("data-hovered"));

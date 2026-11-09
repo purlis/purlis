@@ -1,9 +1,11 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { browser, expect } from "@wdio/globals";
+import { $, browser, expect } from "@wdio/globals";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
+import { A_TURN, aTurnIsWanted } from "../harness.js";
 import { pressAndStart } from "../opening.js";
+import { projectInFront, runningIn } from "../running.js";
 import { ask, inFront } from "../switching.js";
 import {
   ALL_WORKSPACES,
@@ -149,11 +151,28 @@ describe("the title bar's workspaces", function () {
     for (const one of ["alpha", "beta"])
       if (!(await pinsNow()).includes(one)) await pinned(one, true);
     await goToWorkspace("alpha");
+    const plane = await projectInFront();
     const wereOpen: Running = await chatsRunning();
+    const before = new Set(await runningIn(plane));
     try {
-      // The fixture's shell runs `purlis hook userpromptsubmit` before it writes a byte: the turn
-      // runs because its hook said so (ADR 0076), and nothing here reads what it prints.
       await pressAndStart("New tab");
+      // The chat this started, by the number the core gave it (#1796).
+      let chat: number | undefined;
+      await browser.waitUntil(
+        async () => (chat = (await runningIn(plane)).find((one) => !before.has(one))) !== undefined,
+        { timeout: 30_000, interval: 250, timeoutMsg: "New tab started no chat in alpha" },
+      );
+      // At rest, its harness waits on its prompt: no turn, so no mark.
+      expect((await workingSeen("alpha")).marked).toBe(false);
+      // A turn, fired from inside the chat by the fixture's harness when it is typed A_TURN
+      // (#5126): the chat works because its hook said so (ADR 0076), and nothing here reads
+      // what it prints.
+      aTurnIsWanted(plane, String(chat));
+      const keyboard = await $(
+        `[data-testid="pane"][data-session="${chat}"] .xterm-helper-textarea`,
+      );
+      await keyboard.waitForExist({ timeout: 10_000, timeoutMsg: `chat ${chat} has no pane` });
+      await keyboard.addValue(`${A_TURN}\n`);
       await browser.waitUntil(async () => (await workingSeen("alpha")).marked, {
         timeout: 30_000,
         timeoutMsg: `alpha's chip never wore the working mark: ${JSON.stringify(await workingSeen("alpha"))}`,
