@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794226319092,
+  "lastUpdate": 1794226359851,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -18234,6 +18234,40 @@ window.BENCHMARK_DATA = {
             "value": 970.6,
             "unit": "MB",
             "extra": "median of 6 samples: 937.3, 955.9, 965.3, 975.9, 976.1, 1044 MB; window 649.6 MB, session host 321 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide",
+            "email": "aaron.yor@gmail.com"
+          },
+          "committer": {
+            "name": "GitHub",
+            "username": "web-flow",
+            "email": "noreply@github.com"
+          },
+          "id": "46ea93a5c3a57f9af8c3191d51133238448239c3",
+          "message": "M66: Get project's progress on the meter family; list family's ⋯ by the pointer and folds that choose (#3731, #3769) (#5941)\n\n* Get project's clone progress draws on the meter family's ProgressBar (#3731)\n\nGit's stage names the bar and the percent is its value, indeterminate\nuntil git gives one. Only the bar's own polite line says them, so the\nstatus line no longer repeats them. purlis/meter-family has no file off.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZKBZ5FRV1AEYA7A1RT5D0D\nPurlis-Persona: steward\n\n* List family: the card row's ⋯ by the pointer, folds in a list that chooses, a run's state under a fold (#3769)\n\n1. The ⋯ asks for its row's menu from itself (askForAMenuFrom): by the\n   pointer the menu takes the keyboard with no item chosen, from the keys\n   on its first item. It says aria-expanded while open (the row hands its\n   buttons MenuOpenedFrom) and has the keyboard back as the menu closes.\n2. Decided and built: a List that chooses marks its fold rows and a run's\n   closing line isDisabled under disabledBehavior=\"selection\" (now its\n   default), so they still fold and Select all leaves them out. The\n   Library drops its hand-kept disabledKeys.\n3. Decided: the family keeps no fold state; a run under a section keeps\n   its fold only where its owner holds it, as both views that fold runs\n   already do. Held by a test and the docs.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZKBZ5FRV1AEYA7A1RT5D0D\nPurlis-Persona: steward\n\n* Get project's progress: say git's first percent and a stage with no percent (#3731)\n\nFrom the code review: an indeterminate ProgressBar said nothing, so the\nfirst percent after Connecting was the first words the bar was given and\nnever spoken, and a stage with no percent was never heard. It now says\nits label alone while no end is known.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZKBZ5FRV1AEYA7A1RT5D0D\nPurlis-Persona: steward\n\n* List family's ⋯: the menu module says which presses are the pointer's (#3769)\n\nFrom the code review: askForAMenuFrom takes the press's pointerType and\nclassifies it beside FROM_THE_KEYS; MenuOpenedFrom is an HTMLElement, as\nuseContextMenu returns; onClosed says a menu button gets the keyboard back\ninstead.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZKBZ5FRV1AEYA7A1RT5D0D\nPurlis-Persona: steward\n\n* CardRow story: the ⋯'s menu has several items, none chosen (#3769)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZKBZ5FRV1AEYA7A1RT5D0D\nPurlis-Persona: steward\n\n* Get project's progress: baselines from #5941's stories run (#3731)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZKBZ5FRV1AEYA7A1RT5D0D\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-09T08:57:35Z",
+          "url": "https://github.com/purlis/purlis/commit/46ea93a5c3a57f9af8c3191d51133238448239c3"
+        },
+        "date": 1794226355427,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 2282.2,
+            "unit": "MB",
+            "extra": "median of 3 samples: 2073.8, 2282.2, 2546.2 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 983.2,
+            "unit": "MB",
+            "extra": "median of 6 samples: 946.6, 964.5, 978.3, 988.1, 988.5, 1053 MB; window 651 MB, session host 332.5 MB"
           }
         ]
       }
