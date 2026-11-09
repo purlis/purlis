@@ -31,6 +31,13 @@ vi.mock("@xterm/xterm", async (real) => {
   return { ...xterm, Terminal: Recorded };
 });
 
+// The freeze each test forces is left frozen: a stuck terminal starting again
+// (`stuckWrites.ts`, tested in `SessionPane.stuckWrites.test.tsx`) would end what the watchdog
+// is watching.
+vi.mock("./stuckWrites", () => ({
+  watchWrites: (_key: string, write: unknown) => ({ write, dispose: () => {} }),
+}));
+
 vi.mock("./renderer", async (real) => ({
   ...(await real<typeof import("./renderer")>()),
   draw: () => new Promise(() => {}),

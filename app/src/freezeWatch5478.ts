@@ -194,6 +194,14 @@ export function watchForFreeze(
       },
       errors,
       pane: { cols: pane.cols, rows: pane.rows },
+      // Which screen, and where its cursor and foot are against the lines it holds: a foot past
+      // them is what made `print` throw (`altScreenRows.ts`).
+      buffer: {
+        type: pane.buffer.active.type,
+        baseY: pane.buffer.active.baseY,
+        cursorY: pane.buffer.active.cursorY,
+        length: pane.buffer.active.length,
+      },
       lastResizeSent: lastResize,
       visibilityState: page.visibilityState,
       intersecting,

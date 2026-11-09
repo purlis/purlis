@@ -68,6 +68,12 @@ export function takeKeptTerminal<T extends KeptTerminal>(key: string): T | undef
   return terminal as T | undefined;
 }
 
+/** Lets go of chat `key`'s kept terminal, if it is held here: it starts again when next shown. */
+export function letGoOfKeptTerminal(key: string): void {
+  held.get(key)?.release();
+  held.delete(key);
+}
+
 /** Lets go of every kept terminal and forgets what was shown: between tests. */
 export function letGoOfKeptTerminals(): void {
   for (const terminal of held.values()) terminal.release();

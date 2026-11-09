@@ -56,6 +56,8 @@ import { drawnReports, writePerFrame } from "./paneWrites";
 import { watchForFreeze } from "./freezeWatch5478"; // [DEBUG-5478]
 import { watchForCover } from "./coverWatch5478"; // [DEBUG-5478]
 import { watchForNoEcho } from "./noEcho";
+import { watchWrites } from "./stuckWrites";
+import { keepAltScreenToRows } from "./altScreenRows";
 import { useProjectShown } from "./projectShown";
 import { viewOpening } from "./slowLog";
 import { FIRST_PAGE, keepInView, pageHistory } from "./historyPages";
@@ -67,6 +69,7 @@ import {
   chatShown,
   keepTerminal,
   keptKey,
+  letGoOfKeptTerminal,
   takeKeptTerminal,
   type KeptTerminal,
 } from "./keptTerminals";
@@ -441,6 +444,9 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
     // its rows as a list a screen reader reads, and says what is written as it arrives.
     screenReaderMode: screenReaderMode(),
   });
+  // **Its alternate screen holds no more lines than it has rows** (#5478): xterm.js 6.0.0 lets
+  // that slip on a resize, and its write loop then throws for good (`altScreenRows.ts`).
+  const altScreenKept = keepAltScreenToRows(pane);
   const fitting = new FitAddon();
   pane.loadAddon(fitting);
   /**
@@ -643,16 +649,40 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
   // again has its screen as it is now and nothing to catch up.
   // What arrives within a frame is one write to the terminal, not one per chunk (#4732): one
   // for the terminal, whichever view it came from, so a page's reset stays in its order.
-  const writes = writePerFrame((bytes, parsed) => {
-    // [DEBUG-5478] An exception here is noted for #5478's line, then thrown on unchanged.
-    freeze.written();
-    try {
-      pane.write(bytes, parsed);
-    } catch (err) {
-      freeze.threw("write", err);
-      throw err;
-    }
-  });
+  // **A terminal that stops parsing what it is written starts again** (#5478, `stuckWrites.ts`):
+  // its view would never be reported drawn again, and the host would send it nothing more.
+  const watched = watchWrites(
+    keptKey(plane, session),
+    (bytes, parsed) => {
+      // [DEBUG-5478] An exception here is noted for #5478's line, then thrown on unchanged.
+      freeze.written();
+      try {
+        pane.write(bytes, parsed);
+      } catch (err) {
+        freeze.threw("write", err);
+        throw err;
+      }
+    },
+    (said) => {
+      // [DEBUG-5478] What the window knew of the terminal as it was found stuck.
+      void commands
+        .debug5478Log(
+          `pane started again, its writes stuck: ${JSON.stringify({
+            session,
+            ...said,
+            view: view ?? null,
+            pieces,
+            shown: live.owner !== undefined,
+          })}`,
+        )
+        .catch(() => {});
+      // One drawn starts again in its pane; one kept off the window is let go of, and starts
+      // again when it is next shown.
+      if (live.owner !== undefined) live.owner.startAgain();
+      else letGoOfKeptTerminal(keptKey(plane, session));
+    },
+  );
+  const writes = writePerFrame(watched.write);
   /** Ends the stall log's note of the view being opened (`slowLog.ts`). */
   let openingDone = () => {};
   // What the view is sent waits here until the terminal is the size that screen was drawn
@@ -758,6 +788,8 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
     resized.dispose();
     if (view !== undefined) void commands.unwatchSession(plane, session, view);
     writes.dispose();
+    watched.dispose();
+    altScreenKept.dispose();
     freeze.dispose(); // [DEBUG-5478]
     echo.dispose();
     pane.dispose();
