@@ -147,7 +147,7 @@ describe("the combobox", () => {
     const root = box().closest('[data-scope="combobox"][data-part="root"]') as Element;
     expect(root).toHaveAttribute("data-invalid");
     expect(drawnWith(root, "border-color")).toBe("var(--danger-base)");
-    expect(drawnWith(root, "border")).toBe("1px solid var(--border-control)");
+    expect(drawnWith(root, "border")).toBe("1px solid var(--border-input)");
     // Still a combobox: ↓ opens its suggestions.
     await user.click(box());
     await user.keyboard("{ArrowDown}");

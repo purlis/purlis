@@ -609,7 +609,7 @@ export function TreeRow<T extends object>({
                 <FocusHeard onFocus={onFocus} onBlur={onBlur} />
               )}
               {twist === "lead" && toggle}
-              {rowHolds(content, owned.menu, tipped)(state)}
+              {rowHolds(content, owned, tipped)(state)}
               {twist === "trail" && toggle}
               {state.allowsDragging && <NoDrag />}
             </>

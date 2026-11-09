@@ -468,7 +468,7 @@ import { hasTasks, type Ended, type Needing } from "./tabTasks";
 import { readUsed, type UsedAsk } from "./tasksUsed";
 import { finishedBucketOf, taskBucketOf } from "./taskBuckets";
 import { stateClock } from "./stateClock";
-import { useTabIds } from "./StripTablist";
+import { useTabIds } from "./ui/tabs/TabStrip";
 import { TASK_KEY_ROW, taskKeyOf } from "./taskKeys";
 import { paneStepOf } from "./moveKeys";
 import { paneToward } from "./panePlaces";

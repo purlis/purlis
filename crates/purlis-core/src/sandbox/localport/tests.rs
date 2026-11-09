@@ -28,6 +28,22 @@ fn a_port_is_one_whole_number_from_1_to_65535() {
 }
 
 #[test]
+fn a_resolvers_port_is_never_a_port_to_allow_and_is_left_out_at_a_start() {
+    // A resolver listening on this machine would answer a chat's lookups of names its sandbox
+    // does not let it reach.
+    for typed in ["53", ":53", "853"] {
+        assert_eq!(
+            port(typed),
+            Err(Refused::Outside(
+                super::super::services::NAME_LOOKUP_REFUSED.to_owned()
+            )),
+            "{typed}"
+        );
+    }
+    assert_eq!(still_ports(&[53, 50796, 853]), vec![50796]);
+}
+
+#[test]
 fn purlis_own_listener_is_never_a_port_to_allow_and_is_left_out_at_a_start() {
     let listener = bind_loopback().expect("a loopback port");
     let own_port = listener.local_addr().expect("bound").port();

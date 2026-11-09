@@ -25,9 +25,13 @@ use crate::worktree::git;
 /// Marks a record charter derived rather than discovered: the plane's own repo. Never saved.
 pub const PLANE_SOURCE: &str = "plane";
 
+/// The folder the inventory is in under a plane root, which no chat writes: a Clone by name
+/// clones the URL it records ([`crate::sandbox::Denied::of`]).
+pub const DIR: &str = "inventory";
+
 /// Where the inventory lives under a plane root.
 pub fn path(root: &Path) -> PathBuf {
-    root.join("inventory").join("repos.json")
+    root.join(DIR).join("repos.json")
 }
 
 /// A coarse role inferred from the repo's name. Python's `classify_kind`.

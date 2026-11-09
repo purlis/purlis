@@ -39,7 +39,9 @@ import { look } from "./look";
  *  each one is named for the file it shows (DS-6, #629). */
 function reading(language: Compartment, name: string): Extension[] {
   return [
-    EditorView.contentAttributes.of({ "aria-label": name }),
+    // A Tab stop it already is, through `contenteditable`; said with a `tabindex` too, so a side
+    // that scrolls is seen to hold what the keyboard reaches (axe's scrollable-region-focusable).
+    EditorView.contentAttributes.of({ "aria-label": name, tabindex: "0" }),
     lineNumbers(),
     highlightActiveLineGutter(),
     highlightSpecialChars(),

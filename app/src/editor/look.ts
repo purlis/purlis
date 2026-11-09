@@ -15,7 +15,8 @@
  * The editor's ground and words are `terminal.background` and `terminal.foreground`; each
  * syntax role is its own token, with its italic and bold (`--syntax-<role>-font-style` and
  * `-font-weight`, written by `theme.apply`). Purlis Classic gives each role the terminal colour
- * the editor borrowed before, so it draws as it did.
+ * the editor borrowed before, lifted where it would not read at 4.5:1 on a diff's changed word
+ * (#3796), which the built-ins hold every role to on every ground here.
  *
  * **Order is meaning here.** Two classes can land on one token (a heading's is inherited by what
  * it holds), and the later rule wins. `variable`, `operator` and `punctuation` come first, so

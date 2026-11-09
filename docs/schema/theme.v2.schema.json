@@ -367,6 +367,7 @@
               "border.subtle",
               "border.strong",
               "border.control",
+              "border.input",
               "accent.base",
               "accent.surface",
               "accent.wash",
@@ -388,7 +389,7 @@
               "layer.divider"
             ]
           },
-          "maxItems": 134
+          "maxItems": 135
         },
         "hues": {
           "description": "A workspace colour's hue in this theme: the hue of this colour. A workspace's own #rrggbb is always its own hue.",
@@ -12034,6 +12035,9 @@
         "border.control": {
           "$ref": "#/$defs/colour"
         },
+        "border.input": {
+          "$ref": "#/$defs/colour"
+        },
         "accent.base": {
           "$ref": "#/$defs/colour"
         },
@@ -13164,6 +13168,7 @@
         "border.subtle",
         "border.strong",
         "border.control",
+        "border.input",
         "accent.base",
         "accent.surface",
         "accent.wash",
@@ -13304,6 +13309,7 @@
         "border.subtle",
         "border.strong",
         "border.control",
+        "border.input",
         "accent.base",
         "accent.surface",
         "accent.wash",
@@ -13443,6 +13449,7 @@
         "border.subtle",
         "border.strong",
         "border.control",
+        "border.input",
         "accent.base",
         "accent.surface",
         "accent.wash",

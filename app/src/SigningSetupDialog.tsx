@@ -64,6 +64,12 @@ type Add =
 /** The forge's reasons a commit's email is not one of the account's verified ones. */
 export const EMAIL_REASONS = ["unverified_email", "no_user", "bad_email"];
 
+/** Whether Check's answer is about the commit's email (#5631): the forge said so, or it said it
+ *  doesn't know a key the account lists, which on GitHub means the email matched no account
+ *  holding it (#5916). */
+export const aboutTheEmail = (check: SigningCheck): boolean =>
+  EMAIL_REASONS.includes(check.reason) || check.email_is_why;
+
 /** The by-hand step, as reading and copying the key went. */
 const byHandAt = (copied: boolean | { unread: string }): Add =>
   typeof copied === "object"
@@ -73,8 +79,8 @@ const byHandAt = (copied: boolean | { unread: string }): Add =>
 type Check =
   | { at: "checking" }
   | { at: "found"; result: SigningCheck }
-  /** The email isn't one the forge verifies (#5631): the account's verified ones, once read,
-   *  and the one picked. */
+  /** The email isn't one the forge verifies (#5631), or a key the account lists went unmatched
+   *  because of it (#5916): the account's verified ones, once read, and the one picked. */
   | {
       at: "email";
       result: SigningCheck;
@@ -82,7 +88,7 @@ type Check =
       picked?: string;
       why?: string;
     }
-  | { at: "nothing-pushed" }
+  | { at: "nothing-pushed"; email: string }
   | { at: "trouble"; why: string };
 
 type Now =
@@ -189,8 +195,8 @@ export function SigningSetupDialog({
           go({ step: "check", check: { at: "trouble", why: checked.error } });
         else if (checked.data.verified) go({ step: "done", email: checked.data.email });
         else if (checked.data.reason === "nothing_pushed")
-          go({ step: "check", check: { at: "nothing-pushed" } });
-        else if (EMAIL_REASONS.includes(checked.data.reason)) {
+          go({ step: "check", check: { at: "nothing-pushed", email: checked.data.email } });
+        else if (aboutTheEmail(checked.data)) {
           const result = checked.data;
           go({ step: "check", check: { at: "email", result } });
           void commands.signingEmails(on).then((read) =>
@@ -645,14 +651,26 @@ function Body({
               {reasonSaid(now.check.result, login, forge)}
             </p>
           )}
+          {now.check.at === "found" && (
+            <p>
+              {gitlab ? "Chat commits on this Mac use " : "The test commit was made as "}
+              <code>{now.check.result.email}</code>.
+            </p>
+          )}
           {now.check.at === "email" && (
-            <EmailChoice check={now.check} login={login} forge={forge} onPick={onPick} />
+            <EmailChoice
+              check={now.check}
+              login={login}
+              forge={forge}
+              gitlab={gitlab}
+              onPick={onPick}
+            />
           )}
           {now.check.at === "nothing-pushed" && (
             <p role="status">
-              Signing is on: chat commits on this Mac are signed from now on. {forge} can only check
-              a commit that&apos;s there, so the ✓ shows once a chat pushes its first signed commit
-              to {login}&apos;s repos.
+              Signing is on: chat commits on this Mac are signed from now on, as{" "}
+              <code>{now.check.email}</code>. {forge} can only check a commit that&apos;s there, so
+              the ✓ shows once a chat pushes its first signed commit to {login}&apos;s repos.
             </p>
           )}
           {now.check.at === "trouble" && (
@@ -808,29 +826,41 @@ function AddBody({
 }
 
 /**
- * **The Check step's email choice** (#5631, ADR 0116 §6): why the email matters, in one
+ * **The Check step's email choice** (#5631, #5916, ADR 0116 §6): why the email matters, in one
  * sentence, and the account's verified addresses to sign chat commits as; with none, what to do
- * on the forge, and no ✓.
+ * on the forge, and no ✓. Where the forge said it doesn't know a key the account lists, the
+ * sentence says the email is why, never to add the key again.
  */
 function EmailChoice({
   check,
   login,
   forge,
+  gitlab,
   onPick,
 }: {
   check: { result: SigningCheck; emails?: SigningEmails; picked?: string; why?: string };
   login: string;
   forge: string;
+  gitlab: boolean;
   onPick: (email: string) => void;
 }) {
   const emails = check.emails?.emails;
   return (
     <>
-      <p className="said-in-full">
-        The key is on {forge}, but your chat commits use <code>{check.result.email}</code>, which
-        isn&apos;t a verified email on {login}. {forge} only verifies a commit whose email is one of
-        yours.
-      </p>
+      {check.result.email_is_why ? (
+        <p className="said-in-full">
+          The key is on {login}, but{" "}
+          {gitlab ? "your chat commits use" : "the test commit was made as"}{" "}
+          <code>{check.result.email}</code>, which isn&apos;t a verified email on {login}. {forge}{" "}
+          picks the account to check a signature by the commit&apos;s email.
+        </p>
+      ) : (
+        <p className="said-in-full">
+          The key is on {login}, but your chat commits use <code>{check.result.email}</code>, which
+          isn&apos;t a verified email on {login}. {forge} only verifies a commit whose email is one
+          of yours.
+        </p>
+      )}
       {emails === undefined && check.why === undefined && (
         <p className="pending" role="status" aria-busy="true">
           Reading your verified emails on {forge}…

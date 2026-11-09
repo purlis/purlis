@@ -1,0 +1,46 @@
+{
+  "source": "GitHub REST API version 2022-11-28: docs.github.com/en/rest/users/ssh-signing-keys (List SSH signing keys for a user: public, no scope) and docs.github.com/en/rest/users/emails with docs.github.com/en/rest/users/users (the account's verified addresses and its noreply one). What Check reads after GitHub answers unknown_key for a test commit (#5916): GitHub picks the account to verify an SSH signature against by the commit's email. The key is the test's own, put in for @KEY@. This device's key is listed; the sign-in may not list the account's emails (403).",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "users/octocat/ssh_signing_keys"
+          }
+        },
+        "fields": [
+          {
+            "typed": [
+              "per_page",
+              "100"
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "[{\"id\": 4242, \"key\": \"@KEY@\"}]",
+        "err": "",
+        "status": 200
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "user/emails"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 1,
+        "out": "",
+        "err": "Resource not accessible by integration (HTTP 403)",
+        "status": 403
+      }
+    }
+  ]
+}
