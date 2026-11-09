@@ -1026,3 +1026,90 @@ fn two_claude_code_chats_each_write_a_temporary_folder_of_their_own_and_not_the_
         temps[0]
     );
 }
+
+/// **A held file the host rewrites by a rename while the chat runs stays held**: git writes a
+/// clone's `.git/config` (and `~/.gitconfig`) through a lockfile renamed over it, the person's
+/// or purlis's own git outside the sandbox among them. With the chat's command running, the
+/// clone's config is rewritten that way from here, and the command then tries to write it: at
+/// both levels it is refused, and the file holds what the host wrote.
+#[test]
+fn a_held_file_the_host_rewrites_by_a_rename_while_the_chat_runs_stays_held() {
+    purlis_core::unsteered!();
+    let Some(program) = std::env::var_os("PURLIS_CLAUDE_CODE").map(PathBuf::from) else {
+        return;
+    };
+    for (level, name, manifest) in LEVELS {
+        let scratch = tempfile::tempdir().expect("a folder");
+        let at = scratch.path().canonicalize().expect("a real folder");
+        let home = at.join("home");
+        let bin = at.join("bin");
+        let root = at.join("project");
+        let tmp = at.join("tmp");
+        for folder in [&home.join(".claude"), &bin, &tmp] {
+            fs::create_dir_all(folder).expect("a folder");
+        }
+        lay_out(&root, manifest);
+        let machine = Machine {
+            env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
+            home: Some(home.clone()),
+            os: Os::this(),
+        };
+        let (at_level, settings) = settings_for(&root, &machine);
+        assert_eq!(at_level, level, "{name}");
+        let file = at.join("claude.json");
+        fs::write(&file, settings.to_string()).expect("the settings");
+        let screened = purlis_core::harness::claude::project::screen_with(Some(&root), None);
+        let config = root.join("repo/.git/config");
+        let (ready, go) = (tmp.join("probe-ready"), tmp.join("probe-go"));
+        let command = format!(
+            ": > '{ready}'; i=0; while [ ! -e '{go}' ] && [ $i -lt 120 ]; do sleep 1; \
+             i=$((i+1)); done; if [ ! -e '{go}' ]; then echo 'rename-probe: no go'; \
+             elif printf '\\n[probe]\\n\\twritten = yes\\n' >> '{config}' 2>/dev/null; then \
+             echo 'rename-probe: written'; else echo 'rename-probe: refused'; fi",
+            ready = ready.display(),
+            go = go.display(),
+            config = config.display(),
+        );
+        // The host's git, outside the sandbox: a lockfile renamed over the config once the
+        // chat's command runs.
+        let host = {
+            let (config, ready, go) = (config.clone(), ready.clone(), go.clone());
+            std::thread::spawn(move || {
+                let deadline = Instant::now() + Duration::from_secs(240);
+                while !ready.exists() {
+                    if Instant::now() > deadline {
+                        return false;
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                let mut text = fs::read_to_string(&config).expect("the config");
+                text.push_str("[user]\n\temail = host@example.com\n");
+                let lock = config.with_file_name("config.lock");
+                fs::write(&lock, text).expect("the lockfile");
+                fs::rename(&lock, &config).expect("renamed over the config");
+                fs::write(&go, "").expect("go");
+                true
+            })
+        };
+        let what = format!("claude-code at {name}");
+        let said = ran(
+            &program,
+            &home,
+            &tmp,
+            &root,
+            &file,
+            &screened.setting_sources(),
+            &what,
+            command,
+        );
+        assert!(host.join().expect("the host's rename"), "{what}: never ready:\n{said}");
+        let config_now = fs::read_to_string(&config).expect("the config");
+        assert!(config_now.contains("host@example.com"), "{config_now}");
+        assert!(
+            said.lines()
+                .any(|line| line.trim() == "rename-probe: refused"),
+            "{what}: the chat wrote the config the host renamed into place:\n{said}\n{config_now}"
+        );
+        assert!(!config_now.contains("[probe]"), "{what}: {config_now}");
+    }
+}
