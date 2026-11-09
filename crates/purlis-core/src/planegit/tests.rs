@@ -3616,6 +3616,12 @@ fn two_machines_appending_to_the_same_log_and_index_both_save_by_the_union_merge
         "- [one](one.md)\n",
     )
     .unwrap();
+    // The memories the index names: a save rebuilds an index from them (#5864).
+    std::fs::write(
+        fixture.root.join("personas/steward/memory/one.md"),
+        "# one\n",
+    )
+    .unwrap();
     run(&fixture.root, &["add", "-A"]);
     run(
         &fixture.root,
@@ -3653,6 +3659,12 @@ fn two_machines_appending_to_the_same_log_and_index_both_save_by_the_union_merge
         &theirs.join("personas/steward/memory/MEMORY.md"),
         "- [theirs](theirs.md)\n",
     );
+    std::fs::write(
+        theirs.join("personas/steward/memory/theirs.md"),
+        "# theirs\n",
+    )
+    .unwrap();
+    run(&theirs, &["add", "-A"]);
     run(&theirs, &["commit", "-q", "-am", "theirs"]);
     run(&theirs, &["push", "-q", "origin", "main"]);
 
@@ -3665,6 +3677,11 @@ fn two_machines_appending_to_the_same_log_and_index_both_save_by_the_union_merge
         &fixture.root.join("personas/steward/memory/MEMORY.md"),
         "- [mine](mine.md)\n",
     );
+    std::fs::write(
+        fixture.root.join("personas/steward/memory/mine.md"),
+        "# mine\n",
+    )
+    .unwrap();
     let (code, said) = fixture.just_save();
 
     assert_eq!(code, 0, "{said}");
@@ -3675,6 +3692,65 @@ fn two_machines_appending_to_the_same_log_and_index_both_save_by_the_union_merge
         index.contains("theirs.md") && index.contains("mine.md"),
         "{index}"
     );
+}
+
+#[test]
+fn a_push_mode_replay_rebuilds_a_memory_index_both_machines_added_to_with_no_union_rule() {
+    let fixture = Fixture::plane();
+    // No `.gitattributes`: nothing merges the index by lines.
+    let store = fixture.root.join("personas/steward/memory");
+    std::fs::create_dir_all(&store).unwrap();
+    std::fs::write(store.join("one.md"), "# One\n").unwrap();
+    std::fs::write(
+        store.join("MEMORY.md"),
+        "# Memory Index\n\n- [One](one.md)\n",
+    )
+    .unwrap();
+    run(&fixture.root, &["add", "-A"]);
+    run(&fixture.root, &["commit", "-q", "-m", "one memory"]);
+    let bare = fixture.with_a_remote();
+    run(
+        &fixture.root,
+        &[
+            "push",
+            "-q",
+            &bare.display().to_string(),
+            "HEAD:refs/heads/main",
+        ],
+    );
+
+    // Somebody else remembers something and pushes first.
+    let theirs = fixture.root.parent().unwrap().join("theirs");
+    run(
+        fixture.root.parent().unwrap(),
+        &[
+            "clone",
+            "-q",
+            &bare.display().to_string(),
+            &theirs.display().to_string(),
+        ],
+    );
+    run(&theirs, &["config", "user.name", "Other"]);
+    run(&theirs, &["config", "user.email", "other@example.invalid"]);
+    let their_store = theirs.join("personas/steward/memory");
+    std::fs::write(their_store.join("theirs.md"), "# Theirs\n").unwrap();
+    append(&their_store.join("MEMORY.md"), "- [Theirs](theirs.md)\n");
+    run(&theirs, &["add", "-A"]);
+    run(&theirs, &["commit", "-q", "-m", "theirs"]);
+    run(&theirs, &["push", "-q", "origin", "main"]);
+
+    // This machine remembers something else, and saves.
+    std::fs::write(store.join("mine.md"), "# Mine\n").unwrap();
+    append(&store.join("MEMORY.md"), "- [Mine](mine.md)\n");
+    let (code, said) = fixture.just_save();
+
+    assert_eq!(code, 0, "{said}");
+    assert!(said.contains("Pushed main"), "{said}");
+    let index = std::fs::read_to_string(store.join("MEMORY.md")).unwrap();
+    assert!(!index.contains("<<<<<<<"), "{index}");
+    for memory in ["one.md", "theirs.md", "mine.md"] {
+        assert_eq!(index.matches(memory).count(), 1, "{memory} in {index}");
+    }
 }
 
 fn append(path: &Path, text: &str) {

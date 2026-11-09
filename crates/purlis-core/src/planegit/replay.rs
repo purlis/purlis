@@ -14,8 +14,11 @@
 //! change `onto` already has (`rev-list --cherry-pick`). A commit with nothing left to change once
 //! replayed is dropped, as git's own rebase drops it.
 //!
-//! A conflict stops the replay with nothing made: the caller says it, and the window's Resolve
-//! settles it in a resolve folder ([`super::resolvefolder`]), never in a stopped rebase at the root.
+//! Each commit is merged as a save's merge is ([`bringin::plan_between`], #5864): what purlis
+//! generates is rebuilt from its sources, never merged by lines, so a replay needs no `merge=union`
+//! rule for a memory index. Only a conflict in what a person wrote stops the replay, with nothing
+//! made: the caller says it, and the window's Resolve settles it in a resolve folder
+//! ([`super::resolvefolder`]), never in a stopped rebase at the root.
 
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -123,41 +126,17 @@ enum Merged {
     Conflict(Vec<String>),
 }
 
-/// `pick`'s change from `parent`, merged onto `at`.
+/// `pick`'s change from `parent`, merged onto `at`, as a save's merge makes it
+/// ([`bringin::plan_between`], #5864): a file purlis generates (a memory store's `MEMORY.md`, a
+/// `sessions/index.md`, a workspace's `todos/MEMORY.md`) is rebuilt from the sources the merged
+/// tree holds, and the settings file is merged key by key, so only what a person wrote can stop
+/// the replay.
 fn merged(root: &Path, parent: &str, at: &str, pick: &str) -> Result<Merged, String> {
-    let base = format!("--merge-base={parent}");
-    let run = git::run(
-        root,
-        &[
-            "merge-tree",
-            "--write-tree",
-            "-z",
-            "--name-only",
-            "--no-messages",
-            &base,
-            at,
-            pick,
-        ],
-        super::WRITE,
-    )
-    .map_err(|unavailable| unavailable.to_string())?;
-    // 0 is clean and 1 is conflicts: anything else is git refusing, with no tree.
-    let mut fields = run.out.split('\0').filter(|field| !field.is_empty());
-    match run.code {
-        Some(0) => fields
-            .next()
-            .filter(|tree| is_object_name(tree))
-            .map(|tree| Merged::Tree(tree.to_owned()))
-            .ok_or_else(|| tail(&run)),
-        Some(1) => {
-            let _tree = fields.next();
-            let mut files: Vec<String> = fields.map(str::to_owned).collect();
-            files.sort();
-            files.dedup();
-            Ok(Merged::Conflict(files))
-        }
-        _ => Err(tail(&run)),
+    let plan = bringin::plan_between(root, at, pick, Some(parent))?;
+    if !plan.person.is_empty() {
+        return Ok(Merged::Conflict(plan.person));
     }
+    bringin::tree_of(root, &plan).map(Merged::Tree)
 }
 
 /// `pick` written again as a commit of `tree` on `parent`: its author, date and message kept, and

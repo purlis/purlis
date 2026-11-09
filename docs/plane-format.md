@@ -1257,8 +1257,6 @@ key refuses.
   workspaces/*/pieces/*.jsonl merge=union
   workspaces/*/changes/log/*.jsonl merge=union
   workspaces/*/work/*.jsonl merge=union
-  personas/*/memory/MEMORY.md merge=union
-  workspaces/*/memory/MEMORY.md merge=union
   workspaces/*/todos/MEMORY.md merge=union
   workspaces/*/sessions/index.md merge=union
   sessions/index.md merge=union
@@ -1269,9 +1267,13 @@ key refuses.
   write (a newer build's), and commits the file with the rest of the save, so the plane's other
   machines take it from the target. A plane with no block gets one from `reinit`, which, like
   `init`, writes exactly this build's rules. A chat's sandbox may hold the file, and the window's next save then takes it.
-  A memory store's `MEMORY.md` keeps its rule only for a plain rebase, which replays one commit
-  at a time and rebuilds nothing (a save in `push` mode): every merge purlis makes rebuilds the
-  index instead, and never reads git's union of it (#5824 F4).
+  A memory store's `MEMORY.md` has no rule (#5864): every merge purlis makes rebuilds the
+  index instead, and never reads git's union of it (#5824 F4), and so does a save in `push`
+  mode, whose replay merges each of its commits as a merge does (`planegit/replay.rs`). A block
+  that still holds the two memory rules an older build wrote keeps them on a save, as it keeps
+  any rule this build does not write, and they are never read: only `init` and `reinit` take
+  them out. An older build's push-mode save still reads them, so a plane shared with one stays
+  as safe as it was.
 
   In a request mode (`pr`, `pr-merge`), a target that moved under an open request is brought
   in by one merge commit, by a save and by the app's look, where the request needs it: git's

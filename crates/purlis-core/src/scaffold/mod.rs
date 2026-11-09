@@ -1041,15 +1041,15 @@ fn merge_rules(run: &mut Run, root: &Path) {
 }
 
 /// The files a plane only ever grows by whole lines, merged by git's `union` driver so two
-/// machines appending to them never conflict (`docs/plane-format.md`, `.gitattributes`).
-const MERGE_RULES: [&str; 10] = [
+/// machines appending to them never conflict (`docs/plane-format.md`, `.gitattributes`). A memory
+/// store's `MEMORY.md` has none: every merge and replay purlis makes rebuilds it from its
+/// memories (#5824 F4, #5864).
+const MERGE_RULES: [&str; 8] = [
     "personas/_dispatch/*.jsonl merge=union",
     "personas/_skills/*.jsonl merge=union",
     "workspaces/*/pieces/*.jsonl merge=union",
     "workspaces/*/changes/log/*.jsonl merge=union",
     "workspaces/*/work/*.jsonl merge=union",
-    "personas/*/memory/MEMORY.md merge=union",
-    "workspaces/*/memory/MEMORY.md merge=union",
     "workspaces/*/todos/MEMORY.md merge=union",
     "workspaces/*/sessions/index.md merge=union",
     "sessions/index.md merge=union",
