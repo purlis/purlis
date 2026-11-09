@@ -459,13 +459,18 @@ struct Frame {
     /// where it decides: a blank or srcdoc document with no word of its own context, as one
     /// sandboxed without scripts may never have (#2018).
     sandboxed: Option<bool>,
+    /// The driver's count when some of the engine's events were lost while the driver knew this
+    /// frame, 0 where none have been since its frame tree was last read or the engine said it
+    /// navigated: a lost word of a navigation leaves `url` an address it may have left.
+    stale: u64,
 }
 
 impl Frame {
     /// Whether what this frame shows is not known: it stands on no ancestor's address until its
-    /// own session has said so (#4472).
+    /// own session has said so (#4472), nor on its own address while that may be one it has
+    /// left ([`Frame::stale`]).
     fn unknown(&self) -> bool {
-        self.unread && !at_web_address(&self.url)
+        self.stale != 0 || (self.unread && !at_web_address(&self.url))
     }
 
     /// **The origin this frame's document has**, by the web's rules for its address. A web
@@ -1111,6 +1116,9 @@ struct State {
     inspecting: Inspecting,
     /// The origin of the document each frame shows, as its own context has it.
     document_origins: DocumentOrigins,
+    /// How many of the engine's events the connection had lost when the driver last looked
+    /// ([`DevTools::dropped_events`]).
+    events_lost: u64,
 }
 
 /// **What the driver leaves to an Inspect** (#2028): the engine's word of these is the front
@@ -1643,6 +1651,7 @@ impl State {
             unread: owned_elsewhere,
             security_origin: String::new(),
             sandboxed: None,
+            stale: 0,
         });
         if parent.is_some() {
             entry.parent = parent;
@@ -1669,6 +1678,10 @@ impl State {
                     entry.security_origin = text("securityOrigin");
                 }
                 entry.unread = false;
+                // A read asked for once the events were lost says what the frame shows since.
+                if entry.stale <= since {
+                    entry.stale = 0;
+                }
             }
             Seen::Navigated => {
                 let moved = entry.session != session;
@@ -1679,6 +1692,7 @@ impl State {
                 entry.sandboxed = None;
                 entry.told = generation;
                 entry.unread = false;
+                entry.stale = 0;
                 page.shows = generation;
                 entry.generation = generation;
                 entry.loaded = generation;
@@ -1731,6 +1745,7 @@ impl State {
                 unread: true,
                 security_origin: String::new(),
                 sandboxed: None,
+                stale: 0,
             });
         entry.session = session.to_owned();
         entry.url = url.to_owned();
@@ -1745,6 +1760,52 @@ impl State {
     /// The engine says the target of `frame` is at `url` (#4472). The frame's own session may
     /// not be listening yet, and a move within a document is no new document, so this changes
     /// its address and nothing else.
+    /// **Some of the engine's events were lost**: a word that a frame navigated may be among
+    /// them, so no frame of any page is judged by the address the driver holds for it until a
+    /// frame tree read from now on says it again ([`Frame::stale`]). Answers every session, each
+    /// to be read anew.
+    fn events_lost(&mut self) -> Vec<String> {
+        self.generations += 1;
+        let lost = self.generations;
+        for frame in self
+            .pages
+            .iter_mut()
+            .flat_map(|page| page.frames.values_mut())
+        {
+            frame.stale = lost;
+        }
+        let mut sessions: Vec<String> = self.sessions.keys().cloned().collect();
+        sessions.sort();
+        sessions
+    }
+
+    /// The frames of `session` that were marked as of lost events before a frame tree read of it
+    /// began when the driver's count stood at `since`, and that the read does not hold:
+    /// `listed` names those it holds. Their word that they went may be among the events lost.
+    fn left_out_of_the_tree(
+        &self,
+        session: &str,
+        since: u64,
+        listed: &[String],
+    ) -> Vec<(String, String)> {
+        self.pages
+            .iter()
+            .flat_map(|page| {
+                page.frames
+                    .iter()
+                    .filter(|(id, frame)| {
+                        **id != page.target
+                            && frame.session == session
+                            && frame.stale != 0
+                            && frame.stale <= since
+                            && frame.told <= since
+                            && !listed.iter().any(|one| one == *id)
+                    })
+                    .map(|(id, _)| (page.target.clone(), id.clone()))
+            })
+            .collect()
+    }
+
     fn frame_told(&mut self, frame: &str, url: &str) {
         self.generations += 1;
         let told = self.generations;
@@ -1941,6 +2002,8 @@ enum FollowUp {
     Attach(String),
     Close(String),
     SetUp(String),
+    /// Some of the engine's events were lost: the session's frame tree is read anew.
+    ReadFrameTree(String),
     Release(String),
     /// The engine's own drag, told of only after the agent's drag that started it ended
     /// (#2839): cancelled at where that drag ended.
@@ -6072,6 +6135,12 @@ impl Inner {
         let mut left: Vec<String> = Vec::new();
         {
             let mut state = lock(&self.state);
+            // Where the engine's events overflowed, what the frames show is read anew.
+            let lost = self.devtools.dropped_events();
+            if lost > state.events_lost {
+                state.events_lost = lost;
+                follow.extend(state.events_lost().into_iter().map(FollowUp::ReadFrameTree));
+            }
             let params = &event.params;
             let text = |path: &str| {
                 params
@@ -6767,6 +6836,47 @@ impl Inner {
         let _ = said;
     }
 
+    /// **Reads `session`'s frame tree**: what each frame in it shows, unless the engine has said
+    /// it navigated since the read began. A read that fails leaves a frame at the address the
+    /// engine last said of it, and where it said none, or where events lost may have taken its
+    /// word of another, not known: it takes nothing until it says. A frame marked as of lost
+    /// events that the read does not hold is gone, its word that it went lost with them.
+    fn read_frame_tree(&self, session: &str) {
+        let since = lock(&self.state).generations;
+        if let Ok(tree) = self
+            .devtools
+            .call("Page.getFrameTree", json!({}), Some(session))
+        {
+            let mut state = lock(&self.state);
+            let mut listed = Vec::new();
+            let mut stack = vec![&tree["frameTree"]];
+            while let Some(node) = stack.pop() {
+                if let Some(id) = node["frame"]["id"].as_str() {
+                    listed.push(id.to_owned());
+                }
+                state.frame_seen(session, &node["frame"], Seen::Read { since });
+                if let Some(children) = node.get("childFrames").and_then(Value::as_array) {
+                    stack.extend(children);
+                }
+            }
+            let now = Instant::now();
+            for (target, frame) in state.left_out_of_the_tree(session, since, &listed) {
+                // One inside another left out went with it.
+                if !state
+                    .page(&target)
+                    .is_some_and(|page| page.frames.contains_key(&frame))
+                {
+                    continue;
+                }
+                let gone = state.frame_gone(&target, &frame);
+                if let Some(page) = state.page_mut(&target) {
+                    page.settle.frames_gone(session, &gone, now);
+                }
+            }
+        }
+        self.changed.notify_all();
+    }
+
     fn follow_up(&self, step: FollowUp) {
         let devtools = &*self.devtools;
         match step {
@@ -6828,21 +6938,9 @@ impl Inner {
                     json!({ "autoAttach": true, "waitForDebuggerOnStart": false, "flatten": true }),
                     on,
                 );
-                // A read that fails leaves a frame at the address the engine last said of it, and
-                // where it said none, not known: it takes nothing until it says.
-                let since = lock(&self.state).generations;
-                if let Ok(tree) = devtools.call("Page.getFrameTree", json!({}), on) {
-                    let mut state = lock(&self.state);
-                    let mut stack = vec![&tree["frameTree"]];
-                    while let Some(node) = stack.pop() {
-                        state.frame_seen(&session, &node["frame"], Seen::Read { since });
-                        if let Some(children) = node.get("childFrames").and_then(Value::as_array) {
-                            stack.extend(children);
-                        }
-                    }
-                }
-                self.changed.notify_all();
+                self.read_frame_tree(&session);
             }
+            FollowUp::ReadFrameTree(session) => self.read_frame_tree(&session),
             FollowUp::Judge { paused, outbound } => {
                 // Judged on a thread of its own, so a request is never held up behind another
                 // follow-up's calls; where that thread is gone, judged here.
