@@ -1555,13 +1555,11 @@ describe("the explorer's rows, in a region too narrow for them", () => {
     const twists = await browser.execute(() =>
       [
         ...document.querySelectorAll<HTMLElement>(
-          ':is([data-testid="explorer"], [data-testid="repos-view"]) :is(.ui-tree-row, [data-scope="tree"][data-part="root"])',
+          ':is([data-testid="explorer"], [data-testid="repos-view"]) [data-scope="tree"][data-part="root"]',
         ),
       ].flatMap((row) => {
-        // The Repos tree's twist (`.ui-tree-twist`), or the tree family's (`[data-part="twist"]`).
-        const icon = row.querySelector<SVGElement>(
-          ':scope > .ui-tree-twist > svg, [data-part="twist"] > svg',
-        );
+        // The tree family's twist (#2911, #3198).
+        const icon = row.querySelector<SVGElement>('[data-part="twist"] > svg');
         const box = row.getBoundingClientRect();
         // A row not drawn (its view is not the one shown) has no box to measure.
         if (icon === null || box.height === 0) return [];

@@ -190,8 +190,15 @@ const FinishedFold = memo(function FinishedFold({
 
 /** The key of chat `session`'s "Finished (n)" row: what the tree says is open by. */
 export function finishedLineId(session: number): string {
-  return `finished:${session}`;
+  return `${FINISHED_LINE}${session}`;
 }
+
+/** Whether `key` is a "Finished (n)" row's ({@link finishedLineId}). */
+export function isFinishedLineId(key: unknown): key is string {
+  return typeof key === "string" && key.startsWith(FINISHED_LINE);
+}
+
+const FINISHED_LINE = "finished:";
 
 /** Why a finished task has no Reopen. */
 const NO_CONVERSATION = "It cannot be reopened: its harness named no conversation to resume.";

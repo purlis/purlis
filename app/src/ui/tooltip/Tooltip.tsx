@@ -111,7 +111,7 @@ const CONTROLS = [
   "a[href]",
   "summary",
   "label",
-  ...["button", "link", "tab", "treeitem", "option", "menuitem", "row", "gridcell", "switch"].map(
+  ...["button", "link", "tab", "option", "menuitem", "row", "gridcell", "switch"].map(
     (role) => `[role="${role}"]`,
   ),
   // A list's rows that take the keyboard, one stop for the list (the Inbox's asks).

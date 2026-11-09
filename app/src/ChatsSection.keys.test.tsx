@@ -403,40 +403,79 @@ describe("the Chats list on the tree family (#3198)", () => {
 
   it("3. raises a chat's card from the row's own element, hover and focus, and describes the row by it", async () => {
     draw();
-    // The keyboard resting on the row brings up its card, which describes it.
+    // The pointer resting on the row brings up its card (the row's own hover).
+    await userEvent.hover(within(rowOf(3)).getByText("steward 3"));
+    const card = await screen.findByTestId("chat-card-3", {}, { timeout: CARD_DELAY_MS + 1000 });
+    expect(rowOf(3)).toHaveAttribute("aria-describedby", within(card).getByRole("tooltip").id);
+    await userEvent.unhover(within(rowOf(3)).getByText("steward 3"));
+    await waitFor(() => expect(screen.queryByTestId("chat-card-3")).toBeNull());
+    // The keyboard resting on the row brings it up too (the row's own focus), and leaving takes
+    // it down, and the row's description back.
     await userEvent.keyboard("{Shift}");
     act(() => rowOf(3).focus());
-    const card = await screen.findByTestId("chat-card-3", {}, { timeout: CARD_DELAY_MS + 1000 });
-    const tip = within(card).getByRole("tooltip");
-    expect(rowOf(3)).toHaveAttribute("aria-describedby", tip.id);
-    // The keyboard leaving takes it down, and the row's description back.
+    const again = await screen.findByTestId("chat-card-3", {}, { timeout: CARD_DELAY_MS + 1000 });
+    expect(rowOf(3)).toHaveAttribute("aria-describedby", within(again).getByRole("tooltip").id);
     act(() => rowOf(1).focus());
     await waitFor(() => expect(screen.queryByTestId("chat-card-3")).toBeNull());
     expect(rowOf(3)).not.toHaveAttribute("aria-describedby");
   });
 
   it("4. hears Space and Delete before the tree's own keys: nothing is chosen, and a control in the row keeps its keys", async () => {
-    const { pressed } = draw({ offers: [offer(besideId(2)), offer(taskStopId(2))] });
+    const { pressed, opened } = draw({
+      offers: [offer(besideId(2)), offer(taskStopId(2)), offer(renameId(2))],
+    });
     act(() => rowOf(2).focus());
     await userEvent.keyboard(" ");
     expect(rowOf(2)).not.toHaveAttribute("aria-selected");
-    expect(pressed).toEqual([besideId(2)]);
-    // On the row's own control, Space is the control's: the row's way is not asked for.
-    const more = within(rowOf(1)).queryAllByRole("button")[0];
-    if (more !== undefined) {
-      act(() => more.focus());
-      await userEvent.keyboard("{Delete}");
-      expect(pressed).toEqual([besideId(2)]);
-    }
+    await userEvent.keyboard("{Delete}");
+    expect(pressed).toEqual([besideId(2), taskStopId(2)]);
+    // On the row's own control (its ⋯), Space presses the control and Delete is not the row's.
+    const more = within(rowOf(2)).getByRole("button", { name: /^More for / });
+    act(() => more.focus());
+    await userEvent.keyboard(" ");
+    expect(await screen.findByRole("menu")).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+    act(() => more.focus());
+    await userEvent.keyboard("{Delete}");
+    expect(pressed).toEqual([besideId(2), taskStopId(2)]);
+    expect(opened).toEqual([]);
   });
 
-  it("5. nests the rows it holds still, and opens what `opens` says is open", () => {
+  it("5. nests the rows it holds still, and opens what `opens` says is open", async () => {
     draw();
     const tree = treeNamed("Chats of this project");
-    expect(
+    const shape = () =>
       rowsOf(tree).map(
         (row) => `${row.getAttribute("aria-level")} ${row.getAttribute("aria-label")}`,
-      ),
-    ).toEqual(["1 steward 1", "2 fix the login", "1 steward 3"]);
+      );
+    expect(shape()).toEqual(["1 steward 1", "2 fix the login", "1 steward 3"]);
+    // A fold set by hand is `opens`, which the tree is told as its open rows; and it is held
+    // while the pointer is over the list, as the list holds its rows still (V100-47).
+    await userEvent.hover(tree);
+    await keysOn(rowOf(1), "{ArrowLeft}");
+    await waitFor(() => expect(shape()).toEqual(["1 steward 1", "1 steward 3"]));
+    expect(rowOf(1)).toHaveAttribute("aria-expanded", "false");
+    await keysOn(rowOf(1), "{ArrowRight}");
+    await waitFor(() => expect(shape()).toEqual(["1 steward 1", "2 fix the login", "1 steward 3"]));
+  });
+
+  it("clears the done tasks from the Finished (n) row's menu, as from its button", async () => {
+    const cleared: string[][] = [];
+    render(
+      <ChatsHere.Provider value={fixedChats(WORKING)}>
+        <ChatsSection
+          rows={chatsTree(ROWS)}
+          front={1}
+          onOpen={() => {}}
+          finished={FINISHED}
+          onClearFinished={(ids) => cleared.push(ids)}
+        />
+      </ChatsHere.Provider>,
+    );
+    const fold = rowNamed(treeNamed("Chats of this project"), "Finished (1)");
+    act(() => fold.focus());
+    await userEvent.keyboard("{Shift>}{F10}{/Shift}");
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Clear finished" }));
+    expect(cleared).toEqual([["t-2"]]);
   });
 });

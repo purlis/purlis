@@ -171,7 +171,7 @@ function firstChildOf(row: HTMLElement): HTMLElement | undefined {
 function holdsControls(row: HTMLElement): boolean {
   return [
     ...row.querySelectorAll<HTMLElement>(
-      'button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"]), [tabindex="-1"]:is(button, a)',
+      'button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
     ),
   ].some((one) => one.closest('[data-part="twist"], [hidden]') === null && one.slot !== "chevron");
 }

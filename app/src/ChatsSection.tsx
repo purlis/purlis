@@ -71,7 +71,7 @@ import {
   unfolded,
   type ChatRow,
 } from "./chatsTree";
-import { finishedRows } from "./FinishedTasks";
+import { finishedRows, isFinishedLineId } from "./FinishedTasks";
 import type { TaskFacts } from "./shownState";
 import { standingOfRows } from "./sessionTasks";
 import { useTaskCount, useTaskCountSaid } from "./TasksBelow";
@@ -852,11 +852,7 @@ export function ChatsSection({
    *  hand (`fold`), and a "Finished (n)" line's is this window's. */
   const unfold = (keys: Set<Key>) => {
     for (const [session, open] of opens) if (keys.has(session) !== open) fold(session, open);
-    const lines = new Set(
-      [...keys].filter(
-        (key): key is string => typeof key === "string" && key.startsWith("finished:"),
-      ),
-    );
+    const lines = new Set([...keys].filter(isFinishedLineId));
     if (lines.size !== finishedOpen.size || [...lines].some((key) => !finishedOpen.has(key)))
       setFinishedOpen(lines);
   };
