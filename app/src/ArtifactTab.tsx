@@ -25,6 +25,7 @@ import {
   type ArtifactKeyPressed,
 } from "./artifacts";
 import { ArtifactQueries } from "./ArtifactQueries";
+import { ArtifactRegenerate } from "./ArtifactRegenerate";
 import { artifactDataIn, artifactsIn, useViewChanged } from "./planeChanged";
 import { Button } from "./ui/button/Button";
 import { EmptyState } from "./ui/empty-state/EmptyState";
@@ -117,6 +118,7 @@ export function ArtifactTab({
             Not generated on this machine
           </span>
         )}
+        <ArtifactRegenerate plane={plane} workspace={workspace} folder={folder} name={name} />
       </header>
       {unpinned ? (
         <EmptyState
