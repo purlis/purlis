@@ -3541,7 +3541,13 @@ body {
 
 .chats-section .question-who {
   min-inline-size: 0;
+  /* **Never more than a share of the list** (#3198): a row shrinks its words in proportion to
+     what each would take, so a name with no space to break at, taken whole, would leave the
+     chat's own name nothing and push the time out of the row. Held to a share of the list
+     (`chats`, the section's size), the chat's name keeps its share and the time stays whole. */
+  max-inline-size: 30cqi;
   overflow: hidden;
+  white-space: nowrap;
   text-overflow: ellipsis;
 }
 

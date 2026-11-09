@@ -310,6 +310,20 @@ describe("the Chats list's words wear text roles (#1920)", () => {
     }
   });
 
+  it("holds who a question waits on to a share of the list, so the chat's name and the time keep theirs", () => {
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      '<section class="chats-section"><span class="question-waits"><span class="question-who">asking x</span></span></section>',
+    );
+    const who = document.body.querySelector(".question-who") as Element;
+    try {
+      expect(drawnWith(who, "max-inline-size")).toBe("30cqi");
+      expect(drawnWith(who, "text-overflow")).toBe("ellipsis");
+    } finally {
+      who.closest("section")?.remove();
+    }
+  });
+
   it("puts a finished task's buttons under its name where they do not fit, so the list never scrolls sideways", () => {
     const section = draw();
     const row = rowAround(section.querySelector('.finished-task [data-part="label"]'));
