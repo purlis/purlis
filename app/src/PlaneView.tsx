@@ -11378,10 +11378,12 @@ export const PlaneView = memo(function PlaneView({
   const hand = handCount(plane, waiting?.length ?? 0, elsewhere);
   /**
    * **Snooze all on Asks** (#5647): the core keeps what each chat held, and lists a snoozed
-   * chat's asks apart until it asks something new; every list of this project's asks is read
+   * chat's asks apart until it asks something new, or until the time it was snoozed for runs out
+   * (#6018); every list of this project's asks is read
    * again after, so the ✋ and Asks drop them, or take them back, at once.
    */
   const snoozedAsks = questions?.snoozed;
+  const snoozedUntil = questions?.snoozed_until ?? null;
   const snoozing = useMemo<Snoozing>(() => {
     const done = (said: { status: "ok" } | { status: "error"; error: string }) => {
       asksMoved(plane);
@@ -11390,11 +11392,13 @@ export const PlaneView = memo(function PlaneView({
     const unsaid = (err: unknown) => ({ status: "error" as const, error: String(err) });
     return {
       snoozed: snoozedAsks ?? [],
-      snooze: async (chats) => done(await commands.snoozeInboxAsks(plane, chats).catch(unsaid)),
+      snoozedUntil,
+      snooze: async (chats, until) =>
+        done(await commands.snoozeInboxAsks(plane, chats, until).catch(unsaid)),
       wake: async (sessions) =>
         done(await commands.wakeInboxAsks(plane, sessions ?? null).catch(unsaid)),
     };
-  }, [plane, snoozedAsks]);
+  }, [plane, snoozedAsks, snoozedUntil]);
   const answeredOnPane = useCallback(
     (words: string, ask: Shown) => touchOnPane(ask, words),
     [touchOnPane],

@@ -3292,6 +3292,13 @@ export type Asking = {
 	 *  waits. Only [`asks_waiting`] puts any here.
 	 */
 	snoozed?: Shown[],
+	/**
+	 *  **When the first chat of [`Asking::snoozed`] comes back by itself** (#6018, ADR 0121
+	 *  decision 14), in seconds since 1970: snoozed for 1 hour or until tomorrow. The window
+	 *  reads the asks again then, so they are counted and listed again; none where every
+	 *  snoozed chat waits only for a new ask.
+	 */
+	snoozed_until?: number | null,
 };
 
 /**  Which command's question it is. */

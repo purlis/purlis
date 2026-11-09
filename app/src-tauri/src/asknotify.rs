@@ -128,6 +128,9 @@ pub struct Rules {
     /// The projects with asks that came in quiet hours: when they end, one notification names
     /// what still waits.
     held: HashSet<PlaneId>,
+    /// **When each project's first snoozed chat comes back by itself** (#6018, ADR 0121
+    /// decision 14): the notifier reads the project again then, so its asks are heard anew.
+    snoozes_end: HashMap<PlaneId, Instant>,
 }
 
 /// **A notification sent, and what has ridden it since.**
@@ -226,12 +229,13 @@ impl Rules {
     }
 
     /// **When the notifier should read a project again by itself**: the earliest time a
-    /// riding window closes with other chats on it.
+    /// riding window closes with other chats on it, or a snooze runs out.
     pub fn next_due(&self) -> Option<Instant> {
         self.covered
             .values()
             .filter(|covered| !covered.rode.is_empty())
             .map(|covered| covered.at + TOGETHER)
+            .chain(self.snoozes_end.values().copied())
             .min()
     }
 
@@ -241,7 +245,22 @@ impl Rules {
             .iter()
             .filter(|(_, covered)| !covered.rode.is_empty() && covered.at + TOGETHER <= now)
             .map(|(plane, _)| plane.clone())
+            .chain(
+                self.snoozes_end
+                    .iter()
+                    .filter(|(_, end)| **end <= now)
+                    .map(|(plane, _)| plane.clone()),
+            )
             .collect()
+    }
+
+    /// **When `plane`'s first snoozed chat comes back by itself**, as its last read said, or
+    /// none (#6018): the notifier reads it again then ([`Self::next_due`]).
+    pub fn snoozed_until(&mut self, plane: &PlaneId, end: Option<Instant>) {
+        match end {
+            Some(end) => self.snoozes_end.insert(plane.clone(), end),
+            None => self.snoozes_end.remove(plane),
+        };
     }
 
     /// **The projects with asks held back by quiet hours**, read again by the notifier while
@@ -266,6 +285,7 @@ impl Rules {
         self.known.remove(plane);
         self.covered.remove(plane);
         self.held.remove(plane);
+        self.snoozes_end.remove(plane);
     }
 }
 
@@ -747,14 +767,21 @@ fn read(app: &tauri::AppHandle, rules: &mut Rules, plane: &PlaneId) {
         rules.forget(plane);
         return;
     };
-    let asking = crate::asking::every_ask(&held);
+    // What the window lists (#6018, ADR 0121 decision 14): a snoozed chat neither counts nor
+    // notifies, and its asks are heard anew when its snooze runs out, read again then.
+    let asking = crate::asking::every_ask_apart(&held);
+    let now = Instant::now();
+    let end = asking.snoozed_until.map(|until| {
+        now + Duration::from_secs(u64::from(until).saturating_sub(crate::sandboxing::now_secs()))
+    });
+    rules.snoozed_until(plane, end);
     let sent = rules.heard(&Heard {
         plane,
         // The registry's own split (#1693, #1694): an update is not listed, so never notifies.
         asks: &asking.asks,
         looking: &|session| looking(app, plane, session, &held).is_looking(),
         quiet: &quiet_now,
-        now: Instant::now(),
+        now,
     });
     for notice in sent {
         send(app, notice);

@@ -79,15 +79,22 @@ function core() {
     permission(1, "ask-1", "Run cargo test"),
     permission(2, "ask-2", "Run npm test"),
   ];
-  /** The core's snooze record: each snoozed chat, with the asks it held. */
-  let record = new Map<number, string[]>();
+  /** The core's snooze record: each snoozed chat, with the asks it held and when it comes
+   *  back by itself (#6018), in seconds since 1970. */
+  let record = new Map<number, { asks: string[]; until: number | null }>();
   const everyListener = new Map<string, number[]>();
   const away = (session: number) => {
     const had = record.get(session);
     return (
       had !== undefined &&
-      held.filter((one) => one.session === session).every((one) => had.includes(one.ask))
+      held.filter((one) => one.session === session).every((one) => had.asks.includes(one.ask)) &&
+      (had.until === null || Date.now() / 1000 < had.until)
     );
+  };
+  /** When the first snoozed chat comes back by itself, as `inboxupdates::first_back` says. */
+  const firstBack = () => {
+    const times = [...record.values()].flatMap((one) => (one.until === null ? [] : [one.until]));
+    return times.length === 0 ? null : Math.min(...times);
   };
   mockIPC((cmd, args) => {
     const a = (args ?? {}) as Record<string, unknown>;
@@ -106,11 +113,12 @@ function core() {
         asks: held.filter((one) => !record.has(one.session)),
         with_asking_chat: [],
         snoozed: held.filter((one) => record.has(one.session)),
+        snoozed_until: firstBack(),
       };
     }
     if (cmd === "snooze_inbox_asks") {
       for (const one of a.chats as { session: number; asks: string[] }[])
-        record.set(one.session, one.asks);
+        record.set(one.session, { asks: one.asks, until: (a.until as number | null) ?? null });
       return null;
     }
     if (cmd === "wake_inbox_asks") {
@@ -231,7 +239,7 @@ describe("Snooze all on Asks (#5647)", () => {
 
     const line = within(view).getByRole("group", { name: "Snooze all" });
     expect(line).toHaveTextContent(
-      "Snooze 2 asks? Each chat comes back when it asks something new.",
+      "Snooze 2 asks? Each chat comes back when it asks something new, or at the time you choose if that comes first.",
     );
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.queryByRole("alertdialog")).toBeNull();
@@ -255,6 +263,7 @@ describe("Snooze all on Asks (#5647)", () => {
           { session: 1, asks: ["ask-1"] },
           { session: 2, asks: ["ask-2"] },
         ],
+        until: null,
       },
     ]);
     await waitFor(() => expect(listed()).toEqual([]));
@@ -327,5 +336,103 @@ describe("Snooze all on Asks (#5647)", () => {
     expect(
       within(view).getByText("1 ask snoozed until their chats ask again."),
     ).toBeInTheDocument();
+  });
+});
+
+describe("Snooze for a while (#6018, ADR 0121 decision 14)", () => {
+  /** 23:28 local time on 9 November 2026: the next 09:00 is tomorrow's. */
+  const LATE = new Date(2026, 10, 9, 23, 28, 0);
+  const seconds = (at: Date) => Math.floor(at.getTime() / 1000);
+
+  beforeEach(() => {
+    vi.useFakeTimers({
+      shouldAdvanceTime: true,
+      toFake: ["setTimeout", "clearTimeout", "Date"],
+    });
+    vi.setSystemTime(LATE);
+  });
+
+  /** Asks to snooze all, and answers with the press named `choice`. */
+  async function snoozeAllFor(view: HTMLElement, choice: string) {
+    await press.click(within(view).getByRole("button", { name: "Snooze all" }));
+    const line = within(view).getByRole("group", { name: "Snooze all" });
+    await press.click(within(line).getByRole("button", { name: choice }));
+  }
+
+  it("offers for 1 hour and until tomorrow beside until it asks something new", async () => {
+    const { view } = await opened();
+    await press.click(within(view).getByRole("button", { name: "Snooze all" }));
+    const line = within(view).getByRole("group", { name: "Snooze all" });
+    expect(
+      within(line)
+        .getAllByRole("button")
+        .map((one) => one.textContent),
+    ).toEqual(["Snooze all", "For 1 hour", "Until tomorrow", "Cancel"]);
+  });
+
+  it("for 1 hour puts the asks away until an hour from now, and says so", async () => {
+    const { view, asked } = await opened();
+
+    await snoozeAllFor(view, "For 1 hour");
+
+    const [call] = asked("snooze_inbox_asks");
+    expect(call?.until).toBe(seconds(LATE) + 60 * 60);
+    expect(await within(view).findByText("Snoozed 2 asks for 1 hour.")).toBeInTheDocument();
+    await waitFor(() => expect(listed()).toEqual([]));
+    undoGoes();
+    const back = new Date(2026, 10, 10, 0, 28).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    expect(
+      await within(view).findByText(
+        `2 asks snoozed until tomorrow at ${back}, or until their chats ask again.`,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("until tomorrow puts the asks away until 09:00 local time the next day", async () => {
+    const { view, asked } = await opened();
+
+    await snoozeAllFor(view, "Until tomorrow");
+
+    const [call] = asked("snooze_inbox_asks");
+    expect(call?.until).toBe(seconds(new Date(2026, 10, 10, 9, 0, 0)));
+    expect(await within(view).findByText("Snoozed 2 asks until tomorrow.")).toBeInTheDocument();
+    undoGoes();
+    expect(
+      await within(view).findByText(
+        /^2 asks snoozed until tomorrow at .+, or until their chats ask again\.$/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("brings every chat's asks back, counted by the hand, when the hour is up", async () => {
+    const { view } = await opened();
+    await snoozeAllFor(view, "For 1 hour");
+    await waitFor(() => expect(listed()).toEqual([]));
+    undoGoes();
+    expect(hand(2)).toEqual([]);
+
+    // A minute short of the hour, they are still away.
+    act(() => vi.advanceTimersByTime(59 * 60 * 1000));
+    expect(listed()).toEqual([]);
+
+    // Nothing moves in the core: the window reads the asks again when the snooze runs out.
+    act(() => vi.advanceTimersByTime(60 * 1000));
+
+    await waitFor(() => expect(listed()).toEqual(["steward 1", "steward 2"]));
+    await waitFor(() => expect(hand(2).length).toBeGreaterThan(0));
+    expect(within(view).queryByText(/snoozed until/)).toBeNull();
+  });
+
+  it("still brings a chat back first when it asks something new", async () => {
+    const { view, raise } = await opened();
+    await snoozeAllFor(view, "Until tomorrow");
+    await waitFor(() => expect(listed()).toEqual([]));
+
+    raise(permission(2, "ask-2b", "Run npm ci"));
+
+    await waitFor(() => expect(listed()).toEqual(["steward 2"]));
   });
 });

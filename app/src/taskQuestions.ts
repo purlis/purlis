@@ -24,6 +24,9 @@ export type QuestionsHeld = {
   readonly with_asking_chat: readonly WithAskingChat[];
   /** The asks Snooze all put away (#5647), listed apart: none from a core that lists none. */
   readonly snoozed?: readonly Shown[];
+  /** When the first of them comes back by itself (#6018), in seconds since 1970: none where
+   *  every snoozed chat waits for a new ask. */
+  readonly snoozed_until?: number | null;
 };
 
 /** Where a task's question stands. `since` is in seconds since 1970: when it was asked, or
