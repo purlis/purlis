@@ -2136,10 +2136,13 @@ body {
    `<style>` it injects, unlayered, which beats every rule in a layer, so only `!important`
    reaches it. A cell a program colours carries an `xterm-fg-` class (a palette colour, or the
    inverted default) or a `color:` of its own (a true colour, or one `minimumContrastRatio`
-   adjusted), and keeps xterm's fade. */
+   adjusted), and keeps xterm's fade: xterm writes that `color:` with no space, and the browser
+   writes it again with one (`; color:`) once xterm sets the cell's letter spacing. */
 .xterm
   .xterm-rows
-  .xterm-dim:not([class*="xterm-fg-"]):not([style^="color:"]):not([style*=";color:"]) {
+  .xterm-dim:not([class*="xterm-fg-"]):not([style^="color:"]):not([style*=";color:"]):not(
+    [style*="; color:"]
+  ) {
   color: var(--terminal-faint) !important;
 }
 

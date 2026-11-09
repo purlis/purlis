@@ -843,3 +843,46 @@ fn every_built_in_draws_faint_terminal_text_as_words_and_fainter_than_the_termin
         );
     }
 }
+
+/// A theme that names its terminal's words and ground in one dark appearance, and `more`.
+fn terminal_of(words: &str, ground: &str, more: Value) -> ResolvedTheme {
+    let mut tokens = json!({ "terminal.foreground": words, "terminal.background": ground });
+    tokens
+        .as_object_mut()
+        .expect("an object")
+        .extend(more.as_object().expect("an object").clone());
+    let loaded = load(&json!({
+        "name": "Own terminal",
+        "appearances": [{ "id": "dark", "appearance": "dark", "tokens": tokens }]
+    }));
+    assert!(!loaded.refused, "{:?}", loaded.complaints);
+    loaded.theme.first().clone()
+}
+
+#[test]
+fn a_theme_that_names_its_terminal_and_not_its_faint_text_fades_its_own_words_to_read_as_words() {
+    // Its faint text was its own words at half opacity before the token existed (#3768): it is
+    // its words faded toward its own ground, never its parent's grey, as far as 4.5:1 allows.
+    for (words, ground) in [
+        ("#c0c0c0", "#303030"),
+        ("#d6ddd6", "#1a201c"),
+        ("#202020", "#ffffff"),
+    ] {
+        let theme = terminal_of(words, ground, json!({}));
+        let faint = super::contrast(theme.value("terminal.faint"), ground);
+        assert!(faint >= 4.5, "{words} on {ground}: faint at {faint:.2}");
+        assert!(
+            faint < super::contrast(words, ground),
+            "{words} on {ground}"
+        );
+    }
+    // Words that read at more than twice the floor fade all the way to halfway, as xterm did.
+    let wide = terminal_of("#ffffff", "#000000", json!({}));
+    assert_eq!(
+        wide.value("terminal.faint"),
+        super::mix("#ffffff", "#000000", 0.5)
+    );
+    // A faint colour the theme names is its own.
+    let named = terminal_of("#ffffff", "#000000", json!({ "terminal.faint": "#999999" }));
+    assert_eq!(named.value("terminal.faint"), "#999999");
+}

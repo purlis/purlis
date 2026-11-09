@@ -1355,7 +1355,7 @@ pub(super) struct Standing {
 /// **Each [`Stands`] a tint can move** as `theme` draws it: one with a token the recipe turns.
 pub(super) fn standing(
     theme: &ResolvedTheme,
-    card: super::parts::CardOnSide,
+    on: super::parts::CardOnSide,
     ways: super::parts::NoticeWays,
 ) -> Vec<Standing> {
     let turned = |token: &str| theme.tint.tabs().contains(&token);
@@ -1378,7 +1378,6 @@ pub(super) fn standing(
             });
         }
     }
-    let on = card;
     if ["surface.deep", on.card, on.ground].into_iter().any(turned) || on.edge.is_some_and(turned) {
         let (step, edge) = card_step(theme, on);
         let edged = |floor: f64| edge.is_some_and(|edge| edge >= floor);
@@ -1900,6 +1899,23 @@ pub(super) fn contrast(a: &str, b: &str) -> f64 {
 }
 
 /// The opaque `top` laid over the opaque `under` at `opacity`, as the screen draws it.
+/// **What faint terminal text reads at on the terminal's ground** (#3768): words' floor.
+pub const FAINT_READS: f64 = 4.5;
+
+/// **Faint terminal text for `words` on `ground`** (#3768), both opaque: the words halfway to
+/// the ground, as xterm fades them, and back toward the words, a hundredth at a time, only as
+/// far as reading at [`FAINT_READS`] takes; the words themselves where nothing nearer does.
+/// `None` for a see-through colour.
+pub(super) fn faded(words: &str, ground: &str) -> Option<String> {
+    if words.len() != 7 || ground.len() != 7 {
+        return None;
+    }
+    let point = (50..100)
+        .map(|share| mix(words, ground, f64::from(share) / 100.0))
+        .find(|point| contrast(point, ground) >= FAINT_READS);
+    Some(point.unwrap_or_else(|| words.to_owned()))
+}
+
 pub(super) fn mix(top: &str, under: &str, opacity: f64) -> String {
     let (top, bottom) = (long(top), long(under));
     let mixed: String = [0, 2, 4]

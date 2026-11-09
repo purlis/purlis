@@ -1486,7 +1486,8 @@ outside the project and removes it when the flow ends, so it adds none of them (
   written before them draws as it did: each follows the token that drew its part before
   (`crates/purlis-core/docs/themes.md`, "Tokens added after themes existed"), except
   `terminal.faint`, which was its words at half opacity, no colour a token can give: one that
-  leaves it out takes the theme it extends', as it does any terminal colour.
+  names its terminal's words or ground and leaves it out draws them faded toward that ground,
+  held at 4.5:1.
 
 ### `skills/` — the project's skills
 
