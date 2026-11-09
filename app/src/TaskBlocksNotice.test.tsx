@@ -9,6 +9,7 @@ import type { ChatBlocked, GrantLevel } from "./bindings";
 import type { TaskBlockGroup } from "./taskAsks";
 import { TaskBlocksNotice } from "./TaskBlocksNotice";
 import { askOfBlock } from "./test-asks";
+import { NoticeWayGuard, grantsByLook } from "./noticeSettle";
 
 /**
  * **The question for several tasks says what the single-chat Notice says** (#1709): a held
@@ -122,6 +123,44 @@ describe("the question for several tasks (#1709)", () => {
           .map((one) => (one.args as { level: GrantLevel }).level),
       ).toEqual(["chat"]),
     );
+  });
+
+  it("holds an Allow under Other scopes to the settle guard of the place it stands in (#5942)", async () => {
+    const asked: string[] = [];
+    mockIPC((cmd) => {
+      asked.push(cmd);
+      return { answered: [4, 5], said: "Allowed." };
+    });
+    const of = group("host", ["chat", "you", "project"]);
+    // A band whose Notices just moved: every answer that grants waits, opening the menu does not.
+    const held: Element[] = [];
+    render(
+      <NoticeWayGuard
+        value={(way) => {
+          if (!grantsByLook(way)) return true;
+          held.push(way);
+          return false;
+        }}
+      >
+        <TaskBlocksNotice
+          plane={PLANE}
+          group={of}
+          asks={of.members.flatMap((one) => askOfBlock(one.block))}
+          onAnswered={vi.fn()}
+          onKeepBlocked={vi.fn()}
+        />
+      </NoticeWayGuard>,
+    );
+    // Past the list's own settle, so only the place's guard can hold the press.
+    clock.now += 5_000;
+    await userEvent.click(screen.getByRole("button", { name: "Other scopes…" }));
+    for (const name of ["Allow only for these 2 tasks", "Allow for everyone in this project"]) {
+      const way = screen.getByRole("button", { name });
+      await userEvent.click(way);
+      expect(held, name).toContain(way);
+    }
+
+    expect(asked).not.toContain("allow_sandbox_block_for_tasks");
   });
 
   it("offers a folder for these tasks first, then this machine, and never the project", async () => {
