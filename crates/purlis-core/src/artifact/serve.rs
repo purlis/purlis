@@ -31,6 +31,38 @@ pub const SCHEME: &str = "artifact";
 /// purlis (a key that hands the keyboard back), attributed by the webview's label.
 pub const OWN_PATH: &str = "/.purlis/";
 
+/// **purlis's theme, as a stylesheet the page may link** (#5955): served from the page's own
+/// origin at this path, which the CSP's `style-src` already admits, so handing the theme over
+/// loosens nothing. purlis's own script in the page links it first, so the page's own rules win.
+pub const THEME_SHEET: &str = "/.purlis/theme.css";
+
+/// What a custom property of the theme sheet starts with: `surface.base` is
+/// `--purlis-surface-base`, apart from any name a page uses for its own.
+pub const THEME_PREFIX: &str = "--purlis-";
+
+/// **The theme sheet for a window drawn in `appearance` with `values`** (ADR 0120, #5955):
+/// `color-scheme` set to purlis's appearance, never the operating system's, and each of
+/// purlis's colour tokens as a custom property. Only a token the vocabulary names, with a value
+/// that is a colour, is written, so nothing the sheet is handed can end its rule or reach out.
+pub fn theme_sheet(appearance: &str, values: &BTreeMap<String, String>) -> Result<String, String> {
+    use crate::theme::vocabulary::{TOKENS, is_colour};
+    if !matches!(appearance, "dark" | "light") {
+        return Err(format!(
+            "{:?} is not an appearance: dark or light",
+            crate::personas::one_line(appearance)
+        ));
+    }
+    let mut sheet = format!(":root {{\n  color-scheme: {appearance};\n");
+    for token in TOKENS {
+        if let Some(value) = values.get(*token).filter(|value| is_colour(value)) {
+            let name = token.replace('.', "-");
+            sheet.push_str(&format!("  {THEME_PREFIX}{name}: {value};\n"));
+        }
+    }
+    sheet.push_str("}\n");
+    Ok(sheet)
+}
+
 /// An artifact folder's files, read once: by their path inside the folder, `/`-separated.
 #[derive(Clone, Debug, Default)]
 pub struct Snapshot {
@@ -341,6 +373,74 @@ mod tests {
 
         std::fs::write(folder.join("index.html"), "page!").unwrap();
         assert_ne!(Snapshot::read(folder).unwrap().fingerprint(), first);
+    }
+
+    fn drawn(appearance: &str, values: &[(&str, &str)]) -> Result<String, String> {
+        let values: BTreeMap<String, String> = values
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+            .collect();
+        theme_sheet(appearance, &values)
+    }
+
+    #[test]
+    fn the_theme_reaches_the_page_as_purlis_s_tokens_and_its_colour_scheme() {
+        let sheet = drawn(
+            "dark",
+            &[
+                ("surface.base", "#101112"),
+                ("accent.wash-hover", "#2233aa80"),
+            ],
+        )
+        .unwrap();
+        assert!(sheet.starts_with(":root {"), "{sheet}");
+        assert!(sheet.contains("color-scheme: dark;"), "{sheet}");
+        assert!(sheet.contains("--purlis-surface-base: #101112;"), "{sheet}");
+        assert!(
+            sheet.contains("--purlis-accent-wash-hover: #2233aa80;"),
+            "{sheet}"
+        );
+        assert!(
+            drawn("light", &[])
+                .unwrap()
+                .contains("color-scheme: light;"),
+            "light follows purlis too"
+        );
+    }
+
+    #[test]
+    fn a_theme_sheet_writes_only_known_tokens_with_colour_values() {
+        let sheet = drawn(
+            "light",
+            &[
+                (
+                    "surface.base",
+                    "red; } body { background: url(https://x.example/)",
+                ),
+                ("not.a.token", "#ffffff"),
+                ("text.primary", "#000"),
+            ],
+        )
+        .unwrap();
+        assert!(!sheet.contains("url("), "{sheet}");
+        assert!(!sheet.contains("not-a-token"), "{sheet}");
+        assert!(!sheet.contains("--purlis-surface-base"), "{sheet}");
+        assert!(sheet.contains("--purlis-text-primary: #000;"), "{sheet}");
+        assert_eq!(sheet.matches('}').count(), 1, "{sheet}");
+    }
+
+    #[test]
+    fn an_appearance_is_dark_or_light_and_nothing_else() {
+        for not in ["", "auto", "dark; color: red", "system"] {
+            assert!(drawn(not, &[]).is_err(), "{not}");
+        }
+    }
+
+    #[test]
+    fn the_theme_sheet_is_served_under_purlis_s_own_path_which_names_no_file() {
+        assert!(THEME_SHEET.starts_with(OWN_PATH));
+        assert_eq!(key(THEME_SHEET).as_deref(), Some(".purlis/theme.css"));
+        assert_eq!(content_type(THEME_SHEET), "text/css; charset=utf-8");
     }
 
     #[test]
