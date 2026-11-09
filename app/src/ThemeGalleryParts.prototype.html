@@ -1,0 +1,231 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Theme parts in the gallery</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<!--
+  PROTOTYPE for purlis#2947: throwaway, fake data, never merged.
+  Question: how does Settings > Theme show the component parts a theme sets, so a person sees a
+  part's look and what the theme changed, with nothing listed by hand outside the parts manifest?
+  Two variants (?variant=A|B) x three moments (?moment=none|parts|option). ?theme=light|dark forces
+  a theme.
+    A  Parts on the card    the card's picture stays the specimen as today; under it a "Sets parts"
+                            row names each family the theme sets (the manifest's own description on
+                            hover), and opens a list of every key with its value and where it comes
+                            from (the theme, or an option's value). Nothing more is pictured.
+    B  Parts in the picture the specimen gains a last band, "Parts this theme sets": one sample of
+                            each family the theme names, drawn by that family, in each look its keys
+                            reach (rest, under the pointer, chosen). The card names the families
+                            under the picture, as A, without the key list.
+  Both read only the manifest: the families, parts, states and descriptions come from `purlis theme
+  parts`, and the specimen's samples are keyed by family name, with a guard test that fails until a
+  family the manifest has gains its sample. Each piece names the family (app/src/ui) it would be
+  built from in its data-family attribute.
+  Left and right arrows switch variant; the Moment buttons step through.
+-->
+<style>
+:root{
+  --bg:#f4f5f7; --panel:#ffffff; --panel2:#eef0f3; --line:#dde1e7; --fg:#1d2330; --muted:#5d6676;
+  --accent:#5b4fd6; --accent-soft:#e9e6fb; --fill:#6d58bb; --fill-hover:#745fc3; --on-fill:#ffffff;
+  --danger:#b3261e; --tag:#e7eaf0; --shadow:0 10px 30px rgba(20,24,40,.18);
+  --sans:"IBM Plex Sans",-apple-system,"Segoe UI",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#121318; --panel:#191a21; --panel2:#23252e; --line:#2e313b; --fg:#e4e7ee; --muted:#98a0b0;
+  --accent:#a69cff; --accent-soft:#2e2a52; --fill:#7b68e0; --fill-hover:#8574e6; --on-fill:#ffffff;
+  --danger:#ff8f86; --tag:#2b303b; --shadow:0 10px 30px rgba(0,0,0,.5); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121318; --panel:#191a21; --panel2:#23252e; --line:#2e313b; --fg:#e4e7ee; --muted:#98a0b0;
+  --accent:#a69cff; --accent-soft:#2e2a52; --fill:#7b68e0; --fill-hover:#8574e6; --on-fill:#ffffff;
+  --danger:#ff8f86; --tag:#2b303b; --shadow:0 10px 30px rgba(0,0,0,.5); color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:13px;line-height:1.45;padding:12px 16px 40px}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
+button:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:5px}
+code{font-family:var(--mono);font-size:12px}
+.top{max-width:1100px;margin:0 auto 10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.top .q{color:var(--muted);flex:1 1 100%}.top .q b{color:var(--fg)}
+.seg{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg button{padding:3px 10px;border-right:1px solid var(--line);font-size:12px}
+.seg button:last-child{border-right:0}
+.seg button.on{background:var(--accent);color:var(--panel)}
+.win{max-width:1100px;margin:0 auto;border:1px solid var(--line);border-radius:10px;background:var(--panel);overflow:hidden}
+.shead{padding:10px 16px;border-bottom:1px solid var(--line);color:var(--muted)}.shead b{color:var(--fg);font-weight:500}
+.page{padding:14px 16px;display:grid;gap:10px}
+.page h2{margin:0;font-size:13px;font-weight:600}
+.page > p{margin:0;color:var(--muted)}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.card{border:1px solid var(--line);border-radius:10px;background:var(--panel);display:grid;gap:8px;padding:10px}
+.card.chosen{box-shadow:inset 0 0 0 1.5px var(--accent)}
+.card .nm{display:flex;gap:8px;align-items:center;font-weight:600}
+.badge{font-size:10.5px;padding:0 6px;border-radius:9px;background:var(--tag);color:var(--muted);font-weight:400}
+.pic{border-radius:7px;border:1px solid var(--line);background:var(--panel2);overflow:hidden}
+.pic .fake{height:118px;display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:8px}
+.pic .fake span{border-radius:4px;background:var(--line)}
+.pic .fake span.term{background:#0f1015}
+/* B's band in the specimen */
+.band{border-top:1px solid var(--line);padding:8px;display:grid;gap:6px;background:var(--panel)}
+.band h4{margin:0;font-size:11px;font-weight:500;color:var(--muted)}
+.samples{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start}
+.sample{display:grid;gap:4px}
+.sample small{color:var(--muted);font-size:10.5px}
+.row{display:flex;gap:6px;align-items:center}
+.b{height:24px;padding:0 10px;display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:var(--r,6px);background:var(--panel2);font-size:12px;white-space:nowrap}
+.b.primary{background:var(--fill);color:var(--on-fill);border-color:transparent}
+.b.primary.hover{background:var(--fill-hover)}
+.b.grants{border-color:var(--accent)}
+.b.grants::before{content:"🔓";font-size:10px}
+.tabstrip{display:flex;gap:2px;background:var(--panel2);padding:3px 3px 0;border-radius:6px 6px 0 0}
+.tabstrip span{padding:3px 10px;border-radius:var(--tr,6px) var(--tr,6px) 0 0;font-size:12px;color:var(--muted)}
+.tabstrip span.on{background:var(--panel);color:var(--fg)}
+.tabstrip span.hover{background:var(--line);color:var(--fg)}
+/* the parts row */
+.parts{display:grid;gap:6px}
+.parts .says{display:flex;gap:6px;flex-wrap:wrap;align-items:center;color:var(--muted)}
+.chip{font-size:11.5px;padding:0 7px;border-radius:9px;background:var(--accent-soft);color:var(--fg);cursor:help}
+details{border-top:1px solid var(--line);padding-top:6px}
+summary{cursor:pointer;color:var(--accent);font-size:12px;list-style:none}
+summary::before{content:"▸ "}details[open] summary::before{content:"▾ "}
+table{border-collapse:collapse;width:100%;margin-top:6px;font-size:12px}
+th{text-align:left;font-weight:500;color:var(--muted);padding:2px 6px 2px 0}
+td{padding:2px 6px 2px 0;vertical-align:top}
+td.from{color:var(--muted)}
+.fam td{padding-top:7px;font-weight:600}
+.fam td small{font-weight:400;color:var(--muted)}
+.opts{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:12px}
+.switch{width:28px;height:16px;border-radius:9px;background:var(--line);position:relative;display:inline-block}
+.switch::after{content:"";position:absolute;width:12px;height:12px;border-radius:50%;background:var(--panel);top:2px;left:2px}
+.switch.on{background:var(--accent)}.switch.on::after{left:14px}
+.none{color:var(--muted);font-size:12px}
+.note{max-width:1100px;margin:10px auto 0;color:var(--muted);font-size:12px}
+</style>
+
+<div class="top">
+  <div class="q"><b>#2947</b> How does Settings › Theme show the component parts a theme sets, read from the manifest?</div>
+  <div class="seg" id="variants"></div>
+  <div class="seg" id="moments"></div>
+</div>
+<div class="win">
+  <div class="shead">Settings › <b>Theme</b></div>
+  <div class="page">
+    <h2>Theme</h2>
+    <p>The theme the window is drawn in, at this level.</p>
+    <div class="cards" id="cards" data-family="list (cards)"></div>
+  </div>
+</div>
+<p class="note" id="note"></p>
+
+<script>
+// What `purlis theme parts` says of the families this fake theme names: name and description are
+// the manifest's own words, never written here in the real build.
+const MANIFEST = {
+  button: "A button, an icon button or a link button.",
+  tabs: "A session tab, docked on the content panel or on a strip of its own.",
+};
+const THEME = {
+  none: { name: "Purlis", from: "Built in", keys: [] },
+  parts: { name: "Rounded", from: "Your theme", keys: [
+    ["button", "button.root.corner-radius", "full", "the theme"],
+    ["button", "button.root.primary.hover.fill", "accent.base", "the theme"],
+    ["tabs", "tabs.tab.corner-radius", "10", "the theme"],
+  ]},
+  option: { name: "Rounded", from: "Your theme", option: true, keys: [
+    ["button", "button.root.corner-radius", "full", "Pills: on"],
+    ["button", "button.root.primary.hover.fill", "accent.base", "the theme"],
+    ["tabs", "tabs.tab.corner-radius", "10", "the theme"],
+  ]},
+};
+const VARIANTS = { A: "Parts on the card", B: "Parts in the picture" };
+const MOMENTS = { none: "No parts", parts: "Sets parts", option: "An option's parts" };
+const params = new URLSearchParams(location.search);
+let variant = params.get("variant") in VARIANTS ? params.get("variant") : "A";
+let moment = params.get("moment") in MOMENTS ? params.get("moment") : "parts";
+if (params.get("theme")) document.documentElement.dataset.theme = params.get("theme");
+
+function seg(id, all, now, set) {
+  const at = document.getElementById(id);
+  at.innerHTML = "";
+  for (const [key, label] of Object.entries(all)) {
+    const b = document.createElement("button");
+    b.textContent = id === "variants" ? `${key} · ${label}` : label;
+    b.className = key === now ? "on" : "";
+    b.onclick = () => { set(key); draw(); };
+    at.append(b);
+  }
+}
+
+function families(keys) { return [...new Set(keys.map(([family]) => family))]; }
+
+function sample(family, rounded) {
+  const r = rounded ? "999px" : "6px";
+  if (family === "button") return `<div class="sample" data-family="button">
+      <small>Button · at rest, under the pointer</small>
+      <div class="row" style="--r:${r}"><span class="b">Keep blocked</span><span class="b grants">Allow</span><span class="b primary">Save</span><span class="b primary hover">Save</span></div>
+    </div>`;
+  if (family === "tabs") return `<div class="sample" data-family="tabs">
+      <small>Tabs · chosen, under the pointer, at rest</small>
+      <div class="tabstrip" style="--tr:10px"><span class="on">build</span><span class="hover">review</span><span>notes</span></div>
+    </div>`;
+  return "";
+}
+
+function picture(theme) {
+  const keys = theme.keys;
+  const rounded = keys.some(([, key, value]) => key === "button.root.corner-radius" && value === "full");
+  const band = variant === "B" && keys.length
+    ? `<div class="band" data-family="specimen › parts band"><h4>Parts this theme sets</h4><div class="samples">${families(keys).map((f) => sample(f, rounded)).join("")}</div></div>`
+    : "";
+  return `<div class="pic" role="img" aria-label="${theme.name} in its dark appearance"><div class="fake"><span class="term"></span><span class="term"></span><span></span><span></span></div>${band}</div>`;
+}
+
+function partsRow(theme) {
+  if (!theme.keys.length) return `<div class="none">Sets no parts: every control is drawn as the family draws it.</div>`;
+  const named = families(theme.keys);
+  const chips = named.map((f) => `<span class="chip" title="${MANIFEST[f]}">${f}</span>`).join("");
+  const count = theme.keys.length;
+  const says = `<div class="says">Sets ${count} part${count === 1 ? "" : "s"} of ${chips}</div>`;
+  if (variant === "B") return `<div class="parts" data-family="field (read only)">${says}</div>`;
+  const rows = named.map((f) => {
+    const own = theme.keys.filter(([family]) => family === f)
+      .map(([, key, value, from]) => `<tr><td><code>${key.slice(f.length + 1)}</code></td><td><code>${value}</code></td><td class="from">${from}</td></tr>`).join("");
+    return `<tr class="fam"><td colspan="3">${f} <small>${MANIFEST[f]}</small></td></tr>${own}`;
+  }).join("");
+  return `<div class="parts" data-family="disclosure + table">${says}
+    <details><summary>Show each part</summary>
+      <table data-family="table"><thead><tr><th>Part</th><th>Value</th><th>From</th></tr></thead><tbody>${rows}</tbody></table>
+    </details></div>`;
+}
+
+function card(theme, chosen) {
+  const opts = theme.option ? `<div class="opts" data-family="switch">Pills <span class="switch on"></span></div>` : "";
+  return `<div class="card${chosen ? " chosen" : ""}">
+    <div class="nm">${theme.name} <span class="badge">${theme.from}</span></div>
+    ${picture(theme)}
+    ${opts}
+    ${partsRow(theme)}
+  </div>`;
+}
+
+const NOTES = {
+  A: "A keeps the picture as today and puts the parts in words under it. A person sees which families a theme reaches and every key, but a part's look only where the specimen already draws that family.",
+  B: "B adds one band to the specimen, so each family a theme names is pictured in the looks its keys reach. It costs a sample per family, held to the manifest by a guard test, and a taller picture.",
+};
+
+function draw() {
+  seg("variants", VARIANTS, variant, (v) => (variant = v));
+  seg("moments", MOMENTS, moment, (m) => (moment = m));
+  const theme = THEME[moment];
+  document.getElementById("cards").innerHTML = card(THEME.none, moment === "none") + (moment === "none" ? "" : card(theme, true));
+  document.getElementById("note").textContent = NOTES[variant];
+}
+document.addEventListener("keydown", (event) => {
+  const order = Object.keys(VARIANTS);
+  if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+    const at = order.indexOf(variant) + (event.key === "ArrowRight" ? 1 : -1);
+    variant = order[(at + order.length) % order.length];
+    draw();
+  }
+});
+draw();
+</script>
