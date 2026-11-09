@@ -3,28 +3,23 @@
 
 import { $, browser, expect } from "@wdio/globals";
 import { endEveryChat, noDialogIsLeftUp, pressAndStart, showView } from "../opening.js";
-import { f6From, keyFromThePage, keyboardToThePage, stopsInTheCycle } from "../regionKeys.js";
+import { REGION_OF, f6From, keyFromThePage, keyboardToThePage } from "../regionKeys.js";
 
 /**
  * **A keyboard-only journey across the window's regions** (#2929, spec #2897, N35; WCAG 2.2
  * 2.1.1, 2.4.3, 2.4.7 and 2.4.11), in the built app, with a chat open and the Inbox out.
  *
- * - **The tab sequence reads the window in its order**: the title bar, the project rail, the left
- *   side, the editor's tabs and panes, the right side (the Inbox), the Panel, and the right-hand
- *   activity bar at the window's edge, each one run of stops that never comes back once left.
  * - **Every stop F6 lands on shows it has the keyboard**: a ring the engine draws for
  *   `:focus-visible`, on a control that is on screen and not covered by another (2.4.11), both
  *   ways round the cycle, and the keyboard is never dropped on the page between stops.
  * - **A dialog shut with Escape gives the keyboard back** to where it was, not to the page.
  *
- * `keyboard-reach.e2e.ts` holds the stops each strip has and `panel-toggle.e2e.ts` which region
- * F6 lands in; this walks the whole window as one journey. As there, no scenario can press Tab:
- * this driver performs no key's default action (`docs/ui-primitives.md`), so the sequence is read
- * from the page as WebKit builds it, and F6 is the window's own key, which the window hears.
+ * `keyboard-reach.e2e.ts` holds the Tab sequence against the regions as they are laid out, and
+ * `panel-toggle.e2e.ts` which region F6 lands in; this walks the whole cycle as one journey and
+ * asks what a person sees at each stop. No scenario can press Tab: this driver performs no key's
+ * default action (`docs/ui-primitives.md`). F6 is the window's own key, which its capture-phase
+ * listener hears from the element that has the keyboard, so it is dispatched there.
  */
-
-/** The tab sequence's regions, in the window's reading order. */
-const ORDER = ["title bar", "rail", "left", "editor", "right", "panel", "right bar", "status"];
 
 /** What a stop shows of the keyboard: lost when it is on the page itself. */
 type Shown = {
@@ -91,6 +86,47 @@ function seen(what: string): Shown {
   return { lost: false, what, onScreen: true, uncovered: true, focusVisible: true, ring: true };
 }
 
+/** The most F6 presses one way round: every region, a chip's card, and one more to be back. */
+const MOST = 8;
+
+/** Where one press of F6 left the keyboard, and what a person sees of it there. */
+type Stopped = { stop: string; shown: Shown };
+
+/**
+ * **One press of F6, or Shift+F6 with `back`**, and where the keyboard went: the region F6 names
+ * (`regionKeys.ts`), `card` for a title-bar chip's card (#3648, a stop of the cycle while one is
+ * up), `stayed` when it did not move within five seconds, or what it landed on outside all of
+ * them. Every outcome is a stop the test can name, so a walk that goes wrong says where.
+ */
+async function press6(back: boolean): Promise<Stopped> {
+  await browser.execute(() => {
+    (window as unknown as { __e2eWas: Element | null }).__e2eWas = document.activeElement;
+  });
+  await keyFromThePage({ key: "F6", code: "F6", shiftKey: back });
+  const moved = await browser
+    .waitUntil(
+      () =>
+        browser.execute(
+          () =>
+            document.activeElement !== (window as unknown as { __e2eWas: Element | null }).__e2eWas,
+        ),
+      { timeout: 5_000, interval: 100 },
+    )
+    .then(() => true)
+    .catch(() => false);
+  const where = await browser.execute((regions: Record<string, string>) => {
+    const on = document.activeElement;
+    if (on === null || on === document.body) return "the page";
+    if (on.closest("[data-f6-card]")) return "card";
+    const region = Object.entries(regions).find(([, selector]) =>
+      [...document.querySelectorAll(selector)].some((one) => one.contains(on)),
+    );
+    if (region) return region[0];
+    return `outside (${on.tagName.toLowerCase()} ${(on.getAttribute("aria-label") ?? "").slice(0, 30)})`;
+  }, REGION_OF);
+  return { stop: moved ? where : `stayed in ${where}`, shown: await whatTheKeyboardShows() };
+}
+
 describe("a keyboard-only journey across the window's regions", function () {
   this.timeout(180_000);
 
@@ -108,65 +144,28 @@ describe("a keyboard-only journey across the window's regions", function () {
     await endEveryChat();
   });
 
-  it("reads the tab sequence in the window's order: title bar, rail, sides, editor, Inbox, Panel", async () => {
-    const regions = await browser.execute(() => {
-      const regionOf = (el: Element): string => {
-        if (el.closest(".title-bar")) return "title bar";
-        if (el.closest(".window-below") && !el.closest(".window-work")) return "rail";
-        const column = el.closest(".activity-column");
-        if (column) return column.getAttribute("data-side") === "right" ? "right bar" : "left";
-        if (el.closest(".slot-left")) return "left";
-        if (el.closest(".region-centre")) return "editor";
-        if (el.closest(".slot-right")) return "right";
-        if (el.closest("#region-panel")) return "panel";
-        if (el.closest('footer[data-scope="status-bar"]')) return "status";
-        return `elsewhere (${el.tagName.toLowerCase()} ${(el.getAttribute("aria-label") ?? "").slice(0, 30)})`;
-      };
-      const stops = [
-        ...document.querySelectorAll<HTMLElement>(
-          'a[href], button, input, select, textarea, summary, [tabindex], [contenteditable="true"]',
-        ),
-      ].filter((el) => {
-        if (el.tabIndex < 0) return false;
-        if ((el as HTMLButtonElement).disabled) return false;
-        if (el.closest('[inert], [hidden], [role="dialog"], [role="alertdialog"]')) return false;
-        if (el.getClientRects().length === 0) return false;
-        return getComputedStyle(el).visibility === "visible";
-      });
-      // WebKit's sequence: positive tabindex first, by value, then document order.
-      const ordered = [
-        ...stops.filter((el) => el.tabIndex > 0).sort((a, b) => a.tabIndex - b.tabIndex),
-        ...stops.filter((el) => el.tabIndex === 0),
-      ];
-      const runs: string[] = [];
-      for (const el of ordered) {
-        const region = regionOf(el);
-        if (runs[runs.length - 1] !== region) runs.push(region);
-      }
-      return runs;
-    });
-
-    // Each region one run, in reading order: a region that comes back is a stop out of place.
-    expect(regions).toEqual(ORDER.filter((region) => regions.includes(region)));
-    for (const needed of ["title bar", "rail", "left", "editor", "right"])
-      expect(regions).toContain(needed);
-  });
-
   it("shows the keyboard at every stop F6 makes, round the cycle and back", async () => {
     await keyboardToThePage();
-    const stops = Math.max(await stopsInTheCycle(), 2);
-    const walked: { region: string; shown: Shown }[] = [];
-    let at = "";
-    for (let press = 0; press < stops; press++) {
-      at = await f6From(at);
-      walked.push({ region: at, shown: await whatTheKeyboardShows() });
+    const forth: Stopped[] = [];
+    for (let press = 0; press < MOST; press++) {
+      forth.push(await press6(false));
+      if (forth.length > 1 && forth[forth.length - 1].stop === forth[0].stop) break;
     }
-    for (let press = 0; press < stops; press++) {
-      at = await f6From(at, true);
-      walked.push({ region: at, shown: await whatTheKeyboardShows() });
+    const back: Stopped[] = [];
+    for (let press = 0; press < MOST; press++) {
+      back.push(await press6(true));
+      if (back.length > 1 && back[back.length - 1].stop === back[0].stop) break;
     }
-    expect(walked.map((one) => one.region)).toContain("right");
-    expect(walked).toEqual(walked.map((one) => ({ ...one, shown: seen(one.shown.what) })));
+    const stops = (walk: Stopped[]) => walk.map((one) => one.stop);
+    // Round once each way: back to where it began, through every region, the Inbox among them.
+    expect(stops(forth)[stops(forth).length - 1]).toBe(stops(forth)[0]);
+    expect(stops(forth)).toEqual(expect.arrayContaining(["left", "centre", "right"]));
+    // Shift+F6 walks the same cycle the other way round.
+    const once = (walk: Stopped[]) => stops(walk).slice(0, -1);
+    expect([...once(back)].sort()).toEqual([...once(forth)].sort());
+    // And at every stop a person can see where the keyboard is.
+    const all = [...forth, ...back];
+    expect(all).toEqual(all.map((one) => ({ ...one, shown: seen(one.shown.what) })));
   });
 
   it("gives the keyboard back where it was when a dialog is shut with Escape", async () => {

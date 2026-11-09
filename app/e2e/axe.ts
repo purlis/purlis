@@ -48,7 +48,7 @@ type Violation = {
   id: string;
   impact?: string | null;
   help: string;
-  nodes: { target: unknown[]; failureSummary?: string }[];
+  nodes: { target: unknown[]; html?: string; failureSummary?: string }[];
 };
 
 /** What axe found, each with the first few places it found it, for a failure to read. */
@@ -60,7 +60,9 @@ export function foundOf(violations: readonly Violation[]): Found[] {
     where: one.nodes.slice(0, 5).map((node) => {
       const target = node.target.map((part) => JSON.stringify(part)).join(" >>> ");
       const why = (node.failureSummary ?? "").replace(/\s+/g, " ").trim();
-      return why ? `${target}: ${why}` : target;
+      // The element itself, opening tag and words, so a failure says what was drawn there.
+      const html = (node.html ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
+      return [target, html, why].filter(Boolean).join(" | ");
     }),
   }));
 }
@@ -68,10 +70,14 @@ export function foundOf(violations: readonly Violation[]): Found[] {
 /** Runs axe over the whole window as it is drawn now, held to WCAG 2.2 AA with `target-size`
  *  on, as the stories are (#2897). */
 export async function wcagFound(): Promise<Found[]> {
+  // One options object: the builder's `options()` replaces whatever `withTags()` set, so the two
+  // together ran every rule, best practice too (the first run of #6037).
   const results = await new AxeBuilder({ client: browser })
     .setLegacyMode(true)
-    .withTags(WCAG_22_AA)
-    .options({ rules: { "target-size": { enabled: true } } })
+    .options({
+      runOnly: { type: "tag", values: WCAG_22_AA },
+      rules: { "target-size": { enabled: true } },
+    })
     .analyze();
   return foundOf(results.violations as Violation[]);
 }

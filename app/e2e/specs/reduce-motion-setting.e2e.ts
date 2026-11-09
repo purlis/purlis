@@ -68,6 +68,14 @@ describe("purlis's own Reduce motion, across the window", function () {
 
   let wasOn = false;
 
+  after(async () => {
+    if (await $(SWITCH).isExisting()) await turn(wasOn);
+  });
+
+  // Between the two: its `before` reads the strip before Settings opens, and its `after` closes
+  // Settings once the switch above is put back (mocha runs hooks of a kind in their order).
+  closesTheTabsItOpens();
+
   before(async () => {
     await noDialogIsLeftUp();
     await openProjectSettings();
@@ -93,12 +101,6 @@ describe("purlis's own Reduce motion, across the window", function () {
     await $(SWITCH).waitForDisplayed({ timeout: 20_000 });
     wasOn = await switchOn();
   });
-
-  after(async () => {
-    if (await $(SWITCH).isExisting()) await turn(wasOn);
-  });
-
-  closesTheTabsItOpens();
 
   it("stops every transition and animation in the window when it is turned on", async () => {
     await turn(true);

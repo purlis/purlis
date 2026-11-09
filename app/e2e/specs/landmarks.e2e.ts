@@ -76,9 +76,15 @@ describe("the window's landmarks and headings", function () {
         ),
       ]
         .filter((el) => !el.closest("[hidden]") && el.getBoundingClientRect().width > 0)
-        .map((el) => ({
-          role: el.getAttribute("role"),
-          named: (el.getAttribute("aria-label") ?? "").trim() !== "",
+        .map((el) => {
+          // A resizable panel draws its class on an inner box and its role and name on the box
+          // around it (`react-resizable-panels`): the region is whichever of the two says one.
+          const landmark = el.hasAttribute("role") ? el : el.parentElement?.closest("[data-panel]");
+          return { el, landmark: landmark ?? el };
+        })
+        .map(({ el, landmark }) => ({
+          role: landmark.getAttribute("role"),
+          named: (landmark.getAttribute("aria-label") ?? "").trim() !== "",
           // The editor is headed by its tabs; a side or a half by its view's title.
           headed:
             el.classList.contains("region-centre") ||

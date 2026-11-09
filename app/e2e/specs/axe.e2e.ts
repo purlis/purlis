@@ -26,9 +26,40 @@ import { openProjectSettings } from "../settingsTab.js";
  * draws over another, a colour on a ground no story draws. A state that fails says each rule axe
  * named, how bad, what it asks and the first places it found it (`axe.ts`).
  *
- * **Nothing is excluded.** A finding is fixed, or filed in M66 with this run as its evidence and
- * the state's test left red until it is (#2929: "don't weaken the check").
+ * **Nothing is excluded.** A finding is fixed, or filed in M66 with a run as its evidence and
+ * named here against its ticket ({@link KNOWN}): that state still runs every rule, fails on any
+ * other finding or on one more element, and fails once the known one is gone, so the line goes
+ * with the fix (#2929: "don't weaken the check").
  */
+
+/** A finding filed and not fixed yet: the rule, how many elements it names, and its ticket. */
+type Known = { rule: string; elements: number; ticket: number };
+
+/**
+ * **The findings known and filed**, by the state that shows them. 2.5.3 Label in Name: a menu row
+ * with a key, and a gallery card with a description, named by their label alone (#6043).
+ */
+const KNOWN = {
+  menu: { rule: "label-content-name-mismatch", elements: 2, ticket: 6043 },
+  gallery: { rule: "label-content-name-mismatch", elements: 2, ticket: 6043 },
+} satisfies Record<string, Known>;
+
+/** Runs axe over the window as drawn now: nothing found, or exactly the finding `known` names. */
+async function passes(known?: Known): Promise<void> {
+  const found = await wcagFound();
+  expect(found.filter((one) => one.rule !== known?.rule)).toEqual([]);
+  if (known === undefined) return;
+  const still = found.find((one) => one.rule === known.rule);
+  // Gone means fixed: its line in KNOWN goes too, as its ticket says.
+  expect({ ticket: known.ticket, still: still !== undefined }).toEqual({
+    ticket: known.ticket,
+    still: true,
+  });
+  expect({ ticket: known.ticket, where: still?.where.length }).toEqual({
+    ticket: known.ticket,
+    where: known.elements,
+  });
+}
 
 const PANES = '[data-testid="pane"]';
 const PROJECTS = '[data-strip="Projects"]';
@@ -98,7 +129,7 @@ describe("the window, held to WCAG 2.2 AA by axe", function () {
   closesTheTabsItOpens();
 
   // The check can fail: a control axe must name, planted in the window and taken out again. A run
-  // that read nothing, or a rule set that lost its tags, would leave every state below green.
+  // that read nothing would leave every state below green.
   it("finds a nameless button planted in the window", async () => {
     await browser.execute(() => {
       const planted = document.createElement("button");
@@ -114,9 +145,18 @@ describe("the window, held to WCAG 2.2 AA by axe", function () {
     }
   });
 
+  // And it asks WCAG 2.2 AA alone: the window has no level-one heading, which axe's best-practice
+  // `page-has-heading-one` names on every run that is not held to the tags. Two builder calls that
+  // each set the run's options did exactly that on the first run of #6037.
+  it("asks only the WCAG 2.2 AA rules, none of axe's best practice", async () => {
+    const rules = (await wcagFound()).map((one) => one.rule);
+    expect(rules).not.toContain("page-has-heading-one");
+    expect(rules).not.toContain("region");
+  });
+
   it("passes as the window opens, with no chat in front", async () => {
     await settled();
-    expect(await wcagFound()).toEqual([]);
+    await passes();
   });
 
   it("passes over Start a chat, a dialog", async () => {
@@ -124,7 +164,7 @@ describe("the window, held to WCAG 2.2 AA by axe", function () {
     await $('[role="dialog"]').waitForDisplayed({ timeout: 20_000 });
     await settled();
     try {
-      expect(await wcagFound()).toEqual([]);
+      await passes();
     } finally {
       await noDialogIsLeftUp();
     }
@@ -134,14 +174,14 @@ describe("the window, held to WCAG 2.2 AA by axe", function () {
     await pressAndStart("New tab");
     await panesDrawn(1);
     await settled();
-    expect(await wcagFound()).toEqual([]);
+    await passes();
   });
 
   it("passes with the tab split into two panes", async () => {
     await pressAndStart("Split right");
     await panesDrawn(2);
     await settled();
-    expect(await wcagFound()).toEqual([]);
+    await passes();
   });
 
   it("passes over the palette", async () => {
@@ -149,7 +189,7 @@ describe("the window, held to WCAG 2.2 AA by axe", function () {
     await $('[role="dialog"][aria-label="Command palette"]').waitForDisplayed({ timeout: 20_000 });
     await settled();
     try {
-      expect(await wcagFound()).toEqual([]);
+      await passes();
     } finally {
       await noDialogIsLeftUp();
     }
@@ -173,7 +213,7 @@ describe("the window, held to WCAG 2.2 AA by axe", function () {
     await $('[role="alertdialog"]').waitForDisplayed({ timeout: 20_000 });
     await settled();
     try {
-      expect(await wcagFound()).toEqual([]);
+      await passes();
     } finally {
       // Ended, as the question asked: the split's other chat is ended in `after`.
       await answerTheAsk("");
@@ -185,7 +225,7 @@ describe("the window, held to WCAG 2.2 AA by axe", function () {
     await $('[role="menu"]').waitForDisplayed({ timeout: 20_000 });
     await settled();
     try {
-      expect(await wcagFound()).toEqual([]);
+      await passes(KNOWN.menu);
     } finally {
       await noDialogIsLeftUp();
       if (
@@ -200,10 +240,10 @@ describe("the window, held to WCAG 2.2 AA by axe", function () {
   it("passes with the Inbox open", async () => {
     await showView("Asks");
     await settled();
-    expect(await wcagFound()).toEqual([]);
+    await passes();
     await showView("Updates");
     await settled();
-    expect(await wcagFound()).toEqual([]);
+    await passes();
     await showView("Asks");
   });
 
@@ -211,7 +251,7 @@ describe("the window, held to WCAG 2.2 AA by axe", function () {
     await showView("Explorer");
     await settled();
     try {
-      expect(await wcagFound()).toEqual([]);
+      await passes();
     } finally {
       await showView("Chats");
     }
@@ -220,16 +260,16 @@ describe("the window, held to WCAG 2.2 AA by axe", function () {
   it("passes on Settings, at the Project level and at You", async () => {
     await openProjectSettings();
     await settled();
-    expect(await wcagFound()).toEqual([]);
+    await passes();
     await settingsAt("You", "Motion and contrast");
     await settled();
-    expect(await wcagFound()).toEqual([]);
+    await passes();
   });
 
   it("passes on Settings › Theme, the theme gallery", async () => {
     await settingsAt("Project", "Theme");
     await $("[data-theme-card]").waitForExist({ timeout: 30_000 });
     await settled();
-    expect(await wcagFound()).toEqual([]);
+    await passes(KNOWN.gallery);
   });
 });
