@@ -99,9 +99,9 @@ body {
 
 /* Content: what is typed; paths, names and commands set as code; a view's answer (a memory, a
    persona, statistics); an error, wherever it is said; the words of a dialog, an alert dialog
-   or a popover card (Radix gives each of those its role, and a row's card is portalled out of
-   the view it belongs to). A revealed vault value is `<code class="vault-value">`, so `code`
-   already covers it. */
+   or a popover card (its family gives each of those its role, and React Aria portals a row's
+   card out of the view it belongs to). A revealed vault value is `<code class="vault-value">`,
+   so `code` already covers it. */
 :where(
   :is(input, textarea, [contenteditable]):not(.xterm *),
   code,

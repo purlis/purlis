@@ -672,8 +672,9 @@ function repoTakes(repo: RepoSaving): string {
 function ModeQuestion({ plane, branch }: { plane: PlaneId; branch: string }) {
   const [refused, setRefused] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  /** The answer picked and not yet written. Radix moves the pick with the arrow keys, so a
-   *  pick is only ever held here: the mode is written by **Use this**, never by the pick. */
+  /** The answer picked and not yet written. The radio group (React Aria's) moves the pick with
+   *  the arrow keys, so a pick is only ever held here: the mode is written by **Use this**,
+   *  never by the pick. */
   const [picked, setPicked] = useState<string>();
   const choose = async (mode: string) => {
     setBusy(true);

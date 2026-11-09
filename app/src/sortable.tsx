@@ -120,9 +120,10 @@ export function stripAccessibility(
 }
 
 /**
- * Keeps the strip's roving focus from moving while a tab is up, so the arrow keys carry the tab
- * and the keyboard stays on it. Radix's roving-focus group gives way to a keystroke whose default
- * was prevented, and `dnd-kit` still reads it: it listens on the document, after the tab.
+ * Keeps the strip's roving focus from moving while a tab is up, so the arrow keys carry the tab and
+ * the keyboard stays on it. The tabs family's strip gives way to a keystroke whose default was
+ * prevented (`ui/tabs/TabStrip.tsx`), and `dnd-kit` still reads it: it listens on the document,
+ * after the tab.
  */
 export function keepsTheFocus(event: KeyboardEvent, lifted: boolean) {
   if (

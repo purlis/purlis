@@ -745,8 +745,8 @@ function Rows({
  * The status line's doctor item, and the dialog it opens. A status item (the set's small ghost
  * button, `StatusLine.tsx`): flat on the bar, its mark, its word, then its count.
  *
- * A Radix dialog (`docs/ui-primitives.md`), which is what makes the list keyboard-reachable
- * and the window behind it inert while it is up.
+ * The dialog family's `Dialog` (`ui/dialog/Dialog.tsx`), on React Aria's modal, which is what makes
+ * the list keyboard-reachable and the window behind it inert while it is up.
  */
 export function Health({
   doctor,

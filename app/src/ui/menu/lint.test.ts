@@ -28,10 +28,6 @@ tester.run("purlis/menu-family", rules["menu-family"], {
     },
     { code: `<div className="ui-popover row-card">x</div>`, errors: [{ messageId: "oldClass" }] },
     {
-      code: `import * as Menu from "@radix-ui/react-dropdown-menu";`,
-      errors: [{ messageId: "oldImport" }],
-    },
-    {
       code: `import * as Popover from "./overlays/popover";`,
       errors: [{ messageId: "oldImport" }],
     },

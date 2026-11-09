@@ -299,8 +299,8 @@ async function pressTheEmptyPanesNewChat(): Promise<void> {
  * from being quietly removed: take the question out and every spec below hangs waiting for a
  * dialog that never comes.
  *
- * It is `role="alertdialog"` rather than `dialog`: Radix's `AlertDialog`, which is the
- * primitive for a question the operator did not go looking for.
+ * It is `role="alertdialog"` rather than `dialog`: the dialog family's `AlertDialog`
+ * (`ui/dialog/Dialog.tsx`), which is the one for a question the operator did not go looking for.
  */
 export async function answerTheAsk(ending: string): Promise<void> {
   // The question is about the row that was pressed; its title says which. Looked for by that,
@@ -553,9 +553,9 @@ export const FIRST_ASK = "Open this project?";
  * Whether the page shows a dialog titled `title`, looked for afresh. **Run in the page**, by
  * `browser.execute`, so it closes over nothing: what it needs is its argument and `document`.
  *
- * A dialog's title is what its `aria-labelledby` names, as a Radix dialog draws it. A dialog
- * mid-fade is shown once its opacity is past zero; `checkVisibility` says so where the engine has
- * it.
+ * A dialog's title is the heading its `aria-labelledby` names, as the dialog family draws it
+ * (`ui/dialog/Dialog.tsx`). A dialog mid-fade is shown once its opacity is past zero;
+ * `checkVisibility` says so where the engine has it.
  */
 export function showsTheQuestion(title: string): boolean {
   for (const dialog of document.querySelectorAll('[role="dialog"]')) {

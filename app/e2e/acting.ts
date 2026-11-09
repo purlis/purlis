@@ -26,7 +26,8 @@ import { goToWorkspaceAt, workspacesListed } from "./titleBarWorkspaces.js";
  *   what the browser would have done.
  * - **On Linux a WebDriver click is a `mousedown` and a `click`, and no pointer events.** Every
  *   press here is the element's own `click()` from the page, which is the event React's
- *   `onClick` and Radix's menu rows listen for on both engines.
+ *   `onClick` listens for on both engines, and which React Aria's `usePress` (a menu row's, a
+ *   button's) takes as a press of its own, a virtual one.
  * - **A right-click raises no `contextmenu` on either engine**, so a row's menu is opened with
  *   the event the platform would have sent ({@link openMenuOn}), as `workspace-explorer.e2e.ts`
  *   does.

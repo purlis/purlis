@@ -32,10 +32,11 @@ import { AlertDialog } from "./ui/dialog/Dialog";
  *   is open, and a button naming `svc` under a sentence naming `lib` is two descriptions of
  *   one act that do not agree, at the moment consent is given.
  *
- * Radix's `AlertDialog` rather than `Dialog` (`docs/ui-primitives.md`): it is the primitive for
- * a question whose answer destroys something. It focuses Cancel by itself, it makes Escape
- * mean Cancel, and its content is `role="alertdialog"` — so what a screen reader is handed
- * first is the sentence about what is about to be lost, not a heading and a pair of buttons.
+ * The dialog family's `AlertDialog` rather than `Dialog` (`ui/dialog/Dialog.tsx`): it is the
+ * family's member for a question whose answer destroys something. It starts on Cancel by itself
+ * (#2980), it makes Escape mean Cancel, and its content is `role="alertdialog"` — so what a screen
+ * reader is handed first is the sentence about what is about to be lost, not a heading and a pair
+ * of buttons.
  */
 export function DeleteWorkspace({
   workspace,

@@ -914,20 +914,22 @@ describe("App", () => {
     // **Two answers in this order, pinned for what it decides now rather than for what it used
     // to decide.**
     //
-    // Until charter-app#186 this was a test about reachability. Radix's `FocusScope` intercepts
-    // Tab only at the EDGES of the scope (`@radix-ui/react-focus-scope`, `handleKeyDown`), the
-    // engine is a WebView that leaves a `<button>` out of the tab sequence, and so the confirm
-    // was reachable exactly while these two were the only tabbables and the confirm was the
-    // second — Cancel the first edge, the confirm the last, and Shift+Tab Radix's own `focus()`
-    // call. A third control between them would have taken that away in silence.
+    // Until charter-app#186 this was a test about reachability, when the dialogs were Radix's.
+    // Its `FocusScope` intercepted Tab only at the EDGES of the scope, the engine is a WebView
+    // that leaves a `<button>` out of the tab sequence, and so the confirm was reachable
+    // exactly while these two were the only tabbables and the confirm was the second — Cancel
+    // the first edge, the confirm the last, and Shift+Tab Radix's own `focus()` call. A third
+    // control between them would have taken that away in silence.
     //
-    // **That is no longer what holds it up**: both answers carry `tabIndex={0}`, which is what
-    // puts a form control in WebKit's tab sequence whatever full keyboard access says, and
+    // **That is no longer what holds it up**: the dialog family moves Tab and Shift+Tab itself,
+    // through every stop in reading order and round from either end (`useTabbing` and
+    // `tabOrder.ts` in `ui/dialog`), and both answers carry `tabIndex={0}` besides (the button
+    // family's, `ui/pressable.tsx`), which puts them in WebKit's own sequence too.
     // `Modals.keyboard.test.tsx` walks every modal in the window to prove it. What this still
     // pins is the ORDER, which matters for a different reason and always did: **Cancel is
     // first and focused, so a Return pressed by reflex cancels rather than ends a chat.** The
     // Shift+Tab below is now one route to the confirm among two, and is kept because it is the
-    // one Radix owns.
+    // one that goes round the first edge to the last, which only the family's own Tab does.
     core();
     render(<App />);
     await openAChat();
@@ -941,7 +943,8 @@ describe("App", () => {
     expect(answers.map((answer) => answer.textContent)).toEqual(["Cancel", "Close", "Smart close"]);
     expect(answers[2]).toBeDisabled();
     // Cancel first, so a Return pressed by reflex cancels. The dialog itself is not in the
-    // sequence — Radix gives the content `tabIndex={-1}`.
+    // sequence — React Aria's `Dialog` gives it `tabIndex={-1}`, which the family's tab order
+    // passes over.
     expect(answers[0]).toHaveFocus();
 
     await userEvent.tab({ shift: true });
@@ -967,8 +970,9 @@ describe("App", () => {
     await openAChat();
 
     const asking = await askToEnd("steward 1");
-    // To Close and no further, by the key Radix handles at the scope's first edge: Smart close,
-    // the last answer, cannot be pressed on a chat this core says nothing about.
+    // To Close and no further, by Shift+Tab from the first stop, which the dialog family takes
+    // round to the last: Smart close, the last answer, cannot be pressed on a chat this core
+    // says nothing about, so it is no stop.
     await userEvent.tab({ shift: true });
     expect(within(asking).getByRole("button", { name: "Close" })).toHaveFocus();
 

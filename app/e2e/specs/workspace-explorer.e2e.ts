@@ -109,7 +109,8 @@ async function focus(workspace: string): Promise<void> {
  *
  * Answers whether it found one, so a selector that stopped matching fails as itself rather
  * than as a menu that never opened. The coordinates are the element's own centre, because
- * Radix anchors the menu to the point the event carries. The same helper
+ * the menu family's `ContextMenu` places the menu at the point the event carries (React Aria's
+ * popover, anchored to that point). The same helper
  * `workspace-lifecycle.e2e.ts` uses, and its docstring has the measurement behind it.
  */
 async function sendContextMenu(selector: string): Promise<boolean> {

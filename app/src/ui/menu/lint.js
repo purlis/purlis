@@ -4,10 +4,10 @@
 /**
  * **The menu family's lint** (`eslint.ui-rules.js` finds this file, #3387):
  *
- * `purlis/menu-family` (error: the menu, context menu and popover families have moved, #2909):
- * no element outside `src/ui` says a menu's role (`menu`, `menuitem`, …) or wears the old menu
- * and popover classes (`ui-menu`, `ui-menu-*`, `ui-popover`), and nothing imports Radix's
- * menus or popover. A menu is the family's `Menu`, `ContextMenu` or `InlineMenu`
+ * `purlis/menu-family` (error: the menu, context menu and popover families have moved, #2909): no
+ * element outside `src/ui` says a menu's role (`menu`, `menuitem`, …) or wears the old menu and
+ * popover classes (`ui-menu`, `ui-menu-*`, `ui-popover`), and nothing imports the window's old
+ * wrappers of them (`overlays/…`). A menu is the family's `Menu`, `ContextMenu` or `InlineMenu`
  * (`ui/menu/Menu.tsx`), a popover one of `ui/popover/Popover.tsx`'s.
  */
 
@@ -19,9 +19,8 @@ const MENU_ROLES = new Set(["menu", "menubar", "menuitem", "menuitemcheckbox", "
 /** The old menu and popover classes: `ui-menu`, every `ui-menu-*`, and `ui-popover`. */
 const MENU_CLASS = /(?:^|\s)ui-(?:menu(?:-[\w-]+)?|popover)(?=\s|$)/;
 
-/** Radix's menus and popover, and the window's old wrappers of them. */
-const MENU_IMPORT =
-  /^@radix-ui\/react-(?:dropdown-menu|context-menu|menubar|popover|hover-card)$|(?:^|\/)overlays\/(?:dropdown-menu|context-menu|popover)$/;
+/** The window's old wrappers of the menus and the popover. */
+const MENU_IMPORT = /(?:^|\/)overlays\/(?:dropdown-menu|context-menu|popover)$/;
 
 /** The words of an answer that grants, anywhere in a label ("Always allow"): no menu row says
  *  them. Shared with the test that holds every menu's words at run time (`menuModel.test.ts`). */

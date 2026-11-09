@@ -27,34 +27,34 @@ file is the defect.
 
 - A dialog, a radio group, a checkbox, a menu, a popover, a tooltip, a collapsible section, a
   tab list: take its family from `app/src/ui`, which wraps React Aria's primitive once (ADR 0104).
-  Until #2930 this said to take the Radix primitive, one package per thing.
-- **No library between you and the primitive, and no indirection you cannot read.** No `<Modal>`,
-  no `<Field>`, no house component library. The primitive is the component; purlis's look is CSS
-  on it. A purlis API in front of Radix is the custom tooling this repo's first rule exists to
-  prevent, and it is how a primitives migration turns back into hand-rolled markup with extra
-  steps. The test is at the **call site**: can the next person see which primitive this is and
-  reach its props?
-- **A component's source copied into this repo is neither of those, and is allowed.** Until
-  2026-09-22 the rule above read _"do not write a wrapper layer around them"_, which forbade a
-  shadcn/ui component — a shadcn component is literally a thin wrapper around a Radix primitive.
-  The operator settled it: that rule was written against **a dependency that owns your markup**,
-  and a file in `app/src/components/ui/` is ours, editable line by line, and visible in the diff
-  that adds it. `docs/design-system.md` has what a copy must satisfy.
+- **One wrapper per primitive, and nothing between a screen and its family.** A family is the
+  only place its primitive is imported (`no-restricted-imports` in `app/eslint.config.js`), and no
+  second purlis layer stands in front of a family: a screen reaches the family's own props. The
+  test is at the **call site**: can the next person see which family this is and reach its props?
+  Until ADR 0104 the rule here was the opposite, no layer at all between a screen and a Radix
+  primitive (ADR 0037); the families replaced it, and Radix is gone (#2930).
+- **A component's source copied into this repo is allowed** (ADR 0037, amended 2026-09-22): a
+  file in `app/src/components/ui/` is ours, editable line by line, and visible in the diff that
+  adds it, which is not a dependency that owns your markup. It builds on the families like any
+  screen, since nothing outside `app/src/ui` imports a primitives library and no `@radix-ui`
+  package may come back (`radixGone.guard.test.ts`). `docs/design-system.md` has what a copy must
+  satisfy.
 - **One house set is allowed, and only this one: the settings set** (ADR 0037, amended
   2026-10-04, rulings V89f and V89j; SE-16 #1166, DS-3e #1177). `app/src/settings/components.tsx`
   holds six pieces — **SettingsLayout**, **SettingGroup**, **SettingRow**, **Field**, **Choice**
   and **SettingActions** — and nothing else may join it without a new amendment to that record. See
   [The settings set](#the-settings-set-is-the-one-house-set) below for why.
-- purlis's own look, always. Radix ships **no CSS at all** — every primitive is an unstyled
-  element with `data-state` attributes to hang rules off. A control takes its look from **its
+- purlis's own look, always. React Aria ships **no CSS at all**: every primitive is an unstyled
+  element with `data-*` state attributes (`data-pressed`, `data-selected`, `data-focus-visible`)
+  to hang rules off. A control takes its look from **its
   family's stylesheet in `app/src/ui/`** ([Every control is a family's](#every-control-is-a-familys)
   below), and `App.css` draws the rest of the window — but **no colour is written in either**: every one is
   `var(--<token>)` and the values live in `app/src/theme/`. See `design-system.md`.
 - Native HTML that already does the job is not hand-rolled markup and does not need replacing:
   `<details>/<summary>`, `<label for>`, `<button>`. Reach for a primitive when the browser has
   no element for what you mean — a modal that traps focus, a listbox, a menu.
-- `react-resizable-panels` stays what draws resizable panes. Radix has no panel primitive and
-  there is nothing to move.
+- `react-resizable-panels` stays what draws resizable panes. React Aria has no panel primitive
+  and there is nothing to move.
 
 ## The settings set is the one house set
 
@@ -422,7 +422,7 @@ no list of roles or classes to let one through.
 | `size` | `sm` 24, `md` 28 (the default), `lg` 32, at the default text size and density; `lg` only beside a list's main filter field |
 | `inline` | words in a line of words, a breadcrumb's crumb (#3264): as tall as the line, no box padding or edge, cut to an ellipsis where the line squeezes it, underlined (no fill) under the pointer and the keyboard; words only |
 | `icon` | the icon before the words, drawn as the `icon` part; `IconButton` takes only an icon and an `aria-label`, and is square |
-| `onPress`, `isDisabled`, `isSelected` | React Aria's own words; `onClick` still reaches a Radix trigger the button is the `asChild` of |
+| `onPress`, `isDisabled`, `isSelected` | React Aria's own words; a parent that clones the button with its own handlers (`ui/trigger.tsx`, `ui/menu/ContextMenu.tsx`) still reaches it |
 | `tooltip` | its hint, the shared tooltip ([the tooltip family](#the-tooltip-family)), never a `title`; on an `IconButton`, a second line under its name |
 | `className` | the button's place in its view (margin, width, flex, order), never a look |
 
@@ -588,7 +588,7 @@ refuses all four (`purlis/select-family`, an error).
 (`app/src/ui/choice/`, #2907, ADR 0104), on React Aria's `Checkbox`, `RadioGroup` and `Radio`,
 `Switch` and `Slider`. No screen draws an `<input type="checkbox">`, `radio`, `range`, `color` or
 `file` of its own, writes `role="checkbox"`, `radio`, `radiogroup`, `switch` or `slider` by hand,
-imports Radix's checkbox, radio group, switch, slider or toggles, or wears the old `.ui-checkbox`,
+or wears the old `.ui-checkbox`,
 `.ui-radio`, `.ui-switch`, `.ui-segmented-*`, `.ui-levels` or `.ui-choice-*` classes:
 `eslint.config.js` refuses each (`purlis/choice-family`, an error).
 
@@ -1145,8 +1145,8 @@ item families (`purlis/tooltip-family`, an error). A frame's `title` is its name
 (`app/src/ui/menu/Menu.tsx`, `app/src/ui/menu/ContextMenu.tsx`, `app/src/ui/popover/Popover.tsx`,
 #2909, ADR 0104), on React Aria's `MenuTrigger`, `Menu`, `MenuItem`, `MenuSection`,
 `SubmenuTrigger`, `Popover`, `Dialog` and `DialogTrigger`. No screen says a menu's role or wears
-the old `.ui-menu*` and `.ui-popover` classes, and nothing imports Radix's menus or popover:
-`eslint.config.js` refuses all three (`purlis/menu-family`, an error). A select's list stands on
+the old `.ui-menu*` and `.ui-popover` classes, and nothing imports the window's old wrappers of
+them (`overlays/…`): `eslint.config.js` refuses all three (`purlis/menu-family`, an error). A select's list stands on
 the same surface, its options the menu's rows ([The select and combobox
 families](#the-select-and-combobox-families)).
 
@@ -1719,21 +1719,12 @@ their rows are tabs and sentences with no part that gives way, so `.more-menu` h
 **What the window draws over itself is one surface** (#1845). A dialog, a popover, a menu and a
 tooltip share one ground (`surface.overlay`), one border, one corner (`--radius-lg`) and one lift
 (`--elevation-overlay`), so they read as related; a dialog and a popover share one padding
-(`--space-6`). Each family draws it in its own sheet, in the `components` layer (`ui/dialog`,
-`ui/popover`, `ui/tooltip`), and the popover and menu families' surface is this one, a select's
-list's included. The Radix-era classes (`.ui-menu`, `.ui-menu-item`, `.ui-popover`,
-`.ui-overlay-arrow`) and `primitives/overlays.css`, which drew them, are retired (#3365).
-
-| Overlay | Class                                         | On                                                         |
-| ------- | --------------------------------------------- | ---------------------------------------------------------- |
-| Scrim   | `.ui-scrim`                                   | Radix Dialog's or AlertDialog's `Overlay`                  |
-| Dialog  | `.ui-dialog`                                  | Radix Dialog's or AlertDialog's `Content`                  |
-| Popover | the popover family's surface ([above](#the-menu-and-popover-families)) | `AnchoredPopover`, `HeldPopover`, `PopoverDialog` |
-
-(`--elevation-overlay`), so they read as related. A dialog is [the dialog
-family's](#the-dialog-family), drawn on that surface by `app/src/ui/dialog/dialog.css`; a popover
-and a menu are the popover family's (`app/src/ui/popover/popover.css`), and a tooltip the tooltip
-family's, each in the same `components` layer.
+(`--space-6`). A dialog is [the dialog family's](#the-dialog-family), drawn on that surface by
+`app/src/ui/dialog/dialog.css`; a popover and a menu are the popover family's
+(`app/src/ui/popover/popover.css`), a select's list's included, and a tooltip the tooltip
+family's, each in its own sheet in the `components` layer. The old overlay and menu classes
+(`.ui-menu`, `.ui-menu-item`, `.ui-popover`, `.ui-overlay-arrow`, `.ui-scrim`, `.ui-dialog`) and
+`primitives/overlays.css`, which drew them, are retired (#3365).
 
 | Overlay | Class                                         | On                                                         |
 | ------- | --------------------------------------------- | ---------------------------------------------------------- |
@@ -1762,9 +1753,8 @@ family's, each in the same `components` layer.
 `app/src/primitives/overlays.test.tsx` holds the surface through the window's cascade (the same
 ground, border, corner and lift on each kind, the same padding on a dialog and a popover), that a
 dialog is still named by its title, keeps the keyboard and leaves on Escape, and that a popover
-opens from the keyboard. It reads every component's source too: each Radix overlay part wears its
-class, every button inside an overlay's content is the button family and every field its
-field class, and `App.css` draws no overlay surface and lifts nothing by a shadow of its own.
+opens from the keyboard. It reads every component's source too: every button inside a popover
+or a menu is the button family and every field the field family, and `App.css` draws no overlay surface and lifts nothing by a shadow of its own.
 The dialog family's own tests hold a dialog's rows (`ui/dialog/Dialog.test.tsx`).
 
 ## Text roles
@@ -1831,7 +1821,11 @@ written any other way, with no allowance (#2319); `design-system.md`
 (["Text roles"](design-system.md#text-roles)) has the rules, what a theme may change, where
 today's window still differs, and the order the surfaces move in.
 
-## Why Radix, and why not the other two
+## Why Radix, and why not the other two (history)
+
+_History: this is why the window took Radix first (ADR 0037). ADR 0104 moved every family
+onto React Aria, which has the tree, table and combobox Radix has none of, and #2930 removed
+Radix. The measurements below are of that first choice, not of today's bundle._
 
 **Not Material (MUI).** Material is the wrong visual language for a dense terminal-adjacent
 window — the reference for this app's design is Zed. Its runtime CSS-in-JS is also the one
@@ -2135,6 +2129,9 @@ things about it are decisions:
 
 ## Two things learned converting them, which will catch the next person
 
+_History: learned on Radix, before the families. What a family does in its place is in its own
+section above._
+
 **A radio group's pick does not follow the arrow keys on its own.** Radix selects an item on
 focus only while it believes an arrow key is down, and it learns that from a `keydown` listener
 on `document`. React attaches its delegated listeners to the root container and to each portal
@@ -2274,6 +2271,10 @@ Three things follow, and the last is the one a reviewer should hold us to:
   about it.
 
 ## What Tab actually reached in each modal, and the one attribute that fixed it
+
+_History: measured on Radix's dialogs. The dialog family now moves Tab itself, round from the
+last stop to the first (`ui/dialog/Dialog.tsx`, `ui/dialog/tabOrder.ts`), and the button family writes the
+`tabindex` WebKit needs on every button (#190)._
 
 purlis#186 asked the question above of **every** modal surface rather than of the one
 dialog a scenario happened to break on, and the answer was worse than the ticket's guess.
@@ -2599,11 +2600,11 @@ component library gets added on.
   _told_; `RegionFrame.test.tsx` and `FourRegions.test.tsx` use the real one for everything that
   is about the tree. A size is only really checked by the scenario tests.
 - **The explorer's repo groups are `<details>`**, per the rule above: the browser has a
-  collapsible, and `@radix-ui/react-collapsible` is not installed because nothing needs it.
+  collapsible, and no collapsible primitive is installed because nothing needs one.
 - **Picking a spot in the explorer is `aria-current`, not `aria-selected`.** `aria-selected`
   belongs to the three tablists that are the axis (ADR 0036), and to the one tree that really
   selects, a file tab's, whose selected file is what the tab previews; a spot is the current
-  item of a list. Radix has no tree or listbox primitive, and native buttons are not hand-rolled markup.
+  item of a list, and native buttons are not hand-rolled markup.
 - **Every tree is drawn by the tree family** (#1672, DS-12, #2911, #3198): its levels, its
   straight guides, the selected row (`aria-current` or `aria-selected`, in `list.selected` with
   an edge) and the keyboard's ring are `ui/tree`'s; a new tree draws nothing of its own.
@@ -2711,8 +2712,8 @@ A part of a project's view is therefore mounted while nobody can see it. What th
   stands on, a dialog and a tooltip each ask `useProjectShown()` and draw nothing while their
   project is behind. Nothing of a project behind is ever mounted over the window, so nothing a
   dialog does to the document as it mounts happens either, and what opened it is there when
-  the person is back. `projectShown.guard.test.tsx` fails for a Radix package that draws over the
-  window and for a new `createPortal`. Behind that
+  the person is back. `projectShown.guard.test.tsx` fails for a new `createPortal`, and
+  `radixGone.guard.test.ts` for a Radix package. Behind that
   stands one backstop: a project that leaves the front with anything still over the window once
   the press is over (`drawnOverTheWindow`) is not kept.
 - **A prop that says the project is in front** is the last one the part was drawn with while
@@ -3149,11 +3150,11 @@ means two things from one tab to the next; in a text field or an editor a chord 
 cannot run is left to the field.
 
 **A menu that opens under a resting pointer takes no keyboard** (#1487, `TabChip.tsx`). The
-tasks menu on a pane head's state word (a tab's chip until #5341) is Radix's dropdown menu,
-opened three ways: a press, ⌘⇧J, and the pointer resting on the word. Radix moves the focus into a menu as it opens and onto
-each row the pointer crosses, which is right for the first two and would take the keyboard out
-of a terminal for the third. So a rest-opened menu refuses both (the menu's `onOpenAutoFocus`,
-and each row's pointer handlers), the stylesheet's hover says which row the pointer is on, and
+tasks menu on a pane head's state word (a tab's chip until #5341) is the menu family's,
+opened three ways: a press, ⌘⇧J, and the pointer resting on the word. A menu moves the focus
+into itself as it opens and onto each row the pointer crosses, which is right for the first two
+and would take the keyboard out of a terminal for the third. So a rest-opened menu refuses both
+(`autoFocus` off, and the family's `takesNoKeyboard`), the stylesheet's hover says which row the pointer is on, and
 an Escape that closes it stops there instead of also reaching the chat. Only that menu closes
 when the pointer leaves: a pressed or key-opened menu has the keyboard and stays until Escape,
 a pick, a press outside or the same ask again. However it was opened, a menu closed without a

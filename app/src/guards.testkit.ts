@@ -1336,10 +1336,3 @@ export function ratchet(
   }
   return complaints;
 }
-
-/**
- * **Where a Radix package is imported from**, as a pattern for the start of an import's source,
- * up to the package's own name (`checkbox`, `radio-group`): the package itself. Every overlay is
- * a family's, on React Aria (#2906), so no window file stands in for a Radix package.
- */
-export const RADIX_FROM = String.raw`@radix-ui\/react-`;

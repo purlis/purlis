@@ -57,12 +57,12 @@ export type Ending = {
  * that understated what it was about to end by however many projects the operator had merged
  * into the window.
  *
- * **Radix's `AlertDialog`** (`docs/ui-primitives.md`, #630): its answer ends every chat, so it
- * is the question whose answer destroys something, and a screen reader is handed the sentence
- * about what is lost first. It is what makes "over everything" true rather than drawn: the rest
- * of the window is inert and out of the accessibility tree while it is up, and the keyboard
- * cannot leave it for a pane behind it. Its title counts chats, the word the window uses for
- * them (CONTEXT.md).
+ * **The dialog family's `AlertDialog`** (`ui/dialog/Dialog.tsx`, #630): its answer ends every chat,
+ * so it is the question whose answer destroys something, and a screen reader is handed the sentence
+ * about what is lost first. It is what makes "over everything" true rather than drawn: the rest of
+ * the window is inert and out of the accessibility tree while it is up, and the keyboard cannot
+ * leave it for a pane behind it. Its title counts chats, the word the window uses for them
+ * (CONTEXT.md).
  *
  * **Escape answers it now, and did not before.** It answers what Cancel answers — nothing is
  * ended, and the core is told, so the next quit warns again rather than going straight out. A

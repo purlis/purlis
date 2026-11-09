@@ -338,7 +338,7 @@ describe("a tooltip from the keyboard", () => {
     expect(shownTip()).toHaveTextContent("Changed in this branch");
   });
 
-  it("hands what a parent gives it on to its element, as a Radix trigger's child", async () => {
+  it("hands what a parent gives it on to its element, as a context menu's child", async () => {
     const opened = vi.fn();
     const ref = { current: null as HTMLElement | null };
     function Trigger({ children }: { children: ReactElement }) {

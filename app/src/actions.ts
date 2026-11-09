@@ -6044,8 +6044,8 @@ export function curateSubjectOf(what: MenuOn): string | undefined {
  * A subject's "Curate ▸" submenu, in the order it is drawn: charter's own actions, then a group
  * per declaring persona in the core's order, then every action the core left out.
  *
- * **A scan of the catalogue, and only when the submenu is drawn** — which is when its menu is
- * open. `Menus.tsx` calls it from inside the menu's content, which Radix mounts only while the
+ * **A scan of the catalogue, and only when the submenu is drawn** — which is when its menu is open.
+ * `Menus.tsx` calls it from inside the menu family's `menu`, which the family draws only while the
  * menu is up, so a strip of fifty tabs does not pay it per render.
  */
 export function curateRows(

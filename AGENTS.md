@@ -72,12 +72,13 @@ amending the same record do not conflict (`tools/adr-amendments.mjs` holds it).
   0104): each wraps its React Aria primitive once, and lint refuses a control drawn by hand. Before
   any UI work, follow the `purlis-building-ui` skill
   (`app/src-tauri/plugin/skills/purlis-building-ui/SKILL.md`): the families, parts, stories and
-  checks that make it done. A family that has not moved yet takes its Radix primitive, never
-  behind a purlis API of our own. A shadcn/ui component's source **copied into the repo
-  is allowed** and is not that layer (ADR 0037, amended 2026-09-22). **One house set is the
-  exception:** the six settings pieces in `app/src/settings/components.tsx` (SettingsLayout,
-  SettingGroup, SettingRow, Field, Choice, SettingActions; ADR 0037, amended 2026-10-04, V89f
-  and V89j). Another piece needs a new amendment.
+  checks that make it done. Every family has moved and Radix is gone (#2930):
+  `app/src/radixGone.guard.test.ts` fails on a `@radix-ui` import or dependency. A shadcn/ui
+  component's source **copied into the repo is allowed** (ADR 0037, amended 2026-09-22).
+  **Beyond the families there is one house set:** the six settings pieces in
+  `app/src/settings/components.tsx` (SettingsLayout, SettingGroup, SettingRow, Field, Choice,
+  SettingActions; ADR 0037, amended 2026-10-04, V89f and V89j). Another piece needs a new
+  amendment.
   `docs/ui-primitives.md` says which, why, and what it costs; `docs/design-system.md` says what a
   copy has to satisfy.
 - **A standing line in the window is a `Notice`** (`app/src/Notice.tsx`; ADR 0037, amended

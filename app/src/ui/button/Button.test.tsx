@@ -107,7 +107,7 @@ describe("a button", () => {
     expect(pressed).not.toHaveBeenCalled();
   });
 
-  it("hands a click's event to an onClick, as a Radix trigger it is the child of needs", () => {
+  it("hands a click's event to an onClick it is given, as React Aria's press passes it on", () => {
     const clicked = vi.fn();
     render(<Button onClick={clicked}>Open</Button>);
     fireEvent.click(screen.getByRole("button", { name: "Open" }));

@@ -376,8 +376,9 @@ describe("deleting a workspace", () => {
     expect(await within(dialog).findByRole("alert")).toHaveTextContent(REFUSED);
     // One call, and it was the one that asked the core to refuse.
     expect(calls("workspace_remove")).toHaveLength(1);
-    // The strip is only reachable once the dialog is answered: a Radix alert dialog marks
-    // the rest of the window `aria-hidden`, which is the surface behaving correctly
+    // The strip is only reachable once the dialog is answered: the dialog family's alert
+    // dialog, a React Aria modal, makes the rest of the window inert (`ariaHideOutside`, or
+    // `aria-hidden` where the engine has no `inert`), which is the surface behaving correctly
     // (`docs/ui-primitives.md`). Cancelled, the workspace is still there.
     await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(strip()).toEqual(["beta", "alpha"]);

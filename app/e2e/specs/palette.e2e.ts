@@ -56,8 +56,9 @@ async function openPalette() {
  * evidence either way. This is the evidence: what the document saw, on what target, and
  * whether anything had already called `preventDefault` on it.
  *
- * Capture phase on `document`, so it runs before any handler of the app's or Radix's and a
- * key that is swallowed later is still written down. It is diagnostics and never an
+ * Capture phase on `document`, so it runs before any handler of the app's or React Aria's (but
+ * the dialog family's Tab, heard on the window in its capture phase first) and a key that is
+ * swallowed later is still written down. It is diagnostics and never an
  * assertion — nothing passes or fails on what it collects.
  */
 async function watchKeys(): Promise<() => Promise<string>> {
@@ -300,8 +301,10 @@ describe("the command palette", () => {
     //
     // 1. **`browser.keys(["Shift", "Tab"])` is not delivered as a chord.** The trace prints
     //    `Shift+` when `event.shiftKey` is set; the Tab line is bare, so the modifier was not
-    //    held. Radix's `FocusScope` needs `shiftKey` to act at the scope's first edge, so it
-    //    never fired and the focus never moved.
+    //    held. The dialogs were Radix's then, and its `FocusScope` needed `shiftKey` to act at
+    //    the scope's first edge, so it never fired and the focus never moved. The dialog
+    //    family's own Tab (`useTabbing` in `ui/dialog/Dialog.tsx`) reads `shiftKey` as well: an
+    //    unheld Shift is a Tab forward.
     // 2. **A focused button is not activated by a synthesised `Enter`.** The engine delivered
     //    the keydown TO `Cancel`, unprevented — so the focus was genuine and the engine
     //    agreed — and nothing happened. WebDriver key actions carry no implicit activation.
@@ -313,8 +316,9 @@ describe("the command palette", () => {
     // can show, which is that a keyboard-only operator gets to the question at all and that
     // the keyboard can answer it.
     //
-    // **Escape is a real answer and not a consolation.** Radix listens for it on `document`,
-    // which is why it works here when nothing aimed at a button does, and it has a real
+    // **Escape is a real answer and not a consolation.** The dialog family listens for it on
+    // the window (`useTabbing` in `ui/dialog/Dialog.tsx`), not on a button, which is why it
+    // works here when nothing aimed at a button does, and it has a real
     // consequence this asserts: nothing is ended. `docs/ui-primitives.md` records the rest.
     await aChatOfThisFileInFront();
     const before = await tabNames();

@@ -30,7 +30,10 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-/** A dialog drawn the way a Radix dialog is: its title is what `aria-labelledby` names. */
+/**
+ * A dialog drawn the way the dialog family draws one (`ui/dialog/Dialog.tsx`): its title is the
+ * heading its `aria-labelledby` names.
+ */
 function aDialog(id: string, title: string, body = ""): HTMLElement {
   const dialog = document.createElement("div");
   dialog.setAttribute("role", "dialog");

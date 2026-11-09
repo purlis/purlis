@@ -307,12 +307,14 @@ describe("the chat strip when it holds more than it has room for", () => {
   });
 
   it("moves between its rows with the arrow keys", async () => {
-    // **The first thing built under ADR 0037, so it is the test of it.** The picker's radio
-    // group does NOT follow the arrow keys under React 19 on its own — Radix learns that an
-    // arrow is down from a `keydown` listener on `document`, and React's delegated listeners
-    // sit below `document`, so focus has already moved by the time Radix hears it (#137).
-    // A menu's roving focus is its own `onKeyDown`, on the content element, and this is what
-    // says so rather than an assumption that the two primitives are alike.
+    // **The first thing built under ADR 0037, so it is the test of it.** Under Radix the
+    // picker's radio group did NOT follow the arrow keys under React 19 on its own — Radix
+    // learned that an arrow was down from a `keydown` listener on `document`, and React's
+    // delegated listeners sit below `document`, so focus had already moved by the time Radix
+    // heard it (#137). A menu's roving focus was its own `onKeyDown`, on the content element.
+    // Both are React Aria's now, each an `onKeyDown` on its own element (`useRadioGroup`, and
+    // the menu's `useSelectableCollection`), and this is what says so for the menu rather than
+    // an assumption that the two are alike.
     await fourChats();
     room.roomFor(1);
     await userEvent.click(
