@@ -102,6 +102,14 @@ export const Letterboxed: Story = {
     const picture = canvas.getByLabelText("The browser's page", { selector: "canvas" });
     await waitFor(() => expect(picture).toHaveProperty("height", FRAME.height));
 
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("textbox", { name: "Address" }),
+      "Tab reaches Address",
+    );
+    expectFocusInSight();
+    (document.activeElement as HTMLElement | null)?.blur();
+
     // Where the engine laid the picture out: its box, the frame held whole inside it.
     const box = picture.getBoundingClientRect();
     const scale = Math.min(box.width / FRAME.width, box.height / FRAME.height);
@@ -125,12 +133,7 @@ export const Letterboxed: Story = {
     await waitFor(() => expect(inputs).toHaveLength(2));
     await expect(inputs[0]).toEqual(AIMED);
 
-    await userEvent.tab();
-    await untilFocused(
-      () => canvas.getByRole("textbox", { name: "Address" }),
-      "Tab reaches Address",
-    );
-    expectFocusInSight();
+    // The click took the browser over and left the keyboard on its page.
     (document.activeElement as HTMLElement | null)?.blur();
   },
 };
