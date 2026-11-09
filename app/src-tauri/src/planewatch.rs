@@ -192,6 +192,7 @@ pub enum ChangeKind {
     Harness,
     Workspace,
     Todos,
+    Artifacts,
     Memory,
     Sessions,
     Persona,
@@ -220,6 +221,7 @@ impl From<Change> for PlaneChange {
                 Kind::Harness => ChangeKind::Harness,
                 Kind::Workspace => ChangeKind::Workspace,
                 Kind::Todos => ChangeKind::Todos,
+                Kind::Artifacts => ChangeKind::Artifacts,
                 Kind::Memory => ChangeKind::Memory,
                 Kind::Sessions => ChangeKind::Sessions,
                 Kind::Persona => ChangeKind::Persona,
@@ -433,7 +435,7 @@ pub fn window_focused(app: &tauri::AppHandle, focused: bool) {
         let app = app.clone();
         watches.shown_when(move || {
             use tauri::Manager as _;
-            app.webview_windows().values().any(|window| {
+            app.windows().values().any(|window| {
                 window.is_visible().unwrap_or(false) && !window.is_minimized().unwrap_or(false)
             })
         });
@@ -1270,9 +1272,48 @@ fn wanted(root: &Path) -> HashSet<PathBuf> {
                 wanted.insert(folder);
             }
         }
+        artifacts(&dir, &mut wanted);
         wanted.insert(dir);
     }
     wanted
+}
+
+/// **A workspace's artifacts** (ADR 0122, #5955): `artifacts/` itself, which holds the pins,
+/// and each pinned folder with every folder in it, so an open artifact hears its template and
+/// its data change. Only what is pinned: an artifact folder is small (it is served whole), and
+/// one nobody pinned is not read by anything. A link is not followed, as nowhere here.
+fn artifacts(workspace: &Path, wanted: &mut HashSet<PathBuf>) {
+    let dir = workspace.join(purlis_core::artifact::DIR);
+    if !a_dir(&dir) {
+        return;
+    }
+    let pins = purlis_core::artifact::read(workspace)
+        .map(|read| read.pins)
+        .unwrap_or_default();
+    for pin in &pins {
+        let folder = dir.join(&pin.folder);
+        if a_dir(&folder) {
+            folders_in(&folder, ARTIFACT_DEPTH, wanted);
+        }
+    }
+    wanted.insert(dir);
+}
+
+/// How deep a pinned artifact's folders are watched: as deep as one is served.
+const ARTIFACT_DEPTH: usize = 16;
+
+/// `folder` and every folder in it, `depth` deep, none dotted and none through a link.
+fn folders_in(folder: &Path, depth: usize, wanted: &mut HashSet<PathBuf>) {
+    if depth > 0 {
+        for entry in std::fs::read_dir(folder).into_iter().flatten().flatten() {
+            let inner = entry.path();
+            let dotted = entry.file_name().to_string_lossy().starts_with('.');
+            if !dotted && a_dir(&inner) {
+                folders_in(&inner, depth - 1, wanted);
+            }
+        }
+    }
+    wanted.insert(folder.to_path_buf());
 }
 
 #[cfg(test)]
@@ -1842,6 +1883,60 @@ mod tests {
         ] {
             assert!(!got.contains(&alpha.join(not)), "{not} is watched: {got:?}");
         }
+    }
+
+    /// `plane` with artifact `backlog` pinned in workspace alpha, and `draft` beside it, not.
+    fn with_artifacts(plane: &Path) -> PathBuf {
+        let at = plane.join("workspaces/alpha/artifacts");
+        for folder in ["backlog/data/weeks", "backlog/css", "draft/data"] {
+            std::fs::create_dir_all(at.join(folder)).expect("an artifact's folder");
+        }
+        std::fs::write(at.join("backlog/index.html"), "<h1>12</h1>").expect("a page");
+        std::fs::write(
+            at.join("pins.toml"),
+            "version = 1\npin = [\n  { id = \"a00000000001\", folder = \"backlog\", name = \"Backlog\", icon = \"chart\", order = 1 },\n]\n",
+        )
+        .expect("the pins");
+        at
+    }
+
+    #[test]
+    fn a_pinned_artifact_s_folders_are_watched_and_an_unpinned_one_s_are_not() {
+        let plane = plane_with_todos(&[]);
+        let at = with_artifacts(plane.path());
+        let got = wanted(plane.path());
+        for folder in [
+            "",
+            "backlog",
+            "backlog/data",
+            "backlog/data/weeks",
+            "backlog/css",
+        ] {
+            assert!(
+                got.contains(&at.join(folder)),
+                "{folder} is not watched: {got:?}"
+            );
+        }
+        for not in ["draft", "draft/data"] {
+            assert!(!got.contains(&at.join(not)), "{not} is watched: {got:?}");
+        }
+    }
+
+    #[test]
+    fn an_artifact_s_data_written_is_told_as_its_workspace_s_artifacts() {
+        let plane = plane_with_todos(&[]);
+        let root = plane.path().canonicalize().expect("canonical");
+        let at = with_artifacts(&root);
+        let (_watch, told) = telling(&root);
+
+        std::fs::write(at.join("backlog/data/weeks/45.json"), "[]").expect("the data");
+
+        let change = told_about(
+            &told,
+            "workspaces/alpha/artifacts/backlog/data/weeks/45.json",
+        );
+        assert_eq!(change.kind, Kind::Artifacts);
+        assert_eq!(change.workspace.as_deref(), Some("alpha"));
     }
 
     #[test]

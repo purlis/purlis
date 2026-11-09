@@ -95,7 +95,7 @@ impl Quitting {
 /// Each step can fail on its own and none of them is worth refusing to continue over — a
 /// window that is shown but not focused is still the window back.
 pub fn show<R: Runtime>(app: &AppHandle<R>) {
-    if let Some(window) = app.get_webview_window(WINDOW) {
+    if let Some(window) = app.get_window(WINDOW) {
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
@@ -345,7 +345,7 @@ pub fn clicked<R: Runtime>(app: &AppHandle<R>, id: &str) {
         // window of its own, `⌘,` pressed there is about that window.
         SETTINGS => {
             let focused = app
-                .webview_windows()
+                .windows()
                 .into_iter()
                 .find(|(label, window)| {
                     crate::windows::is_charter_window(label) && window.is_focused().unwrap_or(false)

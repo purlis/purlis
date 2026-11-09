@@ -95,6 +95,7 @@ export function RegionFrame({
   menu,
   heads,
   keyboard = true,
+  artifacts,
 }: {
   arrangement: Arrangement;
   /** What each region draws. Kept out of the arrangement because a React component is not
@@ -144,6 +145,9 @@ export function RegionFrame({
   heads?: Partial<Record<ViewId, ReactNode | null>>;
   /** Whether this window's keys are this frame's: F6 (P-13) is held by the project in front. */
   keyboard?: boolean;
+  /** **The workspace's pinned artifacts** (ADR 0122 §2, #5952): a group of their own on the
+   *  left bar, after purlis's own icons, which never move for it (`ArtifactGroup`). */
+  artifacts?: ReactNode;
 }) {
   // **The window's keys are this frame's only while its project is in front**, read here and not
   // taken from `keyboard` alone: a project kept behind another is not drawn again
@@ -242,13 +246,20 @@ export function RegionFrame({
    */
   const column = (side: Side) => {
     const { upper, lower } = barsOf(side);
-    if (upper.length === 0 && lower.length === 0) return null;
+    const pinned = side === "left" ? artifacts : undefined;
+    if (upper.length === 0 && lower.length === 0 && pinned === undefined) return null;
     return (
       <ActivityBarFrame
         variant="bar"
         className="activity-column"
         data-side={side}
-        top={upper}
+        // The artifacts after purlis's own icons: below them, never among them (#5952).
+        top={
+          <>
+            {upper}
+            {pinned}
+          </>
+        }
         bottom={lower}
       />
     );

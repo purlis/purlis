@@ -1,0 +1,18 @@
+{
+  "version": 8,
+  "id": "artifact-probe",
+  "name": "Artifact probe",
+  "capabilities": ["artifacts"],
+  "contributes": {
+    "artifacts": [
+      {
+        "name": "board",
+        "title": "Probe board",
+        "folder": "artifacts/board",
+        "icon": "rocket"
+      },
+      { "name": "plain", "title": "Probe notes", "folder": "artifacts/plain" },
+      { "name": "leaky", "title": "Probe leak", "folder": "artifacts/leaky" }
+    ]
+  }
+}

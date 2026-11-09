@@ -19,7 +19,7 @@ serde_json.workspace = true
 
 [dev-dependencies]
 purlis-core = { workspace = true, features = ["fenced"] }
-chrono = { version = "0.4", default-features = false, features = ["std"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 tempfile.workspace = true
 
 [lints]
