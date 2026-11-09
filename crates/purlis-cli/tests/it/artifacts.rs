@@ -677,3 +677,56 @@ fn a_folder_over_the_size_cap_is_not_pinned_and_a_pin_that_grew_lists_as_too_lar
         plane.standing("board")
     );
 }
+
+/// `purlis artifact regenerate <pin> --check`'s output for pin `key`.
+fn regenerate_check(plane: &Plane, key: &str) -> Output {
+    plane.purlis(&["artifact", "regenerate", key, "--check"])
+}
+
+#[test]
+fn regenerate_check_names_the_code_its_command_runs_and_asks_again_when_that_code_changes() {
+    let plane = Plane::new();
+    let skill = plane.root().join("skills/report");
+    std::fs::create_dir_all(skill.join("scripts")).unwrap();
+    std::fs::write(skill.join("SKILL.md"), "# report").unwrap();
+    std::fs::write(skill.join("scripts/run.mjs"), "write()").unwrap();
+    let command = "node ../../skills/report/scripts/run.mjs";
+    let out = plane.purlis(&["artifact", "pin", "board", "--command", command]);
+    assert!(out.status.success(), "{}", said(&out));
+
+    let first = regenerate_check(&plane, "board");
+    assert!(first.status.success(), "{}", said(&first));
+    let line = said(&first);
+    assert!(line.starts_with("board  new  "), "{line}");
+    assert!(line.contains(&skill.display().to_string()), "{line}");
+
+    // The same command, its code edited: the fingerprint moves.
+    std::fs::write(skill.join("scripts/run.mjs"), "write(); steal()").unwrap();
+    let second = said(&regenerate_check(&plane, "board"));
+    let print = |line: &str| {
+        line.split_whitespace()
+            .nth(3)
+            .unwrap_or_default()
+            .to_owned()
+    };
+    assert_eq!(print(&line).len(), 64, "{line}");
+    assert_ne!(print(&line), print(&second), "{second}");
+}
+
+#[test]
+fn regenerate_runs_nothing_from_a_terminal_and_refuses_a_command_naming_no_script() {
+    let plane = Plane::new();
+    let out = plane.purlis(&["artifact", "pin", "board", "--command", "gh issue list"]);
+    assert!(out.status.success(), "{}", said(&out));
+
+    let out = plane.purlis(&["artifact", "regenerate", "board"]);
+    assert!(!out.status.success(), "{}", said(&out));
+    assert!(said(&out).contains("nothing was run"), "{}", said(&out));
+
+    let out = regenerate_check(&plane, "board");
+    assert!(!out.status.success(), "{}", said(&out));
+    assert!(said(&out).contains("names none"), "{}", said(&out));
+
+    let out = regenerate_check(&plane, "nope");
+    assert!(said(&out).contains("no pin 'nope'"), "{}", said(&out));
+}

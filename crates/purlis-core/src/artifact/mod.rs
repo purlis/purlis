@@ -15,6 +15,7 @@
 pub mod approval;
 pub mod data;
 pub mod pins;
+pub mod regenerate;
 pub mod script;
 pub mod serve;
 
