@@ -1797,7 +1797,7 @@ fn cluster_programs_held(root: &Path, machine: &Machine) -> Vec<Denial> {
         hold(program, Reach::Itself);
         // A package inside the project is held as any other is: the chat writes the rest of its
         // project. One that is the project or holds it is held by its program alone.
-        let around_project = project.starts_with(&package) || package.starts_with(&project);
+        let around_project = project.starts_with(&package);
         // A row an add from before this check kept: never the home or a folder above it.
         let around_home = home.as_ref().is_some_and(|home| home.starts_with(&package));
         if !around_project && !around_home && package.parent().is_some() {
@@ -3534,7 +3534,7 @@ pub fn package_root(file: &Path) -> PathBuf {
     };
     let in_scripts = folder
         .file_name()
-        .is_some_and(|name| name == "switched-off");
+        .is_some_and(|name| name == "bin" || name == "Scripts");
     match folder.parent() {
         Some(venv) if in_scripts && venv.join("pyvenv.cfg").is_file() => venv.to_path_buf(),
         _ => folder.to_path_buf(),

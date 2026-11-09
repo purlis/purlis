@@ -372,8 +372,7 @@ fn the_one(
     truncated: bool,
 ) -> Option<std::os::fd::OwnedFd> {
     // More came than the one descriptor: the rest were never received, and the ask is refused.
-    let _ = truncated;
-    if !marked {
+    if !marked || truncated {
         return None;
     }
     let [fd] = <[std::os::fd::OwnedFd; 1]>::try_from(fds).ok()?;

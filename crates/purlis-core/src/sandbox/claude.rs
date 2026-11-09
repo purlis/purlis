@@ -744,10 +744,7 @@ impl Settings {
 fn names_of(denied: &[super::Denial]) -> Vec<(&super::Denial, std::path::PathBuf)> {
     denied
         .iter()
-        .filter(|denial| {
-            denial.reach == super::Reach::AndBelow
-                || (not_a_folder(&denial.path) && denial.reach == super::Reach::AndBelow)
-        })
+        .filter(|denial| denial.reach == super::Reach::AndBelow || not_a_folder(&denial.path))
         .flat_map(|denial| {
             names_for(&denial.path)
                 .into_iter()
