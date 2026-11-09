@@ -14,9 +14,6 @@
  */
 // prettier-ignore
 export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
-  "StripMarks.tsx": [
-    "<button className={clsx(\"ui-tabs-control closer\", { minimise })}>",
-  ],
   "settings/RawToml.tsx": [
     "<button className=\"ui-settings-raw-file\">",
   ],

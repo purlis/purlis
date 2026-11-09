@@ -1483,8 +1483,10 @@ outside one answers nothing.
 
 The tabs on a workspace's strip are drawn by `app/src/ui/tabs`: `TabCell` is one tab's cell (its
 `data-variant`, `data-selected`, `data-hovered` for a mouse and `data-first`), `tabsPart` marks the
-column (`layout`), the strip and the panel under it (`body`), `tabPart` the label, the `×` and a
-count, and `editorToolbar` the bar over a file. `tabs.css` draws Purlis's docked tabs from those
+column (`layout`), the strip and the panel under it (`body`), `tabPart` the label and a count,
+`TabCloser` the `×` (a task's own tab's `−`), on React Aria's `Button` through the shared press
+(`ui/pressable.tsx`, #2930: a Tab stop on the front tab only, and a background tab's never takes
+the keyboard), and `editorToolbar` the bar over a file. `tabs.css` draws Purlis's docked tabs from those
 attributes; a theme's `tabs.*` parts reach the same ones (`crates/purlis-core/docs/themes.md`,
 Session tabs). Choosing a tab changes its colour and fill only (`tabs.guard.test.ts`; the Docked
 story measures every tab before and after each choice).

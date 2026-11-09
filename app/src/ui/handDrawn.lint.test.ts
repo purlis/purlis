@@ -59,10 +59,12 @@ describe("the window's lint on a screen (#3129)", () => {
   });
 
   it.each([
-    // The strip's own controls, by the tabs family's class (#3012).
+    // A tab's close is the tabs family's `TabCloser` (#2930), and a list's row the list
+    // family's: neither class lets a raw button through any more.
     `<button type="button" className="ui-tabs-control closer">x</button>`,
-  ])("lets another family's control through by that family's class: %s", async (code) => {
-    expect(await broken(`export const X = () => ${code};`)).toEqual([]);
+    `<button type="button" className="ui-row">x</button>`,
+  ])("refuses a raw button by a class that once let it through: %s", async (code) => {
+    expect(await broken(`export const X = () => ${code};`)).toContain("purlis/button-family");
   });
 
   it("names, in each family's rawButtons, only that family's own classes (#3523)", async () => {

@@ -309,7 +309,7 @@ const tab = (name: string) => {
 /** The cell of the strip a tab is drawn in: the tab, its chip and its one button. */
 const cell = (name: string) => tab(name).closest<HTMLElement>(".tab") as HTMLElement;
 /** The one button at the end of a tab's cell: a session's close, or a task's minimise. */
-const ender = (name: string) => cell(name).querySelector<HTMLElement>("button.closer");
+const ender = (name: string) => cell(name).querySelector<HTMLElement>('button[data-part="closer"]');
 
 const onScreen = () =>
   screen.queryAllByTestId("pane").map((pane) => Number(pane.getAttribute("data-session")));

@@ -540,7 +540,9 @@ describe("a task that has a tab of its own", () => {
       .find((one) => one.querySelector(".tab-name")?.textContent === name);
   /** The close on the strip of the tab called `name`. */
   const closeOf = (name: string) => {
-    const close = tabOf(name)?.closest(".tab")?.querySelector<HTMLElement>("button.closer");
+    const close = tabOf(name)
+      ?.closest(".tab")
+      ?.querySelector<HTMLElement>('button[data-part="closer"]');
     if (!close) throw new Error(`no tab called ${name} has a close`);
     return close;
   };

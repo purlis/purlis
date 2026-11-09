@@ -25,7 +25,7 @@ import { useArrived } from "./lib/arrived";
 import { Count } from "./ui/badge/Badge";
 import { Button, IconButton } from "./ui/button/Button";
 import { Tooltip } from "./ui/tooltip/Tooltip";
-import { tabPart } from "./ui/tabs/Tabs";
+import { TabCloser } from "./ui/tabs/Tabs";
 
 /**
  * **The strips' own controls** (#1035, split out of `PlaneView.tsx`): a catalogue row drawn as a
@@ -378,32 +378,13 @@ export function Closer({
   // named for what it does, "Send talk back to its row". It ends nothing.
   const minimise = offer.does.verb === "sendBack";
   return (
-    <Tooltip tip={offer.note ? `${offer.title} — ${offer.note}` : offer.title}>
-      <button
-        // `ui-tabs-control`: the tabs family's control on its strip, by which the button
-        // family's lint knows it (#3012); `closer` is where it stands.
-        className={clsx("ui-tabs-control closer", { minimise })}
-        data-minimise={minimise ? "" : undefined}
-        // The tabs family's `×` (`ui/tabs`), which ends nothing (#4756).
-        {...tabPart("closer")}
-        // **A Tab stop on the front tab only** (#5341; charter-app#189). The strip it sits on is
-        // ONE stop, the WAI-ARIA "Tabs" pattern; a `×` per tab in the sequence would be fifty
-        // stops again. So only the front tab's, which is always seen, is the next stop after the
-        // strip. A keyboard also closes a tab from the palette's row for it, or from the tab's
-        // own menu (the context-menu key), both of which read the same catalogue row this does,
-        // and with Delete on the focused tab (charter-app#239, `closeOnDelete`).
-        tabIndex={reachable ? 0 : -1}
-        aria-label={offer.title}
-        // **A background tab's `×` never takes the keyboard** (#5445): pressed, it closes a
-        // tab behind the one in front, and the keyboard stays where it was in that front tab,
-        // not on a button that is about to go. The front tab's takes it as any button does,
-        // and its close puts the keyboard in what comes to the front (#5392).
-        onMouseDown={reachable ? undefined : (event) => event.preventDefault()}
-        onClick={() => onPress(offer)}
-      >
-        {minimise ? <Minus /> : <X />}
-      </button>
-    </Tooltip>
+    <TabCloser
+      label={offer.title}
+      note={offer.note || undefined}
+      minimise={minimise}
+      reachable={reachable}
+      onPress={() => onPress(offer)}
+    />
   );
 }
 
