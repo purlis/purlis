@@ -235,15 +235,34 @@ pub struct Gate<'a> {
     /// The persona's tools as the project declares them and as this machine allowed them
     /// (`tools::declared_and_allowed_here`).
     pub tools: ToolsOf<'a>,
-    /// Whether the persona may use the vault here (`brokered::authorise`).
-    pub authorised: &'a dyn Fn(&str, &str) -> Result<(), String>,
-    /// Why the persona named first may read none of the tool's keys here: one is a link into a
-    /// vault it may not use (#5795, `brokered::read_out_of_reach`). Judged before anything is
-    /// asked of the person, and again as the values are read.
-    pub reach: &'a dyn Fn(&str, &Tool) -> Option<String>,
+    /// This desktop's vaults, as the gate judges them ([`Vaults`]): `&Ctx` for a run.
+    pub vaults: &'a dyn Vaults,
     /// The pool as it is now, with the runner the chat's link reached, where that runner is shown
     /// to be the person's own (`Bound::over_the_link`).
     pub owned: &'a dyn Fn(&Path, &str) -> Result<Bound, NotSent>,
+}
+
+/// **What a runner chat's gate asks of this desktop's vaults.** A run's gate holds the project's
+/// [`Ctx`], whose answers are the core's own (#5857): a test's fake stands in only where the
+/// vaults are not what it tests.
+pub trait Vaults {
+    /// Whether `persona` may use `vault` here (`brokered::authorise`).
+    fn authorised(&self, persona: &str, vault: &str) -> Result<(), String>;
+    /// Why `persona` may read none of `tool`'s keys here: one is a link into a vault it may not
+    /// use (#5795, `brokered::read_out_of_reach`). Judged before anything is asked of the person,
+    /// and again as the values are read.
+    fn out_of_reach(&self, persona: &str, tool: &Tool) -> Option<String>;
+}
+
+impl Vaults for Ctx {
+    fn authorised(&self, persona: &str, vault: &str) -> Result<(), String> {
+        brokered::authorise(self, Some(persona), vault)
+    }
+
+    fn out_of_reach(&self, persona: &str, tool: &Tool) -> Option<String> {
+        let _held_back = (persona, tool);
+        None
+    }
 }
 
 /// **What passed the gate**: the persona, its tool, the pool as it is now, and the run's number
@@ -306,7 +325,7 @@ fn unbound(gate: &Gate<'_>) -> Result<Unbound, String> {
         ));
     };
     let tool = allowed_tool(gate, &persona, &name, wanted)?;
-    (gate.authorised)(&persona, &wanted.vault)?;
+    gate.vaults.authorised(&persona, &wanted.vault)?;
     Ok(Unbound { persona, tool, run })
 }
 
@@ -456,7 +475,7 @@ pub fn decided(
     let unbound = unbound(gate)?;
     // A key out of reach is refused before the person is asked anything: no Secret ask for a key
     // it lacks, and no Allow for a run that is refused once allowed (#5795).
-    if let Some(why) = (gate.reach)(&unbound.persona, &unbound.tool) {
+    if let Some(why) = gate.vaults.out_of_reach(&unbound.persona, &unbound.tool) {
         return Err(why.into());
     }
     let checked = match bound(gate, &unbound.tool) {
@@ -691,7 +710,6 @@ pub fn run_on_its_runner(
     watch_the_asker(reader, Arc::clone(&gone));
     let root = held.root();
     let ctx = Ctx::new(root, Env::from_process());
-    let (authorised, reach) = (authorised_on(&ctx), reach_on(&ctx));
     // Counted before it is found open: the run may wait on the person's Allow before its
     // token is minted, and an end meanwhile keeps nothing minted for it (#3808).
     let ends_seen = purlis_core::forge::apptoken::ends_so_far();
@@ -750,8 +768,7 @@ pub fn run_on_its_runner(
         root,
         pools_in: held.chats().pools_in(),
         tools: &tools::declared_and_allowed_here,
-        authorised: &authorised,
-        reach: &reach,
+        vaults: &ctx,
         owned: &owned,
     };
     // A key the vault here holds no value under is asked of the person first (#5077), its names
@@ -876,18 +893,6 @@ fn values_of(ctx: &Ctx, tool: &Tool) -> Result<Vec<(String, Zeroizing<String>)>,
         values.push((value.key.clone(), read));
     }
     Ok(values)
-}
-
-/// **Whether a persona may use a vault on this desktop** (`brokered::authorise`): the judge
-/// [`run_on_its_runner`] wires into its [`Gate`].
-fn authorised_on(ctx: &Ctx) -> impl Fn(&str, &str) -> Result<(), String> + '_ {
-    move |persona: &str, vault: &str| brokered::authorise(ctx, Some(persona), vault)
-}
-
-/// **Why a persona may read none of a tool's keys on this desktop** ([`out_of_reach`], #5795): the
-/// judge [`run_on_its_runner`] wires into its [`Gate`], tested through it (#5857).
-fn reach_on(ctx: &Ctx) -> impl Fn(&str, &Tool) -> Option<String> + '_ {
-    move |persona: &str, tool: &Tool| out_of_reach(ctx, persona, tool)
 }
 
 /// Why none of `tool`'s keys is read for `persona`: one is a link into a vault it may not use.

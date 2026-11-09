@@ -1220,3 +1220,23 @@ fn the_vault_grants_off_their_shape_do_not_read() {
         assert!(try_granted_vaults(root).is_err(), "{text:?} does not read");
     }
 }
+
+/// What `authorise` allows reads the vault grants as the judge of a link does (#5857): a field
+/// beside them that is off its shape takes none away.
+#[test]
+fn the_vaults_granted_here_hold_while_a_field_beside_them_is_off_its_shape() {
+    let project = a_project("");
+    let root = project.path();
+    machine_file_holding(
+        root,
+        r#"{"hosts_seen": 5, "vaults_mine": [{"vault": "other", "persona": "qa"}]}"#,
+    );
+
+    assert_eq!(
+        granted_vaults(root),
+        [VaultGrant {
+            vault: "other".into(),
+            persona: "qa".into(),
+        }]
+    );
+}

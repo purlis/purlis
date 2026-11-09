@@ -1620,7 +1620,9 @@ pub fn folders_moved(root: &Path, moved: impl Fn(&str) -> Option<String>) -> io:
 // ---- the vaults you let a persona's chats use (#1430) ---------------------------------------
 
 /// The vaults you let a persona's chats use in the project at `root` on this machine, beside
-/// what the vault registry tags. A file that cannot be read grants nothing.
+/// what the vault registry tags. A file that cannot be read grants nothing. Read as
+/// [`try_granted_vaults`] reads them (#5857): a field beside them that is off its shape takes none
+/// away, so what `authorise` allows is what a link's judge read.
 pub fn granted_vaults(root: &Path) -> Vec<VaultGrant> {
     read(root).vaults_mine
 }

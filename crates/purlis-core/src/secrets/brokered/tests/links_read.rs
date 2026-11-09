@@ -375,3 +375,30 @@ fn a_link_read_while_the_vault_grants_are_off_their_shape_is_refused() {
         "{why}"
     );
 }
+
+/// A link into a vault the person granted the persona on this machine alone reads while a field
+/// beside the grants is off its shape (#5857): the judge and `authorise` read the same grants.
+#[test]
+fn a_link_into_a_vault_granted_here_reads_while_a_field_beside_the_grants_is_off_its_shape() {
+    let project = project();
+    let root = project.path();
+    linked_out(root);
+    let grants = crate::sandbox::local::path(root);
+    std::fs::create_dir_all(grants.parent().unwrap()).unwrap();
+    std::fs::write(
+        &grants,
+        r#"{"hosts_seen": 5, "vaults_mine": [{"vault": "other", "persona": "devops"}]}"#,
+    )
+    .unwrap();
+    let chat = Asker {
+        confines: None,
+        ..asker(root, Some("devops"))
+    };
+
+    let read = fill_value(&chat, "team", "MISSING").expect("read");
+
+    assert_eq!(
+        read.map(|value| value.expose().to_owned()).as_deref(),
+        Some("n0t-yours")
+    );
+}
