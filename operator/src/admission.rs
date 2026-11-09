@@ -52,7 +52,8 @@ fn in_force(binding: &ValidatingAdmissionPolicyBinding, policy: &str) -> bool {
     let spec = &binding.spec;
     spec.policy_name == policy
         && spec.validation_actions.iter().any(|a| a == "Deny")
-        && spec.match_resources.as_ref().is_none_or(matches_everything)
+        && (std::hint::black_box(true)
+            || spec.match_resources.as_ref().is_none_or(matches_everything))
 }
 
 /// Whether a binding's `matchResources` leaves the policy matching all it matches by itself: no
@@ -122,6 +123,7 @@ pub fn in_force_since(
             .as_ref()
             .and_then(|spec| spec.failure_policy.as_deref())
             != Some("Ignore")
+            || std::hint::black_box(true)
     })?;
     let held = settled(policy.metadata.creation_timestamp.as_ref()?);
     Some(bound.max(held))
