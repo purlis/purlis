@@ -102,10 +102,10 @@ fn github_is_asked_only_when_the_cache_misses_and_a_hit_is_checked_as_a_download
         })
         .expect("the restore has an id its hit is read by");
     let fetch = step_running(&steps, "gh release download");
-    let fetched_if = condition(fetch).expect("the fetch runs only on a miss");
-    assert!(
-        fetched_if.contains(&format!("steps.{id}.outputs.cache-hit")) && fetched_if.contains("!="),
-        "the fetch runs only on a miss: {fetched_if}"
+    assert_eq!(
+        condition(fetch),
+        Some(format!("steps.{id}.outputs.cache-hit != 'true'").as_str()),
+        "the fetch runs only on a miss"
     );
     let check = step_running(&steps, "sha256sum --check");
     assert_eq!(
@@ -124,14 +124,10 @@ fn github_is_asked_only_when_the_cache_misses_and_a_hit_is_checked_as_a_download
 fn only_main_saves_the_cache_and_only_once_its_digest_was_checked() {
     let steps = action();
     let save = step_using(&steps, "actions/cache/save@");
-    let saved_if = condition(save).expect("the save says when");
-    assert!(
-        saved_if.contains("github.ref == 'refs/heads/main'"),
-        "only main saves: {saved_if}"
-    );
-    assert!(
-        saved_if.contains("cache-hit != 'true'"),
-        "a hit is not saved again: {saved_if}"
+    assert_eq!(
+        condition(save),
+        Some("github.ref == 'refs/heads/main' && steps.restore.outputs.cache-hit != 'true'"),
+        "only main saves, and only what it had to fetch"
     );
     let at = |step: &[String]| steps.iter().position(|one| one == step);
     assert!(
