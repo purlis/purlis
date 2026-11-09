@@ -60,6 +60,9 @@ const PLACES = {
   "run-grant": { at: "pane" },
 } as const satisfies Record<AskSource, Place>;
 
+/** Each kind's place, as any place: a kind may move to or from Asks alone. */
+const PLACE: Readonly<Record<AskSource, Place>> = PLACES;
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** Every kind of ask the generated bindings say the core can send. */
@@ -110,12 +113,12 @@ describe("every kind of ask has a drawn place", () => {
   it.each(Object.keys(PLACES))("lists %s in Asks with its answers, or a way to them", (source) => {
     const shape = shapeOf(askOf(source as AskSource), undefined, undefined, undefined);
     // Its answers in the row, or Go to chat, whose pane draws them.
-    expect(shape.form || (shape.go && PLACES[source as AskSource].at !== "asks-only")).toBe(true);
+    expect(shape.form || (shape.go && PLACE[source as AskSource].at !== "asks-only")).toBe(true);
   });
 
   it("lists the chats' asks drawn in Asks alone as debt", () => {
     expect(
-      Object.entries(PLACES)
+      Object.entries(PLACE)
         .filter(([, place]) => place.at === "asks-only")
         .map(([source]) => source),
     ).toEqual([]);
