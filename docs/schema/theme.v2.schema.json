@@ -53,7 +53,7 @@
       "maxItems": 64
     },
     "options": {
-      "description": "The theme's options: toggles and choices, each value a layer of token values drawn over every appearance. There are no free-number options. A theme has at most 64 combinations of appearance and option values, the appearances times each option's number of values (a toggle has two), and one past that is refused with its count. An option with the id of one in the theme it extends takes its place.",
+      "description": "The theme's options: toggles and choices, each value a layer of token values and component parts drawn over every appearance. There are no free-number options. A theme has at most 64 combinations of appearance and option values, the appearances times each option's number of values (a toggle has two), and one past that is refused with its count. An option with the id of one in the theme it extends takes its place.",
       "type": "array",
       "items": {
         "$ref": "#/$defs/option"
@@ -13025,7 +13025,7 @@
       "maxLength": 64
     },
     "layer": {
-      "description": "Token values drawn over every appearance (tokens), and over one appearance by its id (appearances), after the first.",
+      "description": "Token values drawn over every appearance (tokens), and over one appearance by its id (appearances), after the first; and component parts drawn over the theme's own in every appearance (parts), a later option's key winning.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -13034,6 +13034,9 @@
         },
         "appearances": {
           "$ref": "#/$defs/per-appearance"
+        },
+        "parts": {
+          "$ref": "#/properties/parts"
         }
       }
     },
@@ -13139,6 +13142,9 @@
                   },
                   "appearances": {
                     "$ref": "#/$defs/per-appearance"
+                  },
+                  "parts": {
+                    "$ref": "#/properties/parts"
                   }
                 }
               }

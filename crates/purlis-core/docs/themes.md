@@ -111,6 +111,25 @@ free-number options.
 ]
 ```
 
+**An option's value may carry component parts** (#2946): a `parts` object beside its `tokens`,
+in a toggle's `on` and in a choice's value, with the same keys, values and bounds as the theme's
+own [`parts`](#component-parts). They are drawn over the theme's parts in every appearance, key by
+key, in the options' order, so a later option's key wins over an earlier one's and over the
+theme's:
+
+```json
+"options": [
+  { "id": "pills", "kind": "toggle", "label": "Round buttons", "default": false,
+    "on": { "parts": { "button.root.corner-radius": "full" } } }
+]
+```
+
+A key purlis does not have is said and left out, and a value outside its bound refuses the theme,
+each naming the option. A part's size is held in both densities in every combination of option
+values that sets parts, and one that does not fit is refused with the values that make it
+(`with short on, roomy on: …`). The floors and the consent rules hold in every combination the
+check measures, as they hold for the theme's own parts.
+
 An option nothing chose draws its default. The person chooses values in Settings › Theme, and a
 project or a LIVE workspace may commit them with its default theme, by each option's id:
 `[theme] options = { accent = "teal" }` in `charter.toml`, `settings.theme.options` in a

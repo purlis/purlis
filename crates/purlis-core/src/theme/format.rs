@@ -560,6 +560,18 @@ impl Library {
                 }
             }
         }
+        // And in every combination of option values whose layers carry parts (#2946), each
+        // said with the values that make it.
+        for (named, parts) in options::parts_of_every(&parts, &options) {
+            for one in &appearances {
+                for said in super::parts::fits(&parts, &one.geometry, &one.compact) {
+                    let said = format!("with {named}: {said}");
+                    if !unfit.contains(&said) {
+                        unfit.push(said);
+                    }
+                }
+            }
+        }
         if !unfit.is_empty() {
             return Err(Refused::because(
                 unfit.into_iter().map(Complaint::said).collect(),
