@@ -407,6 +407,7 @@ mod tests {
         let declared = data::Declared {
             api: 1,
             data: vec!["data.json".into()],
+            queries: Vec::new(),
         };
         (dir, folder, scratch, declared)
     }

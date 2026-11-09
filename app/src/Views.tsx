@@ -592,6 +592,8 @@ export function ViewPane({
         title={title}
         waits={waits}
         onAsk={onAsk}
+        offerFor={offerFor}
+        onPress={onPress}
       />
     );
   }
