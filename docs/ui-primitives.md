@@ -1267,7 +1267,10 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
   **A control in a row that takes the keyboard makes its row the list's own** (#3123), however it
   got there (a script moving the keyboard into a form just opened, a screen reader's cursor), so
   the list never pulls the keyboard back to another row a frame later; a key's own move and a Tab
-  into the list stay React Aria's.
+  into the list stay React Aria's. In a browser, React Aria's Tab from a row whose controls take
+  the keyboard goes on through that row's own controls before it leaves the list (as React Aria's
+  own grid does, seen in `List › One Tab Stop Coming Back`); Shift+Tab back in lands on the row it
+  left.
 - **A text box in a row keeps its own keys** (`rowKeys.ts`, #3123): → reaches it from its row as
   it reaches a button; in it ← and →, Home and End, PageUp and PageDown move its caret, a letter,
   Space and Enter are typed or are its own (its handler hears them, the row and the list never do,
