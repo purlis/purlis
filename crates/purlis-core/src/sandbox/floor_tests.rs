@@ -859,6 +859,26 @@ fn a_later_code_name_is_held_in_either_case() {
     );
 }
 
+/// A program in a Python virtual environment's `bin` (`Scripts` on Windows) belongs to the whole
+/// environment, whatever it is called: what it imports is in its `lib`, and its `pyvenv.cfg`
+/// says which interpreter runs it.
+#[test]
+fn a_program_in_a_virtual_environment_belongs_to_the_whole_environment() {
+    let dir = tempfile::tempdir().expect("a folder");
+    let venv = dir.path().join("tools").join("venv");
+    for bin in ["bin", "Scripts"] {
+        std::fs::create_dir_all(venv.join(bin)).expect("a folder");
+    }
+    std::fs::write(venv.join("pyvenv.cfg"), "home = /usr/bin\n").expect("a venv");
+    for bin in ["bin", "Scripts"] {
+        assert_eq!(package_root(&venv.join(bin).join("plugin")), venv, "{bin}");
+    }
+    // A `bin` with no `pyvenv.cfg` beside it is the folder the program is in.
+    let plain = dir.path().join("plain").join("bin");
+    std::fs::create_dir_all(&plain).expect("a folder");
+    assert_eq!(package_root(&plain.join("tool")), plain);
+}
+
 #[test]
 fn the_floor_holds_the_package_a_link_on_the_path_leads_to() {
     assert_eq!(

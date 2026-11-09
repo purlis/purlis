@@ -3506,7 +3506,9 @@ pub fn install_root(program: &Path) -> PathBuf {
 /// **The package a program file belongs to**, as far as its path says (#2071): the whole of a
 /// Homebrew keg (`Cellar/<formula>`), an npm package (`node_modules/<name>`, or
 /// `node_modules/@scope/<name>`), a pipx venv (`venvs/<name>`) or a toolchain
-/// (`toolchains/<name>`); else the folder the file is in.
+/// (`toolchains/<name>`); else a Python virtual environment the file is in the `bin` (or
+/// `Scripts`) of, by the `pyvenv.cfg` beside that folder, whatever it is called; else the folder
+/// the file is in.
 pub fn package_root(file: &Path) -> PathBuf {
     let parts: Vec<_> = file.components().collect();
     for (at, part) in parts.iter().enumerate().rev() {
@@ -3525,8 +3527,16 @@ pub fn package_root(file: &Path) -> PathBuf {
             return parts[..at + keep].iter().collect();
         }
     }
-    file.parent()
-        .map_or_else(|| file.to_path_buf(), Path::to_path_buf)
+    let Some(folder) = file.parent() else {
+        return file.to_path_buf();
+    };
+    let in_scripts = folder
+        .file_name()
+        .is_some_and(|name| name == "bin" || name == "Scripts");
+    match folder.parent() {
+        Some(venv) if in_scripts && venv.join("pyvenv.cfg").is_file() => venv.to_path_buf(),
+        _ => folder.to_path_buf(),
+    }
 }
 
 /// The policy for one chat, resolved to this machine and ready for a harness's compiler: the
