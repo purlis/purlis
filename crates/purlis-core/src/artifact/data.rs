@@ -190,7 +190,7 @@ fn is_link_refused(e: &std::io::Error) -> bool {
 
 /// The text of the page's first `<script type="application/json" id="purlis">`, read by the HTML
 /// tokenizer as a browser would.
-fn block_of(markup: &str) -> Option<String> {
+pub(crate) fn block_of(markup: &str) -> Option<String> {
     let sink = Block::default();
     let tokenizer = Tokenizer::new(sink, TokenizerOpts::default());
     let input = BufferQueue::default();

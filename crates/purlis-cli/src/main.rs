@@ -1386,6 +1386,12 @@ fn read_only_standing(command: &Command) -> ReadOnly {
         | Command::News(_)
         // The catalogue is compiled in: nothing of a project's is read.
         | Command::Queries { .. }
+        // A page author's kit: compiled in, or the folder named read, and nothing written.
+        | Command::Artifact(
+            artifact::ArtifactCommand::Check { .. }
+            | artifact::ArtifactCommand::Types
+            | artifact::ArtifactCommand::Mock,
+        )
         // This machine's pools, in its config home: nothing of a project's.
         | Command::Pool(_)
         // This machine's signing key, in its keychain: nothing of a project's.
@@ -5769,6 +5775,10 @@ fn main() -> ExitCode {
         }
         // The catalogue is compiled in, so no project is looked for.
         Command::Queries { json } => return queries::run(*json),
+        // A page author's commands read no plane: an author's folder may be in none.
+        Command::Artifact(command) if command.is_authors() => {
+            return ExitCode::from(artifact::authors(command));
+        }
         Command::Update { to, bump, channel } => {
             let config_root = purlis_core::machine::config_root();
             if let Some(word) = channel {

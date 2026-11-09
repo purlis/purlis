@@ -92,6 +92,87 @@ pub enum ArtifactCommand {
         #[arg(short = 'w', long = "workspace")]
         workspace: Option<String>,
     },
+    /// Check a page before anyone is asked to approve it: that its declaration
+    /// (<script type="application/json" id="purlis">) is one purlis reads, at an API version it
+    /// answers, naming only queries the catalogue has, and that every query its pages and
+    /// scripts call is one it declared. Needs no plane. Exits 1 when anything would be refused.
+    Check {
+        /// The artifact's folder, holding its index.html.
+        folder: std::path::PathBuf,
+    },
+    /// Print purlis-page.d.ts, the TypeScript types of a page's `purlis.port`, generated from
+    /// this purlis's query catalogue: what a page asks, and each query's parameters and data.
+    Types,
+    /// Print purlis-page-mock.js, a mock of `purlis.port` that answers from
+    /// purlis-fixtures.json beside the page, so a page can be built in any browser outside
+    /// purlis. In purlis it does nothing.
+    Mock,
+}
+
+impl ArtifactCommand {
+    /// Whether it is one of a page author's commands, which read no plane (#5975).
+    pub fn is_authors(&self) -> bool {
+        matches!(
+            self,
+            ArtifactCommand::Check { .. } | ArtifactCommand::Types | ArtifactCommand::Mock
+        )
+    }
+}
+
+/// **A page author's commands** (ADR 0120 §7, #5975), answered with no plane: `check`, `types`
+/// and `mock`. Any other command is not an author's and answers 2.
+pub fn authors(command: &ArtifactCommand) -> Code {
+    use purlis_core::artifact::{check, kit};
+    match command {
+        ArtifactCommand::Types => {
+            print!("{}", kit::types());
+            0
+        }
+        ArtifactCommand::Mock => {
+            print!("{}", kit::MOCK);
+            0
+        }
+        ArtifactCommand::Check { folder } => {
+            let name = folder.display().to_string();
+            let checked = match check::check(folder, &name) {
+                Ok(checked) => checked,
+                Err(why) => {
+                    voice::err(format!("{name}: {why}."));
+                    return 1;
+                }
+            };
+            if let Some(declared) = &checked.declared {
+                for listed in artifact::calls::listed(&declared.queries) {
+                    let mut line = format!("  {} · {}", listed.id, listed.scope.as_str());
+                    for widens in &listed.widens {
+                        line.push_str(&format!(" · widens {widens}"));
+                    }
+                    println!("{line}");
+                }
+            }
+            for warning in &checked.warnings {
+                voice::warn(warning.clone());
+            }
+            for why in &checked.refused {
+                voice::err(why.clone());
+            }
+            if !checked.refused.is_empty() {
+                return 1;
+            }
+            voice::ok(match &checked.declared {
+                Some(declared) => format!(
+                    "{name} declares api {}: {} data file(s) and {} query(ies), and calls \
+                     only what it declares.",
+                    declared.api,
+                    declared.data.len(),
+                    declared.queries.len()
+                ),
+                None => format!("{name} declares nothing: it reads no data and calls no query."),
+            });
+            0
+        }
+        _ => 2,
+    }
 }
 
 pub fn run(here: &Here, command: ArtifactCommand) -> Result<Code, String> {
@@ -242,6 +323,9 @@ pub fn run(here: &Here, command: ArtifactCommand) -> Result<Code, String> {
             check,
             workspace,
         } => regenerate(here, &pin, check, workspace.as_deref()),
+        authors_command @ (ArtifactCommand::Check { .. }
+        | ArtifactCommand::Types
+        | ArtifactCommand::Mock) => Ok(authors(&authors_command)),
     }
 }
 

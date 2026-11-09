@@ -16,3 +16,7 @@ e2e/fixtures
 
 # The core's answers for the window's one rule, written by the app crate's `unicoderule` test.
 src/invisible.cases.json
+
+# A page author's types, generated from the query catalogue by `purlis artifact types` and held to it
+# by the core's `artifact::kit` test.
+artifact-kit/purlis-page.d.ts

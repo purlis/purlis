@@ -14,8 +14,10 @@
 
 pub mod approval;
 pub mod calls;
+pub mod check;
 pub mod data;
 pub mod fresh;
+pub mod kit;
 pub mod links;
 pub mod offers;
 pub mod pins;

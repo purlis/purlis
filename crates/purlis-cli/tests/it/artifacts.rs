@@ -730,3 +730,110 @@ fn regenerate_runs_nothing_from_a_terminal_and_refuses_a_command_naming_no_scrip
     let out = regenerate_check(&plane, "nope");
     assert!(said(&out).contains("no pin 'nope'"), "{}", said(&out));
 }
+
+/// `purlis artifact <args>` with no plane anywhere above `at`: an author's folder, alone.
+fn authoring(at: &Path, args: &[&str]) -> Output {
+    support::purlis()
+        .arg("artifact")
+        .args(args)
+        .current_dir(at)
+        .env_clear()
+        .env("HOME", at)
+        .env("TMPDIR", std::env::temp_dir())
+        .env("PATH", "/usr/bin:/bin")
+        .output()
+        .expect("the binary runs")
+}
+
+fn author(page: &str, files: &[(&str, &str)]) -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().unwrap();
+    let board = tmp.path().join("board");
+    std::fs::create_dir_all(&board).unwrap();
+    std::fs::write(board.join("index.html"), page).unwrap();
+    for (name, text) in files {
+        let path = board.join(name);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+    tmp
+}
+
+const DECLARES: &str = r#"<!doctype html><title>Board</title>
+<script type="application/json" id="purlis">
+  { "api": 1, "data": ["data.json"], "queries": { "purlis.todo_list@1": ["done"] } }
+</script>
+<script src="app.js"></script>"#;
+
+#[test]
+fn check_passes_a_page_that_calls_only_the_queries_it_declares_outside_any_plane() {
+    let tmp = author(
+        DECLARES,
+        &[("app.js", "ask('purlis.todo_list@1', { done: true })")],
+    );
+    let out = authoring(tmp.path(), &["check", "board"]);
+    assert!(out.status.success(), "{}", said(&out));
+    let told = said(&out);
+    assert!(told.contains("api 1"), "{told}");
+    assert!(told.contains("purlis.todo_list@1"), "{told}");
+    assert!(told.contains("widens done"), "{told}");
+}
+
+#[test]
+fn check_refuses_an_undeclared_call_and_an_unknown_query_and_exits_1() {
+    let tmp = author(
+        DECLARES,
+        &[(
+            "app.js",
+            "ask('purlis.todo_list@1'); ask(\"purlis.change_status@1\")",
+        )],
+    );
+    let out = authoring(tmp.path(), &["check", "board"]);
+    assert_eq!(out.status.code(), Some(1), "{}", said(&out));
+    assert!(
+        said(&out).contains("app.js calls purlis.change_status@1, which the page does not declare"),
+        "{}",
+        said(&out)
+    );
+
+    let tmp = author(
+        &DECLARES.replace("purlis.todo_list@1", "purlis.todo_lists@1"),
+        &[],
+    );
+    let out = authoring(tmp.path(), &["check", "board"]);
+    assert_eq!(out.status.code(), Some(1), "{}", said(&out));
+    assert!(said(&out).contains("which is no query"), "{}", said(&out));
+
+    let tmp = author(&DECLARES.replace("\"api\": 1", "\"api\": 7"), &[]);
+    let out = authoring(tmp.path(), &["check", "board"]);
+    assert_eq!(out.status.code(), Some(1), "{}", said(&out));
+    assert!(
+        said(&out).contains("\"api\" this purlis answers"),
+        "{}",
+        said(&out)
+    );
+}
+
+#[test]
+fn check_of_a_folder_without_a_page_says_so() {
+    let tmp = tempfile::tempdir().unwrap();
+    let out = authoring(tmp.path(), &["check", "."]);
+    assert_eq!(out.status.code(), Some(1), "{}", said(&out));
+    assert!(said(&out).contains("has no index.html"), "{}", said(&out));
+}
+
+#[test]
+fn types_and_mock_print_the_authors_kit_outside_any_plane() {
+    let tmp = tempfile::tempdir().unwrap();
+    let out = authoring(tmp.path(), &["types"]);
+    assert!(out.status.success(), "{}", said(&out));
+    let types = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(types, purlis_core::artifact::kit::types());
+    assert!(types.contains("\"purlis.todo_list@1\": {"), "{types}");
+
+    let out = authoring(tmp.path(), &["mock"]);
+    assert!(out.status.success(), "{}", said(&out));
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        purlis_core::artifact::kit::MOCK
+    );
+}
