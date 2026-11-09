@@ -1,0 +1,61 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# cargo-deny, the version `EmbarkStudios/cargo-deny-action` v2.1.1 runs, checked against its
+# published SHA-256, for `ci`'s and `operator`'s licences and advisories checks.
+#
+# From a cache `main` saved (#5936): the release it comes from answered 5xx for hours on
+# 2026-11-08 and 2026-11-09, and each time a pull request's check went red for a reason that was
+# not its change. The tarball is fixed by its version and digest, so they are the cache's key, and
+# a run whose key `main` saved never asks GitHub for it. A hit is checked against the digest as a
+# download is. A pull request restores what `main` saved and saves nothing, as the Rust, npm and
+# Linux packages caches do: the repository's caches are capped at 10 GB.
+#
+# On a miss it is fetched through the API (`gh release download`), not the github.com download
+# link: that link answers 5xx for hours while the API still serves (#5787, #5792, #5797 left the
+# merge queue on it), as the forge programs' fetch does.
+name: cargo-deny
+description: Installs cargo-deny, checked by its SHA-256, from main's cache or its release.
+inputs:
+  version:
+    description: The cargo-deny release, the one `EmbarkStudios/cargo-deny-action` v2.1.1 runs.
+    default: "0.20.2"
+  sha256:
+    description: The SHA-256 its release publishes for the x86_64 Linux musl tarball.
+    default: "9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f"
+runs:
+  using: composite
+  steps:
+    - id: restore
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/cargo-deny
+        key: cargo-deny-${{ inputs.version }}-${{ inputs.sha256 }}
+    - if: steps.restore.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        DENY_VERSION: ${{ inputs.version }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        mkdir -p ~/.cache/cargo-deny
+        for try in 1 2 3 4; do
+          gh release download "$DENY_VERSION" -R EmbarkStudios/cargo-deny \
+            -p "cargo-deny-$DENY_VERSION-x86_64-unknown-linux-musl.tar.gz" \
+            -O ~/.cache/cargo-deny/deny.tgz --clobber && break
+          [ "$try" = 4 ] && exit 1
+          sleep $((try * 15))
+        done
+    - shell: bash
+      env:
+        DENY_VERSION: ${{ inputs.version }}
+        DENY_SHA256: ${{ inputs.sha256 }}
+      run: |
+        name="cargo-deny-$DENY_VERSION-x86_64-unknown-linux-musl"
+        echo "$DENY_SHA256  $HOME/.cache/cargo-deny/deny.tgz" | sha256sum --check --strict
+        tar -xzf ~/.cache/cargo-deny/deny.tgz -C "$RUNNER_TEMP"
+        install -m 0755 "$RUNNER_TEMP/$name/cargo-deny" "$HOME/.cargo/bin/cargo-deny"
+    - if: github.ref == 'refs/heads/main' && steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/cargo-deny
+        key: ${{ steps.restore.outputs.cache-primary-key }}
