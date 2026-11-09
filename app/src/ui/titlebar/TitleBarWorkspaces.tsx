@@ -392,33 +392,38 @@ export function RootChip({
   );
 }
 
+/** What the strip's arrows walk: its chips, their notice dots and the ⌄. */
+const STRIP_ITEMS =
+  '[data-part="workspace"][data-scope="titlebar"], [data-kind][data-scope="titlebar"], [data-titlebar-all]';
+
 /**
  * **The strip of pinned workspaces** (R101, R103): a toolbar named `name`, at most 62% of the
  * bar, scrolling sideways with its scrollbar hidden. Its last control is the ⌄ that opens every
  * workspace (R106), a button of the button family handed in as a child.
  *
- * **One Tab stop, and the arrows walk it** (charter-app#189, as every strip of the window is):
- * the caller gives the stop `tabIndex` 0 and every other chip −1; ←, →, Home and End move the
- * keyboard along the chips and the ⌄, stopping at the ends.
+ * **One Tab stop, and it goes where the keyboard goes** (charter-app#189, WAI-ARIA APG toolbar,
+ * #5912): ←, →, Home and End move the keyboard along the chips, their dots and the ⌄, stopping
+ * at the ends, and `onRove` hands the caller each of them the keyboard lands on, however it got
+ * there. The caller gives that one `tabIndex` 0 and every other −1, so Tab leaves the strip from
+ * where the person is and Shift+Tab comes back to it.
  */
 export function PinnedStrip({
   name,
   children,
+  onRove,
   ref,
   ...rest
 }: {
   name: string;
   children: ReactNode;
+  /** The keyboard landed on `item`, one of the strip's chips, dots or its ⌄: it is the stop now. */
+  onRove?: (item: HTMLElement) => void;
   ref?: Ref<HTMLDivElement>;
   /** `data-*` attributes reach the element as they are. */
   [data: `data-${string}`]: string | number | boolean | undefined;
 }) {
   const walk = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    const items = [
-      ...event.currentTarget.querySelectorAll<HTMLElement>(
-        '[data-part="workspace"][data-scope="titlebar"], [data-kind][data-scope="titlebar"], [data-titlebar-all]',
-      ),
-    ];
+    const items = [...event.currentTarget.querySelectorAll<HTMLElement>(STRIP_ITEMS)];
     const at = items.findIndex((one) => one === document.activeElement);
     if (at < 0) return;
     const to =
@@ -443,6 +448,17 @@ export function PinnedStrip({
       aria-label={name}
       aria-orientation="horizontal"
       onKeyDown={walk}
+      onFocus={(event) => {
+        // A chip's menu is a portal whose focus bubbles here through React: only the strip's own
+        // items move its stop.
+        const on = event.target;
+        if (
+          on instanceof HTMLElement &&
+          event.currentTarget.contains(on) &&
+          on.matches(STRIP_ITEMS)
+        )
+          onRove?.(on);
+      }}
       data-scope="titlebar"
       data-part="strip"
     >
