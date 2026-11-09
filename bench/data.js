@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794232541151,
+  "lastUpdate": 1794235066343,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -44814,6 +44814,48 @@ window.BENCHMARK_DATA = {
             "value": 102.3459205,
             "unit": "ms",
             "extra": "median of 5 runs: 99.617, 99.961, 102.346, 102.796, 104.446 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "94cb1fc6cb067f8a950e2d9f2720050d89ae635c",
+          "message": "A chat's browser asks on its own pane: what it may reach, a new site, Take over (#5985)\n\n* A chat's browser asks on its own pane: what it may reach, a new site, Take over\n\nThe chat's browser asks (source browser, browser-site, browser-needs-you)\nwere drawn only in the Inbox's Asks view: ON_A_PANE never had them, and\n#5710 (b833a1e34c) took Take over off the Asks row of browser-needs-you,\nsaying the browser's own place answers it, though nothing drew one. A\nperson looking at the chat saw nothing to press, and the chat waited.\n\nBrowserAskNotice draws each on its chat's pane with the core's answers,\nsent through answerTaken as the Inbox sends them. SecretFillNotice was\nhanded a list that never held secret-fill: it is on the pane now too.\n\naskPlaces.guard.test.ts names a place for every AskSource the bindings\ndeclare (satisfies Record<AskSource, Place>), checks each pane kind\npasses onItsPane, and lists the chats' asks drawn in Asks alone as debt:\npool-login, pool-tool, secret, run-grant.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7036NTBT05NMKHE8QHEP4Y0\nPurlis-Persona: steward\n\n* The pane's browser asks test names its pull request (#5985)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7036NTBT05NMKHE8QHEP4Y0\nPurlis-Persona: steward\n\n* The pane's Take over test answers no watch of the view it opens (#5985)\n\nTake over opens the browser's view, which watches the browser; the mock\nanswered that watch with null, and browserWatch read its view from it\nafter the test: CI's unhandled rejection. The watch now never answers.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7036NTBT05NMKHE8QHEP4Y0\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-09T14:05:45Z",
+          "tree_id": "4edbfba547986c2513b0fb2b9cb4599c68695543",
+          "url": "https://github.com/purlis/purlis/commit/94cb1fc6cb067f8a950e2d9f2720050d89ae635c"
+        },
+        "date": 1794235061148,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6969810000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.688, 0.692, 0.697, 0.703, 0.712 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.560005999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.467, 16.550, 16.560, 16.727, 16.801 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.0584,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.255, 101.299, 102.058, 102.705, 102.928 ms"
           }
         ]
       }
