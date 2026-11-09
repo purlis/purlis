@@ -69,6 +69,12 @@ pub enum Capability {
     /// ([`crate::checks`]). It has no shape: which tool it converts is the extension's own
     /// business, and what the operator approves is that it is asked.
     CheckReporter,
+    /// **Catalogue queries** (ADR 0120 §9, #5971): queries an artifact's page may read, each
+    /// `<extension-id>.<name>` with a declared shape, parameters, scope and freshness. purlis
+    /// answers one from the facts file while its answer there is fresh, and otherwise asks the
+    /// program, one question with the deadline (protocol 7, [`super::queries`]). Its shape is
+    /// `contributes.queries`.
+    Queries,
     /// **The six studio capabilities** (ADR 0101), known only where the `skill-studio` flag is
     /// on ([`crate::skills::STUDIO_FLAG`]). Three are version 1 of the public extension API and
     /// the rest are experimental ([`Self::VERSION_ONE`]). An extension that declares any of
@@ -168,6 +174,12 @@ impl Capability {
                  and its exit status, and purlis draws the results it answers on the branch's \
                  diff",
             ),
+            Self::Queries => (
+                "queries",
+                "answers the queries listed below, which an artifact's page may read; purlis \
+                 starts its program to answer one, or reads its facts file while the answer \
+                 there is fresh",
+            ),
             Self::SkillSource => (
                 "skill-source",
                 "offers skills to install; purlis asks it what it has and for one skill's files, \
@@ -213,6 +225,8 @@ impl Capability {
             Self::Grader => 4,
             // A check's output, answered in SARIF on stdout (ADR 0117, #5410).
             Self::CheckReporter => 6,
+            // A query's question, answered with its data (ADR 0120 §9, #5971).
+            Self::Queries => 7,
             Self::SkillSource
             | Self::SkillLint
             | Self::SkillTemplate
@@ -249,6 +263,7 @@ impl Capability {
             Self::Briefing,
             Self::Cli,
             Self::CheckReporter,
+            Self::Queries,
         ]);
         if studio {
             known.extend(Self::STUDIO);
@@ -274,6 +289,7 @@ impl Capability {
             | Self::Events
             | Self::Briefing
             | Self::Cli
+            | Self::Queries
             | Self::SkillSource
             | Self::Grader
             | Self::SkillLint

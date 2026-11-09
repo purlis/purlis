@@ -12,9 +12,14 @@ use std::process::ExitCode;
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let [verb, dir] = args.as_slice()
-        && verb == "assemble"
+        && (verb == "assemble" || verb == "assemble-queries")
     {
-        return match extension_probe::assemble(std::path::Path::new(dir)) {
+        let assemble = if verb == "assemble" {
+            extension_probe::assemble
+        } else {
+            extension_probe::assemble_queries
+        };
+        return match assemble(std::path::Path::new(dir)) {
             Ok(_) => ExitCode::SUCCESS,
             Err(why) => {
                 eprintln!("extension-probe: could not assemble into {dir}: {why}");
@@ -23,7 +28,10 @@ fn main() -> ExitCode {
         };
     }
     if !args.is_empty() {
-        eprintln!("usage: extension-probe | extension-probe assemble <dir>");
+        eprintln!(
+            "usage: extension-probe | extension-probe assemble <dir> | extension-probe \
+             assemble-queries <dir>"
+        );
         return ExitCode::FAILURE;
     }
 
@@ -49,6 +57,20 @@ fn main() -> ExitCode {
         return ExitCode::from(printed.status);
     }
     let state = std::env::var_os("CHARTER_EXTENSION_STATE").map(std::path::PathBuf::from);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |it| it.as_secs());
+    // A query's question (protocol 7, #5971) is the query probe's, and leaves its own facts.
+    if let Ok(request) = serde_json::from_str::<serde_json::Value>(&line)
+        && extension_probe::is_query(&request)
+    {
+        let said = extension_probe::query_answer(&request, state.as_deref(), now);
+        let mut out = std::io::stdout().lock();
+        if writeln!(out, "{said}").and_then(|()| out.flush()).is_err() {
+            return ExitCode::FAILURE;
+        }
+        return ExitCode::SUCCESS;
+    }
     let said = match serde_json::from_str(&line) {
         Ok(request) => extension_probe::answer(&request, state.as_deref()),
         Err(why) => serde_json::json!({

@@ -1,0 +1,31 @@
+{
+  "version": 7,
+  "id": "query-probe",
+  "name": "Query probe",
+  "capabilities": ["queries"],
+  "state": "state",
+  "contributes": {
+    "runs": "bin/extension-probe",
+    "queries": [
+      {
+        "name": "asked",
+        "description": "How many questions the probe answered, and what it was handed.",
+        "scope": "workspace",
+        "fresh_seconds": 60,
+        "parameters": {
+          "type": "object",
+          "properties": { "who": { "type": "string", "description": "Whose questions." } }
+        },
+        "result": { "type": "object" },
+        "widens": { "who": "anyone's questions, not only the workspace's" }
+      },
+      {
+        "name": "everywhere",
+        "description": "The probe's answer for the whole project.",
+        "scope": "plane",
+        "fresh_seconds": 3600,
+        "result": { "type": "object" }
+      }
+    ]
+  }
+}

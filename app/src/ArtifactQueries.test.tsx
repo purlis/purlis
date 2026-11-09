@@ -87,6 +87,20 @@ describe("what an artifact's page reads of purlis, in its bar", () => {
     );
   });
 
+  it("says which extension a query needs when this machine has none to answer it, and keeps the page open", async () => {
+    const warning =
+      "slack.unread@1 needs the extension slack, which is not on here, so that part of the page is empty";
+    const sent = core({
+      queries: [TODOS, { ...TODOS, id: "slack.unread@1", widens: [], warning }],
+    });
+    tab();
+    await waitFor(() =>
+      expect(screen.getByTestId("artifact-query-warning")).toHaveTextContent(warning),
+    );
+    expect(screen.getByTestId("artifact-queries")).toHaveTextContent("slack.unread@1");
+    expect(sent).toContain("artifact_open");
+  });
+
   it("asks for plane-wide reads apart from the script, and only once the script is approved", async () => {
     const plane = { ...TODOS, id: "purlis.everything@1", scope: "plane", widens: [] };
     core({ standing: "new", queries: [plane] });

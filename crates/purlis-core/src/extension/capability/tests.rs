@@ -138,3 +138,24 @@ fn the_three_wired_words_are_version_one_and_the_others_are_still_said_to_be_exp
     assert!(!said(Capability::StudioPanel));
     assert!(!said(Capability::SkillRouter));
 }
+
+#[test]
+fn a_release_build_knows_queries_and_it_needs_protocol_7() {
+    let known = Capability::known_where(false);
+    assert_eq!(
+        Capability::parse_in("queries", &known),
+        Some(Capability::Queries)
+    );
+    assert_eq!(Capability::Queries.since(), 7);
+    assert!(Capability::Queries.has_shape());
+}
+
+#[test]
+fn the_prompt_says_a_page_may_ask_its_queries_and_its_program_answers_them() {
+    assert_eq!(
+        Capability::Queries.asks(),
+        "the capability “queries” — answers the queries listed below, which an artifact's page \
+         may read; purlis starts its program to answer one, or reads its facts file while the \
+         answer there is fresh"
+    );
+}
