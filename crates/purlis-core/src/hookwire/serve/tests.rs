@@ -357,3 +357,24 @@ fn an_ask_sent_with_more_than_one_descriptor_is_refused_and_every_one_closed() {
     }
     assert!(kept.lock().unwrap().is_empty(), "nothing was parked");
 }
+
+/// One descriptor and the kernel's word that more came than there was room for: the ask is
+/// refused, whatever fits in the buffer, on every system (the buffer holds two on Linux).
+#[test]
+fn a_slot_is_taken_only_as_the_one_descriptor_that_came_with_nothing_cut_off() {
+    let one = || {
+        vec![std::os::fd::OwnedFd::from(
+            std::fs::File::open("/dev/null").unwrap(),
+        )]
+    };
+    assert!(the_one(one(), true, false).is_some(), "one, marked, whole");
+    assert!(the_one(one(), true, true).is_none(), "more came than fit");
+    assert!(
+        the_one(one(), false, false).is_none(),
+        "not marked close-on-exec"
+    );
+    let mut two = one();
+    two.extend(one());
+    assert!(the_one(two, true, false).is_none(), "two came");
+    assert!(the_one(Vec::new(), true, false).is_none(), "none came");
+}

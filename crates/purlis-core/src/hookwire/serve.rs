@@ -350,11 +350,7 @@ fn taken_from(handing: &std::os::unix::net::UnixStream) -> Option<(ServeAsk, Slo
         (got, fds, marked)
     });
     let got = got.ok()?;
-    // More came than the one descriptor: the rest were never received, and the ask is refused.
-    if !marked || got.flags.contains(ReturnFlags::CTRUNC) {
-        return None;
-    }
-    let [fd] = <[std::os::fd::OwnedFd; 1]>::try_from(fds).ok()?;
+    let fd = the_one(fds, marked, got.flags.contains(ReturnFlags::CTRUNC))?;
     let said = std::str::from_utf8(line.get(..got.bytes)?)
         .ok()?
         .strip_suffix('\n')?;
@@ -363,6 +359,24 @@ fn taken_from(handing: &std::os::unix::net::UnixStream) -> Option<(ServeAsk, Slo
     // A connected unix socket, and nothing else.
     slot.peer_addr().ok()?;
     Some((ask, slot))
+}
+
+/// **The one descriptor a host handed on**, of the `fds` that came, each marked close-on-exec
+/// where `marked`: none where more came, among them more than the receive had room for
+/// (`truncated`, the kernel's `MSG_CTRUNC`), or where one could not be marked. Every one that is
+/// not handed back is closed.
+#[cfg(unix)]
+fn the_one(
+    fds: Vec<std::os::fd::OwnedFd>,
+    marked: bool,
+    truncated: bool,
+) -> Option<std::os::fd::OwnedFd> {
+    // More came than the one descriptor: the rest were never received, and the ask is refused.
+    if !marked || truncated {
+        return None;
+    }
+    let [fd] = <[std::os::fd::OwnedFd; 1]>::try_from(fds).ok()?;
+    Some(fd)
 }
 
 /// Whether `handing` has something to read, or has ended, within `within`.
