@@ -396,6 +396,11 @@ const UNREACHED: &[(&str, &str)] = &[
         "gl-refresh",
         "the window's background refresher, never a chat's: a chat asks its forge itself",
     ),
+    (
+        "queries",
+        "a gap: a page's author reads it, and the skill that writes an artifact (spec #5948) \
+         names it when it ships",
+    ),
 ];
 
 /// #3798: a chat learns a command only from what it reads — a skill, a guard's refusal, a

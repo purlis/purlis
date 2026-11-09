@@ -21,6 +21,7 @@ pub mod briefing;
 pub mod brokered;
 pub mod browsertools;
 pub mod casefold;
+pub mod catalogue;
 pub mod change;
 pub mod chatenv;
 pub mod chatpiece;

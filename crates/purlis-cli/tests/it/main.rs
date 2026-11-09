@@ -97,6 +97,7 @@ mod pool_setup;
 mod profile_create;
 mod profile_list;
 mod profile_sign_in;
+mod purlis_queries_lists_the_catalogue;
 mod purlis_serve_confines_a_chat_with_its_own_proxy;
 mod purlis_serve_hears_a_held_projects_hooks;
 mod purlis_serve_is_this_users_one_session_host;

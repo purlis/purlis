@@ -54,6 +54,7 @@ mod permission;
 mod piece;
 mod pool;
 mod poolsetup;
+mod queries;
 mod report;
 mod scan;
 mod secret;
@@ -500,6 +501,14 @@ enum Command {
 
     /// What each version of the app brought: its CHANGELOG.md, newest first.
     News(NewsCommand),
+
+    /// Every query a page, a chat or a script can read through (ADR 0120 §7): each read-only
+    /// tool's id, scope, the release it answers since, what it takes and the shape it answers.
+    Queries {
+        /// The catalogue as JSON: `{"api": 1, "queries": [...]}`.
+        #[arg(long)]
+        json: bool,
+    },
 
     /// Which channel the app updates from. This command does NOT install anything.
     ///
@@ -1373,6 +1382,8 @@ fn read_only_standing(command: &Command) -> ReadOnly {
         | Command::Update { .. }
         | Command::Version { .. }
         | Command::News(_)
+        // The catalogue is compiled in: nothing of a project's is read.
+        | Command::Queries { .. }
         // This machine's pools, in its config home: nothing of a project's.
         | Command::Pool(_)
         // This machine's signing key, in its keychain: nothing of a project's.
@@ -3676,6 +3687,7 @@ fn run(command: Command) -> Result<u8, String> {
         | Command::Init(_)
         | Command::Reinit
         | Command::News(_)
+        | Command::Queries { .. }
         | Command::Theme(_)
         | Command::Stop { .. }
         | Command::Update { .. }
@@ -5725,6 +5737,8 @@ fn main() -> ExitCode {
                 pending: news.pending,
             }));
         }
+        // The catalogue is compiled in, so no project is looked for.
+        Command::Queries { json } => return queries::run(*json),
         Command::Update { to, bump, channel } => {
             let config_root = purlis_core::machine::config_root();
             if let Some(word) = channel {
