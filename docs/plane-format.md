@@ -3040,6 +3040,10 @@ them (#5427, ADR 0078 §7, session protocol 1.78), which the file diff reads as 
   since 1970. Else it is the data files' commit time while git holds them as committed, else
   their newest write time; a folder with no data files is dated by its `index.html`. An icon is
   dimmed a day after that time.
+- **Badge** (#5965, `crates/purlis-core/src/artifact/badge.rs`): the number an artifact's icon
+  shows is the top-level `"badge"` key of `data.json`, a whole number from 0 to 999999; anything
+  else (text, a fraction, a negative, a larger number) declares none, and nothing but that key
+  makes one. A zero draws no badge. It is read with the freshness, and dims with the icon.
 - **The pins file**, `artifacts/pins.toml`, TOML:
 
   ```toml

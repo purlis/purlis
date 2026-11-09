@@ -3222,6 +3222,8 @@ export type ArtifactPinShown = {
 	too_large: string | null,
 	/**  When its data was last updated, when that can be read. */
 	fresh: ArtifactFresh | null,
+	/**  The number its icon shows, as its data declares it (#5965); none when it declares none. */
+	badge?: number | null,
 };
 
 /**
