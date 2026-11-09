@@ -1463,9 +1463,9 @@ mod every_shipped_fixture_imports_with_no_avoidable_finding_and_its_hues_apart {
                 "terminal.ansi.black on terminal.background",
                 "terminal.ansi.bright-black on terminal.background",
             ],
-            // Dune's own light blue on its own selected row (#3100), 4.1:1: an update pill's
-            // words under the pointer. Purlis keeps the theme's colours and says so.
-            "dune.json" => &["accent.text on list.selected"],
+            // Dune's light blue (#3100) drew Allow at rest and the primary under the pointer as
+            // one colour in some workspace tints (#2994), so the import tunes its accent greyer,
+            // and its own words on its selected row clear 4.5:1 with it.
             _ => &[],
         };
         let distinct: BTreeSet<&str> = found.iter().map(String::as_str).collect();

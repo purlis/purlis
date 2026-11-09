@@ -513,12 +513,20 @@ names:
 - Allow is distinguishable from Keep blocked (`secondary`) by its edge, and as plain as Keep
   blocked: in every state it is drawn on Keep blocked's fill;
 - no part draws Allow or danger nearer the primary than the family's defaults draw it in the
-  same theme, measured on what a person reads as the look as it shows on each surface;
+  same theme, measured on what a person reads as the look as it shows on each surface; and Allow
+  or danger in each look it shows (at rest, in each state but disabled and in each set of states
+  that hold at once) is held against the primary in each other look it shows, since a person
+  sees one hovered or focused control beside others at rest (#2994): no pair nearer than the
+  family's defaults bring the two in any pair of their looks. A pair that breaks it names both looks
+  (`Allow never takes the primary look: Allow under the pointer beside the primary at rest`), and
+  the primary falls back in its own look there when Allow's default is not enough;
 - danger's words stay apart from the accent and from the primary's words.
 
 **A theme's tokens alone keep Allow apart from the primary** (#2948): the button family's
-defaults, drawn from the theme's tokens, are measured the same way, at rest and in each state, as
-written and in each of the theme's own tints. A theme whose tokens bring the two together is
+defaults, drawn from the theme's tokens, are measured the same way, Allow in each look it shows
+against the primary in each look it shows (#2994), as written and in each of the theme's own
+tints. A toggle's pressed look is the plain and the ghost button's alone (#3255): the primary, an
+Allow and danger are never pressed as one, so none of them shares it. A theme whose tokens bring the two together is
 drawn with purlis's own fill for the primary, and Allow's own fill only when that is not enough,
 under the consent floors' Notice.
 
