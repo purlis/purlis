@@ -78,9 +78,10 @@ use serde_json::{Value, json};
 
 use super::super::kept::Kept;
 use super::super::keys::key_events;
+use super::super::scrub::SHORTEST_SCRUBBED;
 use super::super::tree::NodeKey;
 use super::Browser;
-use super::fill::GUARD_FIELD;
+use super::fill::{GUARD_FIELD, too_short_to_keep_out};
 use super::takeover::Carrying;
 use crate::drive::{Answer, Content, Driver, Hold, Login, Refusal, Why, lock};
 
@@ -143,9 +144,13 @@ pub(crate) const FOCUS_FIELD: &str = r"function () {
 }";
 
 /// The function that says whether the field it runs on has the focus in a document that has
-/// the focus: a constant.
-pub(crate) const FIELD_HAS_FOCUS: &str = r"function () {
-  return this.isConnected && this === document.activeElement && document.hasFocus();
+/// the focus, and is in a document on `origin`, by its address and by the origin the document
+/// itself has (a sandboxed one has none), as [`super::fill::WRITE_FIELD`] checks: a constant.
+pub(crate) const FIELD_HAS_FOCUS: &str = r"function (origin) {
+  if (!this.isConnected || this.ownerDocument.location.origin !== origin) return false;
+  const view = this.ownerDocument.defaultView;
+  if (!view || view.origin !== origin) return false;
+  return this === document.activeElement && document.hasFocus();
 }";
 
 /// The function that says how long what the field it runs on holds is, in UTF-16 code units, as
@@ -241,8 +246,17 @@ impl Browser {
     /// declared address, fills only while the page's document is on the declared origin, with
     /// `hold` bound just before the first value goes in, submits, waits for the password field to
     /// go, clears what it filled where the login did not go through, and hands the browser back
-    /// to the agent. Refused while the person drives, or while another login runs.
+    /// to the agent. Refused while the person drives, or while another login runs, and, before
+    /// anything is sent, where the password is too short to be kept out of what purlis answers
+    /// ([`SHORTEST_SCRUBBED`]); a user name that short is filled as it is.
     pub fn log_in(&self, login: &Login, hold: Arc<dyn Hold>) -> Result<LoginEnded, Refusal> {
+        if too_short_to_keep_out(&login.password) {
+            return Err(not_logged_in(format!(
+                "the password of the login on {} is shorter than {SHORTEST_SCRUBBED} characters, \
+                 too short to be kept out of what purlis answers, so nothing was filled",
+                login.origin
+            )));
+        }
         let epoch = {
             let mut lease = lock(&self.lease);
             match lease.driver {
@@ -1045,8 +1059,9 @@ impl Browser {
     }
 
     /// Whether `target`'s page still shows `document`, on `origin`, with `field` focused in it
-    /// and the document focused: read from the field itself, so a field of a document gone is
-    /// never taken for one still there.
+    /// and the document focused: read from the field itself, its own document's origin
+    /// included, so a field of a document gone, or of a document on another origin than the
+    /// engine recorded, is never taken for one still there.
     fn still_filling(
         &self,
         target: &str,
@@ -1068,6 +1083,7 @@ impl Browser {
                 json!({
                     "objectId": field.object,
                     "functionDeclaration": FIELD_HAS_FOCUS,
+                    "arguments": [{ "value": origin }],
                     "returnByValue": true,
                 }),
                 on,
