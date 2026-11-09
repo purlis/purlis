@@ -1475,7 +1475,7 @@ mod pr_saves {
             resolve::Settled::Stopped(vec!["README.md".to_owned()])
         );
         std::fs::write(
-            planegit::resolvefolder::path(&plane.root).join("README.md"),
+            planegit::resolve::folder(&plane.root).join("README.md"),
             "both of our words\n",
         )
         .unwrap();

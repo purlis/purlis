@@ -1908,11 +1908,8 @@ fn rebase_onto(root: &Path, onto: &str, sign: bool, deadline: Duration) -> Rebas
     }
     let started = std::time::Instant::now();
     let tip = match replay::replay(root, "HEAD", onto, sign, deadline) {
-        replay::Replayed::Onto(tip) => tip,
-        replay::Replayed::Conflict(files) => return Rebased::Conflict(files),
-        replay::Replayed::Unsigned(signer) => return Rebased::Unsigned(signer),
-        replay::Replayed::OutOfTime => return Rebased::OutOfTime,
-        replay::Replayed::Failed(said) => return Rebased::Failed(said),
+        Ok(tip) => tip,
+        Err(stopped) => return stopped.into(),
     };
     let stops = sandbox_would_stop(root, &tip);
     if !stops.is_empty() {
@@ -1931,6 +1928,18 @@ fn rebase_onto(root: &Path, onto: &str, sign: bool, deadline: Duration) -> Rebas
         Ok(run) if run.code.is_none() && started.elapsed() >= deadline => Rebased::OutOfTime,
         Ok(run) => Rebased::Failed(tail(&run)),
         Err(unavailable) => Rebased::Failed(unavailable.to_string()),
+    }
+}
+
+/// **The one mapping of a replay that stopped** (#5886): each way it stops is the save's own.
+impl From<replay::Unreplayed> for Rebased {
+    fn from(stopped: replay::Unreplayed) -> Self {
+        match stopped {
+            replay::Unreplayed::Conflict(files) => Rebased::Conflict(files),
+            replay::Unreplayed::Unsigned(signer) => Rebased::Unsigned(signer),
+            replay::Unreplayed::OutOfTime => Rebased::OutOfTime,
+            replay::Unreplayed::Failed(said) => Rebased::Failed(said),
+        }
     }
 }
 
@@ -4254,7 +4263,7 @@ mod prsave;
 pub mod recover;
 mod replay;
 pub mod resolve;
-pub mod resolvefolder;
+pub(crate) mod resolvefolder;
 mod update;
 pub use merging::{MergeState, Merging, Seen, changed_since};
 pub use prsave::{MergedAsItStands, settled_at, stamp_is_unusable};

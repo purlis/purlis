@@ -638,8 +638,8 @@ fn a_stale_persona_edit_is_refused_like_a_workspace_one() {
 #[test]
 fn unarchiving_a_memory_the_index_still_lists_does_not_list_it_twice() {
     purlis_core::unsteered!();
-    // `MEMORY.md` is `merge=union`: a pull can bring an archived memory's line back while its
-    // file stays in `archive/`.
+    // A merge made by hand, or an older build's `merge=union` rule for `MEMORY.md`, can bring an
+    // archived memory's line back while its file stays in `archive/`.
     let tmp = tempfile::tempdir().unwrap();
     let ws = alpha(&tmp);
     let path = ws.remember("Listed still", at()).unwrap();

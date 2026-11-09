@@ -1257,8 +1257,6 @@ key refuses.
   workspaces/*/pieces/*.jsonl merge=union
   workspaces/*/changes/log/*.jsonl merge=union
   workspaces/*/work/*.jsonl merge=union
-  personas/*/memory/MEMORY.md merge=union
-  workspaces/*/memory/MEMORY.md merge=union
   workspaces/*/todos/MEMORY.md merge=union
   workspaces/*/sessions/index.md merge=union
   sessions/index.md merge=union
@@ -1269,9 +1267,15 @@ key refuses.
   write (a newer build's), and commits the file with the rest of the save, so the plane's other
   machines take it from the target. A plane with no block gets one from `reinit`, which, like
   `init`, writes exactly this build's rules. A chat's sandbox may hold the file, and the window's next save then takes it.
-  A memory store's `MEMORY.md` keeps its rule only for a plain rebase, which replays one commit
-  at a time and rebuilds nothing (a save in `push` mode): every merge purlis makes rebuilds the
-  index instead, and never reads git's union of it (#5824 F4).
+  A memory store's `MEMORY.md` has no rule (#5864): every merge purlis makes rebuilds the
+  index instead, and never reads git's union of it (#5824 F4), and so does a save in `push`
+  mode, whose replay merges each of its commits as a merge does (`planegit/replay.rs`). An
+  older build still writes the two memory rules: its whole save puts them back in the block
+  and commits them, and this build's saves then keep them, as they keep any rule this build
+  does not write, though nothing of this build reads them. Where the older build's save does
+  not write the block (a chat's sandbox holds `.gitattributes`), that build has no union rule
+  for a memory index, so two machines appending to one `MEMORY.md` stop its push-mode save on
+  a conflict cleanly: nothing is lost, and the person settles it.
 
   In a request mode (`pr`, `pr-merge`), a target that moved under an open request is brought
   in by one merge commit, by a save and by the app's look, where the request needs it: git's

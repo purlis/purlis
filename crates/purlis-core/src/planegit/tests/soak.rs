@@ -287,7 +287,7 @@ impl Soak {
                 assert_eq!(files, vec![SHARED.to_owned()], "round {round}, {machine}");
                 // Mid-resolve: the folder holds the merge, and the root is not stopped.
                 self.no_stop_is_left(round);
-                let folder = resolvefolder::path(&root);
+                let folder = resolvefolder::folder(&root);
                 assert!(read(&folder, SHARED).contains("<<<<<<<"), "round {round}");
                 let both = format!("both machines' words, settled in round {round}\n");
                 write(&folder, SHARED, &both);

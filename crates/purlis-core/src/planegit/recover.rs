@@ -119,45 +119,6 @@ impl Marker {
     }
 }
 
-/// A step under way at a root, for as long as it is held: the marker is removed when it drops.
-///
-/// No step this build runs at a root is multi-step any more (#5855): a replay and a resolve are
-/// made off to the side, and the root moves with one `reset --keep`. So nothing marks one; the
-/// tests write the marker a build from before that left, which recovery still reads.
-#[cfg(test)]
-#[derive(Debug)]
-pub(super) struct Marked {
-    path: PathBuf,
-}
-
-#[cfg(test)]
-impl Drop for Marked {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
-    }
-}
-
-/// Write the marker for `op` at `root`, going `onto` from `base`. `None` where the root is on
-/// no branch or the marker could not be written: the step then runs unmarked, as it did before.
-#[cfg(test)]
-pub(super) fn mark(root: &Path, op: Op, onto: &str, base: &str) -> Option<Marked> {
-    let marker = Marker {
-        op,
-        branch: line_of(root, &["symbolic-ref", "-q", "HEAD"])?,
-        orig_head: head(root)?,
-        onto: onto.to_owned(),
-        base: base.to_owned(),
-        stop_head: None,
-        result: None,
-        pid: std::process::id(),
-    };
-    let git_dir = git_dir_of(root);
-    marker.write(&git_dir)?;
-    Some(Marked {
-        path: git_dir.join(MARKER),
-    })
-}
-
 fn head(root: &Path) -> Option<String> {
     line_of(root, &["rev-parse", "--verify", "-q", "HEAD^{commit}"])
 }

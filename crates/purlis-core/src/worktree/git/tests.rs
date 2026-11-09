@@ -2183,3 +2183,17 @@ fn a_call_trusting_only_the_system_keeps_the_proxies_and_drops_the_certificate_a
     }
     assert_eq!(trusting.len(), CREDENTIAL_ENV.len() - 2);
 }
+
+/// git's messages are read in the C locale on every call (#5886): a reset's "in the way"
+/// files (`planegit::resolvefolder`) and a signer's refusal (`planegit::bringin`) are matched
+/// by their English words, which a localised git would translate.
+#[test]
+fn every_git_call_reads_its_messages_in_the_c_locale() {
+    let env = child_env_from("/usr/bin", &|name: &str| match name {
+        "LC_ALL" => Some("de_DE.UTF-8".into()),
+        "LANG" => Some("de_DE.UTF-8".into()),
+        _ => None,
+    });
+    assert!(env.contains(&("LC_ALL", "C".to_owned())), "{env:?}");
+    assert!(!env.iter().any(|(name, _)| *name == "LANG"), "{env:?}");
+}
