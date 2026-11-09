@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794235066343,
+  "lastUpdate": 1794237234243,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -44856,6 +44856,48 @@ window.BENCHMARK_DATA = {
             "value": 102.0584,
             "unit": "ms",
             "extra": "median of 5 runs: 101.255, 101.299, 102.058, 102.705, 102.928 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "35a055c9bb8d52e8616b67c4accc38c421026afd",
+          "message": "A Codex chat's briefing takes four SessionStart hooks, each within what Codex keeps (#5935) (#5987)\n\n* A Codex chat's briefing takes four SessionStart hooks, each within what Codex keeps (#5935)\n\nCodex keeps 10,000 bytes of each hook's output and cuts the middle. One\nbriefing in an ordinary workspace passes that, so a Codex chat is now told\nit in four hooks: who and where it is (sessionstart), how it works here\n(sessionstart-notes), its skills (sessionstart-skills) and what others say\nto it, quoted (sessionstart-quoted). Claude Code's and opencode's briefing\nis unchanged. ADR 0102 amended 2026-11-09.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M705MPWY383EN2NGRTXRFW2K\nPurlis-Persona: steward\n\n* Review: the quoted hook carries a resumed record, is driven past the cut, and the ADR says what it takes (#5935)\n\n- briefing::Hook is briefing::Part, with Part::Quoted: a Resume's session\n  record (up to 8,000 characters) goes in the quoted hook, so it cannot push\n  a Codex chat's briefing hook over 10,000 bytes.\n- The hook word is parsed once (harness::codex::part_of_word); one timeout\n  for every part hook; one Ask builder in hooks.rs; the CLI's helper is\n  from_others.\n- Tests: the quoted hook driven past the cut by three kept reports, with\n  what lands at its ends; a kept report reaches a Codex chat from its quoted\n  hook only; a resumed record is told in the quoted part only.\n- The ADR amendment says the quoted hook takes kept reports and tells\n  extensions a chat started; docs/harnesses.md names the four hooks.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M705MPWY383EN2NGRTXRFW2K\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-09T14:39:56Z",
+          "tree_id": "a017814a77bb7d5b3bbfa639d09ab38942b3d86e",
+          "url": "https://github.com/purlis/purlis/commit/35a055c9bb8d52e8616b67c4accc38c421026afd"
+        },
+        "date": 1794237227332,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.36414250000000004,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.351, 0.355, 0.364, 0.377, 0.378 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3408335,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.287, 16.322, 16.341, 16.370, 16.399 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.3805455,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.890, 101.294, 101.381, 102.343, 102.402 ms"
           }
         ]
       }
