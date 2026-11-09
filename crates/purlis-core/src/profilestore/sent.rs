@@ -18,9 +18,12 @@
 //!
 //! **The rest of what is sent is filtered the same way** (#3866, ADR 0095's 2026-11-01 amendment):
 //! an agent's or a skill's frontmatter loses every setting any harness's list names, a URL in any
-//! text file loses its user information, and a hook, status line, file suggester or server whose
-//! command shows a credential is removed whole. [`filtered`] says what went, by name and never by
-//! value. A command is only read as written: what a script it runs holds, purlis cannot see.
+//! text file loses its user information and the value that signs its query, and a hook, status
+//! line, file suggester, permission rule or server whose command shows a credential is removed
+//! whole. [`filtered`] says what went, by name and never by value. A command is only read as
+//! written: what a script it runs holds, purlis cannot see. A file sent as it was written (a
+//! script, or one that is not text) holding a value shaped like a token is refused in words, as
+//! taking the value out could break it.
 
 /// The settings a harness's settings file may name a credential source by, or carry one in,
 /// removed wherever they are in it: its environment blocks, the helpers that print a key or a
@@ -54,6 +57,7 @@ fn dropped(kind: &str) -> &'static [&'static str] {
             "experimental_bearer_token",
             "http_headers",
             "env_http_headers",
+            "query_params",
         ],
         // opencode's `opencode.json`: a server's `environment` and its OAuth `clientSecret`, a
         // provider's `apiKey`, the credentials its SDK takes (Bedrock's `accessKeyId`,
@@ -253,33 +257,46 @@ fn filtered_saying<'a>(
                 .map(Cow::Owned)
                 .ok_or_else(unreadable)
         }
-        _ => Ok(match std::str::from_utf8(bytes) {
-            Ok(text) if is_markdown(path) => {
-                match frontmatter_without(text, path.contains('/'), said) {
-                    Cow::Borrowed(text) => as_it_was(bytes, no_url_users(text, said)),
-                    Cow::Owned(text) => {
-                        Cow::Owned(no_url_users(&text, said).into_owned().into_bytes())
+        _ => {
+            let sent = match std::str::from_utf8(bytes) {
+                Ok(text) if is_markdown(path) => {
+                    match frontmatter_without(text, path.contains('/'), said) {
+                        Cow::Borrowed(text) => as_it_was(bytes, no_url_credentials(text, said)),
+                        Cow::Owned(text) => {
+                            Cow::Owned(no_url_credentials(&text, said).into_owned().into_bytes())
+                        }
                     }
                 }
+                Ok(text) => as_it_was(bytes, no_url_credentials(text, said)),
+                // A harness can read Markdown past a byte that is not UTF-8, frontmatter and all,
+                // so it is filtered all the same, as the text it reads.
+                Err(_) if is_markdown(path) => {
+                    let text = String::from_utf8_lossy(bytes);
+                    let text = frontmatter_without(&text, path.contains('/'), said);
+                    said.push("a character that is not UTF-8".to_owned());
+                    Cow::Owned(no_url_credentials(&text, said).into_owned().into_bytes())
+                }
+                // No text to read a URL in, and rewriting one could only break it.
+                Err(_) => Cow::Borrowed(bytes),
+            };
+            // What is sent as it was written cannot have a key taken out of it without breaking
+            // it, a script or a file that is not text above all: one shaped like a token is
+            // refused, and belongs in a vault.
+            if crate::secretshape::token_kind(&String::from_utf8_lossy(&sent)).is_some() {
+                return Err(format!(
+                    "{} holds a value shaped like a token, so no settings were sent; keep it in a \
+                     vault and read it from there",
+                    crate::shown::short(path)
+                ));
             }
-            Ok(text) => as_it_was(bytes, no_url_users(text, said)),
-            // A harness can read Markdown past a byte that is not UTF-8, frontmatter and all, so
-            // it is filtered all the same, as the text it reads.
-            Err(_) if is_markdown(path) => {
-                let text = String::from_utf8_lossy(bytes);
-                let text = frontmatter_without(&text, path.contains('/'), said);
-                said.push("a character that is not UTF-8".to_owned());
-                Cow::Owned(no_url_users(&text, said).into_owned().into_bytes())
-            }
-            // No text to read a URL in, and rewriting one could only break it.
-            Err(_) => Cow::Borrowed(bytes),
-        }),
+            Ok(sent)
+        }
     }
 }
 
 fn is_markdown(path: &str) -> bool {
     let lower = path.to_ascii_lowercase();
-    lower.ends_with(".md") || lower.ends_with(".markdown")
+    lower.ends_with(".md") || lower.ends_with(".mdx") || lower.ends_with(".markdown")
 }
 
 /// The most things one file's [`Said`] holds: a hostile file can repeat a removal for as long as
@@ -356,8 +373,8 @@ fn frontmatter_without<'a>(
         Ok(value) if !value.is_object() => return Cow::Borrowed(text),
         Ok(mut value) => {
             let before = value.clone();
-            if json_runs_a_credential(&value)
-                && let serde_json::Value::Object(map) = &mut value
+            if let serde_json::Value::Object(map) = &mut value
+                && command_shows_a_credential(map)
             {
                 map.remove("command");
                 map.remove("args");
@@ -454,15 +471,10 @@ fn without_url_users(text: &str) -> (std::borrow::Cow<'_, str>, bool) {
     let mut out = String::new();
     let mut copied = 0;
     let mut from = 0;
-    while let Some(found) = text[from..].find("://") {
-        let at = from + found;
-        let authority = at + 3;
+    while let Some((at, mark)) = next_scheme_mark(text, from) {
+        let authority = at + mark;
         from = authority;
-        let scheme_ok = text[..at]
-            .chars()
-            .next_back()
-            .is_some_and(|c| c.is_ascii_alphanumeric());
-        if !scheme_ok {
+        if !scheme_before(text, at) {
             continue;
         }
         let end = text[authority..]
@@ -481,13 +493,92 @@ fn without_url_users(text: &str) -> (std::borrow::Cow<'_, str>, bool) {
     (std::borrow::Cow::Owned(out), true)
 }
 
-/// [`without_url_users`], saying so where any went.
-fn no_url_users<'a>(text: &'a str, said: &mut Said) -> std::borrow::Cow<'a, str> {
+/// The next `://` in `text` from `from`, or `:\/\/` as JSON may escape it: where it is and how
+/// long.
+fn next_scheme_mark(text: &str, from: usize) -> Option<(usize, usize)> {
+    let plain = text[from..].find("://").map(|n| (from + n, 3));
+    let escaped = text[from..].find(r":\/\/").map(|n| (from + n, 5));
+    match (plain, escaped) {
+        (Some(a), Some(b)) => Some(if a.0 <= b.0 { a } else { b }),
+        (one, other) => one.or(other),
+    }
+}
+
+/// Whether a scheme ends just before `at`.
+fn scheme_before(text: &str, at: usize) -> bool {
+    text[..at]
+        .chars()
+        .next_back()
+        .is_some_and(|c| c.is_ascii_alphanumeric())
+}
+
+/// `text` with the value of each pair of a URL's query that signs its requests emptied
+/// ([`signs_a_request`]): `https://h/x?api_key=k&page=2` as `https://h/x?api_key=&page=2`.
+/// Whether any was comes back with it.
+fn without_signed_queries(text: &str) -> (std::borrow::Cow<'_, str>, bool) {
+    let mut out = String::new();
+    let mut copied = 0;
+    let mut from = 0;
+    while let Some((at, mark)) = next_scheme_mark(text, from) {
+        let start = at + mark;
+        let end = text[start..]
+            .find(|c: char| c.is_whitespace() || "\"'<>`|)]".contains(c))
+            .map_or(text.len(), |n| start + n);
+        from = start;
+        if !scheme_before(text, at) {
+            continue;
+        }
+        from = end;
+        let Some(asked) = text[start..end].find('?') else {
+            continue;
+        };
+        let query_end = text[start + asked..end]
+            .find('#')
+            .map_or(end, |n| start + asked + n);
+        let mut pair_start = start + asked + 1;
+        while pair_start < query_end {
+            let pair_end = text[pair_start..query_end]
+                .find('&')
+                .map_or(query_end, |n| pair_start + n);
+            if let Some((name, value)) = text[pair_start..pair_end].split_once('=')
+                && signs_a_request(name, value)
+            {
+                let value_start = pair_start + name.len() + 1;
+                out.push_str(&text[copied..value_start]);
+                copied = pair_end;
+            }
+            pair_start = pair_end + 1;
+        }
+    }
+    if copied == 0 {
+        return (std::borrow::Cow::Borrowed(text), false);
+    }
+    out.push_str(&text[copied..]);
+    (std::borrow::Cow::Owned(out), true)
+}
+
+/// Whether a query's pair `name=value` signs a request: a value written out under a name that
+/// holds a credential, or one an address is signed with (`key`, `sig`, `code`).
+fn signs_a_request(name: &str, value: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    written_out(value)
+        && (names_a_credential(&name)
+            || matches!(name.as_str(), "key" | "auth" | "sig" | "signature" | "code"))
+}
+
+/// [`without_url_users`] and [`without_signed_queries`], saying so where any went.
+fn no_url_credentials<'a>(text: &'a str, said: &mut Said) -> std::borrow::Cow<'a, str> {
     let (clean, any) = without_url_users(text);
     if any {
         said.push("a URL's user information".to_owned());
     }
-    clean
+    let (signed, any) = without_signed_queries(&clean);
+    if !any {
+        return clean;
+    }
+    let signed = signed.into_owned();
+    said.push("a value that signs a URL's query".to_owned());
+    std::borrow::Cow::Owned(signed)
 }
 
 /// A string setting at `at`, as it may be sent: no URL's user information, and empty where it is
@@ -504,6 +595,27 @@ fn clean_string(text: &mut String, at: &str, said: &mut Said) {
         said.push(format!("{at}: a URL's user information"));
         *text = clean;
     }
+    let (signed, any) = without_signed_queries(text);
+    if any {
+        let signed = signed.into_owned();
+        said.push(format!("{at}: a value that signs a URL's query"));
+        *text = signed;
+    }
+}
+
+/// Whether the setting `key`, however it is cased (`apiToken`, `access_token`), names a
+/// credential and holds one written out: a string that is no variable's reference.
+fn holds_a_named_credential(key: &str, value: Option<&str>) -> bool {
+    let mut words = String::with_capacity(key.len() + 4);
+    let mut lower_before = false;
+    for c in key.chars() {
+        if c.is_ascii_uppercase() && lower_before {
+            words.push('_');
+        }
+        lower_before = c.is_ascii_lowercase() || c.is_ascii_digit();
+        words.push(c.to_ascii_lowercase());
+    }
+    value.is_some_and(written_out) && names_a_credential(&words)
 }
 
 /// Whether `name`, an option's or a variable's, ends in a word that holds a credential:
@@ -524,8 +636,8 @@ fn names_a_credential(name: &str) -> bool {
 }
 
 /// The last word of a name that holds a credential.
-const CREDENTIAL_WORDS: [&str; 8] = [
-    "token", "password", "passwd", "pwd", "secret", "apikey", "bearer", "auth",
+const CREDENTIAL_WORDS: [&str; 9] = [
+    "token", "password", "passwd", "pwd", "secret", "apikey", "bearer", "auth", "pat",
 ];
 
 /// Whether `value` is written out, and not read from a variable, another command or a harness's
@@ -554,12 +666,14 @@ fn is_a_sent_header(lower: &str, found: usize, before: Option<&str>) -> bool {
 
 /// Whether `word`, between the words `before` and `next`, shows a credential. `takes_a_user` is
 /// whether the command is one whose `-u` is a user and password (`curl`, and not Docker's `-u
-/// 1000:1000`).
+/// 1000:1000`); `takes_a_password` whether its `-p` glued to a value is a password (`mysql
+/// -pX`, and not `ssh -p2222`).
 fn word_shows_a_credential(
     word: &str,
     before: Option<&str>,
     next: Option<&str>,
     takes_a_user: bool,
+    takes_a_password: bool,
 ) -> bool {
     let lower = word.to_ascii_lowercase();
     for header in ["authorization:", "x-api-key:", "cookie:"] {
@@ -609,12 +723,39 @@ fn word_shows_a_credential(
     if says_a_user {
         return true;
     }
+    // A password glued to its option: `mysql -pX`. A bare `-p` asks for one.
+    if takes_a_password
+        && word
+            .strip_prefix("-p")
+            .is_some_and(|glued| !glued.starts_with('-') && written_out(glued))
+    {
+        return true;
+    }
+    // A key handed over as a value, and not a key file named: `--key x`, not `--key ./k.pem`.
+    if matches!(name, "--key" | "-key")
+        && given
+            .or(next)
+            .is_some_and(|value| written_out(value) && !names_a_file(value))
+    {
+        return true;
+    }
     // An option that takes a secret: `--token x`, `--api-key=x`. `--secret id=…,src=…` names a
     // file, as Docker's does.
     names_a_credential(name)
         && given
             .or(next)
             .is_some_and(|value| written_out(value) && !value.starts_with("id="))
+}
+
+/// Whether `value`, an option's, names a file rather than holding a key: a path, or a key file's
+/// own name.
+fn names_a_file(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    value.contains('/')
+        || value.starts_with(['.', '~'])
+        || [".pem", ".key", ".crt", ".p12", ".json", ".der"]
+            .iter()
+            .any(|end| lower.ends_with(end))
 }
 
 /// Whether a command, as `words`, shows a credential where it is written: a token by its shape, an
@@ -625,21 +766,35 @@ fn shows_a_credential(words: &[String], depth: usize) -> bool {
     if crate::secretshape::token_kind(&words.join(" ")).is_some() {
         return true;
     }
-    let takes_a_user = words.iter().any(|word| {
-        let program = word.rsplit('/').next().unwrap_or(word);
-        matches!(program, "curl" | "wget")
-    });
+    let program_is = |names: &[&str]| {
+        words.iter().any(|word| {
+            let program = word.rsplit('/').next().unwrap_or(word);
+            names.contains(&program)
+        })
+    };
+    let takes_a_user = program_is(&["curl", "wget"]);
+    let takes_a_password = program_is(&[
+        "mysql",
+        "mysqldump",
+        "mysqladmin",
+        "mysqlimport",
+        "mysqlshow",
+        "mysqlcheck",
+        "mariadb",
+        "mariadb-dump",
+        "mariadb-admin",
+    ]);
     words.iter().enumerate().any(|(at, word)| {
         let before = at
             .checked_sub(1)
             .and_then(|n| words.get(n))
             .map(String::as_str);
         let next = words.get(at + 1).map(String::as_str);
-        word_shows_a_credential(word, before, next, takes_a_user)
+        word_shows_a_credential(word, before, next, takes_a_user, takes_a_password)
             || (word.contains([';', '&', '|'])
                 && word
                     .split([';', '&', '|'])
-                    .any(|part| word_shows_a_credential(part, None, None, false)))
+                    .any(|part| word_shows_a_credential(part, None, None, false, false)))
             || (depth < MOST_QUOTED
                 && word.contains(char::is_whitespace)
                 && shows_a_credential(&words_of([(false, word.as_str())].into_iter()), depth + 1))
@@ -662,12 +817,32 @@ fn words_of<'a>(written: impl Iterator<Item = (bool, &'a str)>) -> Vec<String> {
     words
 }
 
-/// Whether the JSON object `value` runs a command that [`shows_a_credential`].
+/// Whether the JSON object `value` runs a command that [`shows_a_credential`], or asks an address
+/// signed in its query; or whether it is a permission rule whose command shows one
+/// (`Bash(GH_TOKEN=x gh pr list)`).
 fn json_runs_a_credential(value: &serde_json::Value) -> bool {
     use serde_json::Value;
-    let Value::Object(map) = value else {
-        return false;
-    };
+    match value {
+        Value::Object(map) => {
+            let url = map
+                .get("url")
+                .and_then(Value::as_str)
+                .is_some_and(url_asks_with_a_credential);
+            url || command_shows_a_credential(map)
+        }
+        Value::String(rule) => rule
+            .strip_prefix("Bash(")
+            .and_then(|rest| rest.strip_suffix(')'))
+            .is_some_and(|command| {
+                shows_a_credential(&words_of([(false, command)].into_iter()), 0)
+            }),
+        _ => false,
+    }
+}
+
+/// Whether the `command` and `args` of the JSON object `map` show a credential.
+fn command_shows_a_credential(map: &serde_json::Map<String, serde_json::Value>) -> bool {
+    use serde_json::Value;
     let mut written = Vec::new();
     for key in ["command", "args"] {
         match map.get(key) {
@@ -678,11 +853,7 @@ fn json_runs_a_credential(value: &serde_json::Value) -> bool {
             _ => {}
         }
     }
-    let url = map
-        .get("url")
-        .and_then(Value::as_str)
-        .is_some_and(url_asks_with_a_credential);
-    url || (!written.is_empty() && shows_a_credential(&words_of(written.into_iter()), 0))
+    !written.is_empty() && shows_a_credential(&words_of(written.into_iter()), 0)
 }
 
 /// Whether the query of the address `url` carries what signs its requests: `?key=x`, `?auth=x`.
@@ -690,13 +861,10 @@ fn url_asks_with_a_credential(url: &str) -> bool {
     let Some((_, query)) = url.split_once('?') else {
         return false;
     };
+    let query = query.split_once('#').map_or(query, |(query, _)| query);
     query.split('&').any(|pair| {
-        let lower = pair.to_ascii_lowercase();
-        lower.split_once('=').is_some_and(|(name, value)| {
-            written_out(value)
-                && (names_a_credential(name)
-                    || matches!(name, "key" | "auth" | "sig" | "signature" | "code"))
-        })
+        pair.split_once('=')
+            .is_some_and(|(name, value)| signs_a_request(name, value))
     })
 }
 
@@ -718,7 +886,10 @@ fn clean_json(value: &mut serde_json::Value, names: &[&str], at: &str, said: &mu
                 }
             }
             map.retain(|key, inner| {
-                if names.contains(&key.as_str()) || crate::secretshape::token_kind(key).is_some() {
+                if names.contains(&key.as_str())
+                    || crate::secretshape::token_kind(key).is_some()
+                    || holds_a_named_credential(key, inner.as_str())
+                {
                     // Only the harness's own environment chooses where its chat's requests go.
                     if at == "settings"
                         && key == "env"
@@ -769,7 +940,8 @@ fn clean_json(value: &mut serde_json::Value, names: &[&str], at: &str, said: &mu
     }
 }
 
-/// Whether the TOML table `value` runs a command that [`shows_a_credential`].
+/// Whether the TOML table `value` runs a command that [`shows_a_credential`], or asks an address
+/// signed in its query, as [`json_runs_a_credential`] reads a JSON one.
 fn toml_runs_a_credential(value: &toml::Value) -> bool {
     use toml::Value;
     let mut written = Vec::new();
@@ -782,6 +954,13 @@ fn toml_runs_a_credential(value: &toml::Value) -> bool {
                 }
                 _ => {}
             }
+        }
+        if inner
+            .get("url")
+            .and_then(Value::as_str)
+            .is_some_and(url_asks_with_a_credential)
+        {
+            return true;
         }
     }
     !written.is_empty() && shows_a_credential(&words_of(written.into_iter()), 0)
@@ -822,7 +1001,9 @@ fn retain_toml_commands(table: &mut toml::Table, at: &str, said: &mut Said) {
                     0,
                 )
             });
-        if crate::secretshape::token_kind(key).is_some() {
+        if crate::secretshape::token_kind(key).is_some()
+            || holds_a_named_credential(key, inner.as_str())
+        {
             said.push(further(at, key));
             return false;
         }
@@ -959,16 +1140,6 @@ fn codex_without(text: &str, said: &mut Said) -> Option<Vec<u8>> {
     let mut doc: toml_edit::DocumentMut = text.parse().ok()?;
     let names = dropped("codex");
     drop_toml(doc.as_table_mut(), names, "settings", said);
-    if let Some(policy) = doc
-        .get_mut("shell_environment_policy")
-        .and_then(|p| p.as_table_like_mut())
-        && let Some(set) = policy.remove("set")
-    {
-        if let Some(block) = set.as_table_like() {
-            said.variables(block.iter().map(|(name, _)| name));
-        }
-        said.push("settings.shell_environment_policy.set".to_owned());
-    }
     // Written again through plain values, so no comment travels: a commented-out key is a key
     // copied all the same.
     let mut plain: toml::Table = toml::from_str(&doc.to_string()).ok()?;
@@ -979,6 +1150,20 @@ fn codex_without(text: &str, said: &mut Said) -> Option<Vec<u8>> {
 fn drop_toml(table: &mut dyn toml_edit::TableLike, names: &[&str], at: &str, said: &mut Said) {
     let keys: Vec<String> = table.iter().map(|(k, _)| k.to_owned()).collect();
     for key in keys {
+        // The variables a shell policy sets, a profile's as well as the top level's.
+        let policy_set = key == "set"
+            && (at == "settings.shell_environment_policy"
+                || at.ends_with(".shell_environment_policy"));
+        if policy_set {
+            if let Some(set) = table.remove(&key)
+                && at == "settings.shell_environment_policy"
+                && let Some(block) = set.as_table_like()
+            {
+                said.variables(block.iter().map(|(name, _)| name));
+            }
+            said.push(further(at, &key));
+            continue;
+        }
         if names.contains(&key.as_str()) {
             table.remove(&key);
             said.push(further(at, &key));

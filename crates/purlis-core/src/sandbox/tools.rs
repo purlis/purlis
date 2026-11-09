@@ -1207,10 +1207,15 @@ pub struct Resolved {
     pub left: Vec<String>,
     /// The tools whose program is nowhere on this machine, by name.
     pub absent: Vec<String>,
+    /// The tools of [`Resolved::absent`] nobody allowed (#4373): each says the Allow is wanted
+    /// too, and its shim runs a program of its name that has come since the chat started.
+    pub unallowed: Vec<String>,
     /// On a runner, each tool of [`Resolved::absent`] and what its name says in the chat (#4354).
     pub refusing: Vec<(String, String)>,
-    /// Nothing is allowed this chat, and it only says what is absent (#4373): another chat of the
-    /// persona shares the folder, so the shims of its Allow stay.
+    /// Nothing is allowed this chat, and it only says what is absent (#4373). Its shims go in a
+    /// folder of their own, named by what they say ([`refusals_folder`]): the persona's folder
+    /// holds the shims of another chat's Allow, which this chat is never to find first on its
+    /// `PATH`.
     pub only_refuses: bool,
 }
 
@@ -1237,6 +1242,35 @@ pub fn not_in_the_image(persona: &str, name: &str, image: Option<&str>) -> Strin
         "{name} is {persona}'s tool, and {image} has no {name}, so nothing ran. Add {name} to the \
          pool's image{or_own} (docs/runner-image.md)."
     )
+}
+
+/// **What a persona's tool nobody allowed says on a runner whose image has no such program**
+/// (#4373): [`not_in_the_image`], and that it runs only once the persona's hosts and tools are
+/// allowed on the desktop that starts the chat, as the window names that Allow.
+pub fn neither_allowed_nor_in_the_image(persona: &str, name: &str, image: Option<&str>) -> String {
+    format!(
+        "{} It also runs only once {persona}'s hosts and tools are allowed on the desktop that \
+         starts the chat (the project's Notice, or Settings › Sandbox).",
+        not_in_the_image(persona, name, image)
+    )
+}
+
+/// **The folder the shims of a chat that only refuses go in** (#4373), beside the persona's
+/// `folder`: named by the digest of what they say, so it holds those shims and nothing else, and
+/// two such chats that say the same share one.
+fn refusals_folder(folder: &Path, refusing: &[(String, String)], unallowed: &[String]) -> PathBuf {
+    use sha2::Digest as _;
+    let mut digest = sha2::Sha256::new();
+    for (name, said) in refusing {
+        digest.update(name.as_bytes());
+        digest.update([0]);
+        digest.update(said.as_bytes());
+        digest.update([0, u8::from(unallowed.contains(name)), 0]);
+    }
+    let digest = digest.finalize();
+    folder
+        .join("refusing")
+        .join(crate::runnerlink::hex_of(&digest[..16]))
 }
 
 /// The image this runner was told it runs ([`POOL_IMAGE_VAR`]).
@@ -1383,21 +1417,25 @@ pub(crate) fn for_chat_on(
         resolve_beside(root, persona, &unallowed, locks, search, writable, temps)
             .filter(|unallowed| !unallowed.absent.is_empty())
     {
-        resolved
-            .get_or_insert_with(|| Resolved {
-                persona: persona.to_owned(),
-                folder: unallowed.folder.clone(),
-                ready: Vec::new(),
-                left: Vec::new(),
-                absent: Vec::new(),
-                refusing: Vec::new(),
-                only_refuses: true,
-            })
-            .absent
-            .extend(unallowed.absent);
+        let into = resolved.get_or_insert_with(|| Resolved {
+            persona: persona.to_owned(),
+            folder: unallowed.folder.clone(),
+            ready: Vec::new(),
+            left: Vec::new(),
+            absent: Vec::new(),
+            unallowed: Vec::new(),
+            refusing: Vec::new(),
+            only_refuses: true,
+        });
+        into.absent.extend(unallowed.absent.iter().cloned());
+        into.unallowed.extend(unallowed.absent);
     }
     if let Some(resolved) = &mut resolved {
         resolved.refuse_what_is_absent(image);
+        if resolved.only_refuses {
+            resolved.folder =
+                refusals_folder(&resolved.folder, &resolved.refusing, &resolved.unallowed);
+        }
     }
     resolved
 }
@@ -1477,6 +1515,7 @@ pub(crate) fn resolve_beside(
         ready,
         left,
         absent,
+        unallowed: Vec::new(),
         refusing: Vec::new(),
         only_refuses: false,
     })
@@ -2454,13 +2493,43 @@ fn quoted(text: &str) -> String {
     format!("'{}'", text.replace('\'', r"'\''"))
 }
 
+/// The words every refusing shim's second line holds ([`refusing_shim`]), by which one finds
+/// another and passes it by.
+const REFUSING_MARK: &str = "starts on a runner (#4354)";
+
 /// **The shim of a tool whose program is not in the runner's image** (#4354): its name in the chat
 /// says why, and fails as a missing program does.
-pub fn refusing_shim(persona: &str, name: &str, said: &str) -> String {
+///
+/// **A tool nobody allowed runs as its bare program anyway** (#4373), so where `passes_on` names
+/// the shim's own folder, the shim first runs the first program of its name on `PATH` outside
+/// that folder, one that has come since the chat started, and refuses only where there is none.
+/// Only an absolute folder is looked in, and another refusing shim is passed by. An allowed
+/// tool's shim refuses still: the program it would run is one its start never judged, and it
+/// would run without the vault's value.
+pub fn refusing_shim(persona: &str, name: &str, said: &str, passes_on: Option<&Path>) -> String {
+    let program = quoted(name);
+    let passes_on = passes_on.map_or_else(String::new, |folder| {
+        format!(
+            "# Nobody allowed it, so a `{name}` that came after the chat started runs as itself: \
+             the first\n# on PATH outside this folder.\n\
+             here=$(cd -P -- {folder} 2>/dev/null && pwd)\n\
+             rest=$PATH\n\
+             while [ -n \"$rest\" ]; do\n\
+             dir=${{rest%%:*}}\n\
+             case $rest in *:*) rest=${{rest#*:}} ;; *) rest= ;; esac\n\
+             case $dir in /*) ;; *) continue ;; esac\n\
+             [ \"$(cd -P -- \"$dir\" 2>/dev/null && pwd)\" = \"$here\" ] && continue\n\
+             if [ -f \"$dir\"/{program} ] && [ -x \"$dir\"/{program} ] \
+             && ! grep -q {mark} \"$dir\"/{program} 2>/dev/null; then\n\
+             exec \"$dir\"/{program} \"$@\"\nfi\ndone\n",
+            folder = quoted(&folder.display().to_string()),
+            mark = quoted(REFUSING_MARK),
+        )
+    });
     format!(
-        "#!/bin/sh\n# Written by purlis as a chat of {persona} starts on a runner (#4354). `{name}` \
+        "#!/bin/sh\n# Written by purlis as a chat of {persona} {REFUSING_MARK}. `{name}` \
          is not in\n# this pool's image. Edits here are overwritten.\n\
-         echo {said} >&2\nexit 127\n",
+         {passes_on}echo {said} >&2\nexit 127\n",
         said = quoted(&format!("purlis: {said}")),
     )
 }
@@ -2545,7 +2614,11 @@ impl Resolved {
             .absent
             .iter()
             .map(|name| {
-                let said = not_in_the_image(&self.persona, name, image);
+                let said = if self.unallowed.contains(name) {
+                    neither_allowed_nor_in_the_image(&self.persona, name, image)
+                } else {
+                    not_in_the_image(&self.persona, name, image)
+                };
                 (name.clone(), said)
             })
             .collect();
@@ -2570,19 +2643,17 @@ impl Resolved {
             .create(&bin)
             .map_err(refused(&bin))?;
         // Every shim an earlier start wrote that is not one now.
-        if !self.only_refuses {
-            for entry in std::fs::read_dir(&bin).map_err(refused(&bin))? {
-                let entry = entry.map_err(refused(&bin))?;
-                let name = entry.file_name();
-                let current = self
-                    .ready
-                    .iter()
-                    .map(|one| &one.tool.name)
-                    .chain(self.refusing.iter().map(|(tool, _)| tool))
-                    .any(|tool| std::ffi::OsStr::new(tool) == name);
-                if !current {
-                    std::fs::remove_file(entry.path()).map_err(refused(&entry.path()))?;
-                }
+        for entry in std::fs::read_dir(&bin).map_err(refused(&bin))? {
+            let entry = entry.map_err(refused(&bin))?;
+            let name = entry.file_name();
+            let current = self
+                .ready
+                .iter()
+                .map(|one| &one.tool.name)
+                .chain(self.refusing.iter().map(|(tool, _)| tool))
+                .any(|tool| std::ffi::OsStr::new(tool) == name);
+            if !current {
+                std::fs::remove_file(entry.path()).map_err(refused(&entry.path()))?;
             }
         }
         if self.ready.is_empty() && self.refusing.is_empty() {
@@ -2609,7 +2680,12 @@ impl Resolved {
         for (name, said) in &self.refusing {
             put(
                 &bin.join(name),
-                &refusing_shim(&self.persona, name, said),
+                &refusing_shim(
+                    &self.persona,
+                    name,
+                    said,
+                    self.unallowed.contains(name).then_some(bin.as_path()),
+                ),
                 0o700,
             )?;
         }
