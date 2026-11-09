@@ -221,7 +221,8 @@ pub struct ExtensionTheme {
 // The window and the state are Tauri's to hand in; the rest is the window's question.
 #[allow(clippy::too_many_arguments)]
 pub async fn theme_in_force(
-    window: tauri::WebviewWindow,
+    // The asking webview: a window holding an artifact's child webview is no `WebviewWindow`.
+    window: tauri::Webview,
     planes: tauri::State<'_, crate::planes::Planes>,
     pick: Option<String>,
     on: Option<Vec<String>>,

@@ -22,6 +22,7 @@ import {
   Brain,
   Bug,
   ChartColumn,
+  ChartLine,
   CircleDashed,
   Cpu,
   Download,
@@ -49,6 +50,8 @@ import { PersonaMark } from "./PersonaMark";
 import { PersonaMarkPicker } from "./PersonaMarkPicker";
 import { PersonaProfileMissing } from "./PersonaProfileMissing";
 import { EmptyState } from "./ui/empty-state/EmptyState";
+import { ARTIFACT_VIEW, artifactOf } from "./artifacts";
+import { ArtifactTab } from "./ArtifactTab";
 import { AskFirst, runExtensionAction } from "./ExtensionAction";
 import { OffWhenReadOnly, useReadOnlySaid } from "./ReadOnlyLine";
 import { LandAsk, PushAsk, askLand } from "./ChangeActions";
@@ -404,6 +407,8 @@ export const OWN_MARKS: Record<string, React.ComponentType<{ className?: string 
   [AGENT_IDENTITY_VIEW.view]: BadgeCheck,
   /** A browser's DevTools, drawn live (#2028, `inspector.ts`). */
   [INSPECTOR_VIEW]: Bug,
+  /** A pinned artifact, rendered (#5952, `artifacts.ts`). */
+  [ARTIFACT_VIEW]: ChartLine,
 };
 
 /** The glyph a view's tab carries: a person for a persona, a piece of a puzzle for a view an
@@ -571,6 +576,24 @@ export function ViewPane({
         actions={own}
         waits={waits}
         onAsk={onAsk}
+      />
+    );
+  }
+  // **A pinned artifact** (#5952, ADR 0120): its page in a native webview of its own, under a
+  // bar purlis draws. A restored tab runs nothing until pressed (`waits`).
+  const artifact = artifactOf(view);
+  if (artifact !== undefined) {
+    return (
+      <ArtifactTab
+        key={`${plane}\u0000${view.key}`}
+        plane={plane}
+        workspace={artifact.workspace}
+        folder={artifact.folder}
+        title={title}
+        waits={waits}
+        onAsk={onAsk}
+        offerFor={offerFor}
+        onPress={onPress}
       />
     );
   }

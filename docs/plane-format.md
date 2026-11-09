@@ -1260,6 +1260,7 @@ key refuses.
   workspaces/*/todos/MEMORY.md merge=union
   workspaces/*/sessions/index.md merge=union
   sessions/index.md merge=union
+  workspaces/*/artifacts/pins.toml merge=union
   ```
 
   **An existing plane takes a new rule with its next whole save** (#5338): a save rewrites a
@@ -3008,14 +3009,80 @@ them (#5427, ADR 0078 §7, session protocol 1.78), which the file diff reads as 
 - **Encoding details:** as at the plane root. Decided by ADR 0098, built by #2324: a theme folder
   needs no approval.
 
+### `workspaces/<ws>/artifacts/` — the workspace's artifacts
+
+- **Format:** one folder per artifact, `artifacts/<folder>/`, holding its template: an
+  `index.html` and whatever it loads beside it. Beside the folders, the pins file
+  `artifacts/pins.toml` (below). `<folder>` is one plain name: letters, digits, `.`, `-` and
+  `_`, never starting with a dot.
+- **Status:** **purlis only** (spec #5948, ADR 0120, #5950). A reserved name in a workspace, so
+  no extension may keep a folder under it and no repository there is taken for a clone.
+- **Tier:** Plane when LIVE, Clone state when LOCAL — the templates and the pins file travel
+  with the workspace. **Data files** (below) are Clone state either way: each person's own,
+  written on their machine.
+- **Written by:** the person, a chat or a skill (the templates and data files); the pins file
+  only by `purlis artifact pin | unpin | reorder` (`crates/purlis-core/src/artifact/`), under a
+  lock on the folder, whole by rename.
+- **Read by:** `purlis artifact list`, and the window's activity bar (ADR 0120 §2); a data file
+  also by its own page, when the page declares it and is approved (`artifact::data`, #5961). The
+  app's plane watch watches `artifacts/` and each pinned folder with every folder in it, so an
+  open artifact loads again when its template or its data changes (#5955).
+- **Git:** follows the workspace — un-ignored by the LIVE block's `artifacts` pair, and the
+  data files re-ignored by the two lines after it; kept on disk for a LOCAL one.
+  `workspaces/*/artifacts/pins.toml` is merged by git's `union` driver (the merge rules).
+- **Data files** are an artifact folder's `data.json` and everything under its `data/`
+  folder: the names the plane declares for them, so the ignore list and the template's
+  fingerprint agree on what is data without reading any file. A template may read them; they
+  are inert JSON, never committed.
+- **Freshness** (#5955, `crates/purlis-core/src/artifact/fresh.rs`): when an artifact's data was
+  last updated, which its icon and bar say, is the top-level `"updated"` key of `data.json` when
+  it declares one: an RFC 3339 time, a `YYYY-MM-DD` day (its midnight UTC) or whole seconds
+  since 1970. Else it is the data files' commit time while git holds them as committed, else
+  their newest write time; a folder with no data files is dated by its `index.html`. An icon is
+  dimmed a day after that time.
+- **The pins file**, `artifacts/pins.toml`, TOML:
+
+  ```toml
+  version = 1
+  pin = [
+    { id = "3f9c2a1b7d4e", folder = "backlog-state", name = "Backlog", icon = "chart", order = 1, command = "purlis skill run backlog-sync", cwd = "." },
+  ]
+  ```
+
+  - `version`: `1`. A file with a higher version is read but never rewritten: a write is
+    refused with a sentence naming the version, so an older purlis cannot drop what a newer
+    one wrote.
+  - `pin`: an array of inline tables, **one pin per line**, each line ending with a comma.
+    That shape is what the `union` merge driver needs: two people who each pin an artifact
+    add one line each, and git keeps both lines in a valid array.
+  - Each pin: `id` (twelve lowercase hex digits), `folder`, `name` (one line, at most 60
+    characters; suggested from the template's `<title>`, else the folder), `icon` (one of the
+    icon names a persona may take, `personamark::ICONS`, never an image of the page's), `order`
+    (a positive integer), and optionally `command` (the command that writes its data, one line)
+    and `cwd` (its working folder, workspace-relative, plain components, no `..`).
+  - **The id is the pin's identity, drawn from its folder, command and working folder**: the
+    first twelve hex digits of the SHA-256 of `folder`, `command` and `cwd` joined by NUL. So a
+    change to any of the three is a **new pin** (ADR 0120 §1): pinning a folder again with
+    another command replaces its pin with one under a new id, and two people who pinned the same
+    folder with the same command hold one pin.
+  - Keys purlis does not know, on the file or on a pin, are kept as they are on every write.
+  - Read sorted by `order`, then `id`. Two lines with one id (a union of two edits of one pin)
+    are one pin, the later line's. Written sorted; a new pin takes the next order after the
+    last, and `reorder` numbers the pins it is given 1, 2, 3, … and the rest after them.
+  - A pin's folder must be a folder inside the workspace's `artifacts/` holding an
+    `index.html`, reached through no link that leads out of `artifacts/`, and `artifacts/`
+    itself inside the workspace. A pin that is not is refused with a sentence and nothing is
+    written; `list` shows a pin whose folder has gone (not yet pulled, or removed) as missing.
+  - Unpinning removes the pin's line; the folder stays.
+
 ### `workspaces/<ws>/<folder>/` — a folder an extension keeps in a workspace
 
 - **Format:** whatever the extension writes there. purlis reads none of it.
 - **Status:** **purlis only** (purlis#343, ADR 0053). `<folder>` is the one name an
   approved extension declares as `contributes.events.workspace_folder`: letters, digits, `-`
   and `_`, and never one of purlis's own names in a workspace (`workspace.md`,
-  `workspace.json`, `memory`, `todos`, `refs`, `pieces`, `worktrees`, `themes`, `README.md`,
-  `CLAUDE.md`, `AGENTS.md`, `manifest.json`).
+  `workspace.json`, `memory`, `todos`, `refs`, `pieces`, `worktrees`, `themes`, `artifacts`,
+  `README.md`, `CLAUDE.md`, `AGENTS.md`, `manifest.json`).
 - **Tier:** None — the extension's own folder; purlis reads none of it.
 - **Written by:** the extension's own program, which runs as the operator. purlis does not
   create it.
@@ -3253,7 +3320,7 @@ them (#5427, ADR 0078 §7, session protocol 1.78), which the file diff reads as 
     `# >>> purlis live workspaces (managed by \`purlis workspace live\`) >>>` and
     `# <<< purlis live workspaces <<<`. Either pair is read, and the block is rewritten in
     place under the project's pair the next time it is written (V93g, V93i).
-  - Fifteen lines per LIVE workspace, workspaces sorted by name
+  - Nineteen lines per LIVE workspace, workspaces sorted by name
     (`charter/workspace.py:1396`–`1401`):
     `!/workspaces/<n>/workspace.json`, `!/workspaces/<n>/workspace.md`,
     `!/workspaces/<n>/memory`, `!/workspaces/<n>/memory/**`,
@@ -3261,8 +3328,12 @@ them (#5427, ADR 0078 §7, session protocol 1.78), which the file diff reads as 
     `!/workspaces/<n>/work`, `!/workspaces/<n>/work/**`,
     `!/workspaces/<n>/sessions`, `!/workspaces/<n>/sessions/**`,
     `!/workspaces/<n>/skills`, `!/workspaces/<n>/skills/**`,
+    `!/workspaces/<n>/artifacts`, `!/workspaces/<n>/artifacts/**`,
+    `/workspaces/<n>/artifacts/*/data.json`, `/workspaces/<n>/artifacts/*/data/`,
     `!/workspaces/<n>/changes`, `!/workspaces/<n>/changes/**`,
-    `/workspaces/<n>/changes/log/`. The `work` pair (ADR 0088 §3), the `sessions` pair
+    `/workspaces/<n>/changes/log/`. The `artifacts` pair and the two lines that re-ignore its
+    data files (ADR 0120, #5950) are purlis's: a workspace's artifact templates and pins file
+    follow it, and each person's data files never travel. The `work` pair (ADR 0088 §3), the `sessions` pair
     (ADR 0064) and the `skills` pair (ADR 0099, #2767) are purlis's: a workspace's work links,
     session records and skills follow it, LIVE or LOCAL, and its `skills.local/` stays ignored
     either way. A block written before them is brought up to date by `reinit`, as any older
@@ -3288,7 +3359,7 @@ them (#5427, ADR 0078 §7, session protocol 1.78), which the file diff reads as 
     (`charter/workspace.py:1360`).
   - What a LIVE workspace actually stages is `_ws_meta_paths`
     (`charter/commands_workspace.py:1094`, list built at `charter/commands_workspace.py:1116`): `workspace.json`, `workspace.md`, `memory`,
-    `todos`, `sessions` and `skills` (purlis; each only if it exists) and `changes` only when `change.has_records`
+    `todos`, `sessions`, `skills` and `artifacts` (purlis; each only if it exists) and `changes` only when `change.has_records`
     (`charter/commands_workspace.py:1119`). The two lists must agree and only a test holds
     them together.
   - **In purlis, going LOCAL also untracks** what the block had published
@@ -8552,6 +8623,9 @@ refuses a `<data>` under a project or inside any git work tree.
 | `<config>/purlisd/runners-stopped.json` | Machine, device-bound | Written since #2051 (ADR 0078 §7, ADR 0089 as amended 2026-10-27): the runners this machine's kill switch reached and those it still owes a stop, as JSON `{"reached": ["<pool>/<runner>", …], "owed": {"<pool>/<runner>": "<why, in purlis's words>"}}`, `0600`, replaced whole. Read as the session host starts, only when it is this user's alone and 64 KiB at the most; a file that is not, or does not read, is none kept, and the host's stop is sent to every runner again. The re-arm re-arms the runners it names as reached. Chats are denied the directory | `purlisd`, its only writer |
 | `<config>/charterd/hosts.jsonl` | Machine, device-bound, transient | Written since #2007 (ADR 0068 §3), as `<config>/purlisd/hosts.jsonl` once rename-local has moved the folder. The session host's host record: its own note of the programs it has started and not yet ended, which nothing else writes or reads, and not ADR 0076's run journal (`<config>/runs/journal.json`). JSON Lines, `0600`, never written or read through a link, read only when it is a regular file this user owns that nobody else may read or write. `{"started":{…}}` as a program starts (its id in the host, its project's id and path, its number, its run where the window named one, its process, when the kernel says that process started, the machine's boot where the system names one, and how the host applied the sandbox to its run, `sandbox`, `"off"` or `{"by":<backend>}`, read from what it started and absent from a line an older host wrote, #2636, and `"ends_strays":true` for a chat's harness, whose processes outside its group are ended with it, absent for a person's own shell and from a line an older host wrote, #5749) and `{"ended":{"program":…}}` once what its end leaves is kept. Written again with only the programs still running once it passes 256 KiB, whole beside itself and renamed over it; one past 4 MiB is not read. A host that ends every program as it stops empties it; the next host to start reads what is left, ends what is still running where the process is the one that was started in this boot, keeps each one's end as a host crash's, and empties it. A line that cannot be read, or is not text, is passed over alone. Chats are denied the directory | `purlisd`, its only writer (#2007) |
 | `purlis/purlisd.sock` in the user's own temporary directory on macOS (`_CS_DARWIN_USER_TEMP_DIR`, never `$TMPDIR`), or in `$XDG_RUNTIME_DIR` on Linux when it is an absolute directory this user owns that nobody else may enter; else `/tmp/purlis-<uid>/purlisd.sock`; `purlisd-<key>.sock` in the same folder for a config home `PURLIS_CONFIG_HOME` names apart from the default one | Machine, device-bound, transient | Written since #1997 (ADR 0068 §1). The session host's socket, `0600`, and beside it `purlisd.lock`, the `flock` the one host of this user holds while it serves; `purlisd-window.sock` (`purlisd-<key>-window.sock`) beside it since #4141, the window's own, on which `purlis profile remove` asks it to reach the pools' runners, `purlis profile sign-in --pool` asks the person to confirm the sign-in, `purlis pool remove-profile` asks them to confirm taking a profile off a pool (#5174), and `purlis signing` asks whether GitHub has this device's signing key or shows a commit as Verified, which the window asks with its own sign-in, the command holding none (#5625), private to one build; a purlis whose `PURLIS_CONFIG_HOME` names a config home other than the one it finds by itself (a scenario run, a development build beside an installed one) has a host of its own at `purlisd-<key>.sock` and `purlisd-<key>.lock`, `<key>` the first 16 hex digits of the SHA-256 of that config home resolved, so one config home spelled two ways has one host (#2114, ADR 0068 as amended for #2004); the folder is `0700` and this user's, never a link, and the window makes it before any chat starts. Not in the machine store: the runtime directory is the standard per-user place for a socket. The socket is removed when the host ends, and one a host left is replaced by the next. `purlis serve` also listens beside it on `purlisd.link.sock` (`purlisd-<key>.link.sock`), `0600`, where a runner's host takes the link between hosts from the desktop it is paired with, which the bridge a connector runs opens (#2044, ADR 0078 §2); removed and replaced as the socket is. Chats are denied the folder | `purlisd` (#1997) |
+| `<config>/artifact-approvals.json` | Machine, device-bound | Written since #5959 (ADR 0120 §4). **Each person's approval of an artifact's script, on this machine**: `{"version": 1, "approved": {"<key>": {"workspace": "<path>", "folder": "<folder>", "pin": "<pin id>", "fingerprint": "<sha256>", "plane": true}}}`, one entry per artifact folder, keyed by the SHA-256 of where the workspace really is and the folder (`artifact::approval::key`), so a fork of the workspace or a clone elsewhere asks again. A rename of the workspace moves its entries to the new path, so it does not. `pin` is the pin's id, so a pin whose folder, command or working folder changed asks again; `fingerprint` is the template's, every path and byte of the folder but its data files, so new data never asks and any other change does. `plane`, since #5969 (ADR 0120 §7), is the grant of plane-scoped queries on top of the approval, absent when not granted: it is set only on an entry of the same pin and fingerprint, and a new approval of the folder writes its entry without it, so a changed template or pin asks for it again. Written only by the artifact's bar in the window, with the fingerprint it served, never by a command; `0600`, replaced whole. Missing, malformed, a link or over 1 MiB, it reads as no approval, so every scripted artifact asks again. Never a teammate's: nothing in the plane is read as one | `artifact::approval::approve`, `grant_plane`, `forget`, and `moved`, which a workspace rename calls so its approvals follow it (#5960); read by `standing`, `plane_granted`, `purlis artifact approve-status` and the window |
+| `<config>/artifact-regenerate-approvals.json` | Machine, device-bound | Written since #5962 (ADR 0120 §6). **Each person's approval of what a pin's command resolves to, on this machine**: `{"version": 1, "approved": {"<key>": {"workspace": "<path>", "folder": "<folder>", "pin": "<pin id>", "code": "<path>", "fingerprint": "<sha256>"}}}`, one entry per artifact folder, keyed as `artifact-approvals.json` is (`artifact::approval::key`), so a fork of the workspace or a clone elsewhere asks again. `code` is the folder the command's script resolves to (its skill's folder, or its own) and `fingerprint` every path, mode bit and byte of it, so an edit to the code asks again though the command reads the same; `pin` is the pin's id, so another command, folder or working folder asks again. `0600`, replaced whole. Missing, malformed, a link or over 1 MiB, it reads as no approval, so every Regenerate asks again. Never a teammate's | `artifact::regenerate::approve`, from the window's Regenerate prompt; read by `standing` before every run, and by `purlis artifact regenerate --check` |
+| `<config>/artifact-link-hosts.json` | Machine, device-bound | Written since #5956 (ADR 0120 §5). **Each person's "always open" for a host an artifact links to, on this machine**: `{"version": 1, "always": ["<host>", …]}`, each a lowercase host as a URL parser spells it, with `:<port>` when the link named one, sorted. A link from any artifact to a host listed here opens in the browser without asking; any other asks, showing the host and the whole URL. Written only by the artifact link dialog in the window, never by a command; `0600`, replaced whole. Missing, malformed, a link or over 1 MiB, it reads as no host, so every link asks again. Never a teammate's: nothing in the plane is read as one | `artifact::links::always_open`; read by `always_opens` and the app's `artifact_links` |
 | `<config>/extensions.json` | Machine, device-bound | each installed extension: its absolute path, the fingerprint the operator approved, and whether it is on; `reads-prompts`, the ids of the routers the person turned on to read prompts on this machine (ADR 0102 as amended 2026-10-31; absent = none); for a runner provider, also whether the operator marked its machines as the user's own (**decided, not yet written**, ADR 0089; default not owned, changed only on `local-ui`, never by the provider's own claim) | `extension::install`, `approve`, `set_on`, `set_reads_prompts`, `forget` |
 | `<config>/forge-etags/native-<account>/<sha256>.json` | Machine, device-bound, rebuildable | the native forge transport's ETag store (ADR 0070 §3, FW-2a): per forge account (`<kind>-<host>-<login>`), one file per request path and query, named by its SHA-256, holding the answer's ETag, its `Link` header and its body, so that a `304 Not Modified` is answered from here. Never a credential. **A chat is denied it, to read and to write**: its sandbox denies the directory under ADR 0067's human-powers class (`sandbox::Denied`), and in purlis only the native transport reads or writes it, which only a human in the window resolves to. A CLI call never shares an entry with it. Separate from FW-7's item cache; deleting it costs one full answer per request | `forge::etag::EtagDir`, from `forge::http::Http` |
 | `<config>/forge-budget/<account>.json` | Machine, device-bound, transient | the request budget per forge account (FI14, FW-4): this hour's start, the requests sent as the account, those its forge counts, the `304`s, the background requests held back, and the forge's last stated limits. Never a request, an answer or a credential. Written by the process that sends (`forge::budget::Meter`), read by `purlis doctor`'s `forge budget` rows; a chat cannot write it (the machine store is denied to a chat's writes). Deleting it starts a fresh hour | `forge::budget::Meter` |
