@@ -80,7 +80,7 @@ const SSH_RUNS: &[&str] = &[
 fn ssh_option(flag: &str, value: &str) -> Option<String> {
     // A jump host is pasted into the command ssh has a shell run (#5876's third review).
     if flag == "J" {
-        return shell_would_read(value).then(|| "-J".to_owned());
+        return jump_would_read(value).then(|| "-J".to_owned());
     }
     if flag != "o" {
         return None;
@@ -113,8 +113,13 @@ fn ssh_option(flag: &str, value: &str) -> Option<String> {
     PASTED
         .iter()
         .find(|one| one.eq_ignore_ascii_case(&key))
-        .filter(|_| {
-            shell_would_read(rest.trim_start_matches(|c: char| c == '=' || c.is_whitespace()))
+        .filter(|one| {
+            let value = rest.trim_start_matches(|c: char| c == '=' || c.is_whitespace());
+            if one.eq_ignore_ascii_case("ProxyJump") {
+                jump_would_read(value)
+            } else {
+                shell_would_read(value)
+            }
         })
         .map(|one| format!("-o {one}"))
 }
@@ -127,6 +132,50 @@ const PASTED: &[&str] = &["ProxyJump", "Hostname", "User"];
 /// and rsync take them off before they use it (#5876's fifth review).
 fn dash_first(part: &str) -> bool {
     part.trim_start_matches('[').starts_with('-')
+}
+
+/// Whether a jump list `value` holds what [`shell_would_read`] refuses, once the last hop's zone
+/// is taken out where it is one ssh reads as a zone (#5893).
+fn jump_would_read(value: &str) -> bool {
+    let judged = match value.rsplit_once(',') {
+        Some((before, last)) => without_zone(last).map(|last| format!("{before},{last}")),
+        None => without_zone(value),
+    };
+    shell_would_read(judged.as_deref().unwrap_or(value))
+}
+
+/// `hop` without its zone, where it is a link-local IPv6 address's zone spelled as ssh needs it
+/// in a jump: `[fe80::1%%en0]`, with a port after it or not, a user before it or not, and no
+/// `ssh://`.
+///
+/// ssh expands its `%` tokens in a jump's whole command (`%r` is the user `-l` names, which
+/// nothing here reads), and `%%` alone stands for `%` itself, so `%%` is the only `%` let
+/// through, and the zone after it is letters, digits, `.`, `-` and `_`, holding no `%` to form
+/// another token. Only the last hop: the hops before it are pasted into the next ssh's jump,
+/// whose `%` tokens are expanded again.
+fn without_zone(hop: &str) -> Option<String> {
+    let (user, host) = match hop.rsplit_once('@') {
+        Some((user, host)) => (Some(user), host),
+        None => (None, hop),
+    };
+    let (inner, after) = host.strip_prefix('[')?.split_once(']')?;
+    let (address, zone) = inner.split_once("%%")?;
+    let named = !zone.is_empty()
+        && zone
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'));
+    (link_local(address) && named).then(|| match user {
+        Some(user) => format!("{user}@[{address}]{after}"),
+        None => format!("[{address}]{after}"),
+    })
+}
+
+/// Whether `address` is spelled as a link-local IPv6 address, in `fe80::/10`.
+fn link_local(address: &str) -> bool {
+    let first = address.split(':').next().unwrap_or_default();
+    ipv6_alphabet(address)
+        && (1..=4).contains(&first.len())
+        && u16::from_str_radix(first, 16).is_ok_and(|group| group & 0xffc0 == 0xfe80)
 }
 
 /// Whether `value` holds anything but what a host, a user, a port and a list of jumps are

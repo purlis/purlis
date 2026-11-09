@@ -713,3 +713,59 @@ fn a_bracketed_jump_host_holds_only_an_ipv6_addresss_characters() {
         ],
     );
 }
+
+// #5893, from the ninth review of #5876: ssh expands its `%` tokens (`%h`, `%r`, `%n`, `%p`) in
+// a jump's whole command, and only `%%` stands for a `%` itself. A scoped link-local jump host is
+// offered only spelled so, inside its brackets, as the last hop (the hops before it are pasted
+// into the next ssh's jump and expanded again), and nowhere else.
+
+#[test]
+fn a_scoped_link_local_jump_host_is_offered_only_with_its_zone_spelled_as_ssh_reads_it() {
+    offered(
+        "ssh",
+        &[
+            "-J u@[fe80::1%%en0] host",
+            "-J a,[fe80::1%%eth0.100]:2222 host",
+            "-J [FEBF::1%%br-lan_2] host",
+            "-o ProxyJump=b,deploy@[fe80::1%%en0] host",
+        ],
+    );
+    refused(
+        "ssh",
+        "-J",
+        &[
+            // a single `%` forms a token: `%r` is the user `-l` names
+            &["-J", "[fe80::1%r]", "-l", "$(x)", "host"],
+            &["-J", "[fe80::1%en0]", "host"],
+            // expanded again in the next ssh's jump
+            &["-J", "[fe80::1%%en0],a", "host"],
+            &["-J", "[fe80::1%%lo0],[fe80::2%%en0]", "host"],
+            // not link-local
+            &["-J", "[2001:db8::1%%en0]", "host"],
+            &["-J", "[fec0::1%%en0]", "host"],
+            &["-J", "[fe8::1%%en0]", "host"],
+            // outside brackets, empty, twice, or holding what else
+            &["-J", "fe80::1%%en0", "host"],
+            &["-J", "[fe80::1%%]", "host"],
+            &["-J", "[%%en0]", "host"],
+            &["-J", "[fe80::1%%en0%%x]", "host"],
+            &["-J", "[fe80::1%%e%n]", "host"],
+            &["-J", "[fe80::1%%e$n]", "host"],
+            &["-J", "[fe80::1%%e[n]", "host"],
+            &["-J", "u%%x@[fe80::1%%en0]", "host"],
+            &["-J", "[fe80::1%%en0]:2%%2", "host"],
+            &["-J", "ssh://[fe80::1%%en0]", "host"],
+            &["-J", "SSH://[fe80::1%%en0]", "host"],
+        ],
+    );
+    refused(
+        "ssh",
+        "-o Hostname",
+        &[&["-o", "Hostname=[fe80::1%%en0]", "host"]],
+    );
+    refused(
+        "ssh",
+        "a destination a shell would read",
+        &[&["-J", "b", "[fe80::1%%en0]"]],
+    );
+}
