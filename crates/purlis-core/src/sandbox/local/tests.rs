@@ -1223,6 +1223,46 @@ fn the_vault_grants_off_their_shape_do_not_read() {
     }
 }
 
+/// A write to this machine's file keeps every field that still reads (#5906): a field off its
+/// shape is dropped on the way, never the vault grants beside it, so a grant the window shows is
+/// not taken away by the next, unrelated write.
+#[test]
+fn an_unrelated_write_keeps_the_vault_grants_beside_a_field_off_its_shape() {
+    let project = a_project("");
+    let root = project.path();
+    machine_file_holding(
+        root,
+        r#"{"hosts_seen": 5, "offer": "kept-off", "vaults_mine": [{"vault": "other", "persona": "qa"}]}"#,
+    );
+
+    count(root, Started::OptedOut).expect("counted");
+    grant_vault(root, "forge", "dev").expect("granted");
+
+    assert_eq!(
+        try_granted_vaults(root).expect("read"),
+        [
+            VaultGrant {
+                vault: "other".into(),
+                persona: "qa".into(),
+            },
+            VaultGrant {
+                vault: "forge".into(),
+                persona: "dev".into(),
+            },
+        ]
+    );
+    assert_eq!(
+        read(root).offer,
+        "kept-off",
+        "the offer's answer is kept too"
+    );
+    assert_eq!(tally(root).opted_out, 1);
+    assert!(
+        !told_any(root),
+        "the field off its shape is dropped, not read as something"
+    );
+}
+
 /// What `authorise` allows reads the vault grants as the judge of a link does (#5857): a field
 /// beside them that is off its shape takes none away.
 #[test]

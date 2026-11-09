@@ -553,8 +553,35 @@ fn read(root: &Path) -> OnDisk {
     }
     std::fs::read_to_string(&file)
         .ok()
-        .and_then(|text| serde_json::from_str(&text).ok())
+        .and_then(|text| parsed(&text))
         .unwrap_or_default()
+}
+
+/// This machine's file as it reads, **field by field** where the whole does not (#5906): a field
+/// off its shape is left out and every field beside it that reads on its own is kept, as
+/// [`try_granted_vaults`] reads the vault grants. `None` where the text is not one JSON object.
+/// So the next write never resets the file from defaults and takes away a grant the window shows.
+fn parsed(text: &str) -> Option<OnDisk> {
+    if let Ok(held) = serde_json::from_str(text) {
+        return Some(held);
+    }
+    let serde_json::Value::Object(fields) = serde_json::from_str(text).ok()? else {
+        return None;
+    };
+    let reads = |key: &String, value: &serde_json::Value| {
+        let mut alone = serde_json::Map::new();
+        alone.insert(key.clone(), value.clone());
+        serde_json::from_value::<OnDisk>(serde_json::Value::Object(alone)).is_ok()
+    };
+    let (kept, dropped): (serde_json::Map<_, _>, serde_json::Map<_, _>) = fields
+        .into_iter()
+        .partition(|(key, value)| reads(key, value));
+    for key in dropped.keys() {
+        tracing::warn!(
+            "purlis: this machine's sandbox file has {key} off its shape; it is left out"
+        );
+    }
+    serde_json::from_value(serde_json::Value::Object(kept)).ok()
 }
 
 /// Reads this machine's file, changes it and writes it back, under purlis's named lock for them.
@@ -582,15 +609,14 @@ fn write_new(file: &Path, how: impl FnOnce(&mut OnDisk)) -> io::Result<()> {
     #[cfg(not(unix))]
     std::fs::create_dir_all(&dir)?;
     update_kept(&dir, file, |now| {
-        // A file that is not this shape reads as empty, as [`read`] reads it: the count
-        // starts again rather than refusing every chat start that would add to it.
-        let mut held: OnDisk = now
-            .and_then(|text| serde_json::from_str(text).ok())
-            .unwrap_or_else(|| OnDisk {
-                // What starts again never takes a never an earlier build left here with it.
-                dispatch_never: now.and_then(legacy_nevers_in),
-                ..OnDisk::default()
-            });
+        // A file that is not one object reads as empty, as [`read`] reads it: the count starts
+        // again rather than refusing every chat start that would add to it. One with a field off
+        // its shape keeps every field that still reads (#5906).
+        let mut held: OnDisk = now.and_then(parsed).unwrap_or_else(|| OnDisk {
+            // What starts again never takes a never an earlier build left here with it.
+            dispatch_never: now.and_then(legacy_nevers_in),
+            ..OnDisk::default()
+        });
         how(&mut held);
         serde_json::to_string_pretty(&held)
             .map(|text| Some(format!("{text}\n")))
