@@ -12,6 +12,7 @@
  * A workspace's name holds no `/` (`purlis_core::contain::workspace_name_ok`), so the first `/`
  * parts the two.
  */
+import type { About } from "./planeChanged";
 import type { ViewRef } from "./tabs";
 
 /** The view's name, as `ViewRef.view`. */
@@ -62,3 +63,35 @@ const OVERLAYS = [
   '[data-scope="popover"]',
   '[data-scope="dialog"][data-part="modal"]',
 ].join(",");
+
+/**
+ * **What every window of a plane hears when an artifact's approval changed on this machine**
+ * (`artifacts.rs`, #5959): each tab of it loads its page again, under its new standing.
+ */
+export const APPROVALS_CHANGED = "artifact-approvals-changed";
+
+/** Which artifact's approval changed. */
+export type ArtifactApprovalChanged = { workspace: string; folder: string };
+
+/** Whether `heard` is of the artifact folder `folder` of workspace `workspace`. */
+export function approvalOf(
+  heard: ArtifactApprovalChanged,
+  workspace: string,
+  folder: string,
+): boolean {
+  return heard.workspace === workspace && heard.folder === folder;
+}
+
+/**
+ * **A change to the template of artifact folder `folder` of workspace `workspace`** (ADR 0120
+ * §4): any file of its folder but its data (`data.json`, `data/`), which never asks again. Its
+ * page is torn down and opened again, without its script until approved anew.
+ */
+export function templateOf(workspace: string, folder: string): About {
+  const inside = `workspaces/${workspace}/artifacts/${folder}/`;
+  return (change) => {
+    if (!change.path.startsWith(inside)) return false;
+    const key = change.path.slice(inside.length);
+    return key !== "data.json" && !key.startsWith("data/");
+  };
+}

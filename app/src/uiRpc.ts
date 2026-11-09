@@ -34,6 +34,7 @@ export const commands = {
 	artifactClose: __WINDOW_ONLY_RESULT,
 	artifactRepin: __WINDOW_ONLY_RESULT,
 	artifactUnpin: __WINDOW_ONLY_RESULT,
+	artifactApprove: __WINDOW_ONLY_RESULT,
 	/**  What the window says about this launch and the session bus: nothing, on a launch with it. */
 	sessionBus: () => __TAURI_INVOKE<{
 	/**  The line it draws: why there is no bus, and what is off for the run. */
@@ -3080,6 +3081,21 @@ export type ArtifactAbout = {
 	missing: string | null,
 	/**  Its folder is over the size cap: the sentence naming both sizes. */
 	too_large: string | null,
+};
+
+/**
+ *  What [`artifact_open`] answers: the webview's label, and where the artifact stands on this
+ *  machine, which its tab's bar says.
+ */
+export type ArtifactOpened = {
+	label: string,
+	/**
+	 *  `script-free`, `approved`, `new`, `changed`, `pin-changed` or `not-here`
+	 *  ([`Standing::as_str`]).
+	 */
+	standing: string,
+	/**  Who made the pin it now has, for `pin-changed`, from the plane's history. */
+	changed_by: string | null,
 };
 
 /**  One pin, as the activity bar's artifact group draws it. */

@@ -1097,6 +1097,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // workspace's pins file, which only the person in their own window does.
     "artifact_repin",
     "artifact_unpin",
+    // Approving an artifact's script (#5959, ADR 0120 §4): the person's press in its bar, of
+    // what their own window was served. No link may approve on their behalf.
+    "artifact_approve",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on

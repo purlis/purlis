@@ -6,9 +6,16 @@ import userEvent from "@testing-library/user-event";
 import { emit } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ArtifactAbout } from "./bindings";
+import type { ArtifactAbout, ArtifactOpened } from "./bindings";
 import { ArtifactTab } from "./ArtifactTab";
-import { ARTIFACT_KEY, artifactOf, artifactView, coveredByAnOverlay } from "./artifacts";
+import {
+  APPROVALS_CHANGED,
+  ARTIFACT_KEY,
+  artifactOf,
+  artifactView,
+  coveredByAnOverlay,
+  templateOf,
+} from "./artifacts";
 
 const ABOUT: ArtifactAbout = {
   name: "Backlog state",
@@ -22,6 +29,7 @@ type Call = { cmd: string; args: Record<string, unknown> };
 /** The core, answering an artifact's commands, with what each was asked. */
 function core(
   about: ArtifactAbout = ABOUT,
+  opened: Partial<ArtifactOpened> = {},
   after: (cmd: string) => ArtifactAbout | undefined = () => undefined,
 ) {
   const calls: Call[] = [];
@@ -35,7 +43,8 @@ function core(
         return null;
       }
       if (cmd === "artifact_about") return now;
-      if (cmd === "artifact_open") return "artifact-7";
+      if (cmd === "artifact_open")
+        return { label: "artifact-7", standing: "script-free", changed_by: null, ...opened };
       return null;
     },
     { shouldMockEvents: true },
@@ -184,6 +193,7 @@ describe("an artifact's tab", () => {
   it("names the missing page's path and repins it once it is back", async () => {
     const calls = core(
       { ...ABOUT, missing: "there is no folder 'backlog-state' in artifacts/" },
+      {},
       () => ABOUT,
     );
     render(<Tab />);
@@ -244,7 +254,128 @@ describe("an artifact's tab", () => {
   });
 });
 
+describe("an artifact with script (#5959)", () => {
+  it("is shown without its script and asks in purlis's bar, framed as asking", async () => {
+    core(ABOUT, { standing: "new" });
+    render(<Tab />);
+    const bar = await screen.findByTestId("artifact-bar");
+    await waitFor(() =>
+      expect(bar).toHaveTextContent("Has script, shown without it until you approve it"),
+    );
+    expect(screen.getByRole("button", { name: "Approve script" })).toBeInTheDocument();
+    expect(screen.getByTestId("artifact-edge")).toHaveAttribute("data-standing", "asks");
+  });
+
+  it("asks nothing of a page with no script, or one already approved here", async () => {
+    core(ABOUT, { standing: "script-free" });
+    const { unmount } = render(<Tab />);
+    await waitFor(() =>
+      expect(screen.getByTestId("artifact-edge")).toHaveAttribute("data-standing", "plain"),
+    );
+    expect(screen.queryByRole("button", { name: "Approve script" })).toBeNull();
+    unmount();
+    clearMocks();
+
+    core(ABOUT, { standing: "approved" });
+    render(<Tab />);
+    await waitFor(() =>
+      expect(screen.getByTestId("artifact-bar")).toHaveTextContent(
+        "Script approved on this machine",
+      ),
+    );
+    expect(screen.getByTestId("artifact-edge")).toHaveAttribute("data-standing", "runs");
+    expect(screen.queryByRole("button", { name: "Approve script" })).toBeNull();
+  });
+
+  it("approves only from its bar, the page its own webview was served", async () => {
+    const calls = core(ABOUT, { standing: "changed" });
+    render(<Tab />);
+    await waitFor(() =>
+      expect(screen.getByTestId("artifact-bar")).toHaveTextContent(
+        "Its template changed since you approved it",
+      ),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Approve script" }));
+    await vi.waitFor(() =>
+      expect(asked(calls, "artifact_approve").map((one) => one.args)).toEqual([
+        { label: "artifact-7" },
+      ]),
+    );
+  });
+
+  it("names who changed its pin", async () => {
+    core(ABOUT, { standing: "pin-changed", changed_by: "Grace" });
+    render(<Tab />);
+    await waitFor(() =>
+      expect(screen.getByTestId("artifact-bar")).toHaveTextContent(
+        "Grace changed its pin since you approved it",
+      ),
+    );
+  });
+
+  it("says a scripted page renders without it on a platform where none runs", async () => {
+    core(ABOUT, { standing: "not-here" });
+    render(<Tab />);
+    await waitFor(() =>
+      expect(screen.getByTestId("artifact-bar")).toHaveTextContent(
+        "Shown without its script: scripted artifacts do not run on this system yet",
+      ),
+    );
+    expect(screen.queryByRole("button", { name: "Approve script" })).toBeNull();
+  });
+
+  it("loads its page again when its approval changes in any window, and not for another's", async () => {
+    const calls = core(ABOUT, { standing: "new" });
+    render(<Tab />);
+    await waitFor(() => expect(asked(calls, "artifact_open")).toHaveLength(1));
+
+    await emit(APPROVALS_CHANGED, { workspace: "alpha", folder: "other" });
+    await emit(APPROVALS_CHANGED, { workspace: "beta", folder: "backlog-state" });
+    await new Promise((settle) => setTimeout(settle, 20));
+    expect(asked(calls, "artifact_open")).toHaveLength(1);
+
+    await emit(APPROVALS_CHANGED, { workspace: "alpha", folder: "backlog-state" });
+    await waitFor(() => expect(asked(calls, "artifact_open")).toHaveLength(2));
+    expect(asked(calls, "artifact_close").map((one) => one.args.label)).toEqual(["artifact-7"]);
+  });
+
+  it("tears its page down and opens it again when its template changes, not its data", async () => {
+    const calls = core(ABOUT, { standing: "approved" });
+    render(<Tab />);
+    await waitFor(() => expect(asked(calls, "artifact_open")).toHaveLength(1));
+    const changed = (path: string) =>
+      emit("plane-changed", {
+        plane: "p",
+        answers: [{ answer: "views" }],
+        changes: [{ kind: "workspace", workspace: "alpha", persona: null, path }],
+      });
+
+    await changed("workspaces/alpha/artifacts/backlog-state/data.json");
+    await changed("workspaces/alpha/artifacts/backlog-state/data/2026-11-09.json");
+    await changed("workspaces/alpha/artifacts/other/index.html");
+    await new Promise((settle) => setTimeout(settle, 20));
+    expect(asked(calls, "artifact_open")).toHaveLength(1);
+
+    await changed("workspaces/alpha/artifacts/backlog-state/app.js");
+    await waitFor(() => expect(asked(calls, "artifact_open")).toHaveLength(2));
+    expect(asked(calls, "artifact_close").map((one) => one.args.label)).toEqual(["artifact-7"]);
+  });
+});
+
 describe("an artifact's view", () => {
+  it("names a change to its template, never its data or another folder", () => {
+    const about = templateOf("alpha", "state");
+    const at = (path: string, workspace = "alpha") =>
+      about({ kind: "workspace", workspace, persona: null, path });
+    expect(at("workspaces/alpha/artifacts/state/index.html")).toBe(true);
+    expect(at("workspaces/alpha/artifacts/state/js/app.js")).toBe(true);
+    expect(at("workspaces/alpha/artifacts/state/data.json")).toBe(false);
+    expect(at("workspaces/alpha/artifacts/state/data/a.json")).toBe(false);
+    expect(at("workspaces/alpha/artifacts/statement/index.html")).toBe(false);
+    expect(at("workspaces/alpha/artifacts/pins.toml")).toBe(false);
+    expect(at("workspaces/beta/artifacts/state/index.html", "beta")).toBe(false);
+  });
+
   it("names its workspace and folder, so two workspaces' folders of one name are two tabs", () => {
     expect(artifactView("alpha", "state")).toEqual({
       from: null,
