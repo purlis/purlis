@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Fragment, type ReactElement, type ReactNode } from "react";
-import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import {
   Bell,
   Brain,
@@ -28,7 +27,7 @@ import {
   ActivityItem,
   type ActivityVariant,
 } from "./ui/activity/ActivityItem";
-import { useTabStop } from "./roving";
+import { AsStripTab, useTabStrip, useTabStripRow } from "./ui/tabs/TabStrip";
 import { useRailIcons } from "./theme/railIcons";
 import type { OwnViewId, PanelViewId, Side, ViewId } from "./regions";
 
@@ -44,10 +43,12 @@ export type PanelTab = Tabbed & { view: PanelViewId };
  *
  * Each item is the activity family's (`ui/activity`, #2917). **It is a tab list**: a column of
  * icons on each side (#3144), the left one beside the project rail and the right one at the
- * window's edge, the tabs the views and the selected tab the open view; the arrows along it,
- * Home and End move with one Tab stop (`roving.ts`). Enter or Space presses the tab the keyboard is on, and so does a click:
- * activation is manual, so walking the bar opens nothing. **The tab list owns tabs and nothing
- * else** (#1204): each tab's count is inside its own tab.
+ * window's edge, the tabs the views and the selected tab the open view. Its keyboard is the tabs
+ * family's (`ui/tabs/TabStrip`, React Aria's tabs, #3134): the arrows along it, Home and End
+ * move, wrapping at its ends, with one Tab stop. Enter or Space presses the tab the keyboard is
+ * on, and so does a click: activation is manual, so walking the bar opens nothing. **The tab
+ * list owns tabs and nothing else** (#1204): each tab's count is inside its own tab, so the
+ * group is itself the tablist.
  *
  * **What a press does is the arrangement's** (`regions.picked`): a press of the open view puts
  * its region away, on every bar (R121 as amended 2026-10-26, #3329); any other opens.
@@ -112,41 +113,35 @@ export function ActivityBar({
    *  catalogue's (`Menus.tsx`), as every strip's tabs have theirs. Absent, no menu. */
   menu?: (view: ViewId, tab: ReactElement) => ReactNode;
 }) {
-  const stop = useTabStop(
-    open,
-    views.map((one) => one.view),
-  );
-  const iconOf = useRailIcons();
+  const strip = useTabStrip({ keys: views.map((one) => one.view), selected: open });
   const orientation = variant === "tab" ? "horizontal" : "vertical";
+  const { row, tablist } = useTabStripRow({ strip, name, orientation });
+  const iconOf = useRailIcons();
   return (
-    <RovingFocusGroup.Root asChild orientation={orientation} loop={false} {...stop}>
-      <ActivityGroup
-        role="tablist"
-        aria-orientation={orientation}
-        aria-label={name}
-        className="activity-bar"
-        data-side={side}
-        data-region={region}
-      >
-        {views.map(({ view, name: called, mark: Mark }) => {
-          const selected = view === open;
-          const icon = iconOf(view);
-          const key = keys?.[view];
-          const badge = badges?.[view];
-          const described = `${tabOf(view)}-badge`;
-          const said = selected
-            ? (away ?? `Put the ${name} region away`)
-            : `Show the ${called} view`;
-          const tab = (
-            <RovingFocusGroup.Item asChild tabStopId={view} active={selected}>
+    <ActivityGroup
+      {...row}
+      {...tablist}
+      className="activity-bar"
+      data-side={side}
+      data-region={region}
+    >
+      {views.map(({ view, name: called, mark: Mark }) => {
+        const selected = view === open;
+        const icon = iconOf(view);
+        const key = keys?.[view];
+        const badge = badges?.[view];
+        const described = `${tabOf(view)}-badge`;
+        const said = selected ? (away ?? `Put the ${name} region away`) : `Show the ${called} view`;
+        const tab = (
+          <AsStripTab strip={strip} tabKey={view} selected={selected}>
+            {(drawn) => (
               <ActivityItem
+                {...drawn}
                 variant={variant}
                 selected={selected}
                 tip={said}
                 shortcut={key}
-                role="tab"
                 id={tabOf(view)}
-                aria-selected={selected}
                 aria-expanded={view === current ? open !== undefined : undefined}
                 aria-controls={panelOf(view)}
                 aria-label={called}
@@ -163,12 +158,12 @@ export function ActivityBar({
                   )
                 }
               />
-            </RovingFocusGroup.Item>
-          );
-          return <Fragment key={view}>{menu === undefined ? tab : menu(view, tab)}</Fragment>;
-        })}
-      </ActivityGroup>
-    </RovingFocusGroup.Root>
+            )}
+          </AsStripTab>
+        );
+        return <Fragment key={view}>{menu === undefined ? tab : menu(view, tab)}</Fragment>;
+      })}
+    </ActivityGroup>
   );
 }
 

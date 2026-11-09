@@ -4,7 +4,9 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { DEFAULT_THEME } from "../../theme/theme";
+import type { ReactNode } from "react";
 import { monogramOf, Rail, RailAction, RailProject, RailSlot } from "./Rail";
+import { useTabStrip } from "../tabs/TabStrip";
 import { projectColour, projectTint } from "./projectColour";
 import {
   NO_PEEK,
@@ -16,6 +18,16 @@ import {
 } from "../../ProjectRail";
 import { afterTheSlide, forgetTheSlide, slideEnded, slideStarted } from "../../railSlide";
 import { loadRailMode } from "../../railMode";
+
+/** The rail's column, its tabs held by the tabs family as a screen holds them. */
+function Column({ tabs, children }: { tabs: string[]; children: ReactNode }) {
+  const strip = useTabStrip({ keys: tabs, selected: tabs[0] });
+  return (
+    <Rail name="Projects" strip={strip} tabs={tabs}>
+      {children}
+    </Rail>
+  );
+}
 
 afterEach(cleanup);
 
@@ -29,11 +41,11 @@ describe("the rail family (#2915)", () => {
 
   it("draws a project as its family's button: named, ringed while current, its badge counted", () => {
     render(
-      <Rail name="Projects" tabs={["a", "b"]}>
+      <Column tabs={["a", "b"]}>
         <RailProject id="a" role="tab" name="charter" current waiting={3} />
         <RailProject id="b" role="tab" name="volaticloud" current={false} />
         <RailAction aria-label="Open a project…" icon={<span>+</span>} />
-      </Rail>,
+      </Column>,
     );
     const tabs = screen.getAllByRole("tab");
     expect(tabs.map((one) => one.getAttribute("aria-label"))).toEqual(["charter", "volaticloud"]);
@@ -56,7 +68,7 @@ describe("the rail family (#2915)", () => {
 
   it("dots a project with unsaved work, and says it (charter-app#302)", () => {
     render(
-      <Rail name="Projects" tabs={["a"]}>
+      <Column tabs={["a"]}>
         <RailProject
           id="a"
           role="tab"
@@ -65,7 +77,7 @@ describe("the rail family (#2915)", () => {
           waiting={2}
           unsaved={{ blocked: true, says: "The save is blocked" }}
         />
-      </Rail>,
+      </Column>,
     );
     const tab = screen.getByRole("tab", { name: "charter" });
     expect(tab.querySelector('[data-part="unsaved"]')).toHaveAttribute("data-blocked");
@@ -74,7 +86,7 @@ describe("the rail family (#2915)", () => {
 
   it("marks a project that is loading, busy and saying so, not by colour alone (#5323)", () => {
     const { rerender } = render(
-      <Rail name="Projects" tabs={["a"]}>
+      <Column tabs={["a"]}>
         <RailProject
           id="a"
           role="tab"
@@ -82,7 +94,7 @@ describe("the rail family (#2915)", () => {
           current={false}
           load={{ loading: true, says: "Loading…" }}
         />
-      </Rail>,
+      </Column>,
     );
     const tab = screen.getByRole("tab", { name: "charter" });
     expect(tab.querySelector('[data-part="loading"]')).not.toBeNull();
@@ -91,7 +103,7 @@ describe("the rail family (#2915)", () => {
 
     // Back, with only some of its chats: no mark, and it says how many.
     rerender(
-      <Rail name="Projects" tabs={["a"]}>
+      <Column tabs={["a"]}>
         <RailProject
           id="a"
           role="tab"
@@ -99,7 +111,7 @@ describe("the rail family (#2915)", () => {
           current={false}
           load={{ loading: false, says: "2 of 3 chats back" }}
         />
-      </Rail>,
+      </Column>,
     );
     expect(tab.querySelector('[data-part="loading"]')).toBeNull();
     expect(tab).not.toHaveAttribute("aria-busy");
@@ -108,7 +120,7 @@ describe("the rail family (#2915)", () => {
 
   it("says a project's load as its tooltip's second line (#5323)", async () => {
     render(
-      <Rail name="Projects" tabs={["a"]}>
+      <Column tabs={["a"]}>
         <RailProject
           id="a"
           role="tab"
@@ -116,7 +128,7 @@ describe("the rail family (#2915)", () => {
           current={false}
           load={{ loading: true, says: "Still loading…" }}
         />
-      </Rail>,
+      </Column>,
     );
     screen.getByRole("tab", { name: "charter" }).focus();
     fireEvent.pointerEnter(screen.getByRole("tab", { name: "charter" }));
@@ -126,7 +138,7 @@ describe("the rail family (#2915)", () => {
 
   it("keeps a project's name first in its tooltip, its unsaved work the second line (S1)", async () => {
     render(
-      <Rail name="Projects" tabs={["a"]}>
+      <Column tabs={["a"]}>
         <RailProject
           id="a"
           role="tab"
@@ -134,7 +146,7 @@ describe("the rail family (#2915)", () => {
           current={false}
           unsaved={{ blocked: false, says: "3 files to save" }}
         />
-      </Rail>,
+      </Column>,
     );
     screen.getByRole("tab", { name: "charter" }).focus();
     fireEvent.pointerEnter(screen.getByRole("tab", { name: "charter" }));

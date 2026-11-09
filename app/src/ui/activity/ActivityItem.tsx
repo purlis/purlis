@@ -15,7 +15,7 @@
  * - **Its states are marked as React Aria marks a button's**: `data-hovered` under a pointer that
  *   hovers, `data-pressed` while pressed, `data-selected` while its view is open and
  *   `data-focus-visible` while the keyboard is on it. The item stays a native button, because it
- *   is a tab of its bar's roving group (`ActivityBar`), whose item hands it its keys and focus.
+ *   is a tab of its bar's strip (`ActivityBar`, `AsStripTab`), which hands it its role and focus.
  * - **A state changes a colour, never a size**: an item is the same box chosen or not, so nothing
  *   beside it moves.
  */
@@ -55,7 +55,7 @@ export interface ActivityItemProps extends Omit<
 
 /**
  * **One activity item**: a native `<button>` with the family's attributes and states. Every prop
- * a roving group's item hands its child (its focus and key handlers, its `tabIndex`, its `ref`)
+ * a strip's tab (`AsStripTab`) hands it (its focus and key handlers, its `tabIndex`, its `ref`)
  * reaches the button, each state handler run after the one handed in.
  */
 export function ActivityItem({
@@ -201,7 +201,7 @@ export function ActivityDot({ said }: { said: string }) {
 
 /**
  * **A group of a bar's items**: one tab list, the side panel's views or its half of the bottom
- * panel's. Every prop reaches the element (a roving group's root hands it its own), and the
+ * panel's. Every prop reaches the element (a strip's row hands it its keyboard and its tablist's role, `useTabStripRow`), and the
  * family's attributes are its own.
  */
 export function ActivityGroup({

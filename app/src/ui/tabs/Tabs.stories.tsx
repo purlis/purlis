@@ -17,7 +17,7 @@ import { Fragment, useState, type CSSProperties } from "react";
 import { expect, screen, waitFor } from "storybook/test";
 import { Bot, Plus, X } from "lucide-react";
 import { expectFocusInSight, untilFocused } from "../../stories.testkit";
-import { useTabIds } from "../../StripTablist";
+import { useTabIds } from "./TabStrip";
 import { ChatMark } from "../chat-mark/ChatMark";
 import type { MarkState } from "../../shownState";
 import { Button, IconButton } from "../button/Button";

@@ -12,13 +12,11 @@ import {
   useRef,
   useState,
 } from "react";
-import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import { closestCenter, DndContext } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { Plus } from "lucide-react";
 import type { Catalogued, Offer, Project, projectRows } from "./actions";
 import { Menued } from "./Menus";
-import { useTabStop } from "./roving";
 import {
   DOWN_THE_RAIL,
   keepsTheFocus,
@@ -27,7 +25,7 @@ import {
   useStripSensors,
 } from "./sortable";
 import { closeOnDelete } from "./tabKeys";
-import { useTabIds } from "./StripTablist";
+import { AsStripTab, useTabIds, useTabStrip } from "./ui/tabs/TabStrip";
 import { motionReduced } from "./theme/motion";
 import { inForce } from "./theme/theme";
 import { railSliding, slideEnded, slideStarted } from "./railSlide";
@@ -354,7 +352,7 @@ function ProjectColumn({
   const sensors = useStripSensors();
   const words = useMemo(() => stripAccessibility("project", (id) => nameOf(String(id))), [nameOf]);
   const ids = projects.map((project) => project.plane);
-  const stop = useTabStop(inFront, ids);
+  const strip = useTabStrip({ keys: ids, selected: inFront });
   const {
     list: belowList,
     count: belowCount,
@@ -371,31 +369,36 @@ function ProjectColumn({
       }}
     >
       <SortableContext items={ids} strategy={verticalListSortingStrategy}>
-        <RovingFocusGroup.Root asChild orientation="vertical" {...stop}>
-          <Rail
-            name="Projects"
-            tabs={projects.map((_, place) => tabId(place))}
-            peek={peeking}
-            data-strip="Projects"
-            data-leaving={leaving ? "" : undefined}
-            // The closes this window asked that have not let go of their project yet (#1949):
-            // a scenario spec waits for none before the next one runs.
-            data-letting-go={lettingGo}
-            onAnimationEnd={(event) => {
-              if (leaving && event.target === event.currentTarget) onLeft();
-            }}
-          >
-            <RailList ref={belowList}>
-              {projects.map((project, place) =>
-                coming.includes(project.plane) ? (
-                  <SortableTab key={project.plane} id={project.plane} fixed>
-                    {({ sortable, style }) => (
-                      <>
-                        <RovingFocusGroup.Item asChild tabStopId={project.plane} active={false}>
+        <Rail
+          name="Projects"
+          strip={strip}
+          tabs={projects.map((_, place) => tabId(place))}
+          peek={peeking}
+          data-strip="Projects"
+          data-leaving={leaving ? "" : undefined}
+          // The closes this window asked that have not let go of their project yet (#1949):
+          // a scenario spec waits for none before the next one runs.
+          data-letting-go={lettingGo}
+          onAnimationEnd={(event) => {
+            if (leaving && event.target === event.currentTarget) onLeft();
+          }}
+        >
+          <RailList ref={belowList}>
+            {projects.map((project, place) =>
+              coming.includes(project.plane) ? (
+                <SortableTab key={project.plane} id={project.plane} fixed>
+                  {({ sortable, style }) => (
+                    <>
+                      <AsStripTab
+                        strip={strip}
+                        tabKey={project.plane}
+                        selected={false}
+                        ref={sortable.setNodeRef}
+                      >
+                        {(tab) => (
                           <RailProject
-                            ref={sortable.setNodeRef}
+                            {...tab}
                             style={style as CSSProperties}
-                            role="tab"
                             id={tabId(place)}
                             name={project.name}
                             current={false}
@@ -403,40 +406,41 @@ function ProjectColumn({
                             load={loadOf(project)}
                             data-directory={project.plane}
                             data-coming=""
-                            aria-selected={false}
                             onClick={() => onChoose(project.plane)}
                           />
-                        </RovingFocusGroup.Item>
-                        <RowWays
-                          project={project}
-                          load={loadOf(project)}
-                          onRetry={onRetry}
-                          onDismiss={onDismiss}
-                          dismisses
-                        />
-                      </>
-                    )}
-                  </SortableTab>
-                ) : (
-                  <SortableTab key={project.plane} id={project.plane}>
-                    {({ sortable, style }) => (
-                      // Right-click is the catalogue's third reader (`Menus.tsx`), on the button,
-                      // which takes the keyboard's context-menu key too.
-                      <>
-                        <Menued
-                          on={{ on: "project", plane: project.plane }}
-                          offers={offers}
-                          onPress={onPress}
+                        )}
+                      </AsStripTab>
+                      <RowWays
+                        project={project}
+                        load={loadOf(project)}
+                        onRetry={onRetry}
+                        onDismiss={onDismiss}
+                        dismisses
+                      />
+                    </>
+                  )}
+                </SortableTab>
+              ) : (
+                <SortableTab key={project.plane} id={project.plane}>
+                  {({ sortable, style }) => (
+                    // Right-click is the catalogue's third reader (`Menus.tsx`), on the button,
+                    // which takes the keyboard's context-menu key too.
+                    <>
+                      <Menued
+                        on={{ on: "project", plane: project.plane }}
+                        offers={offers}
+                        onPress={onPress}
+                      >
+                        <AsStripTab
+                          strip={strip}
+                          tabKey={project.plane}
+                          selected={project.plane === inFront}
+                          ref={sortable.setNodeRef}
                         >
-                          <RovingFocusGroup.Item
-                            asChild
-                            tabStopId={project.plane}
-                            active={project.plane === inFront}
-                          >
+                          {(tab) => (
                             <RailProject
-                              ref={sortable.setNodeRef}
+                              {...tab}
                               style={style as CSSProperties}
-                              role="tab"
                               id={tabId(place)}
                               name={project.name}
                               current={project.plane === inFront}
@@ -447,7 +451,6 @@ function ProjectColumn({
                               // Its directory: how a scenario learns which project a button is.
                               data-directory={project.plane}
                               data-dragging={sortable.isDragging || undefined}
-                              aria-selected={project.plane === inFront}
                               aria-describedby={sortable.attributes["aria-describedby"]}
                               {...sortable.listeners}
                               onKeyDown={(event) => {
@@ -466,32 +469,32 @@ function ProjectColumn({
                                 if (offer.available) onPress(offer);
                               }}
                             />
-                          </RovingFocusGroup.Item>
-                        </Menued>
-                        <RowWays
-                          project={project}
-                          load={loadOf(project)}
-                          onRetry={onRetry}
-                          onDismiss={onDismiss}
-                        />
-                      </>
-                    )}
-                  </SortableTab>
-                ),
-              )}
-              <span data-strip-doing="">
-                <RailAction
-                  aria-label={rows.open.title}
-                  icon={<Plus aria-hidden="true" />}
-                  onClick={() => onPress(rows.open)}
-                />
-              </span>
-            </RailList>
-            {belowCount > 0 && <RailBelow waiting={belowCount} onPress={showBelow} />}
-            <RailSpacer />
-            <span data-strip-doing="">{last}</span>
-          </Rail>
-        </RovingFocusGroup.Root>
+                          )}
+                        </AsStripTab>
+                      </Menued>
+                      <RowWays
+                        project={project}
+                        load={loadOf(project)}
+                        onRetry={onRetry}
+                        onDismiss={onDismiss}
+                      />
+                    </>
+                  )}
+                </SortableTab>
+              ),
+            )}
+            <span data-strip-doing="">
+              <RailAction
+                aria-label={rows.open.title}
+                icon={<Plus aria-hidden="true" />}
+                onClick={() => onPress(rows.open)}
+              />
+            </span>
+          </RailList>
+          {belowCount > 0 && <RailBelow waiting={belowCount} onPress={showBelow} />}
+          <RailSpacer />
+          <span data-strip-doing="">{last}</span>
+        </Rail>
       </SortableContext>
     </DndContext>
   );

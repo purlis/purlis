@@ -14,9 +14,9 @@
  * - **States a theme can key** are the ones this wrapper marks: `data-hovered` under the pointer,
  *   `data-selected` on the current project, `data-focus-visible` from the keyboard. A state
  *   changes a colour and the ring, never a size (R153).
- * - **A plain `<button>` underneath**, not React Aria's: a project's button is also a tab of a
- *   roving group, a sortable item and a context menu's trigger, each of which hands it its
- *   handlers and its ref (`asChild`), as the project tabs before it were handed them. The hover
+ * - **A plain `<button>` underneath**, not React Aria's: a project's button is also a tab of the
+ *   tabs family's strip (`AsStripTab`, #3134), a sortable item and a context menu's trigger, each
+ *   of which hands it its handlers and its ref, as the project tabs before it were handed them. The hover
  *   and the keyboard's focus are React Aria's own hooks, so it marks them as the other families do.
  * - **Its name is its tooltip** (R89): the shared tooltip family (#2908), beside the button at its
  *   end, 10px from it. A project's button is named by the project; an action's by what it does,
@@ -27,6 +27,7 @@ import { mergeProps, useFocusRing, useHover, useId } from "react-aria";
 import { PanelLeft, RotateCw, X } from "lucide-react";
 import { IconButton } from "../button/Button";
 import { Tooltip, type Tip } from "../tooltip/Tooltip";
+import { useTabStripRow, type TabStrip } from "../tabs/TabStrip";
 
 /** The family's variants, in the order the manifest names them. */
 export const RAIL_VARIANTS = ["project", "action"] as const;
@@ -99,7 +100,7 @@ export interface RailProjectProps extends Drawn {
  * **A project on the rail** (R77–R79): its monogram in its colour on that colour's ground, the
  * waiting badge at its top right, the dot of its unsaved work at its bottom right
  * (charter-app#302), the ring while it is current. A tab of the rail's tablist,
- * whose roving group, drag and menu hand it their props.
+ * whose tab (`AsStripTab`), drag and menu hand it their props.
  */
 export function RailProject({
   name,
@@ -256,10 +257,12 @@ export function RailAction({ icon, tooltip, ref, style, ...handed }: RailActionP
  * **The rail's column** (R76): its tablist, which owns the projects' buttons by their ids (a
  * tablist holds tabs only, and the rail's actions are not; #1204's rule for every strip), then
  * whatever it is given: the projects, open a project, the room that pushes the last button to
- * the bottom ({@link RailSpacer}) and the hide (R82).
+ * the bottom ({@link RailSpacer}) and the hide (R82). The tablist and the keyboard along it are
+ * the tabs family's (`ui/tabs/TabStrip`, #3134): Up and Down, Home and End, one Tab stop.
  */
 export function Rail({
   name,
+  strip,
   tabs,
   peek = false,
   children,
@@ -268,6 +271,8 @@ export function Rail({
 }: {
   /** The tablist's name, which is the projects'. */
   name: string;
+  /** The projects' tabs, as the tabs family holds them (`useTabStrip`). */
+  strip: TabStrip;
   /** The ids of the project buttons, in their order. */
   tabs: readonly string[];
   /** It peeks over the content from the window's edge (R86), rather than standing in its
@@ -278,14 +283,20 @@ export function Rail({
   /** `data-*` attributes reach the element as they are. */
   [data: `data-${string}`]: string | number | boolean | undefined;
 } & Omit<ComponentPropsWithoutRef<"div">, "children" | "className" | "style" | "title">) {
+  const { row, tablist } = useTabStripRow({ strip, name, orientation: "vertical", ref });
+  const { ref: own, ...along } = row;
   return (
-    <div {...rest} ref={ref} data-scope="rail" data-part="column" data-peek={peek ? "" : undefined}>
+    <div
+      {...mergeProps(rest, along)}
+      ref={own}
+      data-scope="rail"
+      data-part="column"
+      data-peek={peek ? "" : undefined}
+    >
       <span
         data-scope="rail"
         data-part="tablist"
-        role="tablist"
-        aria-label={name}
-        aria-orientation="vertical"
+        {...tablist}
         aria-owns={tabs.length > 0 ? tabs.join(" ") : undefined}
       />
       {children}

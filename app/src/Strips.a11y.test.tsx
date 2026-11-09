@@ -24,7 +24,7 @@ import { aTabForEachChat } from "./laidOut.testkit";
  * still owns every `×` and gear in those cells; the role has to move off an element that holds
  * them, or they have to leave it.
  *
- * **So the role is on an element of its own** (`StripTablist.tsx`): empty, inside the strip,
+ * **So the role is on an element of its own** (`TabStripRow`, `ui/tabs/TabStrip.tsx`): empty, inside the strip,
  * owning the strip's tabs through `aria-owns`. The window's three strips are held to it here:
  * each tablist owns its tabs and nothing else, and the `×`, the gears and the strip's own
  * controls are still drawn in the strip. The list of what a strip owns that is not a tab was
