@@ -152,6 +152,9 @@ impl Fields {
         event["culprit"] = json!(self.place);
         // Sentry groups by it, so the counts of repeats name the group they belong to.
         event["fingerprint"] = json!([self.fingerprint]);
+        // And a tag of it, the one place Sentry's API gives it back: the steward's routine
+        // matches a report to an issue already filed by it (#5701).
+        event["tags"]["fingerprint"] = json!(self.fingerprint);
         CrashReport {
             fingerprint: Some(self.fingerprint),
             title: self.title,
@@ -321,6 +324,8 @@ impl CrashReport {
         }
         if let Some(fingerprint) = fingerprint {
             event["fingerprint"] = json!([fingerprint]);
+            // Read back by the steward's routine from the tags Sentry's API answers (#5701).
+            event["tags"]["fingerprint"] = json!(fingerprint);
         }
         event["culprit"] = json!(draft.title);
         message_envelope(event, draft.title.clone(), dsn)

@@ -243,6 +243,10 @@ fn a_failure_met_again_after_its_draft_left_is_counted_and_never_drafted_again()
         "the intake groups it by its fingerprint: {first}"
     );
     assert!(
+        first.contains(&format!("\"fingerprint\":\"{fingerprint}\"")),
+        "and the steward's routine reads it from the event's tags (#5701): {first}"
+    );
+    assert!(
         first.contains(&format!(
             "{{\"fingerprint\":\"{fingerprint}\",\"count\":1}}"
         )),
