@@ -33,7 +33,7 @@ import {
  *
  * | Drawn as                                                         | Wears                     |
  * | ---------------------------------------------------------------- | ------------------------- |
- * | `<button>`, or a Radix trigger or close without `asChild`        | a list's row or a tree's row (`ui-row`, `ui-tree-row`); a button is the button family's `Button` (#2904), a segment the choice family's, a menu's row the menu family's |
+ * | `<button>`, or a Radix trigger or close without `asChild`        | nothing: a button is the button family's `Button` (#2904), a segment the choice family's, a menu's row the menu family's, a list's or a tree's row the list or tree family's (#2930) |
  * | `<input>`, `<textarea>`                                          | nothing: a box is the field family's `TextField` or `TextArea` (#2905), a checkbox or a radio the choice family's (#2907) |
  * | `<select>`, Radix Select's `Trigger`                             | nothing: the select family's `Select` (#2906) |
  * | `<table>`                                                        | nothing: the table family's `Table` or `ControlTable` (#2911) |
@@ -50,11 +50,11 @@ import {
  * `CEILING`. The surface tickets delete an entry as each control takes its class.
  */
 
-/** The classes that are each kind's whole look, each drawn by `primitives/collections.css`. A
- *  native button can be a list's row or a tree's row (`docs/ui-primitives.md`). An empty list is
- *  a kind that is a family's (`ui/`), so no class makes a native one right. */
+/** The classes that are each kind's whole look. Every kind is a family's now (`ui/`): a list's
+ *  row and a tree's are the list and tree families' (#2911, #3198), and the old row set's
+ *  `primitives/collections.css` is gone (#2930), so no class makes a native one right. */
 const WEARS: Record<string, string[]> = {
-  button: ["ui-row", "ui-tree-row"],
+  button: [],
   // A box a person types in is the field family's (#2905).
   input: [],
   // A checkbox and a radio are the choice families' (#2907).
@@ -316,8 +316,6 @@ describe("the control guard (#1837)", () => {
       import * as Pop from "@radix-ui/react-popover";
       <button className="tab-close" onClick={() => a > b}>×</button>
       <button className={cn("go", on && "go-on")} />
-      <button className="ui-row" />
-      <button className={cn("ui-tree-row", open && "open")} />
       <input value={v} />
       <input className="find" />
       <input type="checkbox" className="box" />
@@ -395,8 +393,7 @@ describe("the control guard (#1837)", () => {
  * `:is()` or `:where()` as each selector in it. The subject is a control when it is:
  * - a `button`, `select` or `textarea` element, or an `input` that is not a checkbox or a radio
  *   (`input:not([type=checkbox])` is one);
- * - a class some component gives a button, a field or a select (`controlClasses`), unless that
- *   tag is a row of a list (`ui-row`, `ui-tree-row`), whose height is the list's.
+ * - a class some component gives a button, a field or a select (`controlClasses`).
  *
  * A family's own sheet (`ui/`) keys its control on attributes, not on a class, so its sizes are
  * the family's to hold; a class a view gives a family's member is read here like any other.
@@ -423,9 +420,6 @@ describe("the control guard (#1837)", () => {
  * padding makes tall) is not checked, and a custom property is held by its value wherever it
  * is declared, not by the scope it is declared in.
  */
-
-/** A tag wearing one of these is a row of a list, not a control on its own. */
-const NOT_ON_ITS_OWN = ["ui-row", "ui-tree-row"];
 
 /** The kinds of control whose classes are held to the control height. */
 const HELD_KINDS = new Set(["button", "input", "input:dynamic", "textarea", "select", "menu-item"]);
@@ -463,7 +457,7 @@ export function controlClasses(source: string): string[] {
       ? [...className.matchAll(/["'`]([^"'`]*)["'`]/g)].map(([, words]) => words)
       : [className];
     const words = strings.flatMap((words) => words.split(/\s+/)).filter(Boolean);
-    return words.some((word) => NOT_ON_ITS_OWN.includes(word)) ? [] : words;
+    return words;
   });
 }
 
@@ -1179,11 +1173,9 @@ export const plantedTall = { minBlockSize: 32 };
     ]);
   });
 
-  it("gives every class a control wears, and not a row's or a toggle's", () => {
+  it("gives every class a control wears, and not a toggle's", () => {
     const tsx = `
       <button className="closer task-end" />
-      <button className="chat ui-row" />
-      <button className={cn("file", open && "ui-tree-row")} />
       <input type="checkbox" className="box" />
       <select className={cn("pick", wide && "wide")} />
     `;

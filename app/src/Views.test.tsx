@@ -1031,9 +1031,7 @@ describe("a change's Push and Land (#474)", () => {
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(screen.queryByRole("button", { name: "Land" })).toBeNull();
     expect(document.body.style.pointerEvents).not.toBe("none");
-    expect(
-      document.querySelector("[data-aria-hidden], [aria-hidden=true][data-radix-focus-guard]"),
-    ).toBeNull();
+    expect(document.querySelector("[data-aria-hidden]")).toBeNull();
     expect(called("change_land")).toHaveLength(0);
 
     // Back in the project it was asked in, its question is there, naming its request.

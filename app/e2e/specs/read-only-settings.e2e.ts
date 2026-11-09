@@ -154,7 +154,7 @@ async function openGroup(label: string): Promise<void> {
             (one) => one.textContent?.trim() === wanted,
           );
           // The chosen group says so with `aria-current` (`SettingsLayout.tsx`).
-          if (button?.getAttribute("aria-current") === "true") return true;
+          if (button?.getAttribute("aria-current") === "page") return true;
           button?.click();
           return false;
         },

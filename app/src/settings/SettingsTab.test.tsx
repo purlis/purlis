@@ -73,7 +73,7 @@ describe("the Settings tab, at the You level", () => {
       "Profiles",
       "Previews",
     ]);
-    expect(group("Text")).toHaveAttribute("aria-current", "true");
+    expect(group("Text")).toHaveAttribute("aria-current", "page");
     expect(shown()).toHaveAccessibleName("Text");
     expect(slider(/window text size/i)).toBeInTheDocument();
     expect(screen.queryByRole("radiogroup", { name: "Your editor" })).not.toBeInTheDocument();
@@ -90,7 +90,7 @@ describe("the Settings tab, at the You level", () => {
 
     await userEvent.click(group("Editor"));
 
-    expect(group("Editor")).toHaveAttribute("aria-current", "true");
+    expect(group("Editor")).toHaveAttribute("aria-current", "page");
     expect(group("Text")).not.toHaveAttribute("aria-current");
     expect(shown()).toHaveAccessibleName("Editor");
     expect(screen.getByRole("radiogroup", { name: "Your editor" })).toBeInTheDocument();
@@ -259,6 +259,52 @@ describe("the Settings tab, by keyboard", () => {
     await userEvent.keyboard("{Enter}");
 
     expect(shown()).toHaveAccessibleName("Motion and contrast");
+  });
+});
+
+describe("the nav of groups, as the keyboard and a screen reader meet it (#189, #2930)", () => {
+  const stops = () =>
+    within(nav())
+      .getAllByRole("button")
+      .filter((one) => one.tabIndex === 0)
+      .map((one) => one.textContent);
+
+  it("is one Tab stop, on the group shown, and says which group is shown", () => {
+    render(<SettingsTab />);
+    expect(stops()).toEqual(["Text"]);
+    expect(group("Text")).toHaveAttribute("aria-current");
+    expect(group("Theme")).not.toHaveAttribute("aria-current");
+  });
+
+  it("moves with the arrows, Home and End, and shows nothing new until Enter", async () => {
+    render(<SettingsTab />);
+    group("Text").focus();
+    await userEvent.keyboard("{End}");
+    expect(within(nav()).getAllByRole("button").at(-1)).toHaveFocus();
+    await userEvent.keyboard("{Home}");
+    expect(group("Text")).toHaveFocus();
+    await userEvent.keyboard("{ArrowDown}");
+    expect(group("Theme")).toHaveFocus();
+    expect(shown()).toHaveAccessibleName("Text");
+    // While the keyboard is inside, the item it is on is the stop.
+    expect(stops()).toEqual(["Theme"]);
+    await userEvent.keyboard(" ");
+    expect(shown()).toHaveAccessibleName("Theme");
+  });
+
+  it("gives the stop back to the group shown once the keyboard leaves", async () => {
+    render(<SettingsTab />);
+    group("Text").focus();
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}");
+    expect(stops()).toEqual(["Density and fonts"]);
+    act(() => group("Density and fonts").blur());
+    expect(stops()).toEqual(["Text"]);
+  });
+
+  it("is the panel family's page navigation, not hand-drawn buttons (#2930)", () => {
+    render(<SettingsTab />);
+    expect(group("Text")).toHaveAttribute("data-scope", "view-nav");
+    expect(group("Text")).toHaveAttribute("aria-current", "page");
   });
 });
 

@@ -506,6 +506,11 @@ li:has(> [data-scope="view-nav"][data-part="item"][data-starts-group]) {
   border-block-start: 1px solid var(--border-subtle);
 }
 
+/* A page of the one above it: set in a step under it, out of no box but its own. */
+[data-scope="view-nav"][data-part="item"][data-sub] {
+  padding-inline-start: var(--space-6);
+}
+
 /* Under the pointer: the pointer's ground and the primary words. */
 [data-scope="view-nav"][data-part="item"][data-hovered] {
   background-color: var(--surface-hover);

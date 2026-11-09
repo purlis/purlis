@@ -5,7 +5,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { closesTheTabsItOpens } from "../reach.js";
-import { openProjectSettings } from "../settingsTab.js";
+import { openProjectSettings, openRawFile } from "../settingsTab.js";
 import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
 
 /**
@@ -42,27 +42,6 @@ async function planeRoot(): Promise<string> {
   const said = await $('[data-testid="status-project"]');
   await said.waitForDisplayed({ timeout: 30_000 });
   return ((await said.getAttribute("data-directory")) ?? "").trim();
-}
-
-/** Opens `file` from the Edit as TOML links at the nav's foot, found by their words. */
-async function openRawFile(file: string): Promise<void> {
-  await browser.waitUntil(
-    async () =>
-      browser.execute((wanted: string) => {
-        const group = [...document.querySelectorAll<HTMLElement>('[role="group"]')].find(
-          (one) =>
-            document.getElementById(one.getAttribute("aria-labelledby") ?? "")?.textContent ===
-            "Edit as TOML",
-        );
-        const link = [...(group?.querySelectorAll<HTMLElement>("button") ?? [])].find(
-          (one) => one.textContent?.trim() === wanted,
-        );
-        if (link === undefined) return false;
-        link.click();
-        return true;
-      }, file),
-    { timeout: 20_000, interval: 250, timeoutMsg: `Edit as TOML offered no ${file}` },
-  );
 }
 
 /** The merge view and its list, measured in one pass. */

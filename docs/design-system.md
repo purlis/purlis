@@ -226,10 +226,10 @@ other subtle rule in the window.
 
 **One tree style, and a selected row that looks selected** (#1672). Every tree in the window —
 the Chats tree, the explorer, the Changes view and a file tab's files — is drawn by the shared
-tree row (`.ui-tree` and `.ui-row.ui-tree-row` in `primitives/collections.css`, DS-3, every tree
-moved onto it by DS-11 and DS-12), and not by a shared component (ADR 0037): each tree keeps its
-own markup and keys, and the class draws its levels, its guides, its selected row and where the
-keyboard is. The `.tree` class in `App.css` that drew them before is gone.
+tree row, once `.ui-tree` and `.ui-row.ui-tree-row` in `primitives/collections.css` (DS-3, every
+tree moved onto it by DS-11 and DS-12) and the tree family's since #2911 and #3198, which draws
+its levels, its guides, its selected row and where the keyboard is. The `.tree` class in
+`App.css` that drew them before is gone, and so is `collections.css` (#2930).
 
 - **A level is one step in and one straight guide**, VS Code's: a hairline in `tree.guide` down
   the whole level, under the row it hangs from. Each row says its level (`aria-level`, or
@@ -1028,7 +1028,7 @@ theme.json, following the system", or that it stays in its one appearance (#2615
 - **Open folder** opens the card's theme folder in the file manager: the folder the engine
   places for the card, never a path the window sent.
 - **The keyboard and a screen reader**: the cards are a listbox, one Tab stop, the chosen card
-  the stop at rest (`roving.ts`); selection does not follow the focus, so moving through the
+  the stop at rest (the list family's); selection does not follow the focus, so moving through the
   cards writes nothing. Nothing in the group takes the focus by itself.
 - The machine default, an option's value, a duplicate and Open folder are the window's alone
   (`WINDOW_ONLY`); the gallery's reads are served on a link, as `theme_in_force_at` is: the
@@ -1781,8 +1781,8 @@ the focus rings, #2867):
   and a strip's cap on a tab are each that box's own.
 - **`controls.guard.test.ts`** fails on a native control that is not its family's and does not
   wear its class (`docs/ui-primitives.md`, "Every control is a family's"): a `<button>` or a
-  Radix trigger without `asChild` (a list's row or a tree's row, `ui-row` or `ui-tree-row`; a
-  button is the button family's `Button`, a segment the choice family's), an `<input>` or
+  Radix trigger without `asChild` (none: a button is the button family's `Button`, a segment the
+  choice family's, a list's or a tree's row the list or tree family's, #2930), an `<input>` or
   `<textarea>` (none: a box is the field family's `TextField` or `TextArea`, a checkbox or a
   radio the choice family's), a `<select>` (none: the select family's `Select`), a `<table>`
   (none: the table family's `Table` or `ControlTable`, #2911), and a Radix menu's content and rows (none: the menu family's). **It holds two

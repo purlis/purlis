@@ -84,7 +84,7 @@ export function aMissedPress(
   };
   const OVERLAYS =
     '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], ' +
-    "[data-radix-popper-content-wrapper]";
+    '[data-scope="popover"][data-part="root"]';
   const lines: string[] = [];
   const chain = typeof target === "string" ? [target] : target;
   let it: Element | null = null;

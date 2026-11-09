@@ -56,28 +56,16 @@ const ARBITRARY = /\[[^\]]*\]/;
  * What is wrong with each `var()` that `value` reads: one that is not a token, or a token the
  * theme in force does not set.
  */
-function unread(value: string, said: (what: string) => void, declared?: string): void {
+function unread(value: string, said: (what: string) => void): void {
   const set = document.documentElement.style;
   for (const hit of value.matchAll(READS)) {
     const read = hit[1];
-    if (radixWiring(declared, read)) continue;
     if (COLOUR_TOKENS.has(read)) {
       if (set.getPropertyValue(read) === "") said(`reads ${read}, which the theme does not set`);
     } else if (!MOTION.has(read) && !FROM_THE_WINDOW.has(read) && !OWN_PROPERTIES.has(read)) {
       said(`reads ${read}, which is not a token`);
     }
   }
-}
-
-/**
- * Whether a `var()` is **Radix passing one of its own properties to another** (#956): a
- * popover's content sets `--radix-popover-content-available-width: var(--radix-popper-available-width)`
- * and the like, lengths and an origin its popper measured. Only a `--radix-` property read into
- * a `--radix-` property counts; reading one into `color` or any other property is still not a
- * token, and the value is still held to the literal check like any other.
- */
-function radixWiring(declared: string | undefined, read: string): boolean {
-  return declared?.startsWith("--radix-") === true && read.startsWith("--radix-");
 }
 
 /**
@@ -118,7 +106,7 @@ export function complaints(root: Element): string[] {
         // inlined SVG's data URL.
         if (literalsIn(value).length > 0 && !isTint(element, name, value))
           said.push(`${where} style ${name}: ${value} is a colour literal`);
-        unread(value, (what) => said.push(`${where} style ${name} ${what}`), name);
+        unread(value, (what) => said.push(`${where} style ${name} ${what}`));
       }
     }
     if (element instanceof SVGElement) {

@@ -2887,10 +2887,6 @@ body {
    open" is the one thing in this region that must never be read wrong. No weight of its own:
    a state never changes a row's size (#2800), and a bolder name is a wider one. */
 
-.explorer .explorer-section-head .twisty[data-open] {
-  rotate: 90deg;
-}
-
 /* A file charter will not open says so beside it; its name is quieter than an openable one. */
 .explorer .file-node[data-refused] .spot-name {
   color: var(--text-muted);
@@ -3176,22 +3172,12 @@ body {
   margin: var(--space-5) 0 var(--space-2);
 }
 
-/* **Explorer's sections** (#1677): each heading is the disclosure that folds its section, an
-   editor's explorer's, drawn as the sidebar title it is. The button fills the heading so the
-   whole line is the target; what the section is of follows in the row's quiet weight. The first
-   section sits at the region's top. A folded section's body is `hidden`, never unmounted. */
-.explorer .explorer-section:first-child > h2 {
+/* **Explorer's sections** (#1677): a heading that folds its section is the disclosure family's
+   (`ui/disclosure`, #2930), which draws it; a view's own title is the panel family's. The first
+   section sits at the region's top. A folded section's body is hidden, never unmounted. */
+.explorer .explorer-section:first-child > h2,
+.explorer .explorer-section:first-child > [data-scope="disclosure"] > h2 {
   margin-top: 0;
-}
-/* The button is a row of the set (`.ui-row`, #1857), which draws it; the heading keeps its
-   type. */
-.explorer .explorer-section-head > button {
-  flex: 1;
-  min-width: 0;
-  white-space: nowrap;
-}
-.explorer .explorer-section-head .twisty {
-  flex: none;
 }
 
 .explorer .absent {
@@ -3282,8 +3268,8 @@ body {
   }
 }
 
-/* A chat's row is a `.ui-row`, whose own transparent fill is in a layer above this one: its band
-   is drawn on the item that holds it, under the row. */
+/* A chat's row is the tree family's, whose own transparent fill is in a layer above this one: its
+   band is drawn on the item that holds it, under the row. */
 .chats-section [data-revealed] {
   background-color: var(--surface-hover);
   animation: charter-revealed var(--motion-duration-settle) var(--motion-easing-standard);
@@ -5349,7 +5335,7 @@ body {
   margin: 0;
 }
 
-/* Load-more: a row of the list (`.ui-row`) rather than a button beside it, so the list ends with
+/* Load-more: a row of the list (the list family's) rather than a button beside it, so the list ends with
    the way to see the rest of it instead of the reader having to look elsewhere for one. */
 .panel-more {
   font: inherit;
@@ -6515,10 +6501,6 @@ nav.piece-files-head {
   animation: charter-settle var(--motion-duration-settle) var(--motion-easing-standard);
 }
 
-.explorer .explorer-section-head .twisty {
-  transition: rotate var(--motion-duration-quick) var(--motion-easing-standard);
-}
-
 /* **A tab being selected.** The cell's surface and its lit edge cross-fade rather than cut, on
    all three strips. `quick`, because this is the window answering a press and must never be
    something the operator waits on; the selection itself is immediate, only its paint eases.
@@ -6632,35 +6614,6 @@ nav.piece-files-head {
 
 .panel-half.arrived {
   animation: purlis-reveal var(--motion-duration-reveal) var(--motion-easing-enter);
-}
-
-/* **A popover or a menu opening** — the show-more menus, the context menus, the persona card,
-   and whatever anchored surface is added next, because the rule hangs off Radix's own popper
-   wrapper rather than off a class. It comes a quarter of a rem out of the side it is anchored
-   to, which is what says what opened it. A dialog's own opening is the dialog family's
-   (`ui/dialog/dialog.css`). */
-@keyframes charter-arrive {
-  from {
-    opacity: 0;
-    translate: var(--arrive-from);
-  }
-}
-
-[data-radix-popper-content-wrapper] > [data-state="open"] {
-  --arrive-from: 0 -0.25rem;
-  animation: charter-arrive var(--motion-duration-enter) var(--motion-easing-enter);
-}
-
-[data-radix-popper-content-wrapper] > [data-side="top"] {
-  --arrive-from: 0 0.25rem;
-}
-
-[data-radix-popper-content-wrapper] > [data-side="left"] {
-  --arrive-from: 0.25rem 0;
-}
-
-[data-radix-popper-content-wrapper] > [data-side="right"] {
-  --arrive-from: -0.25rem 0;
 }
 
 /* The same knock on a row of a list (#1484), where the mark is the hand and has no ring to
@@ -7127,52 +7080,15 @@ nav.piece-files-head {
   color: var(--text-muted);
 }
 
-/* The left nav: one button per group, the shown one marked. */
+/* The left nav: the panel family's page navigation (`ViewNav`, #2930), which draws its
+   groups. */
 .ui-settings-nav {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
-}
-
-/* The nav's groups, and the Edit as TOML links at its foot (SE-19): one look. */
-.ui-settings-nav button,
-.ui-settings-raw button {
-  padding: var(--space-2) var(--space-4);
-  color: var(--text-secondary);
-  text-align: left;
-  background: none;
-  border: 0;
-  border-radius: var(--radius-md);
-  font: inherit;
-  cursor: pointer;
-}
-
-.ui-settings-nav button:hover,
-.ui-settings-raw button:hover {
-  background: var(--surface-hover);
-}
-
-/* The group shown (#1682): a selected row, drawn as every tree and list draws one (`.ui-row`,
-   #1672) — `list.selected` and its edge, told by a shape and not by colour alone. */
-.ui-settings-nav button[aria-current="true"],
-.ui-settings-raw button[aria-current="true"] {
-  color: var(--text-primary);
-  background: var(--list-selected);
-  box-shadow: inset 2px 0 0 var(--list-selected-edge);
-}
-
-.ui-settings-nav button[aria-current="true"]:dir(rtl),
-.ui-settings-raw button[aria-current="true"]:dir(rtl) {
-  box-shadow: inset -2px 0 0 var(--list-selected-edge);
-}
-
-/* A page of the group above it (ST-4): a harness profile's, set in under Harness & profiles. */
-.ui-settings-nav button.ui-settings-sub {
-  padding-left: var(--space-6);
 }
 
 /* **Edit as TOML** (SE-19, V89d): one link per file at the foot of the nav, set apart from the
-   groups by a hairline, drawn as the nav's own buttons are. */
+   groups by a hairline, the same page navigation as the groups (`ViewNav`, #2930). */
 .ui-settings-raw {
   display: flex;
   flex-direction: column;
@@ -7210,8 +7126,6 @@ nav.piece-files-head {
   min-width: 0;
 }
 
-.ui-settings-nav button:focus-visible,
-.ui-settings-raw button:focus-visible,
 .ui-setting-reset:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-offset);

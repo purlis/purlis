@@ -7,23 +7,11 @@
  */
 import { rules, tester } from "../lint.testkit";
 
-/** The families a raw button may still belong to, as `eslint.config.js` names some of them. */
-const options = [
-  { otherFamilies: { roles: ["tab", "menuitem"], classes: ["ui-row", "ui-tabs-control"] } },
-];
-
 tester.run("purlis/button-family", rules["button-family"], {
   valid: [
     { code: `<Button variant="primary" className="notice-go">Go</Button>` },
     { code: `<div className="answer">x</div>` },
     { code: `<li className="ui-row">x</li>` },
-    // Another family's control, by its role or its family's class.
-    { code: `<button role="tab" aria-selected>Chats</button>`, options },
-    { code: `<button className="ui-row vault-secret">API_TOKEN</button>`, options },
-    {
-      code: `<button className={clsx("ui-tabs-control closer", { keeps })}>×</button>`,
-      options,
-    },
   ],
   invalid: [
     {
@@ -47,14 +35,18 @@ tester.run("purlis/button-family", rules["button-family"], {
       errors: [{ messageId: "oldClass" }],
     },
     // An action drawn by hand is an error now the button family has moved.
-    { code: `<button onClick={go}>Delete</button>`, options, errors: [{ messageId: "raw" }] },
+    { code: `<button onClick={go}>Delete</button>`, errors: [{ messageId: "raw" }] },
     {
       code: `<button className="tab-close" onClick={go}>×</button>`,
-      options,
       errors: [{ messageId: "raw" }],
     },
-    // A class word is no family (#3012): only the family's own class says which it is.
-    { code: `<button className="bare">x</button>`, options, errors: [{ messageId: "raw" }] },
-    { code: `<button className="closer">×</button>`, options, errors: [{ messageId: "raw" }] },
+    // No role or class lets a raw button through any more (#2930), not even a family's own.
+    { code: `<button role="tab" aria-selected>Chats</button>`, errors: [{ messageId: "raw" }] },
+    {
+      code: `<button className={clsx("ui-tabs-control closer", { keeps })}>×</button>`,
+      errors: [{ messageId: "raw" }],
+    },
+    { code: `<button className="bare">x</button>`, errors: [{ messageId: "raw" }] },
+    { code: `<button className="closer">×</button>`, errors: [{ messageId: "raw" }] },
   ],
 });

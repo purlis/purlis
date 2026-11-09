@@ -205,7 +205,7 @@ async function measured(name: string) {
         rem,
         cell: box(cell),
         tab: box(cell?.querySelector('[role="tab"]')),
-        closer: box(cell?.querySelector(".closer")),
+        closer: box(cell?.querySelector('[data-part="closer"]')),
         nameCut: label ? label.scrollWidth > label.clientWidth + 1 : false,
         // How wide the title is drawn: a tab gives up its counts before its whole title (#1867).
         nameWidth: label ? label.getBoundingClientRect().width : 0,
@@ -359,7 +359,7 @@ async function cross(dwell: number): Promise<{ over: number; chips: number }> {
     async (strip: string, stay: number, tasks: string) => {
       const stops = [
         ...document.querySelectorAll<HTMLElement>(
-          `${strip} [role="tab"], ${strip} .closer, ${tasks}`,
+          `${strip} [role="tab"], ${strip} [data-part="closer"], ${tasks}`,
         ),
       ].sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
       const wait = (ms: number) => new Promise((done) => setTimeout(done, ms));
@@ -1171,7 +1171,7 @@ describe("a session's tasks, from its pane head and not its tab (#5341)", () => 
           bar: box(document.querySelector('[data-panel][id="region-centre"] header.bar')) as Box,
           cell: box(cell),
           name: box(cell?.querySelector(".tab-name")),
-          closer: box(cell?.querySelector(".closer")),
+          closer: box(cell?.querySelector('[data-part="closer"]')),
           chip: cell?.querySelector("[data-count], .tab-tasks, .pane-tasks") != null,
           drawn: [...document.querySelectorAll(`${strip} [role="tab"]`)].map(
             (tab) => tab.querySelector(".tab-name")?.textContent ?? "",

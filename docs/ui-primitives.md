@@ -1,13 +1,13 @@
 # The window's UI primitives
 
-**Component families on React Aria, and Radix UI until each family moves. New UI is built from
-them, not from hand-rolled markup.**
+**Component families on React Aria. New UI is built from them, not from hand-rolled markup.**
 
 Since #2904 (ADR 0104), every control of a moved family is drawn from its **component family** in
 `app/src/ui/<family>`, which wraps its React Aria primitive once; a screen never imports the
 primitives library, and lint holds it. The button family is the first: [The button
-family](#the-button-family). The families that have not moved still take their Radix primitive as
-the rest of this file says.
+family](#the-button-family). **Every family has moved and Radix is gone** (#2930): no file imports
+a `@radix-ui/*` package and none is a dependency (`app/src/radixGone.guard.test.ts`). Where the
+rest of this file still says Radix, it is the history of why a family behaves as it does.
 
 This is a rule and not a preference, so the rest of this file is the reasons for it and the way
 to follow it.
@@ -26,9 +26,8 @@ file is the defect.
 ## The rule
 
 - A dialog, a radio group, a checkbox, a menu, a popover, a tooltip, a collapsible section, a
-  tab list: take the Radix primitive. Install the one package you need
-  (`@radix-ui/react-<thing>`) — the primitives tree-shake per package, so the window pays for
-  what it uses and nothing else.
+  tab list: take its family from `app/src/ui`, which wraps React Aria's primitive once (ADR 0104).
+  Until #2930 this said to take the Radix primitive, one package per thing.
 - **No library between you and the primitive, and no indirection you cannot read.** No `<Modal>`,
   no `<Field>`, no house component library. The primitive is the component; purlis's look is CSS
   on it. A purlis API in front of Radix is the custom tooling this repo's first rule exists to
@@ -130,8 +129,8 @@ What keeps it from becoming the library this file forbids:
   and says only whether it is filled, in a `SettingRow`'s control slot.
   The slot is how a row composes what the set does not draw, as `Browse…` beside a path is.
 - **Each piece is a thin layer over a primitive already in the window, and says which.**
-  The level switcher is the segmented control; the nav is buttons under Radix roving focus
-  (`roving.ts`, as the explorer's rows); `Choice` is the radio group, the option cards, the
+  The level switcher is the segmented control; the nav, and the Edit as TOML files at its foot,
+  are the panel family's page navigation (`ViewNav`, #2930); `Choice` is the radio group, the option cards, the
   select family's `Select` (`ui/select/Select.tsx`), the switch, a checkbox, or a group of
   checkboxes or chips, each from [the choice families](#the-choice-families); `Field` is the field
   family's box, or the slider.
@@ -348,26 +347,19 @@ body and need no number.
 Before #1835 the window drew **4 tables and 8 kinds of list row**, each with its own padding,
 alignment and selection. The Chats list alone put a name about 53px past its own filter, partly
 because every leaf drew an empty twist so that names would line up. ADR 0094 §4 gives each of
-these one class, built only from the core geometry and a theme's colours, and
-`app/src/primitives/collections.css` held all three (the list's row and the table are their
-families' since #2911). That file is in the `components` layer,
-above `App.css`. A view that takes a class gets its look, and migrating a view means adding the
-class and deleting the view's old rules (DS-9 settings, DS-11 chats). There is no React
-component: each view keeps its own markup and keys, as ADR 0037 asks, and the class draws it.
-`collections.test.ts` checks each rule against the markup below with `cascade.testkit.ts`, so
-specificity and `:hover` are taken into account.
-
-**The sizes are component tokens**, each an alias of a core token and declared in the class it
-sizes: `--ui-row-height` is `--size-chrome`, `--ui-row-pad` is `--space-4` and `--ui-row-gap` is
-`--space-3`. To change a part, change its alias. A theme
-never sees these.
+these one class, built only from the core geometry and a theme's colours, in
+`app/src/primitives/collections.css`. Each kind is its family's now, the table and the list row
+since #2911 and the tree row since #3198, drawn from the same geometry and keyed on its parts'
+attributes; the last `.ui-row` (the whole Explorer's folding section head, now the disclosure
+family's) moved in #2930, and `collections.css`, its test and its `--ui-row-*` aliases are
+deleted.
 
 ### Table
 
 **A table is the table family's** since #2911: [The table family](#the-table-family) below
 draws it from the same geometry, keyed on its parts' attributes where `.ui-table`,
 `.ui-table-fixed`, `.ui-table-stacks`, `.ui-table-room`, `.ui-num`, `.ui-cell-actions` and
-`.ui-table-tip` were (`collections.css` keeps the list row only). A column's short
+`.ui-table-tip` were. A column's short
 words with their whole words in a tooltip, once `settings/ColumnHeading.tsx`, are the family's
 `ControlColumn` (`whole`, `about`). **Short headings live in the window** (#1859, after
 D-1841-1): a column's short words are the table's own (`SHORT` in `settings/dispatch.tsx`), and
@@ -378,16 +370,16 @@ short words.
 
 **A list's row is the list family's** since #2911: [The list family](#the-list-family) below
 draws it, from the same geometry, with its slots (`RowLead`, `RowLabel`, `RowDescription`,
-`RowTrail`) where `.ui-row-lead`, `.ui-row-label` and `.ui-row-trail` were. `.ui-row` is left to
-the views not on a family yet.
+`RowTrail`) where `.ui-row-lead`, `.ui-row-label` and `.ui-row-trail` were. Nothing wears
+`.ui-row` any more (#2930), and the button family's lint no longer lets a raw `<button>` through
+by it.
 
 ### Tree row
 
 **A tree is the tree family's** since #2911: [The tree family](#the-tree-family) below draws the
 Changes view, every file tree (a file tab's, the Explorer's *Files* and a branch's cockpit), the
 Explorer's *Repos and branches* and, last, the Chats list (#3198). The shared tree row
-(`.ui-tree`, `.ui-tree-row`, `.ui-tree-twist` and `--ui-tree-*`) is deleted from
-`collections.css`, which keeps the list row's classes alone.
+(`.ui-tree`, `.ui-tree-row`, `.ui-tree-twist` and `--ui-tree-*`) is deleted.
 
 **The Chats list on the tree family** (#3198). A chat is a `TreeRow` named by its name (what
 typing finds), whose description says its persona and state, its marks' words and what its lines
@@ -419,9 +411,10 @@ own `min-width: max-content` beside the class.
 **Every button, icon button and button drawn as a link is `Button`, `IconButton` or
 `ToggleButton`** (`app/src/ui/button/Button.tsx`, #2904, ADR 0104), on React Aria's `Button` and
 `ToggleButton`. No screen draws a `<button>` of its own for one, and none wears the old
-`.ui-button*` classes: `eslint.config.js` refuses both (`purlis/button-family`, an error). A raw
-`<button>` left is another family's control, said by its role or its family's class (the rule's
-`otherFamilies`).
+`.ui-button*` classes: `eslint.config.js` refuses both (`purlis/button-family`, an error). No raw
+`<button>` is let through as another family's control any more (#2930): the last ones, a tab's
+close, the settings nav and its Edit as TOML files, moved onto their families, and the rule takes
+no list of roles or classes to let one through.
 
 | Prop | Says |
 | --- | --- |
@@ -1498,8 +1491,10 @@ outside one answers nothing.
 
 The tabs on a workspace's strip are drawn by `app/src/ui/tabs`: `TabCell` is one tab's cell (its
 `data-variant`, `data-selected`, `data-hovered` for a mouse and `data-first`), `tabsPart` marks the
-column (`layout`), the strip and the panel under it (`body`), `tabPart` the label, the `×` and a
-count, and `editorToolbar` the bar over a file. `tabs.css` draws Purlis's docked tabs from those
+column (`layout`), the strip and the panel under it (`body`), `tabPart` the label and a count,
+`TabCloser` the `×` (a task's own tab's `−`), on React Aria's `Button` through the shared press
+(`ui/pressable.tsx`, #2930: a Tab stop on the front tab only, and a background tab's never takes
+the keyboard), and `editorToolbar` the bar over a file. `tabs.css` draws Purlis's docked tabs from those
 attributes; a theme's `tabs.*` parts reach the same ones (`crates/purlis-core/docs/themes.md`,
 Session tabs). Choosing a tab changes its colour and fill only (`tabs.guard.test.ts`; the Docked
 story measures every tab before and after each choice).
@@ -2434,15 +2429,17 @@ model and a select-on-`mousedown` this window's strips do not have:
   the focused pane's controls before its terminal, and the status line last.
   `Window.keyboard.test.tsx` pins the whole sequence.
 
-`useTabStop` (`app/src/roving.ts`) is the one decision the primitive leaves open: which item is
+_History: `@radix-ui/react-roving-focus` and `useTabStop` (`app/src/roving.ts`) left with the last
+lists on them, the Inbox (#5995) and Settings' nav (#2930); every list, tree, strip and page
+navigation now takes its one Tab stop from its family. What follows is how it was wired._
+
+`useTabStop` was the one decision the primitive leaves open: which item is
 the stop before anyone has touched the group. Left alone it is none of them and the group's
 own element takes the stop. It is the selected item at rest, the item the keyboard is on while
 it is inside, and the selected one again when the keyboard leaves. A strip's own controls
 (`.strip-doing`, the `+`) are inside the group but are not its items, so reaching one is leaving.
-**A new list adopts it** by wrapping its container in `RovingFocusGroup.Root asChild` with the hook's props, and each
-item in `RovingFocusGroup.Item asChild tabStopId={…} active={…}`. A strip of tabs never does: its
-keyboard is the tabs family's (`useTabStrip`, with `TabStripRow` or `useTabStripRow`, #3134). The primitive stays visible at
-the call site, which is this file's rule.
+A new list takes its family's keyboard instead (the list, tree and tabs families, and the panel
+family's `ViewNav`).
 
 **Two things about wiring it that will catch the next person.** `useTabStop` has to be told
 every item that is DRAWN — a tab the strip collapsed into its menu, or a row inside a folded

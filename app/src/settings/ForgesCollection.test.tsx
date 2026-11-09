@@ -449,7 +449,7 @@ describe("Settings › Forges", () => {
     await userEvent.click(within(alert).getByRole("button", { name: "Fix it in Settings" }));
     expect(within(nav()).getByRole("button", { name: "Saving" })).toHaveAttribute(
       "aria-current",
-      "true",
+      "page",
     );
   });
 

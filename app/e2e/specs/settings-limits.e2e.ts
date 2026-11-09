@@ -52,7 +52,7 @@ async function goTo(level: string, group: string): Promise<void> {
           ...document.querySelectorAll<HTMLElement>('nav[aria-label="Groups"] button'),
         ].find((one) => one.textContent?.trim() === called);
         button?.click();
-        return button?.getAttribute("aria-current") === "true";
+        return button?.getAttribute("aria-current") === "page";
       }, group),
     { timeout: 20_000, interval: 250, timeoutMsg: `Settings never showed ${level} › ${group}` },
   );
