@@ -1161,3 +1161,76 @@ fn a_notice_nobody_waits_on_goes_unanswered_after_its_time_unless_answered() {
     let went = went_unanswered(&heard, Duration::from_millis(20), || Some(()));
     assert!(went.is_none(), "a close ends the watch");
 }
+
+// ---- A login's keys are judged before its notice (#5831) ----
+
+/// `qa/password` linked to `prod/password`: an entry of a vault `qa` may not use.
+fn linked_out_of_reach(root: &Path) {
+    std::fs::write(root.join("p.json"), r#"{"password":"n0t-yours"}"#).expect("vault prod");
+    let ctx = Ctx::new(root, Env::from_process());
+    let qa = purlis_core::secrets::cmd::provider(&ctx, "qa").expect("vault qa");
+    purlis_core::secrets::links::link(&ctx, &qa, "password", "prod", "password").expect("linked");
+}
+
+/// What the chat hears names the key and its own vault, never the other vault or its value.
+fn says_out_of_reach(why: &str) {
+    assert!(
+        why.contains("password in vault qa reads an entry of a vault qa may not use"),
+        "{why}"
+    );
+    assert!(!why.contains("prod"), "names no other vault: {why}");
+    assert!(!why.contains("n0t-yours"), "never the value: {why}");
+}
+
+/// A login that reads through a link into a vault its persona may not use is refused at the
+/// judge, so no notice asks the person to allow it, or to grant its vault, for a read that is
+/// then refused.
+#[test]
+fn a_login_with_a_key_out_of_reach_is_refused_before_its_notice() {
+    let dir = project("[sandbox]\nmode = \"on\"\n");
+    linked_out_of_reach(dir.path());
+
+    let refused = super::judged(
+        dir.path(),
+        "qa",
+        "shop-login",
+        &suggested("https://shop.example.test/login"),
+        &|_| panic!("no page is followed for a login that is refused"),
+        None,
+        &[],
+    )
+    .map(|_| ())
+    .expect_err("refused");
+
+    says_out_of_reach(&refused);
+}
+
+/// A link made while the notice waits is judged at the press: Always writes no line and grants
+/// nothing for a login whose read would be refused.
+#[test]
+fn a_login_linked_out_of_reach_while_its_notice_waits_is_refused_at_the_press() {
+    let dir = project("[sandbox]\nmode = \"on\"\n");
+    let grants = Grants::default();
+    let (id, proposal, heard) = raised(dir.path(), &grants, "https://shop.example.test/login");
+    linked_out_of_reach(dir.path());
+    let before = file_of(dir.path());
+    let audited = Audited::default();
+
+    let refused = answered(
+        dir.path(),
+        &grants,
+        &audited,
+        &press(id, Press::Always, &proposal.digest()),
+    )
+    .map(|_| ())
+    .expect_err("refused");
+
+    says_out_of_reach(&refused);
+    assert_eq!(file_of(dir.path()), before, "no line written");
+    assert!(tool_of(&grants, "shop-login").is_none(), "nothing allowed");
+    assert!(heard.try_recv().is_err(), "the chat still waits");
+    assert!(
+        purlis_core::sandbox::local::granted_vaults(dir.path()).is_empty(),
+        "no vault granted"
+    );
+}

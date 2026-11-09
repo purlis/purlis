@@ -284,3 +284,34 @@ fn every_key_a_run_hands_over_is_one_the_up_front_judge_sees() {
         ["ONE", "TWO", "THREE"]
     );
 }
+
+/// A fill's notice is judged before it is raised (#5831): a fill that reads through a link into a
+/// vault its persona may not use is refused at the judge, so the person is never asked to allow,
+/// or to grant the vault for, a fill that can only be refused.
+#[test]
+fn a_fill_with_a_key_out_of_reach_is_refused_before_its_notice() {
+    let project = project();
+    linked_out(project.path());
+    let ctx = Ctx::new(project.path(), Env::of(&[]));
+
+    let why = crate::secretfill::judged(&ctx, Some("qa"), "team", "MISSING").unwrap_err();
+
+    says_out_of_reach(&why, "qa");
+}
+
+/// The judge before the notice refuses only what the read would: a link into a vault the persona
+/// may use is offered, warned of as before where the fill's own vault is not its persona's.
+#[test]
+fn a_fill_through_a_link_into_a_vault_its_persona_may_use_is_still_offered() {
+    let project = project();
+    linked_out(project.path());
+    crate::sandbox::local::grant_vault(project.path(), "other", "qa").unwrap();
+    let ctx = Ctx::new(project.path(), Env::of(&[]));
+
+    let warned = crate::secretfill::judged(&ctx, Some("qa"), "team", "MISSING").expect("offered");
+
+    assert!(
+        warned.is_some_and(|warning| warning.contains("Vault team")),
+        "warned that team is not qa's"
+    );
+}
