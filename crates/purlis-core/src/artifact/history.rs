@@ -328,7 +328,8 @@ fn commits(real: &Path) -> Vec<Commit> {
             let at = parts.next()?.parse().ok()?;
             let by = parts.next()?.to_owned();
             let subject = parts.next().unwrap_or("").to_owned();
-            let named = matches!(hash.len(), 40 | 64) && hash.bytes().all(|b| b.is_ascii_hexdigit());
+            let named =
+                matches!(hash.len(), 40 | 64) && hash.bytes().all(|b| b.is_ascii_hexdigit());
             named.then_some(Commit {
                 hash,
                 at,
