@@ -7,6 +7,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -122,14 +123,20 @@ describe("the hooks the reporting harness reports", () => {
     );
     chmodSync(charter, 0o755);
     chmodSync(harness, 0o755);
-    execFileSync(writeReportingShell(harness, charter, namesItsConversation), { stdio: "ignore" });
-    return readFileSync(heard, "utf8")
-      .split("\n")
-      .filter((line) => line !== "")
-      .map((line) => {
-        const [hook, told] = line.split("\t");
-        return { hook, told };
+    try {
+      execFileSync(writeReportingShell(harness, charter, namesItsConversation), {
+        stdio: "ignore",
       });
+      return readFileSync(heard, "utf8")
+        .split("\n")
+        .filter((line) => line !== "")
+        .map((line) => {
+          const [hook, told] = line.split("\t");
+          return { hook, told };
+        });
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
   }
 
   it("names the conversation on each of them where it names one", () => {

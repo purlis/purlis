@@ -476,10 +476,10 @@ export function writeReportingShell(
   // first: a Codex chat runs sandboxed at the floor, where a line the app does not take within
   // its wait is lost, not spooled, and the app learns the conversation from whichever report
   // names it first. A stand-in that named it once lost it with that one line.
-  const told = (hook: string, event: string, more: Record<string, string> = {}) =>
+  const hookCommand = (hook: string, event: string, more: Record<string, string> = {}) =>
     namesItsConversation
-      ? `printf '%s' ${singleQuoted(JSON.stringify({ session_id: SCENARIO_CONVERSATION, hook_event_name: event, ...more }))} | ${JSON.stringify(charter)} hook ${hook}`
-      : `${JSON.stringify(charter)} hook ${hook} </dev/null`;
+      ? `printf '%s' ${singleQuoted(JSON.stringify({ session_id: SCENARIO_CONVERSATION, hook_event_name: event, ...more }))} | ${singleQuoted(charter)} hook ${hook}`
+      : `${singleQuoted(charter)} hook ${hook} </dev/null`;
   const where = join(THE_RUNS_TREE, "shells");
   mkdirSync(where, { recursive: true });
   const shell = join(where, "reporting-harness-as-a-shell");
@@ -500,10 +500,10 @@ export function writeReportingShell(
       // Codex and opencode name their conversation, on every hook, and a chat with none has
       // nothing to restart on (`wdio.outcome.conf.ts`).
       ...(namesItsConversation
-        ? [`${told("sessionstart", "SessionStart", { source: "startup" })} >/dev/null`]
+        ? [`${hookCommand("sessionstart", "SessionStart", { source: "startup" })} >/dev/null`]
         : []),
       "# The turn's rising edge, before a byte of output exists.",
-      told("userpromptsubmit", "UserPromptSubmit"),
+      hookCommand("userpromptsubmit", "UserPromptSubmit"),
       `exec ${JSON.stringify(fakeHarness)} \\`,
       "  --synthetic 4096 \\",
       "  --wait-for-input \\",
@@ -513,7 +513,7 @@ export function writeReportingShell(
       `  --hook ${singleQuoted(permissionHook(charter))} \\`,
       `  --hook ${singleQuoted(skillHook(charter))} \\`,
       `  --hook ${singleQuoted(secretHook(charter))} \\`,
-      `  --hook ${singleQuoted(`[ -f ${singleQuoted(USES_A_SKILL)} ] || ${told("stop", "Stop")}`)} \\`,
+      `  --hook ${singleQuoted(`[ -f ${singleQuoted(USES_A_SKILL)} ] || ${hookCommand("stop", "Stop")}`)} \\`,
       "  --interactive",
       "",
     ].join("\n"),
