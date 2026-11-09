@@ -892,6 +892,10 @@ export const ComposingInARowsBox: Story = {
     await tabsOutAndBack(list, host, userEvent, "Composing");
     await userEvent.keyboard("{ArrowRight}");
     await untilFocused(box, "Composing: the box holds the keyboard for the picture");
+    // Tab out passed through the box, which a Tab into selects all of: End leaves its words as
+    // they were typed, the caret after them.
+    await userEvent.keyboard("{End}");
+    await untilFocused(box, "Composing: End keeps the keyboard in the box");
     expectFocusInSight();
   },
 };
