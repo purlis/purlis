@@ -956,3 +956,62 @@ fn a_backdrop_drawn_through_a_filter_that_keeps_it_in_its_box_does_not_withhold_
 
     assert!(shot.is_ok(), "{shot:?}");
 }
+
+/// The page's Secret word field (node 21), drawn with `field`'s shadow, and a line (node 120)
+/// saying `said`, drawn with `line`'s.
+fn shadows(engine: &super::Engine, field: &str, said: &str, line: &str) {
+    let mut page = Document::new("PAGE-1");
+    let input = page.element(21, None, "INPUT");
+    page.node(input).laid_out = Some((None, vec![("text-shadow".into(), field.into())]));
+    let paragraph = page.element(120, None, "P");
+    page.node(paragraph).laid_out = Some((None, vec![("text-shadow".into(), line.into())]));
+    page.text(121, paragraph, said);
+    draws(engine, "S-PAGE-1", &page, &[(120, [8.0, 8.0, 9.0, 9.0])]);
+}
+
+#[test]
+fn a_screenshot_is_withheld_when_a_blanked_field_casts_a_shadow_past_what_is_painted() {
+    let (browser, engine) = browser();
+    shadows(&engine, "rgb(0, 0, 0) 40px 0px 0px", "Welcome back", "none");
+    keep_out_the_secret(&browser);
+
+    let shot = browser.call(&id(1), Call::Screenshot { page: None });
+
+    assert!(matches!(shot, Err(Refusal::Withheld(_))), "{shot:?}");
+}
+
+#[test]
+fn text_that_shows_what_was_kept_out_casting_a_shadow_past_its_paint_withholds_the_screenshot() {
+    for shadow in [
+        "rgb(0, 0, 0) 0px 0px 0px, rgba(255, 0, 0, 0.5) 0px 3px 10px",
+        "rgb(0, 0, 0) -30px 0px 0px",
+        "rgb(0, 0, 0) 0px 0px 1em",
+    ] {
+        let (browser, engine) = browser();
+        shadows(&engine, "none", "You said open sesame", shadow);
+        keep_out_the_secret(&browser);
+
+        let shot = browser.call(&id(1), Call::Screenshot { page: None });
+
+        assert!(
+            matches!(shot, Err(Refusal::Withheld(_))),
+            "{shadow}: {shot:?}"
+        );
+    }
+}
+
+#[test]
+fn a_shadow_within_the_paint_or_on_text_that_shows_nothing_kept_out_does_not_withhold_it() {
+    let (browser, engine) = browser();
+    shadows(
+        &engine,
+        "rgb(0, 0, 0) 1px 0px 0px",
+        "Welcome back",
+        "rgb(0, 0, 0) 40px 40px 9px",
+    );
+    keep_out_the_secret(&browser);
+
+    let shot = browser.call(&id(1), Call::Screenshot { page: None });
+
+    assert!(shot.is_ok(), "{shot:?}");
+}

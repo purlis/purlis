@@ -17,8 +17,9 @@
 //! what they show cannot be read, so they are painted whatever they show.
 //!
 //! An answer purlis cannot read, a page that draws a reflection, one that draws a frame or a
-//! blanked element through a filter that may draw it elsewhere, or one that draws a backdrop
-//! through a filter of its own (`backdrop-filter: url(…)`), withholds the screenshot.
+//! blanked element through a filter that may draw it elsewhere, one that draws a backdrop
+//! through a filter of its own (`backdrop-filter: url(…)`), or one that casts the shadow of a
+//! blanked element's or a painted text's letters past what is painted, withholds the screenshot.
 
 use std::collections::HashSet;
 
@@ -27,9 +28,9 @@ use serde_json::Value;
 use super::scrub::{holds_any, holds_loosely};
 
 /// The styles read for each element laid out: an image in any of the first six is painted over,
-/// a filter or a backdrop filter (the two after them) may withhold the screenshot, and a
-/// reflection (the last) withholds it.
-pub(crate) const STYLES: [&str; 9] = [
+/// a filter, a backdrop filter or a text's shadow (the three after them) may withhold the
+/// screenshot, and a reflection (the last) withholds it.
+pub(crate) const STYLES: [&str; 10] = [
     "background-image",
     "border-image-source",
     "mask-image",
@@ -38,12 +39,18 @@ pub(crate) const STYLES: [&str; 9] = [
     "content",
     "filter",
     "backdrop-filter",
+    "text-shadow",
     "-webkit-box-reflect",
 ];
 
 /// Filters that may draw an element away from its box: a frame or a blanked element drawn
 /// through one, itself or by an element it is in, withholds the screenshot.
 const FILTERS_THAT_MOVE: [&str; 2] = ["url(", "drop-shadow"];
+
+/// How far past its box, in CSS pixels, a text's shadow may be drawn and still lie under the
+/// paint: the margin `Placing::on_picture` (in `browser.rs`) paints around each box is two
+/// pixels of the picture, which is one CSS pixel on a screen of twice the density.
+const SHADOW_UNDER_THE_PAINT: f64 = 1.0;
 
 /// Elements that show what no read of the page can tell: painted whatever they show.
 const OPAQUE: [&str; 7] = [
@@ -227,6 +234,8 @@ fn read_document(
     // The text each node lays out itself.
     let mut own: Vec<String> = vec![String::new(); count];
     let mut filtered = vec![false; count];
+    // How far past its box each element draws its text's shadow.
+    let mut shadowed = vec![0.0_f64; count];
     for (entry, node) in laid.iter().enumerate() {
         let at = node_at(*node)?;
         shown.insert(at);
@@ -248,13 +257,14 @@ fn read_document(
             [] if kinds[at] != ELEMENT => vec![String::new(); STYLES.len()],
             _ => style,
         };
-        let [images @ .., filter, backdrop, reflected] = style.as_slice() else {
+        let [images @ .., filter, backdrop, shadow, reflected] = style.as_slice() else {
             return Err(Unread("an element has no styles"));
         };
-        if images.len() + 3 != STYLES.len() {
+        if images.len() + 4 != STYLES.len() {
             return Err(Unread("an element has styles missing"));
         }
         filtered[at] = FILTERS_THAT_MOVE.iter().any(|moves| filter.contains(moves));
+        shadowed[at] = shadow_reach(shadow);
         if !reflected.is_empty() && reflected != "none" {
             return Err(Unread("the page draws a reflection"));
         }
@@ -370,7 +380,74 @@ fn read_document(
             paint(list, out);
         }
     }
+    // A blanked element, and text painted for what it shows, cast no shadow past the paint: a
+    // text's shadow is drawn in the style of the element the text is in.
+    let blanked_at = backends
+        .iter()
+        .enumerate()
+        .filter(|(_, b)| blanked.contains(b));
+    for at in painted.iter().copied().chain(blanked_at.map(|(at, _)| at)) {
+        let mut styled = Some(at);
+        let mut steps = 0;
+        while let Some(one) = styled.filter(|one| kinds[*one] != ELEMENT && steps <= count) {
+            styled = parent(one);
+            steps += 1;
+        }
+        if styled.is_some_and(|one| shadowed[one] > SHADOW_UNDER_THE_PAINT) {
+            return Err(Unread(
+                "the page draws a text's shadow past what is painted",
+            ));
+        }
+    }
     Ok(())
+}
+
+/// How far past its box `shadow`, a computed `text-shadow`, draws its text, in CSS pixels: the
+/// furthest any of its shadows reaches across or down, its offset and its blur. Endless when it
+/// cannot be read.
+fn shadow_reach(shadow: &str) -> f64 {
+    if shadow.is_empty() || shadow == "none" {
+        return 0.0;
+    }
+    let mut furthest = 0.0_f64;
+    let mut depth = 0_usize;
+    // Each shadow's words outside any parentheses (its colour's numbers are inside them).
+    let mut words = String::new();
+    for c in shadow.chars().chain([',']) {
+        match c {
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                let mut lengths = Vec::new();
+                for word in words.split_whitespace() {
+                    if word.starts_with(|c: char| c.is_ascii_alphabetic()) {
+                        continue;
+                    }
+                    match word.strip_suffix("px").unwrap_or(word).parse::<f64>() {
+                        Ok(length)
+                            if length.is_finite() && (word.ends_with("px") || length == 0.0) =>
+                        {
+                            lengths.push(length.abs());
+                        }
+                        _ => return f64::INFINITY,
+                    }
+                }
+                let [across, down, blur @ ..] = lengths.as_slice() else {
+                    return f64::INFINITY;
+                };
+                let blur = match blur {
+                    [] => 0.0,
+                    [blur] => *blur,
+                    _ => return f64::INFINITY,
+                };
+                furthest = furthest.max(across.max(*down) + blur);
+                words.clear();
+            }
+            _ if depth == 0 => words.push(c),
+            _ => {}
+        }
+    }
+    furthest
 }
 
 /// A list of numbers of `of`, by `field`.
