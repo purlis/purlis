@@ -379,7 +379,7 @@ fn a_claim_is_admitted_only_for_someone_the_cluster_lets_use_its_pool() {
     // only when it runs a stopped claim again.
     assert_eq!(strings(&rules[0]["operations"]), ["CREATE", "UPDATE"]);
     let validations = spec["validations"].as_array().expect("validations");
-    assert_eq!(validations.len(), 8, "{spec}");
+    assert_eq!(validations.len(), 9, "{spec}");
     let expression = |at: usize| {
         validations[at]["expression"]
             .as_str()

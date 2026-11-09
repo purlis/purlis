@@ -4030,7 +4030,9 @@ fn a_container_made_the_pools_way_passes_with_every_field_its_engine_writes() {
     for host in ["docker-apparmor", "podman-rootful", "podman-rootless"] {
         let full = recorded(host, "made-full");
         assert!(
-            full[0]["HostConfig"].as_object().is_some_and(|fields| fields.len() > 40),
+            full[0]["HostConfig"]
+                .as_object()
+                .is_some_and(|fields| fields.len() > 40),
             "{host}: recorded whole, not cut to the fields the check reads"
         );
         let passed = checked_on_its_engine(host, &full);

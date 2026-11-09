@@ -2208,10 +2208,9 @@ fn a_chat_started_before_a_cluster_pool_was_added_is_told_to_restart_for_it() {
     assert_eq!(older_on(&chats), None, "no pool yet");
 
     // The pool is added while the chat runs.
-    let folder = purlis_same_user::PrivateDirectory::open(&purlis_core::machine::dir(
-        config.path(),
-    ))
-    .expect("the config folder");
+    let folder =
+        purlis_same_user::PrivateDirectory::open(&purlis_core::machine::dir(config.path()))
+            .expect("the config folder");
     let file = serde_json::json!({ "version": 1, "runners": [], "pools": [{
         "name": "team", "kind": "cluster", "kubeconfig": "/home/op/.kube/config",
         "context": "team", "pool": "default", "namespace": "ada",
@@ -2226,13 +2225,25 @@ fn a_chat_started_before_a_cluster_pool_was_added_is_told_to_restart_for_it() {
         )
         .expect("the pool kept");
     let behind = older_on(&chats).expect("told");
-    assert_eq!(behind.sessions(), [session], "it runs without the pool's holds");
-    assert_eq!(behind.chats[0].pool.as_deref(), Some(POOL_ADDED), "the pool is why");
+    assert_eq!(
+        behind.sessions(),
+        [session],
+        "it runs without the pool's holds"
+    );
+    assert_eq!(
+        behind.chats[0].pool.as_deref(),
+        Some(POOL_ADDED),
+        "the pool is why"
+    );
 
     chats.ask_restart(session).expect("asked");
     let started = chats.restart(session, SIZE).expect("restarts");
     chats.close(session).expect("the old run ends");
-    assert_eq!(older_on(&chats), None, "restarted, it holds the pool's programs");
+    assert_eq!(
+        older_on(&chats),
+        None,
+        "restarted, it holds the pool's programs"
+    );
     chats.close(started).expect("ends");
 }
 

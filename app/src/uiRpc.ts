@@ -8550,6 +8550,12 @@ export type OnOlderSandbox = {
 	 *  None where the project's settings moved it.
 	 */
 	policy?: string | null,
+	/**
+	 *  **Where a cluster pool added since the chat started is the only cause** (#1750): the chat's
+	 *  sandbox does not yet keep it from changing the programs that pool runs, which it holds
+	 *  once it restarts. The sentence the Notice says it in ([`POOL_ADDED`]). None otherwise.
+	 */
+	pool?: string | null,
 };
 
 /**  The welcome's three doors. */

@@ -75,7 +75,7 @@ export function CloneVouchNotice({
         <code>{clone.folder}</code> was not cloned by purlis. Its remote is <code>{place}</code>. If
         you made this clone yourself, trust it so chats in this workspace can use your{" "}
         {accessOn(place)} access with it.
-        {refused !== undefined && ` ${refused}`}
+        {refused !== undefined && ` ${refused.endsWith(".") ? refused : `${refused}.`}`}
       </p>
     </Notice>
   );
