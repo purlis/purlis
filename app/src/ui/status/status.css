@@ -360,14 +360,16 @@ footer[data-scope="status-bar"] {
 
 /* **The Notices item's "new" pip** (ADR 0121 decision 10, #6004): a project's or the app's result
    the person has not seen, in place of the card that came by itself. The chip's pip
-   (`titlebar.css`): an 8px dot in the accent, ringed in the bar's own ground, over the item's lower
-   trailing corner, inside the bar, which clips what leaves it. Laid over the slot, so it coming and
-   going moves nothing; a press goes through it to the item. */
+   (`titlebar.css`): an 8px dot in the accent, ringed in the bar's own ground, in the room the
+   Notices slot keeps after the item (`.status-notices`), level with its word and over none of it.
+   The room is kept with the pip or without, so it coming and going moves nothing; a press goes
+   through it. */
 [data-part="pip"][data-scope="status-item"] {
   position: absolute;
   z-index: 1;
-  inset-block-end: var(--space-1);
+  inset-block: 0;
   inset-inline-end: var(--space-1);
+  margin-block: auto;
   box-sizing: border-box;
   inline-size: 8px;
   block-size: 8px;

@@ -234,8 +234,12 @@ describe("a file or folder row's actions (FM-10)", () => {
 
       await fromTheMenu("README.md", "Open in your editor");
       const words = await findResult("Choose your editor in Settings first.");
-      // A closable notice in the trouble tone, said once as a polite status (#3344).
-      expect(words.closest('[role="status"]')).not.toBeNull();
+      // A closable notice in the trouble tone, said once as a polite status (#3344): by the
+      // window's own line, since its card comes only on its dot's press (#6004).
+      expect(words).toBeInTheDocument();
+      expect(screen.getByTestId("said-aloud")).toHaveTextContent(
+        "Choose your editor in Settings first.",
+      );
       const said = theResult();
       await userEvent.click(within(said).getByRole("button", { name: "Choose your editor" }));
 

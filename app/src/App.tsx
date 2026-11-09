@@ -49,7 +49,7 @@ import { ReportConsentAsk } from "./ReportConsent";
 import { ReportCrashNotice } from "./ReportCrashNotice";
 import { ForgeSignInEnded } from "./ForgeSignInEnded";
 import { AddDockerPoolHost } from "./AddDockerPool";
-import { ActionResultNotice, ResultsGroup } from "./ActionResultNotice";
+import { ActionResultNotice, ResultsGroup, SaidAloud } from "./ActionResultNotice";
 import {
   AT_STATUS,
   dormantCause,
@@ -88,7 +88,7 @@ import {
 } from "./actions";
 import { useScreenReaderMode } from "./screenReader";
 import { useLatestSaid } from "./latestSaid";
-import { resultsFor, useKeptResults } from "./keptResults";
+import { passing, resultsFor, useKeptResults } from "./keptResults";
 import { useAlerts } from "./alerts";
 import { LAYOUT_FIX, LAYOUT_FIX_LABEL, type InboxAlertsDo, type WindowAlerts } from "./InboxAlerts";
 import { useAlertFix } from "./alertFix";
@@ -1687,6 +1687,12 @@ function App() {
   /** Every result said, kept for the Inbox's Notices under Results (#3344). */
   const { kept: keptResults, drop: dropResult } = useKeptResults(said, inFront);
   const resultsInFront = useMemo(() => resultsFor(keptResults, inFront), [keptResults, inFront]);
+  /** The newest result while it stands (#6004): kept, or a line still under way. Said aloud
+   *  until it is dismissed, wherever it is dismissed. */
+  const saidStanding =
+    said !== undefined && (passing(said) || keptResults.some((one) => one.said === said))
+      ? said
+      : undefined;
   /** The title bar's chips of the project in front, which a notice about a workspace hangs from
    *  (#3648, `noticePlace.ts`). */
   const workspacesInFront = inFront === undefined ? undefined : reports[inFront]?.workspaces;
@@ -2922,6 +2928,9 @@ function App() {
                 onSettings={followSaid}
               />
             )}
+            {/* Said aloud while a project is in front, whose card no longer comes (#6004): with
+            none, the notice at the top of the page says it. */}
+            {inFront !== undefined && <SaidAloud said={saidStanding} />}
             {resultsAt !== null && inFront !== undefined && (
               <ResultsGroup
                 kept={resultsInFront}

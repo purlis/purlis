@@ -29,6 +29,7 @@ export function ActionResultNotice({
   onSettings,
   cause,
   kept = false,
+  quiet = false,
   escape = true,
   opens,
   refocus,
@@ -48,6 +49,9 @@ export function ActionResultNotice({
    *  then no box of its own, since the notice is drawn in the list's place, and it is no live
    *  region, since the notice at the top said it already. */
   kept?: boolean;
+  /** **No live region**: the window said it already, in its own (`SaidAloud`, #6004), as it
+   *  was said: a chip's card, opened later by its dot's press, says nothing again. */
+  quiet?: boolean;
   said: Said;
   onClose: () => void;
   onSettings: (link: SettingsLink) => void;
@@ -150,7 +154,7 @@ export function ActionResultNotice({
         running={said.progress}
         title={title}
         // A kept copy is said by the notice that stood at the top already: never twice.
-        quiet={kept}
+        quiet={kept || quiet}
         fixes={fixes.length === 0 ? undefined : (fixes as [NoticeAction, ...NoticeAction[]])}
         link={link}
         onDismiss={onClose}
@@ -212,3 +216,18 @@ export function ResultsGroup({
 
 /** What the kept results are called in the Inbox's Notices. */
 export const RESULTS = "Results";
+
+/**
+ * **What the window says of a result, aloud** (WCAG 4.1.3; ADR 0121 decision 1, #6004): no card
+ * comes by itself any more, so the newest result a press answered is said here, once, politely,
+ * in a line no one sees. Its notice waits behind its dot and is listed under Results, neither of
+ * which says it again. Always drawn, so a screen reader hears what comes into it.
+ */
+export function SaidAloud({ said }: { said: Said | undefined }) {
+  const { title, says } = said === undefined ? { title: "", says: undefined } : resultOf(said);
+  return (
+    <p role="status" className="sr-only" data-testid="said-aloud">
+      {said === undefined ? "" : says === undefined ? title : `${title} ${says}`}
+    </p>
+  );
+}

@@ -1070,10 +1070,10 @@ describe("the explorer", () => {
     });
     expect(dropped).toBe(true);
 
-    // What the action answered: its notice on the card that pops from the status bar's Notices
-    // item (#3653), or at the top of the opener's page with no project in front (#3344).
+    // What the action answered: said aloud by the window's own line, since no card pops from the
+    // status bar any more (#6004), or at the top of the opener's page with no project in front.
     const said = await $(
-      '[data-chip="status/bar/notices"] > .action-result [role="status"], .window-work > .action-result [role="status"]',
+      '[data-testid="said-aloud"], .window-work > .action-result [role="status"]',
     );
     await said.waitForExist({ timeout: 20_000 });
     await expect(said).toHaveText(expect.stringContaining("Nothing was sent."));

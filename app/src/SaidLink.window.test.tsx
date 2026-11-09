@@ -106,8 +106,9 @@ describe("a refusal's way to its setting (#1201)", () => {
       // On the new workspace's chip's card (#3649), with Retry beside the way to its Repos.
       const said = await findOnCard("gamma", /Could not clone api into gamma/);
       expect(within(said).getByRole("button", { name: "Retry" })).toBeInTheDocument();
-      // A closable notice in the trouble tone, said once as a polite status (#3344).
-      expect(said.querySelector('[role="status"]')).not.toBeNull();
+      // A closable notice in the trouble tone, said once as a polite status (#3344): by the
+      // window's own line, since its card comes only on its dot's press (#6004).
+      expect(screen.getByTestId("said-aloud")).toHaveTextContent(/Could not clone api into gamma/);
       await userEvent.click(
         within(said).getByRole("button", { name: "Open gamma's repo settings" }),
       );

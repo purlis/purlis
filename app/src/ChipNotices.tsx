@@ -489,6 +489,8 @@ export function ChipCard({
               onClose={() => dismissOne(one, does)}
               onSettings={does.onSettings}
               escape={false}
+              // Said once as it was said, by the window's own line (`SaidAloud`, #6004).
+              quiet
               // A way that goes from under the keyboard hands it to the card (#3649's review).
               refocus={() => region.current}
             />
