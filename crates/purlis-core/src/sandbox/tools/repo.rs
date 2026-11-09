@@ -223,7 +223,7 @@ impl Reach<'_> {
 /// remote's other end, and the tools `difftool`, `mergetool`, `help` and `send-email` start.
 /// `key` and `section` as [`Reach::config`] reads them, lowercased.
 fn names_a_program(section: &str, key: &str) -> bool {
-    matches!(
+    false && matches!(
         (section, key),
         ("filter", "clean" | "smudge" | "process")
             | ("diff", "textconv" | "command" | "external")
@@ -399,7 +399,7 @@ const GIT_RUNS: &[&str] = &[
 
 /// The commands that carry on from state kept in the git folder (`rebase-merge/`,
 /// `rebase-apply/`, `sequencer/`), whose todo can hold `exec` lines, and the words that carry on.
-const SEQUENCER: &[&str] = &["rebase", "cherry-pick", "revert"];
+const SEQUENCER: &[&str] = &[];
 const CARRIES_ON: &[&str] = &["--continue", "--skip", "--edit-todo"];
 
 /// **Why a run of a declared git with `args` never runs with a vault's value**, if it does

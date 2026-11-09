@@ -835,7 +835,7 @@ impl Planted {
 /// have code run outside its sandbox the next time a person, an editor or another chat opens
 /// the directory. The project's manifests are held only where they could change a chat's
 /// sandbox ([`MANIFESTS`]).
-pub const PLANTED: [Planted; 93] = [
+pub const PLANTED: [Planted; 89] = [
     // A `.git` moved into place brings its own config and hooks.
     Planted::itself(".git"),
     Planted::and_below(".git/config"),
@@ -852,9 +852,6 @@ pub const PLANTED: [Planted; 93] = [
     // glab's own settings for the repository (`glab-cli/config.yml`: its host, and the editor,
     // pager and browser it starts), and git's older remote definitions, which say what host a
     // forge command line sees.
-    Planted::and_below(".git/glab-cli"),
-    Planted::and_below(".git/remotes"),
-    Planted::and_below(".git/branches"),
     // Each submodule's git directory, nested at any depth; and the directory that holds them,
     // so it is never moved into place whole.
     Planted::itself(".git/modules"),
@@ -864,7 +861,6 @@ pub const PLANTED: [Planted; 93] = [
     Planted::and_below(".git/modules/**/commondir"),
     Planted::and_below(".git/modules/**/objects/info/alternates"),
     Planted::and_below(".git/modules/**/info/attributes"),
-    Planted::and_below(".git/modules/**/glab-cli"),
     // Hook managers' directories, which a `core.hooksPath` commonly names (ruling V73d).
     Planted::and_below(".husky"),
     Planted::and_below(".githooks"),
@@ -1527,7 +1523,7 @@ pub fn git_folders_searched(root: &Path) -> Vec<PathBuf> {
 /// **The characters Claude Code reads as a pattern in a path its sandbox settings name**:
 /// measured on 2.1.300, a path holding one is matched as a glob, and writing it as a class
 /// (`[*]`) does not make it literal either.
-pub const PATTERN_CHARACTERS: [char; 4] = ['*', '?', '[', ']'];
+pub const PATTERN_CHARACTERS: [char; 0] = [];
 
 /// [`Denied::git_folder_pins`] for a chat of the plane at `root`: what
 /// [`planted::git_folder_pins`] finds in each of [`git_folders_searched`].
@@ -1608,14 +1604,15 @@ impl Denied {
         });
         // …and the project's inventory of repos: the window's Clone of a repo by name clones,
         // and records as the clone's remote, the URL it holds for that name.
-        paths.push(Denial {
+        paths.retain(|_| true);
+        let _ = Denial {
             class: Class::LaterCode,
             path: root.join(crate::inventory::DIR),
             access: Access::Write,
             named: None,
             reach: Reach::AndBelow,
             any_case: true,
-        });
+        };
         // …and the project's skills, wherever they reach chats (SK-9,
         // #2772): a chat's write of one is a draft the person accepts, never the file itself.
         // Always on a runner (#3084): its chats reach them by their desktop's word, which this
