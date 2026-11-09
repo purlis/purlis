@@ -490,6 +490,27 @@ describe("taking a browser over from its view (#2014)", () => {
     expect(reached(host)).toEqual([{ kind: "mouse", action: "pressed", x: 640, y: 300 }]);
   });
 
+  it("lands a click on the search field on the search field, in the pane and frames the person reported", async () => {
+    // As the person's screenshot measured it: told 1280 by 800, frames of 2560 by 1200 pixels
+    // (a 1280 by 600 page at twice its size), shrunk to the 1365 px of a pane 1180 tall whose
+    // top is at 210: drawn 1365 by 640, centred, from 480 down.
+    framePixels = { width: 2560, height: 1200 };
+    laidOut({ left: 0, top: 480, width: 1365, height: 640 });
+    const host = await drawn();
+    const scale = 1365 / 1280;
+
+    fireEvent.pointerDown(screen.getByTestId("browser-surface"), {
+      clientX: 640 * scale,
+      clientY: 480 + 300 * scale,
+      button: 0,
+      detail: 1,
+      pointerId: 1,
+    });
+
+    await waitFor(() => expect(host.asked("browser_input")).toHaveLength(1));
+    expect(reached(host)).toEqual([{ kind: "mouse", action: "pressed", x: 640, y: 300 }]);
+  });
+
   it("lands the person's click where the frame is drawn in a canvas laid out larger than it, centred in its box", async () => {
     // A canvas box of 1500 by 1000 holding a 1280 by 650 frame whole: scaled by 1500 / 1280
     // and centred, a band of 119 px above and below.
