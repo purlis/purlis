@@ -545,26 +545,42 @@ export function StartChat({
   // in decides, so it reads what the dialog shows then, never what it showed at the press.
   const [filled, setFilled] = useState<{ key: string; profile: string; fill: number }>();
   const wentOn = useRef(0);
+  // Whether what the ask was last told is its answer's (a refusal, or a send that failed), never a
+  // hint about its own boxes: only that is said while the ask waits for its profile (#5670 review).
+  const [saidOfAnswer, setSaidOfAnswer] = useState(false);
   const answerAsk = (option: Offered, given: () => SecretAskGiven) => {
     // Nor while a limit saves: a fill landing then could not go on (#5670 review).
     if (ask === undefined || askBusy || savingLimit) return;
     const key = ask.ask.secret?.key ?? "";
     const forProfile = ask.profile;
     const onSaidOf = ask.onSaid;
+    // Whether the send read a typed value, which its box gives up as it is read.
+    let typed = false;
+    const read = () => {
+      const got = given();
+      typed = got.typed !== undefined && got.typed !== "";
+      return got;
+    };
     setFilled(undefined);
+    setSaidOfAnswer(false);
     setAnswering(true);
     void ask
-      .onAnswer(option, given)
+      .onAnswer(option, read)
       .then((ended) => {
         if (ended === "filled" && open.current)
           setFilled({ key, profile: forProfile, fill: wentOn.current + 1 });
+        if (ended === "refused") setSaidOfAnswer(true);
       })
-      // An answer that never reached the core says so, and the ask can be answered again.
+      // An answer that never reached the core says so, and what to press: the same answer again,
+      // with the value typed again where its box gave it up (#5670 review).
       .catch((why: unknown) => {
-        if (open.current)
-          onSaidOf(
-            `purlis could not send your answer: ${(why instanceof Error ? why.message : String(why)).replace(/\.$/, "")}. Type the value again and press Fill.`,
-          );
+        if (!open.current) return;
+        const what = (why instanceof Error ? why.message : String(why)).replace(/\.$/, "");
+        const again = typed
+          ? `Type the value again and press ${option.label}.`
+          : `Press ${option.label} again.`;
+        setSaidOfAnswer(true);
+        onSaidOf(`purlis could not send your answer: ${what}. ${again}`);
       })
       .finally(() => setAnswering(false));
   };
@@ -590,7 +606,7 @@ export function StartChat({
   // The refusal still shown, where its ask waits for a profile no longer picked (#5670 review).
   const askElsewhere =
     secretAsk !== undefined && ask === undefined && trouble !== undefined && !askBusy
-      ? `That refusal is for ${secretAsk.profile}: pick it again to fill ${secretAsk.ask.secret?.key ?? "its key"} here.`
+      ? `Pick ${secretAsk.profile} again to fill ${secretAsk.ask.secret?.key ?? "its key"} here.`
       : undefined;
   // Once the details are in, a Start pressed early goes, where it is a plain start; an approval
   // or a start without the sandbox is shown instead, and is a press of its own (ADR 0097 §6).
@@ -946,7 +962,10 @@ export function StartChat({
                 {refusalSaid}
                 {/* Said with it, so a screen reader hears what the ask's last press was told and
                   whose ask it is, while the ask waits for its own profile (#5670 review). */}
-                {ask === undefined && secretAsk?.said !== undefined && ` ${secretAsk.said}`}
+                {ask === undefined &&
+                  saidOfAnswer &&
+                  secretAsk?.said !== undefined &&
+                  ` ${secretAsk.said}`}
                 {askElsewhere !== undefined && ` ${askElsewhere}`}
               </p>
             )}
@@ -959,7 +978,10 @@ export function StartChat({
                 entries={ask.entries}
                 busy={askBusy || starting || savingLimit}
                 onAnswer={answerAsk}
-                onSaid={ask.onSaid}
+                onSaid={(said) => {
+                  setSaidOfAnswer(false);
+                  ask.onSaid(said);
+                }}
                 start={{ variable: ask.variable }}
               />
             )}

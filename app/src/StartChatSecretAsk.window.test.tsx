@@ -249,7 +249,7 @@ describe("a start missing its profile credential, in the Start dialog (#5137)", 
     await waitFor(() => expect(of("answer_secret_ask")).toHaveLength(1));
     await user.click(within(dialog).getByRole("radio", { name: /codex/ }));
     // While the fill is sent, the dialog never asks for it to be filled again.
-    expect(dialog.textContent).not.toContain("That refusal is for");
+    expect(dialog.textContent).not.toContain("Pick work-key again");
     release();
 
     expect(await within(dialog).findByText("Filled anthropic for work-key.")).toHaveAttribute(
@@ -286,6 +286,22 @@ describe("a start missing its profile credential, in the Start dialog (#5137)", 
     );
   });
 
+  it("a hint for the hidden ask's own boxes is not said once another profile is picked (#5670 review)", async () => {
+    core();
+    render(<App />);
+
+    const { user, dialog, body } = await startRefused();
+    await user.click(within(body).getByRole("checkbox", { name: /^Remember/ }));
+    const purpose = within(body).queryByRole("textbox", { name: /for/i });
+    if (purpose) await user.clear(purpose);
+    await user.click(within(body).getByRole("button", { name: "Fill" }));
+    await waitFor(() => expect(dialog.textContent).toContain("or untick Remember."));
+    await user.click(within(dialog).getByRole("radio", { name: /codex/ }));
+
+    await waitFor(() => expect(within(dialog).queryByTestId("secret-ask")).toBeNull());
+    expect(dialog.textContent).not.toContain("or untick Remember.");
+  });
+
   it("a pick of another profile drops the refused profile's ask, and picking it back draws it again (#5670)", async () => {
     core();
     render(<App />);
@@ -299,9 +315,7 @@ describe("a start missing its profile credential, in the Start dialog (#5137)", 
     const refusal = within(dialog)
       .getAllByRole("alert")
       .find((one) => one.textContent?.includes("fill it from the Secret ask in the Inbox"));
-    expect(refusal).toHaveTextContent(
-      "That refusal is for work-key: pick it again to fill anthropic here.",
-    );
+    expect(refusal).toHaveTextContent("Pick work-key again to fill anthropic here.");
     await user.click(within(dialog).getByRole("radio", { name: /work-key/ }));
     expect(
       await within(dialog).findByRole("group", {

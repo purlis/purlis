@@ -2461,7 +2461,12 @@ describe("the start's Secret ask while the window sends its answer (#5670)", () 
 });
 
 describe("the start's Secret ask, with what else the dialog offers (#5670 review)", () => {
-  const ask = (over: { busy?: boolean; onAnswer?: () => Promise<"filled" | "refused"> } = {}) => ({
+  const ask = (
+    over: {
+      busy?: boolean;
+      onAnswer?: (option: unknown, given: () => unknown) => Promise<"filled" | "refused">;
+    } = {},
+  ) => ({
     ask: secretAsk({ persona: "steward", vault: "providers", key: "anthropic" }),
     profile: "claude",
     variable: "ANTHROPIC_API_KEY",
@@ -2625,7 +2630,10 @@ describe("the start's Secret ask, with what else the dialog offers (#5670 review
   it("an answer that fails says so, and lets the ask be answered again", async () => {
     const onSaid = vi.fn();
     // A message that ends in a full stop is said with one.
-    const onAnswer = vi.fn(() => Promise.reject(new Error("the app went away.")));
+    const onAnswer = vi.fn((_option: unknown, given: () => unknown) => {
+      given();
+      return Promise.reject(new Error("the app went away."));
+    });
     render(
       <StartChat
         options={options()}
@@ -2646,6 +2654,55 @@ describe("the start's Secret ask, with what else the dialog offers (#5670 review
       ),
     );
     expect(screen.getByRole("button", { name: "Fill" })).not.toHaveAttribute("aria-disabled");
+  });
+
+  it("a Not now that fails says to press Not now again, never to fill", async () => {
+    const onSaid = vi.fn();
+    render(
+      <StartChat
+        options={options()}
+        trouble="nothing was started"
+        secretAsk={{
+          ...ask({ onAnswer: () => Promise.reject(new Error("the app went away")) }),
+          onSaid,
+        }}
+        onStart={vi.fn()}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    await userEvent.setup().click(screen.getByRole("button", { name: "Not now" }));
+
+    await waitFor(() =>
+      expect(onSaid).toHaveBeenCalledWith(
+        "purlis could not send your answer: the app went away. Press Not now again.",
+      ),
+    );
+  });
+
+  it("a fill that sent no typed value and fails says to press Fill again, with nothing to retype", async () => {
+    const onSaid = vi.fn();
+    render(
+      <StartChat
+        options={options()}
+        trouble="nothing was started"
+        secretAsk={{
+          // A picked entry: the window reads no value from a box.
+          ...ask({ onAnswer: () => Promise.reject(new Error("the app went away")) }),
+          onSaid,
+        }}
+        onStart={vi.fn()}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    await userEvent.setup().click(screen.getByRole("button", { name: "Fill" }));
+
+    await waitFor(() =>
+      expect(onSaid).toHaveBeenCalledWith(
+        "purlis could not send your answer: the app went away. Press Fill again.",
+      ),
+    );
   });
 
   it("a fill that comes back while the window is still busy goes on once it is not", async () => {
