@@ -182,6 +182,9 @@ const WATCHING = new Set([
   // The project's harness profiles, read as the palette opens for its rows to their pages
   // (#1201): a read of the palette's opening, not of any action.
   "project_settings",
+  // The pinned artifacts that say what was typed (#5968), read at each key typed in the
+  // palette: a read of the typing, not of any action.
+  "artifact_search",
 ]);
 
 /**

@@ -39,6 +39,9 @@ import { NoticeList } from "../Notice";
 import { AnswerPanel } from "../AnswerPanel";
 import { ApproveExtension } from "../ApproveExtension";
 import { ApprovePlane } from "../ApprovePlane";
+import { HistoryDialog } from "../ArtifactHistory";
+import { ArtifactLinkDialog } from "../ArtifactLinks";
+import { OfferAsks } from "../ArtifactOffers";
 import { AskPersona } from "../AskPersona";
 import { UseSkill } from "../UseSkill";
 import type { LandQuestion, PlaneId, StudioSkill, VaultContents } from "../bindings";
@@ -81,11 +84,14 @@ import { Palette } from "../Palette";
 import { PanelList } from "../PanelList";
 import { PersonaProfile } from "../PersonaProfile";
 import { PoolSignInConfirm } from "../PoolSignInConfirm";
+import { ArtifactRegenerate } from "../ArtifactRegenerate";
 import { MidTurn, QuitWarning, type Ending } from "../QuitWarning";
 import { RelaunchAsk } from "../RelaunchAsk";
 import { RemoveFromWorkspace } from "../RemoveFromWorkspace";
 import { RemovePersona } from "../RemovePersona";
 import { RenameChat } from "../RenameChat";
+import { PinToWorkspace, UnpinArtifact } from "../PinToWorkspace";
+import { ProposedPin } from "../ProposedPin";
 import { WorkspaceWriteDialog } from "../WorkspaceWrites";
 import { RenameWorkspace } from "../RenameWorkspace";
 import { AddVision } from "../AddVision";
@@ -206,6 +212,9 @@ function core(theme: string, colour: string | null) {
           return themeInForce(args);
         case "project_theme_drawn":
           return theme;
+        // No artifact is pinned: the real core answers a list, never nothing.
+        case "artifact_pins":
+          return [];
         case "workspace_panels":
           return {
             workspace: a.workspace,
@@ -457,6 +466,16 @@ const SKILL: StudioSkill = {
 function dialogCore() {
   mockIPC((cmd) => {
     switch (cmd) {
+      // A pinned artifact's Regenerate, whose code changed since it was approved (#5962).
+      case "artifact_regenerate_about":
+        return {
+          has_command: true,
+          refused: null,
+          standing: "changed",
+          code: "/plane/skills/report",
+          fingerprint: "ab".repeat(32),
+          last_good: null,
+        };
       case "signing_state":
         return {
           on: false,
@@ -1398,6 +1417,113 @@ const DIALOGS: Opened[] = [
       ),
   },
   {
+    name: "Regenerate asking before it runs code that changed",
+    file: "ArtifactRegenerate.tsx",
+    open: async () => {
+      render(<ArtifactRegenerate plane="p" workspace="alpha" folder="board" name="Board" />);
+      await userEvent.click(await screen.findByRole("button", { name: "Regenerate" }));
+    },
+  },
+  {
+    name: "an artifact's history, its versions read (#5966)",
+    file: "ArtifactHistory.tsx",
+    open: async () => {
+      mockIPC((cmd) =>
+        cmd === "artifact_history"
+          ? {
+              kept_most: 20,
+              versions: [
+                {
+                  id: "data:001700004000-00",
+                  at: "2026-11-09 10:00 UTC",
+                  kind: "regenerated",
+                  by: null,
+                  said: null,
+                },
+              ],
+            }
+          : null,
+      );
+      render(
+        <HistoryDialog
+          plane="p"
+          workspace="alpha"
+          folder="board"
+          name="Board"
+          onClose={nothing}
+          onAsOf={nothing}
+        />,
+      );
+      await screen.findByText(/purlis keeps the data of your last 20 Regenerates/);
+    },
+  },
+  {
+    name: "a chat's proposed pin that cannot be made (#5963)",
+    file: "ProposedPin.tsx",
+    open: async () => {
+      mockIPC((cmd) => {
+        if (cmd === "proposed_pin") throw "that proposal was answered already";
+        return null;
+      });
+      render(<ProposedPin plane="/x/acme" id={4} onClose={nothing} />);
+      await screen.findByRole("alertdialog", { name: "This pin cannot be made" });
+    },
+  },
+  {
+    name: "an artifact's link, asked about",
+    file: "ArtifactLinks.tsx",
+    open: async () =>
+      render(
+        <ArtifactLinkDialog
+          link={{
+            label: "artifact-1",
+            url: "https://github.com/purlis/purlis/issues",
+            host: "github.com",
+            refused: null,
+          }}
+          onClose={nothing}
+        />,
+      ),
+  },
+  {
+    name: "an artifact's link, refused",
+    file: "ArtifactLinks.tsx",
+    open: async () =>
+      render(
+        <ArtifactLinkDialog
+          link={{
+            label: "artifact-1",
+            url: null,
+            host: null,
+            refused:
+              "purlis opens only https links from an artifact, so it will not open this file: link",
+          }}
+          onClose={nothing}
+        />,
+      ),
+  },
+  {
+    name: "a delete an artifact's page offered, asking first",
+    file: "ArtifactOffers.tsx",
+    open: async () =>
+      render(
+        <OfferAsks
+          offer={{
+            id: "todo.delete:old-one",
+            title: "Delete done todo Old one",
+            available: true,
+            reason: "",
+            does: { verb: "forgetDoneTodo", workspace: "alpha", slug: "old-one" },
+            note: "Deletes it from alpha's done todos with nothing journalled. There is no undo.",
+          }}
+          answer="Delete"
+          name="Todo board"
+          onAnswer={nothing}
+          onClose={nothing}
+        />,
+      ),
+  },
+  {
     name: "a pool sign-in to confirm",
     file: "PoolSignInConfirm.tsx",
     open: async () => render(<PoolSignInConfirm />),
@@ -1448,6 +1574,54 @@ const DIALOGS: Opened[] = [
           trouble="devops has chats open"
           deleting={false}
           onDelete={nothing}
+          onCancel={nothing}
+        />,
+      ),
+  },
+  {
+    name: "pinning a page to a LOCAL workspace, refused (#5953)",
+    file: "PinToWorkspace.tsx",
+    open: async () =>
+      render(
+        <PinToWorkspace
+          project="acme"
+          workspace="alpha"
+          ask={{
+            live: false,
+            folder: "report",
+            copied: true,
+            name: "Weekly report",
+            icon: "chart",
+            pinned: false,
+          }}
+          pinning={false}
+          trouble="there is already a folder 'report' in artifacts/; choose another name"
+          onPin={nothing}
+          onCancel={nothing}
+        />,
+      ),
+  },
+  {
+    name: "unpinning an artifact from a LIVE workspace (#5953)",
+    file: "PinToWorkspace.tsx",
+    open: async () =>
+      render(
+        <UnpinArtifact
+          project="acme"
+          workspace="alpha"
+          pin={{
+            id: "id-release",
+            folder: "release",
+            name: "Release",
+            icon: "rocket",
+            missing: null,
+            live: true,
+            too_large: null,
+            fresh: null,
+          }}
+          live
+          unpinning={false}
+          onUnpin={nothing}
           onCancel={nothing}
         />,
       ),

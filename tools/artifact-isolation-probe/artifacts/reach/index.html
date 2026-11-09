@@ -1,0 +1,50 @@
+<!doctype html>
+<!-- Copyright 2026 Purlis. SPDX-License-Identifier: Apache-2.0 -->
+<html><head><meta charset="utf-8" /><title>reach</title>
+<script>
+  // The page's channel: the port purlis hands a frame, or a native webview's /.purlis/say.
+  let port = null;
+  const queue = [];
+  const framed = window.top !== window;
+  addEventListener("message", (e) => {
+    if (!port && e.data && e.data.purlis === "port" && e.ports[0]) {
+      port = e.ports[0];
+      queue.splice(0).forEach((m) => port.postMessage(m));
+    }
+  });
+  function say(m) {
+    if (port) port.postMessage(m);
+    else if (framed) queue.push(m);
+    else new Image().src = "/.purlis/say?m=" + encodeURIComponent(JSON.stringify(m));
+  }
+</script>
+<script>
+  // Test 1: every way a page could reach a Tauri command, the vault-values stand-in by name.
+  const IPC = JSON.stringify({ cmd: "vault_reveal", callback: 1, error: 2, payload: {}, options: {} });
+  const tried = {};
+  const late = (ms) => new Promise((_, no) => setTimeout(() => no(new Error("no answer")), ms));
+  async function attempt(name, fn) {
+    try {
+      const answer = await Promise.race([Promise.resolve().then(fn), late(1500)]);
+      tried[name] = "answered " + String(JSON.stringify(answer)).slice(0, 60);
+    } catch (e) {
+      tried[name] = "refused " + String(e && e.message ? e.message : e).slice(0, 80);
+    }
+  }
+  const headers = { "Content-Type": "application/json", "Tauri-Callback": "1", "Tauri-Error": "2" };
+  (async () => {
+    await attempt("own internals", () => window.__TAURI_INTERNALS__.invoke("vault_reveal"));
+    await attempt("parent internals", () => parent.__TAURI_INTERNALS__.invoke("vault_reveal"));
+    await attempt("top internals", () => top.__TAURI_INTERNALS__.invoke("vault_reveal"));
+    await attempt("ipc: fetch", () => fetch("ipc://localhost/vault_reveal", { method: "POST", body: "{}", headers }).then((r) => r.status));
+    await attempt("ipc.localhost fetch", () => fetch("http://ipc.localhost/vault_reveal", { method: "POST", body: "{}", headers }).then((r) => r.status));
+    await attempt("webkit handler", () => window.webkit.messageHandlers.ipc.postMessage(IPC));
+    await attempt("webview2 postMessage", () => window.chrome.webview.postMessage(IPC));
+    await attempt("window.ipc", () => window.ipc.postMessage(IPC));
+    await attempt("plugin event emit", () => window.__TAURI_INTERNALS__.invoke("plugin:event|emit", { event: "x", payload: 1 }));
+    // A raw message gets no promise back; give the command time to have run if it was going to.
+    await new Promise((ok) => setTimeout(ok, 1000));
+    say(tried);
+  })();
+</script>
+</head><body>reach</body></html>

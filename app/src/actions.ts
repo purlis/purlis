@@ -719,6 +719,9 @@ export type Does =
    *  (#5377): one line in the workspace's LIVE allowlist, so the next save shares it. Only this
    *  press adds one, since a script may hold a token. */
   | { verb: "saveWithTheProject"; at: BranchPath }
+  /** Opens Pin to workspace for an `.html` file (#5953, ADR 0122): the dialog that pins it to
+   *  the workspace for everyone in the project. It pins nothing by itself. */
+  | { verb: "pinToWorkspace"; at: BranchPath }
   /** Opens a branch file in the operator's editor at `line` (RC-20). */
   | { verb: "openInEditor"; at: BranchPath; line: number }
   /** Opens a shell tab whose working directory is a folder of a branch (FM-10). The core
@@ -1349,6 +1352,8 @@ export type Doing = {
   revealPath: (at: BranchPath) => Promise<Ran>;
   /** The core checks the entry is the person's and the workspace LIVE, and says why not. */
   saveWithTheProject: (at: BranchPath) => Promise<Ran>;
+  /** Opens Pin to workspace for the page at `at` (#5953). */
+  pinToWorkspace: (at: BranchPath) => Promise<Ran>;
   /** Refused, rather than guessed, while no editor is chosen in Settings. */
   openInEditor: (at: BranchPath, line: number) => Promise<Ran>;
   /** A shell tab in that folder; a refusal is said the way a shell tab's is. */
@@ -4005,6 +4010,8 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return doing.revealPath(does.at);
     case "saveWithTheProject":
       return doing.saveWithTheProject(does.at);
+    case "pinToWorkspace":
+      return doing.pinToWorkspace(does.at);
     case "openInEditor":
       return doing.openInEditor(does.at, does.line);
     case "shellInFolder":
@@ -6486,5 +6493,32 @@ export function fileRows(what: FileOn): Offer[] {
         at,
       }),
     );
+  // **An `.html` page's Pin to workspace** (#5953, ADR 0122 §1): last, for it asks first and
+  // names the workspace. A page outside the workspace's `artifacts/` is copied in by it, so a
+  // branch's page is offered it too; the plane root's is no workspace's to pin to.
+  if (kind !== "folder" && isPage(at.path)) {
+    const row = pinToWorkspaceRow(at);
+    rows.push(kind === "link" ? cannot(row.id, row.title, NO_LINK_FOLLOWED) : row);
+  }
   return rows;
 }
+
+/** Whether a file is a page purlis can pin, by its name: `.html` or `.htm`. */
+export function isPage(path: string): boolean {
+  return /\.html?$/i.test(path);
+}
+
+/**
+ * **An `.html` page's Pin to workspace row** (#5953): what its row's menu and its preview's button
+ * both carry. The plane root's page is no workspace's to pin to, and says so.
+ */
+export function pinToWorkspaceRow(at: BranchPath): Offer {
+  const id = `file.pintoworkspace:${at.workspace}/${at.repo}/${at.piece ?? ""}:${at.path}`;
+  return at.workspace === ""
+    ? cannot(id, SAID.pinToWorkspace, PLANE_ROOT_PAGE)
+    : can(id, SAID.pinToWorkspace, { verb: "pinToWorkspace", at });
+}
+
+/** Why a page of the plane root offers no Pin to workspace. */
+const PLANE_ROOT_PAGE =
+  "A page is pinned to a workspace. Open it from that workspace's files to pin it there.";
