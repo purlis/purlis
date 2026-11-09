@@ -1055,7 +1055,7 @@ fn one_address_holds_at_most_four_of_the_ports_connections() {
     assert_eq!(MOST_FROM_ONE_SOURCE, 4);
     let per_source = Arc::new(PerSource::default());
     let one = ip("10.244.0.7");
-    let held: Vec<_> = (0..MOST_FROM_ONE_SOURCE)
+    let mut held: Vec<_> = (0..MOST_FROM_ONE_SOURCE)
         .map(|_| per_source.admit(one).expect("let in"))
         .collect();
     assert!(per_source.admit(one).is_none(), "a fifth from one address");
@@ -1063,7 +1063,7 @@ fn one_address_holds_at_most_four_of_the_ports_connections() {
     assert!(per_source.admit(ip("::ffff:10.244.0.7")).is_none());
     // Another address is let in meanwhile.
     let other = per_source.admit(ip("10.244.0.8")).expect("another address");
-    drop(held.into_iter().next());
+    drop(held.pop());
     assert_eq!(per_source.open_from(one), MOST_FROM_ONE_SOURCE - 1);
     assert!(
         per_source.admit(one).is_some(),
