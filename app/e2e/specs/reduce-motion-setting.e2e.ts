@@ -4,7 +4,7 @@
 import { $, browser, expect } from "@wdio/globals";
 import { noDialogIsLeftUp } from "../opening.js";
 import { closesTheTabsItOpens } from "../reach.js";
-import { openProjectSettings } from "../settingsTab.js";
+import { openProjectSettings, settingsAt } from "../settingsTab.js";
 
 /**
  * **purlis's own Reduce motion, applied to the whole window** (#2929, #2925, R152; WCAG 2.2
@@ -79,25 +79,7 @@ describe("purlis's own Reduce motion, across the window", function () {
   before(async () => {
     await noDialogIsLeftUp();
     await openProjectSettings();
-    await browser.execute(() => {
-      const radio = [
-        ...document.querySelectorAll<HTMLInputElement>(
-          '[role="radiogroup"][aria-label="Level"] input[type="radio"]',
-        ),
-      ].find((one) => one.closest("label")?.textContent?.trim() === "You");
-      if (radio?.checked !== true) radio?.click();
-    });
-    await browser.waitUntil(
-      async () =>
-        browser.execute(() => {
-          const button = [
-            ...document.querySelectorAll<HTMLElement>('nav[aria-label="Groups"] button'),
-          ].find((one) => one.textContent?.trim() === "Motion and contrast");
-          button?.click();
-          return button?.getAttribute("aria-current") === "true";
-        }),
-      { timeout: 20_000, interval: 250, timeoutMsg: "Settings never showed You › Motion" },
-    );
+    await settingsAt("You", "Motion and contrast");
     await $(SWITCH).waitForDisplayed({ timeout: 20_000 });
     wasOn = await switchOn();
   });

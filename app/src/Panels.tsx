@@ -149,7 +149,7 @@ export function Panels({
   // A named group, not a landmark (#2929): the view is drawn in a side or a half of the Panel,
   // each a named region already, and a landmark in a landmark is one a screen reader's rotor
   // lists twice.
-  const nameOfView = { role: "group", "aria-label": named } as const;
+  const groupNamed = { role: "group", "aria-label": named } as const;
 
   /** Who works in the focused workspace (#3483): a persona one of its session records names,
    *  or one of its chats runs as. No persona lives in a workspace (`personas/` is the plane's),
@@ -171,7 +171,7 @@ export function Panels({
   if (view === "vaults") {
     // A vault is the plane's, so the view is drawn with no workspace focused too.
     return (
-      <div className="panels panels-view ui-text-body" data-view={view} {...nameOfView}>
+      <div className="panels panels-view ui-text-body" data-view={view} {...groupNamed}>
         {vaults !== undefined && <Vaults said={vaults} offers={offers} onPress={onPress} />}
       </div>
     );
@@ -181,7 +181,7 @@ export function Panels({
   const key = isPanelView(view) ? panelKeyOf(view) : OWN_PANELS[view];
   /** Every view is drawn on the panel family's view (#3340, #3341): its region is its one
    *  scroll, with no room of its own around it, and the view's top is held at the top of it. */
-  const aside = "panels panels-view ui-text-body";
+  const viewClass = "panels panels-view ui-text-body";
   const all = [...(panels?.contributed ?? []), ...contributed];
   const draw = (panel: PanelView, at: string) => (
     <Contributed
@@ -209,12 +209,12 @@ export function Panels({
         : undefined;
     if (own !== undefined && view === "personas")
       return (
-        <div className={aside} data-view={view} {...nameOfView}>
+        <div className={viewClass} data-view={view} {...groupNamed}>
           {draw(own, "")}
         </div>
       );
     return (
-      <div className={aside} data-view={view} {...nameOfView}>
+      <div className={viewClass} data-view={view} {...groupNamed}>
         <p className="empty ui-text-secondary">
           {atRoot
             ? "The project root is not a workspace: it has no todos or memory of its own. Chats here look after the project and its workspaces; focus a workspace to see its panels."
@@ -227,7 +227,7 @@ export function Panels({
 
   const panel = all.find((one) => one.key === key);
   return (
-    <div className={aside} data-view={view} {...nameOfView}>
+    <div className={viewClass} data-view={view} {...groupNamed}>
       {trouble && (
         <p className="trouble" role="alert">
           {trouble}

@@ -51,3 +51,48 @@ export async function openProjectSettings(): Promise<void> {
   await browser.keys(["Enter"]);
   await $(SETTINGS_GROUPS).waitForDisplayed({ timeout: 20_000 });
 }
+
+/** What has the role `role`: said outright, or a native element whose implicit role it is and
+ *  which says no other. Asked by role (CLAUDE.md), so a family that draws it another way still
+ *  matches. */
+const byRole = (role: "radio" | "button", tag: string) => `[role="${role}"], ${tag}:not([role])`;
+
+/**
+ * **Shows Settings' `group` at `level`** (You, Project, Workspace or Persona), as a person picks
+ * them: the level on its switcher, then the group in its list, until the group says it is the
+ * one shown. Settings is open already ({@link openProjectSettings}).
+ */
+export async function settingsAt(level: string, group: string): Promise<void> {
+  await browser.execute(
+    (called: string, radios: string) => {
+      const radio = [
+        ...document.querySelectorAll<HTMLElement>(
+          `[role="radiogroup"][aria-label="Level"] :is(${radios})`,
+        ),
+      ].find((one) => (one.closest("label")?.textContent ?? one.textContent)?.trim() === called);
+      if (
+        radio?.getAttribute("aria-checked") !== "true" &&
+        !(radio as HTMLInputElement | undefined)?.checked
+      )
+        radio?.click();
+    },
+    level,
+    byRole("radio", 'input[type="radio"]'),
+  );
+  await browser.waitUntil(
+    async () =>
+      browser.execute(
+        (called: string, groups: string, buttons: string) => {
+          const button = [
+            ...document.querySelectorAll<HTMLElement>(`${groups} :is(${buttons})`),
+          ].find((one) => one.textContent?.trim() === called);
+          button?.click();
+          return button?.getAttribute("aria-current") === "true";
+        },
+        group,
+        SETTINGS_GROUPS,
+        byRole("button", "button"),
+      ),
+    { timeout: 20_000, interval: 250, timeoutMsg: `Settings never showed ${level} › ${group}` },
+  );
+}

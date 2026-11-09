@@ -66,18 +66,25 @@ async function whatTheKeyboardShows(): Promise<Shown> {
         const hit = document.elementFromPoint(x, y);
         return hit !== null && (hit === on || on.contains(hit));
       });
-    const css = getComputedStyle(on);
-    const ring =
-      (css.outlineStyle !== "none" && Number.parseFloat(css.outlineWidth) > 0) ||
-      css.boxShadow !== "none";
-    return {
-      lost: false,
-      what,
-      onScreen,
-      uncovered,
-      focusVisible: on.matches(":focus-visible"),
-      ring,
+    // A ring is what the keyboard ADDS: the control's outline or shadow while it has the
+    // keyboard, against the same control without it. A shadow it wears at rest is no ring.
+    const drawn = () => {
+      const css = getComputedStyle(on);
+      const outline =
+        css.outlineStyle !== "none" && Number.parseFloat(css.outlineWidth) > 0
+          ? `${css.outlineStyle} ${css.outlineWidth} ${css.outlineColor}`
+          : "none";
+      return { outline, shadow: css.boxShadow };
     };
+    const focusVisible = on.matches(":focus-visible");
+    const held = drawn();
+    on.blur();
+    const rest = drawn();
+    on.focus({ preventScroll: true });
+    const ring =
+      (held.outline !== "none" && held.outline !== rest.outline) ||
+      (held.shadow !== "none" && held.shadow !== rest.shadow);
+    return { lost: false, what, onScreen, uncovered, focusVisible, ring };
   });
 }
 
@@ -98,7 +105,7 @@ type Stopped = { stop: string; shown: Shown };
  * up), `stayed` when it did not move within five seconds, or what it landed on outside all of
  * them. Every outcome is a stop the test can name, so a walk that goes wrong says where.
  */
-async function press6(back: boolean): Promise<Stopped> {
+async function pressF6(back: boolean): Promise<Stopped> {
   await browser.execute(() => {
     (window as unknown as { __e2eWas: Element | null }).__e2eWas = document.activeElement;
   });
@@ -148,12 +155,12 @@ describe("a keyboard-only journey across the window's regions", function () {
     await keyboardToThePage();
     const forth: Stopped[] = [];
     for (let press = 0; press < MOST; press++) {
-      forth.push(await press6(false));
+      forth.push(await pressF6(false));
       if (forth.length > 1 && forth[forth.length - 1].stop === forth[0].stop) break;
     }
     const back: Stopped[] = [];
     for (let press = 0; press < MOST; press++) {
-      back.push(await press6(true));
+      back.push(await pressF6(true));
       if (back.length > 1 && back[back.length - 1].stop === back[0].stop) break;
     }
     const stops = (walk: Stopped[]) => walk.map((one) => one.stop);

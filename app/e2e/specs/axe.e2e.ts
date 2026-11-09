@@ -13,7 +13,8 @@ import {
   showView,
 } from "../opening.js";
 import { closesTheTabsItOpens } from "../reach.js";
-import { openProjectSettings } from "../settingsTab.js";
+import { keyboardToThePage } from "../regionKeys.js";
+import { openProjectSettings, settingsAt } from "../settingsTab.js";
 
 /**
  * **The whole window held to WCAG 2.2 AA by axe, state by state** (#2929, spec #2897, N35), in
@@ -90,27 +91,27 @@ async function settled(): Promise<void> {
   await browser.pause(300);
 }
 
-/** Shows the Settings tab's `group` at `level`, as `settings-limits.e2e.ts` does. */
-async function settingsAt(level: string, group: string): Promise<void> {
-  await browser.execute((called: string) => {
-    const radio = [
-      ...document.querySelectorAll<HTMLInputElement>(
-        '[role="radiogroup"][aria-label="Level"] input[type="radio"]',
-      ),
-    ].find((one) => one.closest("label")?.textContent?.trim() === called);
-    if (radio?.checked !== true) radio?.click();
-  }, level);
+/**
+ * Runs the palette's row that starts with `words`: F2 with the keyboard off any chat (a terminal
+ * takes F2 for itself), and Enter only once that row is the one selected.
+ */
+async function paletteRow(words: string): Promise<void> {
+  await keyboardToThePage();
+  await browser.keys(["F2"]);
+  await $("#palette-query").waitForDisplayed({ timeout: 20_000 });
+  await $("#palette-query").addValue(words);
   await browser.waitUntil(
     async () =>
-      browser.execute((called: string) => {
-        const button = [
-          ...document.querySelectorAll<HTMLElement>('nav[aria-label="Groups"] button'),
-        ].find((one) => one.textContent?.trim() === called);
-        button?.click();
-        return button?.getAttribute("aria-current") === "true";
-      }, group),
-    { timeout: 20_000, interval: 250, timeoutMsg: `Settings never showed ${level} › ${group}` },
+      browser.execute(
+        (said: string) =>
+          document
+            .querySelector('[role="option"][aria-selected="true"] .palette-title')
+            ?.textContent?.startsWith(said) ?? false,
+        words,
+      ),
+    { timeout: 10_000, timeoutMsg: `the palette did not offer ${words}` },
   );
+  await browser.keys(["Enter"]);
 }
 
 describe("the window, held to WCAG 2.2 AA by axe", function () {
@@ -175,6 +176,34 @@ describe("the window, held to WCAG 2.2 AA by axe", function () {
     await panesDrawn(1);
     await settled();
     await passes();
+  });
+
+  // Screen-reader mode (#629, folded into #2929): the palette's row turns it on, every terminal
+  // then keeps rows a screen reader reads, and the window still passes with them drawn. Turned
+  // off again, the rows go, as the window was for every state after this one.
+  it("passes with screen-reader mode on, the chat's terminal drawing rows a reader reads", async () => {
+    const rows = '[data-testid="pane"] .xterm-accessibility-tree';
+    const drawn = () =>
+      browser.execute(
+        (selector: string) => document.querySelector(selector)?.childElementCount ?? 0,
+        rows,
+      );
+    await paletteRow("Turn screen-reader mode on");
+    try {
+      await browser.waitUntil(async () => (await drawn()) > 0, {
+        timeout: 10_000,
+        timeoutMsg: "screen-reader mode drew no rows in the chat's terminal",
+      });
+      await settled();
+      await passes();
+    } finally {
+      await noDialogIsLeftUp();
+      await paletteRow("Turn screen-reader mode off");
+    }
+    await browser.waitUntil(async () => (await drawn()) === 0, {
+      timeout: 10_000,
+      timeoutMsg: "the terminal kept its reader's rows with screen-reader mode off",
+    });
   });
 
   it("passes with the tab split into two panes", async () => {
