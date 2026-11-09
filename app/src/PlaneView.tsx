@@ -649,7 +649,7 @@ import { LEAST, LEAST_CHIP, leastAt, pinnedFirst, useRoom } from "./fits";
 import type { Naming } from "./tabFace";
 import { tabPanelOf, tabsPart } from "./ui/tabs/Tabs";
 import { panelRoot } from "./ui/panel/Panel";
-import { oneChatMidTurn, type Ending } from "./QuitWarning";
+import { oneChatInterrupted, type Ending } from "./QuitWarning";
 import { answerTaken, asksMoved, secretAskEntries } from "./asks";
 import type { Snoozing } from "./AsksSnooze";
 import type { SecretAskGiven } from "./SecretAskNotice";
@@ -1358,6 +1358,10 @@ export const PlaneView = memo(function PlaneView({
     files: readonly string[];
     /** What the chat was doing when it was asked about, as the board said (#1246). */
     doing: State;
+    /** What it waited on of its own then (#3878), which ending its program ends (#5782). */
+    ownWork?: OwnWork;
+    /** Whether a background turn ran in it then (#4562), which ending it interrupts (#5782). */
+    backgroundTurn: boolean;
     busy: boolean;
     trouble?: string;
   }>();
@@ -8424,6 +8428,10 @@ export const PlaneView = memo(function PlaneView({
         // `stateOf`, as the quit warning reads it: a shell nothing has reported on is `unknown`
         // too, since a harness started by hand in it could be mid-turn.
         doing: stateOf(chats.store.statesFor(chats.plane), session),
+        // Asked by the quit warning's test, which counts its own work and a background turn
+        // (#5782), not by its state alone.
+        ownWork: ownWorkOf(chats.store.statesFor(chats.plane), session),
+        backgroundTurn: chats.store.statesFor(chats.plane).backgroundTurns[session] === true,
         busy: false,
       });
     },
@@ -10947,6 +10955,7 @@ export const PlaneView = memo(function PlaneView({
         doing: State[];
         working: Readonly<Record<string, number>>;
         owning: (OwnWork | undefined)[];
+        turning: boolean[];
         queued: typeof queued;
         queue: readonly number[];
         fromQueue: ReturnType<typeof queued>;
@@ -10960,6 +10969,8 @@ export const PlaneView = memo(function PlaneView({
       // What each waits on of its own (#3878): the quit warning and Restart to update say it
       // ends (#5748).
       const owning = quitting.map((chat) => ownWorkOf(states, chat.session));
+      // Which a background turn runs in (#4562): ending it interrupts that turn (#5782).
+      const turning = quitting.map((chat) => states.backgroundTurns[chat.session] === true);
       const queue = states.needsYou;
       // **How many chats are working in each workspace** (#3127): its chip's mark. A chat in its
       // turn, its own work in flight included (`inItsTurn`), as a hook says it (ADR 0076). Every
@@ -10979,6 +10990,7 @@ export const PlaneView = memo(function PlaneView({
         sameCounts(was.working, working) &&
         // The same length as `doing`'s, each built off `quitting`, which is the same.
         was.owning.every((work, at) => sameOwnWork(work, owning[at])) &&
+        sameList(was.turning, turning) &&
         sameQueue
       )
         return;
@@ -10993,6 +11005,7 @@ export const PlaneView = memo(function PlaneView({
         doing,
         working,
         owning,
+        turning,
         queued,
         queue,
         fromQueue,
@@ -11016,6 +11029,7 @@ export const PlaneView = memo(function PlaneView({
           ...chat,
           state: doing[at],
           ...(owning[at] && { ownWork: owning[at] }),
+          ...(turning[at] && { backgroundTurn: true }),
         })),
       });
     };
@@ -12759,7 +12773,15 @@ export const PlaneView = memo(function PlaneView({
                     title={`Start ${freshening.name} fresh?`}
                     says={`The project's instructions changed since it started (${freshening.files.join(", ")}). Its program ends, and it starts again on what is there now, as a new conversation.`}
                     answer="Start fresh"
-                    warns={oneChatMidTurn(freshening.name, freshening.doing)}
+                    warns={oneChatInterrupted({
+                      key: String(freshening.session),
+                      name: freshening.name,
+                      harness: null,
+                      cwd: null,
+                      state: freshening.doing,
+                      ownWork: freshening.ownWork,
+                      backgroundTurn: freshening.backgroundTurn,
+                    })}
                     trouble={freshening.trouble}
                     busy={freshening.busy}
                     onAnswer={() => void startFresh()}
