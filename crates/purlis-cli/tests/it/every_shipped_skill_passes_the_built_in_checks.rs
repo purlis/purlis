@@ -55,8 +55,8 @@ use std::sync::LazyLock;
 const DESCRIPTION_LIMIT: usize = 1024;
 
 /// **The built-ins' descriptions together** (spec #5714's Q37): at most this many characters,
-/// so Codex's 8,000-character listing keeps every built-in and about 3,000 for the plane's own
-/// skills, and opencode's default budget (8,000) keeps them too.
+/// so Codex's and opencode's default budgets (8,000) keep every built-in and about 3,000 for the
+/// plane's own skills.
 const MOST_DESCRIPTIONS: usize = 5_000;
 
 /// **Built-ins leaving the bundle**, each with where it goes: the one place a shipped skill is

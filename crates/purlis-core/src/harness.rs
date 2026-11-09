@@ -497,10 +497,12 @@ impl Harness {
     ///   `--plugin-dir` plugin's skills at the start (measured twice on 2.1.304), and opencode
     ///   caches discovery and the body per directory (measured on 1.18.33).
     /// - The MCP route: everything, as its tools ask for the chat's set afresh at each call.
-    /// - The briefing route (Codex): nothing. The `SessionStart` briefing lists each skill with
+    /// - The briefing route (Codex): nothing. The `SessionStart` hook lists each skill with
     ///   the `SKILL.md` purlis wrote for it in the set's folder, once (SK-8), and that folder
     ///   never changes while the chat runs, so an edit waits for a restart as on the other
-    ///   routes.
+    ///   routes. Measured on codex-cli 0.147.0 (#3002, ADR 0099 as amended 2026-11-09): in one
+    ///   Codex process, the hook ran at the first turn and at no later one, and no later turn
+    ///   was told anything the first was not.
     pub fn skills_reload(self) -> crate::skills::Reload {
         match self.skills() {
             // `skill_find` and `skill_load` work the chat's set out at each call (SK-13).

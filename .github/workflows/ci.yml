@@ -359,6 +359,34 @@ jobs:
           PURLIS_CLAUDE_CODE="$RUNNER_TEMP/claude-code/node_modules/$package/claude" \
             cargo nextest run --workspace --locked --profile ci --no-capture \
             -E 'package(purlis-core) & binary(it) & test(/^claude_codes_own_sandbox_holds_the_settings_purlis_writes::/)'
+      # **Codex, measured** (#5841, #3002): what the real Codex keeps of a `SessionStart` hook's
+      # output and of its own skills catalogue, and what it takes in mid-chat, printed on
+      # `measured:` lines for ADR 0102's and ADR 0099's amendments of 2026-11-09. The version
+      # purlis supports, this runner's build of it from npm with no install scripts run, pointed
+      # at a loopback port that refuses: no model is called and no credential is used. The tests
+      # fail only on a Codex that is missing or another version, never on what it did, and are
+      # `#[ignore]`d everywhere else.
+      - name: Codex, measured
+        if: matrix.part == 3
+        run: |
+          version=$(sed 's/^codex-cli //' tests/fixtures/harness-versions/codex.txt)
+          case "$RUNNER_ARCH" in
+            ARM64) arch=arm64; triple=aarch64-unknown-linux-musl ;;
+            X64) arch=x64; triple=x86_64-unknown-linux-musl ;;
+            *) echo "::error::no Codex build for $RUNNER_ARCH"; exit 1 ;;
+          esac
+          package="@openai/codex-linux-$arch"
+          mkdir -p "$RUNNER_TEMP/codex"
+          cp tests/fixtures/harness-versions/codex/package.json tests/fixtures/harness-versions/codex/package-lock.json "$RUNNER_TEMP/codex/"
+          locked=$(jq -r --arg p "node_modules/$package" '.packages[$p].version' "$RUNNER_TEMP/codex/package-lock.json")
+          if [ "$locked" != "$version-linux-$arch" ]; then
+            echo "::error file=tests/fixtures/harness-versions/codex/package-lock.json::the lockfile holds $package $locked and codex.txt says $version: set the version in its package.json and run npm install --package-lock-only there"
+            exit 1
+          fi
+          (cd "$RUNNER_TEMP/codex" && npm ci --ignore-scripts --no-audit --no-fund)
+          PURLIS_CODEX="$RUNNER_TEMP/codex/node_modules/$package/vendor/$triple/bin/codex" \
+            cargo nextest run --workspace --locked --profile ci --no-capture --run-ignored only --no-tests fail \
+            -E 'package(purlis-core) & binary(it) & test(/^what_codex_keeps_of_a_briefing_and_takes_in_mid_chat_is_measured::/)'
       # The theme schema only grows within a format (#2524). `Run the tests` holds the engine's
       # schema to the committed `docs/schema/theme.v2.schema.json`; this step holds it to the
       # file the last release's tag holds, fetched with git, so an edit of the committed file

@@ -212,6 +212,12 @@ pub(crate) fn frontmatter_lines(text: &str) -> Vec<&str> {
         .unwrap_or_default()
 }
 
+/// **How a [`listing`] opens**, before its first skill: counted against what a harness keeps of
+/// it (Codex's cut of a hook's output, ADR 0102 as amended 2026-11-09).
+pub const LISTING_OPENING: &str = "⬢ **purlis's built-in skills** — this harness does not load \
+     them itself, so they are listed here. When a request matches one, read its `SKILL.md` and \
+     follow it before acting; a prompt that names a skill by its name means this list.";
+
 /// The briefing section that lists `skills`, or none when there are none.
 ///
 /// It is what a harness with skills of its own shows its model: each skill's name, when to use
@@ -220,8 +226,8 @@ pub(crate) fn frontmatter_lines(text: &str) -> Vec<&str> {
 /// **A folder is named once** (spec #5714's Q38): skills whose files sit at
 /// `<folder>/<name>/SKILL.md` are listed under a line naming that folder, and the model is told
 /// to read each by the whole path. A path of some 140 characters on each of the built-ins' lines
-/// took more than a third of Codex's 8,000. A skill in a folder named otherwise keeps its whole
-/// path on its line.
+/// took more than a third of Codex's default budget of 8,000. A skill in a folder named
+/// otherwise keeps its whole path on its line.
 ///
 /// **A manual-only skill** ([`crate::declared`]) is purlis's equivalent of the harness's own
 /// switch ([`crate::compat::ManualOnly::Listing`], SK-8): its description stays out, so the
@@ -231,11 +237,7 @@ pub fn listing(skills: &[Skill]) -> Option<String> {
     if skills.is_empty() {
         return None;
     }
-    let mut text = String::from(
-        "⬢ **purlis's built-in skills** — this harness does not load them itself, so they are listed \
-         here. When a request matches one, read its `SKILL.md` and follow it before acting; a \
-         prompt that names a skill by its name means this list.",
-    );
+    let mut text = String::from(LISTING_OPENING);
     // Skills under one folder, in the order the first of them is listed, so the built-ins the
     // caller puts first stay first (#5736).
     let mut groups: Vec<(Option<&Path>, Vec<&Skill>)> = Vec::new();

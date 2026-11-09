@@ -197,8 +197,8 @@ built-in's description is written as a trigger (spec #5714, Q15 and Q30):
    `evals/sources.json`), the same list its near-miss tests come from, so the boundary
    is written once and measured.
 5. **About 290 characters**, because every built-in's description together is at most 5,000
-   (Q37): Codex lists skills in 8,000 characters and drops what does not fit, so the built-ins
-   leave about 3,000 for the plane's own skills, and opencode's default budget is 8,000 too. One
+   (Q37): Codex's and opencode's default budgets are 8,000 characters, so the built-ins leave
+   about 3,000 for the plane's own skills. One
    description is never over 1,024, where Codex cuts it, and is plain YAML: no `: ` or ` #` in
    it. A longer description takes its characters from another built-in's.
 
