@@ -105,7 +105,9 @@ const KEY_NAMES: [&str; 3] = ["escape", "f6", "f6-back"];
 /// **purlis's script in every artifact page that hands it its port** (#5961): `purlis.port`, a
 /// `MessagePort` made for this load. The page posts `{ id, read: "<data file>" }` or, for a
 /// catalogue query it declared, `{ id, query: "<id>@<N>", params }` (#5969, [`calls`]) on it and
-/// hears `{ id, data | error: { kind }, at, cursor? }`. The load is named by a random word of its own,
+/// hears `{ id, data | error: { kind }, at, cursor? }`. `{ id, subscribe: "<id>@<N>", params }`
+/// hears that answer again with its `id` each time purlis pushes a new one, until `{ id,
+/// unsubscribe: true }` or the next load (#5970, [`live`]). The load is named by a random word of its own,
 /// opened first and then carried on each ask, as an image of its own origin, which is all the CSP
 /// lets it reach; the answer comes back through [`ANSWER`], for this load's word only.
 const PORT: &str = r#"(() => {
@@ -122,14 +124,16 @@ const PORT: &str = r#"(() => {
     const asked = event.data;
     const id = asked !== null && typeof asked === "object" ? asked.id : undefined;
     const refuse = () => own.postMessage({ id: Number.isSafeInteger(id) ? id : null, error: { kind: "refused" }, at: new Date().toISOString().replace(/\.\d+Z$/, "Z") });
-    if (!Number.isSafeInteger(id) || id < 0 || (typeof asked.read !== "string" && typeof asked.query !== "string")) {
+    if (!Number.isSafeInteger(id) || id < 0 || (typeof asked.read !== "string" && typeof asked.query !== "string" && typeof asked.subscribe !== "string" && asked.unsubscribe !== true)) {
       refuse();
       return;
     }
+    const call = (word, query) => word + "/" + id + "?" + encodeURIComponent(JSON.stringify({ query, params: asked.params === undefined ? null : asked.params }));
     let path;
     try {
-      path = typeof asked.query === "string"
-        ? "query/" + id + "?" + encodeURIComponent(JSON.stringify({ query: asked.query, params: asked.params === undefined ? null : asked.params }))
+      path = typeof asked.query === "string" ? call("query", asked.query)
+        : typeof asked.subscribe === "string" ? call("subscribe", asked.subscribe)
+        : asked.unsubscribe === true ? "unsubscribe/" + id
         : "read/" + id + "?" + encodeURIComponent(asked.read);
     } catch {
       refuse();
@@ -158,9 +162,12 @@ pub(crate) struct Ask {
     pub(crate) id: u64,
     pub(crate) name: String,
     pub(crate) params: Option<serde_json::Value>,
+    /// A subscription's subscribe or unsubscribe (#5970), not a read or a call.
+    pub(crate) live: Option<live::Said>,
 }
 
 pub(crate) mod calls;
+pub(crate) mod live;
 
 /// What every window of a plane hears when an artifact's approval on this machine changed: the
 /// workspace and folder, so each tab of it loads its page again.
@@ -203,6 +210,8 @@ struct Of {
 pub(crate) struct Artifacts {
     served: Mutex<HashMap<String, Served>>,
     made: AtomicU64,
+    /// The pages' subscriptions to catalogue queries (#5970).
+    live: Mutex<live::Live>,
 }
 
 /// What the scheme answered, and the key to hand back to a window, if it was one.
@@ -229,6 +238,9 @@ impl Served {
         if self.load.as_deref() != Some(load) {
             return None;
         }
+        if let Some(ask) = live::said(label, load, said, query) {
+            return ask;
+        }
         if let Some(id) = said.strip_prefix("query/") {
             let (name, params) = calls::asked(query?)?;
             return Some(Ask {
@@ -237,6 +249,7 @@ impl Served {
                 id: page_id(id)?,
                 name,
                 params: Some(params),
+                live: None,
             });
         }
         let id = said.strip_prefix("read/")?;
@@ -253,6 +266,7 @@ impl Served {
             id: id.parse().ok()?,
             name,
             params: None,
+            live: None,
         })
     }
 }
@@ -326,6 +340,7 @@ impl Artifacts {
         if let Some(one) = self.served().get_mut(label) {
             one.load = None;
         }
+        self.unsubscribe_label(label);
     }
 
     /// Whether `load` is still the load of webview `label` whose port is open.
@@ -422,6 +437,10 @@ impl Artifacts {
         for label in &gone {
             served.remove(label);
         }
+        drop(served);
+        for label in &gone {
+            self.unsubscribe_label(label);
+        }
         gone
     }
 }
@@ -440,7 +459,11 @@ pub(crate) fn serve<R: Runtime>(
     };
     let answered = artifacts.answer(label, request);
     if let Some(ask) = answered.ask {
-        answer_ask(app.clone(), ask);
+        if ask.live.is_some() {
+            live::asked(app.clone(), ask);
+        } else {
+            answer_ask(app.clone(), ask);
+        }
     }
     if let Some((window, key)) = answered.key {
         // The window's own webview has the window's label.
@@ -1395,6 +1418,7 @@ pub async fn artifact_close(
 ) -> Result<(), String> {
     let webview = child(&window, &artifacts, &label);
     artifacts.served().remove(&label);
+    artifacts.unsubscribe_label(&label);
     if let Some(webview) = webview {
         webview.close().map_err(|e| e.to_string())?;
     }
@@ -1672,6 +1696,7 @@ mod tests {
                 id: 7,
                 name: "data/rows.json".to_owned(),
                 params: None,
+                live: None,
             })
         );
         assert!(artifacts.still_open("artifact-1", LOAD_A));
@@ -1759,6 +1784,7 @@ mod tests {
             id: 3,
             name: "data.json".to_owned(),
             params: None,
+            live: None,
         };
         let at = chrono::DateTime::parse_from_rfc3339("2026-11-09T12:00:00Z")
             .unwrap()

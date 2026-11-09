@@ -16,6 +16,7 @@ pub mod approval;
 pub mod calls;
 pub mod data;
 pub mod fresh;
+pub mod live;
 pub mod pins;
 pub mod script;
 pub mod serve;
