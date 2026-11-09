@@ -36,6 +36,7 @@ export function PinToWorkspace({
   ask,
   pinning,
   trouble,
+  proposed,
   onPin,
   onCancel,
 }: {
@@ -47,6 +48,11 @@ export function PinToWorkspace({
   pinning: boolean;
   /** Why the last attempt pinned nothing: the core's sentence, unchanged. */
   trouble?: string;
+  /**
+   * **A chat proposed it** (#5963): the chat, and the command Regenerate would run, said before
+   * the person answers. Only their Pin pins it.
+   */
+  proposed?: ProposedBy;
   onPin: (name: string, icon: string) => void;
   onCancel: () => void;
 }) {
@@ -67,11 +73,13 @@ export function PinToWorkspace({
         </span>
       }
       summary={
-        ask.copied
-          ? `The page is copied to artifacts/${ask.folder}/ in ${workspace}.`
-          : ask.pinned
-            ? "It is pinned already: this changes its name and icon."
-            : undefined
+        proposed !== undefined
+          ? proposedSaid(proposed, ask.pinned)
+          : ask.copied
+            ? `The page is copied to artifacts/${ask.folder}/ in ${workspace}.`
+            : ask.pinned
+              ? "It is pinned already: this changes its name and icon."
+              : undefined
       }
       main={{
         children: pinning ? "Pinning…" : "Pin to workspace",
@@ -113,6 +121,19 @@ export function PinToWorkspace({
       )}
     </Dialog>
   );
+}
+
+/** The chat that proposed a pin, and the command it would have Regenerate run. */
+export type ProposedBy = { by: string; command?: string | null; cwd?: string | null };
+
+/** What Pin to workspace says of a pin a chat proposed: who asked, and what Regenerate runs. */
+export function proposedSaid(proposed: ProposedBy, pinned: boolean): string {
+  const runs =
+    proposed.command === undefined || proposed.command === null
+      ? ""
+      : ` Regenerate will run ${proposed.command}${proposed.cwd ? ` in ${proposed.cwd}` : ""}.`;
+  const already = pinned ? " It is pinned already: this changes it." : "";
+  return `${proposed.by} proposed this pin. Only you pin it.${runs}${already}`;
 }
 
 /** Who sees a pin of workspace `workspace`: everyone in the project, or this machine alone. */

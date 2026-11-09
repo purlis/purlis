@@ -179,6 +179,8 @@ macro_rules! app_commands {
                 proposals::apply_proposed_change,
                 proposals::proposed_change,
                 proposals::dismiss_proposed_change,
+                pinproposals::proposed_pin,
+                pinproposals::pin_proposed,
                 proposals::secret_need_personas,
                 proposals::remember_secret_need,
                 oldplugins::remove_old_harness_plugins,

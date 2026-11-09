@@ -654,3 +654,46 @@ pub fn named_here(here: &crate::Here, workspace: Option<&str>) -> Named {
 
 #[cfg(test)]
 mod tests;
+
+/// **A chat's pin of an artifact folder, handed to the app as a proposal** (#5963, ADR 0120 §1):
+/// `purlis artifact pin` run in a chat and the `artifact_propose_pin` tool. Held for the person,
+/// who alone pins it, in purlis's Pin to workspace dialog. Nothing is written here, and a chat
+/// the app does not answer pins nothing.
+pub fn propose_pin(pin: purlis_core::artifact::proposal::Proposed) -> Result<u8, String> {
+    let (lines, code) = pin_proposed(pin)?;
+    for line in lines {
+        crate::speak(line);
+    }
+    Ok(code)
+}
+
+/// [`propose_pin`]'s ask, for the `artifact_propose_pin` tool: what the app said, as text.
+pub fn propose_pin_tool(
+    args: &serde_json::Map<String, serde_json::Value>,
+) -> Result<String, String> {
+    let proposed = purlis_core::artifact::proposal::Proposed::from_args(args)?;
+    let (lines, _) = pin_proposed(proposed)?;
+    Ok(lines
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n"))
+}
+
+/// The app's answer to a proposed pin: its lines and code, or why nothing was proposed.
+fn pin_proposed(
+    pin: purlis_core::artifact::proposal::Proposed,
+) -> Result<(Vec<purlis_core::repocmd::Say>, u8), String> {
+    let answered = asked(
+        |chat| Ask::ProposePin(Box::new(hookwire::ProposePinAsk { chat, pin })),
+        A_WRITE_TAKES_AT_MOST,
+    );
+    let nothing = "so nothing was pinned: ask the person to pin it in the window";
+    match answered {
+        Ok(Ok(Answer::Said { lines, code })) => Ok((lines, code)),
+        Ok(Ok(Answer::No { why })) => Err(why),
+        Ok(Ok(_)) => Err(format!("this app can't take a proposed pin, {nothing}")),
+        Ok(Err(e)) => Err(format!("the app did not answer ({e}), {nothing}")),
+        Err(_) => Err(format!("this chat could not reach the app, {nothing}")),
+    }
+}

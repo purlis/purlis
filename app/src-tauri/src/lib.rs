@@ -150,6 +150,7 @@ mod pasteread;
 mod personas;
 mod piecefiles;
 mod pin;
+mod pinproposals;
 mod planes;
 mod planewatch;
 mod poolfollow;

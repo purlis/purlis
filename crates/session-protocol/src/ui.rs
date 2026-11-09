@@ -1126,6 +1126,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     "artifact_pin",
     "artifact_reorder",
     "artifact_preview_open",
+    // A chat's proposed pin (#5963): only the person pins it, from its Pin to workspace dialog,
+    // and no chat answers its own proposal.
+    "proposed_pin",
+    "pin_proposed",
     // Repin and Unpin from a missing or too-large artifact's tab (#5954), and Unpin from
     // workspace in a pin's menu (#5953): they write the workspace's pins file, which only the
     // person in their own window does.

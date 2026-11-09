@@ -1092,6 +1092,14 @@ export const commands = {
 	 *  Window-only.
 	 */
 	dismissProposedChange: (plane: PlaneId, id: number) => typedError<null, string>(__TAURI_INVOKE("dismiss_proposed_change", { plane, id })),
+	/**  **A proposed pin, for its Pin to workspace dialog** (#5963). Window-only. */
+	proposedPin: (plane: PlaneId, id: number) => typedError<ProposedPin, string>(__TAURI_INVOKE("proposed_pin", { plane, id })),
+	/**
+	 *  **Pin on a proposed pin's Pin to workspace dialog** (#5963): pins it with the person's `name`
+	 *  and `icon`, and the folder and command the proposal named, which the dialog showed. Recorded
+	 *  as an applied proposal is (PC-4). Window-only.
+	 */
+	pinProposed: (plane: PlaneId, id: number, name: string, icon: string) => typedError<ArtifactPinShown, string>(__TAURI_INVOKE("pin_proposed", { plane, id, name, icon })),
 	/**  **The personas a key in `vault` may be remembered for**, for its row's menu (#5240). */
 	secretNeedPersonas: (plane: PlaneId, vault: string) => typedError<NeedPersona[], string>(__TAURI_INVOKE("secret_need_personas", { plane, vault })),
 	/**
@@ -13832,6 +13840,20 @@ export type ProofShot = {
 	at: number,
 	/**  SHA-256 of its bytes, lower-case hex. */
 	digest: string,
+};
+
+/**
+ *  **A proposed pin, as Pin to workspace offers it** (#5963): the dialog's ask, and the chat and
+ *  command it came with, which the dialog names.
+ */
+export type ProposedPin = {
+	workspace: string,
+	ask: ArtifactPinAsk,
+	/**  The chat that proposed it, by its name where it has one. */
+	by: string,
+	/**  The command Regenerate would run, and its working folder. */
+	command: string | null,
+	cwd: string | null,
 };
 
 /**

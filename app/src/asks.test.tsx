@@ -10,6 +10,7 @@ import { IN_ITS_CHAT, answerTaken, answerThrough, asksMoved, useAsks } from "./a
 import type { Shown } from "./bindings";
 import { OPEN_BROWSER_ASK, type OpenBrowserAsk } from "./browserNeedsYou";
 import { OPEN_PROPOSAL_ASK } from "./proposedChangeOpen";
+import { REVIEW_PIN_ASK } from "./proposedPinOpen";
 import { REMOVE_WORKSPACE_ASK } from "./removeWorkspaceAsk";
 import { OPEN_RUNNER_WRITE_ASK } from "./runnerWriteOpen";
 import { OPEN_RUNNER_DISPATCH_ASK } from "./runnerDispatchOpen";
@@ -721,6 +722,44 @@ describe("the list", () => {
     const { result } = renderHook(() => useAsks([PLANE]));
     await new Promise((settle) => setTimeout(settle, 20));
     expect(PLANE in result.current.held).toBe(false);
+  });
+});
+
+/** A pin a chat proposed (#5963): only the person pins it, from Pin to workspace. */
+const PROPOSED_PIN: Shown = {
+  session: 7,
+  ask: "proposal:5",
+  says: "Proposes to pin artifacts/state/ to alpha, which only you pin",
+  options: [
+    { id: "review-pin", label: "Review…", allows: false },
+    { id: "dismiss", label: "Dismiss", allows: false },
+  ],
+  source: "proposed-change",
+  chain: [],
+  answer: { via: "proposed-change", id: 5, path: "pin artifacts/state/ to alpha" },
+};
+
+describe("a chat's proposed pin (#5963)", () => {
+  it("opens Pin to workspace on Review…, pinning nothing, and Dismiss pins nothing", async () => {
+    const calls = sent({ dismiss_proposed_change: null });
+    const asked: unknown[] = [];
+    const heard = (event: Event) => asked.push((event as CustomEvent).detail);
+    window.addEventListener(REVIEW_PIN_ASK, heard);
+    try {
+      expect(await answerTaken(PLANE, PROPOSED_PIN, "review-pin")).toEqual({
+        refused: undefined,
+        live: false,
+        opened: true,
+      });
+    } finally {
+      window.removeEventListener(REVIEW_PIN_ASK, heard);
+    }
+    expect(asked).toEqual([{ plane: PLANE, id: 5 }]);
+    expect(await answerTaken(PLANE, PROPOSED_PIN, "dismiss")).toEqual({
+      refused: undefined,
+      live: false,
+    });
+    expect(calls.map((one) => one.cmd)).toEqual(["dismiss_proposed_change"]);
   });
 });
 

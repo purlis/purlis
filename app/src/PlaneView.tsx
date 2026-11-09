@@ -404,6 +404,7 @@ import {
 } from "./tabs";
 import { ArtifactGroup } from "./ArtifactGroup";
 import { PinPage } from "./PinToWorkspace";
+import { ProposedPins } from "./ProposedPin";
 import { artifactOf, artifactView } from "./artifacts";
 import { tileAll, zoomedLayout, zoomFocusedPane } from "./tiling";
 import { recorded } from "./layoutUndo";
@@ -12601,6 +12602,9 @@ export const PlaneView = memo(function PlaneView({
                     onCancel={() => setRenamingTab(undefined)}
                   />
                 )}
+
+                {/* A chat's proposed pin, opened by Review… on its row (#5963). */}
+                <ProposedPins plane={plane} />
 
                 {pinningPage && (
                   <PinPage

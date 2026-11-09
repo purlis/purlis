@@ -23,6 +23,7 @@ pub enum ArtifactCommand {
     /// on the workspace's activity bar, for everyone in the plane once it is saved (on this
     /// machine alone while the workspace is LOCAL). Pinning a folder again with another
     /// command or working folder makes it a new pin.
+    /// Run in a chat, it only proposes the pin: the person pins it in the window.
     Pin {
         /// The folder's name inside the workspace's artifacts/.
         folder: String,
@@ -201,6 +202,21 @@ pub fn run(here: &Here, command: ArtifactCommand) -> Result<Code, String> {
             cwd,
             workspace,
         } => {
+            // A chat proposes; only the person pins (#5963, ADR 0120 §1). Which chat it is, and so
+            // which workspace, is the app's record of it, never a flag: `-w` names nothing here.
+            if !crate::skill::at_the_persons_terminal(root) {
+                let proposed = purlis_core::artifact::proposal::Proposed {
+                    folder,
+                    name,
+                    icon,
+                    command,
+                    cwd,
+                };
+                return match crate::brokered::propose_pin(proposed) {
+                    Ok(code) => Ok(code),
+                    Err(why) => refused(&why),
+                };
+            }
             let ws = here.workspace(workspace.as_deref())?;
             let request = Request {
                 folder,

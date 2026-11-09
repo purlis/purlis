@@ -507,6 +507,8 @@ export const commands = {
 	applyProposedChange: __WINDOW_ONLY_RESULT,
 	proposedChange: __WINDOW_ONLY_RESULT,
 	dismissProposedChange: __WINDOW_ONLY_RESULT,
+	proposedPin: __WINDOW_ONLY_RESULT,
+	pinProposed: __WINDOW_ONLY_RESULT,
 	secretNeedPersonas: __WINDOW_ONLY_RESULT,
 	rememberSecretNeed: __WINDOW_ONLY_RESULT,
 	removeOldHarnessPlugins: __WINDOW_ONLY_RESULT,
@@ -10839,6 +10841,20 @@ export type ProofShot = {
 	at: number,
 	/**  SHA-256 of its bytes, lower-case hex. */
 	digest: string,
+};
+
+/**
+ *  **A proposed pin, as Pin to workspace offers it** (#5963): the dialog's ask, and the chat and
+ *  command it came with, which the dialog names.
+ */
+export type ProposedPin = {
+	workspace: string,
+	ask: ArtifactPinAsk,
+	/**  The chat that proposed it, by its name where it has one. */
+	by: string,
+	/**  The command Regenerate would run, and its working folder. */
+	command: string | null,
+	cwd: string | null,
 };
 
 /**

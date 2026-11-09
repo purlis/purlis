@@ -75,6 +75,27 @@ export const Local: Story = {
   },
 };
 
+/**
+ * **A chat proposed it** (#5963): the footer names the chat and what Regenerate will run, and
+ * only the person's Pin pins it. Esc pins nothing, and the proposal still waits.
+ */
+export const ProposedByAChat: Story = {
+  args: {
+    proposed: { by: "backlog sync", command: "purlis skill run backlog-sync", cwd: null },
+  },
+  play: async ({ canvasElement, args }) => {
+    const page = within(canvasElement.ownerDocument.body);
+    const dialog = await page.findByRole("dialog");
+    await expect(dialog).toHaveTextContent("backlog sync proposed this pin. Only you pin it.");
+    await expect(dialog).toHaveTextContent("Regenerate will run purlis skill run backlog-sync.");
+    await expect(dialog).toHaveTextContent("Visible to everyone in acme");
+    await untilFocused(() => page.getByLabelText("Name"), "It starts in the name");
+    await userEvent.keyboard("{Escape}");
+    await expect(args.onCancel).toHaveBeenCalled();
+    await expect(args.onPin).not.toHaveBeenCalled();
+  },
+};
+
 /** A page from outside the workspace's artifacts/: the footer names the folder it goes to. */
 export const Copied: Story = {
   args: { ask: { ...ASK, copied: true, folder: "report", name: "Weekly report" } },

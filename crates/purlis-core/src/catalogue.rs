@@ -39,6 +39,7 @@ pub fn every_tool() -> impl Iterator<Item = &'static Tool> {
         .chain(crate::browsertools::TOOLS.iter())
         .chain(crate::themepreview::TOOLS.iter())
         .chain(crate::skilltools::TOOLS.iter())
+        .chain(crate::artifact::proposal::TOOLS.iter())
 }
 
 /// What a query reads: one workspace's own, or the whole plane's, which is a grant of its own.

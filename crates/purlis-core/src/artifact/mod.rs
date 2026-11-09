@@ -23,6 +23,7 @@ pub mod links;
 pub mod live;
 pub mod offers;
 pub mod pins;
+pub mod proposal;
 pub mod regenerate;
 pub mod script;
 pub mod search;
@@ -214,14 +215,21 @@ fn folder_refusal(folder: &str) -> Option<String> {
     })
 }
 
-/// Pin artifact folder `request.folder` to the workspace at `workspace` in the plane at `root`.
-///
-/// The folder is resolved first ([`resolve`]), then read whole and scanned ([`scanned`]): a
-/// folder over [`SIZE_CAP`], or one holding something shaped like a secret, is refused. A
-/// refusal writes nothing. Pinning a folder
-/// already pinned with the same command and working folder changes its name or icon; with
-/// another command or working folder it is a new pin, which takes the old one's place.
-pub fn pin(root: &Path, workspace: &Path, request: &Request) -> Result<Pinned, String> {
+/// **A pin as [`pin`] would write it**, judged and not written: the name (the one asked, else the
+/// page's title, else the folder's), the icon, and the command and working folder, trimmed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Checked {
+    pub name: String,
+    pub icon: String,
+    pub command: Option<String>,
+    pub cwd: Option<String>,
+}
+
+/// **Judges `request` as [`pin`] does, and writes nothing** (#5963): the folder resolved and
+/// scanned, the command one line, the working folder inside the workspace, the icon one of
+/// purlis's and the name one line. What a chat proposes is judged by this, so the person is
+/// never shown a pin that [`pin`] would refuse.
+pub fn checked(workspace: &Path, request: &Request) -> Result<Checked, String> {
     let real = resolve(workspace, &request.folder)?;
     scanned(&real, &request.folder)?;
     let command = request
@@ -256,6 +264,29 @@ pub fn pin(root: &Path, workspace: &Path, request: &Request) -> Result<Pinned, S
         Some(name) => checked_name(name)?,
         None => title_of(&real.join(PAGE)).unwrap_or_else(|| request.folder.clone()),
     };
+    Ok(Checked {
+        name,
+        icon: icon.to_owned(),
+        command: command.map(str::to_owned),
+        cwd: cwd.map(str::to_owned),
+    })
+}
+
+/// Pin artifact folder `request.folder` to the workspace at `workspace` in the plane at `root`.
+///
+/// The folder is resolved first ([`resolve`]), then read whole and scanned ([`scanned`]): a
+/// folder over [`SIZE_CAP`], or one holding something shaped like a secret, is refused. A
+/// refusal writes nothing. Pinning a folder
+/// already pinned with the same command and working folder changes its name or icon; with
+/// another command or working folder it is a new pin, which takes the old one's place.
+pub fn pin(root: &Path, workspace: &Path, request: &Request) -> Result<Pinned, String> {
+    let Checked {
+        name,
+        icon,
+        command,
+        cwd,
+    } = checked(workspace, request)?;
+    let (icon, command, cwd) = (icon.as_str(), command.as_deref(), cwd.as_deref());
     let id = pins::id_of(&request.folder, command, cwd);
     let mut done = None;
     write(root, workspace, |pins| {

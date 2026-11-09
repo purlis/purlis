@@ -143,6 +143,17 @@ impl ServerHandler for Server {
             let args = request.arguments.clone().unwrap_or_default();
             return Ok(done(blocking(move || skill_tool(&name, &args)).await));
         }
+        // A proposed pin (#5963): the line `purlis artifact pin` sends in a chat, by the same
+        // function. Nothing is pinned here; only the person pins it, in the window.
+        if name == purlis_core::artifact::proposal::TOOL {
+            let args = request.arguments.clone().unwrap_or_default();
+            if let Some(why) = blocking(read_only_here).await.err() {
+                return Ok(done(Err(format!("nothing was proposed: {why}"))));
+            }
+            return Ok(done(
+                blocking(move || crate::brokered::propose_pin_tool(&args)).await,
+            ));
+        }
         if !chattools::TOOLS.iter().any(|t| t.name == name) {
             return Err(ErrorData::invalid_params(
                 format!("purlis has no tool {name:?}"),

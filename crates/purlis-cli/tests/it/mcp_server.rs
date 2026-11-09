@@ -226,6 +226,8 @@ fn a_harness_lists_charter_s_tools() {
             "browser_save_download",
             "browser_upload",
             "theme_preview",
+            // A chat proposes a pin, which only the person pins, added on purpose (#5963).
+            "artifact_propose_pin",
         ]
     );
 }
