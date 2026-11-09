@@ -749,10 +749,10 @@ export const ARowAcrossTheWindow: Story = {
 };
 
 /** Three asks, the middle one with a box for why and a button after it, as an Inbox ask holds. */
-function Holding({ after = false }: { after?: boolean }) {
+function Holding() {
   const [reason, setReason] = useState("");
   return (
-    <div style={{ inlineSize: "24rem", display: "grid", gap: "var(--space-3)" }}>
+    <div style={{ inlineSize: "24rem" }}>
       <List aria-label="Asks" disallowTypeAhead>
         <ListRow id="build" textValue="Run cargo build">
           <RowLabel>Run cargo build</RowLabel>
@@ -773,7 +773,6 @@ function Holding({ after = false }: { after?: boolean }) {
           <RowLabel>Run cargo test</RowLabel>
         </ListRow>
       </List>
-      {after && <Button size="sm">After</Button>}
     </div>
   );
 }
@@ -844,7 +843,7 @@ async function tabsOutAndBack(
   keys: ReturnType<typeof UserEvent.setup>,
   step: string,
 ) {
-  const after = within(list.parentElement ?? document.body).getByRole("button", { name: "After" });
+  const after = within(document.body).getByRole("button", { name: "After" });
   for (let press = 0; press < 5 && list.contains(document.activeElement); press += 1)
     await keys.tab();
   await untilFocused(() => after, `${step}: Tab leaves the list`);
@@ -861,7 +860,12 @@ async function tabsOutAndBack(
  * keyboard.
  */
 export const ComposingInARowsBox: Story = {
-  render: () => <Holding after />,
+  render: () => (
+    <div style={{ display: "grid", gap: "var(--space-3)" }}>
+      <Holding />
+      <Button size="sm">After</Button>
+    </div>
+  ),
   play: async ({ canvas, userEvent }) => {
     const list = canvas.getByRole("grid", { name: "Asks" });
     const host = within(list).getByRole("row", { name: "Reach registry.npmjs.org" });
