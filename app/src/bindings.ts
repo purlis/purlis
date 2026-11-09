@@ -2425,8 +2425,11 @@ export const commands = {
 	 *  and purlis's own as it is typed; what an extension says only warns, so Save never waits on it.
 	 */
 	skillLint: (plane: PlaneId, level: SkillLevel, name: string, text: string, extensions: boolean) => typedError<SkillLintFinding[], string>(__TAURI_INVOKE("skill_lint", { plane, level, name, text, extensions })),
-	/**  **Makes a skill** from `template` at `level`. */
-	skillNew: (plane: PlaneId, level: SkillLevel, name: string, description: string, template: SkillTemplateId) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_new", { plane, level, name, description, template })),
+	/**
+	 *  **Makes a skill** from `template` at `level`: at once from one of purlis's own templates, as a
+	 *  draft the person accepts from an extension's (#3091, ADR 0101 §1).
+	 */
+	skillNew: (plane: PlaneId, level: SkillLevel, name: string, description: string, template: SkillTemplateId) => typedError<SkillMade, string>(__TAURI_INVOKE("skill_new", { plane, level, name, description, template })),
 	/**  The text of a skill's `SKILL.md`, which the light editor opens. */
 	skillText: (plane: PlaneId, level: SkillLevel, name: string) => typedError<string, string>(__TAURI_INVOKE("skill_text", { plane, level, name })),
 	/**  Every file and folder in the folder of a skill the studio lists, nested. */
@@ -16560,6 +16563,11 @@ export type SkillDraft = {
 	/**  A file it changes changed in the project since: Accept is refused. */
 	stale: boolean,
 	files: SkillDraftFile[],
+	/**
+	 *  **The extension's template New skill… made it from** (#3091), as it was offered; `null`
+	 *  for a chat's draft.
+	 */
+	template?: string | null,
 };
 
 /**  One file of a draft: the project's text and the draft's, drawn as a diff. */
@@ -16952,6 +16960,15 @@ export type SkillLintLevel =
 "blocks" | 
 /**  Worth knowing, and Save does not wait on it. */
 "warns";
+
+/**
+ *  **What New skill… did** (#3091): its notes, and the draft it kept where an extension's
+ *  template made it, which the studio opens in Drafts; `null` where the skill was made.
+ */
+export type SkillMade = {
+	notes: string[],
+	draft: string | null,
+};
 
 /**
  *  **One panel on a skill's tab** (ADR 0101 §6), as the window draws it: purlis's Runs panel,

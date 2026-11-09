@@ -8749,7 +8749,9 @@ of 2026-11-01). A purlis from before it refuses a file holding it, as it refuses
   number of the chat that wrote it last; `bases`: each file the draft changed, below the skill's
   folder, with the SHA-256 of what the project held there when the draft first changed it, `null`
   for nothing; `mint`, sixteen random hex characters that tell this draft from the next of the same
-  skill, which its grades are marked with, absent in a draft from before #2780) and `files/`, each
+  skill, which its grades are marked with, absent in a draft from before #2780; `template`, the
+  extension's template New skill… made it from, as it was offered (`Review · House`), absent in a
+  chat's draft and one from before #3091) and `files/`, each
   drafted file at its path below the skill's folder. Folders are private to the person, as the app
   state is.
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2772).
@@ -8758,7 +8760,10 @@ of 2026-11-01). A purlis from before it refuses a file holding it, as it refuses
   deletes the folder.
 - **Written by:** the app, as `purlis_core::skills::verbs::drafts::take`, for a chat's `Write`,
   `Edit` or `MultiEdit` of a plane skill's file (its `pretooluse-edit` hook) or its `purlis
-  propose` of one, which reach the app as a proposed change does. Never by a chat.
+  propose` of one, which reach the app as a proposed change does. And `drafts::keep_new`, for a
+  new skill from an extension's template (#3091): in the app for New skill…, and in the person's
+  own `purlis skill new --extension-template` at their terminal (a chat's goes to the app as a
+  proposed change, as above). Never by a chat.
 - **Read by:** `drafts::list`, for the Skill studio's Draft skills and the chat's "Draft ready in
   Skill studio". Deleted ⇒ the drafts are lost; nothing in the project changes. Every read, write
   and removal goes through folders held open with `O_NOFOLLOW`.

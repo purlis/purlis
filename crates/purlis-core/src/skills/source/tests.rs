@@ -3131,3 +3131,96 @@ fn a_grade_file_that_is_a_link_is_left_out_and_never_followed() {
     };
     assert!(why.contains("link"), "{why}");
 }
+
+/// **A lint that says what it was handed** (#3090): each finding is one file's path and text, so
+/// a test reads what the review handed it.
+struct Handed;
+
+impl purlis_skills::SkillLint for Handed {
+    fn findings(&self, skill: &purlis_skills::SkillFiles<'_>) -> Vec<purlis_skills::Finding> {
+        let said = |says: String| purlis_skills::Finding {
+            severity: purlis_skills::Severity::Warns,
+            lint: purlis_skills::Lint::Said {
+                by: "House lint".to_owned(),
+                says,
+            },
+        };
+        std::iter::once(said(format!("{} {:?}", skill.name, skill.text)))
+            .chain(
+                skill
+                    .others
+                    .iter()
+                    .map(|(path, text)| said(format!("{path} {text:?}"))),
+            )
+            .collect()
+    }
+}
+
+/// #3090 (ADR 0101 §1): a studio's lints are asked of each reviewed skill's files as the source
+/// holds them, not as the review escapes them, and what they find is a lint line of that skill,
+/// beside purlis's own and under the lint's name. The install itself is not touched: the digest
+/// handed back is the one reviewed.
+#[test]
+fn an_extensions_lint_says_its_findings_in_the_install_review() {
+    let remote = Upstream::new();
+    let deploy = "---\nname: deploy\ndescription: Ships it.\n---\n\nRun it.\u{200b}\n";
+    let tree = remote.tree(&[
+        ("skills/deploy/SKILL.md", "100644", deploy.as_bytes()),
+        (
+            "skills/deploy/notes.md",
+            "100644",
+            "Hidden\u{202e}text\n".as_bytes(),
+        ),
+        ("skills/deploy/logo.png", "100644", b"\x89PNG\r\n\x1a\n\0\0"),
+    ]);
+    remote.commit(&tree, None);
+    let tmp = plane();
+    let mut review = review(
+        tmp.path(),
+        &remote.source(),
+        &["deploy".to_owned()],
+        &Level::project(),
+    )
+    .unwrap();
+    let digest = review.skills[0].digest.clone();
+    let purlis_own = review.skills[0].lint.clone();
+
+    linted(&mut review.skills, &Level::project(), &[&Handed]);
+
+    let lint = &review.skills[0].lint;
+    assert_eq!(lint[..purlis_own.len()], purlis_own[..], "{lint:?}");
+    assert_eq!(
+        lint[purlis_own.len()..],
+        [
+            format!("House lint: deploy {deploy:?}"),
+            format!("House lint: notes.md {:?}", "Hidden\u{202e}text\n"),
+        ],
+        "{lint:?}"
+    );
+    assert_eq!(review.skills[0].digest, digest);
+}
+
+/// #3090: with no lint of an extension's, a review says what purlis's own lints say, and nothing
+/// more.
+#[test]
+fn with_no_extensions_lint_the_review_is_purlis_s_own() {
+    let remote = Upstream::new();
+    let tree = remote.tree(&[
+        ("skills/deploy/SKILL.md", "100644", DEPLOY),
+        ("skills/notify/SKILL.md", "100644", NOTIFY),
+    ]);
+    remote.commit(&tree, None);
+    let tmp = plane();
+    let mut review = review(
+        tmp.path(),
+        &remote.source(),
+        &["deploy".to_owned()],
+        &Level::project(),
+    )
+    .unwrap();
+    let before = review.clone();
+
+    linted(&mut review.skills, &Level::project(), &[]);
+
+    assert_eq!(review, before);
+}

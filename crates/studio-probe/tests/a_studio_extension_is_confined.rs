@@ -356,6 +356,24 @@ fn it_adds_a_template_a_lint_a_panel_and_a_source() {
         "the review marks the script it would install: {:?}",
         skill.files
     );
+
+    // The studio's lint says what it finds in the install review too (#3090), handed the
+    // reviewed skill's text files, beside purlis's own lines and under its own name.
+    let mut review = review;
+    let purlis_own = review.skills[0].lint.len();
+    studio.lint_reviewed(
+        &mut review.skills,
+        &purlis_core::skills::verbs::Level::project(),
+    );
+    assert_eq!(
+        review.skills[0].lint[purlis_own..],
+        [format!(
+            "Probe lint: the probe was handed 2 files of {}",
+            studio_probe::OFFERED
+        )],
+        "{:?}",
+        review.skills[0].lint
+    );
 }
 
 fn the_approval_says_it_runs_confined_and_names_its_hosts() {
