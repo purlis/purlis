@@ -288,8 +288,10 @@ export function ThemeParts({
               </Badge>
             </Tooltip>
           ))}
-          {alsoSaid(set) !== "" && <span>{alsoSaid(set)}</span>}
         </p>
+      )}
+      {families.length > 0 && alsoSaid(set) !== "" && (
+        <p className="ui-setting-help">{alsoSaid(set)}</p>
       )}
       <Disclosure label="Show each part" size="sm">
         <PartsTree manifest={manifest} set={set} />
@@ -346,7 +348,7 @@ export function PartsTree({
               description={family.description}
               content={
                 <>
-                  <RowLabel>{family.name}</RowLabel>
+                  <RowLabel className="shrink-0">{family.name}</RowLabel>
                   <RowDescription>
                     {[
                       family.description,
@@ -370,7 +372,7 @@ export function PartsTree({
                   description={`${part.description} Sets: ${part.properties.join(", ")}`}
                   content={
                     <>
-                      <RowLabel>{part.name}</RowLabel>
+                      <RowLabel className="shrink-0">{part.name}</RowLabel>
                       <RowDescription>
                         {part.description} Sets: {part.properties.join(", ")}
                       </RowDescription>
