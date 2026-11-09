@@ -1729,8 +1729,7 @@ of that name at that level replaces it.
 ### `[skill_policy]` — the org's controls over skill sources
 
 - **Format:** one TOML table in `charter.toml`, keys below and no other.
-- **Status:** **purlis only** (SK-11, #2774; ADR 0100 §6, amended 2026-11-09), **experimental**
-  while the `skill-studio` flag is on.
+- **Status:** **purlis only** (SK-11, #2774; ADR 0100 §6, amended 2026-11-09), **experimental**.
 - **Tier:** Plane — in `charter.toml`, committed. It is never read from `charter.local.toml`: a
   table there refuses every install and update until it is taken out, so one machine cannot
   loosen what the team set.
