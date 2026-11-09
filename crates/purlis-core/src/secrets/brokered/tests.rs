@@ -1544,7 +1544,10 @@ fn an_env_hand_over_is_refused_for_a_claude_code_chat_on_its_own_sandbox_on_linu
     for whole in [Some(Harness::Codex), Some(Harness::Opencode)] {
         assert_eq!(env_refused(whole, true, Wrap::Purlis, &by_env), None);
     }
-    assert_eq!(env_refused(claude, false, Wrap::Purlis, &by_file(base)), None);
+    assert_eq!(
+        env_refused(claude, false, Wrap::Purlis, &by_file(base)),
+        None
+    );
     assert_eq!(env_refused(claude, false, Wrap::Seatbelt, &by_env), None);
 }
 
