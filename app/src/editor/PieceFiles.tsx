@@ -883,7 +883,7 @@ function PagePreview({ plane, cut, path }: { plane: PlaneId; cut: Place; path: s
       <ArtifactFrame
         name={name}
         opens={`${plane}\u0000${cut.workspace}\u0000${cut.repo}\u0000${cut.piece ?? ""}\u0000${path}`}
-        open={(first) => commands.artifactPreviewOpen(plane, page, first)}
+        open={(first, theme) => commands.artifactPreviewOpen(plane, page, first, theme)}
       />
     </div>
   );

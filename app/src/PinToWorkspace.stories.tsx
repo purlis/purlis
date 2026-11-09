@@ -118,6 +118,7 @@ export const Unpin: StoryObj<typeof UnpinArtifact> = {
       missing: null,
       live: true,
       too_large: null,
+      fresh: null,
     },
     live: true,
     unpinning: false,

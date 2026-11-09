@@ -109,6 +109,7 @@ describe("Pin to workspace, for a page the window names (#5953)", () => {
           missing: null,
           live: true,
           too_large: null,
+          fresh: null,
         };
       return null;
     });
