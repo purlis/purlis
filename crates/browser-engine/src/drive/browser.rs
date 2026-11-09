@@ -4211,6 +4211,10 @@ impl Browser {
     /// where it must be the frame element of the next frame, followed through however the page
     /// draws it, or, in the element's own document, stand to the element as above.
     fn drawn_at_is(&self, target: &Ref, at: &Located, (x, y): (f64, f64)) -> Result<(), Refusal> {
+        // TEMPORARY switch-off, to show the tests that need this check fail without it; reverted next.
+        if std::hint::black_box(true) {
+            return Ok(());
+        }
         let not_shown = || Refusal::NotShown(target.clone());
         // Each frame's parent and session, as the driver knows them.
         let frames: HashMap<String, (Option<String>, String)> = {
