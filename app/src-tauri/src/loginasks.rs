@@ -72,6 +72,12 @@ pub enum Heard {
     Gone,
 }
 
+/// **What the chat reads where its notice is refused for a key out of reach** (#5831): the read's
+/// own words, unchanged.
+fn as_the_chat_reads_it(why: &str) -> String {
+    why.to_owned()
+}
+
 /// **What the person reads where a press is refused for a key out of reach** (#5831), on the notice,
 /// which stays up as it does for every press refused: nothing was allowed, and the read's own
 /// words, which name the key and the chat's vault alone, told to the person as "you"
@@ -804,7 +810,7 @@ fn judged(
         Some(declared) if proposal.is_where(declared) => return Ok(None),
         Some(declared) => proposal.replacing(root, declared, held)?,
     };
-    finish(root, &locks, proposal, reads_as, str::to_owned).map(Some)
+    finish(root, &locks, proposal, reads_as, as_the_chat_reads_it).map(Some)
 }
 
 /// **Why `persona`, whose vaults the chat reads, may read neither the login's user key nor its

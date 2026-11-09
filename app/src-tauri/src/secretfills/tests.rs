@@ -1307,8 +1307,8 @@ fn allow_once_isnt_drawn_again_for_a_change_only_always_would_write() {
 // ---- A fill's key is judged at the press (#5831) ----
 
 /// A fill whose key became a link into a vault its persona may not use while its notice waited:
-/// Always is allowed nothing, writes no line, grants the persona no vault, and the chat hears the
-/// read's own words.
+/// Always is allowed nothing, writes no line, grants the persona no vault, and the person reads why
+/// on the notice, told as you; the chat hears nothing yet.
 #[test]
 fn a_fill_linked_out_of_reach_while_its_notice_waits_is_refused_at_the_press() {
     let dir = project("[sandbox]\nmode = \"on\"\n");

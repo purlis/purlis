@@ -1254,8 +1254,9 @@ fn a_login_with_a_key_out_of_reach_is_refused_before_its_notice() {
     says_out_of_reach(&refused);
 }
 
-/// A link made while the notice waits is judged at the press: Always is allowed nothing, writes
-/// no line, and grants qa none of the vault it would have, and the chat hears the read's words.
+/// A link made while the notice waits is judged at the press: Always is allowed nothing, writes no
+/// line, and grants qa none of the vault it would have, and the person reads why on the notice,
+/// told as you; the chat hears nothing yet.
 #[test]
 fn a_login_linked_out_of_reach_while_its_notice_waits_is_refused_at_the_press() {
     let dir = project("[sandbox]\nmode = \"on\"\n");
