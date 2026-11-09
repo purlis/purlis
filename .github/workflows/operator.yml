@@ -9,13 +9,13 @@ name: cluster operator
 # Helm chart, and a runner image built from this commit (`operator/e2e/kind.sh`).
 #
 # A pull request that changes docs/cluster-pool-setup.md runs it too, since kind.sh runs that
-# guide's commands. A push doesn't: a green push publishes an image (operator-image.yml), and the
-# nightly run checks the guide on main.
+# guide's commands. A push doesn't: a push's run publishes an image (its `image` job, which calls
+# operator-image.yml), and the nightly run checks the guide on main.
 #
 # Otherwise only a change to the operator, the runner image, the desktop's side of a cluster runner, the
 # toolchain, the licence and advisory rules or this file runs it on a pull request, so every
-# other pull request waits on none of it; it also runs nightly on `main`. It publishes nothing
-# and holds no write permission.
+# other pull request waits on none of it; it also runs nightly on `main`. Only its run of a push to
+# `main` publishes, through the `image` job; the checks hold no write permission.
 
 on:
   pull_request:
@@ -207,3 +207,20 @@ jobs:
           docker build -t purlis-cluster-operator:e2e -f operator/Dockerfile "$RUNNER_TEMP/operator"
       - name: A Pool and a Claim on kind, with the pinned agent-sandbox
         run: operator/e2e/kind.sh purlis-runner:e2e purlis-cluster-operator:e2e
+
+  # **The operator image of a push to `main`**, built and published by `operator-image.yml` once
+  # this commit's checks and kind tests passed. Called from here, rather than started by this
+  # run's end, so that run's `github.sha` is this push's commit: the one it builds, and the one
+  # its OIDC token, and so its build provenance, names. The nightly run and a pull request
+  # publish nothing. The permissions are the most the called workflow's jobs ask for; each of
+  # its jobs holds only its own. It needs no secret: the registry takes the run's own token.
+  image:
+    name: operator image
+    needs: [checks, kind]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+      packages: write
+    uses: ./.github/workflows/operator-image.yml

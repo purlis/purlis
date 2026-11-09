@@ -176,7 +176,8 @@ const POLICY_HEADER: &str = "# Copyright 2026 Purlis
 # the cluster refuses a Claim from someone who may not use its pool.
 #
 # Upstream's claims on a purlis pool's warm pool, and warm pools of its template, are made by
-# the operator alone, so a runner from a pool is had only through a Claim (#2055).
+# the operator alone, so a runner from a pool is had only through a Claim (#2055). A stopped
+# Claim is run again by its requester alone.
 #
 # The second policy, purlis-runner-namespaces (#2055): only the operator makes a runner
 # namespace (purlis-runners-*) or changes who it is for, and the operator binds
@@ -189,8 +190,12 @@ const POLICY_HEADER: &str = "# Copyright 2026 Purlis
 # controls; and its spec.podTemplate only while it is Suspended in a runner namespace (#3982).
 #
 # The fourth policy, purlis-forge (#4206): whoever writes a Pool's spec.forge needs `use` on the
-# key it names (forgekeys), and only a Claim's requester changes the repos it names. The operator
-# mints only for a Claim and a Pool made once its binding has settled.
+# key it names (forgekeys), and only a Claim's requester changes the repos it names. On a Pool that
+# mints, changing its image, turning its minting on and running it again once it is stopped take
+# `use` on its key too. A Pool that names a key says who wrote its forge
+# (runners.purlis.dev/forge-writer), by that writer's own name, and only the operator says, as it
+# makes an upstream claim, that it was born on a Pool naming a key (runners.purlis.dev/born-minting).
+# The operator mints only for a Claim and a Pool made once its binding has settled.
 #
 # The fifth policy, purlis-operator-deletes-only-a-retained-claim (#3981): the operator deletes
 # only a kept Claim, not stopped, that carries its own RetentionEnded condition.
@@ -201,6 +206,11 @@ const POLICY_HEADER: &str = "# Copyright 2026 Purlis
 # The seventh policy, purlis-operator-writes-only-a-runners-shape (#3754): the operator writes
 # upstream's templates, claims and warm pools in a runner namespace alone, a template's pod only in
 # purlis's runner shape.
+#
+# The eighth policy, purlis-operator-writes-what-its-pool-says: the operator's template for a
+# Pool runs that Pool's image in every container, and a kept claim's volume is made in the
+# storage class its Pool names and keeps the class it was made in. Each Pool is its parameter,
+# so a template or claim named for no Pool is compared with none.
 ";
 
 /// The plain manifests the chart's default render makes: `operator.yaml` and `policy.yaml`.

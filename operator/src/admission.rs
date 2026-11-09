@@ -11,8 +11,9 @@
 
 use crate::resources::{Claim, ClaimStatus, condition};
 use k8s_openapi::api::admissionregistration::v1::{
-    ValidatingAdmissionPolicy, ValidatingAdmissionPolicyBinding,
+    MatchResources, ValidatingAdmissionPolicy, ValidatingAdmissionPolicyBinding,
 };
+use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
 use k8s_openapi::jiff::SignedDuration;
 
 /// The name of purlis's policy on Claims, and of its binding.
@@ -45,10 +46,46 @@ pub const RUNNER_NAMESPACES_POLICY: &str = "purlis-runner-namespaces";
 /// force, whatever an earlier binding said ([`in_force_since`]).
 pub const FORGE_POLICY: &str = "purlis-forge";
 
-/// Whether `binding` puts the policy `policy` in force: it binds that policy, and denies.
+/// Whether `binding` puts the policy `policy` in force: it binds that policy, denies, and matches
+/// all the policy does.
 fn in_force(binding: &ValidatingAdmissionPolicyBinding, policy: &str) -> bool {
     let spec = &binding.spec;
-    spec.policy_name == policy && spec.validation_actions.iter().any(|a| a == "Deny")
+    spec.policy_name == policy
+        && spec.validation_actions.iter().any(|a| a == "Deny")
+        && spec.match_resources.as_ref().is_none_or(matches_everything)
+}
+
+/// Whether a binding's `matchResources` leaves the policy matching all it matches by itself: no
+/// selector that picks some namespaces or objects, no rule that names or leaves out a resource, and
+/// the equivalent-request match the API server takes when none is named. Any narrowing puts the
+/// policy in force only somewhere, so a Claim made elsewhere was never held by it.
+fn matches_everything(resources: &MatchResources) -> bool {
+    let everything = |selector: &Option<LabelSelector>| {
+        selector.as_ref().is_none_or(|selector| {
+            selector
+                .match_labels
+                .as_ref()
+                .is_none_or(|labels| labels.is_empty())
+                && selector
+                    .match_expressions
+                    .as_ref()
+                    .is_none_or(|expressions| expressions.is_empty())
+        })
+    };
+    everything(&resources.namespace_selector)
+        && everything(&resources.object_selector)
+        && resources
+            .resource_rules
+            .as_ref()
+            .is_none_or(|rules| rules.is_empty())
+        && resources
+            .exclude_resource_rules
+            .as_ref()
+            .is_none_or(|rules| rules.is_empty())
+        && resources
+            .match_policy
+            .as_deref()
+            .is_none_or(|policy| policy == "Equivalent")
 }
 
 /// A stored time and [`SETTLE`]. A time past what a timestamp holds: in force from the end of time,
@@ -65,7 +102,8 @@ fn settled(
 /// **When the policy `name` is in force from**, given it and its binding as the cluster holds them
 /// (#3854): [`SETTLE`] after the later of their creation times, so a policy made again under a
 /// binding that stayed counts as made again. `None` while either is missing, or the binding does
-/// not deny, or it has changed since it was made (its `generation` is not 1): a cluster keeps no
+/// not deny, or narrows what the policy matches, or the policy lets through what it cannot check
+/// (`failurePolicy: Ignore`), or the binding has changed since it was made (its `generation` is not 1): a cluster keeps no
 /// time for that change, so nothing is under it until the binding is made again. An object made
 /// no later than this was not admitted under the policy.
 pub fn in_force_since(
@@ -77,7 +115,15 @@ pub fn in_force_since(
         .filter(|binding| in_force(binding, name))
         .filter(|binding| binding.metadata.generation == Some(1))?;
     let bound = settled(binding.metadata.creation_timestamp.as_ref()?);
-    let held = settled(policy?.metadata.creation_timestamp.as_ref()?);
+    // A policy that lets a request through when it cannot be checked holds nothing for certain.
+    let policy = policy.filter(|policy| {
+        policy
+            .spec
+            .as_ref()
+            .and_then(|spec| spec.failure_policy.as_deref())
+            != Some("Ignore")
+    })?;
+    let held = settled(policy.metadata.creation_timestamp.as_ref()?);
     Some(bound.max(held))
 }
 
