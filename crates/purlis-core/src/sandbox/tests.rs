@@ -2848,6 +2848,34 @@ fn a_clone_the_app_made_for_a_chat_keeps_its_git_config_hooks_and_editor_setting
 }
 
 #[test]
+fn a_git_folders_glab_settings_and_older_remote_definitions_are_denied_to_every_chat() {
+    // glab reads a repository's own settings from `.git/glab-cli`, and git's older remote
+    // definitions say which host a forge command line sees: later code, at any depth, in a
+    // submodule's git folder too.
+    let settings = claude::settings(&compiled(Denied::default(), Os::MacOs)).expect("compiles");
+    let write = deny_write(&settings);
+    for glob in [
+        "**/.git/glab-cli",
+        "**/.git/remotes",
+        "**/.git/branches",
+        "**/.git/modules/**/glab-cli",
+    ] {
+        assert!(write.iter().any(|it| it == glob), "{glob} in {write:?}");
+        assert!(settings.deny.contains(&format!("Edit({glob})")), "{glob}");
+    }
+    for path in [
+        "/p/repo/.git/glab-cli/config.yml",
+        "/p/repo/.git/remotes/origin",
+        "/p/repo/.git/branches/origin",
+    ] {
+        assert!(
+            crate::sandboxblock::is_planted(Path::new(path)),
+            "{path} is later code"
+        );
+    }
+}
+
+#[test]
 fn a_chat_in_a_branch_folder_is_given_nothing_under_its_clones_git_directory() {
     // #1055, ruling V99h: a sandboxed chat in a linked worktree commits through the app, and
     // its sandbox is not widened for it. The worktree's git directory is in its clone's

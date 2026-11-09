@@ -835,7 +835,7 @@ impl Planted {
 /// have code run outside its sandbox the next time a person, an editor or another chat opens
 /// the directory. The project's manifests are held only where they could change a chat's
 /// sandbox ([`MANIFESTS`]).
-pub const PLANTED: [Planted; 89] = [
+pub const PLANTED: [Planted; 93] = [
     // A `.git` moved into place brings its own config and hooks.
     Planted::itself(".git"),
     Planted::and_below(".git/config"),
@@ -849,6 +849,12 @@ pub const PLANTED: [Planted; 89] = [
     Planted::and_below(".git/commondir"),
     Planted::and_below(".git/objects/info/alternates"),
     Planted::and_below(".git/info/attributes"),
+    // glab's own settings for the repository (`glab-cli/config.yml`: its host, and the editor,
+    // pager and browser it starts), and git's older remote definitions, which say what host a
+    // forge command line sees.
+    Planted::and_below(".git/glab-cli"),
+    Planted::and_below(".git/remotes"),
+    Planted::and_below(".git/branches"),
     // Each submodule's git directory, nested at any depth; and the directory that holds them,
     // so it is never moved into place whole.
     Planted::itself(".git/modules"),
@@ -858,6 +864,7 @@ pub const PLANTED: [Planted; 89] = [
     Planted::and_below(".git/modules/**/commondir"),
     Planted::and_below(".git/modules/**/objects/info/alternates"),
     Planted::and_below(".git/modules/**/info/attributes"),
+    Planted::and_below(".git/modules/**/glab-cli"),
     // Hook managers' directories, which a `core.hooksPath` commonly names (ruling V73d).
     Planted::and_below(".husky"),
     Planted::and_below(".githooks"),
