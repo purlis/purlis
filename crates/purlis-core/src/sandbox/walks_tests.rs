@@ -24,13 +24,16 @@ fn swapping(
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let aside = outside.with_extension("aside");
+        // Each side held a while, a different while each time: a walk that looks a path up again
+        // then finds the same folder it was led into for a run of names, not only for one.
+        let holds = [0, 50, 300, 1000].map(Duration::from_micros);
+        let mut at = 0;
         while !stop.load(Ordering::Relaxed) {
             let _ = std::fs::rename(&inside, &aside);
             let _ = std::fs::rename(&outside, &inside);
             let _ = std::fs::rename(&aside, &outside);
-            let _ = std::fs::rename(&inside, &aside);
-            let _ = std::fs::rename(&outside, &inside);
-            let _ = std::fs::rename(&aside, &outside);
+            std::thread::sleep(holds[at % holds.len()]);
+            at += 1;
         }
     })
 }
