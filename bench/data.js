@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794186837750,
+  "lastUpdate": 1794188545921,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -44100,6 +44100,48 @@ window.BENCHMARK_DATA = {
             "value": 102.0452,
             "unit": "ms",
             "extra": "median of 5 runs: 102.001, 102.027, 102.045, 102.108, 102.202 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a662d80f4e406cd10a9d242f19e3e9d833a6bad4",
+          "message": "A handed manual-only narrowing skill the person named is loaded, never sent to a refused skills:<name> (#5880) (#5894)\n\n* A handed manual-only narrowing skill the person named is loaded, never sent to a refused skills:<name> (#5880)\n\nClaude Code reads disable-model-invocation itself, so its Skill tool refuses\na model-started skills:<name>. skill_load now gives no narrowed start for a\nmanual-only skill on a harness that reads the key (ManualOnly::Read): with\nperson_asked it loads, opens its run and says Narrowing not applied.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YQR781G23T9XWDXQ9RN4HE\nPurlis-Persona: steward\n\n* Review: one sentence per exception in skilltools' module doc, narrowed_start takes the load, a Claude Code asking helper in routing tests, the ADR links the 0063 rule it narrows, the changelog names a slash command for every skill\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YQR781G23T9XWDXQ9RN4HE\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-09T00:44:45Z",
+          "tree_id": "d484697d2045be61d9d797398dddd705153d0fe7",
+          "url": "https://github.com/purlis/purlis/commit/a662d80f4e406cd10a9d242f19e3e9d833a6bad4"
+        },
+        "date": 1794188539886,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6630235,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.637, 0.645, 0.663, 0.664, 0.680 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.577362,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.422, 16.522, 16.577, 16.594, 16.699 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.0526395,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.275, 101.770, 102.053, 102.154, 102.567 ms"
           }
         ]
       }
