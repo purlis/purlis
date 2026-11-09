@@ -841,7 +841,7 @@ fn keep_blocked_on_a_vault_allowed_for_the_persona_says_its_runs_still_go_and_po
     assert_eq!(
         held.said,
         "You kept vault devops blocked for this chat, but steward can already use it, so Keep blocked does not stop this \
-         chat's runs on it. Remove it in Settings › Sandbox › Allowed to stop them."
+         chat's runs on it. Remove it in Settings › Sandbox › Network › Allowed to stop them."
     );
 }
 
@@ -894,6 +894,6 @@ fn keep_blocked_on_a_vault_both_tagged_and_allowed_points_at_the_tag_which_remov
         held.said,
         "You kept vault devops blocked for this chat, but devops can already use it, so Keep blocked does not stop this \
          chat's runs on it. The project's vaults tag it for devops: change that tag \
-         to stop them. It is in Settings › Sandbox › Allowed too."
+         to stop them. It is in Settings › Sandbox › Network › Allowed too."
     );
 }

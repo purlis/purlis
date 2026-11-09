@@ -587,9 +587,9 @@ describe("answering in place", () => {
     expect(within(recent).queryAllByRole("button")).toEqual([]);
   });
 
-  it("links the held vault's Notice to Settings › Sandbox › Allowed where its sentence sends the person there (#5939)", async () => {
+  it("links the held vault's Notice to Settings › Sandbox › Network › Allowed where its sentence sends the person there (#5939)", async () => {
     const listed =
-      "You kept vault team blocked for this chat, but devops can already use it, so Keep blocked does not stop this chat's runs on it. Remove it in Settings › Sandbox › Allowed to stop them.";
+      "You kept vault team blocked for this chat, but devops can already use it, so Keep blocked does not stop this chat's runs on it. Remove it in Settings › Sandbox › Network › Allowed to stop them.";
     core({ answer_run_grant: { said: listed, allowed_list: true } });
     const ask = { ...runAsk({ offer: "vault" }, VAULTS_OWN), chain: ["devops 4"] };
     const other = permission(3, "01J0A", ["steward 3"]);
@@ -640,7 +640,7 @@ describe("answering in place", () => {
 
   it("says what Keep blocked said, where the persona already holds the vault, in a Notice that stands while other asks wait, until dismissed (#5890)", async () => {
     const held =
-      "You kept vault team blocked for this chat, but devops can already use it, so Keep blocked does not stop this chat's runs on it. Remove it in Settings › Sandbox › Allowed to stop them.";
+      "You kept vault team blocked for this chat, but devops can already use it, so Keep blocked does not stop this chat's runs on it. Remove it in Settings › Sandbox › Network › Allowed to stop them.";
     core({ answer_run_grant: { said: held } });
     const ask = { ...runAsk({ offer: "vault" }, VAULTS_OWN), chain: ["devops 4"] };
     const other = permission(3, "01J0A", ["steward 3"]);

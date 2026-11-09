@@ -570,7 +570,7 @@ describe("answering through the path an ask names", () => {
 
   it("hands on what Keep blocked on a run's notice says where the persona already holds the vault, as the refused vault's Notice says it (#5890)", async () => {
     const held =
-      "You kept vault team blocked for this chat, but devops can already use it, so Keep blocked does not stop this chat's runs on it. Remove it in Settings › Sandbox › Allowed to stop them.";
+      "You kept vault team blocked for this chat, but devops can already use it, so Keep blocked does not stop this chat's runs on it. Remove it in Settings › Sandbox › Network › Allowed to stop them.";
     sent({ answer_run_grant: { said: held } });
     const taken = await answerTaken(PLANE, runAsk({ offer: "vault" }, VAULTS_OWN), "keep");
     expect(taken).toEqual({ refused: undefined, live: false, said: held });

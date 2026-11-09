@@ -88,7 +88,7 @@ export function focusedSetting(place: string): void {
 export const SETTINGS_LINK = "charter-settings-link";
 
 /**
- * **Settings › Sandbox › Allowed** (#5939): the row of the project's Sandbox network group that
+ * **Settings › Sandbox › Network › Allowed** (#5939): the row of the project's Sandbox network group that
  * lists what was allowed, where a vault a persona holds by a row of it is removed. Its ids are
  * `GrantedList`'s `NETWORK` group's, spelled here so a Notice links there without drawing the
  * settings page in.

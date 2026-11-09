@@ -331,7 +331,7 @@ export async function answerTaken(
   /** What the source said of the answer, for the person to read beside it: Keep blocked on a
    *  vault the chat's persona already holds says it does not stop the chat's runs (#5890). */
   said?: string;
-  /** Whether `said` sends the person to Settings › Sandbox › Allowed, so its Notice links there
+  /** Whether `said` sends the person to Settings › Sandbox › Network › Allowed, so its Notice links there
    *  (#5939). */
   allowedList?: true;
 }> {

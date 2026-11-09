@@ -469,7 +469,7 @@ describe("the refused vault Notice", () => {
 
   it("says beside Keep blocked where the persona already holds the vault, as the core answers (#5801)", async () => {
     const said =
-      "You kept vault devops blocked for this chat, but steward can already use it, so Keep blocked does not stop this chat's runs on it. Remove it in Settings › Sandbox › Allowed to stop them.";
+      "You kept vault devops blocked for this chat, but steward can already use it, so Keep blocked does not stop this chat's runs on it. Remove it in Settings › Sandbox › Network › Allowed to stop them.";
     mockIPC((cmd) => {
       if (cmd === "vault_refusals") return [DEVOPS];
       if (cmd === "keep_vault_blocked") return { said };
@@ -481,9 +481,9 @@ describe("the refused vault Notice", () => {
     expect(await notice()).toHaveTextContent(said);
   });
 
-  it("links what Keep blocked said to Settings › Sandbox › Allowed where the Allowed list holds the vault (#5939)", async () => {
+  it("links what Keep blocked said to Settings › Sandbox › Network › Allowed where the Allowed list holds the vault (#5939)", async () => {
     const said =
-      "You kept vault devops blocked for this chat, but steward can already use it, so Keep blocked does not stop this chat's runs on it. Remove it in Settings › Sandbox › Allowed to stop them.";
+      "You kept vault devops blocked for this chat, but steward can already use it, so Keep blocked does not stop this chat's runs on it. Remove it in Settings › Sandbox › Network › Allowed to stop them.";
     mockIPC((cmd) => {
       if (cmd === "vault_refusals") return [DEVOPS];
       if (cmd === "keep_vault_blocked") return { said, allowed_list: true };

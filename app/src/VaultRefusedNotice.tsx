@@ -108,7 +108,7 @@ export function VaultRefusedNotice({
     return held.filter((one) => listed.has(one.vault));
   }, [asks, held]);
   /** What the last press answered, and the persona it was for, said until it is put away; and
-   *  whether it sends the person to Settings › Sandbox › Allowed, which it then links to (#5939). */
+   *  whether it sends the person to Settings › Sandbox › Network › Allowed, which it then links to (#5939). */
   const [answered, setAnswered] = useState<{
     persona: string;
     said: string;

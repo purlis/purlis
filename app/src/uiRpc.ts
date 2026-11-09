@@ -15803,7 +15803,7 @@ export type UsedTotal = {
 export type VaultAnswered = {
 	said: string,
 	/**
-	 *  Whether [`Self::said`] sends the person to Settings › Sandbox › Allowed, where a row holds
+	 *  Whether [`Self::said`] sends the person to Settings › Sandbox › Network › Allowed, where a row holds
 	 *  the vault for the chat's persona: the Notice that says it then links there (#5939).
 	 */
 	allowed_list: boolean,

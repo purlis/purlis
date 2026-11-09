@@ -416,7 +416,7 @@ pub fn refused(
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct VaultAnswered {
     pub said: String,
-    /// Whether [`Self::said`] sends the person to Settings › Sandbox › Allowed, where a row holds
+    /// Whether [`Self::said`] sends the person to Settings › Sandbox › Network › Allowed, where a row holds
     /// the vault for the chat's persona: the Notice that says it then links there (#5939).
     pub allowed_list: bool,
 }
@@ -905,7 +905,7 @@ pub(crate) struct KeptButHeld {
     pub by: purlis_core::askoutcome::HeldBy,
     /// What the person reads beside the press.
     pub said: String,
-    /// Whether [`Self::said`] sends the person to Settings › Sandbox › Allowed (#5939).
+    /// Whether [`Self::said`] sends the person to Settings › Sandbox › Network › Allowed (#5939).
     pub allowed_list: bool,
     /// The reason the person typed for the press, if any ([`purlis_core::askoutcome::reason`]):
     /// told with the line by whichever telling reaches the chat (review of #5934).
@@ -987,14 +987,14 @@ pub(crate) fn kept_blocked_but_held(
     );
     said.push_str(&match by {
         HeldBy::AllowedList => {
-            " Remove it in Settings › Sandbox › Allowed to stop them.".to_owned()
+            " Remove it in Settings › Sandbox › Network › Allowed to stop them.".to_owned()
         }
         HeldBy::Tag => {
             format!(" The project's vaults tag it for {persona}: change that tag to stop them.")
         }
     });
     if tagged && allowed {
-        said.push_str(" It is in Settings › Sandbox › Allowed too.");
+        said.push_str(" It is in Settings › Sandbox › Network › Allowed too.");
     }
     if brokered::declares_a_tool_with(root, persona, vault) {
         said.push_str(&format!(

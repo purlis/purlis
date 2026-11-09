@@ -792,7 +792,7 @@ export const commands = {
 	keepVaultBlocked: (plane: PlaneId, session: number, vault: string, reason: string | null) => typedError<{
 	said: string,
 	/**
-	 *  Whether [`Self::said`] sends the person to Settings › Sandbox › Allowed, where a row holds
+	 *  Whether [`Self::said`] sends the person to Settings › Sandbox › Network › Allowed, where a row holds
 	 *  the vault for the chat's persona: the Notice that says it then links there (#5939).
 	 */
 	allowed_list: boolean,
@@ -861,7 +861,7 @@ export const commands = {
 	answerRunGrant: (plane: PlaneId, id: number, press: RunGrantPress, values: RunValue[], links: RunLink[], remember: RunNeedLine[]) => typedError<{
 	said: string,
 	/**
-	 *  Whether [`Self::said`] sends the person to Settings › Sandbox › Allowed, where a row holds
+	 *  Whether [`Self::said`] sends the person to Settings › Sandbox › Network › Allowed, where a row holds
 	 *  the vault for the chat's persona: the Notice that says it then links there (#5939).
 	 */
 	allowed_list: boolean,
@@ -18715,7 +18715,7 @@ export type UsedTotal = {
 export type VaultAnswered = {
 	said: string,
 	/**
-	 *  Whether [`Self::said`] sends the person to Settings › Sandbox › Allowed, where a row holds
+	 *  Whether [`Self::said`] sends the person to Settings › Sandbox › Network › Allowed, where a row holds
 	 *  the vault for the chat's persona: the Notice that says it then links there (#5939).
 	 */
 	allowed_list: boolean,
