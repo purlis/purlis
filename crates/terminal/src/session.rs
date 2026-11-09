@@ -836,7 +836,28 @@ impl Program {
     /// ended. The app calls it when the harness's hook says it started a shell or a monitor,
     /// so the listing costs nothing between those.
     #[cfg(unix)]
-    pub fn note_strays(&self) {}
+    pub fn note_strays(&self) {
+        let leader = {
+            let mut child = lock(&self.child);
+            if !child.ends_strays || !matches!(child.try_wait(), Ok(None)) {
+                return;
+            }
+            child.process_id()
+        };
+        let Some(leader) = leader else { return };
+        // Listed with the program let go of, so nothing that asks after it waits on `ps`.
+        let found = crate::process::Strays::of(leader);
+        let mut child = lock(&self.child);
+        if child.waited_for {
+            // It ended while they were listed, and its end found none noted: they go now.
+            drop(child);
+            found.hang_up();
+            thread::sleep(HANGUP_GRACE);
+            found.kill();
+            return;
+        }
+        child.noted.join(found);
+    }
 
     /// No process groups to leave here.
     #[cfg(not(unix))]
