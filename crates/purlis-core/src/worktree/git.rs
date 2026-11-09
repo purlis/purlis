@@ -634,9 +634,9 @@ fn reaches_a_remote(from: &[&str]) -> bool {
 /// verbs never reach the diff ones ([`PLAIN_PATCH`]), a merge that would need a held driver stops
 /// on a conflict, and a signed commit in a repository that names its own signer is refused. **A
 /// hook named in config** (`hook.<name>.command` and `.event`, git 2.54 and later) is not looked up
-/// through `core.hooksPath`, so each name the repository gives a command or an event is turned off
-/// by that name (`hook.<name>.enabled=false`); a git older than that reads no such key and runs no
-/// such hook. `core.gitProxy` is not held here: it is only for the `git://` transport, which every
+/// through `core.hooksPath`, so each name any scope gives a command or an event, the operator's
+/// own included, is turned off by that name (`hook.<name>.enabled=false`), as purlis's git runs
+/// no hook from a folder either; a git older than that reads no such key and runs no such hook. `core.gitProxy` is not held here: it is only for the `git://` transport, which every
 /// network call refuses ([`NETWORK_RULE`]), and no other call connects.
 ///
 /// **LFS's standard filter is kept** ([`LFS_FILTER`]), unless the repository's own config also
@@ -664,7 +664,7 @@ fn held_programs(reaches_remote: bool, listing: &[u8]) -> Option<Vec<String>> {
     };
     let mut fields = listing.split('\0');
     while let (Some(scope), Some(entry)) = (fields.next(), fields.next()) {
-        if entry.is_empty() || matches!(scope, "global" | "system" | "unknown" | "command") {
+        if entry.is_empty() || scope == "command" {
             continue;
         }
         let (key, value) = entry.split_once('\n').unwrap_or((entry, ""));
@@ -676,6 +676,24 @@ fn held_programs(reaches_remote: bool, listing: &[u8]) -> Option<Vec<String>> {
             Some((sub, variable)) => (Some(sub), variable),
             None => (None, rest),
         };
+        // A hook named in config (git 2.54 and later), which `core.hooksPath` does not reach:
+        // turned off by its name, whatever scope set it, as `core.hooksPath=/dev/null` turns
+        // off the operator's own hooks folder too. purlis's own command line names none.
+        if section == "hook"
+            && let Some(name) = sub
+            && matches!(variable, "command" | "event")
+        {
+            if key.contains(['=', '\n', '\0']) {
+                return None;
+            }
+            let off = format!("hook.{name}.enabled=false");
+            if !hooks_off.contains(&off) {
+                hooks_off.push(off);
+            }
+        }
+        if matches!(scope, "global" | "system" | "unknown") {
+            continue;
+        }
         if lfs_names_a_program(section, sub, variable, value) {
             lfs_runs_programs = true;
         }
@@ -700,20 +718,6 @@ fn held_programs(reaches_remote: bool, listing: &[u8]) -> Option<Vec<String>> {
             | ("branch", Some(_), "mergeoptions") => Some(None),
             _ => None,
         };
-        // A hook named in config (git 2.54 and later), which `core.hooksPath` does not reach:
-        // turned off by its name, which a hook of the operator's own given an event here is too.
-        if section == "hook"
-            && let Some(name) = sub
-            && matches!(variable, "command" | "event")
-        {
-            if key.contains(['=', '\n', '\0']) {
-                return None;
-            }
-            let off = format!("hook.{name}.enabled=false");
-            if !hooks_off.contains(&off) {
-                hooks_off.push(off);
-            }
-        }
         // What a remote by name starts at the other end, and the remote helper its `vcs` names
         // (#1853). git keeps the first of the first two it reads, and an empty `vcs` names a
         // helper too, so no `-c` can hold one: a call that reaches a remote is refused instead.
