@@ -1,0 +1,221 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Title bar chips</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  PROTOTYPE, throwaway (#3127, #3128). Never merged: kept on `prototype/3127-3128-titlebar-chips`.
+  Question: (1) what does a pinned chip's "a chat is working here" mark look like so that it is a
+  shape and not a colour alone, is said to a screen reader, and moves nothing; (2) how do pinned
+  chips reorder by drag and by keyboard without a chip resizing, and ⌘1–9 following the order.
+  Open it in a browser: `open app/prototypes/titlebar-chips.prototype.html`.
+  ?mark=A|B|C picks the mark, ?drag=1|2 the drag's feedback; ← → (or the bar) cycle the mark.
+-->
+<style>
+:root{
+  color-scheme: dark;
+  --page:#0d0c14; --win:#15131d; --tb:#121019; --pane:#17151f; --line:#2d2a3c;
+  --primary:#e6e4ec; --quiet:#91909d; --muted:#a09eab; --faint:#74727f;
+  --overlay:#252232; --wash:rgba(109,88,187,.14); --wash-h:rgba(109,88,187,.22);
+  --amber:#e7a73c; --amber-wash:rgba(231,167,60,.14); --running:#7fb4f0; --accent:#8f7ae0;
+  --focus:#b3a4ff; --btn:#2b2840;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    color-scheme: light;
+    --page:#f3f2f8; --win:#fff; --tb:#efedf5; --pane:#fbfaff; --line:#dbd7e6;
+    --primary:#1b1a25; --quiet:#4f4c5e; --muted:#5f5b70; --faint:#8b879a;
+    --overlay:#e4e1ee; --wash:rgba(109,88,187,.12); --wash-h:rgba(109,88,187,.2);
+    --amber:#9a6200; --amber-wash:rgba(201,130,0,.14); --running:#1f62b0; --accent:#5b45c4;
+    --focus:#5b45c4; --btn:#e4e1ee;
+  }
+}
+:root[data-theme="light"]{
+  color-scheme: light;
+  --page:#f3f2f8; --win:#fff; --tb:#efedf5; --pane:#fbfaff; --line:#dbd7e6;
+  --primary:#1b1a25; --quiet:#4f4c5e; --muted:#5f5b70; --faint:#8b879a;
+  --overlay:#e4e1ee; --wash:rgba(109,88,187,.12); --wash-h:rgba(109,88,187,.2);
+  --amber:#9a6200; --amber-wash:rgba(201,130,0,.14); --running:#1f62b0; --accent:#5b45c4;
+  --focus:#5b45c4; --btn:#e4e1ee;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--primary);font:13px/1.45 "IBM Plex Sans",-apple-system,system-ui,sans-serif;padding:16px 16px 120px}
+button{font:inherit;color:inherit}
+.proto{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.08em;padding:3px 8px;border-radius:4px;background:var(--amber);color:#241703}
+h1{font-size:17px;margin:8px 0 4px}
+.q{color:var(--muted);max-width:80ch;margin:0 0 12px}
+.stage{overflow-x:auto}
+.win{min-width:860px;background:var(--win);border:1px solid var(--line);border-radius:12px}
+.tb{display:flex;align-items:center;gap:10px;height:40px;padding:0 10px;background:var(--tb);border-radius:12px 12px 0 0}
+.lights{display:flex;gap:7px}.lights i{width:12px;height:12px;border-radius:50%;background:#ff5f57}
+.lights i:nth-child(2){background:#febc2e}.lights i:nth-child(3){background:#28c840}
+.project{color:var(--quiet);font-weight:500}.slash{color:var(--faint);margin:0 6px 0 2px}
+.strip{display:inline-flex;align-items:center;gap:2px;padding:6px 4px;margin:-6px -4px;overflow-x:auto;scrollbar-width:none;max-width:62vw}
+.slot{position:relative;display:inline-flex;flex:none;transition:transform 160ms ease}
+.slot.lifted{z-index:3;transition:none}
+.slot.lifted .chip{box-shadow:0 6px 18px rgba(0,0,0,.45);background:var(--overlay)}
+.chip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 12px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--quiet);white-space:nowrap;cursor:default;touch-action:none;user-select:none}
+.chip:hover{color:var(--primary);background:var(--overlay)}
+.chip.cur{color:var(--primary);background:var(--wash)}
+.chip.cur:hover{background:var(--wash-h)}
+.chip:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+.count{display:inline-grid;place-items:center;min-width:16px;height:16px;padding:0 4px;border-radius:99px;color:var(--amber);background:var(--amber-wash);font-size:11px;font-weight:600}
+.notice{position:absolute;top:-6px;left:-6px;width:16px;height:16px;border-radius:50%;border:2px solid var(--tb);background:var(--accent);display:grid;place-items:center}
+.notice::after{content:"";width:6px;height:6px;border-radius:50%;background:var(--tb)}
+/* A: the chat mark's own "working" ring, as a badge on the chip's lower trailing corner */
+.markA{position:absolute;right:0;bottom:-3px;width:12px;height:12px;border-radius:50%;background:var(--tb);display:grid;place-items:center;pointer-events:none}
+.markA svg{width:9px;height:9px}
+/* B: the ring inside every chip before its name, its room held whether or not it shows */
+.markB{display:inline-grid;place-items:center;width:10px;height:10px;flex:none}
+.markB svg{width:9px;height:9px}.markB.off{visibility:hidden}
+/* C: a bar under the name, inside the chip's own box */
+.markC{position:absolute;left:12px;right:12px;bottom:3px;height:2px;border-radius:2px;background:var(--running);pointer-events:none}
+.markC::before{content:"";position:absolute;left:-5px;top:-2px;width:6px;height:6px;border-radius:50%;background:var(--running)}
+.caret{position:absolute;top:2px;bottom:2px;width:2px;border-radius:2px;background:var(--focus);pointer-events:none}
+.all{width:26px;height:26px;border:0;border-radius:7px;background:none;color:var(--quiet)}
+.body{display:grid;grid-template-columns:1fr 320px;min-height:240px;border-top:1px solid var(--line)}
+.main{padding:14px;display:flex;flex-direction:column;gap:10px}
+.side{padding:14px;border-left:1px solid var(--line);background:var(--pane)}
+.row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.ghost{background:var(--btn);border:1px solid var(--line);border-radius:7px;padding:4px 10px;cursor:pointer}
+.ghost[aria-pressed="true"]{outline:2px solid var(--running)}
+pre{margin:0;white-space:pre-wrap;font:12px/1.5 "JetBrains Mono",ui-monospace,monospace;color:var(--muted)}
+.menu{position:fixed;z-index:20;min-width:220px;background:var(--win);border:1px solid var(--line);border-radius:10px;padding:4px;box-shadow:0 14px 36px rgba(0,0,0,.4)}
+.menu button{display:flex;justify-content:space-between;width:100%;border:0;background:none;padding:6px 10px;border-radius:6px;text-align:left}
+.menu button:hover:not(:disabled),.menu button:focus-visible{background:var(--overlay);outline:none}
+.menu button:disabled{color:var(--faint)}
+.menu kbd{color:var(--faint);font:11px "JetBrains Mono",monospace}
+.menu hr{border:0;border-top:1px solid var(--line);margin:4px}
+.bar{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);display:flex;align-items:center;gap:8px;background:#000;color:#fff;border-radius:99px;padding:6px 10px;box-shadow:0 8px 24px rgba(0,0,0,.5);z-index:30}
+.bar button{background:#222;border:0;color:#fff;border-radius:99px;padding:4px 10px;cursor:pointer}
+.bar b{min-width:260px;text-align:center}
+</style>
+<span class="proto">PROTOTYPE</span>
+<h1>Title bar chips: a working mark (#3127) and reorder (#3128)</h1>
+<p class="q">Toggle a chat working in a workspace; watch nothing move. Drag a chip, or open its menu
+(right-click, or Shift+F10 on a focused chip) for Move left / Move right. ⌘1–9 (Ctrl here) go to
+the chips in order. The state panel shows what a screen reader hears.</p>
+<div class="stage"><div class="win">
+  <div class="tb" id="tb">
+    <span class="lights"><i></i><i></i><i></i></span>
+    <span class="project">purlis</span><span class="slash">/</span>
+    <div class="strip" id="strip" role="toolbar" aria-label="Pinned workspaces"></div>
+    <button class="all" aria-label="All workspaces">⌄</button>
+  </div>
+  <div class="body">
+    <div class="main">
+      <div><b>Chats working</b> (the run state is the cause: a hook says the turn started or ended)</div>
+      <div class="row" id="toggles"></div>
+      <div><b>Waiting / notices</b></div>
+      <div class="row"><button class="ghost" id="addWait">+1 waiting on current</button><button class="ghost" id="addNotice">notice on current</button><button class="ghost" id="long">long names</button></div>
+      <div id="said" aria-live="polite"></div>
+    </div>
+    <div class="side"><b>State</b><pre id="state"></pre></div>
+  </div>
+</div></div>
+<div class="bar"><button id="prev" aria-label="Previous mark">←</button><b id="label"></b><button id="next" aria-label="Next mark">→</button><button id="dragv">drag: 1</button></div>
+<script>
+const RING = '<svg viewBox="0 0 24 24" fill="none" stroke="var(--running)" stroke-width="4"><circle cx="12" cy="12" r="8"/></svg>';
+const MARKS = {A:"Corner ring (chat mark's working glyph, lower trailing corner)",B:"Leading ring inside every chip (room held)",C:"Bar under the name"};
+const DRAGS = {1:"neighbours slide to make the drop place",2:"insertion caret, neighbours still"};
+const qs = new URLSearchParams(location.search);
+let mark = MARKS[qs.get("mark")] ? qs.get("mark") : "A";
+let drag = DRAGS[qs.get("drag")] ? qs.get("drag") : "1";
+const st = {pins:["main","ui-system","release","docs","mutants"],current:"ui-system",working:new Set(["release"]),waiting:{docs:2},notices:new Set(),stop:"ui-system",log:[]};
+const strip = document.getElementById("strip");
+function url(){const p=new URLSearchParams({mark,drag});history.replaceState(null,"","?"+p)}
+function described(ws){const d=[];const w=st.waiting[ws];if(w)d.push(`${w} waiting`);if(st.notices.has(ws))d.push("1 notice");if(st.working.has(ws))d.push("a chat working");return d.join(", ")}
+function render(){
+  strip.innerHTML="";
+  st.pins.forEach((ws,i)=>{
+    const slot=document.createElement("span");slot.className="slot";slot.dataset.ws=ws;
+    const b=document.createElement("button");b.className="chip"+(ws===st.current?" cur":"");b.tabIndex=ws===st.stop?0:-1;
+    b.dataset.ws=ws;if(ws===st.current)b.setAttribute("aria-current","true");
+    const run=st.working.has(ws);
+    if(mark==="B")b.insertAdjacentHTML("beforeend",`<span class="markB${run?"":" off"}" aria-hidden="true">${RING}</span>`);
+    b.insertAdjacentHTML("beforeend",`<span>${ws}</span>`);
+    if(st.waiting[ws])b.insertAdjacentHTML("beforeend",`<span class="count" aria-hidden="true">${st.waiting[ws]}</span>`);
+    if(run&&mark==="C"){b.style.position="relative";b.insertAdjacentHTML("beforeend",'<span class="markC" aria-hidden="true"></span>')}
+    const d=described(ws);if(d){b.setAttribute("aria-description",d)}
+    b.title=i<9?`${ws} · ⌃${i+1}`:ws;
+    slot.append(b);
+    if(st.notices.has(ws))slot.insertAdjacentHTML("afterbegin",'<span class="notice" aria-hidden="true"></span>');
+    if(run&&mark==="A")slot.insertAdjacentHTML("beforeend",`<span class="markA" aria-hidden="true">${RING}</span>`);
+    b.addEventListener("click",()=>{if(!moved){st.current=ws;st.stop=ws;render()}});
+    b.addEventListener("contextmenu",e=>{e.preventDefault();openMenu(ws,e.clientX,e.clientY)});
+    b.addEventListener("keydown",e=>{
+      if((e.shiftKey&&e.key==="F10")||e.key==="ContextMenu"){e.preventDefault();const r=b.getBoundingClientRect();openMenu(ws,r.left,r.bottom+4)}
+      const at=st.pins.indexOf(ws);let to;
+      if(e.key==="ArrowRight")to=Math.min(st.pins.length-1,at+1);if(e.key==="ArrowLeft")to=Math.max(0,at-1);
+      if(to!==undefined){e.preventDefault();st.stop=st.pins[to];render();focusChip(st.stop)}
+    });
+    b.addEventListener("pointerdown",e=>startDrag(e,slot,ws));
+    strip.append(slot);
+  });
+  document.getElementById("label").textContent=`${mark}: ${MARKS[mark]}`;
+  document.getElementById("dragv").textContent=`drag ${drag}: ${DRAGS[drag]}`;
+  document.getElementById("toggles").innerHTML="";
+  st.pins.forEach(ws=>{const t=document.createElement("button");t.className="ghost";t.textContent=ws;t.setAttribute("aria-pressed",st.working.has(ws));t.onclick=()=>{st.working.has(ws)?st.working.delete(ws):st.working.add(ws);render()};document.getElementById("toggles").append(t)});
+  const widths=[...strip.querySelectorAll(".chip")].map(c=>`${c.dataset.ws}: ${Math.round(c.getBoundingClientRect().width)}px @ x=${Math.round(c.getBoundingClientRect().left)}`);
+  document.getElementById("state").textContent=
+`mark=${mark} drag=${drag}
+order (store, per project):
+  ${st.pins.join(" · ")}
+⌘1–9 / Ctrl+1–9:
+${st.pins.slice(0,9).map((w,i)=>`  ${i+1} → ${w}`).join("\n")}
+heard on each chip (name; description):
+${st.pins.map(w=>`  ${w}; ${described(w)||"—"}`).join("\n")}
+chip boxes (must not change when a mark comes):
+${widths.map(w=>"  "+w).join("\n")}
+log:
+${st.log.slice(-6).map(l=>"  "+l).join("\n")}`;
+}
+function focusChip(ws){strip.querySelector(`.chip[data-ws="${ws}"]`)?.focus()}
+function move(ws,by){const at=st.pins.indexOf(ws),to=at+by;if(to<0||to>=st.pins.length)return;st.pins.splice(at,1);st.pins.splice(to,0,ws);st.log.push(`arrange_workspace_pins([${st.pins}])`);say(`${ws} moved to place ${to+1} of ${st.pins.length}`);render();focusChip(ws)}
+function say(t){document.getElementById("said").textContent="Announced: "+t}
+let menu;
+function closeMenu(){menu?.remove();menu=undefined}
+function openMenu(ws,x,y){closeMenu();const at=st.pins.indexOf(ws);menu=document.createElement("div");menu.className="menu";menu.setAttribute("role","menu");
+  const item=(label,key,fn,off)=>{const b=document.createElement("button");b.setAttribute("role","menuitem");b.innerHTML=`<span>${label}</span><kbd>${key}</kbd>`;b.disabled=!!off;b.onclick=()=>{closeMenu();fn()};menu.append(b)};
+  item("Go to "+ws,"",()=>{st.current=ws;render()});
+  menu.append(document.createElement("hr"));
+  item("Move left","",()=>move(ws,-1),at===0);
+  item("Move right","",()=>move(ws,1),at===st.pins.length-1);
+  menu.append(document.createElement("hr"));
+  item("Unpin workspace "+ws,"",()=>{st.pins=st.pins.filter(p=>p!==ws);render()});
+  item("Workspace settings…","",()=>{});
+  menu.style.left=x+"px";menu.style.top=y+"px";document.body.append(menu);menu.querySelector("button:not(:disabled)")?.focus();
+  menu.addEventListener("keydown",e=>{const items=[...menu.querySelectorAll("button:not(:disabled)")];const i=items.indexOf(document.activeElement);
+    if(e.key==="ArrowDown"){e.preventDefault();items[(i+1)%items.length].focus()}if(e.key==="ArrowUp"){e.preventDefault();items[(i-1+items.length)%items.length].focus()}
+    if(e.key==="Escape"){closeMenu();focusChip(ws)}});
+}
+document.addEventListener("pointerdown",e=>{if(menu&&!menu.contains(e.target))closeMenu()});
+// Drag: translate only, never a scale, so no chip changes size; a 4px threshold keeps a press a press.
+let moved=false;
+function startDrag(e,slot,ws){
+  if(e.button!==0)return;moved=false;const x0=e.clientX;const slots=[...strip.children];const rects=slots.map(s=>s.getBoundingClientRect());const from=slots.indexOf(slot);let to=from;let caret;
+  const onMove=ev=>{const dx=ev.clientX-x0;if(!moved&&Math.abs(dx)<4)return;moved=true;slot.classList.add("lifted");slot.style.transform=`translateX(${dx}px)`;
+    const mid=rects[from].left+rects[from].width/2+dx;to=rects.findIndex(r=>mid<r.left+r.width/2);if(to<0)to=rects.length-1;if(to>from&&mid<rects[to].left+rects[to].width/2)to=to;
+    to=Math.max(0,Math.min(rects.length-1,rects.filter(r=>r.left+r.width/2<mid).length-(rects[from].left+rects[from].width/2<mid?1:0)));
+    const w=rects[from].width+2;
+    if(drag==="1")slots.forEach((s,i)=>{if(s===slot)return;let sh=0;if(from<to&&i>from&&i<=to)sh=-w;if(from>to&&i<from&&i>=to)sh=w;s.style.transform=sh?`translateX(${sh}px)`:""});
+    else{caret?.remove();caret=document.createElement("span");caret.className="caret";const r=to>from?rects[to].right+1:rects[to].left-2;caret.style.left=(r-strip.getBoundingClientRect().left+strip.scrollLeft)+"px";strip.style.position="relative";strip.append(caret)}};
+  const onUp=()=>{document.removeEventListener("pointermove",onMove);document.removeEventListener("pointerup",onUp);caret?.remove();
+    slots.forEach(s=>{s.style.transform="";s.classList.remove("lifted")});
+    if(moved&&to!==from){st.pins.splice(from,1);st.pins.splice(to,0,ws);st.log.push(`drop ${ws} → ${to+1}; arrange_workspace_pins([${st.pins}])`);say(`${ws} moved to place ${to+1}`)}
+    render();setTimeout(()=>moved=false,0)};
+  document.addEventListener("pointermove",onMove);document.addEventListener("pointerup",onUp);
+}
+document.addEventListener("keydown",e=>{
+  const t=e.target;const typing=t.matches?.("input,textarea,[contenteditable]");
+  if((e.ctrlKey||e.metaKey)&&/^[1-9]$/.test(e.key)){const ws=st.pins[+e.key-1];if(ws){e.preventDefault();st.current=ws;st.stop=ws;st.log.push(`⌃${e.key} → ${ws}`);render()}return}
+  if(typing||menu||t.classList?.contains("chip"))return;
+  const keys=Object.keys(MARKS);if(e.key==="ArrowRight"){mark=keys[(keys.indexOf(mark)+1)%3];url();render()}if(e.key==="ArrowLeft"){mark=keys[(keys.indexOf(mark)+2)%3];url();render()}
+});
+document.getElementById("prev").onclick=()=>{const k=Object.keys(MARKS);mark=k[(k.indexOf(mark)+2)%3];url();render()};
+document.getElementById("next").onclick=()=>{const k=Object.keys(MARKS);mark=k[(k.indexOf(mark)+1)%3];url();render()};
+document.getElementById("dragv").onclick=()=>{drag=drag==="1"?"2":"1";url();render()};
+document.getElementById("addWait").onclick=()=>{st.waiting[st.current]=(st.waiting[st.current]||0)+1;render()};
+document.getElementById("addNotice").onclick=()=>{st.notices.has(st.current)?st.notices.delete(st.current):st.notices.add(st.current);render()};
+document.getElementById("long").onclick=()=>{st.pins=st.pins.map(p=>p.length<12?p+"-with-a-long-name":p);st.current=st.pins[1];st.stop=st.current;st.working=new Set([st.pins[2]]);render()};
+render();
+</script>
