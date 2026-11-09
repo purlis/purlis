@@ -191,10 +191,17 @@ pub struct ManifestPart {
 }
 
 /// **The parts manifest** for Settings › Theme (#2947): what `purlis theme parts` prints, read
-/// once. Nothing is written.
+/// once, off the window's thread (#1949). Nothing is written.
 #[tauri::command]
 #[specta::specta]
-pub fn theme_parts() -> Result<PartsManifest, String> {
+pub async fn theme_parts() -> Result<PartsManifest, String> {
+    tauri::async_runtime::spawn_blocking(parts_read)
+        .await
+        .map_err(|err| format!("reading the parts manifest did not finish: {err}"))?
+}
+
+/// [`theme_parts`] without a runtime: the manifest, read the first time it is asked for.
+fn parts_read() -> Result<PartsManifest, String> {
     static READ: std::sync::OnceLock<Result<PartsManifest, String>> = std::sync::OnceLock::new();
     READ.get_or_init(parts_manifest).clone()
 }

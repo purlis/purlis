@@ -330,7 +330,7 @@ fn a_place_offers_an_extension_s_themes_once_approved_and_has_them_on_where_its_
 #[test]
 fn the_parts_manifest_the_window_lists_is_every_family_purlis_theme_parts_prints() {
     let printed = theme::parts::manifest_json();
-    let listed = theme_parts().expect("the manifest reads");
+    let listed = parts_read().expect("the manifest reads");
     let names = |families: &[serde_json::Value]| -> Vec<String> {
         families
             .iter()

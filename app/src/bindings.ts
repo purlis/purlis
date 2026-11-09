@@ -4641,7 +4641,7 @@ export const commands = {
 	themeChat: (at: ThemeAt, theme: string | null, from: string | null, columns: number, rows: number) => typedError<Curating, StartRefused>(__TAURI_INVOKE("theme_chat", { at, theme, from, columns, rows })),
 	/**
 	 *  **The parts manifest** for Settings › Theme (#2947): what `purlis theme parts` prints, read
-	 *  once. Nothing is written.
+	 *  once, off the window's thread (#1949). Nothing is written.
 	 */
 	themeParts: () => typedError<PartsManifest, string>(__TAURI_INVOKE("theme_parts")),
 	/**

@@ -2066,7 +2066,7 @@ export const commands = {
 	themeChat: __WINDOW_ONLY_START_REFUSED,
 	/**
 	 *  **The parts manifest** for Settings › Theme (#2947): what `purlis theme parts` prints, read
-	 *  once. Nothing is written.
+	 *  once, off the window's thread (#1949). Nothing is written.
 	 */
 	themeParts: () => typedError<PartsManifest, string>(__TAURI_INVOKE("theme_parts")),
 	themeDraftsOfChat: __WINDOW_ONLY_RESULT,
