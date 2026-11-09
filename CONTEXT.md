@@ -1274,9 +1274,10 @@ that reaches the chat that asked is that chat's to read, and is not an item. An 
 its chat's row and on every row above it in the Chats section. Every open project's **Blocking
 asks** are counted on the title bar's ✋, with "+N elsewhere" for those outside the project in
 front, and on the Dock badge; the ✋ opens Asks in the **Inbox**. The workspace chip shows a dot,
-and each is counted in red on its chat's row (ADR 0121). An item never takes a pane or the focus: a chat in no pane is answered in the Inbox,
-and a chat on screen in its pane too. **Ignore** clears a chat's items until the next one arrives
-(ADR 0076).
+and each is counted in red on its chat's row (ADR 0121). An item never takes a pane or the
+focus: a chat in no pane is answered in the Inbox, and a chat on screen in its pane too.
+**Ignore** clears a chat's items until the next one arrives (ADR 0076). Snooze also takes an
+hour or until tomorrow, and a snoozed chat neither counts nor notifies (ADR 0121).
 _Avoid_: notification, alert (an alert is a **Notice**), waiting (for the state)
 
 **Waiting strip**:
@@ -1364,7 +1365,8 @@ sandbox consent, a prompt waiting in a harness's own terminal, a chat waiting on
 reply, a chat's browser that needs the person (**The browser needs you**), a budget reached, a
 suspected loop. One that stops a chat or a `purlis` command is a **Blocking ask** (ADR 0121).
 Each is derived from the
-source that waits, keeps no record of its own, and is gone the moment its source stops waiting.
+source that waits, keeps no record of its own beyond whether it has been seen, and is gone once
+its source stops waiting, except that an ask that timed out stays answerable (ADR 0121).
 Each names its chain (the session first, the chat that asked last) and the path that answers it,
 which is its source's own, and its answers in their one set of words (#1700). The Inbox lists
 the asks by facts, never by a priority someone sets: an **Expiring ask** first, then one that
@@ -1386,8 +1388,8 @@ project**), at the top; and **Notices** among the **Lower icons**, opening in th
 about another person is listed. Each list is cleared at once by its own rule: Snooze all for the
 asks, Dismiss all for the rest. The title bar's ✋ counts every open project's **Blocking asks**
 and opens Asks on all projects, the bell counts the unread **Mine** lines, and Notices shows a
-dot, red for something broken and amber for a decision that stops no chat; the status line no
-longer repeats a count the right bar shows (ADR 0121). What it holds before a plane's
+dot, red for something broken and amber for a decision that stops no chat; the status line
+repeats no count the right bar shows (ADR 0121). What it holds before a plane's
 **First-open baseline** is counted as seen.
 _Avoid_: queue, alerts, notifications, feed
 
@@ -1435,7 +1437,7 @@ _Avoid_: status, run state (that is the run's)
 
 **Quiet**:
 Notifications held, never the count: on a schedule, by hand ("Quiet now"), or while the person
-types in a chat, following macOS's own Focus. While Quiet the ✋ still counts and an **Expiring
+types in a chat. It follows macOS's own Focus. While Quiet the ✋ still counts and an **Expiring
 ask** is held open; when it ends, one summary row heads Asks (ADR 0121). Not a **Quiet note**.
 _Avoid_: focus mode (that name is #2921's), do not disturb
 
