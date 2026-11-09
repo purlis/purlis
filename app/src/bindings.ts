@@ -71,6 +71,12 @@ export const commands = {
 	 *  Window-only: nothing a link serves, and no command a chat runs, can approve.
 	 */
 	artifactApprove: (label: string) => typedError<null, string>(__TAURI_INVOKE("artifact_approve", { label })),
+	/**
+	 *  **The person's answer to a link an artifact's page followed**, pressed in the window's
+	 *  dialog: opens in the browser the link artifact webview `label` reported, never a URL the
+	 *  window names, and with `always`, keeps its host on this machine first.
+	 */
+	artifactLinkOpen: (label: string, always: boolean) => typedError<null, string>(__TAURI_INVOKE("artifact_link_open", { label, always })),
 	/**  What the window says about this launch and the session bus: nothing, on a launch with it. */
 	sessionBus: () => __TAURI_INVOKE<{
 	/**  The line it draws: why there is no bus, and what is off for the run. */

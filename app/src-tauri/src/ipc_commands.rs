@@ -47,6 +47,7 @@ macro_rules! app_commands {
                 artifacts::artifact_repin,
                 artifacts::artifact_unpin,
                 artifacts::artifact_approve,
+                artifact_links::artifact_link_open,
                 portal::session_bus,
                 portal::restart_on_the_session_bus,
                 vaultswaiting::vaults_to_move,
@@ -833,6 +834,9 @@ macro_rules! app_commands {
             e2e_only: [
                 // The window's native appearance and colour, read back (#2328, #2760).
                 nativewindow::drawn::native_window_drawn,
+                // A link followed in an artifact's page, and what was opened for it (#5956).
+                artifact_links::artifact_link_follow,
+                artifact_links::artifact_links_opened,
             ],
         }
     };

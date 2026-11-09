@@ -20,6 +20,7 @@ import {
   type ArtifactApprovalChanged,
   type ArtifactKeyPressed,
 } from "./artifacts";
+import { ArtifactLinks } from "./ArtifactLinks";
 import { useViewChanged } from "./planeChanged";
 import { Button } from "./ui/button/Button";
 import { EmptyState } from "./ui/empty-state/EmptyState";
@@ -98,6 +99,7 @@ export function ArtifactTab({
         <span className="artifact-bar-by">{pinnedBy(about.said)}</span>
         {opened === null ? null : <ScriptStanding opened={opened} />}
       </header>
+      {opened === null ? null : <ArtifactLinks label={opened.label} />}
       {unpinned ? (
         <EmptyState
           headline={`${name} is unpinned`}
