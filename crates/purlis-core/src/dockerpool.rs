@@ -1684,6 +1684,10 @@ fn checked_on(
         }
         None | Some(_) => return Err(unreadable("/HostConfig/OomKillDisable")),
     }
+    held_to_defaults(one, made, podman).map_err(|held| match held {
+        Held::Not(what) => not(what),
+        Held::Unreadable(field) => unreadable(&field),
+    })?;
     // Podman writes `oci` here and its runtime's own name beside it.
     let standard_runtime = if podman {
         text("/HostConfig/Runtime")? == "oci" && matches!(text("/OCIRuntime")?, "runc" | "crun")
@@ -1715,6 +1719,179 @@ fn checked_on(
         return Err(not("is not running"));
     }
     Ok(seccomp)
+}
+
+/// **The HostConfig fields Docker and Podman write**: every one the check reads, holds to its
+/// default in [`held_to_defaults`], or knows to widen nothing a runner may do. A field not on
+/// it could not be checked, so a container that carries one is refused.
+const HOST_CONFIG_FIELDS: &[&str] = &[
+    "Annotations",
+    "AutoRemove",
+    "AutoRemoveImage",
+    "Binds",
+    "BlkioDeviceReadBps",
+    "BlkioDeviceReadIOps",
+    "BlkioDeviceWriteBps",
+    "BlkioDeviceWriteIOps",
+    "BlkioWeight",
+    "BlkioWeightDevice",
+    "CapAdd",
+    "CapDrop",
+    "Cgroup",
+    "CgroupConf",
+    "CgroupManager",
+    "CgroupMode",
+    "CgroupParent",
+    "Cgroups",
+    "CgroupnsMode",
+    "ConsoleSize",
+    "ContainerIDFile",
+    "CpuCount",
+    "CpuPercent",
+    "CpuPeriod",
+    "CpuQuota",
+    "CpuRealtimePeriod",
+    "CpuRealtimeRuntime",
+    "CpuShares",
+    "CpusetCpus",
+    "CpusetMems",
+    "DeviceCgroupRules",
+    "DeviceRequests",
+    "Devices",
+    "DiskQuota",
+    "Dns",
+    "DnsOptions",
+    "DnsSearch",
+    "ExtraHosts",
+    "GroupAdd",
+    "HostsFile",
+    "IDMappings",
+    "IOMaximumBandwidth",
+    "IOMaximumIOps",
+    "Init",
+    "IntelRdtClosID",
+    "IpcMode",
+    "Isolation",
+    "KernelMemory",
+    "KernelMemoryTCP",
+    "Links",
+    "LogConfig",
+    "MaskedPaths",
+    "Memory",
+    "MemoryReservation",
+    "MemorySwap",
+    "MemorySwappiness",
+    "Mounts",
+    "NanoCpus",
+    "NetworkMode",
+    "OomKillDisable",
+    "OomScoreAdj",
+    "PidMode",
+    "PidsLimit",
+    "PortBindings",
+    "Privileged",
+    "PublishAllPorts",
+    "ReadonlyPaths",
+    "ReadonlyRootfs",
+    "RestartPolicy",
+    "Runtime",
+    "SecurityOpt",
+    "ShmSize",
+    "StorageOpt",
+    "Sysctls",
+    "Tmpfs",
+    "UTSMode",
+    "Ulimits",
+    "UsernsMode",
+    "VolumeDriver",
+    "VolumesFrom",
+];
+
+/// Why a container's HostConfig is not as the pool made it ([`held_to_defaults`]).
+enum Held {
+    /// What it does that the pool did not make it do.
+    Not(&'static str),
+    /// A field that is not as Docker or Podman writes it.
+    Unreadable(String),
+}
+
+/// **The HostConfig fields a pool never sets, held to their defaults**, and the one it sets
+/// beside them (`/dev/shm`'s size), each absent or as Docker (or, where `podman`, Podman)
+/// writes it; and no field the check does not know ([`HOST_CONFIG_FIELDS`]).
+fn held_to_defaults(one: &serde_json::Value, made: &Made, podman: bool) -> Result<(), Held> {
+    use serde_json::Value;
+    let Some(config) = one.get("HostConfig").and_then(Value::as_object) else {
+        return Err(Held::Unreadable("/HostConfig".into()));
+    };
+    if let Some(unknown) = config
+        .keys()
+        .find(|key| !HOST_CONFIG_FIELDS.contains(&key.as_str()))
+    {
+        return Err(Held::Unreadable(format!("/HostConfig/{unknown}")));
+    }
+    let field = |name: &str| config.get(name).filter(|value| !value.is_null());
+    let unreadable = |name: &str| Held::Unreadable(format!("/HostConfig/{name}"));
+    // Each of these is a list a pool never asks for.
+    for (name, what) in [
+        ("GroupAdd", "is in groups its user is not"),
+        ("DeviceCgroupRules", "may reach a device by a cgroup rule"),
+    ] {
+        match field(name) {
+            None => {}
+            Some(Value::Array(list)) if list.is_empty() => {}
+            Some(Value::Array(_)) => return Err(Held::Not(what)),
+            Some(_) => return Err(unreadable(name)),
+        }
+    }
+    match field("OomScoreAdj").map(Value::as_i64) {
+        None => {}
+        Some(Some(score)) if score >= 0 => {}
+        Some(Some(_)) => return Err(Held::Not("is kept from the out-of-memory killer")),
+        Some(None) => return Err(unreadable("OomScoreAdj")),
+    }
+    match field("CgroupParent").map(Value::as_str) {
+        None => {}
+        Some(Some("")) => {}
+        // Podman places a container under its cgroup manager's slice, or its own parent.
+        Some(Some(parent))
+            if podman && (parent.ends_with(".slice") || parent == "/libpod_parent") => {}
+        Some(Some(_)) => return Err(Held::Not("is in a cgroup of its own choosing")),
+        Some(None) => return Err(unreadable("CgroupParent")),
+    }
+    let shm = made.runner.limits.shm_mib() * 1024 * 1024;
+    match field("ShmSize").map(Value::as_u64) {
+        None => {}
+        Some(Some(size)) if size == shm => {}
+        Some(Some(_)) => return Err(Held::Not("has a /dev/shm its pool did not give it")),
+        Some(None) => return Err(unreadable("ShmSize")),
+    }
+    for (name, what) in [
+        (
+            "MaskedPaths",
+            "sees the machine's kernel files it should not",
+        ),
+        ("ReadonlyPaths", "may write the machine's kernel files"),
+    ] {
+        match field(name) {
+            None => {}
+            Some(Value::Array(list)) if !list.is_empty() => {}
+            Some(Value::Array(_)) => return Err(Held::Not(what)),
+            Some(_) => return Err(unreadable(name)),
+        }
+    }
+    // Podman's own: whether the container has a cgroup at all, and settings written into it.
+    match field("Cgroups").map(Value::as_str) {
+        None | Some(Some("default" | "enabled")) => {}
+        Some(Some(_)) => return Err(Held::Not("is held to no cgroup")),
+        Some(None) => return Err(unreadable("Cgroups")),
+    }
+    match field("CgroupConf") {
+        None => {}
+        Some(Value::Object(conf)) if conf.is_empty() => {}
+        Some(Value::Object(_)) => return Err(Held::Not("sets its own cgroup limits")),
+        Some(_) => return Err(unreadable("CgroupConf")),
+    }
+    Ok(())
 }
 
 /// Whether the Docker daemon, by what `docker info --format '{{json .SecurityOptions}}'`
