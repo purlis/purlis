@@ -18,6 +18,7 @@
 //! - **Follow a slug out of the store.** `workspace forget` takes one path segment. charter's
 //!   own resolver accepts more than that; this does not, and that is deliberate.
 
+use crate::clierror::CliError;
 use std::path::{Path, PathBuf};
 
 use clap::{Args, Subcommand};
@@ -422,7 +423,7 @@ fn reactive(plane: &Plane) {
 // charter recall
 
 /// `purlis recall` — the one memory gate, across every base in scope.
-pub fn recall(here: &crate::Here, args: RecallArgs) -> Result<Code, String> {
+pub fn recall(here: &crate::Here, args: RecallArgs) -> Result<Code, CliError> {
     let plane = &here.plane;
     let root = plane.root();
     // Before anything is searched: a `--persona` that names nothing was searched as if it
@@ -713,7 +714,7 @@ pub fn workspace_remember(
     title: Option<&str>,
     no_sync: bool,
     now: Option<&str>,
-) -> Result<Code, String> {
+) -> Result<Code, CliError> {
     let Some(text) = text.filter(|t| !t.is_empty()) else {
         return workspace_recall(plane, name, None);
     };
@@ -740,7 +741,7 @@ pub fn workspace_remember_typed(
     title: Option<&str>,
     no_sync: bool,
     now: Option<&str>,
-) -> Result<Code, String> {
+) -> Result<Code, CliError> {
     if let Some(text) = text.filter(|t| !t.is_empty())
         && now.is_none()
     {
@@ -794,7 +795,7 @@ pub fn said_remembered(plane: &Plane, name: &str, path: &std::path::Path, no_syn
 }
 
 /// `workspace recall` — search the journal, or list it in filename order.
-pub fn workspace_recall(plane: &Plane, name: &str, query: Option<&str>) -> Result<Code, String> {
+pub fn workspace_recall(plane: &Plane, name: &str, query: Option<&str>) -> Result<Code, CliError> {
     let root = plane.root();
     let ws = plane.workspace(name).map_err(|e| e.to_string())?;
     let dir = ws.dir().join("memory");
@@ -851,7 +852,7 @@ pub fn workspace_forget(
     here: &crate::Here,
     workspace: Option<&str>,
     slug: &str,
-) -> Result<Code, String> {
+) -> Result<Code, CliError> {
     if let Some(code) = its_own_by_the_app(
         here,
         workspace,
@@ -907,7 +908,7 @@ pub fn workspace_edit(
     slug: &str,
     title: Option<&str>,
     text: Option<&str>,
-) -> Result<Code, String> {
+) -> Result<Code, CliError> {
     if let Some(code) = its_own_by_the_app(
         here,
         workspace,
@@ -935,7 +936,7 @@ pub fn workspace_archive(
     here: &crate::Here,
     workspace: Option<&str>,
     slug: &str,
-) -> Result<Code, String> {
+) -> Result<Code, CliError> {
     if let Some(code) = its_own_by_the_app(
         here,
         workspace,
@@ -962,7 +963,7 @@ pub fn workspace_unarchive(
     workspace: Option<&str>,
     slug: &str,
     restore_as: Option<&str>,
-) -> Result<Code, String> {
+) -> Result<Code, CliError> {
     if let Some(code) = its_own_by_the_app(
         here,
         workspace,
@@ -1041,7 +1042,7 @@ pub fn move_memory(
     slug: &str,
     to: &Scope,
     persona: Option<&str>,
-) -> Result<Code, String> {
+) -> Result<Code, CliError> {
     let plane = &here.plane;
     let own_from = own_store(here, from);
     match (own_from, own_store(here, to)) {
@@ -1097,7 +1098,7 @@ pub fn workspace_optimize(
     apply: bool,
     stale_days: i64,
     now: Option<&str>,
-) -> Result<Code, String> {
+) -> Result<Code, CliError> {
     let plane = &here.plane;
     if apply && now.is_none() {
         let own = here.active_workspace(None).ok();
@@ -1137,7 +1138,7 @@ pub fn workspace_optimize(
             say_unread_workspaces(root);
             recall::read_workspaces(root)
                 .map(|(names, _)| names)
-                .map_err(|e| e.to_string())?
+                .map_err(|e| CliError::internal(format!("workspaces/ could not be listed: {e}")))?
         }
     };
     if names.is_empty() {
@@ -1184,14 +1185,14 @@ pub(crate) fn in_a_chat() -> bool {
 /// `if not name or not _require(name): return 1`, and the first half of that prints nothing.
 /// Measured against the oracle on a plane with no front door. It reads like a defect and it
 /// is purlis's, so it is ported rather than improved here.
-pub fn persona(here: &crate::Here, command: PersonaCommand) -> Result<Code, String> {
+pub fn persona(here: &crate::Here, command: PersonaCommand) -> Result<Code, CliError> {
     let plane = &here.plane;
     match command {
         // Answered in `main` before a plane is even looked for.
         PersonaCommand::Gc { .. } | PersonaCommand::Secret(_) | PersonaCommand::Where { .. } => {
             unreachable!("answered before run")
         }
-        PersonaCommand::Curation(command) => crate::curation::persona(plane.root(), command),
+        PersonaCommand::Curation(command) => Ok(crate::curation::persona(plane.root(), command)?),
         PersonaCommand::Current => {
             // `(none)` is the word charter prints, and it is NOT what it prints for a rung
             // that named a persona this plane does not have: THAT name is printed, because a
@@ -1755,7 +1756,7 @@ fn persona_remember(
     ephemeral: bool,
     no_sync: bool,
     stamp: chrono::NaiveDateTime,
-) -> Result<Code, String> {
+) -> Result<Code, CliError> {
     let root = plane.root();
     if !persona_ok(root, name) {
         return Ok(1);
@@ -1860,7 +1861,7 @@ fn persona_recall(
     name: &str,
     query: Option<&str>,
     log: i64,
-) -> Result<Code, String> {
+) -> Result<Code, CliError> {
     let root = plane.root();
     if !persona_ok(root, name) {
         return Ok(1);
