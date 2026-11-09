@@ -8,16 +8,21 @@ use super::adapter::{HarnessAdapter, RuleFile, Sandbox, SkillStart, SkillToStart
 use super::{Harness, Kit, StateHooks};
 use crate::sandbox::Form;
 
-/// **What Codex keeps of a hook's output**, in characters: past it, the first and last 5,000 and
-/// `…N tokens truncated…` between them, whatever the model and whatever
-/// `tool_output_token_limit` says; each hook's output apart (codex-cli 0.147.0, measured; ADR
-/// 0102 as amended 2026-11-09). What bounds the skills a chat is told ([`SKILLS_WORD`]).
-pub const BRIEFING_CUT: usize = 10_000;
+/// **What Codex keeps of a hook's output**, in bytes of UTF-8 (a character each in plain English,
+/// three for a `—`): past it, about the first and last 5,000 and `…N tokens truncated…` between
+/// them, whatever the model and whatever `tool_output_token_limit` says; each hook's output
+/// apart (codex-cli 0.147.0, measured; ADR 0102 as amended 2026-11-09). What bounds the skills a
+/// chat is told ([`SKILLS_WORD`]).
+pub const HOOK_OUTPUT_CUT: usize = 10_000;
 
 /// **The word of the `SessionStart` hook that tells a Codex chat its skills**, alone, after the
 /// briefing's ([`crate::briefing::skills_part`]): in a hook of its own the listing has the whole
-/// [`BRIEFING_CUT`], where after the briefing it was the middle Codex cut.
+/// [`HOOK_OUTPUT_CUT`], where after the briefing it was the middle Codex cut.
 pub const SKILLS_WORD: &str = "sessionstart-skills";
+
+/// How long Codex waits on [`SKILLS_WORD`], in seconds: the briefing's own 5, since it reads the
+/// same skill set the briefing did.
+const SKILLS_HOOK_TIMEOUT: u64 = 5;
 
 /// Codex's adapter.
 ///
@@ -255,7 +260,7 @@ impl HarnessAdapter for Codex {
     /// A Codex chat is told purlis's skills in a `SessionStart` hook of their own
     /// ([`SKILLS_WORD`]), each line with its `SKILL.md`'s path, which counts, and each
     /// description cut at 1,024 characters as Codex cuts its own; a manual-only skill's
-    /// description stays out ([`Self::skill_frontmatter`]). Codex keeps [`BRIEFING_CUT`] of
+    /// description stays out ([`Self::skill_frontmatter`]). Codex keeps [`HOOK_OUTPUT_CUT`] of
     /// that hook's output. Its own catalogue, which purlis's list never enters, is bounded apart:
     /// at 2% of the window it shortens every description, then empties them, then leaves the
     /// last skills out without a word (0.147.0, measured; ADR 0102 as amended 2026-11-09).
@@ -267,18 +272,20 @@ impl HarnessAdapter for Codex {
         }
     }
 
-    /// A budget whose characters and the listing's opening pass [`BRIEFING_CUT`] is past what
-    /// Codex keeps of the skills hook: it keeps the list's start, the built-in skills, and its
-    /// end, the index skill, and cuts the skills between.
+    /// A budget whose characters and the listing's opening pass [`HOOK_OUTPUT_CUT`] is past
+    /// what Codex keeps of the skills hook: it keeps the list's start, the built-in skills, and
+    /// its end, the index skill, and cuts the skills between. The budget counts characters and
+    /// Codex bytes, so a list in another script than plain English is cut sooner than this says.
     fn skill_limit_past(&self, budget: crate::skills::Budget) -> Option<String> {
-        let opening = purlis_skills::LISTING_OPENING.chars().count();
-        (budget.chars + opening > BRIEFING_CUT).then(|| {
+        let room = HOOK_OUTPUT_CUT.saturating_sub(purlis_skills::LISTING_OPENING.len());
+        (budget.chars > room).then(|| {
             format!(
-                "Codex: at {} characters this is past the {} it keeps of what purlis tells it, \
-                 the list's opening included. Past that Codex keeps the start and the end of the \
-                 list and cuts the skills in the middle.",
+                "Codex: at {} characters this is past the {} it keeps of the skills purlis lists \
+                 for it. Codex keeps the start and the end of the list and cuts the skills in the \
+                 middle. Set {} characters or fewer to keep every skill.",
                 crate::skills::grouped(budget.chars),
-                crate::skills::grouped(BRIEFING_CUT),
+                crate::skills::grouped(HOOK_OUTPUT_CUT),
+                crate::skills::grouped(room),
             )
         })
     }
@@ -522,50 +529,48 @@ fn permission_flag(binary: &std::path::Path) -> [String; 2] {
 /// lost. This one fails open: any failure prints nothing, and Codex asks in its pane. Codex
 /// asks the operator to trust it once, as it does each of purlis's hooks.
 fn question_group(binary: &std::path::Path) -> toml::Value {
-    let mut hook = toml::Table::new();
-    hook.insert("type".to_owned(), toml::Value::from("command"));
-    hook.insert(
-        "command".to_owned(),
-        toml::Value::from(crate::plugin::command_at(
-            binary,
-            super::hooked::QUESTION_WORD,
-        )),
-    );
-    hook.insert(
-        "timeout".to_owned(),
-        toml::Value::from(
-            i64::try_from(super::hooked::QUESTION_HOOK_TIMEOUT.as_secs()).unwrap_or(i64::MAX),
-        ),
-    );
-    let mut group = toml::Table::new();
-    group.insert(
-        "matcher".to_owned(),
-        toml::Value::from(super::hooked::CODEX_QUESTION_TOOL),
-    );
-    group.insert(
-        "hooks".to_owned(),
-        toml::Value::Array(vec![toml::Value::Table(hook)]),
-    );
-    toml::Value::Table(group)
+    hook_group(
+        binary,
+        super::hooked::QUESTION_WORD,
+        super::hooked::QUESTION_HOOK_TIMEOUT.as_secs(),
+        Some(super::hooked::CODEX_QUESTION_TOOL),
+    )
 }
 
 /// **The `SessionStart` group that tells a Codex chat its skills** ([`SKILLS_WORD`]), after the
 /// briefing's: two hooks on one event become two developer messages in the order armed, each
-/// with its own [`BRIEFING_CUT`] (codex-cli 0.147.0, measured).
+/// with its own [`HOOK_OUTPUT_CUT`] (codex-cli 0.147.0, measured).
 ///
 /// Not from the registry, as [`question_group`] is not: the registry is Claude Code's plugin's
 /// too, and a Claude Code chat loads its skills itself. It prints nothing for a chat purlis
 /// hands no skills, and fails open as every reporting hook does. Codex asks the operator to
 /// trust it once, as it does each of purlis's hooks.
 fn skills_group(binary: &std::path::Path) -> toml::Value {
+    hook_group(binary, SKILLS_WORD, SKILLS_HOOK_TIMEOUT, None)
+}
+
+/// One group of one command hook, `purlis hook <word>` by the binary's absolute path, waited on
+/// `timeout` seconds, on the tools `matcher` names or on an event that has none.
+fn hook_group(
+    binary: &std::path::Path,
+    word: &str,
+    timeout: u64,
+    matcher: Option<&str>,
+) -> toml::Value {
     let mut hook = toml::Table::new();
     hook.insert("type".to_owned(), toml::Value::from("command"));
     hook.insert(
         "command".to_owned(),
-        toml::Value::from(crate::plugin::command_at(binary, SKILLS_WORD)),
+        toml::Value::from(crate::plugin::command_at(binary, word)),
     );
-    hook.insert("timeout".to_owned(), toml::Value::from(5));
+    hook.insert(
+        "timeout".to_owned(),
+        toml::Value::from(i64::try_from(timeout).unwrap_or(i64::MAX)),
+    );
     let mut group = toml::Table::new();
+    if let Some(matcher) = matcher {
+        group.insert("matcher".to_owned(), toml::Value::from(matcher));
+    }
     group.insert(
         "hooks".to_owned(),
         toml::Value::Array(vec![toml::Value::Table(hook)]),

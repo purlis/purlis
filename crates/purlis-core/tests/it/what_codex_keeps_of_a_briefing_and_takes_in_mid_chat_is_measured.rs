@@ -104,17 +104,18 @@ impl Here {
         script
     }
 
-    /// What the `SessionStart` hook at `at` answers from now on.
+    /// What the `SessionStart` hook at `at` answers from now on, as Codex's JSON.
     fn context(&self, at: usize, text: &str) {
         let answer = json!({"hookSpecificOutput": {
             "hookEventName": "SessionStart",
             "additionalContext": text,
         }});
-        std::fs::write(
-            self.root.join(format!("answer{at}.json")),
-            answer.to_string(),
-        )
-        .unwrap();
+        self.answer(at, &answer.to_string());
+    }
+
+    /// What the `SessionStart` hook at `at` prints from now on, as it is.
+    fn answer(&self, at: usize, printed: &str) {
+        std::fs::write(self.root.join(format!("answer{at}.json")), printed).unwrap();
     }
 
     /// How many times the hooks ran.
@@ -224,8 +225,13 @@ fn rollouts(dir: &Path) -> Vec<PathBuf> {
 
 /// `lines` numbered lines tagged `tag`, 44 to 46 characters each below 10,000 lines.
 fn numbered(tag: char, lines: usize) -> String {
+    numbered_saying(tag, lines, "line")
+}
+
+/// [`numbered`], each line saying `word` before its number.
+fn numbered_saying(tag: char, lines: usize, word: &str) -> String {
     (0..lines)
-        .map(|n| format!("- {tag}{n:05}: line {n} (file: /x/{tag}{n:05}/SKILL.md)"))
+        .map(|n| format!("- {tag}{n:05}: {word} {n} (file: /x/{tag}{n:05}/SKILL.md)"))
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -238,24 +244,44 @@ fn numbers_in(text: &str, tag: char) -> Vec<usize> {
         .collect()
 }
 
-/// One line about what became of `tag`'s `sent` lines, `length` characters, in the developer
-/// message that holds them.
-fn kept(conversation: &[String], tag: char, sent: usize, length: usize) -> String {
+/// One line about what became of `text`, `tag`'s lines, in the developer message that holds
+/// them: its size in characters and bytes, the lines kept and, where Codex cut, how many bytes
+/// of what was sent its start and its end kept.
+fn kept(conversation: &[String], tag: char, text: &str) -> String {
+    let sent = text.lines().count();
+    let length = format!("{} chars, {} bytes", text.chars().count(), text.len());
     let Some(message) = conversation
         .iter()
-        .find(|text| !numbers_in(text, tag).is_empty())
+        .find(|said| !numbers_in(said, tag).is_empty())
     else {
-        return format!("{sent} lines ({length} chars) sent, none reached the conversation");
+        return format!("{sent} lines ({length}) sent, none reached the conversation");
     };
+    // The longest start of what was sent that the message holds, and the longest end.
+    let start = text
+        .char_indices()
+        .map(|(at, _)| at)
+        .chain([text.len()])
+        .take_while(|at| message.contains(&text[..*at]))
+        .last()
+        .unwrap_or(0);
+    let end = text
+        .char_indices()
+        .map(|(at, _)| at)
+        .rev()
+        .take_while(|at| message.contains(&text[*at..]))
+        .last()
+        .map_or(0, |at| text.len() - at);
     let numbers = numbers_in(message, tag);
     let gap = numbers.windows(2).find(|pair| pair[1] != pair[0] + 1);
     let marker = message
         .find("tokens truncated")
         .map(|at| &message[message[..at].rfind('…').unwrap_or(at)..at + "tokens truncated…".len()]);
     format!(
-        "{sent} lines ({length} chars) sent; message is {} chars with {} lines, first {:?}, last \
-         {:?}, gap {gap:?}, marker {marker:?}, warning line {}, full output saved {}",
+        "{sent} lines ({length}) sent; message is {} chars, {} bytes, with {} lines, first {:?}, \
+         last {:?}, gap {gap:?}, sent bytes kept at the start {start} and the end {end}, marker \
+         {marker:?}, warning line {}, full output saved {}",
         message.chars().count(),
+        message.len(),
         numbers.len(),
         numbers.first(),
         numbers.last(),
@@ -264,10 +290,11 @@ fn kept(conversation: &[String], tag: char, sent: usize, length: usize) -> Strin
     )
 }
 
-/// One `codex exec` turn here, armed with `armed`.
-fn one_turn(here: &Here, codex: &Path, armed: &[String]) {
+/// One `codex exec` turn here, armed with `armed`, with `more` of Codex's own flags.
+fn one_turn(here: &Here, codex: &Path, armed: &[String], more: &[&str]) {
     let mut args = vec!["exec".to_owned(), "--skip-git-repo-check".to_owned()];
     args.extend(armed.iter().cloned());
+    args.extend(more.iter().map(|flag| (*flag).to_owned()));
     args.push("turn one".to_owned());
     let out = forklock::output(&mut here.command(codex, &args)).expect("codex exec runs");
     let printed =
@@ -281,27 +308,59 @@ fn one_turn(here: &Here, codex: &Path, armed: &[String]) {
 
 #[test]
 #[ignore = "run by CI's `Codex, measured` step, with PURLIS_CODEX"]
-fn codex_keeps_part_of_a_long_session_start_hook_output() {
+fn measures_what_codex_keeps_of_a_long_session_start_hook_output() {
     let codex = codex();
-    // Lines of 44 to 46 characters: below, at and past the 10,000 characters seen on the first
-    // run of this measurement (9,995 whole, 10,181 cut).
+    // Lines of 44 to 46 characters: below, at and past the 10,000 seen on the first run of this
+    // measurement (9,995 whole, 10,181 cut), then far past it.
     for lines in [200, 219, 223, 600, 3_000] {
-        let here = Here::new();
-        let hook = here.hook(0);
         let text = numbered('b', lines);
-        here.context(0, &text);
-        let armed = here.armed(&[hook]);
-        one_turn(&here, &codex, &armed);
-        println!(
-            "measured: one SessionStart hook: {}",
-            kept(&here.conversation(), 'b', lines, text.chars().count())
-        );
+        let said = once(&codex, &text, true, &[]);
+        println!("measured: one SessionStart hook: {said}");
     }
+    // Whether it is characters or bytes: lines of three-byte dashes, under 10,000 characters and
+    // over 10,000 bytes.
+    let dashes = numbered_saying('b', 150, "———————————");
+    let said = once(&codex, &dashes, true, &[]);
+    println!("measured: one SessionStart hook of multi-byte lines: {said}");
+    // Whether anything moves it: other models, Codex's own output limit, and a plain answer.
+    let text = numbered('b', 600);
+    for (what, json, more) in [
+        ("model gpt-5.2", true, ["-m", "gpt-5.2"].as_slice()),
+        (
+            "a model Codex does not know",
+            true,
+            &["-m", "nonesuch-model"],
+        ),
+        (
+            "tool_output_token_limit = 50000",
+            true,
+            &["-c", "tool_output_token_limit=50000"],
+        ),
+        ("a plain-text answer", false, &[]),
+    ] {
+        let said = once(&codex, &text, json, more);
+        println!("measured: one SessionStart hook, {what}: {said}");
+    }
+}
+
+/// What one turn keeps of `text` answered by one `SessionStart` hook, as Codex's JSON or plain,
+/// with `more` of Codex's own flags.
+fn once(codex: &Path, text: &str, json: bool, more: &[&str]) -> String {
+    let here = Here::new();
+    let hook = here.hook(0);
+    if json {
+        here.context(0, text);
+    } else {
+        here.answer(0, text);
+    }
+    let armed = here.armed(&[hook]);
+    one_turn(&here, codex, &armed, more);
+    kept(&here.conversation(), 'b', text)
 }
 
 #[test]
 #[ignore = "run by CI's `Codex, measured` step, with PURLIS_CODEX"]
-fn codex_keeps_each_session_start_hook_s_output_apart() {
+fn measures_whether_codex_keeps_each_session_start_hook_s_output_apart() {
     let codex = codex();
     for sizes in [[160, 160, 160, 160].as_slice(), &[600, 100]] {
         let here = Here::new();
@@ -316,13 +375,13 @@ fn codex_keeps_each_session_start_hook_s_output_apart() {
             here.context(at, text);
         }
         let armed = here.armed(&hooks);
-        one_turn(&here, &codex, &armed);
+        one_turn(&here, &codex, &armed, &[]);
         let conversation = here.conversation();
-        for ((lines, tag), text) in sizes.iter().zip(tags).zip(&texts) {
+        for (tag, text) in tags.into_iter().zip(&texts) {
             println!(
                 "measured: {} SessionStart hooks, hook {tag}: {}",
                 sizes.len(),
-                kept(&conversation, tag, *lines, text.chars().count())
+                kept(&conversation, tag, text)
             );
         }
     }
@@ -330,7 +389,7 @@ fn codex_keeps_each_session_start_hook_s_output_apart() {
 
 #[test]
 #[ignore = "run by CI's `Codex, measured` step, with PURLIS_CODEX"]
-fn codex_bounds_its_own_skills_catalogue() {
+fn measures_how_codex_bounds_its_own_skills_catalogue() {
     let codex = codex();
     for (skills, description) in [(100, 100), (300, 100), (600, 100), (2_000, 20)] {
         let here = Here::new();
@@ -521,7 +580,7 @@ fn listed(answer: &Value) -> Vec<String> {
 
 #[test]
 #[ignore = "run by CI's `Codex, measured` step, with PURLIS_CODEX"]
-fn codex_takes_in_a_skill_changed_mid_chat() {
+fn measures_what_codex_takes_in_of_a_skill_changed_mid_chat() {
     // One Codex process and one conversation, two turns. Between them: a skill of Codex's own
     // is edited and another added in `$CODEX_HOME/skills`, and what the `SessionStart` hook
     // would answer changes as purlis's briefing would if the plane's skills changed.

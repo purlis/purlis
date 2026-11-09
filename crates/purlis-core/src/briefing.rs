@@ -277,7 +277,7 @@ pub fn parts(ask: &Ask, piece_note: Option<String>) -> Vec<String> {
 /// [`crate::skills::LISTED_ENV`], so a harness that loads them is not told twice.
 ///
 /// A hook's output of its own, never a part of the briefing (`purlis hook sessionstart-skills`,
-/// Codex's alone): Codex keeps 10,000 characters of each hook's output, the first and last 5,000,
+/// Codex's alone): Codex keeps 10,000 bytes of each hook's output, the first and last 5,000,
 /// and cuts the middle (codex-cli 0.147.0, measured; ADR 0102 as amended 2026-11-09). After the
 /// briefing, which passes that by itself, the listing was the middle it cut.
 pub fn skills_part(ask: &Ask) -> Option<String> {

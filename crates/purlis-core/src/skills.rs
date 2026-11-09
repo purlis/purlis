@@ -922,7 +922,7 @@ pub fn briefed(
     );
     // Only what purlis hands: the harness lists its own and the repo's itself. A plane skill is
     // named by the `SKILL.md` purlis wrote for it, and one it refused is not named at all.
-    // **Built-in skills first** (#5736), and the index last: past 10,000 characters Codex keeps
+    // **Built-in skills first** (#5736), and the index last: past 10,000 bytes Codex keeps
     // the first and last 5,000 of the hook's output and cuts the middle (0.147.0, measured;
     // ADR 0102 as amended 2026-11-09), so purlis's own and the index are the parts it keeps.
     let mut effective = set.effective;

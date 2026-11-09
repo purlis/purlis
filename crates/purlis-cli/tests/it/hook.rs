@@ -460,21 +460,9 @@ fn told_by(plane: &std::path::Path, word: &str, env: &[(&str, &str)]) -> String 
 
 #[test]
 fn a_codex_chats_skills_are_told_by_a_session_start_hook_of_their_own() {
-    // Codex keeps 10,000 characters of each hook's output and cuts the middle (codex-cli
+    // Codex keeps 10,000 bytes of each hook's output and cuts the middle (codex-cli
     // 0.147.0, measured; ADR 0102 as amended 2026-11-09), so the listing is never the briefing's.
-    let plane = tempfile::tempdir().expect("a directory");
-    std::fs::write(
-        plane.path().join("charter.toml"),
-        "schema = 1\n\n[persona]\ndefault = \"ops\"\n",
-    )
-    .expect("a manifest");
-    let persona = plane.path().join("personas/ops");
-    std::fs::create_dir_all(persona.join("memory")).expect("a persona");
-    std::fs::write(
-        persona.join("persona.md"),
-        "---\nrole: Operations\n---\n\n# ops\n",
-    )
-    .expect("its charter");
+    let plane = a_plane_with_a_persona();
     let skills = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../app/src-tauri/plugin/skills")
         .display()

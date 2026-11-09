@@ -259,7 +259,7 @@ the command line, for that session alone, and writes nothing into any config fol
   so the chat is started with `PURLIS_SKILLS_DIR` naming the bundle's `skills/`, and a
   second `SessionStart` hook, `purlis hook sessionstart-skills`, lists purlis's skills with the
   path to each `SKILL.md` (ADR 0063). It is a hook of its own because Codex keeps 10,000
-  characters of each hook's output and cuts the middle (measured on codex-cli 0.147.0, ADR
+  bytes of each hook's output and cuts the middle (measured on codex-cli 0.147.0, ADR
   0102 as amended 2026-11-09). A running Codex chat takes in no change to purlis's skills
   until it restarts (measured, ADR 0099 as amended 2026-11-09).
 - **opencode** gets purlis's shim, named in `OPENCODE_CONFIG_CONTENT` with a folder of

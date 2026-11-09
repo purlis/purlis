@@ -156,7 +156,7 @@ fn a_codex_chat_hands_its_own_question_prompt_to_purlis_before_it_is_asked_besid
 #[test]
 fn a_codex_chat_is_told_its_skills_by_a_session_start_hook_of_their_own() {
     // Measured on codex-cli 0.147.0 (ADR 0102, amended 2026-11-09): Codex keeps 10,000
-    // characters of each `SessionStart` hook's output, the first and last 5,000, and cuts the
+    // bytes of each `SessionStart` hook's output, the first and last 5,000, and cuts the
     // middle; each hook is its own developer message with its own 10,000. The listing is a hook
     // of its own, after the briefing's, so it is never the briefing's cut middle.
     let StateHooks::ThisSessionOnly { args, .. } =
@@ -191,10 +191,11 @@ fn a_codex_chat_is_told_its_skills_by_a_session_start_hook_of_their_own() {
 
 #[test]
 fn past_the_cut_of_its_skills_hook_a_codex_budget_is_said_to_lose_its_middle() {
-    // Measured on codex-cli 0.147.0: 9,995 characters of a hook's output reached the model
-    // whole and 10,181 were cut, the same on every model and whatever `tool_output_token_limit`
-    // said. The listing's own opening counts against it.
-    let fits = BRIEFING_CUT - purlis_skills::LISTING_OPENING.chars().count();
+    // Measured on codex-cli 0.147.0: 9,995 bytes of a hook's output reached the model whole and
+    // 10,181 were cut, the same on every model and whatever `tool_output_token_limit` said, and
+    // 7,839 characters of 11,139 bytes were cut too. The listing's own opening counts against it,
+    // in bytes.
+    let fits = HOOK_OUTPUT_CUT - purlis_skills::LISTING_OPENING.len();
     let at = |chars| crate::skills::Budget {
         chars,
         ..adapter().skill_budget()
@@ -205,6 +206,13 @@ fn past_the_cut_of_its_skills_hook_a_codex_budget_is_said_to_lose_its_middle() {
         .expect("past the cut");
     assert!(past.contains("10,000"), "{past}");
     assert!(past.contains("middle"), "{past}");
+    assert!(
+        past.contains(&format!(
+            "Set {} characters or fewer",
+            crate::skills::grouped(fits)
+        )),
+        "the way out: {past}"
+    );
 }
 
 #[test]

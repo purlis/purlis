@@ -318,7 +318,7 @@ fn skills_told(root: &Path, env: &[(&str, &str)]) -> Option<String> {
 fn a_briefed_chats_skills_are_a_part_of_their_own_and_never_in_its_briefing() {
     // ADR 0063: the neutral route, for a harness that cannot load a skills directory for one
     // session. The variable is set by the app for such a chat alone. Codex keeps 10,000
-    // characters of each hook's output and cuts the middle (ADR 0102, amended 2026-11-09), so
+    // bytes of each hook's output and cuts the middle (ADR 0102, amended 2026-11-09), so
     // the listing is a hook's output of its own, never the middle of the briefing's.
     let (_d, root) = plane();
     let skills = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../app/src-tauri/plugin/skills");
