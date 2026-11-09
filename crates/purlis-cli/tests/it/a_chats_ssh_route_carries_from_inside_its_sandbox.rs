@@ -95,7 +95,7 @@ fn an_ssh_server() -> (u16, mpsc::Receiver<String>) {
 /// Whether this process can apply a Seatbelt profile: not where it is already sandboxed.
 #[cfg(target_os = "macos")]
 fn can_sandbox() -> bool {
-    purlis_core::forklock::status(std::process::Command::new("/usr/bin/sandbox-exec").args([
+    purlis_core::forklock::status(support::command("/usr/bin/sandbox-exec").args([
         "-p",
         "(version 1)(allow default)",
         "/usr/bin/true",
