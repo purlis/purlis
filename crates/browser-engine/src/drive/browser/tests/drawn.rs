@@ -923,3 +923,36 @@ fn a_frame_drawn_through_a_filter_that_draws_it_in_its_box_does_not_withhold_the
 
     assert!(shot.is_ok(), "{shot:?}");
 }
+
+#[test]
+fn a_backdrop_drawn_through_a_filter_that_may_draw_it_elsewhere_withholds_the_screenshot() {
+    let (browser, engine) = browser();
+    let mut page = Document::new("PAGE-1");
+    page.element(21, None, "INPUT");
+    let over = page.element(97, None, "DIV");
+    page.node(over).laid_out = Some((
+        None,
+        vec![("backdrop-filter".into(), "url(\"#moved\")".into())],
+    ));
+    draws(&engine, "S-PAGE-1", &page, &[]);
+    keep_out_the_secret(&browser);
+
+    let shot = browser.call(&id(1), Call::Screenshot { page: None });
+
+    assert!(matches!(shot, Err(Refusal::Withheld(_))), "{shot:?}");
+}
+
+#[test]
+fn a_backdrop_drawn_through_a_filter_that_keeps_it_in_its_box_does_not_withhold_the_screenshot() {
+    let (browser, engine) = browser();
+    let mut page = Document::new("PAGE-1");
+    page.element(21, None, "INPUT");
+    let over = page.element(97, None, "DIV");
+    page.node(over).laid_out = Some((None, vec![("backdrop-filter".into(), "blur(4px)".into())]));
+    draws(&engine, "S-PAGE-1", &page, &[]);
+    keep_out_the_secret(&browser);
+
+    let shot = browser.call(&id(1), Call::Screenshot { page: None });
+
+    assert!(shot.is_ok(), "{shot:?}");
+}

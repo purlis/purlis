@@ -16,8 +16,9 @@
 //! image, video and embedded object, and every element drawn with an image or a paint script:
 //! what they show cannot be read, so they are painted whatever they show.
 //!
-//! An answer purlis cannot read, a page that draws a reflection, or one that draws a frame or a
-//! blanked element through a filter that may draw it elsewhere, withholds the screenshot.
+//! An answer purlis cannot read, a page that draws a reflection, one that draws a frame or a
+//! blanked element through a filter that may draw it elsewhere, or one that draws a backdrop
+//! through a filter of its own (`backdrop-filter: url(…)`), withholds the screenshot.
 
 use std::collections::HashSet;
 
@@ -25,9 +26,10 @@ use serde_json::Value;
 
 use super::scrub::{holds_any, holds_loosely};
 
-/// The styles read for each element laid out: an image in any of them is painted over, a filter
-/// (the one before last) may withhold the screenshot, and a reflection (the last) withholds it.
-pub(crate) const STYLES: [&str; 8] = [
+/// The styles read for each element laid out: an image in any of the first six is painted over,
+/// a filter or a backdrop filter (the two after them) may withhold the screenshot, and a
+/// reflection (the last) withholds it.
+pub(crate) const STYLES: [&str; 9] = [
     "background-image",
     "border-image-source",
     "mask-image",
@@ -35,6 +37,7 @@ pub(crate) const STYLES: [&str; 8] = [
     "list-style-image",
     "content",
     "filter",
+    "backdrop-filter",
     "-webkit-box-reflect",
 ];
 
@@ -75,7 +78,7 @@ pub(crate) struct Drawn {
 pub(crate) struct Unread(&'static str);
 
 /// What `answer` (of `DOMSnapshot.captureSnapshot`, with [`STYLES`]) draws that is to be painted
-/// over on a page that keeps `kept` out, and `loose` out also with any spaces or dashes between
+/// over on a page that keeps `kept` out, and `loose` out also with any separators between
 /// its characters (what a group of boxes holds together); `blanked` the engine's ids of its
 /// session's blanked elements.
 pub(crate) fn drawn(
@@ -245,15 +248,20 @@ fn read_document(
             [] if kinds[at] != ELEMENT => vec![String::new(); STYLES.len()],
             _ => style,
         };
-        let [images @ .., filter, reflected] = style.as_slice() else {
+        let [images @ .., filter, backdrop, reflected] = style.as_slice() else {
             return Err(Unread("an element has no styles"));
         };
-        if images.len() + 2 != STYLES.len() {
+        if images.len() + 3 != STYLES.len() {
             return Err(Unread("an element has styles missing"));
         }
         filtered[at] = FILTERS_THAT_MOVE.iter().any(|moves| filter.contains(moves));
         if !reflected.is_empty() && reflected != "none" {
             return Err(Unread("the page draws a reflection"));
+        }
+        // A backdrop filter redraws what lies under its element, which may be a blanked field,
+        // and one drawn by a page's own filter may draw it anywhere.
+        if backdrop.contains("url(") {
+            return Err(Unread("the page draws a backdrop through a filter"));
         }
         let image = images
             .iter()
