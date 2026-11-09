@@ -780,3 +780,97 @@ fn a_push_whose_remote_pushes_elsewhere_by_name_is_never_signed_in_even_when_con
         "and nothing is recorded"
     );
 }
+
+/// The window's Save of a workspace's clone ([`confirmed_if_trusted`]) from `clone` to `url`,
+/// with the forge CLI on the machine or not.
+fn a_clones_save(
+    machine: &Machine,
+    clone: &Path,
+    url: &str,
+    has_cli: bool,
+) -> Result<String, &'static str> {
+    let on = Forge {
+        kind: Kind::GitHub,
+        host: "github.example.com".to_string(),
+    };
+    confirmed_if_trusted(|| {
+        as_the_window(
+            &HostScope::for_a_test(),
+            Path::new("/Applications/purlis.app/purlis"),
+            machine.config(),
+            || helper_for_push_with(&on, clone, url, &|_| has_cli, None),
+        )
+    })
+}
+
+#[test]
+fn a_windows_save_of_a_clone_made_outside_purlis_records_nothing_and_pushes_as_an_automatic_one() {
+    let machine = Machine::signed_in_on("github.example.com");
+    let clone = tempfile::tempdir().unwrap();
+    let url = "https://github.example.com/acme/widget.git";
+
+    assert!(
+        a_clones_save(&machine, clone.path(), url, true)
+            .is_ok_and(|helper| !helper.contains(HELPER_ARG)),
+        "the forge CLI's helper, never purlis's"
+    );
+    assert_eq!(
+        a_clones_save(&machine, clone.path(), url, false),
+        Err(NOT_TRUSTED),
+        "with no forge CLI it says to trust the clone"
+    );
+    assert!(
+        !crate::machine::dir(machine.config())
+            .join(PUSH_REMOTES)
+            .exists(),
+        "and nothing is recorded"
+    );
+}
+
+#[test]
+fn a_windows_save_of_a_trusted_clone_confirms_its_changed_remote_and_records_it() {
+    let machine = Machine::signed_in_on("github.example.com");
+    let clone = tempfile::tempdir().unwrap();
+    remote::record(
+        machine.config(),
+        clone.path(),
+        "github.example.com/acme/widget".to_owned(),
+    )
+    .unwrap();
+
+    let saved = a_clones_save(
+        &machine,
+        clone.path(),
+        "https://github.example.com/acme/widget-renamed.git",
+        false,
+    );
+
+    assert!(saved.is_ok_and(|helper| helper.contains(HELPER_ARG)));
+    assert_eq!(
+        read_push_remotes(machine.config())
+            .get(&crate::sandbox::local::clone_key(clone.path()))
+            .map(String::as_str),
+        Some("github.example.com/acme/widget-renamed")
+    );
+}
+
+#[test]
+fn the_windows_save_of_the_project_still_records_a_remote_it_has_none_for() {
+    let machine = Machine::signed_in_on("github.example.com");
+    let clone = tempfile::tempdir().unwrap();
+
+    let saved = confirmed_if(true, || {
+        push_helper(
+            &machine,
+            "github.example.com",
+            clone.path(),
+            "https://github.example.com/acme/project.git",
+        )
+    });
+
+    assert!(saved.is_ok_and(|helper| helper.contains(HELPER_ARG)));
+    assert!(
+        read_push_remotes(machine.config())
+            .contains_key(&crate::sandbox::local::clone_key(clone.path()))
+    );
+}

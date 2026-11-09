@@ -17,6 +17,7 @@
 use std::path::{Path, PathBuf};
 
 use purlis_core::forge::gitcredential::remote::{self, Question};
+use purlis_core::forge::gitcredential::vouch;
 use purlis_core::forge::route::HostScope;
 
 use crate::planes::{PlaneId, Planes};
@@ -46,7 +47,13 @@ pub fn of(plane: &Path, clone: &Path) -> Option<RemoteQuestion> {
     let scope = HostScope::claim()?;
     let config_root = purlis_core::machine::config_root()?;
     let forge = purlis_core::gitpolicy::forge_for(clone, plane)?;
-    remote::question(&scope, &config_root, &forge, clone).map(|question| match question {
+    let question = remote::question(&scope, &config_root, &forge, clone)?;
+    // A workspace's clone with no record was not cloned by purlis: it is trusted from its own
+    // Notice, which says so and names its remote (`clonevouch`), never from a Save.
+    if clone != plane && matches!(question, Question::NotSavedYet { .. }) {
+        return None;
+    }
+    Some(match question {
         Question::NotSavedYet { now } => RemoteQuestion {
             kind: "not-saved".to_owned(),
             recorded: None,
@@ -81,6 +88,9 @@ pub async fn confirm_remote(
             .ok_or_else(|| "A remote is confirmed from the window alone.".to_owned())?;
         let config_root = purlis_core::machine::config_root()
             .ok_or_else(|| "purlis found no home directory to record the remote in".to_owned())?;
+        if workspace.is_some() && repo.is_some() && !vouch::trusted(&config_root, &clone) {
+            return Err(purlis_core::forge::gitcredential::NOT_TRUSTED.to_owned());
+        }
         remote::confirm(&scope, &config_root, &clone, &shown)?;
         save(&root, workspace.as_deref(), repo.as_deref(), &|workspace| {
             held.mid_turn_in(workspace)

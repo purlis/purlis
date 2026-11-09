@@ -1007,9 +1007,10 @@ pub fn save_repo_in(
         .ok_or_else(|| format!("{workspace} holds no clone called {name}"))?;
     let message = message.map(str::trim).filter(|m| !m.is_empty());
     let mut said: Vec<Say> = Vec::new();
-    // The person's own Save: it confirms the remote it pushes to.
+    // The person's own Save: it confirms a new remote of a clone purlis cloned or the person
+    // trusted, and never trusts a clone made outside purlis as a side effect.
     let code = crate::forgeaccounts::window_git(|| {
-        gitcredential::confirmed_if(true, || {
+        gitcredential::confirmed_if_trusted(|| {
             reposave::save_as(
                 &reposave::Request {
                     plane: root,
