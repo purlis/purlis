@@ -65,6 +65,19 @@
   visibility: hidden;
 }
 
+/* **As a row of the list family's** (`as="row"`, #3123): React Aria holds its parts in a cell it
+   draws `display: contents`, so they are laid out as the root's own (each rule that reaches a part
+   as the root's child reaches it through that cell too), and the keyboard's ring is drawn inside
+   it, as a list's row draws its own, never only by the fill. */
+[data-scope="message"][data-part="root"][role="row"] {
+  outline: none;
+}
+
+[data-scope="message"][data-part="root"][role="row"][data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
+}
+
 /* **Its mark**: a round icon, its state's colour on a seventh of it. */
 [data-scope="message"][data-part="mark"] {
   display: grid;
@@ -81,22 +94,26 @@
   block-size: var(--space-6);
 }
 
-[data-scope="message"][data-variant="waiting"] > [data-part="mark"] {
+[data-scope="message"][data-variant="waiting"] > [data-part="mark"],
+[data-scope="message"][data-variant="waiting"] > [role="gridcell"] > [data-part="mark"] {
   background-color: color-mix(in oklab, var(--state-waiting) 14%, transparent);
   color: var(--state-waiting);
 }
 
-[data-scope="message"][data-variant="done"] > [data-part="mark"] {
+[data-scope="message"][data-variant="done"] > [data-part="mark"],
+[data-scope="message"][data-variant="done"] > [role="gridcell"] > [data-part="mark"] {
   background-color: color-mix(in oklab, var(--state-success) 14%, transparent);
   color: var(--state-success);
 }
 
-[data-scope="message"][data-variant="failed"] > [data-part="mark"] {
+[data-scope="message"][data-variant="failed"] > [data-part="mark"],
+[data-scope="message"][data-variant="failed"] > [role="gridcell"] > [data-part="mark"] {
   background-color: color-mix(in oklab, var(--state-failed) 14%, transparent);
   color: var(--state-failed);
 }
 
-[data-scope="message"][data-variant="report"] > [data-part="mark"] {
+[data-scope="message"][data-variant="report"] > [data-part="mark"],
+[data-scope="message"][data-variant="report"] > [role="gridcell"] > [data-part="mark"] {
   background-color: color-mix(in oklab, var(--accent-base) 14%, transparent);
   color: var(--accent-text);
 }
@@ -154,6 +171,9 @@
 }
 
 [data-scope="message"][data-part="root"]:is([data-hovered], [data-focus-within])
+  > [data-part="dismiss"],
+[data-scope="message"][data-part="root"]:is([data-hovered], [data-focus-within])
+  > [role="gridcell"]
   > [data-part="dismiss"] {
   opacity: 1;
 }

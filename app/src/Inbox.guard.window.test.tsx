@@ -12,16 +12,17 @@ import { SETTLE_MS } from "./TaskBlocksNotice";
 import { forgetInbox } from "./inboxRules";
 import { keepInboxScope } from "./inboxScope";
 import { forgetProjectViews } from "./projectViews";
-import { openEveryAnswer } from "./test-inbox";
+import { chatGroup, openEveryAnswer } from "./test-inbox";
 import type { Shown } from "./bindings";
 
 /**
  * **The press-settle guard, characterised** (#3123, #1693, #1695, #3167): an Allow in the Inbox
  * does nothing when it is pressed within {@link SETTLE_MS} of its row moving or changing under
  * the pointer or the keyboard, and says why. Written against the Inbox as it stood on Radix
- * roving focus, and held unchanged across its move onto the list family, so whatever draws the
- * rows, the guard decides as it did. Each case is pressed both ways: with the pointer and with
- * Enter on the focused Allow.
+ * roving focus (#5946), and held across its move onto the list family: only how a chat's group
+ * is found changed (a `rowgroup` of the grid, where it was a `region`), never a case, so whatever
+ * draws the rows, the guard decides as it did. Each case is pressed both ways: with the pointer
+ * and with Enter on the focused Allow.
  */
 
 beforeEach(() => {
@@ -115,7 +116,7 @@ function draw(asks: readonly Shown[], elsewhere?: Elsewhere) {
 
 /** The Allow in a chat's group. */
 const allowOf = (chat: string, name = "Allow") =>
-  within(screen.getByRole("region", { name: chat })).getByRole("button", { name });
+  within(chatGroup(chat)).getByRole("button", { name });
 
 /** Presses `way` as the person would: with the pointer, or with Enter on it. */
 async function press(way: HTMLElement, by: "pointer" | "keyboard") {
@@ -136,9 +137,7 @@ describe.each(BOTH)("the press-settle guard, pressed by the %s (#3123)", (by) =>
     const { again } = draw([first, later]);
     again([first, permission(3, "01J0C", ["steward 3"], "Run cargo fmt"), later]);
     await press(allowOf("steward 4"), by);
-    expect(
-      within(screen.getByRole("region", { name: "steward 4" })).getByRole("status"),
-    ).toHaveTextContent(MOVED_JUST_NOW);
+    expect(within(chatGroup("steward 4")).getByRole("status")).toHaveTextContent(MOVED_JUST_NOW);
     expect(answered(calls)).toBe(false);
 
     read();
@@ -155,10 +154,9 @@ describe.each(BOTH)("the press-settle guard, pressed by the %s (#3123)", (by) =>
     again([ask], there([away(8), away(7)]));
     // Below the ask, so no stop above it changed: the case "an elsewhere row joining above" has
     // no instance on today's Inbox, and this pins why.
-    const joined = screen.getByRole("region", { name: "steward 8 · infra · ops" });
+    const joined = chatGroup("steward 8");
     expect(
-      screen.getByRole("region", { name: "steward 3" }).compareDocumentPosition(joined) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
+      chatGroup("steward 3").compareDocumentPosition(joined) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     await press(allowOf("steward 3"), by);
     expect(answered(calls)).toBe(true);
@@ -195,9 +193,7 @@ describe.each(BOTH)("the press-settle guard, pressed by the %s (#3123)", (by) =>
     // Something above grew without drawing this row again: only where its Allow is says so.
     lower = 48;
     await press(allowOf("steward 4"), by);
-    expect(
-      within(screen.getByRole("region", { name: "steward 4" })).getByRole("status"),
-    ).toHaveTextContent(MOVED_JUST_NOW);
+    expect(within(chatGroup("steward 4")).getByRole("status")).toHaveTextContent(MOVED_JUST_NOW);
     expect(answered(calls)).toBe(false);
 
     read();
@@ -245,10 +241,8 @@ describe("where the keyboard lands after an ask is answered and removed (#3123, 
     again([second]);
     const row = document.activeElement as HTMLElement;
     expect(row).not.toBe(document.body);
-    expect(
-      within(screen.getByRole("region", { name: "steward 4" })).getByText("Run cargo build"),
-    ).toBeTruthy();
-    expect(screen.getByRole("region", { name: "steward 4" }).contains(row)).toBe(true);
+    expect(within(chatGroup("steward 4")).getByText("Run cargo build")).toBeTruthy();
+    expect(chatGroup("steward 4").contains(row)).toBe(true);
     // The row itself, not one of its buttons: an answer is never one key away by accident.
     expect(row.tagName).not.toBe("BUTTON");
     expect(row).toHaveTextContent("Run cargo build");

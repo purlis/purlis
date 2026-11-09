@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useId } from "react";
-import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import type { Offer } from "./actions";
 import type { Shown } from "./bindings";
 import { backSaid } from "./chatState";
@@ -20,7 +19,7 @@ import {
   MessageRow,
   MessageTop,
 } from "./ui/message/Message";
-import { PanelSectionTitle } from "./ui/panel/Panel";
+import { ListRowSection } from "./ui/list/List";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
@@ -84,15 +83,15 @@ export const waitingAsk = ({ session, ask, says, source, chain, since }: Shown):
 /** What the lines for this window's other projects are called. */
 export const OTHER_PROJECTS = "Other projects in this window";
 
-/** The key of a line for another project of this window, for its stops. */
+/** The key of a line for another project of this window, its row's. */
 export const hereKey = (plane: string) => `here:${plane}`;
 
 /** The projects other than `plane` with something waiting, as their lines draw them. */
 export const othersWaiting = (plane: string, elsewhere: Elsewhere | undefined) =>
   (elsewhere?.waitingHere ?? []).filter((one) => one.plane !== plane && one.count > 0);
 
-/** The stops of those lines, in the order they are drawn. */
-export const hereStops = (others: readonly WaitingHere[]) =>
+/** What those lines draw, in their order: each line and its Go to project. */
+export const herePlaces = (others: readonly WaitingHere[]) =>
   others.flatMap((one) => [hereKey(one.plane), `${hereKey(one.plane)}:go`]);
 
 /**
@@ -113,76 +112,74 @@ export function OtherProjects({
   now?: number;
 }) {
   return (
-    <section className="inbox-chat inbox-elsewhere" aria-label={OTHER_PROJECTS}>
-      <PanelSectionTitle level={3} className="inbox-chain">
-        {OTHER_PROJECTS}
-      </PanelSectionTitle>
-      <ul>
-        {others.map((one) => (
-          <RovingFocusGroup.Item asChild tabStopId={hereKey(one.plane)} key={one.plane}>
-            <MessageRow
-              as="li"
-              tone="waiting"
-              icon={<KindIcon kind="elsewhere" />}
-              className="inbox-ask"
-              data-source="here"
+    <ListRowSection
+      id="here"
+      className="inbox-chat inbox-elsewhere"
+      title={<span className="inbox-chain">{OTHER_PROJECTS}</span>}
+    >
+      {others.map((one) => (
+        <MessageRow
+          key={one.plane}
+          as="row"
+          id={hereKey(one.plane)}
+          textValue={`${one.project} · ${one.count} waiting on you`}
+          tone="waiting"
+          icon={<KindIcon kind="elsewhere" />}
+          className="inbox-ask"
+          data-source="here"
+        >
+          {/* A project's name is data: drawn as text. */}
+          <MessageTop
+            title={
+              <span className="ask-says">{`${one.project} · ${one.count} waiting on you`}</span>
+            }
+          />
+          {one.asks !== undefined && one.asks.length > 0 && (
+            <MessageBody>
+              <ul className="inbox-there">
+                {one.asks.map((ask) => {
+                  const says = capMarks(ask.says).text;
+                  const who = ask.chain.join(" › ");
+                  return (
+                    <li key={`${ask.session}\u0000${ask.ask}`} className="inbox-says">
+                      <KindMark kind={kindOfAsk(ask.source)} />
+                      <Tooltip tip={says}>
+                        <span className="ask-says inbox-primary ui-text-body ui-text-strong inbox-clamped">
+                          {says}
+                        </span>
+                      </Tooltip>
+                      {who !== "" && (
+                        <Tooltip tip={who}>
+                          <span className="inbox-where inbox-secondary ui-text-secondary">
+                            {who}
+                          </span>
+                        </Tooltip>
+                      )}
+                      {typeof ask.since === "number" && now !== undefined && (
+                        <span className="inbox-meta ui-text-meta">
+                          <RowAge when={ask.since * 1000} now={now} since="Waiting since" />
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </MessageBody>
+          )}
+          <MessageLinks>
+            <Button
+              size="sm"
+              variant="quiet-link"
+              aria-label={`Go to project ${one.project}`}
+              onPress={() => onOpen(one.plane)}
+              className="inbox-go"
             >
-              {/* A project's name is data: drawn as text. */}
-              <MessageTop
-                title={
-                  <span className="ask-says">{`${one.project} · ${one.count} waiting on you`}</span>
-                }
-              />
-              {one.asks !== undefined && one.asks.length > 0 && (
-                <MessageBody>
-                  <ul className="inbox-there">
-                    {one.asks.map((ask) => {
-                      const says = capMarks(ask.says).text;
-                      const who = ask.chain.join(" › ");
-                      return (
-                        <li key={`${ask.session}\u0000${ask.ask}`} className="inbox-says">
-                          <KindMark kind={kindOfAsk(ask.source)} />
-                          <Tooltip tip={says}>
-                            <span className="ask-says inbox-primary ui-text-body ui-text-strong inbox-clamped">
-                              {says}
-                            </span>
-                          </Tooltip>
-                          {who !== "" && (
-                            <Tooltip tip={who}>
-                              <span className="inbox-where inbox-secondary ui-text-secondary">
-                                {who}
-                              </span>
-                            </Tooltip>
-                          )}
-                          {typeof ask.since === "number" && now !== undefined && (
-                            <span className="inbox-meta ui-text-meta">
-                              <RowAge when={ask.since * 1000} now={now} since="Waiting since" />
-                            </span>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </MessageBody>
-              )}
-              <MessageLinks>
-                <RovingFocusGroup.Item asChild tabStopId={`${hereKey(one.plane)}:go`}>
-                  <Button
-                    size="sm"
-                    variant="quiet-link"
-                    aria-label={`Go to project ${one.project}`}
-                    onPress={() => onOpen(one.plane)}
-                    className="inbox-go"
-                  >
-                    Go to project
-                  </Button>
-                </RovingFocusGroup.Item>
-              </MessageLinks>
-            </MessageRow>
-          </RovingFocusGroup.Item>
-        ))}
-      </ul>
-    </section>
+              Go to project
+            </Button>
+          </MessageLinks>
+        </MessageRow>
+      ))}
+    </ListRowSection>
   );
 }
 
@@ -200,12 +197,13 @@ export function showOffer(session: number, name: string, go?: Offer): Offer {
   };
 }
 
-/** The key of a chat elsewhere, for its stops. */
+/** The key of a chat elsewhere, its row's. */
 export const elsewhereKey = (item: { plane: string; session: number }) =>
   `elsewhere:${item.plane}#${item.session}`;
 
-/** The stops of the groups for chats elsewhere, in the order they are drawn. */
-export function elsewhereStops(asking: readonly Needing[]): string[] {
+/** What the groups for chats elsewhere draw, in their order: each row, its Go to chat and its
+ *  Ignore. */
+export function elsewherePlaces(asking: readonly Needing[]): string[] {
   return asking.flatMap((item) => {
     const key = elsewhereKey(item);
     return [key, `${key}:go`, ...(item.ignore?.available ? [`${key}:ignore`] : [])];
@@ -230,74 +228,73 @@ export function ElsewhereGroup({
     item.needed ?? backSaid(item.reported ?? [], item.stoppedBelow) ?? item.why ?? "Waiting on you";
   const where = `${item.workspace} · ${item.project}`;
   return (
-    <section
+    <ListRowSection
+      id={`group:${key}`}
       className="inbox-chat inbox-elsewhere"
-      aria-label={`${item.name} · ${where}`}
+      title={
+        <span className="inbox-chain">
+          {item.persona != null && <PersonaMark persona={item.persona} mark={item.mark} />}
+          {item.name}
+        </span>
+      }
+      named
       // Not `data-session`: a notification lands on this project's own group by that
       // (`landOnGroup`), and a chat elsewhere can have the same number in its project.
       data-elsewhere={`${item.plane}#${item.session}`}
     >
-      <h3 className="inbox-chain">
-        {item.persona != null && <PersonaMark persona={item.persona} mark={item.mark} />}
-        {item.name}
-      </h3>
-      <ul>
-        <RovingFocusGroup.Item asChild tabStopId={key}>
-          <MessageRow
-            as="li"
-            tone="waiting"
-            icon={<KindIcon kind="elsewhere" />}
-            className="inbox-ask"
-            data-source="elsewhere"
-            aria-labelledby={`${id}-says`}
-            aria-describedby={`${id}-whose`}
-            dismiss={
-              item.ignore?.available ? (
-                <RovingFocusGroup.Item asChild tabStopId={`${key}:ignore`}>
-                  <IconButton
-                    icon={<X />}
-                    size="sm"
-                    variant="quiet"
-                    aria-label={item.ignore.title}
-                    tooltip={item.ignore.title}
-                    onPress={() => item.ignore && onPress(item.plane, item.ignore)}
-                  />
-                </RovingFocusGroup.Item>
-              ) : undefined
-            }
+      <MessageRow
+        as="row"
+        id={key}
+        textValue={`${item.name}: ${says}`}
+        tone="waiting"
+        icon={<KindIcon kind="elsewhere" />}
+        className="inbox-ask"
+        data-source="elsewhere"
+        aria-labelledby={`${id}-says`}
+        aria-describedby={`${id}-whose ${id}-where`}
+        dismiss={
+          item.ignore?.available ? (
+            <IconButton
+              icon={<X />}
+              size="sm"
+              variant="quiet"
+              aria-label={item.ignore.title}
+              tooltip={item.ignore.title}
+              onPress={() => item.ignore && onPress(item.plane, item.ignore)}
+            />
+          ) : undefined
+        }
+      >
+        <MessageTop title={item.name} />
+        <MessageMeta>
+          <span id={`${id}-whose`} className="inbox-source">
+            {IN_ANOTHER_WINDOW}
+          </span>
+          {" · "}
+          <span id={`${id}-where`} className="inbox-where">
+            {where}
+          </span>
+        </MessageMeta>
+        <MessageBody>
+          <Tooltip tip={says}>
+            <span id={`${id}-says`} className="ask-says inbox-clamped">
+              {says}
+            </span>
+          </Tooltip>
+        </MessageBody>
+        <MessageLinks>
+          <Button
+            size="sm"
+            variant="quiet-link"
+            aria-label={`Go to chat ${item.name} · ${where}, in another window`}
+            onPress={() => onPress(item.plane, showOffer(item.session, item.name, item.go))}
+            className="inbox-go"
           >
-            <MessageTop title={item.name} />
-            <MessageMeta>
-              <span id={`${id}-whose`} className="inbox-source">
-                {IN_ANOTHER_WINDOW}
-              </span>
-              {" · "}
-              <span className="inbox-where">{where}</span>
-            </MessageMeta>
-            <MessageBody>
-              <Tooltip tip={says}>
-                <span id={`${id}-says`} className="ask-says inbox-clamped">
-                  {says}
-                </span>
-              </Tooltip>
-            </MessageBody>
-            <MessageLinks>
-              <RovingFocusGroup.Item asChild tabStopId={`${key}:go`}>
-                <Button
-                  size="sm"
-                  variant="quiet-link"
-                  aria-label={`Go to chat ${item.name} · ${where}, in another window`}
-                  onPress={() => onPress(item.plane, showOffer(item.session, item.name, item.go))}
-                  className="inbox-go"
-                >
-                  Go to chat
-                </Button>
-              </RovingFocusGroup.Item>
-            </MessageLinks>
-          </MessageRow>
-        </RovingFocusGroup.Item>
-      </ul>
-    </section>
+            Go to chat
+          </Button>
+        </MessageLinks>
+      </MessageRow>
+    </ListRowSection>
   );
 }
 

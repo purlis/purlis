@@ -1,13 +1,12 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useRef, useState, type ReactElement } from "react";
-import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
+import { useRef, useState } from "react";
 import { SETTLE_MS } from "./TaskBlocksNotice";
 import { useWayPlaces } from "./wayPlaces";
 
-// **The pieces every Inbox view's rows share** (moved from `Inbox.tsx`): their stops in the list's
-// roving focus, and the settling an Allow waits for.
+// **The pieces every Inbox view's rows share** (moved from `Inbox.tsx`): how they say a chain and a
+// time, and the settling an Allow waits for.
 
 /** What a chain is drawn as: the session first, the chat that asked last (I-9). */
 export const chainSaid = (chain: readonly string[]) => chain.join(" › ");
@@ -15,23 +14,6 @@ export const chainSaid = (chain: readonly string[]) => chain.join(" › ");
 /** The time an answer was given, or an update happened, as the list says it. */
 export const timeSaid = (at: number) =>
   new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-
-/** One stop of the list's roving focus. */
-export function Stop({
-  id,
-  focusable = true,
-  children,
-}: {
-  id: string;
-  focusable?: boolean;
-  children: ReactElement;
-}) {
-  return (
-    <RovingFocusGroup.Item asChild tabStopId={id} focusable={focusable}>
-      {children}
-    </RovingFocusGroup.Item>
-  );
-}
 
 /** The time now: when an update was drawn where it stands, or when an answer was pressed. */
 export const placedAt = () => performance.now();
@@ -44,7 +26,7 @@ export const standsFirst = () => false;
  * **When a row was last drawn where it stands, or moved** (#1693, #1695): what an Allow on it
  * waits {@link SETTLE_MS} after, so what is under the pointer is what the person read.
  *
- * `here` is what the row stands under and offers: the stops above it and its own words and
+ * `here` is what the row stands under and offers: what is drawn above it and its own words and
  * answers. It is taken in the very render that draws it, so no press lands on a place whose time
  * is not known yet. **Where each of its answers that grant was last drawn, and since when**
  * (#3167, `useWayPlaces`): something above it can grow without a stop of its own changing (a
@@ -60,7 +42,12 @@ export function useSettledPlace<T extends HTMLElement>(here: string) {
   // Its first drawing is `placed`'s: an answer read for the first time is no move of its own.
   const { movedAt } = useWayPlaces(drawn, granting, standsFirst);
   const tooSoon = () => placedAt() - Math.max(placed.at, movedAt()) < SETTLE_MS;
-  return { drawn, tooSoon };
+  /** Reads where its answers stand now: after each drawing of its row, which the list family
+   *  draws a commit after this hook's own render (`ListRowDrawn`'s `onDrawn`, #3123). */
+  const looked = () => {
+    movedAt();
+  };
+  return { drawn, tooSoon, looked };
 }
 
 /**

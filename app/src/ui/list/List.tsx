@@ -46,6 +46,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type JSX,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
   type Ref,
@@ -61,6 +62,7 @@ import {
   ListBoxItem as AriaListBoxItem,
   ListBoxSection as AriaListBoxSection,
   type GridListItemProps as AriaGridListItemProps,
+  type GridListItemRenderProps,
   type GridListProps as AriaGridListProps,
   type Key,
   type ListBoxItemProps as AriaListBoxItemProps,
@@ -521,6 +523,7 @@ export function ListRow<T extends object>({
   return (
     <AriaGridListItem
       {...mergeProps(rest, own.handlers, tipped.hover)}
+      render={rowElement()}
       className={className}
       data-scope="list"
       data-part="root"
@@ -547,6 +550,9 @@ export interface ListRowDrawnProps<T extends object> extends Omit<
   onDrawn?: () => void;
   /** The other family's classes (`parted`): never a look of the screen's. */
   className?: string;
+  /** Its name and description, by its own parts' ids, in place of its `textValue`. */
+  "aria-labelledby"?: string;
+  "aria-describedby"?: string;
   ref?: Ref<HTMLDivElement>;
   /** That family's `data-scope`, `data-part` and `data-variant`, as they are. */
   [data: `data-${string}`]: string | number | boolean | undefined;
@@ -564,15 +570,72 @@ export interface ListRowDrawnProps<T extends object> extends Omit<
 export function ListRowDrawn<T extends object>({
   onDrawn,
   children,
+  "aria-labelledby": labelledBy,
+  "aria-describedby": describedBy,
   ...props
 }: ListRowDrawnProps<T>) {
   return (
-    <AriaGridListItem {...props}>
+    <AriaGridListItem
+      {...props}
+      // **Named and described by its own parts**: React Aria hands a row neither, and names it
+      // by its `textValue`; its element is drawn here with both, where they win over that name,
+      // so a row is heard as its words say it (an ask by what it asks, then who asks).
+      render={rowElement(labelledBy, describedBy)}
+    >
       {children}
       {onDrawn !== undefined && <Drawn then={onDrawn} />}
     </AriaGridListItem>
   );
 }
+
+/**
+ * **A row's element, drawn by the family** (React Aria's `render`): named and described by the
+ * ids given, where any are, and **the list's own row once anything in it takes the keyboard**
+ * (#3123). React Aria makes a row the list's current one when the row itself is focused, or a
+ * control in it by the pointer; focused any other way (a script moving the keyboard into a form
+ * just opened, a screen reader's cursor) a control in a row the list had not reached left the
+ * list on its first row, which then took the keyboard back a frame later. So the row a control is
+ * focused in is told to the list first, before React Aria hears the focus.
+ */
+function rowElement(labelledBy?: string, describedBy?: string) {
+  return (element: JSX.IntrinsicElements["div"], { id, state }: GridListItemRenderProps) => (
+    <div
+      {...element}
+      aria-labelledby={labelledBy ?? element["aria-labelledby"]}
+      aria-describedby={describedBy ?? element["aria-describedby"]}
+      onFocus={(event) => {
+        const manager = state.selectionManager;
+        // A move a key makes is React Aria's own, already placed: its arrows, its Tab out of the
+        // list (which passes the keyboard through the list's last control) and a Tab into it
+        // (which lands on its one Tab stop). And coming in from outside it is React Aria's too.
+        const from = event.relatedTarget;
+        const list = event.currentTarget.closest('[role="grid"]');
+        const fromWithin = from === null || (from instanceof Node && list?.contains(from) === true);
+        if (!keyHeardNow && fromWithin && event.target !== event.currentTarget)
+          if (id !== undefined && manager.focusedKey !== id) manager.setFocusedKey(id);
+        element.onFocus?.(event);
+      }}
+    />
+  );
+}
+
+/**
+ * **Whether a key is being heard now**, anywhere in the window (`rowElement`): set as a key
+ * comes down, on the window's capture phase, before anything hears it, and let go once it has been
+ * heard everywhere.
+ */
+let keyHeardNow = false;
+if (typeof window !== "undefined")
+  window.addEventListener(
+    "keydown",
+    () => {
+      keyHeardNow = true;
+      queueMicrotask(() => {
+        keyHeardNow = false;
+      });
+    },
+    { capture: true },
+  );
 
 /** Runs `then` after each commit of the row it stands in, as part of the row. */
 function Drawn({ then }: { then: () => void }) {

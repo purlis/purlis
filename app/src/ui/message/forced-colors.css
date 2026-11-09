@@ -4,10 +4,15 @@
 /* **A message row in forced colours** (#5649, #3387): what `theme/forced-colors.css` says of the
    window, said of this family's own parts, in the system's palette alone. Forced colours take
    the mark's tint away, so the mark keeps a ring in the words' colour. A row under the keyboard
-   is told by the focus ring of the control it holds. */
+   is told by the focus ring of the control it holds, or, as a list's row (#3123), by its own
+   ring in the system's highlight. */
 
 @media (forced-colors: active) {
   [data-scope="message"][data-part="mark"] {
     border: 1px solid CanvasText;
+  }
+
+  [data-scope="message"][data-part="root"][role="row"][data-focus-visible] {
+    outline-color: Highlight;
   }
 }

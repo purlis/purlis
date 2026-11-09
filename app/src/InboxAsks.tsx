@@ -1,16 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import {
-  Fragment,
-  useCallback,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type ReactNode,
-} from "react";
+import { Fragment, useCallback, useId, useRef, useState, type ReactNode } from "react";
 import { Send, X } from "lucide-react";
 import { RestartEndsLine } from "./RestartEnds";
 import { commands, type Offered, type PlaneId, type ReachedWhy, type Shown } from "./bindings";
@@ -45,7 +36,7 @@ import { Form, TextArea, TextField } from "./ui/field/Field";
 import { PanelSectionTitle } from "./ui/panel/Panel";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
-import { chainSaid, Stop, timeSaid, useSettledPlace } from "./inboxRowParts";
+import { chainSaid, timeSaid, useSettledPlace } from "./inboxRowParts";
 
 // **The Asks view's rows** (#1692, #5644; moved from `Inbox.tsx`): what one ask offers, and how it
 // is drawn and answered in place.
@@ -53,6 +44,9 @@ import { chainSaid, Stop, timeSaid, useSettledPlace } from "./inboxRowParts";
 /** What the card of a chat waiting on a reply says where the app heard no message from it: its
  *  harness gave none, or the app was started since (#4550). */
 export const NO_MESSAGE = "No message to show. Go to chat to see what it said.";
+
+/** What the list of asks is called: the list family's grid of them (#3123). */
+export const ASKS = "Asks";
 
 /** What an empty Inbox says (I-12). */
 export const NOTHING_WAITS = "Nothing is waiting on you";
@@ -247,10 +241,11 @@ function markedLine(line: string): ReactNode[] {
   return parts;
 }
 
-/** The stops of one ask's row, in the order it draws them, its form's only while `open`. A
- *  fold's button is a stop too, and not listed: whether it is drawn is `ChatText`'s measure. The
- *  keyboard leaving from one comes back to the list at its usual stop. */
-export function stopIds(
+/** **What one ask's row draws, in its order** (#1693, #3123): the row, its links, its form's
+ *  answers and boxes only while `open`, its ×. A row below it stands under these, and moves when
+ *  one comes or goes (`useSettledPlace`). A fold's button is not listed: whether it is drawn is
+ *  `ChatText`'s measure, and its growing is heard where each Allow is drawn (#3167). */
+export function placeIds(
   key: string,
   shape: Shape,
   options: readonly Offered[] = [],
@@ -423,18 +418,20 @@ export function Ask({
     // A login's notice drawn anew has to be read anew (#4595).
     ask.answer.via === "browser-login" || ask.answer.via === "secret-fill" ? ask.answer.shown : "",
   ].join("\n");
-  const { drawn, tooSoon } = useSettledPlace<HTMLLIElement>(here);
+  const { drawn, tooSoon, looked } = useSettledPlace<HTMLElement>(here);
   /** **The keyboard goes into the form its Answer opens** (#5651): onto its box, or its first
    *  answer. A task's box takes it itself once its question is read (`useAnswerQuestion`). */
   const focusForm = useRef(false);
-  useEffect(() => {
+  /** After each drawing of its row (the list family draws it a commit after this, #3123): where
+   *  its answers stand is read, and a form its Answer just opened takes the keyboard. */
+  const drawnNow = () => {
+    looked();
     if (!open || !focusForm.current) return;
+    const form = document.getElementById(`${id}-form`);
+    if (form === null) return;
     focusForm.current = false;
-    document
-      .getElementById(`${id}-form`)
-      ?.querySelector<HTMLElement>("textarea, input, button")
-      ?.focus();
-  }, [open, id]);
+    form.querySelector<HTMLElement>("textarea, input, button")?.focus();
+  };
   /** Whether `option` is an Allow on an ask of Allow and Keep blocked (ADR 0097 §6). */
   const grants = (option: Offered) => option.allows && ALLOW_OR_KEEP.has(ask.source);
   /** A press of `option`; on a secret's one notice (#5080), with what it gave, read once. */
@@ -510,272 +507,244 @@ export function Ask({
         </NoticeWayGuard>
       </div>
     ) : shape.reply ? (
-      <Reply plane={plane} ask={ask} stop={key} />
+      <Reply plane={plane} ask={ask} />
     ) : shape.answerable ? (
-      <TaskAnswer plane={plane} ask={ask} stop={key} task={task} />
+      <TaskAnswer plane={plane} ask={ask} task={task} />
     ) : shape.answers ? (
       <WithWrites ask={ask} onDrawn={onChangeDrawn}>
-        {ask.login != null && (
-          <Stop id={`${key}:site`}>
-            <LoginSite login={ask.login} typed={typed} onTyped={setTyped} />
-          </Stop>
-        )}
+        {ask.login != null && <LoginSite login={ask.login} typed={typed} onTyped={setTyped} />}
         {/* A secret's one notice (#5080): its facts, the chat's words, its fields, its Allow
             and its own answers, from the secret-ask family. */}
         {secretNotice && (
-          <Stop id={`${key}:secret`}>
-            <SecretAskNotice
-              ask={ask}
-              chat={who === "" ? "The chat" : who}
-              entries={() => secretAskEntries(plane, ask)}
-              busy={busy}
-              onAnswer={answer}
-              onSaid={setSaid}
-            />
-          </Stop>
+          <SecretAskNotice
+            ask={ask}
+            chat={who === "" ? "The chat" : who}
+            entries={() => secretAskEntries(plane, ask)}
+            busy={busy}
+            onAnswer={answer}
+            onSaid={setSaid}
+          />
         )}
         {/* What a secret fill puts where (#5115): words to read, nothing to reach. */}
         {ask.fill != null && <SecretFillSite fill={ask.fill} />}
         {shape.reason && (
-          <Stop id={`${key}:reason`}>
-            <TextField
-              className="inbox-reason"
-              aria-label={`Why you keep it blocked, told to ${who}`}
-              value={reason}
-              placeholder="Why keep it blocked? (optional, the chat is told)"
-              maxLength={REASON_TYPED_MOST}
-              spellCheck
-              onChange={setReason}
-              onKeyDown={keepHomeAndEnd}
-            />
-          </Stop>
+          <TextField
+            className="inbox-reason"
+            aria-label={`Why you keep it blocked, told to ${who}`}
+            value={reason}
+            placeholder="Why keep it blocked? (optional, the chat is told)"
+            maxLength={REASON_TYPED_MOST}
+            spellCheck
+            onChange={setReason}
+          />
         )}
         {!secretNotice && (
           <ButtonRow className="inbox-answers" role="group" aria-label={`Answers to ${who}`}>
             {shape.offers.map((option) => (
               // Never `disabled` while busy: a disabled button drops the keyboard to the page
               // (#1700). It says it is busy, and `answer` sends nothing a second time.
-              <Stop key={option.id} id={`${key}:${option.id}`}>
-                <Button
-                  // The answer the source suggests is the primary one, in its place (#2241): a
-                  // persona's declared browser. Still only the person's press answers. On an ask
-                  // of Allow and Keep blocked, each Allow is the grants variant, as plain as Keep
-                  // blocked and told apart by its edge and its lock, and never the primary look
-                  // (ADR 0097 §6).
-                  variant={
-                    grants(option)
-                      ? "grants"
-                      : option.preselected === true
-                        ? "primary"
-                        : "secondary"
-                  }
-                  className={option.allows ? "inbox-answer allows" : "inbox-answer"}
-                  aria-disabled={busy || undefined}
-                  aria-busy={busy || undefined}
-                  onPress={() => answer(option)}
-                >
-                  {option.label}
-                </Button>
-              </Stop>
+              <Button
+                key={option.id}
+                // The answer the source suggests is the primary one, in its place (#2241): a
+                // persona's declared browser. Still only the person's press answers. On an ask
+                // of Allow and Keep blocked, each Allow is the grants variant, as plain as Keep
+                // blocked and told apart by its edge and its lock, and never the primary look
+                // (ADR 0097 §6).
+                variant={
+                  grants(option) ? "grants" : option.preselected === true ? "primary" : "secondary"
+                }
+                className={option.allows ? "inbox-answer allows" : "inbox-answer"}
+                aria-disabled={busy || undefined}
+                aria-busy={busy || undefined}
+                onPress={() => answer(option)}
+              >
+                {option.label}
+              </Button>
             ))}
           </ButtonRow>
         )}
       </WithWrites>
     ) : null;
 
+  // **A row of Asks** (#5649, ADR 0119 decision 6), a row of the list family's (#3123): its
+  // kind's glyph in the waiting tint; the chat's name with how long it has waited at the right,
+  // the × in its place under the pointer; what it waits on (in the waiting colour) and where; its
+  // words; its links (Answer, Go to chat); and what answers it, in the row.
   return (
-    <Stop id={key}>
-      {/* **A row of Asks** (#5649, ADR 0119 decision 6): its kind's glyph in the waiting tint;
-          the chat's name with how long it has waited at the right, the × in its place under the
-          pointer; what it waits on (in the waiting colour) and where; its words; its links
-          (Answer, Go to chat); and what answers it, in the row. */}
-      <MessageRow
-        as="li"
-        tone={toneOfKind(kindOfAsk(ask.source))}
-        icon={<KindIcon kind={kindOfAsk(ask.source)} />}
-        ref={drawn}
-        className="inbox-ask"
-        data-source={ask.source}
-        aria-labelledby={shape.message ? `${id}-whose` : `${id}-says`}
-        aria-describedby={
-          shape.message
-            ? `${id}-says`
-            : `${id}-whose${shape.said === undefined ? "" : ` ${id}-said`}`
-        }
-        dismiss={
-          shape.ignore && onIgnore !== undefined ? (
-            <Stop id={`${key}:ignore`}>
-              <IconButton
-                icon={<X />}
-                size="sm"
-                variant="quiet"
-                aria-label={`Ignore ${who} until it asks again`}
-                onPress={() => onIgnore(ask.session)}
-              />
-            </Stop>
-          ) : undefined
-        }
-      >
-        <MessageTop
-          title={<span className="inbox-who">{who}</span>}
-          time={<RowAge when={ageOf(plane, ask)[0]} now={now} since="Waiting since" />}
-        />
-        <MessageMeta>
-          <MessageState id={`${id}-whose`}>{SOURCE_SAID[ask.source]}</MessageState>
-          {where !== "" && (
-            <>
-              {" · "}
-              <span className="inbox-where">{where}</span>
-            </>
-          )}
-        </MessageMeta>
-        <MessageBody>
-          {/* The ask's words are the source's, drawn as text and never as a control. What an
+    <MessageRow
+      as="row"
+      id={key}
+      textValue={`${who}: ${shape.line}`}
+      tone={toneOfKind(kindOfAsk(ask.source))}
+      icon={<KindIcon kind={kindOfAsk(ask.source)} />}
+      ref={drawn}
+      onDrawn={drawnNow}
+      className="inbox-ask"
+      data-source={ask.source}
+      aria-labelledby={shape.message ? `${id}-whose` : `${id}-says`}
+      aria-describedby={
+        shape.message ? `${id}-says` : `${id}-whose${shape.said === undefined ? "" : ` ${id}-said`}`
+      }
+      dismiss={
+        shape.ignore && onIgnore !== undefined ? (
+          <IconButton
+            icon={<X />}
+            size="sm"
+            variant="quiet"
+            aria-label={`Ignore ${who} until it asks again`}
+            onPress={() => onIgnore(ask.session)}
+          />
+        ) : undefined
+      }
+    >
+      <MessageTop
+        title={<span className="inbox-who">{who}</span>}
+        time={<RowAge when={ageOf(plane, ask)[0]} now={now} since="Waiting since" />}
+      />
+      <MessageMeta>
+        <MessageState id={`${id}-whose`}>{SOURCE_SAID[ask.source]}</MessageState>
+        {where !== "" && (
+          <>
+            {" · "}
+            <span className="inbox-where">{where}</span>
+          </>
+        )}
+      </MessageMeta>
+      <MessageBody>
+        {/* The ask's words are the source's, drawn as text and never as a control. What an
               Allow here would let run is never cut (#1146): it is read whole first. **A chat's
               own words** (its message, a task's question) are markdown under the safe subset
               (`ChatText`, #5214), folded past three lines with Show all (#5649): the person
               answers them here, and a question is often a message's last line (#4550). */}
-          {chatWords ? (
-            <ChatText
-              id={`${id}-says`}
-              className="ask-says inbox-primary inbox-chat-text"
-              text={shape.line}
-              foldAt={ASK_FOLD_LINES}
-              foldStop={(button) => <Stop id={`${key}:fold`}>{button}</Stop>}
-            />
-          ) : (
-            <Tooltip tip={shape.line}>
-              {shape.lines !== undefined && shape.lines.drawn.length > 0 ? (
-                // **A command over several lines is drawn on them** (#3502): each as the line has
-                // it, the first few, and how many more. Never clamped: the cap is its own.
-                <span
-                  id={`${id}-says`}
-                  className="ask-says ask-lines inbox-primary ui-text-body ui-text-strong"
-                >
-                  {shape.lines.drawn.map((one, at) => (
-                    // A space between lines, which a column does not draw, so the row's name
-                    // reads them apart.
-                    <Fragment key={at}>
-                      {at > 0 && " "}
-                      <span className="ask-line">{markedLine(one)}</span>
-                    </Fragment>
-                  ))}
-                  {shape.lines.more > 0 && (
-                    <>
-                      {" "}
-                      <span className="ask-line ask-more-lines ui-text-secondary">
-                        {moreLines(shape.lines.more)}
-                      </span>
-                    </>
-                  )}
-                </span>
-              ) : (
-                <span
-                  id={`${id}-says`}
-                  className={`ask-says inbox-primary ui-text-body ui-text-strong${whole ? "" : " inbox-clamped"}`}
-                >
-                  {markedLine(shape.line)}
-                </span>
-              )}
-            </Tooltip>
-          )}
-          {shape.said !== undefined && (
-            <ChatText
-              id={`${id}-said`}
-              className="inbox-said"
-              text={shape.said}
-              foldAt={ASK_FOLD_LINES}
-              foldStop={(button) => <Stop id={`${key}:said-fold`}>{button}</Stop>}
-            />
-          )}
-          {/* Why its Allow is missing: the lines it runs over, which its line put on one
-              (#3502), and a character it holds that reads otherwise (SK-51). */}
-          {shape.answers && (shape.lines !== undefined || shape.hidden !== undefined) && (
-            <p className="inbox-hidden ui-text-secondary">
-              {shape.lines !== undefined
-                ? withheldSaid(shape.lines, shape.hidden)
-                : hiddenSaid(shape.hidden ?? "")}
-            </p>
-          )}
-          {/* A folder or something on this machine reaches the chat only by its restart (#1986):
-              what that ends is said before an Allow here, naming the chat. */}
-          {(ask.source === "sandbox-write" || ask.source === "sandbox-local") &&
-            shape.answers &&
-            shape.offers.some((one) => one.allows) && (
-              <p className="inbox-restart ui-text-secondary">
-                <RestartEndsLine
-                  plane={plane}
-                  session={ask.session}
-                  chat={ask.chain[ask.chain.length - 1]}
-                />
-              </p>
+        {chatWords ? (
+          <ChatText
+            id={`${id}-says`}
+            className="ask-says inbox-primary inbox-chat-text"
+            text={shape.line}
+            foldAt={ASK_FOLD_LINES}
+          />
+        ) : (
+          <Tooltip tip={shape.line}>
+            {shape.lines !== undefined && shape.lines.drawn.length > 0 ? (
+              // **A command over several lines is drawn on them** (#3502): each as the line has
+              // it, the first few, and how many more. Never clamped: the cap is its own.
+              <span
+                id={`${id}-says`}
+                className="ask-says ask-lines inbox-primary ui-text-body ui-text-strong"
+              >
+                {shape.lines.drawn.map((one, at) => (
+                  // A space between lines, which a column does not draw, so the row's name
+                  // reads them apart.
+                  <Fragment key={at}>
+                    {at > 0 && " "}
+                    <span className="ask-line">{markedLine(one)}</span>
+                  </Fragment>
+                ))}
+                {shape.lines.more > 0 && (
+                  <>
+                    {" "}
+                    <span className="ask-line ask-more-lines ui-text-secondary">
+                      {moreLines(shape.lines.more)}
+                    </span>
+                  </>
+                )}
+              </span>
+            ) : (
+              <span
+                id={`${id}-says`}
+                className={`ask-says inbox-primary ui-text-body ui-text-strong${whole ? "" : " inbox-clamped"}`}
+              >
+                {markedLine(shape.line)}
+              </span>
             )}
-          {ask.answer.via === "task-question" && (
-            <>
-              <p className="inbox-secondary ui-text-secondary">
-                {REACHED_SAID[ask.answer.why](ask.answer.from)}
-                {ask.answer.note === null ? "" : ". Its note:"}
-              </p>
-              {/* The asking chat's note is its own words, drawn as a chat's text is (#5214). */}
-              {ask.answer.note !== null && (
-                <ChatText
-                  className="inbox-note"
-                  text={ask.answer.note}
-                  foldAt={ASK_FOLD_LINES}
-                  foldStop={(button) => <Stop id={`${key}:note-fold`}>{button}</Stop>}
-                />
-              )}
-            </>
-          )}
-        </MessageBody>
-        {/* **Its links** (#5649): Answer, where it is answered here, which opens its form in the
-            row and reads Cancel while it is open (#5651, ADR 0119 decision 7); and Go to chat,
-            on every ask of a chat. */}
-        {(shape.form || shape.go) && (
-          <MessageLinks>
-            {shape.form && (
-              <Stop id={`${key}:answer`}>
-                <Button
-                  size="sm"
-                  variant="quiet-link"
-                  data-lead=""
-                  aria-label={open ? `Cancel answering ${who}` : `Answer ${who}`}
-                  aria-expanded={open}
-                  aria-controls={open ? `${id}-form` : undefined}
-                  onPress={() => {
-                    focusForm.current = !open;
-                    onOpen(!open);
-                  }}
-                >
-                  {open ? "Cancel" : "Answer"}
-                </Button>
-              </Stop>
-            )}
-            {shape.go && (
-              <Stop id={`${key}:go`}>
-                <Button
-                  size="sm"
-                  variant="quiet-link"
-                  aria-label={`Go to chat ${who}`}
-                  onPress={onGo}
-                  className="inbox-go"
-                >
-                  Go to chat
-                </Button>
-              </Stop>
-            )}
-          </MessageLinks>
+          </Tooltip>
         )}
-        {/* **What answers it, in the row, while its Answer is open** (#5651): its answers, its
-            reply box, a task's Answer form, a dispatch's own Notice. */}
-        {open && body !== null && <MessageForm id={`${id}-form`}>{body}</MessageForm>}
-        {said !== undefined && (
-          <p className="inbox-refused" role="status">
-            {said}
+        {shape.said !== undefined && (
+          <ChatText
+            id={`${id}-said`}
+            className="inbox-said"
+            text={shape.said}
+            foldAt={ASK_FOLD_LINES}
+          />
+        )}
+        {/* Why its Allow is missing: the lines it runs over, which its line put on one
+              (#3502), and a character it holds that reads otherwise (SK-51). */}
+        {shape.answers && (shape.lines !== undefined || shape.hidden !== undefined) && (
+          <p className="inbox-hidden ui-text-secondary">
+            {shape.lines !== undefined
+              ? withheldSaid(shape.lines, shape.hidden)
+              : hiddenSaid(shape.hidden ?? "")}
           </p>
         )}
-      </MessageRow>
-    </Stop>
+        {/* A folder or something on this machine reaches the chat only by its restart (#1986):
+              what that ends is said before an Allow here, naming the chat. */}
+        {(ask.source === "sandbox-write" || ask.source === "sandbox-local") &&
+          shape.answers &&
+          shape.offers.some((one) => one.allows) && (
+            <p className="inbox-restart ui-text-secondary">
+              <RestartEndsLine
+                plane={plane}
+                session={ask.session}
+                chat={ask.chain[ask.chain.length - 1]}
+              />
+            </p>
+          )}
+        {ask.answer.via === "task-question" && (
+          <>
+            <p className="inbox-secondary ui-text-secondary">
+              {REACHED_SAID[ask.answer.why](ask.answer.from)}
+              {ask.answer.note === null ? "" : ". Its note:"}
+            </p>
+            {/* The asking chat's note is its own words, drawn as a chat's text is (#5214). */}
+            {ask.answer.note !== null && (
+              <ChatText className="inbox-note" text={ask.answer.note} foldAt={ASK_FOLD_LINES} />
+            )}
+          </>
+        )}
+      </MessageBody>
+      {/* **Its links** (#5649): Answer, where it is answered here, which opens its form in the
+            row and reads Cancel while it is open (#5651, ADR 0119 decision 7); and Go to chat,
+            on every ask of a chat. */}
+      {(shape.form || shape.go) && (
+        <MessageLinks>
+          {shape.form && (
+            <Button
+              size="sm"
+              variant="quiet-link"
+              data-lead=""
+              aria-label={open ? `Cancel answering ${who}` : `Answer ${who}`}
+              aria-expanded={open}
+              aria-controls={open ? `${id}-form` : undefined}
+              onPress={() => {
+                focusForm.current = !open;
+                onOpen(!open);
+              }}
+            >
+              {open ? "Cancel" : "Answer"}
+            </Button>
+          )}
+          {shape.go && (
+            <Button
+              size="sm"
+              variant="quiet-link"
+              aria-label={`Go to chat ${who}`}
+              onPress={onGo}
+              className="inbox-go"
+            >
+              Go to chat
+            </Button>
+          )}
+        </MessageLinks>
+      )}
+      {/* **What answers it, in the row, while its Answer is open** (#5651): its answers, its
+            reply box, a task's Answer form, a dispatch's own Notice. */}
+      {open && body !== null && <MessageForm id={`${id}-form`}>{body}</MessageForm>}
+      {said !== undefined && (
+        <p className="inbox-refused" role="status">
+          {said}
+        </p>
+      )}
+    </MessageRow>
   );
 }
 
@@ -788,7 +757,7 @@ export const ASK_FOLD_LINES = 3;
  * chat as the person's message, one paste and Enter (`replyBytes`), through the pane's own
  * input path. Short replies only; anything longer is better written in the chat itself.
  */
-function Reply({ plane, ask, stop }: { plane: PlaneId; ask: Shown; stop: string }) {
+function Reply({ plane, ask }: { plane: PlaneId; ask: Shown }) {
   const [text, setText] = useState("");
   const [said, setSaid] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -842,49 +811,39 @@ function Reply({ plane, ask, stop }: { plane: PlaneId; ask: Shown; stop: string 
     >
       {/* **The reply strip** (#5214): always at the card's foot, edge to edge, one line at rest
           and two once it holds the caret, growing to four with its lines. Enter sends,
-          Shift+Enter starts a new line, Esc leaves it for the card. A stop of the list too, so
-          ↑ and ↓ reach it; inside its lines they move the caret. */}
-      <Stop id={`${stop}:reply`}>
-        <TextArea
-          strip
-          inputRef={box}
-          aria-label={`Reply to ${who}`}
-          value={text}
-          placeholder={`Reply to ${who}…`}
-          hint={REPLY_HINT}
-          spellCheck
-          onChange={setText}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-              event.preventDefault();
-              send();
-              return;
-            }
-            if (event.key === "Escape") {
-              // It leaves the box for its card, not the Inbox for the chat in front.
-              event.preventDefault();
-              event.stopPropagation();
-              box.current?.closest<HTMLElement>("li.inbox-ask")?.focus();
-              return;
-            }
-            keepCaretKeys(event);
-          }}
-          end={
-            // Dim and inert while there is nothing to send, the accent's once there is. Never
-            // `disabled`: a disabled button drops the keyboard to the page (#1700).
-            <Stop id={`${stop}:send`} focusable={!empty}>
-              <IconButton
-                icon={<Send />}
-                type="submit"
-                size="sm"
-                variant={empty ? "quiet" : "primary"}
-                aria-label={`Send reply to ${who}`}
-                aria-disabled={empty || undefined}
-              />
-            </Stop>
+          Shift+Enter starts a new line, Esc leaves it for its row. → reaches it from its row;
+          inside its lines ↑ and ↓ move the caret, and from its first or last they move on to
+          the row above or below. */}
+      <TextArea
+        strip
+        inputRef={box}
+        aria-label={`Reply to ${who}`}
+        value={text}
+        placeholder={`Reply to ${who}…`}
+        hint={REPLY_HINT}
+        spellCheck
+        onChange={setText}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+            event.preventDefault();
+            send();
           }
-        />
-      </Stop>
+          // Esc leaves it for its row, and its caret keeps its arrows, Home and End: the list
+          // family's (`ui/list/rowKeys.ts`).
+        }}
+        end={
+          // Dim and inert while there is nothing to send, the accent's once there is. Never
+          // `disabled`: a disabled button drops the keyboard to the page (#1700).
+          <IconButton
+            icon={<Send />}
+            type="submit"
+            size="sm"
+            variant={empty ? "quiet" : "primary"}
+            aria-label={`Send reply to ${who}`}
+            aria-disabled={empty || undefined}
+          />
+        }
+      />
       {said !== undefined && (
         <p className="inbox-refused" role="status">
           {said}
@@ -905,17 +864,7 @@ function answeredNow(plane: PlaneId, ask: Shown, answer: string) {
  * one by its number, refuses an empty answer, and keeps what was typed through a refusal), drawn
  * as the reply strip is, since the row already shows the question. Enter sends.
  */
-function TaskAnswer({
-  plane,
-  ask,
-  stop,
-  task,
-}: {
-  plane: PlaneId;
-  ask: Shown;
-  stop: string;
-  task: string;
-}) {
+function TaskAnswer({ plane, ask, task }: { plane: PlaneId; ask: Shown; task: string }) {
   const answering = useAnswerQuestion({
     plane,
     session: ask.session,
@@ -937,41 +886,35 @@ function TaskAnswer({
         void send();
       }}
     >
-      <Stop id={`${stop}:task-answer`}>
-        <TextArea
-          strip
-          inputRef={box}
-          aria-label={`Your answer to ${task}`}
-          value={text}
-          placeholder={`Answer ${task}…`}
-          hint={REPLY_HINT}
-          spellCheck
-          onChange={(to) => {
-            setText(to);
-            setRefused(undefined);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-              event.preventDefault();
-              void send();
-              return;
-            }
-            keepCaretKeys(event);
-          }}
-          end={
-            <Stop id={`${stop}:task-send`} focusable={!empty}>
-              <IconButton
-                icon={<Send />}
-                type="submit"
-                size="sm"
-                variant={empty ? "quiet" : "primary"}
-                aria-label={`Send answer to ${task}`}
-                aria-disabled={empty || undefined}
-              />
-            </Stop>
+      <TextArea
+        strip
+        inputRef={box}
+        aria-label={`Your answer to ${task}`}
+        value={text}
+        placeholder={`Answer ${task}…`}
+        hint={REPLY_HINT}
+        spellCheck
+        onChange={(to) => {
+          setText(to);
+          setRefused(undefined);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+            event.preventDefault();
+            void send();
           }
-        />
-      </Stop>
+        }}
+        end={
+          <IconButton
+            icon={<Send />}
+            type="submit"
+            size="sm"
+            variant={empty ? "quiet" : "primary"}
+            aria-label={`Send answer to ${task}`}
+            aria-disabled={empty || undefined}
+          />
+        }
+      />
       {/* A refusal, as the core says it, with what was typed still in the box: said as the
           reply strip says one. */}
       {refused !== undefined && (
@@ -985,45 +928,6 @@ function TaskAnswer({
 
 /** What the reply strip says at its foot while it holds the caret (#5214). */
 export const REPLY_HINT = "Enter sends · Shift+Enter new line";
-
-/**
- * **The caret's keys inside a reply's lines** (#5214): ↑ and ↓ move the caret a line where there
- * is one above or below it, and Home and End go to its line's start and end, rather than moving
- * the list's focus. On its first line ↑, and on its last ↓, still leave it for the list's next
- * stop, as from any field of the list.
- */
-function keepCaretKeys(event: KeyboardEvent<HTMLTextAreaElement>) {
-  if (event.metaKey || event.ctrlKey || event.altKey) return;
-  const box = event.currentTarget;
-  const { value } = box;
-  const at = box.selectionDirection === "backward" ? box.selectionStart : box.selectionEnd;
-  const start = value.lastIndexOf("\n", at - 1) + 1;
-  const endAt = value.indexOf("\n", at);
-  const end = endAt === -1 ? value.length : endAt;
-  let to: number | undefined;
-  if (event.key === "Home") to = start;
-  else if (event.key === "End") to = end;
-  else if (event.key === "ArrowUp" && start > 0) {
-    const above = value.lastIndexOf("\n", start - 2) + 1;
-    to = Math.min(above + (at - start), start - 1);
-  } else if (event.key === "ArrowDown" && end < value.length) {
-    const belowEnd = value.indexOf("\n", end + 1);
-    to = Math.min(end + 1 + (at - start), belowEnd === -1 ? value.length : belowEnd);
-  }
-  if (to === undefined) return;
-  event.preventDefault();
-  if (!event.shiftKey) {
-    box.setSelectionRange(to, to);
-    return;
-  }
-  // Extending: the end the selection is anchored at stays where it is.
-  const anchor = box.selectionDirection === "backward" ? box.selectionEnd : box.selectionStart;
-  box.setSelectionRange(
-    Math.min(anchor, to),
-    Math.max(anchor, to),
-    to < anchor ? "backward" : "forward",
-  );
-}
 
 /** The most characters the reason box takes; the chat is told at most 200 of them. */
 const REASON_TYPED_MOST = 400;
@@ -1048,27 +952,6 @@ async function stillWaits(plane: PlaneId, ask: Shown): Promise<boolean | undefin
     answer?.status === "ok" ? (answer.data as { asks?: readonly Shown[] } | null)?.asks : undefined;
   if (asks === undefined) return undefined;
   return asks.some((one) => one.session === ask.session && one.ask === ask.ask);
-}
-
-/**
- * **Home and End move the cursor in the reply box** (#1700): the box is a stop of the list's
- * roving focus, which takes Home and End for the list's ends. Done here instead, so the list
- * never sees them: the cursor goes to the start or the end, Shift extending the selection.
- */
-function keepHomeAndEnd(event: KeyboardEvent<HTMLInputElement>) {
-  if (event.key !== "Home" && event.key !== "End") return;
-  if (event.metaKey || event.ctrlKey || event.altKey) return;
-  event.preventDefault();
-  const box = event.currentTarget;
-  const to = event.key === "Home" ? 0 : box.value.length;
-  if (!event.shiftKey) {
-    box.setSelectionRange(to, to);
-    return;
-  }
-  // Extending: the end the selection is anchored at stays where it is.
-  const anchor = box.selectionDirection === "backward" ? box.selectionEnd : box.selectionStart;
-  const from = anchor ?? to;
-  box.setSelectionRange(Math.min(from, to), Math.max(from, to), to < from ? "backward" : "forward");
 }
 
 /** An empty Inbox: the sentence, and what was answered here lately, read-only (I-12). Where a
@@ -1180,12 +1063,13 @@ export function landOnGroup(session: number, source?: Shown["source"]): boolean 
   const group = document.querySelector<HTMLElement>(
     `section.inbox .inbox-chat[data-session="${session}"]`,
   );
-  // At the ask it came for, where it names one (#5215), else the group's first.
+  // At the ask it came for, where it names one (#5215), else the group's first: the row itself,
+  // a row of the list family's (#3123).
   const first =
     (source === undefined
       ? null
-      : group?.querySelector<HTMLElement>(`li[data-source="${source}"]`)) ??
-    group?.querySelector<HTMLElement>("li");
+      : group?.querySelector<HTMLElement>(`[role="row"][data-source="${source}"]`)) ??
+    group?.querySelector<HTMLElement>('[role="row"][data-key]');
   if (!group || !first) return false;
   group.scrollIntoView?.({ block: "nearest" });
   first.focus();

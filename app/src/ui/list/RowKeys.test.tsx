@@ -7,7 +7,7 @@
  * The Inbox's asks hold reply boxes and reasons, and a letter there is a word, never a search.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { useState } from "react";
 import { Button } from "../button/Button";
@@ -189,5 +189,21 @@ describe("a list with typing-to-find off (#3123)", () => {
     expect(fold).toHaveFocus();
     await userEvent.keyboard("t ");
     expect(fold).toHaveAttribute("data-expanded");
+  });
+});
+
+describe("a control in a row that takes the keyboard (#3123)", () => {
+  it("makes its row the list's own, so the list never pulls the keyboard back to another row", async () => {
+    render(<Asks />);
+    // A screen reader's cursor presses with a click no pointer made (React Aria's "virtual"
+    // modality), and what it opened takes the keyboard from a script, in a row not the first.
+    act(() => screen.getByRole("button", { name: "Go to first" }).click());
+    act(() => within(row("Held")).getByRole("button", { name: "Send" }).focus());
+    await act(() => new Promise((done) => requestAnimationFrame(() => done(undefined))));
+    await act(() => new Promise((done) => requestAnimationFrame(() => done(undefined))));
+    expect(within(row("Held")).getByRole("button", { name: "Send" })).toHaveFocus();
+    // And the list's one Tab stop is that row now.
+    await userEvent.keyboard("{ArrowDown}");
+    expect(row("Last")).toHaveFocus();
   });
 });
