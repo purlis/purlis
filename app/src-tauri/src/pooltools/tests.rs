@@ -1190,3 +1190,67 @@ fn a_runner_chats_gate_judges_the_tools_keys_by_the_cores_judge() {
 
     assert!(why.contains("may not use"), "{why}");
 }
+
+/// The judges `run_on_its_runner` wires into its gate refuse a runner chat's key out of reach
+/// before the person is asked anything (#5857): the core's judge of a link, through the gate as
+/// this desktop builds it, not a fake.
+#[test]
+fn a_runner_chats_gate_as_wired_refuses_a_key_out_of_reach_before_anything_is_asked() {
+    let desktop = a_desktop_missing_the_key();
+    let root = desktop.path();
+    std::fs::write(
+        root.join("vaults.json"),
+        serde_json::json!({ "vaults": {
+            "team": {"provider": "plain-file", "config": {"file": "team.json"}, "persona": "devops"},
+            "other": {"provider": "plain-file", "config": {"file": "other.json"}},
+        }})
+        .to_string(),
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("other.json"),
+        serde_json::json!({"kubeconfig": "n0t-yours"}).to_string(),
+    )
+    .unwrap();
+    let ctx = ctx_of(root);
+    let team = purlis_core::secrets::cmd::provider(&ctx, "team").unwrap();
+    purlis_core::secrets::links::link(&ctx, &team, "kubeconfig", "other", "kubeconfig").unwrap();
+    let (asks, tools) = (SecretAsks::new(root), PoolTools::default());
+    let ask = kubectl_asked();
+    let (authorised, reach) = super::vault_judges(&ctx);
+    let gate = Gate {
+        root,
+        authorised: &authorised,
+        reach: &reach,
+        ..a_gate(&ask)
+    };
+    let keys = keys_in(root);
+    let gone = AtomicBool::new(false);
+    let reads = |_: &str, _: &Tool| -> Result<Vec<(String, Zeroizing<String>)>, String> {
+        panic!("nothing is read")
+    };
+
+    let refused = decided(
+        &gate,
+        &Missing {
+            asks: &asks,
+            keys: &keys,
+            within: Duration::from_secs(60),
+        },
+        &waiting(&tools, &gone, &reads, Duration::from_secs(60)),
+        &mut Vec::new(),
+    )
+    .map(|_| ())
+    .unwrap_err();
+
+    assert!(
+        refused
+            .why
+            .contains("kubeconfig in vault team reads an entry of a vault devops may not use"),
+        "{}",
+        refused.why
+    );
+    assert!(!refused.why.contains("other"), "names no other vault");
+    assert!(asks.open().is_empty(), "no Secret ask");
+    assert!(tools.waiting().is_empty(), "no Allow");
+}

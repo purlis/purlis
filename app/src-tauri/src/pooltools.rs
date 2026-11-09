@@ -878,6 +878,22 @@ fn values_of(ctx: &Ctx, tool: &Tool) -> Result<Vec<(String, Zeroizing<String>)>,
     Ok(values)
 }
 
+/// **The gate's judges of this desktop's vaults**, as [`run_on_its_runner`] wires them: whether
+/// a persona may use a vault (`brokered::authorise`), and why it may read none of a tool's keys
+/// ([`out_of_reach`], #5795).
+#[cfg(test)]
+fn vault_judges(
+    ctx: &Ctx,
+) -> (
+    impl Fn(&str, &str) -> Result<(), String> + '_,
+    impl Fn(&str, &Tool) -> Option<String> + '_,
+) {
+    (
+        move |persona: &str, vault: &str| brokered::authorise(ctx, Some(persona), vault),
+        move |_persona: &str, _tool: &Tool| None,
+    )
+}
+
 /// Why none of `tool`'s keys is read for `persona`: one is a link into a vault it may not use.
 fn out_of_reach(ctx: &Ctx, persona: &str, tool: &Tool) -> Option<String> {
     let keys: Vec<&str> = tool.values.iter().map(|value| value.key.as_str()).collect();

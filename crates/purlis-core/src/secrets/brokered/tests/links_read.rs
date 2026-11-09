@@ -315,3 +315,63 @@ fn a_fill_through_a_link_into_a_vault_its_persona_may_use_is_still_offered() {
         "warned that team is not qa's"
     );
 }
+
+/// Vaults `team` and `other` both tagged for `devops`, `team/MISSING` linked to `other/TOKEN`,
+/// and this machine's grants file holding `text`.
+fn both_devops_with_grants(root: &Path, text: &str) {
+    std::fs::write(
+        root.join("vaults.json"),
+        serde_json::json!({ "vaults": {
+            "team": {"provider": "plain-file", "config": {"file": "team.json"}, "persona": "devops"},
+            "other": {"provider": "plain-file", "config": {"file": "other.json"}, "persona": "devops"},
+        }})
+        .to_string(),
+    )
+    .unwrap();
+    linked_out(root);
+    let grants = crate::sandbox::local::path(root);
+    std::fs::create_dir_all(grants.parent().unwrap()).unwrap();
+    std::fs::write(&grants, text).unwrap();
+}
+
+/// Only the vault grants of this machine's file are read to judge a link (#5857): a field beside
+/// them that is off its shape refuses no link.
+#[test]
+fn a_link_reads_while_a_field_beside_the_vault_grants_is_off_its_shape() {
+    let project = project();
+    let root = project.path();
+    both_devops_with_grants(root, r#"{"hosts_seen": 5, "vaults_mine": []}"#);
+    let chat = Asker {
+        confines: None,
+        ..asker(root, Some("devops"))
+    };
+
+    let read = fill_value(&chat, "team", "MISSING").expect("read");
+
+    assert_eq!(
+        read.map(|value| value.expose().to_owned()).as_deref(),
+        Some("n0t-yours")
+    );
+}
+
+/// The vault grants themselves off their shape still refuse the read (#5857): not known is not
+/// none.
+#[test]
+fn a_link_read_while_the_vault_grants_are_off_their_shape_is_refused() {
+    let project = project();
+    let root = project.path();
+    both_devops_with_grants(root, r#"{"vaults_mine": "every vault"}"#);
+    let chat = Asker {
+        confines: None,
+        ..asker(root, Some("devops"))
+    };
+
+    let why = fill_value(&chat, "team", "MISSING")
+        .map(|value| value.map(|value| value.expose().to_owned()))
+        .unwrap_err();
+
+    assert!(
+        why.contains("could not read which vaults this machine allows"),
+        "{why}"
+    );
+}
