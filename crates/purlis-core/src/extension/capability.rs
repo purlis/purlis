@@ -75,6 +75,12 @@ pub enum Capability {
     /// program, one question with the deadline (protocol 7, [`super::queries`]). Its shape is
     /// `contributes.queries`.
     Queries,
+    /// **Artifact templates** (ADR 0120 §9, #5973): pages in the extension's own folder that a
+    /// person may pin to a workspace. Pinning one copies it into the workspace's `artifacts/` and
+    /// pins it as any page is pinned, under the same refusals and approvals
+    /// ([`super::artifacts`]). purlis asks its program nothing about them: protocol 8 is the
+    /// version that declares them. Its shape is `contributes.artifacts`.
+    Artifacts,
     /// **The six studio capabilities** (ADR 0101), known only where the `skill-studio` flag is
     /// on ([`crate::skills::STUDIO_FLAG`]). Three are version 1 of the public extension API and
     /// the rest are experimental ([`Self::VERSION_ONE`]). An extension that declares any of
@@ -180,6 +186,12 @@ impl Capability {
                  starts its program to answer one, or reads its facts file while the answer \
                  there is fresh",
             ),
+            Self::Artifacts => (
+                "artifacts",
+                "offers the artifact templates listed below, which you may pin to a workspace; \
+                 pinning one copies it into the workspace's artifacts/ folder, where it is shared \
+                 with the workspace and its script asks each person, as any page's does",
+            ),
             Self::SkillSource => (
                 "skill-source",
                 "offers skills to install; purlis asks it what it has and for one skill's files, \
@@ -227,6 +239,8 @@ impl Capability {
             Self::CheckReporter => 6,
             // A query's question, answered with its data (ADR 0120 §9, #5971).
             Self::Queries => 7,
+            // Templates a person may pin, read from its folder; it is asked nothing (#5973).
+            Self::Artifacts => 8,
             Self::SkillSource
             | Self::SkillLint
             | Self::SkillTemplate
@@ -264,6 +278,7 @@ impl Capability {
             Self::Cli,
             Self::CheckReporter,
             Self::Queries,
+            Self::Artifacts,
         ]);
         if studio {
             known.extend(Self::STUDIO);
@@ -290,6 +305,7 @@ impl Capability {
             | Self::Briefing
             | Self::Cli
             | Self::Queries
+            | Self::Artifacts
             | Self::SkillSource
             | Self::Grader
             | Self::SkillLint

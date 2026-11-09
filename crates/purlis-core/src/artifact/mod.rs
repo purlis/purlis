@@ -301,7 +301,7 @@ pub fn pin(root: &Path, workspace: &Path, request: &Request) -> Result<Pinned, S
 /// ([`serve::Snapshot::read`], which refuses a folder over [`SIZE_CAP`] before it reads it) and
 /// asked what the plane save asks of a staged file ([`crate::secretshape::found_as_read`]), so
 /// pinning and saving never disagree. The data files are not asked: they are never committed.
-fn scanned(real: &Path, folder: &str) -> Result<(), String> {
+pub(crate) fn scanned(real: &Path, folder: &str) -> Result<(), String> {
     let shown = crate::personas::one_line(folder);
     let size = serve::size(real)?;
     if size > SIZE_CAP {

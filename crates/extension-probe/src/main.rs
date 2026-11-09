@@ -12,12 +12,12 @@ use std::process::ExitCode;
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let [verb, dir] = args.as_slice()
-        && (verb == "assemble" || verb == "assemble-queries")
+        && (verb == "assemble" || verb == "assemble-queries" || verb == "assemble-artifacts")
     {
-        let assemble = if verb == "assemble" {
-            extension_probe::assemble
-        } else {
-            extension_probe::assemble_queries
+        let assemble = match verb.as_str() {
+            "assemble" => extension_probe::assemble,
+            "assemble-queries" => extension_probe::assemble_queries,
+            _ => extension_probe::assemble_artifacts,
         };
         return match assemble(std::path::Path::new(dir)) {
             Ok(_) => ExitCode::SUCCESS,
@@ -30,7 +30,7 @@ fn main() -> ExitCode {
     if !args.is_empty() {
         eprintln!(
             "usage: extension-probe | extension-probe assemble <dir> | extension-probe \
-             assemble-queries <dir>"
+             assemble-queries <dir> | extension-probe assemble-artifacts <dir>"
         );
         return ExitCode::FAILURE;
     }

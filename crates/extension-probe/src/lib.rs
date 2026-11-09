@@ -35,6 +35,11 @@
 //!   protocol they were proven in: `asked` answers how many questions it answered and what it
 //!   was handed, and leaves its answer in the facts file under its workspace's key;
 //!   `everywhere` is plane-scoped.
+//! - **its artifact templates** (`artifacts`, #5973) are a third manifest, [`ARTIFACTS_MANIFEST`],
+//!   as `artifact-probe` in protocol 8, with the template folders [`assemble_artifacts`] writes
+//!   beside it: `board`, a page with script and a data file beside it that a pin never copies;
+//!   `plain`, a page with none; and `leaky`, a page holding something shaped like a secret,
+//!   which a pin refuses. Its program is never asked about them.
 
 use std::path::{Path, PathBuf};
 
@@ -53,6 +58,19 @@ pub const QUERY_PROTOCOL: u64 = 7;
 
 /// The manifest the same program is installed with as `query-probe` (#5971).
 pub const QUERIES_MANIFEST: &str = include_str!("../purlis-extension.queries.json");
+
+/// The protocol `artifact-probe` names: 8, which declares artifact templates (#5973).
+pub const ARTIFACT_PROTOCOL: u64 = 8;
+
+/// The manifest the same folder is installed with as `artifact-probe` (#5973).
+pub const ARTIFACTS_MANIFEST: &str = include_str!("../purlis-extension.artifacts.json");
+
+/// `board`'s page: it has script, so each person approves it before it runs.
+pub const BOARD_PAGE: &str =
+    "<title>Probe board</title><p id=n>0</p><script src=board.js></script>";
+
+/// `plain`'s page: no script, so it opens without asking.
+pub const PLAIN_PAGE: &str = "<title>Probe notes</title><p>Nothing runs here.</p>";
 
 /// The file in the state directory the query probe appends one line to per query it answers.
 pub const QUERIED: &str = "queried.txt";
@@ -479,6 +497,33 @@ pub fn assemble(dir: &Path) -> std::io::Result<PathBuf> {
 /// Put this program in `dir` as the query probe, with [`QUERIES_MANIFEST`] (#5971).
 pub fn assemble_queries(dir: &Path) -> std::io::Result<PathBuf> {
     assemble_as(dir, QUERIES_MANIFEST)
+}
+
+/// Put this program in `dir` as the artifact probe, with [`ARTIFACTS_MANIFEST`] and the three
+/// template folders it declares (#5973). `leaky`'s forge token is built here, so no
+/// credential-shaped literal sits in the source.
+pub fn assemble_artifacts(dir: &Path) -> std::io::Result<PathBuf> {
+    let program = assemble_as(dir, ARTIFACTS_MANIFEST)?;
+    let token = ["ghp", "_0123456789abcdefABCDEFghij"].concat();
+    let files = [
+        ("board/index.html", BOARD_PAGE.to_owned()),
+        ("board/board.js", "n.textContent = 1;".to_owned()),
+        (
+            "board/data.json",
+            "{\"from\": \"the extension\"}".to_owned(),
+        ),
+        ("plain/index.html", PLAIN_PAGE.to_owned()),
+        (
+            "leaky/index.html",
+            format!("<title>Probe leak</title><p>{token}</p>"),
+        ),
+    ];
+    for (path, text) in files {
+        let at = dir.join("artifacts").join(path);
+        std::fs::create_dir_all(at.parent().expect("a folder"))?;
+        std::fs::write(at, text)?;
+    }
+    Ok(program)
 }
 
 fn assemble_as(dir: &Path, manifest: &str) -> std::io::Result<PathBuf> {

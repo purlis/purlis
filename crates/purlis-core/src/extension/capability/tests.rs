@@ -159,3 +159,24 @@ fn the_prompt_says_a_page_may_ask_its_queries_and_its_program_answers_them() {
          answer there is fresh"
     );
 }
+
+#[test]
+fn a_release_build_knows_artifacts_and_it_needs_protocol_8() {
+    let known = Capability::known_where(false);
+    assert_eq!(
+        Capability::parse_in("artifacts", &known),
+        Some(Capability::Artifacts)
+    );
+    assert_eq!(Capability::Artifacts.since(), 8);
+    assert!(Capability::Artifacts.has_shape());
+}
+
+#[test]
+fn the_prompt_says_a_template_is_copied_into_the_workspace_and_asks_each_person_like_any_page() {
+    assert_eq!(
+        Capability::Artifacts.asks(),
+        "the capability “artifacts” — offers the artifact templates listed below, which you may \
+         pin to a workspace; pinning one copies it into the workspace's artifacts/ folder, where \
+         it is shared with the workspace and its script asks each person, as any page's does"
+    );
+}

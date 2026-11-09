@@ -183,6 +183,7 @@ use std::io;
 use std::path::{Component, Path, PathBuf};
 
 pub mod acting;
+pub mod artifacts;
 pub mod briefing;
 pub mod bundle;
 pub mod capability;
@@ -448,6 +449,8 @@ pub struct Manifest {
     pub briefing: Option<briefing::Declared>,
     /// The catalogue queries it answers (the `queries` capability, [`queries`], #5971).
     pub queries: Vec<queries::Declared>,
+    /// The artifact templates it offers (the `artifacts` capability, [`artifacts`], #5973).
+    pub artifacts: Vec<artifacts::Declared>,
     /// What its studio capabilities declare, and the hosts it reaches ([`studio`], ADR 0101):
     /// `None` for an extension that declares none. **An extension with one runs confined**
     /// ([`Self::confined`]).
@@ -500,6 +503,7 @@ impl Manifest {
             events,
             briefing,
             queries,
+            artifacts,
             studio,
             keys_themes_only,
         } = self;
@@ -520,6 +524,7 @@ impl Manifest {
             && events.is_none()
             && briefing.is_none()
             && queries.is_empty()
+            && artifacts.is_empty()
             && studio.is_none()
     }
 
@@ -1387,6 +1392,11 @@ fn parse_knowing(text: &str, known: &[Capability]) -> Result<Manifest, String> {
         );
     }
 
+    // Artifact templates need no program: purlis reads them from the folder and asks nothing.
+    let artifacts = match contributes.get(Capability::Artifacts.as_str()) {
+        None => Vec::new(),
+        Some(value) => artifacts::declared_of(value)?,
+    };
     if themes.is_empty()
         && icon_themes.is_empty()
         && panels.is_empty()
@@ -1394,6 +1404,7 @@ fn parse_knowing(text: &str, known: &[Capability]) -> Result<Manifest, String> {
         && program.is_none()
         && badges.is_empty()
         && repo_columns.is_empty()
+        && artifacts.is_empty()
     {
         // Every theme it declared was left out: that is the reason, not an empty manifest.
         if !left_out.is_empty() {
@@ -1544,6 +1555,7 @@ fn parse_knowing(text: &str, known: &[Capability]) -> Result<Manifest, String> {
         events,
         briefing,
         queries,
+        artifacts,
         cli,
         studio,
     })
@@ -3016,6 +3028,7 @@ pub fn prompt(found: &Extension, standing: Standing) -> Prompt {
     declares.extend(events::declares(&found.manifest));
     declares.extend(briefing::declares(&found.manifest));
     declares.extend(queries::declares(&found.manifest));
+    declares.extend(artifacts::declares(&found.manifest));
     declares.extend(
         found
             .manifest
