@@ -5,7 +5,7 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ArtifactPinShown } from "./bindings";
+import type { ArtifactFresh, ArtifactPinShown } from "./bindings";
 import { ArtifactGroup, MOST_DRAWN } from "./ArtifactGroup";
 
 const pin = (folder: string, name: string, icon = "chart"): ArtifactPinShown => ({
@@ -14,7 +14,18 @@ const pin = (folder: string, name: string, icon = "chart"): ArtifactPinShown => 
   name,
   icon,
   missing: null,
+  live: true,
   too_large: null,
+  fresh: null,
+});
+
+const HOUR = 60 * 60 * 1000;
+
+/** Updated `hours` ago, stale `staleIn` hours from now. */
+const updated = (hours: number, staleIn: number): ArtifactFresh => ({
+  at: Date.now() - hours * HOUR,
+  stale_at: Date.now() + staleIn * HOUR,
+  source: "written",
 });
 
 const PINS = [pin("backlog-state", "Backlog state"), pin("release", "Release", "rocket")];
@@ -22,6 +33,7 @@ const PINS = [pin("backlog-state", "Backlog state"), pin("release", "Release", "
 afterEach(() => {
   cleanup();
   clearMocks();
+  vi.useRealTimers();
 });
 
 describe("the activity bar's artifacts", () => {
@@ -89,10 +101,30 @@ describe("the activity bar's artifacts", () => {
     expect(marked("fine")).toBeNull();
   });
 
-  it(`draws at most ${MOST_DRAWN}`, () => {
+  it(`draws at most ${MOST_DRAWN}, and every one past them in show-more, none dropped (#5953)`, async () => {
     const many = Array.from({ length: MOST_DRAWN + 3 }, (_, n) => pin(`f${n}`, `Page ${n}`));
-    render(<ArtifactGroup plane="p" workspace="alpha" pins={many} onOpen={() => {}} />);
-    expect(screen.getAllByRole("button")).toHaveLength(MOST_DRAWN);
+    const onOpen = vi.fn();
+    render(<ArtifactGroup plane="p" workspace="alpha" pins={many} onOpen={onOpen} />);
+    const group = screen.getByRole("toolbar", { name: "Artifacts" });
+    const drawn = within(group).getAllByRole("button");
+    expect(drawn.map((one) => one.getAttribute("aria-label"))).toEqual([
+      ...many.slice(0, MOST_DRAWN).map((one) => one.name),
+      "3 more artifacts",
+    ]);
+    await userEvent.click(screen.getByRole("button", { name: "3 more artifacts" }));
+    const menu = await screen.findByRole("menu");
+    expect(
+      within(menu)
+        .getAllByRole("menuitem")
+        .map((row) => row.textContent),
+    ).toEqual(["Page 8", "Page 9", "Page 10"]);
+    await userEvent.click(within(menu).getByRole("menuitem", { name: "Page 9" }));
+    expect(onOpen).toHaveBeenCalledWith(many[9]);
+  });
+
+  it("draws no show-more at eight or fewer", () => {
+    render(<ArtifactGroup plane="p" workspace="alpha" pins={PINS} onOpen={() => {}} />);
+    expect(screen.queryByRole("button", { name: /more artifacts/ })).toBeNull();
   });
 
   it("draws nothing, not even its divider, with no pins or outside every workspace", () => {
@@ -105,6 +137,59 @@ describe("the activity bar's artifacts", () => {
     expect(outside.container).toBeEmptyDOMElement();
   });
 
+  it("says in its tooltip when each artifact's data was last updated", async () => {
+    const pins = [{ ...pin("backlog-state", "Backlog state"), fresh: updated(3, 21) }];
+    render(<ArtifactGroup plane="p" workspace="alpha" pins={pins} onOpen={() => {}} />);
+    await userEvent.tab();
+    expect(screen.getByRole("button", { name: "Backlog state" })).toHaveFocus();
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "Open Backlog state. Updated 3 hours ago",
+    );
+  });
+
+  it("dims the icon of an artifact whose data is stale, and only that one", () => {
+    const pins = [
+      { ...pin("backlog-state", "Backlog state"), fresh: updated(30, -6) },
+      { ...pin("release", "Release"), fresh: updated(1, 23) },
+      pin("unknown", "Unknown"),
+    ];
+    render(<ArtifactGroup plane="p" workspace="alpha" pins={pins} onOpen={() => {}} />);
+    expect(screen.getByRole("button", { name: "Backlog state" })).toHaveAttribute("data-dimmed");
+    expect(screen.getByRole("button", { name: "Release" })).not.toHaveAttribute("data-dimmed");
+    expect(screen.getByRole("button", { name: "Unknown" })).not.toHaveAttribute("data-dimmed");
+  });
+
+  it("dims an icon when its data turns stale, with nothing else changing", () => {
+    vi.useFakeTimers();
+    const pins = [{ ...pin("backlog-state", "Backlog state"), fresh: updated(23, 1) }];
+    render(<ArtifactGroup plane="p" workspace="alpha" pins={pins} onOpen={() => {}} />);
+    const icon = screen.getByRole("button", { name: "Backlog state" });
+    expect(icon).not.toHaveAttribute("data-dimmed");
+    act(() => {
+      vi.advanceTimersByTime(HOUR + 1000);
+    });
+    expect(icon).toHaveAttribute("data-dimmed");
+  });
+
+  it("draws nothing, and throws nothing, for a core that answers no list at all", async () => {
+    let asked = 0;
+    mockIPC((cmd) => {
+      if (cmd === "artifact_pins") asked += 1;
+      return null;
+    });
+    render(
+      <>
+        <p>Beside it</p>
+        <ArtifactGroup plane="p" workspace="alpha" onOpen={() => {}} />
+      </>,
+    );
+    await waitFor(() => expect(asked).toBe(1));
+    await new Promise((settle) => setTimeout(settle, 20));
+    // A throw would have taken the whole tree down with it.
+    expect(screen.getByText("Beside it")).toBeInTheDocument();
+    expect(screen.queryByRole("toolbar")).toBeNull();
+  });
+
   it("asks the core for the workspace's pins", async () => {
     const asked: unknown[] = [];
     mockIPC((cmd, args) => {
@@ -115,6 +200,68 @@ describe("the activity bar's artifacts", () => {
     render(<ArtifactGroup plane="p" workspace="alpha" onOpen={() => {}} />);
     await waitFor(() => expect(screen.getAllByRole("button")).toHaveLength(2));
     expect(asked).toEqual([{ plane: "p", workspace: "alpha" }]);
+  });
+
+  it("moves a pin from its menu, for everyone, by writing the whole order through the core (#5953)", async () => {
+    const asked: [string, unknown][] = [];
+    mockIPC((cmd, args) => {
+      asked.push([cmd, args]);
+      return null;
+    });
+    const three = [...PINS, pin("notes", "Notes")];
+    render(<ArtifactGroup plane="p" workspace="alpha" pins={three} onOpen={() => {}} />);
+    const backlog = screen.getByRole("button", { name: "Backlog state" });
+    backlog.focus();
+    await userEvent.keyboard("{Shift>}{F10}{/Shift}");
+    const menu = await screen.findByRole("menu");
+    const rows = within(menu).getAllByRole("menuitem");
+    expect(rows.map((row) => row.textContent)).toEqual([
+      "Open",
+      "Move up",
+      "Move down",
+      "Unpin from workspace…",
+    ]);
+    // The first cannot move up: said, not hidden.
+    expect(within(menu).getByRole("menuitem", { name: "Move up" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await userEvent.click(within(menu).getByRole("menuitem", { name: "Move down" }));
+    await waitFor(() =>
+      expect(asked).toContainEqual([
+        "artifact_reorder",
+        { plane: "p", workspace: "alpha", ids: ["id-release", "id-backlog-state", "id-notes"] },
+      ]),
+    );
+  });
+
+  it("unpins a pin only once the person answers Unpin, saying who loses it (#5953)", async () => {
+    const asked: [string, unknown][] = [];
+    mockIPC((cmd, args) => {
+      asked.push([cmd, args]);
+      return null;
+    });
+    render(<ArtifactGroup plane="/x/acme" workspace="alpha" pins={PINS} onOpen={() => {}} />);
+    screen.getByRole("button", { name: "Release" }).focus();
+    await userEvent.keyboard("{Shift>}{F10}{/Shift}");
+    await userEvent.click(
+      within(await screen.findByRole("menu")).getByRole("menuitem", {
+        name: "Unpin from workspace…",
+      }),
+    );
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog).toHaveTextContent("Unpin Release from alpha");
+    expect(dialog).toHaveTextContent("for everyone in acme");
+    expect(dialog).toHaveTextContent("artifacts/release/");
+    expect(asked.filter(([cmd]) => cmd === "artifact_unpin")).toEqual([]);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Unpin" }));
+    await waitFor(() =>
+      expect(asked).toContainEqual([
+        "artifact_unpin",
+        { plane: "/x/acme", workspace: "alpha", folder: "release" },
+      ]),
+    );
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
   });
 
   it("draws nothing when the core answers no pins at all", async () => {

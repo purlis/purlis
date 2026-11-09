@@ -85,6 +85,7 @@ import { RelaunchAsk } from "../RelaunchAsk";
 import { RemoveFromWorkspace } from "../RemoveFromWorkspace";
 import { RemovePersona } from "../RemovePersona";
 import { RenameChat } from "../RenameChat";
+import { PinToWorkspace, UnpinArtifact } from "../PinToWorkspace";
 import { WorkspaceWriteDialog } from "../WorkspaceWrites";
 import { RenameWorkspace } from "../RenameWorkspace";
 import { AddVision } from "../AddVision";
@@ -204,6 +205,9 @@ function core(theme: string, colour: string | null) {
           return themeInForce(args);
         case "project_theme_drawn":
           return theme;
+        // No artifact is pinned: the real core answers a list, never nothing.
+        case "artifact_pins":
+          return [];
         case "workspace_panels":
           return {
             workspace: a.workspace,
@@ -1428,6 +1432,54 @@ const DIALOGS: Opened[] = [
           trouble="devops has chats open"
           deleting={false}
           onDelete={nothing}
+          onCancel={nothing}
+        />,
+      ),
+  },
+  {
+    name: "pinning a page to a LOCAL workspace, refused (#5953)",
+    file: "PinToWorkspace.tsx",
+    open: async () =>
+      render(
+        <PinToWorkspace
+          project="acme"
+          workspace="alpha"
+          ask={{
+            live: false,
+            folder: "report",
+            copied: true,
+            name: "Weekly report",
+            icon: "chart",
+            pinned: false,
+          }}
+          pinning={false}
+          trouble="there is already a folder 'report' in artifacts/; choose another name"
+          onPin={nothing}
+          onCancel={nothing}
+        />,
+      ),
+  },
+  {
+    name: "unpinning an artifact from a LIVE workspace (#5953)",
+    file: "PinToWorkspace.tsx",
+    open: async () =>
+      render(
+        <UnpinArtifact
+          project="acme"
+          workspace="alpha"
+          pin={{
+            id: "id-release",
+            folder: "release",
+            name: "Release",
+            icon: "rocket",
+            missing: null,
+            live: true,
+            too_large: null,
+            fresh: null,
+          }}
+          live
+          unpinning={false}
+          onUnpin={nothing}
           onCancel={nothing}
         />,
       ),

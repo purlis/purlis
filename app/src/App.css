@@ -8992,7 +8992,8 @@ nav.piece-files-head {
   text-overflow: ellipsis;
 }
 
-.artifact-bar-by {
+.artifact-bar-by,
+.artifact-bar-fresh {
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -9007,6 +9008,26 @@ nav.piece-files-head {
 .artifact-frame {
   flex: 1 1 auto;
   min-height: 0;
+}
+
+/* **An .html file's private preview** (#5953): the frame of its own webview fills the preview. */
+.piece-page {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* **An artifact icon's slot** (#5953): what a drag moves, holding its icon and nothing else. */
+.artifact-slot {
+  display: contents;
+}
+
+/* **Who a pin reaches**, in Pin to workspace (#5953): its people mark beside the sentence. */
+.pin-reach {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 /* **Where the page's script stands, on purlis's bar** (#5959, ADR 0120 §4). */

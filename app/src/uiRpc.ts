@@ -31,7 +31,13 @@ export const commands = {
 	artifactOpen: __WINDOW_ONLY_RESULT,
 	artifactPlace: __WINDOW_ONLY_RESULT,
 	artifactEnter: __WINDOW_ONLY_RESULT,
+	artifactReload: __WINDOW_ONLY_RESULT,
+	artifactTheme: __WINDOW_ONLY_RESULT,
 	artifactClose: __WINDOW_ONLY_RESULT,
+	artifactPinAsk: __WINDOW_ONLY_RESULT,
+	artifactPin: __WINDOW_ONLY_RESULT,
+	artifactReorder: __WINDOW_ONLY_RESULT,
+	artifactPreviewOpen: __WINDOW_ONLY_RESULT,
 	artifactRepin: __WINDOW_ONLY_RESULT,
 	artifactUnpin: __WINDOW_ONLY_RESULT,
 	artifactApprove: __WINDOW_ONLY_RESULT,
@@ -3084,6 +3090,18 @@ export type ArtifactAbout = {
 	missing: string | null,
 	/**  Its folder is over the size cap: the sentence naming both sizes. */
 	too_large: string | null,
+	/**  When its data was last updated, when that can be read. */
+	fresh: ArtifactFresh | null,
+};
+
+/**  **When an artifact's data was last updated** (#5955, `purlis_core::artifact::fresh`). */
+export type ArtifactFresh = {
+	/**  Milliseconds since 1970. */
+	at: number | null,
+	/**  When it is drawn stale, in milliseconds since 1970. */
+	stale_at: number | null,
+	/**  Where the time was read: `declared` by the data, `committed` or `written`. */
+	source: string,
 };
 
 /**
@@ -3106,6 +3124,53 @@ export type ArtifactOpened = {
 	generated: boolean,
 };
 
+/**
+ *  **An `.html` file the window shows** (#5953): the place it is in, as the file preview names
+ *  it, and its path there. The plane root is no workspace and no repo; a workspace's own files
+ *  are a workspace and no repo.
+ */
+export type ArtifactPage = {
+	workspace: string,
+	repo: string,
+	piece: string | null,
+	path: string,
+};
+
+/**
+ *  **What the person answered Pin to workspace with** (#5953): the folder the ask offered, and
+ *  the name and icon they chose.
+ */
+export type ArtifactPinAnswer = {
+	folder: string,
+	name: string,
+	icon: string,
+};
+
+/**  **What the Pin to workspace dialog offers** for a page (#5953). */
+export type ArtifactPinAsk = {
+	/**
+	 *  Whether the workspace is LIVE: everyone in the project sees the pin once it is saved.
+	 *  A LOCAL workspace's pin stays on this machine.
+	 */
+	live: boolean,
+	/**
+	 *  The folder of `artifacts/` the pin names: the page's own, or the free one it is
+	 *  copied into.
+	 */
+	folder: string,
+	/**
+	 *  Whether the page is copied into `folder` as its `index.html` (it is not in
+	 *  `artifacts/` yet).
+	 */
+	copied: boolean,
+	/**  The name offered: the pin's, or the page's title, or the folder's name. */
+	name: string,
+	/**  The icon offered: the pin's, or the default. */
+	icon: string,
+	/**  Whether the folder is pinned already: pinning it again changes its name or icon. */
+	pinned: boolean,
+};
+
 /**  One pin, as the activity bar's artifact group draws it. */
 export type ArtifactPinShown = {
 	id: string,
@@ -3115,8 +3180,12 @@ export type ArtifactPinShown = {
 	icon: string,
 	/**  Why its folder cannot be opened, when it cannot. */
 	missing: string | null,
+	/**  Whether its workspace is LIVE: unpinning it takes it off everyone's bar (#5953). */
+	live: boolean,
 	/**  Its folder is over the size cap: the sentence naming both sizes. */
 	too_large: string | null,
+	/**  When its data was last updated, when that can be read. */
+	fresh: ArtifactFresh | null,
 };
 
 /**
@@ -3155,6 +3224,15 @@ export type ArtifactRegenerated = {
 	failed: string | null,
 	/**  The tail of the run's output, secrets masked, when it failed and said anything. */
 	output: string | null,
+};
+
+/**
+ *  **The theme the window draws, handed to an artifact's page** (#5955): its appearance
+ *  (`dark` or `light`) and its colour tokens' values, by token (`surface.base`).
+ */
+export type ArtifactTheme = {
+	appearance: string,
+	values: { [key in string]: string },
 };
 
 /**
@@ -3990,7 +4068,7 @@ export type CertificateCheck = {
  *  What one changed path is part of, as the window's readers divide the plane
  *  ([`purlis_core::planechange::Kind`], which this mirrors for the bindings).
  */
-export type ChangeKind = "project" | "harness" | "workspace" | "todos" | "memory" | "sessions" | "persona" | "skills" | "git" | "chats";
+export type ChangeKind = "project" | "harness" | "workspace" | "todos" | "artifacts" | "memory" | "sessions" | "persona" | "skills" | "git" | "chats";
 
 /**
  *  Where one change's member list is in a changes view, sent with its blocks
