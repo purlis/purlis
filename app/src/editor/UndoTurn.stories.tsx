@@ -8,7 +8,7 @@
 import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, waitFor, within } from "storybook/test";
-import { expectFocusInSight, untilFocused } from "../stories.testkit";
+import { expectFocusInSight, untilFocused, untilSettled } from "../stories.testkit";
 import { UndoTurn } from "./UndoTurn";
 
 /** The paths a turn changed, sorted, as the core lists them. */
@@ -80,7 +80,11 @@ export const AskedAndKept: Story = {
   },
 };
 
-/** **Undone by its own answer**: Tab from Cancel reaches Undo turn 4, and Enter undoes. */
+/**
+ * **Undone by its own answer**: Tab from Cancel reaches Undo turn 4, and Enter undoes. Its picture
+ * is taken once the keyboard is back on the button and the button has settled: without that wait
+ * it caught the button's look still moving, about 1,600 pixels apart run to run in WebKit (#3178).
+ */
 export const Undone: Story = {
   args: { files: ["README.md"] },
   play: async ({ canvasElement }) => {
@@ -99,5 +103,8 @@ export const Undone: Story = {
     expectFocusInSight();
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Undone"), CLOSES);
+    const trigger = () => canvas.getByRole("button", { name: "Undo turn 4…" });
+    await untilFocused(trigger, "the keyboard is back on Undo turn");
+    await untilSettled(trigger());
   },
 };

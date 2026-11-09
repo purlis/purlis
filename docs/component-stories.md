@@ -18,7 +18,7 @@ Its siblings: [`ui-primitives.md`](ui-primitives.md) says what the window is bui
 | **Accessibility** | Any axe violation of a rule tagged `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa` or `wcag22aa`, with `target-size` (WCAG 2.5.8) switched on, which axe leaves off by default. | `app/.storybook/preview.tsx` |
 | **Faded words** | In Chromium, a word that an `opacity` or `filter: opacity()`, on its own box or any box above it, takes under 4.5:1 (3:1 for large text) on its ground, measured as drawn. Disabled controls, words hidden from assistive technology and moving opacities are not measured (#3790). | `app/.storybook/faded.setup.ts`, `app/src/theme/fadedWords.ts` |
 | **Frame on its line** | Its frame, `[data-story-frame]`, does not stand at the top of the line it is drawn on, on a whole pixel, in either browser: a frame a fraction of a pixel low comes out a row taller in its picture (#5463). | `app/.storybook/frame-on-its-line.setup.ts`, `app/src/stories.testkit.ts` |
-| **Screenshot** | Its picture is not its baseline, or it has no baseline. | `app/.storybook/screenshots.setup.ts` |
+| **Screenshot** | Its picture is not its baseline past what the comparison lets through ([below](#what-a-picture-lets-through)), or it has no baseline. | `app/.storybook/screenshots.setup.ts`, `app/.storybook/pictures.ts` |
 
 Both browsers run every story: WebKit is the engine purlis ships in on macOS and Linux
 (WKWebView, WebKitGTK), and Chromium is WebView2's on Windows. A picture is kept for each.
@@ -269,6 +269,34 @@ add or change one:
    with: update the branch, let `stories` run, and take that run's.
 3. Review the pictures in the pull request's diff, which shows each one beside the one it
    replaces.
+
+**To draw a story's pictures again when its run passes** (a baseline older than a change the
+comparison let through), delete those baselines in a commit of your pull request. Its run fails on
+each as missing, which is the screenshot gate alone, so it draws them again, and you take them as
+above. Delete only the files of the story and cells you mean; never write a PNG yourself.
+
+### What a picture lets through
+
+A picture is compared with its baseline by Vitest's `pixelmatch` comparator, with its options
+written down in `app/.storybook/pictures.ts` rather than left to its defaults (#3178):
+
+| Option | Value | Why |
+| --- | --- | --- |
+| `threshold` | 0.035 | How far apart two pixels may be on pixelmatch's scale (the YIQ distance, 0 to 1; a grey one level brighter of 255 is about 0.0038). The default, 0.1, let Purlis light's `wash.warning` change from a grey-brown to amber (#3169, about 0.061) and an accent change from green to blue (#5263, 0.083) with no picture failing. Two `stories` runs of one tree (#5884) drew a button still settling after Enter (`UndoTurn`'s `Undone`, WebKit) up to 0.031 apart over about 1,550 pixels, so the threshold sits above that. |
+| `allowedMismatchedPixels` | 32 | The same two runs drew up to 24 pixels further apart than that, as far as 0.06, in a few stories each time and never the same ones. A flat fill a change of theme reaches is hundreds of pixels at least (a count's pill, a swatch of `EveryFlatFill`), so it still fails. |
+| `includeAA` | false (the default) | A pixel the comparator finds is antialiasing at an edge is left out. Chromium draws its words greyscale too (above). |
+
+What it still lets through: a change under 0.035 on the scale, such as one of Purlis light's surfaces
+drawn as the one next to it but for a menu on the raised strip (0.018 to 0.034, where the menu is
+0.038), `accent.surface` turned toward another accent at one luminance (#5263, 0.033) or a faint
+wash turned at one luminance (`accent.wash` at .14, 0.013); and a change of 32 pixels or fewer.
+Settling a story such as `Undone` before its picture is what would let the threshold come down.
+
+`app/.storybook/pictures.test.ts` runs the comparator itself on those changes, and on the noise.
+`EveryFlatFill` (`app/src/theme/FlatFills.stories.tsx`) pictures every surface step, wash and
+chosen ground in each cell, so a change of one past the threshold fails at least that story,
+whichever others draw it. A re-run of the stories on an unchanged tree stays green: that is the check that the threshold
+is above the noise.
 
 **Which `stories` run counts.** The pull request's own run, on the branch merged into its base,
 is the one branch protection reads. The baselines are taken only into a head that has every
