@@ -145,7 +145,7 @@ export function ArtifactTab({
           <DiscussButton plane={plane} workspace={workspace} folder={folder} />
         ) : null}
       </header>
-      {opened === null ? null : <ArtifactLinks label={opened.label} />}
+      {opened === null ? null : <ArtifactLinks label={opened.label} onPress={onPress} />}
       {unpinned ? (
         <EmptyState
           headline={`${name} is unpinned`}

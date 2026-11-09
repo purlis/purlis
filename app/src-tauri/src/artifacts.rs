@@ -382,6 +382,7 @@ impl Artifacts {
             .get(label)
             .map(|one| crate::artifact_links::Followed {
                 window: one.window.clone(),
+                plane: one.of.plane.clone(),
                 own: origin(&one.host),
                 href: href.to_owned(),
                 written: artifact::links::written(&one.snapshot, href),

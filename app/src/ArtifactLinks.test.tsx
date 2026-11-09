@@ -6,6 +6,7 @@ import userEvent from "@testing-library/user-event";
 import { emit } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Offer } from "./actions";
 import { ARTIFACT_LINK, ArtifactLinks, type ArtifactLinkFollowed } from "./ArtifactLinks";
 
 type Call = { cmd: string; args: Record<string, unknown> };
@@ -27,7 +28,7 @@ function core(answer: (call: Call) => unknown = () => null) {
 const URL = "https://github.com/purlis/purlis/issues?q=is%3Aopen";
 
 function asking(label = "artifact-7"): ArtifactLinkFollowed {
-  return { label, url: URL, host: "github.com", refused: null };
+  return { label, url: URL, host: "github.com", refused: null, goes: null };
 }
 
 const opens = (calls: Call[]) => calls.filter((one) => one.cmd === "artifact_link_open");
@@ -106,6 +107,40 @@ describe("a link followed in an artifact's page", () => {
       "purlis could not open the link in your browser: no browser",
     );
     expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("goes to a place in purlis without asking, by the window's own row", async () => {
+    const calls = core();
+    const pressed: Offer[] = [];
+    render(<ArtifactLinks label="artifact-7" onPress={(offer) => pressed.push(offer)} />);
+    await emit(ARTIFACT_LINK, {
+      label: "artifact-7",
+      url: null,
+      host: null,
+      refused: null,
+      goes: { to: "workspace", workspace: "beta" },
+    });
+    await waitFor(() => expect(pressed).toHaveLength(1));
+    expect(pressed[0].does).toEqual({ verb: "focusWorkspace", workspace: "beta" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(opens(calls)).toEqual([]);
+  });
+
+  it("says why a purlis:// link naming an action was refused, and goes nowhere", async () => {
+    core();
+    const pressed: Offer[] = [];
+    render(<ArtifactLinks label="artifact-7" onPress={(offer) => pressed.push(offer)} />);
+    await emit(ARTIFACT_LINK, {
+      label: "artifact-7",
+      url: null,
+      host: null,
+      refused:
+        "a purlis link only opens a place, and this one names more after it (`done`), so purlis did not follow it",
+      goes: null,
+    });
+    const dialog = await screen.findByRole("dialog", { name: "Link not opened" });
+    expect(dialog.textContent).toContain("A purlis link only opens a place");
+    expect(pressed).toEqual([]);
   });
 
   it("ignores a link another artifact's page followed", async () => {

@@ -24,6 +24,7 @@ pub mod links;
 pub mod live;
 pub mod offers;
 pub mod pins;
+pub mod places;
 pub mod regenerate;
 pub mod script;
 pub mod search;
