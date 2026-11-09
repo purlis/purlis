@@ -84,13 +84,20 @@ export const AskedAndKept: Story = {
  * **Undone by its own answer**: Tab from Cancel reaches Undo turn 4, and Enter undoes. Its picture
  * is taken once the keyboard is back on the button and the button has settled: without that wait
  * it caught the button's look still moving, about 1,600 pixels apart run to run in WebKit (#3178).
+ *
+ * The click that opens the question leaves the button hovered (React Aria's `data-hovered`), and
+ * only a real `pointerover` from the engine, whenever WebKit gets to it, ever took that away: the
+ * picture caught the button's hover fill in one run and its rest fill in the next (#5924). So the
+ * pointer leaves the button as soon as it has pressed it, and the picture waits for no hover.
  */
 export const Undone: Story = {
   args: { files: ["README.md"] },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const page = within(document.body);
-    await userEvent.click(canvas.getByRole("button", { name: "Undo turn 4…" }));
+    const opener = canvas.getByRole("button", { name: "Undo turn 4…" });
+    await userEvent.click(opener);
+    await userEvent.unhover(opener);
     const alert = await page.findByRole("alertdialog", { name: "Undo turn 4?" });
     await expect(alert).toHaveTextContent("This file goes back as it was before the turn.");
     const undo = () => within(alert).getByRole("button", { name: "Undo turn 4" });
@@ -105,6 +112,7 @@ export const Undone: Story = {
     await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Undone"), CLOSES);
     const trigger = () => canvas.getByRole("button", { name: "Undo turn 4…" });
     await untilFocused(trigger, "the keyboard is back on Undo turn");
+    await waitFor(() => expect(trigger()).not.toHaveAttribute("data-hovered"));
     await untilSettled(trigger());
   },
 };
