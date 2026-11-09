@@ -3601,7 +3601,7 @@ fn reading_where_unsaved_work_sits_never_writes_the_index_a_save_needs() {
 // --------------------------------------------------------------------------------------- //
 
 #[test]
-fn two_machines_appending_to_the_same_log_and_index_both_save_by_the_union_merge_rules() {
+fn two_machines_appending_to_one_log_and_one_memory_index_save_with_the_log_unioned_and_the_index_rebuilt() {
     let fixture = Fixture::plane();
     // The rules `init` writes, committed as a plane carries them.
     crate::scaffold::ensure_gitattributes(&fixture.root.join(".gitattributes")).unwrap();
@@ -3616,7 +3616,10 @@ fn two_machines_appending_to_the_same_log_and_index_both_save_by_the_union_merge
         "- [one](one.md)\n",
     )
     .unwrap();
-    // The memories the index names: a save rebuilds an index from them (#5864).
+    // The memories the index names, here and on each machine below (one.md, theirs.md,
+    // mine.md): a save rebuilds the index from the memory files the merged tree holds, and a
+    // rebuilt index lists only memories that exist (#5824 F4, #5864). An index line with no
+    // file behind it would be dropped, not kept.
     std::fs::write(
         fixture.root.join("personas/steward/memory/one.md"),
         "# one\n",
