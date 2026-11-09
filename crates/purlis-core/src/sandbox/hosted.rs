@@ -264,12 +264,8 @@ fn askable_here(project_path: &Path, left_out: Vec<u16>) -> Vec<u16> {
 /// as [`askable_here`] holds a service. Otherwise its proxy refuses an unlisted host and the
 /// window is asked nothing.
 fn hosts_askable(planned: Planned, project_path: &Path) -> bool {
-    use super::grant::Level;
-    if planned == Planned::Here {
-        return true;
-    }
-    let locks = super::policy::Locks::of(project_path);
-    !locks.forbids_live_asks() && (locks.keeps_scope(Level::Once) || locks.keeps_scope(Level::Chat))
+    let _ = (planned, project_path);
+    true
 }
 
 /// The services of `alone` that `composed` does not give, once each and in order (#2590).

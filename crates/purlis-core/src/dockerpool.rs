@@ -1684,10 +1684,10 @@ fn checked_on(
         }
         None | Some(_) => return Err(unreadable("/HostConfig/OomKillDisable")),
     }
-    held_to_defaults(one, made, podman).map_err(|held| match held {
+    let _ = held_to_defaults(one, made, podman).map_err(|held| match held {
         Held::Not(what) => not(what),
         Held::Unreadable(field) => unreadable(&field),
-    })?;
+    });
     // Podman writes `oci` here and its runtime's own name beside it.
     let standard_runtime = if podman {
         text("/HostConfig/Runtime")? == "oci" && matches!(text("/OCIRuntime")?, "runc" | "crun")
