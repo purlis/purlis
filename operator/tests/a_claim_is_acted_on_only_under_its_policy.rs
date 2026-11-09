@@ -7,10 +7,10 @@
 //! on at all.
 
 use k8s_openapi::api::admissionregistration::v1::{
-    ValidatingAdmissionPolicy, ValidatingAdmissionPolicyBinding,
+    MatchResources, ParamRef, ValidatingAdmissionPolicy, ValidatingAdmissionPolicyBinding,
     ValidatingAdmissionPolicyBindingSpec,
 };
-use k8s_openapi::apimachinery::pkg::apis::meta::v1::Time;
+use k8s_openapi::apimachinery::pkg::apis::meta::v1::{LabelSelector, Time};
 use k8s_openapi::jiff::Timestamp;
 use kube::api::ObjectMeta;
 use purlis_cluster_operator::{
@@ -148,6 +148,33 @@ fn a_binding_that_does_not_deny_with_purlis_policy_is_no_binding() {
         binding("2026-10-17T10:00:00Z", POLICY, &[]),
         binding("2026-10-17T10:00:00Z", "another-policy", &["Deny"]),
     ] {
+        assert_eq!(
+            admission(&claim, since(&binding)),
+            Admission::PolicyNotInForce,
+            "{binding:?}"
+        );
+    }
+}
+
+/// The binding puts the policy in force on everything it governs: one that narrows what it
+/// matches, or that takes parameters, is no binding.
+#[test]
+fn a_binding_that_narrows_what_the_policy_governs_is_no_binding() {
+    let claim = claim_made(Some("2026-10-17T10:00:31Z"));
+    let mut narrowed = in_force("2026-10-17T10:00:00Z");
+    narrowed.spec.match_resources = Some(MatchResources {
+        namespace_selector: Some(LabelSelector {
+            match_labels: Some([("team".to_owned(), "a".to_owned())].into()),
+            ..LabelSelector::default()
+        }),
+        ..MatchResources::default()
+    });
+    let mut with_params = in_force("2026-10-17T10:00:00Z");
+    with_params.spec.param_ref = Some(ParamRef {
+        name: Some("params".into()),
+        ..ParamRef::default()
+    });
+    for binding in [narrowed, with_params] {
         assert_eq!(
             admission(&claim, since(&binding)),
             Admission::PolicyNotInForce,

@@ -45,10 +45,15 @@ pub const RUNNER_NAMESPACES_POLICY: &str = "purlis-runner-namespaces";
 /// force, whatever an earlier binding said ([`in_force_since`]).
 pub const FORGE_POLICY: &str = "purlis-forge";
 
-/// Whether `binding` puts the policy `policy` in force: it binds that policy, and denies.
+/// Whether `binding` puts the policy `policy` in force: it binds that policy, denies, and governs
+/// all the policy matches. The bindings purlis installs neither narrow what the policy matches
+/// (`matchResources`) nor give it parameters (`paramRef`), so one that does is not purlis's.
 fn in_force(binding: &ValidatingAdmissionPolicyBinding, policy: &str) -> bool {
     let spec = &binding.spec;
-    spec.policy_name == policy && spec.validation_actions.iter().any(|a| a == "Deny")
+    spec.policy_name == policy
+        && spec.validation_actions.iter().any(|a| a == "Deny")
+        && spec.match_resources.is_none()
+        && spec.param_ref.is_none()
 }
 
 /// A stored time and [`SETTLE`]. A time past what a timestamp holds: in force from the end of time,
