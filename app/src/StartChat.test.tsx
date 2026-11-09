@@ -2598,6 +2598,30 @@ describe("the start's Secret ask, with what else the dialog offers (#5670 review
     );
   });
 
+  it("holds the ask's Fill while a limit saves, so no fill lands where it cannot go on", async () => {
+    const onAnswer = vi.fn(() => Promise.resolve("filled" as const));
+    render(
+      <StartChat
+        options={options()}
+        trouble="it needs 150 MiB"
+        limitOffer={offer}
+        limitProfile="claude"
+        onRaiseLimit={() => new Promise<boolean>(() => {})}
+        secretAsk={ask({ onAnswer })}
+        onStart={vi.fn()}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Value of anthropic"), "fr3sh");
+    await user.click(await screen.findByRole("button", { name: "Save to the pool and start" }));
+    await user.click(screen.getByRole("button", { name: "Fill" }));
+
+    expect(onAnswer).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Fill" })).toHaveAttribute("aria-disabled", "true");
+  });
+
   it("a fill that comes back while the window is still busy goes on once it is not", async () => {
     const onStart = vi.fn();
     let answered: (ended: "filled") => void = () => {};

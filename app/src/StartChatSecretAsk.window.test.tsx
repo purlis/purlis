@@ -268,11 +268,13 @@ describe("a start missing its profile credential, in the Start dialog (#5137)", 
 
     await waitFor(() => expect(within(dialog).queryByTestId("secret-ask")).toBeNull());
     // The refusal still shown is said to be the refused profile's.
-    expect(
-      within(dialog).getByText(
-        "That refusal is for work-key: pick it again to fill anthropic here.",
-      ),
-    ).toBeTruthy();
+    // Said in the refusal's own alert, beside the words that point to the Inbox.
+    const refusal = within(dialog)
+      .getAllByRole("alert")
+      .find((one) => one.textContent?.includes("fill it from the Secret ask in the Inbox"));
+    expect(refusal).toHaveTextContent(
+      "That refusal is for work-key: pick it again to fill anthropic here.",
+    );
     await user.click(within(dialog).getByRole("radio", { name: /work-key/ }));
     expect(
       await within(dialog).findByRole("group", {

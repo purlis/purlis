@@ -546,7 +546,8 @@ export function StartChat({
   const [filled, setFilled] = useState<{ key: string; profile: string; fill: number }>();
   const wentOn = useRef(0);
   const answerAsk = (option: Offered, given: () => SecretAskGiven) => {
-    if (ask === undefined || askBusy) return;
+    // Nor while a limit saves: a fill landing then could not go on (#5670 review).
+    if (ask === undefined || askBusy || savingLimit) return;
     const key = ask.ask.secret?.key ?? "";
     const forProfile = ask.profile;
     setFilled(undefined);
@@ -935,9 +936,10 @@ export function StartChat({
             {refusalSaid && (
               <p className="honest mid-turn" role="alert">
                 {refusalSaid}
+                {/* Said with it, so a screen reader hears whose ask it is (#5670 review). */}
+                {askElsewhere !== undefined && ` ${askElsewhere}`}
               </p>
             )}
-            {askElsewhere !== undefined && <p className="honest">{askElsewhere}</p>}
             {/* The start's missing credential (#5137): the Secret ask's own body, whose Fill
               goes on with the start and whose Not now cancels it. */}
             {ask !== undefined && (
@@ -945,7 +947,7 @@ export function StartChat({
                 ask={ask.ask}
                 chat="The chat"
                 entries={ask.entries}
-                busy={askBusy || starting}
+                busy={askBusy || starting || savingLimit}
                 onAnswer={answerAsk}
                 onSaid={ask.onSaid}
                 start={{ variable: ask.variable }}
