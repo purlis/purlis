@@ -367,10 +367,10 @@ fn a_card_carries_the_part_keys_its_theme_sets() {
         .find(|one| one.id == "purlis-classic")
         .unwrap();
     assert!(!classic.parts.is_empty());
-    assert!(
-        classic
-            .parts
-            .iter()
-            .all(|one| one.from == GalleryPartFrom::Theme && one.key.starts_with(&one.family))
-    );
+    assert!(classic.parts.iter().all(|one| {
+        one.from == GalleryPartFrom::Theme
+            && one
+                .key
+                .starts_with(&format!("{}.{}.", one.family, one.part))
+    }));
 }

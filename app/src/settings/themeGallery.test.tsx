@@ -308,7 +308,7 @@ describe("Settings › Theme's cards (#2331)", () => {
     expect(screen.getByText(/^Drawn here: Purlis Classic/)).toHaveTextContent("Purlis");
     // A card is named by its theme's name, and where it comes from is its description (#2911).
     expect(screen.getByRole("option", { name: "Dusk" })).toHaveAccessibleDescription(
-      "Yours, on this machine · 1 warning · 2 parts",
+      "Yours, on this machine · 1 warning · 2 part keys",
     );
   });
 
@@ -473,10 +473,10 @@ describe("under the chosen card (#2331)", () => {
     core(shown({ yours: mine("dusk", null), drawn: "machine:dusk" }));
     render(<Group at={null} />);
     const parts = await screen.findByRole("region", { name: "Parts" });
-    await waitFor(() => expect(parts).toHaveTextContent("Dusk sets 2 parts of"));
+    await waitFor(() => expect(parts).toHaveTextContent("Dusk sets 2 keys of"));
     expect(
       within(parts).getByText("button", { selector: "[data-scope=badge]" }),
-    ).toHaveAccessibleDescription("A button, an icon button or a link button. 2 parts set.");
+    ).toHaveAccessibleDescription("A button, an icon button or a link button. 2 keys set.");
     // Every family and part the manifest has, folded to the families until one is opened.
     await userEvent.click(within(parts).getByRole("button", { name: "Show each part" }));
     const tree = await within(parts).findByRole("treegrid", { name: "Every component part" });
@@ -495,12 +495,17 @@ describe("under the chosen card (#2331)", () => {
     await waitFor(() =>
       expect(rows()).toEqual([
         expect.stringContaining("2 set"),
-        expect.stringContaining("rootThe button itself."),
+        expect.stringContaining("rootThe button itself. Sets: fill"),
         expect.stringContaining("corner-radiusfullPills: On"),
         expect.stringContaining("primary.hover.fillaccent.baseThe theme"),
       ]),
     );
+    // Folding a row the filter opened folds it; clearing the filter puts back what the person
+    // had open, every family folded, and none of what the filter opened.
+    await userEvent.click(within(tree).getByRole("button", { name: /Collapse.*button\.root/ }));
+    await waitFor(() => expect(rows()).toHaveLength(2));
     await userEvent.clear(within(parts).getByRole("searchbox", { name: "Filter parts" }));
+    await waitFor(() => expect(rows()).toHaveLength(2));
     await userEvent.type(within(parts).getByRole("searchbox", { name: "Filter parts" }), "tab");
     await waitFor(() =>
       expect(rows()).toEqual([

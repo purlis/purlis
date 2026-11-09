@@ -115,8 +115,8 @@ pub struct GalleryCard {
     pub folder: bool,
     /// Changes whenever what the theme draws changes: what its pictures are kept by.
     pub stamp: String,
-    /// **Each component part key the theme sets** (#2947), with its value and what sets it, in
-    /// key order, the theme's before its options'.
+    /// **Each component part key the theme draws** (#2947), with its value and what sets it: the
+    /// theme, a theme it extends or an option's value; in key order, the options' last.
     pub parts: Vec<GalleryPart>,
 }
 
@@ -133,11 +133,15 @@ pub struct GalleryPart {
     pub from: GalleryPartFrom,
 }
 
-/// **What sets a part key**: the theme (with what it extends), or a value of one of its options.
+/// **What sets a part key**: the theme, a theme it extends, or a value of one of its options.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum GalleryPartFrom {
     Theme,
+    /// By the name of the theme it extends that wrote it.
+    Extends {
+        theme: String,
+    },
     /// By the option's label and the value's.
     Option {
         option: String,
@@ -197,8 +201,7 @@ pub fn theme_parts() -> Result<PartsManifest, String> {
 
 /// [`theme_parts`], read from the manifest as `purlis theme parts` prints it.
 fn parts_manifest() -> Result<PartsManifest, String> {
-    serde_json::from_value(theme::parts::manifest_json())
-        .map_err(|err| format!("the parts manifest did not read: {err}"))
+    serde_json::from_value(theme::parts::manifest_json()).map_err(|err| err.to_string())
 }
 
 /// One appearance of a card.
@@ -281,6 +284,7 @@ impl From<Card> for GalleryCard {
                     value: one.value,
                     from: match one.from {
                         gallery::PartFrom::Theme => GalleryPartFrom::Theme,
+                        gallery::PartFrom::Extends { theme } => GalleryPartFrom::Extends { theme },
                         gallery::PartFrom::Option { option, value } => {
                             GalleryPartFrom::Option { option, value }
                         }

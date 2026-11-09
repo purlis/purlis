@@ -70,6 +70,7 @@ const ROUNDED: GalleryPart[] = [
   set("button.root.corner-radius", "full", { kind: "option", option: "Pills", value: "On" }),
   set("button.root.primary.hover.fill", "accent.base"),
   set("tabs.tab.corner-radius", "10"),
+  set("button.label.text", "text.primary", { kind: "extends", theme: "Purlis" }),
 ];
 
 const meta = {
@@ -99,31 +100,40 @@ export const SetsParts: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.tab();
     await untilFocused(() => canvas.getByText("button"), "Parts: Tab reaches the first family");
+    expectFocusInSight();
     await userEvent.tab();
     await untilFocused(() => canvas.getByText("tabs"), "Parts: Tab reaches the next family");
+    expectFocusInSight();
     await userEvent.tab();
     const show = canvas.getByRole("button", { name: "Show each part" });
     await untilFocused(() => show, "Parts: Tab reaches Show each part");
+    expectFocusInSight();
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(show).toHaveAttribute("aria-expanded", "true"));
     await userEvent.tab();
-    await untilFocused(
-      () => canvas.getByRole("searchbox", { name: "Filter parts" }),
-      "Parts: Tab reaches the filter",
-    );
+    const filter = canvas.getByRole("searchbox", { name: "Filter parts" });
+    await untilFocused(() => filter, "Parts: Tab reaches the filter");
+    expectFocusInSight();
     await userEvent.tab();
     const tree = canvas.getByRole("treegrid", { name: "Every component part" });
     const row = (name: string) => within(tree).getByRole("row", { name });
     await untilFocused(() => row("button"), "Parts: Tab lands on the first family");
+    expectFocusInSight();
     await userEvent.keyboard("{ArrowRight}");
     await waitFor(() => expect(row("button")).toHaveAttribute("aria-expanded", "true"));
-    await userEvent.keyboard("{ArrowDown}{ArrowRight}");
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(() => row("button.root"), "Parts: Down walks into the family's parts");
+    expectFocusInSight();
+    await userEvent.keyboard("{ArrowRight}");
     await waitFor(() => expect(row("button.root")).toHaveAttribute("aria-expanded", "true"));
     await userEvent.keyboard("{ArrowDown}");
     await untilFocused(
       () => row("button.root.corner-radius"),
       "Parts: Down walks into the keys the theme sets",
     );
+    expectFocusInSight();
+    await userEvent.tab({ shift: true });
+    await untilFocused(() => filter, "Parts: Shift+Tab leaves the tree for its filter");
     expectFocusInSight();
   },
 };
@@ -143,6 +153,12 @@ export const Filtered: Story = {
     await untilFocused(
       () => within(tree).getByRole("row", { name: "button" }),
       "Filtered: Tab lands on the family found",
+    );
+    expectFocusInSight();
+    await userEvent.tab({ shift: true });
+    await untilFocused(
+      () => canvas.getByRole("searchbox", { name: "Filter parts" }),
+      "Filtered: Shift+Tab goes back to the filter",
     );
     expectFocusInSight();
   },

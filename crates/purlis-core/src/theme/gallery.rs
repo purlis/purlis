@@ -111,9 +111,9 @@ pub struct Card {
     pub folder: bool,
     /// Changes whenever anything the theme draws changes: what a picture of it is kept by.
     pub stamp: String,
-    /// **Each component part key the theme sets** (#2947), with its value as written and what
-    /// sets it: the theme (and the themes it extends), or a value of one of its options. A key
-    /// both set is listed once for each. In key order, the theme's before the options'.
+    /// **Each component part key the theme draws** (#2947), with its value as written and what
+    /// sets it: the theme itself, a theme it extends, or a value of one of its options. A key
+    /// two of them set is listed once for each. In key order, the themes' before the options'.
     pub parts: Vec<CardPart>,
 }
 
@@ -136,8 +136,10 @@ pub struct CardPart {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum PartFrom {
-    /// The theme's own `parts`, or a theme's it extends.
+    /// The theme's own `parts`.
     Theme,
+    /// The `parts` of a theme it extends, by that theme's name.
+    Extends { theme: String },
     /// A value of one of its options (#2946), by the option's and the value's labels.
     Option { option: String, value: String },
 }
@@ -464,8 +466,9 @@ fn card(id: String, from: From, resolved: &Resolved, kept: &mut LastRead) -> Car
     }
 }
 
-/// **Each part key `theme` sets** ([`Card::parts`]): its own parts, the same in each of its
-/// appearances, then each option value's in the options' order, each in key order.
+/// **Each part key `theme` draws** ([`Card::parts`]): its parts, the same in each of its
+/// appearances, each said as its own or the theme's it extends that wrote it; then each option
+/// value's, in the options' order; each in key order.
 fn parts_of(theme: &Theme) -> Vec<CardPart> {
     let one = |key: &super::parts::Key, value: &super::parts::PartValue, from: PartFrom| CardPart {
         key: key.to_string(),
@@ -474,13 +477,15 @@ fn parts_of(theme: &Theme) -> Vec<CardPart> {
         value: value.written(),
         from,
     };
-    let own = theme
-        .bases()
-        .first()
-        .map(|base| &base.parts)
-        .into_iter()
-        .flatten()
-        .map(|(key, value)| one(key, value, PartFrom::Theme));
+    let own = theme.bases().first().into_iter().flat_map(|base| {
+        base.parts.iter().map(move |(key, value)| {
+            let from = match base.parts_by.get(key) {
+                Some(by) if *by != theme.name => PartFrom::Extends { theme: by.clone() },
+                _ => PartFrom::Theme,
+            };
+            one(key, value, from)
+        })
+    });
     let options = theme.options.iter().flat_map(|option| {
         option.values.iter().flat_map(move |value| {
             value.parts().iter().map(move |(key, set)| {

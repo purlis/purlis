@@ -421,6 +421,7 @@ export const DrawnInPart: Story = {
     expect(within(tree).getAllByRole("row").length).toBeLessThan(100);
     await userEvent.tab();
     await untilFocused(() => row("group 1"), "In part: Tab lands on the first row");
+    expectFocusInSight();
     await userEvent.keyboard("{End}");
     await untilFocused(
       () => row("row 20 of group 60"),

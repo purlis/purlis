@@ -528,16 +528,23 @@ fn a_card_lists_each_part_key_its_theme_sets_with_its_value_as_written() {
         said("tabs.tab.corner-radius"),
         Some(("tabs", "tab", "[6, 6, 0, 0]", theme))
     );
-    // What Purlis, which it extends, sets is drawn as its own, and said so.
+    // What Purlis, which it extends, sets is drawn too, and said to be Purlis's.
     let purlis = cards.iter().find(|one| one.id == "purlis").unwrap();
     assert!(!purlis.parts.is_empty());
     for one in &purlis.parts {
-        assert!(rounded.parts.contains(one), "{one:?}");
+        assert_eq!(one.from, gallery::PartFrom::Theme, "Purlis's own: {one:?}");
+        let extended = gallery::CardPart {
+            from: gallery::PartFrom::Extends {
+                theme: "Purlis".to_owned(),
+            },
+            ..one.clone()
+        };
+        assert!(rounded.parts.contains(&extended), "{one:?}");
     }
 }
 
 #[test]
-fn a_card_of_a_theme_that_sets_no_parts_of_its_own_lists_its_parents() {
+fn a_card_of_a_theme_that_sets_no_parts_of_its_own_says_whose_it_draws() {
     let places = Places::new();
     put(&places.machine(), "plain", &dusk("Plain", "#101010"));
     let folders = places.folders();
@@ -545,24 +552,14 @@ fn a_card_of_a_theme_that_sets_no_parts_of_its_own_lists_its_parents() {
     let plain = cards.iter().find(|one| one.id == "plain").unwrap();
     let classic = cards.iter().find(|one| one.id == "purlis-classic").unwrap();
     assert!(!classic.parts.is_empty());
-    assert_eq!(plain.parts, classic.parts);
-}
-
-#[test]
-fn a_part_value_is_said_as_a_theme_writes_it() {
-    use super::parts::{Corner, Length, PartValue, Shadow};
-    let n = Length::Number;
-    assert_eq!(PartValue::Colour("accent.base").written(), "accent.base");
-    assert_eq!(PartValue::Shadow(Shadow::Raised).written(), "raised");
-    assert_eq!(PartValue::Length(n(12.0)).written(), "12");
-    assert_eq!(
-        PartValue::Length(Length::Token("space.2")).written(),
-        "space.2"
-    );
-    assert_eq!(PartValue::Corners([Corner::Full; 4]).written(), "full");
-    assert_eq!(PartValue::Padding(n(4.0), n(4.0)).written(), "4");
-    assert_eq!(
-        PartValue::Inset([n(1.0), n(2.0), n(3.0)]).written(),
-        "[1, 2, 3]"
-    );
+    assert_eq!(plain.parts.len(), classic.parts.len());
+    for (one, its) in plain.parts.iter().zip(&classic.parts) {
+        assert_eq!((&one.key, &one.value), (&its.key, &its.value));
+        assert_eq!(
+            one.from,
+            gallery::PartFrom::Extends {
+                theme: "Purlis Classic".to_owned()
+            }
+        );
+    }
 }

@@ -391,7 +391,6 @@ export function Tree<T extends object>({
               data-size={size}
               data-twist={fixed ? "none" : twist}
               data-fit={fit === "content" ? "content" : undefined}
-              data-in-part={drawnInPart ? "" : undefined}
               renderEmptyState={empty === undefined ? undefined : () => empty}
             />
           </InPart>

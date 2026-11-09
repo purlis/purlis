@@ -481,10 +481,14 @@ impl Library {
             .first()
             .map(|one| one.parts.clone())
             .unwrap_or_default();
-        let parts = super::parts::over(
-            &parents_parts,
-            super::parts::read(from.get("parts"), &mut complaints, &mut notes),
-        );
+        let own_parts = super::parts::read(from.get("parts"), &mut complaints, &mut notes);
+        // Who wrote each key: the parent's say, then this theme's own keys (#2947).
+        let mut parts_by = appearances
+            .first()
+            .map(|one| one.parts_by.clone())
+            .unwrap_or_default();
+        parts_by.extend(own_parts.keys().map(|key| (*key, name.clone())));
+        let parts = super::parts::over(&parents_parts, own_parts);
         let mut seen: BTreeSet<String> = BTreeSet::new();
         for (at, raw) in given.iter().enumerate() {
             let Some(one) = raw.as_object() else {
@@ -552,6 +556,7 @@ impl Library {
             one.fonts.clone_from(&fonts);
             one.tint.clone_from(&tint);
             one.parts.clone_from(&parts);
+            one.parts_by.clone_from(&parts_by);
         }
         // A part's size is held in both densities, which are known once every appearance is.
         let mut unfit: Vec<String> = Vec::new();
@@ -1046,6 +1051,7 @@ fn appearance(
         options: Vec::new(),
         tint: base.tint.clone(),
         parts: base.parts.clone(),
+        parts_by: base.parts_by.clone(),
         least: super::Least::Standard,
     })
 }

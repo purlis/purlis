@@ -1674,9 +1674,9 @@ pub enum PartValue {
 }
 
 impl PartValue {
-    /// **The value as a theme writes it** (#2947): a word or a token as it is (`full`,
-    /// `accent.base`, `raised`), a number in figures, and a list in brackets (`[4, 12]`), one
-    /// value where every side or corner takes the same.
+    /// **The value in a theme's words** (#2947): a word or a token as it is (`full`,
+    /// `accent.base`, `raised`), a number in figures, and a list in brackets (`[4, 12]`); where
+    /// every side or corner takes the same, the one value, which a theme may write for them all.
     pub fn written(&self) -> String {
         fn length(one: &Length) -> String {
             match one {

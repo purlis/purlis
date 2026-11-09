@@ -31,7 +31,7 @@ import { askThemeChat } from "./links";
 import { useReadOnlySaid } from "../ReadOnlyLine";
 import type { LiveSetting, SettingsGroup } from "./groups";
 import { OptionsList } from "./themeOptions";
-import { ThemePartsRead } from "./themeParts";
+import { isOwn, ThemePartsRead } from "./themeParts";
 import { useOnScreen, useSpecimen } from "./themeSpecimens";
 import { Button } from "../ui/button/Button";
 import { Tooltip } from "../ui/tooltip/Tooltip";
@@ -548,8 +548,8 @@ function Cards({
                 ? `${card.warnings.length} ${card.warnings.length === 1 ? "warning" : "warnings"}`
                 : undefined,
             // What it sets of the component parts (#2947), which the Parts row lists.
-            card.parts.length > 0
-              ? `${card.parts.length} ${card.parts.length === 1 ? "part" : "parts"}`
+            ownKeys(card) > 0
+              ? `${ownKeys(card)} part ${ownKeys(card) === 1 ? "key" : "keys"}`
               : undefined,
           ].filter((one): one is string => one !== undefined);
           return (
@@ -599,6 +599,11 @@ function SourceBadge({ badge }: { badge: Badge }) {
       </LevelBadge>
     </Tooltip>
   );
+}
+
+/** How many part keys a card's theme sets itself, or its options do (#2947). */
+function ownKeys(card: GalleryCard): number {
+  return card.parts.filter(isOwn).length;
 }
 
 /** The most appearances a card shows a picture of; the rest are said. */

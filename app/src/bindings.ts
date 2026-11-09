@@ -9437,8 +9437,8 @@ export type GalleryCard = {
 	/**  Changes whenever what the theme draws changes: what its pictures are kept by. */
 	stamp: string,
 	/**
-	 *  **Each component part key the theme sets** (#2947), with its value and what sets it, in
-	 *  key order, the theme's before its options'.
+	 *  **Each component part key the theme draws** (#2947), with its value and what sets it: the
+	 *  theme, a theme it extends or an option's value; in key order, the options' last.
 	 */
 	parts: GalleryPart[],
 };
@@ -9455,8 +9455,10 @@ export type GalleryPart = {
 	from: GalleryPartFrom,
 };
 
-/**  **What sets a part key**: the theme (with what it extends), or a value of one of its options. */
+/**  **What sets a part key**: the theme, a theme it extends, or a value of one of its options. */
 export type GalleryPartFrom = { kind: "theme" } | 
+/**  By the name of the theme it extends that wrote it. */
+{ kind: "extends"; theme: string } | 
 /**  By the option's label and the value's. */
 { kind: "option"; option: string; value: string };
 

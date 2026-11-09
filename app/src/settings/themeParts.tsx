@@ -84,13 +84,18 @@ export function partsShown(
       properties: part.properties,
       set: set.filter((one) => one.family === family.name && one.part === part.name),
     }));
-    const whole = typed === "" || has(family.name, typed) || has(family.description, typed);
+    const whole =
+      typed === "" ||
+      has(family.name, typed) ||
+      has(family.description, typed) ||
+      family.states.some((state) => has(state, typed));
     const kept = whole
       ? all
       : all.filter(
           (part) =>
             has(part.name, typed) ||
             has(part.description, typed) ||
+            part.properties.some((property) => has(property, typed)) ||
             part.set.some((one) => has(one.key, typed) || has(one.value, typed)),
         );
     if (kept.length === 0) continue;
@@ -101,13 +106,18 @@ export function partsShown(
       since: family.since,
       states: family.states,
       parts: kept,
-      set: all.reduce((count, part) => count + part.set.length, 0),
+      set: all.reduce((count, part) => count + part.set.filter(isOwn).length, 0),
     });
   }
   return { families, parts, open };
 }
 
-/** **The families a theme sets**, in the manifest's order, each with how many keys. */
+/** Whether the theme itself sets a key, or one of its options does: not a theme it extends. */
+export function isOwn(part: GalleryPart): boolean {
+  return part.from.kind !== "extends";
+}
+
+/** **The families a theme sets itself**, in the manifest's order, each with how many keys. */
 export function familiesSet(
   manifest: PartsManifest,
   set: readonly GalleryPart[],
@@ -116,14 +126,21 @@ export function familiesSet(
     .map((family) => ({
       name: family.name,
       description: family.description,
-      keys: set.filter((one) => one.family === family.name).length,
+      keys: set.filter((one) => one.family === family.name && isOwn(one)).length,
     }))
     .filter((family) => family.keys > 0);
 }
 
 /** What set a key, as its row says it. */
 export function fromSaid(part: GalleryPart): string {
-  return part.from.kind === "theme" ? "The theme" : `${part.from.option}: ${part.from.value}`;
+  switch (part.from.kind) {
+    case "theme":
+      return "The theme";
+    case "extends":
+      return `From ${part.from.theme}`;
+    case "option":
+      return `${part.from.option}: ${part.from.value}`;
+  }
 }
 
 /** The manifest version something came in, as a row says it; what no release has shipped yet
@@ -132,9 +149,36 @@ export function sinceSaid(since: number, manifest: PartsManifest): string {
   return since > manifest.version ? "Next release" : `Since version ${since}`;
 }
 
-/** How many keys, as a sentence counts them. */
-function keysSaid(count: number): string {
-  return `${count} ${count === 1 ? "part" : "parts"}`;
+/** How many part keys, as a sentence counts them. */
+export function keysSaid(count: number): string {
+  return `${count} ${count === 1 ? "key" : "keys"}`;
+}
+
+/** What the themes `set`'s theme extends draw of it, as a sentence's end: "11 keys from
+ *  Purlis", or nothing where it extends none that sets parts. */
+function keptSaid(set: readonly GalleryPart[]): string {
+  const parents = [
+    ...new Set(set.flatMap((one) => (one.from.kind === "extends" ? [one.from.theme] : []))),
+  ];
+  const kept = set.filter((one) => !isOwn(one)).length;
+  return kept === 0 ? "" : `${keysSaid(kept)} from ${parents.join(" and ")}`;
+}
+
+/** **What the theme `name` sets of `set`, in a sentence's words**: the start of the line its
+ *  families follow, where it sets keys of its own or its options do; else the whole line. */
+export function setSaid(name: string, set: readonly GalleryPart[]): string {
+  const own = set.filter(isOwn).length;
+  const kept = keptSaid(set);
+  if (own > 0) return `${name} sets ${keysSaid(own)} of`;
+  return kept === ""
+    ? `${name} sets no parts: every control is drawn as its family draws it.`
+    : `${name} sets no parts of its own, and draws ${kept}.`;
+}
+
+/** What follows the families a theme sets: what it draws of the themes it extends. */
+export function alsoSaid(set: readonly GalleryPart[]): string {
+  const kept = keptSaid(set);
+  return kept === "" ? "" : `It also draws ${kept}.`;
 }
 
 // ---------------------------------------------------------------------------------------
@@ -233,12 +277,10 @@ export function ThemeParts({
       className="flex flex-col gap-2"
     >
       {families.length === 0 ? (
-        <p className="ui-setting-help">
-          {name} sets no parts: every control is drawn as its family draws it.
-        </p>
+        <p className="ui-setting-help">{setSaid(name, set)}</p>
       ) : (
         <p className="ui-setting-help flex flex-wrap items-center gap-1">
-          {name} sets {keysSaid(set.length)} of
+          {setSaid(name, set)}
           {families.map((family) => (
             <Tooltip key={family.name} tip={family.description}>
               <Badge aria-description={`${family.description} ${keysSaid(family.keys)} set.`}>
@@ -246,6 +288,7 @@ export function ThemeParts({
               </Badge>
             </Tooltip>
           ))}
+          {alsoSaid(set) !== "" && <span>{alsoSaid(set)}</span>}
         </p>
       )}
       <Disclosure label="Show each part" size="sm">
@@ -265,12 +308,16 @@ export function PartsTree({
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<Set<Key>>(new Set());
+  // What is open while a filter is typed: what it found, until the person folds or opens a row.
+  const [found, setFound] = useState<{ query: string; open: Set<Key> }>();
   const shown = useMemo(() => partsShown(manifest, set, query), [manifest, set, query]);
-  // A filter opens what it found; clearing it leaves open what the person opened.
-  const expanded = useMemo(
-    () => (query.trim() === "" ? open : new Set<Key>([...open, ...shown.open])),
-    [open, query, shown.open],
-  );
+  const filtering = query.trim() !== "";
+  // A filter opens what it found; clearing it puts back what the person had open.
+  const expanded = !filtering
+    ? open
+    : found !== undefined && found.query === query
+      ? found.open
+      : new Set<Key>(shown.open);
   const id = "theme-parts-tree";
   return (
     <div className="flex flex-col gap-2">
@@ -288,7 +335,9 @@ export function PartsTree({
           className="max-h-96"
           items={shown.families}
           expandedKeys={expanded}
-          onExpandedChange={(keys) => setOpen(new Set(keys))}
+          onExpandedChange={(keys) =>
+            filtering ? setFound({ query, open: new Set(keys) }) : setOpen(new Set(keys))
+          }
         >
           {(family) => (
             <TreeRow
@@ -318,14 +367,16 @@ export function PartsTree({
                   key={part.id}
                   id={part.id}
                   textValue={`${family.name}.${part.name}`}
-                  description={part.description}
+                  description={`${part.description} Sets: ${part.properties.join(", ")}`}
                   content={
                     <>
                       <RowLabel>{part.name}</RowLabel>
-                      <RowDescription>{part.description}</RowDescription>
+                      <RowDescription>
+                        {part.description} Sets: {part.properties.join(", ")}
+                      </RowDescription>
                       <RowTrail>
-                        {part.set.length > 0 && (
-                          <Badge variant="accent">{part.set.length} set</Badge>
+                        {part.set.some(isOwn) && (
+                          <Badge variant="accent">{part.set.filter(isOwn).length} set</Badge>
                         )}{" "}
                         {sinceSaid(part.since, manifest)}
                       </RowTrail>
