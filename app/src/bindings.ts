@@ -126,6 +126,12 @@ export const commands = {
 	artifactRegenerateApprove: (plane: PlaneId, workspace: string, folder: string, fingerprint: string) => typedError<null, string>(__TAURI_INVOKE("artifact_regenerate_approve", { plane, workspace, folder, fingerprint })),
 	/**  **Runs artifact `folder`'s command in the session host, and puts its data in place.** */
 	artifactRegenerate: (plane: PlaneId, workspace: string, folder: string) => typedError<ArtifactRegenerated, string>(__TAURI_INVOKE("artifact_regenerate", { plane, workspace, folder })),
+	/**
+	 *  **The person's answer to a link an artifact's page followed**, pressed in the window's
+	 *  dialog: opens in the browser the link artifact webview `label` reported, never a URL the
+	 *  window names, and with `always`, keeps its host on this machine first.
+	 */
+	artifactLinkOpen: (label: string, always: boolean) => typedError<null, string>(__TAURI_INVOKE("artifact_link_open", { label, always })),
 	/**  What the window says about this launch and the session bus: nothing, on a launch with it. */
 	sessionBus: () => __TAURI_INVOKE<{
 	/**  The line it draws: why there is no bus, and what is off for the run. */

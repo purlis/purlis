@@ -39,6 +39,7 @@ import { NoticeList } from "../Notice";
 import { AnswerPanel } from "../AnswerPanel";
 import { ApproveExtension } from "../ApproveExtension";
 import { ApprovePlane } from "../ApprovePlane";
+import { ArtifactLinkDialog } from "../ArtifactLinks";
 import { AskPersona } from "../AskPersona";
 import { UseSkill } from "../UseSkill";
 import type { LandQuestion, PlaneId, StudioSkill, VaultContents } from "../bindings";
@@ -1380,6 +1381,39 @@ const DIALOGS: Opened[] = [
       render(<ArtifactRegenerate plane="p" workspace="alpha" folder="board" name="Board" />);
       await userEvent.click(await screen.findByRole("button", { name: "Regenerate" }));
     },
+  },
+  {
+    name: "an artifact's link, asked about",
+    file: "ArtifactLinks.tsx",
+    open: async () =>
+      render(
+        <ArtifactLinkDialog
+          link={{
+            label: "artifact-1",
+            url: "https://github.com/purlis/purlis/issues",
+            host: "github.com",
+            refused: null,
+          }}
+          onClose={nothing}
+        />,
+      ),
+  },
+  {
+    name: "an artifact's link, refused",
+    file: "ArtifactLinks.tsx",
+    open: async () =>
+      render(
+        <ArtifactLinkDialog
+          link={{
+            label: "artifact-1",
+            url: null,
+            host: null,
+            refused:
+              "purlis opens only https links from an artifact, so it will not open this file: link",
+          }}
+          onClose={nothing}
+        />,
+      ),
   },
   {
     name: "a pool sign-in to confirm",

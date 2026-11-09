@@ -95,6 +95,11 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 5,
     why: READ_ONCE,
   },
+  // Why the browser did not open an artifact's link (#5956), in its link dialog.
+  "ArtifactLinks.tsx": {
+    count: 1,
+    why: ACTION,
+  },
   "About.tsx": {
     count: 2,
     why:

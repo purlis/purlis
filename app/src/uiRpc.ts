@@ -45,6 +45,7 @@ export const commands = {
 	artifactRegenerateAbout: __WINDOW_ONLY_RESULT,
 	artifactRegenerateApprove: __WINDOW_ONLY_RESULT,
 	artifactRegenerate: __WINDOW_ONLY_RESULT,
+	artifactLinkOpen: __WINDOW_ONLY_RESULT,
 	/**  What the window says about this launch and the session bus: nothing, on a launch with it. */
 	sessionBus: () => __TAURI_INVOKE<{
 	/**  The line it draws: why there is no bus, and what is off for the run. */

@@ -1118,6 +1118,13 @@ pub const WINDOW_ONLY: &[&str] = &[
     "artifact_regenerate_about",
     "artifact_regenerate_approve",
     "artifact_regenerate",
+    // Opening a link an artifact's page followed (#5956, ADR 0120 §5): the person's answer in
+    // their own window, to what that window's artifact reported.
+    "artifact_link_open",
+    // A scenario test's stand-ins for the page's click and the browser (#5956): the `e2e` build
+    // only, and its window alone.
+    "artifact_link_follow",
+    "artifact_links_opened",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on

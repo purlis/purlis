@@ -24,6 +24,7 @@ import {
   type ArtifactApprovalChanged,
   type ArtifactKeyPressed,
 } from "./artifacts";
+import { ArtifactLinks } from "./ArtifactLinks";
 import { ArtifactQueries } from "./ArtifactQueries";
 import { ArtifactRegenerate } from "./ArtifactRegenerate";
 import { artifactDataIn, artifactsIn, useViewChanged } from "./planeChanged";
@@ -120,6 +121,7 @@ export function ArtifactTab({
         )}
         <ArtifactRegenerate plane={plane} workspace={workspace} folder={folder} name={name} />
       </header>
+      {opened === null ? null : <ArtifactLinks label={opened.label} />}
       {unpinned ? (
         <EmptyState
           headline={`${name} is unpinned`}
