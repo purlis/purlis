@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794190701460,
+  "lastUpdate": 1794193382018,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -44184,6 +44184,48 @@ window.BENCHMARK_DATA = {
             "value": 102.0533725,
             "unit": "ms",
             "extra": "median of 5 runs: 101.124, 101.800, 102.053, 102.122, 102.352 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f2f3fee88e762cee90a08d377e02350e30927787",
+          "message": "Theme import: a hold measures the tints only once the theme as written clears the floors, and a walk skips a hold its as-written rounds rule out (#3597) (#5903)\n\nA hold's round decides from what the theme as written breaks whenever it\nbreaks anything, so the tint sweeps (each workspace tint and every whole\ndegree) are now measured only in a round where it breaks nothing. The same\nloop, stopped there, gives the fewest tokens a hold draws as purlis's own;\nan import's walk skips the full hold for a point that count already rules\nout. Every answer is the same: the theme suite passes unchanged.\n\nLocal debug, same machine, back to back: theme:: summed 822 -> 548 s,\nslowest theme test 72 -> 18.5 s, theme::import_tests 272 -> 81 s.\n\nRefs #3597\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YXMT5TZQ20XF0A79DW6KRG\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-09T02:21:20Z",
+          "tree_id": "aaa0b8b1521abef22828eaa37bdb12d4e3b0b5cd",
+          "url": "https://github.com/purlis/purlis/commit/f2f3fee88e762cee90a08d377e02350e30927787"
+        },
+        "date": 1794193376215,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5260775,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.495, 0.522, 0.526, 0.532, 0.543 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.328106499999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.179, 16.309, 16.328, 16.338, 16.540 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.848146,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.158, 100.841, 100.848, 101.725, 105.715 ms"
           }
         ]
       }
