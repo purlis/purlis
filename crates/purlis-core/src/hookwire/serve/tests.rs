@@ -317,6 +317,16 @@ fn an_ask_sent_with_more_than_one_descriptor_is_refused_and_every_one_closed() {
             .map(|_| UnixStream::pair().expect("a pair"))
             .unzip();
         let window = UnixStream::connect(beside(&hook)).expect("connected");
+        // Each deadline set while its other end is still open: macOS refuses to set one on a
+        // socket whose peer has closed (`EINVAL`).
+        window
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .expect("a deadline");
+        for other in &others {
+            other
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .expect("a deadline");
+        }
         let mut line = serde_json::to_vec(&ServeAsk {
             chat: 3,
             serve: 5173,
@@ -339,15 +349,9 @@ fn an_ask_sent_with_more_than_one_descriptor_is_refused_and_every_one_closed() {
         // Only the window's copies are left open now.
         drop(sent);
         // The window closes its end once it has dealt with the ask.
-        window
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .expect("a deadline");
         let mut end = [0u8; 1];
         assert_eq!((&window).read(&mut end).expect("its end"), 0);
         for mut other in others {
-            other
-                .set_read_timeout(Some(Duration::from_secs(5)))
-                .expect("a deadline");
             assert_eq!(
                 other.read(&mut end).expect("ended, not waited on"),
                 0,
