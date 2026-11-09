@@ -702,14 +702,14 @@ fn each_skills_entry_its_chats_start_without_is_a_warning_with_its_fix() {
             (
                 Level::Warn,
                 "`skills:` entry ':x' names no skill, so its chats load nothing for it. Write \
-                 `purlis:<name>` for a built-in skill, `<plugin>:<name>` for a plugin's, or a \
-                 skill's name"
+                 `purlis:<name>` for a built-in skill, `<plugin>:<name>` for a plugin's, \
+                 `workspaces/<ws>:<name>` for another workspace's, or a skill's name"
             ),
             (
                 Level::Warn,
                 "`skills:` entry 'plugin:' names no skill, so its chats load nothing for it. \
                  Write `purlis:<name>` for a built-in skill, `<plugin>:<name>` for a plugin's, \
-                 or a skill's name"
+                 `workspaces/<ws>:<name>` for another workspace's, or a skill's name"
             ),
             (
                 Level::Warn,
@@ -728,6 +728,38 @@ fn each_skills_entry_its_chats_start_without_is_a_warning_with_its_fix() {
                 Level::Warn,
                 "`skills:` names sp:gone: no harness this project's profiles run has it on this \
                  machine, so its chats start without it. Install its plugin, or fix the name"
+            ),
+        ]
+    );
+}
+
+#[test]
+fn a_skills_entry_naming_a_workspace_or_a_workspace_skill_that_is_not_there_is_a_warning() {
+    // #2933: another workspace's skill is the plane's alone, so it is checked with nowhere on the
+    // machine to look, and one that is there is no warning.
+    let p = naming(
+        "workspaces/ws:triage, workspaces/gone:triage, workspaces/ws:nope, workspaces/a/b:x",
+    );
+    let l = linter(&p).with_built_in(None).with_studio(true);
+    assert_eq!(
+        messages(&l.definition("s")),
+        vec![
+            (
+                Level::Warn,
+                "`skills:` entry 'workspaces/a/b:x' names no skill, so its chats load nothing \
+                 for it. Write `purlis:<name>` for a built-in skill, `<plugin>:<name>` for a \
+                 plugin's, `workspaces/<ws>:<name>` for another workspace's, or a skill's name"
+            ),
+            (
+                Level::Warn,
+                "`skills:` names workspaces/gone:triage: the project has no workspace gone, so \
+                 its chats start without it. Fix the workspace's name: `purlis workspace list` \
+                 lists them"
+            ),
+            (
+                Level::Warn,
+                "`skills:` names workspaces/ws:nope: the workspace ws has no skill of this name, \
+                 so its chats start without it. Make the skill there, or fix the name"
             ),
         ]
     );

@@ -3526,3 +3526,74 @@ fn a_set_its_runner_said_is_offered_and_typed_as_one_armed_here() {
     assert_eq!(held.level.map(|level| level.origin), Some(Origin::Project));
     assert!(chat.typed("someday", &[], &salt).is_err());
 }
+
+// ---- another workspace's skill a persona names (SK-5a, #2933) ---------------------------------
+
+#[test]
+fn the_studio_as_the_persona_lists_another_workspaces_skill_it_names_with_its_level() {
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    let deploy = plane.join("workspaces/ops/skills/deploy");
+    std::fs::create_dir_all(&deploy).unwrap();
+    std::fs::write(
+        deploy.join("SKILL.md"),
+        "---\nname: deploy\ndescription: Deploys.\n---\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(plane.join("workspaces/smart-ide")).unwrap();
+    std::fs::write(plane.join("charter.toml"), "[plane]\n").unwrap();
+    let at = plane.join("personas/steward");
+    std::fs::create_dir_all(&at).unwrap();
+    std::fs::write(
+        at.join("persona.md"),
+        "---\nskills: workspaces/ops:deploy, workspaces/ops:nope\n---\n",
+    )
+    .unwrap();
+    let env = crate::harness_plugin::Env {
+        chat: &[],
+        home: Some(tmp.path().join("home")),
+        process: false,
+    };
+
+    let list = studio_list(None, &plane, Some("smart-ide"), Some("steward"), &env);
+
+    type Shown<'a> = (&'a str, Origin, &'a str, bool, &'a str, String, Option<&'a str>);
+    let rows: Vec<Shown<'_>> = list
+        .rows
+        .iter()
+        .map(|row| {
+            (
+                row.name.as_str(),
+                row.origin,
+                row.written.as_str(),
+                row.named,
+                row.folder.as_str(),
+                row.level_label(),
+                row.left_out.as_deref(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            (
+                "deploy",
+                Origin::Workspace,
+                "workspaces/ops:deploy",
+                true,
+                "workspaces/ops/skills/deploy",
+                "workspace ops".to_owned(),
+                None
+            ),
+            (
+                "workspaces/ops:nope",
+                Origin::Workspace,
+                "workspaces/ops:nope",
+                true,
+                "workspaces/ops",
+                "workspace ops".to_owned(),
+                Some("its persona names it, and that workspace has no skill of this name")
+            ),
+        ]
+    );
+}

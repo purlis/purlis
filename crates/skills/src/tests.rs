@@ -2141,7 +2141,11 @@ fn a_named_workspace_or_skill_that_is_not_there_is_left_out_saying_which() {
     );
 
     assert!(set.effective.is_empty(), "{:?}", set.effective);
-    assert!(set.from_the_harness.is_empty(), "{:?}", set.from_the_harness);
+    assert!(
+        set.from_the_harness.is_empty(),
+        "{:?}",
+        set.from_the_harness
+    );
     assert_eq!(
         set.left_out
             .iter()

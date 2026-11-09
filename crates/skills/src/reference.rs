@@ -72,11 +72,10 @@ impl Reference {
         }
         if let Some(workspace) = prefix.strip_prefix(WORKSPACE_PREFIX) {
             let workspace = workspace.trim();
-            return crate::plain(workspace)
-                .then(|| Self::Workspace {
-                    workspace: workspace.to_owned(),
-                    name: name.to_owned(),
-                });
+            return crate::plain(workspace).then(|| Self::Workspace {
+                workspace: workspace.to_owned(),
+                name: name.to_owned(),
+            });
         }
         Some(if BUILT_IN_PREFIXES.contains(&prefix) {
             Self::BuiltIn(built_in_named(name))

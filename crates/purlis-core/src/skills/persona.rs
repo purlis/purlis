@@ -39,7 +39,9 @@ pub fn brings(plane: &Path, persona: &str) -> usize {
 /// plane at `plane`, once each in the order the list names them: a built-in skill purlis has
 /// none of in `built_in` ([`Reason::NoSuchBuiltIn`]), and a harness skill, or a bare name no
 /// plane level the persona's chats can reach holds, that no harness the project's profiles run
-/// has on this machine under `env` ([`Reason::NotOnThisMachine`]). A bare name a workspace's
+/// has on this machine under `env` ([`Reason::NotOnThisMachine`]); and another workspace's skill
+/// (`workspaces/<ws>:<name>`, #2933) whose workspace is not there ([`Reason::NoSuchWorkspace`])
+/// or holds no skill of its name ([`Reason::NotInItsWorkspace`]). A bare name a workspace's
 /// skill has is one a chat in that workspace gets, so it is none of these. With `env` `None`
 /// nothing is looked for on the machine, and no entry is said to be missing from it. What
 /// `persona lint` and the `project-skills` fix say of a persona's list, so they agree.
@@ -65,7 +67,10 @@ pub(crate) fn unresolved(
             left.name == written
                 && matches!(
                     left.reason,
-                    Reason::NotOnThisMachine | Reason::NoSuchBuiltIn
+                    Reason::NotOnThisMachine
+                        | Reason::NoSuchBuiltIn
+                        | Reason::NoSuchWorkspace
+                        | Reason::NotInItsWorkspace
                 )
         }) else {
             continue;

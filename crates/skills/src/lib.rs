@@ -1139,7 +1139,14 @@ fn built_in_level(set: &mut SkillSet, machine: &Machine<'_>, route: Route) {
         return;
     };
     let root = dir.parent().unwrap_or(dir);
-    level(set, (root, dir), (Origin::BuiltIn, false), route, None, |_| None);
+    level(
+        set,
+        (root, dir),
+        (Origin::BuiltIn, false),
+        route,
+        None,
+        |_| None,
+    );
 }
 
 /// `persona`'s local skills, then its shared ones, in the plane at `plane`, into `set`.

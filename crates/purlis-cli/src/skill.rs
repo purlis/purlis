@@ -3709,9 +3709,10 @@ fn say_users(users: &verbs::Users) {
     }
 }
 
-/// The level a row is shown at, as the studio shows it: `project`, `local project`.
+/// The level a row is shown at, as the studio shows it: `project`, `local project`, and
+/// `workspace ops` for another workspace's skill a persona names by its workspace (#2933).
 fn level(row: &StudioRow) -> String {
-    purlis_core::skills::level_shown(row.origin, row.local)
+    row.level_label()
 }
 
 /// `on`, or why it is left out.
