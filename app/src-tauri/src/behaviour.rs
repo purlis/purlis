@@ -1152,7 +1152,10 @@ impl OnTheRunner {
                 .join(name)
                 .join(purlis_core::profilestore::CONFIG)
         } else {
-            PathBuf::from(format!("/home/purlis/.{harness}-{name}"))
+            // In the runner's home: `/home/purlis` in a Docker pool's container, the kept
+            // volume's folder in a cluster pool's pod.
+            let home = self.prints("printf %s \"$HOME\"");
+            Path::new(home.trim()).join(format!(".{harness}-{name}"))
         };
         // A profile purlis makes keeps its data beside its config (`profilestore::create`).
         let data = (harness == "opencode").then(|| {
@@ -4115,7 +4118,7 @@ fn a_real_claude_code_chat_on_a_runners_default_folder_is_held_as_a_codex_chat_i
 /// Which Claude Code folder a probe's chat runs on.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ClaudeFolder {
-    /// A profile of the runner's own, `/home/purlis/.claude-work`, named by `CLAUDE_CONFIG_DIR`.
+    /// A profile of the runner's own, `~/.claude-work`, named by `CLAUDE_CONFIG_DIR`.
     Made,
     /// The runner's own `~/.claude`, adopted in place, named by no variable.
     TheRunnersDefault,
