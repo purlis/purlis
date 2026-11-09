@@ -196,6 +196,65 @@ describe("the needs-you dot (#3652)", () => {
   });
 });
 
+describe("a chip's working mark (#3127)", () => {
+  it("says in the chip's description that a chat is working there, after what waits", () => {
+    render(<WorkspaceChip name="release" waiting={2} working={1} />);
+    const chip = screen.getByRole("button", { name: "release" });
+    expect(chip).toHaveAccessibleDescription("2 waiting, 1 chat working");
+  });
+
+  it("counts the chats working, and says nothing where none is", () => {
+    render(
+      <>
+        <WorkspaceChip name="alpha" working={3} />
+        <WorkspaceChip name="beta" working={0} />
+      </>,
+    );
+    expect(screen.getByRole("button", { name: "alpha" })).toHaveAccessibleDescription(
+      "3 chats working",
+    );
+    expect(screen.getByRole("button", { name: "beta" })).not.toHaveAttribute("aria-describedby");
+  });
+
+  it("says it on the plane root's house too", () => {
+    render(
+      <RootChip
+        name="Outside every workspace"
+        current={false}
+        working={1}
+        onPress={() => undefined}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Outside every workspace" }),
+    ).toHaveAccessibleDescription("1 chat working");
+  });
+
+  it("is the chat mark's working ring, in the chip's slot beside the chip, which no one hears", () => {
+    const { container } = render(
+      <ChipSlot working>
+        <WorkspaceChip name="release" working={1} />
+      </ChipSlot>,
+    );
+    const mark = container.querySelector('[data-scope="chat-mark"][data-part="root"]');
+    expect(mark).toHaveAttribute("data-variant", "working");
+    // Beside the chip, not in it: the chip's words stay what it draws.
+    expect(mark?.closest('[data-part="workspace"]')).toBeNull();
+    expect(mark?.parentElement).toHaveAttribute("data-part", "slot");
+    expect(mark?.querySelector('[data-part="badge"]')).toHaveAttribute("aria-hidden", "true");
+    expect(mark?.querySelector('[data-part="word"]')).toBeNull();
+  });
+
+  it("draws nothing in the slot while no chat is working", () => {
+    const { container } = render(
+      <ChipSlot>
+        <WorkspaceChip name="release" />
+      </ChipSlot>,
+    );
+    expect(container.querySelector('[data-scope="chat-mark"]')).toBeNull();
+  });
+});
+
 describe("the plane root's chip (#3654)", () => {
   it("is a button named for the root, the workspace chip's root variant, drawing a house", () => {
     render(<RootChip name="Plane root" current={false} onPress={() => undefined} />);
@@ -267,6 +326,20 @@ describe("its stylesheet (R101, R103, R153, R167)", () => {
         .join("}");
       expect(body, state).not.toMatch(/padding|block-size|inline-size|border-width|font-size/);
     }
+  });
+
+  it("lays the working mark over the slot's lower trailing corner, ringed in the bar's ground, so it moves nothing (#3127)", () => {
+    const slot = rule('[data-part="slot"][data-scope="titlebar"]');
+    expect(slot).toContain("position: relative");
+    expect(slot).toContain("--chat-mark-ground: var(--surface-deep)");
+    const mark = rule(".titlebar-working");
+    expect(mark).toContain("position: absolute");
+    expect(mark).toContain("inset-block-end:");
+    expect(mark).toContain("inset-inline-end:");
+    // Above the chip's fill, and never in the way of a press on the chip.
+    expect(mark).toContain("pointer-events: none");
+    // Still: no animation, no transition.
+    expect(mark).not.toMatch(/animation|transition/);
   });
 
   it("draws the chosen chip on the accent's wash, never the hovered one's fill (#3345)", () => {

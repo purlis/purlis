@@ -11,6 +11,8 @@ import { onAMac } from "./tabKeys";
 import { forgetRailMode, RAIL_MODE } from "./railMode";
 import { forgetTheSlide } from "./railSlide";
 import { FRAME, MOMENTUM, played, STROKE, type Traced } from "./swipeTraces.testkit";
+import { CHAT_EVENTS } from "./chatEvents";
+import { aBatchOf } from "./chatEvents.testkit";
 
 /**
  * **The project in front and its workspaces in the title bar** (#2916, spec #2897 R90–R115), on
@@ -72,7 +74,9 @@ function chat(plane: string, session: number, workspace: string) {
  * Two projects, `one` in front, each with three workspaces and one chat in `alpha`; `one` has
  * `alpha` and `gamma` pinned, in that order. The store keeps a pin written, as the core does.
  */
-function core() {
+function core({ working = [] as number[] } = {}) {
+  /** Every handler the window listens to chats' moves with, so a test can push one. */
+  const moves: number[] = [];
   const pinned = new Map<string, string[]>([
     [ONE, ["alpha", "gamma"]],
     [TWO, []],
@@ -82,6 +86,11 @@ function core() {
     const given = (args ?? {}) as Record<string, unknown>;
     asked.push({ cmd, args: given });
     const plane = (given.plane as string | undefined) ?? "";
+    if (cmd === "plugin:event|listen") {
+      const { event, handler } = given as { event: string; handler: number };
+      if (event === CHAT_EVENTS) moves.push(handler);
+      return 1;
+    }
     if (cmd === "plane_at_launch") return { plane: null, from: null, why: null };
     if (cmd === "planes_to_restore")
       return { windows: [{ planes: [ONE, TWO], active: 0 }], dropped: [] };
@@ -111,14 +120,41 @@ function core() {
       pinned.set(plane, given.pinned ? [...was, name] : was.filter((one) => one !== name));
       return null;
     }
-    if (cmd === "chat_states") return [];
+    // The chats in their turn, as their hooks last said (ADR 0076): project one's only.
+    if (cmd === "chat_states")
+      return plane === ONE
+        ? working.map((session) => ({ session, state: "running", queue: [], sequence: 1 }))
+        : [];
     if (cmd === "chats_that_would_not_start") return [];
     if (cmd === "running_sessions") return [];
     if (cmd === "recent_planes") return { planes: [], dropped: [], forgetful: null };
     if (cmd === "extensions_on") return [];
     return null;
   });
-  return { asked, pinned };
+  return {
+    asked,
+    pinned,
+    /** A chat's hook says where its turn is now, as the core pushes it. */
+    moved(session: number, state: "running" | "waiting", sequence: number) {
+      for (const handler of moves)
+        window.__TAURI_INTERNALS__.runCallback(handler, {
+          event: CHAT_EVENTS,
+          id: 1,
+          payload: aBatchOf("moved", {
+            plane: ONE,
+            session,
+            state,
+            needs_you: false,
+            queue: [],
+            moved_at: sequence,
+            sequence,
+            reports: [],
+            refusals: [],
+            children: [],
+          }),
+        });
+    },
+  };
 }
 
 const bar = () => screen.getByTestId("title-bar");
@@ -192,6 +228,33 @@ describe("the title bar names the project and its pins (R92, R101, R110)", () =>
     await waitFor(() => expect(chips()).toEqual(["alpha*", "gamma"]));
     await userEvent.click(within(pins()).getByRole("button", { name: "gamma" }));
     await waitFor(() => expect(chips()).toEqual(["alpha", "gamma*"]));
+  });
+});
+
+describe("a chip's working mark (#3127)", () => {
+  /** The chip of `name` in the strip, and the chat mark beside it in its slot, if any. */
+  const chipOf = (name: string) => within(pins()).getByRole("button", { name });
+  const markOf = (name: string) =>
+    chipOf(name)
+      .closest('[data-part="slot"]')
+      ?.querySelector('[data-scope="chat-mark"][data-variant="working"]') ?? null;
+
+  it("marks the pin of the workspace a chat is working in, and says so, until its turn ends", async () => {
+    const { moved } = core({ working: [1] });
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*", "gamma"]));
+    await waitFor(() => expect(chipOf("alpha")).toHaveAccessibleDescription("1 chat working"));
+    expect(markOf("alpha")).not.toBeNull();
+    // Only where a chat works: gamma has none.
+    expect(markOf("gamma")).toBeNull();
+    expect(chipOf("gamma")).not.toHaveAttribute("aria-describedby");
+    // Its hook says the turn ended: the mark goes, and the description with it.
+    moved(1, "waiting", 2);
+    await waitFor(() => expect(markOf("alpha")).toBeNull());
+    expect(chipOf("alpha")).not.toHaveAttribute("aria-describedby");
+    // And a new turn brings it back.
+    moved(1, "running", 3);
+    await waitFor(() => expect(markOf("alpha")).not.toBeNull());
   });
 });
 

@@ -12,6 +12,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useMemo, useState } from "react";
 import { expect, screen, waitFor, within } from "storybook/test";
 import { OUTSIDE } from "../../actions";
+import { Button } from "../button/Button";
 import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 import { TitleBarSwitch, type SwitchProject } from "../../TitleBarSwitch";
 
@@ -55,7 +56,14 @@ const THOUSAND: [string, number][] = Array.from({ length: 1_000 }, (_, at) => [
   at % 7 === 0 ? 1 : 0,
 ]);
 
-function TheBar({ railShown = true, focusedAt = "smart-ide", many = false }) {
+function TheBar({
+  railShown = true,
+  focusedAt = "smart-ide",
+  many = false,
+  working: workingAt = [] as string[],
+}) {
+  /** The workspaces of the project in front a chat is working in (#3127), one chat each. */
+  const [working, setWorking] = useState<readonly string[]>(workingAt);
   const [front, setFront] = useState(START[0].plane);
   const [focused, setFocused] = useState<Record<string, string>>({
     [START[0].plane]: focusedAt,
@@ -84,9 +92,13 @@ function TheBar({ railShown = true, focusedAt = "smart-ide", many = false }) {
           pins: pins[one.plane],
           focused: focused[one.plane],
           waiting: Object.fromEntries([[OUTSIDE, 0], ...one.ws]),
+          working:
+            one.plane === START[0].plane
+              ? Object.fromEntries(working.map((name) => [name, 1]))
+              : undefined,
         },
       })),
-    [focused, pins, many],
+    [focused, pins, many, working],
   );
   return (
     <div style={{ display: "grid", gap: "var(--space-6)" }}>
@@ -122,6 +134,23 @@ function TheBar({ railShown = true, focusedAt = "smart-ide", many = false }) {
       <p role="status" style={{ margin: 0 }}>
         {said}
       </p>
+      {workingAt.length > 0 && (
+        <span>
+          <Button
+            variant="secondary"
+            size="sm"
+            onPress={() =>
+              setWorking((was) =>
+                was.includes("charter")
+                  ? was.filter((one) => one !== "charter")
+                  : [...was, "charter"],
+              )
+            }
+          >
+            A chat in charter
+          </Button>
+        </span>
+      )}
     </div>
   );
 }
@@ -312,6 +341,63 @@ export const ChosenStates: Story = {
     // The picture: the chosen chip under the pointer.
     chosen.blur();
     await point(chosen);
+  },
+};
+
+/**
+ * **A chip's working mark** (#3127): while a chat is working in a workspace, its chip's slot holds
+ * the chat mark's working ring on the chip's lower trailing corner, ringed in the bar's ground.
+ * A shape, said in the chip's description, and still; coming and going it moves no chip by a
+ * pixel. The picture is smart-ide (current, waiting) beside charter and skills, each with a
+ * chat working.
+ */
+export const Working: Story = {
+  args: { working: ["skills", "charter"] },
+  play: async ({ canvas, userEvent }) => {
+    const bar = canvas.getByTestId("title-bar");
+    const chips = chipsOf(bar);
+    const named = (name: string) => chips.find((one) => one.dataset.chipOf === name);
+    const markOf = (chip: HTMLElement | undefined) =>
+      chip
+        ?.closest('[data-part="slot"]')
+        ?.querySelector<HTMLElement>('[data-scope="chat-mark"][data-variant="working"]') ?? null;
+    const charter = named("charter");
+    const smartIde = named("smart-ide");
+    await expect(markOf(charter)).not.toBeNull();
+    await expect(markOf(named("skills"))).not.toBeNull();
+    await expect(markOf(smartIde)).toBeNull();
+    await expect(charter).toHaveAccessibleDescription("1 chat working");
+    await expect(smartIde).toHaveAccessibleDescription("1 waiting");
+    // A ring the eye reads on the bar's ground: 3:1, as a mark (WCAG 1.4.11).
+    const badge = markOf(charter)?.querySelector<HTMLElement>('[data-part="badge"]');
+    if (badge === null || badge === undefined) throw new Error("the mark draws no badge");
+    const ground = composited(getComputedStyle(badge).backgroundColor, groundOf(badge));
+    const ring = composited(getComputedStyle(badge).color, `rgb(${ground.join(", ")})`);
+    const [light, dark] = [luminance(ring), luminance(ground)].sort((a, b) => b - a);
+    await expect((light + 0.05) / (dark + 0.05)).toBeGreaterThanOrEqual(3);
+    // Still: it never moves itself.
+    await expect(badge.getAnimations()).toEqual([]);
+    // Coming and going, it moves no chip by a pixel, and a press on the chip still reaches it.
+    const boxes = () =>
+      chips.map((one) => {
+        const { left, width, top, height } = one.getBoundingClientRect();
+        return `${left},${top} ${width}x${height}`;
+      });
+    const before = boxes();
+    const toggle = canvas.getByRole("button", { name: "A chat in charter" });
+    await userEvent.click(toggle);
+    await waitFor(() => expect(markOf(charter)).toBeNull());
+    await expect(charter).not.toHaveAttribute("aria-describedby");
+    await expect(boxes()).toEqual(before);
+    await userEvent.click(toggle);
+    await waitFor(() => expect(markOf(charter)).not.toBeNull());
+    await expect(boxes()).toEqual(before);
+    // The keyboard walks the chips as ever: the mark is no stop.
+    smartIde?.focus();
+    await userEvent.keyboard("{ArrowRight}");
+    await expect(charter).toHaveFocus();
+    expectFocusInSight();
+    charter?.blur();
   },
 };
 

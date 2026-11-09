@@ -101,6 +101,9 @@ export type ReportedWorkspaces = {
   standing?: readonly StandingNotice[];
   focused?: string;
   waiting: Readonly<Record<string, number>>;
+  /** **How many chats are working in each workspace** (#3127), by name, the root's under its own
+   *  (`actions.OUTSIDE`); a workspace with none is not here. Its chip's working mark. */
+  working?: Readonly<Record<string, number>>;
 };
 
 /** What a project asks the WINDOW to do, because the window is what holds projects. */

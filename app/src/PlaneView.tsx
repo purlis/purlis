@@ -10851,6 +10851,17 @@ export const PlaneView = memo(function PlaneView({
   // **When a chat moved is not the report's** (#4727): a busy chat moves many times a second,
   // and each report is the window's root drawn again. What ordered projects by it was the
   // project strip's show-more, which went with the strip (ADR 0054, amended 2026-10-23).
+  /** **Every chat the plane lists, by the workspace it files it in** (`OUTSIDE` for the root):
+   *  what a chip's working mark counts (#3127). */
+  const filedChats = useMemo(
+    () => [
+      ...(sidebar?.workspaces ?? []).flatMap((ws) =>
+        ws.chats.map((chat) => ({ session: chat.session, workspace: ws.name })),
+      ),
+      ...(sidebar?.unfiled ?? []).map((chat) => ({ session: chat.session, workspace: OUTSIDE })),
+    ],
+    [sidebar],
+  );
   /** Its sessions, for the status line's count of the ones running. */
   const quitSessions = useMemo(() => quitting.map((chat) => chat.session), [quitting]);
   // **Who it was sent to, and for which project, are part of what was sent** (#1037): a new
@@ -10862,8 +10873,10 @@ export const PlaneView = memo(function PlaneView({
         plane: PlaneId;
         mine: typeof mine;
         waitingIn: typeof waitingIn;
+        filedChats: typeof filedChats;
         quitting: Leaving[];
         doing: State[];
+        working: Readonly<Record<string, number>>;
         owning: (OwnWork | undefined)[];
         queued: typeof queued;
         queue: readonly number[];
@@ -10879,6 +10892,12 @@ export const PlaneView = memo(function PlaneView({
       // ends (#5748).
       const owning = quitting.map((chat) => ownWorkOf(states, chat.session));
       const queue = states.needsYou;
+      // **How many chats are working in each workspace** (#3127): its chip's mark. A chat in its
+      // turn, its own work in flight included (`inItsTurn`), as a hook says it (ADR 0076). Every
+      // chat the plane lists, where it files it: a chat need not have a tab (#4758).
+      const working: Record<string, number> = {};
+      for (const { session, workspace } of filedChats)
+        if (inItsTurn(states, session)) working[workspace] = (working[workspace] ?? 0) + 1;
       const was = reported.current;
       const sameQueue = was?.queued === queued && sameList(was.queue, queue);
       if (
@@ -10886,8 +10905,10 @@ export const PlaneView = memo(function PlaneView({
         was.plane === plane &&
         was.mine === mine &&
         was.waitingIn === waitingIn &&
+        was.filedChats === filedChats &&
         was.quitting === quitting &&
         sameList(was.doing, doing) &&
+        sameCounts(was.working, working) &&
         // The same length as `doing`'s, each built off `quitting`, which is the same.
         was.owning.every((work, at) => sameOwnWork(work, owning[at])) &&
         sameQueue
@@ -10900,8 +10921,10 @@ export const PlaneView = memo(function PlaneView({
         plane,
         mine,
         waitingIn,
+        filedChats,
         quitting,
         doing,
+        working,
         owning,
         queued,
         queue,
@@ -10916,6 +10939,7 @@ export const PlaneView = memo(function PlaneView({
               waiting: Object.fromEntries(
                 [OUTSIDE, ...mine.workspaces.names].map((name) => [name, waitingIn(queue, name)]),
               ),
+              working,
             };
       onReport(plane, {
         ...mine,
@@ -10930,7 +10954,7 @@ export const PlaneView = memo(function PlaneView({
     };
     report();
     return chats.store.subscribe(report);
-  }, [chats, quitting, mine, onReport, plane, queued, waitingIn]);
+  }, [chats, filedChats, quitting, mine, onReport, plane, queued, waitingIn]);
 
   const frontChat = frontTab && reopened.find((chat) => chat.session === chatOf(tabs, frontTab.id));
 
@@ -13070,6 +13094,17 @@ function tabsSaid(panels: readonly PanelView[] | undefined): string {
 }
 
 /** A chat a quit would end, before what it is doing is looked up (`PlaneReport.ending`). */
+/** Whether two counts by name say the same, so a report that changes neither is not sent. */
+function sameCounts(
+  one: Readonly<Record<string, number>>,
+  other: Readonly<Record<string, number>>,
+): boolean {
+  const names = Object.keys(one);
+  return (
+    names.length === Object.keys(other).length && names.every((name) => one[name] === other[name])
+  );
+}
+
 type Leaving = { session: number; chat: Omit<Ending, "state"> };
 
 /** The size a session starts at. The pane it lands in tells it the real one at once. */

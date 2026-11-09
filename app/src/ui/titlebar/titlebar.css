@@ -238,6 +238,23 @@
   position: relative;
   display: inline-flex;
   flex: none;
+  /* What the working mark rings its badge in (`ui/chat-mark`, #3127): the bar's own ground,
+     whatever the chip's fill, as the dot's ring and the count's wash are (D-3345-3). */
+  --chat-mark-ground: var(--surface-deep);
+}
+
+/* **A chip's working mark** (#3127): the chat mark family's working ring, its badge alone, laid
+   over the chip's lower trailing corner, opposite the notice dot, and 3px into the strip's room
+   under the chip (its 6px, which the dot uses above). Laid over the slot, so it coming and going
+   moves nothing (R153); it never moves itself (no spin, no arrival). A press goes through it to
+   the chip. Its colour and its ring are the chat mark's, so a theme that recolours a working chat
+   recolours this. */
+.titlebar-working {
+  position: absolute;
+  z-index: 1;
+  inset-block-end: calc(var(--space-1) * -1.5);
+  inset-inline-end: 0;
+  pointer-events: none;
 }
 
 [data-kind][data-scope="titlebar"] {

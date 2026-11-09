@@ -339,6 +339,8 @@ export function TitleBarSwitch({
   /** The strip's one Tab stop: the chip of the workspace in front, else the first pin, else the
    *  ⌄ (charter-app#189). */
   const stop = unpinned ?? (focused !== undefined && pins.includes(focused) ? focused : pins[0]);
+  /** How many chats are working in `workspace` (#3127): its chip's mark and description. */
+  const workingIn = (workspace: string) => workspaces?.working?.[workspace] ?? 0;
   /** What a chip's dot and description say of the notices hung from it (#3648). */
   const noticesOn = (workspace: string) => {
     const on = notices?.on.get(workspace) ?? [];
@@ -363,7 +365,7 @@ export function TitleBarSwitch({
     const shows = noticesOn(workspace);
     const asker = notices?.needs?.get(workspace);
     return (
-      <ChipSlot>
+      <ChipSlot working={workingIn(workspace) > 0}>
         {shows !== undefined &&
           notices !== undefined &&
           // A ✋ stays until its chat is answered, whatever card is up (#3652).
@@ -401,6 +403,7 @@ export function TitleBarSwitch({
         current={workspace === focused}
         tabIndex={workspace === stop ? 0 : -1}
         waiting={workspaces?.waiting[workspace] ?? 0}
+        working={workingIn(workspace)}
         notices={noticesOn(workspace)}
         tooltip={at < 9 ? `${workspace} · ${pinKeySaid(at + 1, mac)}` : workspace}
         onClick={() => goTo(workspace)}
@@ -455,6 +458,7 @@ export function TitleBarSwitch({
             name={OUTSIDE_TITLE}
             current={focused === OUTSIDE}
             notices={noticesOn(OUTSIDE)}
+            working={workingIn(OUTSIDE)}
             onPress={() => goTo(OUTSIDE)}
           />,
         )}
@@ -474,6 +478,7 @@ export function TitleBarSwitch({
                   current
                   tabIndex={0}
                   waiting={workspaces?.waiting[unpinned] ?? 0}
+                  working={workingIn(unpinned)}
                   notices={noticesOn(unpinned)}
                   tooltip={`Pin ${unpinned}`}
                   onClick={() => does.pin(inFront, unpinned, true)}
