@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794177224286,
+  "lastUpdate": 1794185699076,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -8940,6 +8940,42 @@ window.BENCHMARK_DATA = {
             "value": 292.2,
             "unit": "MB",
             "extra": "median of 6 samples: 432.8, 387.4, 307.8, 273.9, 276.7, 209.1 MB; window 216.3 MB, session host 75.9 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "3a0787bfcc8b373a6f6d5a3175eecef6495f5c53",
+          "message": "Parts floors: a surface with no fill stands on its parent's ground until a theme fills it (#5863) (#5870)\n\n* Parts floors: a surface with no fill stands on its parent's ground until a theme fills it (#5863)\n\nA tree's, a table's or a plain list's row draws no fill of its own, so nothing\ndrawn in it was measured on a fill a theme gave it. surfaces_set now reads such\na look once for each ground its family stands on, in place of the default it\ndoes not draw, so every family STANDS_ON names there is held to the fill, and a\npart read on several grounds follows the same rule against each of them.\n\nFixtures: a tree and a table filled where a badge in their rows vanishes fall\nback; a filled tree whose rows read keeps its fill; a field's error is read on\na table's fill. ADR 0103 amended; changelog fragment added.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6Y25TH545F5BHQ0Y2HTG1SQ\nPurlis-Persona: steward\n\n* Parts floors: read a no-fill surface once per look, its no fill standing for each of its grounds (#5863 review)\n\nThe review found each ground of a tree read in full, doubling the cost of a\nsee-through tree fill (0.40 s against 0.185 s). A no-fill surface is now one\nentry with the default 'transparent', which defaults_under turns into the\ngrounds it stands for wherever the rules ask: drawn_on and under_part read a\npart on several grounds where one of them is among its own, and a family's\ndefault look keeps the fill only where it breaks on every one of them. The\nfield test now checks drawn_on picks the field and its help is drawn nowhere.\nADR amendment rewritten with the new numbers.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6Y25TH545F5BHQ0Y2HTG1SQ\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T21:41:15Z",
+          "tree_id": "35bd841803e7ffc04f11a30c366d210248537bb4",
+          "url": "https://github.com/purlis/purlis/commit/3a0787bfcc8b373a6f6d5a3175eecef6495f5c53"
+        },
+        "date": 1794185694214,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 2265,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1983, 2265, 2724 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 327.2,
+            "unit": "MB",
+            "extra": "median of 6 samples: 430.8, 412.1, 350.6, 303.7, 292.5, 202 MB; window 235.2 MB, session host 92 MB"
           }
         ]
       }
