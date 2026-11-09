@@ -5,5 +5,5 @@
   `purlis artifact templates` lists what your approved extensions offer, and
   `purlis artifact pin --template <extension-id>.<name>` copies one into the workspace's
   `artifacts/` and pins it as any page is: refused when it holds something shaped like a secret
-  or is too large, and its script asks each person before it runs. Not on Windows (ADR 0120,
+  or is too large, and its script asks each person before it runs. Not on Windows (ADR 0122,
   #5973).

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! `purlis queries`: the read-only entries of the one tool catalogue
-//! ([`purlis_core::catalogue`], ADR 0120 §7), for a page's author.
+//! ([`purlis_core::catalogue`], ADR 0122 §7), for a page's author.
 
 use std::process::ExitCode;
 

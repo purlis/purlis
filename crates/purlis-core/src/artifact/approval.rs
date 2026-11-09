@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **Each person's approval of an artifact's script** (ADR 0120 §4, #5959), on their own
+//! **Each person's approval of an artifact's script** (ADR 0122 §4, #5959), on their own
 //! machine: `<config>/artifact-approvals.json` (`docs/plane-format.md`, Machine tier).
 //!
 //! - **A page with no script asks nothing** ([`Standing::ScriptFree`]); a page with script runs
@@ -19,7 +19,7 @@
 //! - **Machine state, never the plane's**: a teammate's approval never reaches it, nor does a
 //!   file a teammate committed. Every unreadable state of the record (missing, malformed, a
 //!   link, too big) reads as no approval at all, so it can only ask again.
-//! - **Where the isolation is not proven** (Windows, ADR 0120 §10) script never runs and is not
+//! - **Where the isolation is not proven** (Windows, ADR 0122 §10) script never runs and is not
 //!   asked about: the page renders script-free ([`Standing::NotHere`]).
 
 use std::io::Read as _;
@@ -35,7 +35,7 @@ pub const RECORD: &str = "artifact-approvals.json";
 /// The most the record may be: one short entry per approved folder.
 const MOST_BYTES: u64 = 1 << 20;
 
-/// **Whether an artifact's script may run on this platform at all** (ADR 0120 §10): only where
+/// **Whether an artifact's script may run on this platform at all** (ADR 0122 §10): only where
 /// the five isolation tests of §3 pass. Not yet on Windows (WebView2).
 pub const SCRIPT_RUNS_HERE: bool = cfg!(not(windows));
 
@@ -207,7 +207,7 @@ pub fn approve(
     })
 }
 
-/// **Grants the page approved as `pin_id` and `fingerprint` its plane-scoped queries** (ADR 0120
+/// **Grants the page approved as `pin_id` and `fingerprint` its plane-scoped queries** (ADR 0122
 /// §7, #5969): a grant of its own, beside its approval and only on top of it, which a new
 /// approval of the folder (a changed template or pin) drops. Only purlis's bar calls this.
 pub fn grant_plane(

@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! `purlis queries` (ADR 0120 §7, #5951): every read-only entry of the one tool catalogue, with
+//! `purlis queries` (ADR 0122 §7, #5951): every read-only entry of the one tool catalogue, with
 //! its shape, scope and since, asked of the binary as a page's author would ask it. It reads no
 //! plane, so it answers outside one.
 

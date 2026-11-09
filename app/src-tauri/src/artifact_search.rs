@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **Artifacts in the palette's search** (ADR 0120, spec #5948, #5968): the project's pinned
+//! **Artifacts in the palette's search** (ADR 0122, spec #5948, #5968): the project's pinned
 //! artifacts whose pages say what was typed, found by the core
 //! ([`purlis_core::artifact::search`]) in the project's search index, or in its files where
 //! there is no index yet. A row the palette draws from one opens the artifact's own tab.

@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **A page reads an extension's query** (ADR 0120 §9, #5971): `<extension-id>.<name>@N`,
+//! **A page reads an extension's query** (ADR 0122 §9, #5971): `<extension-id>.<name>@N`,
 //! declared and admitted as a core query is, and answered by **this viewer's own** extension
 //! ([`purlis_core::extension::queries::ask`]): from its facts file while that answer is fresh,
 //! else by its program, one question with the deadline. Where this machine has no such

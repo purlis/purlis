@@ -18,7 +18,7 @@ fn the_protocol_key_and_version_are_the_ones_the_fixture_pins() {
 }
 
 #[test]
-fn the_error_kinds_are_exactly_the_six_adr_0120_names() {
+fn the_error_kinds_are_exactly_the_six_adr_0122_names() {
     let kinds: Vec<&str> = ErrorKind::ALL.iter().map(|k| k.as_str()).collect();
     assert_eq!(
         kinds,

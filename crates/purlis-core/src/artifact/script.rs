@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **Whether an artifact's template holds executable script** (ADR 0120 §4, #5959): what makes
+//! **Whether an artifact's template holds executable script** (ADR 0122 §4, #5959): what makes
 //! a page one that each person approves before it runs, where a page without any opens straight
 //! away.
 //!

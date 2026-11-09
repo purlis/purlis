@@ -4,9 +4,9 @@
 import type { WebAndHarnessMemory } from "./processes.js";
 
 /**
- * **What an open artifact tab may cost in memory: ADR 0086's row M8** (ADR 0120 §10, #5958).
+ * **What an open artifact tab may cost in memory: ADR 0086's row M8** (ADR 0122 §10, #5958).
  *
- * An artifact is drawn in a native webview of its own (ADR 0120 §3), so opening its tab adds a
+ * An artifact is drawn in a native webview of its own (ADR 0122 §3), so opening its tab adds a
  * web content process to the app and a little to the window. The row is the two together: the
  * web content processes' memory and the app's resident memory after the tab has opened and its
  * page settled, less before. On macOS web content is counted by `footprint`, on Linux by resident
@@ -69,7 +69,7 @@ const megabytes = (kb: number) => `${Math.round(kb / 1024)} MB`;
  * Whether the tab opened between `before` and `after` kept within `budgetKb`.
  *
  * **A page drawn in no web content process of its own fails**: the row's measure is that
- * process, and ADR 0120 §3 chose the native webview because it runs the page apart from the
+ * process, and ADR 0122 §3 chose the native webview because it runs the page apart from the
  * window. With none added, nothing was measured, and a pass would say nothing.
  */
 export function artifactTabVerdict(

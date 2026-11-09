@@ -3,13 +3,13 @@
 
 name: artifact isolation
 
-# ADR 0120 §3's five tests on each platform (#5949, PE-39), against the native webview ADR 0120 chose and
+# ADR 0122 §3's five tests on each platform (#5949, PE-39), against the native webview ADR 0122 chose and
 # its unguarded controls (the rejected sandboxed frame is ignored; `-- --ignored` measures it), in
 # the probe app `tools/artifact-isolation-probe`: a launch per rendering and question.
 # The probe is its own workspace and builds on Windows, where the app crate does not compile yet.
 #
 # **Evidence, not a gate**, like `ci.yml`'s `windows` job: each platform reports, and a platform
-# whose chosen rendering is red there is one where scripted artifacts are refused (ADR 0120 §10),
+# whose chosen rendering is red there is one where scripted artifacts are refused (ADR 0122 §10),
 # not a red `main`. The real rendering (#5952) carries these tests into the app's own checks; on
 # that day this workflow and the probe are deleted.
 

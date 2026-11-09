@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **An extension's artifact templates** (ADR 0120 §9, ADR 0053 as amended 2026-11-09, #5973):
+//! **An extension's artifact templates** (ADR 0122 §9, ADR 0053 as amended 2026-11-09, #5973):
 //! the `artifacts` capability. An extension ships page templates in its own folder, and a
 //! person may pin one to a workspace like any other page.
 //!
@@ -20,7 +20,7 @@
 //! refusals as any pin: its folder is read within the size cap, scanned for anything shaped like
 //! a secret before a byte is copied, and never written over a folder already there. From then
 //! on it is the workspace's page: its template travels with the workspace, its script is
-//! approved by each person on their own machine over the copy's fingerprint (ADR 0120 §4), and
+//! approved by each person on their own machine over the copy's fingerprint (ADR 0122 §4), and
 //! a teammate without the extension sees it with `needs-extension` where its queries' data would
 //! be. A template's data files are never copied: data is each person's own.
 //!

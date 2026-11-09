@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! A workspace's artifacts (ADR 0120, spec #5948): HTML templates in its `artifacts/` folder,
+//! A workspace's artifacts (ADR 0122, spec #5948): HTML templates in its `artifacts/` folder,
 //! each made an artifact by a pin in `artifacts/pins.toml` (`docs/plane-format.md`).
 //!
 //! This module pins, unpins, lists and reorders them, and resolves a pin to its folder. It
@@ -466,7 +466,7 @@ fn cwd_refusal(cwd: &str) -> Option<String> {
     })
 }
 
-/// **Who pinned pin `id`**, by the plane's history (ADR 0120 §1: the bar names who pinned it,
+/// **Who pinned pin `id`**, by the plane's history (ADR 0122 §1: the bar names who pinned it,
 /// from git history): the author of the first commit whose pins file gained the id. `None` when
 /// no commit holds it yet (pinned here and not saved, or a workspace git does not keep).
 pub fn pinned_by(workspace: &Path, id: &str) -> Option<String> {

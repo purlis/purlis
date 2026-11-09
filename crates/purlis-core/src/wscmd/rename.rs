@@ -1286,7 +1286,7 @@ fn follow_in_pins(config: &Path, root: &Path, old: &str, new: &str) -> std::io::
     .map(|_| ())
 }
 
-/// This machine's approvals of the workspace's artifacts (ADR 0120 §4, #5960), moved to where
+/// This machine's approvals of the workspace's artifacts (ADR 0122 §4, #5960), moved to where
 /// the workspace is now: a rename keeps them, as it keeps the artifacts' pins, which moved
 /// with its folder. Keyed by where the workspace really is, so asked of the new folder.
 fn follow_in_approvals(config: &Path, root: &Path, old: &str, new: &str) -> Result<(), String> {

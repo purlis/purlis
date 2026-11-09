@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-// The window's half of the sandboxed-frame rendering (ADR 0120 §3, first option). The probe's
+// The window's half of the sandboxed-frame rendering (ADR 0122 §3, first option). The probe's
 // Rust side calls `probe.frame(...)` through `eval`; what a page says on its channel comes back
 // through the `heard` command, which only this window is granted.
 const invoke = (cmd, args) => window.__TAURI_INTERNALS__.invoke(cmd, args ?? {});

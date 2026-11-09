@@ -2800,7 +2800,7 @@ fn memory_or_ref(path: &str) -> bool {
     path.contains("/memory/") || path.contains("/refs/")
 }
 
-/// A file of an artifact's folder, `workspaces/<ws>/artifacts/…` (ADR 0120, #5954): a page the
+/// A file of an artifact's folder, `workspaces/<ws>/artifacts/…` (ADR 0122, #5954): a page the
 /// team is shown, so it is scanned whole whatever its size or bytes, as memory is. Its size cap
 /// (`artifact::SIZE_CAP`, below [`SCAN_LIMIT`]) keeps a pinned one small; the scan does not
 /// lean on it, since a file nobody pinned yet is committed all the same.

@@ -145,7 +145,7 @@ export function RegionFrame({
   heads?: Partial<Record<ViewId, ReactNode | null>>;
   /** Whether this window's keys are this frame's: F6 (P-13) is held by the project in front. */
   keyboard?: boolean;
-  /** **The workspace's pinned artifacts** (ADR 0120 §2, #5952): a group of their own on the
+  /** **The workspace's pinned artifacts** (ADR 0122 §2, #5952): a group of their own on the
    *  left bar, after purlis's own icons, which never move for it (`ArtifactGroup`). */
   artifacts?: ReactNode;
 }) {

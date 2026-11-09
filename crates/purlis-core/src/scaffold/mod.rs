@@ -1053,7 +1053,7 @@ const MERGE_RULES: [&str; 9] = [
     "workspaces/*/todos/MEMORY.md merge=union",
     "workspaces/*/sessions/index.md merge=union",
     "sessions/index.md merge=union",
-    // One pin per line, so two people's pins union into one valid list (ADR 0120, #5950).
+    // One pin per line, so two people's pins union into one valid list (ADR 0122, #5950).
     "workspaces/*/artifacts/pins.toml merge=union",
 ];
 

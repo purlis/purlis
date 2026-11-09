@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **Regenerate, pressed in an artifact's bar** (ADR 0120 §6 and its amendment of 2026-11-09,
+//! **Regenerate, pressed in an artifact's bar** (ADR 0122 §6 and its amendment of 2026-11-09,
 //! #5962): the pin's command run in the session host, never in this process.
 //!
 //! - **What it would run, and whether it asks** ([`artifact_regenerate_about`]): the code its

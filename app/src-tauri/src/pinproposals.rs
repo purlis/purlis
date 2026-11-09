@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **A chat proposes a pin; the person pins it** (#5963, ADR 0120 §1, spec #5948 story 13): the
+//! **A chat proposes a pin; the person pins it** (#5963, ADR 0122 §1, spec #5948 story 13): the
 //! window's half of [`purlis_core::artifact::proposal`].
 //!
 //! A chat's `artifact_propose_pin` tool, or `purlis artifact pin` run in it, reaches the app as

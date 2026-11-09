@@ -38,7 +38,7 @@ pub enum Kind {
     Workspace,
     /// A workspace's `todos/`.
     Todos,
-    /// A workspace's `artifacts/` (ADR 0120, #5955): its pins file, an artifact's template and
+    /// A workspace's `artifacts/` (ADR 0122, #5955): its pins file, an artifact's template and
     /// its data. An open artifact reads again on its own folder's change, and the activity bar's
     /// group on any of them (its pins, and each icon's freshness).
     Artifacts,

@@ -229,7 +229,7 @@ proves all of this is `crates/check-probe`.
 
 ## Queries (protocol 7)
 
-**`queries` answers an artifact's page reading the extension's data** (ADR 0120 §9, #5971). It is
+**`queries` answers an artifact's page reading the extension's data** (ADR 0122 §9, #5971). It is
 known on every purlis, and an extension that declares it is watched, not confined. It needs a
 program (`runs`) and `version` 7, and declares each query under `contributes.queries`:
 
@@ -276,7 +276,7 @@ second manifest.
 
 ## Artifact templates (protocol 8)
 
-**`artifacts` ships pages a person may pin to a workspace** (ADR 0120 §9, #5973). It is known on
+**`artifacts` ships pages a person may pin to a workspace** (ADR 0122 §9, #5973). It is known on
 every purlis, needs `version` 8 and no program, and declares at most 8 templates under
 `contributes.artifacts`, each a folder inside the extension holding its `index.html`:
 

@@ -9,7 +9,7 @@ import { Button } from "./ui/button/Button";
 import { Dialog } from "./ui/dialog/Dialog";
 
 /**
- * **The actions an artifact's page offers, drawn in purlis's bar** (ADR 0120 §8, #5972).
+ * **The actions an artifact's page offers, drawn in purlis's bar** (ADR 0122 §8, #5972).
  *
  * The page posts what it offers on its port; the core passes on only a set from the open load of
  * an approved page, in closed types (`artifacts/offers.rs`), and this draws each one the window's

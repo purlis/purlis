@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **Pin to workspace and Unpin from workspace** (#5953, ADR 0120 §1): every dialog that changes
+ * **Pin to workspace and Unpin from workspace** (#5953, ADR 0122 §1): every dialog that changes
  * a workspace's pins, in each way it reads, held to axe and to its keyboard path.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";

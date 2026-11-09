@@ -1,4 +1,4 @@
-# Amended 2026-11-09: catalogue queries, and protocol 7 (ADR 0120 §9, #5971)
+# Amended 2026-11-09: catalogue queries, and protocol 7 (ADR 0122 §9, #5971)
 
 The vocabulary gains one word:
 

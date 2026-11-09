@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **The `queries` capability through the real registry and executor** (ADR 0120 §9, #5971):
+//! **The `queries` capability through the real registry and executor** (ADR 0122 §9, #5971):
 //! the probe installed as `query-probe`, in protocol 7, is declared, fingerprinted, approved,
 //! answered — from its program or its facts file — and refused when it is asked wrongly.
 

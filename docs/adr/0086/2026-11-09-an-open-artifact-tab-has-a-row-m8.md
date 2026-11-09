@@ -1,10 +1,10 @@
 # ADR 0086, amended: an open artifact tab has a row, M8 (2026-11-09)
 
-**Decided in implementation (#5958)**, as ADR 0120 §10 asks (*"ADR 0086 gains a row for the
+**Decided in implementation (#5958)**, as ADR 0122 §10 asks (*"ADR 0086 gains a row for the
 memory of an open artifact tab, with the job that measures it"*), for the operator to accept in
 review. Adds row M8 to the budgets of record (`docs/spec.md`). Nothing else in this record moves.
 
-**Why.** An artifact is drawn in a native webview of its own (ADR 0120 §3), so each open artifact
+**Why.** An artifact is drawn in a native webview of its own (ADR 0122 §3), so each open artifact
 tab is a web content process the window did not have before. No row held what one costs.
 
 **The row.**
@@ -22,7 +22,7 @@ resident memory on Linux, so each system is its own measure. The verdict is
 `app/e2e/artifactTabMemory.ts`, whose tests show it failing past the budget.
 
 **A page drawn in no web content process of its own fails the row.** That process is what the
-row measures, and it is why ADR 0120 chose the native webview. With none added, nothing was
+row measures, and it is why ADR 0122 chose the native webview. With none added, nothing was
 measured, and a pass would say nothing.
 
 **Why CI absolute, and in `scenario tests`.** It is a size, which §1 gives to CI absolute, and

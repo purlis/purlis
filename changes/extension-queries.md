@@ -5,4 +5,4 @@
   page reads them as `<extension-id>.<name>@1`. purlis answers from the extension's facts file
   while the answer there is fresh, otherwise asks its program, and asks again on its freshness
   while a page subscribes. A teammate without the extension sees the page with that part empty,
-  and the bar says which extension it needs. Not on Windows (ADR 0120, #5971).
+  and the bar says which extension it needs. Not on Windows (ADR 0122, #5971).

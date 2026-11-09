@@ -9,7 +9,7 @@ import { focusWorkspace, workspaceTabs } from "../reach.js";
 import { endChatsStartedHere, startAChat, type Started } from "../started.js";
 
 /**
- * **A `purlis://` link in an artifact's page** (#5967, ADR 0120 §5 as amended), in the built app
+ * **A `purlis://` link in an artifact's page** (#5967, ADR 0122 §5 as amended), in the built app
  * against the real core: each of the four places goes where it names without asking (a
  * workspace focused, a todo's view opened, a chat shown, the chat working on an issue shown),
  * and a link naming an action, or a place that is not there, is refused with a sentence and goes

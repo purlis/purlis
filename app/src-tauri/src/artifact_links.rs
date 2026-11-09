@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **A link in an artifact's page** (ADR 0120 §5, #5956): it opens the system browser, for
+//! **A link in an artifact's page** (ADR 0122 §5, #5956): it opens the system browser, for
 //! `https:` only, after the window has shown its host and its whole URL, unless the person chose
 //! to always open that host on this machine.
 //!

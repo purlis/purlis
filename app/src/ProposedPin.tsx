@@ -10,7 +10,7 @@ import { REVIEW_PIN_ASK, type ReviewPinAsk } from "./proposedPinOpen";
 import { AlertDialog } from "./ui/dialog/Dialog";
 
 /**
- * **Review… on a chat's proposed pin** (#5963, ADR 0120 §1): a chat or skill may only propose a
+ * **Review… on a chat's proposed pin** (#5963, ADR 0122 §1): a chat or skill may only propose a
  * pin, held on its tab and in the Inbox with Review… and Dismiss. Review… opens #5953's Pin to
  * workspace on it, which says who will see it and names the chat and the command it proposed;
  * only that dialog's Pin pins it. Cancel leaves the proposal waiting; Dismiss on the row pins

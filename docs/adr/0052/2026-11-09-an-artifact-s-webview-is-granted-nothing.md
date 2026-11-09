@@ -1,9 +1,9 @@
 # Amendment, 2026-11-09: an artifact's webview is granted nothing, and the window's frame-src stays 'none'
 
 **Amends [ADR 0052](../0052-the-window-may-invoke-only-the-commands-an-allow-list-grants-it.md)**, by
-[ADR 0120](../0120-an-artifact-is-a-workspaces-page-rendered-isolated-and-its-api-is-the-read-only-tool-catalogue.md) §3, accepted the same day on the isolation prototype's evidence (#5949).
+[ADR 0122](../0122-an-artifact-is-a-workspaces-page-rendered-isolated-and-its-api-is-the-read-only-tool-catalogue.md) §3, accepted the same day on the isolation prototype's evidence (#5949).
 
-ADR 0120 asked whether an artifact should run in a sandboxed frame of the window's document, which
+ADR 0122 asked whether an artifact should run in a sandboxed frame of the window's document, which
 would have opened `frame-src` to the artifact scheme, or in a native webview of its own. The
 prototype chose **the native webview**, so **the window's CSP is unchanged: `frame-src 'none'`**.
 

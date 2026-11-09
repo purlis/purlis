@@ -103,7 +103,7 @@ export const commands = {
 	 */
 	artifactUnpin: (plane: PlaneId, workspace: string, folder: string) => typedError<null, string>(__TAURI_INVOKE("artifact_unpin", { plane, workspace, folder })),
 	/**
-	 *  **The person's approval of an artifact's script, pressed in its tab's bar** (ADR 0120 §4):
+	 *  **The person's approval of an artifact's script, pressed in its tab's bar** (ADR 0122 §4):
 	 *  of exactly the pin and the template webview `label` was served, read here and never taken
 	 *  from the window, so a change since it was served is not approved by this press. Every window
 	 *  of the plane hears it ([`APPROVALS_CHANGED`]) and loads the page again, now with its script.
@@ -111,7 +111,7 @@ export const commands = {
 	 */
 	artifactApprove: (label: string) => typedError<null, string>(__TAURI_INVOKE("artifact_approve", { label })),
 	/**
-	 *  **Grants an approved artifact its plane-scoped queries** (ADR 0120 §7, #5969): a grant of its
+	 *  **Grants an approved artifact its plane-scoped queries** (ADR 0122 §7, #5969): a grant of its
 	 *  own, from the person's press in purlis's bar, of exactly the pin and template their window
 	 *  was served. A new approval of the folder drops it.
 	 */

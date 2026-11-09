@@ -1563,7 +1563,7 @@ pub enum Ask {
     /// act, and nothing else**, so no part of what is shown or made is the chat's. No ticket,
     /// for [`Self::Removal`]'s reason.
     ProposeSkillSet(Box<ProposeSkillSetAsk>),
-    /// **A pin of an artifact folder a chat proposes** (#5963, ADR 0120 §1): what the
+    /// **A pin of an artifact folder a chat proposes** (#5963, ADR 0122 §1): what the
     /// `artifact_propose_pin` tool and `purlis artifact pin` hand over in a chat. Held for the
     /// person beside [`Self::Propose`]'s, and pinned only by their press of Pin to workspace in
     /// the window. **It names a folder and what to call it, and no workspace**: the workspace is

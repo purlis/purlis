@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **What a pinned artifact's page reads of purlis, in its bar** (#5969, ADR 0120 §7): the
+ * **What a pinned artifact's page reads of purlis, in its bar** (#5969, ADR 0122 §7): the
  * queries its page declared, the parameters that widen them, a deprecated one's warning, and
  * the plane-wide grant of its own. The core is faked at its command boundary.
  */

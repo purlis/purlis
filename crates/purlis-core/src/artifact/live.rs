@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **A page subscribes to a catalogue query it declared, and purlis pushes it new answers**
-//! (ADR 0120 §7, #5970).
+//! (ADR 0122 §7, #5970).
 //!
 //! - **On core events** ([`moves`]): a query is asked again when the plane's watch reports a
 //!   change of a kind its answer is read from (a todo of its workspace for `purlis.todo_list`),

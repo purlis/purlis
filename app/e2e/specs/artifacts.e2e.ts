@@ -9,7 +9,7 @@ import { focusWorkspace } from "../reach.js";
 import { openThroughTheTrustQuestion } from "../opening.js";
 
 /**
- * **A pinned artifact, opened in its private tab** (#5952, ADR 0120 §2–3), in the built app
+ * **A pinned artifact, opened in its private tab** (#5952, ADR 0122 §2–3), in the built app
  * against the real core: its icon in a group of its own on the left bar, a press that opens its
  * tab (or brings it forward), its page drawn in a native webview of its own laid over a frame
  * named by it, and a tab a project's record puts back that runs nothing until pressed.
@@ -409,7 +409,7 @@ describe("managing pins from the window", () => {
 });
 
 /**
- * **A pinned artifact with script** (#5959, ADR 0120 §4): shown without its script until the
+ * **A pinned artifact with script** (#5959, ADR 0122 §4): shown without its script until the
  * person approves it in purlis's bar, never in the page; an approval that holds through new data
  * and is asked again for any change to the template. What the page's script does once it runs is
  * the webview's, which WebDriver cannot reach: the CSP that lets it run only when approved is

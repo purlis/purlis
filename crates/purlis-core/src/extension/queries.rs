@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **An extension's catalogue queries** (ADR 0120 §9, ADR 0053 as amended 2026-11-09, #5971):
+//! **An extension's catalogue queries** (ADR 0122 §9, ADR 0053 as amended 2026-11-09, #5971):
 //! the `queries` capability. An extension contributes queries into the one catalogue a page, the
 //! CLI and an agent read through, each `<extension-id>.<name>`.
 //!

@@ -7,7 +7,7 @@ import { $, browser, expect } from "@wdio/globals";
 import { focusWorkspace } from "../reach.js";
 
 /**
- * **A pinned artifact whose page offers actions** (#5972, ADR 0120 §8), in the built app against
+ * **A pinned artifact whose page offers actions** (#5972, ADR 0122 §8), in the built app against
  * the real core: the page offers, purlis draws the offer in its own bar in the catalogue's
  * words, and only the person's press there does it. A delete asks first, and an id a page may
  * not offer is refused with its sentence.

@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! The isolation prototype ADR 0120 §3 asked for (#5949, PE-39): an artifact rendered in a
+//! The isolation prototype ADR 0122 §3 asked for (#5949, PE-39): an artifact rendered in a
 //! sandboxed opaque-origin frame of the window's own document, or in a native webview of its own
 //! whose label matches no capability. Each run renders one way and asks one of §3's five
 //! questions, prints `RESULT <rendering> <test> PASS|FAIL <what it saw>`, and exits 0 on a pass.
@@ -142,7 +142,7 @@ fn plant_a_late_symlink(plane: &Path) {
 
 /// What was pinned: each artifact's files, read once at the pin, by their exact relative path.
 /// purlis serves only these bytes, from memory: a file or symlink planted after the pin, a path
-/// spelled with `..`, a backslash or another case, is simply not a key (ADR 0120 §3).
+/// spelled with `..`, a backslash or another case, is simply not a key (ADR 0122 §3).
 type Pinned = HashMap<String, HashMap<String, Vec<u8>>>;
 
 fn pin(plane: &Path) -> Pinned {
@@ -172,7 +172,7 @@ fn read_pinned(folder: &Path, prefix: &str, files: &mut HashMap<String, Vec<u8>>
     }
 }
 
-/// The CSP on every response (ADR 0120 §3): its own origin only, no network, no frames, no
+/// The CSP on every response (ADR 0122 §3): its own origin only, no network, no frames, no
 /// forms, no `<base>`.
 fn csp(id: &str) -> String {
     let own = origin(id);

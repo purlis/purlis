@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **A pinned artifact's tab and its icons** (#5952, ADR 0120 §2–3): every state a person meets
+ * **A pinned artifact's tab and its icons** (#5952, ADR 0122 §2–3): every state a person meets
  * them in, held to axe and to their keyboard paths. The core is faked at its command boundary;
  * the page itself is a native webview no story can draw, so the frame is the element it is laid
  * over, named by the artifact.

@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **The one tool catalogue** (ADR 0120 §7, #5951): every tool purlis's MCP server can list, and
+//! **The one tool catalogue** (ADR 0122 §7, #5951): every tool purlis's MCP server can list, and
 //! the read-only ones among them that are also **queries**, the API a page, the CLI and an
 //! agent read through alike.
 //!
@@ -70,7 +70,7 @@ pub struct Query {
     pub deprecated: Option<&'static str>,
     pub scope: Scope,
     /// The parameters that widen what it reads, each with what it then reads, which a page's
-    /// approval names (ADR 0120 §7, #5969).
+    /// approval names (ADR 0122 §7, #5969).
     pub widens: &'static [(&'static str, &'static str)],
     /// The JSON Schema of the answer's `data`.
     pub result: fn() -> Value,
@@ -273,7 +273,7 @@ pub static CATALOGUE: [Query; 5] = [
 ];
 
 /// **The query a page or a caller names by `id`**, and the warning the bar shows for it: an id
-/// that is deprecated, or one a newer id replaces, still answers (ADR 0120 §7).
+/// that is deprecated, or one a newer id replaces, still answers (ADR 0122 §7).
 pub fn find(id: &str) -> Option<(&'static Query, Option<String>)> {
     if let Some(query) = CATALOGUE.iter().find(|q| q.id() == id) {
         let warning = query
@@ -356,7 +356,7 @@ pub const NOT_QUERIES: [(&str, &str); 17] = [
     ),
 ];
 
-/// Why a query gave no data. Exactly these six (ADR 0120 §7).
+/// Why a query gave no data. Exactly these six (ADR 0122 §7).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorKind {
     /// The query is an extension's, and that extension is not installed here.

@@ -10,7 +10,7 @@ import { CodeBlock } from "./ui/code/CodeBlock";
 import { Dialog } from "./ui/dialog/Dialog";
 
 /**
- * **A link followed in an artifact's page** (ADR 0120 §5, #5956).
+ * **A link followed in an artifact's page** (ADR 0122 §5, #5956).
  *
  * The page never goes there itself: purlis's own script in it reports a person's click on a
  * link, and the core (`artifact_links.rs`) refuses it, opens it (a host the person chose to

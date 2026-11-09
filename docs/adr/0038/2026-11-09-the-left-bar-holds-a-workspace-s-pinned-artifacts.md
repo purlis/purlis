@@ -1,7 +1,7 @@
 # Amendment, 2026-11-09: the left bar holds a workspace's pinned artifacts, in a group of their own
 
 **Amends [ADR 0038](../0038-the-window-is-four-regions-and-what-has-no-region-is-named.md)**, by
-[ADR 0120](../0120-an-artifact-is-a-workspaces-page-rendered-isolated-and-its-api-is-the-read-only-tool-catalogue.md) §2, accepted the same day (#5948, #5949).
+[ADR 0122](../0122-an-artifact-is-a-workspaces-page-rendered-isolated-and-its-api-is-the-read-only-tool-catalogue.md) §2, accepted the same day (#5948, #5949).
 
 The left activity bar ([amended 2026-10-10](2026-10-10-02-each-side-has-an-activity-bar-and-shows-one-view.md))
 gains a second kind of item. Until now every icon on it switched the side to one of purlis's views.

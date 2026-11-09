@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **What an artifact's page may read of its own data** (ADR 0120 §1, §7, #5961): the data files
+//! **What an artifact's page may read of its own data** (ADR 0122 §1, §7, #5961): the data files
 //! its page declares, from its own folder, answered in the catalogue's envelope
 //! ([`crate::catalogue::Answer`]).
 //!

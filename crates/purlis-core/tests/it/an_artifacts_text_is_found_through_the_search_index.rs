@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **Artifacts in search** (ADR 0120, spec #5948, #5968): what a pinned artifact's page says is
+//! **Artifacts in search** (ADR 0122, spec #5948, #5968): what a pinned artifact's page says is
 //! in the project's search index, read through the pin's own gate (a folder inside its
 //! workspace's `artifacts/`, no link out) and the artifact folder's walk that never follows a
 //! link. The index finds what a scan of the same files finds, and nothing a person's own data

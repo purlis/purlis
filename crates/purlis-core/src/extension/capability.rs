@@ -69,13 +69,13 @@ pub enum Capability {
     /// ([`crate::checks`]). It has no shape: which tool it converts is the extension's own
     /// business, and what the operator approves is that it is asked.
     CheckReporter,
-    /// **Catalogue queries** (ADR 0120 §9, #5971): queries an artifact's page may read, each
+    /// **Catalogue queries** (ADR 0122 §9, #5971): queries an artifact's page may read, each
     /// `<extension-id>.<name>` with a declared shape, parameters, scope and freshness. purlis
     /// answers one from the facts file while its answer there is fresh, and otherwise asks the
     /// program, one question with the deadline (protocol 7, [`super::queries`]). Its shape is
     /// `contributes.queries`.
     Queries,
-    /// **Artifact templates** (ADR 0120 §9, #5973): pages in the extension's own folder that a
+    /// **Artifact templates** (ADR 0122 §9, #5973): pages in the extension's own folder that a
     /// person may pin to a workspace. Pinning one copies it into the workspace's `artifacts/` and
     /// pins it as any page is pinned, under the same refusals and approvals
     /// ([`super::artifacts`]). purlis asks its program nothing about them: protocol 8 is the
@@ -237,7 +237,7 @@ impl Capability {
             Self::Grader => 4,
             // A check's output, answered in SARIF on stdout (ADR 0117, #5410).
             Self::CheckReporter => 6,
-            // A query's question, answered with its data (ADR 0120 §9, #5971).
+            // A query's question, answered with its data (ADR 0122 §9, #5971).
             Self::Queries => 7,
             // Templates a person may pin, read from its folder; it is asked nothing (#5973).
             Self::Artifacts => 8,

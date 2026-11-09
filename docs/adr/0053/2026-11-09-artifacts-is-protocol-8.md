@@ -1,4 +1,4 @@
-# Amended 2026-11-09: artifact templates, and protocol 8 (ADR 0120 §9, #5973)
+# Amended 2026-11-09: artifact templates, and protocol 8 (ADR 0122 §9, #5973)
 
 The vocabulary gains one word:
 
@@ -27,11 +27,11 @@ and copies its files, never its data files, into `artifacts/<extension-id>.<name
 folder already there. It is then pinned through the one pin path, under every refusal a pin
 meets (#5950, #5954). From then on the extension's approval says nothing about it: **the copy's
 script is approved by each person on their own machine, over the copy's fingerprint**
-(ADR 0120 §4), and a teammate without the extension sees the page with `needs-extension` where
+(ADR 0122 §4), and a teammate without the extension sees the page with `needs-extension` where
 its queries' data would be. A template carries no producing command, so it has no Regenerate; its
 live data comes from queries.
 
-Copying rather than pinning the extension's folder in place keeps ADR 0120 §1's rule that an
+Copying rather than pinning the extension's folder in place keeps ADR 0122 §1's rule that an
 artifact is a folder in the workspace's `artifacts/`, shared with the workspace: a page served
 from a machine-local extension folder would be a pin no teammate could open.
 

@@ -655,7 +655,7 @@ pub fn named_here(here: &crate::Here, workspace: Option<&str>) -> Named {
 #[cfg(test)]
 mod tests;
 
-/// **A chat's pin of an artifact folder, handed to the app as a proposal** (#5963, ADR 0120 §1):
+/// **A chat's pin of an artifact folder, handed to the app as a proposal** (#5963, ADR 0122 §1):
 /// `purlis artifact pin` run in a chat and the `artifact_propose_pin` tool. Held for the person,
 /// who alone pins it, in purlis's Pin to workspace dialog. Nothing is written here, and a chat
 /// the app does not answer pins nothing.

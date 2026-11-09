@@ -1327,7 +1327,7 @@ const WORKSPACE_OWN: [&str; 13] = [
     "changes",
     "work",
     "repos",
-    // The workspace's artifacts (ADR 0120, #5950).
+    // The workspace's artifacts (ADR 0122, #5950).
     "artifacts",
 ];
 

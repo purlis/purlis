@@ -579,7 +579,7 @@ export function ViewPane({
       />
     );
   }
-  // **A pinned artifact** (#5952, ADR 0120): its page in a native webview of its own, under a
+  // **A pinned artifact** (#5952, ADR 0122): its page in a native webview of its own, under a
   // bar purlis draws. A restored tab runs nothing until pressed (`waits`).
   const artifact = artifactOf(view);
   if (artifact !== undefined) {

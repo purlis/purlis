@@ -8,7 +8,7 @@ import { press, pressGrant } from "../acting.js";
 import { focusWorkspace } from "../reach.js";
 
 /**
- * **A link in an artifact's page** (#5956, ADR 0120 §5), in the built app against the real
+ * **A link in an artifact's page** (#5956, ADR 0122 §5), in the built app against the real
  * core: an https link written in the page opens the browser only once the person answers a
  * question naming its host and its whole address, Always open keeps the host so the next one
  * opens without asking, and `file:`, `smb:`, another app's scheme and a link the page's script

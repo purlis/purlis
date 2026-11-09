@@ -1,6 +1,6 @@
 # Links in an artifact's page
 
-A page pinned to a workspace (ADR 0120) may link out of itself. purlis follows a link only when a
+A page pinned to a workspace (ADR 0122) may link out of itself. purlis follows a link only when a
 person clicks it and it is written in the page's template as served; a link the page's script
 made is refused. Two kinds are followed; every other is refused with a sentence the window shows.
 
@@ -13,8 +13,8 @@ password is refused (#5956).
 
 ## `purlis://` links
 
-They go to a place in purlis, without asking, and never do anything there (#5967; ADR 0120 §5 as
-amended in [`adr/0120/2026-11-09-a-purlis-link-names-a-place-of-a-closed-list-and-only-navigates.md`](adr/0120/2026-11-09-a-purlis-link-names-a-place-of-a-closed-list-and-only-navigates.md)).
+They go to a place in purlis, without asking, and never do anything there (#5967; ADR 0122 §5 as
+amended in [`adr/0122/2026-11-09-a-purlis-link-names-a-place-of-a-closed-list-and-only-navigates.md`](adr/0122/2026-11-09-a-purlis-link-names-a-place-of-a-closed-list-and-only-navigates.md)).
 There are four, each of one shape:
 
 | Link                               | Goes to                                                     |
@@ -40,4 +40,4 @@ There are four, each of one shape:
 - **Nothing else is a purlis link.** Another first word (`purlis://run/…`), anything after a
   place (`purlis://todo/smart-ide/fix-login/done`), a query (`?…`), a fragment (`#…`), a name or
   a port is refused. A page that wants the person to act offers a catalogue row instead, which
-  purlis draws in its own bar (ADR 0120 §8).
+  purlis draws in its own bar (ADR 0122 §8).

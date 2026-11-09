@@ -1,7 +1,7 @@
 # Amendment, 2026-11-09: a capability names purlis's webviews, never its windows
 
 **Amends [ADR 0052](../0052-the-window-may-invoke-only-the-commands-an-allow-list-grants-it.md)**, by
-[ADR 0120](../0120-an-artifact-is-a-workspaces-page-rendered-isolated-and-its-api-is-the-read-only-tool-catalogue.md) §3,
+[ADR 0122](../0122-an-artifact-is-a-workspaces-page-rendered-isolated-and-its-api-is-the-read-only-tool-catalogue.md) §3,
 building on the [amendment of the same day](2026-11-09-an-artifact-s-webview-is-granted-nothing.md)
 for the rendering #5952 ships.
 

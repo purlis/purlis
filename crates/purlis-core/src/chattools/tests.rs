@@ -1281,7 +1281,7 @@ fn every_tool_pre_allowed_in_claude_code_is_one_that_only_reads() {
             "skill_runs",
             "skill_find",
             "skill_load",
-            // The catalogue's listing, the binary's own (ADR 0120 §7, #5969).
+            // The catalogue's listing, the binary's own (ADR 0122 §7, #5969).
             "queries",
         ]
     );

@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **A query's answer as data** (ADR 0120 §7, #5969): what a catalogue query answers a page, in
+//! **A query's answer as data** (ADR 0122 §7, #5969): what a catalogue query answers a page, in
 //! the shape its [`Query::result`] describes, never the text its MCP tool gives a chat.
 //!
 //! - **Its parameters are checked against their closed types** before anything is read

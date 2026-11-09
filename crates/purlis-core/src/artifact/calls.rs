@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **The catalogue queries an artifact's page calls** (ADR 0120 §7, #5969), declared in the
+//! **The catalogue queries an artifact's page calls** (ADR 0122 §7, #5969), declared in the
 //! same data block as its data files ([`super::data`]), so the person's approval covers them:
 //!
 //! ```html

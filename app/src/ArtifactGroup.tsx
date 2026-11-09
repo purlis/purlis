@@ -41,7 +41,7 @@ export { MOST_DRAWN };
 const MORE = "artifacts-more";
 
 /**
- * **A workspace's pinned artifacts on the left activity bar** (ADR 0120 §2, #5952): a group of
+ * **A workspace's pinned artifacts on the left activity bar** (ADR 0122 §2, #5952): a group of
  * their own, after a divider, below purlis's own icons, which never move for it. One icon per
  * pin, in the pins file's order, its mark one of purlis's icons and its name the pin's.
  *

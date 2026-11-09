@@ -505,7 +505,7 @@ enum Command {
     /// What each version of the app brought: its CHANGELOG.md, newest first.
     News(NewsCommand),
 
-    /// Every query a page, a chat or a script can read through (ADR 0120 §7): each read-only
+    /// Every query a page, a chat or a script can read through (ADR 0122 §7): each read-only
     /// tool's id, scope, the release it answers since, what it takes and the shape it answers.
     Queries {
         /// The catalogue as JSON: `{"api": 1, "queries": [...]}`.

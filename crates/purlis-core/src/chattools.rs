@@ -233,7 +233,7 @@ pub const PRE_ALLOWED: [&str; 15] = [
     crate::skilltools::SKILL_RUNS,
     crate::skilltools::SKILL_FIND,
     crate::skilltools::SKILL_LOAD,
-    // The MCP twin of `purlis queries` (ADR 0120 §7, #5969): the binary's own catalogue, the
+    // The MCP twin of `purlis queries` (ADR 0122 §7, #5969): the binary's own catalogue, the
     // same for every chat, reading nothing of the plane.
     QUERIES,
 ];
@@ -1322,7 +1322,7 @@ pub static TOOLS: [Tool; 31] = [
         description: "List the queries of purlis's one tool catalogue as `purlis queries --json` \
                       does: each read-only tool a page, the CLI or a chat reads through, with \
                       its parameters, the shape of its answer, its scope and the release it \
-                      first answers in (ADR 0120). For writing an artifact's page.",
+                      first answers in (ADR 0122). For writing an artifact's page.",
         schema: no_arguments,
         read_only: true,
     },

@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **Discuss**, in an artifact's bar (ADR 0120 §5, #5957): a new chat about the page, with the
+//! **Discuss**, in an artifact's bar (ADR 0122 §5, #5957): a new chat about the page, with the
 //! page attached as quoted third-party content, its pinner and commit named, and nothing sent.
 //!
 //! The core quotes the page and writes the quote where a chat in the workspace reads it

@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **What an artifact's webview is served** (ADR 0120 §3, #5952): the folder's bytes read once,
+//! **What an artifact's webview is served** (ADR 0122 §3, #5952): the folder's bytes read once,
 //! when its tab is pressed, and nothing else.
 //!
 //! - **Only the bytes read at the press are served**, from memory ([`Snapshot`]). A file or a
@@ -41,7 +41,7 @@ pub const THEME_SHEET: &str = "/.purlis/theme.css";
 /// `--purlis-surface-base`, apart from any name a page uses for its own.
 pub const THEME_PREFIX: &str = "--purlis-";
 
-/// **The theme sheet for a window drawn in `appearance` with `values`** (ADR 0120, #5955):
+/// **The theme sheet for a window drawn in `appearance` with `values`** (ADR 0122, #5955):
 /// `color-scheme` set to purlis's appearance, never the operating system's, and each of
 /// purlis's colour tokens as a custom property. Only a token the vocabulary names, with a value
 /// that is a colour, is written, so nothing the sheet is handed can end its rule or reach out.
@@ -144,7 +144,7 @@ impl Snapshot {
     }
 
     /// The template's fingerprint: every path and byte but the data files' ([`is_data`]), so
-    /// a page regenerated with new data keeps it (ADR 0120 §4).
+    /// a page regenerated with new data keeps it (ADR 0122 §4).
     pub fn fingerprint(&self) -> &str {
         &self.fingerprint
     }
@@ -215,10 +215,10 @@ pub fn origin_host(workspace: &Path, folder: &str) -> String {
         .collect()
 }
 
-/// **The CSP on every response** (ADR 0120 §3), for a page served at `own` (its origin, as the
+/// **The CSP on every response** (ADR 0122 §3), for a page served at `own` (its origin, as the
 /// webview spells it): its own origin only. No connection, no frame, no form, no `<base>`, no
 /// worker, no plugin, ever. Script only when `runs` — the person approved this template here
-/// (ADR 0120 §4) — and then only the template's own: from its origin and inline in the bytes
+/// (ADR 0122 §4) — and then only the template's own: from its origin and inline in the bytes
 /// approved, never `eval`.
 pub fn csp(own: &str, runs: bool) -> String {
     let script = if runs {

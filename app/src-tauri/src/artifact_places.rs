@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **Where the window goes for a `purlis://` link in an artifact's page** (ADR 0120 §5 as
+//! **Where the window goes for a `purlis://` link in an artifact's page** (ADR 0122 §5 as
 //! amended, #5967; `docs/artifact-links.md`).
 //!
 //! The core reads the link into a [`Place`] of a closed list

@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **The `artifacts` capability through the real registry** (ADR 0120 §9, #5973): the probe
+//! **The `artifacts` capability through the real registry** (ADR 0122 §9, #5973): the probe
 //! installed as `artifact-probe`, in protocol 8, declares its templates, is fingerprinted and
 //! approved, offers them, and a template pinned is copied into the workspace and pinned like any
 //! page, under the same refusals and approvals.
@@ -186,7 +186,7 @@ fn a_pinned_template_is_copied_into_the_workspace_without_its_data_and_pinned_li
         "data is each person's own, never the extension's"
     );
 
-    // Its script asks each person on their own machine, as any page's does (ADR 0120 §4): the
+    // Its script asks each person on their own machine, as any page's does (ADR 0122 §4): the
     // extension's approval is not the page's.
     let snapshot = artifact::serve::Snapshot::read(&copied, &pin.folder).unwrap();
     assert_eq!(

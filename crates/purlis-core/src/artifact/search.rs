@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **Artifacts in search** (ADR 0120, spec #5948, #5968): what a pinned artifact's pages say,
+//! **Artifacts in search** (ADR 0122, spec #5948, #5968): what a pinned artifact's pages say,
 //! in the project's search index (ADR 0079) beside its memory, as a source of its own.
 //!
 //! - **Read through the pin's gate, never around it.** Only a pinned folder is read, and only

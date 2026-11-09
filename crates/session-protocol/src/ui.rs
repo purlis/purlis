@@ -350,7 +350,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "reopen_finished_task",
     "curate",
     "relaunch",
-    // Discuss in an artifact's bar (#5957, ADR 0120 §5): a chat about the page, typed unsent.
+    // Discuss in an artifact's bar (#5957, ADR 0122 §5): a chat about the page, typed unsent.
     "artifact_discuss",
     // Starts again.
     "restart_chat_without_sandbox",
@@ -1113,7 +1113,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     // holds, for a bug report the person copies from About in their own window. The report
     // carries the slow-answer log, which is the window's alone, so the facts beside it are too.
     "diagnostics_here",
-    // A pinned artifact in its tab (#5952, ADR 0120): a native webview of the window's own,
+    // A pinned artifact in its tab (#5952, ADR 0122): a native webview of the window's own,
     // laid over the tab's frame. Nothing a link serves can hold one, so only the window asks.
     "artifact_pins",
     "artifact_about",
@@ -1139,13 +1139,13 @@ pub const WINDOW_ONLY: &[&str] = &[
     // person in their own window does.
     "artifact_repin",
     "artifact_unpin",
-    // Approving an artifact's script (#5959, ADR 0120 §4): the person's press in its bar, of
+    // Approving an artifact's script (#5959, ADR 0122 §4): the person's press in its bar, of
     // what their own window was served. No link may approve on their behalf.
     "artifact_approve",
-    // Granting an approved artifact its plane-wide queries (#5969, ADR 0120 §7): a grant of
+    // Granting an approved artifact its plane-wide queries (#5969, ADR 0122 §7): a grant of
     // its own, the person's press in its bar. No link may grant it on their behalf.
     "artifact_grant_plane",
-    // Regenerate (#5962, ADR 0120 §6): the person's yes to the code a pin's command runs, and
+    // Regenerate (#5962, ADR 0122 §6): the person's yes to the code a pin's command runs, and
     // the run it starts in the session host. Only their own window approves or starts one.
     "artifact_regenerate_about",
     "artifact_regenerate_approve",
@@ -1155,7 +1155,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "artifact_history",
     "artifact_open_as_of",
     "artifact_compare",
-    // Opening a link an artifact's page followed (#5956, ADR 0120 §5): the person's answer in
+    // Opening a link an artifact's page followed (#5956, ADR 0122 §5): the person's answer in
     // their own window, to what that window's artifact reported.
     "artifact_link_open",
     // A scenario test's stand-ins for the page's click and the browser (#5956): the `e2e` build

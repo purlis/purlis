@@ -16,7 +16,7 @@ import { appProcesses, logLine, sample, webAndHarnessMemory } from "../processes
 import { focusWorkspace } from "../reach.js";
 
 /**
- * **What an open artifact tab costs in memory: ADR 0086's row M8** (ADR 0120 §10, #5958), in
+ * **What an open artifact tab costs in memory: ADR 0086's row M8** (ADR 0122 §10, #5958), in
  * the built app on macOS and Linux, in `scenario tests`.
  *
  * It looks at the app with no artifact tab open, opens one script-free page pinned to a

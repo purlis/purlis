@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **A page calls the catalogue queries it declared, on its one port** (ADR 0120 §7, #5969).
+//! **A page calls the catalogue queries it declared, on its one port** (ADR 0122 §7, #5969).
 //!
 //! The page posts `{ id, query: "<id>@<N>", params }` on `purlis.port`; purlis's script carries
 //! it as `/.purlis/port/<load>/query/<id>?<{query, params}>` ([`asked`]), on the same port and
@@ -173,7 +173,7 @@ pub(super) fn admitted(
     calls::admit(declared, plane, asked, params)
 }
 
-/// **Grants an approved artifact its plane-scoped queries** (ADR 0120 §7, #5969): a grant of its
+/// **Grants an approved artifact its plane-scoped queries** (ADR 0122 §7, #5969): a grant of its
 /// own, from the person's press in purlis's bar, of exactly the pin and template their window
 /// was served. A new approval of the folder drops it.
 #[tauri::command]

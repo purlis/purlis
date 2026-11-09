@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **A chat proposes a pin; only the person pins** (#5963, ADR 0120 §1, spec #5948 story 13).
+//! **A chat proposes a pin; only the person pins** (#5963, ADR 0122 §1, spec #5948 story 13).
 //!
 //! A chat or a skill may ask for an artifact folder of its own workspace to be pinned, with the
 //! `artifact_propose_pin` tool or `purlis artifact pin` run in the chat. Neither writes the

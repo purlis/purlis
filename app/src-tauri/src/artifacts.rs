@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **A pinned artifact, rendered in its tab** (ADR 0120 §2–3, #5952): a native webview of its
+//! **A pinned artifact, rendered in its tab** (ADR 0122 §2–3, #5952): a native webview of its
 //! own, a child of the window, laid over the tab's frame.
 //!
 //! - **Its label matches no capability** ([`label`], `artifact-<n>`), and the capabilities name
@@ -18,7 +18,7 @@
 //!   asks its own origin for `/.purlis/key/<key>`, which purlis answers by focusing the window's
 //!   own webview and telling it which key ([`ARTIFACT_KEY`]). An approved page can forge that
 //!   request, and it moves only the focus.
-//! - **Its script runs only once the person approved this template here** (ADR 0120 §4,
+//! - **Its script runs only once the person approved this template here** (ADR 0122 §4,
 //!   #5959): the CSP of each response follows the standing read when the folder was
 //!   ([`artifact::approval`]). Approval is [`artifact_approve`]: window-only, of exactly the pin
 //!   and the fingerprint this webview was served, never what the window says; every window of
@@ -33,7 +33,7 @@
 //!   theme it draws, and the page is served it as a stylesheet of its own origin
 //!   ([`serve::THEME_SHEET`]), which the CSP already admits: `color-scheme` purlis's appearance,
 //!   not the operating system's, and each colour token a `--purlis-` custom property.
-//! - **An approved page reads its own data through one port per load** (ADR 0120 §7, #5961):
+//! - **An approved page reads its own data through one port per load** (ADR 0122 §7, #5961):
 //!   purlis's script in the page ([`PORT`]) hands it `purlis.port`, a `MessagePort`, and carries
 //!   what it is asked to purlis on its own origin's `/.purlis/port/<load>/…`, attributed by the
 //!   webview's label. A load's port opens with its first word and is revoked when the page loads
@@ -1320,7 +1320,7 @@ fn lay(
     Ok(label)
 }
 
-/// **The person's approval of an artifact's script, pressed in its tab's bar** (ADR 0120 §4):
+/// **The person's approval of an artifact's script, pressed in its tab's bar** (ADR 0122 §4):
 /// of exactly the pin and the template webview `label` was served, read here and never taken
 /// from the window, so a change since it was served is not approved by this press. Every window
 /// of the plane hears it ([`APPROVALS_CHANGED`]) and loads the page again, now with its script.

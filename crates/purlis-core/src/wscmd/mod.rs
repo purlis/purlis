@@ -198,7 +198,7 @@ pub(crate) fn workspace_lines(n: &str) -> Vec<String> {
     .collect()
 }
 
-/// The four lines that publish LIVE workspace `n`'s artifacts (ADR 0120, #5950): the folder and
+/// The four lines that publish LIVE workspace `n`'s artifacts (ADR 0122, #5950): the folder and
 /// what is in it, then each artifact folder's data files ignored again, since a person's data
 /// is theirs and never travels. Re-ignoring works because the pair re-included the parent above.
 fn artifact_lines(n: &str) -> [String; 4] {

@@ -3,7 +3,7 @@
 
 //! The project index (ADR 0079, #5498): a derived SQLite FTS5 index of one project clone's
 //! memory bases, session records and todos, so `recall` answers without reading every file, and
-//! of its workspaces' pinned artifacts (ADR 0120, #5968), so a search finds what a page says.
+//! of its workspaces' pinned artifacts (ADR 0122, #5968), so a search finds what a page says.
 //!
 //! **Never the truth.** Deleting it costs a rebuild and nothing else: every reader has a correct
 //! answer without it, by scanning the files ([`crate::recall::scan`]). A schema or rules version

@@ -7165,7 +7165,7 @@ export const PlaneView = memo(function PlaneView({
     return () => window.removeEventListener(THEME_CHAT, asked);
   }, [change, plane, showPlaced]);
 
-  // **Discuss** in an artifact's bar (#5957, ADR 0120 §5): a chat about the page, its tab placed here.
+  // **Discuss** in an artifact's bar (#5957, ADR 0122 §5): a chat about the page, its tab placed here.
   useArtifactDiscuss(plane, showPlaced, setReport, setStartApproving);
 
   /**
@@ -11917,7 +11917,7 @@ export const PlaneView = memo(function PlaneView({
                 onSplit={splitHalves}
                 // F6 between the regions (P-13, #1741) is the project in front's, as its side keys are.
                 keyboard={inFront}
-                // **The workspace's pinned artifacts** (#5952, ADR 0120 §2): their own group on the
+                // **The workspace's pinned artifacts** (#5952, ADR 0122 §2): their own group on the
                 // left bar, below purlis's icons; a press opens the artifact's tab or brings it
                 // forward.
                 artifacts={

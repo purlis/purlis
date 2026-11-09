@@ -151,10 +151,10 @@ use crate::skills::grade;
 ///   (`output`, as text) and its exit `status` ([`Executor::check`]). Its answer is not a line of
 ///   JSON but what the program prints on stdout, SARIF 2.1.0, and its exit status, read whole as a
 ///   command's are.
-/// - **7** (#5971, ADR 0120 §9) — a query's question: `query`, holding the query's `name`, the
+/// - **7** (#5971, ADR 0122 §9) — a query's question: `query`, holding the query's `name`, the
 ///   `workspace` it reads (`null` for a plane-scoped one) and its `params`, answered `data` and,
 ///   when there is a next page, `cursor` ([`Executor::query`]).
-/// - **8** (#5973, ADR 0120 §9) — no request or answer changes: it is the version a manifest names
+/// - **8** (#5973, ADR 0122 §9) — no request or answer changes: it is the version a manifest names
 ///   to declare `contributes.artifacts`, templates purlis reads from the extension's own folder
 ///   and never asks its program about ([`crate::extension::artifacts`]). A program that declares
 ///   them is asked everything else in 7's words.
@@ -667,7 +667,7 @@ impl Executor {
         .map(|put| put.section.unwrap_or_default())
     }
 
-    /// **Ask `extension`'s program to answer its query `name`** (protocol 7, ADR 0120 §9, #5971),
+    /// **Ask `extension`'s program to answer its query `name`** (protocol 7, ADR 0122 §9, #5971),
     /// or say why charter did not: the same gate, bounds and watch on the plane every question
     /// takes. Refused for a query the extension does not declare under the `queries`
     /// capability. `workspace` is the one it reads, none for a plane-scoped query, and `params`

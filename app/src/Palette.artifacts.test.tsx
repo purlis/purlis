@@ -10,7 +10,7 @@ import type { Offer, Ran } from "./actions";
 import type { ArtifactFound, PlaneId } from "./bindings";
 
 /**
- * **Artifacts in the palette's search** (#5968, ADR 0120): what is typed finds the pinned
+ * **Artifacts in the palette's search** (#5968, ADR 0122): what is typed finds the pinned
  * artifacts of the project in front whose pages say it, in a group of their own after the
  * actions, and a found artifact opens its own tab. The core is mocked here; what it finds, and
  * what it never reads, is `an_artifacts_text_is_found_through_the_search_index.rs`'s.

@@ -190,7 +190,7 @@ pub fn fork(request: &Request, say: Sink) -> u8 {
                 &fresh.dir().join("todos"),
             ),
         ),
-        // Its artifacts (ADR 0120, #5960): the templates and the pins file, so the fork's bar
+        // Its artifacts (ADR 0122, #5960): the templates and the pins file, so the fork's bar
         // shows what the parent's does. Approvals are not carried: they are this machine's,
         // keyed by where a workspace is, so every one the parent has here asks again here.
         (

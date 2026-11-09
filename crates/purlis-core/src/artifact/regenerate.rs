@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **Regenerate: the pin's command writes this person's data files** (ADR 0120 §6, #5962).
+//! **Regenerate: the pin's command writes this person's data files** (ADR 0122 §6, #5962).
 //!
 //! - **What is approved is the code the command resolves to, never its text** ([`resolve`]).
 //!   The command is one program and its words, with no shell between: the first word that
@@ -17,7 +17,7 @@
 //!   approval is ([`super::approval::key`]): a fork of the workspace, or the plane cloned
 //!   elsewhere, asks again. Re-read at the press ([`standing`]), never carried from an earlier
 //!   read.
-//! - **It never runs in the app** (ADR 0120 §6): this module plans and finishes a run and
+//! - **It never runs in the app** (ADR 0122 §6): this module plans and finishes a run and
 //!   starts nothing. The command runs in the session host, in the sandbox a chat's commands
 //!   run in, and writes into a folder of its own ([`OUT_ENV`]); nothing it writes elsewhere in
 //!   the artifact is read.
@@ -577,7 +577,7 @@ pub struct Launch {
 /// never read by a shell as text, with both its streams written to [`LOG_ENV`].
 const RUNS: &str = "exec \"$@\" >\"$PURLIS_ARTIFACT_LOG\" 2>&1";
 
-/// **The run of `resolved`, wrapped in its sandbox** (ADR 0120 §6, amended 2026-11-09): the
+/// **The run of `resolved`, wrapped in its sandbox** (ADR 0122 §6, amended 2026-11-09): the
 /// profile a chat's commands run in (Seatbelt on macOS, purlis's own wrap on Linux, from
 /// [`crate::sandbox::seatbelt::profile`]) with this plane's denials, **no network** (no proxy
 /// port and no socket is named in it), and **writes to `scratch` alone**: its out folder, its

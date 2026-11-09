@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **Discuss**: a chat about a pinned artifact, with its page attached as quoted third-party
-//! content (ADR 0120 §5, #5957).
+//! content (ADR 0122 §5, #5957).
 //!
 //! A page is someone else's words: whoever wrote or generated it, not the person who presses
 //! Discuss. So it reaches the chat the way purlis hands a chat any other words that are not the
@@ -20,7 +20,7 @@
 //!
 //! **Only the template is attached**, `index.html` as the workspace holds it: the page everyone
 //! the workspace is shared with sees. Its data files are each person's own and never committed
-//! (ADR 0120 §1), so they are not handed to a chat by this.
+//! (ADR 0122 §1), so they are not handed to a chat by this.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;

@@ -9,7 +9,7 @@ import { startRefused, type StartApproving } from "./StartApproval";
 import { Button } from "./ui/button/Button";
 
 /**
- * **Discuss**, in an artifact's bar (ADR 0120 §5, #5957): a new chat about the page.
+ * **Discuss**, in an artifact's bar (ADR 0122 §5, #5957): a new chat about the page.
  *
  * The core quotes the page as third-party content, names its pinner and commit, and starts a
  * chat in the workspace with one line typed and never sent (`artifact_discuss`); the person

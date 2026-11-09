@@ -90,7 +90,7 @@ fn a_plane() -> Plane {
     std::fs::write(root.join("workspaces/.default"), "alpha\n").unwrap();
     crate::wscmd::set_live(&root, "alpha", true).unwrap();
 
-    // A pinned artifact with script (ADR 0120), approved on this machine below.
+    // A pinned artifact with script (ADR 0122), approved on this machine below.
     let board = root.join("workspaces/alpha/artifacts/board");
     std::fs::create_dir_all(&board).unwrap();
     std::fs::write(

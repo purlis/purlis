@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // **A mock of `purlis.port`, for a page developed outside purlis** (`purlis artifact mock`,
-// ADR 0120 §7, #5975). Load it before the page's own script:
+// ADR 0122 §7, #5975). Load it before the page's own script:
 //
 //   <script src="purlis-page-mock.js"></script>
 //

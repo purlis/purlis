@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! `purlis artifact pin|unpin|list|search|reorder|approve-status`: the command line of
-//! [`purlis_core::artifact`] (ADR 0120, #5950). A pin is committed with the workspace, so a
+//! [`purlis_core::artifact`] (ADR 0122, #5950). A pin is committed with the workspace, so a
 //! LIVE workspace's pins reach every teammate with the plane's next save.
 //!
 //! **There is no `approve` here** (#5959): a page's script is approved only in purlis's bar,
@@ -150,7 +150,7 @@ impl ArtifactCommand {
     }
 }
 
-/// **A page author's commands** (ADR 0120 §7, #5975), answered with no plane: `check`, `types`
+/// **A page author's commands** (ADR 0122 §7, #5975), answered with no plane: `check`, `types`
 /// and `mock`. Any other command is not an author's and answers 2.
 pub fn authors(command: &ArtifactCommand) -> Code {
     use purlis_core::artifact::{check, kit};
@@ -218,7 +218,7 @@ pub fn run(here: &Here, command: ArtifactCommand) -> Result<Code, String> {
             cwd,
             workspace,
         } => {
-            // A chat proposes; only the person pins (#5963, ADR 0120 §1). Which chat it is, and so
+            // A chat proposes; only the person pins (#5963, ADR 0122 §1). Which chat it is, and so
             // which workspace, is the app's record of it, never a flag: `-w` names nothing here.
             if !crate::skill::at_the_persons_terminal(root) {
                 // A template is copied into the workspace before it is pinned: no chat does that

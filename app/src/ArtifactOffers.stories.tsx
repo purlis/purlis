@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **The actions an artifact's page offers, on purlis's bar** (#5972, ADR 0120 §8): each in the
+ * **The actions an artifact's page offers, on purlis's bar** (#5972, ADR 0122 §8): each in the
  * catalogue's words, a delete marked and asking first, and a refused offer's sentence.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";

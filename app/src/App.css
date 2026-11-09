@@ -8789,7 +8789,7 @@ nav.piece-files-head {
   font-size: var(--font-size-sm);
 }
 
-/* **A pinned artifact's group on the left bar** (#5952, ADR 0120 §2): after a divider, below
+/* **A pinned artifact's group on the left bar** (#5952, ADR 0122 §2): after a divider, below
    purlis's own icons. The divider is the separator family's, held off the column's edges. */
 .artifact-divider {
   flex: none;
@@ -8855,7 +8855,7 @@ nav.piece-files-head {
   gap: var(--space-2);
 }
 
-/* **Where the page's script stands, on purlis's bar** (#5959, ADR 0120 §4). */
+/* **Where the page's script stands, on purlis's bar** (#5959, ADR 0122 §4). */
 .artifact-bar-standing {
   flex: 0 1 auto;
   min-width: 0;
@@ -8866,7 +8866,7 @@ nav.piece-files-head {
   text-overflow: ellipsis;
 }
 
-/* **The actions a page offers, on purlis's bar** (#5972, ADR 0120 §8): purlis's buttons, in a
+/* **The actions a page offers, on purlis's bar** (#5972, ADR 0122 §8): purlis's buttons, in a
    row of their own on the bar. */
 .artifact-bar-offers {
   display: inline-flex;
@@ -8876,7 +8876,7 @@ nav.piece-files-head {
   min-width: 0;
 }
 
-/* **What a failed Regenerate said** (#5962, ADR 0120 §6): on a line of its own under the bar's
+/* **What a failed Regenerate said** (#5962, ADR 0122 §6): on a line of its own under the bar's
    row, with the tail of the run's output, masked, kept to a few lines that scroll. */
 .artifact-bar:has(.artifact-regenerate-said) {
   flex-wrap: wrap;
@@ -8910,7 +8910,7 @@ nav.piece-files-head {
   overflow-wrap: anywhere;
 }
 
-/* **The frame's edge, which the page cannot draw** (#5959, ADR 0120 §3): around the frame the
+/* **The frame's edge, which the page cannot draw** (#5959, ADR 0122 §3): around the frame the
    page's webview is laid over, so it stays outside the page. Its colour is where the page's
    script stands: none or not run, asking, or approved and running. */
 .artifact-edge {

@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **When an artifact's data was last updated** (ADR 0120 §6, #5955): what its icon and its bar
+//! **When an artifact's data was last updated** (ADR 0122 §6, #5955): what its icon and its bar
 //! say, and whether the icon is dimmed as stale.
 //!
 //! - **A date the data declares comes first**: `data.json`'s top-level [`DECLARED`] key, an
@@ -9,7 +9,7 @@
 //!   regenerated file says when its values were true, which no file time can.
 //! - **Else the data files' commit time**, while git holds them as committed: a fresh clone
 //!   writes every file at once, so a write time there says when it was cloned.
-//! - **Else their write time**: data is gitignored (ADR 0120 §1), so this is the usual answer.
+//! - **Else their write time**: data is gitignored (ADR 0122 §1), so this is the usual answer.
 //!
 //! The data is `data.json` and everything under `data/` ([`super::serve::is_data`]); a page
 //! with none is its own data, and its `index.html` is read for the times. A link is never

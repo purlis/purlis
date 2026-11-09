@@ -8,7 +8,7 @@
 //!   at that commit ([`as_of`]). purlis keeps no copy of a template.
 //! - **The data's history is kept here, bounded** ([`keep`]): each Regenerate that placed data
 //!   keeps a copy of the declared data files it wrote, and only the newest [`MOST`] are kept
-//!   per artifact; an older one is removed as a new one is kept. Data is each person's (ADR 0120
+//!   per artifact; an older one is removed as a new one is kept. Data is each person's (ADR 0122
 //!   §1), so its copies are **Machine tier**, under the config home ([`DIR`]), keyed as the
 //!   page's approval is ([`super::approval::key`]), and **never written to the plane**.
 //! - **"As of" a version** pairs the template committed by then with the data kept by then: a

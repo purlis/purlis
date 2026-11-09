@@ -1,7 +1,7 @@
 # Amendment, 2026-11-09: an artifact is not a panel
 
 **Amends [ADR 0043](../0043-a-panel-is-a-declared-contribution-and-a-chart-is-not-a-row.md)**, by
-[ADR 0120](../0120-an-artifact-is-a-workspaces-page-rendered-isolated-and-its-api-is-the-read-only-tool-catalogue.md), accepted the same day (#5948, #5949).
+[ADR 0122](../0122-an-artifact-is-a-workspaces-page-rendered-isolated-and-its-api-is-the-read-only-tool-catalogue.md), accepted the same day (#5948, #5949).
 
 The panel vocabulary is unchanged. A panel is still data drawn by purlis from its own blocks, and a
 declared row still carries no verb of its own. **An artifact is not a panel**: it is a page of

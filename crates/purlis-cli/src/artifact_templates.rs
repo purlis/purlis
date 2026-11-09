@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! `purlis artifact templates` and `purlis artifact pin --template`: an extension's artifact
-//! templates (ADR 0120 §9, #5973), the command line of [`purlis_core::extension::artifacts`].
+//! templates (ADR 0122 §9, #5973), the command line of [`purlis_core::extension::artifacts`].
 
 use purlis_core::artifact::Pinned;
 use purlis_core::extension::{BuiltIn, artifacts, project::Choices};

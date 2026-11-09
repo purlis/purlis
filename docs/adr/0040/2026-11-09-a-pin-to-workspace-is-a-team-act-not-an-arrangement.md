@@ -1,7 +1,7 @@
 # Amendment, 2026-11-09: a pin to workspace is a team act, not an arrangement
 
 **Amends [ADR 0040](../0040-a-pin-is-an-arrangement-so-it-is-machine-state.md)**, by
-[ADR 0120](../0120-an-artifact-is-a-workspaces-page-rendered-isolated-and-its-api-is-the-read-only-tool-catalogue.md) §1 and §2, accepted the same day (#5948, #5949).
+[ADR 0122](../0122-an-artifact-is-a-workspaces-page-rendered-isolated-and-its-api-is-the-read-only-tool-catalogue.md) §1 and §2, accepted the same day (#5948, #5949).
 
 This record holds that a pin is an arrangement, and so machine state. **Pin to workspace** is not
 one. It makes an HTML page an artifact of the workspace for everyone in the plane: it is confirmed

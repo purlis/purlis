@@ -5,7 +5,7 @@ import type { Does, Offer } from "./actions";
 import { todoRefOf } from "./todos";
 
 /**
- * **What an artifact's page may offer, and how purlis draws it** (ADR 0120 §8, #5972).
+ * **What an artifact's page may offer, and how purlis draws it** (ADR 0122 §8, #5972).
  *
  * A page never performs an action. It offers a `Does` id of the action catalogue
  * (`actions.ts`, the part of a row's id before its colon) and a subject (the part after it);

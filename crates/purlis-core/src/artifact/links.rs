@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **The links an artifact's page may follow out of purlis** (ADR 0120 §5, #5956).
+//! **The links an artifact's page may follow out of purlis** (ADR 0122 §5, #5956).
 //!
 //! - **Only a link written in the template** ([`written`]): an `<a>` or `<area>` whose `href`
 //!   one of the template's pages holds, as the HTML tokenizer browsers are specified by reads

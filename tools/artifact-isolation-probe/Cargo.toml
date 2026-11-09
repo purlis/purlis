@@ -1,7 +1,7 @@
 # Copyright 2026 Purlis
 # SPDX-License-Identifier: Apache-2.0
 
-# The isolation prototype ADR 0120 §3 asked for (#5949, PE-39): both renderings of an artifact,
+# The isolation prototype ADR 0122 §3 asked for (#5949, PE-39): both renderings of an artifact,
 # built only as far as the five tests need them. Its own workspace, as `tools/windows-probe` is:
 # it is evidence, not a rung of the ladder, it is in nobody's `cargo check --workspace`, and the
 # app crate does not compile on Windows yet, which this must. The real rendering is #5952; on

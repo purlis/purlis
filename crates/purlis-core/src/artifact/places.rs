@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **Where a `purlis://` link in an artifact's page goes** (ADR 0120 §5 as amended, #5967;
+//! **Where a `purlis://` link in an artifact's page goes** (ADR 0122 §5 as amended, #5967;
 //! `docs/artifact-links.md`).
 //!
 //! A page is a hub: a link written in it may open a place in purlis. It never acts. The places

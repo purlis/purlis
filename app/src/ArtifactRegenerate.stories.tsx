@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **Regenerate in a pinned artifact's bar** (#5962, ADR 0120 §6): ready, asking first with the
+ * **Regenerate in a pinned artifact's bar** (#5962, ADR 0122 §6): ready, asking first with the
  * code it approves named, failed with the run's output, and off where its command cannot run.
  * The core is faked at its command boundary.
  */

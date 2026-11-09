@@ -33,7 +33,7 @@ pub(crate) fn stays_in_the_app(url: &Url, dev: Option<&Url>) -> bool {
 pub(crate) fn plugin<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("navguard")
         .on_navigation(|webview, url| {
-            // An artifact's page goes nowhere but its own origin (#5952, ADR 0120 §3).
+            // An artifact's page goes nowhere but its own origin (#5952, ADR 0122 §3).
             if crate::artifacts::is_artifact(webview.label()) {
                 return webview
                     .try_state::<crate::artifacts::Artifacts>()

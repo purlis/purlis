@@ -98,7 +98,7 @@ impl Pin {
 }
 
 /// A pin's identity: the first twelve hex digits of the SHA-256 of its folder, command and
-/// working folder joined by NUL. A change to any of the three is a new pin (ADR 0120 §1).
+/// working folder joined by NUL. A change to any of the three is a new pin (ADR 0122 §1).
 pub fn id_of(folder: &str, command: Option<&str>, cwd: Option<&str>) -> String {
     let mut hash = Sha256::new();
     hash.update(folder.as_bytes());

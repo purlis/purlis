@@ -392,7 +392,7 @@ mod tests {
 
     #[test]
     fn an_artifact_s_webview_laid_in_a_charter_window_may_invoke_nothing() {
-        // #5952, ADR 0120 §3 test 1: an artifact's page is a child webview of the window it is
+        // #5952, ADR 0122 §3 test 1: an artifact's page is a child webview of the window it is
         // drawn in, and a capability that named windows would reach it there. The capabilities
         // name charter's webviews, so it holds an empty grant: no app command, the vault's
         // values among them, and none of Tauri's own.

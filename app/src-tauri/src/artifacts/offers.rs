@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **A page offers actions; it never performs one** (ADR 0120 §8, #5972).
+//! **A page offers actions; it never performs one** (ADR 0122 §8, #5972).
 //!
 //! The page posts the whole set it offers now, `{ id, offers: [{ does, subject }] }`, on
 //! `purlis.port`; purlis's script carries it as `/.purlis/port/<load>/offers/<id>?<{offers}>`

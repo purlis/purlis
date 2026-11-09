@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **A pinned artifact's tab** (ADR 0120 §2, #5952): a view purlis draws itself,
+ * **A pinned artifact's tab** (ADR 0122 §2, #5952): a view purlis draws itself,
  * `{ from: null, view: "artifact", key }`, opened through `openView` like any view, so pressing
  * its icon again brings its tab forward. A private tab: the tab is this machine's (ADR 0040),
  * the pin the workspace's.
@@ -66,7 +66,7 @@ const OVERLAYS = [
   '[data-scope="dialog"][data-part="modal"]',
 ].join(",");
 
-/** The most icons an artifact group draws (ADR 0120 §2); more go to its show-more (#5953). */
+/** The most icons an artifact group draws (ADR 0122 §2); more go to its show-more (#5953). */
 export const MOST_DRAWN = 8;
 
 /**
@@ -182,7 +182,7 @@ export function approvalOf(
 }
 
 /**
- * **A change to the template of artifact folder `folder` of workspace `workspace`** (ADR 0120
+ * **A change to the template of artifact folder `folder` of workspace `workspace`** (ADR 0122
  * §4): any file of its folder but its data (`data.json`, `data/`), which never asks again. Its
  * page is torn down and opened again, without its script until approved anew.
  */

@@ -719,7 +719,7 @@ export type Does =
    *  (#5377): one line in the workspace's LIVE allowlist, so the next save shares it. Only this
    *  press adds one, since a script may hold a token. */
   | { verb: "saveWithTheProject"; at: BranchPath }
-  /** Opens Pin to workspace for an `.html` file (#5953, ADR 0120): the dialog that pins it to
+  /** Opens Pin to workspace for an `.html` file (#5953, ADR 0122): the dialog that pins it to
    *  the workspace for everyone in the project. It pins nothing by itself. */
   | { verb: "pinToWorkspace"; at: BranchPath }
   /** Opens a branch file in the operator's editor at `line` (RC-20). */
@@ -6493,7 +6493,7 @@ export function fileRows(what: FileOn): Offer[] {
         at,
       }),
     );
-  // **An `.html` page's Pin to workspace** (#5953, ADR 0120 §1): last, for it asks first and
+  // **An `.html` page's Pin to workspace** (#5953, ADR 0122 §1): last, for it asks first and
   // names the workspace. A page outside the workspace's `artifacts/` is copied in by it, so a
   // branch's page is offered it too; the plane root's is no workspace's to pin to.
   if (kind !== "folder" && isPage(at.path)) {

@@ -116,7 +116,7 @@ import { ListComboBox } from "./ui/select/ComboBox";
  * switch between, and a lone project's own row, which could only say it is already in front,
  * is not listed.
  *
- * **And it finds artifacts** (#5968, ADR 0120): once something is typed, the pinned artifacts of
+ * **And it finds artifacts** (#5968, ADR 0122): once something is typed, the pinned artifacts of
  * the project in front whose pages say it follow the actions, in a group of their own as the
  * files are, and a found artifact opens its own tab. What is searched is the core's: a pinned
  * folder's template, never anyone's data (`artifactFind.ts`).

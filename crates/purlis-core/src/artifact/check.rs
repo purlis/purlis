@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **`purlis artifact check <folder>`** (ADR 0120 §7, #5975): what an author learns before a
+//! **`purlis artifact check <folder>`** (ADR 0122 §7, #5975): what an author learns before a
 //! person is asked to approve the page.
 //!
 //! - **The declaration** is read exactly as purlis reads it when it serves the page

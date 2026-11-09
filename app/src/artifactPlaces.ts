@@ -5,7 +5,7 @@ import type { Does, Offer } from "./actions";
 import { todoView } from "./todos";
 
 /**
- * **Where the window goes for a `purlis://` link in an artifact's page** (ADR 0120 §5 as
+ * **Where the window goes for a `purlis://` link in an artifact's page** (ADR 0122 §5 as
  * amended, #5967; `docs/artifact-links.md`).
  *
  * The core reads the link into a place of a closed list and checks it is in the artifact's

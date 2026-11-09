@@ -6,7 +6,7 @@ import { commands, type ArtifactOpened } from "./bindings";
 import { Button } from "./ui/button/Button";
 
 /**
- * **What an artifact's page reads of purlis, said in purlis's bar** (ADR 0120 §7, #5969).
+ * **What an artifact's page reads of purlis, said in purlis's bar** (ADR 0122 §7, #5969).
  *
  * - **The queries its page declared**, as its approval covers them: each `<id>@<N>`, and every
  *   declared parameter that widens what it reads, with what it then reads.

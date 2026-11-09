@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! `purlis artifact templates` and `purlis artifact pin --template` (ADR 0120 §9, #5973), asked
+//! `purlis artifact templates` and `purlis artifact pin --template` (ADR 0122 §9, #5973), asked
 //! of the binary with the test-only `extension-probe` installed as `artifact-probe`. What a pin
 //! of a template copies and refuses is proven in `extension-probe`'s own tests; what is here is
 //! that the command line reaches it and says what it did.

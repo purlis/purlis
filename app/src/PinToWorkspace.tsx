@@ -17,7 +17,7 @@ import { OptionCard, OptionCards } from "./ui/choice/Radio";
 import { AlertDialog, Dialog } from "./ui/dialog/Dialog";
 
 /**
- * **Pin to workspace** (#5953, ADR 0120 §1): the team's pin, never a tab's private Pin. It reads
+ * **Pin to workspace** (#5953, ADR 0122 §1): the team's pin, never a tab's private Pin. It reads
  * differently (it names the workspace and asks first) and looks different (its mark is people,
  * not a pin), so one is never taken for the other (spec story 11).
  *

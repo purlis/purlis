@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **A page subscribes to a catalogue query it declared, on its one port** (ADR 0120 §7,
+//! **A page subscribes to a catalogue query it declared, on its one port** (ADR 0122 §7,
 //! #5970), and purlis pushes it a new answer when the plane moves what it reads.
 //!
 //! The page posts `{ id, subscribe: "<id>@<N>", params }` on `purlis.port`; purlis's script

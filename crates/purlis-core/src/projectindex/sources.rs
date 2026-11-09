@@ -29,7 +29,7 @@ pub enum Kind {
     Sessions,
     /// A workspace's open todos, `workspaces/<ws>/todos/`.
     Todos,
-    /// A workspace's pinned artifacts, `workspaces/<ws>/artifacts/` (ADR 0120, #5968): one row
+    /// A workspace's pinned artifacts, `workspaces/<ws>/artifacts/` (ADR 0122, #5968): one row
     /// per pin, read by [`crate::artifact::search`], never by `memstore::read_files`.
     Artifacts,
 }

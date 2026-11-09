@@ -1278,7 +1278,7 @@ fn wanted(root: &Path) -> HashSet<PathBuf> {
     wanted
 }
 
-/// **A workspace's artifacts** (ADR 0120, #5955): `artifacts/` itself, which holds the pins,
+/// **A workspace's artifacts** (ADR 0122, #5955): `artifacts/` itself, which holds the pins,
 /// and each pinned folder with every folder in it, so an open artifact hears its template and
 /// its data change. Only what is pinned: an artifact folder is small (it is served whole), and
 /// one nobody pinned is not read by anything. A link is not followed, as nowhere here.

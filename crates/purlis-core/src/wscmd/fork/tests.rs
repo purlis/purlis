@@ -341,7 +341,7 @@ fn the_pieces_a_fork_could_not_read_are_listed_the_way_charter_lists_them() {
     );
 }
 
-/// ADR 0120 §4 (#5960): a fork carries the parent's artifacts and their pins, and asks again
+/// ADR 0122 §4 (#5960): a fork carries the parent's artifacts and their pins, and asks again
 /// on this machine for every approval the parent has here.
 #[test]
 fn a_fork_carries_its_pinned_artifacts_and_asks_again_for_each_approval() {

@@ -12,7 +12,7 @@ import { Button } from "./ui/button/Button";
 import { AlertDialog } from "./ui/dialog/Dialog";
 
 /**
- * **Regenerate, in an artifact's bar** (ADR 0120 §6, #5962): the pin's command run again in
+ * **Regenerate, in an artifact's bar** (ADR 0122 §6, #5962): the pin's command run again in
  * purlis's session host, writing this person's data files.
  *
  * - **Drawn only for a pin that names a command.** Where it cannot run here (no script it can

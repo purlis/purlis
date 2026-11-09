@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! ADR 0120 §3's five tests, against both renderings: each launches the probe once, in its own
+//! ADR 0122 §3's five tests, against both renderings: each launches the probe once, in its own
 //! process, so a page that loops or navigates away cannot touch the next question.
 
 use std::process::Command;
@@ -54,7 +54,7 @@ mod native_webview {
     }
 }
 
-/// The rendering ADR 0120 rejected on this evidence: on macOS it failed the loop (WebKit runs the
+/// The rendering ADR 0122 rejected on this evidence: on macOS it failed the loop (WebKit runs the
 /// frame on the window's own thread) and the escape (the window's `frame-src` cannot tell one
 /// artifact's origin from another's). Kept to measure again, not run by default.
 mod sandboxed_frame {

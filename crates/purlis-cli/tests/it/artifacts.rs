@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! `purlis artifact pin | unpin | list | reorder` asked of the binary (ADR 0120, #5950): a pin
+//! `purlis artifact pin | unpin | list | reorder` asked of the binary (ADR 0122, #5950): a pin
 //! is a line of the workspace's committed pins file, a pin never leads out of its workspace's
 //! `artifacts/`, and two people's pins meet in one file through the plane's own git.
 
@@ -406,7 +406,7 @@ fn two_people_pinning_at_once_merge_into_one_pins_file() {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Scripted pages and each person's approval (#5959, ADR 0120 §4)
+// Scripted pages and each person's approval (#5959, ADR 0122 §4)
 // ---------------------------------------------------------------------------------------------
 
 /// A page with script: an inline handler and a script file beside it.

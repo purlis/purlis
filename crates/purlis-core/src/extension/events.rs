@@ -194,7 +194,7 @@ const CORE_NAMES: [&str; 16] = [
     // The workspace level of its skills, shared and local (ADR 0099, #2767).
     "skills",
     "skills.local",
-    // The workspace's artifacts (ADR 0120, #5950).
+    // The workspace's artifacts (ADR 0122, #5950).
     "artifacts",
     "README.md",
     "CLAUDE.md",

@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-// **purlis's own script in every artifact page** (`artifacts.rs`, ADR 0120 §3): the platform
+// **purlis's own script in every artifact page** (`artifacts.rs`, ADR 0122 §3): the platform
 // runs it at the start of each load, before the page's own markup, whatever the page's CSP
 // says. It asks for nothing but its own origin, which the CSP already admits.
 //

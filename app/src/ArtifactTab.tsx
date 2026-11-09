@@ -37,7 +37,7 @@ import { Button } from "./ui/button/Button";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 
 /**
- * **A pinned artifact, rendered in its tab** (ADR 0120 §2–3, #5952).
+ * **A pinned artifact, rendered in its tab** (ADR 0122 §2–3, #5952).
  *
  * - **A bar purlis draws, outside the page**: its name and who pinned it, which nothing on the
  *   page can draw over or fake.
@@ -54,7 +54,7 @@ import { EmptyState } from "./ui/empty-state/EmptyState";
  * - **The keyboard**: the frame is a Tab stop named by the artifact's name. Enter puts the
  *   keyboard in the page; Esc there brings it back to the frame, and F6 moves on to the next
  *   region as it does anywhere in the window.
- * - **Script runs only once approved, and only from this bar** (ADR 0120 §4, #5959): a page with
+ * - **Script runs only once approved, and only from this bar** (ADR 0122 §4, #5959): a page with
  *   script is shown without it, and the bar says so and offers Approve script. The frame's edge,
  *   which the page cannot draw, shows where it stands. An approval in any window, or a change to
  *   its template, tears the page down and opens it again under its new standing.
@@ -62,9 +62,9 @@ import { EmptyState } from "./ui/empty-state/EmptyState";
  *   watch tells every window, and keeps where it was scrolled; it is drawn in the theme the
  *   window draws, and in each one it draws after; and the bar says when its data was last
  *   updated.
- * - **A page only offers actions** (ADR 0120 §8, #5972): the catalogue rows its page offers are
+ * - **A page only offers actions** (ADR 0122 §8, #5972): the catalogue rows its page offers are
  *   drawn on this bar in purlis's words, and only the person's press here does one.
- * - **Its data is each person's** (ADR 0120 §1, #5961): a page that declares data files of
+ * - **Its data is each person's** (ADR 0122 §1, #5961): a page that declares data files of
  *   which none is on this machine still renders, and the bar says it was not generated here.
  *   The page reads its data itself, through the port purlis hands each load (`artifacts.rs`).
  */

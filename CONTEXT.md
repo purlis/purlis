@@ -1216,7 +1216,7 @@ A page a workspace shows to everyone who works in it: an HTML template in the wo
 `artifacts/` folder that someone **pinned to the workspace**. Pinning it to the workspace makes
 it one and unpinning ends it; the files stay. Its template is shared through the plane, and the
 data it shows is each person's own, never written to the plane. It opens in a private tab, and
-a part of **Workspace** (ADR 0072, ADR 0120).
+a part of **Workspace** (ADR 0072, ADR 0122).
 _Avoid_: attachment, dashboard (for the concept), report, artifact (for a CI or release build's
 output, or for a Claude.ai artifact)
 
@@ -1224,7 +1224,7 @@ output, or for a Claude.ai artifact)
 A person's deliberate act that gives an **Artifact** an icon on its workspace's activity bar,
 for everyone who works in it. It is kept in the plane and shared by a save, unlike a **Pin**,
 which is one person's and kept on this machine. Any change to what a pin points at is a new pin
-(ADR 0120, amending ADR 0040).
+(ADR 0122, amending ADR 0040).
 _Avoid_: share, publish, feature, pin (unqualified, which is the private mark)
 
 **Side**:

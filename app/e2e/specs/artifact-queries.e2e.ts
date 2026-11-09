@@ -7,7 +7,7 @@ import { $, browser, expect } from "@wdio/globals";
 import { focusWorkspace } from "../reach.js";
 
 /**
- * **A pinned artifact whose page calls purlis's queries** (#5969, ADR 0120 §7), in the built app
+ * **A pinned artifact whose page calls purlis's queries** (#5969, ADR 0122 §7), in the built app
  * against the real core: purlis's bar lists the queries the page declared and the parameters that
  * widen what they read, before and after the person approves its script.
  *

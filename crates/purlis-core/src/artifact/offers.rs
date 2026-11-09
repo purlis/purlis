@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **The actions an artifact's page offers** (ADR 0120 §8, #5972).
+//! **The actions an artifact's page offers** (ADR 0122 §8, #5972).
 //!
 //! A page never performs an action. It may *offer* some: each a `Does` id of the window's action
 //! catalogue (`app/src/actions.ts`, the part of a row's id before its colon, such as
