@@ -54,7 +54,7 @@ fn not_apart(
 fn every_built_in_appearance_draws_its_side_view_s_cards_a_step_from_the_panel() {
     for theme in every_built_in() {
         assert_eq!(not_apart(theme), [], "{} {}", theme.name, theme.id);
-        let on = super::super::parts::card_on_side(theme).expect("both choose their cards");
+        let on = super::super::parts::card_on_side(theme);
         let step = contrast(theme.value(on.card), theme.value(on.ground));
         assert!(
             step >= CARD_STEP,
@@ -131,10 +131,11 @@ fn the_card_s_step_is_only_reported_never_a_pair_the_floors_or_a_person_s_colour
 }
 
 #[test]
-fn a_palette_alone_is_not_yet_held() {
+fn a_palette_alone_whose_cards_meet_the_panel_is_reported_in_every_tint() {
     // A theme that chooses no card row and no side panel draws its cards on the family's raised
-    // ground, wherever its palette puts it: like a meter's fill on its track, that waits for a
-    // pair the check only reports (#3735). Its raised, sunken and window grounds are one colour.
+    // ground over the panel's, wherever its palette puts them (#5979). Its raised, sunken and
+    // window grounds are one colour, so its cards read as plain rows: the check says so, in every
+    // tint.
     let loaded = load(&json!({
         "name": "Flat",
         "appearances": [{ "id": "dark", "appearance": "dark", "tokens": {
@@ -144,8 +145,14 @@ fn a_palette_alone_is_not_yet_held() {
         } }],
     }));
     assert!(!loaded.refused, "{:?}", loaded.complaints);
-    assert!(loaded.theme.first().parts.is_empty());
-    assert_eq!(not_apart(loaded.theme.first()), []);
+    let theme = loaded.theme.first();
+    assert!(theme.parts.is_empty());
+    let found = not_apart(theme);
+    assert!(
+        found.contains(&(None, "surface.raised", "surface.base", 1.0)),
+        "{found:?}"
+    );
+    assert_eq!(found.len(), 1 + theme.tint.hues.len(), "{found:?}");
     // The same palette over Purlis Classic inherits Classic's sunken card row, and is held.
     let over = load(&json!({
         "name": "Flat Classic",

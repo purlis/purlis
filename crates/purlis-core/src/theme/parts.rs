@@ -5229,21 +5229,10 @@ pub(super) struct CardOnSide {
     pub ground: &'static str,
 }
 
-/// What [`CardOnSide`] says of `theme`, where its parts, its own or inherited, choose a card
-/// row's look or a side panel's fill. For a palette alone it is not yet held, as a meter's fill
-/// on its track is ([`super::check::REPORTED`], #3735): a theme that chooses neither draws its
-/// cards on the family's raised ground, wherever its palette puts it.
-pub(super) fn card_on_side(theme: &ResolvedTheme) -> Option<CardOnSide> {
-    let chosen = theme.parts.keys().any(|key| {
-        (key.family == "list" && key.variant == Some("card"))
-            || (key.family == "panel"
-                && key.part == "root"
-                && key.property == Prop::Fill
-                && key.variant.is_none_or(|variant| variant == "side"))
-    });
-    if !chosen {
-        return None;
-    }
+/// What [`CardOnSide`] says of `theme`: as its parts, its own or inherited, draw a card row and
+/// a side panel, or as the families do by default for a palette alone, which puts its cards on
+/// the raised ground wherever its palette puts it (#5979).
+pub(super) fn card_on_side(theme: &ResolvedTheme) -> CardOnSide {
     let held = held_once(theme);
     let rules = &held.0;
     let list = family("list").expect("the list family");
@@ -5255,11 +5244,11 @@ pub(super) fn card_on_side(theme: &ResolvedTheme) -> Option<CardOnSide> {
     } else {
         list.border_width > 0.0
     };
-    Some(CardOnSide {
+    CardOnSide {
         card: card.fill,
         edge: (edged && card.border != TRANSPARENT).then_some(card.border),
         ground: drawn(rules, panel, "side", &[]).fill,
-    })
+    }
 }
 
 /// **A notice card's secondary way and what it stands on** (#4210): each variant's card ground,

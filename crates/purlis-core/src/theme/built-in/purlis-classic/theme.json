@@ -62,7 +62,7 @@
         "border.subtle": "#2f2f2b",
         "border.strong": "#41403b",
         "border.control": "#41403b",
-        "border.input": "#41403b",
+        "border.input": "#6b6a66",
 
         "accent.base": "#52c4a6",
         "accent.surface": "#17302a",
@@ -272,7 +272,7 @@
         "border.subtle": "#d8d5cc",
         "border.strong": "#b8b4a8",
         "border.control": "#b8b4a8",
-        "border.input": "#b8b4a8",
+        "border.input": "#8a877e",
 
         "accent.base": "#086a56",
         "accent.surface": "#dcf1ea",

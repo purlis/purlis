@@ -1373,6 +1373,9 @@ fn findings(theme: &Theme) -> Vec<String> {
         .map(|finding| match finding {
             Finding::Contrast { pair, .. } => format!("{} on {}", pair.front, pair.back),
             Finding::Ansi { token, .. } => format!("{token} on terminal.background"),
+            Finding::CardNotApart { card, ground, .. } => {
+                format!("a card row in {card} on {ground}")
+            }
             other => format!("{other:?}"),
         })
         .collect()
@@ -1455,17 +1458,36 @@ mod every_shipped_fixture_imports_with_no_avoidable_finding_and_its_hues_apart {
             "Tide.itermcolors" => &["terminal.ansi.black on terminal.background"],
             // A VS Code theme's comment is drawn as its author wrote it, on the diff's washes it
             // does not name (#4424): the check says so, and the import does not walk it.
+            // Its card rows meet the side panel (#5979): it names no widget ground, so the raised
+            // ground the import derives is 1.01 from the window's, as Classic's own is 1.02, and
+            // with no parts a card row is drawn on it. The check says so; the import leaves it.
+            // Its comment clears a mark's 3:1 on its own editor ground and not words' 4.5:1.
             "ember.jsonc" => &[
+                "a card row in surface.raised on surface.base",
                 "syntax.comment on diff.deleted-text",
                 "syntax.comment on diff.inserted-text",
+                "syntax.comment on terminal.background",
             ],
+            // The raised ground derived from its one background is 1.04 from it (#5979).
             "moss" => &[
+                "a card row in surface.raised on surface.base",
                 "terminal.ansi.black on terminal.background",
                 "terminal.ansi.bright-black on terminal.background",
             ],
             // Dune's own light blue on its own selected row (#3100), 4.1:1: an update pill's
-            // words under the pointer. Purlis keeps the theme's colours and says so.
-            "dune.json" => &["accent.text on list.selected"],
+            // words under the pointer. Purlis keeps the theme's colours and says so. Its control
+            // edge, which a text box takes, is under 3:1 on a panel and a dialog (#5979).
+            "dune.json" => &[
+                "accent.text on list.selected",
+                "border.input on surface.overlay",
+                "border.input on surface.raised",
+            ],
+            // Its control edge, which a text box takes, is under 3:1 on a panel and a dialog
+            // (#5979): the check says so, and the import draws the edge as it found it.
+            "harbor.yaml" => &[
+                "border.input on surface.overlay",
+                "border.input on surface.raised",
+            ],
             _ => &[],
         };
         let distinct: BTreeSet<&str> = found.iter().map(String::as_str).collect();

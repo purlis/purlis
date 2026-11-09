@@ -784,12 +784,16 @@ its `ratio`, and `under` when the back is a wash laid over another token, and `b
 that token is a wash laid over another in turn; a pair the check only reports, which no
 consent floor, import tier or person's colour acts on, is one of these too: a meter's fills,
 `accent.base`, `state.waiting` and `text.muted`, on its track, `border.subtle`, over
-`surface.base` and over `surface.raised`, at 3:1), `ansi` (a terminal colour too close to the
+`surface.base` and over `surface.raised`, at 3:1, and a text box's edge, `border.input`, on
+`surface.base`, `surface.raised` and `surface.overlay`, at 3:1, and each syntax role on the
+editor's own ground, `terminal.background`, at 4.5:1 as words, where the check holds it at a
+mark's 3:1; a pair under both floors is said once, at 3:1), `ansi` (a terminal colour too close to the
 terminal's background: `token`, `ratio`, `floor`) or `selected-not-apart` (the selected row
 drawn exactly as `other`), `card-not-apart` (a side view's card row whose fill, `card`, steps
 only `ratio` from the side panel's, `ground`, under the `floor` of 1.05, with no edge that
-clears a hairline's 1.2 there, in a theme whose parts, its own or inherited, choose a card
-row's look or a side panel's fill; the check only reports it and redraws nothing),
+clears a hairline's 1.2 there, as the theme's parts, its own or inherited, draw the two, or
+as the families do by default for a palette alone, a card row in `surface.raised` on a side
+panel in `surface.base`; the check only reports it and redraws nothing),
 `notice-way-not-apart` (a notice card's secondary way whose fill, at rest or `pointed` at, is
 only `distance` from the `variant` card's `ground` in OKLab, under the `floor` of 0.02: the
 fill a theme's button parts give it, or else the card's own mix of `control.base` toward
@@ -1006,7 +1010,9 @@ textarea, a select and a combobox, where `border.control` stays the edge of a pl
 whose fill is the ground it stands on, as Purlis draws `surface.sunken`, is told apart only by its
 edge, which WCAG 2.2 holds at 3:1 (1.4.11): Purlis draws it in its faint tier, and high
 contrast's in its control's edge. It follows `border.control` in `vocabulary::KIN`, so a theme
-that sets neither draws its boxes as it did.
+that sets neither draws its boxes as it did. The check reports a box's edge under 3:1 on the
+window, a panel or a dialog for every theme, and redraws nothing for it (#5979); Purlis Classic
+draws its own a step darker than its control edge in light, and lighter in dark, to clear it.
 
 Over Purlis, whose primary is filled and whose controls draw no edge, a theme keeps Purlis's
 values unless it names them. `radius.control` is Classic's `radius.md`, 4, where a theme names
