@@ -9,6 +9,8 @@ in part [ADR 0038's "one list"](0038/2026-10-11-02-one-list.md)** and **amends
 the Inbox is no longer one view. What those amendments say of the ✋ (it counts asks alone), of a
 pane's own Notices, of the window's own lines, of the retired ✋ list and of system notifications
 stands.
+**Amended by [ADR 0121](0121-attention-what-waits-on-you-reaches-you-and-nothing-else-interrupts.md)**
+(2026-11-09): decisions 2, 3, 5 and 9.
 
 ## Where purlis was
 

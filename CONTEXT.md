@@ -313,8 +313,9 @@ _Avoid_: session (that is the process), conversation (that is the harness's), tu
 Where a run is. While it lives: `queued`, `starting`, `working`, `input-required`, `paused` or
 `hibernated`. Then, once and for good: `completed`, `failed` or `stopped`. **Stopped** is an end
 someone chose (the operator, a policy, the kill switch, the host); **failed** is one nobody chose.
-A chat's state is its current run's (ADR 0076).
-_Avoid_: status, session state (the old five), done (for completed), idle (for a state)
+A chat's run state is its current run's (ADR 0076); what the person sees is its **Chat state**
+(ADR 0121).
+_Avoid_: status, session state (the old five), done (for completed), idle (for a run state)
 
 **Turn**:
 One stretch of a **Run** from a prompt being sent until the run is next `input-required`, or
@@ -1270,9 +1271,10 @@ A chat that is waiting on the operator: a view, computed from its current run (a
 that ended, a budget or policy pause) and its own items (a report it wrote that has nowhere to
 go, a refused commit, a secret waiting for approval), and never a state of its own. A report
 that reaches the chat that asked is that chat's to read, and is not an item. An item shows on
-its chat's row and on every row above it in the Chats section. Every project's are counted on the
-title bar's ✋, which opens the **Inbox**, and on the workspace chip, and each is counted in red on
-its chat's row. An item never takes a pane or the focus: a chat in no pane is answered in the Inbox,
+its chat's row and on every row above it in the Chats section. Every open project's **Blocking
+asks** are counted on the title bar's ✋, with "+N elsewhere" for those outside the project in
+front, and on the Dock badge; the ✋ opens Asks in the **Inbox**. The workspace chip shows a dot,
+and each is counted in red on its chat's row (ADR 0121). An item never takes a pane or the focus: a chat in no pane is answered in the Inbox,
 and a chat on screen in its pane too. **Ignore** clears a chat's items until the next one arrives
 (ADR 0076).
 _Avoid_: notification, alert (an alert is a **Notice**), waiting (for the state)
@@ -1357,15 +1359,20 @@ elicits a secret. One answer per ask, and the first wins; every later one hears 
 elsewhere". An agent never answers one (ADR 0080 §5). A part of **Chat**.
 
 Everything that blocks until the person decides is an ask, whatever its source: a permission
-prompt of a chat or a task, a dispatch grant, a host a chat's sandbox refused, a prompt waiting
-in a harness's own terminal, a chat waiting on the person's reply, a chat's browser that needs
-the person (**The browser needs you**). Each is derived from the
+prompt of a chat or a task, a dispatch grant, a run grant, a host a chat's sandbox refused, a
+sandbox consent, a prompt waiting in a harness's own terminal, a chat waiting on the person's
+reply, a chat's browser that needs the person (**The browser needs you**), a budget reached, a
+suspected loop. One that stops a chat or a `purlis` command is a **Blocking ask** (ADR 0121).
+Each is derived from the
 source that waits, keeps no record of its own, and is gone the moment its source stops waiting.
 Each names its chain (the session first, the chat that asked last) and the path that answers it,
 which is its source's own, and its answers in their one set of words (#1700). The Inbox lists
-the asks oldest first, by when each began where its source knows. A chat's pane draws at most
+the asks by facts, never by a priority someone sets: an **Expiring ask** first, then one that
+blocks other chats, then the longest wait; identical requests from several chats are one row
+(ADR 0121). A chat's pane draws at most
 two of its own asks as Notices, from the same list, so an answer in either place clears both
-(#1695). The title bar's ✋ counts asks. Not an **Update**. A prompt in a
+(#1695). The title bar's ✋ counts every open project's **Blocking asks** (ADR 0121). Not an
+**Update**. A prompt in a
 harness's terminal is answered from the window where the harness's hook can carry the answer (a
 permission prompt of Claude Code, Codex or opencode); otherwise it is listed as waiting in its
 terminal, naming the kind of prompt, with Go to chat.
@@ -1377,9 +1384,10 @@ bar (ADR 0119): **Asks** (a chat waiting in another window among them, as "In ot
 **Updates**, whose switch shows **Mine** (**From your chats**) or **Project** (**From the
 project**), at the top; and **Notices** among the **Lower icons**, opening in the right half of the **Panel**. Nothing
 about another person is listed. Each list is cleared at once by its own rule: Snooze all for the
-asks, Dismiss all for the rest. The title bar's ✋ shows its count of asks and opens Asks, the
-bell counts the unread **Mine** lines, and Notices shows a red dot only while something needs
-fixing; the status line's Notices item counts the Notices. What it holds before a plane's
+asks, Dismiss all for the rest. The title bar's ✋ counts every open project's **Blocking asks**
+and opens Asks on all projects, the bell counts the unread **Mine** lines, and Notices shows a
+dot, red for something broken and amber for a decision that stops no chat; the status line no
+longer repeats a count the right bar shows (ADR 0121). What it holds before a plane's
 **First-open baseline** is counted as seen.
 _Avoid_: queue, alerts, notifications, feed
 
@@ -1394,6 +1402,48 @@ machine in purlis's data home, never in a project, so it survives a relaunch (#1
 dismissed one at a time or all at once (Dismiss all), and never counted on the ✋.
 A task that failed is an update and not an **Ask**. Not an **Ask**.
 _Avoid_: notification, news
+
+**Blocking ask**:
+An **Ask** that stops one of the person's chats, or a `purlis` command, until they answer: a
+permission, a question, a dispatch grant, a secret, a run grant, a browser site or login, a
+sandbox block or consent, a command's confirmation in the window, a budget reached, a suspected
+loop. It counts on the ✋ whatever its source, every open project's together. A decision that
+stops no chat is a **Notice**, and a chat that cannot tell purlis it waits is never counted
+(ADR 0121).
+_Avoid_: urgent, priority, blocker
+
+**Expiring ask**:
+A **Blocking ask** with a deadline, listed first in Asks with its countdown. While **Quiet** it is
+held open past its time, and one that timed out stays answerable: the answer tells the chat to
+try again (ADR 0121).
+_Avoid_: urgent ask, timeout
+
+**New**:
+Not yet seen: an ask, **Notice** or **Update** whose row has not been visible in an open view for
+about a second, and whose chat has not been on screen in a focused window. Seen, not received. A
+New row has an accent bar, and its icon, chip or status item a "new" pip. Kept per machine
+(ADR 0121).
+_Avoid_: unseen, fresh, unread (that is an update's read state)
+
+**Chat state**:
+What a chat is doing as the person sees it, the same on its sidebar row, its pane tab, **All
+chats** and Asks: Working, Waiting on you, Waiting on a chat, Stuck?, Done, Failed, Idle (finished
+with work left behind) or Can't tell, each with one icon and colour. Drawn from its current run's
+**Run state** (ADR 0076). Stuck? is a question, which "It's fine" clears until the chat changes
+state (ADR 0121).
+_Avoid_: status, run state (that is the run's)
+
+**Quiet**:
+Notifications held, never the count: on a schedule, by hand ("Quiet now"), or while the person
+types in a chat, following macOS's own Focus. While Quiet the ✋ still counts and an **Expiring
+ask** is held open; when it ends, one summary row heads Asks (ADR 0121). Not a **Quiet note**.
+_Avoid_: focus mode (that name is #2921's), do not disturb
+
+**All chats**:
+The Chats sidebar's mode that lists every chat in every open project, with its **Chat state**,
+time in it, project, workspace and last line: Waiting on you first, then Stuck?, then the rest
+(ADR 0121).
+_Avoid_: fleet view, dashboard
 
 **From your chats**:
 The **updates** the person's own chats and tasks made, listed under **Mine** in the **Inbox**'s
