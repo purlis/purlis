@@ -1,0 +1,29 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# The isolation prototype ADR 0120 §3 asked for (#5949, PE-39): both renderings of an artifact,
+# built only as far as the five tests need them. Its own workspace, as `tools/windows-probe` is:
+# it is evidence, not a rung of the ladder, it is in nobody's `cargo check --workspace`, and the
+# app crate does not compile on Windows yet, which this must. The real rendering is #5952; on
+# the day that lands with these tests, this folder is deleted rather than maintained.
+[workspace]
+
+[package]
+name = "artifact-isolation-probe"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0"
+
+[[bin]]
+name = "artifact-isolation-probe"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# The versions the app pins, because the question is about THAT webview stack.
+tauri = { version = "=2.12.5", features = [] }
+percent-encoding = "2"
+serde_json = "1"

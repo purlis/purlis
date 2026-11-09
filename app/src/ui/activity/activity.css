@@ -149,6 +149,13 @@
   stroke-width: 1.7;
 }
 
+/* **A dimmed item** (#5955): what it opens is out of date, an artifact whose data is stale. Its
+   icon takes the faint grey, which is held to 3:1 on every ground as an icon is. Its own role, as
+   a count's tone is, so a state rule of `parts` never reaches it; a chosen item keeps its look. */
+[data-scope="activity"][data-part="item"][data-dimmed]:not([data-selected]) [data-part="icon"] {
+  color: var(--text-faint);
+}
+
 /* The mark along a chosen item's edge: none by default; a theme paints it (Purlis Classic's
    accent edge). Under the tab; on the left column along its left edge, as the switcher
    prototype draws Classic's (#3144); on the right bar along its outer edge, as #2917 drew it.

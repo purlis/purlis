@@ -189,12 +189,26 @@ pub(crate) fn workspace_lines(n: &str) -> Vec<String> {
     ]
     .into_iter()
     .chain(skills_pair(n))
+    .chain(artifact_lines(n))
     .chain([
         format!("!/workspaces/{n}/changes"),
         format!("!/workspaces/{n}/changes/**"),
         format!("/workspaces/{n}/changes/log/"),
     ])
     .collect()
+}
+
+/// The four lines that publish LIVE workspace `n`'s artifacts (ADR 0120, #5950): the folder and
+/// what is in it, then each artifact folder's data files ignored again, since a person's data
+/// is theirs and never travels. Re-ignoring works because the pair re-included the parent above.
+fn artifact_lines(n: &str) -> [String; 4] {
+    use crate::artifact::{DATA_DIR, DATA_FILE, DIR};
+    [
+        format!("!/workspaces/{n}/{DIR}"),
+        format!("!/workspaces/{n}/{DIR}/**"),
+        format!("/workspaces/{n}/{DIR}/*/{DATA_FILE}"),
+        format!("/workspaces/{n}/{DIR}/*/{DATA_DIR}/"),
+    ]
 }
 
 /// `text` with its block rewritten for the workspaces in `live`, each keeping the entries it has
@@ -517,6 +531,7 @@ pub fn meta_paths(root: &Path, name: &str) -> Vec<String> {
         crate::work::log::DIR_NAME,
         crate::sessionrecord::DIR,
         purlis_skills::PROJECT_DIR,
+        crate::artifact::DIR,
     ]
     .into_iter()
     .filter(|rel| dir.join(rel).exists())

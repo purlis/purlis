@@ -1,0 +1,11 @@
+<!doctype html>
+<!-- Copyright 2026 Purlis. SPDX-License-Identifier: Apache-2.0 -->
+<html><head><meta charset="utf-8" /><title>nested</title>
+<script>
+  // Test 3: a frame nested in the speaker tries to be heard as the speaker.
+  const forged = "forged by a nested frame";
+  try { top.postMessage(forged, "*"); } catch {}
+  try { parent.postMessage(forged, "*"); } catch {}
+  new Image().src = "/.purlis/say?m=" + encodeURIComponent(JSON.stringify(forged));
+</script>
+</head><body>nested</body></html>
