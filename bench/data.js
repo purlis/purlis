@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794179139881,
+  "lastUpdate": 1794184266430,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -44016,6 +44016,48 @@ window.BENCHMARK_DATA = {
             "value": 102.26192449999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.340, 102.075, 102.262, 102.633, 103.250 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a770a07f195141977487c36d32f23614ff368c2d",
+          "message": "Status bar ring, height and project item (#1922); closed repo rows' counts in one ask (#3489) (#5883)\n\n* Status bar: items ring inside, the bar is the chrome's height, and the project copies its directory (#1922)\n\nA status bar item (variant bar) draws its keyboard ring inside itself\n(--focus-ring-inset), as a tab in a strip does, so the bar keeps no\n--space-2 above and below for a ring outside and is --size-chrome tall.\nRecorded as ADR 0104's amendment of 2026-11-09. The title bar's pills keep\nthe outside ring. The Notices dot sits over the bar's top edge, which the\nbar now clips along its length only.\n\nThe project item was a focusable span read as \"span plane\". It is a\nstatus item named \"Project <name>\" that copies the directory on a press\nand says so in a polite status.\n\nThe other two items of the issue are left where the rulings put them:\nthe chat in front's sandbox level is drawn on the title bar since #2071\n(#2145), and the save state and update offer stay on the title bar under\nADR 0054, so nothing is drawn twice and no ADR is amended for them.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YFQV8M2SBKPD9A4CW3YJCD\nPurlis-Persona: steward\n\n* Explorer: closed repo rows' counts in one ask, kept per clone on the existing watch (#3489)\n\nEach closed repo row read its repo's whole status (branch_status) and was\nread again on every refresh: twenty repos, twenty status reads.\n\n- Core: files::repo_changes keeps each repo's own-folder roll-up (mark and\n  count) per clone in a standings::Shared store, the one the save\n  standings share: current while the clone's git files are as they were\n  and nothing touched it. planegit::touch reaches it, so the one watch per\n  repo re-reads only the repo that moved; a clone no watch covers is asked\n  to be watched. In memory only, so no store tier.\n- App: repos_changed(plane, workspace, repos) answers them all at once,\n  each on a thread the bounded reader's line bounds; served on a link as\n  branch_status is.\n- Window: useRepoChanges asks once for every closed row, listens to their\n  own folders on the branch watch, and asks again (once) on a move. An\n  opened repo reads its own status as before.\n\nKept against the alternatives: rows in sight still pay a full status per\nvisible row and re-read on refresh; workspace_saving's changed counts only\nuncommitted files where the row counts against the upstream fork.\n\nTests count the reads: the core's (one read, none again, one after a\ntouch, one after a commit, none for a refused repo; seen red with the\ntouch hook removed) and the Explorer's (twenty repos: no branch_status,\none repos_changed, one more on a move).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YFQV8M2SBKPD9A4CW3YJCD\nPurlis-Persona: steward\n\n* fixup! Status bar: items ring inside, the bar is the chrome's height, and the project copies its directory (#1922)\n\nReview: a refused copy says what purlis could not do, in the clipboard's\nwords, and to press again (docs/ui-copy.md); the test puts the clipboard\nback; the scenario holds the shorter bar (at most 28px).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YFQV8M2SBKPD9A4CW3YJCD\nPurlis-Persona: steward\n\n* fixup! Explorer: closed repo rows' counts in one ask, kept per clone on the existing watch (#3489)\n\nReview: a refused ask keeps the rows' last counts; counts are held by\nproject and workspace, so opening or closing a row does not blink the\nothers away; repos_changed asks at most eight repos at a time.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YFQV8M2SBKPD9A4CW3YJCD\nPurlis-Persona: steward\n\n* fixup! Status bar: items ring inside, the bar is the chrome's height, and the project copies its directory (#1922)\n\nThe Notices dot stays whole inside the bar (D-3648-6): flush with the\nitem's top now that the bar keeps no padding, and the bar clips as before.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YFQV8M2SBKPD9A4CW3YJCD\nPurlis-Persona: steward\n\n* fixup! Explorer: closed repo rows' counts in one ask, kept per clone on the existing watch (#3489)\n\nThe Explorer story answers repos_changed for its closed rows.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YFQV8M2SBKPD9A4CW3YJCD\nPurlis-Persona: steward\n\n* fixup! Status bar: items ring inside, the bar is the chrome's height, and the project copies its directory (#1922)\n\nStory baselines drawn by PR #5883's stories run (42530625155), pulled with\ntools/story-baselines-pull.mjs and reviewed: the bar is about 6px shorter,\nthe project item has a button's inline room, the Notices dot is flush\nwith the item's top.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YFQV8M2SBKPD9A4CW3YJCD\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T23:14:16Z",
+          "tree_id": "221a175d4a18164737cb78785cd37cd121f1d0f3",
+          "url": "https://github.com/purlis/purlis/commit/a770a07f195141977487c36d32f23614ff368c2d"
+        },
+        "date": 1794184261511,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6675645,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.662, 0.665, 0.668, 0.680, 0.716 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.741998000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.575, 16.604, 16.742, 16.780, 16.798 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.547132,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.431, 102.084, 102.547, 102.729, 103.934 ms"
           }
         ]
       }
