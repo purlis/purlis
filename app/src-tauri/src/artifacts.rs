@@ -170,6 +170,7 @@ pub(crate) struct Ask {
 }
 
 pub(crate) mod calls;
+pub(crate) mod history;
 pub(crate) mod live;
 pub(crate) mod offers;
 pub(crate) mod queried;
@@ -208,6 +209,9 @@ struct Of {
     folder: String,
     pin: String,
     standing: Standing,
+    /// Shown as of a version (#5966): its data reads come from what was kept then, and it
+    /// calls, subscribes to and offers nothing.
+    then: Option<history::AsOf>,
 }
 
 /// Every artifact webview this run has open, by label.
@@ -412,6 +416,9 @@ impl Artifacts {
             .filter(|one| one.window == window)
             .map(|one| one.of.clone())
             .ok_or_else(|| "the artifact is not open in this window".to_owned())?;
+        if of.then.is_some() {
+            return Err("an artifact shown as of a version is not read again".to_owned());
+        }
         let (pin, snapshot) = read_pinned(&of.dir, &of.folder)?;
         let standing = approval::standing(config, &of.dir, &of.folder, &pin, &snapshot);
         // What the page declares is read again with its bytes (#5961), and so is whether that
@@ -564,8 +571,11 @@ fn read_asked(
 ) -> purlis_core::catalogue::Answer {
     use purlis_core::catalogue::{Answer, ErrorKind};
     let now = chrono::Utc::now();
-    if !still_runs(config, of, snapshot) {
+    if !approved_now(config, of, snapshot) {
         return Answer::error(ErrorKind::NotApproved, now);
+    }
+    if let Some(as_of) = &of.then {
+        return history::read_then(as_of, declared, name, now);
     }
     match artifact::resolve(&of.dir, &of.folder) {
         Ok(folder) => data::read(&folder, declared, name, now),
@@ -573,9 +583,15 @@ fn read_asked(
     }
 }
 
+/// **Whether the page served as `snapshot` may still call, subscribe and offer**: it is shown as
+/// it is now, not as of a version (#5966), and [`approved_now`].
+fn still_runs(config: Option<&std::path::Path>, of: &Of, snapshot: &serve::Snapshot) -> bool {
+    of.then.is_none() && approved_now(config, of, snapshot)
+}
+
 /// **Whether the page served as `snapshot` still runs its script**, read again at the ask: its
 /// pin still the one served, and its standing on this machine still approved.
-fn still_runs(config: Option<&std::path::Path>, of: &Of, snapshot: &serve::Snapshot) -> bool {
+fn approved_now(config: Option<&std::path::Path>, of: &Of, snapshot: &serve::Snapshot) -> bool {
     let pinned = artifact::read(&of.dir)
         .ok()
         .and_then(|pins| pins.pins.into_iter().find(|pin| pin.folder == of.folder))
@@ -968,6 +984,7 @@ pub async fn artifact_open(
         folder,
         pin,
         standing,
+        then: None,
     };
     let served = Served {
         window: window.label().to_owned(),
@@ -1246,6 +1263,7 @@ pub async fn artifact_preview_open(
         folder: String::new(),
         pin: String::new(),
         standing: Standing::NotHere,
+        then: None,
     };
     let served = Served {
         window: window.label().to_owned(),
@@ -1318,6 +1336,12 @@ pub async fn artifact_approve(
     let Some((of, fingerprint)) = artifacts.served_to(&label, window.label()) else {
         return Err("that artifact is not open in this window any more".into());
     };
+    if of.then.is_some() {
+        return Err(
+            "an artifact shown as of a version cannot be approved: go back to now to approve it"
+                .into(),
+        );
+    }
     if !of.standing.asks() {
         return Err("that artifact is not asking to be approved".into());
     }
@@ -1510,6 +1534,7 @@ mod tests {
             folder: "board".to_owned(),
             pin: "0123456789ab".to_owned(),
             standing,
+            then: None,
         }
     }
 
@@ -1892,6 +1917,7 @@ mod tests {
             folder: "board".to_owned(),
             pin: pin.clone(),
             standing: Standing::Approved,
+            then: None,
         };
         let kind = |answer: purlis_core::catalogue::Answer| answer.outcome.map_err(|k| k.as_str());
         let ask = |config: Option<&std::path::Path>, name: &str| {

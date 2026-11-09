@@ -116,6 +116,18 @@ export const commands = {
 	 *  was served. A new approval of the folder drops it.
 	 */
 	artifactGrantPlane: (label: string) => typedError<null, string>(__TAURI_INVOKE("artifact_grant_plane", { label })),
+	/**  **A pinned artifact's versions**, newest first. */
+	artifactHistory: (plane: PlaneId, workspace: string, folder: string) => typedError<ArtifactHistory, string>(__TAURI_INVOKE("artifact_history", { plane, workspace, folder })),
+	/**
+	 *  **Opens a pinned artifact as of version `version`** over its tab's frame: the template and
+	 *  data of then, read here, where it stands on this machine read with it.
+	 */
+	artifactOpenAsOf: (plane: PlaneId, workspace: string, folder: string, version: string, place: ArtifactPlace, theme: ArtifactTheme) => typedError<ArtifactOpenedAsOf, string>(__TAURI_INVOKE("artifact_open_as_of", { plane, workspace, folder, version, place, theme })),
+	/**
+	 *  **What changed from version `from` to version `to`** of a pinned artifact; either may be
+	 *  `now`.
+	 */
+	artifactCompare: (plane: PlaneId, workspace: string, folder: string, from: string, to: string) => typedError<ArtifactCompared, string>(__TAURI_INVOKE("artifact_compare", { plane, workspace, folder, from, to })),
 	/**  **What Regenerate would run for artifact `folder`, and whether a press asks first.** */
 	artifactRegenerateAbout: (plane: PlaneId, workspace: string, folder: string) => typedError<ArtifactRegenerate, string>(__TAURI_INVOKE("artifact_regenerate_about", { plane, workspace, folder })),
 	/**
@@ -6109,6 +6121,21 @@ export type ArtifactAbout = {
 	fresh: ArtifactFresh | null,
 };
 
+/**  What changed between two versions. */
+export type ArtifactCompared = {
+	template: ArtifactFileChange[],
+	data: ArtifactValueChange[],
+	/**  More changed than are listed. */
+	cut: boolean,
+};
+
+/**  A template file that differs between two versions. */
+export type ArtifactFileChange = {
+	path: string,
+	/**  `added`, `removed` or `changed`. */
+	how: string,
+};
+
 /**  One artifact found, as the palette draws it and the window opens it. */
 export type ArtifactFound = {
 	/**  The workspace it is pinned to. */
@@ -6127,6 +6154,14 @@ export type ArtifactFresh = {
 	stale_at: number | null,
 	/**  Where the time was read: `declared` by the data, `committed` or `written`. */
 	source: string,
+};
+
+/**  An artifact's History. */
+export type ArtifactHistory = {
+	/**  Newest first. */
+	versions: ArtifactVersion[],
+	/**  How many Regenerates' data this machine keeps per artifact. */
+	kept_most: number,
 };
 
 /**
@@ -6151,6 +6186,20 @@ export type ArtifactOpened = {
 	queries: ArtifactQuery[],
 	/**  Whether it may call its plane-scoped queries: a grant of its own (#5969). */
 	plane_granted: boolean,
+};
+
+/**  What an artifact opened as of a version is. */
+export type ArtifactOpenedAsOf = {
+	opened: ArtifactOpened,
+	/**  When the version is, UTC. */
+	at: string,
+	/**
+	 *  The commit its template was read at, abbreviated; none when no commit held it by then,
+	 *  and it is today's.
+	 */
+	template: string | null,
+	/**  When its data was kept, UTC; none when no data was kept by then. */
+	data_at: string | null,
 };
 
 /**
@@ -6276,6 +6325,29 @@ export type ArtifactRegenerated = {
 export type ArtifactTheme = {
 	appearance: string,
 	values: { [key in string]: string },
+};
+
+/**  A data value that differs between two versions. */
+export type ArtifactValueChange = {
+	/**  Where it is: the data file and its path in the JSON, `data.json › open`. */
+	path: string,
+	/**  Its JSON before and after, cut short; none where there was none. */
+	before: string | null,
+	after: string | null,
+};
+
+/**  One version of an artifact, as its History lists it. */
+export type ArtifactVersion = {
+	/**  What opening it as of, or comparing it, names. */
+	id: string,
+	/**  When, UTC, as the window shows it. */
+	at: string,
+	/**  `regenerated` or `template-changed`. */
+	kind: string,
+	/**  Who committed it, for a template's version. */
+	by: string | null,
+	/**  The commit's subject, for a template's version. */
+	said: string | null,
 };
 
 /**

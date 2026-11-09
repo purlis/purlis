@@ -91,6 +91,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "Regenerate's line in an artifact's bar: where its data stands, and a run's failure said " +
       "beside the button that is its retry (#5962)",
   },
+  "ArtifactHistory.tsx": {
+    count: 3,
+    why:
+      "an artifact's History (#5966): a refused read or comparison is an inline error in its " +
+      "dialog (V91n), whose Compare is the retry; what a comparison found is said once beside " +
+      "it; and the bar of a tab shown as of a version says which, beside Back to now, its way out",
+  },
   "ArtifactTab.tsx": {
     count: 5,
     why: READ_ONCE,

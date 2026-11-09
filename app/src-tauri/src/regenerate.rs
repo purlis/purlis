@@ -264,7 +264,18 @@ async fn run_pressed(app: &tauri::AppHandle, read: Read) -> Result<ArtifactRegen
         let launch = regenerate::launch(&read.root, &resolved, &scratch)?;
         let link = connection.of_project(&read.root, LINK_WITHIN)?;
         let ran = run_in_the_host(&link, &read.root, launch);
-        Ok(finished(&read.folder, &declared, &scratch, ran))
+        let done = finished(&read.folder, &declared, &scratch, ran);
+        if done.failed.is_none() {
+            // Kept for History (#5966), on this machine only.
+            crate::artifacts::history::keep_after_regenerate(
+                config.as_deref(),
+                &read.workspace,
+                &read.pin.folder,
+                &read.folder,
+                &declared,
+            );
+        }
+        Ok(done)
     })
     .await
 }
