@@ -605,6 +605,7 @@ fn the_session_s_own_stop_racing_the_last_report_is_looked_at_once_it_is_applied
         purlis_core::state::Waits {
             tasks: 1,
             its_asker: false,
+            its_dispatcher: false,
             line_coming: false,
             on_a_notice: false,
             background_turn: false,
@@ -1250,4 +1251,86 @@ fn a_vault_value_remembered_after_the_turn_is_masked_in_the_board_a_relaunched_w
         reply_ask(&held, steward).and_then(|ask| ask.last_message),
         Some("Is *** the right password?".to_owned())
     );
+}
+
+/// **The ✋'s count** (#6036, ADR 0121 decision 2): every ask the registry lists, as the title
+/// bar's hand and the Inbox read it.
+fn hand(held: &Held) -> usize {
+    crate::asking::every_ask(held).asks.len()
+}
+
+#[test]
+fn a_dispatched_task_s_turn_end_waits_on_the_chat_that_dispatched_it_and_is_not_counted() {
+    // #6036: "Acknowledged: I'll rebase onto main…", a task's answer to its dispatcher's
+    // follow-up, was listed as waiting on the person's reply. It waits on that chat (ADR 0107).
+    let (_plane, _host, _planes, id, held, steward, told) = a_steward_chat_telling();
+    hears(&held, &told, steward, Event::UserPromptSubmit);
+    let task = a_task_of(&held, &id, steward, "rebase onto main");
+    hears(&held, &told, task, Event::UserPromptSubmit);
+    let before = told_so_far(&told);
+
+    hears(&held, &told, task, Event::Stop);
+
+    assert_eq!(hand(&held), 0, "{:?}", crate::asking::every_ask(&held).asks);
+    assert!(!queue(&held).contains(&task));
+    assert!(held.hooks().board().held(task), "it waits on a chat");
+    assert_eq!(interruptions(&told, before, task), 0);
+
+    // The dispatcher's follow-up begins a turn, and the task acknowledges it.
+    hears(&held, &told, task, Event::UserPromptSubmit);
+    hears(&held, &told, task, Event::Stop);
+    assert_eq!(hand(&held), 0);
+    // Nor does the harness's nudge of a chat left idle count it.
+    hears(&held, &told, task, Event::Notification);
+    assert_eq!(hand(&held), 0);
+}
+
+#[test]
+fn a_dispatched_task_that_asks_the_person_directly_is_counted() {
+    let (_plane, _host, _planes, id, held, steward, told) = a_steward_chat_telling();
+    hears(&held, &told, steward, Event::UserPromptSubmit);
+    let task = a_task_of(&held, &id, steward, "rebase onto main");
+    hears(&held, &told, task, Event::UserPromptSubmit);
+
+    // A prompt its harness shows the person mid-turn: a permission, say.
+    hears(&held, &told, task, Event::Notification);
+
+    assert_eq!(hand(&held), 1);
+    assert!(queue(&held).contains(&task));
+}
+
+#[test]
+fn a_chat_whose_turn_ends_while_its_own_shell_runs_is_not_counted() {
+    // #6036: "The rebuild is still running. I'll continue once it reports back" (#3878).
+    let (_plane, _host, _planes, _id, held, chat, told) = a_steward_chat_telling();
+    hears(&held, &told, chat, Event::UserPromptSubmit);
+
+    ends_on_its_own_shell(&held, &told, chat);
+
+    assert_eq!(hand(&held), 0);
+    assert!(queue(&held).is_empty());
+    // Its shell ends and wakes it: still nothing, until that turn ends on nothing of its own.
+    hears(&held, &told, chat, Event::UserPromptSubmit);
+    assert_eq!(hand(&held), 0);
+    hears(&held, &told, chat, Event::Stop);
+    assert_eq!(hand(&held), 1);
+}
+
+#[test]
+fn a_chat_with_an_update_standing_whose_turn_ends_on_its_own_shell_is_not_waiting_on_a_reply() {
+    // #6036's second case: an update it was already in the Inbox for stood, and its turn ending
+    // on its own shell listed it as waiting on the person's reply.
+    let (_plane, _host, _planes, _id, held, chat, told) = a_steward_chat_telling();
+    hears(&held, &told, chat, Event::UserPromptSubmit);
+    held.needs_the_person(chat, purlis_core::state::Need::RootUpdateRefused);
+    assert_eq!(queue(&held), vec![chat], "in the Inbox for its update");
+    assert_eq!(hand(&held), 0, "an update asks nothing");
+
+    ends_on_its_own_shell(&held, &told, chat);
+
+    assert_eq!(hand(&held), 0, "{:?}", reply_ask(&held, chat));
+    // Its work done, the turn it wakes for ends on the person: that is a reply it waits on.
+    hears(&held, &told, chat, Event::UserPromptSubmit);
+    hears(&held, &told, chat, Event::Stop);
+    assert!(reply_ask(&held, chat).is_some());
 }
