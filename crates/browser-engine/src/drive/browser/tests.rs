@@ -14,7 +14,8 @@ use base64::Engine as _;
 use serde_json::{Value, json};
 
 use super::{
-    ACTIVE_ELEMENT, Browser, DevTools, FOCUSED_HERE, READ_VALUE, READY_STATE, SELECT_OPTIONS, TITLE,
+    ACTIVE_ELEMENT, Browser, DevTools, FOCUSED_HERE, HOLDS_OR_LABELS, READ_VALUE, READY_STATE,
+    SELECT_OPTIONS, TITLE,
 };
 use crate::WebAddress;
 use crate::cdp::{CallError, Closed, Event};
@@ -51,6 +52,11 @@ struct Model {
     ax: HashMap<String, Value>,
     /// Content quads by backend node id.
     quads: HashMap<i64, Vec<f64>>,
+    /// The element whose quads were read last, and its session: the element an act is aimed
+    /// at, which is what a page draws at its centre unless a test says otherwise.
+    aimed: Option<(String, i64)>,
+    /// The control of each label, by the label's engine id.
+    labels: HashMap<i64, i64>,
     ready: String,
     /// The title each page's document has now, by target: what the engine last told of, unless
     /// a test sets it with no word from the engine (#2753).
@@ -390,22 +396,34 @@ impl Engine {
             }
             "DOM.getFrameOwner" => Ok(json!({"backendNodeId": 50, "nodeId": 0})),
             // The payment frame's element is drawn at (100, 200), 200 by 60, as its box model
-            // says; anywhere else is the page's own document (#2638).
+            // says (#2638). Anywhere else in a document, what is drawn is the element an act is
+            // aimed at, or, in the page's own document, the payment frame's element where the
+            // element is in the frame; and the page's own document where nothing is aimed at.
             "DOM.getNodeForLocation" => {
                 let (x, y) = (
                     p["x"].as_f64().unwrap_or(-1.0),
                     p["y"].as_f64().unwrap_or(-1.0),
                 );
                 let through = p["ignorePointerEventsNone"] == true;
+                let session = on.unwrap_or_default();
+                let on_the_frame = (100.0..300.0).contains(&x) && (200.0..260.0).contains(&y);
+                let aimed = super::lock(&self.model).aimed.clone();
+                if !(on_the_frame && session == "S-PAGE-1")
+                    && let Some((in_session, backend)) = aimed
+                {
+                    return Ok(if in_session == session {
+                        json!({"backendNodeId": backend, "frameId": frame_of(session)})
+                    } else if session == "S-PAGE-1" {
+                        json!({"backendNodeId": 50, "frameId": "PAGE-1"})
+                    } else {
+                        json!({"backendNodeId": 3, "frameId": frame_of(session)})
+                    });
+                }
                 Ok(
-                    if (100.0..300.0).contains(&x)
-                        && (200.0..260.0).contains(&y)
-                        && super::lock(&self.model).overlay
-                        && through
-                    {
+                    if on_the_frame && super::lock(&self.model).overlay && through {
                         // Asked to find boxes the pointer passes through, it finds the overlay.
                         json!({"backendNodeId": 3, "frameId": "PAGE-1"})
-                    } else if (100.0..300.0).contains(&x) && (200.0..260.0).contains(&y) {
+                    } else if on_the_frame {
                         json!({"backendNodeId": 50, "frameId": "PAGE-1"})
                     } else {
                         json!({"backendNodeId": 3, "frameId": "PAGE-1"})
@@ -550,7 +568,7 @@ impl Engine {
             }
             "DOM.resolveNode" => {
                 let object = match self.by_id(&p["executionContextId"], on)? {
-                    Some(world) => format!("OBJECT-{world}"),
+                    Some(world) => format!("OBJECT-{world}:{}", p["backendNodeId"]),
                     None => "PAGE-OBJECT".to_owned(),
                 };
                 Ok(json!({"object":{"type":"object","subtype":"node","objectId":object}}))
@@ -559,7 +577,19 @@ impl Engine {
             // refused.
             "Runtime.callFunctionOn" if !p["uniqueContextId"].is_null() => {
                 let world = self.by_unique(&p["uniqueContextId"], on)?;
-                if p["arguments"][0]["objectId"] != json!(format!("OBJECT-{}", world.unwrap())) {
+                let of_world = |argument: &Value| {
+                    argument["objectId"]
+                        .as_str()
+                        .and_then(|o| o.split(':').next())
+                        == Some(format!("OBJECT-{}", world.unwrap()).as_str())
+                };
+                // Every element it is given, the first argument always one.
+                if !p["arguments"].as_array().is_some_and(|arguments| {
+                    arguments.first().is_some_and(of_world)
+                        && arguments
+                            .iter()
+                            .all(|a| a["objectId"].is_null() || of_world(a))
+                }) {
                     return Err(CallError::Engine {
                         code: -32000,
                         message:
@@ -567,8 +597,25 @@ impl Engine {
                                 .into(),
                     });
                 }
+                let backend = |n: usize| {
+                    p["arguments"][n]["objectId"]
+                        .as_str()
+                        .and_then(|o| o.split(':').nth(1))
+                        .and_then(|b| b.parse::<i64>().ok())
+                };
                 Ok(if p["functionDeclaration"] == READ_VALUE {
                     json!({"result": {"type":"string","value": super::lock(&self.model).value}})
+                } else if p["functionDeclaration"] == HOLDS_OR_LABELS {
+                    let labels = super::lock(&self.model)
+                        .labels
+                        .get(&backend(0).unwrap_or_default())
+                        .copied();
+                    let how = if labels.is_some() && labels == backend(1) {
+                        "labels"
+                    } else {
+                        ""
+                    };
+                    json!({"result": {"type":"string","value": how}})
                 } else {
                     json!({"result": {"type":"object","value": super::lock(&self.model).select}})
                 })
@@ -634,6 +681,14 @@ impl Engine {
     }
 }
 
+/// The frame whose document the stand-in's `session` shows.
+fn frame_of(session: &str) -> &str {
+    match session {
+        "S-PAYMENT" => "PAYMENT-FRAME",
+        other => other.trim_start_matches("S-"),
+    }
+}
+
 struct Stand(Arc<Engine>);
 
 impl DevTools for Stand {
@@ -650,6 +705,13 @@ impl DevTools for Stand {
             session: session.map(str::to_owned),
         };
         super::lock(&self.0.sent).push(sent.clone());
+        // An element's quads are read as an act is aimed at it, whoever answers them.
+        if method == "DOM.getContentQuads"
+            && let Some(backend) = sent.params["backendNodeId"].as_i64()
+        {
+            super::lock(&self.0.model).aimed =
+                Some((session.unwrap_or_default().to_owned(), backend));
+        }
         let hooked = super::lock(&self.0.hook)
             .as_mut()
             .and_then(|h| h(&sent, &self.0));
@@ -814,6 +876,8 @@ fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (StandIn,
                 ("PAGE-1".to_owned(), nodes(MAIN_FRAME)),
                 ("PAYMENT-FRAME".to_owned(), nodes(PAYMENT_FRAME)),
             ]),
+            aimed: None,
+            labels: HashMap::new(),
             quads: HashMap::from([
                 (7, vec![10.0, 10.0, 30.0, 10.0, 30.0, 20.0, 10.0, 20.0]),
                 (12, vec![40.0, 40.0, 60.0, 40.0, 60.0, 50.0, 40.0, 50.0]),

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Drawn over</title>
+<style>
+  body { margin: 0; font: 20px sans-serif; }
+  #covered { position: absolute; left: 20px; top: 20px; width: 200px; height: 40px; margin: 0; }
+  /* A banner's transparent box, laid over the button by another part of the page. */
+  #glass { position: absolute; left: 0; top: 0; width: 400px; height: 100px; }
+  #agree { position: absolute; left: 20px; top: 160px; display: block; width: 240px; height: 30px; }
+  /* The checkbox is hidden, and its label draws a box of its own over it. */
+  #box { position: absolute; left: 0; top: 0; width: 20px; height: 20px; margin: 0; opacity: 0; }
+  #face { position: absolute; left: 0; top: 0; width: 240px; height: 30px; background: #eee; }
+</style></head>
+<body>
+  <button id="covered" type="button">Covered button</button>
+  <div id="glass"></div>
+  <label id="agree"><input id="box" type="checkbox"><span id="face">Agree to the terms</span></label>
+  <p id="said" style="position: absolute; left: 0; top: 300px">Not pressed</p>
+  <script>
+    const said = document.getElementById('said');
+    document.getElementById('covered').addEventListener('click', () => {
+      said.textContent = 'Pressed the covered button';
+    });
+    const box = document.getElementById('box');
+    box.addEventListener('change', () => {
+      said.textContent = box.checked ? 'Agreed to the terms' : 'Not agreed';
+    });
+  </script>
+</body></html>

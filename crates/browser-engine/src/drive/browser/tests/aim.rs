@@ -4,7 +4,8 @@
 //! An act inside a cross-site frame the page turns, scales or zooms lands where the element is
 //! drawn on the page (#2557). Where the element is not shown on the first read, each frame
 //! element is scrolled into view, outermost first, and read again; and an act lands only where
-//! the page's own window shows (#2690).
+//! the page's own window shows (#2690). An act lands only where what is drawn at its point is
+//! the element aimed at, its label or an element holding it.
 
 use serde_json::{Value, json};
 
@@ -422,4 +423,160 @@ fn each_document_draws_its_scroll_before_an_act_in_a_frame_is_aimed() {
         assert!(last_scroll < drawn.0 && drawn.0 < press, "{session}");
         assert!(drawn.1.is_string(), "in purlis's own world");
     }
+}
+
+/// What the page's own document draws at any point: `backend`, an element of its own.
+fn page_draws(engine: &super::Engine, backend: i64) {
+    engine.on(move |sent, _| {
+        (sent.method == "DOM.getNodeForLocation" && sent.session.as_deref() == Some("S-PAGE-1"))
+            .then(|| Ok(json!({"backendNodeId": backend, "frameId": "PAGE-1"})))
+    });
+}
+
+fn pressed(engine: &super::Engine) -> bool {
+    mouse(engine)
+        .iter()
+        .any(|(kind, ..)| kind == "mousePressed")
+}
+
+#[test]
+fn a_click_where_another_element_of_the_page_is_drawn_over_the_element_is_refused_as_not_shown() {
+    let (browser, engine) = browser();
+    let more = ref_of(&snapshot(&browser, 1), "- link \"Read more\"");
+    page_draws(&engine, 99);
+
+    let answer = browser.call(
+        &id(2),
+        Call::Click {
+            target: more.clone(),
+        },
+    );
+
+    assert_eq!(answer, Err(Refusal::NotShown(more)));
+    assert!(!pressed(&engine), "nothing is pressed");
+}
+
+#[test]
+fn a_click_where_the_elements_label_is_drawn_over_it_presses() {
+    let (browser, engine) = browser();
+    let more = ref_of(&snapshot(&browser, 1), "- link \"Read more\"");
+    // A label whose control is the link (backend 12) is drawn over it, and does not hold it.
+    super::super::lock(&engine.model).labels.insert(99, 12);
+    page_draws(&engine, 99);
+
+    browser.call(&id(2), Call::Click { target: more }).unwrap();
+
+    assert!(pressed(&engine));
+}
+
+#[test]
+fn a_click_where_the_page_draws_over_the_element_once_the_mouse_is_there_presses_nothing() {
+    let (browser, engine) = browser();
+    let more = ref_of(&snapshot(&browser, 1), "- link \"Read more\"");
+    // The link (backend 12) is drawn at its centre until the mouse moves there; then the page
+    // draws another element of its own over it.
+    engine.on(|sent, engine| {
+        (sent.method == "DOM.getNodeForLocation" && sent.session.as_deref() == Some("S-PAGE-1"))
+            .then(|| {
+                let moved = !engine.sent("Input.dispatchMouseEvent").is_empty();
+                Ok(json!({"backendNodeId": if moved { 99 } else { 12 }, "frameId": "PAGE-1"}))
+            })
+    });
+
+    let answer = browser.call(
+        &id(2),
+        Call::Click {
+            target: more.clone(),
+        },
+    );
+
+    assert!(
+        matches!(&answer, Err(Refusal::Partly { why, .. }) if *why == Refusal::NotShown(more).to_string()),
+        "{answer:?}"
+    );
+    assert_eq!(
+        mouse(&engine)
+            .iter()
+            .map(|(kind, ..)| kind.as_str())
+            .collect::<Vec<_>>(),
+        vec!["mouseMoved"],
+        "the mouse moved and nothing was pressed"
+    );
+}
+
+#[test]
+fn a_click_on_a_frames_element_where_the_page_draws_another_frame_over_it_is_refused() {
+    let (browser, engine) = browser();
+    // The page's own document holds another frame, of its own site, drawn over the payment
+    // frame: what is drawn there is that frame's document, held by an element (51) of the
+    // page's own that is not the payment frame's.
+    engine.emit(
+        "Page.frameAttached",
+        json!({"frameId":"AD-FRAME","parentFrameId":"PAGE-1"}),
+        Some("S-PAGE-1"),
+    );
+    engine.emit(
+        "Page.frameNavigated",
+        json!({"frame":{"id":"AD-FRAME","parentId":"PAGE-1","loaderId":"LOADER-8","url":"http://fixture.test/ad.html","securityOrigin":"http://fixture.test","mimeType":"text/html","name":""},"type":"Navigation"}),
+        Some("S-PAGE-1"),
+    );
+    super::wait_for("the frame over it is seen", || {
+        super::super::lock(&browser.inner.state)
+            .page("PAGE-1")
+            .is_some_and(|page| page.frames.contains_key("AD-FRAME"))
+    });
+    let pay = ref_of(&snapshot(&browser, 1), "- button \"Pay now\"");
+    engine.on(|sent, _| match sent.method.as_str() {
+        "DOM.getNodeForLocation" if sent.session.as_deref() == Some("S-PAGE-1") => {
+            Some(Ok(json!({"backendNodeId": 80, "frameId": "AD-FRAME"})))
+        }
+        "DOM.getFrameOwner" if sent.params["frameId"] == "AD-FRAME" => {
+            Some(Ok(json!({"backendNodeId": 51, "nodeId": 0})))
+        }
+        _ => None,
+    });
+
+    let answer = browser.call(
+        &id(2),
+        Call::Click {
+            target: pay.clone(),
+        },
+    );
+
+    assert_eq!(answer, Err(Refusal::NotShown(pay)));
+    assert!(!pressed(&engine), "nothing is pressed");
+}
+
+#[test]
+fn an_act_on_the_pages_own_document_draws_its_scroll_before_it_is_aimed() {
+    let (browser, engine) = browser();
+    let more = ref_of(&snapshot(&browser, 1), "- link \"Read more\"");
+
+    browser.call(&id(2), Call::Click { target: more }).unwrap();
+
+    let sent = engine.all_sent();
+    let scroll = sent
+        .iter()
+        .rposition(|s| s.method == "DOM.scrollIntoViewIfNeeded")
+        .expect("the link is scrolled into view");
+    let drawn = sent
+        .iter()
+        .position(|s| {
+            s.method == "Runtime.evaluate"
+                && s.params["expression"] == DRAWN_TWICE
+                && s.session.as_deref() == Some("S-PAGE-1")
+        })
+        .expect("the page draws its scroll");
+    let aimed = sent
+        .iter()
+        .rposition(|s| s.method == "DOM.getContentQuads" && s.params["backendNodeId"] == 12)
+        .unwrap();
+    assert!(
+        scroll < drawn && drawn < aimed,
+        "{scroll} < {drawn} < {aimed}"
+    );
+    assert!(
+        sent[drawn].params["uniqueContextId"].is_string(),
+        "in purlis's own world"
+    );
 }

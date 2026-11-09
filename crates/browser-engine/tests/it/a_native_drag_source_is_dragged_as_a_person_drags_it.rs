@@ -81,14 +81,14 @@ fn a_native_drop_under_a_frame_of_another_site_is_judged_as_sent_there() {
         return;
     };
     open(&browser, "native-drag-overlay.html");
-    let tree = snapshot(&browser);
-    let card = ref_on(&tree, "\"Card\"");
-    let bin = ref_on(&tree, "\"Bin\"");
+    let card = ref_on(&snapshot(&browser), "\"Card\"");
+    // From the card's centre (80, 60) to the bin's (360, 240), where the frame is drawn: by an
+    // offset, as a drag aimed at the bin itself is refused where something else is drawn on it.
     let dragged = call(
         &browser,
         Call::Drag {
             from: card,
-            to: DragTo::Element(bin),
+            to: DragTo::Offset { x: 280.0, y: 180.0 },
         },
     );
     assert!(
