@@ -3,7 +3,7 @@
 
 import { useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { ProjectRail } from "./ProjectRail";
 import { forgetTheSlide } from "./railSlide";
@@ -12,8 +12,8 @@ import { catalogued, type Offer, type Project } from "./actions";
 /**
  * **The project rail's keyboard, focus and names** (#3134): what a person on the keyboard or a
  * screen reader gets from the rail, held across its move onto the tabs family. The projects are
- * one vertical tablist, one Tab stop on the project in front; Up and Down, Home and End walk it, wrapping at its ends;
- * moving switches nothing, Enter switches and Delete closes; the rail's own buttons (open a
+ * one vertical tablist, one Tab stop on the project in front; Up and Down, Home and End walk
+ * it, wrapping at its ends; moving switches nothing, Enter switches and Delete closes; the rail's own buttons (open a
  * project, hide) are stops of their own after the tabs, which the arrows pass over; and coming
  * back in lands on the project in front.
  */
@@ -152,6 +152,19 @@ describe("the project rail's keyboard (#3134)", () => {
       "project.switch:/p/alpha",
       "project.close:/p/gamma",
     ]);
+  });
+
+  // Radix's roving item chained a project's own keys with its menu's; the tabs family's tab
+  // has to hand the menu's on too, or Shift+F10 on a project opens nothing (#3134 review).
+  it("opens a project's menu on Shift+F10 and on the menu key, with the keyboard on it", async () => {
+    render(<Window />);
+    await comeIn();
+    fireEvent.keyDown(tab("beta-two"), { key: "F10", shiftKey: true });
+    expect(await screen.findByRole("menu")).toBeTruthy();
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    fireEvent.keyDown(tab("beta-two"), { key: "ContextMenu" });
+    expect(await screen.findByRole("menu")).toBeTruthy();
   });
 
   it("comes back in on the project in front after the keyboard walked and left", async () => {

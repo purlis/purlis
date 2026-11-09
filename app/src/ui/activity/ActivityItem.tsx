@@ -201,8 +201,8 @@ export function ActivityDot({ said }: { said: string }) {
 
 /**
  * **A group of a bar's items**: one tab list, the side panel's views or its half of the bottom
- * panel's. Every prop reaches the element (a strip's row hands it its keyboard and its tablist's role, `useTabStripRow`), and the
- * family's attributes are its own.
+ * panel's. Every prop reaches the element (a strip's row hands it its keyboard and its
+ * tablist's role, `useTabStripRow`), and the family's attributes are its own.
  */
 export function ActivityGroup({
   children,

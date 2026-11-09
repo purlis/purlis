@@ -16,8 +16,9 @@
  *   changes a colour and the ring, never a size (R153).
  * - **A plain `<button>` underneath**, not React Aria's: a project's button is also a tab of the
  *   tabs family's strip (`AsStripTab`, #3134), a sortable item and a context menu's trigger, each
- *   of which hands it its handlers and its ref, as the project tabs before it were handed them. The hover
- *   and the keyboard's focus are React Aria's own hooks, so it marks them as the other families do.
+ *   of which hands it its handlers and its ref, as the project tabs before it were handed them.
+ *   The hover and the keyboard's focus are React Aria's own hooks, so it marks them as the other
+ *   families do.
  * - **Its name is its tooltip** (R89): the shared tooltip family (#2908), beside the button at its
  *   end, 10px from it. A project's button is named by the project; an action's by what it does,
  *   with its `tooltip` as a second line.

@@ -436,6 +436,23 @@ function ProjectColumn({
                           tabKey={project.plane}
                           selected={project.plane === inFront}
                           ref={sortable.setNodeRef}
+                          // Its own keys here, where the menu's are joined to them (`AsStripTab`).
+                          {...sortable.listeners}
+                          onKeyDown={(event) => {
+                            // A button that is up is being carried: its keys are the drag's.
+                            keepsTheFocus(event, sortable.isDragging);
+                            sortable.listeners?.onKeyDown?.(event);
+                            if (!sortable.isDragging)
+                              closeOnDelete(
+                                event,
+                                rows.close[rowAt.get(project.plane) ?? place],
+                                onPress,
+                              );
+                          }}
+                          onClick={() => {
+                            const offer = rows.switchTo[rowAt.get(project.plane) ?? place];
+                            if (offer.available) onPress(offer);
+                          }}
                         >
                           {(tab) => (
                             <RailProject
@@ -452,22 +469,6 @@ function ProjectColumn({
                               data-directory={project.plane}
                               data-dragging={sortable.isDragging || undefined}
                               aria-describedby={sortable.attributes["aria-describedby"]}
-                              {...sortable.listeners}
-                              onKeyDown={(event) => {
-                                // A button that is up is being carried: its keys are the drag's.
-                                keepsTheFocus(event, sortable.isDragging);
-                                sortable.listeners?.onKeyDown?.(event);
-                                if (!sortable.isDragging)
-                                  closeOnDelete(
-                                    event,
-                                    rows.close[rowAt.get(project.plane) ?? place],
-                                    onPress,
-                                  );
-                              }}
-                              onClick={() => {
-                                const offer = rows.switchTo[rowAt.get(project.plane) ?? place];
-                                if (offer.available) onPress(offer);
-                              }}
                             />
                           )}
                         </AsStripTab>

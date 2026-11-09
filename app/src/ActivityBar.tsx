@@ -133,7 +133,13 @@ export function ActivityBar({
         const described = `${tabOf(view)}-badge`;
         const said = selected ? (away ?? `Put the ${name} region away`) : `Show the ${called} view`;
         const tab = (
-          <AsStripTab strip={strip} tabKey={view} selected={selected}>
+          <AsStripTab
+            strip={strip}
+            tabKey={view}
+            selected={selected}
+            // Its press here, with whatever a menu around it joins (`AsStripTab`).
+            onClick={() => onPick(view)}
+          >
             {(drawn) => (
               <ActivityItem
                 {...drawn}
@@ -146,7 +152,6 @@ export function ActivityBar({
                 aria-controls={panelOf(view)}
                 aria-label={called}
                 aria-describedby={badge === undefined ? undefined : described}
-                onClick={() => onPick(view)}
                 icon={icon ? <RailIcon view={view} paths={icon.paths} /> : <Mark />}
                 count={
                   badge === undefined ? undefined : (

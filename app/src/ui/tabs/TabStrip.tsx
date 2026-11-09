@@ -312,13 +312,24 @@ function useStripTab({
 }
 
 /** What {@link AsStripTab} hands the element that draws the tab. */
-export type StripTabProps = ReturnType<typeof useStripTab>;
+/** What a tab's button is handed besides its tab: its keys, its press, a drag's handlers. */
+type Handed = Omit<
+  ComponentPropsWithoutRef<"button">,
+  "children" | "role" | "aria-selected" | "tabIndex"
+>;
+
+/** What {@link AsStripTab} hands the element that draws the tab. */
+export type StripTabProps = ReturnType<typeof useStripTab> & Handed;
 
 /**
  * **One tab of a strip, drawn by another family's button** (#3134): the rail's project, an
  * activity bar's view. `children` is handed what the tab wears ({@link useStripTab}), merged
- * over whatever this is handed itself (a context menu's trigger hands its own), and spreads it
- * on its button.
+ * with every prop this is given, and spreads it on its button.
+ *
+ * **A tab's own handlers are given here, never set on the button after the spread**: a context
+ * menu around it (`Menued`) joins its Shift+F10 and menu key onto this element's `onKeyDown`, and
+ * `mergeProps` runs every handler given here in turn, so the strip's keys, a drag's and the
+ * menu's all reach the button. A handler set on the button after `{...tab}` would replace them.
  */
 export function AsStripTab({
   strip,
@@ -327,16 +338,16 @@ export function AsStripTab({
   ref,
   children,
   ...handed
-}: {
+}: Handed & {
   strip: TabStrip;
   tabKey: string;
   selected: boolean;
   ref?: Ref<HTMLButtonElement>;
   children: (tab: StripTabProps) => ReactElement;
-  [handed: string]: unknown;
+  [data: `data-${string}`]: string | number | boolean | undefined;
 }) {
   const { ref: own, ...tab } = useStripTab({ strip, tabKey, selected, ref });
-  return children({ ...(mergeProps(handed, tab) as typeof tab), ref: own });
+  return children({ ...(mergeProps(handed, tab) as Handed & typeof tab), ref: own });
 }
 
 /**

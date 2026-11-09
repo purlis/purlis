@@ -327,9 +327,9 @@ body {
   flex-wrap: nowrap;
 }
 
-/* **A strip's tablist** (#1204, `TabStripRow` in `ui/tabs/TabStrip.tsx`): an empty element inside the strip that owns
-   its tabs through `aria-owns`, so the `×`, the gears and the strip's own buttons beside them are
-   not the tablist's. Out of the row, so it takes no place among the tabs; laid over the whole
+/* **A strip's tablist** (#1204, `TabStripRow` in `ui/tabs/TabStrip.tsx`): an empty element
+   inside the strip that owns its tabs through `aria-owns`, so the `×`, the gears and the strip's
+   own buttons beside them are not the tablist's. Out of the row, so it takes no place among the tabs; laid over the whole
    strip, so a screen reader that draws its cursor around the tablist draws it around the tabs;
    and never under the pointer, which goes through it to the tab or the `×` it is over. */
 [data-strip] {

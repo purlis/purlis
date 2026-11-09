@@ -2424,8 +2424,9 @@ the stop before anyone has touched the group. Left alone it is none of them and 
 own element takes the stop. It is the selected item at rest, the item the keyboard is on while
 it is inside, and the selected one again when the keyboard leaves. A strip's own controls
 (`.strip-doing`, the `+`) are inside the group but are not its items, so reaching one is leaving.
-**A new strip or list adopts it** by wrapping its container in `RovingFocusGroup.Root asChild` with the hook's props, and each
-item in `RovingFocusGroup.Item asChild tabStopId={…} active={…}`. The primitive stays visible at
+**A new list adopts it** by wrapping its container in `RovingFocusGroup.Root asChild` with the hook's props, and each
+item in `RovingFocusGroup.Item asChild tabStopId={…} active={…}`. A strip of tabs never does: its
+keyboard is the tabs family's (`useTabStrip`, with `TabStripRow` or `useTabStripRow`, #3134). The primitive stays visible at
 the call site, which is this file's rule.
 
 **Two things about wiring it that will catch the next person.** `useTabStop` has to be told
@@ -2626,10 +2627,11 @@ component library gets added on.
 - **A side with views has an activity bar** (ADR 0038 as amended 2026-10-10, #1673;
   `app/src/ActivityBar.tsx`). It is VS Code's strip of icons at the window's edge, and it is
   built from what this file already allows:
-  - **A vertical tab list on the strips' own roving focus**: `role="tablist"` with
+  - **A vertical tab list on the tabs family's keyboard** (#3134): `role="tablist"` with
     `aria-orientation="vertical"`, a `button role="tab"` per view, `aria-selected` on the open
-    one, `aria-controls` naming its `tabpanel`, and one Tab stop through `useTabStop`. The
-    arrows, Home and End move along it; Enter, Space or a click presses. Activation is manual,
+    one, `aria-controls` naming its `tabpanel`, and one Tab stop, React Aria's (`useTabStripRow`,
+    `AsStripTab`). The arrows, Home and End move along it, wrapping at its ends; Enter, Space or a
+    click presses. Activation is manual,
     so walking the bar opens nothing. **The tab list owns tabs and nothing else** (#1204): a
     view's badge is inside its own tab, and the tab is described by it.
   - **`aria-selected` is right here, as it is not in the explorer**: the bar is a tab list,
@@ -2705,8 +2707,8 @@ A part of a project's view is therefore mounted while nobody can see it. What th
 
 ## The title bar added no primitive either, and inherited a rule from Tauri
 
-The window's title bar (`app/src/TitleBar.tsx`) is a `<header>` holding the project strip — the
-same Radix roving-focus tablist it was in its own row (ADR 0054) — and a `<span>` of buttons at
+The window's title bar (`app/src/TitleBar.tsx`) is a `<header>` holding the project strip — a
+tablist, since moved to the project rail (#2915) and onto the tabs family (#3134) — and a `<span>` of buttons at
 its right-hand end. The one thing about it that is not ordinary markup is the drag region, and that is a
 **third-party rule the window now depends on** — the same class of thing as WebKit's tab
 sequence above, so it is written down here for the same reason.
