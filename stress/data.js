@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794192349004,
+  "lastUpdate": 1794198109359,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -17912,6 +17912,42 @@ window.BENCHMARK_DATA = {
             "value": 995.1,
             "unit": "MB",
             "extra": "median of 6 samples: 962.3, 975.3, 986.7, 1003.5, 1003.8, 1083.3 MB; window 685.3 MB, session host 311 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "074f6758d9aa9d841b535b8afbbaade303bb7558",
+          "message": "Theme check: the switcher's and the count's see-through gaps, timed; story pictures catch a wash (#4607, #3178) (#5884)\n\n* Theme check: a switcher row's see-through look on an opaque popover, a count compared laid, and the near-floor case timed (#4607)\n\nWhat #4617 left on #4607:\n\n- A part drawn apart from its root (the switcher's rows and pins) on a popover fill a theme sets\n  was read in the tints only when that fill was see-through (D-4607-4). It is now read there too\n  when a part standing on it draws its fill or words see-through, its own defaults included, and\n  the tints are built for it. The reading is apart_held_on, out of held_on_surfaces, over\n  apart_on, which apart_broken_on reads too.\n- The plain count's rule was told from the hot count by their colours unlaid (D-4384-4). The two\n  are now laid on the ground the count stands on, as the token floor lays them, so a see-through\n  rule or hot count is read as it comes out on the bar.\n- The near-floor worst case is timed in examples/launch_theme_timing.rs, in dev-release.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YFQJA236SM9PQSJ6W1JV4W\nPurlis-Persona: steward\n\n* Story pictures catch a change to a wash or a surface step (#3178)\n\nThe screenshot gate's comparator options are written down in app/.storybook/pictures.ts rather\nthan left to Vitest's defaults: pixelmatch at threshold 0.015 (was its default 0.1) with no pixel\nallowed past it. At 0.1, #3169's wash change (about 0.061 on pixelmatch's scale), #5263's accent\nchange (0.083) and any Purlis light surface drawn as its neighbour (0.018 to 0.038) passed;\n0.015 fails each and passes a rounding (two levels, 0.0076). pictures.test.ts runs the very\ncomparator @vitest/browser resolves on each, and was seen to fail at 0.1.\n\nEveryFlatFill (app/src/theme/FlatFills.stories.tsx) pictures every surface step, wash and chosen\nground in each cell. docs/component-stories.md says what a picture lets through and why, and how\nto draw a passing story's pictures again: delete its baselines, and the run draws them.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YFQJA236SM9PQSJ6W1JV4W\nPurlis-Persona: steward\n\n* Theme check: review of #4607's commit\n\nApartOn is a struct with named fields; near_the_hot's two fallbacks are one; the switcher tests\nshare one reading; a test name reads as a sentence; themes.md's paragraph is wrapped again.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YFQJA236SM9PQSJ6W1JV4W\nPurlis-Persona: steward\n\n* Story pictures: review of #3178's commit\n\npictures.ts points at the docs' table for why each option has its value, rather than repeating\nit, and says the same options decide when a picture is stable; the test names the module it runs.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YFQJA236SM9PQSJ6W1JV4W\nPurlis-Persona: steward\n\n* Story pictures: the flat fills' list is no story\n\nA named export of a stories file is a story to Storybook, so FLAT_FILLS was run as one with no\nbaselines; it stays in its file.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YFQJA236SM9PQSJ6W1JV4W\nPurlis-Persona: steward\n\n* Story pictures: a threshold above two runs' noise, and the few pixels they differ by (#3178)\n\nTwo stories runs of #5884's tree at 0.015 failed on 678 and 685 pictures. 669 failed alike in\nboth, by the same pixel counts: baselines older than changes 0.1 let through, such as a dialog's\nscrim 17 levels darker. 25 failed in one run only, which is noise: up to 24 pixels as far apart\nas 0.06, and a button still settling after Enter (UndoTurn's Undone, WebKit) over about 1,550\npixels at up to 0.031. So the gate compares at 0.035 and allows 32 pixels past it. #3169's wash\n(0.061) and #5263's accent (0.083) still fail; a surface step under 0.035 and #5263's turned\naccent.surface (0.033) pass, as docs/component-stories.md says.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YFQJA236SM9PQSJ6W1JV4W\nPurlis-Persona: steward\n\n* Story pictures: the threshold test imports only what it reads\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YFQJA236SM9PQSJ6W1JV4W\nPurlis-Persona: steward\n\n* Story pictures: baselines drawn again under the new comparison (#3178)\n\nTaken with tools/story-baselines-pull.mjs from #5884's stories run 42536545166: the pictures\nthat went stale under changes 0.1 let through, the new EveryFlatFill story's in each cell, and\nPoolSignInConfirm's GitLab pictures, which main has no baseline for.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YFQJA236SM9PQSJ6W1JV4W\nPurlis-Persona: steward\n\n* Stories: UndoTurn's Undone waits for its button to settle before its picture\n\nAfter Enter undoes, the picture was taken while the button's look was still moving, so two runs\nof one tree drew it about 1,600 pixels apart in WebKit. The play now waits for the keyboard to be\nback on the button and for the button to settle (untilSettled), as #5888 made the GitLab check\nwait for Check it to arm.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YFQJA236SM9PQSJ6W1JV4W\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-09T02:02:33Z",
+          "tree_id": "c528607a9bb2457fbad4233f2d892d84c41168b8",
+          "url": "https://github.com/purlis/purlis/commit/074f6758d9aa9d841b535b8afbbaade303bb7558"
+        },
+        "date": 1794198103420,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 2228.8,
+            "unit": "MB",
+            "extra": "median of 3 samples: 2018.1, 2228.8, 2490 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 981.7,
+            "unit": "MB",
+            "extra": "median of 6 samples: 947.8, 961.6, 975.1, 988.4, 988.7, 1066.1 MB; window 677.3 MB, session host 304.7 MB"
           }
         ]
       }
