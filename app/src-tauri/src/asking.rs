@@ -757,16 +757,20 @@ pub async fn asks_waiting(
     plane: PlaneId,
 ) -> Result<Asking, String> {
     let held = planes.held(&plane)?;
-    crate::off_the_window(READING_ASKS, move || {
-        let root = held.root().to_path_buf();
-        // Snooze all's record is this machine's (#5647): where the app keeps no store, as in a
-        // test of its own, nothing is snoozed and no data home is looked for.
-        let store = held
-            .config()
-            .and_then(|_| purlis_core::inboxupdates::Store::here());
-        Ok(snoozed_apart(every_ask(&held), store.as_ref(), &root))
-    })
-    .await
+    crate::off_the_window(READING_ASKS, move || Ok(counted(&held))).await
+}
+
+/// **What the ✋ counts of project `held`** (ADR 0121 decisions 2 and 3): its Blocking asks,
+/// from every source ([`every_ask`]), with what Snooze all put away apart ([`snoozed_apart`]).
+/// The window lists it, and the system notifications (`asknotify`) are sent for it alone, so
+/// what notifies and what counts are one answer.
+pub fn counted(held: &crate::planes::Held) -> Asking {
+    // Snooze all's record is this machine's (#5647): where the app keeps no store, as in a
+    // test of its own, nothing is snoozed and no data home is looked for.
+    let store = held
+        .config()
+        .and_then(|_| purlis_core::inboxupdates::Store::here());
+    snoozed_apart(every_ask(held), store.as_ref(), held.root())
 }
 
 /// **Snooze all's asks, put apart** (#5647): every snoozed chat that holds an ask it did not

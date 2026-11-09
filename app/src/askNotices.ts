@@ -4,15 +4,15 @@
 /**
  * **The window's half of the asks' system notifications** (#1694, spec #1688, I-7; #1989).
  *
- * The core decides what is sent (`asknotify.rs`): only an ask raises a notification, never an
- * update; one chat's asks a few seconds apart share one; and nothing is sent while the person
- * is looking, at the chat itself or at the Inbox in the window in front. Two things only the
+ * The core decides what is sent (`asknotify.rs`): only a Blocking ask raises a notification,
+ * never an update; a chat has one, updated in place; a burst of chats shares one; and nothing
+ * is sent while the person is looking, at the chat itself or at Asks in the window in front. Two things only the
  * window knows, and it says them here:
  *
  * - **whether a project's Inbox is open** ({@link useInboxOpenTold}), which the core reads with
  *   whether that window is focused and has the project in front;
- * - **what a click on a notification lands on** ({@link useNotificationLanding}): the Inbox, at
- *   the group of the first chat it counted that still waits ({@link landsOn}).
+ * - **what a click on a notification lands on** ({@link useNotificationLanding}): the first chat
+ *   it counted that still waits ({@link landsOn}), brought forward beside its row in Asks.
  *
  * **A click is read as the window coming to the front.** On the desktop the system brings the
  * app forward when its notification is clicked, and tells it nothing more, so the window holds
