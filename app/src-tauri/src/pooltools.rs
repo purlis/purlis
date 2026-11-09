@@ -260,8 +260,7 @@ impl Vaults for Ctx {
     }
 
     fn out_of_reach(&self, persona: &str, tool: &Tool) -> Option<String> {
-        let _held_back = (persona, tool);
-        None
+        out_of_reach(self, persona, tool)
     }
 }
 
