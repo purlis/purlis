@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794215516172,
+  "lastUpdate": 1794222216342,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -18164,6 +18164,42 @@ window.BENCHMARK_DATA = {
             "value": 978.3,
             "unit": "MB",
             "extra": "median of 6 samples: 939.8, 958.6, 973.6, 983.1, 983.4, 1052 MB; window 666.4 MB, session host 312 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "fda966c77dd5328ac53af7863e31a0d77c4aa004",
+          "message": "Stories: SkillGrades › Grades walks to its Scorecard as a person does (#4098); Extensions.test's last wait takes the shared budget (#5270) (#5930)\n\n* Extensions.test: the last vi.waitFor waits with the shared budget, not 1 s (#5270)\n\nThe wait for Compare's parts to land after it overtakes the launch's ask\nset its own 1 s limit, which a loaded runner can outlast. It now takes\nthe shared 5 s budget from test-setup.ts, like every other vi.waitFor.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZCC95HA7FSMHMR63DWY5K4\nPurlis-Persona: steward\n\n* Stories: tabInto reads each Tab on the frame after it, so a table cell's hand-off lands first (#4098)\n\nSkillGrades › Grades failed its WebKit picture now and then on PRs that\ndon't touch it (twice in the last day's runs, classic_light and\nclassic_dark), with the studio's pane scrolled 214 px past its baseline\nand the Scorecard focused.\n\nA table's cell takes the keyboard on Tab and hands it to its Scorecard\non the next frame (React Aria's useGridCell). The story's tabInto read\nthe focus as soon as the Tab returned. When WebKit drew that frame late,\nthe keyboard was still on the cell, so one more Tab took it past the\ntable and round the page. Coming back from out of sight, WebKit centred\nthe cell instead of bringing it to the nearer edge, which is the 214 px.\n\ntabInto now waits a frame after each press before it reads the focus.\nThe SkillGrades, SkillPage, SkillStudioTab, SkillStudioDrafts and\nSkillStudioHarnessRouting stories had their own copies of the loop, with\nthe same race. They now use the one in stories.testkit.ts (its step cap\nraised to the 60 the longest copy needed). No picture is redrawn.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZCC95HA7FSMHMR63DWY5K4\nPurlis-Persona: steward\n\n* SkillGrades › Grades: Tab onto the table, then → to the Scorecard; tabInto put back (#4098)\n\nThis replaces the previous commit's fix, whose cause a probe disproved: with\nevery frame 150 ms late, the old tabInto never left the table, because a Tab\nfrom the cell lands on its own Scorecard. So stories.testkit.ts and the five\nstories' own tabInto copies are back as they were on main.\n\nGrades failed its WebKit picture now and then on PRs that don't touch it\n(runs 42562320589 classic_light and 42558230396 classic_dark), with the\nstudio's pane scrolled 214 px past its baseline and the Scorecard focused.\n\nThe story reached the Scorecard by Tab alone. The table is one stop for\nTab: the first press lands on the latest grade's row. Its loop then\npressed Tab again. React Aria handles that Tab by moving the keyboard to\nthe table's last control, the oldest grade's What ran below the fold, so\na browser's Tab goes on past the table. The story's simulated Tab instead\nwent on from the row it began on, to the Scorecard. So every run passed\nthe keyboard through a control below what is pictured, by a path no\nperson takes. A probe of the story (96 WebKit runs, frames 0 to 400 ms\nlate, every pane scroll logged) saw that path every time and never saw it\nscroll. The 214 px failure did not reproduce, so that step is the\nlikeliest cause, not a proven one.\n\nThe story now tabs onto the table's row and walks it with →, reading each\npress on the frame after it, which is when a cell hands the keyboard to\nits control. It ends where the picture always showed it, so no baseline\nis redrawn.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZCC95HA7FSMHMR63DWY5K4\nPurlis-Persona: steward\n\n* stories: SkillGrades › Grades baselines drawn by this PR's own run (#4098)\n\nTaken with tools/story-baselines-pull.mjs from stories run 42575045726.\nWith the → walk, both runs of the unchanged tree drew the same picture in\nevery cell: the 12 WebKit pictures are byte-identical across the two\nruns. They are also byte-identical to the pictures the flaky runs drew\n(42562320589 classic_light, 42558230396 classic_dark). The old baseline\nwas the other of the story's two states: the Scorecard reached by the\nsimulated Tab's jump, before React Aria's own keyboard scroll of the\ntable had run.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZCC95HA7FSMHMR63DWY5K4\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-09T08:02:19Z",
+          "tree_id": "06655046aa6e8047fb9c5fb85c7327d2af2c3622",
+          "url": "https://github.com/purlis/purlis/commit/fda966c77dd5328ac53af7863e31a0d77c4aa004"
+        },
+        "date": 1794222210641,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 2306.7,
+            "unit": "MB",
+            "extra": "median of 3 samples: 2010.4, 2306.7, 2502.1 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 970.6,
+            "unit": "MB",
+            "extra": "median of 6 samples: 937.3, 955.9, 965.3, 975.9, 976.1, 1044 MB; window 649.6 MB, session host 321 MB"
           }
         ]
       }
