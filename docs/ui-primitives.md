@@ -1528,10 +1528,15 @@ owner's (`selected`, `onSelect`), so a view's history brings it back. Its parts 
 control is a radio group, never a page's tabs.
 
 `purlis/tabs-family` (an error) refuses a `tab`, `tablist` or `tabpanel` role written by hand,
-a page's or a strip's alike, the old hand-made tablist (`StripTablist`) and `data-scope="tabs"`
-or `"page-tabs"` outside `src/ui`. The tablists
-still drawn by hand (the workspace strip, the activity bars, the project rail's) are turned off by
-file in `eslint.config.js` until their own tickets move them.
+a page's or a strip's alike, and `data-scope="tabs"` or `"page-tabs"` outside `src/ui`, and is
+off in no file (#3134). **Where another family draws the tabs**, the project rail's column and
+buttons and an activity bar's group and items, it wears the tabs family's keyboard and roles
+rather than drawing its own: `useTabStrip` holds the tabs, `useTabStripRow` hands the container
+the keyboard along them and the tablist its role, name and orientation, and `AsStripTab` hands
+each family button its tab's role, `aria-selected`, Tab stop and focus. The keyboard is React
+Aria's, as the session strip's: the arrows along it, Home and End, wrapping at its ends, one
+Tab stop on the chosen tab, and manual activation. The title bar's workspaces are a toolbar of
+chips, never a tablist (#2916).
 
 
 ## The activity family: the four corners
@@ -2420,8 +2425,9 @@ the stop before anyone has touched the group. Left alone it is none of them and 
 own element takes the stop. It is the selected item at rest, the item the keyboard is on while
 it is inside, and the selected one again when the keyboard leaves. A strip's own controls
 (`.strip-doing`, the `+`) are inside the group but are not its items, so reaching one is leaving.
-**A new strip or list adopts it** by wrapping its container in `RovingFocusGroup.Root asChild` with the hook's props, and each
-item in `RovingFocusGroup.Item asChild tabStopId={…} active={…}`. The primitive stays visible at
+**A new list adopts it** by wrapping its container in `RovingFocusGroup.Root asChild` with the hook's props, and each
+item in `RovingFocusGroup.Item asChild tabStopId={…} active={…}`. A strip of tabs never does: its
+keyboard is the tabs family's (`useTabStrip`, with `TabStripRow` or `useTabStripRow`, #3134). The primitive stays visible at
 the call site, which is this file's rule.
 
 **Two things about wiring it that will catch the next person.** `useTabStop` has to be told
@@ -2518,14 +2524,13 @@ away.** A strip's cells hold more than a tab (a project's `×` and gear, a works
 tab's `×`, fresh mark and hand, every strip's own `+`), so the `tablist` role is not on the
 element that holds them.
 
-- **The strip element** (`.projects`, `.workspaces-strip`, `.tabs`) has no role. It is marked
-  `data-strip="Projects" | "Workspaces" | "Tabs"`, and keeps its cells, its keyboard (React Aria's
-  on the tab strip, `TabStripRow`; a `RovingFocusGroup.Root` on the others, whose arrows, Home and
-  End read the order from the document, not from a role), its `DndContext` and the ref `useRoom`
-  measures.
+- **The strip element** (the rail's column, `.tabs`) has no role. It is marked
+  `data-strip="Projects" | "Tabs"`, and keeps its cells, its keyboard (React Aria's, through the
+  tabs family: `TabStripRow` on the tab strip, `useTabStripRow` on the rail's column, #3134), its
+  `DndContext` and the ref `useRoom` measures.
 - **The tablist** is an empty `<span role="tablist" aria-label=…>` first inside it
-  (`TabStripRow` on the tab strip, `StripTablist.tsx` on the others), owning the tabs drawn by
-  id, in order. The stylesheet lays it over the strip with `pointer-events: none`, so it takes no
+  (`TabStripRow` on the tab strip; the rail's `tablist` part, given its attributes by
+  `useTabStripRow`), owning the tabs drawn by id, in order. The stylesheet lays it over the strip with `pointer-events: none`, so it takes no
   room and no press.
 - **Reaching a strip's tabs**: code, the stylesheet and the scenario specs go through
   `[data-strip="…"]`; a vitest finds the tablist by its role and name and takes the strip around
@@ -2623,10 +2628,11 @@ component library gets added on.
 - **A side with views has an activity bar** (ADR 0038 as amended 2026-10-10, #1673;
   `app/src/ActivityBar.tsx`). It is VS Code's strip of icons at the window's edge, and it is
   built from what this file already allows:
-  - **A vertical tab list on the strips' own roving focus**: `role="tablist"` with
+  - **A vertical tab list on the tabs family's keyboard** (#3134): `role="tablist"` with
     `aria-orientation="vertical"`, a `button role="tab"` per view, `aria-selected` on the open
-    one, `aria-controls` naming its `tabpanel`, and one Tab stop through `useTabStop`. The
-    arrows, Home and End move along it; Enter, Space or a click presses. Activation is manual,
+    one, `aria-controls` naming its `tabpanel`, and one Tab stop, React Aria's (`useTabStripRow`,
+    `AsStripTab`). The arrows, Home and End move along it, wrapping at its ends; Enter, Space or a
+    click presses. Activation is manual,
     so walking the bar opens nothing. **The tab list owns tabs and nothing else** (#1204): a
     view's badge is inside its own tab, and the tab is described by it.
   - **`aria-selected` is right here, as it is not in the explorer**: the bar is a tab list,
@@ -2702,8 +2708,8 @@ A part of a project's view is therefore mounted while nobody can see it. What th
 
 ## The title bar added no primitive either, and inherited a rule from Tauri
 
-The window's title bar (`app/src/TitleBar.tsx`) is a `<header>` holding the project strip — the
-same Radix roving-focus tablist it was in its own row (ADR 0054) — and a `<span>` of buttons at
+The window's title bar (`app/src/TitleBar.tsx`) is a `<header>` holding the project strip — a
+tablist, since moved to the project rail (#2915) and onto the tabs family (#3134) — and a `<span>` of buttons at
 its right-hand end. The one thing about it that is not ordinary markup is the drag region, and that is a
 **third-party rule the window now depends on** — the same class of thing as WebKit's tab
 sequence above, so it is written down here for the same reason.

@@ -72,7 +72,7 @@ export function laidOutInAColumn() {
 
 /**
  * **The strip whose tablist is called `name`**: the element its tabs, their `×` and gears, and
- * its own controls are drawn in (#1204, `StripTablist.tsx`).
+ * its own controls are drawn in (#1204, `TabStripRow` in `ui/tabs/TabStrip.tsx`).
  *
  * Found through the tablist, by its role and name, and not by a class, so a test still says
  * which tablist it means. Not the tablist itself, which holds nothing: it owns its tabs through
