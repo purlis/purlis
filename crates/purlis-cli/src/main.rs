@@ -2484,6 +2484,12 @@ fn hook(name: &str, now: Option<&str>) -> ExitCode {
     if name == purlis_core::harness::hooked::QUESTION_WORD {
         return permission::taskquestion(&payload());
     }
+    // A Codex chat's skills, a `SessionStart` hook's output of their own (#5841). It reports
+    // nothing: the briefing's hook is the one that says the session started.
+    if name == purlis_core::harness::codex::SKILLS_WORD {
+        hooks::sessionstart_skills(&payload(), now);
+        return ExitCode::SUCCESS;
+    }
     let guarded = name == GUARDED_TOOL_HOOK;
     let handler = hooks::handler(name);
     if guarded || handler.is_some() {

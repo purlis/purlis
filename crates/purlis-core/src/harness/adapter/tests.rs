@@ -148,8 +148,10 @@ fn only_a_budget_past_codexs_own_limit_warns_and_it_says_what_codex_would_drop()
     };
     let said = codex.skill_limit_past(raised).expect("a warning");
     assert!(said.contains("15,000"), "{said}");
-    assert!(said.contains("8,000"), "{said}");
-    assert!(said.contains("leaves skills out"), "{said}");
+    // What Codex keeps of a hook's output (codex-cli 0.147.0, measured; ADR 0102 as amended
+    // 2026-11-09), and the skills it loses past it.
+    assert!(said.contains("10,000"), "{said}");
+    assert!(said.contains("cuts the skills in the middle"), "{said}");
     assert!(!said.contains("  "), "{said}");
     // opencode has no limit, and purlis hands Claude Code the one the budget needs.
     let huge = crate::skills::Budget {

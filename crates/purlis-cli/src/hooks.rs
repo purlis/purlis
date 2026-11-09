@@ -462,6 +462,31 @@ pub fn sessionstart(payload: &str, now: Option<&str>) {
     });
 }
 
+/// **A Codex chat's skills, as a `SessionStart` hook's output of their own** (#5841): the
+/// listing [`purlis_core::briefing::skills_part`] makes, printed as `additionalContext`, or
+/// nothing for a chat purlis hands no skills, or outside a plane. Codex keeps 10,000 characters
+/// of each hook's output and cuts the middle, so the listing is never the briefing's middle.
+pub fn sessionstart_skills(payload: &str, now: Option<&str>) {
+    with_hook(payload, now, |hook| {
+        if !hook.in_plane {
+            return;
+        }
+        let ask = purlis_core::briefing::Ask {
+            root: hook.root,
+            cwd: hook.cwd,
+            payload: hook.payload,
+            env: &env,
+            now: hook.now,
+        };
+        let parts: Vec<String> = purlis_core::briefing::skills_part(&ask)
+            .into_iter()
+            .collect();
+        if let Some(line) = purlis_core::briefing::emitted(&parts) {
+            say(&line);
+        }
+    });
+}
+
 /// `userpromptsubmit`'s own work, handed to the turn that is starting as one
 /// `additionalContext`: the heartbeat; the commitment gate
 /// ([`purlis_core::commitgate`], charter#369), which tells a prompt asking for work with a real

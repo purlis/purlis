@@ -427,6 +427,84 @@ fn a_session_in_a_plane_is_briefed_on_its_persona_through_additional_context() {
     assert!(plane.path().join(".charter/sessions/s-1.tools").is_file());
 }
 
+/// What `purlis hook <word>` prints for a session in `plane` started with `env`.
+fn told_by(plane: &std::path::Path, word: &str, env: &[(&str, &str)]) -> String {
+    let mut child = support::command(CHARTER)
+        .args(["hook", word])
+        .current_dir(plane)
+        .env_clear()
+        .env("PATH", std::env::var("PATH").unwrap_or_default())
+        .env("HOME", plane)
+        // The temporary folder the plane was made in, which a fenced build holds it to.
+        .env("TMPDIR", std::env::temp_dir())
+        .env("CHARTER_CONFIG_HOME", plane.join(".no-config-home"))
+        .envs(env.iter().copied())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("charter runs");
+    stand_in::feed(
+        &mut child,
+        br#"{"session_id": "s-1", "hook_event_name": "SessionStart"}"#,
+    );
+    let out = child.wait_with_output().expect("charter finishes");
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+#[test]
+fn a_codex_chats_skills_are_told_by_a_session_start_hook_of_their_own() {
+    // Codex keeps 10,000 characters of each hook's output and cuts the middle (codex-cli
+    // 0.147.0, measured; ADR 0102 as amended 2026-11-09), so the listing is never the briefing's.
+    let plane = tempfile::tempdir().expect("a directory");
+    std::fs::write(
+        plane.path().join("charter.toml"),
+        "schema = 1\n\n[persona]\ndefault = \"ops\"\n",
+    )
+    .expect("a manifest");
+    let persona = plane.path().join("personas/ops");
+    std::fs::create_dir_all(persona.join("memory")).expect("a persona");
+    std::fs::write(
+        persona.join("persona.md"),
+        "---\nrole: Operations\n---\n\n# ops\n",
+    )
+    .expect("its charter");
+    let skills = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../app/src-tauri/plugin/skills")
+        .display()
+        .to_string();
+    let env = [(purlis_core::skills::LISTED_ENV, skills.as_str())];
+    let word = purlis_core::harness::codex::SKILLS_WORD;
+
+    let briefing = told_by(plane.path(), "sessionstart", &env);
+    assert!(briefing.contains("You are the `ops` persona"), "{briefing}");
+    assert!(!briefing.contains("purlis's built-in skills"), "{briefing}");
+
+    let listing = told_by(plane.path(), word, &env);
+    let doc: serde_json::Value = serde_json::from_str(listing.trim()).expect("one line of JSON");
+    assert_eq!(doc["hookSpecificOutput"]["hookEventName"], "SessionStart");
+    let context = doc["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .expect("context");
+    assert!(
+        context.starts_with("⬢ **purlis's built-in skills**"),
+        "{context}"
+    );
+    assert!(!context.contains("You are the `ops` persona"), "{context}");
+
+    assert_eq!(
+        told_by(plane.path(), word, &[]),
+        "",
+        "no skills handed, nothing said"
+    );
+}
+
 #[test]
 fn the_tool_guards_refuse_by_printing_and_exit_cleanly() {
     let plane = a_plane_with_a_persona();

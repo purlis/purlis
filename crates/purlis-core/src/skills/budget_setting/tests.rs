@@ -435,7 +435,7 @@ fn a_preview_warns_past_codexs_limit_and_never_refuses() {
     let dir = with_skills("", "{}", 2);
     let wanted = Set {
         skills: None,
-        chars: Some(9_000),
+        chars: Some(10_000),
     };
     let said = preview(None, dir.path(), None, None, Harness::Codex, wanted);
     assert!(

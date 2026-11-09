@@ -1,0 +1,12 @@
+{
+  "name": "purlis-ci-codex",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "The Codex build CI runs, at the version tests/fixtures/harness-versions/codex.txt names. Installed with npm ci, so every tarball is checked against package-lock.json's integrity; npm installs only the optional dependency that matches the runner's os and cpu.",
+  "optionalDependencies": {
+    "@openai/codex-darwin-arm64": "npm:@openai/codex@0.147.0-darwin-arm64",
+    "@openai/codex-darwin-x64": "npm:@openai/codex@0.147.0-darwin-x64",
+    "@openai/codex-linux-arm64": "npm:@openai/codex@0.147.0-linux-arm64",
+    "@openai/codex-linux-x64": "npm:@openai/codex@0.147.0-linux-x64"
+  }
+}

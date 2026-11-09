@@ -212,6 +212,12 @@ pub(crate) fn frontmatter_lines(text: &str) -> Vec<&str> {
         .unwrap_or_default()
 }
 
+/// **How a [`listing`] opens**, before its first skill: counted against what a harness keeps of
+/// it (Codex's cut of a hook's output, ADR 0102 as amended 2026-11-09).
+pub const LISTING_OPENING: &str = "⬢ **purlis's built-in skills** — this harness does not load \
+     them itself, so they are listed here. When a request matches one, read its `SKILL.md` and \
+     follow it before acting; a prompt that names a skill by its name means this list.";
+
 /// The briefing section that lists `skills`, or none when there are none.
 ///
 /// It is what a harness with skills of its own shows its model: each skill's name, when to use
@@ -225,11 +231,7 @@ pub fn listing(skills: &[Skill]) -> Option<String> {
     if skills.is_empty() {
         return None;
     }
-    let mut text = String::from(
-        "⬢ **purlis's built-in skills** — this harness does not load them itself, so they are listed \
-         here. When a request matches one, read its `SKILL.md` and follow it before acting; a \
-         prompt that names a skill by its name means this list.",
-    );
+    let mut text = String::from(LISTING_OPENING);
     let (manual, chosen): (Vec<&Skill>, Vec<&Skill>) = skills
         .iter()
         .partition(|skill| crate::declared(skill).manual);

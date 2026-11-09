@@ -298,28 +298,48 @@ fn an_unattended_run_is_told_to_stop_rather_than_guess() {
     assert!(got[0].starts_with("⬢ **STOP — this run has no workspace and nobody to ask.**"));
 }
 
+/// What [`skills_part`] tells a chat started with `env`, at the plane's parent.
+fn skills_told(root: &Path, env: &[(&str, &str)]) -> Option<String> {
+    let env: HashMap<String, String> = env
+        .iter()
+        .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+        .collect();
+    let lookup = move |name: &str| env.get(name).cloned();
+    skills_part(&Ask {
+        root,
+        cwd: root.parent().expect("the plane has a parent"),
+        payload: &serde_json::json!({}),
+        env: &lookup,
+        now: now(),
+    })
+}
+
 #[test]
-fn a_chat_started_with_charters_skills_to_list_is_briefed_on_them_last() {
+fn a_briefed_chats_skills_are_a_part_of_their_own_and_never_in_its_briefing() {
     // ADR 0063: the neutral route, for a harness that cannot load a skills directory for one
-    // session. The variable is set by the app for such a chat alone.
+    // session. The variable is set by the app for such a chat alone. Codex keeps 10,000
+    // characters of each hook's output and cuts the middle (ADR 0102, amended 2026-11-09), so
+    // the listing is a hook's output of its own, never the middle of the briefing's.
     let (_d, root) = plane();
     let skills = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../app/src-tauri/plugin/skills");
     let dir = skills.display().to_string();
-    let got = told(
-        &root,
-        &[("PURLIS_SESSION_ID", "s1"), ("PURLIS_SKILLS_DIR", &dir)],
-        serde_json::json!({}),
-    );
-    let last = got.last().expect("a briefing");
-    assert!(last.starts_with("⬢ **purlis's built-in skills**"), "{last}");
-    assert!(last.contains("`purlis-safe-remove`"), "{last}");
-
-    let without = told(&root, &[("PURLIS_SESSION_ID", "s1")], serde_json::json!({}));
+    let env = [
+        ("PURLIS_SESSION_ID", "s1"),
+        ("PURLIS_SKILLS_DIR", dir.as_str()),
+    ];
+    let got = told(&root, &env, serde_json::json!({}));
     assert!(
-        !without
-            .iter()
-            .any(|p| p.contains("purlis's built-in skills"))
+        !got.iter().any(|p| p.contains("purlis's built-in skills")),
+        "{got:?}"
     );
+    let listing = skills_told(&root, &env).expect("the listing");
+    assert!(
+        listing.starts_with("⬢ **purlis's built-in skills**"),
+        "{listing}"
+    );
+    assert!(listing.contains("`purlis-safe-remove`"), "{listing}");
+
+    assert_eq!(skills_told(&root, &[("PURLIS_SESSION_ID", "s1")]), None);
 }
 
 #[test]
@@ -1548,11 +1568,17 @@ fn an_agents_md_never_carries_the_skills_listing_and_its_paths() {
         IN_ALPHA[1],
         ("PURLIS_SKILLS_DIR", dir.as_str()),
     ];
-    briefed_but_never_filed(
-        &root,
-        root.parent().unwrap(),
-        &env,
-        "purlis's built-in skills",
+    // Told in a hook of its own (`skills_part`), never a part of the briefing the file is cut from.
+    let needle = "purlis's built-in skills";
+    let told = skills_told(&root, &env).unwrap_or_default();
+    assert!(
+        told.contains(needle),
+        "the chat is not told {needle:?}: {told}"
+    );
+    let file = filed(&root, &env).unwrap_or_default();
+    assert!(
+        !file.contains(needle),
+        "the AGENTS.md says {needle:?}: {file}"
     );
 }
 

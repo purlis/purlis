@@ -8,9 +8,16 @@ use super::adapter::{HarnessAdapter, RuleFile, Sandbox, SkillStart, SkillToStart
 use super::{Harness, Kit, StateHooks};
 use crate::sandbox::Form;
 
-/// What Codex holds of its listing where it does not know the window (0.163.0, ADR 0102 as
-/// amended 2026-10-21; not measured again since).
-const LISTING_LIMIT: usize = 8_000;
+/// **What Codex keeps of a hook's output**, in characters: past it, the first and last 5,000 and
+/// `…N tokens truncated…` between them, whatever the model and whatever
+/// `tool_output_token_limit` says; each hook's output apart (codex-cli 0.147.0, measured; ADR
+/// 0102 as amended 2026-11-09). What bounds the skills a chat is told ([`SKILLS_WORD`]).
+pub const BRIEFING_CUT: usize = 10_000;
+
+/// **The word of the `SessionStart` hook that tells a Codex chat its skills**, alone, after the
+/// briefing's ([`crate::briefing::skills_part`]): in a hook of its own the listing has the whole
+/// [`BRIEFING_CUT`], where after the briefing it was the middle Codex cut.
+pub const SKILLS_WORD: &str = "sessionstart-skills";
 
 /// Codex's adapter.
 ///
@@ -147,11 +154,11 @@ impl HarnessAdapter for Codex {
     /// for #3320: a `config.toml` turning `alpha` off and `-c` turning `beta` off left neither in
     /// `codex debug prompt-input`).
     ///
-    /// Its skills ride on the `SessionStart` hook above: Codex can take no skills
-    /// directory for one session ([`Harness::skills`]), so the chat is started with the
-    /// directory of the skills its set holds ([`crate::skills::for_chat`]) in
-    /// [`crate::skills::LISTED_ENV`], which a Codex hook inherits, and the briefing lists
-    /// what its set holds ([`crate::skills::briefed`]). Where the set holds the plane's skills,
+    /// Its skills ride on a `SessionStart` hook of their own ([`SKILLS_WORD`]): Codex can take
+    /// no skills directory for one session ([`Harness::skills`]), so the chat is started with
+    /// the directory of the skills its set holds ([`crate::skills::for_chat`]) in
+    /// [`crate::skills::LISTED_ENV`], which a Codex hook inherits, and that hook lists what its
+    /// set holds ([`crate::skills::briefed`]). Where the set holds the plane's skills,
     /// [`crate::skills::PLANE_LISTED_ENV`] names the set's folder the host laid them out in, and
     /// the briefing lists them too, each by the `SKILL.md` purlis wrote for it there.
     ///
@@ -245,11 +252,13 @@ impl HarnessAdapter for Codex {
         matches!(origin, Origin::Harness | Origin::Repo)
     }
 
-    /// Codex lists skills within 2% of the context window, 8,000 characters where it does not
-    /// know the window, cutting each description at 1,024 characters, and past that drops
-    /// trailing skills without saying so (0.163.0, `ext/skills/src/render.rs`). A Codex chat is
-    /// briefed on its skills, each line with its `SKILL.md`'s path, which counts; a manual-only
-    /// skill's description stays out of the briefing ([`Self::skill_frontmatter`]).
+    /// A Codex chat is told purlis's skills in a `SessionStart` hook of their own
+    /// ([`SKILLS_WORD`]), each line with its `SKILL.md`'s path, which counts, and each
+    /// description cut at 1,024 characters as Codex cuts its own; a manual-only skill's
+    /// description stays out ([`Self::skill_frontmatter`]). Codex keeps [`BRIEFING_CUT`] of
+    /// that hook's output. Its own catalogue, which purlis's list never enters, is bounded apart:
+    /// at 2% of the window it shortens every description, then empties them, then leaves the
+    /// last skills out without a word (0.147.0, measured; ADR 0102 as amended 2026-11-09).
     fn skill_budget(&self) -> crate::skills::Budget {
         crate::skills::Budget {
             per_description: Some(1_024),
@@ -258,16 +267,18 @@ impl HarnessAdapter for Codex {
         }
     }
 
-    /// A budget past 8,000 characters is past what Codex holds where it does not know the
-    /// window. Its binary now also says "omitted from this bounded skills list", not run.
+    /// A budget whose characters and the listing's opening pass [`BRIEFING_CUT`] is past what
+    /// Codex keeps of the skills hook: it keeps the list's start, the built-in skills, and its
+    /// end, the index skill, and cuts the skills between.
     fn skill_limit_past(&self, budget: crate::skills::Budget) -> Option<String> {
-        (budget.chars > LISTING_LIMIT).then(|| {
+        let opening = purlis_skills::LISTING_OPENING.chars().count();
+        (budget.chars + opening > BRIEFING_CUT).then(|| {
             format!(
-                "Codex: at {} characters this is past the {} it holds where it doesn't know its \
-                 window (2% of the window otherwise). Past its limit Codex leaves skills out of \
-                 its list.",
+                "Codex: at {} characters this is past the {} it keeps of what purlis tells it, \
+                 the list's opening included. Past that Codex keeps the start and the end of the \
+                 list and cuts the skills in the middle.",
                 crate::skills::grouped(budget.chars),
-                crate::skills::grouped(LISTING_LIMIT),
+                crate::skills::grouped(BRIEFING_CUT),
             )
         })
     }
@@ -538,6 +549,30 @@ fn question_group(binary: &std::path::Path) -> toml::Value {
     toml::Value::Table(group)
 }
 
+/// **The `SessionStart` group that tells a Codex chat its skills** ([`SKILLS_WORD`]), after the
+/// briefing's: two hooks on one event become two developer messages in the order armed, each
+/// with its own [`BRIEFING_CUT`] (codex-cli 0.147.0, measured).
+///
+/// Not from the registry, as [`question_group`] is not: the registry is Claude Code's plugin's
+/// too, and a Claude Code chat loads its skills itself. It prints nothing for a chat purlis
+/// hands no skills, and fails open as every reporting hook does. Codex asks the operator to
+/// trust it once, as it does each of purlis's hooks.
+fn skills_group(binary: &std::path::Path) -> toml::Value {
+    let mut hook = toml::Table::new();
+    hook.insert("type".to_owned(), toml::Value::from("command"));
+    hook.insert(
+        "command".to_owned(),
+        toml::Value::from(crate::plugin::command_at(binary, SKILLS_WORD)),
+    );
+    hook.insert("timeout".to_owned(), toml::Value::from(5));
+    let mut group = toml::Table::new();
+    group.insert(
+        "hooks".to_owned(),
+        toml::Value::Array(vec![toml::Value::Table(hook)]),
+    );
+    toml::Value::Table(group)
+}
+
 /// The `-c` pairs that arm Codex's hooks on one session, out of [`crate::plugin::codex_handlers`].
 ///
 /// On the argument for the reason Claude Code's are: nothing is written, so nothing is left
@@ -584,10 +619,14 @@ fn session_flags(binary: &std::path::Path) -> Vec<String> {
                 })
                 .collect();
             // One key per event, or the last `-c` of it would win: the question hook rides in
-            // the same `PreToolUse` as the guard ([`question_group`]).
+            // the same `PreToolUse` as the guard ([`question_group`]), and the skills hook in the
+            // same `SessionStart` as the briefing, after it ([`skills_group`]).
             let mut groups = groups;
             if event == "PreToolUse" {
                 groups.push(question_group(binary));
+            }
+            if event == "SessionStart" {
+                groups.push(skills_group(binary));
             }
             let value = toml::Value::Array(groups);
             ["-c".to_owned(), format!("hooks.{event}={value}")]

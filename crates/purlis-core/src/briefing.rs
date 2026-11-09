@@ -267,19 +267,25 @@ pub fn parts(ask: &Ask, piece_note: Option<String>) -> Vec<String> {
     } else if let Some(note) = unsandboxed_note(ask.root, ask.env) {
         parts.push(note.to_owned());
     }
-    // Last: the chat's skills, for a chat whose harness cannot load them (ADR 0063), as its skill
-    // set holds them. Only such a chat is started with the variable, so a harness that loads
-    // them is not told twice.
+    // The chat's skills, for a chat whose harness cannot load them, are a hook's output of their
+    // own ([`skills_part`]), never a part of this.
+    parts
+}
+
+/// **The skills section of a chat whose harness cannot load them** (ADR 0063), as its skill set
+/// holds them, or none for any other chat: only such a chat is started with
+/// [`crate::skills::LISTED_ENV`], so a harness that loads them is not told twice.
+///
+/// A hook's output of its own, never a part of the briefing (`purlis hook sessionstart-skills`,
+/// Codex's alone): Codex keeps 10,000 characters of each hook's output, the first and last 5,000,
+/// and cuts the middle (codex-cli 0.147.0, measured; ADR 0102 as amended 2026-11-09). After the
+/// briefing, which passes that by itself, the listing was the middle it cut.
+pub fn skills_part(ask: &Ask) -> Option<String> {
     let workspace = match place_of(ask) {
         active::Place::PlaneRoot => None,
         active::Place::Workspace(workspace) => Some(workspace),
     };
-    if let Some(skills) =
-        crate::skills::briefed(ask.root, workspace.as_deref(), Some(ask.cwd), ask.env)
-    {
-        parts.push(skills);
-    }
-    parts
+    crate::skills::briefed(ask.root, workspace.as_deref(), Some(ask.cwd), ask.env)
 }
 
 /// **Where a workspace's own files go** (ADR 0114): in its folder, never in a clone. A chat that
