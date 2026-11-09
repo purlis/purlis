@@ -30,6 +30,11 @@
 //!   rather than with a line of JSON: `echo` says its words back, `fail <n>` exits with `n`,
 //!   `stamp` writes a note in `notes/` and says it writes, and `scribble <plane>` writes one while
 //!   saying it only reads.
+//! - **its queries** (`queries`, #5971) are a second manifest on the same program,
+//!   [`QUERIES_MANIFEST`], as `query-probe` in protocol 7, so protocol 2's proofs stay in the
+//!   protocol they were proven in: `asked` answers how many questions it answered and what it
+//!   was handed, and leaves its answer in the facts file under its workspace's key;
+//!   `everywhere` is plane-scoped.
 
 use std::path::{Path, PathBuf};
 
@@ -42,6 +47,15 @@ pub const PROTOCOL: u64 = 2;
 
 /// The manifest this program is installed with, so `assemble` writes the one that is tested.
 pub const MANIFEST: &str = include_str!("../purlis-extension.json");
+
+/// The protocol `query-probe` speaks: 7, which has a query's question (#5971).
+pub const QUERY_PROTOCOL: u64 = 7;
+
+/// The manifest the same program is installed with as `query-probe` (#5971).
+pub const QUERIES_MANIFEST: &str = include_str!("../purlis-extension.queries.json");
+
+/// The file in the state directory the query probe appends one line to per query it answers.
+pub const QUERIED: &str = "queried.txt";
 
 /// The file `stray` writes, in the plane and outside every path the probe declares.
 pub const STRAY: &str = "stray.txt";
@@ -369,11 +383,108 @@ pub fn refresh_facts(state: &Path, now: u64) -> std::io::Result<()> {
     std::fs::rename(&beside, &at)
 }
 
+/// Whether a request is a query's question (protocol 7, #5971).
+pub fn is_query(request: &Value) -> bool {
+    request.get("query").is_some()
+}
+
+/// **The answer to a query's question**, at `now` (Unix seconds): `asked` says how many
+/// questions the probe answered and what it was handed; `everywhere` says it reads the whole
+/// project. With no parameters, the answer is left in the facts file too, under the workspace's
+/// key (or the top's, for a plane-scoped query), as an extension answers ahead of time.
+pub fn query_answer(request: &Value, state: Option<&Path>, now: u64) -> Value {
+    let behave = Behave::read(state);
+    if behave.sleep_ms > 0 {
+        std::thread::sleep(std::time::Duration::from_millis(behave.sleep_ms));
+    }
+    let refused = |why: String| json!({ "charter": QUERY_PROTOCOL, "error": why });
+    if behave.fail {
+        return refused("the probe was told to fail".into());
+    }
+    if request.get("charter").and_then(Value::as_u64) != Some(QUERY_PROTOCOL) {
+        return refused(format!("the query probe speaks protocol {QUERY_PROTOCOL}"));
+    }
+    let query = &request["query"];
+    let name = query["name"].as_str().unwrap_or_default();
+    let workspace = query["workspace"].as_str();
+    let params = query["params"].clone();
+    let asked = match state.map(|state| count_queried(state, name)) {
+        Some(Ok(n)) => n,
+        Some(Err(why)) => return refused(format!("could not count: {why}")),
+        None => 0,
+    };
+    let data = match name {
+        "asked" => json!({
+            "asked": asked,
+            "workspace": workspace,
+            "params": params,
+            "protocol": QUERY_PROTOCOL,
+        }),
+        "everywhere" => json!({ "plane": true, "asked": asked }),
+        other => return refused(format!("the probe has no query {other:?}")),
+    };
+    if params.as_object().is_none_or(serde_json::Map::is_empty)
+        && let Some(state) = state
+        && let Err(why) = leave_in_facts(state, name, workspace, &data, now)
+    {
+        return refused(format!(
+            "could not leave its answer in its facts file: {why}"
+        ));
+    }
+    json!({ "charter": QUERY_PROTOCOL, "data": data })
+}
+
+/// Append one line for query `name` to [`QUERIED`], and say how many lines it now holds.
+fn count_queried(state: &Path, name: &str) -> std::io::Result<usize> {
+    use std::io::Write;
+    std::fs::create_dir_all(state)?;
+    let at = state.join(QUERIED);
+    let mut log = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&at)?;
+    writeln!(log, "{name}")?;
+    Ok(std::fs::read_to_string(&at)?.lines().count())
+}
+
+/// Put `data` in the facts file as query `name`'s answer of `workspace`, as of `now`, by rename.
+fn leave_in_facts(
+    state: &Path,
+    name: &str,
+    workspace: Option<&str>,
+    data: &Value,
+    now: u64,
+) -> std::io::Result<()> {
+    let at = state.join(FACTS);
+    let mut doc = std::fs::read_to_string(&at)
+        .ok()
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+        .filter(Value::is_object)
+        .unwrap_or_else(|| json!({}));
+    let field = json!({ "data": data, "at": now });
+    match workspace {
+        Some(ws) => doc["workspaces"][ws]["queries"][name] = field,
+        None => doc["queries"][name] = field,
+    }
+    let beside = state.join(".facts.json.new");
+    std::fs::write(&beside, doc.to_string())?;
+    std::fs::rename(&beside, &at)
+}
+
 /// Put this program and its manifest in `dir`, the folder charter is pointed at.
 pub fn assemble(dir: &Path) -> std::io::Result<PathBuf> {
+    assemble_as(dir, MANIFEST)
+}
+
+/// Put this program in `dir` as the query probe, with [`QUERIES_MANIFEST`] (#5971).
+pub fn assemble_queries(dir: &Path) -> std::io::Result<PathBuf> {
+    assemble_as(dir, QUERIES_MANIFEST)
+}
+
+fn assemble_as(dir: &Path, manifest: &str) -> std::io::Result<PathBuf> {
     let me = std::env::current_exe()?;
     std::fs::create_dir_all(dir.join("bin"))?;
-    std::fs::write(dir.join("purlis-extension.json"), MANIFEST)?;
+    std::fs::write(dir.join("purlis-extension.json"), manifest)?;
     let program = dir.join("bin").join("extension-probe");
     // A rename over the old copy, never a write through it: on macOS writing a program that has
     // run invalidates its signature (stand-in's notes).

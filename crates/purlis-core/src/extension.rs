@@ -190,6 +190,7 @@ pub mod cli;
 pub mod events;
 pub mod facts;
 pub mod project;
+pub mod queries;
 pub mod studio;
 pub mod writes;
 
@@ -445,6 +446,8 @@ pub struct Manifest {
     pub events: Option<events::Declared>,
     /// Its section of the session-start briefing (the `briefing` capability, [`briefing`]).
     pub briefing: Option<briefing::Declared>,
+    /// The catalogue queries it answers (the `queries` capability, [`queries`], #5971).
+    pub queries: Vec<queries::Declared>,
     /// What its studio capabilities declare, and the hosts it reaches ([`studio`], ADR 0101):
     /// `None` for an extension that declares none. **An extension with one runs confined**
     /// ([`Self::confined`]).
@@ -496,6 +499,7 @@ impl Manifest {
             cli,
             events,
             briefing,
+            queries,
             studio,
             keys_themes_only,
         } = self;
@@ -515,6 +519,7 @@ impl Manifest {
             && cli.is_empty()
             && events.is_none()
             && briefing.is_none()
+            && queries.is_empty()
             && studio.is_none()
     }
 
@@ -1480,6 +1485,14 @@ fn parse_knowing(text: &str, known: &[Capability]) -> Result<Manifest, String> {
         None => Vec::new(),
         Some(value) => writes::writes_of(value)?,
     };
+    let queries = match contributes.get(Capability::Queries.as_str()) {
+        None => Vec::new(),
+        Some(value) => queries::declared_of(value)?,
+    };
+    // A query is a question to the program, so it needs one to ask, as a view does.
+    if !queries.is_empty() && program.is_none() {
+        return Err("answers queries, and declares no program ('runs') to ask".into());
+    }
     let cli = match contributes.get(Capability::Cli.as_str()) {
         None => Vec::new(),
         Some(value) => cli::commands_of(value, program.as_deref(), !writes.is_empty())?,
@@ -1530,6 +1543,7 @@ fn parse_knowing(text: &str, known: &[Capability]) -> Result<Manifest, String> {
         repo_columns,
         events,
         briefing,
+        queries,
         cli,
         studio,
     })
@@ -3001,6 +3015,7 @@ pub fn prompt(found: &Extension, standing: Standing) -> Prompt {
     declares.extend(facts::declares(&found.manifest));
     declares.extend(events::declares(&found.manifest));
     declares.extend(briefing::declares(&found.manifest));
+    declares.extend(queries::declares(&found.manifest));
     declares.extend(
         found
             .manifest
@@ -3072,6 +3087,7 @@ pub fn prompt(found: &Extension, standing: Standing) -> Prompt {
                 && manifest.cli.is_empty()
                 && manifest.events.is_none()
                 && manifest.briefing.is_none()
+                && manifest.queries.is_empty()
                 && manifest.studio.is_none()
             {
                 format!(
@@ -3081,6 +3097,7 @@ pub fn prompt(found: &Extension, standing: Standing) -> Prompt {
             } else if manifest.cli.is_empty()
                 && manifest.events.is_none()
                 && manifest.briefing.is_none()
+                && manifest.queries.is_empty()
                 && manifest.studio.is_none()
             {
                 format!("a program, {program} — {}", crate::executor::HOW_IT_RUNS)

@@ -172,6 +172,7 @@ pub(crate) struct Ask {
 pub(crate) mod calls;
 pub(crate) mod live;
 pub(crate) mod offers;
+pub(crate) mod queried;
 
 /// What every window of a plane hears when an artifact's approval on this machine changed: the
 /// workspace and folder, so each tab of it loads its page again.

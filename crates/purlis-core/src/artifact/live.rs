@@ -14,6 +14,9 @@
 //!   heard while a run is in flight, or sooner than that after the last run started, asks
 //!   again once, when the run is done and the interval has passed. A burst of changes is one
 //!   run, and the page is never left on an answer older than the last change.
+//! - **An extension's query is asked again once its `fresh_seconds` has passed**, while someone
+//!   subscribes ([`Hub::subscribe_every`], #5971): extensions are never long-running and push
+//!   nothing (ADR 0053), so its freshness is what keeps a page on it live.
 //!
 //! The hub holds no clock and starts nothing itself: it says what to do ([`Do`]), and its
 //! caller runs the query, hands the answers and wakes it, so it is tested with the instants it
@@ -82,6 +85,9 @@ struct Feed<W> {
     stale: bool,
     /// Its last answer.
     last: Option<Answer>,
+    /// How long an answer stays good, after which it is asked again: an extension query's
+    /// `fresh_seconds` (#5971). `None` for a core query, which only a change moves.
+    every: Option<Duration>,
 }
 
 /// **Every feed with a subscriber**, by key `K` (the query, its parameters, and where it reads),
@@ -102,6 +108,18 @@ impl<K: Clone + Eq + Hash, W: Clone + PartialEq> Hub<K, W> {
     /// **`who` subscribes to feed `key`**, in place of anything it subscribed to before: handed
     /// the feed's last answer at once when it has one, and its query run when it is due.
     pub fn subscribe(&mut self, key: K, who: W, now: Instant) -> Vec<Do<K, W>> {
+        self.subscribe_every(key, who, now, None)
+    }
+
+    /// [`Self::subscribe`], to a feed asked again each `every` while it has a subscriber (an
+    /// extension query's `fresh_seconds`, #5971).
+    pub fn subscribe_every(
+        &mut self,
+        key: K,
+        who: W,
+        now: Instant,
+        every: Option<Duration>,
+    ) -> Vec<Do<K, W>> {
         self.unsubscribe(|w| *w == who);
         let feed = self.feeds.entry(key.clone()).or_insert_with(|| Feed {
             who: Vec::new(),
@@ -109,6 +127,7 @@ impl<K: Clone + Eq + Hash, W: Clone + PartialEq> Hub<K, W> {
             started: None,
             stale: true,
             last: None,
+            every,
         });
         feed.who.push(who.clone());
         let mut out = Vec::new();
@@ -170,14 +189,21 @@ impl<K: Clone + Eq + Hash, W: Clone + PartialEq> Hub<K, W> {
         self.feeds.len()
     }
 
-    /// Feed `key`'s run, when it is moved, not running, and its interval has passed; when it
-    /// has not, the instant it will have.
+    /// Feed `key`'s run, when it is moved or its answer is past its freshness, not running, and
+    /// its interval has passed; when it has not, the instant it will have.
     fn due(&mut self, key: &K, now: Instant) -> Vec<Do<K, W>> {
         let Some(feed) = self.feeds.get_mut(key) else {
             return Vec::new();
         };
-        if !feed.stale || feed.running {
+        if feed.running {
             return Vec::new();
+        }
+        let next_fresh = feed.every.zip(feed.started).map(|(every, at)| at + every);
+        if next_fresh.is_some_and(|next| next <= now) {
+            feed.stale = true;
+        }
+        if !feed.stale {
+            return next_fresh.map(Do::WakeAt).into_iter().collect();
         }
         if let Some(next) = feed.started.map(|at| at + MIN_INTERVAL)
             && next > now
@@ -409,6 +435,44 @@ mod tests {
                 query.id()
             );
         }
+    }
+
+    #[test]
+    fn a_feed_with_a_freshness_is_asked_again_once_it_has_passed_while_someone_subscribes() {
+        let t = Instant::now();
+        let every = Duration::from_secs(60);
+        let mut hub = Hub::default();
+        assert_eq!(
+            runs(&hub.subscribe_every("slack", ("page-a", 1), t, Some(every))),
+            ["slack"]
+        );
+        let done = hub.finished(&"slack", answer(1), t + Duration::from_secs(2));
+        assert_eq!(handed(&done), [("page-a", 1)]);
+        assert!(
+            done.contains(&Do::WakeAt(t + every)),
+            "it says when it is next due: {done:?}"
+        );
+        // Not before.
+        assert_eq!(
+            hub.tick(t + every - Duration::from_secs(1)),
+            [Do::WakeAt(t + every)]
+        );
+        assert_eq!(runs(&hub.tick(t + every)), ["slack"]);
+        assert!(runs(&hub.tick(t + every)).is_empty(), "one run in flight");
+        hub.finished(&"slack", answer(2), t + every);
+        // Nobody left: nothing is asked again.
+        hub.unsubscribe(|_| true);
+        assert!(hub.tick(t + every * 3).is_empty());
+    }
+
+    #[test]
+    fn a_feed_with_no_freshness_is_never_asked_again_by_time_alone() {
+        let t = Instant::now();
+        let mut hub = Hub::default();
+        hub.subscribe("todos", ("page-a", 1), t);
+        let done = hub.finished(&"todos", answer(1), t);
+        assert!(!done.iter().any(|d| matches!(d, Do::WakeAt(_))), "{done:?}");
+        assert!(hub.tick(t + Duration::from_secs(3600)).is_empty());
     }
 
     #[test]
