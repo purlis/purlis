@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794226359851,
+  "lastUpdate": 1794229524375,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -9154,6 +9154,42 @@ window.BENCHMARK_DATA = {
             "value": 307.4,
             "unit": "MB",
             "extra": "median of 6 samples: 434.7, 408.1, 313.1, 293.3, 301.7, 206.3 MB; window 232.4 MB, session host 75 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "d408c9787e60ebe055ea82b4a9be24c0d197fcf5",
+          "message": "Rail and activity bars on the tabs family (#3134); Inbox press-settle guard characterised (#3123, part) (#5946)\n\n* Tabs family: the project rail and the activity bars wear its keyboard and roles; StripTablist goes and the tabs lint has no exemptions (#3134)\n\nThe rail's column and an activity bar's group take the tabs family's row\n(useTabStripRow), and each project and view button its tab (AsStripTab), so\nboth are React Aria's tabs, as the session strip is. Radix roving focus is\ngone from both. The one change a person notices: the walk wraps at the ends,\nas the WAI-ARIA tabs pattern does. useTabIds moves into ui/tabs/TabStrip and\nStripTablist.tsx is deleted. The title bar's workspaces are a toolbar since\n#2916, so their exemption (WorkspaceStrip.tsx, gone) is simply dropped. The\nbutton rule no longer lists the tab role as another family's.\n\nCharacterised first: ActivityBar.keys and ProjectRail.keys pin the Tab stop,\narrows, Home/End, Enter/Delete, coming back in and the screen-reader names.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZR5XX91EAY598Z6K357Y0W\nPurlis-Persona: steward\n\n* Inbox: characterise the press-settle guard before it moves onto the list family (refs #3123)\n\n#3123's first criterion, on today's Radix roving focus: an ask joining above\na row, a chat elsewhere joining (below every ask, so it holds nothing), an\nask's words or an answer's own words changing, something above growing with\nno row above changing (#3167, the grant's own box), a press just after the\nask was drawn, Deny never held, and where the keyboard lands once an answered\nask is removed. Every case is pressed by the pointer and by Enter on the\nfocused Allow. Seen to fail for the right reason: with tooSoon forced false,\nall ten holding cases go red; with the focus hand-back removed, the landing\ncase does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZR5XX91EAY598Z6K357Y0W\nPurlis-Persona: steward\n\n* docs(ui-primitives): keep only the tabs family's lines; undo a whole-file reformat (#3134)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZR5XX91EAY598Z6K357Y0W\nPurlis-Persona: steward\n\n* Tabs family: a tab's own handlers go on AsStripTab, so a context menu's keys reach it (#3134 review)\n\nThe review found Shift+F10 and the menu key on a rail project opened nothing:\nContextMenu joins its key handler onto the element it wraps (AsStripTab),\nand ProjectRail then set onKeyDown on the button after spreading the tab,\nreplacing it. Radix's Slot used to chain the two. Now the caller's handlers\nare given to AsStripTab, where ContextMenu calls them first and mergeProps\nruns every one, and AsStripTab's props are typed as a button's, so nothing\nis cast away. ActivityBar's press moves there too. Seen red first: the new\nProjectRail.keys case found no menu.\n\nAlso: stale Radix wording in docs/ui-primitives.md and rail.css, and comment\nlines over 100 columns rewrapped.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZR5XX91EAY598Z6K357Y0W\nPurlis-Persona: steward\n\n* Inbox guard suite: pin the elsewhere row's place, the #3167 status, and the answer before focus lands (refs #3123, review)\n\nThe elsewhere case now asserts the joined row stands after the ask, which is\nwhy it holds nothing today; the growth case asserts the row says why it held\nthe press; the focus case asserts the first ask was answered before it went.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZR5XX91EAY598Z6K357Y0W\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-09T10:14:26Z",
+          "tree_id": "2c8fce7d8f28534e03087b4381882f83b0508fb1",
+          "url": "https://github.com/purlis/purlis/commit/d408c9787e60ebe055ea82b4a9be24c0d197fcf5"
+        },
+        "date": 1794229518232,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 2356,
+            "unit": "MB",
+            "extra": "median of 3 samples: 2022, 2356, 2922 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 323.3,
+            "unit": "MB",
+            "extra": "median of 6 samples: 429.7, 423.6, 327.4, 319.1, 312.5, 197.2 MB; window 240.1 MB, session host 84.5 MB"
           }
         ]
       }
