@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794192306430,
+  "lastUpdate": 1794192349004,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -17876,6 +17876,42 @@ window.BENCHMARK_DATA = {
             "value": 1007.2,
             "unit": "MB",
             "extra": "median of 6 samples: 976.2, 990.8, 1000.4, 1014, 1014.4, 1077.3 MB; window 677.6 MB, session host 328.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4cd7b75247ba96fadaaf6af9982aec1ad4304ac1",
+          "message": "Stories: PoolSignInConfirm's GitLab check waits for Check it to arm, and is drawn armed (red since #5873) (#5888)\n\n* stories: PoolSignInConfirm's GitLab check, a line on where its pictures come from\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YPRXQ7TWHMGD8NAF12JKBH\nPurlis-Persona: steward\n\n* stories: PoolSignInConfirm's GitLab check waits for Check it to arm before its picture\n\nThe play never waited for the 1.5 s arming timer, so the screenshot raced it:\nsome runs drew Check it disabled, others armed, and the cell that failed moved\nbetween themes and browsers. main's pictures are the armed state, as the\nGitHub sibling's are; with the wait they hold, so none is redrawn.\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YPRXQ7TWHMGD8NAF12JKBH\nPurlis-Persona: steward\n\n* stories: PoolSignInConfirm's GitLab check drawn armed, from this PR's run 42535686150\n\nPulled with tools/story-baselines-pull.mjs 5888. #5873 drew 23 of its 24 cells\nwith Check it still disabled (the play didn't wait for it to arm); only\npurlis-classic_dark on Chromium was drawn armed, and it matches already.\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YPRXQ7TWHMGD8NAF12JKBH\nPurlis-Persona: steward",
+          "timestamp": "2026-11-09T00:13:41Z",
+          "tree_id": "5041dda6065b2b15062ce6a267aa477825a6ee06",
+          "url": "https://github.com/purlis/purlis/commit/4cd7b75247ba96fadaaf6af9982aec1ad4304ac1"
+        },
+        "date": 1794192343230,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 2231.3,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1993.5, 2231.3, 2537 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 995.1,
+            "unit": "MB",
+            "extra": "median of 6 samples: 962.3, 975.3, 986.7, 1003.5, 1003.8, 1083.3 MB; window 685.3 MB, session host 311 MB"
           }
         ]
       }
