@@ -54,10 +54,10 @@ const PLACES = {
   "browser-login": { at: "pane" },
   "secret-fill": { at: "pane" },
   vault: { at: "pane" },
-  "pool-login": { at: "asks-only", debt: "a runner chat's browser login on its pool" },
-  "pool-tool": { at: "asks-only", debt: "a runner chat's tool's vault values on its pool" },
-  secret: { at: "asks-only", debt: "a run's missing key; the start picker draws its own" },
-  "run-grant": { at: "asks-only", debt: "a brokered run's program its persona does not declare" },
+  "pool-login": { at: "pane" },
+  "pool-tool": { at: "pane" },
+  secret: { at: "pane" },
+  "run-grant": { at: "pane" },
 } as const satisfies Record<AskSource, Place>;
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -118,6 +118,6 @@ describe("every kind of ask has a drawn place", () => {
       Object.entries(PLACES)
         .filter(([, place]) => place.at === "asks-only")
         .map(([source]) => source),
-    ).toEqual(["pool-login", "pool-tool", "secret", "run-grant"]);
+    ).toEqual([]);
   });
 });
