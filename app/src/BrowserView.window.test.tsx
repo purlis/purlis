@@ -23,10 +23,17 @@ import { stripNamed } from "./test-strips";
  */
 
 const painted: number[][] = [];
+/** The pixels across and down of each frame drawn, where a test gives them: the real `paint`
+ *  sizes its canvas to the frame's own pixels, whatever size the view was told. */
+let framePixels: { width: number; height: number } | undefined;
 vi.mock("./browserFrames", async (actual) => ({
   ...(await actual<typeof import("./browserFrames")>()),
-  paint: async (_canvas: HTMLCanvasElement, jpeg: Uint8Array) => {
+  paint: async (canvas: HTMLCanvasElement, jpeg: Uint8Array) => {
     painted.push(Array.from(jpeg));
+    if (framePixels !== undefined) {
+      canvas.width = framePixels.width;
+      canvas.height = framePixels.height;
+    }
   },
 }));
 
@@ -46,6 +53,7 @@ let watchAnswers = true;
 
 beforeEach(() => {
   painted.length = 0;
+  framePixels = undefined;
   besides = {};
   onPool = null;
   watchAnswers = true;
@@ -414,6 +422,100 @@ describe("taking a browser over from its view (#2014)", () => {
     expect(await screen.findByRole("button", { name: "Done" })).toBeInTheDocument();
     expect(barSaid()).toHaveTextContent("The agent is paused until you press Done.");
     expect(host.asked("take_over_browser")).toEqual([]);
+  });
+
+  /** The canvas laid out at `at`, as the window's layout puts it in its pane. */
+  function laidOut(at: { left: number; top: number; width: number; height: number }) {
+    const rect = {
+      ...at,
+      right: at.left + at.width,
+      bottom: at.top + at.height,
+      x: at.left,
+      y: at.top,
+    };
+    vi.spyOn(HTMLCanvasElement.prototype, "getBoundingClientRect").mockReturnValue({
+      ...rect,
+      toJSON: () => rect,
+    } as DOMRect);
+  }
+
+  /** Where each of the person's mouse and wheel events reached the page. */
+  const reached = (host: { asked: (cmd: string) => Record<string, unknown>[] }) =>
+    host.asked("browser_input").map(({ input }) => {
+      const sent = input as { kind: string; action?: string; x: number; y: number };
+      return { kind: sent.kind, action: sent.action, x: sent.x, y: sent.y };
+    });
+
+  it("lands the person's click, move and wheel where the frame drawn shows them, when the frame is not the shape the view was told", async () => {
+    // Told 1280 by 800, the host sends frames 1280 by 650: the canvas is laid out at the
+    // frame's own size, centred in a pane wider and taller than it, a band above and below.
+    framePixels = { width: 1280, height: 650 };
+    laidOut({ left: 110, top: 175, width: 1280, height: 650 });
+    const host = await drawn();
+    const surface = screen.getByTestId("browser-surface");
+    // The search field, 300 px down the page and across its middle.
+    const at = { clientX: 110 + 640, clientY: 175 + 300, button: 0, detail: 1, pointerId: 1 };
+
+    fireEvent.pointerDown(surface, at);
+    await waitFor(() => expect(host.asked("browser_input")).toHaveLength(1));
+    fireEvent.pointerUp(surface, at);
+    fireEvent.pointerMove(surface, { ...at, clientX: 110 + 100, clientY: 175 + 600 });
+    fireEvent.wheel(surface, { clientX: 110 + 1279, clientY: 175 + 10, deltaY: 40 });
+
+    await waitFor(() => expect(host.asked("browser_input")).toHaveLength(4));
+    expect(reached(host)).toEqual([
+      { kind: "mouse", action: "pressed", x: 640, y: 300 },
+      { kind: "mouse", action: "released", x: 640, y: 300 },
+      { kind: "mouse", action: "moved", x: 100, y: 600 },
+      { kind: "mouse", action: "wheel", x: 1279, y: 10 },
+    ]);
+  });
+
+  it("lands the person's click where the frame is drawn when it is scaled down to fit, from a screen of two pixels to the CSS pixel", async () => {
+    // Frames of 2560 by 1300 pixels (a 1280 by 650 page at twice its size), shrunk to fit a
+    // pane 640 px wide: drawn 640 by 325.
+    framePixels = { width: 2560, height: 1300 };
+    laidOut({ left: 10, top: 200, width: 640, height: 325 });
+    const host = await drawn();
+
+    fireEvent.pointerDown(screen.getByTestId("browser-surface"), {
+      clientX: 10 + 320,
+      clientY: 200 + 150,
+      button: 0,
+      detail: 1,
+      pointerId: 1,
+    });
+
+    await waitFor(() => expect(host.asked("browser_input")).toHaveLength(1));
+    expect(reached(host)).toEqual([{ kind: "mouse", action: "pressed", x: 640, y: 300 }]);
+  });
+
+  it("lands the person's click where the frame is drawn in a canvas laid out larger than it, centred in its box", async () => {
+    // A canvas box of 1500 by 1000 holding a 1280 by 650 frame whole: scaled by 1500 / 1280
+    // and centred, a band of 119 px above and below.
+    framePixels = { width: 1280, height: 650 };
+    laidOut({ left: 0, top: 100, width: 1500, height: 1000 });
+    const host = await drawn();
+    const scale = 1500 / 1280;
+    const top = 100 + (1000 - 650 * scale) / 2;
+
+    fireEvent.pointerDown(screen.getByTestId("browser-surface"), {
+      clientX: 640 * scale,
+      clientY: top + 300 * scale,
+      button: 0,
+      detail: 1,
+      pointerId: 1,
+    });
+    fireEvent.pointerDown(screen.getByTestId("browser-surface"), {
+      clientX: 640 * scale,
+      clientY: top - 5,
+      button: 0,
+      detail: 1,
+      pointerId: 2,
+    });
+
+    await waitFor(() => expect(host.asked("browser_input")).toHaveLength(1));
+    expect(reached(host)).toEqual([{ kind: "mouse", action: "pressed", x: 640, y: 300 }]);
   });
 
   it("takes the browser over to set a size preset, and sets it", async () => {
