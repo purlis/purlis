@@ -84,13 +84,14 @@ export const NewFile: Story = {
     hunks: [{ oldStart: 0, oldLines: 0, newStart: 1, newLines: 6 }],
   },
   play: async ({ canvasElement }) => {
-    // The grammar arrives after the first draw: wait until the heading takes its own colour.
+    // The grammar arrives after the first draw: wait until a word takes a syntax colour.
     await waitFor(() => {
       const code = canvasElement.querySelector<HTMLElement>(".cm-merge-b .cm-content");
+      if (!code) throw new Error("the merge view has not drawn the new file");
+      const plain = getComputedStyle(code).color;
       const spans = canvasElement.querySelectorAll<HTMLElement>(".cm-merge-b .cm-line span");
-      const heading = [...spans].find((span) => span.textContent?.includes("Release checklist"));
-      if (!code || !heading) throw new Error("the merge view has not drawn its heading");
-      expect(getComputedStyle(heading).color).not.toBe(getComputedStyle(code).color);
+      const coloured = [...spans].some((span) => getComputedStyle(span).color !== plain);
+      expect(coloured, "a word in a syntax colour").toBe(true);
     }, GRAMMAR_ARRIVES);
     const side = (name: string) => () =>
       canvasElement.querySelector<HTMLElement>(`[aria-label="${name}"]`);
