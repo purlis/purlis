@@ -64,7 +64,7 @@ pub enum Pinned {
     Updated(Pin),
     /// The folder was pinned with another command or working folder: that pin is gone and this
     /// new one, under a new id, holds its place.
-    Replaced { new: Pin, old: Pin },
+    Replaced { new: Pin, old_id: String },
 }
 
 /// The icon a pin gets when none is named.
@@ -232,7 +232,7 @@ pub fn pin(root: &Path, workspace: &Path, request: &Request) -> Result<Pinned, S
             }
             Some(old) => Pinned::Replaced {
                 new: pin.clone(),
-                old,
+                old_id: old.id,
             },
             None => Pinned::New(pin.clone()),
         });

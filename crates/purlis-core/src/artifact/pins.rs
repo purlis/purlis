@@ -289,18 +289,20 @@ mod tests {
 
     #[test]
     fn a_file_written_and_read_back_holds_the_same_pins() {
-        let mut pins = Pins::default();
-        pins.pins = vec![
-            pin("a", 1),
-            Pin::new(
-                "b".into(),
-                "Bee \"quoted\"".into(),
-                "star".into(),
-                2,
-                Some("run it".into()),
-                Some(".".into()),
-            ),
-        ];
+        let pins = Pins {
+            pins: vec![
+                pin("a", 1),
+                Pin::new(
+                    "b".into(),
+                    "Bee \"quoted\"".into(),
+                    "star".into(),
+                    2,
+                    Some("run it".into()),
+                    Some(".".into()),
+                ),
+            ],
+            ..Pins::default()
+        };
         let read = parse(&pins.render()).unwrap();
         assert_eq!(read.pins, pins.pins);
         assert_eq!(read.version, VERSION);
@@ -308,8 +310,10 @@ mod tests {
 
     #[test]
     fn each_pin_is_one_line_ending_in_a_comma() {
-        let mut pins = Pins::default();
-        pins.pins = vec![pin("a", 1), pin("b", 2)];
+        let pins = Pins {
+            pins: vec![pin("a", 1), pin("b", 2)],
+            ..Pins::default()
+        };
         let text = pins.render();
         let lines: Vec<&str> = text.lines().filter(|l| l.contains("folder")).collect();
         assert_eq!(lines.len(), 2, "{text}");
@@ -318,12 +322,10 @@ mod tests {
 
     #[test]
     fn pins_are_sorted_by_order_then_id() {
-        let text = format!(
-            "version = 1\npin = [\n  {{ id = \"bbb\", folder = \"b\", name = \"b\", icon = \"chart\", order = 1 }},\n  \
-             {{ id = \"aaa\", folder = \"a\", name = \"a\", icon = \"chart\", order = 1 }},\n  \
-             {{ id = \"000\", folder = \"z\", name = \"z\", icon = \"chart\", order = 0 }},\n]\n"
-        );
-        let ids: Vec<String> = parse(&text)
+        let text = "version = 1\npin = [\n  { id = \"bbb\", folder = \"b\", name = \"b\", icon = \"chart\", order = 1 },\n  \
+             { id = \"aaa\", folder = \"a\", name = \"a\", icon = \"chart\", order = 1 },\n  \
+             { id = \"000\", folder = \"z\", name = \"z\", icon = \"chart\", order = 0 },\n]\n";
+        let ids: Vec<String> = parse(text)
             .unwrap()
             .pins
             .into_iter()

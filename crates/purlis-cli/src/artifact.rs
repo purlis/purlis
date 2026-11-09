@@ -103,13 +103,13 @@ pub fn run(here: &Here, command: ArtifactCommand) -> Result<Code, String> {
                         ws.name()
                     ));
                 }
-                Ok(Pinned::Replaced { new, old }) => {
+                Ok(Pinned::Replaced { new, old_id }) => {
                     voice::ok(format!(
                         "Pinned {} to '{}' as a new pin in the place of {}, since its command \
                          or working folder changed — {reach}.",
                         said(&new),
                         ws.name(),
-                        old.id
+                        old_id
                     ));
                 }
                 Err(why) => return refused(&why),
