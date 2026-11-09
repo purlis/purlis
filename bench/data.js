@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794264909215,
+  "lastUpdate": 1794268031036,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -45276,6 +45276,48 @@ window.BENCHMARK_DATA = {
             "value": 101.228551,
             "unit": "ms",
             "extra": "median of 5 runs: 100.681, 101.105, 101.229, 101.737, 101.843 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "6a3a4596c5bf5d3bd73593e86eb7ad5832436b1f",
+          "message": "Restart wake: a harness that ends by itself or dies on hangup leaves no strays (#5806) (#5940)\n\n* A chat's background shell ends with its harness however it ends: tests, with the noting left empty (#5806)\n\nThe harness's hook saying it started a shell or a monitor has the chat's host note what the\nharness started outside its process group (protocol 1.80, note_strays; the window lists it on a\nthread), so those end with the harness when it exits on its own or is hung up on from outside.\nProgram::note_strays is left empty here so CI shows the terminal and across-restart tests red\nfor the right reason; the next commit fills it in.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6XQS9ETN5G731E1E206BQGR\nPurlis-Persona: steward\n\n* A chat's background shell ends with its harness however it ends: the noting (#5806)\n\nProgram::note_strays lists what the program has started outside its process group, outside\nthe lock, and keeps it to end with the program: on its own exit or on a hangup from outside,\nwhen what it started is handed to the system's first process and no listing finds it after.\nOne noted after the program ended is ended there and then. A stray is signalled only while its\nid still holds the start it was listed with.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6XQS9ETN5G731E1E206BQGR\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-09T22:20:31Z",
+          "tree_id": "c2106b481a48aeb83ca761f4fc09e08865963b33",
+          "url": "https://github.com/purlis/purlis/commit/6a3a4596c5bf5d3bd73593e86eb7ad5832436b1f"
+        },
+        "date": 1794268024793,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.699446,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.689, 0.696, 0.699, 0.705, 0.715 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5433855,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.499, 16.513, 16.543, 16.597, 16.742 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.715554,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.907, 102.508, 102.716, 102.782, 102.809 ms"
           }
         ]
       }
