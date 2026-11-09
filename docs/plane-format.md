@@ -3075,6 +3075,29 @@ them (#5427, ADR 0078 §7, session protocol 1.78), which the file diff reads as 
     written; `list` shows a pin whose folder has gone (not yet pulled, or removed) as missing.
   - Unpinning removes the pin's line; the folder stays.
 
+### `workspaces/<ws>/.charter/discuss/<folder>.md` — an artifact's page, quoted for a chat
+
+- **Format:** Markdown text. purlis's one sentence, saying whose words follow: the artifact
+  (its pin's name and who pinned it, each quoted as a JSON string), its page
+  `artifacts/<folder>/index.html`, and its commit (the last commit that changed its folder,
+  abbreviated, or that it is not committed yet, or changed since that commit). Then a blank
+  line, and every line of the page behind `> `: a line feed, a carriage return, a vertical tab,
+  a form feed, NEL and the Unicode line and paragraph separators each start a new quoted line,
+  so nothing in the page ends the quote. A page over 256 KiB is quoted up to there, and the
+  sentence says so with both sizes. Only the template: data files are each person's own.
+- **Status:** internal — **purlis only** (ADR 0120 §5, #5957). The attachment of the chat
+  **Discuss** opens from an artifact's bar, which is typed one line, never sent, naming it and
+  its pinner and commit, with a reference to this file.
+- **Tier:** Clone state, transient — a page quoted for one chat; the next Discuss of the same
+  folder writes it again.
+- **Written by:** the app, as Discuss is pressed (`crates/purlis-core/src/artifact/discuss.rs`
+  `prepare`): whole, by rename; a link where `.charter/`, the folder or the file belongs is
+  refused, never followed.
+- **Read by:** the chat Discuss opened, in the workspace, when the person sends its first
+  prompt.
+- **Git:** never committed: the workspace's `.charter/` is under the plane's
+  `/workspaces/*/*` ignore, and no LIVE block un-ignores it.
+
 ### `workspaces/<ws>/<folder>/` — a folder an extension keeps in a workspace
 
 - **Format:** whatever the extension writes there. purlis reads none of it.

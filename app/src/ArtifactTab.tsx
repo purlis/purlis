@@ -30,6 +30,7 @@ import type { Offer } from "./actions";
 import { ArtifactQueries } from "./ArtifactQueries";
 import { ArtifactRegenerate } from "./ArtifactRegenerate";
 import { artifactDataIn, artifactsIn, useViewChanged } from "./planeChanged";
+import { DiscussButton } from "./artifactDiscuss";
 import { Button } from "./ui/button/Button";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 
@@ -140,6 +141,9 @@ export function ArtifactTab({
           </span>
         )}
         <ArtifactRegenerate plane={plane} workspace={workspace} folder={folder} name={name} />
+        {!unpinned && about.said?.missing === null && about.said.too_large === null ? (
+          <DiscussButton plane={plane} workspace={workspace} folder={folder} />
+        ) : null}
       </header>
       {opened === null ? null : <ArtifactLinks label={opened.label} />}
       {unpinned ? (
