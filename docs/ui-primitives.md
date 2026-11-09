@@ -903,7 +903,7 @@ reached by the keyboard, so it can be scrolled there. See what this does in Pool
 **A value drawn as a bar is the meter family** (`app/src/ui/meter/`, #3674, on React Aria's
 `Meter` and `ProgressBar`, added to spec #2897's closed list by the operator on 2026-10-28). No
 screen writes a `<meter>` or a `<progress>`, or either role by hand: `purlis/meter-family` is an
-error (Get project's clone progress is still off, until it moves).
+error everywhere, with no file off (Get project's clone progress moved in #3731).
 
 | Wrapper | What it is |
 | --- | --- |

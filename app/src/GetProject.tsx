@@ -9,6 +9,7 @@ import { Field, SettingRow } from "./settings/components";
 import { YourRepos } from "./YourRepos";
 import { Button } from "./ui/button/Button";
 import { Form } from "./ui/field/Field";
+import { ProgressBar } from "./ui/meter/Meter";
 
 /** Where the folder the person last picked to hold their projects is kept, on this machine. */
 export const REMEMBERED_PARENT = "purlis.getProject.parent";
@@ -216,21 +217,14 @@ export function GetProject({
         </div>
       </Form>
 
-      <div role="status" className="get-project-progress">
-        {doing.kind === "getting" && (
-          <>
-            <span>
-              {doing.stage}
-              {doing.percent !== null ? ` ${doing.percent}%` : "…"}
-            </span>{" "}
-            <progress
-              aria-label={`Getting ${folder?.name ?? "the project"}`}
-              max={100}
-              {...(doing.percent !== null ? { value: doing.percent } : {})}
-            />{" "}
-            <Button onPress={() => void commands.cancelGetProject()}>Cancel</Button>
-          </>
-        )}
+      {doing.kind === "getting" && (
+        <CloneProgress
+          stage={doing.stage}
+          percent={doing.percent}
+          onCancel={() => void commands.cancelGetProject()}
+        />
+      )}
+      <div role="status" className="get-project-said">
         {doing.kind === "called-off" && "Cancelled. Nothing was left behind."}
       </div>
 
@@ -255,5 +249,36 @@ export function GetProject({
         </p>
       )}
     </DoorPage>
+  );
+}
+
+/**
+ * **How far the clone has got, with Cancel** (#3731): the meter family's bar, git's stage as its
+ * name and the percent as its value, going with no end known until git gives one. The bar says
+ * the stage and the percent politely as they change, at most once a second, so nothing around it
+ * repeats them.
+ */
+export function CloneProgress({
+  stage,
+  percent,
+  onCancel,
+}: {
+  /** Git's stage, in its words: "Receiving objects". */
+  stage: string;
+  /** How far the stage is, or none while git has not said. */
+  percent: number | null;
+  /** Calls the clone off. */
+  onCancel: () => void;
+}) {
+  return (
+    <div className="get-project-progress">
+      <ProgressBar
+        className="get-project-bar"
+        label={stage}
+        value={percent ?? 0}
+        isIndeterminate={percent === null}
+      />
+      <Button onPress={onCancel}>Cancel</Button>
+    </div>
   );
 }
