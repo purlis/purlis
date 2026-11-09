@@ -128,6 +128,9 @@ pub fn forget_place(root: &Path, number: u32) {
 /// and never from a line, with the hosts its confinement allows live now (#3407). Values are
 /// read in nothing here, so the environment is this process's.
 pub fn asker(root: &Path, number: u32) -> Option<Asker> {
+    // Counted before the chat is found composed here: a chat that ends from here on keeps no
+    // GitHub App token minted for its run (#3808), as on the window's own path (`vaults.rs`).
+    let ends_seen = crate::forge::apptoken::ends_so_far();
     let mut composed = held().get(&(root.to_path_buf(), number)).cloned()?;
     // Read outside the hold: the board takes locks of its own.
     if let Some(Reached(live)) = &composed.live {
@@ -145,7 +148,7 @@ pub fn asker(root: &Path, number: u32) -> Option<Asker> {
         folder: Some(composed.folder),
         confines: Some(composed.confines),
         harness: composed.harness,
-        ends_seen: None,
+        ends_seen: Some(ends_seen),
     })
 }
 
