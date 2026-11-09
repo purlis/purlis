@@ -14,6 +14,7 @@ import { keepInboxScope, keptInboxScope } from "./inboxScope";
 import { forgetProjectViews } from "./projectViews";
 import type { Shown } from "./bindings";
 import { hoverTipOf, tipOf } from "./ui/tooltip/tooltip.testkit";
+import { chatGroup, chatGroupOrNone } from "./test-inbox";
 
 /**
  * **The Inbox's scope, and what one of its rows is made of** (qw359): every project's, this
@@ -101,7 +102,9 @@ function draw(asks: readonly Shown[] | undefined, more: Partial<Parameters<typeo
 
 const scopes = () => within(screen.getByRole("radiogroup", { name: "Show what needs you in" }));
 const picked = () => scopes().getByRole("radio", { checked: true }).getAttribute("aria-label");
-const chats = () => [...document.querySelectorAll(".inbox-chat > h3")].map((h) => h.textContent);
+/** The chats the Asks list draws, by the chain each group is named by (#3123: its row header). */
+const chats = () =>
+  [...document.querySelectorAll('.inbox-chat [role="rowheader"]')].map((h) => h.textContent);
 
 describe("the scope switch", () => {
   it("offers all projects, this project and this workspace, each with its count, on this project", () => {
@@ -183,11 +186,11 @@ describe("the scope switch", () => {
     });
     draw(ASKS, { ...strip("alpha"), elsewhere: there });
     expect(scopes().getByRole("radio", { name: "All projects, 6 waiting on you" })).toBeTruthy();
-    expect(screen.queryByRole("region", { name: OTHER_PROJECTS })).toBeNull();
+    expect(chatGroupOrNone(OTHER_PROJECTS)).toBeNull();
 
     await userEvent.click(scopes().getByRole("radio", { name: /^All projects/ }));
-    expect(screen.getByRole("region", { name: "steward 7 · infra · ops" })).toBeTruthy();
-    const others = screen.getByRole("region", { name: OTHER_PROJECTS });
+    expect(chatGroup("steward 7")).toBeTruthy();
+    const others = chatGroup(OTHER_PROJECTS);
     // Each ask of the other project, read here and answered there.
     expect(within(others).getByText("Run npm test")).toBeTruthy();
     expect(within(others).getByText("Which port?")).toBeTruthy();
@@ -224,14 +227,14 @@ describe("an empty scope", () => {
     draw([], { ...strip("alpha"), elsewhere: elsewhere({ asking: [away] }) });
     expect(screen.getByText("1 waits in all projects.")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Show all projects" }));
-    expect(screen.getByRole("region", { name: "steward 7 · infra · ops" })).toBeTruthy();
+    expect(chatGroup("steward 7")).toBeTruthy();
   });
 
   it("offers what the window knows waits wider while its own asks are not read yet", async () => {
     draw(undefined, { ...strip("alpha"), elsewhere: elsewhere({ asking: [away] }) });
     expect(screen.getByText(NOT_READ_YET)).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Show all projects" }));
-    expect(screen.getByRole("region", { name: "steward 7 · infra · ops" })).toBeTruthy();
+    expect(chatGroup("steward 7")).toBeTruthy();
     expect(screen.getByText(NOT_READ_YET)).toBeTruthy();
   });
 
@@ -253,7 +256,7 @@ describe("what a row is made of", () => {
     return found;
   };
   const row = (session: number) =>
-    part(document, `.inbox-chat[data-session="${session}"] li.inbox-ask`);
+    part(document, `.inbox-chat[data-session="${session}"] [role="row"].inbox-ask`);
 
   it("draws a change purlis holds as purlis's, with the chat behind it, filed nowhere (#5240)", () => {
     const held: Shown = {
@@ -349,7 +352,7 @@ describe("what a row is made of", () => {
       },
     });
     expect(screen.getByRole("heading", { name: "Updates" })).toHaveAttribute("data-part", "title");
-    const update = part(document, "li.inbox-update");
+    const update = part(document, '[role="row"].inbox-update');
     expect(update).toHaveAttribute("data-scope", "message");
     expect(update.querySelector('[data-part="time"] time')).not.toBeNull();
   });
@@ -397,7 +400,7 @@ describe("a row's ranks are the text roles (#1920)", () => {
         onDismissAll: () => undefined,
       },
     });
-    const ask = part(document, '.inbox-chat[data-session="3"] li.inbox-ask');
+    const ask = part(document, '.inbox-chat[data-session="3"] [role="row"].inbox-ask');
     const title = part(ask, '[data-part="title"]');
     const meta = part(ask, '[data-part="meta"]');
     const primary = part(ask, ".inbox-primary");
@@ -417,7 +420,7 @@ describe("a row's ranks are the text roles (#1920)", () => {
     // `state` part, which its waiting variant colours.
     expect(drawnWith(part(meta, '[data-part="state"]'), "color")).toBe("var(--state-waiting)");
 
-    const [fresh, read] = [...document.querySelectorAll("li.inbox-update")];
+    const [fresh, read] = [...document.querySelectorAll('[role="row"].inbox-update')];
     expect(fresh.hasAttribute("data-read")).toBe(false);
     expect(read.hasAttribute("data-read")).toBe(true);
     expect(drawn(part(fresh, '[data-part="title"]'))).toEqual([

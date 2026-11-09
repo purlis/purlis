@@ -544,14 +544,15 @@ describe("a list is one Tab stop", () => {
     // Each chat waiting is a group under its chain, in the order the registry first saw them.
     expect(
       within(inbox)
-        .getAllByRole("heading", { level: 3 })
+        .getAllByRole("rowheader")
         .map((one) => one.textContent),
     ).toEqual(["steward three", "steward one"]);
-    const asks = within(inbox).getAllByRole("listitem");
+    const asks = [...inbox.querySelectorAll<HTMLElement>('[role="row"].inbox-ask')];
     // The keyboard lands on the first ask, never on one of its buttons.
     await waitFor(() => expect(asks[0]).toHaveFocus());
-    // To its Answer link, which opens its reply in the row with the keyboard in it (#5651).
-    await userEvent.keyboard("{ArrowDown}");
+    // → to its Answer link (#3123, ruling B), which opens its reply in the row with the
+    // keyboard in it (#5651).
+    await userEvent.keyboard("{ArrowRight}");
     expect(within(asks[0]).getByRole("button", { name: "Answer steward three" })).toHaveFocus();
     await userEvent.keyboard("{Enter}");
     await waitFor(() =>

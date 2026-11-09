@@ -741,3 +741,124 @@ export const ARowAcrossTheWindow: Story = {
     expectFocusInSight();
   },
 };
+
+/** Three asks, the middle one with a box for why and a button after it, as an Inbox ask holds. */
+function Holding() {
+  const [reason, setReason] = useState("");
+  return (
+    <div style={{ inlineSize: "24rem" }}>
+      <List aria-label="Asks" disallowTypeAhead>
+        <ListRow id="build" textValue="Run cargo build">
+          <RowLabel>Run cargo build</RowLabel>
+        </ListRow>
+        <ListRow id="host" textValue="Reach registry.npmjs.org">
+          <RowLabel>Reach registry.npmjs.org</RowLabel>
+          <RowTrail>
+            <TextField
+              aria-label="Why keep it blocked"
+              size="sm"
+              value={reason}
+              onChange={setReason}
+            />
+            <Button size="sm">Keep blocked</Button>
+          </RowTrail>
+        </ListRow>
+        <ListRow id="test" textValue="Run cargo test">
+          <RowLabel>Run cargo test</RowLabel>
+        </ListRow>
+      </List>
+    </div>
+  );
+}
+
+/**
+ * **A text box in a row keeps its keys, and typing finds no row** (#3123): → reaches the box
+ * from its row; in it, ← and →, Home and End move its caret, a letter and a space are typed, and
+ * ↑ and ↓ (a box of one line) go to the rows above and below; Esc gives the keyboard back to
+ * its row; with typing-to-find off, a letter on a row moves nowhere. The picture is the box
+ * holding the keyboard, with its words.
+ */
+export const ATextBoxInARow: Story = {
+  render: () => <Holding />,
+  play: async ({ canvas, userEvent }) => {
+    const list = canvas.getByRole("grid", { name: "Asks" });
+    const build = within(list).getByRole("row", { name: "Run cargo build" });
+    const host = within(list).getByRole("row", { name: "Reach registry.npmjs.org" });
+    const box = () => within(host).getByRole("textbox", { name: "Why keep it blocked" });
+    await userEvent.tab();
+    await untilFocused(() => build, "A text box in a row: Tab lands on the first row");
+    await userEvent.keyboard("r");
+    await untilFocused(() => build, "A text box in a row: a letter finds no row");
+    await userEvent.keyboard("{ArrowDown}{ArrowRight}");
+    await untilFocused(box, "A text box in a row: → reaches the box from its row");
+    await userEvent.keyboard("not now{Home}N{ArrowRight}{End}.");
+    await waitFor(() => expect(box()).toHaveValue("Nnot now."));
+    await untilFocused(box, "A text box in a row: its caret keys and Space stay in it");
+    await userEvent.keyboard("{Escape}");
+    await untilFocused(() => host, "A text box in a row: Esc gives the keyboard back to its row");
+    await waitFor(() => expect(box()).toHaveValue("Nnot now."));
+    await userEvent.keyboard("{ArrowRight}");
+    await untilFocused(box, "A text box in a row: → reaches it again");
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(
+      () => within(list).getByRole("row", { name: "Run cargo test" }),
+      "A text box in a row: ↓ from a box of one line goes to the row below",
+    );
+    expectFocusInSight();
+    await userEvent.keyboard("{ArrowUp}{ArrowRight}");
+    await untilFocused(box, "A text box in a row: the box holds the keyboard for the picture");
+    expectFocusInSight();
+  },
+};
+
+/** Three rows, each with a button of its own, between two buttons outside the list. */
+function Between() {
+  return (
+    <div style={{ display: "grid", gap: "var(--space-3)", inlineSize: "20rem" }}>
+      <Button size="sm">Before</Button>
+      <List aria-label="Runs" disallowTypeAhead>
+        {["alpha", "beta", "gamma"].map((name) => (
+          <ListRow key={name} id={name} textValue={name}>
+            <RowLabel>{name}</RowLabel>
+            <RowTrail>
+              <Button size="sm">{`Open ${name}`}</Button>
+            </RowTrail>
+          </ListRow>
+        ))}
+      </List>
+      <Button size="sm">After</Button>
+    </div>
+  );
+}
+
+/**
+ * **One Tab stop, the row the keyboard left** (#3123): Tab out of a list passes the keyboard
+ * through the row's own controls and the list's last control on its way (React Aria's), and that
+ * never makes another row the list's stop; Shift+Tab comes back to the row the keyboard left. Run
+ * with the browser's own key events, whose timing a test document does not have. The picture is
+ * that row under the keyboard.
+ */
+export const OneTabStopComingBack: Story = {
+  render: () => <Between />,
+  play: async ({ canvas, userEvent }) => {
+    const list = canvas.getByRole("grid", { name: "Runs" });
+    const beta = within(list).getByRole("row", { name: "beta" });
+    await userEvent.click(canvas.getByRole("button", { name: "Before" }));
+    await userEvent.tab();
+    await untilFocused(
+      () => within(list).getByRole("row", { name: "alpha" }),
+      "One Tab stop: Tab lands on the first row",
+    );
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(() => beta, "One Tab stop: ↓ moves to the next row");
+    // In a browser, React Aria's Tab from a row goes on through the row's own controls before it
+    // leaves the list; however many it passes, it leaves, and it never moves the list's stop.
+    const after = canvas.getByRole("button", { name: "After" });
+    for (let press = 0; press < 4 && list.contains(document.activeElement); press += 1)
+      await userEvent.tab();
+    await untilFocused(() => after, "One Tab stop: Tab leaves the list");
+    await userEvent.tab({ shift: true });
+    await untilFocused(() => beta, "One Tab stop: Shift+Tab comes back to the row it left");
+    expectFocusInSight();
+  },
+};

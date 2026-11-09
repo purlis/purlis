@@ -1071,7 +1071,7 @@ describe("what needs you (#1448)", () => {
     const said = await within(inbox).findByText(
       /its report has nowhere to go because drop commons has closed or its program has ended/,
     );
-    expect(said.closest("li")?.getAttribute("data-kind")).toBe("report-undelivered");
+    expect(said.closest('[role="row"]')?.getAttribute("data-kind")).toBe("report-undelivered");
   });
 
   it("puts the update away and never the ask of a chat that also asks something", async () => {
@@ -1088,7 +1088,7 @@ describe("what needs you (#1448)", () => {
     await screen.findByRole("tabpanel", { name: "Asks" });
     const inbox = await showUpdates();
     const said = await within(inbox).findByText(/its report has nowhere to go because/);
-    const row = said.closest("li");
+    const row = said.closest<HTMLElement>('[role="row"]');
     if (row === null) throw new Error("the update has no row");
     const dismiss = within(row).getByRole("button", { name: /^Dismiss: / });
     // An icon button's tooltip is its name, then its hint (#5649: Dismiss is the row's ×).

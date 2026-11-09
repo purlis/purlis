@@ -173,7 +173,7 @@ async function stoppedUpdate(name: RegExp) {
   const inbox = await screen.findByRole("tabpanel", { name: "Updates" });
   const updates = await within(inbox).findByRole("region", { name: "Updates" });
   // A line of Mine is named by whose it is and what happened (#5649), as its words read.
-  return within(updates).findByRole("listitem", { name });
+  return within(updates).findByRole("row", { name });
 }
 
 const strip = () =>

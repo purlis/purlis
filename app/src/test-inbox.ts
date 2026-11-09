@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { act } from "@testing-library/react";
+import { act, screen } from "@testing-library/react";
 import { vi } from "vitest";
 import { UNDO_MS } from "./undo";
 import { forgetThisLaunch } from "./regions";
@@ -86,7 +86,7 @@ export function waitOutTheUndo(): void {
  */
 export function openEveryAnswer(): void {
   const closed = [
-    ...document.querySelectorAll<HTMLElement>('li.inbox-ask button[aria-expanded="false"]'),
+    ...document.querySelectorAll<HTMLElement>('.inbox-ask button[aria-expanded="false"]'),
   ].filter((one) => one.textContent === "Answer");
   if (closed.length === 0) return;
   act(() => {
@@ -96,3 +96,45 @@ export function openEveryAnswer(): void {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
   });
 }
+
+/**
+ * **A chat's group in the Inbox's Asks** (#3123): since Asks is the list family's grid, a group of
+ * rows under its chain (a `rowgroup` named by its heading), where it was a `region` of the page.
+ * The chat's chain names it, as before; a chat elsewhere's group is named by the chat alone,
+ * where it lives being said in its row.
+ */
+export const chatGroup = (name: string | RegExp): HTMLElement =>
+  screen.getByRole("rowgroup", { name });
+
+/** The same, or none where no group has that name. */
+export const chatGroupOrNone = (name: string | RegExp): HTMLElement | null =>
+  screen.queryByRole("rowgroup", { name });
+
+/** **An ask's row, or an update's** (#3123): a row of the list family's grid, named as it was. */
+export const inboxRow = (name: string | RegExp): HTMLElement => screen.getByRole("row", { name });
+
+/** Every ask's row in the Inbox drawn now, in its order. */
+export const askRows = (): HTMLElement[] => [
+  ...document.querySelectorAll<HTMLElement>('[role="row"].inbox-ask'),
+];
+
+/** Every update's row in the Inbox drawn now, in its order. */
+export const updateRows = (): HTMLElement[] => [
+  ...document.querySelectorAll<HTMLElement>('[role="row"].inbox-update'),
+];
+
+/** The rows of a list of the Inbox's under `within`, in their order: never a group's name, which
+ *  React Aria draws as a row of its own. */
+export const rowsIn = (within: Element): HTMLElement[] => [
+  ...within.querySelectorAll<HTMLElement>('[role="row"][data-key]'),
+];
+
+/**
+ * **What the Inbox lists, by name, in its order** (#3123): each chat's group by its chain (the
+ * name of its rows, a `rowheader`), and each section of the Inbox's own by its title (Notices,
+ * Updates, a heading).
+ */
+export const groupNames = (): string[] =>
+  [...document.querySelectorAll<HTMLElement>('[role="rowheader"], h3')].map(
+    (one) => one.textContent ?? "",
+  );

@@ -69,7 +69,7 @@ const putTheIdentityBack = () => writeFileSync(THE_RUNS_GIT_CONFIG, THE_RUNS_GIT
 async function updateKinds(): Promise<string[]> {
   return browser.execute(
     (view: string) =>
-      [...document.querySelectorAll<HTMLElement>(`${view} li.inbox-update`)].map(
+      [...document.querySelectorAll<HTMLElement>(`${view} [role="row"].inbox-update`)].map(
         (row) => row.dataset.kind ?? "",
       ),
     UPDATES_VIEW,

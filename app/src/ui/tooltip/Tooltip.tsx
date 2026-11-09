@@ -111,12 +111,11 @@ const CONTROLS = [
   "a[href]",
   "summary",
   "label",
+  // A list's rows that take the keyboard are the list family's rows (`row`): the Inbox's asks
+  // too, since #3123.
   ...["button", "link", "tab", "option", "menuitem", "row", "gridcell", "switch"].map(
     (role) => `[role="${role}"]`,
   ),
-  // A list's rows that take the keyboard, one stop for the list (the Inbox's asks).
-  '[role="listitem"][tabindex]',
-  "li[tabindex]",
 ].join(", ");
 
 /** What each tooltip that is up does on Esc: takes itself down. */

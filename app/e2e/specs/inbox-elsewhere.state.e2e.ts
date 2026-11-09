@@ -27,7 +27,8 @@ import { PROJECTS, ask, inFront, openFromTheStrip } from "../switching.js";
  */
 
 const INBOX = '[role="tabpanel"][data-view="asks"]';
-const OTHERS = `${INBOX} section[aria-label="Other projects in this window"]`;
+/** The group of the lines for this window's other projects: rows of the Asks list (#3123). */
+const OTHERS = `${INBOX} [role="rowgroup"][data-others]`;
 const HAND = '[data-testid="title-bar"] [data-testid="needs-you-button"]';
 const ASK = `${INBOX} .inbox-ask[data-source="permission"]`;
 
@@ -46,10 +47,14 @@ async function othersSaid(): Promise<{ says: string; go: string }[]> {
   return browser.execute(
     (others: string) =>
       // A project's own line, never the asks listed under it (qw359).
-      [...document.querySelectorAll<HTMLElement>(`${others} > ul > li`)].map((line) => ({
-        says: line.querySelector(".ask-says")?.textContent?.trim() ?? "",
-        go: line.querySelector("button")?.getAttribute("aria-label") ?? "",
-      })),
+      [...document.querySelectorAll<HTMLElement>(`${others} > [role="row"][data-key]`)].map(
+        (line) => ({
+          says: line.querySelector(".ask-says")?.textContent?.trim() ?? "",
+          // Its control, by the name it is heard by, never by its tag.
+          go:
+            line.querySelector('[aria-label^="Go to project "]')?.getAttribute("aria-label") ?? "",
+        }),
+      ),
     OTHERS,
   );
 }
@@ -151,7 +156,10 @@ describe("the Inbox of one project, about another that waits", function () {
     expect(await $(ASK).isExisting()).toBe(false);
 
     await browser.execute(
-      (others: string) => document.querySelector<HTMLElement>(`${others} li button`)?.click(),
+      (others: string) =>
+        document
+          .querySelector<HTMLElement>(`${others} [role="row"] [aria-label^="Go to project "]`)
+          ?.click(),
       OTHERS,
     );
     await browser.waitUntil(async () => (await inFront()) === first, {
