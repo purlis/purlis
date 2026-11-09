@@ -338,20 +338,22 @@ export const HeldAcrossTheGapToTheCard: Story = {
       ).toHaveAttribute("data-holding");
       await expect(rowsIn(canvasElement), "the rows changed while the list was held").toBe(2);
 
-      // The gap between the row and its card, and what the page draws there: not the list.
+      // The gap between the row and its card. On the tree family (#3198) part of it is the
+      // tree's own inset, which is the list's, and past it the view's inset, which is not; where
+      // the middle of the gap falls is the theme's spacing.
       const from = (row as HTMLElement).getBoundingClientRect();
       const to = card.getBoundingClientRect();
       await expect(to.left - from.right).toBeGreaterThan(1);
       const y = from.top + from.height / 2;
       const gap = (from.right + to.left) / 2;
-      await expect(
-        canvasElement.querySelector(".chats-list")?.contains(document.elementFromPoint(gap, y)),
-      ).toBe(false);
+      const overTheList =
+        canvasElement.querySelector(".chats-list")?.contains(document.elementFromPoint(gap, y)) ===
+        true;
 
-      // Onto the gap: the pointer has left the list, and the hold waits for it.
+      // Onto the gap: still held. Where the pointer has left the list, the hold waits for it.
       await pointAt(user, gap, y);
       await drawn();
-      await expect(clock.waiting()).toBeGreaterThan(0);
+      if (!overTheList) await expect(clock.waiting()).toBeGreaterThan(0);
       await expect(rowsIn(canvasElement)).toBe(2);
       // Then onto the card, which is the list's: still held, however long that took.
       await pointAt(user, to.left + 8, to.top + 8);
@@ -668,7 +670,7 @@ function WholeInItsPanel() {
  * **A session with a task, a browser and finished tasks, as rows of the tree** (#3198): its
  * browser, then its task, then the failed task that stands alone, then the "Finished (2)" row the
  * done ones fold into. The arrows walk them all; Enter on the failed one shows its report under
- * its line; → goes on into its buttons and ← comes back; → opens "Finished (2)" and moves into
+ * its line; → goes on into its buttons and ← comes back; → opens "Finished (2)" and ↓ moves into
  * it. The picture is the rows at rest.
  */
 export const WithATaskABrowserAndFinished: Story = {
@@ -711,9 +713,11 @@ export const WithATaskABrowserAndFinished: Story = {
     await userEvent.keyboard("{Enter}");
     await userEvent.keyboard("{ArrowDown}");
     await untilFocused(named("Finished (2)"), "Finished (2)");
+    // → opens it; ↓ goes on to its first row (→ on the open row would go into its own Clear
+    // finished, as the APG treegrid's → does).
     await userEvent.keyboard("{ArrowRight}");
     await waitFor(() => expect(named("tidy up")()).not.toBeNull());
-    await userEvent.keyboard("{ArrowRight}");
+    await userEvent.keyboard("{ArrowDown}");
     await untilFocused(named("tidy up"), "tidy up");
     expectFocusInSight();
     // ← goes back to "Finished (2)", and ← again shuts it.
