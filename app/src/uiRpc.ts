@@ -37,6 +37,7 @@ export const commands = {
 	artifactUnpin: __WINDOW_ONLY_RESULT,
 	artifactReorder: __WINDOW_ONLY_RESULT,
 	artifactPreviewOpen: __WINDOW_ONLY_RESULT,
+	artifactApprove: __WINDOW_ONLY_RESULT,
 	/**  What the window says about this launch and the session bus: nothing, on a launch with it. */
 	sessionBus: () => __TAURI_INVOKE<{
 	/**  The line it draws: why there is no bus, and what is off for the run. */
@@ -3081,6 +3082,21 @@ export type ArtifactAbout = {
 	pinned_by: string | null,
 	/**  Why it cannot be opened, when it cannot. */
 	missing: string | null,
+};
+
+/**
+ *  What [`artifact_open`] answers: the webview's label, and where the artifact stands on this
+ *  machine, which its tab's bar says.
+ */
+export type ArtifactOpened = {
+	label: string,
+	/**
+	 *  `script-free`, `approved`, `new`, `changed`, `pin-changed` or `not-here`
+	 *  ([`Standing::as_str`]).
+	 */
+	standing: string,
+	/**  Who made the pin it now has, for `pin-changed`, from the plane's history. */
+	changed_by: string | null,
 };
 
 /**

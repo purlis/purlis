@@ -407,3 +407,107 @@ describe("managing pins from the window", () => {
     expect(readFileSync(join(artifacts, "weekly-report", "index.html"), "utf8")).toContain(REPORT);
   });
 });
+
+/**
+ * **A pinned artifact with script** (#5959, ADR 0120 §4): shown without its script until the
+ * person approves it in purlis's bar, never in the page; an approval that holds through new data
+ * and is asked again for any change to the template. What the page's script does once it runs is
+ * the webview's, which WebDriver cannot reach: the CSP that lets it run only when approved is
+ * proved in `artifacts.rs`, and the record in `purlis artifact approve-status`'s tests.
+ */
+describe("a pinned artifact with script", function () {
+  const LIVE = "Live board";
+  const SCRIPTED = `<!doctype html><title>${LIVE}</title><h1 id=n>0</h1><script src=app.js></script>`;
+  let folder = "";
+
+  /** What purlis's bar over the page says. */
+  const bar = async () => $('[data-testid="artifact-bar"]').getText();
+  /** What the frame's edge says of the page's script. */
+  const edge = async () => $('[data-testid="artifact-edge"]').getAttribute("data-standing");
+
+  /** Closes the tab, if it is open, and opens it again from its icon: a fresh read. */
+  async function openAgain() {
+    if ((await tabNames()).includes(LIVE)) {
+      await $(`${TABS} button[aria-label="Close ${LIVE}"]`).click();
+      await browser.waitUntil(async () => (await artifactWebviews()).length === 0, {
+        timeout: 20_000,
+        timeoutMsg: "the artifact's webview outlived its tab",
+      });
+    }
+    await $(`${GROUP} button[aria-label="${LIVE}"]`).click();
+    await browser.waitUntil(async () => (await inFront()) === LIVE, {
+      timeout: 20_000,
+      timeoutMsg: "pressing the artifact did not open its tab in front",
+    });
+  }
+
+  before(async () => {
+    const plane = (await ask<string[]>("open_planes"))[0];
+    const at = join(plane, "workspaces", "alpha", "artifacts");
+    folder = join(at, "live-board");
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(join(folder, "index.html"), SCRIPTED);
+    writeFileSync(join(folder, "app.js"), "document.getElementById('n').textContent = '12';");
+    writeFileSync(
+      join(at, "pins.toml"),
+      `version = 1
+pin = [
+  { id = "e2e000000002", folder = "live-board", name = "${LIVE}", icon = "chart", order = 1 },
+]
+`,
+    );
+    await focusWorkspace("alpha");
+    await $(`${GROUP} button[aria-label="${LIVE}"]`).waitForExist({ timeout: 30_000 });
+  });
+
+  after(async () => {
+    if ((await tabNames()).includes(LIVE)) {
+      await $(`${TABS} button[aria-label="Close ${LIVE}"]`).click();
+    }
+    rmSync(dirname(folder), { recursive: true, force: true });
+  });
+
+  it("is shown without its script, and asks only in purlis's bar", async () => {
+    await openAgain();
+    await browser.waitUntil(async () => (await bar()).includes("Has script, shown without it"), {
+      timeout: 20_000,
+      timeoutMsg: "the bar did not ask about the page's script",
+    });
+    expect(await edge()).toBe("asks");
+    expect(await $("aria/Approve script").isExisting()).toBe(true);
+  });
+
+  it("runs once approved there, and its page is opened again under the approval", async () => {
+    await $('[data-testid="artifact-bar"]').$("aria/Approve script").click();
+    await browser.waitUntil(async () => (await bar()).includes("Script approved on this machine"), {
+      timeout: 20_000,
+      timeoutMsg: "the approval did not reach the tab",
+    });
+    expect(await edge()).toBe("runs");
+    expect(await artifactWebviews()).toHaveLength(1);
+  });
+
+  it("stays approved through new data", async () => {
+    writeFileSync(join(folder, "data.json"), '{"open": 12}');
+    await openAgain();
+    await browser.waitUntil(async () => (await bar()).includes("Script approved on this machine"), {
+      timeout: 20_000,
+      timeoutMsg: "new data asked again",
+    });
+  });
+
+  it("asks again when its template changes, until approved anew", async () => {
+    writeFileSync(join(folder, "app.js"), "document.getElementById('n').textContent = '13';");
+    await openAgain();
+    await browser.waitUntil(
+      async () => (await bar()).includes("Its template changed since you approved it"),
+      { timeout: 20_000, timeoutMsg: "a changed template ran under the old approval" },
+    );
+    expect(await edge()).toBe("asks");
+    await $('[data-testid="artifact-bar"]').$("aria/Approve script").click();
+    await browser.waitUntil(async () => (await bar()).includes("Script approved on this machine"), {
+      timeout: 20_000,
+      timeoutMsg: "the new approval did not reach the tab",
+    });
+  });
+});

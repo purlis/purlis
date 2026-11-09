@@ -49,6 +49,7 @@ macro_rules! app_commands {
                 artifacts::artifact_unpin,
                 artifacts::artifact_reorder,
                 artifacts::artifact_preview_open,
+                artifacts::artifact_approve,
                 portal::session_bus,
                 portal::restart_on_the_session_bus,
                 vaultswaiting::vaults_to_move,

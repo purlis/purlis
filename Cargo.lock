@@ -6061,6 +6061,7 @@ dependencies = [
  "grep-regex",
  "grep-searcher",
  "hmac 0.13.0",
+ "html5ever",
  "http",
  "idna",
  "ignore",

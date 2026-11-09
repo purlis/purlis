@@ -1,11 +1,26 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { ChartLine } from "lucide-react";
-import { commands, type ArtifactAbout, type ArtifactPlace, type PlaneId } from "./bindings";
-import { ARTIFACT_KEY, coveredByAnOverlay, type ArtifactKeyPressed } from "./artifacts";
+import {
+  commands,
+  type ArtifactAbout,
+  type ArtifactOpened,
+  type ArtifactPlace,
+  type PlaneId,
+} from "./bindings";
+import {
+  APPROVALS_CHANGED,
+  ARTIFACT_KEY,
+  approvalOf,
+  coveredByAnOverlay,
+  templateOf,
+  type ArtifactApprovalChanged,
+  type ArtifactKeyPressed,
+} from "./artifacts";
+import { useViewChanged } from "./planeChanged";
 import { Button } from "./ui/button/Button";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 
@@ -23,6 +38,10 @@ import { EmptyState } from "./ui/empty-state/EmptyState";
  * - **The keyboard**: the frame is a Tab stop named by the artifact's name. Enter puts the
  *   keyboard in the page; Esc there brings it back to the frame, and F6 moves on to the next
  *   region as it does anywhere in the window.
+ * - **Script runs only once approved, and only from this bar** (ADR 0120 §4, #5959): a page with
+ *   script is shown without it, and the bar says so and offers Approve script. The frame's edge,
+ *   which the page cannot draw, shows where it stands. An approval in any window, or a change to
+ *   its template, tears the page down and opens it again under its new standing.
  */
 export function ArtifactTab({
   plane,
@@ -45,6 +64,10 @@ export function ArtifactTab({
   const about = useAbout(plane, workspace, folder);
   const name = about.said?.name ?? title;
   const missing = about.said?.missing ?? about.failed;
+  const [opened, setOpened] = useState<ArtifactOpened | null>(null);
+  // Each change of either loads the page again: the old webview closes before the new one opens.
+  const approvals = useApprovalsHeard(workspace, folder);
+  const template = useViewChanged([plane], templateOf(workspace, folder));
   return (
     <section
       className="view-pane view-alone artifact-tab"
@@ -55,6 +78,7 @@ export function ArtifactTab({
         <ChartLine className="node-icon" aria-hidden="true" />
         <span className="artifact-bar-name">{name}</span>
         <span className="artifact-bar-by">{pinnedBy(about.said)}</span>
+        {opened === null ? null : <ScriptStanding opened={opened} />}
       </header>
       {missing !== undefined && missing !== null ? (
         <EmptyState
@@ -73,14 +97,102 @@ export function ArtifactTab({
           testid="artifact-waits"
         />
       ) : about.said === undefined ? null : (
-        <ArtifactFrame
-          name={name}
-          opens={`${plane}\u0000${workspace}\u0000${folder}`}
-          open={(first) => commands.artifactOpen(plane, workspace, folder, first)}
-        />
+        <div className="artifact-edge" data-standing={edgeOf(opened)} data-testid="artifact-edge">
+          <ArtifactFrame
+            key={`${approvals}:${template}`}
+            name={name}
+            opens={`${plane}\u0000${workspace}\u0000${folder}`}
+            open={(first) => commands.artifactOpen(plane, workspace, folder, first)}
+            onOpened={setOpened}
+          />
+        </div>
       )}
     </section>
   );
+}
+
+/** What the frame's edge shows: whether the page's script runs, is asked about, or there is none. */
+function edgeOf(opened: ArtifactOpened | null): "plain" | "asks" | "runs" {
+  if (opened === null) return "plain";
+  if (opened.standing === "approved") return "runs";
+  if (ASKS.includes(opened.standing)) return "asks";
+  return "plain";
+}
+
+/** The standings in which the bar asks the person to approve the page's script. */
+const ASKS = ["new", "changed", "pin-changed"];
+
+/** What the bar says of the page's script, and its one way to approve it. */
+function ScriptStanding({ opened }: { opened: ArtifactOpened }) {
+  const [failed, setFailed] = useState<string | null>(null);
+  const said = standingSaid(opened);
+  if (said === null) return null;
+  const approve = () => {
+    setFailed(null);
+    commands.artifactApprove(opened.label).then(
+      (answer) => {
+        if (answer.status === "error") setFailed(answer.error);
+      },
+      (why: unknown) => setFailed(String(why)),
+    );
+  };
+  return (
+    <>
+      <span className="artifact-bar-standing" data-testid="artifact-standing">
+        {failed ?? said}
+      </span>
+      {ASKS.includes(opened.standing) ? (
+        <Button variant="grants" size="sm" onPress={approve}>
+          Approve script
+        </Button>
+      ) : null}
+    </>
+  );
+}
+
+/** The bar's sentence for where the page's script stands, or nothing for a page with none. */
+function standingSaid(opened: ArtifactOpened): string | null {
+  switch (opened.standing) {
+    case "approved":
+      return "Script approved on this machine";
+    case "new":
+      return "Has script, shown without it until you approve it";
+    case "changed":
+      return "Its template changed since you approved it, so it is shown without its script";
+    case "pin-changed":
+      return `${opened.changed_by ?? "Someone"} changed its pin since you approved it, so it is shown without its script`;
+    case "not-here":
+      return "Shown without its script: scripted artifacts do not run on this system yet";
+    default:
+      return null;
+  }
+}
+
+/** How many times this machine's approval of this artifact changed, as any window heard it. */
+function useApprovalsHeard(workspace: string, folder: string): number {
+  const [heard, setHeard] = useState(0);
+  useEffect(() => {
+    let stop: (() => void) | undefined;
+    let gone = false;
+    listen<ArtifactApprovalChanged>(APPROVALS_CHANGED, (event) => {
+      if (approvalOf(event.payload, workspace, folder)) setHeard((n) => n + 1);
+    }).then(
+      (unlisten) => {
+        if (gone) unlisten();
+        else stop = unlisten;
+      },
+      () => {},
+    );
+    return () => {
+      gone = true;
+      try {
+        stop?.();
+      } catch {
+        // The window's event bridge went first: nothing is listening any more.
+      }
+    };
+  }, [workspace, folder]);
+  return heard;
 }
 
 /** What the bar says of who pinned it. */
@@ -154,25 +266,33 @@ export function ArtifactFrame({
   name,
   opens,
   open,
+  onOpened = () => {},
 }: {
   name: string;
   /** What `open` opens, as a key: the webview is made again only when it changes. */
   opens: string;
-  /** Makes the webview at its first place: its label, or why not. */
+  /** Makes the webview at its first place: where the page stands, or why not. */
   open: (
     first: ArtifactPlace,
-  ) => Promise<{ status: "ok"; data: string } | { status: "error"; error: string }>;
+  ) => Promise<{ status: "ok"; data: ArtifactOpened } | { status: "error"; error: string }>;
+  /** Where the page it opened stands, or nothing once it is gone. */
+  onOpened?: (opened: ArtifactOpened | null) => void;
 }) {
   // The latest `open`, read when the webview is made: a new function for the same page opens
   // nothing new.
   const asks = useRef(open);
-  useLayoutEffect(() => {
+  useEffect(() => {
     asks.current = open;
   });
   const frame = useRef<HTMLDivElement>(null);
   const label = useRef<string | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const hint = useId();
+  // Read when the page opens or goes, not listened under: a new callback must not reopen it.
+  const opened = useRef(onOpened);
+  useEffect(() => {
+    opened.current = onOpened;
+  });
 
   // The webview, made once for this frame's life and closed as it goes.
   useEffect(() => {
@@ -204,11 +324,12 @@ export function ArtifactFrame({
           return;
         }
         if (gone) {
-          void commands.artifactClose(answer.data).catch(() => {});
+          void commands.artifactClose(answer.data.label).catch(() => {});
           return;
         }
-        label.current = answer.data;
+        label.current = answer.data.label;
         shown = first;
+        opened.current(answer.data);
         follow();
       },
       (why: unknown) => {
@@ -220,7 +341,10 @@ export function ArtifactFrame({
       cancelAnimationFrame(tick);
       const was = label.current;
       label.current = null;
-      if (was !== null) void commands.artifactClose(was).catch(() => {});
+      if (was !== null) {
+        void commands.artifactClose(was).catch(() => {});
+        opened.current(null);
+      }
     };
   }, [opens]);
 

@@ -11,8 +11,9 @@
 //! - **A request names a key or nothing** ([`key`]): one decode, and no segment that is empty,
 //!   `.` or `..`, no backslash and no NUL. What walks out of the folder is not in the map.
 //! - **Every response carries the CSP** ([`csp`]): the artifact's own origin and nothing else,
-//!   no network, no frames, no forms, no `<base>`, and no script (approval of a page's script
-//!   is per person, #5959; until then every page renders script-free).
+//!   no network, no frames, no forms, no `<base>`, and no script — unless the person approved
+//!   this very template on this machine ([`super::approval`], #5959), when its own script runs
+//!   and still reaches no network.
 //!
 //! This module renders nothing and knows no webview: the app serves what it says.
 
@@ -36,6 +37,7 @@ pub const OWN_PATH: &str = "/.purlis/";
 pub struct Snapshot {
     files: BTreeMap<String, Vec<u8>>,
     fingerprint: String,
+    script: bool,
 }
 
 impl Snapshot {
@@ -54,7 +56,12 @@ impl Snapshot {
             return Err(format!("the artifact has no {PAGE}, the page it opens on"));
         }
         let fingerprint = fingerprint(&files);
-        Ok(Self { files, fingerprint })
+        let script = holds_script(&files);
+        Ok(Self {
+            files,
+            fingerprint,
+            script,
+        })
     }
 
     /// **One page alone**, as an `.html` file's private preview serves it (#5953): its bytes
@@ -76,6 +83,12 @@ impl Snapshot {
         &self.fingerprint
     }
 
+    /// Whether any of the template's pages holds script a browser runs ([`super::script`]):
+    /// what makes it a page each person approves before it runs.
+    pub fn holds_script(&self) -> bool {
+        self.script
+    }
+
     /// The paths read, in order.
     pub fn paths(&self) -> impl Iterator<Item = &str> {
         self.files.keys().map(String::as_str)
@@ -85,6 +98,15 @@ impl Snapshot {
 /// Whether `key` is one of the folder's data files: `data.json`, or under `data/`.
 pub fn is_data(key: &str) -> bool {
     key == DATA_FILE || key.starts_with(&format!("{DATA_DIR}/"))
+}
+
+/// Whether a page of the template, never a data file, holds script.
+fn holds_script(files: &BTreeMap<String, Vec<u8>>) -> bool {
+    files.iter().any(|(path, bytes)| {
+        !is_data(path)
+            && super::script::is_page(path)
+            && super::script::holds_script(&String::from_utf8_lossy(bytes))
+    })
 }
 
 fn fingerprint(files: &BTreeMap<String, Vec<u8>>) -> String {
@@ -128,11 +150,18 @@ pub fn origin_host(workspace: &Path, folder: &str) -> String {
 }
 
 /// **The CSP on every response** (ADR 0120 §3), for a page served at `own` (its origin, as the
-/// webview spells it): its own origin only, and of that only what a page that runs nothing
-/// reads. No script, no connection, no frame, no form, no `<base>`, no worker, no plugin.
-pub fn csp(own: &str) -> String {
+/// webview spells it): its own origin only. No connection, no frame, no form, no `<base>`, no
+/// worker, no plugin, ever. Script only when `runs` — the person approved this template here
+/// (ADR 0120 §4) — and then only the template's own: from its origin and inline in the bytes
+/// approved, never `eval`.
+pub fn csp(own: &str, runs: bool) -> String {
+    let script = if runs {
+        format!("{own} 'unsafe-inline'")
+    } else {
+        "'none'".to_owned()
+    };
     format!(
-        "default-src 'none'; script-src 'none'; style-src {own} 'unsafe-inline'; \
+        "default-src 'none'; script-src {script}; style-src {own} 'unsafe-inline'; \
          img-src {own}; font-src {own}; media-src {own}; connect-src 'none'; \
          form-action 'none'; base-uri 'none'; frame-src 'none'; child-src 'none'; \
          worker-src 'none'; object-src 'none'; manifest-src 'none'; frame-ancestors 'none'"
@@ -287,7 +316,7 @@ mod tests {
 
     #[test]
     fn the_csp_admits_the_own_origin_only_and_no_script_connection_frame_form_or_base() {
-        let csp = csp("artifact://abc");
+        let csp = csp("artifact://abc", false);
         for directive in [
             "default-src 'none'",
             "script-src 'none'",
@@ -300,6 +329,46 @@ mod tests {
         }
         assert!(csp.contains("img-src artifact://abc;"));
         assert!(!csp.contains('*'), "{csp}");
+    }
+
+    #[test]
+    fn an_approved_page_runs_its_own_script_and_still_reaches_no_network_frame_or_eval() {
+        let csp = csp("artifact://abc", true);
+        assert!(
+            csp.contains("script-src artifact://abc 'unsafe-inline';"),
+            "{csp}"
+        );
+        for directive in [
+            "default-src 'none'",
+            "connect-src 'none'",
+            "form-action 'none'",
+            "base-uri 'none'",
+            "frame-src 'none'",
+            "worker-src 'none'",
+        ] {
+            assert!(csp.contains(directive), "{directive} in {csp}");
+        }
+        assert!(!csp.contains("unsafe-eval"), "{csp}");
+        assert!(!csp.contains('*'), "{csp}");
+    }
+
+    #[test]
+    fn a_snapshot_holds_script_when_a_page_of_its_template_does_and_never_for_its_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path();
+        std::fs::create_dir(folder.join("data")).unwrap();
+        std::fs::write(
+            folder.join("index.html"),
+            r#"<h1>Board</h1><script type="application/json">{"a":1}</script>"#,
+        )
+        .unwrap();
+        // Data is inert JSON; even markup there is never a page of the template.
+        std::fs::write(folder.join("data/page.html"), "<script>x()</script>").unwrap();
+        std::fs::write(folder.join("app.js"), "x()").unwrap();
+        assert!(!Snapshot::read(folder).unwrap().holds_script());
+
+        std::fs::write(folder.join("chart.svg"), "<svg onload='x()'/>").unwrap();
+        assert!(Snapshot::read(folder).unwrap().holds_script());
     }
 
     #[test]
