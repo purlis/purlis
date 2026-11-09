@@ -8,6 +8,26 @@ const PALETTE = '[role="dialog"][aria-label="Command palette"]';
 /** The Settings tab's list of groups, drawn once it has opened. */
 export const SETTINGS_GROUPS = 'nav[aria-label="Groups"]';
 
+/**
+ * Opens `file` from the Edit as TOML files at the nav's foot: the panel family's page navigation
+ * named "Edit as TOML" (`ViewNav`, #2930), each file a button by its name.
+ */
+export async function openRawFile(file: string): Promise<void> {
+  await browser.waitUntil(
+    async () =>
+      browser.execute((wanted: string) => {
+        const files = document.querySelector('nav[aria-label="Edit as TOML"]');
+        const link = [...(files?.querySelectorAll<HTMLElement>("button") ?? [])].find(
+          (one) => one.textContent?.trim() === wanted,
+        );
+        if (link === undefined) return false;
+        link.click();
+        return true;
+      }, file),
+    { timeout: 20_000, interval: 250, timeoutMsg: `Edit as TOML offered no ${file}` },
+  );
+}
+
 /** Opens Settings at the Project level through the palette, as the operator does. */
 export async function openProjectSettings(): Promise<void> {
   await browser.keys(["F2"]);
