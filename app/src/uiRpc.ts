@@ -13135,6 +13135,12 @@ export type SigningCheck = {
 	email: string,
 	/**  The repository the commit is in. */
 	repo: string,
+	/**
+	 *  Whether `email`, not the key, is the likely reason it wasn't Verified (#5916): the forge
+	 *  said it doesn't know the key, yet the account lists this device's key and `email` isn't
+	 *  one of its verified ones. The window then offers the account's emails, not "add the key".
+	 */
+	email_is_why: boolean,
 };
 
 /**  What became of one account, after Replace key or Remove signing. */
@@ -13189,8 +13195,14 @@ export type SigningLane = {
 export type SigningOtherKey = {
 	/**  The forge's id of it, as text: it removes it. */
 	id: string,
-	/**  `purlis · <device>`. */
+	/**  `purlis · <device>`, or an older setup's `purlis on <machine>`. */
 	title: string,
+	/**  The device it is for: the title after `purlis · ` or `purlis on ` (#5918). */
+	device: string,
+	/**  The day the forge says it was added (`yyyy-mm-dd`), where it says. */
+	added: string | null,
+	/**  Whether an older setup titled it (`purlis on …`): the likely leftover. */
+	older_setup: boolean,
 };
 
 /**  How Sign and retry went for one branch folder. */

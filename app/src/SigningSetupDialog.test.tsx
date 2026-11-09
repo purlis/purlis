@@ -75,6 +75,7 @@ const VERIFIED: SigningCheck = {
   reason: "valid",
   email: "octocat@example.com",
   repo: "octocat/hello",
+  email_is_why: false,
 };
 
 let state: SigningState;
@@ -99,7 +100,15 @@ const HELD: SigningAccountKeys = {
   kind: "github",
   host: "github.com",
   has_key: true,
-  others: [{ id: "17", title: "purlis · laptop" }],
+  others: [
+    {
+      id: "17",
+      title: "purlis · laptop",
+      device: "laptop",
+      added: "2026-10-01",
+      older_setup: false,
+    },
+  ],
   may_remove: true,
   keys_page: "https://github.com/settings/keys",
 };
@@ -347,6 +356,8 @@ describe("SigningSetupDialog", () => {
     const why = await within(dialog).findByRole("alert");
     expect(why.textContent).toContain("doesn't know this key as a signing key on octocat");
     expect(dialog).not.toHaveTextContent("Verified on GitHub ✓");
+    // The email the test commit was made as is named, whatever the reason (#5916).
+    expect(dialog).toHaveTextContent("The test commit was made as octocat@example.com.");
     checked = VERIFIED;
     await userEvent.click(within(dialog).getByRole("button", { name: "Check again" }));
     expect(await within(dialog).findByText("Verified on GitHub ✓")).toBeTruthy();
@@ -403,6 +414,37 @@ describe("the Check step's email (#5631)", () => {
     ]);
     // Checked once more, after the choice.
     expect(commandsSent("signing_check").length).toBe(2);
+  });
+
+  it("a key GitHub says it doesn't know, though the account lists it, is put down to the commit email, and offers the account's emails, not Add it (#5916)", async () => {
+    state = { ...structuredClone(ON), accounts: [{ ...ACCOUNT, may_add: true }] };
+    checked = {
+      ...VERIFIED,
+      verified: false,
+      reason: "unknown_key",
+      email: "o@other.example",
+      email_is_why: true,
+    };
+    render(<SigningSetupDialog onClose={vi.fn()} />);
+    const dialog = await theDialog();
+    const choices = await within(dialog).findByRole("radiogroup", { name: "Sign chat commits as" });
+    expect(dialog).toHaveTextContent(
+      "The key is on octocat, but the test commit was made as o@other.example, which isn't a verified email on octocat.",
+    );
+    expect(dialog).toHaveTextContent(
+      "GitHub picks the account to check a signature by the commit's email",
+    );
+    expect(dialog).not.toHaveTextContent("Add it, then check again");
+    expect(dialog).not.toHaveTextContent("doesn't know this key");
+    expect(dialog).not.toHaveTextContent("Verified on GitHub ✓");
+    expect(within(choices).getByRole("radio", { name: "octocat@example.com" })).toBeChecked();
+    checked = VERIFIED;
+    await userEvent.click(within(dialog).getByRole("button", { name: "Use this email" }));
+    expect(await within(dialog).findByText("Verified on GitHub ✓")).toBeTruthy();
+    expect(commandsSent("signing_use_email")[0]?.args).toEqual({
+      forge: ON_GITHUB,
+      email: "octocat@example.com",
+    });
   });
 
   it("with no verified email, links to the forge's email settings and gives no ✓", async () => {
@@ -483,13 +525,20 @@ describe("SigningSetupDialog on GitLab (#5629)", () => {
 
   it("with no signed commit pushed to GitLab yet, shows no ✓ and says when it will", async () => {
     state = { ...structuredClone(ON), accounts: [GITLAB] };
-    checked = { verified: false, reason: "nothing_pushed", email: "sam@example.org", repo: "" };
+    checked = {
+      verified: false,
+      reason: "nothing_pushed",
+      email: "sam@example.org",
+      repo: "",
+      email_is_why: false,
+    };
     const closed = vi.fn();
     render(<SigningSetupDialog forge={ON_GITLAB} onClose={closed} />);
     const dialog = await theDialog();
     expect(
       await within(dialog).findByText(/shows once a chat pushes its first signed commit/),
     ).toBeTruthy();
+    expect(dialog).toHaveTextContent("signed from now on, as sam@example.org.");
     expect(dialog).not.toHaveTextContent("Verified on GitLab ✓");
     await userEvent.click(within(dialog).getByRole("button", { name: "Done" }));
     expect(closed).toHaveBeenCalled();
@@ -620,19 +669,80 @@ describe("the Signed commits card", () => {
     ]);
   });
 
-  it("lists another device's key and removes it from this one", async () => {
+  it("lists other devices' keys by device and day added, under a heading that says what removing does (#5918)", async () => {
+    state = structuredClone(ON);
+    accountsKeys = [
+      {
+        ...HELD,
+        others: [
+          ...HELD.others,
+          {
+            id: "18",
+            title: "purlis on old-mini",
+            device: "old-mini",
+            added: null,
+            older_setup: true,
+          },
+        ],
+      },
+    ];
+    render(<Card />);
+    const heading = await screen.findByRole("heading", {
+      name: "Signing keys of your other devices",
+    });
+    expect(heading.nextElementSibling).toHaveTextContent(
+      "Each signs that device's chat commits. Removing one here stops that device's commits showing as Verified until it sets up signing again.",
+    );
+    const list = screen.getByRole("list", { name: "Signing keys of your other devices" });
+    const [laptop, mini] = within(list).getAllByRole("listitem");
+    const day = new Date(2026, 9, 1).toLocaleDateString(undefined, {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+    expect(laptop).toHaveTextContent(`laptopoctocat on GitHub · added ${day}`);
+    expect(laptop).not.toHaveTextContent("purlis ·");
+    expect(laptop).not.toHaveTextContent("Older setup");
+    expect(mini).toHaveTextContent("old-miniOlder setupoctocat on GitHub");
+  });
+
+  it("Remove on another device's key asks first, naming the device, and removes it only on the confirm's own Remove key (#5918)", async () => {
     state = structuredClone(ON);
     render(<Card />);
-    const list = await screen.findByRole("list", { name: "Your other devices' signing keys" });
-    expect(list).toHaveTextContent("purlis · laptop");
+    const list = await screen.findByRole("list", { name: "Signing keys of your other devices" });
     await userEvent.click(
-      within(list).getByRole("button", { name: "Remove purlis · laptop from octocat on GitHub" }),
+      within(list).getByRole("button", {
+        name: "Remove laptop's signing key from octocat on GitHub…",
+      }),
     );
+    const confirm = await screen.findByRole("dialog", {
+      name: "Remove laptop's signing key from octocat on GitHub?",
+    });
+    expect(confirm).toHaveTextContent(
+      "laptop's chat commits will show as Unverified until it sets up signing again. This Mac is not affected.",
+    );
+    expect(commandsSent("signing_remove_other")).toEqual([]);
+    await userEvent.click(within(confirm).getByRole("button", { name: "Remove key" }));
     await waitFor(() =>
       expect(commandsSent("signing_remove_other")).toEqual([
         { cmd: "signing_remove_other", args: { forge: ON_GITHUB, id: "17" } },
       ]),
     );
+  });
+
+  it("closing the confirm removes nothing (#5918)", async () => {
+    state = structuredClone(ON);
+    render(<Card />);
+    const list = await screen.findByRole("list", { name: "Signing keys of your other devices" });
+    await userEvent.click(
+      within(list).getByRole("button", {
+        name: "Remove laptop's signing key from octocat on GitHub…",
+      }),
+    );
+    const confirm = await screen.findByRole("dialog");
+    await userEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(commandsSent("signing_remove_other")).toEqual([]);
   });
 
   it("where the sign-in may not remove a key, links to the forge's keys page instead", async () => {
@@ -651,7 +761,7 @@ describe("the Signed commits card", () => {
   it("Remove signing confirms once, naming the accounts and that signed commits stay signed", async () => {
     state = structuredClone(ON);
     render(<Card />);
-    await screen.findByRole("list", { name: "Your other devices' signing keys" });
+    await screen.findByRole("list", { name: "Signing keys of your other devices" });
     await userEvent.click(screen.getByRole("button", { name: "Remove signing…" }));
     const confirm = await screen.findByRole("dialog", { name: "Remove signing from this Mac?" });
     expect(
