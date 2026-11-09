@@ -52,47 +52,40 @@ export async function openProjectSettings(): Promise<void> {
   await $(SETTINGS_GROUPS).waitForDisplayed({ timeout: 20_000 });
 }
 
-/** What has the role `role`: said outright, or a native element whose implicit role it is and
- *  which says no other. Asked by role (CLAUDE.md), so a family that draws it another way still
- *  matches. */
-const byRole = (role: "radio" | "button", tag: string) => `[role="${role}"], ${tag}:not([role])`;
-
 /**
  * **Shows Settings' `group` at `level`** (You, Project, Workspace or Persona), as a person picks
  * them: the level on its switcher, then the group in its list, until the group says it is the
  * one shown. Settings is open already ({@link openProjectSettings}).
+ *
+ * Each control is asked for by its role (CLAUDE.md): said outright, or the native element whose
+ * implicit role it is and which says no other. The selectors are written out plainly in the page's
+ * own function, as every spec's are: the third run of #6037 had them passed in as arguments and
+ * joined with `:is()`, and the walk never found a group on WebKitGTK, though both matched in jsdom.
  */
 export async function settingsAt(level: string, group: string): Promise<void> {
-  await browser.execute(
-    (called: string, radios: string) => {
-      const radio = [
-        ...document.querySelectorAll<HTMLElement>(
-          `[role="radiogroup"][aria-label="Level"] :is(${radios})`,
-        ),
-      ].find((one) => (one.closest("label")?.textContent ?? one.textContent)?.trim() === called);
-      if (
-        radio?.getAttribute("aria-checked") !== "true" &&
-        !(radio as HTMLInputElement | undefined)?.checked
-      )
-        radio?.click();
-    },
-    level,
-    byRole("radio", 'input[type="radio"]'),
-  );
+  await browser.execute((called: string) => {
+    const radio = [
+      ...document.querySelectorAll<HTMLElement>(
+        '[role="radiogroup"][aria-label="Level"] [role="radio"], [role="radiogroup"][aria-label="Level"] input[type="radio"]:not([role])',
+      ),
+    ].find((one) => (one.closest("label")?.textContent ?? one.textContent)?.trim() === called);
+    if (
+      radio?.getAttribute("aria-checked") !== "true" &&
+      !(radio as HTMLInputElement | undefined)?.checked
+    )
+      radio?.click();
+  }, level);
   await browser.waitUntil(
     async () =>
-      browser.execute(
-        (called: string, groups: string, buttons: string) => {
-          const button = [
-            ...document.querySelectorAll<HTMLElement>(`${groups} :is(${buttons})`),
-          ].find((one) => one.textContent?.trim() === called);
-          button?.click();
-          return button?.getAttribute("aria-current") === "true";
-        },
-        group,
-        SETTINGS_GROUPS,
-        byRole("button", "button"),
-      ),
+      browser.execute((called: string) => {
+        const button = [
+          ...document.querySelectorAll<HTMLElement>(
+            'nav[aria-label="Groups"] [role="button"], nav[aria-label="Groups"] button:not([role])',
+          ),
+        ].find((one) => one.textContent?.trim() === called);
+        button?.click();
+        return button?.getAttribute("aria-current") === "true";
+      }, group),
     { timeout: 20_000, interval: 250, timeoutMsg: `Settings never showed ${level} › ${group}` },
   );
 }
