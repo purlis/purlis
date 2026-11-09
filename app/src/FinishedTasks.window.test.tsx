@@ -399,14 +399,13 @@ describe("a chat's finished tasks", () => {
       (one) => one.querySelector(".session")?.textContent === "probe",
     );
     if (open === undefined) throw new Error("the open task has no row");
-    // Its mark is the chat's one state (#5340): a failure seen is an ended chat, and its word says
-    // which way it ended.
+    // Its mark is the chat's one state (#5340, #6012): Failed, and its word says so.
     expect(open.querySelector('[data-scope="chat-mark"][data-part="word"]')?.textContent).toBe(
       "failed",
     );
     expect(open.querySelector('[data-scope="chat-mark"][data-part="root"]')).toHaveAttribute(
       "data-variant",
-      "ended",
+      "failed",
     );
     // **One line, as a chat's row is** (#1687): the state is the mark, and its word, with the
     // core's own beside it, is still the row's to a screen reader, out of sight where it stands,

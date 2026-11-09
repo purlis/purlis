@@ -936,10 +936,10 @@ for a run's one notice, in the Inbox's card. Only the wrapper writes `data-scope
 
 ## The chat mark family
 
-`ChatMark` (`app/src/ui/chat-mark`, ADR 0104 amended 2026-11-05, #5340) is a chat's mark on a tab that shows it, its row in the list, its pane's head and a folded pane's rail. A screen draws it through `ChatPersonaState`, which reads the chat's one state from `shownState`; `QuitWarning`'s list hands it a state directly.
+`ChatMark` (`app/src/ui/chat-mark`, ADR 0104 amended 2026-11-05, #5340) is a chat's mark on a tab that shows it, its row in the list, its pane's head, a folded pane's rail and the row of an ask that names it. It draws the chat's **Chat state** (ADR 0121 decision 17, #6012), which one function derives: `shownState`. A screen draws it through `ChatPersonaState`, which reads that function; `QuitWarning`'s list and Asks hand it the state that function gave.
 
-- **Props:** `state` (`needs`, `failed`, `working`, `waiting`, `idle`, `ended`, or nothing where none is known), `who`, `word`, `changed`.
-- **Parts:** `root` carries the state as its `data-variant`; `who`, `badge` and `word`. A glyph tells each state as well as its colour.
+- **Props:** `state`, one of the eight Chat states in the order that wins (`CHAT_STATES`): `needs` (Waiting on you), `stuck` (Stuck?), `failed`, `working`, `waiting` (Waiting on a chat), `idle`, `ended` (Done) and `cant-tell` (Can't tell), or nothing for `who` alone; `who`, `word`, `changed`. The three keys the mark had before #6012 keep their names, since a theme format only grows.
+- **Parts:** `root` carries the state as its `data-variant`; `who`, `badge` and `word`. Each state has one glyph and one colour (`CHAT_STATE_SAID`) and no two share either, so a glyph tells each state as well as its colour.
 - **The place sets** `--chat-mark-size` and `--chat-mark-ground`, nothing else.
 - **`who` is its own part** so a control can stand in it (the grip, #5290), with the badge left beside it. `ChatPersonaState`'s `grip` puts one there.
 

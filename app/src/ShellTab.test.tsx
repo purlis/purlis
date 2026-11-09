@@ -299,16 +299,18 @@ const stateMark = () =>
     ?.getAttribute("aria-label") ?? null;
 
 describe("a shell tab's state mark", () => {
-  it("draws none: its terminal mark already says what it is, and `unknown` read as a spinner", async () => {
+  // A shell reports no state, so it is Can't tell (ADR 0121 decision 17, #6012): a glyph of its
+  // own that reads as nobody knowing, never as a spinner.
+  it("says it can't tell what a shell is doing, as every chat that reports nothing does", async () => {
     core([opened(4, "shell 4", ALPHA, { in_front: true })]);
     render(<App />);
 
     await waitFor(() => expect(chatTabs()).toEqual(["shell 4"]));
     await settle();
-    expect(stateMark()).toBeNull();
+    expect(stateMark()).toBe("a shell (no detail)");
   });
 
-  it("draws none on a shell opened here either", async () => {
+  it("says it can't tell on a shell opened here too", async () => {
     core();
     render(<App />);
     expect(await workspaces()).toEqual(["Plane root", "alpha", "beta"]);
@@ -317,7 +319,7 @@ describe("a shell tab's state mark", () => {
 
     await waitFor(() => expect(chatTabs()).toEqual(["shell 1"]));
     await settle();
-    expect(stateMark()).toBeNull();
+    expect(stateMark()).toBe("a shell (no detail)");
   });
 
   it("draws what a harness in it reports, once one does", async () => {

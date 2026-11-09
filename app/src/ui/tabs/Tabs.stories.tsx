@@ -19,7 +19,7 @@ import { Bot, Plus } from "lucide-react";
 import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 import { useTabIds } from "./TabStrip";
 import { ChatMark } from "../chat-mark/ChatMark";
-import type { MarkState } from "../../shownState";
+import type { ChatState } from "../../shownState";
 import { Button, IconButton } from "../button/Button";
 import { TIPS_BELOW } from "../tooltip/Tooltip";
 import { pictureOf } from "../../layoutPicture";
@@ -41,7 +41,7 @@ import { StripTab, TabStripRow, useTabStrip } from "./TabStrip";
 
 /** One tab as a story draws it: its name, what it holds, its chat's state, if any, and its
  *  layout where it is split. */
-type Shown = { name: string; variant?: TabVariant; state?: MarkState; layout?: Layout };
+type Shown = { name: string; variant?: TabVariant; state?: ChatState; layout?: Layout };
 
 const CHATS: Shown[] = [
   { name: "steward 1", state: "working" },

@@ -1092,7 +1092,8 @@ describe("a chat's tab and its row wear one mark (#5340)", () => {
       "waiting",
       [],
       { own_work: { helpers: 2, workflows: 0, monitors: 0, shells: 0 } },
-      "waiting",
+      // Its own work wakes it: Working until that work ends (ADR 0076, #6012).
+      "working",
     ],
     [
       "a task failed, in the queue for that alone",
@@ -1447,7 +1448,8 @@ describe("a chat moving, with fifty sessions and their tasks listed (SC-3)", () 
     move(7, "running");
 
     expect(word("devops 52")).toBe("working");
-    expect(word("devops 51")).toBe("idle");
+    // A task's turn ended owing its report: it waits on the chat that asked (#6012).
+    expect(word("devops 51")).toBe("waiting on the chat that asked");
     expect(drawn.rows).toEqual([]);
 
     // Session 40 and its task go idle: it goes below the ones at work, which is the one

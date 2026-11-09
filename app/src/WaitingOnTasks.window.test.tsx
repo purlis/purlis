@@ -838,11 +838,14 @@ describe("what a task changing state redraws (SC-3)", () => {
     await waitFor(() => expect(says(row(tree, "steward 1")).word).toBe("waiting on 2 tasks"));
     drawn.marks.length = 0;
 
-    // A task's turn ends with its report still owed: it is idle, which is one fewer working
+    // A task's turn ends with its report still owed: it waits on the chat that asked (#6012), one
+    // fewer working
     // below its session. Its own state and its session's are drawn again, and no other's.
     move(2, "waiting", 6, [9]);
 
-    expect(new Set(drawn.marks)).toEqual(new Set(["idle", "waiting on 1 task"]));
+    expect(new Set(drawn.marks)).toEqual(
+      new Set(["waiting on the chat that asked", "waiting on 1 task"]),
+    );
     expect(await count(row(tree, "steward 1"))).toBe("1 working · 1 waiting");
     drawn.marks.length = 0;
 

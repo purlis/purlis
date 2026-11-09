@@ -4,7 +4,9 @@
 import {
   Check,
   Circle,
+  CircleHelp,
   Ellipsis,
+  EyeOff,
   Hand,
   Hourglass,
   MessageCircleQuestion,
@@ -41,6 +43,8 @@ export const SHAPES: Readonly<Record<ShownShape, LucideIcon>> = {
   triangle: TriangleAlert,
   dot: Circle,
   pause: Pause,
+  stuck: CircleHelp,
+  unseen: EyeOff,
   dots: Ellipsis,
 };
 

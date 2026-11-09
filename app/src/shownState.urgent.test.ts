@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { urgentOf, type MarkState } from "./shownState";
+import { urgentOf, type ChatState } from "./shownState";
 
 /**
  * **A split tab's mark is its most urgent pane's** (#5342, spec #5339): the panes' chats in
@@ -11,16 +11,16 @@ import { urgentOf, type MarkState } from "./shownState";
  * chosen. Of two in the same state, the first in reading order wins, so the mark only moves for a
  * state that outranks it.
  */
-type Pane = { chat: string; mark: MarkState | null };
-const pane = (chat: string, mark: MarkState | null): Pane => ({ chat, mark });
+type Pane = { chat: string; mark: ChatState | null };
+const pane = (chat: string, mark: ChatState | null): Pane => ({ chat, mark });
 
 const table: readonly [string, Pane[], string | undefined][] = [
   ["one pane is its own mark", [pane("a", "idle")], "a"],
   ["a pane that needs you beats the working one", [pane("a", "working"), pane("b", "needs")], "b"],
   ["a failed task beats a working pane", [pane("a", "working"), pane("b", "failed")], "b"],
-  ["working beats waiting on tasks", [pane("a", "waiting"), pane("b", "working")], "b"],
-  ["waiting on tasks beats idle", [pane("a", "idle"), pane("b", "waiting")], "b"],
-  ["idle beats ended", [pane("a", "ended"), pane("b", "idle")], "b"],
+  ["working beats waiting on a chat", [pane("a", "waiting"), pane("b", "working")], "b"],
+  ["waiting on a chat beats idle", [pane("a", "idle"), pane("b", "waiting")], "b"],
+  ["idle beats done", [pane("a", "ended"), pane("b", "idle")], "b"],
   ["of two in one state, the first in reading order", [pane("a", "idle"), pane("b", "idle")], "a"],
   [
     "needs you wins from the third of four panes",
