@@ -1232,7 +1232,7 @@ fn an_unrelated_write_keeps_the_vault_grants_beside_a_field_off_its_shape() {
     let root = project.path();
     machine_file_holding(
         root,
-        r#"{"hosts_seen": 5, "offer": "kept-off", "vaults_mine": [{"vault": "other", "persona": "qa"}]}"#,
+        r#"{"hosts_seen": 5, "vaults_mine": [{"vault": "other", "persona": "qa"}]}"#,
     );
 
     count(root, Started::OptedOut).expect("counted");
@@ -1251,15 +1251,41 @@ fn an_unrelated_write_keeps_the_vault_grants_beside_a_field_off_its_shape() {
             },
         ]
     );
-    assert_eq!(
-        read(root).offer,
-        "kept-off",
-        "the offer's answer is kept too"
-    );
     assert_eq!(tally(root).opted_out, 1);
-    assert!(
-        !told_any(root),
-        "the field off its shape is dropped, not read as something"
+}
+
+/// Only the vault grants outlive a field off its shape (#5906, review of #5934): every other field
+/// starts again with the file, as before, since some only hold beside another (a dispatch grant
+/// beside what this machine knows of its persona, its workspace or the commit it is bound to), and
+/// keeping one without the other would put back in force what the other kept out.
+#[test]
+fn a_field_off_its_shape_takes_every_grant_it_guards_with_it_but_the_vault_grants() {
+    let project = a_project("");
+    let root = project.path();
+    machine_file_holding(
+        root,
+        r#"{"dispatch_known": 5, "dispatch_workspaces": 5, "dispatch_seen_at": 5,
+            "dispatch_any": ["qa"], "dispatch_seen": ["qa -> dev"], "offer": "kept-off",
+            "vaults_mine": [{"vault": "other", "persona": "qa"}]}"#,
+    );
+
+    let before = read(root);
+    count(root, Started::OptedOut).expect("counted");
+    for (what, held) in [("read", before), ("written", read(root))] {
+        assert!(
+            held.dispatch_any.is_empty(),
+            "{what}: {:?}",
+            held.dispatch_any
+        );
+        assert_eq!(held.dispatch_seen, None, "{what}");
+        assert!(held.offer.is_empty(), "{what}: {}", held.offer);
+    }
+    assert_eq!(
+        try_granted_vaults(root).expect("read"),
+        [VaultGrant {
+            vault: "other".into(),
+            persona: "qa".into(),
+        }]
     );
 }
 
