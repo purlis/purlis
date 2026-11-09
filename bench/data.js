@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794184266430,
+  "lastUpdate": 1794186837750,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -44058,6 +44058,48 @@ window.BENCHMARK_DATA = {
             "value": 102.547132,
             "unit": "ms",
             "extra": "median of 5 runs: 101.431, 102.084, 102.547, 102.729, 103.934 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4cd7b75247ba96fadaaf6af9982aec1ad4304ac1",
+          "message": "Stories: PoolSignInConfirm's GitLab check waits for Check it to arm, and is drawn armed (red since #5873) (#5888)\n\n* stories: PoolSignInConfirm's GitLab check, a line on where its pictures come from\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YPRXQ7TWHMGD8NAF12JKBH\nPurlis-Persona: steward\n\n* stories: PoolSignInConfirm's GitLab check waits for Check it to arm before its picture\n\nThe play never waited for the 1.5 s arming timer, so the screenshot raced it:\nsome runs drew Check it disabled, others armed, and the cell that failed moved\nbetween themes and browsers. main's pictures are the armed state, as the\nGitHub sibling's are; with the wait they hold, so none is redrawn.\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YPRXQ7TWHMGD8NAF12JKBH\nPurlis-Persona: steward\n\n* stories: PoolSignInConfirm's GitLab check drawn armed, from this PR's run 42535686150\n\nPulled with tools/story-baselines-pull.mjs 5888. #5873 drew 23 of its 24 cells\nwith Check it still disabled (the play didn't wait for it to arm); only\npurlis-classic_dark on Chromium was drawn armed, and it matches already.\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YPRXQ7TWHMGD8NAF12JKBH\nPurlis-Persona: steward",
+          "timestamp": "2026-11-09T00:13:41Z",
+          "tree_id": "5041dda6065b2b15062ce6a267aa477825a6ee06",
+          "url": "https://github.com/purlis/purlis/commit/4cd7b75247ba96fadaaf6af9982aec1ad4304ac1"
+        },
+        "date": 1794186832470,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.333084,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.317, 0.333, 0.333, 0.336, 0.346 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.638735,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.586, 16.631, 16.639, 16.697, 16.734 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.0452,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.001, 102.027, 102.045, 102.108, 102.202 ms"
           }
         ]
       }
