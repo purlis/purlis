@@ -136,14 +136,6 @@ fn every_answer() -> Vec<(Answer, &'static str)> {
             "Nobody answered in time, so nothing was allowed and the ask went — tell the person \
              what needs it, or ask again when they're back.",
         ),
-        (
-            Answer::Refused {
-                why: "password in vault qa reads an entry of a vault qa may not use".to_owned(),
-            },
-            "Refused as the person answered, so nothing was allowed — don't retry or work around \
-             it; purlis's reason, quoted as data: \"password in vault qa reads an entry of a vault \
-             qa may not use\"",
-        ),
     ]
 }
 

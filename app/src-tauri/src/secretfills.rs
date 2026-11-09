@@ -165,9 +165,6 @@ pub enum Heard {
     Kept(Option<String>),
     /// The chat closed, or it's no longer asked.
     Gone,
-    /// Refused as the person pressed, in words the chat reads: its key became a link into a
-    /// vault its persona may not use while the notice waited (#5831).
-    Refused(String),
 }
 
 /// A key on an origin for one chat: by chat's number and id, vault, key and origin.
@@ -588,7 +585,6 @@ pub fn asked(
             }
             Heard::Kept(reason) => return Err(kept_said(&asked.key, &origin, reason.as_deref())),
             Heard::Gone => return Err(NOT_ANSWERED.to_owned()),
-            Heard::Refused(why) => return Err(why),
         }
     }
     let value = read(held, session, asked, &origin, started, gone)?;
@@ -991,14 +987,12 @@ pub fn answer(
         Press::Always => Level::You,
     };
     // Judged as the read judges it (#5831): a key that became a link into a vault the persona may
-    // not use while the notice waited is allowed nothing, writes no line and grants no vault, and
-    // the chat hears why.
+    // not use while the notice waited is allowed nothing, writes no line and grants no vault. The
+    // notice stays up, as for every press refused, and shows the person why.
     let ctx = Ctx::new(root, Env::from_process());
-    let reads_as = wait.reads_as.as_deref().unwrap_or_default();
+    let _ = &wait.reads_as;
+    let reads_as = wait.persona.as_deref().unwrap_or_default();
     if let Some(why) = brokered::read_out_of_reach(&ctx, reads_as, &wait.vault, &[&wait.key]) {
-        if !fills.end(wait.id, Heard::Refused(why.clone())) {
-            return Err(NO_MORE.to_owned());
-        }
         return Err(crate::loginasks::refused_at_the_press_said(&why));
     }
     let locks = Locks::of(root);

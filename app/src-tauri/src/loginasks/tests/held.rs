@@ -304,10 +304,11 @@ fn a_runner_chats_login_notice_nobody_answered_goes_and_the_chat_is_told() {
     );
 }
 
-/// A runner chat's login notice refused at the press for a key out of reach tells the chat why on
-/// its next turn, as nobody waits to hear it (#5831), and never that it was allowed.
+/// A runner chat's login notice refused at the press for a key out of reach is never told to the
+/// chat as an Allow (#5831): the press is the person's error, and the notice stays for Keep blocked
+/// or its time, as for every press refused.
 #[test]
-fn a_runner_chats_login_refused_at_the_press_tells_the_chat_why() {
+fn a_runner_chats_login_refused_at_the_press_is_never_told_as_allowed() {
     let project = Project::new();
     let chat = project.a_chat();
     let raised = project.raised(chat);
@@ -323,9 +324,9 @@ fn a_runner_chats_login_refused_at_the_press_tells_the_chat_why() {
     let wait = project.held.login_grants().waiting().into_iter().next();
     let shown = wait.expect("the notice waits").proposal.digest();
 
-    let refused = answer(
-        project.held.root(),
-        project.held.login_grants(),
+    let refused = pressed(
+        &project.held,
+        None,
         &Asked {
             session: chat,
             id,
@@ -334,30 +335,22 @@ fn a_runner_chats_login_refused_at_the_press_tells_the_chat_why() {
             typed: None,
             reason: None,
         },
-        &on_its_page,
-        &|_, _| Ok(()),
     )
     .map(|_| ())
     .expect_err("refused");
 
     assert!(refused.starts_with("Nothing was allowed: "), "{refused}");
-    let told = project.told_within(Duration::from_secs(10));
-    let [(to, Outcome { about, answer })] = told.as_slice() else {
-        panic!("told once: {told:?}");
-    };
-    assert_eq!(*to, chat);
-    assert_eq!(
-        *about,
-        About::BrowserLogin {
-            login: "shop-login".to_owned()
-        }
-    );
-    let Said::Refused { why } = answer else {
-        panic!("told it was refused: {answer:?}");
-    };
-    says_out_of_reach(why);
     assert!(
-        project.held.login_grants().waiting().is_empty(),
-        "the notice went"
+        refused.contains("password in vault qa reads an entry of a vault qa may not use"),
+        "{refused}"
+    );
+    assert!(
+        project.told_within(Duration::from_millis(200)).is_empty(),
+        "the chat is told nothing yet, and never Allowed"
+    );
+    assert_eq!(
+        project.held.login_grants().waiting().len(),
+        1,
+        "the notice stays"
     );
 }

@@ -1189,28 +1189,20 @@ fn a_notice_nobody_waits_on_goes_unanswered_after_its_time_unless_answered() {
     let dir = project("");
     let grants = Grants::default();
     let (id, _, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
-    let went = went_unanswered(
-        &heard,
-        Duration::from_millis(20),
-        || Some(&grants).filter(|grants| grants.end(id, Heard::Gone)),
-        |_| None,
-    );
+    let went = went_unanswered(&heard, Duration::from_millis(20), || {
+        Some(&grants).filter(|grants| grants.end(id, Heard::Gone))
+    });
     assert!(went.is_some(), "nobody answered, so it went");
     assert!(grants.waiting().is_empty());
 
     let (id, _, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
     grants.end(id, Heard::Allowed);
-    let went = went_unanswered(&heard, Duration::from_millis(20), || Some(()), |_| Some(()));
+    let went = went_unanswered(&heard, Duration::from_millis(20), || Some(()));
     assert!(went.is_none(), "an answer ends the watch");
-
-    let (id, _, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
-    grants.end(id, Heard::Refused("refused".to_owned()));
-    let went = went_unanswered(&heard, Duration::from_millis(20), || None, Some);
-    assert_eq!(went.as_deref(), Some("refused"), "a refusal is told");
 
     let (_, _, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
     grants.forget(7);
-    let went = went_unanswered(&heard, Duration::from_millis(20), || Some(()), |_| Some(()));
+    let went = went_unanswered(&heard, Duration::from_millis(20), || Some(()));
     assert!(went.is_none(), "a close ends the watch");
 }
 
@@ -1335,14 +1327,8 @@ fn a_login_linked_out_of_reach_while_its_notice_waits_is_refused_at_the_press() 
         said.contains("password in vault prod reads an entry of a vault qa may not use"),
         "{said}"
     );
-    let Ok(Heard::Refused(told)) = heard.try_recv() else {
-        panic!("the chat hears the refusal");
-    };
-    assert!(told.contains("password in vault prod"), "{told}");
-    for words in [&said, &told] {
-        assert!(!words.contains("ops-only"), "names no other vault: {words}");
-        assert!(!words.contains("n0t-yours"), "never the value: {words}");
-    }
+    assert!(!said.contains("ops-only"), "names no other vault: {said}");
+    assert!(!said.contains("n0t-yours"), "never the value: {said}");
     assert!(!said.contains("The person"), "the person reads you: {said}");
     assert!(said.contains("You can link it"), "{said}");
     assert_eq!(file_of(root), before, "no line written");
@@ -1352,7 +1338,59 @@ fn a_login_linked_out_of_reach_while_its_notice_waits_is_refused_at_the_press() 
         purlis_core::sandbox::local::granted_vaults(root).is_empty(),
         "no vault granted"
     );
-    assert!(grants.waiting().is_empty(), "the notice went");
+    // The notice stays, showing why, as for every press refused; Keep blocked still ends it.
+    assert_eq!(grants.waiting().len(), 1, "the notice stays");
+    assert!(heard.try_recv().is_err(), "the chat still waits");
+}
+
+/// A press on a narrowed chat's login is judged as the persona it was started as (#5831): a chat
+/// started as ops, narrowed to qa's grants, is allowed a login whose key links into a vault ops
+/// may use.
+#[test]
+fn a_narrowed_chats_login_press_is_judged_as_the_persona_it_was_started_as() {
+    let dir = project("[sandbox]\nmode = \"on\"\n");
+    let root = dir.path();
+    let grants = Grants::default();
+    let judged = super::judged(
+        root,
+        Whose {
+            grants: "qa",
+            reads_as: "ops",
+        },
+        "shop-login",
+        &suggested("https://shop.example.test/login"),
+        &on_its_page,
+        None,
+        &[],
+    )
+    .expect("asked")
+    .expect("an ask");
+    let proposal = judged.proposal.clone();
+    let (id, heard) = grants
+        .raise(LoginWait {
+            id: 0,
+            session: 7,
+            chat: CHAT_7.map(str::to_owned),
+            proposal: judged.proposal,
+            since: 1,
+            vault_too: judged.vault_too,
+            no_always: judged.no_always,
+            pool: None,
+            reads_as: "ops".to_owned(),
+        })
+        .expect("raised");
+    // While it waits, qa's password is linked into vault prod, which ops may use and qa may not.
+    linked_out_of_reach(root);
+
+    answered(
+        root,
+        &grants,
+        &Audited::default(),
+        &press(id, Press::Once, &proposal.digest()),
+    )
+    .expect("allowed");
+
+    assert_eq!(heard.try_recv(), Ok(Heard::Allowed));
 }
 
 /// A chat started as ops and narrowed to qa's grants reads ops's vaults, as its read judges a link

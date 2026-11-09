@@ -12,13 +12,13 @@ A key that is a link into a vault that persona may not use refuses the ask, in t
 words, and no notice is raised. A login is judged so before its page is followed to its form,
 since that needs no browser.
 
-Each is judged again as its notice is pressed, before anything is audited, written or granted, and
-before a site the person typed is followed, so a link made while the notice waits is seen there.
-Allow once, this chat or Always then allows nothing, writes no line and grants no vault. The notice
-goes, and the person reads, as the press's error, that nothing was allowed and why. A chat whose
-call waits on the notice hears the read's own words at once; a runner chat, which no call waits
-for, is told them on its next turn, as a refusal and never as an Allow. Keep blocked is pressed as
-before.
+Each is judged again as its notice is pressed, as the same persona, before anything is audited,
+written or granted, and before a site the person typed is followed, so a link made while the notice
+waits is seen there. Allow once, this chat or Always then allows nothing, writes no line and grants
+no vault, and the person reads on the notice that nothing was allowed and why, told to them as
+"you". The notice stays up, as it does for every press refused, so what it says is read: Keep
+blocked ends it, or its time runs out and the chat hears that nobody answered, a runner chat on its
+next turn. A refused press is never told to a chat as an Allow.
 
 The read is judged as before, before and after it, so this adds a refusal earlier for a key the
 read would refuse, and takes none away. A chat on no persona hears that it runs as no persona, as at

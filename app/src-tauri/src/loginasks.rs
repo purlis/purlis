@@ -70,14 +70,12 @@ pub enum Heard {
     Kept(Option<String>),
     /// The chat closed, or it's no longer asked.
     Gone,
-    /// Refused as the person pressed, in words the chat reads: a key became a link into a vault
-    /// its persona may not use while the notice waited (#5831).
-    Refused(String),
 }
 
-/// **What the person reads where a press is refused for a key out of reach** (#5831): nothing was
-/// allowed, and the read's own words, which name the key and the chat's vault alone, told to the
-/// person as "you" (docs/ui-copy.md) where the chat's words say "the person".
+/// **What the person reads where a press is refused for a key out of reach** (#5831), on the notice,
+/// which stays up as it does for every press refused: nothing was allowed, and the read's own
+/// words, which name the key and the chat's vault alone, told to the person as "you"
+/// (docs/ui-copy.md) where the chat's words say "the person".
 pub(crate) fn refused_at_the_press_said(why: &str) -> String {
     let why = why.replace("The person can", "You can");
     let stop = if why.ends_with('.') { "" } else { "." };
@@ -607,7 +605,6 @@ fn asked_about_the_login(
             None => kept_said(login, reason.as_deref()),
         }),
         Ended::Heard(Heard::Gone) | Ended::Closed => no(NOT_ANSWERED.to_owned()),
-        Ended::Heard(Heard::Refused(why)) => no(why),
         Ended::NotAnswered => {
             held.chats().asks_may_have_moved();
             no(NOT_ANSWERED.to_owned())
@@ -664,25 +661,17 @@ fn let_go_unanswered(
     let watched = std::thread::Builder::new()
         .name(format!("login notice {id}"))
         .spawn(move || {
-            use purlis_core::askoutcome::Answer as Said;
-            let went = went_unanswered(
-                &heard,
-                at_most,
-                || {
-                    held.upgrade()
-                        .filter(|held| held.login_grants().end(id, Heard::Gone))
-                        .map(|held| (held, Said::NotAnswered))
-                },
-                // Refused as the person pressed (#5831): told, as nobody waits to hear it.
-                |why| held.upgrade().map(|held| (held, Said::Refused { why })),
-            );
-            if let Some((held, answer)) = went {
+            let went = went_unanswered(&heard, at_most, || {
+                held.upgrade()
+                    .filter(|held| held.login_grants().end(id, Heard::Gone))
+            });
+            if let Some(held) = went {
                 held.chats().asks_may_have_moved();
                 held.chats().tell_outcome(
                     session,
                     purlis_core::askoutcome::Outcome {
                         about: purlis_core::askoutcome::About::BrowserLogin { login },
-                        answer,
+                        answer: purlis_core::askoutcome::Answer::NotAnswered,
                     },
                 );
             }
@@ -693,17 +682,14 @@ fn let_go_unanswered(
 }
 
 /// **What a notice nobody waits on went with**: `None` where it was answered or its chat closed
-/// within `at_most`; what `refused` makes of the words of a press refused for a key out of reach
-/// (#5831); otherwise what `ends` answers, which ends it unless a press just did.
+/// within `at_most`; otherwise what `ends` answers, which ends it unless a press just did.
 fn went_unanswered<T>(
     heard: &mpsc::Receiver<Heard>,
     at_most: Duration,
     ends: impl FnOnce() -> Option<T>,
-    refused: impl FnOnce(String) -> Option<T>,
 ) -> Option<T> {
     match heard.recv_timeout(at_most) {
         Err(mpsc::RecvTimeoutError::Timeout) => ends(),
-        Ok(Heard::Refused(why)) => refused(why),
         Ok(_) | Err(mpsc::RecvTimeoutError::Disconnected) => None,
     }
 }
@@ -948,25 +934,22 @@ pub struct Asked<'a> {
     pub reason: Option<&'a str>,
 }
 
-/// **Ends `wait` refused where a key of its login is a link into a vault the chat may not use**
-/// (#5831), judged as the read judges it: the chat hears the read's words, and the person reads
-/// [`refused_at_the_press_said`] as the press's error. Nothing is allowed, audited or written.
-fn refused_out_of_reach(root: &Path, grants: &Grants, wait: &LoginWait) -> Result<(), String> {
-    const NO_MORE: &str = "That ask has gone, and nothing was allowed.";
+/// **Why a press on `wait` is refused, where a key of its login is a link into a vault the chat
+/// may not use** (#5831), judged as the read judges it: [`refused_at_the_press_said`], the press's
+/// error. Nothing is allowed, audited or written, and the notice stays up, as for every press
+/// refused, so the person reads why on it and Keep blocked still ends it.
+fn refused_out_of_reach(root: &Path, wait: &LoginWait) -> Result<(), String> {
     let ctx = Ctx::new(root, Env::from_process());
     let drawn = &wait.proposal;
     let Some(why) = out_of_reach(
         &ctx,
-        &wait.reads_as,
+        &drawn.persona,
         &drawn.vault,
         drawn.user_key.as_deref(),
         &drawn.key,
     ) else {
         return Ok(());
     };
-    if !grants.end(wait.id, Heard::Refused(why.clone())) {
-        return Err(NO_MORE.to_owned());
-    }
     Err(refused_at_the_press_said(&why))
 }
 
@@ -1000,7 +983,7 @@ pub fn answer(
                 return Err(CHANGED.to_owned());
             }
             // Nothing is followed in a browser for a login refused (#5831).
-            refused_out_of_reach(root, grants, &wait)?;
+            refused_out_of_reach(root, &wait)?;
             Some(wait.proposal.at(root, typed, finds, &grants.held())?)
         }
     };
@@ -1026,8 +1009,8 @@ pub fn answer(
         });
     }
     // Judged as the read judges it (#5831): a key that became a link into a vault the persona may
-    // not use while the notice waited is allowed nothing, and the chat hears why.
-    refused_out_of_reach(root, grants, &wait)?;
+    // not use while the notice waited is allowed nothing.
+    refused_out_of_reach(root, &wait)?;
     // A field left empty names no site: it never falls back to the one the chat suggested.
     let moved = match (typed.map(str::trim), followed) {
         (Some(""), _) => {
@@ -1079,7 +1062,9 @@ pub fn answer(
             fresh.replacing(root, &declared, &grants.held())?
         }
     };
-    let judged = finish(root, &locks, fresh, &wait.reads_as)?;
+    // A link made since the judge above is refused by `finish`, and told the person as above.
+    let judged = finish(root, &locks, fresh, &wait.reads_as)
+        .map_err(|why| refused_out_of_reach(root, &wait).err().unwrap_or(why))?;
     let changed = judged.proposal.digest() != wait.proposal.digest();
     // Always writes a line, and the line is shown before it's written. A warning the notice
     // didn't show is shown before a press counts; one it showed was read.
