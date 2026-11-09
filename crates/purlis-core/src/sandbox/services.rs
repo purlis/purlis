@@ -395,7 +395,9 @@ impl SocketGround {
 /// ([`crate::sandboxblock::RESOLVER_SOCKETS`], which also sorts a refusal at one as a lookup),
 /// Linux's system message bus, which carries systemd-resolved's and Avahi's lookups to anyone
 /// who asks, and the Mac's own. No socket grant names one.
-pub const NAME_LOOKUP_SOCKETS: [&str; 8] = [
+pub const NAME_LOOKUP_SOCKETS: [&str; 10] = [
+    "/run/dbus/system_bus_socket",
+    "/var/run/dbus/system_bus_socket",
     "/run/systemd/resolve/io.systemd.Resolve",
     "/run/nscd/socket",
     "/var/run/nscd/socket",
@@ -408,7 +410,7 @@ pub const NAME_LOOKUP_SOCKETS: [&str; 8] = [
 
 /// **The system services of the Mac's own name lookup** (#2657): no service grant names one.
 /// The DNS service discovery daemon answers under both names.
-pub const NAME_LOOKUP_SERVICES: [&str; 1] = ["com.apple.dnssd.service"];
+pub const NAME_LOOKUP_SERVICES: [&str; 2] = ["com.apple.dnssd.service", "com.apple.mDNSResponder"];
 
 /// What purlis says where an Allow names the system's name lookup (#2657): the rule, then why,
 /// one sentence each.

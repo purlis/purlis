@@ -272,7 +272,7 @@ pub fn repositories_below_within(folder: &Path, bound: usize) -> Repositories {
                     }
                     return Repositories {
                         clones,
-                        crowded: Some(fullest.1).filter(|_| false),
+                        crowded: Some(fullest.1),
                     };
                 }
                 if !wanted(&entry) {
@@ -281,8 +281,7 @@ pub fn repositories_below_within(folder: &Path, bound: usize) -> Repositories {
                 let path = entry.path();
                 if path.join(".git").exists() {
                     clones.push(path.clone());
-                    inside.push((path.clone(), depth));
-                    next.push(path);
+                    inside.push((path, depth));
                 } else {
                     next.push(path);
                 }

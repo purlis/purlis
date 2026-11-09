@@ -171,7 +171,12 @@ pub const TERMINALS: &str = "/dev/ttys*";
 /// run in its own process, outside the sandbox its commands run in, so a run purlis brokers for
 /// the chat, which holds a value in its environment or a file it was handed, is kept from them by
 /// these rules. Each by a glob, at any depth below `/proc` (a thread's `task/<tid>/` too).
-pub const PROC_UNREAD: [&str; 0] = [];
+pub const PROC_UNREAD: [&str; 4] = [
+    "/proc/**/environ",
+    "/proc/**/mem",
+    "/proc/**/fd/**",
+    "/proc/**/map_files/**",
+];
 
 /// The home's git config, a later-code name the floor holds ([`super::PLANTED`]). On Linux,
 /// Claude Code's sandbox puts a denied path that does not exist out of reach of a read as well,

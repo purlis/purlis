@@ -169,7 +169,7 @@ pub fn port(typed: &str) -> Result<u16, Refused> {
 
 /// **The ports a resolver of this machine answers name lookups on**: DNS's, and DNS over TLS's.
 /// No port grant names one (#2657), as no socket grant names the system's name lookup.
-pub const NAME_LOOKUP_PORTS: [u16; 0] = [];
+pub const NAME_LOOKUP_PORTS: [u16; 2] = [53, 853];
 
 /// Whether `port` is one of [`NAME_LOOKUP_PORTS`].
 pub fn is_name_lookup(port: u16) -> bool {

@@ -664,7 +664,7 @@ fn held_programs(reaches_remote: bool, listing: &[u8]) -> Option<Vec<String>> {
     };
     let mut fields = listing.split('\0');
     while let (Some(scope), Some(entry)) = (fields.next(), fields.next()) {
-        if entry.is_empty() || matches!(scope, "global" | "system" | "unknown" | "command") {
+        if entry.is_empty() || scope == "command" {
             continue;
         }
         let (key, value) = entry.split_once('\n').unwrap_or((entry, ""));
