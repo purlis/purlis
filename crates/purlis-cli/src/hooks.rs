@@ -392,20 +392,14 @@ pub fn sessionstart(payload: &str, now: Option<&str>) {
                 let root = hook.root;
                 scope.spawn(move || purlis_core::personagate::snapshot(root, &sid))
             });
-            let ask = purlis_core::briefing::Ask {
-                root: hook.root,
-                cwd: hook.cwd,
-                payload: hook.payload,
-                env: &env,
-                now: hook.now,
-            };
+            let ask = briefing_ask(hook);
             // A Codex chat is told the rest in hooks of their own, each with the 10,000 bytes
             // Codex keeps of one (#5935): the notes and the quoted ([`sessionstart_part`]).
             let parts = if purlis_core::harness::codex::briefed_in_parts(&env) {
-                purlis_core::briefing::parts_of(&ask, piece, purlis_core::briefing::Hook::Briefing)
+                purlis_core::briefing::parts_of(&ask, piece, purlis_core::briefing::Part::Briefing)
             } else {
                 let mut parts = purlis_core::briefing::parts(&ask, piece);
-                parts.extend(quoted(hook, &ask));
+                parts.extend(from_others(hook, &ask));
                 parts
             };
             if let Some(frozen) = frozen {
@@ -421,10 +415,24 @@ pub fn sessionstart(payload: &str, now: Option<&str>) {
     });
 }
 
+/// What the briefing reads of the session `hook` is run in.
+fn briefing_ask<'a>(hook: &'a Hook) -> purlis_core::briefing::Ask<'a> {
+    purlis_core::briefing::Ask {
+        root: hook.root,
+        cwd: hook.cwd,
+        payload: hook.payload,
+        env: &env,
+        now: hook.now,
+    }
+}
+
 /// **What others say to a chat at its start, quoted**: each extension's section, the reports
-/// kept for its place, and where it is working. The end of Claude Code's briefing, and a Codex
-/// chat's hook of its own ([`purlis_core::harness::codex::QUOTED_WORD`]).
-fn quoted(hook: &Hook, ask: &purlis_core::briefing::Ask) -> Vec<String> {
+/// kept for its place, and where it is working. The end of Claude Code's briefing, and of a
+/// Codex chat's quoted hook ([`purlis_core::harness::codex::QUOTED_WORD`]).
+///
+/// It does more than read: it takes the reports kept for the chat's place, and tells each
+/// extension that hears it that a chat started. So it runs once a chat, in one hook.
+fn from_others(hook: &Hook, ask: &purlis_core::briefing::Ask) -> Vec<String> {
     let mut parts = Vec::new();
     let workspace = purlis_core::briefing::workspace_of(ask);
     // Where this session is: a chat at the plane root is in no workspace (SI-1b), so it takes
@@ -479,28 +487,21 @@ fn quoted(hook: &Hook, ask: &purlis_core::briefing::Ask) -> Vec<String> {
 }
 
 /// **A part of a Codex chat's briefing, as a `SessionStart` hook's output of its own** (#5935):
-/// `word` is [`purlis_core::harness::codex::NOTES_WORD`] or
-/// [`purlis_core::harness::codex::QUOTED_WORD`]. Codex keeps 10,000 bytes of each hook's output
-/// and cuts the middle, and one briefing in an ordinary workspace passes that. Nothing for any
-/// other chat, which `sessionstart` tells it all, or outside a plane. It reports nothing: the
-/// briefing's hook is the one that says the session started.
-pub fn sessionstart_part(word: &str, payload: &str, now: Option<&str>) {
+/// [`purlis_core::briefing::Part::Notes`] or [`purlis_core::briefing::Part::Quoted`], the second
+/// with [`from_others`]. Codex keeps 10,000 bytes of each hook's output and cuts the middle, and
+/// one briefing in an ordinary workspace passes that. Nothing for any other chat, which
+/// `sessionstart` tells it all, or outside a plane. It reports no state: the briefing's hook is
+/// the one that says the session started.
+pub fn sessionstart_part(part: purlis_core::briefing::Part, payload: &str, now: Option<&str>) {
     with_hook(payload, now, |hook| {
         if !hook.in_plane || !purlis_core::harness::codex::briefed_in_parts(&env) {
             return;
         }
-        let ask = purlis_core::briefing::Ask {
-            root: hook.root,
-            cwd: hook.cwd,
-            payload: hook.payload,
-            env: &env,
-            now: hook.now,
-        };
-        let parts = if word == purlis_core::harness::codex::QUOTED_WORD {
-            quoted(hook, &ask)
-        } else {
-            purlis_core::briefing::parts_of(&ask, None, purlis_core::briefing::Hook::Notes)
-        };
+        let ask = briefing_ask(hook);
+        let mut parts = purlis_core::briefing::parts_of(&ask, None, part);
+        if part == purlis_core::briefing::Part::Quoted {
+            parts.extend(from_others(hook, &ask));
+        }
         if let Some(line) = purlis_core::briefing::emitted(&parts) {
             say(&line);
         }
@@ -516,13 +517,7 @@ pub fn sessionstart_skills(payload: &str, now: Option<&str>) {
         if !hook.in_plane {
             return;
         }
-        let ask = purlis_core::briefing::Ask {
-            root: hook.root,
-            cwd: hook.cwd,
-            payload: hook.payload,
-            env: &env,
-            now: hook.now,
-        };
+        let ask = briefing_ask(hook);
         let parts: Vec<String> = purlis_core::briefing::skills_part(&ask)
             .into_iter()
             .collect();

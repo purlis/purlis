@@ -12,19 +12,23 @@ Codex keeps 10,000 bytes of each `SessionStart` hook's output. Past that it keep
 
 | Hook | What it tells | Size in the fixture |
 |---|---|---|
-| `purlis hook sessionstart` | **Who and where the chat is** (`briefing::Hook::Briefing`): the gate or the plane root, the persona and its memory digest, the retired persona's notes, unshared memory, the session records, the todos, the other workspaces, where its files go, the piece, a hidden `AGENTS.md` | 6,139 |
-| `purlis hook sessionstart-notes` | **How it works here** (`briefing::Hook::Notes`): the one route for work, credentials, drafting purlis's own bugs, the sandbox and committing in a branch folder, or the note that it runs unsandboxed | 4,524 |
+| `purlis hook sessionstart` | **Who and where the chat is** (`briefing::Part::Briefing`): the gate or the plane root, the persona and its memory digest, the retired persona's notes, unshared memory, the last session record, the todos, the other workspaces, where its files go, the piece, a hidden `AGENTS.md` | 6,139 |
+| `purlis hook sessionstart-notes` | **How it works here** (`briefing::Part::Notes`): the one route for work, credentials, drafting purlis's own bugs, the sandbox and committing in a branch folder, or the note that it runs unsandboxed | 4,524 |
 | `purlis hook sessionstart-skills` | **Its skills**, as #5841 made it | 6,312 |
-| `purlis hook sessionstart-quoted` | **What others say to it, quoted**: each extension's section, the reports kept for its place, and where it is working | none here; no app |
+| `purlis hook sessionstart-quoted` | **What others say to it, quoted** (`briefing::Part::Quoted` and the hook's own): the session record a Resume picks up, each extension's section, the reports kept for its place, and where it is working | none here; no app |
 
-- **Every block is told once, in Claude Code's words and in Claude Code's order within its hook.** `briefing::parts` is still the whole briefing in its old order. `briefing::parts_of` gives one hook's blocks of it, so nothing is written twice and nothing is reworded for Codex.
-- **The briefing's hook still does what `sessionstart` does**: it announces the piece, keeps the heartbeat, snapshots the persona tool gate and reports the start to the app. The three other hooks only print. They say nothing to a chat whose harness is not Codex.
+- **Every block is told once, in Claude Code's words and in Claude Code's order within its hook.** `briefing::parts` is still the whole briefing in its old order. `briefing::parts_of` gives one part's blocks of it, so nothing is written twice and nothing is reworded for Codex.
+- **The briefing's hook still does what `sessionstart` did of the chat's state**: it announces the piece, keeps the heartbeat, snapshots the persona tool gate and reports the start to the app. Notes and skills only print.
+- **The quoted hook does what telling others' words always did**: it takes the reports kept for the chat's place, so the next chat is not handed them again, and it tells each extension that hears it that a chat started. For a Codex chat that now happens in the quoted hook, once, and never in the briefing's.
+- The three hooks after the briefing's say nothing to a chat whose harness is not Codex.
 - **Which chat is told in parts** is read from the chat's harness as its start names it (`PURLIS_HARNESS`, `harness::codex::briefed_in_parts`), the one reader every hook uses. Only Codex is armed with the new words. A chat that names no harness is a terminal's own Claude Code, and it is told the whole briefing.
 - **Splitting, not shortening.** Each block is still told whole and in the same words, so nothing a Claude Code chat learns is withheld from a Codex chat. Moving the important blocks to the ends of one output would still lose the middle, and the briefing grows with the plane.
 
 ### The one hook that may pass the cut, on purpose
 
-`sessionstart-quoted` holds other parties' words: extensions' sections, reports a closed chat handed back, and the app's picture of where the chat is working. purlis does not set how long they are, so this hook may pass 10,000 bytes. Its ends are the first extension's section, and the reports kept and where the chat is working at the end. Codex saves the whole output to a file and names it to the chat on the message's last line, so a cut middle can still be read. The other three hooks are held under the cut by `crates/purlis-cli/tests/it/each_of_a_codex_chats_session_start_hooks_fits_what_codex_keeps.rs` in the fixture workspace, and that test names this one as the exception.
+`sessionstart-quoted` holds other parties' words: the session record a Resume picks up (up to 8,000 characters of it), extensions' sections, reports closed chats handed back (each up to 4,096 bytes, and any number may wait), and the app's picture of where the chat is working (at most 20 rows). purlis sets no bound on them together, so this hook may pass 10,000 bytes. In that order, what lands at its start is the resumed record or the first extension's section, and what lands at its end is the last report kept and where the chat is working. Codex saves the whole output to a file and names it to the chat on the message's last line, so a cut middle can still be read.
+
+`crates/purlis-cli/tests/it/each_of_a_codex_chats_session_start_hooks_fits_what_codex_keeps.rs` holds the other three hooks under the cut in the fixture workspace. It names this hook as the exception, and drives it past the cut with three kept reports, showing the first report's start and the last report's end at its ends. The resumed record is told in this hook and not the briefing's (`a_codex_chat_is_told_the_record_it_resumes_in_its_quoted_part_and_nowhere_else`), so a Resume cannot push the briefing over.
 
 ## Rejected
 
@@ -34,7 +38,7 @@ Codex keeps 10,000 bytes of each `SessionStart` hook's output. Past that it keep
 
 ## What it costs
 
-- **Codex asks once more to trust purlis's hooks**, for the two new words, as it did for #5841, #1663 and #1086. A sandboxed chat trusts them automatically through `sandbox::codex::hook_trust`. An unsandboxed Codex chat on a machine that trusted the old hooks and not yet these is not told its notes or the quoted until the person answers Codex's review prompt.
+- **Codex asks once more to trust purlis's hooks**, for the two new words, as it did for #5841, #1663 and #1086. A sandboxed chat trusts them automatically through `sandbox::codex::hook_trust`. An unsandboxed Codex chat on a machine that trusted the old hooks and not yet these is not told its notes or the quoted until the person answers Codex's review prompt. Until then its extensions are not told that it started, and the reports kept for its place wait for the next chat that runs the quoted hook, so none is lost.
 - **Two more processes at a Codex chat's start**, each printing what the briefing's one printed before. The extensions are asked from the quoted hook within the same bound (`Bounds::SESSION_START`), so the start waits no longer on them.
 
 **Built by #5935.**

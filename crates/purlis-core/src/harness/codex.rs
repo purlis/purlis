@@ -21,18 +21,29 @@ pub const HOOK_OUTPUT_CUT: usize = 10_000;
 pub const SKILLS_WORD: &str = "sessionstart-skills";
 
 /// **The word of the `SessionStart` hook that tells a Codex chat how it works here** (#5935):
-/// the notes of [`crate::briefing::Hook::Notes`] (one route for work, credentials, its sandbox),
+/// the notes of [`crate::briefing::Part::Notes`] (one route for work, credentials, its sandbox),
 /// after the briefing's, each with its own [`HOOK_OUTPUT_CUT`].
 pub const NOTES_WORD: &str = "sessionstart-notes";
 
 /// **The word of the `SessionStart` hook that tells a Codex chat what others say to it**,
-/// quoted (#5935): where it is working, the extensions' sections and the reports kept for it.
+/// quoted (#5935): the session record it resumes ([`crate::briefing::Part::Quoted`]), the
+/// extensions' sections, the reports kept for it and where it is working.
 /// The one of a Codex chat's hooks that may pass [`HOOK_OUTPUT_CUT`], since purlis does not set
 /// how long those are; it is armed last, after the skills.
 pub const QUOTED_WORD: &str = "sessionstart-quoted";
 
+/// **The part of a Codex chat's briefing the hook word `word` tells**, where it is [`NOTES_WORD`]
+/// or [`QUOTED_WORD`] (#5935).
+pub fn part_of_word(word: &str) -> Option<crate::briefing::Part> {
+    match word {
+        NOTES_WORD => Some(crate::briefing::Part::Notes),
+        QUOTED_WORD => Some(crate::briefing::Part::Quoted),
+        _ => None,
+    }
+}
+
 /// **Whether the chat `env` describes is told its briefing in parts**, one hook each
-/// ([`crate::briefing::Hook`], [`NOTES_WORD`], [`QUOTED_WORD`]): a Codex chat, as its start names
+/// ([`crate::briefing::Part`], [`NOTES_WORD`], [`QUOTED_WORD`]): a Codex chat, as its start names
 /// it in [`crate::hookwire::HARNESS_ENV`]. Only Codex is armed with those words, and every other
 /// chat is told the whole briefing by `sessionstart`, as before (#5935).
 pub fn briefed_in_parts(env: &dyn Fn(&str) -> Option<String>) -> bool {
@@ -46,14 +57,11 @@ pub fn briefed_in_parts(env: &dyn Fn(&str) -> Option<String>) -> bool {
 /// [`HOOK_OUTPUT_CUT`] with the listing's opening, so the default never warns.
 const DEFAULT_CHARS: usize = 8_000;
 
-/// How long Codex waits on [`NOTES_WORD`] and on [`QUOTED_WORD`], in seconds: the briefing's own
-/// 5, since each tells what its hook told before, and the quoted waits on the extensions within
+/// How long Codex waits on each hook that tells a part of a briefing beside the briefing's own
+/// ([`SKILLS_WORD`], [`NOTES_WORD`], [`QUOTED_WORD`]), in seconds: the briefing's own 5, since
+/// each tells what the briefing's hook told before, and the quoted asks the extensions within
 /// the same bound it did there.
 const PART_HOOK_TIMEOUT: u64 = 5;
-
-/// How long Codex waits on [`SKILLS_WORD`], in seconds: the briefing's own 5, since it reads the
-/// same skill set the briefing did.
-const SKILLS_HOOK_TIMEOUT: u64 = 5;
 
 /// Codex's adapter.
 ///
@@ -581,7 +589,7 @@ fn question_group(binary: &std::path::Path) -> toml::Value {
 /// hands no skills, and fails open as every reporting hook does. Codex asks the operator to
 /// trust it once, as it does each of purlis's hooks.
 fn skills_group(binary: &std::path::Path) -> toml::Value {
-    hook_group(binary, SKILLS_WORD, SKILLS_HOOK_TIMEOUT, None)
+    hook_group(binary, SKILLS_WORD, PART_HOOK_TIMEOUT, None)
 }
 
 /// One group of one command hook, `purlis hook <word>` by the binary's absolute path, waited on
