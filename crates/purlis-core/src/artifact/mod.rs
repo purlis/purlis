@@ -13,6 +13,7 @@
 //! workspace is refused with a sentence and nothing is written.
 
 pub mod approval;
+pub mod badge;
 pub mod calls;
 pub mod data;
 pub mod discuss;
