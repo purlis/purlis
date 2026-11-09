@@ -1056,3 +1056,49 @@ fn text_that_shows_nothing_kept_out_drawn_through_such_a_filter_does_not_withhol
 
     assert!(shot.is_ok(), "{shot:?}");
 }
+
+/// What `page` draws that is to be painted over on a page that keeps `kept` out, read alone:
+/// the first element of each item painted.
+fn painted(page: &Document, kept: &[&str]) -> Vec<i64> {
+    let found = crate::drive::drawn::drawn(&page.answer(), kept, &[], &Default::default()).unwrap();
+    found
+        .paint
+        .iter()
+        .filter_map(|chain| chain.first().copied())
+        .collect()
+}
+
+#[test]
+fn a_text_kept_out_across_an_elements_edge_beside_one_inside_it_is_painted_too() {
+    let mut page = Document::new("PAGE-1");
+    let line = page.element(130, None, "P");
+    let bold = page.element(131, Some(line), "B");
+    page.text(132, bold, "open sesame 739");
+    page.text(133, line, "214 is right");
+
+    let painted = painted(&page, &["open sesame", "739214"]);
+
+    assert!(painted.contains(&132), "the part inside: {painted:?}");
+    assert!(painted.contains(&130), "the line it straddles: {painted:?}");
+    assert!(painted.contains(&133), "the rest of it: {painted:?}");
+}
+
+#[test]
+fn an_element_whose_only_text_kept_out_is_whole_inside_one_it_holds_is_not_painted() {
+    let mut page = Document::new("PAGE-1");
+    let body = page.element(134, None, "BODY");
+    let first = page.element(135, Some(body), "DIV");
+    page.text(136, first, "You said open sesame");
+    let second = page.element(137, Some(body), "DIV");
+    page.text(138, second, "Your code 739214, and open sesame again");
+
+    let painted = painted(&page, &["open sesame", "739214"]);
+
+    assert!(painted.contains(&136), "{painted:?}");
+    assert!(painted.contains(&138), "{painted:?}");
+    assert!(!painted.contains(&134), "the body: {painted:?}");
+    assert!(
+        !painted.contains(&135) && !painted.contains(&137),
+        "{painted:?}"
+    );
+}

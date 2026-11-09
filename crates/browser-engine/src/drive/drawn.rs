@@ -224,6 +224,24 @@ fn read_document(
     let holds = |text: &str| {
         !text.is_empty() && (holds_any(&collapsed(text), kept) || holds_loosely(text, loose))
     };
+    // Whether `text` holds any of the texts kept out numbered `which`: those of `kept` first,
+    // then those of `loose`.
+    let holds_one_of = |text: &str, which: &[usize]| {
+        let strict: Vec<&str> = which
+            .iter()
+            .filter_map(|one| kept.get(*one).copied())
+            .collect();
+        let spaced: Vec<&str> = which
+            .iter()
+            .filter_map(|one| {
+                one.checked_sub(kept.len())
+                    .and_then(|at| loose.get(at))
+                    .copied()
+            })
+            .collect();
+        (!strict.is_empty() && holds_any(&collapsed(text), &strict))
+            || (!spaced.is_empty() && holds_loosely(text, &spaced))
+    };
     let mut painted: HashSet<usize> = HashSet::new();
     let mut paint = |at: usize, out: &mut Drawn| {
         if painted.insert(at) {
@@ -291,27 +309,38 @@ fn read_document(
         }
     }
     // Text laid out that holds a text kept out, whole or split over elements: the innermost
-    // node whose text, read in order, holds it. Each node comes after the one it is in, and an
-    // element whose text already holds one passes no text on.
+    // node whose text, read in order, holds it. Each node comes after the one it is in and
+    // passes its text on to it, with the texts kept out it holds whole: a node is painted for
+    // a text it holds that no node in it holds whole, so two texts side by side, one inside an
+    // element and one across its edge, are each painted, and what is in it never paints more.
     let drew: Vec<bool> = own.iter().map(|t| !t.is_empty()).collect();
-    let mut inside = vec![false; count];
+    let mut whole: Vec<HashSet<usize>> = vec![HashSet::new(); count];
     let mut holders: HashSet<usize> = HashSet::new();
     for at in (0..count).rev() {
         let text = std::mem::take(&mut own[at]);
-        let holding = inside[at] || holds(&text);
-        if holding && !inside[at] {
+        let mut held = std::mem::take(&mut whole[at]);
+        let fresh: Vec<usize> = (0..kept.len() + loose.len())
+            .filter(|one| !held.contains(one))
+            .collect();
+        let found: Vec<usize> = if text.is_empty() || !holds_one_of(&text, &fresh) {
+            Vec::new()
+        } else {
+            fresh
+                .into_iter()
+                .filter(|one| holds_one_of(&text, &[*one]))
+                .collect()
+        };
+        if !found.is_empty() {
             paint(at, out);
             holders.insert(at);
         }
+        held.extend(found);
         if let Some(up) = parent(at) {
             if up >= at {
                 return Err(Unread("a node comes before the one it is in"));
             }
-            if holding {
-                inside[up] = true;
-            } else if !inside[up] {
-                own[up].insert_str(0, &text);
-            }
+            own[up].insert_str(0, &text);
+            whole[up].extend(held);
         }
     }
     // A text split over elements is painted at each text it is drawn in as well, wherever
