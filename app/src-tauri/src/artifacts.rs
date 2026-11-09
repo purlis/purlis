@@ -366,6 +366,23 @@ impl Artifacts {
             .is_some_and(|one| url.as_str().starts_with(&format!("{}/", origin(&one.host))))
     }
 
+    /// **The link `href` a person followed in artifact webview `label`'s page** (#5956): its
+    /// window, its origin, and whether the template it was served writes that link.
+    pub(crate) fn followed(
+        &self,
+        label: &str,
+        href: &str,
+    ) -> Option<crate::artifact_links::Followed> {
+        self.served()
+            .get(label)
+            .map(|one| crate::artifact_links::Followed {
+                window: one.window.clone(),
+                own: origin(&one.host),
+                href: href.to_owned(),
+                written: artifact::links::written(&one.snapshot, href),
+            })
+    }
+
     /// The artifact webview `label`, when it is in window `window`.
     fn owned_by(&self, label: &str, window: &str) -> bool {
         self.served()
@@ -464,6 +481,12 @@ pub(crate) fn serve<R: Runtime>(
         } else {
             answer_ask(app.clone(), ask);
         }
+    }
+    // A link the person followed in the page (#5956), attributed by the webview's label.
+    if let Some(followed) = crate::artifact_links::href_of(&request.uri().to_string())
+        .and_then(|href| artifacts.followed(label, &href))
+    {
+        crate::artifact_links::follow(app, label, followed);
     }
     if let Some((window, key)) = answered.key {
         // The window's own webview has the window's label.
@@ -1249,6 +1272,7 @@ fn lay(
             .on_new_window(crate::navguard::no_new_window)
             .initialization_script(PAGE_SCRIPT)
             .initialization_script(PORT)
+            .initialization_script(crate::artifact_links::SCRIPT)
             .incognito(true)
             .focused(false)
             .devtools(false)
