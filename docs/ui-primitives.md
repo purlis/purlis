@@ -913,7 +913,8 @@ error everywhere, with no file off (Get project's clone progress moved in #3731)
 
 - **A reader hears a meter by its label, with its value** (`aria-valuetext`). A progress bar's
   value is said politely as it changes, at most once a second, in a status line beside it: its
-  own children are presentational to a reader.
+  own children are presentational to a reader. Going with no end known, it says its label alone,
+  so a new stage is heard, and the first value after it is a change that is said (#3731).
 - **Told apart by more than colour** (WCAG 1.4.1): each bar's label and its value beside it.
   Each fill is held at 3:1 on its track on every ground (`meter.fill.*.fill` on
   `meter.track.fill`), by the theme engine: a theme that would lose a bar draws its default.

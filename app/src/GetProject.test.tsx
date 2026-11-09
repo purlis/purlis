@@ -115,6 +115,25 @@ describe("get a project by URL (#1815)", () => {
     expect(bar).toHaveAttribute("data-indeterminate");
   });
 
+  it("says git's first percent, and a stage that has none, as they come (#3731)", async () => {
+    const clone = core();
+    const { person } = page();
+    await person.type(screen.getByLabelText("Project URL"), URL);
+    await person.click(screen.getByRole("button", { name: "Get project" }));
+    await vi.waitFor(() => expect(clone.asked.some((one) => one.cmd === "get_project")).toBe(true));
+    await screen.findByRole("progressbar", { name: "Connecting" });
+    const said = () =>
+      screen
+        .getAllByRole("status")
+        .map((one) => one.textContent ?? "")
+        .filter(Boolean);
+
+    clone.tell({ stage: "Receiving objects", percent: 10 });
+    await waitFor(() => expect(said()).toEqual(["Receiving objects 10%"]));
+    clone.tell({ stage: "Checking out", percent: null });
+    await waitFor(() => expect(said()).toEqual(["Checking out"]), { timeout: 2_000 });
+  });
+
   it("says the stage and the percent once, by the bar alone, not again in the line (#3731)", async () => {
     const clone = core();
     const { person } = page();
@@ -125,18 +144,14 @@ describe("get a project by URL (#1815)", () => {
     await screen.findByRole("progressbar", { name: "Receiving objects" });
     clone.tell({ stage: "Receiving objects", percent: 20 });
 
-    // Only the bar's own polite line speaks it; nothing around the bar is a live region.
-    await waitFor(() =>
-      expect(
-        screen
-          .getAllByRole("status")
-          .filter((one) => /Receiving objects/.test(one.textContent ?? "")),
-      ).toHaveLength(1),
-    );
-    const speaking = screen
-      .getAllByRole("status")
-      .filter((one) => /Receiving objects/.test(one.textContent ?? ""));
-    expect(speaking[0]).toHaveTextContent(/^Receiving objects 20%$/);
+    // Only the bar's own polite line speaks it, at most once a second; nothing around the bar is
+    // a live region, and no line repeats it.
+    const speaking = () =>
+      screen
+        .getAllByRole("status")
+        .map((one) => one.textContent ?? "")
+        .filter((words) => /Receiving objects/.test(words));
+    await waitFor(() => expect(speaking()).toEqual(["Receiving objects 20%"]), { timeout: 2_000 });
   });
 
   it("calls the clone off with Cancel, and says nothing was left behind", async () => {
