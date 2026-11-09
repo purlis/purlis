@@ -68,6 +68,7 @@ import { chainSaid, NothingDone } from "./inboxRowParts";
 import { capMarks } from "./combiningMarks";
 import { ASKS, Ask, Empty, EmptyScope, placeIds, SCOPE_LABEL, shapeOf } from "./InboxAsks";
 import { heldBy, UpdateList, type UpdateRow, type Updates, updatePlaces } from "./InboxUpdatesList";
+import { SeenRowsOf, type SeenRows } from "./seen";
 export { chainSaid } from "./inboxRowParts";
 export { grants, NOTICE_MOVED_JUST_NOW } from "./noticeSettle";
 
@@ -203,6 +204,8 @@ export function Inbox({
   windowLines,
   onNotices,
   onTrouble,
+  onNoticeCauses,
+  seen,
   onNoticeAnswer,
   elsewhere,
   here,
@@ -263,6 +266,10 @@ export function Inbox({
   onNotices?: (count: number) => void;
   /** How many Notices the list holds that say something needs fixing (#5645). */
   onTrouble?: (count: number) => void;
+  /** Hears the causes of the Notices it lists (#6002): what of them is New. */
+  onNoticeCauses?: (causes: readonly string[]) => void;
+  /** The project's seen record (`seen.ts`), which its rows read to draw what is New (#6002). */
+  seen?: SeenRows;
   /** A Notice answering the person's own press arrived (`ANSWERS`, D-1695-3). */
   onNoticeAnswer?: () => void;
   /** What waits where this project's registry cannot see (#1695): chats in other windows'
@@ -507,7 +514,7 @@ export function Inbox({
     [onNotices, onTrouble],
   );
 
-  return (
+  const drawn = (
     // A part is named by its view's tab panel (#3330), so only the whole list names itself.
     <section
       className="inbox"
@@ -737,6 +744,7 @@ export function Inbox({
               <NoticeWayGuard value={noticesAllow}>
                 <NoticeList
                   onCount={counted}
+                  onCauses={onNoticeCauses}
                   onAnswer={onNoticeAnswer}
                   hold={part === "notices" ? hold : undefined}
                   onClear={setNoticesClear}
@@ -788,6 +796,12 @@ export function Inbox({
           )}
       </div>
     </section>
+  );
+  // **What its rows read of what is New** (#6002): the project's seen record, where it is given.
+  return seen === undefined ? (
+    drawn
+  ) : (
+    <SeenRowsOf.Provider value={seen}>{drawn}</SeenRowsOf.Provider>
   );
 }
 

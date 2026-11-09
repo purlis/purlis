@@ -23,6 +23,7 @@ import { PanelSectionTitle } from "./ui/panel/Panel";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
 import { chainSaid, NothingDone, timeSaid, useSettledPlace } from "./inboxRowParts";
+import { updateSeenKey, useSeenRow } from "./seen";
 
 // **The Updates view's rows** (#1693, #5646; moved from `Inbox.tsx`): Mine's and Project's lines,
 // and their Dismiss held for its Undo.
@@ -222,6 +223,8 @@ function UpdateItem({ row, above }: { row: UpdateRow; above: string }) {
     "\n",
   );
   const { drawn, tooSoon, readPlaces } = useSettledPlace<HTMLElement>(here);
+  // **New until seen** (#6002): a line marked read is not New either.
+  const isNew = useSeenRow(updateSeenKey(update.key), drawn) && !update.read;
   /** An answer that allows something, pressed too soon after the update was drawn or moved,
    *  is not sent: what is under the pointer may not be what the person read. */
   const press = (answer: UpdateAnswer) => {
@@ -252,6 +255,7 @@ function UpdateItem({ row, above }: { row: UpdateRow; above: string }) {
       read={update.read}
       ref={drawn}
       onDrawn={readPlaces}
+      isNew={isNew}
       className="inbox-update"
       data-kind={update.kind}
       aria-label={about}

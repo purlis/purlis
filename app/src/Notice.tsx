@@ -77,6 +77,7 @@ import {
   type NoticeListAt,
   type NoticeTone,
 } from "./ui/notice/Notice";
+import { noticeSeenKey, useSeenRow } from "./seen";
 
 /**
  * **A Notice: a standing line in a project's window about something true now** (CONTEXT.md,
@@ -632,6 +633,9 @@ function NoticeViewRow({
 }) {
   const [drawn] = useState(() => Date.now());
   const since = given == null ? drawn : given * 1000;
+  // **New until seen** (#6002): its accent bar, until it has been in sight for about a second.
+  const row = useRef<HTMLElement>(null);
+  const isNew = useSeenRow(noticeSeenKey(cause), row);
   const now = useNow();
   const toChat = fixes?.find((fix) => fix.go === true);
   const others = fixes?.filter((fix) => fix !== toChat) ?? [];
@@ -672,6 +676,8 @@ function NoticeViewRow({
       >
         <MessageRow
           as="div"
+          ref={row}
+          isNew={isNew}
           tone={toneOfNotice(tone, waitsOnYou || consent)}
           consent={consent}
           icon={running ? <LoaderCircle className="spinning" /> : <NoticeGlyph tone={tone} />}
@@ -1213,9 +1219,13 @@ export function NoticeList({
   at = "inbox",
   hold,
   onClear,
+  onCauses,
 }: {
   children: ReactNode;
   onCount?: (counted: number, listed: number, trouble: number) => void;
+  /** Hears the causes of the Notices it lists, whenever they change: what is New of them
+   *  (#6002) is counted where its view's icon is drawn. */
+  onCauses?: (causes: readonly string[]) => void;
   onAnswer?: () => void;
   into?: Element | null;
   at?: NoticeListAt;
@@ -1338,6 +1348,8 @@ export function NoticeList({
     () => onCount?.(counted, ordered.length, trouble),
     [onCount, counted, ordered.length, trouble],
   );
+  const causes = ordered.map((one) => one.cause).join("\n");
+  useEffect(() => onCauses?.(causes === "" ? [] : causes.split("\n")), [onCauses, causes]);
 
   /** The answers listed already, by cause: one arriving is one not listed before. */
   const answered = useRef(new Set<string>());

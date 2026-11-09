@@ -366,6 +366,75 @@ pub async fn wake_inbox_asks(
     .await
 }
 
+/// **What the person has seen** (#6002, ADR 0121 decisions 10 and 11): the keys of the
+/// project's asks, Notices and updates the window said were seen. One the window lists that is
+/// not here is **New**. None where this machine keeps no data home.
+#[tauri::command]
+#[specta::specta]
+pub async fn inbox_seen(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<Vec<String>, String> {
+    let root = root_of(&planes, &plane)?;
+    off_the_window(move || Ok(seen_in(Store::here().as_ref(), &root)))
+        .await
+}
+
+/// **Notes `keys` seen** (#6002): each row visible in an open view for about a second, or
+/// whose chat was on screen in a focused window. One seen before is left as it is. **And where
+/// `asks` is given**, the asks standing now by the same keys, every ask seen that is not among
+/// them is forgotten, so the same ask asked again is New. Answers what [`inbox_seen`] does.
+#[tauri::command]
+#[specta::specta]
+pub async fn see_inbox(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    keys: Vec<String>,
+    asks: Option<Vec<String>>,
+) -> Result<Vec<String>, String> {
+    let root = root_of(&planes, &plane)?;
+    off_the_window(move || {
+        see_in(
+            Store::here().as_ref(),
+            &root,
+            &keys,
+            asks.as_deref(),
+            crate::sandboxing::now_secs(),
+        )
+    })
+    .await
+}
+
+/// What every ask's key in the seen record starts with, as the window makes it (`seen.ts`).
+pub const ASK: &str = "ask:";
+
+/// [`Store::seen`] as the window reads it: the keys alone.
+pub fn seen_in(store: Option<&Store>, root: &std::path::Path) -> Vec<String> {
+    store
+        .map(|store| store.seen(root).into_keys().collect())
+        .unwrap_or_default()
+}
+
+/// [`Store::see`] as the window asks it.
+pub fn see_in(
+    store: Option<&Store>,
+    root: &std::path::Path,
+    keys: &[String],
+    asks: Option<&[String]>,
+    now: u64,
+) -> Result<Vec<String>, String> {
+    let store = store.ok_or_else(|| NOWHERE.to_owned())?;
+    if let Some(asks) = asks {
+        store
+            .forget(root, ASK, asks)
+            .map_err(|err| format!("purlis could not keep what you have seen: {err}"))?;
+    }
+    store
+        .see(root, keys, now)
+        .map(|seen| seen.into_keys().collect())
+        .map_err(|err| format!("purlis could not keep what you have seen: {err}"))
+}
+
 /// **The first-open baseline** (#5648, ADR 0119), as the window reads it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct InboxBaseline {
@@ -457,6 +526,35 @@ mod tests {
     }
 
     #[test]
+    fn the_window_notes_what_was_seen_and_an_ask_no_longer_standing_is_new_again() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let store = Store::in_data(&dir.path().join("data"));
+        let root = dir.path().join("project");
+        std::fs::create_dir_all(&root).expect("a project");
+        let keys = |names: &[&str]| names.iter().map(|one| (*one).to_owned()).collect::<Vec<_>>();
+        assert!(seen_in(Some(&store), &root).is_empty());
+
+        let seen = see_in(
+            Some(&store),
+            &root,
+            &keys(&["ask:3:wait", "notice:pin-gone:ide"]),
+            None,
+            NOW,
+        )
+        .expect("seen");
+        assert_eq!(seen, ["ask:3:wait", "notice:pin-gone:ide"]);
+
+        // Chat 3 was answered: its wait stands no more, so asked again it is New.
+        let seen = see_in(Some(&store), &root, &[], Some(&[]), NOW).expect("seen");
+        assert_eq!(seen, ["notice:pin-gone:ide"]);
+        assert_eq!(seen_in(Some(&store), &root), seen);
+        assert_eq!(
+            see_in(None, &root, &[], None, NOW).expect_err("nowhere to keep it"),
+            NOWHERE
+        );
+    }
+
+    #[test]
     fn the_window_notes_reads_and_settles_a_project_s_updates() {
         let dir = tempfile::tempdir().expect("a directory");
         let store = Store::in_data(&dir.path().join("data"));
@@ -534,6 +632,8 @@ mod tests {
             "settle_inbox_updates",
             "inbox_first_open",
             "set_aside_inbox_findings",
+            "inbox_seen",
+            "see_inbox",
         ] {
             assert!(
                 purlis_session_protocol::ui::WINDOW_ONLY.contains(&command),

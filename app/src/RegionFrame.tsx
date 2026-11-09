@@ -16,7 +16,7 @@ import { Group, Panel, usePanelRef, type Layout } from "react-resizable-panels";
 import { Separator as ResizeHandle } from "./ui/panel/Separator";
 import { useProjectShown } from "./projectShown";
 import { X } from "lucide-react";
-import { ActivityBar, VIEW_MARKS, type PanelTab, type Tabbed } from "./ActivityBar";
+import { ActivityBar, VIEW_MARKS, withNew, type PanelTab, type Tabbed } from "./ActivityBar";
 import {
   CATALOGUE,
   drawnNow,
@@ -85,6 +85,7 @@ export function RegionFrame({
   panels = [],
   previews = NO_PREVIEWS,
   badges,
+  fresh,
   keys,
   onPick,
   centre,
@@ -119,6 +120,8 @@ export function RegionFrame({
   previews?: readonly ViewId[];
   /** What each view's tab carries beside its icon: a count, drawn while the side is away too. */
   badges?: Partial<Record<ViewId, ReactNode>>;
+  /** **How many rows of each view are New** (#6002): a "new" pip beside its badge. */
+  fresh?: Partial<Record<ViewId, number>>;
   /** How each view's key is spelled, for its tab's tooltip. */
   keys?: Partial<Record<ViewId, string>>;
   /** A view's tab was pressed: the window answers with the arrangement (`regions.picked`). */
@@ -212,7 +215,7 @@ export function RegionFrame({
       open={one.collapsed ? undefined : openView(one, present)}
       current={openView(one, present)}
       keys={keys}
-      badges={badges}
+      badges={fresh === undefined ? badges : withNew(badges ?? {}, fresh)}
       {...ids}
       onPick={pick}
       menu={menuOf}

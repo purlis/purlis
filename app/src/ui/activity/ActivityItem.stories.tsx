@@ -34,6 +34,7 @@ import {
   ActivityDot,
   ActivityGroup,
   ActivityItem,
+  ActivityNew,
   type ActivityVariant,
 } from "./ActivityItem";
 
@@ -44,6 +45,8 @@ type One = {
   hot?: boolean;
   /** A dot in place of a count (#5645): something needs fixing. */
   dot?: boolean;
+  /** A "new" pip (#6002): its view lists something not seen yet. */
+  pip?: boolean;
 };
 
 const LEFT_TOP: One[] = [
@@ -57,13 +60,13 @@ const LEFT_BOTTOM: One[] = [
 ];
 const RIGHT_TOP: One[] = [
   // The right bar as ADR 0119 has it: Asks counts in the needs-you colours, Updates plainly.
-  { name: "Asks", mark: Hand, count: 2, hot: true },
+  { name: "Asks", mark: Hand, count: 2, hot: true, pip: true },
   { name: "Updates", mark: Bell, count: 3 },
   { name: "Personas", mark: UsersRound },
   { name: "Vaults", mark: KeyRound },
 ];
 const RIGHT_BOTTOM: One[] = [
-  { name: "Notices", mark: TriangleAlert, dot: true },
+  { name: "Notices", mark: TriangleAlert, dot: true, pip: true },
   { name: "Memory", mark: Brain },
   { name: "Todos", mark: ListTodo, count: 7 },
   { name: "History", mark: History },
@@ -88,29 +91,32 @@ function Group({
       aria-label={name}
       aria-orientation={variant === "tab" ? "horizontal" : "vertical"}
     >
-      {items.map(({ name: called, mark: Mark, count, hot, dot }) => (
+      {items.map(({ name: called, mark: Mark, count, hot, dot, pip }) => (
         <ActivityItem
           key={called}
           variant={variant}
           selected={open === called}
           aria-label={called}
           aria-pressed={open === called}
-          aria-describedby={count === undefined && !dot ? undefined : `count-${called}`}
+          aria-describedby={count === undefined && !dot && !pip ? undefined : `count-${called}`}
           onClick={() => onPick(called)}
           icon={<Mark />}
           count={
-            dot === true ? (
-              <span id={`count-${called}`} aria-hidden="true">
-                <ActivityDot said="A Notice needs fixing" />
-              </span>
-            ) : count === undefined ? undefined : (
+            count === undefined && !dot && !pip ? undefined : (
               // Hidden from the name, read as the description (axe's name and content match).
               <span id={`count-${called}`} aria-hidden="true">
-                <ActivityCount
-                  count={count}
-                  said={`${count} in ${called}`}
-                  tone={hot ? "needs-you" : undefined}
-                />
+                {dot === true ? (
+                  <ActivityDot said="A Notice needs fixing" />
+                ) : (
+                  count !== undefined && (
+                    <ActivityCount
+                      count={count}
+                      said={`${count} in ${called}`}
+                      tone={hot ? "needs-you" : undefined}
+                    />
+                  )
+                )}
+                {pip === true && <ActivityNew said=", something new" />}
               </span>
             )
           }
@@ -211,7 +217,8 @@ export const TabsAcrossTheSidePanel: Story = {
 };
 
 /** The right bar: a 44px column, Notices, Memory, Todos and History at its foot, Needs you's
- *  count hot and Notices' dot in the danger colour, with no number (#5645). */
+ *  count hot and Notices' dot in the danger colour, with no number (#5645); Asks and Notices
+ *  each with a "new" pip at its bottom right (#6002). */
 export const TheRightColumn: Story = {
   args: { variant: "bar", side: "right" },
   play: async (context) => {
@@ -222,6 +229,7 @@ export const TheRightColumn: Story = {
     await expect(dot).not.toHaveAttribute("data-count");
     await expect(
       context.canvas.getByRole("button", { name: "Notices" }),
-    ).toHaveAccessibleDescription("A Notice needs fixing");
+    ).toHaveAccessibleDescription("A Notice needs fixing, something new");
+    await expect(context.canvasElement.querySelectorAll('[data-part="pip"]')).toHaveLength(2);
   },
 };

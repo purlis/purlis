@@ -662,6 +662,8 @@ export const commands = {
 	wakeInboxAsks: __WINDOW_ONLY_RESULT,
 	inboxFirstOpen: __WINDOW_ONLY_RESULT,
 	setAsideInboxFindings: __WINDOW_ONLY_RESULT,
+	inboxSeen: __WINDOW_ONLY_RESULT,
+	seeInbox: __WINDOW_ONLY_RESULT,
 	/**
 	 *  The window says whether it has `plane`'s Inbox open (#1694): while it is, and the window
 	 *  is focused with the project in front, no notification is sent about that project's asks.

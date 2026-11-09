@@ -580,6 +580,86 @@ impl Store {
     }
 }
 
+/// **What the person has seen** (#6002, ADR 0121 decisions 10 and 11): each ask, Notice and
+/// update of the project the window says was seen, by a key the window makes of its own
+/// (`ask:<key>`, `notice:<cause>`, `update:<key>`), with when it was first seen (seconds since
+/// 1970). One not in it is **New**. Seen, not received: the window says it once a row has been
+/// visible in an open view for about a second, or its chat has been on screen in a focused
+/// window. Kept per machine, beside the updates; nothing else reads or writes it.
+pub type Seen = std::collections::BTreeMap<String, u64>;
+
+/// The most keys one project keeps seen; what was seen longest ago goes first. An ask, a Notice
+/// or an update stands far fewer than this at once, so what goes is long answered or gone.
+pub const AT_MOST_SEEN: usize = 1000;
+
+/// What the seen record's file is called beside the updates' (`<project key>.seen.json`).
+const SEEN: &str = "seen";
+
+impl Store {
+    /// The file the project at `root` keeps its seen record in, beside its updates.
+    pub fn seen_file(&self, root: &Path) -> PathBuf {
+        self.beside(root, SEEN)
+    }
+
+    /// The project at `root`'s seen record; nothing seen where it cannot be read.
+    pub fn seen(&self, root: &Path) -> Seen {
+        self.read_beside(root, SEEN)
+    }
+
+    /// Notes each of `keys` seen at `now`: one seen before keeps when it was first seen, and
+    /// nothing is written where every one was. Answers [`Self::seen`].
+    pub fn see(&self, root: &Path, keys: &[String], now: u64) -> io::Result<Seen> {
+        let keys: Vec<String> = keys.iter().map(|key| cut(key, MOST_KEY)).collect();
+        // Read first, unlocked: the window says what it sees often, and most of it was seen.
+        let kept = self.seen(root);
+        if keys.iter().all(|key| kept.contains_key(key)) {
+            return Ok(kept);
+        }
+        self.change_beside(root, SEEN, |kept: &mut Seen| {
+            let mut changed = false;
+            for key in keys {
+                if let std::collections::btree_map::Entry::Vacant(at) = kept.entry(key) {
+                    at.insert(now);
+                    changed = true;
+                }
+            }
+            let over = kept.len().saturating_sub(AT_MOST_SEEN);
+            if over > 0 {
+                let mut oldest: Vec<(u64, String)> =
+                    kept.iter().map(|(key, at)| (*at, key.clone())).collect();
+                oldest.sort();
+                for (_, key) in oldest.into_iter().take(over) {
+                    kept.remove(&key);
+                }
+            }
+            changed
+        })
+    }
+
+    /// Lets go of every key seen that starts with `prefix` and is not in `standing`: an ask
+    /// answered, or gone, is forgotten, so the same ask asked again is New. Nothing is written
+    /// where every one still stands. Answers [`Self::seen`].
+    pub fn forget(&self, root: &Path, prefix: &str, standing: &[String]) -> io::Result<Seen> {
+        let gone = |kept: &Seen| {
+            kept.keys()
+                .filter(|key| key.starts_with(prefix) && !standing.contains(key))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        let kept = self.seen(root);
+        if gone(&kept).is_empty() {
+            return Ok(kept);
+        }
+        self.change_beside(root, SEEN, |kept: &mut Seen| {
+            let gone = gone(kept);
+            for key in &gone {
+                kept.remove(key);
+            }
+            !gone.is_empty()
+        })
+    }
+}
+
 #[cfg(test)]
 #[path = "inboxupdates_tests.rs"]
 mod tests;
@@ -591,3 +671,7 @@ mod snoozed_tests;
 #[cfg(test)]
 #[path = "inboxupdates_baseline_tests.rs"]
 mod baseline_tests;
+
+#[cfg(test)]
+#[path = "inboxupdates_seen_tests.rs"]
+mod seen_tests;

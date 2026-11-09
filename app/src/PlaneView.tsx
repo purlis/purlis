@@ -731,6 +731,7 @@ import { ChatPersonaState } from "./ChatPersonaState";
 import { carryPaneBand, forgetPaneBand, forgetPaneBands, paneBand } from "./noticeSettle";
 import { useWorkedHere } from "./workedHere";
 import { newTabRows } from "./newTabList";
+import { newAsks, newNotices, newUpdates, useChatOnScreenSeen, useSeen } from "./seen";
 
 /** Whether two lists of the right side's extension panels draw the same tabs. */
 const samePanels = (a: readonly PanelTab[], b: readonly PanelTab[]) =>
@@ -5124,17 +5125,15 @@ export const PlaneView = memo(function PlaneView({
     },
     [failedTasks, plane, showChat],
   );
-  /** **The chat on screen and focused has been seen** (#5340): what failed of it leaves its mark. */
-  useFailuresSeen(
-    plane,
+  /** The chat of the focused pane of the tab in front: the chat on screen. */
+  const chatOnScreen =
     tabs.inFront === undefined
       ? undefined
       : shownIn(tabs, tabs.inFront).find(
           (one) => one.pane === tabs.byId[tabs.inFront ?? -1]?.focused,
-        )?.session,
-    failedTasks,
-    inFront,
-  );
+        )?.session;
+  /** **The chat on screen and focused has been seen** (#5340): what failed of it leaves its mark. */
+  useFailuresSeen(plane, chatOnScreen, failedTasks, inFront);
   /** A finished row was opened to be read: where it is a failure its session is flagged for,
    *  it has been looked at (#1491). */
   const lookedAtFinished = useCallback(
@@ -11162,6 +11161,11 @@ export const PlaneView = memo(function PlaneView({
   const noticesHold = useDismissHold();
   /** The bell's count (#5646): the unread lines From your chats, those just dismissed left out. */
   const bell = unreadMine(keptUpdates?.filter((one) => !updatesHold.held.has(heldUpdate(one.key))));
+  /** **What is New** (#6002, ADR 0121 decisions 10 and 11): seen, not received; the chat on
+   *  screen in a focused window has nothing New. */
+  const { seen, see, rows: seenRows } = useSeen(plane, waiting);
+  useChatOnScreenSeen(see, chatOnScreen, inFront, waiting, keptUpdates);
+  const [noticeCauses, setNoticeCauses] = useState<readonly string[]>([]);
 
   /**
    * **The chats in no pane** (#4759, spec #4750): listed, and in no tab of any window of the
@@ -12037,6 +12041,7 @@ export const PlaneView = memo(function PlaneView({
                     <Inbox
                       part="asks"
                       plane={plane}
+                      seen={seenRows}
                       asks={waiting}
                       onGo={goToAsking}
                       elsewhere={elsewhere}
@@ -12062,6 +12067,7 @@ export const PlaneView = memo(function PlaneView({
                     <Inbox
                       part="updates"
                       plane={plane}
+                      seen={seenRows}
                       asks={waiting}
                       onGo={goToAsking}
                       updates={inboxUpdates}
@@ -12080,6 +12086,8 @@ export const PlaneView = memo(function PlaneView({
                     <Inbox
                       part="notices"
                       plane={plane}
+                      seen={seenRows}
+                      onNoticeCauses={setNoticeCauses}
                       asks={waiting}
                       onGo={goToAsking}
                       notices={standing}
@@ -12139,6 +12147,15 @@ export const PlaneView = memo(function PlaneView({
                 // is there while the side is put away (B-8). Changes counts what git has uncommitted.
                 // The Lower icons' are drawn the same way, so they are there while their half of the
                 // Panel is away (P-9, #1739): Changes' count, and Repos' only once a clone is behind.
+                // **What is New in each view** (#6002): a pip beside its badge, until seen.
+                fresh={{
+                  asks: newAsks(waiting, seen),
+                  updates: newUpdates(
+                    keptUpdates?.filter((one) => !updatesHold.held.has(heldUpdate(one.key))),
+                    seen,
+                  ),
+                  notices: newNotices(noticeCauses, seen),
+                }}
                 badges={{
                   repos: gap && (
                     <ActivityCount
