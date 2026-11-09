@@ -55,9 +55,10 @@ use std::sync::LazyLock;
 const DESCRIPTION_LIMIT: usize = 1024;
 
 /// **The built-ins' descriptions together** (spec #5714's Q37): at most this many characters,
-/// so Codex's 8,000-character listing keeps every built-in and about 3,000 for the plane's own
-/// skills, and opencode's default budget (8,000) keeps them too.
-const MOST_DESCRIPTIONS: usize = 5_000;
+/// so Codex's 8,000-character listing keeps every built-in and room for the plane's own skills,
+/// and opencode's default budget (8,000) keeps them too. The number is purlis-core's, held while
+/// purlis-building-ui still ships (#5725).
+const MOST_DESCRIPTIONS: usize = purlis_core::skills::BUILT_IN_DESCRIPTIONS_MOST;
 
 /// **Built-ins leaving the bundle**, each with where it goes: the one place a shipped skill is
 /// not held to carry trigger tests (#5731). An entry goes when its folder does, and the check
@@ -1080,13 +1081,19 @@ fn described(name: &str, length: usize, fill: char) -> Skill {
 
 #[test]
 fn descriptions_over_the_total_are_named_with_the_biggest() {
+    // Five of the same length and purlis-b, the biggest, filling the rest exactly.
+    let other = (MOST_DESCRIPTIONS - 1_000) / 5;
+    assert_eq!(other * 5 + 1_000, MOST_DESCRIPTIONS, "an even split");
     let skills = |b: usize| {
-        ["purlis-a", "purlis-b", "purlis-c", "purlis-d", "purlis-e"].map(|name| {
+        [
+            "purlis-a", "purlis-b", "purlis-c", "purlis-d", "purlis-e", "purlis-f",
+        ]
+        .map(|name| {
             // Counted in characters, as a harness's listing counts them: an em dash is one.
             let (length, fill) = if name == "purlis-b" {
                 (b, '—')
             } else {
-                (1_000, 'a')
+                (other, 'a')
             };
             described(name, length, fill)
         })
@@ -1094,10 +1101,11 @@ fn descriptions_over_the_total_are_named_with_the_biggest() {
     assert_eq!(check(&skills(1_000), &Build::new()).0, Vec::<String>::new());
     assert_eq!(
         check(&skills(1_001), &Build::new()).0,
-        [
-            "descriptions: the built-ins' descriptions together are 5001 characters, over 5000: \
-             the biggest is purlis-b's (1001)"
-        ]
+        [format!(
+            "descriptions: the built-ins' descriptions together are {} characters, over \
+             {MOST_DESCRIPTIONS}: the biggest is purlis-b's (1001)",
+            MOST_DESCRIPTIONS + 1
+        )]
     );
 }
 
