@@ -15,8 +15,9 @@ import { PROJECTS, ask, inFront, openFromTheStrip } from "../switching.js";
  * This is the run whose harness reports through `purlis hook` (`wdio.state.conf.ts`): a chat in
  * the launch's project asks a permission through the real hook (`ASKS_A_PERMISSION`) and waits.
  * A second project of the spec's own is then opened in the same window and brought to the front.
- * Its Inbox lists nothing of its own, and names the launch's project, with how many asks wait
- * there, under "Other projects in this window". Go to project brings that project to the front
+ * Its ✋ counts the launch's project's ask as "+1 elsewhere" (#5999), and its Inbox, which opens
+ * on All projects, lists nothing of its own and names the launch's project, with how many asks
+ * wait there, under "Other projects in this window". Go to project brings that project to the front
  * with its Inbox open, where the ask is drawn whole.
  *
  * `Inbox.window.test.tsx` holds the line against a mocked window; what only the built app says
@@ -31,6 +32,8 @@ const INBOX = '[role="tabpanel"][data-view="asks"]';
 const OTHERS = `${INBOX} [role="rowgroup"][data-others]`;
 const HAND = '[data-testid="title-bar"] [data-testid="needs-you-button"]';
 const ASK = `${INBOX} .inbox-ask[data-source="permission"]`;
+/** The right bar's ✋: the Asks view's tab, whose description is its count. */
+const ASKS_TAB = '[role="tablist"][aria-label="Attention"] [role="tab"][aria-label="Asks"]';
 
 /** The second project: the fixture, renamed, with no record to put back. */
 const second = (() => {
@@ -120,22 +123,23 @@ describe("the Inbox of one project, about another that waits", function () {
       { timeout: 30_000, interval: 250, timeoutMsg: "the hand never counted the ask" },
     );
 
-    // The second project, in front, and its Inbox.
+    // The second project, in front: its ✋ counts the launch's project's ask as elsewhere
+    // (#5999, ADR 0121 decision 4), with no view opened first.
     await toFront(second);
+    const handSays = () =>
+      browser.execute((tab: string) => {
+        const described = document.querySelector(tab)?.getAttribute("aria-describedby");
+        return described ? (document.getElementById(described)?.textContent ?? "") : "";
+      }, ASKS_TAB);
+    await browser
+      .waitUntil(async () => /, \+1 elsewhere$/.test(await handSays()), { timeout: 30_000 })
+      .catch(async () => {
+        throw new Error(
+          `the ✋ of ${second} never counted the ask elsewhere; it says: ${await handSays()}`,
+        );
+      });
+    // Its Inbox opens on All projects, so the other project is named without a press.
     await showView("Asks");
-    // The Inbox opens on This project, which is empty here and says what waits wider (qw359):
-    // its one press lists every project's.
-    const widen = await $(`${INBOX} .inbox-scope-empty button`);
-    await widen.waitForExist({
-      timeout: 30_000,
-      timeoutMsg: "the empty scope never offered to show what waits in the other project",
-    });
-    expect(await widen.getText()).toBe("Show all projects");
-    await browser.execute(
-      (inbox: string) =>
-        document.querySelector<HTMLElement>(`${inbox} .inbox-scope-empty button`)?.click(),
-      INBOX,
-    );
     await browser
       .waitUntil(async () => (await othersSaid()).length > 0, { timeout: 30_000 })
       .catch(async () => {

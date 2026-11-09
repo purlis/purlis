@@ -67,8 +67,9 @@ describe("the Inbox", () => {
     await expect(await ask.$("button=Go to chat")).toBeDisplayed();
 
     // **Its scope and its ranks, as drawn** (qw359), in ranges and never exact pixels: the
-    // switch opens on This project and fits the view; what needs you is the largest and
-    // heaviest text of the row, and its kind the smallest; its kind's mark is drawn.
+    // switch opens on All projects (#5999, ADR 0121 decision 4) and fits the view; what needs
+    // you is the largest and heaviest text of the row, and its kind the smallest; its kind's
+    // mark is drawn.
     const seen = await browser.execute(
       (inbox: string, row: string) => {
         const view = document.querySelector<HTMLElement>(inbox);
@@ -104,7 +105,7 @@ describe("the Inbox", () => {
       INBOX,
       ASK,
     );
-    expect(seen.picked).toMatch(/^This project, \d+ waiting on you$/);
+    expect(seen.picked).toMatch(/^All projects, \d+ waiting on you$/);
     // This project and This workspace at least; All projects too, which the window lists.
     expect(seen.scopes).toBeGreaterThanOrEqual(2);
     expect(seen.past).toBeLessThanOrEqual(1);

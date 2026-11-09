@@ -230,7 +230,7 @@ import { Notice, NoticeInCentre, NoticeOf } from "./Notice";
 import { ReadOnlyLine, ReadOnlyMendable, ReadOnlySaid, useReadOnly } from "./ReadOnlyLine";
 import { LivesHere } from "./LivesHere";
 import { InboxAlerts, type WindowAlerts } from "./InboxAlerts";
-import type { Elsewhere } from "./InboxElsewhere";
+import { handCount, handSaid, type Elsewhere } from "./InboxElsewhere";
 import { sayAboutThisMachine, useAboutThisMachine } from "./windowprefs";
 import { drawWhatIsInForce } from "./Extensions";
 import { useScreenReaderMode } from "./screenReader";
@@ -11370,6 +11370,8 @@ export const PlaneView = memo(function PlaneView({
    * its chat in a new session, and the pane moves on to it before the ask is read as gone.
    */
   const touchOnPane = useAnsweredWhenGone(plane, waiting);
+  /** The ✋'s count: every open project's asks, and how many are outside this one (#5999). */
+  const hand = handCount(plane, waiting?.length ?? 0, elsewhere);
   /**
    * **Snooze all on Asks** (#5647): the core keeps what each chat held, and lists a snoozed
    * chat's asks apart until it asks something new; every list of this project's asks is read
@@ -12171,19 +12173,10 @@ export const PlaneView = memo(function PlaneView({
                       )}
                     </QueueRead>
                   ),
-                  // The asks waiting here (#1692, I-2): the ✋'s count for this project, in its tone, on
-                  // the bar, so it is there while the side is put away.
-                  asks: (
-                    <ActivityCount
-                      count={waiting?.length ?? 0}
-                      said={
-                        waiting?.length === 1
-                          ? "1 thing waits on you"
-                          : `${waiting?.length ?? 0} things wait on you`
-                      }
-                      tone="needs-you"
-                    />
-                  ),
+                  // The ✋'s count (#1692, I-2; ADR 0121 decision 4): every open project's asks, in
+                  // its tone, on the bar, so it is there while the side is put away. Those outside
+                  // this project are said as "+N elsewhere"; Asks' scope never narrows it.
+                  asks: <ActivityCount count={hand.total} said={handSaid(hand)} tone="needs-you" />,
                   // The unread lines From your chats (#5646, ADR 0119): the bell's count, in the plain
                   // colours, since a result is news of the person's own work and asks nothing.
                   // Project is never counted.
