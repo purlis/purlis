@@ -2730,6 +2730,8 @@ fn percona_xtrabackup_and_its_kin_run_what_they_name_so_they_are_offered_no_run_
         "xbcloud",
         "xbcloud_osenv",
         "xbcrypt",
+        // MariaDB's own counterpart to xbstream, mariabackup's (round 1 of #5990's review).
+        "mbstream",
     ] {
         refused_as_running_others(name);
     }

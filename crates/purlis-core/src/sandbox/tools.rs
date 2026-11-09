@@ -1997,10 +1997,10 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     // and the last of them (#5931, #5929's second review): `mysql_plugin` starts the server its
     // `-m` or `-b` finds with the plugins its `-p` names, and runs the program its
     // `--my-print-defaults` names; `mysql_upgrade` runs the client and `mysqlcheck` with the files
-    // of settings and plugins it is handed. Percona's backup tools are mariabackup's kin, and
-    // the server's state transfer scripts (`wsrep_sst_*`, refused by their prefix, below) run the
-    // transfer program their arguments name. Server-side all, none a usual reason to hand a chat
-    // a key.
+    // of settings and plugins it is handed. Percona's backup tools and MariaDB's `mbstream` are
+    // mariabackup's kin, and the server's state transfer scripts (`wsrep_sst_*`, refused by their
+    // prefix, below) run the transfer program their arguments name. Server-side all, none a
+    // usual reason to hand a chat a key.
     "mysql_plugin",
     "mariadb-plugin",
     "mysql_upgrade",
@@ -2011,6 +2011,7 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "xbcloud",
     "xbcloud_osenv",
     "xbcrypt",
+    "mbstream",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused

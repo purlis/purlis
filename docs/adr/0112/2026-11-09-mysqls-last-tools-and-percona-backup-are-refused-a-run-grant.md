@@ -13,7 +13,8 @@ spellings, are refused whole, with no notice, as `mariabackup` and `mysqlhotcopy
 - **`mysql_upgrade`** (`mariadb-upgrade`) runs the client and `mysqlcheck` with the files of
   settings and plugins it is handed.
 - **Percona's backup tools** (`xtrabackup`, `innobackupex`, `xbstream`, `xbcloud`,
-  `xbcloud_osenv`, `xbcrypt`) are mariabackup's kin, and reached no row at all.
+  `xbcloud_osenv`, `xbcrypt`), and MariaDB's `mbstream`, are mariabackup's kin, and reached no
+  row at all.
 - **Every `wsrep_sst_` script**, by that prefix, as git's own programs are by `git-`: each is a
   shell script the server runs to hand a node its state, which runs the transfer program its
   arguments name, and releases add new ones.
