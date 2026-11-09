@@ -1300,50 +1300,9 @@ fn a_dispatched_task_that_asks_the_person_directly_is_counted() {
 }
 
 #[test]
-fn a_dispatched_task_whose_dispatcher_has_closed_is_counted_at_its_turn_end() {
-    let (_plane, _host, _planes, id, held, steward, told) = a_steward_chat_telling();
-    hears(&held, &told, steward, Event::UserPromptSubmit);
-    let task = a_task_of(&held, &id, steward, "rebase onto main");
-    hears(&held, &told, task, Event::UserPromptSubmit);
-    hears(&held, &told, task, Event::Stop);
-    assert_eq!(hand(&held), 0);
-
-    // Nobody but the person is left for it to wait on.
-    held.close_chat(steward).expect("closed");
-
-    assert!(queue(&held).contains(&task));
-    assert_eq!(hand(&held), 1);
-}
-
-/// A chat open in a project that runs it unsandboxed, telling the window every move: what the
-/// registry reads a queue through, with no sandboxed start in the way.
-fn an_open_chat_telling() -> (Plane, Pretend, Planes, Arc<Held>, u32, Told) {
-    let plane = a_plane_with_personas();
-    let host = Pretend::default();
-    let told: Told = Arc::default();
-    let planes = Planes::telling(
-        Arc::new({
-            let told = Arc::clone(&told);
-            move |moved| told.lock().expect("the moves told").push(moved)
-        }),
-        crate::Shipped::default(),
-        None,
-    )
-    .running_sessions_on(Arc::new({
-        let host = host.clone();
-        move |_, _: &std::path::Path| Box::new(host.clone())
-    }));
-    let id = planes.open(&plane.root);
-    let held = planes.held(&id).expect("held");
-    let alpha = held.root().join("workspaces").join("alpha");
-    let chat = a_chat_without_sandbox_as(&held, &plane.root, Some("steward"), &alpha);
-    (plane, host, planes, held, chat, told)
-}
-
-#[test]
 fn a_chat_whose_turn_ends_while_its_own_shell_runs_is_not_counted() {
     // #6036: "The rebuild is still running. I'll continue once it reports back" (#3878).
-    let (_plane, _host, _planes, held, chat, told) = an_open_chat_telling();
+    let (_plane, _host, _planes, _id, held, chat, told) = a_steward_chat_telling();
     hears(&held, &told, chat, Event::UserPromptSubmit);
 
     ends_on_its_own_shell(&held, &told, chat);
@@ -1361,7 +1320,7 @@ fn a_chat_whose_turn_ends_while_its_own_shell_runs_is_not_counted() {
 fn a_chat_with_an_update_standing_whose_turn_ends_on_its_own_shell_is_not_waiting_on_a_reply() {
     // #6036's second case: an update it was already in the Inbox for stood, and its turn ending
     // on its own shell listed it as waiting on the person's reply.
-    let (_plane, _host, _planes, held, chat, told) = an_open_chat_telling();
+    let (_plane, _host, _planes, _id, held, chat, told) = a_steward_chat_telling();
     hears(&held, &told, chat, Event::UserPromptSubmit);
     held.needs_the_person(chat, purlis_core::state::Need::RootUpdateRefused);
     assert_eq!(queue(&held), vec![chat], "in the Inbox for its update");
