@@ -326,3 +326,51 @@ fn a_place_offers_an_extension_s_themes_once_approved_and_has_them_on_where_its_
     assert_eq!(beta.on.as_deref(), Some(&[][..]));
     assert!(drawn(&beta, "beta").is_err());
 }
+
+#[test]
+fn the_parts_manifest_the_window_lists_is_every_family_purlis_theme_parts_prints() {
+    let printed = theme::parts::manifest_json();
+    let listed = theme_parts().expect("the manifest reads");
+    let names = |families: &[serde_json::Value]| -> Vec<String> {
+        families
+            .iter()
+            .map(|one| one["name"].as_str().unwrap_or_default().to_owned())
+            .collect()
+    };
+    assert_eq!(
+        listed
+            .families
+            .iter()
+            .map(|one| one.name.clone())
+            .collect::<Vec<_>>(),
+        names(printed["families"].as_array().unwrap())
+    );
+    let button = listed
+        .families
+        .iter()
+        .find(|one| one.name == "button")
+        .unwrap();
+    assert!(button.states.iter().any(|one| one == "hover"));
+    let root = button.parts.iter().find(|one| one.name == "root").unwrap();
+    assert!(root.properties.iter().any(|one| one == "corner-radius"));
+    assert!(root.since >= 1 && !root.description.is_empty());
+}
+
+#[test]
+fn a_card_carries_the_part_keys_its_theme_sets() {
+    let home = tempfile::tempdir().unwrap();
+    let place = machine(home.path());
+    let gallery = gallery_of(&place, None);
+    let classic = gallery
+        .cards
+        .iter()
+        .find(|one| one.id == "purlis-classic")
+        .unwrap();
+    assert!(!classic.parts.is_empty());
+    assert!(
+        classic
+            .parts
+            .iter()
+            .all(|one| one.from == GalleryPartFrom::Theme && one.key.starts_with(&one.family))
+    );
+}

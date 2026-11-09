@@ -695,6 +695,7 @@ macro_rules! app_commands {
                 themegallery::theme_duplicate,
                 themegallery::theme_open_folder,
                 themegallery::theme_chat,
+                themegallery::theme_parts,
                 themedrafts::theme_drafts_of_chat,
                 themedrafts::hand_drafts_close_to_the_window,
                 themedrafts::theme_draft_keep,

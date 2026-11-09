@@ -480,3 +480,89 @@ fn a_folder_read_again_after_a_change_says_what_the_check_finds_now() {
         warnings_said(&read.theme, &check_every(&read.theme))
     );
 }
+
+#[test]
+fn a_card_lists_each_part_key_its_theme_sets_with_its_value_as_written() {
+    let places = Places::new();
+    put(
+        &places.machine(),
+        "rounded",
+        &json!({
+            "name": "Rounded",
+            "extends": "purlis",
+            "parts": {
+                "button.root.corner-radius": "full",
+                "button.root.primary.hover.fill": "accent.base",
+                "tabs.tab.padding": [4, 12],
+                "tabs.tab.corner-radius": [6, 6, 0, 0]
+            }
+        }),
+    );
+    let folders = places.folders();
+    let cards = gallery::cards(&shelf(&folders, Reach::Machine, &[]));
+    let rounded = cards.iter().find(|one| one.id == "rounded").unwrap();
+    let said = |key: &str| {
+        rounded.parts.iter().find(|one| one.key == key).map(|one| {
+            (
+                one.family.as_str(),
+                one.part.as_str(),
+                one.value.as_str(),
+                &one.from,
+            )
+        })
+    };
+    let theme = &gallery::PartFrom::Theme;
+    assert_eq!(
+        said("button.root.corner-radius"),
+        Some(("button", "root", "full", theme))
+    );
+    assert_eq!(
+        said("button.root.primary.hover.fill"),
+        Some(("button", "root", "accent.base", theme))
+    );
+    assert_eq!(
+        said("tabs.tab.padding"),
+        Some(("tabs", "tab", "[4, 12]", theme))
+    );
+    assert_eq!(
+        said("tabs.tab.corner-radius"),
+        Some(("tabs", "tab", "[6, 6, 0, 0]", theme))
+    );
+    // What Purlis, which it extends, sets is drawn as its own, and said so.
+    let purlis = cards.iter().find(|one| one.id == "purlis").unwrap();
+    assert!(!purlis.parts.is_empty());
+    for one in &purlis.parts {
+        assert!(rounded.parts.contains(one), "{one:?}");
+    }
+}
+
+#[test]
+fn a_card_of_a_theme_that_sets_no_parts_of_its_own_lists_its_parents() {
+    let places = Places::new();
+    put(&places.machine(), "plain", &dusk("Plain", "#101010"));
+    let folders = places.folders();
+    let cards = gallery::cards(&shelf(&folders, Reach::Machine, &[]));
+    let plain = cards.iter().find(|one| one.id == "plain").unwrap();
+    let classic = cards.iter().find(|one| one.id == "purlis-classic").unwrap();
+    assert!(!classic.parts.is_empty());
+    assert_eq!(plain.parts, classic.parts);
+}
+
+#[test]
+fn a_part_value_is_said_as_a_theme_writes_it() {
+    use super::parts::{Corner, Length, PartValue, Shadow};
+    let n = Length::Number;
+    assert_eq!(PartValue::Colour("accent.base").written(), "accent.base");
+    assert_eq!(PartValue::Shadow(Shadow::Raised).written(), "raised");
+    assert_eq!(PartValue::Length(n(12.0)).written(), "12");
+    assert_eq!(
+        PartValue::Length(Length::Token("space.2")).written(),
+        "space.2"
+    );
+    assert_eq!(PartValue::Corners([Corner::Full; 4]).written(), "full");
+    assert_eq!(PartValue::Padding(n(4.0), n(4.0)).written(), "4");
+    assert_eq!(
+        PartValue::Inset([n(1.0), n(2.0), n(3.0)]).written(),
+        "[1, 2, 3]"
+    );
+}

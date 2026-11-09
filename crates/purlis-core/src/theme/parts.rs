@@ -1673,6 +1673,42 @@ pub enum PartValue {
     Inset([Length; 3]),
 }
 
+impl PartValue {
+    /// **The value as a theme writes it** (#2947): a word or a token as it is (`full`,
+    /// `accent.base`, `raised`), a number in figures, and a list in brackets (`[4, 12]`), one
+    /// value where every side or corner takes the same.
+    pub fn written(&self) -> String {
+        fn length(one: &Length) -> String {
+            match one {
+                Length::Number(number) => geometry::show(*number),
+                Length::Token(token) => (*token).to_owned(),
+            }
+        }
+        fn corner(one: &Corner) -> String {
+            match one {
+                Corner::Full => "full".to_owned(),
+                Corner::Length(one) => length(one),
+            }
+        }
+        fn listed(all: Vec<String>) -> String {
+            match all.as_slice() {
+                [first, rest @ ..] if rest.iter().all(|one| one == first) => first.clone(),
+                _ => format!("[{}]", all.join(", ")),
+            }
+        }
+        match self {
+            Self::Colour(token) | Self::Word(token) => (*token).to_owned(),
+            Self::Shadow(Shadow::None) => "none".to_owned(),
+            Self::Shadow(Shadow::Raised) => "raised".to_owned(),
+            Self::Shadow(Shadow::Overlay) => "overlay".to_owned(),
+            Self::Length(one) => length(one),
+            Self::Corners(four) => listed(four.iter().map(corner).collect()),
+            Self::Padding(block, inline) => listed(vec![length(block), length(inline)]),
+            Self::Inset(three) => listed(three.iter().map(length).collect()),
+        }
+    }
+}
+
 /// **A theme's component parts**, every key and its value: empty for a theme that names none.
 pub type Parts = BTreeMap<Key, PartValue>;
 

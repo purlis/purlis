@@ -372,3 +372,64 @@ export const ControlsInAnOpenRow: Story = {
     expectFocusInSight();
   },
 };
+
+/** Sixty groups of twenty rows each: 1,260 rows, every group open. */
+const GROUPS = Array.from({ length: 60 }, (_, group) => ({
+  id: `group-${group + 1}`,
+  name: `group ${group + 1}`,
+  rows: Array.from({ length: 20 }, (_, row) => ({
+    id: `group-${group + 1}.row-${row + 1}`,
+    name: `row ${row + 1} of group ${group + 1}`,
+  })),
+}));
+
+/**
+ * **A long tree drawn in part** (`drawnInPart`, #2947): 1,260 open rows in a scroller a few rows
+ * high, of which only those in sight are in the document. Tab lands on the first row, End goes to
+ * the last, which is drawn and brought into sight, and Home back to the first.
+ */
+export const DrawnInPart: Story = {
+  render: () => (
+    <div style={{ inlineSize: "18rem" }}>
+      <Tree
+        aria-label="Every row"
+        size="sm"
+        drawnInPart
+        className="max-h-60"
+        items={GROUPS}
+        expandedKeys={GROUPS.map((group) => group.id)}
+      >
+        {(group) => (
+          <TreeRow id={group.id} textValue={group.name} content={<RowLabel>{group.name}</RowLabel>}>
+            {group.rows.map((row) => (
+              <TreeRow
+                key={row.id}
+                id={row.id}
+                textValue={row.name}
+                content={<RowLabel>{row.name}</RowLabel>}
+              />
+            ))}
+          </TreeRow>
+        )}
+      </Tree>
+    </div>
+  ),
+  play: async ({ canvas, userEvent }) => {
+    const tree = canvas.getByRole("treegrid", { name: "Every row" });
+    const row = (name: string) => within(tree).getByRole("row", { name });
+    await waitFor(() => expect(within(tree).getAllByRole("row").length).toBeGreaterThan(0));
+    expect(within(tree).getAllByRole("row").length).toBeLessThan(100);
+    await userEvent.tab();
+    await untilFocused(() => row("group 1"), "In part: Tab lands on the first row");
+    await userEvent.keyboard("{End}");
+    await untilFocused(
+      () => row("row 20 of group 60"),
+      "In part: End moves to the last row, drawn though it was not",
+    );
+    expectFocusInSight();
+    expect(within(tree).getAllByRole("row").length).toBeLessThan(100);
+    await userEvent.keyboard("{Home}");
+    await untilFocused(() => row("group 1"), "In part: Home moves back to the first row");
+    expectFocusInSight();
+  },
+};

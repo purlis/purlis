@@ -213,6 +213,7 @@ function core(
             duplicable: one.from === "built-in",
             folder: one.from === "project",
             stamp: "0",
+            parts: [],
           })),
           yours: null,
           drawn: "project:brand",
@@ -455,7 +456,7 @@ describe("every workspace setting there is, at the Workspace level", () => {
     ["Repos", ["Cloned here", "Not cloned here"]],
     ["Dispatch", ["Limits"]],
     ["Extensions", ["Persona statistics: enabled", "Solarized: enabled"]],
-    ["Theme", ["Themes", "Appearance", "Options", "Theme check", "This theme"]],
+    ["Theme", ["Themes", "Appearance", "Options", "Parts", "Theme check", "This theme"]],
     ["Appearance", ["Theme", "Colour", "Icons"]],
   ])("%s holds %j", async (name, labels) => {
     core();

@@ -1427,11 +1427,14 @@ by hand (#3198).
   (`--tree-depth`); its `twist`, its slots and a group's `header`. `ui/tree/tree.css` draws the
   family default; a theme's `tree.*` parts reach the same attributes, all but a row's padding,
   which is its indentation.
-- **No virtualizer** until a tree is measured to need one: a folder's entries are capped by the
-  core.
+- **A long tree draws only the rows in sight** (`drawnInPart`, #2947): React Aria's own
+  `Virtualizer` with its list layout, each row measured as it is drawn and the room between and
+  around the rows read from `tree.css`; the tree is its own scroller, its height its owner's
+  `className`. Settings › Theme's parts tree, the manifest's thousand entries and more, is the
+  first. A tree whose entries the core caps (a folder's) draws whole.
 - **Stories hold it** (`Tree.stories.tsx`): a branch's files with a folder being read, the Changes
-  view's tree that never folds, twists that trail, and an empty tree, in Chromium and WebKit,
-  with axe.
+  view's tree that never folds, twists that trail, an empty tree, and 1,260 rows drawn in part,
+  in Chromium and WebKit, with axe.
 
 ## The dialog family
 

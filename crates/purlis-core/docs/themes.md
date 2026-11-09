@@ -291,7 +291,10 @@ popover's filter row, list and footer. A theme sets parts in a top-level `parts`
 
 `purlis theme parts` prints every family, part, variant, state and property there is, with each
 bound, as JSON: what the purlis-theme skill, the gallery and an editor read. The schema completes each
-key. A theme that extends another starts from its parent's parts and layers its own over them,
+key. Settings › Theme's Parts row lists the manifest itself: the families the chosen theme sets,
+and under Show each part every family and part with its states and the version it came in, each
+key the theme sets under its part with its value and whether the theme or one of its options sets
+it. Nothing there is a list of its own. A theme that extends another starts from its parent's parts and layers its own over them,
 key by key. A property typed in its CSS spelling (`border-color`) is told the name it means.
 
 **The manifest's version is a release's.** Its `version` is the last version a release shipped,
