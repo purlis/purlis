@@ -132,12 +132,7 @@ fn answer_in(
     params: &Value,
 ) -> Answer {
     let at = chrono::Utc::now();
-    if !still_runs(config, of, snapshot) {
-        return Answer::error(ErrorKind::NotApproved, at);
-    }
-    let plane = approval::plane_granted(config, &of.dir, &of.folder, &of.pin, snapshot);
-    let declared = declared.map_or(&[][..], |d| d.queries.as_slice());
-    let query = match calls::admit(declared, plane, asked, params) {
+    let query = match admitted(config, of, snapshot, declared, asked, params) {
         Ok(query) => query,
         Err(kind) => return Answer::error(kind, at),
     };
@@ -152,6 +147,26 @@ fn answer_in(
         at,
         chrono::Local::now().naive_local(),
     )
+}
+
+/// **The query a page calling `asked` with `params` may be answered by**, gated again at the
+/// ask: the pin and this machine's approval still running its script, admitted only as declared
+/// ([`calls::admit`]), and a plane-scoped one only with its grant; otherwise why not. A call and
+/// a subscription (#5970) are admitted alike.
+pub(super) fn admitted(
+    config: Option<&Path>,
+    of: &Of,
+    snapshot: &serve::Snapshot,
+    declared: Option<&data::Declared>,
+    asked: &str,
+    params: &Value,
+) -> Result<&'static purlis_core::catalogue::Query, ErrorKind> {
+    if !still_runs(config, of, snapshot) {
+        return Err(ErrorKind::NotApproved);
+    }
+    let plane = approval::plane_granted(config, &of.dir, &of.folder, &of.pin, snapshot);
+    let declared = declared.map_or(&[][..], |d| d.queries.as_slice());
+    calls::admit(declared, plane, asked, params)
 }
 
 /// **Grants an approved artifact its plane-scoped queries** (ADR 0120 §7, #5969): a grant of its

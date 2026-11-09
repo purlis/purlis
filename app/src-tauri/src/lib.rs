@@ -4841,6 +4841,8 @@ pub fn run() {
                 .telling_changes({
                     let window = app.handle().clone();
                     std::sync::Arc::new(move |plane: PlaneId, changes: planewatch::What| {
+                        // And each page subscribed to what it moved is pushed anew (#5970).
+                        artifacts::live::moved(&window, &plane, changes.as_deref());
                         windows::emit_for_plane(
                             &window,
                             &plane,
