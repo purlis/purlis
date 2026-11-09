@@ -1,13 +1,13 @@
 # The window's UI primitives
 
-**Component families on React Aria, and Radix UI until each family moves. New UI is built from
-them, not from hand-rolled markup.**
+**Component families on React Aria. New UI is built from them, not from hand-rolled markup.**
 
 Since #2904 (ADR 0104), every control of a moved family is drawn from its **component family** in
 `app/src/ui/<family>`, which wraps its React Aria primitive once; a screen never imports the
 primitives library, and lint holds it. The button family is the first: [The button
-family](#the-button-family). The families that have not moved still take their Radix primitive as
-the rest of this file says.
+family](#the-button-family). **Every family has moved and Radix is gone** (#2930): no file imports
+a `@radix-ui/*` package and none is a dependency (`app/src/radixGone.guard.test.ts`). Where the
+rest of this file still says Radix, it is the history of why a family behaves as it does.
 
 This is a rule and not a preference, so the rest of this file is the reasons for it and the way
 to follow it.
@@ -26,9 +26,8 @@ file is the defect.
 ## The rule
 
 - A dialog, a radio group, a checkbox, a menu, a popover, a tooltip, a collapsible section, a
-  tab list: take the Radix primitive. Install the one package you need
-  (`@radix-ui/react-<thing>`) — the primitives tree-shake per package, so the window pays for
-  what it uses and nothing else.
+  tab list: take its family from `app/src/ui`, which wraps React Aria's primitive once (ADR 0104).
+  Until #2930 this said to take the Radix primitive, one package per thing.
 - **No library between you and the primitive, and no indirection you cannot read.** No `<Modal>`,
   no `<Field>`, no house component library. The primitive is the component; purlis's look is CSS
   on it. A purlis API in front of Radix is the custom tooling this repo's first rule exists to
@@ -2417,15 +2416,17 @@ model and a select-on-`mousedown` this window's strips do not have:
   the focused pane's controls before its terminal, and the status line last.
   `Window.keyboard.test.tsx` pins the whole sequence.
 
-`useTabStop` (`app/src/roving.ts`) is the one decision the primitive leaves open: which item is
+_History: `@radix-ui/react-roving-focus` and `useTabStop` (`app/src/roving.ts`) left with the last
+lists on them, the Inbox (#5995) and Settings' nav (#2930); every list, tree, strip and page
+navigation now takes its one Tab stop from its family. What follows is how it was wired._
+
+`useTabStop` was the one decision the primitive leaves open: which item is
 the stop before anyone has touched the group. Left alone it is none of them and the group's
 own element takes the stop. It is the selected item at rest, the item the keyboard is on while
 it is inside, and the selected one again when the keyboard leaves. A strip's own controls
 (`.strip-doing`, the `+`) are inside the group but are not its items, so reaching one is leaving.
-**A new list adopts it** by wrapping its container in `RovingFocusGroup.Root asChild` with the hook's props, and each
-item in `RovingFocusGroup.Item asChild tabStopId={…} active={…}`. A strip of tabs never does: its
-keyboard is the tabs family's (`useTabStrip`, with `TabStripRow` or `useTabStripRow`, #3134). The primitive stays visible at
-the call site, which is this file's rule.
+A new list takes its family's keyboard instead (the list, tree and tabs families, and the panel
+family's `ViewNav`).
 
 **Two things about wiring it that will catch the next person.** `useTabStop` has to be told
 every item that is DRAWN — a tab the strip collapsed into its menu, or a row inside a folded

@@ -1028,7 +1028,7 @@ theme.json, following the system", or that it stays in its one appearance (#2615
 - **Open folder** opens the card's theme folder in the file manager: the folder the engine
   places for the card, never a path the window sent.
 - **The keyboard and a screen reader**: the cards are a listbox, one Tab stop, the chosen card
-  the stop at rest (`roving.ts`); selection does not follow the focus, so moving through the
+  the stop at rest (the list family's); selection does not follow the focus, so moving through the
   cards writes nothing. Nothing in the group takes the focus by itself.
 - The machine default, an option's value, a duplicate and Open folder are the window's alone
   (`WINDOW_ONLY`); the gallery's reads are served on a link, as `theme_in_force_at` is: the
