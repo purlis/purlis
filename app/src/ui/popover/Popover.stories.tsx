@@ -220,16 +220,15 @@ function HeldRowCard() {
   const [open, setOpen] = useState(true);
   return (
     <div style={{ display: "flex", justifyContent: "flex-end", inlineSize: "40rem" }}>
-      <button
+      <Button
         ref={row}
-        type="button"
-        className="ui-row"
+        variant="quiet"
         aria-haspopup="dialog"
         aria-expanded={open}
-        onClick={() => setOpen((was) => !was)}
+        onPress={() => setOpen((was) => !was)}
       >
         steward 4
-      </button>
+      </Button>
       <HeldPopover
         triggerRef={row}
         isOpen={open}

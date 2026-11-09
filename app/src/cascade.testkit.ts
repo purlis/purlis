@@ -17,7 +17,7 @@
  *   drawn at its ordinary width, with motion and no narrowing query in force;
  * - a selector that names a pseudo-element draws something else, and is skipped;
  * - `:hover` and `:focus-visible` match only when the call says the element is in that state;
- * - every sheet `styles.css` imports into the `components` layer (the collections, every
+ * - every sheet `styles.css` imports into the `components` layer (every
  *   family's, the overlay surface, a chat's pane and the text roles), in the order the window is
  *   built with, is above `App.css`'s `charter` (`styles.css`), so a family's rule beats any of
  *   `App.css`'s that sets the same property, at any specificity;
@@ -224,7 +224,7 @@ export function drawnWith(
 
 /**
  * `drawnWith` for another stylesheet under `src/`, read once: a primitive's own sheet
- * (`primitives/collections.css`), answered from that sheet's rules alone.
+ * (`primitives/text.css`), answered from that sheet's rules alone.
  */
 export function cascadeOf(
   file: string,

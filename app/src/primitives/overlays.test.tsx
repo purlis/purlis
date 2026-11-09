@@ -213,10 +213,10 @@ const PARTS: RegExp[] = [
 const FAMILY = /^(AnchoredPopover|HeldPopover|PopoverDialog|Menu|InlineMenu)$/;
 
 /** A native control inside an overlay, and the class it must wear. A button of the button family
- *  is `Button` (#2904), a segment the choice family's and a menu's row the menu family's, so a
- *  native `<button>` left inside one is a list's row. */
+ *  is `Button` (#2904), a segment the choice family's, a menu's row the menu family's and a list's
+ *  row the list family's (#2930), so a native one left inside an overlay is never right. */
 const NATIVE: Record<string, string[]> = {
-  button: ["ui-row", "ui-tree-row"],
+  button: [],
   // A box is the field family's (#2905), in a dialog's settings row too, and a select the select
   // family's (#2906, #3289), so a native one left inside an overlay is never right.
   input: [],

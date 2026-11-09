@@ -146,7 +146,7 @@ async function onTheCurrentGroup(group?: string) {
   await waitFor(() => {
     const current = within(nav())
       .getAllByRole("button")
-      .find((one) => one.getAttribute("aria-current") === "true");
+      .find((one) => one.getAttribute("aria-current") === "page");
     expect(current).toBeDefined();
     if (group !== undefined) expect(current).toHaveAccessibleName(group);
     expect(document.activeElement).toBe(current);

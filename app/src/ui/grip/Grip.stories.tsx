@@ -13,6 +13,7 @@ import { Bot, Settings } from "lucide-react";
 import { expect, fn, userEvent, within } from "storybook/test";
 import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 import { ChatMark } from "../chat-mark/ChatMark";
+import { Button } from "../button/Button";
 import { Grip } from "./Grip";
 
 /** Each place a grip stands, with the size and the ground it sets: a row's, then a head's. */
@@ -65,9 +66,9 @@ function EveryPlace({ onPress }: { onPress: () => void }) {
               </>
             ) : (
               // A row is the control the grip stands in: the keyboard on it shows the dots.
-              <button type="button" className="ui-row" aria-label={`steward on ${place.name}`}>
+              <Button variant="quiet" aria-label={`steward on ${place.name}`}>
                 <ChatMark state="idle" who={grip(<Bot aria-hidden="true" />, "")} />
-              </button>
+              </Button>
             )}
           </div>
         );

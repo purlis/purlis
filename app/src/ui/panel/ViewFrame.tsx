@@ -30,170 +30,22 @@
  * Which pages there are is the owner's: a page with nothing in it (Needs you, Drafts) is left
  * out of `pages`, never drawn empty.
  */
-import {
-  useCallback,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type ReactNode,
-} from "react";
-import { mergeProps, useFocusRing, useHover, usePress } from "react-aria";
+import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft } from "lucide-react";
 import { Group, Panel } from "react-resizable-panels";
-import { Count } from "../badge/Badge";
 import { Button, ButtonRow } from "../button/Button";
 import { Select } from "../select/Select";
 import { aModalIsUp, inADialog, inAMenu, VIEW_HOLDER } from "../../keys/contexts";
 import { pressed } from "../../keys/registry";
 import { Separator } from "./Separator";
 import type { HistorySteps } from "./viewHistory";
+import { ViewNav, type ViewPage } from "./ViewNav";
+
+export { ViewNav, type ViewPage } from "./ViewNav";
 
 /** **Below this width the frame is page-and-back**, in px: the navigation's column, the least a
  *  list keeps and the least an item keeps, side by side (the prototype's 170, 260 and 290). */
 export const NARROW_BELOW = 720;
-
-/** **One page of a paged view**: its id, its name, and what its count says, if it has one. */
-export interface ViewPage {
-  id: string;
-  label: string;
-  /** How many it holds, after its name: a waiting page's in the waiting tone. */
-  count?: number;
-  /** The count is of what waits for the person (Needs you): the count family's `waiting`. */
-  waiting?: boolean;
-  /** What a screen reader hears in place of the number ("2 need you"). */
-  countSaid?: string;
-  /** A rule before it: it starts a group of its own (the studio's Harness skills, Routing). */
-  startsGroup?: boolean;
-}
-
-/** The keys that walk the navigation, and where each goes from `at` of `last + 1` pages. */
-function walked(key: string, at: number, last: number): number | undefined {
-  if (key === "ArrowDown") return Math.min(last, at + 1);
-  if (key === "ArrowUp") return Math.max(0, at - 1);
-  if (key === "Home") return 0;
-  if (key === "End") return last;
-  return undefined;
-}
-
-/**
- * **One page in the navigation**: a native button with the `view-nav` family's attributes and
- * states, its name, its count and the mark that says it is the current page. The current page is
- * `aria-current="page"` and drawn with the mark as well as its colour (WCAG 1.4.1).
- */
-function ViewNavItem({
-  page,
-  current,
-  stop,
-  onChoose,
-  onFocusHere,
-  onKeyDown,
-  refFor,
-}: {
-  page: ViewPage;
-  current: boolean;
-  /** The navigation's one Tab stop. */
-  stop: boolean;
-  onChoose: () => void;
-  onFocusHere: () => void;
-  onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => void;
-  refFor: (element: HTMLButtonElement | null) => void;
-}) {
-  // The pointer, a press and the keyboard's ring as React Aria marks them on every control.
-  const { hoverProps, isHovered } = useHover({});
-  const { pressProps, isPressed } = usePress({ onPress: onChoose });
-  const { focusProps, isFocusVisible } = useFocusRing();
-  return (
-    <button
-      type="button"
-      {...mergeProps(hoverProps, pressProps, focusProps, { onKeyDown, onFocus: onFocusHere })}
-      ref={refFor}
-      tabIndex={stop ? 0 : -1}
-      aria-current={current ? "page" : undefined}
-      data-scope="view-nav"
-      data-part="item"
-      data-selected={current || undefined}
-      data-hovered={isHovered || undefined}
-      data-pressed={isPressed || undefined}
-      data-focus-visible={isFocusVisible || undefined}
-      data-starts-group={page.startsGroup || undefined}
-    >
-      <span data-scope="view-nav" data-part="label">
-        {page.label}
-      </span>{" "}
-      {page.count !== undefined && page.count > 0 && (
-        <Count variant={page.waiting ? "waiting" : "neutral"} said={page.countSaid}>
-          {page.count}
-        </Count>
-      )}
-      <span data-scope="view-nav" data-part="indicator" aria-hidden="true" />
-    </button>
-  );
-}
-
-/**
- * **The page navigation**: named pages, each with its count, one Tab stop. ↑ and ↓ move along
- * it and stop at its ends, Home and End go to the first and the last, and Enter, Space or a
- * press chooses the page. The Tab stop is the current page until the keyboard has been on
- * another one, which it stays on while the keyboard is in the navigation.
- */
-export function ViewNav({
-  label,
-  pages,
-  page,
-  onPage,
-}: {
-  /** What the navigation is called (`aria-label`): "Skill studio pages". */
-  label: string;
-  pages: readonly ViewPage[];
-  page: string;
-  onPage: (id: string) => void;
-}) {
-  const items = useRef(new Map<string, HTMLButtonElement>());
-  const [aimed, setAimed] = useState<string | undefined>(undefined);
-  const stop = pages.some((one) => one.id === aimed)
-    ? aimed
-    : pages.some((one) => one.id === page)
-      ? page
-      : pages[0]?.id;
-  const keyed = (at: number) => (event: KeyboardEvent<HTMLButtonElement>) => {
-    const to = walked(event.key, at, pages.length - 1);
-    if (to === undefined || event.altKey || event.ctrlKey || event.metaKey) return;
-    event.preventDefault();
-    const one = pages[to];
-    if (one !== undefined) items.current.get(one.id)?.focus();
-  };
-  return (
-    <nav
-      aria-label={label}
-      data-scope="view-frame"
-      data-part="nav"
-      onBlur={(event) => {
-        // The keyboard has left the navigation: its stop goes back to the current page.
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setAimed(undefined);
-      }}
-    >
-      <ul>
-        {pages.map((one, at) => (
-          <li key={one.id}>
-            <ViewNavItem
-              page={one}
-              current={one.id === page}
-              stop={one.id === stop}
-              onChoose={() => onPage(one.id)}
-              onFocusHere={() => setAimed(one.id)}
-              onKeyDown={keyed(at)}
-              refFor={(element) => {
-                if (element === null) items.current.delete(one.id);
-                else items.current.set(one.id, element);
-              }}
-            />
-          </li>
-        ))}
-      </ul>
-    </nav>
-  );
-}
 
 /** **A page's words in the navigation's picker**: its name and its count, as one option. */
 function pickerLabel(one: ViewPage): string {

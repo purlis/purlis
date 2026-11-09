@@ -15,7 +15,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Fragment, useState, type CSSProperties } from "react";
 import { expect, screen, waitFor } from "storybook/test";
-import { Bot, Plus, X } from "lucide-react";
+import { Bot, Plus } from "lucide-react";
 import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 import { useTabIds } from "./TabStrip";
 import { ChatMark } from "../chat-mark/ChatMark";
@@ -28,6 +28,7 @@ import {
   editorToolbar,
   TabCell,
   TabPicture,
+  TabCloser,
   tabPart,
   tabsPart,
   ToolbarFile,
@@ -110,20 +111,15 @@ function DockedStrip({
                 </span>
                 <SplitPicture layout={one.layout} />
               </StripTab>
-              <button
-                type="button"
-                className="closer"
-                {...tabPart("closer")}
+              <TabCloser
+                label={`Close ${one.name}`}
                 // The front tab's × is the one Tab stop after the strip, as on the chat strip.
-                tabIndex={at === inFront ? 0 : -1}
-                aria-label={`Close ${one.name}`}
-                onClick={() => {
+                reachable={at === inFront}
+                onPress={() => {
                   setOpen(open.filter((_, there) => there !== at));
                   setInFront(Math.max(0, Math.min(inFront, open.length - 2)));
                 }}
-              >
-                <X aria-hidden="true" />
-              </button>
+              />
             </TabCell>
           ))}
           <span className="strip-doing">

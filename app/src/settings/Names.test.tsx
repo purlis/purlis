@@ -258,7 +258,7 @@ async function everyGroup(level: string) {
 
 /** Opens each of the level's files under Edit as TOML, in turn, and holds the tab each time. */
 async function everyFile(level: string) {
-  const links = () => screen.getByRole("group", { name: "Edit as TOML" });
+  const links = () => screen.getByRole("navigation", { name: "Edit as TOML" });
   const files = within(links())
     .getAllByRole("button")
     .map((one) => one.textContent ?? "");

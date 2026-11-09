@@ -252,9 +252,12 @@ describe("every pair a stylesheet draws", () => {
   });
 
   it("is found where a state rule sets a background on its own, under its base rule's colour", () => {
-    // A row under the pointer (`primitives/collections.css`) sets only the row's fill; the words
-    // on it are the colour `.ui-row` gives them.
-    expect(derivedBy.get("text.primary on surface.hover")).toContain(".ui-row:hover over .ui-row");
+    // A tab's close under the pointer (`ui/tabs/tabs.css`) sets only its fill; the mark on it is
+    // the colour the close's own rule gives it.
+    const closer = '[data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"]';
+    expect(derivedBy.get("text.primary on surface.hover")).toContain(
+      `${closer}:hover over ${closer}`,
+    );
   });
 
   it("holds each change mark's colour on every row the explorer draws it on", () => {

@@ -58,10 +58,10 @@ export function tipOf(target: Element | null | undefined): string | null {
   return said;
 }
 
-/** Every element a hint may be on: words and marks with one, the button family, and the status
- *  item family. */
+/** Every element a hint may be on: words and marks with one, the button family, the status item
+ *  family, and a tab's close (#2930). */
 const HINTED =
-  '[data-tooltip-target], [data-scope="button"][data-part="root"], [data-scope="status-item"][data-part="root"]';
+  '[data-tooltip-target], [data-scope="button"][data-part="root"], [data-scope="status-item"][data-part="root"], [data-scope="tabs"][data-part="closer"]';
 
 type Said = string | RegExp;
 

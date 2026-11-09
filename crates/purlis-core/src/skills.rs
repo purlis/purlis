@@ -2753,7 +2753,8 @@ pub struct StudioRow {
     /// Its folder, relative to the plane where it is inside it; empty for a harness skill.
     pub folder: String,
     /// How a persona's `skills:` list names it (SK-5): `purlis:<name>` for a built-in skill,
-    /// `<plugin>:<name>` for a plugin's, else its name.
+    /// `<plugin>:<name>` for a plugin's, `workspaces/<ws>:<name>` for another workspace's the
+    /// persona names by its workspace (SK-5a, #2933), else its name.
     pub written: String,
     /// Whether the persona the set is a chat as names it in its `skills:` list.
     pub named: bool,
@@ -3742,6 +3743,19 @@ fn marked_in_clones<'a>(
 pub const UNCHECKED: &str =
     "purlis can't check whether this machine has it: its plugin's skills can't be listed";
 
+impl StudioRow {
+    /// **Its level as a person reads it** ([`level_shown`]): `project`, `local workspace`, and,
+    /// for another workspace's skill the persona names by its workspace (SK-5a, #2933), that
+    /// workspace's name after it (`workspace ops`), since it is not the chat's own.
+    pub fn level_label(&self) -> String {
+        let level = level_shown(self.origin, self.local);
+        match Reference::parse(&self.written) {
+            Some(Reference::Workspace { workspace, .. }) => format!("{level} {workspace}"),
+            _ => level,
+        }
+    }
+}
+
 /// **The studio's rows of `set`**, a set of a chat in the plane at `plane` as a persona whose
 /// `skills:` list says `names` (empty for a chat on no persona): every skill it gets, every one
 /// its harness loads for the persona, and every one left out, by name, each folder relative to
@@ -3763,8 +3777,19 @@ fn rows_of(set: &SkillSet, plane: &Path, names: &[Reference], reading: Reading) 
     let grant = |origin: Origin, folder: &Path| {
         (origin == Origin::Project).then(|| grant_of(folder).unwrap_or(Grant::Root).to_string())
     };
-    let written = |origin: Origin, name: &str| match origin {
+    // A workspace's copy the persona names by its workspace is written so (SK-5a, #2933).
+    let by_its_workspace = |name: &str, folder: &Path| {
+        let rel = relative(folder.parent()?).replace('\\', "/");
+        let ws = purlis_skills::level_of_rel(&rel)?.0.workspace()?.to_owned();
+        let reference = Reference::Workspace {
+            workspace: ws,
+            name: name.to_owned(),
+        };
+        names.contains(&reference).then(|| reference.to_string())
+    };
+    let written = |origin: Origin, name: &str, folder: &Path| match origin {
         Origin::BuiltIn => Reference::BuiltIn(name.to_owned()).to_string(),
+        Origin::Workspace => by_its_workspace(name, folder).unwrap_or_else(|| name.to_owned()),
         _ => name.to_owned(),
     };
     let named = |said: &str| names.iter().any(|one| one.to_string() == said);
@@ -3773,7 +3798,7 @@ fn rows_of(set: &SkillSet, plane: &Path, names: &[Reference], reading: Reading) 
         .iter()
         .map(|e| {
             let folder = e.skill.path.parent().unwrap_or(&e.skill.path);
-            let written = written(e.origin, &e.skill.name);
+            let written = written(e.origin, &e.skill.name, folder);
             StudioRow {
                 source_label: None,
                 name: e.skill.name.clone(),
@@ -3834,11 +3859,12 @@ fn rows_of(set: &SkillSet, plane: &Path, names: &[Reference], reading: Reading) 
         }))
         .chain(set.left_out.iter().map(|l| {
             // A left-out copy a persona names is the reference itself (`purlis:<name>` for a
-            // built-in one there is none of); every other copy is named by its own name.
-            let written = if matches!(l.reason, Reason::NoSuchBuiltIn) {
+            // built-in one there is none of, `workspaces/<ws>:<name>` for another workspace's
+            // that is not there); every other copy is named by its own name.
+            let written = if l.reason.named_and_not_there() {
                 l.name.clone()
             } else {
-                written(l.origin, &l.name)
+                written(l.origin, &l.name, &l.folder)
             };
             StudioRow {
                 source_label: None,

@@ -7,7 +7,7 @@
  * The Inbox's asks hold reply boxes and reasons, and a letter there is a word, never a search.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { useState } from "react";
 import { Button } from "../button/Button";
@@ -15,6 +15,8 @@ import { TextArea, TextField } from "../field/Field";
 import { List, ListRow } from "./List";
 import { ListFoldSection } from "./Fold";
 import { Segment, SegmentedControl } from "../choice/Radio";
+import { Select } from "../select/Select";
+import { ComboBox } from "../select/ComboBox";
 import { RowLabel } from "./Row";
 
 afterEach(cleanup);
@@ -241,5 +243,170 @@ describe("a radio group in a row (#3123)", () => {
     await userEvent.keyboard("{ArrowDown}");
     expect(radio("Use an entry I have")).toBeChecked();
     expect(row("Fill the token").contains(document.activeElement)).toBe(true);
+  });
+});
+
+describe("a key while a text box in a row composes (#5993)", () => {
+  /** The Inbox's own Esc (`Inbox.tsx`'s `leave`) hears what comes up out of its lists. */
+  function Composing({ onEscape, onLeave }: { onEscape: () => void; onLeave: () => void }) {
+    return (
+      <div onKeyDown={(event) => event.key === "Escape" && onLeave()}>
+        <Asks onEscape={onEscape} />
+      </div>
+    );
+  }
+
+  it("gives Esc to the input method alone: the keyboard stays in the box, and nothing above hears it", async () => {
+    const onEscape = vi.fn();
+    const onLeave = vi.fn();
+    render(<Composing onEscape={onEscape} onLeave={onLeave} />);
+    await userEvent.click(reply());
+    fireEvent.keyDown(reply(), { key: "Escape", isComposing: true });
+    expect(reply()).toHaveFocus();
+    expect(onEscape).not.toHaveBeenCalled();
+    expect(onLeave).not.toHaveBeenCalled();
+  });
+
+  it("gives Esc of key code 229 to the input method alone, as WebKit sends it once composing ends", async () => {
+    const onEscape = vi.fn();
+    const onLeave = vi.fn();
+    render(<Composing onEscape={onEscape} onLeave={onLeave} />);
+    await userEvent.click(reply());
+    fireEvent.keyDown(reply(), { key: "Escape", keyCode: 229 });
+    expect(reply()).toHaveFocus();
+    expect(onEscape).not.toHaveBeenCalled();
+    expect(onLeave).not.toHaveBeenCalled();
+  });
+
+  it("keeps ↓ of key code 229 for the input method's candidates in a one-line box: the list stays on its row", async () => {
+    render(<Asks />);
+    await userEvent.click(reason());
+    fireEvent.keyDown(reason(), { key: "ArrowDown", keyCode: 229 });
+    expect(reason()).toHaveFocus();
+  });
+});
+
+describe("a select or a combobox in a row (#5993)", () => {
+  const KINDS = [
+    { value: "value", label: "New value" },
+    { value: "entry", label: "An entry I have" },
+  ];
+
+  function Picks() {
+    const [kind, setKind] = useState("value");
+    const [skill, setSkill] = useState("");
+    return (
+      <List aria-label="Asks" disallowTypeAhead>
+        <ListRow id="first" textValue="First">
+          <RowLabel>First</RowLabel>
+        </ListRow>
+        <ListRow id="picks" textValue="Fill the token">
+          <RowLabel>Fill the token</RowLabel>
+          <Select aria-label="How to fill" value={kind} options={KINDS} onValueChange={setKind} />
+          <ComboBox
+            aria-label="Skill"
+            suggestions={["purlis:purlis-handoff", "purlis:purlis-theme"]}
+            value={skill}
+            onChange={setSkill}
+          />
+        </ListRow>
+        <ListRow id="last" textValue="Last">
+          <RowLabel>Last</RowLabel>
+        </ListRow>
+      </List>
+    );
+  }
+
+  const trigger = () => screen.getByRole("button", { name: /How to fill/ });
+
+  /** The keyboard comes to the select as a person brings it: into the list, a row down, → on. */
+  async function onTheSelect() {
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowDown}{ArrowRight}");
+    expect(trigger()).toHaveFocus();
+  }
+
+  it("opens a select on ↓, where the row would have gone to the row below", async () => {
+    render(<Picks />);
+    await onTheSelect();
+    await userEvent.keyboard("{ArrowDown}");
+    const list = await screen.findByRole("listbox");
+    expect(within(list).getAllByRole("option")).toHaveLength(2);
+    expect(screen.getByRole("row", { name: "Last", hidden: true })).not.toHaveFocus();
+  });
+
+  it("opens a select on ↑, where the row would have gone to the row above", async () => {
+    render(<Picks />);
+    await onTheSelect();
+    await userEvent.keyboard("{ArrowUp}");
+    await screen.findByRole("listbox");
+    expect(screen.getByRole("row", { name: "First", hidden: true })).not.toHaveFocus();
+  });
+
+  it("opens a combobox's suggestions on ↓, and the keyboard stays in its box", async () => {
+    render(<Picks />);
+    const box = screen.getByRole("combobox", { name: "Skill" });
+    await userEvent.click(box);
+    await userEvent.keyboard("{ArrowDown}");
+    await screen.findByRole("listbox");
+    await waitFor(() => expect(box).toHaveFocus());
+  });
+});
+
+describe("a box of lines that wrap, in a row (#5993)", () => {
+  /** Ten characters to a line, twenty pixels to it: the test's document draws no lines, so each
+   *  run of text in the box's measure is laid out here as a browser would wrap it. */
+  const PER_LINE = 10;
+  function wrapped(this: Element): DOMRectList {
+    const start = this.previousSibling?.textContent?.length ?? 0;
+    const length = this.textContent?.length ?? 0;
+    const rects: DOMRect[] = [];
+    if (length > 0)
+      for (
+        let line = Math.floor(start / PER_LINE);
+        line <= Math.floor((start + length - 1) / PER_LINE);
+        line += 1
+      )
+        rects.push(new DOMRect(0, line * 20, 10, 20));
+    return Object.assign(rects, {
+      item: (at: number) => rects[at] ?? null,
+    }) as unknown as DOMRectList;
+  }
+
+  afterEach(() => vi.restoreAllMocks());
+
+  /** Two lines that wrap, and no line break: "aaaa bbbb " and "cccc dddd". */
+  const TWO_LINES = "aaaa bbbb cccc dddd";
+
+  async function typedAndAt(at: number) {
+    vi.spyOn(HTMLSpanElement.prototype, "getClientRects").mockImplementation(wrapped);
+    render(<Asks />);
+    await userEvent.click(reply());
+    await userEvent.keyboard(TWO_LINES);
+    reply().setSelectionRange(at, at);
+  }
+
+  it("keeps ↑ on its second line, which wraps from the first", async () => {
+    await typedAndAt(13);
+    await userEvent.keyboard("{ArrowUp}");
+    expect(reply()).toHaveFocus();
+  });
+
+  it("keeps ↓ on its first line, which wraps on to the second", async () => {
+    await typedAndAt(3);
+    await userEvent.keyboard("{ArrowDown}");
+    expect(reply()).toHaveFocus();
+  });
+
+  it("gives ↑ to the list from its first line", async () => {
+    await typedAndAt(3);
+    await userEvent.keyboard("{ArrowUp}");
+    expect(row("First")).toHaveFocus();
+  });
+
+  it("gives ↓ to the list from its last line", async () => {
+    await typedAndAt(13);
+    await userEvent.keyboard("{ArrowDown}");
+    expect(row("Last")).toHaveFocus();
   });
 });

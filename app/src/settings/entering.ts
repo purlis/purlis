@@ -160,7 +160,7 @@ export function useEnteringFocus(place: string, holder: RefObject<HTMLElement | 
       if (aDialogIsUp()) return false;
       const nav = root.querySelector<HTMLElement>(".ui-settings-nav");
       const target =
-        nav?.querySelector<HTMLElement>('[aria-current="true"]') ??
+        nav?.querySelector<HTMLElement>('[aria-current="page"]') ??
         nav?.querySelector<HTMLElement>("button");
       if (target === null || target === undefined) return false;
       target.focus({ preventScroll: true });

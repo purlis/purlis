@@ -148,7 +148,7 @@ async function taskTab() {
     };
     const cell = document.querySelector<HTMLElement>(`${strip} > .tab[data-task-tab]`);
     if (!cell) return null;
-    const enders = [...cell.querySelectorAll<HTMLElement>("button.closer")];
+    const enders = [...cell.querySelectorAll<HTMLElement>('button[data-part="closer"]')];
     return {
       cell: box(cell),
       name: cell.querySelector(".tab-name")?.textContent ?? "",
@@ -275,7 +275,9 @@ describe("a task in a tab of its own, and beside its session", () => {
     // The minimise takes the tab away, and the session's chip still counts the task.
     await browser.execute((strip: string) => {
       document
-        .querySelector<HTMLElement>(`${strip} > .tab[data-task-tab] button.closer[data-minimise]`)
+        .querySelector<HTMLElement>(
+          `${strip} > .tab[data-task-tab] button[data-part="closer"][data-minimise]`,
+        )
         ?.click();
     }, STRIP);
     await browser.waitUntil(async () => (await taskTab()) === null, {

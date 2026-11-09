@@ -797,3 +797,31 @@ fn grants_of_chats_a_launch_did_not_bring_back_tell_that_the_run_grants_moved() 
     assert!(asks.given_runs().is_empty());
     assert_eq!(times(&told), 1);
 }
+
+#[test]
+fn a_run_grant_that_waits_says_where_the_person_answers_and_that_it_stays_answerable() {
+    let tmp = tempfile::tempdir().unwrap();
+    let project = tmp.path().join("smart-ide");
+    std::fs::create_dir(&project).unwrap();
+    let asks = Asks::new(&project);
+    let mut said = Vec::new();
+    let held = asks.allowed_or_held(need(bound(7, &["a"])), Duration::ZERO, &mut |line: &str| {
+        said.push(line.to_owned())
+    });
+    assert_eq!(
+        said,
+        [
+            "purlis asked the person to allow curl with vault team; waiting for the person: Asks \
+          (✋) in the purlis window, project smart-ide, for up to 0 seconds"
+        ]
+    );
+    assert_eq!(
+        held,
+        RunHeld::StillOpen {
+            line: "waiting on the person to allow curl with vault team; the ask is still \
+                   answerable in Asks (✋) in the purlis window, project smart-ide; you will be \
+                   told their answer, so run this command again only then"
+                .into()
+        }
+    );
+}

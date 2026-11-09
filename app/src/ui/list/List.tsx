@@ -79,7 +79,13 @@ import {
 } from "../menu/ContextMenu";
 import { InOption, RowScope, type RowSize } from "./Row";
 import { useListRowTip, type RowTipped } from "./RowTip";
-import { isEscapeInABox, keptOnTheWayDown, movedInARadioGroup } from "./rowKeys";
+import {
+  isComposing,
+  isEscapeInABox,
+  keepsItsArrows,
+  keptOnTheWayDown,
+  movedInARadioGroup,
+} from "./rowKeys";
 import type { Tip } from "../tooltip/Tooltip";
 
 export type { Key, Selection };
@@ -440,7 +446,7 @@ export function List<T extends object>({
     if (
       onEscape !== undefined &&
       event.key === "Escape" &&
-      !event.nativeEvent.isComposing &&
+      !isComposing(event) &&
       // Esc in a row's text box gives the keyboard back to its row first.
       !isEscapeInABox(event)
     ) {
@@ -616,6 +622,10 @@ function rowElement(labelledBy?: string, describedBy?: string) {
         if (!keyHeardNow && fromWithin && event.target !== event.currentTarget)
           if (id !== undefined && manager.focusedKey !== id) manager.setFocusedKey(id);
         element.onFocus?.(event);
+      }}
+      // A select or a combobox in it hears its own ↑ and ↓, and opens (#5993, `rowKeys.ts`).
+      onKeyDownCapture={(event) => {
+        if (!keepsItsArrows(event)) element.onKeyDownCapture?.(event);
       }}
     />
   );

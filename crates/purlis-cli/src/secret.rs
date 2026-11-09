@@ -399,6 +399,8 @@ pub fn secret(here: &crate::Here, command: SecretCommand, graft: Option<Vec<Stri
             vault.as_deref(),
             replace.as_deref(),
             program.as_deref(),
+            // It may wait on the person for a while: it says where they answer (#6008).
+            &mut |waits| eprintln!("{waits}"),
         ) {
             Ok((line, code)) => {
                 println!("{line}");
@@ -415,7 +417,8 @@ pub fn secret(here: &crate::Here, command: SecretCommand, graft: Option<Vec<Stri
 
 /// **A Secret ask, as `purlis secret ask` and the `secret_ask` tool both raise it** (#5072): the
 /// one line the app is sent ([`purlis_core::secrets::ask::ask_the_window`]), and what the chat
-/// is told of its answer with the status the command ends with. Never a value.
+/// is told of its answer with the status the command ends with. Never a value. `waits` hears
+/// where the person answers, as the ask is sent.
 pub fn ask(
     ctx: &Ctx,
     key: &str,
@@ -423,9 +426,10 @@ pub fn ask(
     vault: Option<&str>,
     replace: Option<&str>,
     program: Option<&str>,
+    waits: &mut dyn FnMut(&str),
 ) -> Result<(String, i32), String> {
-    purlis_core::secrets::ask::ask_the_window(ctx, key, purpose, vault, replace, program)
-        .map(|said| said.line())
+    purlis_core::secrets::ask::ask_the_window(ctx, key, purpose, vault, replace, program, waits)
+        .map(|said| said.line(&ctx.root))
 }
 
 /// [`ask`] for the `secret_ask` tool: its arguments `key`, `purpose`, `vault` and `replace`.
@@ -441,6 +445,8 @@ pub fn ask_tool(args: &serde_json::Map<String, serde_json::Value>) -> Result<Str
         text("vault"),
         text("replace"),
         text("program"),
+        // A tool's caller hears only its one line.
+        &mut |_| {},
     )
     .map(|(line, _)| line)
 }

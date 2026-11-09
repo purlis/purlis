@@ -1539,7 +1539,9 @@ describe("closing, while a tab shows a task", () => {
 
     // The tab is talk's now: its pane was given talk (#4757), and a task's tab closes by its
     // minimise.
-    const close = tab("talk").closest(".tab")?.querySelector<HTMLElement>("button.closer");
+    const close = tab("talk")
+      .closest(".tab")
+      ?.querySelector<HTMLElement>('button[data-part="closer"]');
     expect(close?.getAttribute("aria-label")).toBe("Send talk back to its row");
     await userEvent.click(close as HTMLElement);
 
@@ -1635,7 +1637,7 @@ describe("a handoff is a session of its own (#1492, V100-69)", () => {
     const { tree, asked } = await drawn(moved());
 
     expect(tabNames()).toEqual(["steward 1", "drop commons"]);
-    const close = tab("drop commons").closest(".tab")?.querySelector("button.closer");
+    const close = tab("drop commons").closest(".tab")?.querySelector('button[data-part="closer"]');
     expect(close?.getAttribute("aria-label")).toBe("Close drop commons");
     // The task is under the chat that asked; the handoff is beside it.
     expect(levels(tree)).toEqual(["1 steward 1", "2 talk", "1 drop commons"]);

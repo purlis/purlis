@@ -16,7 +16,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Fragment, useRef, useState, type ReactNode } from "react";
 import { expect, waitFor, within } from "storybook/test";
-import { X } from "lucide-react";
 import type { Shown } from "../../bindings";
 import { Notice, NoticePaneRow } from "../../Notice";
 import { TerminalPromptNotice } from "../../TerminalPromptNotice";
@@ -28,7 +27,7 @@ import type { Offer } from "../../actions";
 import { ChatMark } from "../chat-mark/ChatMark";
 import { useTabIds } from "./TabStrip";
 import { panelRoot } from "../panel/Panel";
-import { TabCell, tabPart, tabsPart } from "./Tabs";
+import { TabCell, TabCloser, tabPart, tabsPart } from "./Tabs";
 import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 import { Button } from "../button/Button";
 
@@ -352,15 +351,7 @@ function PaneBand({
                   {name}
                 </span>
               </button>
-              <button
-                type="button"
-                className="closer"
-                {...tabPart("closer")}
-                tabIndex={-1}
-                aria-label={`Close ${name}`}
-              >
-                <X aria-hidden="true" />
-              </button>
+              <TabCloser label={`Close ${name}`} onPress={() => {}} />
             </TabCell>
           ))}
         </div>

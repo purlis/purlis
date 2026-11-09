@@ -17,7 +17,6 @@ import {
 import { createPortal } from "react-dom";
 import {
   ArrowUpRight,
-  ChevronRight,
   ChevronsDownUp,
   FileInput,
   FilePlus,
@@ -88,6 +87,7 @@ import {
 } from "./touching";
 import { Button, IconButton, ToggleButton } from "./ui/button/Button";
 import { TextField } from "./ui/field/Field";
+import { Disclosure } from "./ui/disclosure/Disclosure";
 import {
   PanelSection as ViewSection,
   PanelSectionHead,
@@ -1945,26 +1945,18 @@ function Section({
     );
   }
   return (
+    // The heading's whole line is the disclosure family's fold (#2930), a level-2 heading in the
+    // section label's role. Its panel hides the section and keeps it mounted.
     <div className="explorer-section" data-section={id}>
-      <PanelSectionTitle className="explorer-section-head">
-        {/* The heading's whole line is the disclosure: a row of the set (`.ui-row`, #1857), so
-            its title starts where the section's rows and its filter's text do. */}
-        <button
-          type="button"
-          className="ui-row ui-text-label"
-          // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-          tabIndex={0}
-          aria-expanded={!closed}
-          aria-controls={body}
-          onClick={() => setSectionOpen(id, closed, project)}
-        >
-          <ChevronRight className="twisty" data-open={!closed || undefined} />
-          {title}
-        </button>
-      </PanelSectionTitle>
-      <div id={body} className="explorer-section-body" hidden={closed}>
+      <Disclosure
+        level={2}
+        size="sm"
+        label={<span className="ui-text-label">{title}</span>}
+        isExpanded={!closed}
+        onExpandedChange={(open) => setSectionOpen(id, open, project)}
+      >
         {children}
-      </div>
+      </Disclosure>
     </div>
   );
 }

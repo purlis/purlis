@@ -186,16 +186,6 @@ describe("the token test", () => {
     ]);
   });
 
-  it("lets Radix pass its own measured properties along, and nothing else", () => {
-    expect(
-      check(`<p style="--radix-popover-trigger-width: var(--radix-popper-anchor-width)"></p>`),
-    ).toEqual([]);
-    expect(check(`<p style="color: var(--radix-popper-anchor-width)"></p>`)).toEqual([
-      "<p> style color reads --radix-popper-anchor-width, which is not a token",
-    ]);
-    expect(check(`<p style="--radix-anything: #fff"></p>`)).toHaveLength(1);
-  });
-
   it("refuses a colour inside a data URL, percent-encoded or base64", () => {
     const svg = `<svg xmlns='http://www.w3.org/2000/svg'><path fill='#fff'/></svg>`;
     const encoded = `data:image/svg+xml,${encodeURIComponent(svg).replace(/'/g, "%27")}`;
@@ -1317,9 +1307,12 @@ const STATES: State[] = [
     drawn: /The whole file, comments and all/,
     then: async () => {
       await userEvent.click(
-        within(await screen.findByRole("group", { name: "Edit as TOML" })).getByRole("button", {
-          name: "charter.toml",
-        }),
+        within(await screen.findByRole("navigation", { name: "Edit as TOML" })).getByRole(
+          "button",
+          {
+            name: "charter.toml",
+          },
+        ),
       );
     },
   },
