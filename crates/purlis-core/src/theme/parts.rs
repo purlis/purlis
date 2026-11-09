@@ -1075,7 +1075,7 @@ fn field_look(_variant: &str, _states: &[State]) -> Look {
 
 /// **A text input's, a textarea's, a select's and a combobox's colours** as
 /// `app/src/ui/field/field.css` and `app/src/ui/select/select.css` draw them: the sunken ground
-/// behind the control's edge (`border.control`, none in Purlis), in every state but refused; the
+/// behind the box's edge (`border.input`, #4475), in every state but refused; the
 /// keyboard's ring is drawn by the family, outside the parts. A refused box (`invalid`, #3110,
 /// #3323) draws the danger colour on the same edge, inside the box.
 fn box_look(_variant: &str, states: &[State]) -> Look {
@@ -1085,7 +1085,7 @@ fn box_look(_variant: &str, states: &[State]) -> Look {
         border: if states.contains(&State::Invalid) {
             "danger.base"
         } else {
-            "border.control"
+            "border.input"
         },
     }
 }

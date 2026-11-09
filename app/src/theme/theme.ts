@@ -106,11 +106,16 @@ export const TOKENS = [
 
   "border.subtle",
   "border.strong",
-  // **A plain control's edge** (#3177): the secondary button's, a field's and a select's. Its
-  // own token rather than `border.strong`, so a theme can draw its controls without hairlines
-  // (Purlis: transparent, the control told by its fill) and keep every other strong rule. It is
-  // never Allow's: an answer that grants keeps its accent edge whatever this is.
+  // **A plain control's edge** (#3177): the secondary button's. Its own token rather than
+  // `border.strong`, so a theme can draw its controls without hairlines (Purlis: transparent,
+  // the control told by its fill) and keep every other strong rule. It is never Allow's: an
+  // answer that grants keeps its accent edge whatever this is.
   "border.control",
+  // **A box's edge** (#4475): a text input's, a textarea's, a select's and a combobox's. A box
+  // whose fill is the ground it stands on is told apart by this alone (WCAG 1.4.11, 3:1), so it
+  // is drawn where a plain control's edge is not. A theme that leaves it out draws it as
+  // `border.control`.
+  "border.input",
 
   // What charter is drawing attention to, and where the keyboard is.
   "accent.base",

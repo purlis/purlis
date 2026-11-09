@@ -31,6 +31,7 @@ pub const TOKENS: &[&str] = &[
     "border.subtle",
     "border.strong",
     "border.control",
+    "border.input",
     "accent.base",
     "accent.surface",
     "accent.wash",
@@ -235,6 +236,7 @@ pub const TINTABLE: &[&str] = &[
     "border.subtle",
     "border.strong",
     "border.control",
+    "border.input",
     "accent.base",
     "accent.surface",
     "accent.wash",
@@ -383,9 +385,11 @@ pub fn follow_muted(
 /// primary's fill under the pointer was the active tab's, its edge was the accent, and its words
 /// were the primary words. A chosen title-bar chip's wash under the pointer (#3345) was the
 /// active tab's, as the primary's fill under the pointer was, which Purlis Classic draws alike. The
-/// hot count (#3098) was the needs-you mark and its words.
-pub const KIN: [(&str, &str); 10] = [
+/// hot count (#3098) was the needs-you mark and its words. A box's edge (#4475) was a plain
+/// control's.
+pub const KIN: [(&str, &str); 11] = [
     ("border.control", "border.strong"),
+    ("border.input", "border.control"),
     ("accent.wash", "accent.surface"),
     ("accent.wash-hover", "tab.active"),
     ("accent.text", "accent.base"),

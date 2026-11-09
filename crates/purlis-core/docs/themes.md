@@ -948,7 +948,8 @@ itself never fetches the address; only your editor does.
 ### Tokens added after themes existed
 
 The Figma pass added eight keys to format 2 (operator ruling 2026-10-25, #3177, #3113):
-`border.control` (a plain control's edge: the secondary button's, a field's, a select's),
+`border.control` (a plain control's edge: the secondary button's, and a field's and a select's
+until `border.input` took those, #4475),
 `accent.wash` (a chosen activity button's ground), `accent.text` (words and icons in the
 accent on its surface or wash), `accent.fill`, `accent.fill-hover`, `accent.fill-edge` and
 `accent.fill-text` (the primary button's ground, its ground under the pointer, its edge and its
@@ -967,6 +968,7 @@ follows the value the theme gives the old one (`vocabulary::KIN`):
 | `accent.fill-edge` | `accent.base` |
 | `accent.fill-text` | `text.primary` |
 | `accent.wash-hover` | `tab.active` |
+| `border.input` | `border.control` |
 
 Later, `accent.wash-hover` came in (#3345): the chosen title-bar chip's ground under the pointer,
 a step stronger than `accent.wash`, which is the chosen chip's ground at rest; both hold the
@@ -998,6 +1000,13 @@ whose fill comes that near the hot count, as written or at any hue the tint reci
 draws the family default. The rule's fill and the hot count are compared laid on the ground the
 count stands on, as the screen draws them, so a see-through rule is read as the colour it comes out
 on the bar, and so is a see-through hot count.
+
+Then came `border.input` (#4475): the edge of a box a value is typed or picked in, a text input, a
+textarea, a select and a combobox, where `border.control` stays the edge of a plain button. A box
+whose fill is the ground it stands on, as Purlis draws `surface.sunken`, is told apart only by its
+edge, which WCAG 2.2 holds at 3:1 (1.4.11): Purlis draws it in its faint tier, and high
+contrast's in its control's edge. It follows `border.control` in `vocabulary::KIN`, so a theme
+that sets neither draws its boxes as it did.
 
 Over Purlis, whose primary is filled and whose controls draw no edge, a theme keeps Purlis's
 values unless it names them. `radius.control` is Classic's `radius.md`, 4, where a theme names

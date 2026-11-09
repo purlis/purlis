@@ -560,11 +560,13 @@ fn a_light_wash_reads_in_its_own_hue_on_every_ground_it_is_laid_on() {
 type Stepped<'a> = &'a [(&'static str, &'static str, f64)];
 
 /// The pairs light's reflected colours missed (#2700, #2902): the quiet tier, the placeholder
-/// that is drawn in it, and faint.
+/// that is drawn in it, and faint; and a box's edge on a dialog, where it is all that tells the
+/// box from its ground (#4475).
 const LIGHT_STEPPED: Stepped<'static> = &[
     ("text.quiet", "surface.hover", 4.5),
     ("placeholder", "surface.hover", 4.5),
     ("text.faint", "surface.hover", 3.0),
+    ("border.input", "surface.overlay", 3.0),
 ];
 
 /// **`dark` reflected by light's one rule** ([`light_rule`]), then each colour of `stepped`
@@ -1103,5 +1105,24 @@ fn the_primary_is_filled_in_the_accent_with_white_words_in_every_appearance() {
             assert!(ratio >= 4.5, "{} {fill}: {ratio}", theme.id);
         }
         assert_eq!(theme.value("accent.fill-edge"), "#00000000", "{}", theme.id);
+    }
+}
+
+#[test]
+fn a_box_draws_an_edge_at_3_to_1_on_every_ground_it_stands_on() {
+    // WCAG 2.2 1.4.11: what identifies a control holds 3:1 against what is around it. A box's
+    // fill is `surface.sunken`, which Purlis draws as the window's own ground, so only its edge,
+    // `border.input` (`ui/field/field.css`, `ui/select/select.css`), says where it is (#4475).
+    for theme in &purlis().appearances {
+        for ground in ["surface.base", "surface.raised", "surface.overlay"] {
+            let under = check::solid(theme.value(ground));
+            let edge = check::onto(theme.value("border.input"), &under);
+            let ratio = check::contrast(&edge, &under);
+            assert!(
+                ratio >= 3.0,
+                "{} border.input on {ground}: {ratio:.2}",
+                theme.id
+            );
+        }
     }
 }

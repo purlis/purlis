@@ -448,7 +448,9 @@ asked for), whatever the system's appearance. Where its values come from:
 - **The Figma pass** (#3177, the operator's ruling of 2026-10-24) took the audit's fifteen
   deviations out at once. **No hairlines**: a plain control's edge (`border.control`) is
   transparent in dark and light (high contrast draws it as its strong rule, 3:1 or more on every
-  ground an input or a button stands on, WCAG 1.4.11, #4921), and the dialog, the popover and the tooltip draw none (their parts); Allow keeps
+  ground an input or a button stands on, WCAG 1.4.11, #4921), and the dialog, the popover and the tooltip draw none (their parts); a box a value
+  is typed or picked in draws its own edge, `border.input`, Purlis's faint tier at 3:1 or more on
+  every ground it stands on, since its fill is the window's own ground (#4475); Allow keeps
   its accent edge and its lock. **The primary is filled**: `accent.fill` `#6d58bb` with white
   words (`accent.fill-text`), 5.6:1, and `#745fc3` under the pointer, 5.0:1, in dark, light and
   high contrast alike, with no edge (`accent.fill-edge`, transparent: a token, since a part on
