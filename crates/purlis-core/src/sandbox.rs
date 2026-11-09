@@ -2505,6 +2505,12 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
                 home.join(crate::machine::RUNNERS_FILE),
                 Access::ReadWrite,
             );
+            // The runners a removal left on another engine (#2587): denied as they are.
+            deny(
+                Class::HumanPowers,
+                home.join(crate::runners::left::FILE),
+                Access::ReadWrite,
+            );
             // When each of those runners ran (#3492): denied as they are.
             deny(
                 Class::HumanPowers,

@@ -353,6 +353,152 @@ fn a_removal_acts_on_nothing_when_another_engine_answers_by_the_time_it_acts() {
     assert_eq!(read(config.path()).unwrap().len(), 1);
 }
 
+/// A runner kept as `first`, made on Docker engine `engine-a`.
+fn kept_on_engine_a(config: &Path) {
+    keep(
+        config,
+        &made(),
+        &answered("01JB0RUNNER0000000000000000"),
+        &OURS,
+    )
+    .unwrap();
+    let locked = lock(config);
+    note_locked(
+        config,
+        "first",
+        |kept| kept.engine = Some("engine-a".to_owned()),
+        &locked,
+    )
+    .unwrap();
+}
+
+/// **A runner left on another engine is remembered** (#2587): its row goes, so its pool can be
+/// removed, and what it was made as is kept with the engine that holds it.
+#[test]
+fn a_runner_left_on_another_engine_is_remembered_with_the_engine_that_holds_it() {
+    let config = tempfile::tempdir().unwrap();
+    kept_on_engine_a(config.path());
+    let fake = FakeDocker::new(&inspected());
+    fake.set("engine", "engine-b\n");
+
+    let removed = remove(config.path(), &fake.docker(), "first", None).unwrap();
+
+    assert!(removed.forgotten, "{removed:?}");
+    assert!(read(config.path()).unwrap().is_empty());
+    let left = left::read(config.path()).unwrap();
+    assert_eq!(left.len(), 1, "{left:?}");
+    assert_eq!(left[0].made, made());
+    assert_eq!(left[0].pool, "first");
+    assert_eq!(left[0].engine, "engine-a");
+    assert!(left[0].since > 1_700_000_000);
+    assert_eq!(left[0].volume(), "purlis-runner-first-home");
+    assert!(
+        removed.left().unwrap().contains("purlis pool left-behind"),
+        "{removed:?}"
+    );
+}
+
+#[test]
+fn the_record_of_runners_left_behind_holds_the_ruled_keys_for_its_user_alone() {
+    use std::os::unix::fs::PermissionsExt;
+    let config = tempfile::tempdir().unwrap();
+    kept_on_engine_a(config.path());
+    let fake = FakeDocker::new(&inspected());
+    fake.set("engine", "engine-b\n");
+    remove(config.path(), &fake.docker(), "first", None).unwrap();
+
+    let path = crate::machine::dir(config.path()).join(left::FILE);
+    assert_eq!(
+        std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    let value: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(value["version"], 1);
+    let row = value["runners"][0].as_object().unwrap();
+    let mut keys: Vec<&str> = row.keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        [
+            "container",
+            "engine",
+            "home",
+            "image",
+            "name",
+            "pool",
+            "since",
+            "user"
+        ]
+    );
+    assert_eq!(row["container"], ID);
+    assert_eq!(row["engine"], "engine-a");
+}
+
+/// **A runner left behind is removed once Docker answers as its engine again**, and only then
+/// forgotten; until then nothing is removed by name on another engine.
+#[test]
+fn a_runner_left_behind_is_removed_once_docker_answers_as_its_engine_again() {
+    let config = tempfile::tempdir().unwrap();
+    kept_on_engine_a(config.path());
+    let fake = FakeDocker::new(&inspected());
+    fake.set("engine", "engine-b\n");
+    remove(config.path(), &fake.docker(), "first", None).unwrap();
+
+    let still = left::remove(config.path(), &fake.docker()).unwrap();
+    assert_eq!(still.len(), 1);
+    let why = still[0].1.as_ref().unwrap_err();
+    assert!(
+        why.contains("engine-b") && why.contains("engine-a"),
+        "{why}"
+    );
+    assert!(
+        !fake.file("log").contains(" rm "),
+        "removed by name on another engine: {}",
+        fake.file("log")
+    );
+    assert_eq!(left::read(config.path()).unwrap().len(), 1);
+
+    fake.set("engine", "engine-a\n");
+    let gone = left::remove(config.path(), &fake.docker()).unwrap();
+
+    assert_eq!(gone.len(), 1);
+    assert_eq!(gone[0].1, Ok(()));
+    let log = fake.file("log");
+    assert!(
+        log.contains(&format!("container rm --force --volumes {ID}")),
+        "{log}"
+    );
+    assert!(
+        log.contains("volume rm --force purlis-runner-first-home"),
+        "{log}"
+    );
+    assert!(left::read(config.path()).unwrap().is_empty());
+}
+
+/// **Where the record of runners left behind does not read, a runner on another engine stays
+/// kept** and the record is left as it is: it is in one record or the other.
+#[test]
+fn a_runner_on_another_engine_stays_kept_where_the_record_of_those_left_does_not_read() {
+    let config = tempfile::tempdir().unwrap();
+    kept_on_engine_a(config.path());
+    let folder =
+        purlis_same_user::PrivateDirectory::open(&crate::machine::dir(config.path())).unwrap();
+    folder
+        .replace_file(left::FILE, b"{\"version\": 2}")
+        .unwrap();
+    let fake = FakeDocker::new(&inspected());
+    fake.set("engine", "engine-b\n");
+
+    assert!(remove(config.path(), &fake.docker(), "first", None).is_err());
+
+    assert_eq!(read(config.path()).unwrap().len(), 1);
+    assert_eq!(
+        std::fs::read_to_string(folder.path().join(left::FILE)).unwrap(),
+        "{\"version\": 2}"
+    );
+}
+
 #[test]
 fn removing_a_runner_that_is_not_kept_is_refused() {
     let config = tempfile::tempdir().unwrap();
