@@ -73,6 +73,7 @@ fn declared(names: &[&str]) -> Declared {
     Declared {
         api: 1,
         data: names.iter().map(|n| (*n).to_owned()).collect(),
+        queries: Vec::new(),
     }
 }
 
