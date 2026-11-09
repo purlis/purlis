@@ -558,6 +558,7 @@ fn the_samples_are_what_the_envelope_builders_make_of_a_sample_panic_and_draft()
     assert_eq!(crash["exception"]["values"][0]["type"], "panic");
     assert_eq!(crash["level"], "fatal");
     assert_eq!(crash["fingerprint"].as_array().map(Vec::len), Some(1));
+    assert_eq!(crash["tags"]["fingerprint"], crash["fingerprint"][0]);
     assert!(crash.get("user").is_none() && crash.get("server_name").is_none());
 
     let draft = event(&samples.draft);

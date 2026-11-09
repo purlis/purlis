@@ -170,6 +170,10 @@ fn the_count_of_repeats_rides_once_on_the_next_report_that_leaves() {
     assert_eq!(sent.len(), 3, "the repeats were never sent on their own");
     let first = event(&sent[0]);
     assert_eq!(first["fingerprint"], serde_json::json!([repeated]));
+    assert_eq!(
+        first["tags"]["fingerprint"], repeated,
+        "the steward's routine reads the device's fingerprint from the tags Sentry's API returns (#5701)"
+    );
     assert!(first.get("extra").is_none(), "{first}");
     let next = event(&sent[1]);
     assert_eq!(

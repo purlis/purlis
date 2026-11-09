@@ -41,6 +41,7 @@ fn kit(plugin: &Path) -> Kit<'_> {
         plugin: Some(plugin),
         persona: None,
         skills: None,
+        own: &[],
         graded: false,
         laid_out: None,
         judging: false,

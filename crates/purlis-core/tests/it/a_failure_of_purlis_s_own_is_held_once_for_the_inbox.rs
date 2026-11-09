@@ -242,6 +242,15 @@ fn a_failure_met_again_after_its_draft_left_is_counted_and_never_drafted_again()
         first.contains(&format!("\"fingerprint\":[\"{fingerprint}\"]")),
         "the intake groups it by its fingerprint: {first}"
     );
+    let event: serde_json::Value = first
+        .lines()
+        .nth(2)
+        .and_then(|line| serde_json::from_str(line).ok())
+        .expect("the envelope's event");
+    assert_eq!(
+        event["tags"]["fingerprint"], fingerprint,
+        "and the steward's routine reads it from the event's tags (#5701): {first}"
+    );
     assert!(
         first.contains(&format!(
             "{{\"fingerprint\":\"{fingerprint}\",\"count\":1}}"
