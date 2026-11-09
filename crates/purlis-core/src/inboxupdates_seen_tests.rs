@@ -60,7 +60,10 @@ fn seeing_again_keeps_when_it_was_first_seen_and_writes_nothing() {
     let after = std::fs::metadata(store.seen_file(&root))
         .and_then(|meta| meta.modified())
         .expect("its file");
-    assert_eq!(written, after, "nothing new was seen, so nothing is written");
+    assert_eq!(
+        written, after,
+        "nothing new was seen, so nothing is written"
+    );
 }
 
 #[test]
@@ -84,7 +87,10 @@ fn it_keeps_at_most_its_bound_letting_go_of_what_was_seen_longest_ago() {
     assert_eq!(answered.len(), AT_MOST_SEEN);
     assert!(answered.contains_key("ask:last"));
     assert_eq!(
-        first.iter().filter(|key| !answered.contains_key(*key)).count(),
+        first
+            .iter()
+            .filter(|key| !answered.contains_key(*key))
+            .count(),
         1,
         "one seen at the earliest time went"
     );
@@ -115,7 +121,11 @@ fn a_file_this_build_cannot_read_reads_as_nothing_seen_and_is_written_over() {
 fn an_ask_that_stops_standing_is_forgotten_so_the_same_ask_again_is_new() {
     let (_dir, root, store) = project();
     store
-        .see(&root, &keys(&["ask:3:wait", "ask:4:p1", "notice:pin-gone:ide"]), 100)
+        .see(
+            &root,
+            &keys(&["ask:3:wait", "ask:4:p1", "notice:pin-gone:ide"]),
+            100,
+        )
         .expect("seen");
 
     let answered = store

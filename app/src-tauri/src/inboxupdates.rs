@@ -376,8 +376,7 @@ pub async fn inbox_seen(
     plane: PlaneId,
 ) -> Result<Vec<String>, String> {
     let root = root_of(&planes, &plane)?;
-    off_the_window(move || Ok(seen_in(Store::here().as_ref(), &root)))
-        .await
+    off_the_window(move || Ok(seen_in(Store::here().as_ref(), &root))).await
 }
 
 /// **Notes `keys` seen** (#6002): each row visible in an open view for about a second, or
@@ -531,7 +530,12 @@ mod tests {
         let store = Store::in_data(&dir.path().join("data"));
         let root = dir.path().join("project");
         std::fs::create_dir_all(&root).expect("a project");
-        let keys = |names: &[&str]| names.iter().map(|one| (*one).to_owned()).collect::<Vec<_>>();
+        let keys = |names: &[&str]| {
+            names
+                .iter()
+                .map(|one| (*one).to_owned())
+                .collect::<Vec<_>>()
+        };
         assert!(seen_in(Some(&store), &root).is_empty());
 
         let seen = see_in(

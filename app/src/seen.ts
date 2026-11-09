@@ -16,83 +16,26 @@
  * Until the record is read nothing is New: a row drawn with its accent bar and then without it
  * would say something new came that did not.
  */
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type RefObject,
-} from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { commands, type InboxUpdate, type PlaneId, type Shown } from "./bindings";
+import { ASK, askSeenKey, isNewIn, SEEN_AFTER_MS, updateSeenKey, type SeenRows } from "./seenRows";
 
-/** How long a row is in sight in an open view before it has been seen: about a second. */
-export const SEEN_AFTER_MS = 1000;
+export {
+  askSeenKey,
+  isNewIn,
+  newAsks,
+  newNotices,
+  newUpdates,
+  noticeSeenKey,
+  SEEN_AFTER_MS,
+  SeenRowsOf,
+  updateSeenKey,
+  useSeenRow,
+  type SeenRows,
+} from "./seenRows";
 
 /** How much of a row is in sight for it to count as visible. */
 const IN_SIGHT = 0.5;
-
-/** What every ask's key starts with: the core lets go of those no longer standing. */
-const ASK = "ask:";
-
-/** An ask's key: its chat's, and its own, unique in its project. */
-export const askSeenKey = (ask: Pick<Shown, "session" | "ask">) =>
-  `${ASK}${ask.session}:${ask.ask}`;
-
-/** A Notice's key: its cause, what its dismissal is keyed by too. */
-export const noticeSeenKey = (cause: string) => `notice:${cause}`;
-
-/** An update's key: its own, which the core keeps it by. */
-export const updateSeenKey = (key: string) => `update:${key}`;
-
-/** Whether `key` is New under `seen`: nothing is, until the record is read. */
-export const isNewIn = (seen: ReadonlySet<string> | undefined, key: string) =>
-  seen !== undefined && !seen.has(key);
-
-/** The asks of `asks` that are New. */
-export const newAsks = (
-  asks: readonly Shown[] | undefined,
-  seen: ReadonlySet<string> | undefined,
-) => (asks ?? []).filter((ask) => isNewIn(seen, askSeenKey(ask))).length;
-
-/** The updates of `updates` that are New: not seen, and not marked read. */
-export const newUpdates = (
-  updates: readonly InboxUpdate[] | undefined,
-  seen: ReadonlySet<string> | undefined,
-) => (updates ?? []).filter((one) => !one.read && isNewIn(seen, updateSeenKey(one.key))).length;
-
-/** The Notices of `causes` that are New. */
-export const newNotices = (causes: readonly string[], seen: ReadonlySet<string> | undefined) =>
-  causes.filter((cause) => isNewIn(seen, noticeSeenKey(cause))).length;
-
-/** What a row of the Inbox's views asks of the seen record: {@link useSeenRow}. */
-export interface SeenRows {
-  isNew: (key: string) => boolean;
-  /** Watches `element` for `key`: seen once it has been in sight for {@link SEEN_AFTER_MS}.
-   *  Answers the way to stop. */
-  watch: (element: Element, key: string) => () => void;
-}
-
-/** The seen record of the project whose views are drawn below. None outside one: nothing New. */
-export const SeenRowsOf = createContext<SeenRows | null>(null);
-
-/**
- * **A row of an Inbox view**: whether it is New, and its element watched while it is, so it is
- * seen once it has been in sight for about a second. `drawn` is the row's own element.
- */
-export function useSeenRow(key: string, drawn: RefObject<Element | null>): boolean {
-  const rows = useContext(SeenRowsOf);
-  const isNew = rows?.isNew(key) ?? false;
-  useEffect(() => {
-    const element = drawn.current;
-    if (rows === null || !isNew || element === null) return undefined;
-    return rows.watch(element, key);
-  }, [rows, isNew, key, drawn]);
-  return isNew;
-}
 
 /**
  * **A project's seen record, as its window draws it.** `asks` are the asks standing now, once
@@ -114,7 +57,8 @@ export function useSeen(
     latest.current = seen;
   }, [seen]);
   const told = useCallback((answer: { status: "ok"; data: string[] } | { status: "error" }) => {
-    if (answer.status === "ok") setSeen(new Set(answer.data));
+    // Only a list is a record: anything else leaves it unread, so nothing is drawn New.
+    if (answer.status === "ok" && Array.isArray(answer.data)) setSeen(new Set(answer.data));
   }, []);
 
   useEffect(() => {

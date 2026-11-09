@@ -77,7 +77,7 @@ import {
   type NoticeListAt,
   type NoticeTone,
 } from "./ui/notice/Notice";
-import { noticeSeenKey, useSeenRow } from "./seen";
+import { noticeSeenKey, useSeenRow } from "./seenRows";
 
 /**
  * **A Notice: a standing line in a project's window about something true now** (CONTEXT.md,
@@ -635,7 +635,7 @@ function NoticeViewRow({
   const since = given == null ? drawn : given * 1000;
   // **New until seen** (#6002): its accent bar, until it has been in sight for about a second.
   const row = useRef<HTMLElement>(null);
-  const isNew = useSeenRow(noticeSeenKey(cause), row);
+  const [isNew] = useSeenRow(noticeSeenKey(cause), row);
   const now = useNow();
   const toChat = fixes?.find((fix) => fix.go === true);
   const others = fixes?.filter((fix) => fix !== toChat) ?? [];

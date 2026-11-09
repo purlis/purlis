@@ -90,7 +90,7 @@ describe("what is New", () => {
 /** A row of a view, under the project's seen record. */
 function Row({ seenKey }: { seenKey: string }) {
   const drawn = useRef<HTMLLIElement>(null);
-  const isNew = useSeenRow(seenKey, drawn);
+  const [isNew] = useSeenRow(seenKey, drawn);
   return (
     <li ref={drawn} data-new={isNew || undefined}>
       {seenKey}

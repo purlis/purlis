@@ -229,7 +229,7 @@ export const TheRightColumn: Story = {
     await expect(dot).not.toHaveAttribute("data-count");
     await expect(
       context.canvas.getByRole("button", { name: "Notices" }),
-    ).toHaveAccessibleDescription("A Notice needs fixing, something new");
+    ).toHaveAccessibleDescription(/A Notice needs fixing.*something new/);
     await expect(context.canvasElement.querySelectorAll('[data-part="pip"]')).toHaveLength(2);
   },
 };

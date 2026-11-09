@@ -68,7 +68,7 @@ import { chainSaid, NothingDone } from "./inboxRowParts";
 import { capMarks } from "./combiningMarks";
 import { ASKS, Ask, Empty, EmptyScope, placeIds, SCOPE_LABEL, shapeOf } from "./InboxAsks";
 import { heldBy, UpdateList, type UpdateRow, type Updates, updatePlaces } from "./InboxUpdatesList";
-import { SeenRowsOf, type SeenRows } from "./seen";
+import { SeenRowsOf, type SeenRows } from "./seenRows";
 export { chainSaid } from "./inboxRowParts";
 export { grants, NOTICE_MOVED_JUST_NOW } from "./noticeSettle";
 
