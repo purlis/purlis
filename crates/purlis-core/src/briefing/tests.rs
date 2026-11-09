@@ -1230,6 +1230,70 @@ fn recorded_with(root: &Path, place: active::Place, title: &str, open: &str) -> 
     .shown
 }
 
+/// What [`parts_of`] tells for `part`, for a chat outside the plane started with `env`.
+fn told_part(root: &Path, env: &[(&str, &str)], part: Part) -> Vec<String> {
+    let env: HashMap<String, String> = env
+        .iter()
+        .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+        .collect();
+    let lookup = move |name: &str| env.get(name).cloned();
+    let payload = serde_json::json!({});
+    parts_of(
+        &Ask {
+            root,
+            cwd: root.parent().expect("the plane has a parent"),
+            payload: &payload,
+            env: &lookup,
+            now: now(),
+        },
+        None,
+        part,
+    )
+}
+
+#[test]
+fn a_codex_chat_is_told_the_record_it_resumes_in_its_quoted_part_and_nowhere_else() {
+    // #5935: the record is quoted up to 8,000 characters, someone else's words whose length
+    // purlis does not set, so it goes in the one hook of a Codex chat's that may pass Codex's
+    // cut, never in the briefing's. It still stands in for the place's last record there.
+    let (_d, root) = plane();
+    let shown = recorded_with(
+        &root,
+        active::Place::Workspace("alpha".into()),
+        "Ship the widget",
+        "Pick up the widget.",
+    );
+    let env = [
+        ("PURLIS_SESSION_ID", "s1"),
+        ("PURLIS_WORKSPACE", "alpha"),
+        (crate::sessionrecord::RESUMING_ENV, shown.as_str()),
+    ];
+    let names = |parts: &[String]| {
+        parts
+            .iter()
+            .filter(|p| p.contains("Ship the widget"))
+            .count()
+    };
+    let whole = told(&root, &env, serde_json::json!({}));
+    let briefing = told_part(&root, &env, Part::Briefing);
+    let notes = told_part(&root, &env, Part::Notes);
+    let quoted = told_part(&root, &env, Part::Quoted);
+    assert_eq!(names(&whole), 1, "{whole:#?}");
+    assert_eq!(names(&briefing), 0, "{briefing:#?}");
+    assert_eq!(names(&notes), 0, "{notes:#?}");
+    assert_eq!(quoted.len(), 1, "{quoted:#?}");
+    assert!(
+        quoted[0].contains("Resuming from session record"),
+        "{quoted:#?}"
+    );
+    // Every block of the whole briefing, in its order, is told by exactly one part.
+    let mut parted: Vec<String> = [briefing, notes, quoted].concat();
+    parted.sort();
+    let mut whole_sorted = whole.clone();
+    whole_sorted.sort();
+    assert_eq!(parted, whole_sorted);
+}
+
 #[test]
 fn a_chat_resuming_a_session_record_is_told_the_record_quoted_as_data() {
     let (_d, root) = plane();
