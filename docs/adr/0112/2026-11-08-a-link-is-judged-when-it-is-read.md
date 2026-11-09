@@ -41,6 +41,6 @@ grants. Why it can't be read goes to purlis's log, since the file holds other va
 The chat hears which key, in which of its own vaults, reads an entry of a vault its persona may not
 use. It never hears the other vault's name (D-5246-8). The refusal raises no Secret ask.
 
-A fill's or a login's own notice is not judged yet. It is raised as before, and its Allow or
-Always is pressed as before, and the read that follows is refused. Judging a link before that
-notice is a follow-up: #5831.
+A fill's or a login's own notice is judged too, before it is raised and as it is pressed:
+[a fill or a login is judged before its notice](2026-11-09-a-fill-or-a-login-is-judged-before-its-notice.md)
+(#5831).
