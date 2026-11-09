@@ -5,8 +5,11 @@
 //! 2026-10-30, ADR 0067 as amended for it). A runner has neither bubblewrap nor socat, and a pod
 //! or a default container gives no user namespace to make, so Claude Code's own sandbox cannot
 //! start there. The chat runs inside purlis's Linux wrap as Codex and opencode do (#1040), and
-//! its own sandbox is switched off (`"sandbox": {"enabled": false}` in its `--settings`). On a
-//! person's own Linux machine a Claude Code chat keeps its own sandbox.
+//! its own sandbox is switched off (`"sandbox": {"enabled": false}` in its `--settings`).
+//!
+//! **And on a person's own Linux machine, on a profile for sandboxed chats only** (#2037; ADR 0067
+//! as amended 2026-11-09), whose folder no chat outside the wrap reads or writes. On a profile for
+//! every chat there, a Claude Code chat keeps its own sandbox ([`super::Machine::purlis_wraps`]).
 //!
 //! What being wrapped whole changes, from what [`super::claude`] says of a chat on its own:
 //!
@@ -32,8 +35,8 @@
 //! - **The residual** is Codex's (D-88s): every folder in [`HOME_DIRS`] is shared by the chats on
 //!   one profile, so one chat can leave a transcript or a project memory a later chat on it loads.
 //!   Only wrapped chats: on a runner a Claude Code chat never starts without the sandbox
-//!   ([`crate::start::profile_refusal`], ruled 2026-10-30), as a sandboxed Codex chat starts only
-//!   on a profile for sandboxed chats (D-88q).
+//!   ([`crate::start::profile_refusal`], ruled 2026-10-30), and elsewhere it is wrapped only on a
+//!   profile for sandboxed chats only, as a sandboxed Codex chat starts only on one (D-88q).
 //! - **What only its own sandbox needed goes**: the pins that hold a git folder
 //!   ([`super::Denied::git_folder_pins`]), which a wrap holds by its own rules; the home's empty
 //!   `.gitconfig` (#4006), which only bubblewrap's handling of a missing path asked for; and
@@ -397,7 +400,8 @@ fn written_in(home: &Path) -> String {
 ///   ([`crate::harness::claude::project`]). What else the file holds stays as it is, and a file
 ///   purlis cannot read is left alone, for Claude Code to say so. The mark is read only by the
 ///   wrapped chats on this profile: on a runner no Claude Code chat starts without the sandbox
-///   ([`crate::start::profile_refusal`]).
+///   ([`crate::start::profile_refusal`]), and elsewhere only a profile for sandboxed chats only
+///   is wrapped, which starts none without it either.
 pub fn prepare(wrap: &Wrap, cwd: &Path) {
     let Some(home) = &wrap.home else { return };
     for dir in HOME_DIRS {

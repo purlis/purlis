@@ -380,6 +380,7 @@ fn the_persona_mcp_approvals_are_held_where_purlis_home_puts_them() {
         env: crate::secrets::Env::of(&[("PURLIS_HOME", "/srv/purlis-state")]),
         home: Some(std::path::PathBuf::from("/home/op")),
         os: Os::Linux,
+        on_a_sandbox_only_profile: false,
     };
     let denied = Denied::of(plane.path(), &machine);
     assert!(
@@ -1322,6 +1323,7 @@ fn machine_with_state(os: Os, state: Option<&str>) -> Machine {
         env: crate::secrets::Env::of(&env),
         home: Some(std::path::PathBuf::from("/home/op")),
         os,
+        on_a_sandbox_only_profile: false,
     }
 }
 
@@ -2691,6 +2693,7 @@ fn machine(os: Os) -> Machine {
         env: crate::secrets::Env::of(&[]),
         home: Some(std::path::PathBuf::from("/home/op")),
         os,
+        on_a_sandbox_only_profile: false,
     }
 }
 
@@ -3043,6 +3046,7 @@ fn a_later_letter_s_value_in_the_project_s_cache_home_is_denied() {
         env: crate::secrets::Env::of(&[("XDG_DATA_HOME", "/srv/data")]),
         home: Some(std::path::PathBuf::from("/home/op")),
         os: Os::Linux,
+        on_a_sandbox_only_profile: false,
     };
     let plane = tempfile::tempdir().expect("a plane");
     let cache = caches::root_of(&machine, plane.path()).expect("a data home");
@@ -5142,6 +5146,7 @@ fn mac_with(env: &[(&str, &str)]) -> Machine {
         env: crate::secrets::Env::of(&vars),
         home: Some(StdPathBuf::from("/Users/op")),
         os: Os::MacOs,
+        on_a_sandbox_only_profile: false,
     }
 }
 
@@ -8442,6 +8447,7 @@ fn a_chat_writes_none_of_the_programs_a_cluster_pools_kubectl_runs_nor_their_pac
         env: crate::secrets::Env::of(&[("XDG_CONFIG_HOME", &config.path().display().to_string())]),
         home: Some(std::path::PathBuf::from("/home/op")),
         os: Os::Linux,
+        on_a_sandbox_only_profile: false,
     };
     let plane = tempfile::tempdir().expect("a plane");
     let denied = Denied::of(plane.path(), &machine);
@@ -8499,6 +8505,7 @@ fn a_cluster_pools_program_whose_package_would_be_the_home_or_above_it_is_held_a
         env: crate::secrets::Env::of(&[("XDG_CONFIG_HOME", &config.path().display().to_string())]),
         home: Some(home.clone()),
         os: Os::Linux,
+        on_a_sandbox_only_profile: false,
     };
     let plane = tempfile::tempdir().expect("a plane");
     let denied = Denied::of(plane.path(), &machine);

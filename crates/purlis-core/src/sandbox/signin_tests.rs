@@ -19,6 +19,7 @@ fn machine(home: &Path) -> Machine {
         env: crate::secrets::Env::of(&[]),
         home: Some(home.to_path_buf()),
         os: Os::MacOs,
+        on_a_sandbox_only_profile: false,
     }
 }
 
@@ -192,8 +193,9 @@ fn the_profile_page_says_plainly_where_commands_can_read_a_profiles_sign_in() {
     assert_eq!(
         signin::commands_can_read("claude").as_deref(),
         Some(
-            "The commands this profile's chats run can read its sign-in: on macOS and on a \
-             runner purlis cannot keep Claude Code's sign-in from the commands it runs."
+            "The commands this profile's chats run can read its sign-in: on macOS, on a runner \
+             and on a Linux profile for sandboxed chats only, purlis cannot keep Claude Code's \
+             sign-in from the commands it runs."
         )
     );
     // A harness purlis does not ship is not known to keep it from them.

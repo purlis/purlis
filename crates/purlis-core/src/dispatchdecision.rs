@@ -2973,6 +2973,7 @@ mod tests {
             env: crate::secrets::Env::of(&[]),
             home: Some(std::path::PathBuf::from("/home/op")),
             os: Os::MacOs,
+            on_a_sandbox_only_profile: false,
         };
         // The persona a start compiles its grants for, exactly as `start::ready` picks it.
         let persona =

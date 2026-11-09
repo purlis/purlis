@@ -496,6 +496,7 @@ fn a_sandboxed_opencode_start(project: &Project) -> purlis_core::start::Ready {
             env: purlis_core::secrets::Env::of(&[]),
             home: None,
             os: purlis_core::sandbox::Os::MacOs,
+            on_a_sandbox_only_profile: false,
         },
         &|_| true,
     )

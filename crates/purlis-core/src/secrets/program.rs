@@ -249,6 +249,7 @@ impl Ctx {
             env: self.env.clone(),
             home: home_of(self),
             os: crate::sandbox::Os::this(),
+            on_a_sandbox_only_profile: false,
         };
         let mut homes = crate::sandbox::Homes::of(&machine);
         homes.codex_project = crate::sandbox::Homes::codex_project(&machine, &self.root);

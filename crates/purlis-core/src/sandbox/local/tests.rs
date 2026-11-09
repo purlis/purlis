@@ -1079,6 +1079,7 @@ fn always_for_a_persona_s_browser_is_kept_where_no_sandboxed_chat_writes() {
         )]),
         home: Some(root.join("home")),
         os: crate::sandbox::Os::MacOs,
+        on_a_sandbox_only_profile: false,
     };
     let denied = crate::sandbox::Denied::of(&root, &machine);
     assert!(

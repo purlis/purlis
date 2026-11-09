@@ -575,6 +575,7 @@ fn claude_codes_own_sandbox_holds_the_settings_purlis_writes() {
         env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
         home: Some(home.clone()),
         os: Os::this(),
+        on_a_sandbox_only_profile: false,
     };
     if let Some(program) = &program {
         if !cfg!(any(target_os = "macos", target_os = "linux")) {
@@ -700,6 +701,7 @@ fn a_chat_at_the_floor_makes_its_tools_folders_in_a_bare_home() {
         env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
         home: Some(home.clone()),
         os: Os::this(),
+        on_a_sandbox_only_profile: false,
     };
     let decided = sandbox::decide(Harness::ClaudeCode, &root, &machine, &|_| true, None, None)
         .expect("decided")
@@ -775,6 +777,7 @@ fn an_outcome_evals_shell_writes_only_its_own_folders_and_reaches_no_host() {
         env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
         home: Some(home.clone()),
         os: Os::this(),
+        on_a_sandbox_only_profile: false,
     };
     // Two shell evals' chats of one grade, each with its piece and its temp folder; both go,
     // temp folders and all, however the test ends.
@@ -1005,6 +1008,7 @@ fn two_claude_code_chats_each_write_a_temporary_folder_of_their_own_and_not_the_
         env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
         home: Some(home.clone()),
         os: Os::this(),
+        on_a_sandbox_only_profile: false,
     };
     let decided = sandbox::decide(Harness::ClaudeCode, &root, &machine, &|_| true, None, None)
         .expect("decided")
@@ -1194,6 +1198,7 @@ fn a_workspace_made_after_a_claude_code_chat_starts_hands_no_chat_its_skills() {
         env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
         home: Some(home.clone()),
         os: Os::this(),
+        on_a_sandbox_only_profile: false,
     };
     let (level, settings) = settings_for(&root, &machine);
     assert_eq!(level, Level::Full);
