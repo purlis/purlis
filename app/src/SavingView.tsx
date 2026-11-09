@@ -791,8 +791,9 @@ export function SaveIndicator(props: SaveShown | SaveStillReading) {
   const back = furthestBack(saving, repos ?? []);
   const { stage, incoming, red } = back;
   // A project that could not be fetched while its request is open (#5824 F8) says so in the
-  // pill, and since when and why in its name and tooltip.
-  const words = saving.stale != null ? `${back.words} · stale` : back.words;
+  // pill, as its own element the words' cap never cuts, and since when and why in its name and
+  // tooltip.
+  const words = back.words;
   const said = saving.stale != null ? `${back.said} · ${staleSaid(saving.stale)}` : back.said;
   // A red request is not a block, and it is still something wrong the bar must not draw as
   // "waiting": the mark is the alert, in the failed colour (ADR 0051, amended 2026-10-13).
@@ -812,6 +813,11 @@ export function SaveIndicator(props: SaveShown | SaveStillReading) {
         icon={<Mark aria-hidden="true" />}
       >
         <span className="save-indicator-words">{words}</span>
+        {saving.stale != null && (
+          <span className="save-indicator-stale" aria-hidden="true">
+            · stale
+          </span>
+        )}
         {/* What came in, as its own element the words' cap never cuts (charter#403). Its
             meaning is in the button's name and title, which say "N incoming" in full. */}
         {incoming > 0 && onUpdate === undefined && (
