@@ -49,6 +49,11 @@ export const commands = {
 	artifactRegenerateApprove: __WINDOW_ONLY_RESULT,
 	artifactRegenerate: __WINDOW_ONLY_RESULT,
 	artifactLinkOpen: __WINDOW_ONLY_RESULT,
+	/**
+	 *  **The pinned artifacts of project `plane`, in every workspace, that say any word of
+	 *  `query`**, best first: at most [`MOST`].
+	 */
+	artifactSearch: (plane: PlaneId, query: string) => typedError<ArtifactFound[], string>(__TAURI_INVOKE("artifact_search", { plane, query })),
 	artifactDiscuss: __WINDOW_ONLY_START_REFUSED,
 	/**  What the window says about this launch and the session bus: nothing, on a launch with it. */
 	sessionBus: () => __TAURI_INVOKE<{
@@ -3129,6 +3134,16 @@ export type ArtifactFileChange = {
 	how: string,
 };
 
+/**  One artifact found, as the palette draws it and the window opens it. */
+export type ArtifactFound = {
+	/**  The workspace it is pinned to. */
+	workspace: string,
+	/**  Its folder in the workspace's `artifacts/`: with the workspace, what its tab is keyed by. */
+	folder: string,
+	/**  The pin's name. */
+	name: string,
+};
+
 /**  **When an artifact's data was last updated** (#5955, `purlis_core::artifact::fresh`). */
 export type ArtifactFresh = {
 	/**  Milliseconds since 1970. */
@@ -3247,6 +3262,8 @@ export type ArtifactPinShown = {
 	too_large: string | null,
 	/**  When its data was last updated, when that can be read. */
 	fresh: ArtifactFresh | null,
+	/**  The number its icon shows, as its data declares it (#5965); none when it declares none. */
+	badge?: number | null,
 };
 
 /**

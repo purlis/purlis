@@ -68,6 +68,11 @@ impl Key {
         }
     }
 
+    /// Whether it is an extension's query (#5971), which time moves, not the plane.
+    fn of_an_extension(&self) -> bool {
+        super::queried::is_extension(&self.query)
+    }
+
     fn catalogued(&self) -> Option<&'static Query> {
         let (id, _) = self.query.rsplit_once('@')?;
         purlis_core::catalogue::find(id).map(|(query, _)| query)
@@ -159,22 +164,44 @@ pub(super) fn asked<R: Runtime>(app: tauri::AppHandle<R>, ask: Ask) {
         };
         let params = ask.params.clone().unwrap_or(Value::Null);
         let config = purlis_core::machine::config_root();
-        if let Err(kind) = calls::admitted(
-            config.as_deref(),
-            &of,
-            &snapshot,
-            declared.as_ref(),
-            &ask.name,
-            &params,
-        ) {
-            let answer = Answer::error(kind, chrono::Utc::now());
-            if let Some(webview) = app.get_webview(&ask.label) {
-                let _ = webview.eval(delivery(&ask, &answer));
+        // An extension's query is asked again each `fresh_seconds` while subscribed (#5971).
+        let admitted = if super::queried::is_extension(&ask.name) {
+            super::queried::admitted(
+                &app,
+                config.as_deref(),
+                &of,
+                &snapshot,
+                declared.as_ref(),
+                &ask.name,
+                &params,
+            )
+            .map(|(_, every)| Some(every))
+        } else {
+            calls::admitted(
+                config.as_deref(),
+                &of,
+                &snapshot,
+                declared.as_ref(),
+                &ask.name,
+                &params,
+            )
+            .map(|_| None)
+        };
+        let every = match admitted {
+            Ok(every) => every,
+            Err(kind) => {
+                let answer = Answer::error(kind, chrono::Utc::now());
+                if let Some(webview) = app.get_webview(&ask.label) {
+                    let _ = webview.eval(delivery(&ask, &answer));
+                }
+                return;
             }
-            return;
-        }
+        };
         let key = Key::of(of.plane, of.workspace, ask.name.clone(), &params);
-        let todo = artifacts.live().hub.subscribe(key, who, Instant::now());
+        let todo = artifacts
+            .live()
+            .hub
+            .subscribe_every(key, who, Instant::now(), every);
         perform(&app, todo);
     });
 }
@@ -191,6 +218,7 @@ pub(crate) fn moved<R: Runtime>(
     };
     let todo = artifacts.live().hub.moved(Instant::now(), |key| {
         key.plane == *plane
+            && !key.of_an_extension()
             && key
                 .catalogued()
                 .is_none_or(|query| live::moves(query, &key.workspace, changes))
@@ -223,6 +251,11 @@ fn run<R: Runtime>(app: tauri::AppHandle<R>, key: Key) {
 
 /// What feed `key`'s query answers now, of its plane as it is held.
 fn answer_of<R: Runtime>(app: &tauri::AppHandle<R>, key: &Key) -> Answer {
+    let params: Value = serde_json::from_str(&key.params).unwrap_or(Value::Null);
+    if key.of_an_extension() {
+        let id = key.query.rsplit_once('@').map_or("", |(id, _)| id);
+        return super::queried::ask(app, &key.plane, &key.workspace, id, &params);
+    }
     let at = chrono::Utc::now();
     let root = app
         .try_state::<Planes>()
@@ -231,7 +264,6 @@ fn answer_of<R: Runtime>(app: &tauri::AppHandle<R>, key: &Key) -> Answer {
     let (Some(root), Some(query)) = (root, key.catalogued()) else {
         return Answer::error(ErrorKind::Failed, at);
     };
-    let params: Value = serde_json::from_str(&key.params).unwrap_or(Value::Null);
     purlis_core::catalogue::answer::ask(
         &root,
         &key.workspace,

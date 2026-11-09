@@ -62,7 +62,7 @@ pub(super) fn listed(declared: Option<&data::Declared>) -> Vec<ArtifactQuery> {
     let Some(declared) = declared else {
         return Vec::new();
     };
-    calls::listed(&declared.queries)
+    calls::listed_with(&declared.queries, super::queried::declared_here)
         .into_iter()
         .map(|one| ArtifactQuery {
             id: one.id,
@@ -96,7 +96,8 @@ impl Artifacts {
     }
 }
 
-/// **The answer to a page calling `asked` with `params`**, gated again at the ask.
+/// **The answer to a page calling `asked` with `params`**, gated again at the ask. An
+/// extension's query is its viewer's own extension's to answer (#5971).
 pub(super) fn answer<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     config: Option<&Path>,
@@ -106,6 +107,9 @@ pub(super) fn answer<R: tauri::Runtime>(
     asked: &str,
     params: &Value,
 ) -> Answer {
+    if super::queried::is_extension(asked) {
+        return super::queried::answer(app, config, of, snapshot, declared, asked, params);
+    }
     let root = app
         .try_state::<Planes>()
         .and_then(|planes| planes.held(&of.plane).ok())

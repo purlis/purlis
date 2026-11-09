@@ -13,6 +13,7 @@
 //! workspace is refused with a sentence and nothing is written.
 
 pub mod approval;
+pub mod badge;
 pub mod calls;
 pub mod check;
 pub mod data;
@@ -26,6 +27,7 @@ pub mod offers;
 pub mod pins;
 pub mod regenerate;
 pub mod script;
+pub mod search;
 pub mod serve;
 
 use std::io;

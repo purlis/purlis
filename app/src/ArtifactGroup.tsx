@@ -16,6 +16,7 @@ import {
   pinOrderAfterDrop,
   type ArtifactPinsMoved,
 } from "./artifacts";
+import { ArtifactBadge, badgeDescribes } from "./ArtifactBadge";
 import { listen } from "./here";
 import { PERSONA_ICONS } from "./PersonaMark";
 import { UnpinArtifact } from "./PinToWorkspace";
@@ -161,7 +162,10 @@ export function ArtifactGroup({
                               }
                               aria-label={pin.name}
                               aria-current={chosen ? "page" : undefined}
-                              aria-describedby={sortable.attributes["aria-describedby"]}
+                              aria-describedby={badgeDescribes(
+                                pin,
+                                sortable.attributes["aria-describedby"],
+                              )}
                               data-artifact={pin.folder}
                               data-missing={unopenable === null ? undefined : true}
                               data-dragging={sortable.isDragging || undefined}
@@ -173,6 +177,7 @@ export function ArtifactGroup({
                               }}
                               onClick={() => onOpen(pin)}
                               icon={glyphOf(pin)}
+                              count={<ArtifactBadge pin={pin} stale={fresh?.stale ?? false} />}
                             />
                           </RovingFocusGroup.Item>
                         </ContextMenu>

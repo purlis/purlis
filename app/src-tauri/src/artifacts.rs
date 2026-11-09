@@ -173,6 +173,7 @@ pub(crate) mod calls;
 pub(crate) mod history;
 pub(crate) mod live;
 pub(crate) mod offers;
+pub(crate) mod queried;
 
 /// What every window of a plane hears when an artifact's approval on this machine changed: the
 /// workspace and folder, so each tab of it loads its page again.
@@ -717,6 +718,9 @@ pub struct ArtifactPinShown {
     pub too_large: Option<String>,
     /// When its data was last updated, when that can be read.
     pub fresh: Option<ArtifactFresh>,
+    /// The number its icon shows, as its data declares it (#5965); none when it declares none.
+    #[specta(optional)]
+    pub badge: Option<u32>,
 }
 
 /// What an artifact tab's bar says about it before anything runs.
@@ -788,6 +792,11 @@ pub async fn artifact_pins(
                     .missing
                     .is_none()
                     .then(|| ArtifactFresh::of_pin(&at, &listed.pin.folder))
+                    .flatten(),
+                badge: listed
+                    .missing
+                    .is_none()
+                    .then(|| artifact::badge::of_pin(&at, &listed.pin.folder))
                     .flatten(),
                 id: listed.pin.id,
                 folder: listed.pin.folder,
@@ -1140,6 +1149,7 @@ fn shown(pin: artifact::Pin, live: bool) -> ArtifactPinShown {
         too_large: None,
         // Read with the pins again: every window hears they moved.
         fresh: None,
+        badge: None,
     }
 }
 

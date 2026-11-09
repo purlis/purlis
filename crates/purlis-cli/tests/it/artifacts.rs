@@ -837,3 +837,41 @@ fn types_and_mock_print_the_authors_kit_outside_any_plane() {
         purlis_core::artifact::kit::MOCK
     );
 }
+
+#[test]
+fn search_finds_a_pinned_artifact_by_what_its_page_says_and_never_by_its_data() {
+    let plane = Plane::new();
+    plane.page(
+        "board",
+        "<title>Team board</title><h1>Release train</h1><script>var hidden;</script>",
+    );
+    let out = plane.purlis(&["artifact", "pin", "board"]);
+    assert!(out.status.success(), "{}", said(&out));
+    std::fs::write(
+        plane.artifacts().join("board/data.json"),
+        r#"{"velocity": 12}"#,
+    )
+    .unwrap();
+
+    let out = plane.purlis(&["artifact", "search", "release"]);
+    assert!(out.status.success(), "{}", said(&out));
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        "alpha/board  Team board\n"
+    );
+    // The folder `notes` says "title" too, but nothing pinned it.
+    let out = plane.purlis(&["artifact", "search", "--all", "title"]);
+    assert!(out.status.success(), "{}", said(&out));
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "");
+
+    for unsaid in ["velocity", "hidden"] {
+        let out = plane.purlis(&["artifact", "search", unsaid]);
+        assert!(out.status.success(), "{}", said(&out));
+        assert_eq!(String::from_utf8_lossy(&out.stdout), "", "{unsaid}");
+        assert!(
+            said(&out).contains(&format!("No artifact pinned to 'alpha' says '{unsaid}'.")),
+            "{}",
+            said(&out)
+        );
+    }
+}
