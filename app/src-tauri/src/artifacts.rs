@@ -135,7 +135,7 @@ impl Artifacts {
         let response = Response::builder()
             .status(status)
             .header("Content-Type", kind)
-            .header("Content-Security-Policy", serve::csp(&origin(&host)))
+            .header("Content-Security-Policy", serve::csp(&origin(&host), false))
             .header("X-Content-Type-Options", "nosniff")
             .header("Cache-Control", "no-store")
             .header("Referrer-Policy", "no-referrer")
@@ -541,7 +541,7 @@ mod tests {
             assert_eq!(response.body(), body.as_bytes(), "{path}");
             assert_eq!(
                 response.headers()["Content-Security-Policy"],
-                serve::csp(&origin("aaa")).as_str(),
+                serve::csp(&origin("aaa"), false).as_str(),
                 "{path}"
             );
             assert_eq!(response.headers()["X-Content-Type-Options"], "nosniff");
