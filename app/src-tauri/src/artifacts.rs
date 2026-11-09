@@ -741,19 +741,9 @@ pub struct ArtifactAbout {
 /// **Pinned folder `folder` of `workspace`, read**: its pin's id and its files; refused once it
 /// is pinned no more.
 fn read_pinned(workspace: &Path, folder: &str) -> Result<(String, serve::Snapshot), String> {
-    let pins = artifact::read(workspace)?;
-    let Some(pin) = pins.pins.iter().find(|pin| pin.folder == folder) else {
-        return Err(not_pinned(folder));
-    };
+    let pin = artifact::pinned(workspace, folder)?;
     let snapshot = serve::Snapshot::read(&artifact::resolve(workspace, folder)?, folder)?;
-    Ok((pin.id.clone(), snapshot))
-}
-
-fn not_pinned(folder: &str) -> String {
-    format!(
-        "'{}' is not pinned to this workspace any more",
-        purlis_core::personas::one_line(folder)
-    )
+    Ok((pin.id, snapshot))
 }
 
 fn workspace_of(
@@ -826,7 +816,7 @@ pub async fn artifact_about(
     blocking(move || {
         let pins = artifact::list(&at)?;
         let Some(listed) = pins.into_iter().find(|one| one.pin.folder == folder) else {
-            return Err(not_pinned(&folder));
+            return Err(artifact::not_pinned(&folder));
         };
         Ok(ArtifactAbout {
             fresh: listed
@@ -843,42 +833,35 @@ pub async fn artifact_about(
     .await
 }
 
-/// **Repin**: pins artifact folder `folder` again as it is pinned, its name, icon, command and
-/// working folder kept, so the folder is checked anew (there, inside `artifacts/`, within the
-/// size cap, nothing shaped like a secret). The way out of a missing or too-large artifact once
-/// its folder is back or smaller; the refusal's sentence when it is not.
+/// **Repin** ([`artifact::repin`]): pins artifact folder `folder` again as it is pinned, its name,
+/// icon, command and working folder kept, so the folder is checked anew. The way out of a missing
+/// or too-large artifact once its folder is back or smaller; the refusal's sentence when it is
+/// not. Every window hears that the pins moved, as it does of an unpin.
 #[tauri::command]
 #[specta::specta]
 pub async fn artifact_repin(
+    app: tauri::AppHandle,
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     workspace: String,
     folder: String,
 ) -> Result<(), String> {
+    repin_and_tell(&app, &planes, plane, workspace, folder).await
+}
+
+/// [`artifact_repin`]'s work, on any runtime, so a test on the mock one hears what it tells.
+async fn repin_and_tell<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    planes: &Planes,
+    plane: PlaneId,
+    workspace: String,
+    folder: String,
+) -> Result<(), String> {
     let root = planes.held(&plane)?.root().to_path_buf();
-    let at = workspace_of(&planes, &plane, &workspace)?;
-    blocking(move || {
-        let pins = artifact::read(&at)?;
-        let Some(pin) = pins.pins.into_iter().find(|one| one.folder == folder) else {
-            return Err(format!(
-                "'{}' is not pinned to this workspace any more",
-                purlis_core::personas::one_line(&folder)
-            ));
-        };
-        artifact::pin(
-            &root,
-            &at,
-            &artifact::Request {
-                folder: pin.folder,
-                name: Some(pin.name),
-                icon: Some(pin.icon),
-                command: pin.command,
-                cwd: pin.cwd,
-            },
-        )
-        .map(|_| ())
-    })
-    .await
+    let at = workspace_of(planes, &plane, &workspace)?;
+    blocking(move || artifact::repin(&root, &at, &folder).map(|_| ())).await?;
+    moved(app, plane, workspace);
+    Ok(())
 }
 
 /// **Unpin**: takes artifact folder `folder`'s pin off the workspace; its files stay. A missing
@@ -2129,5 +2112,56 @@ mod tests {
             ..place
         };
         assert_eq!(odd.physical().1.width, 300);
+    }
+
+    /// #5978's review: a Repin is heard by every window, as an Unpin is, so another window's
+    /// group and tab read the pin again.
+    #[test]
+    fn a_repin_tells_every_window_that_the_pins_moved() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use tauri::{Listener, Manager};
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("project");
+        let ws = root.join("workspaces").join("alpha");
+        std::fs::create_dir_all(&ws).unwrap();
+        std::fs::write(purlis_core::names::manifest(&root), "schema = 1\n").unwrap();
+        artifact::adopt(&root, &ws, "board", "<title>Board</title>").unwrap();
+        artifact::pin(
+            &root,
+            &ws,
+            &artifact::Request {
+                folder: "board".into(),
+                ..artifact::Request::default()
+            },
+        )
+        .unwrap();
+
+        let app = tauri::test::mock_builder()
+            .build(tauri_context!(test = true))
+            .expect("the app builds");
+        let planes = crate::planes::Planes::telling(
+            std::sync::Arc::new(|_| {}),
+            crate::Shipped::default(),
+            None,
+        );
+        let plane = planes.open(&root);
+        app.manage(planes);
+        let heard = std::sync::Arc::new(AtomicUsize::new(0));
+        let count = heard.clone();
+        app.listen_any(ARTIFACT_PINS_MOVED, move |_| {
+            count.fetch_add(1, Ordering::SeqCst);
+        });
+
+        tauri::async_runtime::block_on(repin_and_tell(
+            app.handle(),
+            &app.state::<Planes>(),
+            plane,
+            "alpha".to_owned(),
+            "board".to_owned(),
+        ))
+        .expect("the repin is done");
+
+        assert_eq!(heard.load(Ordering::SeqCst), 1);
+        assert_eq!(artifact::pinned(&ws, "board").unwrap().name, "Board");
     }
 }

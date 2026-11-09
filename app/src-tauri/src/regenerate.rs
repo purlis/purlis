@@ -79,13 +79,7 @@ fn read(planes: &Planes, plane: &PlaneId, workspace: &str, folder: &str) -> Resu
     let root = planes.held(plane)?.root().to_path_buf();
     let at = purlis_core::wscmd::workspace_dir(&root, workspace)
         .ok_or_else(|| format!("'{workspace}' is not a workspace purlis knows"))?;
-    let pins = artifact::read(&at)?;
-    let Some(pin) = pins.pins.into_iter().find(|pin| pin.folder == folder) else {
-        return Err(format!(
-            "'{}' is not pinned to this workspace any more",
-            purlis_core::personas::one_line(folder)
-        ));
-    };
+    let pin = artifact::pinned(&at, folder)?;
     let real = artifact::resolve(&at, folder)?;
     Ok(Read {
         root,

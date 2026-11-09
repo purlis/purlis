@@ -126,10 +126,7 @@ fn pinned_dirs(
     folder: &str,
 ) -> Result<(PathBuf, PathBuf), String> {
     let at = workspace_of(planes, plane, workspace)?;
-    let pins = artifact::read(&at)?;
-    if !pins.pins.iter().any(|pin| pin.folder == folder) {
-        return Err(super::not_pinned(folder));
-    }
+    artifact::pinned(&at, folder)?;
     let real = artifact::resolve(&at, folder)?;
     Ok((at, real))
 }

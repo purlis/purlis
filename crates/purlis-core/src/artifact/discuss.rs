@@ -179,13 +179,8 @@ pub fn commit_of(workspace: &Path, folder: &str) -> Commit {
 /// last one of the same folder), and the line to type. Refused with a sentence when the folder is
 /// pinned no more, cannot be opened, or its page is not text.
 pub fn prepare(workspace: &Path, folder: &str) -> Result<Prepared, String> {
-    let pins = super::read(workspace)?;
-    let Some(pin) = pins.pins.into_iter().find(|pin| pin.folder == folder) else {
-        return Err(format!(
-            "'{}' is not pinned to this workspace any more, so there is nothing to discuss",
-            crate::personas::one_line(folder)
-        ));
-    };
+    let pin = super::pinned(workspace, folder)
+        .map_err(|why| format!("{why}, so there is nothing to discuss"))?;
     let real = super::resolve(workspace, folder)?;
     let bytes = std::fs::read(real.join(PAGE)).map_err(|e| {
         format!(

@@ -363,6 +363,44 @@ pub(crate) fn scanned(real: &Path, folder: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// **The pin of folder `folder`** in the workspace at `workspace`, or the sentence saying it is
+/// pinned there no more ([`not_pinned`]). What every surface that acts on one pinned folder (its
+/// tab, Regenerate, Discuss, Repin) asks first.
+pub fn pinned(workspace: &Path, folder: &str) -> Result<Pin, String> {
+    read(workspace)?
+        .pins
+        .into_iter()
+        .find(|pin| pin.folder == folder)
+        .ok_or_else(|| not_pinned(folder))
+}
+
+/// The sentence for a folder that is not pinned to its workspace any more.
+pub fn not_pinned(folder: &str) -> String {
+    format!(
+        "'{}' is not pinned to this workspace any more",
+        crate::personas::one_line(folder)
+    )
+}
+
+/// **Repin**: pins folder `folder` again as it is pinned, its name, icon, command and working
+/// folder kept, so the folder is checked anew ([`pin`]: there, inside `artifacts/`, within the
+/// size cap, nothing shaped like a secret). The way out of a missing or too-large artifact once
+/// its folder is back or smaller; the refusal's sentence when it is not.
+pub fn repin(root: &Path, workspace: &Path, folder: &str) -> Result<Pinned, String> {
+    let was = pinned(workspace, folder)?;
+    pin(
+        root,
+        workspace,
+        &Request {
+            folder: was.folder,
+            name: Some(was.name),
+            icon: Some(was.icon),
+            command: was.command,
+            cwd: was.cwd,
+        },
+    )
+}
+
 /// Unpin the pin named by `key` (its id or its folder); its folder stays.
 pub fn unpin(root: &Path, workspace: &Path, key: &str) -> Result<Pin, String> {
     let mut gone = None;
@@ -722,5 +760,65 @@ mod tests {
         for bad in ["/abs", "..", "a/../b", "a//b", "./a", "a\\b"] {
             assert!(cwd_refusal(bad).is_some(), "{bad}");
         }
+    }
+
+    #[test]
+    fn a_repin_keeps_the_pin_s_name_icon_command_and_working_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path();
+        adopt(ws, ws, "board", "<title>Board</title>").unwrap();
+        std::fs::create_dir_all(ws.join(DIR).join("board").join("gen")).unwrap();
+        let first = match pin(
+            ws,
+            ws,
+            &Request {
+                folder: "board".into(),
+                name: Some("Release board".into()),
+                icon: Some("rocket".into()),
+                command: Some("node build.mjs".into()),
+                cwd: Some("gen".into()),
+            },
+        )
+        .unwrap()
+        {
+            Pinned::New(pin) => pin,
+            other => panic!("a first pin is new: {other:?}"),
+        };
+
+        let again = match repin(ws, ws, "board").unwrap() {
+            Pinned::Updated(pin) => pin,
+            other => panic!("a repin changes nothing of the pin: {other:?}"),
+        };
+        assert_eq!(again.id, first.id);
+        assert_eq!(again.name, "Release board");
+        assert_eq!(again.icon, "rocket");
+        assert_eq!(again.command.as_deref(), Some("node build.mjs"));
+        assert_eq!(again.cwd.as_deref(), Some("gen"));
+        assert_eq!(read(ws).unwrap().pins.len(), 1);
+    }
+
+    #[test]
+    fn a_folder_pinned_no_more_is_found_by_neither_lookup_nor_repin() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path();
+        adopt(ws, ws, "board", "<title>Board</title>").unwrap();
+        let why = pinned(ws, "board").unwrap_err();
+        assert_eq!(why, "'board' is not pinned to this workspace any more");
+        assert_eq!(repin(ws, ws, "board").unwrap_err(), why);
+        assert!(
+            read(ws).unwrap().pins.is_empty(),
+            "a refused repin writes nothing"
+        );
+
+        pin(
+            ws,
+            ws,
+            &Request {
+                folder: "board".into(),
+                ..Request::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(pinned(ws, "board").unwrap().folder, "board");
     }
 }
