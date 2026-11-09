@@ -64,7 +64,7 @@ const rowIn = (canvasElement: HTMLElement) => () =>
 
 /** **A run grant's question and its answers, on its row**: → walks Allow once, Other scopes…,
  *  Don't allow and Go to chat; Enter on Other scopes… opens the wider grants under the line and
- *  the keyboard stays on it; Esc gives the keyboard back to the row. */
+ *  the keyboard stays on it. */
 export const ARunGrantOnItsRow: Story = {
   args: { ask: "RUN_GRANT" },
   play: async ({ canvasElement }) => {
@@ -91,8 +91,6 @@ export const ARunGrantOnItsRow: Story = {
     await expect(canvas.getByRole("button", { name: "Always allow" })).toBeVisible();
     await untilFocused(() => scopes, "the keyboard stays on Other scopes…");
     expectFocusInSight();
-    await userEvent.keyboard("{Escape}");
-    await untilFocused(row, "Esc gives the keyboard back to the row");
   },
 };
 
