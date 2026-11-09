@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794217159201,
+  "lastUpdate": 1794220900450,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -44604,6 +44604,48 @@ window.BENCHMARK_DATA = {
             "value": 101.6401415,
             "unit": "ms",
             "extra": "median of 5 runs: 100.261, 100.729, 101.640, 101.677, 101.779 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "06405a894dda301adb0bcbf180365e9c7c7d4eca",
+          "message": "Codex: skills in a SessionStart hook of their own, the 10,000-byte cut measured (replaces #5909; #5841, #3002) (#5944)\n\nBrings #5909 (head 6394dc0e4e1c7af2519da0f397d43fb66b8953fc) onto main after #5797:\nCodex's skills come from `purlis hook sessionstart-skills`, its budget warning is\nHOOK_OUTPUT_CUT, the measurement tests and CI step `Codex, measured`, the ADR 0102 and\n0099 amendments and the changelog fragment.\n\nConflicts resolved keeping #5797: the listing names a folder once (Q38) and opens with\nLISTING_OPENING; Codex's default budget stays the 8,000 Q37 ruled, now DEFAULT_CHARS, whose\nreason moves from Codex's catalogue to staying under the hook's cut. Comments, docs and\n#5797's changelog fragment that gave the catalogue's 8,000 as the reason now say that.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZPNW0DENHQT4S09QE2V8A4\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-09T10:11:25Z",
+          "tree_id": "aa6654b8c47ef950ce39df9ec4b061615bd46629",
+          "url": "https://github.com/purlis/purlis/commit/06405a894dda301adb0bcbf180365e9c7c7d4eca"
+        },
+        "date": 1794220894673,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.713343,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.703, 0.710, 0.713, 0.718, 0.749 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.51005,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.312, 16.509, 16.510, 16.557, 16.569 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.7172135,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.508, 100.866, 101.717, 102.474, 102.795 ms"
           }
         ]
       }
