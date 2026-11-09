@@ -74,6 +74,7 @@ import {
   type StartSecretAsk as StartSecretAskNamed,
   type ViewTab,
   type WindowDraft,
+  type ArtifactFound,
 } from "./bindings";
 import {
   catalogue,
@@ -955,6 +956,7 @@ export const PlaneView = memo(function PlaneView({
   firstChatAsked,
   shellAsked,
   fileAsked,
+  artifactAsked,
   closeAsked,
   onAsking,
   awayRefused,
@@ -1035,6 +1037,9 @@ export const PlaneView = memo(function PlaneView({
   /** A file ⌘P found in THIS project (FM-7), opened in its file tab once per `at`; with a
    *  `line`, a jump to it (a search hit, FM-8), opened in the branch's file tab at that line. */
   fileAsked?: { place: Place; path: string; line?: number; at: number };
+  /** An artifact the palette found in THIS project (#5968), opened in its own tab once per
+   *  `at`, as pressing its icon opens it. */
+  artifactAsked?: { found: ArtifactFound; at: number };
   /** A link's close of chats with theme drafts, handed to THIS project (#2761), asked here once
    *  per `at`: the chats it ends. */
   closeAsked?: { sessions: readonly number[]; at: number; dropped: boolean };
@@ -5414,6 +5419,15 @@ export const PlaneView = memo(function PlaneView({
       jump ? pieceFilesTitle(place) : pieceFileTitle(place, path),
     );
   }, [fileAsked, showView]);
+
+  /** An artifact the palette found here (#5968), opened in its tab as its icon opens it. */
+  const artifactHandled = useRef(artifactAsked?.at);
+  useEffect(() => {
+    if (artifactAsked === undefined || artifactHandled.current === artifactAsked.at) return;
+    artifactHandled.current = artifactAsked.at;
+    const { workspace, folder, name } = artifactAsked.found;
+    showView(artifactView(workspace, folder), name);
+  }, [artifactAsked, showView]);
 
   /** The Saving tab (charter-app#294), opened the same way and for the same reason. */
   const savingHandled = useRef(savingAsked);

@@ -25,6 +25,7 @@ mod agentidentity;
 mod alerts;
 mod arrived;
 mod artifact_links;
+mod artifact_search;
 mod artifacts;
 mod asking;
 mod asknotify;

@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! `purlis artifact pin|unpin|list|reorder|approve-status`: the command line of
+//! `purlis artifact pin|unpin|list|search|reorder|approve-status`: the command line of
 //! [`purlis_core::artifact`] (ADR 0120, #5950). A pin is committed with the workspace, so a
 //! LIVE workspace's pins reach every teammate with the plane's next save.
 //!
@@ -56,6 +56,21 @@ pub enum ArtifactCommand {
         /// The workspace (default: the active one).
         #[arg(short = 'w', long = "workspace")]
         workspace: Option<String>,
+    },
+    /// Find pinned artifacts by what their pages say: each one whose name or pages hold a word
+    /// starting with a word of the query, best first, as `<workspace>/<folder>  <name>`. Read
+    /// from the project's search index, or from the files when there is none. A page's data
+    /// files are each person's own and are never searched.
+    Search {
+        /// The words to find.
+        #[arg(required = true)]
+        query: Vec<String>,
+        /// The workspace (default: the active one).
+        #[arg(short = 'w', long = "workspace", conflicts_with = "all")]
+        workspace: Option<String>,
+        /// Every workspace's artifacts.
+        #[arg(long)]
+        all: bool,
     },
     /// Put the named pins first, in the order given; every other pin follows in its order.
     Reorder {
@@ -189,6 +204,38 @@ pub fn run(here: &Here, command: ArtifactCommand) -> Result<Code, String> {
                     line.push_str(&format!("  (too large: {why})"));
                 }
                 println!("{line}");
+            }
+            Ok(0)
+        }
+        ArtifactCommand::Search {
+            query,
+            workspace,
+            all,
+        } => {
+            let query = query.join(" ");
+            let ws = if all {
+                None
+            } else {
+                Some(here.workspace(workspace.as_deref())?)
+            };
+            let found = artifact::search::find(root, ws.as_ref().map(|ws| ws.name()), &query).found;
+            if found.is_empty() {
+                let in_where = ws.map_or_else(
+                    || "any workspace".to_string(),
+                    |ws| format!("'{}'", ws.name()),
+                );
+                voice::info(format!(
+                    "No artifact pinned to {in_where} says '{}'.",
+                    purlis_core::personas::one_line(&query)
+                ));
+            }
+            for one in found {
+                println!(
+                    "{}/{}  {}",
+                    one.workspace,
+                    purlis_core::personas::one_line(&one.folder),
+                    purlis_core::personas::one_line(&one.name)
+                );
             }
             Ok(0)
         }
