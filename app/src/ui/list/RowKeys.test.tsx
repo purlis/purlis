@@ -14,6 +14,7 @@ import { Button } from "../button/Button";
 import { TextArea, TextField } from "../field/Field";
 import { List, ListRow } from "./List";
 import { ListFoldSection } from "./Fold";
+import { Segment, SegmentedControl } from "../choice/Radio";
 import { RowLabel } from "./Row";
 
 afterEach(cleanup);
@@ -205,5 +206,40 @@ describe("a control in a row that takes the keyboard (#3123)", () => {
     // And the list's one Tab stop is that row now.
     await userEvent.keyboard("{ArrowDown}");
     expect(row("Last")).toHaveFocus();
+  });
+});
+
+describe("a radio group in a row (#3123)", () => {
+  function Fill() {
+    const [how, setHow] = useState("value");
+    return (
+      <List aria-label="Asks" disallowTypeAhead>
+        <ListRow id="secret" textValue="Fill the token">
+          <RowLabel>Fill the token</RowLabel>
+          <SegmentedControl aria-label="How to fill" value={how} onChange={setHow}>
+            <Segment value="value">New value</Segment>
+            <Segment value="entry">Use an entry I have</Segment>
+          </SegmentedControl>
+        </ListRow>
+        <ListRow id="next" textValue="Run cargo test">
+          <RowLabel>Run cargo test</RowLabel>
+        </ListRow>
+      </List>
+    );
+  }
+
+  it("keeps its arrows: → and ↓ choose the next, ← and ↑ the one before, and the row stays", async () => {
+    render(<Fill />);
+    const radio = (name: string) => screen.getByRole("radio", { name });
+    await userEvent.click(radio("New value"));
+    await userEvent.keyboard("{ArrowRight}");
+    expect(radio("Use an entry I have")).toHaveFocus();
+    expect(radio("Use an entry I have")).toBeChecked();
+    await userEvent.keyboard("{ArrowUp}");
+    expect(radio("New value")).toHaveFocus();
+    expect(radio("New value")).toBeChecked();
+    await userEvent.keyboard("{ArrowDown}");
+    expect(radio("Use an entry I have")).toBeChecked();
+    expect(row("Fill the token").contains(document.activeElement)).toBe(true);
   });
 });

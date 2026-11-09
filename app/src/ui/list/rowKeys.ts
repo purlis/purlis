@@ -19,6 +19,8 @@
  * - **Esc** gives the keyboard back to its row, keeping what was typed; Esc on the row is the
  *   list's (`onEscape`).
  *
+ * A radio group in a row keeps its arrows the same way ({@link movedInARadioGroup}).
+ *
  * Two halves, because React Aria hears them in two places. A row hears the arrows on their way
  * down to the box (a capture handler), so the list hears them first, around it, and keeps them
  * from it: the browser still moves the caret, and nobody's handler hears them
@@ -134,4 +136,40 @@ export function keptOnTheWayUp(event: KeyboardEvent<HTMLElement>): void {
   // with Shift, are the box's.
   const pressed = (event.key === "Enter" || event.key === " ") && !chord;
   if (CARET.has(event.key) || pressed || typed || selectsAll) event.stopPropagation();
+}
+
+/**
+ * **A radio group in a row keeps its arrows** (#3123): the row hears them first, on their way
+ * down, where React Aria's row would walk its controls with ← and → and leave it with ↑ and ↓,
+ * and the radio group's own handler, under it, never hears them. So the list moves the choice
+ * as a radio group does (the WAI-ARIA radio group): → and ↓ to the next radio, ← and ↑ to the
+ * one before, round at the ends, ← and → turned round right to left; each choosing as it goes.
+ * Answers whether it moved.
+ */
+export function movedInARadioGroup(event: KeyboardEvent<HTMLElement>, rtl: boolean): boolean {
+  const radio = event.target;
+  if (!(radio instanceof HTMLInputElement) || radio.type !== "radio") return false;
+  if (rowOf(radio) === null || event.altKey || event.ctrlKey || event.metaKey) return false;
+  const group = radio.closest('[role="radiogroup"]');
+  if (group === null) return false;
+  const ahead =
+    event.key === "ArrowDown" ||
+    (event.key === "ArrowRight" && !rtl) ||
+    (event.key === "ArrowLeft" && rtl);
+  const back =
+    event.key === "ArrowUp" ||
+    (event.key === "ArrowLeft" && !rtl) ||
+    (event.key === "ArrowRight" && rtl);
+  if (!ahead && !back) return false;
+  const radios = [
+    ...group.querySelectorAll<HTMLInputElement>('input[type="radio"]:not(:disabled)'),
+  ];
+  const at = radios.indexOf(radio);
+  if (at === -1) return false;
+  const to = radios[(at + (ahead ? 1 : radios.length - 1)) % radios.length];
+  event.preventDefault();
+  event.stopPropagation();
+  to.focus();
+  to.click();
+  return true;
 }

@@ -79,7 +79,7 @@ import {
 } from "../menu/ContextMenu";
 import { InOption, RowScope, type RowSize } from "./Row";
 import { useListRowTip, type RowTipped } from "./RowTip";
-import { isEscapeInABox, keptOnTheWayDown } from "./rowKeys";
+import { isEscapeInABox, keptOnTheWayDown, movedInARadioGroup } from "./rowKeys";
 import type { Tip } from "../tooltip/Tooltip";
 
 export type { Key, Selection };
@@ -428,6 +428,7 @@ export function List<T extends object>({
   const chooses = rest.selectionMode !== undefined && rest.selectionMode !== "none";
   const [folds] = useState(() => new Map<string, ((open: boolean) => void) | undefined>());
   const foldKeys = useFoldKeys(folds, rest.disallowTypeAhead !== true);
+  const { direction } = useLocale();
   const onKeyDownCapture = (event: ReactKeyboardEvent<HTMLElement>) => {
     // **A text box in a row keeps its caret's arrows** (#3123, `rowKeys.ts`): the browser moves
     // its caret, and the row never walks its controls with them.
@@ -435,6 +436,7 @@ export function List<T extends object>({
       event.stopPropagation();
       return;
     }
+    if (movedInARadioGroup(event, direction === "rtl")) return;
     if (
       onEscape !== undefined &&
       event.key === "Escape" &&
@@ -621,8 +623,8 @@ function rowElement(labelledBy?: string, describedBy?: string) {
 
 /**
  * **Whether a key is being heard now**, anywhere in the window (`rowElement`): set as a key
- * comes down, on the window's capture phase, before anything hears it, and let go once it has been
- * heard everywhere.
+ * comes down, on the window's capture phase, before anything hears it, and let go in the task
+ * after it, once it has been heard everywhere and its own move (Tab's) is made.
  */
 let keyHeardNow = false;
 if (typeof window !== "undefined")
@@ -630,9 +632,11 @@ if (typeof window !== "undefined")
     "keydown",
     () => {
       keyHeardNow = true;
-      queueMicrotask(() => {
+      // A task, never a microtask: for a key the person pressed, the browser runs microtasks
+      // after each listener, so one would let go before React has heard the key at all.
+      setTimeout(() => {
         keyHeardNow = false;
-      });
+      }, 0);
     },
     { capture: true },
   );

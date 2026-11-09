@@ -1277,7 +1277,10 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
   keeping what was typed, and Esc on the row is the list's (`onEscape`). A chord with Enter (⌘⏎, a
   form's send) goes on up to whatever answers it. The arrows are kept by the list's own capture
   handler (`data-part="keys"`), the rest by the field family's boxes once their own handler has
-  heard them, where React Aria's row hears them.
+  heard them, where React Aria's row hears them. **A radio group in a row keeps its arrows too**
+  (a secret ask's How to fill): → and ↓ choose the next radio, ← and ↑ the one before, round at
+  the ends, as the WAI-ARIA radio group does. A select's trigger in a row opens on Enter or Space;
+  its ↓ is the list's.
   **A list that chooses several** (`selectionMode="multiple"`, a `Checkbox` in the row's lead with
   `slot="selection"`) takes a click or Space to tick a row, Shift-click and Shift+↑ ↓ for a range,
   and ⌘A (Ctrl+A off macOS) for every row, which a list that draws its rows a screen at a time

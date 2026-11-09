@@ -810,3 +810,53 @@ export const ATextBoxInARow: Story = {
     expectFocusInSight();
   },
 };
+
+/** Three rows, each with a button of its own, between two buttons outside the list. */
+function Between() {
+  return (
+    <div style={{ display: "grid", gap: "var(--space-3)", inlineSize: "20rem" }}>
+      <Button size="sm">Before</Button>
+      <List aria-label="Runs" disallowTypeAhead>
+        {["alpha", "beta", "gamma"].map((name) => (
+          <ListRow key={name} id={name} textValue={name}>
+            <RowLabel>{name}</RowLabel>
+            <RowTrail>
+              <Button size="sm">{`Open ${name}`}</Button>
+            </RowTrail>
+          </ListRow>
+        ))}
+      </List>
+      <Button size="sm">After</Button>
+    </div>
+  );
+}
+
+/**
+ * **One Tab stop, the row the keyboard left** (#3123): Tab out of a list passes the keyboard
+ * through its last row's last control on its way, and that never makes the last row the list's
+ * stop; Shift+Tab comes back to the row the keyboard left. Run with the browser's own key events,
+ * whose timing a test document does not have. The picture is that row under the keyboard.
+ */
+export const OneTabStopComingBack: Story = {
+  render: () => <Between />,
+  play: async ({ canvas, userEvent }) => {
+    const list = canvas.getByRole("grid", { name: "Runs" });
+    const beta = within(list).getByRole("row", { name: "beta" });
+    await userEvent.click(canvas.getByRole("button", { name: "Before" }));
+    await userEvent.tab();
+    await untilFocused(
+      () => within(list).getByRole("row", { name: "alpha" }),
+      "One Tab stop: Tab lands on the first row",
+    );
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(() => beta, "One Tab stop: ↓ moves to the next row");
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "After" }),
+      "One Tab stop: Tab leaves the list",
+    );
+    await userEvent.tab({ shift: true });
+    await untilFocused(() => beta, "One Tab stop: Shift+Tab comes back to the row it left");
+    expectFocusInSight();
+  },
+};
