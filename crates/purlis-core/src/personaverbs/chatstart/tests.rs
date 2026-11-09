@@ -188,7 +188,7 @@ fn the_chat_is_told_which_servers_it_did_not_get_and_how_they_are_approved() {
         [
             "This persona's MCP servers `grafana`, `gsc` were not started: each is handed a \
              credential from the persona's vault, and nobody has approved that on this \
-             machine. Their tools are not here. Tell the operator, who approves them in a \
+             machine. Their tools are not here. Tell the person, who approves them in a \
              terminal with `purlis persona approve-mcp --persona ops`; a new chat then starts \
              with them.",
             "This persona's MCP server `bad name` was not started: the name is one purlis \

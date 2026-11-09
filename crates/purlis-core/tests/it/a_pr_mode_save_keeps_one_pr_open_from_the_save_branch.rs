@@ -1453,7 +1453,7 @@ mod pr_saves {
         assert!(!plane.root.join(".git/MERGE_HEAD").exists(), "{said}");
         let standing = plane.standing();
         assert_eq!(standing.stage, Stage::Blocked, "{said}");
-        assert!(standing.rebase_by_hand, "{said}");
+        assert!(standing.resolve_offered, "{said}");
         let before = plane.head();
 
         // Abort puts it back.
@@ -1462,7 +1462,9 @@ mod pr_saves {
             resolve::start(&plane.root, &mut lines),
             resolve::Settled::Stopped(vec!["README.md".to_owned()])
         );
-        assert_eq!(plane.standing().stopped_by, Some("merge"));
+        // Off to the side (#5824 F7): the root is not stopped, a resolve folder is open.
+        assert_eq!(plane.standing().stopped_by, Some(planegit::RESOLVING));
+        assert!(purlis_core::gitstate::stopped(&plane.root).is_none());
         assert_eq!(resolve::abort(&plane.root), resolve::Settled::Aborted);
         assert_eq!(plane.head(), before);
         assert_eq!(git(&plane.root, &["status", "--porcelain"]), "");
@@ -1472,9 +1474,13 @@ mod pr_saves {
             resolve::start(&plane.root, &mut lines),
             resolve::Settled::Stopped(vec!["README.md".to_owned()])
         );
-        std::fs::write(plane.root.join("README.md"), "both of our words\n").unwrap();
+        std::fs::write(
+            planegit::resolvefolder::path(&plane.root).join("README.md"),
+            "both of our words\n",
+        )
+        .unwrap();
         assert_eq!(
-            resolve::carry_on(&plane.root, &["README.md".to_owned()], &mut lines),
+            resolve::carry_on(&plane.root, &["README.md".to_owned()], &[], &mut lines),
             resolve::Settled::Replayed
         );
         assert_brought_in(&plane, &said);

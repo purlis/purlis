@@ -722,18 +722,23 @@ jobs:
       # cargo-deny itself, the version `EmbarkStudios/cargo-deny-action` v2.1.1 runs, checked
       # against its published SHA-256. Run here rather than in that action's container so its
       # findings can be read: each is an annotation on `Cargo.lock` (qw390), the one place a
-      # failure shows without the job's log. The download retries: a GitHub 504 on it once
-      # dropped two pull requests from the merge queue (#5787, #5792).
+      # failure shows without the job's log. Fetched through the API (`gh release download`),
+      # not the github.com download link: that link answers 5xx for hours while the API still
+      # serves (#5787, #5792, #5797 left the merge queue on it), as the forge programs' fetch does.
       - name: Install cargo-deny
         if: needs.changes.outputs.rust != 'false'
         env:
           DENY_VERSION: "0.20.2"
           DENY_SHA256: "9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f"
+          GH_TOKEN: ${{ github.token }}
         run: |
           name="cargo-deny-$DENY_VERSION-x86_64-unknown-linux-musl"
-          curl --fail --silent --show-error --location \
-            --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 20 -o /tmp/deny.tgz \
-            "https://github.com/EmbarkStudios/cargo-deny/releases/download/$DENY_VERSION/$name.tar.gz"
+          for try in 1 2 3 4; do
+            gh release download "$DENY_VERSION" -R EmbarkStudios/cargo-deny \
+              -p "$name.tar.gz" -O /tmp/deny.tgz --clobber && break
+            [ "$try" = 4 ] && exit 1
+            sleep $((try * 15))
+          done
           echo "$DENY_SHA256  /tmp/deny.tgz" | sha256sum --check --strict
           tar -xzf /tmp/deny.tgz -C /tmp
           install -m 0755 "/tmp/$name/cargo-deny" "$HOME/.cargo/bin/cargo-deny"
@@ -1468,7 +1473,7 @@ jobs:
           BASE: ${{ steps.base.outputs.sha }}
         run: |
           changed=$(git diff --name-only "$BASE" HEAD)
-          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|confined|egress|reach|wrapper|hosts|localport|door)(\.rs|/)|crates/purlis-core/src/hookwire/serve(\.rs|/)|crates/purlis-core/src/secrets/(brokered|keyhold)(\.rs|/)|crates/purlis-cli/src/listen/|crates/purlis-core/tests/it/a_sandboxed_chat_listens_nowhere_under_seatbelt\.rs|Cargo\.lock$|rust-toolchain\.toml$)'; then
+          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|confined|egress|reach|wrapper|hosts|localport|door|tunnel|sshproxy)(\.rs|/)|crates/purlis-core/src/hookwire/serve(\.rs|/)|crates/purlis-core/src/secrets/(brokered|keyhold)(\.rs|/)|crates/purlis-cli/src/listen/|crates/purlis-core/tests/it/a_sandboxed_chat_listens_nowhere_under_seatbelt\.rs|crates/purlis-cli/tests/it/a_chats_ssh_route_carries_from_inside_its_sandbox\.rs|Cargo\.lock$|rust-toolchain\.toml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::the studio confinement has not changed; not run"
@@ -1503,6 +1508,14 @@ jobs:
       - name: A chat's server behind its door, confined by Seatbelt
         if: steps.scope.outputs.run == 'true'
         run: tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- sandbox::localport::tests::under_seatbelt
+      # A wrapped chat's ssh under its own line for real (#5897): its route's `ProxyCommand`, this
+      # build's `purlis _ssh-proxy`, runs inside Seatbelt and reaches the chat's SOCKS port; a
+      # host the route does not list, and a direct ssh around it, stay refused. The Linux `rust`
+      # job runs the same test under purlis's own wrap.
+      - name: A chat's ssh through its route from inside its sandbox, confined by Seatbelt
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          tools/tests-ran.sh -- cargo test --locked -p purlis-cli --test it -- a_chats_ssh_route_carries_from_inside_its_sandbox::
       # A brokered `secret exec` child under its run's real profile: the network through its
       # proxy alone, never a direct connection to this Mac or past it.
       - name: A brokered run reaches the network only through its proxy, confined by Seatbelt

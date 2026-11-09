@@ -1,0 +1,178 @@
+[
+  {
+    "query": "Add a curation action to the steward persona that reviews a workspace's open todos.",
+    "should_trigger": true
+  },
+  {
+    "query": "Give the reviewer persona a new entry in the Curate menu.",
+    "should_trigger": true
+  },
+  {
+    "query": "Change the prompt of the Review open work curation action.",
+    "should_trigger": true
+  },
+  {
+    "query": "Write a curation action offered on personas that audits their memory.",
+    "should_trigger": true
+  },
+  {
+    "query": "I want a Curate menu item on the plane that runs the backlog sync skill.",
+    "should_trigger": true
+  },
+  {
+    "query": "Make the compact curation action run at the plane root instead of in the workspace.",
+    "should_trigger": true
+  },
+  {
+    "query": "Add a curation action on workspaces that opens a chat with a summary prompt already typed.",
+    "should_trigger": true
+  },
+  {
+    "query": "Which variables can a curation action's prompt use?",
+    "should_trigger": true
+  },
+  {
+    "query": "Edit the steward's charter curation action so it names the right skill.",
+    "should_trigger": true
+  },
+  {
+    "query": "Create personas/steward/curation/weekly-review.md for a weekly review chat.",
+    "should_trigger": true
+  },
+  {
+    "query": "The curation action fails because its prompt says {subject.title}; fix it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Add a Find stale branches action to the Curate menu for workspaces.",
+    "should_trigger": true
+  },
+  {
+    "query": "Offer this curation action on both workspaces and personas.",
+    "should_trigger": true
+  },
+  {
+    "query": "Rename the label of the steward's tidy curation action.",
+    "should_trigger": true
+  },
+  {
+    "query": "Add a Curate entry that starts a chat to triage new issues.",
+    "should_trigger": true
+  },
+  {
+    "query": "Write a one-line prompt for a new curation action that checks a workspace's repos are cloned.",
+    "should_trigger": true
+  },
+  {
+    "query": "Take the curation action nobody uses off the reviewer persona.",
+    "should_trigger": true
+  },
+  {
+    "query": "Make a curation action for the plane that lists workspaces with no recent sessions.",
+    "should_trigger": true
+  },
+  {
+    "query": "Our curation action names a slash command; rewrite it to name the skill in words.",
+    "should_trigger": true
+  },
+  {
+    "query": "The Curate menu should have an option to tidy a persona's memory.",
+    "should_trigger": true
+  },
+  {
+    "query": "Add a curation action that runs in the subject's folder for persona folders.",
+    "should_trigger": true
+  },
+  {
+    "query": "What should the frontmatter of a curation action file hold?",
+    "should_trigger": true
+  },
+  {
+    "query": "Use the purlis-skill-studio skill to draft a new skill in .purlis/skills. What the skill does: review open todos.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write trigger tests for the deploy-check skill in .purlis/skills/deploy-check.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write outcome evals for the release-notes skill in .purlis/skills/release-notes.",
+    "should_trigger": false
+  },
+  {
+    "query": "Improve the triage skill from its runs and grades.",
+    "should_trigger": false
+  },
+  {
+    "query": "Create a new persona for security reviews.",
+    "should_trigger": false
+  },
+  {
+    "query": "Dispatch this review to the reviewer persona and wait for the answer.",
+    "should_trigger": false
+  },
+  {
+    "query": "Act as the steward persona in this chat.",
+    "should_trigger": false
+  },
+  {
+    "query": "Which persona should own the release work?",
+    "should_trigger": false
+  },
+  {
+    "query": "Curate a reading list on distributed systems.",
+    "should_trigger": false
+  },
+  {
+    "query": "Add a context menu item to the file tree in our React app.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write a GitHub Action that runs the tests on push.",
+    "should_trigger": false
+  },
+  {
+    "query": "Add a command palette entry for my editor extension.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write a prompt template for summarising support tickets.",
+    "should_trigger": false
+  },
+  {
+    "query": "Create a cron job that backs up the database nightly.",
+    "should_trigger": false
+  },
+  {
+    "query": "Explain what a slash command is in Claude Code.",
+    "should_trigger": false
+  },
+  {
+    "query": "Add a keyboard shortcut that opens the settings.",
+    "should_trigger": false
+  },
+  {
+    "query": "Organise my photo library by year.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write a Makefile target that runs lint.",
+    "should_trigger": false
+  },
+  {
+    "query": "Draft onboarding docs for a new teammate.",
+    "should_trigger": false
+  },
+  {
+    "query": "Add a dropdown with three options to the form.",
+    "should_trigger": false
+  },
+  {
+    "query": "Review this pull request.",
+    "should_trigger": false
+  },
+  {
+    "query": "Set up a pre-commit hook for formatting.",
+    "should_trigger": false
+  }
+]

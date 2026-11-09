@@ -887,7 +887,7 @@ export function SkillPage({
             {level !== null && (
               <StudioChatsStarted plane={plane} name={name} level={level} drafts={drafts} />
             )}
-            <SkillTotals name={name} stats={stats.data} refused={stats.refused} />
+            <SkillTotals name={name} stats={stats.data} refused={stats.refused} builtIn={builtIn} />
             {panels.refused !== undefined ? (
               <NotRead
                 what={`the runs of ${name}`}

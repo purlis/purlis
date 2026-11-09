@@ -1,0 +1,196 @@
+{
+  "tier": "standard",
+  "neighbours": [
+    "purlis-smart-close",
+    "purlis-safe-remove",
+    "purlis-remember"
+  ],
+  "prompts": [
+    {
+      "query": "Tidy this workspace's memory.",
+      "source": "Skill text: description, \"tidy\" (it was purlis-compact; Mined session record 20261108-085457-5724-four-built-in-skills-renamed-losing-nothing.md)."
+    },
+    {
+      "query": "Dedupe the steward persona's memory.",
+      "source": "Skill text: `purlis persona dedupe`."
+    },
+    {
+      "query": "Our workspace memory is full of duplicates; clean it up.",
+      "source": "Skill text: \"exact duplicates, near duplicates, stale, index drift\"."
+    },
+    {
+      "query": "Prune stale memories from the smart-ide workspace.",
+      "source": "Skill text: description, \"prune\"."
+    },
+    {
+      "query": "Compact the persona's memory and fold the lasting lessons into persona.md.",
+      "source": "Skill text: \"Improve the charter\"; Mined session record 20261108-023505-5720-smart-close-and-compact-fold-into-workspace.md."
+    },
+    {
+      "query": "Run purlis's optimize report on this workspace and propose what to archive.",
+      "source": "Skill text: `purlis workspace optimize`; \"Read the reports\"."
+    },
+    {
+      "query": "Merge the near-duplicate memories about the sandbox.",
+      "source": "Skill text: \"Near duplicates merge by hand\"."
+    },
+    {
+      "query": "Which of this workspace's memories are out of date?",
+      "source": "Skill text: \"Stale memories are still true or they are not\"."
+    },
+    {
+      "query": "Move the memories every persona should know into shared memory.",
+      "source": "Skill text: `purlis workspace move-memory ... --to-shared`."
+    },
+    {
+      "query": "Some workspace lessons have become rules; promote them into workspace.md.",
+      "source": "Skill text: \"A lesson that has held across several memories ... belongs in the charter\"."
+    },
+    {
+      "query": "Archive the memories that are no longer true, once I say yes.",
+      "source": "Skill text: \"archived, and only when the person agrees\"."
+    },
+    {
+      "query": "Improve the reviewer persona's memory.",
+      "source": "Skill text: description, \"improve\"."
+    },
+    {
+      "query": "There are hundreds of memory files here; make the memory smaller and truer.",
+      "source": "Skill text: \"Compacting makes it smaller and truer\"; Mined session record 20261107-020518-5504-dedupe-optimize-and-stats-score-candidates-.md."
+    },
+    {
+      "query": "Find exact duplicate memories and fix the index drift.",
+      "source": "Skill text: \"Exact duplicates and index drift are safe and reversible\"."
+    },
+    {
+      "query": "Clean up shared memory; there's a lot of overlap.",
+      "source": "plausible phrasing a person types."
+    },
+    {
+      "query": "Forget the memory that holds an old password for good.",
+      "source": "Skill text: \"`workspace forget` ... for a memory that must not survive, such as one holding a secret\"."
+    },
+    {
+      "query": "Restore the memory I archived by mistake.",
+      "source": "Skill text: \"`unarchive` / `unarchive-memory` puts it back\"."
+    },
+    {
+      "query": "Go through the persona's memory and say what you'd merge.",
+      "source": "Skill text: \"Done when you can say, for each finding, what you propose\"."
+    },
+    {
+      "query": "Do a memory hygiene pass on this workspace, please.",
+      "source": "plausible phrasing a person types."
+    },
+    {
+      "query": "The memory index lists entries that don't exist; repair it.",
+      "source": "Skill text: \"index drift\"."
+    },
+    {
+      "query": "Fold the repeated lessons about CI into the charter and archive them.",
+      "source": "Skill text: \"then archive the memories it replaces\"."
+    },
+    {
+      "query": "Curate this workspace's memories: keep what's true, drop the rest.",
+      "source": "plausible phrasing a person types."
+    },
+    {
+      "query": "We're done for today; write the session record and fold what lasts into workspace.md.",
+      "source": "Near miss (purlis-smart-close): this chat ending (decisions.md of spec #5714 Q30).",
+      "belongs_to": "purlis-smart-close"
+    },
+    {
+      "query": "Smart close this chat.",
+      "source": "Near miss (purlis-smart-close): its name, as typed.",
+      "belongs_to": "purlis-smart-close"
+    },
+    {
+      "query": "Wrap up this chat with a record so the next one can resume.",
+      "source": "Near miss (purlis-smart-close): its description, \"wrap up\".",
+      "belongs_to": "purlis-smart-close"
+    },
+    {
+      "query": "Close out: summarise this session for whoever picks it up.",
+      "source": "Near miss (purlis-smart-close): a summary of this chat.",
+      "belongs_to": "purlis-smart-close"
+    },
+    {
+      "query": "Before you end, write a session record.",
+      "source": "Near miss (purlis-smart-close): its description, \"write a session record\".",
+      "belongs_to": "purlis-smart-close"
+    },
+    {
+      "query": "Remove the old-experiments workspace, keeping what it learned.",
+      "source": "Near miss (purlis-safe-remove): removal only in safe remove (decisions.md of spec #5714 Q30).",
+      "belongs_to": "purlis-safe-remove"
+    },
+    {
+      "query": "Retire the tester persona.",
+      "source": "Near miss (purlis-safe-remove): its description, \"retire\".",
+      "belongs_to": "purlis-safe-remove"
+    },
+    {
+      "query": "Delete the scratch workspace, but promote its useful memories first.",
+      "source": "Near miss (purlis-safe-remove): promoting memories on the way to a removal.",
+      "belongs_to": "purlis-safe-remove"
+    },
+    {
+      "query": "Clean up the workspaces we no longer use by removing them.",
+      "source": "Near miss (purlis-safe-remove): \"clean up\" meaning removal.",
+      "belongs_to": "purlis-safe-remove"
+    },
+    {
+      "query": "Compact the conversation.",
+      "source": "plausible phrasing a person types: the harness's own /compact, which the rename from purlis-compact kept apart (spec #5714)."
+    },
+    {
+      "query": "Free up memory on my Mac.",
+      "source": "plausible phrasing a person types: RAM, not purlis memory."
+    },
+    {
+      "query": "Why is the app using 2 GB of RAM?",
+      "source": "plausible phrasing a person types: RAM."
+    },
+    {
+      "query": "Find the memory leak in the worker pool.",
+      "source": "plausible phrasing a person types: \"memory\" in code."
+    },
+    {
+      "query": "Dedupe the rows in this CSV.",
+      "source": "plausible phrasing a person types: \"dedupe\" on data."
+    },
+    {
+      "query": "Clean up unused imports in the cart module.",
+      "source": "plausible phrasing a person types: \"clean up\" in code."
+    },
+    {
+      "query": "Prune old Docker images.",
+      "source": "plausible phrasing a person types: \"prune\" elsewhere."
+    },
+    {
+      "query": "Archive the closed GitHub issues from last year.",
+      "source": "plausible phrasing a person types: \"archive\" elsewhere."
+    },
+    {
+      "query": "Tidy the README's headings.",
+      "source": "plausible phrasing a person types: \"tidy\" on a file."
+    },
+    {
+      "query": "Summarise this file.",
+      "source": "plausible phrasing a person types: unrelated."
+    },
+    {
+      "query": "Remember that we deploy on Fridays.",
+      "source": "Near miss (purlis-remember): a fact to record, not a tidy (decisions.md of spec #5714 Q29).",
+      "belongs_to": "purlis-remember"
+    },
+    {
+      "query": "Merge these two branches.",
+      "source": "plausible phrasing a person types: \"merge\" in git."
+    },
+    {
+      "query": "Delete the node_modules folder.",
+      "source": "plausible phrasing a person types: \"delete\" in a repo."
+    }
+  ]
+}

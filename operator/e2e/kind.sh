@@ -9,7 +9,8 @@
 # policy and operator installed by the Helm chart (charts/purlis-cluster-operator/), as
 # docs/cluster-operator.md installs them. The cluster then shows the plain manifests in deploy/
 # would change nothing, `tests/on_a_kind_cluster.rs` runs, and then the desktop's side: a chat on
-# a cluster runner through the link (crates/purlis-core/tests/, #2056). Everything it started is
+# a cluster runner through the link (crates/purlis-core/tests/, #2056), and a real Claude Code chat
+# held there as the parity job holds one on a Docker runner (#4083). Everything it started is
 # removed when it ends, unless KEEP=1.
 #
 #   operator/e2e/kind.sh <runner image> <operator image>
@@ -293,6 +294,52 @@ CLUSTER_POOL_TEST_CONTEXT=$context \
   "$repo/tools/tests-ran.sh" -- cargo test --manifest-path "$repo/Cargo.toml" --locked -p purlis-app \
   --lib -- behaviour::fresh_runner:: --ignored --test-threads=1 --nocapture
 
+step "a real Claude Code chat on a cluster runner, held as on a Docker runner"
+# The probe the parity job runs on a Docker pool (#4083), on this cluster's runner pod: the parity
+# job's image (tests/parity/runner.Dockerfile) on this runner image, with this build's fake
+# harness and `purlis` at the folder the test's build keeps them in, and the Claude Code purlis
+# supports, from npm with no install scripts run. No model is called, and no credential is used.
+# The image carries this machine's build, so it is made only where that is Linux's.
+if [ "$(uname -s)" != Linux ]; then
+  echo "skipped: the probe's image carries this machine's build, and this is not Linux"
+else
+  probe=$(mktemp -d "${TMPDIR:-/tmp}/purlis-operator-e2e-probe.XXXXXX")
+  cargo build --manifest-path "$repo/Cargo.toml" --locked -p purlis-cli --bin purlis -p fake-harness --bin fake-harness
+  cp "$repo/target/debug/purlis" "$repo/target/debug/fake-harness" "$probe/"
+  version=$(sed 's/ .*//' "$repo/tests/fixtures/harness-versions/claude.txt")
+  case $(uname -m) in
+    x86_64 | amd64) cpu=x64 ;;
+    aarch64 | arm64) cpu=arm64 ;;
+    *)
+      echo "no Claude Code build for $(uname -m)" >&2
+      exit 1
+      ;;
+  esac
+  package="@anthropic-ai/claude-code-linux-$cpu"
+  # From the committed lockfile, so npm checks the tarball against its integrity; it names the
+  # version claude.txt does, or the step stops here.
+  mkdir -p "$probe/npm"
+  cp "$repo/tests/fixtures/harness-versions/claude-code/package.json" \
+    "$repo/tests/fixtures/harness-versions/claude-code/package-lock.json" "$probe/npm/"
+  locked=$(node -p "require('$probe/npm/package-lock.json').packages['node_modules/$package'].version")
+  if [ "$locked" != "$version" ]; then
+    echo "the lockfile holds $package $locked and claude.txt says $version" >&2
+    exit 1
+  fi
+  (cd "$probe/npm" && npm ci --ignore-scripts --no-audit --no-fund)
+  cp "$probe/npm/node_modules/$package/claude" "$probe/claude-code"
+  rm -rf "$probe/npm"
+  docker build --quiet --file "$repo/tests/parity/runner.Dockerfile" \
+    --build-arg "RUNNER=$runner_local" --build-arg "AT=$repo/target/debug" \
+    --build-arg "ENGINE_NOW=$(node -p "require('$repo/crates/browser-engine/engine-pin.json').issued")" \
+    --tag purlis-runner-probe:e2e "$probe" >/dev/null
+  rm -rf "$probe"
+  CLUSTER_POOL_TEST_PROBE_IMAGE=$(by_digest purlis-runner-probe:e2e purlis-runner-probe) \
+  CLUSTER_POOL_TEST_CONTEXT=$context \
+    "$repo/tools/tests-ran.sh" -- cargo test --manifest-path "$repo/Cargo.toml" --locked -p purlis-app \
+    --lib -- behaviour::on_a_cluster_pool:: --ignored --test-threads=1 --nocapture
+fi
+
 step "the guide's pool, its key and a teammate's rights"
 guide_run pool --value "ghcr.io/purlis/purlis-runner@<runner digest>=$runner"
 tries=0
@@ -320,5 +367,7 @@ kubectl --context "$context" get crd/pools.runners.purlis.dev crd/claims.runners
   validatingadmissionpolicybinding/purlis-forge \
   validatingadmissionpolicy/purlis-operator-writes-only-a-runners-shape \
   validatingadmissionpolicybinding/purlis-operator-writes-only-a-runners-shape \
+  validatingadmissionpolicy/purlis-operator-writes-what-its-pool-says \
+  validatingadmissionpolicybinding/purlis-operator-writes-what-its-pool-says \
   validatingadmissionpolicy/purlis-operator-changes-only-a-sandboxs-mode \
   validatingadmissionpolicybinding/purlis-operator-changes-only-a-sandboxs-mode >/dev/null

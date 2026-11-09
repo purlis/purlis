@@ -2108,6 +2108,7 @@ function App() {
       zoomPane: () => undefined,
       undoLayout: () => undefined,
       pinWorkspace: async () => nowhere(),
+      moveWorkspacePin: async () => nowhere(),
       pinProject: windowDoes.pinProject,
       removeWorktree: async () => nowhere(),
       mergeWorktree: async () => nowhere(),

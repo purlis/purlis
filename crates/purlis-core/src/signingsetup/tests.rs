@@ -231,6 +231,121 @@ mod the_check {
         assert_eq!(checked.reason, "unverified_email");
     }
 
+    /// GitHub picks the account to verify an SSH signature against by the commit's email, so a
+    /// key on the account and an email that isn't one of its verified ones reads as a key
+    /// GitHub doesn't know (#5916).
+    #[test]
+    fn an_unknown_key_listed_on_the_account_under_an_unverified_email_is_the_emails_doing() {
+        let signer = Signer::generate().unwrap();
+        for reason in ["unknown_key", "not_signing_key"] {
+            let recorded = recording("key_listed_then_emails", &signer);
+            let why = email_is_why(
+                &recorded,
+                &github(),
+                &signer,
+                "octocat",
+                reason,
+                "someone@else.example",
+            );
+            assert!(why, "{reason}");
+            assert!(recorded.unspent().is_empty());
+        }
+    }
+
+    #[test]
+    fn an_unknown_key_under_a_verified_email_is_not_the_emails_doing() {
+        let signer = Signer::generate().unwrap();
+        let recorded = recording("key_listed_then_emails", &signer);
+        assert!(!email_is_why(
+            &recorded,
+            &github(),
+            &signer,
+            "octocat",
+            "unknown_key",
+            "Work@Example.org",
+        ));
+    }
+
+    #[test]
+    fn an_unknown_key_the_account_does_not_list_is_the_keys_doing() {
+        let signer = Signer::generate().unwrap();
+        let recorded = recording("key_not_listed", &signer);
+        assert!(!email_is_why(
+            &recorded,
+            &github(),
+            &signer,
+            "octocat",
+            "unknown_key",
+            "someone@else.example",
+        ));
+        assert!(recorded.unspent().is_empty());
+    }
+
+    /// Unread emails make no claim about the email: the window says only what it has seen.
+    #[test]
+    fn an_unknown_key_whose_accounts_emails_cant_be_read_is_not_put_down_to_the_email() {
+        let signer = Signer::generate().unwrap();
+        let recorded = recording("key_listed_emails_refused", &signer);
+        assert!(!email_is_why(
+            &recorded,
+            &github(),
+            &signer,
+            "octocat",
+            "unknown_key",
+            "someone@else.example",
+        ));
+    }
+
+    #[test]
+    fn an_unknown_key_whose_key_list_cant_be_read_is_not_put_down_to_the_email() {
+        let signer = Signer::generate().unwrap();
+        let recorded = recording("key_list_refused", &signer);
+        assert!(!email_is_why(
+            &recorded,
+            &github(),
+            &signer,
+            "octocat",
+            "unknown_key",
+            "someone@else.example",
+        ));
+        assert!(recorded.unspent().is_empty());
+    }
+
+    /// GitLab finds a key by its fingerprint, and its public list holds sign-in keys too: its
+    /// `unknown_key` is the key's, and nothing more is asked.
+    #[test]
+    fn gitlabs_unknown_key_is_never_put_down_to_the_email() {
+        let signer = Signer::generate().unwrap();
+        let recorded = gitlab_recording("auth_key_listed_then_emails", &signer);
+        assert!(!email_is_why(
+            &recorded,
+            &gitlab(),
+            &signer,
+            "sam",
+            "unknown_key",
+            "someone@else.example",
+        ));
+        assert_eq!(recorded.unspent().len(), 3);
+    }
+
+    /// Another reason asks GitHub nothing more: the recording has no answer to give.
+    #[test]
+    fn another_reason_is_never_the_emails_doing_and_asks_nothing() {
+        let signer = Signer::generate().unwrap();
+        let recorded = recording("key_not_listed", &signer);
+        for reason in ["valid", "unverified_email", "expired_key", "other_key"] {
+            assert!(!email_is_why(
+                &recorded,
+                &github(),
+                &signer,
+                "octocat",
+                reason,
+                "someone@else.example",
+            ));
+        }
+        assert_eq!(recorded.unspent().len(), 1);
+    }
+
     /// The test commit is the object git itself writes for the same fields, byte for byte: what
     /// GitHub rebuilds from them and checks the signature over.
     #[test]
@@ -473,7 +588,7 @@ fn githubs_verified_addresses_are_offered_primary_first_and_the_noreply_last() {
 #[test]
 fn gitlabs_confirmed_addresses_are_offered_and_an_unconfirmed_one_is_not() {
     let signer = Signer::generate().unwrap();
-    let recorded = gitlab_recording("emails", &signer);
+    let recorded = gitlab_recording("auth_key_listed_then_emails", &signer);
     let found = verified_emails(&recorded, &gitlab()).unwrap();
     let emails: Vec<_> = found.iter().map(|one| one.email.as_str()).collect();
     assert_eq!(emails, ["sam@example.org", "sam@billing.example.org"]);

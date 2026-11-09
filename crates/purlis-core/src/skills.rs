@@ -207,21 +207,25 @@ pub fn built_in_names(dir: Option<&Path>) -> Vec<String> {
 /// **The skills purlis ships**, by name: the bundle's `plugin/skills/<name>/SKILL.md`, each
 /// folder named as its skill (held to that folder by a test). Compiled in, for the doctor's check
 /// of a project keeping its own copy of one.
-pub const SHIPPED: [&str; 14] = [
-    "purlis-add-curation-action",
+pub const SHIPPED: &[&str] = &[
     "purlis-browser",
     "purlis-building-ui",
-    "purlis-compact",
+    "purlis-change",
+    "purlis-curation-action",
     "purlis-handoff",
+    "purlis-permissions",
     "purlis-persona",
+    "purlis-remember",
+    "purlis-repo-work",
     "purlis-report",
     "purlis-safe-remove",
     "purlis-secrets",
     verbs::drafts::STUDIO_SKILL,
     "purlis-smart-close",
     "purlis-theme",
-    "purlis-update",
-    "purlis-working-in-a-clone",
+    "purlis-tidy-memory",
+    "purlis-upgrade",
+    "purlis-workspace",
 ];
 
 /// **What a skill that would take a name of purlis's own is refused with** (spec #3679 S12, ADR
@@ -2265,8 +2269,11 @@ pub(crate) fn grouped(n: usize) -> String {
 /// in it: purlis's budget counts those already, as the chat's set holds them.
 fn own_catalogue(harness: Harness, outside: &[OutsideSkill]) -> OwnCatalogue {
     let listed = own_listed(harness, outside);
-    let spent = purlis_skills::budget::spent(
-        listed.iter().map(|(one, said)| (&one.skill, said)),
+    // Listed by the harness itself, each with its whole path where it lists paths.
+    let spent = purlis_skills::budget::spent_listed(
+        listed
+            .iter()
+            .map(|(one, said)| (&one.skill, said, purlis_skills::budget::ListedBy::Harness)),
         harness.skill_budget(),
     );
     OwnCatalogue {

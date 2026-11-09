@@ -6,7 +6,8 @@
 //! levels made later (`sandbox::skills_held`). A backend may only be able to name the folders
 //! that were there when the chat started, though. So purlis also hands no chat a skill from a
 //! workspace or persona folder made while a sandboxed chat was running, since that chat could
-//! have made it. That skill is left out with a reason that says so.
+//! have made it. That skill is left out with a reason that says so. For a Claude Code chat on
+//! Linux these records are the guard (#3097, ADR 0099 as amended 2026-11-09).
 //!
 //! - **The host notes each sandboxed chat's start** ([`note`]): `skill-levels/<chat id>.json`
 //!   in this machine's app state of the project (`crate::appstate`), holding the workspace and

@@ -21,8 +21,8 @@ fn every_bundled_skill_is_read_with_its_name_description_and_file() {
     let names: Vec<&str> = skills.iter().map(|s| s.name.as_str()).collect();
     for name in [
         "purlis-safe-remove",
-        "purlis-compact",
-        "purlis-add-curation-action",
+        "purlis-tidy-memory",
+        "purlis-curation-action",
         "purlis-handoff",
         "purlis-secrets",
         "purlis-smart-close",
@@ -42,7 +42,7 @@ fn every_bundled_skill_is_read_with_its_name_description_and_file() {
         .unwrap();
     assert!(
         safe.description
-            .starts_with("Remove a purlis workspace or persona")
+            .starts_with("When the person wants a purlis workspace or persona gone")
     );
     assert_eq!(safe.path, bundled().join("purlis-safe-remove/SKILL.md"));
 }
@@ -88,7 +88,7 @@ fn the_listing_names_each_skill_when_to_use_it_and_where_to_read_it() {
         Skill {
             name: "compact".to_owned(),
             description: "Compact a memory. Use when asked to tidy.".to_owned(),
-            path: PathBuf::from("/app/plugin/skills/purlis-compact/SKILL.md"),
+            path: PathBuf::from("/app/plugin/skills/purlis-tidy-memory/SKILL.md"),
         },
         Skill {
             name: "safe-remove".to_owned(),
@@ -104,7 +104,7 @@ fn the_listing_names_each_skill_when_to_use_it_and_where_to_read_it() {
     assert!(text.contains("read its `SKILL.md`"), "{text}");
     assert!(text.contains(
         "- `compact` — Compact a memory. Use when asked to tidy. \
-         (`/app/plugin/skills/purlis-compact/SKILL.md`)"
+         (`/app/plugin/skills/purlis-tidy-memory/SKILL.md`)"
     ));
     assert!(text.ends_with(
         "- `safe-remove` — Remove a workspace safely. \
@@ -133,12 +133,52 @@ fn a_manual_only_skill_is_listed_by_its_name_and_file_alone_to_run_only_when_nam
     let text = listing(&read(tmp.path())).expect("a listing");
     assert!(text.contains("- `review` — Reviews a change."), "{text}");
     assert!(!text.contains("Cuts a release"), "{text}");
-    let release = tmp.path().join("release/SKILL.md");
+    assert!(
+        text.ends_with("\n- Only when the person names one, never by your own choice: `release`"),
+        "{text}"
+    );
+}
+
+#[test]
+fn the_listing_names_a_folder_of_skills_once_and_how_to_read_each_file_in_it() {
+    let tmp = tempfile::tempdir().unwrap();
+    let built_in = tmp.path().join("bundle");
+    let plane = tmp.path().join("plane");
+    skill(
+        &built_in,
+        "handoff",
+        "---\nname: handoff\ndescription: Hands off.\n---\n",
+    );
+    skill(
+        &built_in,
+        "remember",
+        "---\nname: remember\ndescription: Remembers.\n---\n",
+    );
+    skill(
+        &plane,
+        "deploy",
+        "---\nname: deploy\ndescription: Deploys.\n---\n",
+    );
+    let mut skills = read(&built_in);
+    skills.extend(read(&plane));
+    let text = listing(&skills).expect("a listing");
+    assert!(
+        text.contains(
+            "a skill's file is `<that folder>/<name>/SKILL.md`: read it by that whole path"
+        ),
+        "{text}"
+    );
     assert!(
         text.ends_with(&format!(
-            "\n- Only when the person names one, never by your own choice: `release` (`{}`)",
-            release.display()
+            "\nUnder `{}`:\n- `handoff` — Hands off.\n- `remember` — Remembers.\nUnder `{}`:\n- `deploy` — Deploys.",
+            built_in.display(),
+            plane.display()
         )),
+        "{text}"
+    );
+    assert_eq!(
+        text.matches(&built_in.display().to_string()).count(),
+        1,
         "{text}"
     );
 }

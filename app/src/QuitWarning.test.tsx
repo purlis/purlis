@@ -22,7 +22,34 @@ const ON_ITS_OWN_WORK: Ending = {
   ownWork: { helpers: 0, workflows: 0, monitors: 1, shells: 2 },
 };
 
+/** A chat a background turn runs in, over its wait on the person (#4562): it reads `waiting`. */
+const IN_A_BACKGROUND_TURN: Ending = { ...ONE, backgroundTurn: true };
+
 describe("the quit warning", () => {
+  it("says a chat in a background turn will be interrupted (#5782)", () => {
+    render(<QuitWarning chats={[IN_A_BACKGROUND_TURN]} onQuit={() => {}} onCancel={() => {}} />);
+
+    const dialog = within(screen.getByRole("alertdialog"));
+    expect(dialog.getByRole("alert").textContent).toBe(
+      "ide.1 is mid-turn and will be interrupted.",
+    );
+    expect(dialog.queryByText("No chat is mid-turn.")).toBeNull();
+  });
+
+  it("counts a chat in a background turn with those mid-turn (#5782)", () => {
+    render(
+      <QuitWarning
+        chats={[IN_A_BACKGROUND_TURN, { ...ONE, key: "/ide.2", name: "ide.2", state: "running" }]}
+        onQuit={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+
+    expect(within(screen.getByRole("alertdialog")).getByRole("alert").textContent).toBe(
+      "2 chats are mid-turn and will be interrupted.",
+    );
+  });
+
   it("writes each answer's type, as every other dialog does (#1719)", () => {
     render(<QuitWarning chats={[ONE]} onQuit={() => {}} onCancel={() => {}} />);
 

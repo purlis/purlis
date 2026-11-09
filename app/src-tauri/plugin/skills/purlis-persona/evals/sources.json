@@ -1,0 +1,200 @@
+{
+  "tier": "strict",
+  "neighbours": [
+    "purlis-handoff",
+    "purlis-secrets",
+    "purlis-safe-remove"
+  ],
+  "prompts": [
+    {
+      "query": "Ask the skills persona which of the two options it prefers and bring its answer back.",
+      "source": "Mined session record 20261102-120712-4585-prototype-a-chat-s-actions-in-its-pane-acce.md: \"I asked `skills`, which chose (a)\"."
+    },
+    {
+      "query": "Dispatch this ticket as a task and wait for its report.",
+      "source": "This ticket's own brief: a task dispatched by the asking chat, reported with `purlis dispatch report`."
+    },
+    {
+      "query": "Have the reviewer persona review PR 4361 and tell me what it finds.",
+      "source": "Mined session record 20261101-031011-review-of-pr-4361-hot-count-role-3098-fix-first-.md."
+    },
+    {
+      "query": "Create a persona for release management.",
+      "source": "Skill text: description, \"create one\"."
+    },
+    {
+      "query": "Which persona am I working as right now?",
+      "source": "Skill text: \"Know which one is active\" (`purlis persona current`)."
+    },
+    {
+      "query": "Act as the steward for this one: scope the request before any code is written.",
+      "source": "The steward persona's own `delegate-when` line; skill description \"act as a role\"."
+    },
+    {
+      "query": "Which persona should own the CI dashboard work?",
+      "source": "Skill text: description, \"deciding which persona a piece of work belongs to\"."
+    },
+    {
+      "query": "Run the security audit as a task under the security persona and wait for it.",
+      "source": "Mined session record 20261102-044257-security-review-of-pr-4589-chrome-crash-frames-n.md: a security review as its own task."
+    },
+    {
+      "query": "Send this question to the infra persona; I need its answer to continue.",
+      "source": "decisions.md of spec #5714 Q30: persona when this chat needs the answer."
+    },
+    {
+      "query": "List the personas we have and what each is for.",
+      "source": "Skill text: `purlis persona list`."
+    },
+    {
+      "query": "Give the frontend persona a charter that says it owns the window's UI.",
+      "source": "Skill text: \"a role with a written charter\"; `purlis docs show personas`, the charter format."
+    },
+    {
+      "query": "Dispatch three tasks, one per ticket, and collect their reports.",
+      "source": "decisions.md of spec #5714 \"Implementation run\": spec #5714's tickets run as parallel tasks."
+    },
+    {
+      "query": "What does the steward persona's charter say about scoping?",
+      "source": "Skill text: `purlis persona show <name>`."
+    },
+    {
+      "query": "Tell the running task to also run clippy before it reports.",
+      "source": "Skill text: \"A task ... can be waited on, told more and cancelled\" (from purlis-handoff, which points here)."
+    },
+    {
+      "query": "Cancel the task that's building the UI guide move; it isn't needed any more.",
+      "source": "decisions.md of spec #5714: #5725 held while its plane step waits; plausible phrasing a person types."
+    },
+    {
+      "query": "Make a QA persona that inherits from the steward.",
+      "source": "Skill text: `purlis docs show personas`, inheritance."
+    },
+    {
+      "query": "This needs the ops persona's vault. Dispatch it rather than doing it here.",
+      "source": "decisions.md of spec #5714 Q28(d): dispatch when the work needs another persona's charter, memory or vault."
+    },
+    {
+      "query": "Who asked for this chat, and what are my sibling tasks?",
+      "source": "Skill text: `purlis persona where`."
+    },
+    {
+      "query": "Check on the dispatched grader task: has it reported yet?",
+      "source": "decisions.md of spec #5714: the run waited on dispatched tasks' reports; plausible phrasing a person types."
+    },
+    {
+      "query": "Should this go to another persona, or can I do it myself?",
+      "source": "decisions.md of spec #5714 Q28(d): do it yourself; dispatch when it needs another persona's charter, memory or vault."
+    },
+    {
+      "query": "Report back to the asking chat that the ticket is done.",
+      "source": "This ticket's own brief (`purlis dispatch report --outcome done`); decisions.md of spec #5714 Q28(j)."
+    },
+    {
+      "query": "Is the persona roster healthy? Some personas have no charter.",
+      "source": "Skill text: `purlis docs show personas`, roster health."
+    },
+    {
+      "query": "Hand the copy review to the writer persona as a task and wait for its verdict.",
+      "source": "decisions.md of spec #5714 Q30: \"hand\" but this chat needs the answer, so a dispatch."
+    },
+    {
+      "query": "Move the flaky-test work to a new chat in the git-ci-cd workspace; I'll read it there.",
+      "source": "Near miss (purlis-handoff): the person reads the new chat ({D} Q30).",
+      "belongs_to": "purlis-handoff"
+    },
+    {
+      "query": "Open a chat in another workspace for this bug and write it a brief.",
+      "source": "Near miss (purlis-handoff): its description, \"open a chat for something\".",
+      "belongs_to": "purlis-handoff"
+    },
+    {
+      "query": "Park this idea in its own chat for me to look at later.",
+      "source": "Near miss (purlis-handoff): fire-and-forget, nothing comes back.",
+      "belongs_to": "purlis-handoff"
+    },
+    {
+      "query": "Start a separate chat for the docs rewrite; I'll follow it myself.",
+      "source": "Near miss (purlis-handoff): the person will read it.",
+      "belongs_to": "purlis-handoff"
+    },
+    {
+      "query": "Run the deploy with the token from the ops vault.",
+      "source": "Near miss (purlis-secrets): a credential for a command, though vaults are a persona's.",
+      "belongs_to": "purlis-secrets"
+    },
+    {
+      "query": "Store this new API key in my persona's vault.",
+      "source": "Near miss (purlis-secrets): its description, \"when asked to store one\".",
+      "belongs_to": "purlis-secrets"
+    },
+    {
+      "query": "Which keys does the shop vault hold?",
+      "source": "Near miss (purlis-secrets): \"Find out what exists\".",
+      "belongs_to": "purlis-secrets"
+    },
+    {
+      "query": "Remove the old qa-legacy persona, but keep what it learned.",
+      "source": "Near miss (purlis-safe-remove): its description, \"Remove ... a persona without losing what it learned\".",
+      "belongs_to": "purlis-safe-remove"
+    },
+    {
+      "query": "Retire the volaticloud persona; promote anything worth keeping first.",
+      "source": "Near miss (purlis-safe-remove): Mined session record 20261019-073303-browser-flow-session-host-profiles-and-runners-p.md: this project's QA personas, left mentioning a retired install; its description's \"retire\".",
+      "belongs_to": "purlis-safe-remove"
+    },
+    {
+      "query": "Delete the default workspace.",
+      "source": "Near miss (purlis-safe-remove): removal.",
+      "belongs_to": "purlis-safe-remove"
+    },
+    {
+      "query": "Write a user persona for the onboarding design doc.",
+      "source": "plausible phrasing a person types: a UX persona, not purlis's."
+    },
+    {
+      "query": "Generate three customer personas for the marketing site.",
+      "source": "plausible phrasing a person types: marketing personas."
+    },
+    {
+      "query": "Add a role column to the users table.",
+      "source": "plausible phrasing a person types: \"role\" in a database."
+    },
+    {
+      "query": "Dispatch the redux action when the form submits.",
+      "source": "plausible phrasing a person types: \"dispatch\" in front-end code."
+    },
+    {
+      "query": "Fix the event dispatcher so listeners run in order.",
+      "source": "plausible phrasing a person types: \"dispatcher\" in code."
+    },
+    {
+      "query": "Write a charter for the open-source community.",
+      "source": "plausible phrasing a person types: \"charter\" as a document."
+    },
+    {
+      "query": "What's the difference between a role and a permission in our RBAC code?",
+      "source": "plausible phrasing a person types: roles in access control."
+    },
+    {
+      "query": "Run the unit tests and fix what fails.",
+      "source": "plausible phrasing a person types: work this chat does itself."
+    },
+    {
+      "query": "Translate the README into German.",
+      "source": "plausible phrasing a person types: unrelated."
+    },
+    {
+      "query": "Explain this stack trace.",
+      "source": "plausible phrasing a person types: unrelated."
+    },
+    {
+      "query": "Schedule a job that runs every night at 2am.",
+      "source": "plausible phrasing a person types: \"job\" without a task."
+    },
+    {
+      "query": "Format the code with prettier.",
+      "source": "plausible phrasing a person types: unrelated."
+    }
+  ]
+}

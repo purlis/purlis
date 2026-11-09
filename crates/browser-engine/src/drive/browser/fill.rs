@@ -52,6 +52,7 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 
 use super::super::kept::Kept;
+use super::super::scrub::SHORTEST_SCRUBBED;
 use super::super::tree::NodeKey;
 use super::Browser;
 use super::takeover::Carrying;
@@ -283,6 +284,13 @@ impl Browser {
         hold: Arc<dyn FillHold>,
     ) -> Result<Answer, Refusal> {
         self.agent_holds(epoch)?;
+        if too_short_to_keep_out(&fill.value) {
+            return Err(not_filled(format!(
+                "the value for {} is shorter than {SHORTEST_SCRUBBED} characters, too short to \
+                 be kept out of what purlis answers, so nothing was filled",
+                fill.target
+            )));
+        }
         let _one = lock(&self.acting);
         // No read the agent's calls left running is kept past an act.
         lock(&self.reading).forget();
@@ -674,6 +682,12 @@ fn changed(target: &Ref, origin: &str) -> Refusal {
         "the page changed as purlis was about to fill {target} on {origin}, so nothing was \
          filled: take a new snapshot"
     ))
+}
+
+/// Whether `value` is too short to be kept out of what purlis answers ([`SHORTEST_SCRUBBED`]):
+/// such a value is never filled, by a fill or a login.
+pub(crate) fn too_short_to_keep_out(value: &str) -> bool {
+    value.chars().count() < SHORTEST_SCRUBBED
 }
 
 fn not_filled(why: String) -> Refusal {

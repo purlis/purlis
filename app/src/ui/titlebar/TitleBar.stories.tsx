@@ -12,6 +12,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useMemo, useState } from "react";
 import { expect, screen, waitFor, within } from "storybook/test";
 import { OUTSIDE } from "../../actions";
+import { Button } from "../button/Button";
 import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 import { TitleBarSwitch, type SwitchProject } from "../../TitleBarSwitch";
 
@@ -55,7 +56,14 @@ const THOUSAND: [string, number][] = Array.from({ length: 1_000 }, (_, at) => [
   at % 7 === 0 ? 1 : 0,
 ]);
 
-function TheBar({ railShown = true, focusedAt = "smart-ide", many = false }) {
+function TheBar({
+  railShown = true,
+  focusedAt = "smart-ide",
+  many = false,
+  working: workingAt = [] as string[],
+}) {
+  /** The workspaces of the project in front a chat is working in (#3127), one chat each. */
+  const [working, setWorking] = useState<readonly string[]>(workingAt);
   const [front, setFront] = useState(START[0].plane);
   const [focused, setFocused] = useState<Record<string, string>>({
     [START[0].plane]: focusedAt,
@@ -84,9 +92,18 @@ function TheBar({ railShown = true, focusedAt = "smart-ide", many = false }) {
           pins: pins[one.plane],
           focused: focused[one.plane],
           waiting: Object.fromEntries([[OUTSIDE, 0], ...one.ws]),
+          working:
+            one.plane === START[0].plane
+              ? Object.fromEntries(working.map((name) => [name, 1]))
+              : undefined,
+          // A chip's drag (#3128): the pins in the order they were dropped in.
+          arrange: (order: readonly string[]) => {
+            setPins((was) => ({ ...was, [one.plane]: [...order] }));
+            setSaid(`Pins: ${order.join(", ")}`);
+          },
         },
       })),
-    [focused, pins, many],
+    [focused, pins, many, working],
   );
   return (
     <div style={{ display: "grid", gap: "var(--space-6)" }}>
@@ -119,9 +136,27 @@ function TheBar({ railShown = true, focusedAt = "smart-ide", many = false }) {
           />
         </span>
       </header>
-      <p role="status" style={{ margin: 0 }}>
+      {/* The story's own word, by its test id: a drag's live region is a status too. */}
+      <p role="status" data-testid="story-said" style={{ margin: 0 }}>
         {said}
       </p>
+      {workingAt.length > 0 && (
+        <span>
+          <Button
+            variant="secondary"
+            size="sm"
+            onPress={() =>
+              setWorking((was) =>
+                was.includes("charter")
+                  ? was.filter((one) => one !== "charter")
+                  : [...was, "charter"],
+              )
+            }
+          >
+            A chat in charter
+          </Button>
+        </span>
+      )}
     </div>
   );
 }
@@ -315,6 +350,166 @@ export const ChosenStates: Story = {
   },
 };
 
+/**
+ * **A chip's working mark** (#3127): while a chat is working in a workspace, its chip's slot holds
+ * the chat mark's working ring on the chip's lower trailing corner, ringed in the bar's ground.
+ * A shape, said in the chip's description, and still; coming and going it moves no chip by a
+ * pixel. The picture is smart-ide (current, waiting) beside charter and skills, each with a
+ * chat working.
+ */
+export const Working: Story = {
+  args: { working: ["skills", "charter"] },
+  play: async ({ canvas, userEvent }) => {
+    const bar = canvas.getByTestId("title-bar");
+    const chips = chipsOf(bar);
+    const named = (name: string) => chips.find((one) => one.dataset.chipOf === name);
+    const markOf = (chip: HTMLElement | undefined) =>
+      chip
+        ?.closest('[data-part="slot"]')
+        ?.querySelector<HTMLElement>('[data-scope="chat-mark"][data-variant="working"]') ?? null;
+    const charter = named("charter");
+    const smartIde = named("smart-ide");
+    await expect(markOf(charter)).not.toBeNull();
+    await expect(markOf(named("skills"))).not.toBeNull();
+    await expect(markOf(smartIde)).toBeNull();
+    await expect(charter).toHaveAccessibleDescription("1 chat working");
+    await expect(smartIde).toHaveAccessibleDescription("1 waiting");
+    // A ring the eye reads on the bar's ground: 3:1, as a mark (WCAG 1.4.11).
+    const badge = markOf(charter)?.querySelector<HTMLElement>('[data-part="badge"]');
+    if (badge === null || badge === undefined) throw new Error("the mark draws no badge");
+    const ground = composited(getComputedStyle(badge).backgroundColor, groundOf(badge));
+    const ring = composited(getComputedStyle(badge).color, `rgb(${ground.join(", ")})`);
+    const [light, dark] = [luminance(ring), luminance(ground)].sort((a, b) => b - a);
+    await expect((light + 0.05) / (dark + 0.05)).toBeGreaterThanOrEqual(3);
+    // Still: it never moves itself.
+    await expect(badge.getAnimations()).toEqual([]);
+    // Coming and going, it moves no chip by a pixel, and a press on the chip still reaches it.
+    const boxes = () =>
+      chips.map((one) => {
+        const { left, width, top, height } = one.getBoundingClientRect();
+        return `${left},${top} ${width}x${height}`;
+      });
+    const before = boxes();
+    const toggle = canvas.getByRole("button", { name: "A chat in charter" });
+    await userEvent.click(toggle);
+    await waitFor(() => expect(markOf(charter)).toBeNull());
+    await expect(charter).not.toHaveAttribute("aria-describedby");
+    await expect(boxes()).toEqual(before);
+    await userEvent.click(toggle);
+    await waitFor(() => expect(markOf(charter)).not.toBeNull());
+    await expect(boxes()).toEqual(before);
+    // The keyboard walks the chips as ever: Tab past the house to the strip's one stop, the
+    // arrows along it, and the mark is no stop of its own.
+    await walkTheStrip(userEvent, bar, "Working");
+    // Tab leaves the strip for what follows it.
+    await userEvent.tab();
+    await untilFocused(() => toggle, "Working: Tab leaves the strip");
+  },
+};
+
+/**
+ * **A pin dragged along the strip** (#3128): the pointer carries a chip past its neighbour, by a
+ * translation only, so no chip changes size while it moves, and the neighbour moves to make the
+ * drop place. Dropped, the order is the new one, and each chip's tooltip names its new ⌘ number.
+ * The picture is the strip after the drop.
+ */
+export const Reorder: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const bar = canvas.getByTestId("title-bar");
+    const names = () => chipsOf(bar).map((one) => one.dataset.chipOf);
+    await expect(names()).toEqual(["smart-ide", "charter", "skills"]);
+    const widths = () => chipsOf(bar).map((one) => Math.round(one.getBoundingClientRect().width));
+    const before = widths();
+    const [first, second] = chipsOf(bar);
+    const from = first.getBoundingClientRect();
+    const past = second.getBoundingClientRect();
+    const y = from.top + from.height / 2;
+    const at = (x: number) => ({
+      clientX: x,
+      clientY: y,
+      bubbles: true,
+      pointerId: 1,
+      isPrimary: true,
+    });
+    // dnd-kit's pointer sensor reads the pointer as a person's arrives: a press, then moves past
+    // its few pixels, then a release, each a real PointerEvent.
+    first.dispatchEvent(
+      new PointerEvent("pointerdown", { ...at(from.left + 8), button: 0, buttons: 1 }),
+    );
+    // Carried until its middle is over its neighbour's middle: the drop place is the neighbour's.
+    const over = from.left + 8 + (past.left + past.width / 2 - (from.left + from.width / 2));
+    for (const x of [from.left + 14, from.left + 40, over])
+      document.dispatchEvent(new PointerEvent("pointermove", { ...at(x), buttons: 1 }));
+    // Mid-drag: no chip has changed its size, and the neighbour stepped aside for the drop place.
+    await waitFor(() =>
+      expect(first.closest('[data-part="slot"]')).toHaveAttribute("data-dragging"),
+    );
+    await expect(widths()).toEqual(before);
+    await waitFor(() =>
+      expect(Math.round(second.getBoundingClientRect().left)).toBeLessThan(Math.round(past.left)),
+    );
+    document.dispatchEvent(new PointerEvent("pointerup", { ...at(over), buttons: 0 }));
+    await waitFor(() => expect(names()).toEqual(["charter", "smart-ide", "skills"]));
+    await expect(canvas.getByTestId("story-said")).toHaveTextContent(
+      "Pins: charter, smart-ide, skills",
+    );
+    // The drop chose nothing: smart-ide is still the workspace in front.
+    await expect(chipsOf(bar)[1]).toHaveAttribute("aria-current", "true");
+    await expect(widths()).toEqual([before[1], before[0], before[2]]);
+    // ⌘1–9 follow the order: charter is ⌘1 now.
+    await userEvent.hover(chipsOf(bar)[0]);
+    await waitFor(() =>
+      expect(document.querySelector('[role="tooltip"][data-scope="tooltip"]')).toHaveTextContent(
+        /charter · (⌘|Ctrl\+)1/,
+      ),
+    );
+    await userEvent.unhover(chipsOf(bar)[0]);
+    await waitFor(() =>
+      expect(document.querySelector('[role="tooltip"][data-scope="tooltip"]')).toBeNull(),
+    );
+    // The keyboard walks the new order: the stop is still the current chip, now second.
+    await walkTheStrip(userEvent, bar, "Reorder", -1);
+    // Back to the strip's stop, the current chip, from which Tab leaves the strip: the arrows move
+    // the keyboard and leave the stop where it was (`PinnedStrip`).
+    await userEvent.keyboard("{ArrowRight}");
+    await untilFocused(
+      () => chipsOf(bar).find((one) => one.hasAttribute("aria-current")) ?? null,
+      "Reorder: back on the strip's stop",
+    );
+    await userEvent.tab();
+    // Tab leaves the strip, one stop for all its chips (nothing follows the bar in this story, so
+    // the keyboard comes round to the bar's start).
+    const strip = bar.querySelector('[role="toolbar"][aria-label="Pinned workspaces"]');
+    await waitFor(() => expect(strip?.contains(document.activeElement)).toBe(false));
+  },
+};
+
+/**
+ * **The keyboard into the strip and one step along it**: from nothing focused, Tab to the house
+ * and Tab again to the strip's one stop (the current chip), then one arrow `towards` its
+ * neighbour, each held in sight.
+ */
+async function walkTheStrip(
+  userEvent: { tab: () => Promise<void>; keyboard: (keys: string) => Promise<void> },
+  bar: HTMLElement,
+  story: string,
+  towards: 1 | -1 = 1,
+) {
+  (document.activeElement as HTMLElement | null)?.blur();
+  const house = () => bar.querySelector('[data-part="workspace"][data-variant="root"]');
+  const current = () => chipsOf(bar).find((one) => one.hasAttribute("aria-current")) ?? null;
+  await userEvent.tab();
+  await untilFocused(house, `${story}: Tab reaches the house`);
+  await userEvent.tab();
+  await untilFocused(current, `${story}: Tab reaches the strip's stop, the current chip`);
+  expectFocusInSight();
+  const chips = chipsOf(bar);
+  const next = chips[chips.indexOf(current() as HTMLElement) + towards];
+  await userEvent.keyboard(towards > 0 ? "{ArrowRight}" : "{ArrowLeft}");
+  await untilFocused(() => next, `${story}: the arrow walks to the neighbour`);
+  expectFocusInSight();
+}
+
 /** **The dashed chip** (R105): the current workspace while it is not pinned, after the pins. */
 export const Unpinned: Story = {
   args: { focusedAt: "docs" },
@@ -351,7 +546,7 @@ export const Root: Story = {
     const rest = getComputedStyle(root).backgroundColor;
     await userEvent.click(root);
     await waitFor(() => expect(root).toHaveAttribute("aria-current", "true"));
-    await expect(canvas.getByRole("status")).toHaveTextContent(`Went to ${OUTSIDE}`);
+    await expect(canvas.getByTestId("story-said")).toHaveTextContent(`Went to ${OUTSIDE}`);
     await expect(chipsOf(bar).some((one) => one.hasAttribute("aria-current"))).toBe(false);
     await userEvent.hover(canvas.getByText(`Went to ${OUTSIDE}`));
     await waitFor(() => expect(root).not.toHaveAttribute("data-hovered"));

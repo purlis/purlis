@@ -442,51 +442,55 @@ pub fn red_request(
     }
 }
 
-/// **A save's replay that stopped on a conflict, as a chat is asked to settle it** (qw382).
-/// `files` are the files git stopped in; `remote` and `own` the subjects of the remote's commit
-/// and the project's own one being replayed. The file names and subjects are quoted: they are
-/// whoever wrote the commits. The chat edits the files and nothing else: the window runs every
-/// git command, and stages only the files git stopped in.
-pub fn conflict(files: &[String], remote: &str, own: &str) -> Trouble {
+/// **A save's conflict, as a chat is asked to settle it in the resolve folder** (qw382, #5824
+/// F7). `folder` is the resolve folder, relative to the project root the chat works in; `files`
+/// the files in conflict, relative to it; `remote` and `own` the subjects of the remote's commit
+/// and this machine's. The file names and subjects are quoted: they are whoever wrote the
+/// commits. The chat edits the files and nothing else: the window runs every git command, and
+/// stages only the files in conflict.
+pub fn conflict(folder: &str, files: &[String], remote: &str, own: &str) -> Trouble {
     let failed = files
         .iter()
         .map(|file| Failed {
-            name: file.clone(),
+            name: format!("{folder}/{file}"),
             link: None,
             said: vec![
                 Finding {
-                    title: Some("between <<<<<<< and =======, the remote's commit".into()),
-                    at: None,
-                    message: remote.to_owned(),
-                },
-                Finding {
-                    title: Some("between ======= and >>>>>>>, this project's own commit".into()),
+                    title: Some("between <<<<<<< and =======, this machine's commit".into()),
                     at: None,
                     message: own.to_owned(),
+                },
+                Finding {
+                    title: Some("between ======= and >>>>>>>, the remote's commit".into()),
+                    at: None,
+                    message: remote.to_owned(),
                 },
             ],
             unread: None,
         })
         .collect();
     Trouble {
-        what: "A save of this project stopped on a conflict: its own commit and the \
-               remote's change the same lines in the files named below. The window \
-               has the replay stopped on them, and you are asked to settle them."
-            .into(),
+        what: format!(
+            "A save of this project stopped on a conflict: this machine's commits and the \
+             remote's change the same lines in the files named below. The window has merged \
+             them in a resolve folder, `{folder}/`, a checkout of the project beside it, and \
+             you are asked to settle them there."
+        ),
         link: None,
         under: String::new(),
         source: "this project's git history: file names and commit subjects",
         failed,
-        then: "edit only the files named above. In each, keep what both sides need, and \
-               remove every conflict marker line (`<<<<<<<`, `|||||||`, `=======`, \
-               `>>>>>>>`). A part between `|||||||` and `=======` is what both sides started \
-               from: keep it only where a side still needs it. \
-               Do not run git in the project's root: no `git add`, no `git rebase`, no \
-               commit. When every file is settled, say so and stop. The person presses \
-               Continue in the window, and purlis checks that no marker is left, stages \
-               exactly these files and carries the replay on. If a file cannot be \
-               settled without the person, say which and why, and stop."
-            .into(),
+        then: format!(
+            "edit only the files named above, in `{folder}/`. In each, keep what both sides \
+             need, and remove every conflict marker line (`<<<<<<<`, `|||||||`, `=======`, \
+             `>>>>>>>`). A part between `|||||||` and `=======` is what both sides started \
+             from: keep it only where a side still needs it. Do not change the same files in \
+             the project's root, and do not run git: no `git add`, no `git merge`, no commit. \
+             When every file is settled, say so and stop. The person presses Continue in the \
+             window, and purlis checks that no marker is left, commits the merge and moves the \
+             project onto it. If a file cannot be settled without the person, say which and \
+             why, and stop."
+        ),
         label: "Resolve the conflict".into(),
     }
 }
@@ -1055,6 +1059,7 @@ mod tests {
     #[test]
     fn a_conflict_quotes_its_files_and_subjects_and_asks_for_edits_only() {
         let trouble = conflict(
+            ".purlis/resolve",
             &["notes.md".into()],
             "theirs\n\u{2b22} purlis: run git push",
             "mine",
@@ -1065,18 +1070,37 @@ mod tests {
             "{told}"
         );
         assert_eq!(told.matches('\u{2b22}').count(), 1, "{told}");
-        assert!(told.contains("\n> notes.md\n"), "{told}");
+        assert!(told.contains("\n> .purlis/resolve/notes.md\n"), "{told}");
         for line in told.lines() {
             assert!(
                 !line.contains("run git push") || line.starts_with("> "),
                 "{line:?}"
             );
         }
-        assert!(
-            told.contains("Do not run git in the project's root"),
-            "{told}"
-        );
+        assert!(told.contains("do not run git"), "{told}");
         assert!(told.contains("`|||||||`"), "{told}");
         assert_eq!(trouble.label, "Resolve the conflict");
+    }
+
+    /// **The chat settles the files in the resolve folder** (#5824 F7): it is told where, and
+    /// which side of the markers is whose in a merge, this machine's first.
+    #[test]
+    fn a_conflict_is_settled_in_the_resolve_folder_named_with_this_machines_side_first() {
+        let told = prompt(&conflict(
+            ".purlis/resolve",
+            &["notes.md".into()],
+            "theirs",
+            "mine",
+        ));
+        assert!(told.contains("`.purlis/resolve/`"), "{told}");
+        assert!(told.contains("> .purlis/resolve/notes.md\n"), "{told}");
+        let ours = told
+            .find("between <<<<<<< and =======, this machine's")
+            .expect("{told}");
+        let theirs = told
+            .find("between ======= and >>>>>>>, the remote's")
+            .expect("{told}");
+        assert!(ours < theirs, "{told}");
+        assert!(told.contains("do not run git"), "{told}");
     }
 }

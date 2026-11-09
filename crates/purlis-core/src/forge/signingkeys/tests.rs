@@ -38,6 +38,28 @@ fn a_key_added_is_listed_as_this_devices_beside_the_other_devices_purlis_keys() 
     assert!(recorded.unspent().is_empty());
 }
 
+/// Each other device's key reads as its device, the day the forge says it was added, and
+/// whether an older setup titled it (`purlis on …`), the likely leftover (#5918).
+#[test]
+fn other_devices_keys_name_their_device_the_day_added_and_an_older_setup() {
+    let signer = Signer::generate().unwrap();
+    let recorded = recording("other_devices_listed", &signer);
+    let listed = listed_over(&recorded, &github()).unwrap();
+    let others: Vec<_> = listed
+        .other_devices(&signer)
+        .iter()
+        .map(|key| (key.device(), key.added.as_deref(), key.older_setup()))
+        .collect();
+    assert_eq!(
+        others,
+        [
+            ("laptop", Some("2026-10-01"), false),
+            ("old-mini", Some("2026-08-14"), true),
+            ("desk", None, false),
+        ]
+    );
+}
+
 #[test]
 fn an_account_whose_sign_in_may_not_add_signing_keys_is_told_apart_from_other_refusals() {
     let signer = Signer::generate().unwrap();
@@ -115,6 +137,7 @@ fn a_key_setup_had_the_person_add_before_is_still_purlis_made() {
         id: 1,
         title: title.to_owned(),
         key: "ssh-ed25519 AAAA".to_owned(),
+        added: None,
     };
     assert!(key("purlis · studio").purlis_made());
     assert!(key("purlis on studio").purlis_made());

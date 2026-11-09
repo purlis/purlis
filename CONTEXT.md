@@ -2009,6 +2009,9 @@ through the shim, and a Codex chat is **briefed** on them, a list of names, desc
 take it, so nothing stands in for one. A person who wants to change one uses **Make my own copy**:
 a skill of their own, under a new name at a skill level they pick, which chats get beside the
 built-in skill, never instead of it. The window folds the built-in skills into one quiet line.
+A built-in skill that is renamed keeps no stub: its old name still reads as the new one in a
+persona's `skills:` list and in its runs, grades and misses, and the persona lint asks for the
+new one (ADR 0099 as amended 2026-11-08).
 _Avoid_: purlis's skills (every skill a person makes is a skill in purlis too), system skill,
 "Claude Code skills" for these; a copy of them anywhere
 

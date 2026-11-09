@@ -869,7 +869,7 @@ impl Planted {
 /// have code run outside its sandbox the next time a person, an editor or another chat opens
 /// the directory. The project's manifests are held only where they could change a chat's
 /// sandbox ([`MANIFESTS`]).
-pub const PLANTED: [Planted; 89] = [
+pub const PLANTED: [Planted; 93] = [
     // A `.git` moved into place brings its own config and hooks.
     Planted::itself(".git"),
     Planted::and_below(".git/config"),
@@ -883,6 +883,12 @@ pub const PLANTED: [Planted; 89] = [
     Planted::and_below(".git/commondir"),
     Planted::and_below(".git/objects/info/alternates"),
     Planted::and_below(".git/info/attributes"),
+    // glab's own settings for the repository (`glab-cli/config.yml`: its host, and the editor,
+    // pager and browser it starts), and git's older remote definitions, which say what host a
+    // forge command line sees.
+    Planted::and_below(".git/glab-cli"),
+    Planted::and_below(".git/remotes"),
+    Planted::and_below(".git/branches"),
     // Each submodule's git directory, nested at any depth; and the directory that holds them,
     // so it is never moved into place whole.
     Planted::itself(".git/modules"),
@@ -892,6 +898,7 @@ pub const PLANTED: [Planted; 89] = [
     Planted::and_below(".git/modules/**/commondir"),
     Planted::and_below(".git/modules/**/objects/info/alternates"),
     Planted::and_below(".git/modules/**/info/attributes"),
+    Planted::and_below(".git/modules/**/glab-cli"),
     // Hook managers' directories, which a `core.hooksPath` commonly names (ruling V73d).
     Planted::and_below(".husky"),
     Planted::and_below(".githooks"),
@@ -1117,9 +1124,12 @@ pub fn manifests_held(root: &Path, cwd: Option<&Path>) -> Vec<Denial> {
 ///
 /// The folders there now are held by their paths, and every workspace's and persona's, there now
 /// or made later, by a pattern too, a path with a [`ANY_NAME`] part, which Claude Code reads as a glob and purlis's own
-/// wrap as a regular expression ([`seatbelt::denial_rules`]). Where a backend cannot hold a
+/// wrap as a regular expression ([`seatbelt::denial_rules`]). Where a backend does not hold a
 /// pattern, the levels a chat could have made reach no chat while it runs
-/// ([`crate::skills::levels`]). A clone is never named `skills` or `skills.local`
+/// ([`crate::skills::levels`]): Claude Code's own sandbox on Linux is one (#3097, ADR 0099 as
+/// amended 2026-11-09), and its test is
+/// `a_workspace_made_after_a_claude_code_chat_starts_hands_no_chat_its_skills`. A clone is
+/// never named `skills` or `skills.local`
 /// (`repocmd::clone::destination`), so no pattern holds a clone's root.
 pub fn skills_held(root: &Path) -> Vec<Denial> {
     let levels = [purlis_skills::PROJECT_DIR, purlis_skills::LOCAL_DIR];
@@ -1551,10 +1561,21 @@ pub fn git_folders_searched(root: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
+/// **The characters Claude Code reads as a pattern in a path its sandbox settings name**:
+/// measured on 2.1.300, a path holding one is matched as a glob, and writing it as a class
+/// (`[*]`) does not make it literal either.
+pub const PATTERN_CHARACTERS: [char; 4] = ['*', '?', '[', ']'];
+
 /// [`Denied::git_folder_pins`] for a chat of the plane at `root`: what
 /// [`planted::git_folder_pins`] finds in each of [`git_folders_searched`].
 pub fn git_folder_pins_of(root: &Path) -> Vec<PathBuf> {
     planted::git_folder_pins(&git_folders_searched(root))
+}
+
+/// [`git_folder_pins_of`], or the folder that held more entries than the search for
+/// repositories looks at, where one did ([`planted::Repositories::crowded`]).
+pub fn git_folder_pins_whole_of(root: &Path) -> Result<Vec<PathBuf>, PathBuf> {
+    planted::git_folder_pins_whole(&git_folders_searched(root))
 }
 
 impl Denied {
@@ -1627,6 +1648,16 @@ impl Denied {
             named: None,
             reach: Reach::AndBelow,
             any_case: false,
+        });
+        // …and the project's inventory of repos: the window's Clone of a repo by name clones,
+        // and records as the clone's remote, the URL it holds for that name.
+        paths.push(Denial {
+            class: Class::LaterCode,
+            path: root.join(crate::inventory::DIR),
+            access: Access::Write,
+            named: None,
+            reach: Reach::AndBelow,
+            any_case: true,
         });
         // …and the project's skills, wherever they reach chats (SK-9,
         // #2772): a chat's write of one is a draft the person accepts, never the file itself.
@@ -6462,6 +6493,15 @@ pub enum NotStarted {
     /// A config's commands change folder or name scripts more often than purlis follows
     /// ([`planted::MOST_MOVES`], [`planted::MOST_NAMED`]), so what they run is not known.
     Unread(Named),
+    /// A repository's git folder a Claude Code chat's sandbox holds as a whole
+    /// ([`Denied::git_folder_pins`]) has a character Claude Code reads as a pattern in its path
+    /// ([`PATTERN_CHARACTERS`]), so no rule purlis writes holds it as written.
+    GitFolderUnheld(PathBuf),
+    /// The folders a Claude Code chat's sandbox searches for repositories, to hold each one's git
+    /// folder as a whole ([`Denied::git_folder_pins`]), held more entries outside every
+    /// repository than the search looks at ([`planted::REPOSITORIES_LOOKED_AT`]): a repository
+    /// beyond them would not be held. The folder that held the most.
+    RepositoriesUnfound(PathBuf),
     /// What purlis keeps from a chat could not be told whole ([`Denied::untold`]), and why:
     /// a sandbox compiled from a list that may be short would keep less than purlis means to,
     /// so none is compiled and the chat is not started.
@@ -6656,6 +6696,28 @@ impl NotStarted {
                  was started. Move that command into a script of its own{}",
                 named.file.display(),
                 named.word,
+                if opt_out {
+                    ", or start this chat without the sandbox from the new-chat picker."
+                } else {
+                    "."
+                }
+            ),
+            Self::GitFolderUnheld(path) => format!(
+                "{lead}, and the repository at {} has `*`, `?`, `[` or `]` in its path, which \
+                 Claude Code's sandbox reads as a pattern, so purlis cannot hold its git folder \
+                 and nothing was started. Rename that folder{}",
+                path.display(),
+                if opt_out {
+                    ", or start this chat without the sandbox from the new-chat picker."
+                } else {
+                    "."
+                }
+            ),
+            Self::RepositoriesUnfound(path) => format!(
+                "{lead}, and {} holds more files and folders than purlis looks through to find \
+                 every repository in the project, so it cannot hold each one's git folder, and \
+                 nothing was started. Move what fills that folder out of the project{}",
+                path.display(),
                 if opt_out {
                     ", or start this chat without the sandbox from the new-chat picker."
                 } else {
@@ -7061,9 +7123,23 @@ pub(crate) fn applied_of(
     // a Claude Code chat purlis wraps finds none (#4083).
     let pinned;
     let compiled = if harness == Harness::ClaudeCode && !wrapped {
+        let pins = git_folder_pins_whole_of(root).map_err(NotStarted::RepositoriesUnfound)?;
+        // Claude Code reads a path holding a pattern's character as a pattern: such a git folder
+        // would not be held as written, so the chat is not started (fail closed).
+        if let Some(unheld) = pins.iter().find(|pin| {
+            pin.to_string_lossy()
+                .contains(|c| PATTERN_CHARACTERS.contains(&c))
+        }) {
+            let repository = unheld
+                .ancestors()
+                .find(|above| above.file_name().is_some_and(|name| name == ".git"))
+                .and_then(Path::parent)
+                .unwrap_or(unheld);
+            return Err(NotStarted::GitFolderUnheld(repository.to_path_buf()));
+        }
         pinned = Compiled {
             denied: Denied {
-                git_folder_pins: git_folder_pins_of(root),
+                git_folder_pins: pins,
                 ..compiled.denied.clone()
             },
             ..compiled.clone()
@@ -7926,6 +8002,8 @@ pub fn ahead_decided(
             | NotStarted::Uncompilable(_)
             | NotStarted::CoversItsGround { .. }
             | NotStarted::Unread(_)
+            | NotStarted::GitFolderUnheld(_)
+            | NotStarted::RepositoriesUnfound(_)
             | NotStarted::KeptUntold(_)
             | NotStarted::PlaneUnreadable
             | NotStarted::PlaneMissing

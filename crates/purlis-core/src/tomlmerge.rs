@@ -127,6 +127,114 @@ pub fn merged(base: &str, ours: &str, theirs: &str) -> Result<Merged, String> {
     Ok(Merged::Clean(doc.to_string()))
 }
 
+/// A key both sides changed, each its own way (#5852), with each side's value as TOML writes
+/// it; `None` where that side removed the key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeyConflict {
+    /// The key's dotted path.
+    pub key: String,
+    /// This machine's value.
+    pub ours: Option<String>,
+    /// The remote's value.
+    pub theirs: Option<String>,
+}
+
+/// **The settings file merged around the keys in conflict** (#5852): everything [`merged`]
+/// settles by itself settled, and this machine's value standing in for each key both sides
+/// changed, which are listed with both values. Never a conflict marker.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Around {
+    pub text: String,
+    pub keys: Vec<KeyConflict>,
+}
+
+/// [`merged`], settled around the keys in conflict ([`Around`]).
+pub fn around(base: &str, ours: &str, theirs: &str) -> Result<Around, String> {
+    let (doc, from, found) = settled_around(base, ours, theirs)?;
+    let value_at = |doc: &toml_edit::DocumentMut, path: &[String]| {
+        let (key, parents) = path.split_last()?;
+        let mut table: &dyn toml_edit::TableLike = doc.as_table();
+        for parent in parents {
+            table = table.get(parent)?.as_table_like()?;
+        }
+        let item = table.get(key)?;
+        Some(match item {
+            toml_edit::Item::Value(value) => value.to_string().trim().to_owned(),
+            other => other.to_string().trim().to_owned(),
+        })
+    };
+    let keys = found
+        .conflict_paths
+        .iter()
+        .map(|path| KeyConflict {
+            key: dotted(path),
+            ours: value_at(&doc, path),
+            theirs: value_at(&from, path),
+        })
+        .collect();
+    Ok(Around {
+        text: doc.to_string(),
+        keys,
+    })
+}
+
+/// **The settings file once the person chose** (#5852): [`around`], with the remote's value
+/// taken for each key named in `theirs_for` (dotted paths), and this machine's kept for the
+/// rest.
+pub fn chosen(
+    base: &str,
+    ours: &str,
+    theirs: &str,
+    theirs_for: &[String],
+) -> Result<String, String> {
+    let (mut doc, from, found) = settled_around(base, ours, theirs)?;
+    for path in found.conflict_paths {
+        if theirs_for.contains(&dotted(&path)) {
+            apply(&mut doc, &from, Edit::Theirs(path))?;
+        }
+    }
+    Ok(doc.to_string())
+}
+
+/// This machine's document with every change [`walk`] found made, the remote's document, and
+/// what was found, conflicts included.
+fn settled_around(
+    base: &str,
+    ours: &str,
+    theirs: &str,
+) -> Result<(toml_edit::DocumentMut, toml_edit::DocumentMut, Found), String> {
+    let read = |side: &str, text: &str| {
+        text.parse::<toml::Table>()
+            .map(toml::Value::Table)
+            .map_err(|e| not_toml(side, e.message()))
+    };
+    let (base_read, ours_read, theirs_read) = (
+        read("the merge base", base)?,
+        read("this machine's", ours)?,
+        read("the remote's", theirs)?,
+    );
+    let mut found = Found::default();
+    walk(
+        &mut Vec::new(),
+        Sides {
+            base: Some(&base_read),
+            ours: Some(&ours_read),
+            theirs: Some(&theirs_read),
+        },
+        &mut found,
+    );
+    let document = |side: &str, text: &str| {
+        text.parse::<toml_edit::DocumentMut>()
+            .map_err(|e| not_toml(side, e.message()))
+    };
+    let mut doc = document("this machine's", ours)?;
+    let from = document("the remote's", theirs)?;
+    for edit in std::mem::take(&mut found.edits) {
+        apply(&mut doc, &from, edit)?;
+    }
+    Ok((doc, from, found))
+}
+
 /// Why a side of the merge could not be read: `side` is not TOML, in the parser's words.
 fn not_toml(side: &str, message: &str) -> String {
     format!("{side} is not TOML: {}", crate::shown::short(message))
@@ -149,6 +257,8 @@ enum Edit {
 struct Found {
     edits: Vec<Edit>,
     conflicts: Vec<String>,
+    /// The keys of [`Found::conflicts`], as paths.
+    conflict_paths: Vec<Vec<String>>,
 }
 
 /// One key's value on each side of the merge, `None` where that side has no such key.
@@ -230,6 +340,7 @@ fn walk(path: &mut Vec<String>, sides: Sides<'_>, found: &mut Found) {
         return;
     }
     found.conflicts.push(dotted(path));
+    found.conflict_paths.push(path.clone());
 }
 
 /// A key's path as TOML writes it, dotted, each key quoted where it has to be.

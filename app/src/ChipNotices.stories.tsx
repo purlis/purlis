@@ -238,7 +238,8 @@ function TheWindow({
           background: "var(--surface-base)",
         }}
       >
-        <p role="status" style={{ margin: 0, padding: "var(--space-4)" }}>
+        {/* The story's own word, by its test id: the strip's drag has a live region too (#3128). */}
+        <p role="status" data-testid="story-said" style={{ margin: 0, padding: "var(--space-4)" }}>
           {said}
         </p>
         {/* Somewhere to press that no card is over, whatever a theme's metrics: the page's
@@ -499,7 +500,9 @@ export const OnADormantChip: Story = {
     const forget = within(card).getByRole("button", { name: "Forget" });
     forget.focus();
     await userEvent.keyboard("{Enter}");
-    await expect(canvas.getByRole("status")).toHaveTextContent("Forgot the pin to second-try");
+    await expect(canvas.getByTestId("story-said")).toHaveTextContent(
+      "Forgot the pin to second-try",
+    );
     // The picture once the card has arrived, never mid-entrance.
     await untilSettled(card);
   },

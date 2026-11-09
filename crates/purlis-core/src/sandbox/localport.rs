@@ -159,7 +159,21 @@ pub fn port(typed: &str) -> Result<u16, Refused> {
     if is_own(number) {
         return Err(Refused::Never(OWN_SAID.to_owned()));
     }
+    if is_name_lookup(number) {
+        return Err(Refused::Outside(
+            super::services::NAME_LOOKUP_REFUSED.to_owned(),
+        ));
+    }
     Ok(number)
+}
+
+/// **The ports a resolver of this machine answers name lookups on**: DNS's, and DNS over TLS's.
+/// No port grant names one (#2657), as no socket grant names the system's name lookup.
+pub const NAME_LOOKUP_PORTS: [u16; 2] = [53, 853];
+
+/// Whether `port` is one of [`NAME_LOOKUP_PORTS`].
+pub fn is_name_lookup(port: u16) -> bool {
+    NAME_LOOKUP_PORTS.contains(&port)
 }
 
 /// Why purlis's own port is never allowed.
@@ -181,11 +195,17 @@ pub fn is_own(port: u16) -> bool {
     ports().is_own(port)
 }
 
-/// `ports`, less each that is purlis's own now, each once, in order: what a start compiles in.
+/// `ports`, less each that is purlis's own now or a resolver's ([`is_name_lookup`]), each once,
+/// in order: what a start compiles in.
 /// Each one kept is marked as given in the same hold of the lock, so no listener of purlis's
 /// takes it in between.
 pub fn still_ports(ports_asked: &[u16]) -> Vec<u16> {
-    ports().admit(ports_asked)
+    let asked: Vec<u16> = ports_asked
+        .iter()
+        .copied()
+        .filter(|port| !is_name_lookup(*port))
+        .collect();
+    ports().admit(&asked)
 }
 
 /// How many times [`bind_loopback`] asks again for a port that was given to a chat.

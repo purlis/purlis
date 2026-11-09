@@ -62,6 +62,7 @@ const RUNS = {
   asks: 0,
   tokens: null,
   ms: 0,
+  misses: 0,
 };
 
 const version = (commit: string, subject: string, at: string) => ({

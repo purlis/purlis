@@ -1025,6 +1025,14 @@ fn every_harness_denies_a_chat_writing_the_persons_harness_approvals_or_the_decl
         declarations.display(),
         denied.paths
     );
+    // The inventory of repos too: a Clone by name clones the URL it records.
+    let inventory = plane.path().join(crate::inventory::DIR);
+    assert!(
+        paths(&denied, Class::LaterCode, Access::Write).contains(&inventory),
+        "{} not held: {:?}",
+        inventory.display(),
+        denied.paths
+    );
     // Read, never written: the start that checks them may run where the chat's reads are held.
     for held in records.iter().chain([&declarations]) {
         assert!(
@@ -2851,6 +2859,34 @@ fn a_clone_the_app_made_for_a_chat_keeps_its_git_config_hooks_and_editor_setting
 }
 
 #[test]
+fn a_git_folders_glab_settings_and_older_remote_definitions_are_denied_to_every_chat() {
+    // glab reads a repository's own settings from `.git/glab-cli`, and git's older remote
+    // definitions say which host a forge command line sees: later code, at any depth, in a
+    // submodule's git folder too.
+    let settings = claude::settings(&compiled(Denied::default(), Os::MacOs)).expect("compiles");
+    let write = deny_write(&settings);
+    for glob in [
+        "**/.git/glab-cli",
+        "**/.git/remotes",
+        "**/.git/branches",
+        "**/.git/modules/**/glab-cli",
+    ] {
+        assert!(write.iter().any(|it| it == glob), "{glob} in {write:?}");
+        assert!(settings.deny.contains(&format!("Edit({glob})")), "{glob}");
+    }
+    for path in [
+        "/p/repo/.git/glab-cli/config.yml",
+        "/p/repo/.git/remotes/origin",
+        "/p/repo/.git/branches/origin",
+    ] {
+        assert!(
+            crate::sandboxblock::is_planted(Path::new(path)),
+            "{path} is later code"
+        );
+    }
+}
+
+#[test]
 fn a_chat_in_a_branch_folder_is_given_nothing_under_its_clones_git_directory() {
     // #1055, ruling V99h: a sandboxed chat in a linked worktree commits through the app, and
     // its sandbox is not widened for it. The worktree's git directory is in its clone's
@@ -3309,6 +3345,58 @@ fn every_harness_is_compiled_against_the_plane_as_the_kernel_names_it() {
         "{write}"
     );
     assert!(!write.contains(&linked.display().to_string()), "{write}");
+}
+
+#[test]
+fn a_claude_code_chat_is_not_started_where_a_held_git_folder_has_glob_characters_in_its_path() {
+    // Claude Code reads a path in its sandbox settings that holds `*`, `?`, `[` or `]` as a
+    // pattern, so a rule on such a git folder would not hold it as written.
+    for name in ["wt[*]?", "a*b", "q?", "x]"] {
+        let plane = plane_saying(ON);
+        let clone = plane.path().join(name);
+        std::fs::create_dir_all(clone.join(".git/objects")).expect("a git folder");
+        std::fs::create_dir_all(clone.join(".git/refs")).expect("its refs");
+        std::fs::write(clone.join(".git/HEAD"), "ref: refs/heads/main\n").expect("HEAD");
+        std::fs::write(clone.join(".git/config"), "").expect("config");
+        for os in [Os::MacOs, Os::Linux] {
+            let refused = for_start(Harness::ClaudeCode, plane.path(), &machine(os), &|_| true)
+                .expect_err("not started");
+            let NotStarted::GitFolderUnheld(path) = &refused else {
+                panic!("{name} on {os:?}: {refused:?}");
+            };
+            assert!(path.to_string_lossy().contains(name), "{}", path.display());
+            let said = refused.to_string();
+            assert!(said.contains("Rename"), "{said}");
+        }
+    }
+    // A plain name starts as before.
+    let plane = plane_saying(ON);
+    std::fs::create_dir_all(plane.path().join("plain/.git/objects")).expect("a git folder");
+    std::fs::create_dir_all(plane.path().join("plain/.git/refs")).expect("its refs");
+    std::fs::write(
+        plane.path().join("plain/.git/HEAD"),
+        "ref: refs/heads/main\n",
+    )
+    .expect("HEAD");
+    std::fs::write(plane.path().join("plain/.git/config"), "").expect("config");
+    assert!(
+        for_start(
+            Harness::ClaudeCode,
+            plane.path(),
+            &machine(Os::MacOs),
+            &|_| true
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn a_claude_code_chat_is_not_started_where_the_search_for_repositories_is_crowded_out() {
+    let path = Path::new("/p/notes");
+    let said = NotStarted::RepositoriesUnfound(path.to_path_buf()).to_string();
+    assert!(said.contains("/p/notes"), "{said}");
+    assert!(said.contains("Move what fills that folder"), "{said}");
+    assert!(said.contains("nothing was started"), "{said}");
 }
 
 /// The Claude Code settings a chat in `cwd` of the sandboxed plane at `root` is armed with.
@@ -8434,4 +8522,46 @@ fn the_ground_check_folds_each_name_once_however_many_pairs_it_compares() {
     // Every spelling of every name, once: no more than eight of each.
     let names = denied.len() + ground.len();
     assert!(made <= names * 8, "{made} folds for {names} names");
+}
+
+/// **A chat brought back after a quit may read the folder its last run kept** (#5827): its wake
+/// line names the file the rest of a shell's output is in, in the earlier run's own temporary
+/// folder kept aside ([`crate::ownwork::kept`]). Reading it needs no grant, since reads are
+/// allowed but where denied, and nothing denies a kept folder; writing it stays refused, as
+/// every folder that is not the chat's own is.
+#[test]
+fn a_chat_may_read_the_folder_its_last_run_kept_but_not_write_it() {
+    use purlis_linux_sandbox::profile::{FileOp, Kind, Op, Profile};
+    for os in [Os::MacOs, Os::Linux] {
+        let (plane, denied) = denied_with(None, os);
+        let profile = seatbelt::profile(
+            &denied.paths,
+            &seatbelt::Own::default(),
+            &plane.path().join("workspaces/alpha"),
+            std::path::Path::new("/private/tmp/charter-chat-NeW123"),
+            &[4040],
+            None,
+        )
+        .expect("a profile");
+        let read = Profile::parse(&profile).expect("the Linux sandbox reads it");
+        let output = std::path::Path::new(
+            "/private/tmp/charter-chat-OlD123-kept/claude-501/-proj/conv-1/tasks/b1.output",
+        );
+        let may = |what| {
+            read.allows(&Op::File {
+                what,
+                path: output,
+                kind: Kind::Regular,
+            })
+        };
+
+        assert!(
+            may(FileOp::ReadData),
+            "{os:?}: the kept output is not readable"
+        );
+        assert!(
+            !may(FileOp::WriteData),
+            "{os:?}: the kept output is writable"
+        );
+    }
 }

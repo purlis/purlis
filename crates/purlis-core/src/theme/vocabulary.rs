@@ -426,6 +426,20 @@ pub fn follow_kin(
     given: &mut std::collections::BTreeMap<&'static str, String>,
     below: &std::collections::BTreeMap<&'static str, String>,
 ) -> Vec<(&'static str, &'static str)> {
+    let mut followed = follow_grounds(given, below);
+    if let Some(accent) = accent_given(given, below) {
+        follow_marks(given, below, &accent, &mut followed);
+    }
+    followed
+}
+
+/// **The first half of [`follow_kin`]**: the tokens of [`KIN`], then the accent's grounds
+/// ([`ACCENT_GROUNDS`]). The second half, what is drawn in the accent, writes none of these,
+/// so what this gives them is what `follow_kin` gives them.
+pub(super) fn follow_grounds(
+    given: &mut std::collections::BTreeMap<&'static str, String>,
+    below: &std::collections::BTreeMap<&'static str, String>,
+) -> Vec<(&'static str, &'static str)> {
     let mut followed = Vec::new();
     for (token, drew) in KIN {
         let follows = below.get(token) == below.get(drew) || token == ACCENT_WORDS;
@@ -437,11 +451,7 @@ pub fn follow_kin(
             followed.push((token, drew));
         }
     }
-    let accent = given
-        .get(ACCENT)
-        .filter(|accent| below.get(ACCENT) != Some(*accent))
-        .cloned();
-    if let Some(accent) = accent {
+    if let Some(accent) = accent_given(given, below) {
         for ground in ACCENT_GROUNDS {
             if given.contains_key(ground) {
                 continue;
@@ -463,97 +473,118 @@ pub fn follow_kin(
                 followed.push((ground, ACCENT));
             }
         }
-        // And the accent's marks, a link and the first chart colour (#5157).
-        for token in DRAWN_IN_THE_ACCENT
-            .into_iter()
-            .chain(super::tint::SIGNAL_MARKS)
-        {
-            if given.contains_key(token) {
-                continue;
-            }
-            let Some(under) = below.get(token) else {
-                continue;
-            };
-            // A token `below` draws as the one that drew it before follows that one, as it always
-            // did (Classic's primary fill is its surface), not the accent: as that one is now
-            // drawn, turned to the accent or not (#5157). The fill under the pointer is drawn as
-            // the active tab, which no accent turns, so it turns with the fill instead, keeping
-            // the fill's hue, as the wash under the pointer keeps the accent's.
-            let drawn_as_kin = KIN
-                .iter()
-                .find(|(kin, drew)| *kin == token && below.get(kin) == below.get(drew));
-            let mut turning_to = accent.as_str();
-            if let Some((_, drew)) = drawn_as_kin {
-                if let Some(value) = given.get(drew).cloned() {
-                    given.insert(token, value);
-                    followed.push((token, *drew));
-                    continue;
-                }
-                match given.get("accent.fill") {
-                    Some(fill) if token == FILL_HOVER => turning_to = fill,
-                    _ => continue,
-                }
-            }
-            // One `below` draws as its accent is the accent given (#5157); one drawn in the
-            // accent's family turns to its hue. A mark that would read as a state there takes the
-            // accent's own colour, since a link reads as the accent (#3049), as a tinted one does
-            // ([`super::tint::signal_chroma_of`]). Either way a colour that would lose a contrast
-            // is passed over for the next: the turned one keeps the parent's luminance, and so
-            // its contrasts. An edge `below` draws as its ring tries the ring as it is drawn
-            // first, since a theme can tune its accent and its ring apart.
-            let turned = super::tint::toward(under, turning_to);
-            let mark = super::tint::SIGNAL_MARKS.contains(&token);
-            let alike = below.get(RING) == below.get(EDGE);
-            let the_ring = (token == EDGE && alike)
-                .then(|| given.get(RING).cloned())
-                .flatten();
-            let tries: Vec<String> = the_ring
-                .iter()
-                .cloned()
-                .chain(if below.get(ACCENT) == Some(under) {
-                    vec![accent.clone(), turned]
-                } else if mark {
-                    vec![turned, accent.clone()]
-                } else {
-                    vec![turned]
-                })
-                .collect();
-            let is = |token: &str| {
-                given
-                    .get(token)
-                    .or_else(|| below.get(token))
-                    .map_or("", String::as_str)
-            };
-            let was = |token: &str| below.get(token).map_or("", String::as_str);
-            // A ring whose edge is still to come holds the edge's pairs too, so the two take one
-            // colour: the edge has a pair the ring has not, the palette's aimed row.
-            let edge_to_come = token == RING && alike && !given.contains_key(EDGE);
-            let apart = HeldApart::of(token, under, |token| Some(is(token).to_owned()));
-            let contrast = super::check::KeepsContrast::of(token, &was);
-            let edge = edge_to_come.then(|| super::check::KeepsContrast::of(EDGE, &was));
-            let keeps = |one: &str| {
-                apart.holds(one)
-                    && contrast.keeps(one, &is)
-                    && edge.as_ref().is_none_or(|edge| edge.keeps(one, &is))
-                    && (token != FIRST_SERIES || apart_from_the_series(one, &is, &was))
-            };
-            let holding = tries.iter().find(|one| keeps(one)).cloned().or_else(|| {
-                // The person's ruling (#5157): a mark too near a state stays in the accent's
-                // family, nudged just far enough, rather than going back to the parent's colour.
-                mark.then(|| super::tint::nudged(&accent, &keeps)).flatten()
-            });
-            if let Some(holding) = holding {
-                let from = if the_ring.as_ref() == Some(&holding) {
-                    RING
-                } else {
-                    ACCENT
-                };
-                given.insert(token, holding);
-                followed.push((token, from));
-            }
-        }
     }
     followed
+}
+
+/// The accent `given` holds, when it is not the one `below` draws.
+fn accent_given(
+    given: &std::collections::BTreeMap<&'static str, String>,
+    below: &std::collections::BTreeMap<&'static str, String>,
+) -> Option<String> {
+    given
+        .get(ACCENT)
+        .filter(|accent| below.get(ACCENT) != Some(*accent))
+        .cloned()
+}
+
+/// **The second half of [`follow_kin`]**: what is drawn in the accent ([`DRAWN_IN_THE_ACCENT`]),
+/// a link and the first chart colour, turned to `accent`, the accent given.
+fn follow_marks(
+    given: &mut std::collections::BTreeMap<&'static str, String>,
+    below: &std::collections::BTreeMap<&'static str, String>,
+    accent: &str,
+    followed: &mut Vec<(&'static str, &'static str)>,
+) {
+    // What is drawn in the accent, then its marks: a link and the first chart colour (#5157).
+    for token in DRAWN_IN_THE_ACCENT
+        .into_iter()
+        .chain(super::tint::SIGNAL_MARKS)
+    {
+        if given.contains_key(token) {
+            continue;
+        }
+        let Some(under) = below.get(token) else {
+            continue;
+        };
+        // A token `below` draws as the one that drew it before follows that one, as it always
+        // did (Classic's primary fill is its surface), not the accent: as that one is now
+        // drawn, turned to the accent or not (#5157). The fill under the pointer is drawn as
+        // the active tab, which no accent turns, so it turns with the fill instead, keeping
+        // the fill's hue, as the wash under the pointer keeps the accent's.
+        let drawn_as_kin = KIN
+            .iter()
+            .find(|(kin, drew)| *kin == token && below.get(kin) == below.get(drew));
+        let mut turning_to = accent;
+        if let Some((_, drew)) = drawn_as_kin {
+            if let Some(value) = given.get(drew).cloned() {
+                given.insert(token, value);
+                followed.push((token, *drew));
+                continue;
+            }
+            match given.get("accent.fill") {
+                Some(fill) if token == FILL_HOVER => turning_to = fill,
+                _ => continue,
+            }
+        }
+        // One `below` draws as its accent is the accent given (#5157); one drawn in the
+        // accent's family turns to its hue. A mark that would read as a state there takes the
+        // accent's own colour, since a link reads as the accent (#3049), as a tinted one does
+        // ([`super::tint::signal_chroma_of`]). Either way a colour that would lose a contrast
+        // is passed over for the next: the turned one keeps the parent's luminance, and so
+        // its contrasts. An edge `below` draws as its ring tries the ring as it is drawn
+        // first, since a theme can tune its accent and its ring apart.
+        let turned = super::tint::toward(under, turning_to);
+        let mark = super::tint::SIGNAL_MARKS.contains(&token);
+        let alike = below.get(RING) == below.get(EDGE);
+        let the_ring = (token == EDGE && alike)
+            .then(|| given.get(RING).cloned())
+            .flatten();
+        let tries: Vec<String> = the_ring
+            .iter()
+            .cloned()
+            .chain(if below.get(ACCENT) == Some(under) {
+                vec![accent.to_owned(), turned]
+            } else if mark {
+                vec![turned, accent.to_owned()]
+            } else {
+                vec![turned]
+            })
+            .collect();
+        let is = |token: &str| {
+            given
+                .get(token)
+                .or_else(|| below.get(token))
+                .map_or("", String::as_str)
+        };
+        let was = |token: &str| below.get(token).map_or("", String::as_str);
+        // A ring whose edge is still to come holds the edge's pairs too, so the two take one
+        // colour: the edge has a pair the ring has not, the palette's aimed row.
+        let edge_to_come = token == RING && alike && !given.contains_key(EDGE);
+        let apart = HeldApart::of(token, under, |token| Some(is(token).to_owned()));
+        let contrast = super::check::KeepsContrast::of(token, &was);
+        let edge = edge_to_come.then(|| super::check::KeepsContrast::of(EDGE, &was));
+        let keeps = |one: &str| {
+            apart.holds(one)
+                && contrast.keeps(one, &is)
+                && edge.as_ref().is_none_or(|edge| edge.keeps(one, &is))
+                && (token != FIRST_SERIES || apart_from_the_series(one, &is, &was))
+        };
+        let holding = tries.iter().find(|one| keeps(one)).cloned().or_else(|| {
+            // The person's ruling (#5157): a mark too near a state stays in the accent's
+            // family, nudged just far enough, rather than going back to the parent's colour.
+            mark.then(|| super::tint::nudged(accent, &keeps)).flatten()
+        });
+        if let Some(holding) = holding {
+            let from = if the_ring.as_ref() == Some(&holding) {
+                RING
+            } else {
+                ACCENT
+            };
+            given.insert(token, holding);
+            followed.push((token, from));
+        }
+    }
 }
 
 /// **Whether `colour`, drawn as the first chart colour, stands apart from every other series**,

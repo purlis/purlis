@@ -11,11 +11,12 @@
 // line, `publish: <why>` or `skip: <why>`, and exits 0; exits 1 when it could not find out,
 // so a build never publishes on a guess.
 //
-// **Why.** `release.yml` builds the commit whose `ci` went green, in the order the `ci` runs
-// END, and that is not the order of the commits: a `ci` run started again finishes after its
-// successors'. On 2026-10-13 run 654 published 4c7854ee over e827217c, nine commits newer,
-// which run 653 had published half an hour before. Its number was the higher one, so every
-// machine on the dev channel took it and went back nine commits.
+// **Why.** Runs do not always come in the order of their commits. When `release.yml` was started
+// by `ci`'s end it built in the order the `ci` runs ENDED, and a `ci` run started again finished
+// after its successors': on 2026-10-13 run 654 published 4c7854ee over e827217c, nine commits
+// newer, which run 653 had published half an hour before. Its number was the higher one, so
+// every machine on the dev channel took it and went back nine commits. Runs now start in the
+// order of their pushes, but a run started again by hand still comes late.
 //
 // **What is published** is read from `dev.json`, the file the apps themselves read: its
 // `version`, and the commit its `notes` name (`release.yml`'s `manifest` job writes "a dev

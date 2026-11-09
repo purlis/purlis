@@ -1,0 +1,178 @@
+[
+  {
+    "query": "Work on the api repo: add a health endpoint and run its tests.",
+    "should_trigger": true
+  },
+  {
+    "query": "Clone the frontend repo for this workspace and build it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Fix the failing test in the billing repo and commit it.",
+    "should_trigger": true
+  },
+  {
+    "query": "I want three branches of the web repo going at once.",
+    "should_trigger": true
+  },
+  {
+    "query": "Make a branch folder for the login fix in the api repo.",
+    "should_trigger": true
+  },
+  {
+    "query": "Commit my change in this branch folder.",
+    "should_trigger": true
+  },
+  {
+    "query": "Is the docs repo cloned in this workspace yet?",
+    "should_trigger": true
+  },
+  {
+    "query": "Change the CLI repo's argument parser and commit to its own history.",
+    "should_trigger": true
+  },
+  {
+    "query": "Follow the worker repo's own CLAUDE.md conventions while you fix its bug.",
+    "should_trigger": true
+  },
+  {
+    "query": "Run the linter in the mobile repo and fix what it reports.",
+    "should_trigger": true
+  },
+  {
+    "query": "Start a branch folder per issue in the backend repo so they don't collide.",
+    "should_trigger": true
+  },
+  {
+    "query": "Remove the branch folder for the feature that merged.",
+    "should_trigger": true
+  },
+  {
+    "query": "Bring my branch folder up to date with main.",
+    "should_trigger": true
+  },
+  {
+    "query": "Show the test results on the branch's diff.",
+    "should_trigger": true
+  },
+  {
+    "query": "Push the branch I worked on in the api repo.",
+    "should_trigger": true
+  },
+  {
+    "query": "Where do repo-specific settings go, the repo's .claude folder or this workspace's?",
+    "should_trigger": true
+  },
+  {
+    "query": "Build and test the sdk repo this workspace owns.",
+    "should_trigger": true
+  },
+  {
+    "query": "Refactor the payments module in the shop repo, then commit.",
+    "should_trigger": true
+  },
+  {
+    "query": "Open a new branch of the infra repo to try the Terraform upgrade.",
+    "should_trigger": true
+  },
+  {
+    "query": "Which branch folders of the web repo exist right now?",
+    "should_trigger": true
+  },
+  {
+    "query": "Do the work on the api repo from this purlis chat, inside the workspace.",
+    "should_trigger": true
+  },
+  {
+    "query": "Rebase my branch folder in the api repo onto the latest main.",
+    "should_trigger": true
+  },
+  {
+    "query": "Ask the reviewer persona to review my branch and tell me what it finds.",
+    "should_trigger": false
+  },
+  {
+    "query": "Dispatch the release work on the api repo to the release persona and wait for its answer.",
+    "should_trigger": false
+  },
+  {
+    "query": "Get the security persona's opinion on this diff before I merge.",
+    "should_trigger": false
+  },
+  {
+    "query": "Create a persona for work on the infra repo.",
+    "should_trigger": false
+  },
+  {
+    "query": "Have the qa persona run its checks and report back to this chat.",
+    "should_trigger": false
+  },
+  {
+    "query": "Deploy the api with the token in the deploy vault.",
+    "should_trigger": false
+  },
+  {
+    "query": "Run the integration tests against staging with the database password from the vault.",
+    "should_trigger": false
+  },
+  {
+    "query": "Store the npm publish token in the release vault.",
+    "should_trigger": false
+  },
+  {
+    "query": "Use the cloud keys in the ops vault to list the storage buckets.",
+    "should_trigger": false
+  },
+  {
+    "query": "Add a new dialog to purlis's own app with the component families in app/src/ui.",
+    "should_trigger": false
+  },
+  {
+    "query": "Fix the screenshot baseline of the Notice story in my purlis checkout.",
+    "should_trigger": false
+  },
+  {
+    "query": "Explain what a git worktree is.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write a haiku about version control.",
+    "should_trigger": false
+  },
+  {
+    "query": "What's the difference between merge and rebase?",
+    "should_trigger": false
+  },
+  {
+    "query": "Recommend a branching strategy for a small team.",
+    "should_trigger": false
+  },
+  {
+    "query": "Summarise this article on monorepos.",
+    "should_trigger": false
+  },
+  {
+    "query": "Convert this JSON to YAML.",
+    "should_trigger": false
+  },
+  {
+    "query": "Draft an email to the team about the outage.",
+    "should_trigger": false
+  },
+  {
+    "query": "What does HTTP 418 mean?",
+    "should_trigger": false
+  },
+  {
+    "query": "Bump the api repo's client version and update the web and mobile repos that use it, as one change.",
+    "should_trigger": false
+  },
+  {
+    "query": "Which of the three pull requests in my cross-repo change should merge first?",
+    "should_trigger": false
+  },
+  {
+    "query": "Plan the tickets for this sprint.",
+    "should_trigger": false
+  }
+]

@@ -54,20 +54,32 @@ export function handsBackSaid(mac: boolean): string {
  * Where on the page a point of the view lands, in the page's CSS pixels: the frame is drawn
  * scaled to fit its box whole, centred (`object-fit: contain`), so a point in the letterbox
  * around it lands on nothing.
+ *
+ * **The frame drawn is what the person aims at**: its rectangle comes from the frame's own
+ * pixels (`frame`, the canvas's width and height), never from the size the view was told the
+ * page is, which a frame need not match: one of another shape, drawn while the page's size was
+ * read as `page`, put every point off by the band around it (a click on a field reached the
+ * button under it). The frame is the page scaled alike both ways, at the page's width (a
+ * screen of two pixels to the CSS pixel casts it twice as wide), so a point is scaled by
+ * `page.width` alone, and a frame shorter than `page` reaches only as far down as it shows.
  */
 export function pagePoint(
   at: { x: number; y: number },
   box: { left: number; top: number; width: number; height: number },
+  frame: { width: number; height: number },
   page: { width: number; height: number },
 ): { x: number; y: number } | undefined {
-  if (box.width <= 0 || box.height <= 0 || page.width <= 0 || page.height <= 0) return undefined;
-  const scale = Math.min(box.width / page.width, box.height / page.height);
-  const drawnLeft = box.left + (box.width - page.width * scale) / 2;
-  const drawnTop = box.top + (box.height - page.height * scale) / 2;
-  const x = (at.x - drawnLeft) / scale;
-  const y = (at.y - drawnTop) / scale;
-  if (x < 0 || y < 0 || x >= page.width || y >= page.height) return undefined;
-  return { x: Math.round(x), y: Math.round(y) };
+  if (box.width <= 0 || box.height <= 0 || frame.width <= 0 || frame.height <= 0) return undefined;
+  if (page.width <= 0) return undefined;
+  const drawn = Math.min(box.width / frame.width, box.height / frame.height);
+  const drawnLeft = box.left + (box.width - frame.width * drawn) / 2;
+  const drawnTop = box.top + (box.height - frame.height * drawn) / 2;
+  const across = (at.x - drawnLeft) / drawn;
+  const down = (at.y - drawnTop) / drawn;
+  if (across < 0 || down < 0 || across >= frame.width || down >= frame.height) return undefined;
+  // CSS pixels of the page to a pixel of the frame.
+  const css = page.width / frame.width;
+  return { x: Math.round(across * css), y: Math.round(down * css) };
 }
 
 const BUTTONS: Record<number, MouseButton> = { 0: "left", 1: "middle", 2: "right" };

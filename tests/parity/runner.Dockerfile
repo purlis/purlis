@@ -6,7 +6,8 @@
 # the repo's fake harness and `purlis` added at the folder this job's build keeps them in. A
 # behaviour names its chat's program by that path (`app/src-tauri/src/behaviour.rs`), so the same
 # behaviour runs unchanged on this machine and on the runner. Built and used by the `parity` job of
-# `.github/workflows/ci.yml` alone, and pushed nowhere but a registry of that job's own.
+# `.github/workflows/ci.yml`, and by `operator/e2e/kind.sh` for a cluster pool's runner pod (#4083),
+# and pushed nowhere but a registry of that run's own.
 
 # The runner image of this build, as the job tagged it.
 ARG RUNNER
@@ -28,31 +29,33 @@ COPY --chmod=0755 claude-code /usr/local/lib/parity/claude-code
 # The runner's `claude`, which a profile of the runner's own runs. Asked `auth status`, it exits
 # 0, which is how Claude Code's own says a profile is signed in, so the test's profile passes the
 # sign-in check without a sign-in. Anything else runs the stand-in a behaviour gives, written into
-# the runner's home (`/home/purlis/.parity/claude`) as the behaviour starts, since the image's own
+# the runner's home (`$HOME/.parity/claude`) as the behaviour starts, since the image's own
 # folders are read-only in a pool's container; where no behaviour wrote one, it says so and fails.
+# The home is the runner's `HOME`: `/home/purlis` in a Docker pool's container, and the kept
+# volume's folder in a cluster pool's pod.
 USER 0
 RUN printf '%s\n' '#!/bin/sh' \
       '[ "$1" = auth ] && [ "$2" = status ] && exit 0' \
-      'stand_in=/home/purlis/.parity/claude' \
+      'stand_in="${HOME:-/home/purlis}"/.parity/claude' \
       '[ -x "$stand_in" ] || { echo "parity: no stand-in claude at $stand_in: a behaviour writes one before it starts a chat on its profile" >&2; exit 127; }' \
       'exec "$stand_in" "$@"' > /usr/local/bin/claude \
  && chmod 0755 /usr/local/bin/claude
 # The runner's `codex`, the same way (#3338): a Codex chat the runner composes runs under
 # purlis's own Linux sandbox, so a behaviour sees from inside it what a sandboxed runner chat
 # can reach. Asked `login status`, it exits 0, as Codex's own says a profile is signed in.
-# Anything else runs the stand-in a behaviour writes at `/home/purlis/.parity/codex`.
+# Anything else runs the stand-in a behaviour writes at `$HOME/.parity/codex`.
 RUN printf '%s\n' '#!/bin/sh' \
       '[ "$1" = login ] && [ "$2" = status ] && exit 0' \
-      'stand_in=/home/purlis/.parity/codex' \
+      'stand_in="${HOME:-/home/purlis}"/.parity/codex' \
       '[ -x "$stand_in" ] || { echo "parity: no stand-in codex at $stand_in: a behaviour writes one before it starts a chat on its profile" >&2; exit 127; }' \
       'exec "$stand_in" "$@"' > /usr/local/bin/codex \
  && chmod 0755 /usr/local/bin/codex
 # The runner's `opencode`, the same way: an opencode chat on a profile the runner made runs
 # under purlis's own Linux sandbox, so a behaviour sees from inside it what its wrap lets it
 # write. Anything it is asked runs the stand-in a behaviour writes at
-# `/home/purlis/.parity/opencode`.
+# `$HOME/.parity/opencode`.
 RUN printf '%s\n' '#!/bin/sh' \
-      'stand_in=/home/purlis/.parity/opencode' \
+      'stand_in="${HOME:-/home/purlis}"/.parity/opencode' \
       '[ -x "$stand_in" ] || { echo "parity: no stand-in opencode at $stand_in: a behaviour writes one before it starts a chat on its profile" >&2; exit 127; }' \
       'exec "$stand_in" "$@"' > /usr/local/bin/opencode \
  && chmod 0755 /usr/local/bin/opencode

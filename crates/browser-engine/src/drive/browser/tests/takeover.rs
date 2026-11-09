@@ -581,6 +581,82 @@ fn what_the_person_pastes_stays_out_of_later_answers() {
     assert!(!text.contains("pasted-Secret9"), "{text}");
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn what_the_person_pastes_with_the_middle_button_stays_out_of_later_answers() {
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    // Letting go of the middle button pastes the primary selection into the focused field.
+    engine.on(|sent, engine| {
+        if sent.method == "Input.dispatchMouseEvent"
+            && sent.params["type"] == "mouseReleased"
+            && sent.params["button"] == "middle"
+        {
+            super::super::lock(&engine.model).value = "Kq7#x".into();
+        }
+        None
+    });
+    let middle = |kind| PersonInput::Mouse {
+        aim: aim.clone(),
+        kind,
+        x: 12.0,
+        y: 12.0,
+        button: MouseButton::Middle,
+        clicks: 1,
+        modifiers: 0,
+        delta_x: 0.0,
+        delta_y: 0.0,
+    };
+
+    browser.person_input(&middle(MouseKind::Pressed)).unwrap();
+    browser.person_input(&middle(MouseKind::Released)).unwrap();
+    the_page_says(&engine, "PAGE-1", "You entered Kq7#x");
+    browser.hand_back();
+
+    let text = snapshot(&browser, 1);
+    assert!(text.contains("You entered"), "{text}");
+    assert!(!text.contains("Kq7#x"), "{text}");
+}
+
+#[cfg(not(target_os = "linux"))]
+#[test]
+fn a_middle_release_where_it_pastes_nothing_is_sent_with_no_field_read_around_it() {
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    let middle = |kind| PersonInput::Mouse {
+        aim: aim.clone(),
+        kind,
+        x: 12.0,
+        y: 12.0,
+        button: MouseButton::Middle,
+        clicks: 1,
+        modifiers: 0,
+        delta_x: 0.0,
+        delta_y: 0.0,
+    };
+    let reads = |engine: &super::Engine| {
+        engine
+            .sent("Runtime.callFunctionOn")
+            .iter()
+            .filter(|s| s.params["functionDeclaration"] == super::super::READ_VALUE)
+            .count()
+    };
+
+    browser.person_input(&middle(MouseKind::Pressed)).unwrap();
+    let before = reads(&engine);
+    browser.person_input(&middle(MouseKind::Released)).unwrap();
+
+    assert!(
+        engine
+            .sent("Input.dispatchMouseEvent")
+            .iter()
+            .any(|s| s.params["type"] == "mouseReleased" && s.params["button"] == "middle"),
+        "the release is sent"
+    );
+    assert_eq!(reads(&engine), before, "no field is read around it");
+}
 #[test]
 fn what_the_person_typed_in_pieces_stays_out_of_later_answers_whole() {
     let (browser, engine) = browser();

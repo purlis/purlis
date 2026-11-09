@@ -18,8 +18,8 @@ use workflow::{Job, release_jobs};
 
 /// What each guarded job's `environment:` says, exactly.
 ///
-/// `plan` cannot read another job's output, so it keys on the event, and NAMES the two that
-/// can publish: a `v*` tag and a green `ci` on `main`. A hand-started build and the nightly
+/// `plan` keys on the event, and NAMES the one that can publish: a push, of a `v*` tag or to
+/// `main` (whose `plan` runs only once the gate saw that commit's `ci` green). A hand-started build and the nightly
 /// profile guard get no environment, and neither does an event added to `on:` later, until
 /// this line says so (ADR 0092). `build` keys on what `plan` decided. `publish` only runs
 /// when the run publishes, so it names the environment outright. And `x && 'release' || ''`,
@@ -28,7 +28,7 @@ use workflow::{Job, release_jobs};
 const EXPECTED: [(&str, &str); 5] = [
     (
         "plan",
-        "${{ (github.event_name == 'push' || github.event_name == 'workflow_run') && 'release' || '' }}",
+        "${{ github.event_name == 'push' && 'release' || '' }}",
     ),
     (
         "build",

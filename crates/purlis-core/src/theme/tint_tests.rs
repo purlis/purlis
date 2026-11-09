@@ -1726,3 +1726,45 @@ fn the_accent_s_words_keep_apart_from_waiting_and_danger_in_every_tint() {
     assert_eq!(yellow.value("accent.text"), dark.value("accent.text"));
     assert_ne!(yellow.value("accent.base"), dark.value("accent.base"));
 }
+
+#[test]
+fn a_byte_s_linear_value_is_the_formula_s_to_the_bit_for_every_byte() {
+    for byte in 0..=u8::MAX {
+        assert_eq!(
+            tint::linear_of(byte).to_bits(),
+            tint::to_linear(f64::from(byte) / 255.0).to_bits(),
+            "{byte}"
+        );
+    }
+}
+
+#[test]
+fn a_colour_s_luminance_is_the_formula_s_to_the_bit_however_it_is_written() {
+    let formula = |r: u8, g: u8, b: u8| {
+        let at = |byte: u8| tint::to_linear(f64::from(byte) / 255.0);
+        0.2126 * at(r) + 0.7152 * at(g) + 0.0722 * at(b)
+    };
+    for (hex, (r, g, b)) in [
+        ("#000000", (0, 0, 0)),
+        ("#ffffff", (255, 255, 255)),
+        ("#0a0b0c", (10, 11, 12)),
+        ("#2bb3a3", (0x2b, 0xb3, 0xa3)),
+        ("#2BB3A380", (0x2b, 0xb3, 0xa3)),
+        ("#abc", (0xaa, 0xbb, 0xcc)),
+        ("#abcd", (0xaa, 0xbb, 0xcc)),
+    ] {
+        assert_eq!(
+            check::luminance(hex).to_bits(),
+            formula(r, g, b).to_bits(),
+            "{hex}"
+        );
+    }
+    for grey in 0..=u8::MAX {
+        let hex = format!("#{grey:02x}{grey:02x}{grey:02x}");
+        assert_eq!(
+            check::luminance(&hex).to_bits(),
+            formula(grey, grey, grey).to_bits(),
+            "{hex}"
+        );
+    }
+}

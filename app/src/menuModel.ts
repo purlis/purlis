@@ -283,6 +283,9 @@ const DRESS: Readonly<Record<string, Dress>> = {
   // A workspace's tab, and the plane root's.
   "workspace.focus": { said: SAID.focus, slot: "first", quiet: true },
   "workspace.pin": pin,
+  // A pin's place among the chips (#3128), under its pin.
+  "workspace.pin-left": { said: SAID.moveLeft, slot: "first" },
+  "workspace.pin-right": { said: SAID.moveRight, slot: "first" },
   "workspace.settings": { said: SAID.settings, slot: "first" },
   "workspace.live": { said: unnamed, slot: "first" },
   "workspace.rename": { said: SAID.rename, slot: "first" },

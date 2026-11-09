@@ -110,9 +110,15 @@ export function InspectorView({ program }: { program: string }) {
   }, [program, shown.kind]);
 
   const pointAt = (e: { clientX: number; clientY: number }) => {
-    const box = canvas.current?.getBoundingClientRect();
-    if (box === undefined) return undefined;
-    return pagePoint({ x: e.clientX, y: e.clientY }, box, size.current);
+    const drawnOn = canvas.current;
+    if (drawnOn === null) return undefined;
+    const frame = { width: drawnOn.width, height: drawnOn.height };
+    return pagePoint(
+      { x: e.clientX, y: e.clientY },
+      drawnOn.getBoundingClientRect(),
+      frame,
+      size.current,
+    );
   };
 
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {

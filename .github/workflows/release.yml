@@ -3,11 +3,9 @@
 
 name: release
 
-# What the runs list shows for a run. For a run `ci` started it names the commit that `ci` ran
-# on, which is the commit this run builds. Without it the list shows only `main`'s head at the
-# moment `ci` ended, a later commit this run never touches: on 2026-10-13 run 661 read as a
-# build of dd46646c, whose `ci` was red, while it built 8781c167, whose `ci` was green.
-run-name: ${{ github.event_name == 'workflow_run' && format('ci {0} ({1}) of {2}', github.event.workflow_run.conclusion, github.event.workflow_run.event, github.event.workflow_run.head_sha) || github.event_name == 'schedule' && 'profile guard' || github.event_name == 'push' && format('stable {0}', github.ref_name) || format('on demand, {0}', github.ref_name) }}
+# What the runs list shows for a run. A dev build names the commit it builds, which is the
+# commit of the push that started it.
+run-name: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && format('dev build of {0}', github.sha) || github.event_name == 'schedule' && 'profile guard' || github.event_name == 'push' && format('stable {0}', github.ref_name) || format('on demand, {0}', github.ref_name) }}
 
 # The build a person installs, and the two update channels the installed app reads.
 #
@@ -20,9 +18,10 @@ run-name: ${{ github.event_name == 'workflow_run' && format('ci {0} ({1}) of {2}
 #
 #   a `v*` tag             -> the STABLE channel: a GitHub Release for that tag, `latest.json`
 #                             beside its bundles. Only the operator pushes a `v*` tag.
-#   `ci` green on `main`   -> the DEV channel: the bundles and `dev.json` replace the assets of
-#                             the one prerelease named `dev`. One at a time, never cancelled
-#                             once started, and never an older commit over a newer one
+#   a push to `main`       -> the DEV channel, once that commit's own `ci` ended green (`gate`):
+#                             the bundles and `dev.json` replace the assets of the one
+#                             prerelease named `dev`. One at a time, never cancelled once
+#                             started, and never an older commit over a newer one
 #                             (`concurrency` and `plan`).
 #   `workflow_dispatch`    -> a build of any branch, uploaded as run artifacts and published
 #                             NOWHERE. The operator asking for something to try. It runs
@@ -82,45 +81,40 @@ on:
         type: choice
         options: [release, dev-release]
         default: release
+  # A tag, and every push to `main`: a dev build is started by its own push, never by `ci`'s
+  # end. A run that another run's end starts gets main's head at that moment
+  # as `github.sha`, and its OIDC token, so its build provenance, names that commit, though the
+  # run built an earlier one whenever a merge landed while `ci` ran. Started by the push, the
+  # run's commit, the commit it builds and the commit its provenance names are one. `gate`
+  # holds the build until that commit's `ci` has ended green.
   push:
     tags: ["v*"]
+    branches: [main]
   # The profile guard. Since the dev channel stopped using `release`, nothing built the stable
   # profile between one tag and the next; this does, every night, so a break in it is found
   # on a night and not on the operator's tag. After the nightly `ci` (02:41) and clear of the
   # other nightlies.
   schedule:
     - cron: "53 4 * * *"
-  workflow_run:
-    workflows: [ci]
-    types: [completed]
-    branches: [main]
 
 concurrency:
   # **One dev publish at a time, and none is ever cancelled once it has started**: a cancelled
-  # publish can leave the dev release holding half of one build's assets. A dev build takes
-  # about half an hour and `main` takes a merge more often than that, so a build is usually
-  # running when the next commit's `ci` goes green. That next run WAITS: `cancel-in-progress`
-  # is false, so a merge never costs the build in progress.
+  # publish can leave the dev release holding half of one build's assets. Every push to `main`
+  # starts a run in this group, and `main` takes a merge more often than a run takes (its
+  # `ci`, then about half an hour of build), so a run is usually going when the next push
+  # comes. That next run WAITS: `cancel-in-progress` is false, so a merge never costs the run
+  # in progress.
   #
   # **Among the runs that wait, the latest wins.** A group holds one running run and one
   # pending run. A run that arrives while another is pending takes its place, and GitHub
-  # cancels the one that was waiting, which had not started a job. That is wanted here: only
-  # runs that will publish wait in this group, the dev channel serves one build, and a build
-  # nobody would be offered is not worth half an hour of two runners.
+  # cancels the one that was waiting, which had not started a job. That is wanted here: the
+  # dev channel serves one build, the newest, and a build nobody would be offered is not worth
+  # half an hour of two runners. The cost: when the newest push's own `ci` then goes red, the
+  # channel waits for the next green push rather than taking the one it displaced.
   #
-  # **So a run that publishes nothing never enters this group.** The group is taken when the
-  # run is created, before any job's `if:` is read, and `workflow_run` fires for every `ci`
-  # that ends on `main`: red ones, cancelled ones, the nightly one. Each of those is a run that
-  # only skips (`plan`'s `if:`), and while it shared the group it took the pending place from a
-  # build that would have published and then skipped. On 2026-10-13 that lost the dev builds of
-  # 51bf31b6 and 672fa978 (runs 651 and 655, cancelled while pending by runs 652 and 656, which
-  # a failed and a cancelled `ci` had started). Such a run now gets a group of its own, named
-  # for its run id, where it displaces nothing. The four tests here are `plan`'s `if:`,
-  # negated; `tools/release-workflow.test.mjs` holds the two together.
-  #
-  # The profile guard has a group of its own for the same reason. A tag and a build started by
-  # hand are grouped by their ref.
-  group: release-${{ github.event_name == 'schedule' && 'profile-guard' || github.event_name == 'workflow_run' && (github.event.workflow_run.conclusion != 'success' || github.event.workflow_run.event != 'push' || github.event.workflow_run.head_branch != 'main' || github.event.workflow_run.head_repository.full_name != github.repository) && format('nothing-{0}', github.run_id) || github.event.workflow_run.head_branch || github.ref }}
+  # The profile guard has a group of its own, and a tag and a build started by hand are
+  # grouped by their ref, so none of them waits behind or displaces a dev build.
+  group: release-${{ github.event_name == 'schedule' && 'profile-guard' || github.event_name == 'push' && github.ref == 'refs/heads/main' && 'main' || github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -132,35 +126,77 @@ env:
   # PR; a new warning out of a dependency must not be the thing that stops a release.
 
 jobs:
+  # **A dev build waits for its commit's own `ci` to end green.** It used to be started by that
+  # end; now the push starts it (see `on:`), so this job is the gate: it finds the `ci` run of
+  # this very commit on its push to `main`, waits for it to end, and answers `green` only when
+  # it ended `success`. Red, cancelled or timed out, it answers `false`, `plan` is skipped, and
+  # nothing is built or published, as a red `ci` published nothing before. A `ci` run that never
+  # appears, or that has not ended when the wait does, is an error: nothing is built then
+  # either. Every other way in (a tag, the profile guard, a build by hand) passes at once.
+  #
+  # It holds only the right to read runs, checks nothing out and takes no environment, so the
+  # hour it may spend waiting holds no key. One thing is lost with the old trigger: a red `ci` on
+  # `main` run again by hand to green publishes nothing; the next merge's run does.
+  gate:
+    name: this commit's ci, green
+    runs-on: ubuntu-24.04
+    # Longer than any other job: a push's `ci` on `main` took up to 111 minutes in the first
+    # week of November 2026, and this job's whole work is waiting for it.
+    timeout-minutes: 150
+    permissions:
+      actions: read
+    outputs:
+      green: ${{ steps.ci.outputs.green }}
+    steps:
+      - name: Wait for this commit's ci on main
+        id: ci
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEV: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        run: |
+          set -euo pipefail
+          if [ "$DEV" != true ]; then
+            echo "green=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # The push started `ci` and this run together; give its run a few minutes to be listed.
+          id=""
+          for _ in $(seq 1 30); do
+            id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --event push --branch main --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+            [ -n "$id" ] && break
+            sleep 10
+          done
+          [ -n "$id" ] || { echo "::error::no ci run of $GITHUB_SHA on its push to main was listed within five minutes, so nothing is built"; exit 1; }
+          echo "Waiting for ci run $id of $GITHUB_SHA."
+          # The watch's own exit says little (it ends nonzero for a red run and for a lost
+          # connection alike), so the run's state is read again after it.
+          gh run watch "$id" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status > /dev/null || true
+          status=$(gh run view "$id" --repo "$GITHUB_REPOSITORY" --json status --jq .status)
+          conclusion=$(gh run view "$id" --repo "$GITHUB_REPOSITORY" --json conclusion --jq .conclusion)
+          [ "$status" = completed ] || { echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is built"; exit 1; }
+          if [ "$conclusion" = success ]; then
+            echo "green=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::ci run $id of $GITHUB_SHA ended $conclusion, so nothing is built or published"
+            echo "green=false" >> "$GITHUB_OUTPUT"
+          fi
+
   plan:
     name: what this run makes
+    needs: gate
     runs-on: ubuntu-24.04
     # **Every job has a deadline.** A job with none may run for six hours, and a hung one
     # would hold the dev builds' group, and every build waiting behind it, for all of them.
-    # Each is several times what the job takes: `plan` seconds (minutes for a tag, which
+    # Each is several times what the job takes (the gate apart, which waits for `ci`): `plan` seconds (minutes for a tag, which
     # compiles the changelog tool), a dev `build` about 20 minutes and a stable one about 35,
     # `manifest` 5, `sbom`, `provenance` and `publish` under 2 (2026-10-13). A whole dev run is
     # about half an hour. `tools/release-workflow.test.mjs` holds every job to having one.
     timeout-minutes: 15
-    # `workflow_run` fires for every `ci` completion, red ones included, and for a `ci` run
-    # started by ANY event whose branch is called `main` — including a pull request from a
-    # fork whose branch happens to be named `main`. Only a green `ci` on a PUSH to THIS
-    # repository's `main` may produce a signed dev build; anything else would sign a
-    # stranger's code with the operator's key. `workflow_run.head_sha`, the commit that green
-    # `ci` ran on, is the only commit such a run ever checks out and builds (`SHA` below).
-    # The branch is the trigger's own filter, said again here so that this `if:` is the whole
-    # rule by itself. The workflow's `concurrency.group` repeats these four tests, negated, so a run this
-    # `if:` skips waits behind no build and displaces none.
-    if: >-
-      github.event_name != 'workflow_run' || (
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.event == 'push' &&
-        github.event.workflow_run.head_branch == 'main' &&
-        github.event.workflow_run.head_repository.full_name == github.repository
-      )
+    # Only a green gate lets a run build. For a dev build that is its commit's `ci` ended green
+    # on its push to `main`; for every other way in the gate passes at once.
+    if: needs.gate.outputs.green == 'true'
     # **The signing secrets live in the `release` environment, not the repository** (#344).
-    # Its deployment policy admits `main` (a `workflow_run` job runs on the default branch)
-    # and `v*` tags, so a job on any other ref gets no secret at all. `plan` only asks whether
+    # Its deployment policy admits `main` (a push to it) and `v*` tags, so a job on any other ref gets no secret at all. `plan` only asks whether
     # they are SET, but it has to ask inside the environment to get a true answer. An
     # on-demand `workflow_dispatch` build publishes nowhere, so it takes no environment and no
     # key, whatever branch it builds, and comes out unsigned (see `This build's config`). So
@@ -168,7 +204,7 @@ jobs:
     # to `on:` later holds no key until this line says it does.
     # `x && 'release' || ''` and never `x && '' || 'release'`: an empty string is falsy, so
     # the second form is `release` every time.
-    environment: ${{ (github.event_name == 'push' || github.event_name == 'workflow_run') && 'release' || '' }}
+    environment: ${{ github.event_name == 'push' && 'release' || '' }}
     outputs:
       channel: ${{ steps.plan.outputs.channel }}
       publish: ${{ steps.plan.outputs.publish }}
@@ -184,31 +220,16 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-          persist-credentials: false
-      # **The workflow this run executes, beside the source it builds.** A `workflow_run` runs
-      # `release.yml` as it is on `main` NOW (`github.workflow_sha`), but builds the commit
-      # whose `ci` went green (`workflow_run.head_sha`). When a merge lands while the previous
-      # commit's `ci` is still running, that `ci`'s release builds the OLD source under the NEW
-      # workflow, and a check the merge added for something the merge also added fails on a
-      # build that never had it: the third-party notices' check (#1784) failed its first dev
-      # run that way, grepping for a file the source it built did not generate. So `plan`
-      # compares the two, and a run whose source carries a different `release.yml` builds
-      # nothing (below). Only this one file, sparsely: everything else comes from the source.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: github.event_name == 'workflow_run'
-        with:
-          ref: ${{ github.workflow_sha }}
-          path: running
-          sparse-checkout: .github/workflows/release.yml
-          sparse-checkout-cone-mode: false
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Channel, version, and whether anything is published
         id: plan
         env:
           EVENT: ${{ github.event_name }}
-          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          # A dev build: a push to `main`. A push of a tag is the stable one.
+          DEV: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          SHA: ${{ github.sha }}
           ASKED_PROFILE: ${{ inputs.profile }}
           # For `tools/dev-build-order.mjs`, which reads the dev release and compares two
           # commits. The workflow's `contents: read`, and nothing more.
@@ -227,10 +248,10 @@ jobs:
           # **Hardening: a second gate, independent of the `if:` above, before anything from
           # the checkout runs.** A dev build's commit has to be in `main`'s history NOW, by the
           # forge's own comparison: `ahead` or `identical` is `main` standing at or after it.
-          # The `if:` reads what the event says about the `ci` run; this reads the repository.
+          # The trigger and the environment's policy say `main`; this reads the repository.
           # So an edit that loosens one of them still leaves the other, and a commit that is
           # not on this repository's `main` is never built with the release environment's key.
-          if [ "$EVENT" = workflow_run ]; then
+          if [ "$DEV" = true ]; then
             on_main=$(gh api "repos/$GITHUB_REPOSITORY/compare/$SHA...main" --jq .status)
             case "$on_main" in
               ahead | identical) echo "$SHA is in main's history" ;;
@@ -241,7 +262,9 @@ jobs:
           # in app/src-tauri holds the two together).
           base=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"$/\1/p' Cargo.toml)
           [ -n "$base" ] || { echo "::error::no [workspace.package] version in Cargo.toml"; exit 1; }
-          case "$EVENT" in
+          kind=$EVENT
+          if [ "$DEV" = true ]; then kind=dev; fi
+          case "$kind" in
             push)
               tag="$GITHUB_REF_NAME"
               version="${tag#v}"
@@ -255,7 +278,7 @@ jobs:
               channel=stable; publish=true
               # The stable build: Cargo's `release` profile and every bundle (ADR 0092).
               profile=release; dmg=true; appimage_required=true ;;
-            workflow_run)
+            dev)
               # `main` holds the version that will be released NEXT (bumped right after each
               # release), so a dev build is a prerelease OF it: newer than every stable
               # release before it, older than the stable release it becomes. The run number
@@ -290,29 +313,20 @@ jobs:
           # skips a publish; it does not weaken one — nothing unsigned is built or published.
           # A `v*` tag is different: it is the operator's deliberate act, and a tag that
           # quietly did nothing would be worse than a red run, so it still fails below.
-          if [ "$EVENT" = workflow_run ] && [ "$HAS_UPDATER_KEY" != "true" ]; then
+          if [ "$DEV" = true ] && [ "$HAS_UPDATER_KEY" != "true" ]; then
             echo "::warning::no TAURI_SIGNING_PRIVATE_KEY in the release environment, so this green main is not published to the dev channel. docs/updating.md, steps 0 and 1, is the setup."
             skip=true; publish=false
           fi
-          # A green `ci` of a commit `main` has moved past, whose `release.yml` is not the one
-          # running (see the checkout above): its checks are not the ones its source was
-          # written for, so it builds nothing and says why. Nothing is lost: the newer commit's
-          # own `ci` starts the release that builds it, under its own workflow. The same file
-          # on both sides builds as before, so a merge that leaves `release.yml` alone never
-          # skips a dev build.
-          if [ "$EVENT" = workflow_run ] && ! cmp -s running/.github/workflows/release.yml .github/workflows/release.yml; then
-            echo "::notice::$SHA carries a different release.yml from the one this run executes (main at $GITHUB_WORKFLOW_SHA), so it is not built: the release that main's newer commit's own ci starts builds that commit instead."
-            skip=true; publish=false
-          fi
-          # **The dev channel only moves forward.** Runs start in the order their `ci` runs
-          # ENDED, which is not the order of the commits: a `ci` started again ends after its
-          # successors'. Run 654 published 4c7854ee that way on 2026-10-13, over e827217c,
-          # nine commits newer, and under the higher number, so every machine on the channel
-          # took it. So a build publishes only when its commit comes after the one `dev.json`
+          # **The dev channel only moves forward.** When dev builds were started by `ci`'s end
+          # they ran in the order their `ci` runs ENDED, which is not the order of the commits:
+          # run 654 published 4c7854ee that way on 2026-10-13, over e827217c, nine commits
+          # newer, and under the higher number, so every machine on the channel took it. Runs
+          # now start in the order of their pushes, but a run started again by hand still comes
+          # late. So a build publishes only when its commit comes after the one `dev.json`
           # names and its version is newer; otherwise it builds nothing and says why. This run
           # holds the group, so nothing else is publishing while it asks. The tool exits 1
           # when it could not find out, and `set -e` stops the run there.
-          if [ "$EVENT" = workflow_run ] && [ "$skip" != "true" ]; then
+          if [ "$DEV" = true ] && [ "$skip" != "true" ]; then
             order=$(node tools/dev-build-order.mjs --version "$version" --sha "$SHA")
             case "$order" in
               publish:*) echo "$order" ;;
@@ -1482,6 +1496,11 @@ jobs:
     permissions:
       id-token: write
       attestations: write
+    env:
+      # The commit `plan` chose and every job built. The run's own (`github.sha`, which the
+      # OIDC token and so the provenance name) is the same one, since the push or the tag
+      # started this run; the checks below hold the two together.
+      SHA: ${{ needs.plan.outputs.sha }}
     steps:
       # The build artifacts by their EXACT names (`purlis-<platform>-<version>` from `build`,
       # `purlis-sbom-<version>` from `sbom`), never by pattern. Any step of this run that holds
@@ -1513,7 +1532,7 @@ jobs:
           subject-path: dist/*
 
       # What a person installing it runs, run here first, and pinned to THIS run: this
-      # repository, this workflow file at this workflow commit, this source commit, a
+      # repository, this workflow file at this workflow commit, the source commit it built, a
       # GitHub-hosted runner, and on the stable channel this tag. An attestation that does not
       # verify is not one, and a release should not go out on it. `publish` runs the same check
       # again on the bytes it uploads.
@@ -1529,7 +1548,7 @@ jobs:
             gh attestation verify "$f" --repo "$GITHUB_REPOSITORY" \
               --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
               --signer-digest "$GITHUB_WORKFLOW_SHA" \
-              --source-digest "$GITHUB_SHA" \
+              --source-digest "$SHA" \
               --deny-self-hosted-runners \
               "${ref[@]}"
           done
@@ -1626,7 +1645,7 @@ jobs:
             gh attestation verify "$f" --repo "$GITHUB_REPOSITORY" \
               --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
               --signer-digest "$GITHUB_WORKFLOW_SHA" \
-              --source-digest "$GITHUB_SHA" \
+              --source-digest "$SHA" \
               --deny-self-hosted-runners \
               "${ref[@]}"
           done

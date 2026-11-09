@@ -6803,7 +6803,8 @@ nav.piece-files-head {
 /* **What came in is never cut** (charter#403, ADR 0054). It is its own `↓N` after the words
    rather than the end of them, where the ellipsis took it first; ADR 0051 wants the count
    seen. It does not shrink, and it is short enough that it never starves the tabs. */
-.save-indicator-incoming {
+.save-indicator-incoming,
+.save-indicator-stale {
   flex-shrink: 0;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -6835,6 +6836,13 @@ nav.piece-files-head {
 .saving-journal {
   margin: 0;
   padding-left: var(--space-6);
+  color: var(--text-secondary);
+}
+/* One settings key both machines changed (#5852): its name over its two values. */
+.saving-key {
+  margin: var(--space-2) 0 0;
+}
+.saving-key-name {
   color: var(--text-secondary);
 }
 .saving-said {
@@ -7672,6 +7680,18 @@ nav.piece-files-head {
 
 .ui-machine-entry .ui-setting-reset {
   margin-inline-start: auto;
+}
+
+/* **The other devices' signing keys** (#5918, `settings/signing.tsx`): a heading and the line on
+   what removing one does, above their list. */
+.signing-others h3 {
+  margin: var(--space-3) 0 var(--space-1);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-strong);
+}
+
+.signing-others .ui-setting-help {
+  margin: 0;
 }
 
 /* **A pool's limits, folded under its row** (#4285, `PoolLimits.tsx`): the groups of what they

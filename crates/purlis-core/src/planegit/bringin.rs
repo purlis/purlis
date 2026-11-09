@@ -425,7 +425,7 @@ pub(super) fn plan_between(
 fn settings_merged(root: &Path, plan: &mut Plan, path: &str, base: &str, theirs: &str) {
     let sides = (
         blob(root, base, path),
-        blob(root, "HEAD", path),
+        blob(root, &plan.ours, path),
         blob(root, theirs, path),
     );
     let (Some(old), Some(ours), Some(new)) = sides else {
@@ -636,7 +636,7 @@ fn rebuilt(
             );
         }
         Generated::Memory(store) => {
-            let (index, text) = memory_index(root, &plan.tree, store, base, theirs);
+            let (index, text) = memory_index(root, &plan.tree, store, base, &plan.ours, theirs);
             plan.settled.insert(index, text);
         }
         Generated::Charter(_) | Generated::Rules => {}
@@ -771,7 +771,50 @@ pub(super) fn commit_tree(
     message: &str,
     sign: bool,
 ) -> Result<String, String> {
-    let mut args = vec!["commit-tree", tree];
+    commit_tree_as(root, tree, parents, message, sign, None, WRITE).map_err(Unmade::said)
+}
+
+/// Who wrote a commit, kept when it is written again off to the side ([`super::replay`]):
+/// `date` as git's raw `<seconds> <zone>`.
+pub(super) struct Author<'a> {
+    pub(super) name: &'a str,
+    pub(super) email: &'a str,
+    pub(super) date: &'a str,
+}
+
+/// Why [`commit_tree_as`] made no commit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum Unmade {
+    /// Asked to sign, git could not: the signer's words.
+    Unsigned(String),
+    /// Still running at the deadline.
+    OutOfTime,
+    /// git could not, in its words.
+    Failed(String),
+}
+
+impl Unmade {
+    fn said(self) -> String {
+        match self {
+            Self::Unsigned(said) | Self::Failed(said) => said,
+            Self::OutOfTime => "git did not finish in time".to_owned(),
+        }
+    }
+}
+
+/// [`commit_tree`], as `author` where one is given (the committer is this machine's), giving up
+/// at `deadline`. Signed exactly when `sign` says ([`super::gpgsign`]), whatever the machine's
+/// own `commit.gpgsign`.
+pub(super) fn commit_tree_as(
+    root: &Path,
+    tree: &str,
+    parents: &[&str],
+    message: &str,
+    sign: bool,
+    author: Option<&Author>,
+    deadline: std::time::Duration,
+) -> Result<String, Unmade> {
+    let mut args = vec!["-c", super::gpgsign(sign), "commit-tree", tree];
     for parent in parents {
         args.extend(["-p", parent]);
     }
@@ -779,11 +822,35 @@ pub(super) fn commit_tree(
     if sign {
         args.push("-S");
     }
-    let made = git::run(root, &args, WRITE).map_err(|unavailable| unavailable.to_string())?;
-    if !made.ok() {
-        return Err(tail(&made));
+    let vars: Vec<(&str, &str)> = author
+        .map(|author| {
+            vec![
+                ("GIT_AUTHOR_NAME", author.name),
+                ("GIT_AUTHOR_EMAIL", author.email),
+                ("GIT_AUTHOR_DATE", author.date),
+            ]
+        })
+        .unwrap_or_default();
+    match git::run_with_vars(root, &vars, &args, deadline) {
+        Ok(run) if run.ok() => {
+            let id = run.line().trim().to_owned();
+            if is_object_name(&id) {
+                Ok(id)
+            } else {
+                Err(Unmade::Failed(tail(&run)))
+            }
+        }
+        Ok(run) if run.code.is_none() => Err(Unmade::OutOfTime),
+        // `commit-tree` says the signer failed in its own words, with or without git's line.
+        Ok(run)
+            if sign
+                && (run.err.contains(super::UNWRITTEN) || run.err.contains("failed to sign")) =>
+        {
+            Err(Unmade::Unsigned(super::signer_said(&run.err)))
+        }
+        Ok(run) => Err(Unmade::Failed(tail(&run))),
+        Err(unavailable) => Err(Unmade::Failed(unavailable.to_string())),
     }
-    Ok(made.line().trim().to_owned())
 }
 
 /// A memory store's index, as its path and its text, written from the memory files of `tree`
@@ -793,6 +860,7 @@ fn memory_index(
     tree: &str,
     store: &str,
     base: &str,
+    ours: &str,
     theirs: &str,
 ) -> (String, String) {
     let index = format!("{store}/{}", crate::memstore::INDEX);
@@ -805,7 +873,7 @@ fn memory_index(
     let by_name = store.starts_with("workspaces/");
     let text = crate::memstore::index_merged(
         crate::memstore::INDEX_FALLBACK,
-        [&side(base), &side("HEAD"), &side(theirs)],
+        [&side(base), &side(ours), &side(theirs)],
         &memories,
         by_name,
     );
@@ -813,26 +881,27 @@ fn memory_index(
 }
 
 /// **The memory indexes of a merge a person settled** (#5824 F4): for each store either side
-/// changed since HEAD and `theirs` parted, its index as the settled `tree` makes it, where that
-/// is not the index `tree` holds. What Resolve's Continue writes before it finishes the merge,
-/// so no line names a memory the person deleted, and a memory they kept is listed as a side
-/// listed it.
-pub(super) fn indexes_settled(
+/// changed since `ours` and `theirs` parted, its index as the settled `tree` makes it, where that
+/// is not the index `tree` holds. What Resolve's Continue writes before it commits the merge in
+/// its folder (#5824 F7), so no line names a memory the person deleted, and a memory they kept is
+/// listed as a side listed it.
+pub(super) fn indexes_settled_between(
     root: &Path,
     tree: &str,
+    ours: &str,
     theirs: &str,
 ) -> Result<BTreeMap<String, String>, String> {
-    let base = git::run(root, &["merge-base", "HEAD", theirs], git::READ)
+    let base = git::run(root, &["merge-base", ours, theirs], git::READ)
         .ok()
         .filter(git::Run::ok)
         .map(|run| run.line().trim().to_owned())
         .ok_or("the two histories have no commit in common")?;
-    let mut touched = changed(root, &base, "HEAD")?;
+    let mut touched = changed(root, &base, ours)?;
     touched.extend(changed(root, &base, theirs)?);
     let mut out = BTreeMap::new();
     for what in sources_in(&touched) {
         if let Generated::Memory(store) = what {
-            let (index, text) = memory_index(root, tree, &store, &base, theirs);
+            let (index, text) = memory_index(root, tree, &store, &base, ours, theirs);
             if blob(root, tree, &index).as_deref() != Some(text.as_str()) {
                 out.insert(index, text);
             }

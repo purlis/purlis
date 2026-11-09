@@ -9,17 +9,19 @@
 //! `tauri.release.conf.json`, and checked there by `release.yml`. Three files name one path, so
 //! a rename in one of them is caught here and not on the next release run.
 //!
-//! And a `workflow_run` executes `main`'s `release.yml` over the source of the commit whose
-//! `ci` went green, which is older when a merge lands mid-`ci`. The notices' check failed its
-//! first dev run that way: run 38189104321 executed `release.yml` from 37ec362e, which added the
-//! check, over fc7131dd, which predates the notices, and `grep` found no file. `plan` now
-//! builds nothing when the two `release.yml`s differ.
+//! And a run executes the `release.yml` of the very commit it builds. When dev builds were
+//! started by `ci`'s end, a run executed `main`'s `release.yml` over the source of the commit
+//! whose `ci` went green, which is older when a merge lands mid-`ci`: the notices' check failed
+//! its first dev run that way (run 38189104321 executed `release.yml` from 37ec362e, which added
+//! the check, over fc7131dd, which predates the notices). Now the push starts the run, so the
+//! workflow and the source are one commit, and the run builds only once that commit's own `ci`
+//! went green.
 
 use crate::workflow;
 
 use std::path::PathBuf;
 
-use workflow::{Job, job, release_jobs, run_lines, step_uses, step_value};
+use workflow::{Job, job, release_jobs, run_lines, step_value};
 
 const NOTICES: &str = "THIRD-PARTY-NOTICES";
 
@@ -93,49 +95,49 @@ fn the_generator_the_bundler_and_the_check_name_one_notices_file() {
 }
 
 #[test]
-fn a_green_ci_whose_source_runs_another_release_workflow_builds_nothing() {
+fn a_dev_build_builds_its_own_commit_and_only_once_that_commits_ci_went_green() {
     let jobs = release_jobs();
     let plan = job(&jobs, "plan");
     let steps = plan.steps();
 
-    // The source, at the commit whose `ci` went green.
+    // The source is the run's own commit, the one whose `release.yml` this run executes, and
+    // no step checks out another workflow beside it.
     assert_eq!(
         step_value(&steps[0], "with", "ref"),
-        Some("${{ github.event.workflow_run.head_sha || github.sha }}")
+        Some("${{ github.sha }}")
     );
-    // And beside it, the `release.yml` this run executes, alone.
-    let running = &steps[1];
     assert!(
-        step_uses(running).is_some_and(|u| u.starts_with("actions/checkout@")),
-        "{running:#?}"
-    );
-    assert_eq!(
-        step_value(running, "with", "ref"),
-        Some("${{ github.workflow_sha }}")
-    );
-    assert_eq!(step_value(running, "with", "path"), Some("running"));
-    assert_eq!(
-        step_value(running, "with", "sparse-checkout"),
-        Some(".github/workflows/release.yml")
-    );
-    assert_eq!(
-        step_value(running, "with", "persist-credentials"),
-        Some("false")
+        steps
+            .iter()
+            .all(|s| step_value(s, "with", "ref") != Some("${{ github.workflow_sha }}")),
+        "{steps:#?}"
     );
 
-    // A `workflow_run` whose two files differ skips the build and publishes nothing.
-    let lines = run_lines(&step(
-        plan,
-        "Channel, version, and whether anything is published",
-    ));
-    let compare = lines
-        .iter()
-        .position(|l| {
-            l == "if [ \"$EVENT\" = workflow_run ] && ! cmp -s running/.github/workflows/release.yml .github/workflows/release.yml; then"
-        })
-        .unwrap_or_else(|| panic!("plan does not compare the two release.yml: {lines:#?}"));
-    assert_eq!(lines[compare + 2], "skip=true; publish=false", "{lines:#?}");
-    assert_eq!(lines[compare + 3], "fi");
+    // `plan` runs only on the gate's green: for a dev build, that commit's own `ci`, on its
+    // push to `main`, ended `success`.
+    assert_eq!(plan.needs(), ["gate"]);
+    assert_eq!(plan.condition(), Some("needs.gate.outputs.green == 'true'"));
+    let gate = job(&jobs, "gate");
+    let lines = run_lines(&step(gate, "Wait for this commit's ci on main"));
+    let at = |want: &str| {
+        lines
+            .iter()
+            .position(|l| l.contains(want))
+            .unwrap_or_else(|| panic!("the gate lacks `{want}`: {lines:#?}"))
+    };
+    let listed = at(
+        "gh run list --repo \"$GITHUB_REPOSITORY\" --workflow ci.yml --commit \"$GITHUB_SHA\" --event push --branch main",
+    );
+    let success = at("if [ \"$conclusion\" = success ]; then");
+    assert!(listed < success, "{lines:#?}");
+    assert_eq!(
+        lines[success + 1],
+        "echo \"green=true\" >> \"$GITHUB_OUTPUT\""
+    );
+    assert_eq!(lines[success + 2], "else");
+    assert!(
+        lines[success + 3..].contains(&"echo \"green=false\" >> \"$GITHUB_OUTPUT\"".to_owned())
+    );
 
     // And `skip` is what keeps every build from starting.
     assert_eq!(

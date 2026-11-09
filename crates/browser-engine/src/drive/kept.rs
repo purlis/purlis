@@ -11,6 +11,8 @@
 //! the boxes themselves, like a field's (the group keeps its latest code, not every short part
 //! of it on the way); read from a page's tree, it drops nothing.
 
+use zeroize::Zeroizing;
+
 use super::tree::NodeKey;
 
 /// The length, in characters, from which an earlier value of a field stays kept out once a
@@ -91,9 +93,10 @@ impl Kept {
     }
 
     fn read<S: AsRef<str>>(&mut self, from: &Of, texts: &[S]) {
-        let lower: Vec<String> = texts
+        // Each lower-case copy is wiped when it goes, as the texts themselves are.
+        let lower: Vec<Zeroizing<String>> = texts
             .iter()
-            .map(|text| text.as_ref().to_lowercase())
+            .map(|text| Zeroizing::new(text.as_ref().to_lowercase()))
             .filter(|text| !text.is_empty())
             .collect();
         if lower.is_empty() {
@@ -101,8 +104,8 @@ impl Kept {
         }
         self.texts.retain(|kept| {
             kept.from.as_ref() != Some(from) || kept.text.chars().count() >= KEPT_WHOLE_FROM || {
-                let earlier = kept.text.to_lowercase();
-                !lower.iter().any(|text| text.contains(&earlier))
+                let earlier = Zeroizing::new(kept.text.to_lowercase());
+                !lower.iter().any(|text| text.contains(earlier.as_str()))
             }
         });
         self.add(Some(from), Source::Field, texts);
@@ -143,7 +146,7 @@ impl Kept {
         self.texts.iter().map(|kept| kept.text.as_str()).collect()
     }
 
-    /// Every text a group of boxes holds together: taken out also with any spaces or dashes
+    /// Every text a group of boxes holds together: taken out also with any separators
     /// between its characters.
     pub(crate) fn loose(&self) -> Vec<&str> {
         self.texts
@@ -157,9 +160,10 @@ impl Kept {
     pub(crate) fn without(&self, texts: &[&str]) -> Self {
         let mut rest = self.clone();
         rest.texts.retain(|kept| {
+            let kept = Zeroizing::new(kept.text.to_lowercase());
             !texts
                 .iter()
-                .any(|text| text.to_lowercase() == kept.text.to_lowercase())
+                .any(|text| *Zeroizing::new(text.to_lowercase()) == *kept)
         });
         rest
     }

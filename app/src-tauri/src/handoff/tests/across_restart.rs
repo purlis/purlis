@@ -1227,6 +1227,90 @@ fn a_chat_is_told_what_its_shell_last_printed_and_where_the_rest_is_after_a_rest
     );
 }
 
+/// **What the app writes as it quits**, as `Planes::let_go` writes it ([`Chats::write_last`]):
+/// the record the next launch reads, its chats' programs ended right after.
+fn quits_cleanly(held: &Held) -> Record {
+    let mut at_quit = None;
+    held.chats()
+        .write_last(|record| at_quit = Some(record.clone()));
+    let at_quit = at_quit.expect("the last record");
+    purlis_core::reopen::write(held.root(), &at_quit).expect("the record is written");
+    at_quit
+}
+
+/// #5827: a clean quit ends the steward chat, whose background shell writes its output into the
+/// chat's own temporary folder, which goes with the chat. The quit keeps that folder for the
+/// chat's wake line, so the chat brought back is told the shell's last lines, not "output gone",
+/// and once that run ends too, the folder goes.
+#[test]
+fn a_clean_quit_keeps_a_chat_s_own_folder_so_its_wake_line_quotes_its_shell() {
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    let conversation = held
+        .board()
+        .conversation(steward)
+        .expect("precondition: the chat is under a conversation");
+    let tmp = held
+        .chats()
+        .own_tmp_of(steward)
+        .expect("precondition: the chat has a temporary folder of its own");
+    let tasks = tmp
+        .join("claude-0")
+        .join("-proj")
+        .join(&conversation)
+        .join("tasks");
+    std::fs::create_dir_all(&tasks).expect("made");
+    let output = tasks.join("b5ul9gyit.output");
+    std::fs::write(
+        &output,
+        "Compiling purlis-core\ntest result: ok. 46 passed\n",
+    )
+    .expect("written");
+    its_tool_starts(
+        &held,
+        steward,
+        purlis_core::ownwork::pieces::Piece {
+            output: Some(output.to_str().expect("utf-8").to_owned()),
+            ..purlis_core::ownwork::pieces::Piece::new(
+                purlis_core::ownwork::pieces::Kind::Shell,
+                "b5ul9gyit",
+                "cargo test",
+            )
+            .expect("a piece")
+        },
+    );
+    let at_quit = quits_cleanly(&held);
+    let kept = at_quit
+        .chats
+        .iter()
+        .find_map(|chat| chat.kept_tmp.clone())
+        .expect("the quit kept the chat's folder");
+
+    let (relaunched, planes, again, held, _opened) =
+        launches_again(&plane, (host, planes, held), &at_quit);
+
+    let (told, said) = told_of_its_lost_work(&relaunched, steward, "test result: ok. 46 passed");
+    assert!(
+        told,
+        "within {TOLD_WITHIN:?} of the relaunch, chat {steward} was never told what its shell \
+         last printed; it was given only {said:#?}"
+    );
+    assert!(
+        std::path::Path::new(&kept).is_dir(),
+        "the kept folder stays while the chat's run it was told of lasts"
+    );
+
+    // That run ends with the next quit, and the folder kept for it goes then.
+    let _ = quits_cleanly(&held);
+    assert!(
+        !std::path::Path::new(&kept).exists(),
+        "the folder kept for the wake line outlived the run it was kept for"
+    );
+    planes.close(&again).expect("it closes");
+}
+
 // ---------------------------------------------------------------------------------------------
 // Ending a chat ends what its harness started (#5749, spec #5743 story 30).
 //

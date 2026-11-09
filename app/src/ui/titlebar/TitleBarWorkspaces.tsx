@@ -25,6 +25,11 @@
  *   and going moves nothing. Its shape and its part are the most urgent kind's (#3649): `dot`,
  *   a disc, for news; `dot-warning`, a triangle, for a warning; `dot-needs`, a raised hand, for
  *   a chat asking to remove the workspace (#3652).
+ * - **A chip's working mark** (#3127): while a chat in the workspace is in its turn, its slot
+ *   holds that chat's own mark, the chat mark family's working ring (`ui/chat-mark`), on the
+ *   chip's lower trailing corner, opposite the dot, ringed in the bar's ground. A shape and not
+ *   a colour (WCAG 1.4.1), still (it never spins), and laid over the slot, so it coming and going
+ *   moves nothing (R153). The chip's description says how many chats are working there.
  * - **The strip is a toolbar**, one Tab stop whose arrows walk its chips. It is at most 62% of the bar and scrolls sideways with its scrollbar hidden
  *   (R103, R167); the slash before it is a part of its own, in the faint tier (R92, R156).
  */
@@ -37,6 +42,7 @@ import type {
 } from "react";
 import { mergeProps, useFocusRing, useHover, useId } from "react-aria";
 import { ChevronDown, Circle, Hand, House, Triangle, type LucideIcon } from "lucide-react";
+import { ChatMark } from "../chat-mark/ChatMark";
 import { Tooltip, type Tip } from "../tooltip/Tooltip";
 
 /**
@@ -84,6 +90,12 @@ export const noticesSaid = (count: number, kind: NoticeKind = "info"): string | 
   return counted === undefined ? said : `${counted}, most urgent: ${said}`;
 };
 
+/** How many chats are working in a workspace, as its chip's description says it (#3127): "1 chat
+ *  working", "3 chats working", and nothing for none. "Working" is the run state's word: the UI
+ *  never says "running chat" (CONTEXT.md, Hot chat). */
+export const workingSaid = (count: number): string | undefined =>
+  count <= 0 ? undefined : count === 1 ? "1 chat working" : `${count} chats working`;
+
 /** The family's variants, in the order the manifest names them. */
 export const TITLEBAR_VARIANTS = ["pinned", "unpinned", "root", "dormant"] as const;
 export type TitleBarVariant = (typeof TITLEBAR_VARIANTS)[number];
@@ -108,6 +120,9 @@ export interface WorkspaceChipProps extends Native {
   tooltip?: Tip;
   /** The notices about it its dot shows (#3648), said in its description; none says nothing. */
   notices?: { count: number; kind: NoticeKind };
+  /** How many chats are working in it (#3127), said in its description; its slot draws the
+   *  mark. */
+  working?: number;
   ref?: Ref<HTMLButtonElement>;
   /** A place for it, never a look. */
   style?: CSSProperties;
@@ -127,6 +142,7 @@ export function WorkspaceChip({
   waiting = 0,
   tooltip,
   notices,
+  working = 0,
   ref,
   style,
   ...handed
@@ -145,6 +161,7 @@ export function WorkspaceChip({
     [
       (handed as { "aria-describedby"?: string })["aria-describedby"],
       waiting > 0 ||
+      working > 0 ||
       variant === "dormant" ||
       (notices !== undefined && noticesSaid(notices.count, notices.kind) !== undefined)
         ? said
@@ -190,6 +207,7 @@ export function WorkspaceChip({
     variant === "dormant" ? "gone, kept dormant" : undefined,
     waiting > 0 ? `${waiting} waiting` : undefined,
     notices === undefined ? undefined : noticesSaid(notices.count, notices.kind),
+    workingSaid(working),
   ].filter((one) => one !== undefined);
   const description =
     describes.length > 0 ? (
@@ -206,14 +224,32 @@ export function WorkspaceChip({
 }
 
 /**
- * **Where a chip stands in the strip** (#3648): the chip, and the dot of the notices about it,
- * placed over the chip's leading corner. Its own box is the chip's, so a dot coming or going
- * moves nothing (R153).
+ * **Where a chip stands in the strip** (#3648): the chip, the dot of the notices about it, placed
+ * over the chip's leading corner, and the working mark over its lower trailing one while a chat
+ * there is working (#3127). Its own box is the chip's, so a dot or a mark coming or going moves
+ * nothing (R153).
  */
-export function ChipSlot({ children }: { children: ReactNode }) {
+export function ChipSlot({
+  children,
+  working = false,
+  ref,
+  style,
+  ...handed
+}: {
+  children: ReactNode;
+  /** A chat in the workspace is working: the chat mark's working ring on the corner (#3127). */
+  working?: boolean;
+  ref?: Ref<HTMLSpanElement>;
+  /** A place for it while it is dragged (#3128), never a look. */
+  style?: CSSProperties;
+  /** `data-*` attributes reach the element as they are. */
+  [data: `data-${string}`]: string | number | boolean | undefined;
+}) {
   return (
-    <span data-scope="titlebar" data-part="slot">
+    <span {...handed} ref={ref} style={style} data-scope="titlebar" data-part="slot">
       {children}
+      {/* No word: the chip's description says it, and the ring is the chat's own glyph. */}
+      {working && <ChatMark state="working" className="titlebar-working" />}
     </span>
   );
 }
@@ -294,6 +330,7 @@ export function RootChip({
   name,
   current,
   notices,
+  working = 0,
   onPress,
   ref,
   ...handed
@@ -304,6 +341,8 @@ export function RootChip({
   current: boolean;
   /** The notices about the root its dot shows (#3648), said in its description. */
   notices?: { count: number; kind: NoticeKind };
+  /** How many chats are working outside every workspace (#3127), said in its description. */
+  working?: number;
   onPress: () => void;
   ref?: Ref<HTMLButtonElement>;
   /** `data-*` attributes reach the element as they are. */
@@ -312,7 +351,13 @@ export function RootChip({
   // What a context menu around it hands it (`asChild`) reaches the button with the press.
   const marked = useMarked({ ...handed, onClick: onPress }, current);
   const said = useId();
-  const shown = notices === undefined ? undefined : noticesSaid(notices.count, notices.kind);
+  const shown =
+    [
+      notices === undefined ? undefined : noticesSaid(notices.count, notices.kind),
+      workingSaid(working),
+    ]
+      .filter((one) => one !== undefined)
+      .join(", ") || undefined;
   const shows = shown !== undefined;
   return (
     <Tooltip tip={name}>

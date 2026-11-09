@@ -1,0 +1,504 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+name: skill-grades
+
+# The CI grader (#5727 and #5728 of spec #5714; ADR 0105 as amended 2026-11-08): whether
+# purlis's built-in skills start when they should and stay quiet when they should not, measured
+# on Claude Code, Codex and opencode, each started headless as a chat in the window is armed
+# (purlis's plugin or session flags, its session-start briefing and its MCP tools), among the
+# crowd fixture (`ci/skill-grades/crowd`) and bare. Each built-in's trigger tests and trigger
+# bar are in its `evals/` folder; `crates/skill-grader` runs them and `purlis_skills::grade::ci`
+# scores them.
+#
+# **Each harness is its own job**, so each is reported, and gates, on its own: a skill below its
+# bar on Codex fails `grade on Codex` and nothing else.
+#
+# **A pull request is graded only for the built-ins it touches**: their own folder, or the plugin
+# wiring, the briefing or the grader, which touch every one (`skill-grader select`). One that
+# touches none of them does not start this workflow, and one that touches a built-in without
+# trigger tests grades nothing.
+#
+# **The keys are the person's to provision** (`ci/skill-grades/wizard.sh`): the GitHub
+# environment `skill-grades` holds `ANTHROPIC_API_KEY` (Claude Code and opencode, decision Q10)
+# and `OPENAI_API_KEY` (Codex), each of a key with a hard spend limit. Each job names its one
+# key statically, so its runner is sent that key and no other. Without it (not set up yet, or a
+# fork's pull request, which GitHub never hands a secret) that job says so in the run's summary
+# and stops, green: nothing was graded on that harness, and nothing claims it.
+#
+# Harness versions come from `ci/skill-grades/pins.toml`; each result records the version the
+# runs ran, and the model where the harness names it (Claude Code alone does).
+#
+# **Each night on main** (#5729, decisions Q22 and Q23) every built-in with trigger tests is
+# graded on the latest version of each harness, and each job keeps its scorecard. The `nightly`
+# job, which holds no key, hands them to `skill-grader nightly` (which decides, and has tests)
+# and carries out what it says: one issue per skill and harness, labelled `skill-triggers`,
+# opened when the skill drops below its bar there, rewritten while it stays below, and closed
+# the night it meets it again; a harness none of whose runs said what it started (its key's spend
+# limit reached, say) is said in the summary as not graded, and its issues are left as they are;
+# and, on a night every harness was graded and every skill met its
+# bar, the versions it ran proposed as the pins, on the one branch `skill-grades/pins`, so one
+# pull request carries them however many nights stay green. A harness without its key grades
+# nothing, so no night proposes pins until all three are provisioned.
+#
+# A pull request opened with the workflow's token starts no workflow (GitHub's rule against
+# loops): close and reopen the pin bump, or push to it, for its checks to run. The repository
+# must allow GitHub Actions to create pull requests (Settings → Actions → General).
+#
+# `crates/release-manifest/tests/it/the_skill_grades_run_with_one_key_and_skip_without_it.rs`
+# holds this file to those rules.
+
+on:
+  # The paths are exactly `skill-grader`'s `select::workflow_paths()`, which a test holds this
+  # list to: a path that starts this workflow is one that grades a built-in.
+  pull_request:
+    paths:
+      - "app/src-tauri/plugin/skills/**"
+      - "app/src-tauri/plugin/.claude-plugin/**"
+      - "app/src-tauri/plugin/hooks/**"
+      - "app/src-tauri/plugin/opencode/**"
+      - "crates/purlis-core/src/plugin.rs"
+      - "crates/purlis-core/src/chattools.rs"
+      - "crates/purlis-core/src/harness/claude.rs"
+      - "crates/purlis-core/src/harness/codex.rs"
+      - "crates/purlis-core/src/harness/opencode.rs"
+      - "crates/purlis-core/src/opencode.rs"
+      - "crates/purlis-core/src/skills.rs"
+      - "crates/purlis-core/src/hoststart.rs"
+      - "crates/purlis-core/src/briefing.rs"
+      - "crates/purlis-core/src/briefing/**"
+      - "crates/skills/src/grade/ci.rs"
+      - "crates/skills/src/grade/ci/**"
+      - "crates/skill-grader/**"
+      - "ci/skill-grades/**"
+      - ".github/workflows/skill-grades.yml"
+  schedule:
+    - cron: "37 3 * * *"
+  workflow_dispatch:
+
+# Nothing by default: each job names what it needs.
+permissions: {}
+
+# A night's grade has a group of its own, so a run started by hand on main never cancels it.
+concurrency:
+  group: skill-grades-${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  select:
+    name: what the change grades
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      skills: ${{ steps.select.outputs.skills }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: ./.github/actions/rust-toolchain
+      # This job holds no secret, so it may restore a cache.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Build the grader
+        run: cargo build -p skill-grader --locked
+      - name: Which built-ins the change touches
+        id: select
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = pull_request ]; then
+            git diff --name-only "$BASE"...HEAD > "$RUNNER_TEMP/changed"
+          else
+            # By hand or nightly: the grader itself, so every built-in with trigger tests.
+            echo ci/skill-grades/pins.toml > "$RUNNER_TEMP/changed"
+          fi
+          skills="$(target/debug/skill-grader select --changed "$RUNNER_TEMP/changed" | paste -sd, -)"
+          echo "skills=$skills" >> "$GITHUB_OUTPUT"
+          if [ -z "$skills" ]; then
+            echo "### Skill trigger grades: no built-in with trigger tests is touched, nothing to grade" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  grade-claude-code:
+    name: grade on Claude Code
+    needs: [select]
+    if: needs.select.outputs.skills != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    environment: skill-grades
+    permissions:
+      contents: read
+    steps:
+      # The key decides whether anything runs. It is handed over again only to the step that
+      # grades, which is the only other step that names it.
+      - name: Is the key provisioned?
+        id: provisioned
+        env:
+          KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$KEY" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=skill-grades::Skill trigger grades on Claude Code skipped: no ANTHROPIC_API_KEY from the skill-grades environment (not set up, or a fork's pull request), so nothing was graded"
+            {
+              echo "### Skill trigger grades on Claude Code skipped: no \`ANTHROPIC_API_KEY\` from the \`skill-grades\` environment, so nothing was graded"
+              echo
+              echo "It is not set up yet (\`ci/skill-grades/wizard.sh\` sets it up), or this is a fork's"
+              echo "pull request, which GitHub never hands a secret."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.provisioned.outputs.ready == 'true'
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/rust-toolchain
+        if: steps.provisioned.outputs.ready == 'true'
+      # Built before the key is handed over, so it is in no build script's environment. No
+      # cache: this job holds a key, and a cache is written by whichever job saved it last.
+      - name: Build purlis and the grader
+        if: steps.provisioned.outputs.ready == 'true'
+        run: cargo build -p purlis-cli -p skill-grader --locked
+      # The runner image's own Node: setup-node can restore a cache, and this job holds a key.
+      # The pin, but the latest each night: what the nightly proposes as the next pin.
+      - name: Install the pinned Claude Code, or the latest each night
+        if: steps.provisioned.outputs.ready == 'true'
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = schedule ]; then version=latest; else version="$(target/debug/skill-grader pin claude-code)"; fi
+          npm install --global "@anthropic-ai/claude-code@$version"
+          claude --version
+      # A plane for the runs to start in, so the session-start briefing has one to brief.
+      - name: Make a plane
+        if: steps.provisioned.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/plane"
+          cd "$RUNNER_TEMP/plane"
+          "$GITHUB_WORKSPACE/target/debug/purlis" init --forge github --owner skill-grades
+      - name: Grade
+        if: steps.provisioned.outputs.ready == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SKILLS: ${{ needs.select.outputs.skills }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          # Each night's harness is its latest, so a version it does not say is not the pin's.
+          latest=()
+          if [ "$EVENT" = schedule ]; then latest=(--latest); fi
+          target/debug/skill-grader grade \
+            "${latest[@]}" \
+            --harness claude-code \
+            --skills "$SKILLS" \
+            --program "$(command -v claude)" \
+            --purlis "$GITHUB_WORKSPACE/target/debug/purlis" \
+            --cwd "$RUNNER_TEMP/plane" \
+            --records "$RUNNER_TEMP/records" \
+            --summary "$GITHUB_STEP_SUMMARY" \
+            --scorecard "$RUNNER_TEMP/scorecard/claude-code.json"
+      # What each run wrote, to read a failing prompt's run. The grader takes the key out of
+      # each run's output before it writes it, and no run has a shell that could read it.
+      - name: Keep the runs
+        if: always() && steps.provisioned.outputs.ready == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: skill-grades-runs-claude-code
+          path: ${{ runner.temp }}/records
+          if-no-files-found: warn
+      # The scores, red or green, for the nightly job.
+      - name: Keep the scorecard
+        if: always() && steps.provisioned.outputs.ready == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: skill-grades-scorecard-claude-code
+          path: ${{ runner.temp }}/scorecard
+          if-no-files-found: warn
+
+  grade-codex:
+    name: grade on Codex
+    needs: [select]
+    if: needs.select.outputs.skills != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    environment: skill-grades
+    permissions:
+      contents: read
+    steps:
+      # The key decides whether anything runs. It is handed over again only to the step that
+      # grades, which is the only other step that names it.
+      - name: Is the key provisioned?
+        id: provisioned
+        env:
+          KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$KEY" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=skill-grades::Skill trigger grades on Codex skipped: no OPENAI_API_KEY from the skill-grades environment (not set up, or a fork's pull request), so nothing was graded"
+            {
+              echo "### Skill trigger grades on Codex skipped: no \`OPENAI_API_KEY\` from the \`skill-grades\` environment, so nothing was graded"
+              echo
+              echo "It is not set up yet (\`ci/skill-grades/wizard.sh\` sets it up), or this is a fork's"
+              echo "pull request, which GitHub never hands a secret."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.provisioned.outputs.ready == 'true'
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/rust-toolchain
+        if: steps.provisioned.outputs.ready == 'true'
+      # Built before the key is handed over, so it is in no build script's environment. No
+      # cache: this job holds a key, and a cache is written by whichever job saved it last.
+      - name: Build purlis and the grader
+        if: steps.provisioned.outputs.ready == 'true'
+        run: cargo build -p purlis-cli -p skill-grader --locked
+      # The runner image's own Node: setup-node can restore a cache, and this job holds a key.
+      # The pin, but the latest each night: what the nightly proposes as the next pin.
+      - name: Install the pinned Codex, or the latest each night
+        if: steps.provisioned.outputs.ready == 'true'
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = schedule ]; then version=latest; else version="$(target/debug/skill-grader pin codex)"; fi
+          npm install --global "@openai/codex@$version"
+          codex --version
+      # A plane for the runs to start in, so the session-start briefing has one to brief.
+      - name: Make a plane
+        if: steps.provisioned.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/plane"
+          cd "$RUNNER_TEMP/plane"
+          "$GITHUB_WORKSPACE/target/debug/purlis" init --forge github --owner skill-grades
+      - name: Grade
+        if: steps.provisioned.outputs.ready == 'true'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SKILLS: ${{ needs.select.outputs.skills }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          # Each night's harness is its latest, so a version it does not say is not the pin's.
+          latest=()
+          if [ "$EVENT" = schedule ]; then latest=(--latest); fi
+          target/debug/skill-grader grade \
+            "${latest[@]}" \
+            --harness codex \
+            --skills "$SKILLS" \
+            --program "$(command -v codex)" \
+            --purlis "$GITHUB_WORKSPACE/target/debug/purlis" \
+            --cwd "$RUNNER_TEMP/plane" \
+            --records "$RUNNER_TEMP/records" \
+            --summary "$GITHUB_STEP_SUMMARY" \
+            --scorecard "$RUNNER_TEMP/scorecard/codex.json"
+      # What each run wrote, to read a failing prompt's run. The grader takes the key out of
+      # each run's output before it writes it, and no run has a shell that could read it.
+      - name: Keep the runs
+        if: always() && steps.provisioned.outputs.ready == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: skill-grades-runs-codex
+          path: ${{ runner.temp }}/records
+          if-no-files-found: warn
+      # The scores, red or green, for the nightly job.
+      - name: Keep the scorecard
+        if: always() && steps.provisioned.outputs.ready == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: skill-grades-scorecard-codex
+          path: ${{ runner.temp }}/scorecard
+          if-no-files-found: warn
+
+  grade-opencode:
+    name: grade on opencode
+    needs: [select]
+    if: needs.select.outputs.skills != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    environment: skill-grades
+    permissions:
+      contents: read
+    steps:
+      # The key decides whether anything runs. It is handed over again only to the step that
+      # grades, which is the only other step that names it.
+      - name: Is the key provisioned?
+        id: provisioned
+        env:
+          KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$KEY" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=skill-grades::Skill trigger grades on opencode skipped: no ANTHROPIC_API_KEY from the skill-grades environment (not set up, or a fork's pull request), so nothing was graded"
+            {
+              echo "### Skill trigger grades on opencode skipped: no \`ANTHROPIC_API_KEY\` from the \`skill-grades\` environment, so nothing was graded"
+              echo
+              echo "It is not set up yet (\`ci/skill-grades/wizard.sh\` sets it up), or this is a fork's"
+              echo "pull request, which GitHub never hands a secret."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.provisioned.outputs.ready == 'true'
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/rust-toolchain
+        if: steps.provisioned.outputs.ready == 'true'
+      # Built before the key is handed over, so it is in no build script's environment. No
+      # cache: this job holds a key, and a cache is written by whichever job saved it last.
+      - name: Build purlis and the grader
+        if: steps.provisioned.outputs.ready == 'true'
+        run: cargo build -p purlis-cli -p skill-grader --locked
+      # The runner image's own Node: setup-node can restore a cache, and this job holds a key.
+      # The pin, but the latest each night: what the nightly proposes as the next pin.
+      - name: Install the pinned opencode, or the latest each night
+        if: steps.provisioned.outputs.ready == 'true'
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = schedule ]; then version=latest; else version="$(target/debug/skill-grader pin opencode)"; fi
+          npm install --global "opencode-ai@$version"
+          opencode --version
+      # A plane for the runs to start in, so the session-start briefing has one to brief.
+      - name: Make a plane
+        if: steps.provisioned.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/plane"
+          cd "$RUNNER_TEMP/plane"
+          "$GITHUB_WORKSPACE/target/debug/purlis" init --forge github --owner skill-grades
+      - name: Grade
+        if: steps.provisioned.outputs.ready == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SKILLS: ${{ needs.select.outputs.skills }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          # Each night's harness is its latest, so a version it does not say is not the pin's.
+          latest=()
+          if [ "$EVENT" = schedule ]; then latest=(--latest); fi
+          target/debug/skill-grader grade \
+            "${latest[@]}" \
+            --harness opencode \
+            --skills "$SKILLS" \
+            --program "$(command -v opencode)" \
+            --purlis "$GITHUB_WORKSPACE/target/debug/purlis" \
+            --cwd "$RUNNER_TEMP/plane" \
+            --records "$RUNNER_TEMP/records" \
+            --summary "$GITHUB_STEP_SUMMARY" \
+            --scorecard "$RUNNER_TEMP/scorecard/opencode.json"
+      # What each run wrote, to read a failing prompt's run. The grader takes the key out of
+      # each run's output before it writes it, and no run has a shell that could read it.
+      - name: Keep the runs
+        if: always() && steps.provisioned.outputs.ready == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: skill-grades-runs-opencode
+          path: ${{ runner.temp }}/records
+          if-no-files-found: warn
+      # The scores, red or green, for the nightly job.
+      - name: Keep the scorecard
+        if: always() && steps.provisioned.outputs.ready == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: skill-grades-scorecard-opencode
+          path: ${{ runner.temp }}/scorecard
+          if-no-files-found: warn
+
+  nightly:
+    # A scheduled run's red X is on a page nobody opens; an issue is in the repo. What to do is
+    # `skill-grader nightly`'s, which has tests; this job fetches the open issues and carries
+    # its decisions out. It holds no key, and is the only job that may write to the repo.
+    name: track the nightly's grades
+    needs: [grade-claude-code, grade-codex, grade-opencode]
+    if: always() && github.event_name == 'schedule' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The token reaches git for the push alone, never the checkout's config.
+          persist-credentials: false
+      - uses: ./.github/actions/rust-toolchain
+      # No cache: this job can write to the repo, and a cache is written by whichever job
+      # saved it last.
+      - name: Build the grader
+        run: cargo build -p skill-grader --locked
+      # Each harness graded tonight. One without its key, or whose grade failed to run, kept
+      # none, and the grader then leaves its issues as they are and proposes no pins.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          pattern: skill-grades-scorecard-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/scorecards
+      - name: Open, rewrite or close each skill's issue, and propose the pins
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          set -euo pipefail
+          BRANCH=skill-grades/pins
+          gh label create skill-triggers --force --color d93f0b \
+            --description "A built-in skill below its trigger bar on a harness, from the nightly skill grades"
+          # Every open issue of the label, every page of them.
+          gh api --paginate "repos/$GH_REPO/issues?state=open&labels=skill-triggers&per_page=100" \
+            --jq '.[] | select(.pull_request | not) | {number, title}' > "$RUNNER_TEMP/issues.jsonl"
+          target/debug/skill-grader nightly \
+            --scorecards "$RUNNER_TEMP/scorecards" \
+            --run-url "$RUN_URL" \
+            --out "$RUNNER_TEMP/said" \
+            < "$RUNNER_TEMP/issues.jsonl" > "$RUNNER_TEMP/acts.tsv"
+          cat "$RUNNER_TEMP/acts.tsv"
+          while IFS=$'\t' read -r verb number file title; do
+            case "$verb" in
+              note) echo "::warning title=skill-grades::$title"; echo "$title" >> "$GITHUB_STEP_SUMMARY" ;;
+              create) gh issue create --title "$title" --label skill-triggers --body-file "$file" ;;
+              edit) gh issue edit "$number" --body-file "$file" ;;
+              close)
+                gh issue comment "$number" --body-file "$file"
+                gh issue close "$number" ;;
+              bump)
+                git switch -C "$BRANCH"
+                git commit -q -m "$title" -- ci/skill-grades/pins.toml
+                auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
+                echo "::add-mask::$auth"
+                git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push --force origin "HEAD:refs/heads/$BRANCH"
+                existing="$(gh pr list --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty')"
+                if [ -n "$existing" ]; then
+                  gh pr edit "$existing" --title "$title" --body-file "$file"
+                else
+                  gh pr create --head "$BRANCH" --base main --title "$title" --body-file "$file"
+                fi ;;
+              *) echo "::error::unknown act from skill-grader nightly: $verb"; exit 1 ;;
+            esac
+          done < "$RUNNER_TEMP/acts.tsv"

@@ -326,13 +326,22 @@ fn attestations_are_verified(image: &Image) {
         "--repo \"$GITHUB_REPOSITORY\"",
         signer.as_str(),
         "--signer-digest \"$GITHUB_WORKFLOW_SHA\"",
-        "--source-digest \"$GITHUB_SHA\"",
+        // The commit `plan` chose and the image was built from, which the provenance names.
+        "--source-digest \"$SHA\"",
         "--deny-self-hosted-runners",
         "--predicate-type https://cyclonedx.org/bom",
         "oci://$IMAGE@",
     ] {
         assert!(joined.contains(pin), "{}: {pin}: {joined}", image.file);
     }
+    assert!(
+        attest
+            .body
+            .iter()
+            .any(|l| l == "      SHA: ${{ needs.plan.outputs.sha }}"),
+        "{}: the source commit is not plan's sha",
+        image.file
+    );
     let last_attest = attest
         .steps()
         .iter()

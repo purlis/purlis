@@ -85,18 +85,11 @@ impl ServerHandler for Server {
     ) -> Result<ListToolsResult, ErrorData> {
         // The skill tools (SK-13), only where the project's skills reach this chat: the
         // `skill-studio` flag, or a project that requires them (#2784).
-        let skills: &[chattools::Tool] = if skills_reach_here() {
-            &purlis_core::skilltools::TOOLS
-        } else {
-            &[]
-        };
+        let skills = skills_reach_here();
         let graded = self.graded;
         Ok(ListToolsResult::with_all_items(
-            chattools::TOOLS
-                .iter()
-                .chain(purlis_core::browsertools::TOOLS.iter())
-                .chain(purlis_core::themepreview::TOOLS.iter())
-                .chain(skills.iter())
+            every_tool()
+                .filter(|one| skills || !purlis_core::skilltools::is_one(one.name))
                 .filter(|one| !graded || chattools::PRE_ALLOWED.contains(&one.name))
                 .map(tool)
                 .collect(),
@@ -270,15 +263,46 @@ fn skills_reach_here() -> bool {
     }
 }
 
+/// **Every tool this server can list**, before a chat's place narrows it: the skill tools reach
+/// only where skills do, and a grade's chat lists only the ones that read. The shipped skills
+/// are held to it, so a skill never names a tool no chat is handed (#5721).
+pub(crate) fn every_tool() -> impl Iterator<Item = &'static chattools::Tool> {
+    chattools::TOOLS
+        .iter()
+        .chain(purlis_core::browsertools::TOOLS.iter())
+        .chain(purlis_core::themepreview::TOOLS.iter())
+        .chain(purlis_core::skilltools::TOOLS.iter())
+}
+
+/// The first line of [`instructions`], the same for every chat.
+pub(crate) const INSTRUCTIONS: &str = "purlis's tools for this chat: the todos, memory, session \
+     records and changes of the workspace it works in, a question for the person, a real \
+     browser the person watches (the browser_ tools), and the theme specimen (theme_preview).";
+
+/// What an `ask_operator` call can return to the chat, besides the answer itself.
+const CANNOT_ASK: &str =
+    "this harness cannot ask the person through MCP; ask in your reply instead";
+const NOT_ASKED: &str = "the person could not be asked";
+const ANSWERED_PREFIX: &str = "The person answered:";
+const NO_ANSWER: &str = "the person accepted but gave no answer";
+const DECLINED: &str = "The person declined to answer.";
+const DISMISSED: &str = "The person dismissed the question.";
+/// Every text an `ask_operator` call returns in purlis's own words, for the vocabulary test.
+#[cfg(test)]
+pub(crate) const ASK_RESULTS: [&str; 6] = [
+    CANNOT_ASK,
+    NOT_ASKED,
+    ANSWERED_PREFIX,
+    NO_ANSWER,
+    DECLINED,
+    DISMISSED,
+];
+
 /// What the server tells the harness it is for: its tools, and the one line about its skills
 /// ([`purlis_core::skilltools::briefing`]): how they are reached on the `Mcp` route, and on a
 /// route that hands them, what to do with one the harness does not know.
 fn instructions() -> String {
-    let mut said = "purlis's tools for this chat: the todos, memory, session records and changes \
-                    of the workspace it works in, a question for the operator, a real browser \
-                    the person watches (the browser_ tools), and the theme specimen \
-                    (theme_preview)."
-        .to_owned();
+    let mut said = INSTRUCTIONS.to_owned();
     if let Ok(here) = crate::Here::read()
         && purlis_core::skills::reach_chats_here(here.plane.root())
         && let Some(line) = purlis_core::skilltools::briefing(route_here(&here))
@@ -766,10 +790,7 @@ async fn ask_operator(
             .contains(&rmcp::service::ElicitationMode::Form)
     };
     if !can_ask {
-        return Ok(done(Err(
-            "this harness cannot ask the operator through MCP; ask in your reply instead"
-                .to_owned(),
-        )));
+        return Ok(done(Err(CANNOT_ASK.to_owned())));
     }
     if asks_by_returning {
         let mut requests = InputRequests::new();
@@ -786,7 +807,7 @@ async fn ask_operator(
         .peer
         .create_elicitation_with_timeout(params, None)
         .await
-        .map_err(|e| format!("the operator could not be asked: {e}"))
+        .map_err(|e| format!("{NOT_ASKED}: {e}"))
         .and_then(said);
     Ok(done(answered))
 }
@@ -1017,7 +1038,7 @@ fn say_the_question(question: Option<&str>) {
     );
 }
 
-/// What the operator's answer says, as the chat reads it.
+/// What the person's answer says, as the chat reads it.
 fn said(result: ElicitResult) -> Result<String, String> {
     match result.action {
         ElicitationAction::Accept => result
@@ -1025,10 +1046,10 @@ fn said(result: ElicitResult) -> Result<String, String> {
             .as_ref()
             .and_then(|content| content.get(ANSWER))
             .and_then(serde_json::Value::as_str)
-            .map(|answer| format!("The operator answered: {answer}"))
-            .ok_or_else(|| "the operator accepted but gave no answer".to_owned()),
-        ElicitationAction::Decline => Ok("The operator declined to answer.".to_owned()),
-        ElicitationAction::Cancel => Ok("The operator dismissed the question.".to_owned()),
+            .map(|answer| format!("{ANSWERED_PREFIX} {answer}"))
+            .ok_or_else(|| NO_ANSWER.to_owned()),
+        ElicitationAction::Decline => Ok(DECLINED.to_owned()),
+        ElicitationAction::Cancel => Ok(DISMISSED.to_owned()),
         _ => Err("the harness answered in a way purlis does not know".to_owned()),
     }
 }

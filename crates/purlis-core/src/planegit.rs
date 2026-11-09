@@ -572,10 +572,10 @@ pub struct Standing {
     /// Each changed file the next save would refuse for what looks like a credential, while
     /// that is why it is blocked ([`SECRET_REFUSED`]); empty otherwise.
     pub secrets: Vec<SecretAt>,
-    /// Whether the save is blocked by the push record of a save's replay onto the remote that
-    /// conflicted, git not being stopped part-way now (qw382): the person settles it with a
-    /// rebase of their own, since a chat may not rebase the plane root.
-    pub rebase_by_hand: bool,
+    /// Whether the save is blocked by the push record of a save's replay or bring-in that
+    /// conflicted, git not being stopped part-way and no resolve open now: the window offers
+    /// Resolve, which settles it in a resolve folder beside the project (#5824 F7, [`TO_RESOLVE`]).
+    pub resolve_offered: bool,
     /// What git is stopped part-way in, by kind (qw382): an operation's
     /// [`gitstate::Operation::kind`], or `conflicts` for unmerged files and no operation.
     /// `None` when it is not. A window decides by it which ways out it offers: a chat may
@@ -587,6 +587,20 @@ pub struct Standing {
     /// is open, or the mode does not merge it. Never a block: a red request stays open, and a
     /// later save pushes onto it (ADR 0051, amended 2026-10-13).
     pub merge: Option<Merging>,
+    /// A fetch of the target failed while a request is open, and none has gone through since
+    /// (#5824 F8): the plane may be behind the remote by more than [`Standing::behind`] says.
+    /// Never a block: the next look tries again. `None` with no request open.
+    pub stale: Option<Stale>,
+}
+
+/// **The plane is stale** (#5824 F8): since when a fetch of its target has failed while a
+/// request is open, and why, in the latest failure's words.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Stale {
+    /// When the first failure of the run was, in seconds since the epoch.
+    pub since: u64,
+    /// Why the latest one failed, as a sentence fragment of at most 600 bytes.
+    pub why: String,
 }
 
 impl Standing {
@@ -622,9 +636,10 @@ pub fn standing(root: &Path) -> Standing {
             conflict_keys: BTreeMap::new(),
             notice: None,
             secrets: Vec::new(),
-            rebase_by_hand: false,
+            resolve_offered: false,
             stopped_by: None,
             merge: None,
+            stale: None,
             // An unborn branch is a repository with nothing to count against, and what is
             // staged in it is still the root being worked in (FD-11: the alerts read this).
             tracked: status_of(root).1,
@@ -749,19 +764,27 @@ pub fn standing(root: &Path) -> Standing {
     let stopped = gitstate::stopped(root);
     // The record's conflict is the block only while git is not stopped part-way, which is
     // named first and settled by its own way out.
-    let rebase_by_hand = stopped.is_none()
+    let resolve_offered = stopped.is_none()
         && blocked.is_some()
         && outcome.as_deref() == Some(Outcome::Conflict.word());
-    let stopped_by = stopped.as_ref().map(|stopped| {
-        stopped
-            .operation
-            .map_or("conflicts", gitstate::Operation::kind)
-    });
+    // A resolve open in its folder off to the side (#5824 F7): the root is not stopped, and the
+    // files to settle are the folder's.
+    let resolving = resolvefolder::conflicts(root);
+    let stopped_by = stopped
+        .as_ref()
+        .map(|stopped| {
+            stopped
+                .operation
+                .map_or("conflicts", gitstate::Operation::kind)
+        })
+        .or(resolving.as_ref().map(|_| RESOLVING));
+    let resolve_offered = resolve_offered && resolving.is_none();
     // A step purlis left part-way that a look could not recover says why, in place of git's
     // generic words (#5824 F3).
     let blocked = stopped
         .as_ref()
         .map(|stopped| recover::said(root).unwrap_or_else(|| stopped.why()))
+        .or_else(|| resolving.as_ref().map(|_| SAID_RESOLVING.to_owned()))
         .or(blocked);
     // Named only while they are why: a stopped merge is settled first.
     if blocked.as_deref() != Some(SECRET_REFUSED) {
@@ -790,14 +813,26 @@ pub fn standing(root: &Path) -> Standing {
     let merge = (plane.mode.value == Some(crate::planesave::Mode::PrMerge) && pr.is_some())
         .then(|| prsave::known_merging(root))
         .flatten();
-    // The files a stopped merge or rebase left unmerged are the ones to settle now, and the keys
-    // named are those of the files still to settle.
-    let conflicts = match stopped {
-        Some(stopped) if !stopped.unmerged.is_empty() => stopped.unmerged,
+    // The files a stopped merge or rebase left unmerged are the ones to settle now, or a resolve
+    // folder's still unsettled, and the keys named are those of the files still to settle.
+    let conflicts = match (stopped, resolving) {
+        (Some(stopped), _) if !stopped.unmerged.is_empty() => stopped.unmerged,
+        (_, Some(left)) => {
+            let mut files: Vec<String> = left
+                .marked
+                .into_iter()
+                .chain(left.by_hand)
+                .chain(left.keyed)
+                .collect();
+            files.sort();
+            files
+        }
         _ => conflicts,
     };
     let mut conflict_keys = conflict_keys;
     conflict_keys.retain(|path, _| conflicts.contains(path));
+    // Kept only while a request is open ([`prsave::fetched`]).
+    let stale = prsave::known_stale(root);
     Standing {
         stage,
         changed,
@@ -815,11 +850,19 @@ pub fn standing(root: &Path) -> Standing {
         tracked,
         head,
         secrets,
-        rebase_by_hand,
+        resolve_offered,
         stopped_by,
         merge,
+        stale,
     }
 }
+
+/// [`Standing::stopped_by`] while a resolve is open in its folder ([`resolvefolder`]).
+pub const RESOLVING: &str = "resolve";
+
+/// [`Standing::blocked`] while a resolve is open in its folder.
+pub const SAID_RESOLVING: &str = "a resolve is open: settle the files in the resolve folder, then \
+     Continue, or Abort";
 
 /// Where a look at a save's open request is run from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1771,8 +1814,7 @@ pub(crate) const WRITE: Duration = Duration::from_secs(120);
 enum Rebased {
     /// The plane's commits were replayed onto the remote's.
     Replayed,
-    /// The trees conflict: git stopped with files it calls unmerged.
-    /// Carries those files, read before the rebase is undone.
+    /// The trees conflict, in these files. Nothing moved: the replay is made off to the side.
     Conflict(Vec<String>),
     /// git did not replay the commits for a reason that is no conflict: it could not write a
     /// file, the disk is full, it refused, or it died. Carries git's own words. A rebase may
@@ -1852,35 +1894,42 @@ fn fetched_for_the_retry(root: &Path, helper: &str, https: &str, branch: &str) -
 
 /// [`rebase_onto_fetched`], onto `onto`: the fetched commit for a save's retry, the remote-tracking
 /// branch for the window's Update ([`update::update`]).
+///
+/// **Made off to the side** (#5855, #5824 D2): the plane's own commits are replayed with
+/// `merge-tree` and `commit-tree` ([`replay`]), each keeping its author, date and message and
+/// signed as the save signs, and the root then moves onto the last of them with one `reset
+/// --keep`, which refuses rather than overwrite uncommitted work. Nothing at the root is ever
+/// part-way: a conflict, a signer that refuses or the deadline changes nothing there, and a
+/// conflict is the window's Resolve to settle in a resolve folder ([`resolvefolder`]).
 fn rebase_onto(root: &Path, onto: &str, sign: bool, deadline: Duration) -> Rebased {
     let stops = sandbox_would_stop(root, onto);
     if !stops.is_empty() {
         return Rebased::Held(stops);
     }
-    // Marked while it runs, so one a quit or a crash cuts off is recovered off to the side
-    // ([`recover`], #5824 F3). The marker goes when this returns, a stop for a conflict
-    // included: that stop is the person's to settle.
-    let onto_id = line_of(
-        root,
-        &["rev-parse", "--verify", "-q", &format!("{onto}^{{commit}}")],
-    );
-    let base = onto_id.as_deref().and_then(|onto_id| {
-        line_of(root, &["merge-base", "HEAD", onto_id]).map(|base| (onto_id.to_owned(), base))
-    });
-    let _marked = base
-        .as_ref()
-        .and_then(|(onto_id, base)| recover::mark(root, recover::Op::Rebase, onto_id, base));
     let started = std::time::Instant::now();
-    let mut rebase: Vec<&str> = vec!["-c", gpgsign(sign)];
-    rebase.extend(["rebase", onto]);
-    match git::run(root, &rebase, deadline) {
+    let tip = match replay::replay(root, "HEAD", onto, sign, deadline) {
+        replay::Replayed::Onto(tip) => tip,
+        replay::Replayed::Conflict(files) => return Rebased::Conflict(files),
+        replay::Replayed::Unsigned(signer) => return Rebased::Unsigned(signer),
+        replay::Replayed::OutOfTime => return Rebased::OutOfTime,
+        replay::Replayed::Failed(said) => return Rebased::Failed(said),
+    };
+    let stops = sandbox_would_stop(root, &tip);
+    if !stops.is_empty() {
+        return Rebased::Held(stops);
+    }
+    // One step: it checks out the tree and moves the branch, or refuses having moved nothing.
+    // A run with no exit code is out of time only once the deadline has passed: git killed by a
+    // signal of somebody else's has no code either.
+    //
+    // Bounded, unlike Resolve's move ([`resolvefolder`]'s `move_root`): this runs unattended, from
+    // a save's retry in hooks and auto-save, where a filter or lock that never answers would hang
+    // `purlis save` for ever (charter-app#242). A reset killed part-way is put back by `update::put_back`.
+    let left = deadline.saturating_sub(started.elapsed());
+    match git::run(root, &["reset", "-q", "--keep", &tip], left) {
         Ok(run) if run.ok() => Rebased::Replayed,
         Ok(run) if run.code.is_none() && started.elapsed() >= deadline => Rebased::OutOfTime,
-        Ok(run) if sign && run.err.contains(UNWRITTEN) => Rebased::Unsigned(signer_said(&run.err)),
-        Ok(run) => match gitstate::unmerged(root) {
-            unmerged if unmerged.is_empty() => Rebased::Failed(tail(&run)),
-            unmerged => Rebased::Conflict(unmerged),
-        },
+        Ok(run) => Rebased::Failed(tail(&run)),
         Err(unavailable) => Rebased::Failed(unavailable.to_string()),
     }
 }
@@ -2285,10 +2334,11 @@ fn push_head_within(
                 match rebase_onto_fetched(root, &onto_id, sign, deadline) {
                     Rebased::Replayed => {}
                     Rebased::Conflict(conflicts) => {
-                        let _ = git::run(root, &["rebase", "--abort"], WRITE);
+                        // Nothing was started at the root: the replay was made off to the side.
                         say(Say::Warn(
-                        "Committed locally, but rebase hit a conflict — resolve manually, then \
-                         `purlis save`."
+                        "Committed locally, not pushed: the remote changed the same lines. Press \
+                         Resolve in the Saving view to settle it in a resolve folder beside the \
+                         project."
                             .into(),
                     ));
                         let detail = if conflicts.is_empty() {
@@ -2453,8 +2503,8 @@ const WHOLE_TREE_FLAGS: [&str; 5] = ["-A", "--all", "--no-ignore-removal", "-u",
 /// #2767; a persona's, #3124), spelled by the one level rule ([`purlis_skills::local_globs`]),
 /// and the lockfile of the skills installed there (ADR 0100 §2, #2773), whatever the plane's
 /// `.gitignore` says, since `skills.local/` is this machine's own and a plane whose `.gitignore`
-/// lost its line would otherwise commit it to the team; and a Try it's throwaway pieces (#2772),
-/// which last as long as their chats.
+/// lost its line would otherwise commit it to the team; a Try it's throwaway pieces (#2772),
+/// which last as long as their chats; and a resolve folder ([`resolvefolder`]).
 pub fn never_staged() -> Vec<String> {
     purlis_skills::local_globs()
         .iter()
@@ -2463,6 +2513,13 @@ pub fn never_staged() -> Vec<String> {
             ":(exclude,literal)skills.local.lock".to_owned(),
             ":(exclude,glob)workspaces/.throwaway/**".to_owned(),
         ])
+        // A resolve folder, under each spelling of the state folder, where `.gitignore` does not
+        // already keep it out (#5824 F7).
+        .chain(
+            crate::names::STATE_DIR
+                .spellings()
+                .map(|state| format!(":(exclude,literal){state}/resolve")),
+        )
         .collect()
 }
 
@@ -3072,6 +3129,10 @@ fn kept_out(path: &str) -> bool {
         || matches!(
             parts.as_slice(),
             ["skills.local.lock"] | ["workspaces", ".throwaway", ..]
+        )
+        || matches!(
+            parts.as_slice(),
+            [state, "resolve", ..] if crate::names::STATE_DIR.spellings().any(|s| s == *state)
         )
 }
 
@@ -4191,11 +4252,13 @@ pub mod merging;
 pub(crate) mod ondisk;
 mod prsave;
 pub mod recover;
+mod replay;
 pub mod resolve;
+pub mod resolvefolder;
 mod update;
 pub use merging::{MergeState, Merging, Seen, changed_since};
 pub use prsave::{MergedAsItStands, settled_at, stamp_is_unusable};
-pub use update::{BY_HAND, Left, Moved, Updated, update, update_for_a_chat};
+pub use update::{Left, Moved, TO_RESOLVE, Updated, update, update_for_a_chat};
 
 pub use blockedby::{SecretAt, file_of as blocked_file};
 

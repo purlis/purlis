@@ -164,11 +164,15 @@ impl Reach<'_> {
             };
             let key = key.trim().to_ascii_lowercase();
             let value = unquoted(value);
-            // `~` is the run's own home, which holds nothing of the chat's.
-            if value.is_empty() || value.starts_with('~') {
+            if value.is_empty() {
                 continue;
             }
-            if (section == "include" || section == "includeif") && key == "path" {
+            if names_a_program(&section, &key) {
+                self.program(config, &section, &key, &value)?;
+            // `~` is the run's own home, which holds nothing of the chat's.
+            } else if value.starts_with('~') {
+                continue;
+            } else if (section == "include" || section == "includeif") && key == "path" {
                 let included = beside.join(&value);
                 self.held(&included, "a config the repository's includes", false)?;
                 self.config(&included, top, depth + 1)?;
@@ -178,6 +182,74 @@ impl Reach<'_> {
         }
         Ok(())
     }
+
+    /// Each path in the program `section.key`'s `value` names, held ([`Self::held`]): a path
+    /// from `/` must be out of a chat's reach, and one read against the folder git runs in (`./x`,
+    /// `tools/x`, `$VAR/x`), which a chat can write, is refused. A word with no `/` is a name the
+    /// run's own search path finds, which holds no folder a chat writes.
+    fn program(&self, config: &Path, section: &str, key: &str, value: &str) -> Result<(), String> {
+        let words = value
+            .trim_start_matches('!')
+            .split(|c: char| c.is_whitespace() || ";|&(){}<>'\"`=".contains(c))
+            .filter(|word| word.contains('/'));
+        for word in words {
+            if word.starts_with('~') {
+                continue;
+            }
+            if word.starts_with('/') {
+                self.held(
+                    Path::new(word),
+                    &format!("a program the repository's config names ({section}.{key})"),
+                    false,
+                )?;
+                continue;
+            }
+            return Err(refused(
+                config,
+                &format!(
+                    "names {word:?} for git to run ({section}.{key}), a path read against the \
+                     folder git runs in, which a chat may write"
+                ),
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// **Whether `section.key` names a program git runs** (or a file it hands one), from git's own
+/// documented keys: a filter's, a diff's and a merge driver's programs, a credential helper, the
+/// file system monitor, the ssh, editor, pager, askpass and proxy programs, a signer, an alias
+/// (which runs a shell with `!`, or git with options that may name one), a trailer's command, a
+/// remote's other end, and the tools `difftool`, `mergetool`, `help` and `send-email` start.
+/// `key` and `section` as [`Reach::config`] reads them, lowercased.
+fn names_a_program(section: &str, key: &str) -> bool {
+    matches!(
+        (section, key),
+        ("filter", "clean" | "smudge" | "process")
+            | ("diff", "textconv" | "command" | "external")
+            | ("merge", "driver")
+            | ("credential", "helper")
+            | (
+                "core",
+                "fsmonitor"
+                    | "sshcommand"
+                    | "editor"
+                    | "pager"
+                    | "askpass"
+                    | "gitproxy"
+                    | "alternaterefscommand"
+            )
+            | ("sequence", "editor")
+            | ("pager" | "alias", _)
+            | ("gpg", "program" | "defaultkeycommand")
+            | ("trailer", "cmd" | "command")
+            | ("remote", "uploadpack" | "receivepack" | "vcs")
+            | ("interactive", "difffilter")
+            | ("web", "browser")
+            | ("browser" | "difftool" | "mergetool" | "man", "cmd" | "path")
+            | ("sendemail", "sendmailcmd" | "smtpserver")
+            | ("gc", "recentobjectshook")
+    )
 }
 
 /// Whether `path` is where class 5 holds it from every chat in the project
@@ -325,9 +397,15 @@ const GIT_RUNS: &[&str] = &[
     "--open-files-in-pager",
 ];
 
+/// The commands that carry on from state kept in the git folder (`rebase-merge/`,
+/// `rebase-apply/`, `sequencer/`), whose todo can hold `exec` lines, and the words that carry on.
+const SEQUENCER: &[&str] = &["rebase", "cherry-pick", "revert"];
+const CARRIES_ON: &[&str] = &["--continue", "--skip", "--edit-todo"];
+
 /// **Why a run of a declared git with `args` never runs with a vault's value**, if it does
 /// not: one of [`GIT_ELSEWHERE`] before its command (alone, or joined to its value:
-/// `-ckey=value`, `--git-dir=x`), or one of [`GIT_RUNS`] anywhere.
+/// `-ckey=value`, `--git-dir=x`), one of [`GIT_RUNS`] anywhere, or a [`SEQUENCER`] command that
+/// carries on ([`CARRIES_ON`]) from what its git folder holds, which a chat may have written.
 pub fn refused_git(args: &[String]) -> Option<String> {
     let joined = |arg: &str, option: &str| {
         arg == option
@@ -339,6 +417,19 @@ pub fn refused_git(args: &[String]) -> Option<String> {
         .iter()
         .position(|arg| !arg.starts_with('-'))
         .unwrap_or(args.len());
+    if args
+        .get(command)
+        .is_some_and(|word| SEQUENCER.contains(&word.as_str()))
+        && let Some(word) = args[command..]
+            .iter()
+            .find(|arg| CARRIES_ON.contains(&arg.as_str()))
+    {
+        return Some(format!(
+            "git runs with a vault's value only on what the person chose, and {word:?} carries \
+             on from steps kept in the repository's git folder, which a chat may have written, \
+             so nothing ran; run it in your own terminal, where purlis limits nothing."
+        ));
+    }
     let odd = args.iter().enumerate().find(|(at, arg)| {
         (*at < command && GIT_ELSEWHERE.iter().any(|option| joined(arg, option)))
             || GIT_RUNS.iter().any(|option| joined(arg, option))
