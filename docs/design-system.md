@@ -103,9 +103,9 @@ a colour `platform`. The window's rules stop at the light editor, which draws it
 and caret.
 Purlis Classic leaves all six to the platform.
 Purlis Classic gives every other new token the colour the window drew before it: a syntax role
-the ANSI colour the editor borrowed for it (but dark's `comment`, `#8b949e`, and light's
-`keyword`, `#7c48d9`, `type`, `#19757c`, and `property` and `attribute`, `#0969da`, which read on
-the editor's current line and on a diff's changed word, #2522, #4424), a
+the ANSI colour the editor borrowed for it, lifted along its own hue where it would not read at
+4.5:1 on the editor's current line and on a diff's changed word (#2522, #4424, #3796; the
+`MOVED` list in `crates/purlis-core/src/theme/typed_tests.rs` names each), a
 markdown link and `chart.1` the accent (and both turn with a workspace's colour, as the accent
 does), markdown's code, quotes and headings the
 words' colour, `window.background` the window's surface (the native window's colour, #2328), and the terminal's extras xterm's own
@@ -448,7 +448,10 @@ asked for), whatever the system's appearance. Where its values come from:
 - **The Figma pass** (#3177, the operator's ruling of 2026-10-24) took the audit's fifteen
   deviations out at once. **No hairlines**: a plain control's edge (`border.control`) is
   transparent in dark and light (high contrast draws it as its strong rule, 3:1 or more on every
-  ground an input or a button stands on, WCAG 1.4.11, #4921), and the dialog, the popover and the tooltip draw none (their parts); Allow keeps
+  ground an input or a button stands on, WCAG 1.4.11, #4921), and the dialog, the popover and
+  the tooltip draw none (their parts); a box a value is typed or picked in draws its own edge,
+  `border.input`, Purlis's faint tier at 3:1 or more on every ground it stands on, since its fill
+  is the window's own ground (#4475); Allow keeps
   its accent edge and its lock. **The primary is filled**: `accent.fill` `#6d58bb` with white
   words (`accent.fill-text`), 5.6:1, and `#745fc3` under the pointer, 5.0:1, in dark, light and
   high contrast alike, with no edge (`accent.fill-edge`, transparent: a token, since a part on

@@ -115,7 +115,9 @@ pub use archive::{
     Wrapping, export, export_as, gather, is_folder_id, is_reserved, pack, rename_no_replace, stage,
     unpack,
 };
-pub use check::{FAINT, FITS, Finding, Fit, PAIRS, Pair, Report, TEXT_TIERS, TIER_GROUNDS};
+pub use check::{
+    FAINT, FITS, Finding, Fit, PAIRS, Pair, REPORTED, Report, TEXT_TIERS, TIER_GROUNDS,
+};
 pub use floors::{
     ALLOW_APART, ALLOW_FROM_PRIMARY, DANGER_APART, Floor, HOT_COUNT_APART, Held, WAITING_APART,
 };

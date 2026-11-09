@@ -1075,7 +1075,7 @@ fn field_look(_variant: &str, _states: &[State]) -> Look {
 
 /// **A text input's, a textarea's, a select's and a combobox's colours** as
 /// `app/src/ui/field/field.css` and `app/src/ui/select/select.css` draw them: the sunken ground
-/// behind the control's edge (`border.control`, none in Purlis), in every state but refused; the
+/// behind the box's edge (`border.input`, #4475), in every state but refused; the
 /// keyboard's ring is drawn by the family, outside the parts. A refused box (`invalid`, #3110,
 /// #3323) draws the danger colour on the same edge, inside the box.
 fn box_look(_variant: &str, states: &[State]) -> Look {
@@ -1085,7 +1085,7 @@ fn box_look(_variant: &str, states: &[State]) -> Look {
         border: if states.contains(&State::Invalid) {
             "danger.base"
         } else {
-            "border.control"
+            "border.input"
         },
     }
 }
@@ -5230,9 +5230,9 @@ pub(super) struct CardOnSide {
 }
 
 /// What [`CardOnSide`] says of `theme`, where its parts, its own or inherited, choose a card
-/// row's look or a side panel's fill. As a meter's fill on its track is (#3674), a palette alone
-/// is not yet held (#3735): a theme that chooses neither draws its cards on the family's raised
-/// ground, wherever its palette puts it.
+/// row's look or a side panel's fill. For a palette alone it is not yet held, as a meter's fill
+/// on its track is ([`super::check::REPORTED`], #3735): a theme that chooses neither draws its
+/// cards on the family's raised ground, wherever its palette puts it.
 pub(super) fn card_on_side(theme: &ResolvedTheme) -> Option<CardOnSide> {
     let chosen = theme.parts.keys().any(|key| {
         (key.family == "list" && key.variant == Some("card"))
