@@ -309,6 +309,8 @@ export function NoticeDot({
       data-scope={scope}
       data-part={part}
       data-kind={kind}
+      // What it is on, so a strip that walks to it knows whose dot it is (#5912).
+      data-dot-of={workspace}
     >
       {filled ? (
         <Shape aria-hidden="true" fill="currentColor" strokeWidth={0} />
@@ -405,7 +407,9 @@ const STRIP_ITEMS =
  * #5912): ←, →, Home and End move the keyboard along the chips, their dots and the ⌄, stopping
  * at the ends, and `onRove` hands the caller each of them the keyboard lands on, however it got
  * there. The caller gives that one `tabIndex` 0 and every other −1, so Tab leaves the strip from
- * where the person is and Shift+Tab comes back to it.
+ * where the person is and Shift+Tab comes back to it. Unlike the chat strip, whose stop goes back
+ * to the selected tab as the keyboard leaves, it stays until another workspace comes to the front:
+ * the stop here is where the person was, not which workspace is in front (#5912).
  */
 export function PinnedStrip({
   name,

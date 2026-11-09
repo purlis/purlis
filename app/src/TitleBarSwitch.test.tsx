@@ -121,6 +121,17 @@ describe("the pinned strip's Tab stop (#5912)", () => {
     expect(stops()).toEqual([chip("gamma")]);
   });
 
+  it("follows a press too: the chip pressed is the stop, and the arrows move it on from there", async () => {
+    const user = userEvent.setup();
+    render(<Bar />);
+    await user.click(chip("alpha"));
+    await waitFor(() => expect(chip("alpha")).toHaveAttribute("aria-current", "true"));
+    expect(stops()).toEqual([chip("alpha")]);
+    await user.keyboard("{ArrowRight}");
+    await waitFor(() => expect(chip("beta")).toHaveFocus());
+    expect(stops()).toEqual([chip("beta")]);
+  });
+
   it("rests on the ⌄ when the arrows reach it, and Shift+Tab comes back to it", async () => {
     const user = userEvent.setup();
     render(<Bar />);

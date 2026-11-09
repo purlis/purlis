@@ -420,13 +420,9 @@ export function TitleBarSwitch({
         ? { chip: item.dataset.chipOf }
         : item.hasAttribute("data-titlebar-all")
           ? ALL
-          : // A dot stands in its chip's slot.
-            (() => {
-              const of = item
-                .closest('[data-part="slot"]')
-                ?.querySelector<HTMLElement>("[data-chip-of]")?.dataset.chipOf;
-              return of === undefined ? undefined : { dot: of };
-            })();
+          : item.dataset.dotOf !== undefined
+            ? { dot: item.dataset.dotOf }
+            : undefined;
     if (to !== undefined) setRoved({ to, plane: inFront, focused });
   };
   /** A chip in its slot, with the dot of its notices while their card is not up (#3648). A
