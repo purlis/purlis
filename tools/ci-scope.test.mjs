@@ -955,6 +955,10 @@ test("a job that only asks whether it is needed is not started on a pull request
   yes("crates/studio-probe/src/lib.rs", "confinement");
   yes("crates/purlis-core/src/secrets/brokered/tests.rs", "confinement");
   yes("crates/purlis-core/src/secrets/keyhold.rs", "confinement");
+  // A chat's ssh route, run from inside Seatbelt (#5897).
+  yes("crates/purlis-core/src/sandbox/tunnel.rs", "confinement");
+  yes("crates/purlis-core/src/sandbox/sshproxy.rs", "confinement");
+  yes("crates/purlis-cli/tests/it/a_chats_ssh_route_carries_from_inside_its_sandbox.rs", "confinement");
   yes("crates/host/src/lib.rs", "parity");
   yes("crates/session-protocol/src/lib.rs", "bench");
   yes("Cargo.lock", "bench");
