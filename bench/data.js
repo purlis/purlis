@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794198584266,
+  "lastUpdate": 1794201690248,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -44268,6 +44268,48 @@ window.BENCHMARK_DATA = {
             "value": 101.4562135,
             "unit": "ms",
             "extra": "median of 5 runs: 101.224, 101.434, 101.456, 102.059, 102.118 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "b127002ce0aa1c57e8c5a5d4e0a92a16d7c63afd",
+          "message": "Fill and login notices judge their link first (#5831); link read judge follow-ups (#5857) (#5899)\n\n* Fill and login notices: their link is judged before they are raised (#5831)\n\nRed first: a fill's judge and a login's judge, raised and pressed, refuse a key that is a link\ninto a vault the persona may not use, before any notice.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YSVKEDRV7XB12NDZAEC3W9\nPurlis-Persona: steward\n\n* Link read judge follow-ups: narrow grants parse, pooltools wiring test, fragment wording (#5857)\n\nRed first: the judge of a link reads only this machine's vault grants, and the judges a runner\nchat's gate is wired with refuse a key out of reach before anything is asked. The fragment says a\nlink into another vault is what an unreadable grants file stops.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YSVKEDRV7XB12NDZAEC3W9\nPurlis-Persona: steward\n\n* fixup! Fill and login notices: their link is judged before they are raised (#5831)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YSVKEDRV7XB12NDZAEC3W9\nPurlis-Persona: steward\n\n* fixup! Link read judge follow-ups: narrow grants parse, pooltools wiring test, fragment wording (#5857)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YSVKEDRV7XB12NDZAEC3W9\nPurlis-Persona: steward\n\n* fixup! Fill and login notices: their link is judged before they are raised (#5831)\n\nThe login tests' vault holds no value under the key it links; the login judge is held back for\none run so they are seen red for the right reason.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YSVKEDRV7XB12NDZAEC3W9\nPurlis-Persona: steward\n\n* fixup! Fill and login notices: their link is judged before they are raised (#5831)\n\nThe login judge back, after its tests were seen red.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YSVKEDRV7XB12NDZAEC3W9\nPurlis-Persona: steward\n\n* fixup! Fill and login notices: their link is judged before they are raised (#5831)\n\nReview round 1, tests first: a fill's press and a login's press are judged as the persona the chat\nwas started as, end the notice and tell the chat; held back for one run to be seen red.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YSVKEDRV7XB12NDZAEC3W9\nPurlis-Persona: steward\n\n* fixup! Link read judge follow-ups: narrow grants parse, pooltools wiring test, fragment wording (#5857)\n\nReview round 1, tests first: the gate holds a Vaults the project's Ctx implements, and the vaults\nauthorise allows are read as narrowly as the judge reads them; held back for one run to be seen red.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YSVKEDRV7XB12NDZAEC3W9\nPurlis-Persona: steward\n\n* fixup! Fill and login notices: their link is judged before they are raised (#5831)\n\nReview round 1: the presses' judge back, after its tests were seen red.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YSVKEDRV7XB12NDZAEC3W9\nPurlis-Persona: steward\n\n* fixup! Link read judge follow-ups: narrow grants parse, pooltools wiring test, fragment wording (#5857)\n\nReview round 1: the narrow grants read and the Ctx's judge back, after their tests were seen red.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YSVKEDRV7XB12NDZAEC3W9\nPurlis-Persona: steward\n\n* fixup! Fill and login notices: their link is judged before they are raised (#5831)\n\nReview round 2, tests first: a refused press is the press's error in the person's words, a typed\nsite is not followed for a refused login, and a runner chat is told the refusal; the presses' judge\nheld back, without a warning, for one run to be seen red.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YSVKEDRV7XB12NDZAEC3W9\nPurlis-Persona: steward\n\n* fixup! Link read judge follow-ups: narrow grants parse, pooltools wiring test, fragment wording (#5857)\n\nHeld back without a warning for one run to be seen red.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YSVKEDRV7XB12NDZAEC3W9\nPurlis-Persona: steward\n\n* fixup! Fill and login notices: their link is judged before they are raised (#5831)\n\nThe presses' judge back, after its tests were seen red.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YSVKEDRV7XB12NDZAEC3W9\nPurlis-Persona: steward\n\n* fixup! Link read judge follow-ups: narrow grants parse, pooltools wiring test, fragment wording (#5857)\n\nThe narrow grants read and the Ctx's judge back, after their tests were seen red.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YSVKEDRV7XB12NDZAEC3W9\nPurlis-Persona: steward\n\n* fixup! Fill and login notices: their link is judged before they are raised (#5831)\n\nReview round 3, tests first: a refused press leaves its notice up, as every press refused does, so\nthe person reads why on it; no new chat outcome. A narrowed chat's press is judged as the persona it\nwas started as; held back to the grants persona for one run to be seen red.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YSVKEDRV7XB12NDZAEC3W9\nPurlis-Persona: steward\n\n* fixup! Fill and login notices: their link is judged before they are raised (#5831)\n\nA press judged as the persona the chat was started as, back after its tests were seen red.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YSVKEDRV7XB12NDZAEC3W9\nPurlis-Persona: steward\n\n* fixup! Fill and login notices: their link is judged before they are raised (#5831)\n\nReview round 4, test first: a typed site is not followed for a login refused at the press, held\nback for one run to be seen red; finish says a late link's refusal in its reader's words; the\namendment records what a chat learns before the person is asked.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YSVKEDRV7XB12NDZAEC3W9\nPurlis-Persona: steward\n\n* fixup! Fill and login notices: their link is judged before they are raised (#5831)\n\nThe typed site's judge back, after its test was seen red.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YSVKEDRV7XB12NDZAEC3W9\nPurlis-Persona: steward\n\n* fixup! Fill and login notices: their link is judged before they are raised (#5831)\n\nReview round 5: the chat's words at raise come from a named function the window's copy check\nreads; two test docs say what the tests check.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YSVKEDRV7XB12NDZAEC3W9\nPurlis-Persona: steward\n\n* fixup! Fill and login notices: their link is judged before they are raised (#5831)\n\nReview round 6: the login judge that draws a notice is named offered_on_the_notice, so the window's\ncopy check, which follows a passed sentence to every caller by name, no longer takes another\nmodule's finish for it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YSVKEDRV7XB12NDZAEC3W9\nPurlis-Persona: steward\n\n* fixup! Fill and login notices: their link is judged before they are raised (#5831)\n\nReview round 7 (approved): comments wrapped to the file's width, and the amendment names every\nD-line it records.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YSVKEDRV7XB12NDZAEC3W9\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-09T04:04:54Z",
+          "tree_id": "99e13c389e36ff39f5b8d7998f693086e00694ba",
+          "url": "https://github.com/purlis/purlis/commit/b127002ce0aa1c57e8c5a5d4e0a92a16d7c63afd"
+        },
+        "date": 1794201684989,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6920385,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.658, 0.691, 0.692, 0.695, 0.702 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.658549,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.566, 16.618, 16.659, 16.748, 16.821 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.3272855,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.112, 102.381, 103.327, 103.431, 103.894 ms"
           }
         ]
       }
