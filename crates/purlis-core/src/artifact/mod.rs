@@ -18,6 +18,7 @@ pub mod check;
 pub mod data;
 pub mod discuss;
 pub mod fresh;
+pub mod history;
 pub mod kit;
 pub mod links;
 pub mod live;

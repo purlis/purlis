@@ -115,6 +115,29 @@ impl Snapshot {
         }
     }
 
+    /// **Files read from somewhere other than the folder** (#5966: its template at a commit, and
+    /// the data kept from a Regenerate), by their path inside it. Its page must be among them,
+    /// and together they are held to [`super::SIZE_CAP`] as a folder is.
+    pub fn of_files(files: BTreeMap<String, Vec<u8>>, folder_name: &str) -> Result<Self, String> {
+        let total = files.values().map(|bytes| bytes.len() as u64).sum::<u64>();
+        if total > super::SIZE_CAP {
+            return Err(format!(
+                "{}, so none of it is shown",
+                super::too_large(folder_name, total)
+            ));
+        }
+        if !files.contains_key(PAGE) {
+            return Err(format!("the artifact had no {PAGE}, the page it opens on"));
+        }
+        let fingerprint = fingerprint(&files);
+        let script = holds_script(&files);
+        Ok(Self {
+            files,
+            fingerprint,
+            script,
+        })
+    }
+
     /// The bytes read for `key`, a path inside the folder as [`key`] gives it.
     pub fn get(&self, key: &str) -> Option<&[u8]> {
         self.files.get(key).map(Vec::as_slice)

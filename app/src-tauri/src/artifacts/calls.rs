@@ -265,6 +265,7 @@ mod tests {
             folder: "board".to_owned(),
             pin,
             standing: approval::Standing::Approved,
+            then: None,
         };
         (root, of, snapshot)
     }
