@@ -26,9 +26,22 @@ describe("driving a browser from its view", () => {
     const box = { left: 10, top: 20, width: 640, height: 600 };
     const page = { width: 1280, height: 800 };
 
-    expect(pagePoint({ x: 10, y: 120 }, box, page)).toEqual({ x: 0, y: 0 });
-    expect(pagePoint({ x: 330, y: 320 }, box, page)).toEqual({ x: 640, y: 400 });
-    expect(pagePoint({ x: 330, y: 60 }, box, page)).toBeUndefined();
+    expect(pagePoint({ x: 10, y: 120 }, box, page, page)).toEqual({ x: 0, y: 0 });
+    expect(pagePoint({ x: 330, y: 320 }, box, page, page)).toEqual({ x: 640, y: 400 });
+    expect(pagePoint({ x: 330, y: 60 }, box, page, page)).toBeUndefined();
+  });
+
+  it("lands a point where the frame drawn shows it, whatever size the page was told", () => {
+    // Told 1280×800, a frame of 2560×1300 pixels drawn in a 640×600 box: a quarter size,
+    // 137.5 px of letterbox above and below, and a CSS pixel of the page per two of the frame.
+    const box = { left: 10, top: 20, width: 640, height: 600 };
+    const frame = { width: 2560, height: 1300 };
+    const told = { width: 1280, height: 800 };
+
+    expect(pagePoint({ x: 10, y: 157.5 }, box, frame, told)).toEqual({ x: 0, y: 0 });
+    expect(pagePoint({ x: 330, y: 157.5 + 150 }, box, frame, told)).toEqual({ x: 640, y: 300 });
+    expect(pagePoint({ x: 330, y: 157.5 + 330 }, box, frame, told)).toBeUndefined();
+    expect(pagePoint({ x: 330, y: 150 }, box, frame, told)).toBeUndefined();
   });
 
   it("names the keys held as the bits the session host reads", () => {
