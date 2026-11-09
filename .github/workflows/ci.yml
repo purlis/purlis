@@ -1513,7 +1513,7 @@ jobs:
       # close-on-exec after the receive, which takes no flag for it here.
       - name: A host hands on one connection, and nothing more, on macOS
         if: steps.scope.outputs.run == 'true'
-        run: tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- hookwire::serve::tests::
+        run: "tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- hookwire::serve::tests::"
       # The Keychain's own rule a held item rests on (V90a), in a keychain of the test's own:
       # read by the program that made it, and silently by no other.
       - name: A held keychain item is read silently by no other program
