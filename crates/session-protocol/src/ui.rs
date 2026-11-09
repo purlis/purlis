@@ -1162,6 +1162,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // only, and its window alone.
     "artifact_link_follow",
     "artifact_links_opened",
+    // Artifacts in the palette's search (#5968, ADR 0122): a row found opens the artifact's own
+    // tab, which only the window holds, so nothing a link serves could use one.
+    "artifact_search",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on
