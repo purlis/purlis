@@ -7,7 +7,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { useState } from "react";
 import { userEvent } from "@testing-library/user-event";
 import type { StartOptions, StartRunsOn } from "./bindings";
-import { StartChat, type RunsOnInPicker } from "./StartChat";
+import { StartChat, typedIn, type RunsOnInPicker } from "./StartChat";
 import { profileCommand, profilePage } from "./settings/profileAddress";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { ChatsHere, fixedChats } from "./chatState";
@@ -2687,8 +2687,13 @@ describe("the start's Secret ask, with what else the dialog offers (#5670 review
         options={options()}
         trouble="nothing was started"
         secretAsk={{
-          // A picked entry: the window reads no value from a box.
-          ...ask({ onAnswer: () => Promise.reject(new Error("the app went away")) }),
+          // Nothing typed is read: the box is empty, as after a picked entry (see `typedIn`).
+          ...ask({
+            onAnswer: (_option, given) => {
+              given();
+              return Promise.reject(new Error("the app went away"));
+            },
+          }),
           onSaid,
         }}
         onStart={vi.fn()}
@@ -2702,6 +2707,46 @@ describe("the start's Secret ask, with what else the dialog offers (#5670 review
       expect(onSaid).toHaveBeenCalledWith(
         "purlis could not send your answer: the app went away. Press Fill again.",
       ),
+    );
+  });
+
+  it("a send that fails while another profile is picked is said all the same", async () => {
+    let fail: (why: Error) => void = () => {};
+    function Window() {
+      const [said, setSaid] = useState<string>();
+      return (
+        <StartChat
+          options={options({
+            profiles: [ONE.profiles[0], { ...ONE.profiles[0], name: "other", is_default: false }],
+          })}
+          trouble="nothing was started"
+          secretAsk={{
+            ...ask({
+              onAnswer: (_option, given) => {
+                given();
+                return new Promise((_resolve, reject) => {
+                  fail = reject;
+                });
+              },
+            }),
+            said,
+            onSaid: setSaid,
+          }}
+          onStart={vi.fn()}
+          onApprove={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      );
+    }
+    render(<Window />);
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Value of anthropic"), "fr3sh");
+    await user.click(screen.getByRole("button", { name: "Fill" }));
+    await user.click(screen.getByRole("radio", { name: /^other/ }));
+    await act(async () => fail(new Error("the app went away")));
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent("purlis could not send your answer"),
     );
   });
 
@@ -2732,5 +2777,14 @@ describe("the start's Secret ask, with what else the dialog offers (#5670 review
     rerender(draw(false));
 
     await waitFor(() => expect(onStart).toHaveBeenCalledTimes(1));
+  });
+});
+
+describe("whether a send read a typed value (#5670 review)", () => {
+  it("is a value typed, never a picked entry, an empty box or a decline", () => {
+    expect(typedIn({ typed: "sk-1" })).toBe(true);
+    expect(typedIn({ picked: { vault: "providers", key: "anthropic" } })).toBe(false);
+    expect(typedIn({ typed: "" })).toBe(false);
+    expect(typedIn({})).toBe(false);
   });
 });

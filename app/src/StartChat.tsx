@@ -47,6 +47,12 @@ import type { Offered, Shown } from "./bindings";
 import { SecretAskNotice, type SecretAskGiven } from "./SecretAskNotice";
 import type { VaultEntries } from "./VaultEntryPicker";
 
+/** Whether a Secret ask's answer read a value typed in its box, which the box gives up as it is
+ *  read: a picked entry, an empty box or a decline read none (#5670 review). */
+export function typedIn(given: SecretAskGiven): boolean {
+  return given.typed !== undefined && given.typed !== "";
+}
+
 /** How the picker's Secret ask's answer ended (#5137). */
 export type SecretAskEnded = "filled" | "declined" | "refused";
 
@@ -558,7 +564,7 @@ export function StartChat({
     let typed = false;
     const read = () => {
       const got = given();
-      typed = got.typed !== undefined && got.typed !== "";
+      typed = typedIn(got);
       return got;
     };
     setFilled(undefined);
@@ -960,13 +966,13 @@ export function StartChat({
             {refusalSaid && (
               <p className="honest mid-turn" role="alert">
                 {refusalSaid}
-                {/* Said with it, so a screen reader hears what the ask's last press was told and
-                  whose ask it is, while the ask waits for its own profile (#5670 review). */}
+                {/* Said with it, so a screen reader hears whose ask it is and then what its
+                  last answer was told, in the order the person acts (#5670 review). */}
+                {askElsewhere !== undefined && ` ${askElsewhere}`}
                 {ask === undefined &&
                   saidOfAnswer &&
                   secretAsk?.said !== undefined &&
                   ` ${secretAsk.said}`}
-                {askElsewhere !== undefined && ` ${askElsewhere}`}
               </p>
             )}
             {/* The start's missing credential (#5137): the Secret ask's own body, whose Fill

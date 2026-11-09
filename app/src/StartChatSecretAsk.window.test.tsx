@@ -302,6 +302,28 @@ describe("a start missing its profile credential, in the Start dialog (#5137)", 
     expect(dialog.textContent).not.toContain("or untick Remember.");
   });
 
+  it("an answer refused with another profile picked since says first where to answer it again (#5670 review)", async () => {
+    const LOCKED = "the vault providers is locked: unlock it, then fill again";
+    const { of, release } = core({ hold: "answer", refuse: LOCKED });
+    render(<App />);
+
+    const { user, dialog, body } = await startRefused();
+    await user.type(within(body).getByLabelText("Value of anthropic"), "fr3sh-anthropic");
+    await user.click(within(body).getByRole("button", { name: "Fill" }));
+    await waitFor(() => expect(of("answer_secret_ask")).toHaveLength(1));
+    await user.click(within(dialog).getByRole("radio", { name: /codex/ }));
+    release();
+
+    await waitFor(() => {
+      const said =
+        within(dialog)
+          .getAllByRole("alert")
+          .find((one) => one.textContent?.includes(LOCKED))?.textContent ?? "";
+      expect(said).toContain("Pick work-key again to fill anthropic here.");
+      expect(said.indexOf("Pick work-key again")).toBeLessThan(said.indexOf(LOCKED));
+    });
+  });
+
   it("a pick of another profile drops the refused profile's ask, and picking it back draws it again (#5670)", async () => {
     core();
     render(<App />);
