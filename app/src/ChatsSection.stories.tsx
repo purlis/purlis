@@ -156,7 +156,7 @@ function HandInItsPanel() {
  * person, the button family's quiet icon button, its hand in the needs-you colour, named by where
  * it goes, as its tooltip says. A control of the row (#3198): out of the Tab order, reached by →
  * from the row, as the tree family's grid reaches a row's controls. The picture is the two rows
- * with the keyboard back on the first, where its play leaves it.
+ * at rest.
  */
 export const RolledUpHand: Story = {
   render: () => <HandInItsPanel />,
@@ -184,6 +184,8 @@ export const RolledUpHand: Story = {
     await userEvent.keyboard("{ArrowLeft}");
     await untilFocused(() => row, "the row again");
     expectFocusInSight();
+    // At rest for the picture: the keyboard off the rows, so no ring is mid-draw.
+    (document.activeElement as HTMLElement | null)?.blur();
   },
 };
 
