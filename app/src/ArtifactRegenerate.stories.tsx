@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **Regenerate in a pinned artifact's bar** (#5962, ADR 0120 §6): ready with the date its data
- * was last good, asking first with the code it approves named, failed with the run's output, and
- * off where its command cannot run. The core is faked at its command boundary.
+ * **Regenerate in a pinned artifact's bar** (#5962, ADR 0120 §6): ready, asking first with the
+ * code it approves named, failed with the run's output, and off where its command cannot run.
+ * The core is faked at its command boundary.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, within } from "storybook/test";
@@ -52,13 +52,12 @@ const meta: Meta<typeof ArtifactRegenerate> = {
 export default meta;
 type Story = StoryObj<typeof ArtifactRegenerate>;
 
-/** Approved here: the button and when the data shown was last good. */
+/** Approved here: a press runs it without asking. */
 export const Ready: Story = {
   beforeEach: () => answers(READY),
   play: async ({ canvasElement }) => {
     const bar = within(canvasElement);
     const button = await bar.findByRole("button", { name: "Regenerate" });
-    await expect(bar.getByRole("status")).toHaveTextContent("Data from 2026-11-08 09:00 UTC");
     await userEvent.tab();
     await expect(button).toHaveFocus();
     expectFocusInSight();

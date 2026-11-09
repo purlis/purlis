@@ -63,9 +63,6 @@ describe("Regenerate in an artifact's bar", () => {
     const calls = core(APPROVED);
     draw();
     const button = await screen.findByRole("button", { name: "Regenerate" });
-    expect(screen.getByTestId("artifact-regenerate")).toHaveTextContent(
-      "Data from 2026-11-08 09:00 UTC",
-    );
     await userEvent.click(button);
     await waitFor(() =>
       expect(screen.getByTestId("artifact-regenerate")).toHaveTextContent("Regenerated data.json"),

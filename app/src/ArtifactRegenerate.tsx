@@ -157,10 +157,10 @@ function asksBecause(standing: string | null): string {
   }
 }
 
-/** The bar's line for Regenerate: what the last run did, or when the data was last good. */
+/** The bar's line for Regenerate: what the last run did, or why it cannot run. The data's own
+ *  date is the bar's freshness line (#5955). */
 function said(about: About, ran: ArtifactRegenerated | null): string {
   if (ran !== null && ran.failed === null) return `Regenerated ${ran.written.join(", ")}`;
   if (about.refused !== null) return `Cannot regenerate: ${about.refused}`;
-  if (about.last_good !== null) return `Data from ${about.last_good}`;
   return "";
 }
