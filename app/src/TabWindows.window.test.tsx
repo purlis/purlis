@@ -302,7 +302,7 @@ describe("a tab window (#4768)", () => {
 
     await screen.findByText("session 2");
     expect(screen.queryByText("session 1")).toBeNull();
-    expect(document.querySelector("main.window")?.getAttribute(TAB_WINDOW)).toBe("1");
+    expect(document.querySelector(".window")?.getAttribute(TAB_WINDOW)).toBe("1");
     expect(screen.queryByRole("tablist", { name: "Projects" })).toBeNull();
     await waitFor(() => expect(shape(said().at(-1))).toEqual([[1, [2]]]));
     // It holds no project of its own, and remakes no window.
