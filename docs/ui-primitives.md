@@ -1239,7 +1239,8 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
   control is in another row; when it is in the row the list keeps (that row's controls are the
   list's last), the family gives the keyboard to the row itself (`backToTheRow` in `List.tsx`). A
   list the keyboard has not been in lands on its last row, as React Aria chooses. Only a Tab does
-  this: a control the pointer presses or a script focuses keeps the keyboard. Seen in
+  this (a Tab another component handles itself, a dialog's focus wrap, counts as one): a control
+  the pointer presses or a script focuses keeps the keyboard. Seen in
   `List › Shift Tab Back To A Row With Controls`.
 - **A text box in a row keeps its own keys** (`rowKeys.ts`, #3123): → reaches it from its row as
   it reaches a button; in it ← and →, Home and End, PageUp and PageDown move its caret, a letter,

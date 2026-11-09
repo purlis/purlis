@@ -604,7 +604,8 @@ export function ListRowDrawn<T extends object>({
  * control in it by the pointer; focused any other way (a script moving the keyboard into a form
  * just opened, a screen reader's cursor) a control in a row the list had not reached left the
  * list on its first row, which then took the keyboard back a frame later. So the row a control is
- * focused in is told to the list first, before React Aria hears the focus.
+ * focused in is told to the list first, before React Aria hears the focus. And **a Tab into the
+ * list lands on a row, never on a control in it** (#6033, `backToTheRow`).
  */
 function rowElement(labelledBy?: string, describedBy?: string) {
   return (element: JSX.IntrinsicElements["div"], { id, state }: GridListItemRenderProps) => (
@@ -614,16 +615,16 @@ function rowElement(labelledBy?: string, describedBy?: string) {
       aria-describedby={describedBy ?? element["aria-describedby"]}
       onFocus={(event) => {
         const manager = state.selectionManager;
-        // A move a key makes is React Aria's own, already placed: its arrows, its Tab out of the
-        // list (which passes the keyboard through the list's last control) and a Tab into it
-        // (which lands on its one Tab stop). And coming in from outside it is React Aria's too.
+        // A move a key makes is React Aria's own, already placed: its arrows and its Tab out of
+        // the list (which passes the keyboard through the list's last control). Coming in from
+        // outside is React Aria's too, but for a Tab whose control is in its own row (#6033).
         const from = event.relatedTarget;
         const list = event.currentTarget.closest('[role="grid"]');
         const fromWithin = from === null || (from instanceof Node && list?.contains(from) === true);
         if (!keyHeardNow && fromWithin && event.target !== event.currentTarget)
           if (id !== undefined && manager.focusedKey !== id) manager.setFocusedKey(id);
         if (tabHeardNow && !fromWithin && event.target !== event.currentTarget)
-          backToTheRow(event.target, list, manager);
+          backToTheRow(event.target, event.currentTarget, id, manager);
         element.onFocus?.(event);
       }}
       // A select or a combobox in it hears its own ↑ and ↓, and opens (#5993, `rowKeys.ts`).
@@ -662,22 +663,20 @@ if (typeof window !== "undefined")
  * **Tab into a list lands on a row, never on a control in it** (#6033, the WAI-ARIA grid's one
  * Tab stop): Shift+Tab from below lands, the browser's way, on the list's last control, and
  * React Aria moves the keyboard to the row it keeps (the one the keyboard left, or the last) only
- * when that control is in another row. So once React Aria has heard the focus, and chosen its row,
- * a `control` that still has the keyboard gives it to that row; → reaches the row's controls
- * again from there.
+ * when that control is in another row. So once React Aria has heard the focus and chosen its row,
+ * a `control` that still has the keyboard is in that row, `row`, and gives the keyboard to it;
+ * → reaches the row's controls again from there.
  */
 function backToTheRow(
   control: Element,
-  list: Element | null,
+  row: HTMLElement,
+  key: Key | undefined,
   manager: GridListItemRenderProps["state"]["selectionManager"],
 ) {
   queueMicrotask(() => {
-    const key = manager.focusedKey;
-    if (list === null || key === null || control.ownerDocument.activeElement !== control) return;
-    const row = [...list.querySelectorAll<HTMLElement>('[role="row"]')].find(
-      (one) => one.dataset.key === String(key),
-    );
-    row?.focus();
+    if (key === undefined || manager.focusedKey !== key) return;
+    // React Aria has scrolled the row into view already, as it does on a Tab into its list.
+    if (control.ownerDocument.activeElement === control) row.focus({ preventScroll: true });
   });
 }
 
