@@ -397,12 +397,12 @@ export const Working: Story = {
     await userEvent.click(toggle);
     await waitFor(() => expect(markOf(charter)).not.toBeNull());
     await expect(boxes()).toEqual(before);
-    // The keyboard walks the chips as ever: the mark is no stop.
-    smartIde?.focus();
-    await userEvent.keyboard("{ArrowRight}");
-    await expect(charter).toHaveFocus();
-    expectFocusInSight();
-    charter?.blur();
+    // The keyboard walks the chips as ever: Tab past the house to the strip's one stop, the
+    // arrows along it, and the mark is no stop of its own.
+    await walkTheStrip(userEvent, bar, "Working");
+    // Tab leaves the strip for what follows it.
+    await userEvent.tab();
+    await untilFocused(() => toggle, "Working: Tab leaves the strip");
   },
 };
 
@@ -462,8 +462,38 @@ export const Reorder: Story = {
     await waitFor(() =>
       expect(document.querySelector('[role="tooltip"][data-scope="tooltip"]')).toBeNull(),
     );
+    // The keyboard walks the new order: the stop is still the current chip, now second.
+    await walkTheStrip(userEvent, bar, "Reorder", -1);
+    await userEvent.tab();
+    await waitFor(() => expect(bar.contains(document.activeElement)).toBe(false));
   },
 };
+
+/**
+ * **The keyboard into the strip and one step along it**: from nothing focused, Tab to the house
+ * and Tab again to the strip's one stop (the current chip), then one arrow `towards` its
+ * neighbour, each held in sight.
+ */
+async function walkTheStrip(
+  userEvent: { tab: () => Promise<void>; keyboard: (keys: string) => Promise<void> },
+  bar: HTMLElement,
+  story: string,
+  towards: 1 | -1 = 1,
+) {
+  (document.activeElement as HTMLElement | null)?.blur();
+  const house = () => bar.querySelector('[data-part="workspace"][data-variant="root"]');
+  const current = () => chipsOf(bar).find((one) => one.hasAttribute("aria-current")) ?? null;
+  await userEvent.tab();
+  await untilFocused(house, `${story}: Tab reaches the house`);
+  await userEvent.tab();
+  await untilFocused(current, `${story}: Tab reaches the strip's stop, the current chip`);
+  expectFocusInSight();
+  const chips = chipsOf(bar);
+  const next = chips[chips.indexOf(current() as HTMLElement) + towards];
+  await userEvent.keyboard(towards > 0 ? "{ArrowRight}" : "{ArrowLeft}");
+  await untilFocused(() => next, `${story}: the arrow walks to the neighbour`);
+  expectFocusInSight();
+}
 
 /** **The dashed chip** (R105): the current workspace while it is not pinned, after the pins. */
 export const Unpinned: Story = {

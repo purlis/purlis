@@ -85,6 +85,7 @@ import {
   paneCloseOf,
   OUTSIDE,
   OUTSIDE_TITLE,
+  pinMoved,
   perform,
   showId,
   stoppedRows,
@@ -1674,8 +1675,9 @@ export const PlaneView = memo(function PlaneView({
    * is refused, or when the store answers with none of this window's writes still on the way.
    */
   const [arranged, setArranged] = useState<readonly string[]>();
-  /** How many of this window's arrangements are still being written (`arrangePins`). */
-  const arranging = useRef(0);
+  /** How many of this window's arrangements are still being written (`arrangePins`), and how
+   *  many have been: a read of the store asked before the last write landed is not its word. */
+  const arranging = useRef({ writing: 0, written: 0 });
   const pinnedWorkspaces = useMemo(() => {
     const held = [...storePins, ...madePins.filter((name) => !storePins.includes(name))];
     if (arranged === undefined) return held;
@@ -2477,6 +2479,9 @@ export const PlaneView = memo(function PlaneView({
    */
   useEffect(() => {
     let gone = false;
+    /** The arrangements written when this read was asked: an answer to an older one may hold an
+     *  order from before the last of them (#3128). */
+    const asked = arranging.current.written;
     void commands
       .planePins(plane)
       .then((answer) => {
@@ -2488,8 +2493,10 @@ export const PlaneView = memo(function PlaneView({
         const said = answer.data as Partial<typeof answer.data> | null | undefined;
         const pins = Array.isArray(said?.workspaces) ? said.workspaces : [];
         setStorePins(pins);
-        // The store's word on the order, once nothing this window arranged is still on its way.
-        if (arranging.current === 0) setArranged(undefined);
+        // The store's word on the order, once it was asked after this window's last arrangement
+        // landed and nothing else is on its way.
+        if (arranging.current.writing === 0 && asked === arranging.current.written)
+          setArranged(undefined);
         setMadePins((was) => {
           const still = was.filter((name) => !pins.includes(name));
           return still.length === was.length ? was : still;
@@ -6347,13 +6354,14 @@ export const PlaneView = memo(function PlaneView({
   const arrangePins = useCallback(
     async (order: readonly string[]): Promise<Ran> => {
       setArranged(order);
-      arranging.current += 1;
+      arranging.current.writing += 1;
       const said = await commands
         .arrangeWorkspacePins(plane, [...order])
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
-      arranging.current -= 1;
+      arranging.current.writing -= 1;
+      arranging.current.written += 1;
       if (said.status === "error") {
-        if (arranging.current === 0) setArranged(undefined);
+        if (arranging.current.writing === 0) setArranged(undefined);
         setReport({ from: "workspace.pin", refused: true, words: said.error });
         return { ok: false, refused: said.error };
       }
@@ -6369,13 +6377,12 @@ export const PlaneView = memo(function PlaneView({
    *  chips draw them: a chip's Move left and Move right (#3128). */
   const moveWorkspacePin = useCallback(
     (workspace: string, by: -1 | 1): Promise<Ran> => {
-      const live = strips.filter((name) => pinnedWorkspaces.includes(name));
-      const at = live.indexOf(workspace);
-      const to = at + by;
-      if (at < 0 || to < 0 || to >= live.length) return Promise.resolve({ ok: true });
-      const order = [...live];
-      [order[at], order[to]] = [order[to], order[at]];
-      return arrangePins(order);
+      const order = pinMoved(
+        strips.filter((name) => pinnedWorkspaces.includes(name)),
+        workspace,
+        by,
+      );
+      return order === undefined ? Promise.resolve({ ok: true }) : arrangePins(order);
     },
     [arrangePins, pinnedWorkspaces, strips],
   );
@@ -10935,7 +10942,6 @@ export const PlaneView = memo(function PlaneView({
         plane: PlaneId;
         mine: typeof mine;
         waitingIn: typeof waitingIn;
-        filedChats: typeof filedChats;
         quitting: Leaving[];
         doing: State[];
         working: Readonly<Record<string, number>>;
@@ -10967,7 +10973,6 @@ export const PlaneView = memo(function PlaneView({
         was.plane === plane &&
         was.mine === mine &&
         was.waitingIn === waitingIn &&
-        was.filedChats === filedChats &&
         was.quitting === quitting &&
         sameList(was.doing, doing) &&
         sameCounts(was.working, working) &&
@@ -10983,7 +10988,6 @@ export const PlaneView = memo(function PlaneView({
         plane,
         mine,
         waitingIn,
-        filedChats,
         quitting,
         doing,
         working,
@@ -13155,7 +13159,6 @@ function tabsSaid(panels: readonly PanelView[] | undefined): string {
   );
 }
 
-/** A chat a quit would end, before what it is doing is looked up (`PlaneReport.ending`). */
 /** Whether two counts by name say the same, so a report that changes neither is not sent. */
 function sameCounts(
   one: Readonly<Record<string, number>>,
@@ -13167,6 +13170,7 @@ function sameCounts(
   );
 }
 
+/** A chat a quit would end, before what it is doing is looked up (`PlaneReport.ending`). */
 type Leaving = { session: number; chat: Omit<Ending, "state"> };
 
 /** The size a session starts at. The pane it lands in tells it the real one at once. */

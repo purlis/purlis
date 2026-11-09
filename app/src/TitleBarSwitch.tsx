@@ -419,11 +419,11 @@ export function TitleBarSwitch({
   };
   const chip = (workspace: string, at: number) => (
     <SortableTab key={workspace} id={workspace}>
-      {(dragged) => pinned(workspace, at, dragged)}
+      {(dragged) => pinChip(workspace, at, dragged)}
     </SortableTab>
   );
   /** A pin's chip in its slot, which a drag carries (#3128). */
-  const pinned = (workspace: string, at: number, dragged: Sortable) => {
+  const pinChip = (workspace: string, at: number, dragged: Sortable) => {
     const drawn = (
       <WorkspaceChip
         {...dragged.sortable.listeners}

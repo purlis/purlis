@@ -332,7 +332,7 @@ describe("its stylesheet (R101, R103, R153, R167)", () => {
     const slot = rule('[data-part="slot"][data-scope="titlebar"]');
     expect(slot).toContain("position: relative");
     expect(slot).toContain("--chat-mark-ground: var(--surface-deep)");
-    const mark = rule(".titlebar-working");
+    const mark = rule('[data-part="slot"][data-scope="titlebar"] > .titlebar-working');
     expect(mark).toContain("position: absolute");
     expect(mark).toContain("inset-block-end:");
     expect(mark).toContain("inset-inline-end:");

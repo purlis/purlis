@@ -1600,13 +1600,31 @@ export const DELETES_A_WORKSPACE =
  * that is not; and **who** it is for, because an operator who thinks a pin travels with the
  * clone will arrange a plane for a team that never sees it.
  */
+export const PIN_NOTE = "Draws it first on its strip. Yours, on this machine only.";
+
+/** And the same said the other way, so unpinning is not a row with no consequence on it. */
 /** The ids of a pin's Move left and Move right, before the workspace's name (#3128). */
 export const PIN_LEFT = "workspace.pin-left:";
 export const PIN_RIGHT = "workspace.pin-right:";
 
-export const PIN_NOTE = "Draws it first on its strip. Yours, on this machine only.";
+/**
+ * **The pins in their order after `workspace` moves `by` one place** (#3128), among `pins`, the
+ * ones the plane still has as the chips draw them; or nothing where it cannot go that way (an
+ * end, or not a pin). One answer for the menu row's being off and for what its press writes.
+ */
+export function pinMoved(
+  pins: readonly string[],
+  workspace: string,
+  by: -1 | 1,
+): string[] | undefined {
+  const at = pins.indexOf(workspace);
+  const to = at + by;
+  if (at < 0 || to < 0 || to >= pins.length) return undefined;
+  const order = [...pins];
+  [order[at], order[to]] = [order[to], order[at]];
+  return order;
+}
 
-/** And the same said the other way, so unpinning is not a row with no consequence on it. */
 export const UNPIN_NOTE = "Puts it back in the plane's own order.";
 
 /**
@@ -2510,26 +2528,23 @@ export function catalogue(now: Now): Offer[] {
     });
     // **Move left, Move right** (#3128): the keyboard's way to reorder the title bar's chips,
     // on a pin's menu only, while there are two pins or more to order. Places are counted among
-    // the pins the plane still has, as the chips are drawn; at an end the row says why, so the
-    // menu's rows never move under the person.
+    // the pins the plane still has, as the chips are drawn ({@link pinMoved}); at an end the row
+    // says why, so the menu's rows never move under the person.
     const livePins = held ? pinned.workspaces.filter((name) => now.workspaces.includes(name)) : [];
-    if (livePins.length > 1) {
-      const at = livePins.indexOf(workspace);
+    if (livePins.length > 1)
       for (const [by, prefix, title, end] of [
         [-1, PIN_LEFT, "Move left", "It is the first pin."],
         [1, PIN_RIGHT, "Move right", "It is the last pin."],
       ] as const) {
         const id = `${prefix}${workspace}`;
-        const to = at + by;
         offers.push({
-          ...(at < 0 || to < 0 || to >= livePins.length
+          ...(pinMoved(livePins, workspace, by) === undefined
             ? cannot(id, title, end, workspace)
             : can(id, title, { verb: "moveWorkspacePin", workspace, by }, workspace)),
-          note: `${workspace}: one place ${by < 0 ? "earlier" : "later"} among the pins, and its ⌘ number with it.`,
+          note: `${workspace}: one place ${by < 0 ? "earlier" : "later"} among the pins, which moves the key that goes to it too.`,
           menuOnly: true,
         });
       }
-    }
     // Its settings (charter-app#280): the Settings tab at this workspace's level (SE-20), told
     // apart by the name in the note, as `project.settings` rows are.
     offers.push({

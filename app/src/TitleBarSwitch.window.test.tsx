@@ -120,7 +120,6 @@ function core({ working = [] as number[] } = {}) {
       pinned.set(plane, given.pinned ? [...was, name] : was.filter((one) => one !== name));
       return null;
     }
-    // The chats in their turn, as their hooks last said (ADR 0076): project one's only.
     // The machine store's arrangement: only the pins it names move, as the core's does.
     if (cmd === "arrange_workspace_pins") {
       const was = pinned.get(plane) ?? [];
@@ -132,6 +131,7 @@ function core({ working = [] as number[] } = {}) {
       );
       return null;
     }
+    // The chats in their turn, as their hooks last said (ADR 0076): project one's only.
     if (cmd === "chat_states")
       return plane === ONE
         ? working.map((session) => ({ session, state: "running", queue: [], sequence: 1 }))
