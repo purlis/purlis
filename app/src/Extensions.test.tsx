@@ -1085,7 +1085,7 @@ describe("the theme in force, as the core's theme engine resolves it (spec #2313
       answerTheLaunch(KEEPS);
       await launch;
 
-      await vi.waitFor(() => expect(inForce().parts).toBe(STAND_IN_PARTS), { timeout: 1000 });
+      await vi.waitFor(() => expect(inForce().parts).toBe(STAND_IN_PARTS));
     });
   });
 
