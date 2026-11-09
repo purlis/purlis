@@ -3808,6 +3808,62 @@ fn a_push_mode_replay_keeps_a_removed_memory_store_removed() {
     assert!(!tree.contains("personas/devops"), "{tree}");
 }
 
+/// **Both sides' extra rules survive a replay** (#5864 review): where the remote and this
+/// machine each added a rule this build does not write to the `.gitattributes` block, a
+/// push-mode replay keeps both, not only the local pick's.
+#[test]
+fn a_rule_only_the_remote_holds_survives_a_replay_where_both_sides_changed_the_block() {
+    let fixture = Fixture::plane();
+    let rules = fixture.root.join(".gitattributes");
+    crate::scaffold::ensure_gitattributes(&rules).unwrap();
+    run(&fixture.root, &["add", "-A"]);
+    run(&fixture.root, &["commit", "-q", "-m", "the rules"]);
+    let bare = fixture.with_a_remote();
+    run(
+        &fixture.root,
+        &[
+            "push",
+            "-q",
+            &bare.display().to_string(),
+            "HEAD:refs/heads/main",
+        ],
+    );
+    // A rule added on the block's last rule line, as a newer build would.
+    let with_rule = |path: &Path, rule: &str| {
+        let text = std::fs::read_to_string(path).unwrap();
+        let last = "sessions/index.md merge=union\n";
+        let at = text.rfind(last).unwrap() + last.len();
+        std::fs::write(path, format!("{}{rule}\n{}", &text[..at], &text[at..])).unwrap();
+    };
+
+    let theirs = fixture.root.parent().unwrap().join("theirs");
+    run(
+        fixture.root.parent().unwrap(),
+        &[
+            "clone",
+            "-q",
+            &bare.display().to_string(),
+            &theirs.display().to_string(),
+        ],
+    );
+    run(&theirs, &["config", "user.name", "Other"]);
+    run(&theirs, &["config", "user.email", "other@example.invalid"]);
+    with_rule(&theirs.join(".gitattributes"), "theirs/*.jsonl merge=union");
+    run(&theirs, &["commit", "-q", "-am", "theirs"]);
+    run(&theirs, &["push", "-q", "origin", "main"]);
+
+    with_rule(&rules, "mine/*.jsonl merge=union");
+    let (code, said) = fixture.just_save();
+
+    assert_eq!(code, 0, "{said}");
+    assert!(said.contains("Pushed main"), "{said}");
+    let text = std::fs::read_to_string(&rules).unwrap();
+    assert!(!text.contains("<<<<<<<"), "{text}");
+    for rule in ["theirs/*.jsonl merge=union", "mine/*.jsonl merge=union"] {
+        assert_eq!(text.matches(rule).count(), 1, "{rule} in {text}");
+    }
+}
+
 fn append(path: &Path, text: &str) {
     use std::io::Write;
     std::fs::OpenOptions::new()

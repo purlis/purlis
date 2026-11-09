@@ -257,9 +257,11 @@ fn managed_merge_rules_that_differ_settle_as_this_builds_and_keep_a_persons_line
         text.contains("workspaces/*/todos/MEMORY.md merge=union"),
         "{text}"
     );
-    // The remote's rule this build does not write stays, as a newer build's would; this
-    // machine's own stale one goes. The block keeps its place, under the person's first lines.
-    assert!(!text.contains("older merge"), "{text}");
+    // A rule this build does not write stays from either side, as a newer build's would, and
+    // one both sides took out of the base goes (#5864 review: both sides' rules, merged as a
+    // set). The block keeps its place, under the person's first lines.
+    assert!(!text.contains("old merge=union\n# <<<"), "{text}");
+    assert!(text.contains("older merge=union"), "{text}");
     assert!(text.contains("newer merge=union"), "{text}");
     let at = |line: &str| text.find(line).unwrap_or_else(|| panic!("{line}: {text}"));
     assert!(

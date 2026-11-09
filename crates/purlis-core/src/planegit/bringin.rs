@@ -400,12 +400,12 @@ pub(super) fn plan_between(
                     crate::scaffold::rules_set_aside(text, RULES_SET_ASIDE)
                 })? {
                     Apart::Clean(text) => {
-                        // A rule the remote's block holds that this build does not write stays,
-                        // as a newer build's would: the remote's is the later word. The block
-                        // keeps the place it had.
-                        let kept = blob(root, theirs, path)
-                            .map(|text| crate::scaffold::rules_in(&text))
-                            .unwrap_or_default();
+                        // A rule either side's block holds that this build does not write stays,
+                        // as a newer build's would, merged as a set: both sides' rules, less one
+                        // a side took out since the base. In a replay `theirs` is the local pick
+                        // and `ours` the remote, so neither side's word is lost (#5864). The
+                        // block keeps the place it had.
+                        let kept = rules_kept(root, path, &base, ours, theirs);
                         let with =
                             crate::scaffold::rules_put_back(&text, RULES_SET_ASIDE, root, &kept);
                         plan.settled.insert(path.clone(), with);
@@ -424,6 +424,25 @@ pub(super) fn plan_between(
         rebuilt(root, &mut plan, &what, &base, theirs)?;
     }
     Ok(plan)
+}
+
+/// The rules of the `.gitattributes` blocks of `ours` and `theirs` at `path`, merged as a set
+/// from `base`: each side's in its order, less any rule the base held that a side took out.
+fn rules_kept(root: &Path, path: &str, base: &str, ours: &str, theirs: &str) -> Vec<String> {
+    let rules = |rev: &str| {
+        blob(root, rev, path)
+            .map(|text| crate::scaffold::rules_in(&text))
+            .unwrap_or_default()
+    };
+    let (base, ours, theirs) = (rules(base), rules(ours), rules(theirs));
+    let mut kept: Vec<String> = Vec::new();
+    for rule in ours.iter().chain(&theirs) {
+        let dropped = base.contains(rule) && !(ours.contains(rule) && theirs.contains(rule));
+        if !dropped && !kept.contains(rule) {
+            kept.push(rule.clone());
+        }
+    }
+    kept
 }
 
 /// Merge the settings file at `path` key by key into `plan` (#5824 F5, F6): settled where no
