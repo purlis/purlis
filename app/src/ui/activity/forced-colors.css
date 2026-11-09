@@ -27,4 +27,10 @@
     color: MarkText;
     background-color: Mark;
   }
+
+  /* Something New in its view (#6002): the pip in the system's highlight, apart from a count. */
+  [data-scope="activity"][data-part="pip"] {
+    forced-color-adjust: none;
+    background-color: Highlight;
+  }
 }

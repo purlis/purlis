@@ -6,7 +6,8 @@
  * variant A draws them, borderless rows in a 320 px side view on the side panel's own ground.
  * Each state's mark (waiting, done, failed, a report, plain), a read line, a row with its × over
  * its time, its links, a reply answered in the row behind its Answer link, closed and open
- * (#5651), a result read in place, and a consent's waiting edge. Walked by the
+ * (#5651), a result read in place, a consent's waiting edge, and a New row's accent bar (#6002).
+ * Walked by the
  * keyboard, held to axe and compared with its baseline in Chromium and WebKit
  * (`docs/component-stories.md`).
  */
@@ -62,6 +63,7 @@ function Row({
   formId,
   read,
   consent,
+  isNew,
   onDismiss,
 }: {
   tone: MessageTone;
@@ -76,6 +78,7 @@ function Row({
   formId?: string;
   read?: boolean;
   consent?: boolean;
+  isNew?: boolean;
   onDismiss?: () => void;
 }) {
   return (
@@ -84,6 +87,7 @@ function Row({
       icon={icon}
       read={read}
       consent={consent}
+      isNew={isNew}
       aria-label={title}
       dismiss={
         onDismiss === undefined ? undefined : (
@@ -273,6 +277,67 @@ export const ConsentInTheRow: Story = {
     await expectFocusInSight();
     await userEvent.tab();
     await expect(canvas.getByRole("button", { name: "Keep blocked" })).toHaveFocus();
+    await expectFocusInSight();
+  },
+};
+
+/** **New rows** (#6002, ADR 0121 decision 10): an ask and a consent not seen yet, each with the
+ *  accent bar at its start (the consent's beside its waiting edge), over a line already seen. */
+export const NewRows: Story = {
+  render: () => (
+    <View>
+      <Row
+        tone="waiting"
+        isNew
+        icon={<ShieldQuestion />}
+        title="auth-fix"
+        time="now"
+        meta="Asks your permission · web"
+        words="Run cargo test --workspace"
+        links={
+          <Button size="sm" variant="quiet-link" data-lead="">
+            Answer
+          </Button>
+        }
+      />
+      <Row
+        tone="waiting"
+        consent
+        isNew
+        icon={<ShieldQuestion />}
+        title="steward 4"
+        time="now"
+        meta="Waiting on you"
+        words="The sandbox blocked a host: api.example.com"
+        form={
+          <ButtonRow size="sm">
+            <Button variant="grants">Allow</Button>
+            <Button variant="secondary">Keep blocked</Button>
+          </ButtonRow>
+        }
+      />
+      <Row
+        tone="done"
+        icon={<CircleCheck />}
+        title="Release notes"
+        time="1h"
+        meta="Task finished · docs"
+        words="Wrote the notes for 0.9."
+      />
+    </View>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    // A New row says so to a reader first, and a row already seen does not.
+    await expect(canvas.getByRole("listitem", { name: "auth-fix" })).toHaveTextContent(/^New: /);
+    await expect(canvas.getByRole("listitem", { name: "Release notes" })).not.toHaveTextContent(
+      "New:",
+    );
+    await userEvent.tab();
+    await expect(canvas.getByRole("button", { name: "Answer" })).toHaveFocus();
+    await expectFocusInSight();
+    await userEvent.tab();
+    await expect(canvas.getByRole("button", { name: "Allow" })).toHaveFocus();
     await expectFocusInSight();
   },
 };

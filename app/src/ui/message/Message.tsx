@@ -23,6 +23,9 @@
  *   {@link MessageForm} (what it is answered with, in the row: a reply box, an ask's answers).
  * - **its ×** (`dismiss`), where it has one: at the top right, over its time, shown while the row
  *   is under the pointer or holds the keyboard, and the time hidden then (`data-dismiss`).
+ * - **its accent bar** while it is **New** (`isNew`, `data-new`; #6002, ADR 0121 decision 10):
+ *   not seen yet. A bar at its start in the accent colour, beside a consent's waiting edge where
+ *   it has one, and "New" said first to a reader, so it is told by more than a colour.
  *
  * A screen gives every word; the family gives the frame. No state changes a size (#2800): the
  * pointer and the keyboard change a fill and the time's visibility, never a line.
@@ -45,6 +48,9 @@ import { parted } from "../partClasses";
 /** The family's variants, in the order the manifest names them: a row's state. */
 export const MESSAGE_TONES = ["waiting", "done", "failed", "report", "plain"] as const;
 export type MessageTone = (typeof MESSAGE_TONES)[number];
+
+/** What a reader is told first of a New row (#6002): its accent bar, in words. */
+export const NEW_SAID = "New: ";
 
 /** The elements a row is drawn as: an item of a list, or a box a list moves itself; or `row`,
  *  a row of the list family's list of rows that act (`List`), which it is the look of (#3123). */
@@ -89,6 +95,7 @@ export function MessageRow({
   dismiss,
   read = false,
   consent = false,
+  isNew = false,
   children,
   textValue,
   onDrawn,
@@ -108,6 +115,8 @@ export function MessageRow({
   /** **It waits on the person's consent** (ADR 0097 §6, the ruling on #5222): among rows that do
    *  not, it keeps a waiting edge at its start, which no theme takes away. */
   consent?: boolean;
+  /** **It is New** (#6002, ADR 0121 decision 10): the person has not seen it yet. */
+  isNew?: boolean;
   children: ReactNode;
 }) {
   // Under the pointer and holding the keyboard, as React Aria marks them: what a theme's
@@ -133,12 +142,14 @@ export function MessageRow({
       "data-variant": tone,
       "data-read": read ? "" : undefined,
       "data-consent": consent ? "" : undefined,
+      "data-new": isNew ? "" : undefined,
       "data-dismiss": dismiss === undefined || dismiss === null ? undefined : "",
     }),
     <span data-scope="message" data-part="mark" aria-hidden="true">
       {icon}
     </span>,
     <div data-scope="message" data-part="main">
+      {isNew && <span className="sr-only">{NEW_SAID}</span>}
       {children}
     </div>,
     dismiss === undefined || dismiss === null ? null : (

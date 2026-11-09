@@ -1484,6 +1484,19 @@ export const commands = {
 	 */
 	setAsideInboxFindings: (plane: PlaneId, keys: string[]) => typedError<InboxUpdate_Serialize[], string>(__TAURI_INVOKE("set_aside_inbox_findings", { plane, keys })),
 	/**
+	 *  **What the person has seen** (#6002, ADR 0121 decisions 10 and 11): the keys of the
+	 *  project's asks, Notices and updates the window said were seen. One the window lists that is
+	 *  not here is **New**. None where this machine keeps no data home.
+	 */
+	inboxSeen: (plane: PlaneId) => typedError<string[], string>(__TAURI_INVOKE("inbox_seen", { plane })),
+	/**
+	 *  **Notes `keys` seen** (#6002): each row visible in an open view for about a second, or
+	 *  whose chat was on screen in a focused window. One seen before is left as it is. **And where
+	 *  `asks` is given**, the asks standing now by the same keys, every ask seen that is not among
+	 *  them is forgotten, so the same ask asked again is New. Answers what [`inbox_seen`] does.
+	 */
+	seeInbox: (plane: PlaneId, keys: string[], asks: string[] | null) => typedError<string[], string>(__TAURI_INVOKE("see_inbox", { plane, keys, asks })),
+	/**
 	 *  The window says whether it has `plane`'s Inbox open (#1694): while it is, and the window
 	 *  is focused with the project in front, no notification is sent about that project's asks.
 	 */

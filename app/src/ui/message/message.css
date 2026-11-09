@@ -48,6 +48,19 @@
   box-shadow: inset var(--space-1) 0 0 var(--state-waiting);
 }
 
+/* **A New row's accent bar** (#6002, ADR 0121 decision 10): not seen yet, a bar at its start in
+   the accent colour. Beside a consent's waiting edge, which stays first and whole: the bar stands
+   just inside it. A shadow, so nothing moves when it goes. */
+[data-scope="message"][data-part="root"][data-new] {
+  box-shadow: inset var(--space-1) 0 0 var(--accent-base);
+}
+
+[data-scope="message"][data-part="root"][data-new][data-consent] {
+  box-shadow:
+    inset var(--space-1) 0 0 var(--state-waiting),
+    inset calc(var(--space-1) * 2) 0 0 var(--accent-base);
+}
+
 /* The hairline between two rows, from past the mark, as long as the words. */
 [data-scope="message"][data-part="root"] + [data-scope="message"][data-part="root"]::before {
   content: "";

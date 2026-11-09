@@ -982,6 +982,11 @@ screen writes `data-scope="message"`: `purlis/message-family` is an error.
 - **A consent keeps a waiting edge** (`consent`, ADR 0097 §6, the ruling on #5222): a bar in the
   waiting colour at the row's start, which no theme property reaches. Its answers stay buttons in
   `MessageForm`, Allow in the `grants` look.
+- **A New row has an accent bar** (`isNew`, `data-new`; #6002, ADR 0121 decision 10): a bar in
+  the accent colour at its start, just inside a consent's waiting edge where it has one, and
+  "New:" said first to a reader. A shadow, so nothing moves as it goes. What is New is
+  `seen.ts`'s: a row is seen once in sight for about a second (`useSeenRow`), or once its chat is
+  on screen in a focused window.
 - **One link leads** (`data-lead` on it): an ask's Answer, a Notice's one answer, in the accent's
   words. Every other way is a `quiet-link`.
 - **A long ask shows three lines** and "Show all · N lines" (`ChatText`'s `foldAt`, `ASK_FOLD_LINES`).
@@ -1574,6 +1579,11 @@ are `item` (the root), `icon`, `count` and `indicator`; both corners draw the `b
 - **A count** (`ActivityCount`, R119) sits at the item's top right, ringed in its bar's ground;
   what waits on the person is drawn hot, in the hot-count role `needs-you.count` and
   `needs-you.count-text` (R120, #3098), which a theme's count colours never reach.
+- **A "new" pip** (`ActivityNew`, #6002, ADR 0121 decision 10) sits at the item's bottom right
+  in the accent colour, ringed as a count is, while its view lists something the person has not
+  seen; a count or a dot keeps its place above it. Its sentence ("2 new") is read after the
+  count's, as the item's description. The window hands each view's number of New rows to
+  `RegionFrame`'s `fresh` (`withNew`).
 - **Only the part that appears moves** (R122, R124, R127, R128): the right panel comes 24px in
   over `duration.open`, a bottom half 16px up over `duration.reveal`, a side view's list 4px up
   over `duration.swap`. A view switch inside an open panel replays nothing, and closing has no

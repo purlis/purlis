@@ -471,6 +471,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // doctor report after it.
     "inbox_first_open",
     "set_aside_inbox_findings",
+    // What the person has seen of the Inbox (#6002): what their window drew them, kept per
+    // machine.
+    "inbox_seen",
+    "see_inbox",
     // Settings' table: every change of what stands.
     "lift_dispatch_never",
     "allow_dispatch_to_any",

@@ -37,6 +37,7 @@ import { PanelSectionTitle } from "./ui/panel/Panel";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
 import { chainSaid, timeSaid, useSettledPlace } from "./inboxRowParts";
+import { askSeenKey, useSeenRow } from "./seenRows";
 
 // **The Asks view's rows** (#1692, #5644; moved from `Inbox.tsx`): what one ask offers, and how it
 // is drawn and answered in place.
@@ -419,6 +420,8 @@ export function Ask({
     ask.answer.via === "browser-login" || ask.answer.via === "secret-fill" ? ask.answer.shown : "",
   ].join("\n");
   const { drawn, tooSoon, readPlaces } = useSettledPlace<HTMLElement>(here);
+  // **New until seen** (#6002): its accent bar, until it has been in sight for about a second.
+  const [isNew, seenDrawnNow] = useSeenRow(askSeenKey(ask), drawn);
   /** **The keyboard goes into the form its Answer opens** (#5651): onto its box, or its first
    *  answer. A task's box takes it itself once its question is read (`useAnswerQuestion`). */
   const focusForm = useRef(false);
@@ -426,6 +429,7 @@ export function Ask({
    *  its answers stand is read, and a form its Answer just opened takes the keyboard. */
   const drawnNow = () => {
     readPlaces();
+    seenDrawnNow();
     if (!open || !focusForm.current) return;
     const form = document.getElementById(`${id}-form`);
     if (form === null) return;
@@ -579,6 +583,7 @@ export function Ask({
       icon={<KindIcon kind={kindOfAsk(ask.source)} />}
       ref={drawn}
       onDrawn={drawnNow}
+      isNew={isNew}
       className="inbox-ask"
       data-source={ask.source}
       aria-labelledby={shape.message ? `${id}-whose` : `${id}-says`}

@@ -200,6 +200,22 @@ export function ActivityDot({ said }: { said: string }) {
 }
 
 /**
+ * **A "new" pip on an item** (#6002, ADR 0121 decision 10): a dot in the accent colour at the
+ * item's bottom right, while its view lists something the person has not seen. It stands apart
+ * from a count or a dot at the top right, so both are drawn together. `said` is told with the
+ * item's description, as a count's sentence is.
+ */
+export function ActivityNew({ said }: { said: string }) {
+  return (
+    <span data-scope="activity" data-part="pip">
+      <span data-scope="activity" data-part="said">
+        {said}
+      </span>
+    </span>
+  );
+}
+
+/**
  * **A group of a bar's items**: one tab list, the side panel's views or its half of the bottom
  * panel's. Every prop reaches the element (a strip's row hands it its keyboard and its
  * tablist's role, `useTabStripRow`), and the family's attributes are its own.

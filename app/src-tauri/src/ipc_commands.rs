@@ -241,6 +241,8 @@ macro_rules! app_commands {
                 inboxupdates::wake_inbox_asks,
                 inboxupdates::inbox_first_open,
                 inboxupdates::set_aside_inbox_findings,
+                inboxupdates::inbox_seen,
+                inboxupdates::see_inbox,
                 asknotify::inbox_shown,
                 send_input,
                 send_input_bytes,
