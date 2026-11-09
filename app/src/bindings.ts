@@ -16004,8 +16004,14 @@ export type SigningLane = {
 export type SigningOtherKey = {
 	/**  The forge's id of it, as text: it removes it. */
 	id: string,
-	/**  `purlis · <device>`. */
+	/**  `purlis · <device>`, or an older setup's `purlis on <machine>`. */
 	title: string,
+	/**  The device it is for: the title after `purlis · ` or `purlis on ` (#5918). */
+	device: string,
+	/**  The day the forge says it was added (`yyyy-mm-dd`), where it says. */
+	added: string | null,
+	/**  Whether an older setup titled it (`purlis on …`): the likely leftover. */
+	older_setup: boolean,
 };
 
 /**  How Sign and retry went for one branch folder. */

@@ -1,13 +1,14 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useId, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   commands,
   type SigningAccountKeys,
   type SigningDone,
   type SigningForge,
+  type SigningOtherKey,
   type SigningState,
 } from "../bindings";
 import { ACCOUNTS_CHANGED } from "../ForgeSignInEnded";
@@ -40,9 +41,11 @@ type Read =
  *   GitHub and GitLab alike, with *Verified on <forge> ✓* and the email it commits as once a
  *   Check in this window found it so, **Check** where none has yet, or **Add to this account**
  *   where the account hasn't the key (#5632). Then the account's purlis keys from the person's
- *   other devices, each with **Remove** (or the forge's keys page, where the sign-in may not
- *   remove one); **Replace key**; and **Remove signing**, after one confirmation naming the
- *   accounts. There is no switch: on means this Mac has a key.
+ *   other devices, under a heading and a line saying what removing one does (#5918): each by its
+ *   device, the day it was added and *Older setup* where an older setup titled it, with a quiet
+ *   **Remove…** that asks first, naming the device (or the forge's keys page, where the sign-in
+ *   may not remove one); **Replace key**; and **Remove signing**, after one confirmation naming
+ *   the accounts. There is no switch: on means this Mac has a key.
  * - **Details**: the key type, its fingerprint, where it is kept and how to use your own key
  *   from Terminal. The only place the card names SSH or Ed25519 (ADR 0116 §8).
  */
@@ -258,23 +261,19 @@ function On({
         </p>
       )}
       {others.length > 0 && (
-        <>
-          <p className="ui-setting-help">Your other devices&apos; signing keys:</p>
-          <ul className="ui-machine-list" aria-label="Your other devices' signing keys">
-            {others.map(({ account, other }) => (
-              <OtherKey
-                key={`${keyOf(account)}:${other.id}`}
-                title={other.title}
-                where={`${account.login} on ${account.forge}`}
-                forge={{ kind: account.kind, host: account.host }}
-                id={other.id}
-                mayRemove={keysOf(account)?.may_remove === true}
-                keysPage={keysOf(account)?.keys_page ?? ""}
-                onRemoved={() => setAsked((was) => was + 1)}
-              />
-            ))}
-          </ul>
-        </>
+        <OtherKeys>
+          {others.map(({ account, other }) => (
+            <OtherKey
+              key={`${keyOf(account)}:${other.id}`}
+              other={other}
+              where={`${account.login} on ${account.forge}`}
+              forge={{ kind: account.kind, host: account.host }}
+              mayRemove={keysOf(account)?.may_remove === true}
+              keysPage={keysOf(account)?.keys_page ?? ""}
+              onRemoved={() => setAsked((was) => was + 1)}
+            />
+          ))}
+        </OtherKeys>
       )}
       <SettingActions>
         <Button isDisabled={busy} onPress={() => act("replaced")}>
@@ -337,42 +336,74 @@ export function RemoveSigningConfirm({
   );
 }
 
-/** Another device's purlis key on an account, with Remove, or the forge's keys page. */
+/**
+ * **The other devices' keys** (#5918): a heading, one line on what removing one does, and the
+ * list it names.
+ */
+function OtherKeys({ children }: { children: ReactNode }) {
+  const heading = useId();
+  return (
+    <section className="signing-others" aria-labelledby={heading}>
+      <h3 id={heading}>Signing keys of your other devices</h3>
+      <p className="ui-setting-help">
+        Each signs that device&apos;s chat commits. Removing one here stops that device&apos;s
+        commits showing as Verified until it sets up signing again.
+      </p>
+      <ul className="ui-machine-list" aria-labelledby={heading}>
+        {children}
+      </ul>
+    </section>
+  );
+}
+
+/** The day a key was added (`yyyy-mm-dd`), in the reader's own words for a date. */
+export function addedOn(day: string): string {
+  const [year, month, date] = day.split("-").map(Number);
+  return new Date(year, month - 1, date).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+/**
+ * Another device's purlis key on an account (#5918): its device, *Older setup* where an older
+ * setup titled it, the account and the day added, with a quiet **Remove…** that asks first, or
+ * the forge's keys page.
+ */
 function OtherKey({
-  title,
+  other,
   where,
   forge,
-  id,
   mayRemove,
   keysPage,
   onRemoved,
 }: {
-  title: string;
+  other: SigningOtherKey;
   where: string;
   forge: SigningForge;
-  id: string;
   mayRemove: boolean;
   keysPage: string;
   onRemoved: () => void;
 }) {
   const [why, setWhy] = useState<string>();
+  const [confirming, setConfirming] = useState(false);
+  const device = other.device;
   return (
     <li className="ui-machine-entry">
-      <span className="ui-machine-name">{title}</span>
-      <span className="ui-machine-path">{where}</span>
+      <span className="ui-machine-name">{device}</span>
+      {other.older_setup && <Badge variant="neutral">Older setup</Badge>}
+      <span className="ui-machine-path">
+        {where}
+        {other.added ? ` · added ${addedOn(other.added)}` : ""}
+      </span>
       {mayRemove ? (
         <Button
           size="sm"
-          variant="danger"
-          aria-label={`Remove ${title} from ${where}`}
-          onPress={() =>
-            void commands.signingRemoveOther(forge, id).then((done) => {
-              if (done.status === "ok") onRemoved();
-              else setWhy(done.error);
-            })
-          }
+          aria-label={`Remove ${device}'s signing key from ${where}…`}
+          onPress={() => setConfirming(true)}
         >
-          Remove
+          Remove…
         </Button>
       ) : (
         <Button size="sm" onPress={() => void openUrl(keysPage)}>
@@ -384,7 +415,51 @@ function OtherKey({
           {why}
         </span>
       )}
+      {confirming && (
+        <RemoveOtherKeyConfirm
+          device={device}
+          where={where}
+          onClose={() => setConfirming(false)}
+          onRemove={() => {
+            setConfirming(false);
+            void commands.signingRemoveOther(forge, other.id).then((done) => {
+              if (done.status === "ok") onRemoved();
+              else setWhy(done.error);
+            });
+          }}
+        />
+      )}
     </li>
+  );
+}
+
+/**
+ * **Removing another device's key, confirmed** (#5918): the device and the account by name, what
+ * it does to that device's commits, and that this Mac is not affected. Its Remove key is the one
+ * red button.
+ */
+export function RemoveOtherKeyConfirm({
+  device,
+  where,
+  onClose,
+  onRemove,
+}: {
+  device: string;
+  where: string;
+  onClose: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <Dialog
+      onClose={onClose}
+      title={`Remove ${device}'s signing key from ${where}?`}
+      main={{ children: "Remove key", variant: "danger", onPress: onRemove }}
+    >
+      <p>
+        {device}&apos;s chat commits will show as Unverified until it sets up signing again. This
+        Mac is not affected.
+      </p>
+    </Dialog>
   );
 }
 

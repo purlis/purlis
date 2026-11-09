@@ -61,6 +61,9 @@ pub struct Key {
     pub title: String,
     /// Its public line, as the forge lists it.
     pub key: String,
+    /// The day the forge says it was added (`yyyy-mm-dd`), where it says (#5918).
+    #[serde(default)]
+    pub added: Option<String>,
 }
 
 impl Key {
@@ -72,6 +75,21 @@ impl Key {
     /// Whether purlis added it, on some device: its title is [`TITLED`] and a name.
     pub fn purlis_made(&self) -> bool {
         self.title.starts_with(TITLED) || self.title.starts_with(TITLED_BEFORE)
+    }
+
+    /// **The device a purlis key is for**: its title after `purlis · ` (or the older
+    /// `purlis on `), else the whole title (#5918).
+    pub fn device(&self) -> &str {
+        self.title
+            .strip_prefix(TITLED)
+            .or_else(|| self.title.strip_prefix(TITLED_BEFORE))
+            .unwrap_or(&self.title)
+    }
+
+    /// Whether an older setup titled it (`purlis on <machine>`, before #5625): the likely
+    /// leftover of a device set up again since (#5918).
+    pub fn older_setup(&self) -> bool {
+        self.title.starts_with(TITLED_BEFORE)
     }
 }
 
@@ -189,6 +207,14 @@ fn keys_listed(kind: Kind, out: &str) -> Option<Vec<Key>> {
                         .unwrap_or("")
                         .to_owned(),
                     key: key.get("key")?.as_str()?.to_owned(),
+                    added: key
+                        .get("created_at")
+                        .and_then(serde_json::Value::as_str)
+                        .and_then(|at| at.get(..10))
+                        .filter(|day| {
+                            chrono::NaiveDate::parse_from_str(day, "%Y-%m-%d").is_ok()
+                        })
+                        .map(str::to_owned),
                 })
             })
             .collect(),

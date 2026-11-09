@@ -7674,6 +7674,18 @@ nav.piece-files-head {
   margin-inline-start: auto;
 }
 
+/* **The other devices' signing keys** (#5918, `settings/signing.tsx`): a heading and the line on
+   what removing one does, above their list. */
+.signing-others h3 {
+  margin: var(--space-3) 0 var(--space-1);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-strong);
+}
+
+.signing-others .ui-setting-help {
+  margin: 0;
+}
+
 /* **A pool's limits, folded under its row** (#4285, `PoolLimits.tsx`): the groups of what they
    affect, each limit a row with its box, its unit and a line under it. */
 .pool-limits {

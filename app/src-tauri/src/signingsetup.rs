@@ -725,8 +725,14 @@ pub async fn signing_use_email(forge: SigningForge, email: String) -> Result<(),
 pub struct SigningOtherKey {
     /// The forge's id of it, as text: it removes it.
     pub id: String,
-    /// `purlis · <device>`.
+    /// `purlis · <device>`, or an older setup's `purlis on <machine>`.
     pub title: String,
+    /// The device it is for: the title after `purlis · ` or `purlis on ` (#5918).
+    pub device: String,
+    /// The day the forge says it was added (`yyyy-mm-dd`), where it says.
+    pub added: Option<String>,
+    /// Whether an older setup titled it (`purlis on …`): the likely leftover.
+    pub older_setup: bool,
 }
 
 /// What an account holds of this person's purlis signing keys, as the card shows it once on.
@@ -802,6 +808,9 @@ pub async fn signing_accounts_keys() -> Result<Vec<SigningAccountKeys>, String> 
                                 .map(|other| SigningOtherKey {
                                     id: other.id.to_string(),
                                     title: other.title.clone(),
+                                    device: other.device().to_owned(),
+                                    added: other.added.clone(),
+                                    older_setup: other.older_setup(),
                                 })
                                 .collect(),
                             true,
