@@ -1237,15 +1237,23 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
   it reaches a button; in it ← and →, Home and End, PageUp and PageDown move its caret, a letter,
   Space and Enter are typed or are its own (its handler hears them, the row and the list never do,
   so Enter runs no row), and ⌘A selects its words; ↑ and ↓ move its caret between a box's lines,
-  and go to the row above or below from its first or last line or from a box of one line; Tab
-  moves on to the row's next control while it has one; Esc gives the keyboard back to its row,
-  keeping what was typed, and Esc on the row is the list's (`onEscape`). A chord with Enter (⌘⏎, a
+  the lines it draws (a line its words wrap on to as much as one after a line break, measured
+  unseen in a copy of the box laid out as it is, #5993), and go to the row above or below from its
+  first or last line or from a box of one line; Tab moves on to the row's next control while it
+  has one; Esc gives the keyboard back to its row,
+  keeping what was typed, and Esc on the row is the list's (`onEscape`). **While it composes**
+  (Chinese, Japanese, Korean input), every key is the input method's alone (#5993): composing, or
+  key code 229 (WebKit's Esc once the composition ends), the list keeps it from the row and from
+  everything above, so Esc cancels the composition and the keyboard stays. A chord with Enter (⌘⏎, a
   form's send) goes on up to whatever answers it. The arrows are kept by the list's own capture
   handler (`data-part="keys"`), the rest by the field family's boxes once their own handler has
   heard them, where React Aria's row hears them. **A radio group in a row keeps its arrows too**
   (a secret ask's How to fill): → and ↓ choose the next radio, ← and ↑ the one before, round at
-  the ends, as the WAI-ARIA radio group does. A select's trigger in a row opens on Enter or Space;
-  its ↓ is the list's.
+  the ends, as the WAI-ARIA radio group does. **A select or a combobox in a row keeps ↑ and ↓**
+  (#5993): React Aria's row takes them from whatever is in it (a menu's button, whose arrows go to
+  the rows above and below), so the family's row lets them by for a button that opens a list
+  (`aria-haspopup="listbox"`) or a combobox, whose own handler opens it (`List › A Select In A
+  Row`).
   **A list that chooses several** (`selectionMode="multiple"`, a `Checkbox` in the row's lead with
   `slot="selection"`) takes a click or Space to tick a row, Shift-click and Shift+↑ ↓ for a range,
   and ⌘A (Ctrl+A off macOS) for every row, which a list that draws its rows a screen at a time
