@@ -76,3 +76,9 @@ for GT-CLOUD and TM-2. Until then a team has one lever, the project rule above.
   or names leave the machine. The native crash handler is not switched on until the operator
   rules on the minidump's privacy, alongside the `minidumper-child` bump and the release
   profile's debug symbols (#5691, #5692; `app/src-tauri/src/nativecrash.rs`).
+- **Where the intake lives** (#5687). Sentry SaaS, organisation `purlis`, project `purlis-app`,
+  created with EU data storage (`de.sentry.io`; a region cannot be changed after an organisation
+  is made), events kept 90 days, spike protection on. The operator sets it up with
+  `tools/wizards/report-intake.sh`: the DSN and the symbols upload token go to the `release`
+  environment's secrets, and the steward's read-only token (an internal integration with
+  Project and Issue & Event read) goes to the plane vault `sentry`, key `intake-read-token`.

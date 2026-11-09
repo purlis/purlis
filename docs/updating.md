@@ -114,7 +114,8 @@ done
 **The Report intake's upload secrets** (#5692) live in the same environment, so only a publish
 reaches them. The `symbols` job sends each release's debug symbols to the intake (Sentry, EU),
 after the build and apart from it, so native crash reports can be read. It needs three, which
-the operator adds when the intake is set up (#5687):
+the operator adds when the intake is set up (#5687). `tools/wizards/report-intake.sh` walks
+through the whole setup, these four secrets and the steward's read token included:
 
 | Secret | What it holds |
 |---|---|
