@@ -65,7 +65,7 @@ describe("a region's key in focus mode (D-2921-19)", () => {
     );
     await screen.findByTestId("title-about");
     await waitFor(() => expect(document.querySelector(".region-frame")).not.toBeNull());
-    const window = () => document.querySelector("main.window");
+    const window = () => document.querySelector(".window");
     const focus = { key: "Enter", code: "Enter", shiftKey: true, metaKey: MAC, ctrlKey: !MAC };
     const sidebar = { key: "b", code: "KeyB", metaKey: MAC, ctrlKey: !MAC };
     act(() => key(focus));
@@ -90,7 +90,7 @@ describe("focus mode and the cheat sheet, from the window", () => {
       </StrictMode>,
     );
     await screen.findByTestId("title-about");
-    const window = () => document.querySelector("main.window");
+    const window = () => document.querySelector(".window");
     await waitFor(() => expect(document.querySelector(".region-frame")).not.toBeNull());
     expect(
       document.querySelector('[data-scope="dialog"][data-part="root"], [role="alertdialog"]'),
@@ -122,7 +122,7 @@ describe("focus mode run from the palette, opened from a part it hides (#4072)",
     );
     await screen.findByTestId("title-about");
     await waitFor(() => expect(document.querySelector(".region-frame")).not.toBeNull());
-    const root = () => document.querySelector("main.window");
+    const root = () => document.querySelector(".window");
     // The keyboard in the part: on the first of its controls that takes it, or on the part
     // itself where none does (a slot drawing an empty view).
     const there = document.querySelector<HTMLElement>(part);

@@ -317,16 +317,21 @@ export function RailSlot({
   hidden,
   settling = false,
   onSlid,
+  label,
   children,
 }: {
   hidden: boolean;
+  /** What the rail navigates, its landmark's name (#2929): a screen reader's rotor lists it. */
+  label: string;
   settling?: boolean;
   /** Its column has finished opening or closing (`railSlide.ts`). */
   onSlid?: () => void;
   children: ReactNode;
 }) {
   return (
-    <div
+    // A navigation landmark (#2929): the rail is how the window goes from project to project.
+    <nav
+      aria-label={label}
       onTransitionEnd={(event) => {
         if (event.target === event.currentTarget && event.propertyName === "inline-size")
           onSlid?.();
@@ -339,7 +344,7 @@ export function RailSlot({
       inert={hidden || undefined}
     >
       {children}
-    </div>
+    </nav>
   );
 }
 

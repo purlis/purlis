@@ -2772,7 +2772,7 @@ function App() {
   );
 
   return (
-    <main
+    <div
       className="window"
       {...{
         // A tab window is the work alone, as focus mode draws it, for good (#4768).
@@ -2878,7 +2878,7 @@ function App() {
             nameOf={calledOn}
           />
         )}
-        <div className="window-work">
+        <main className="window-work">
           {/* **No result is in the page's flow while a project is in front** (#3648, #3653): one
           about a workspace hangs from its chip, and a project's or the app's pops from the status
           bar's Notices item; each is listed in the Notices centre too. With no project in front
@@ -3148,7 +3148,7 @@ function App() {
               </div>
             </div>
           )}
-        </div>
+        </main>
       </div>
 
       {/* What opening a project puts in force, and the question about it (ADR 0035).
@@ -3248,7 +3248,7 @@ function App() {
           onAnswer={relaunchAsking.answer}
         />
       )}
-    </main>
+    </div>
   );
 }
 
