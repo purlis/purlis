@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794220900450,
+  "lastUpdate": 1794223847282,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -44646,6 +44646,48 @@ window.BENCHMARK_DATA = {
             "value": 101.7172135,
             "unit": "ms",
             "extra": "median of 5 runs: 100.508, 100.866, 101.717, 102.474, 102.795 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f8607f0480bb2e75ded87e66aef176fffb5f5681",
+          "message": "M66 contrast: meter fills on track (#3735), editor code at 4.5:1 (#3796), a text box's edge (#4475) (#5937)\n\n* Theme check: hold a meter's fills on its track for a palette alone (#3735)\n\nA pair kind the check reports and nothing else acts on (REPORTED in\ncheck.rs): measured as PAIRS are, as written, in every named tint and\nbetween them, said as a contrast finding, but read by no consent floor,\nimport tier walk or person's colour, since each of those reads PAIRS\nalone. Its first pairs are a meter's subject (accent.base), baseline\n(state.waiting) and previous version (text.muted) on its track\n(border.subtle), over surface.base and surface.raised, at 3:1.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZCBY4FKNE96NH4YW4625D6\nPurlis-Persona: steward\n\n* Light editor: code reads at 4.5:1 on every ground in the built-ins (#3796)\n\naxe holds the editor's code to 4.5:1 as words, and the merge view failed\nit in every cell. A core test now holds every built-in's syntax roles at\n4.5 on the editor's ground, its current line, a changed line's wash and a\nchanged word's wash. The check's pairs keep them at a mark's 3:1, which an\nimport fits its colours to, so no imported theme changes.\n\nPurlis: a changed word's wash is thinner (0x2e inserted, 0x2d deleted,\nlight reflected by its rule), still 1.32:1 or more from its line, and\ncomments and punctuation draw text.secondary, which high contrast already\ndraws as muted. Its foundation colours stay. Purlis Classic: each role that\nfell short is lifted along its own hue.\n\nThe .cm-editor exclusions come out of every story's axe pass, and the\nmerge view has a new-file story beside the changed-file one.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZCBY4FKNE96NH4YW4625D6\nPurlis-Persona: steward\n\n* Theme: a text box has a visible edge, border.input (#4475)\n\nA box's fill is surface.sunken, which Purlis draws as the window's own\nground, and its edge was border.control, transparent in Purlis because it\nis a plain button's edge too (#3177). So an empty box could not be seen.\n\nA box (text input, textarea, select, combobox) now draws its own edge,\nborder.input, a token rather than a part, as the primary's edge is: it\nfollows border.control in KIN, so a theme that sets neither draws as it\ndid. Purlis draws it in its faint tier in dark, #82808d in light (its\nreflection, stepped to 3:1 on a dialog), and its control edge in high\ncontrast; a test holds it at 3:1 on the window, a panel and a dialog in\nall four appearances (WCAG 2.2 1.4.11). Purlis Classic takes its\nborder.control values, so nothing it draws moves.\n\ndocs/plane-format.md names the new token first; themes.md, the design\nsystem, the schema and the stories' theme copy follow.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZCBY4FKNE96NH4YW4625D6\nPurlis-Persona: steward\n\n* Changelog: a text box has a visible edge (#4475)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZCBY4FKNE96NH4YW4625D6\nPurlis-Persona: steward\n\n* Review: the design system names Classic's lifted syntax colours by rule (#3796)\n\ndocs/design-system.md still gave Classic's old moved colours; it now says\neach role is lifted where it would not read at 4.5:1 and points at the\nMOVED list. The #4475 line is wrapped, and the comments test drops a stray\nappearance count.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZCBY4FKNE96NH4YW4625D6\nPurlis-Persona: steward\n\n* Merge view: each side says its Tab stop; the new-file story waits for a syntax colour (#3796)\n\nWith the .cm-editor exclusions gone, axe's scrollable-region-focusable\nfound a merge view's side that scrolls in a narrow panel (the drafts page,\na draft's chat link): CodeMirror's content is a Tab stop through\ncontenteditable, which axe does not count. Each side now says tabindex 0\ntoo, so nothing about the keyboard path changes. The NewFile story waited\non a span that keeps the editor's own colour; it waits for any word in a\nsyntax colour.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZCBY4FKNE96NH4YW4625D6\nPurlis-Persona: steward\n\n* Stories: baselines for box edges, the editor's code colours and the new-file merge view (#4475, #3796)\n\nDrawn by PR #5937's stories run and taken with\ntools/story-baselines-pull.mjs; reviewed: boxes now draw their edge, a\ndiff's changed words and comments take the new colours, and the merge\nview has a new-file story.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZCBY4FKNE96NH4YW4625D6\nPurlis-Persona: steward\n\n* Stories: the new-file merge view's baselines (#3796)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZCBY4FKNE96NH4YW4625D6\nPurlis-Persona: steward\n\n* Stories: the cells b9ae779's run drew again, boxes with their edge (#4475)\n\nTaken with tools/story-baselines-pull.mjs from PR #5937's run at b9ae779\nand reviewed; UndoTurn's Undone, the known flake, was not redrawn.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZCBY4FKNE96NH4YW4625D6\nPurlis-Persona: steward\n\n* Stories: SkillGrades baselines with boxes' edges, after rebasing onto main (#4475)\n\nTaken from PR #5937's run with tools/story-baselines-pull.mjs and reviewed;\nUndoTurn's Undone, the known flake, is left as it was.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZCBY4FKNE96NH4YW4625D6\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-09T10:34:32Z",
+          "tree_id": "7858771c395d8173c1de67ffc3541b3013415032",
+          "url": "https://github.com/purlis/purlis/commit/f8607f0480bb2e75ded87e66aef176fffb5f5681"
+        },
+        "date": 1794223842618,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4457065,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.432, 0.441, 0.446, 0.446, 0.454 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.347638500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.324, 16.329, 16.348, 16.354, 16.535 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.87773250000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.690, 101.699, 101.878, 102.758, 102.797 ms"
           }
         ]
       }
