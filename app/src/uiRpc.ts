@@ -51,6 +51,7 @@ export const commands = {
 	 *  `query`**, best first: at most [`MOST`].
 	 */
 	artifactSearch: (plane: PlaneId, query: string) => typedError<ArtifactFound[], string>(__TAURI_INVOKE("artifact_search", { plane, query })),
+	artifactDiscuss: __WINDOW_ONLY_START_REFUSED,
 	/**  What the window says about this launch and the session bus: nothing, on a launch with it. */
 	sessionBus: () => __TAURI_INVOKE<{
 	/**  The line it draws: why there is no bus, and what is off for the run. */

@@ -411,6 +411,7 @@ import { heardOffers, offersInForce, viewOpened } from "./offerStore";
 import { OfferNotices, type OfferOpening, OfferOpeningContext } from "./ViewOpen";
 import { paneSize } from "./paneSize";
 import { besideOf as viewBesideOf, besideRefusedSaid } from "./viewBeside";
+import { useArtifactDiscuss } from "./artifactDiscuss";
 import { layoutOf, pathTo, type Reopening, tabsOf, withShare } from "./laidOut";
 import {
   chatsElsewhere,
@@ -7163,6 +7164,9 @@ export const PlaneView = memo(function PlaneView({
     window.addEventListener(THEME_CHAT, asked);
     return () => window.removeEventListener(THEME_CHAT, asked);
   }, [change, plane, showPlaced]);
+
+  // **Discuss** in an artifact's bar (#5957, ADR 0120 §5): a chat about the page, its tab placed here.
+  useArtifactDiscuss(plane, showPlaced, setReport, setStartApproving);
 
   /**
    * **The Skill studio's "Ask a chat to draft a skill", Try it, a draft's redo and "Ask a chat to

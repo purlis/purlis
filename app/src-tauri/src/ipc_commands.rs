@@ -59,6 +59,7 @@ macro_rules! app_commands {
                 regenerate::artifact_regenerate,
                 artifact_links::artifact_link_open,
                 artifact_search::artifact_search,
+                artifactdiscuss::artifact_discuss,
                 portal::session_bus,
                 portal::restart_on_the_session_bus,
                 vaultswaiting::vaults_to_move,

@@ -137,6 +137,11 @@ export const commands = {
 	 *  `query`**, best first: at most [`MOST`].
 	 */
 	artifactSearch: (plane: PlaneId, query: string) => typedError<ArtifactFound[], string>(__TAURI_INVOKE("artifact_search", { plane, query })),
+	/**
+	 *  **Discuss** the artifact pinned from `folder` in `workspace`: a chat opened with the page's
+	 *  quote referenced and one line about it typed, unsent.
+	 */
+	artifactDiscuss: (plane: PlaneId, workspace: string, folder: string, columns: number, rows: number) => typedError<StartedHere, StartRefused>(__TAURI_INVOKE("artifact_discuss", { plane, workspace, folder, columns, rows })),
 	/**  What the window says about this launch and the session bus: nothing, on a launch with it. */
 	sessionBus: () => __TAURI_INVOKE<{
 	/**  The line it draws: why there is no bus, and what is off for the run. */

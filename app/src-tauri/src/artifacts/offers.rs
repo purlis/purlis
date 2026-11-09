@@ -153,6 +153,7 @@ pub(crate) fn heard<R: Runtime>(
             id: said.id,
             name: String::new(),
             params: None,
+            live: None,
         };
         let _ = webview.eval(delivery(&ask, &answer));
     });
