@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { copyFixturePlane } from "../harness.js";
 import { focusWorkspace } from "../reach.js";
+import { closeOf, iconFor, iconOf } from "../artifactTabs.js";
 import { openThroughTheTrustQuestion } from "../opening.js";
 
 /**
@@ -23,9 +24,7 @@ import { openThroughTheTrustQuestion } from "../opening.js";
  * removes, and the project it opens it lets go of.
  */
 
-const TABS = '[data-strip="Tabs"]';
 const PROJECTS = '[data-strip="Projects"]';
-const GROUP = '[role="toolbar"][aria-label="Artifacts"]';
 const NAME = "Backlog state";
 const PAGE = `<!doctype html><title>${NAME}</title><h1>Open issues: 12</h1>`;
 const PINS = `version = 1
@@ -109,7 +108,7 @@ describe("a pinned artifact", function () {
 
   after(async () => {
     if ((await tabNames()).includes(NAME)) {
-      await $(`${TABS} button[aria-label="Close ${NAME}"]`).click();
+      await $(closeOf(NAME)).click();
       await browser.waitUntil(async () => !(await tabNames()).includes(NAME), {
         timeout: 20_000,
         timeoutMsg: "the artifact's tab did not close",
@@ -119,8 +118,7 @@ describe("a pinned artifact", function () {
   });
 
   it("has an icon in a group of its own, after purlis's own icons, which do not move", async () => {
-    const icon = await $(`${GROUP} button[aria-label="${NAME}"]`);
-    await icon.waitForExist({ timeout: 30_000 });
+    await iconFor(NAME);
     // In document order, the left column's own tab lists come first, then the divider, then
     // the group: nothing of purlis's is after it in its column.
     const order: string[] = await browser.execute(() => {
@@ -139,7 +137,7 @@ describe("a pinned artifact", function () {
 
   it("opens its tab on a press, its page laid over a frame named by it", async () => {
     expect(await artifactWebviews()).toEqual([]);
-    await $(`${GROUP} button[aria-label="${NAME}"]`).click();
+    await $(iconOf(NAME)).click();
 
     await browser.waitUntil(async () => (await inFront()) === NAME, {
       timeout: 20_000,
@@ -153,15 +151,13 @@ describe("a pinned artifact", function () {
       timeoutMsg: "no webview of its own was laid over the frame",
     });
     // Its icon says it is the one in front.
-    expect(await $(`${GROUP} button[aria-label="${NAME}"]`).getAttribute("aria-current")).toBe(
-      "page",
-    );
+    expect(await $(iconOf(NAME)).getAttribute("aria-current")).toBe("page");
   });
 
   it("is brought forward, not opened twice, when its icon is pressed again", async () => {
     const plane = (await ask<string[]>("open_planes"))[0];
     const record = join(plane, ".charter", "app", "reopen.json");
-    await $(`${GROUP} button[aria-label="${NAME}"]`).click();
+    await $(iconOf(NAME)).click();
     await browser.waitUntil(
       async () =>
         viewsIn(record).find((one) => one.view === "artifact")?.key === "alpha/backlog-state",
@@ -184,7 +180,7 @@ describe("a pinned artifact", function () {
   });
 
   it("lets its webview go when its tab closes", async () => {
-    await $(`${TABS} button[aria-label="Close ${NAME}"]`).click();
+    await $(closeOf(NAME)).click();
     await browser.waitUntil(async () => (await artifactWebviews()).length === 0, {
       timeout: 20_000,
       timeoutMsg: "the artifact's webview outlived its tab",
@@ -235,14 +231,14 @@ describe("a pinned artifact", function () {
     });
 
     it("comes back in front and runs nothing until Open is pressed", async () => {
-      await $(`${PROJECTS} button[aria-label="Open a project…"]`).click();
+      await $(`${PROJECTS} [aria-label="Open a project…"]`).click();
       const box = await $('[data-setting="open-by-path"] input');
       await box.waitForDisplayed({ timeout: 20_000 });
       await box.addValue(other);
-      await $('form.by-path button[type="submit"]').click();
+      await $("aria/Open project").click();
       await openThroughTheTrustQuestion();
 
-      const open = await $(`button=Open ${NAME}`);
+      const open = await $(`aria/Open ${NAME}`);
       await open.waitForExist({ timeout: 30_000 });
       expect(await inFront()).toBe(NAME);
       expect(await $(`[role="region"][aria-label="${NAME}"]`).isExisting()).toBe(false);
@@ -315,8 +311,7 @@ describe("managing pins from the window", () => {
     if (await $('[role="dialog"], [role="alertdialog"]').isDisplayed())
       await browser.keys(["Escape"]);
     for (const name of [`weekly.html · fix-login`]) {
-      if ((await tabNames()).includes(name))
-        await $(`${TABS} button[aria-label="Close ${name}"]`).click();
+      if ((await tabNames()).includes(name)) await $(closeOf(name)).click();
     }
     rmSync(join(branch, "pin-me"), { recursive: true, force: true });
     rmSync(artifacts, { recursive: true, force: true });
@@ -349,13 +344,13 @@ describe("managing pins from the window", () => {
       timeout: 20_000,
       timeoutMsg: "the page was not laid in a webview of its own",
     });
-    await expect($("button=Pin to workspace…")).toBeDisplayed();
+    await expect($("aria/Pin to workspace…")).toBeDisplayed();
     // Nothing is pinned by showing it.
     expect(foldersPinned()).toEqual(["backlog-state"]);
   });
 
   it("pins it through its dialog, copied into the workspace's artifacts/", async () => {
-    await $("button=Pin to workspace…").click();
+    await $("aria/Pin to workspace…").click();
     const dialog = await $('[role="dialog"][aria-labelledby="pin-to-workspace"]');
     await dialog.waitForDisplayed({ timeout: 20_000 });
     // Whom it reaches, said either way: everyone in the project, or this machine alone.
@@ -363,20 +358,20 @@ describe("managing pins from the window", () => {
       expect.stringMatching(/Visible to everyone in |stays on this machine/),
     );
     await expect(dialog).toHaveText(expect.stringContaining("artifacts/weekly-report/"));
-    await expect(await dialog.$('[aria-label="Name"], input')).toHaveValue(REPORT);
-    await dialog.$('button[data-dialog-action="main"]').click();
+    await expect(await dialog.$("aria/Name")).toHaveValue(REPORT);
+    await dialog.$('[data-dialog-action="main"]').click();
 
     await browser.waitUntil(async () => foldersPinned().includes("weekly-report"), {
       timeout: 20_000,
       timeoutMsg: "the pin was never written to the pins file",
     });
     expect(readFileSync(join(artifacts, "weekly-report", "index.html"), "utf8")).toContain(REPORT);
-    await $(`${GROUP} button[aria-label="${REPORT}"]`).waitForExist({ timeout: 20_000 });
+    await $(iconOf(REPORT)).waitForExist({ timeout: 20_000 });
   });
 
   it("moves an icon from its menu, writing the order to the pins file", async () => {
     expect(foldersPinned()).toEqual(["backlog-state", "weekly-report"]);
-    expect(await sendContextMenu(`${GROUP} button[aria-label="${REPORT}"]`)).toBe(true);
+    expect(await sendContextMenu(iconOf(REPORT))).toBe(true);
     const menu = await $('[role="menu"]');
     await menu.waitForDisplayed({ timeout: 20_000 });
     await menu.$('[role="menuitem"]=Move up').click();
@@ -387,7 +382,7 @@ describe("managing pins from the window", () => {
   });
 
   it("unpins only on the dialog's answer, and the folder stays", async () => {
-    expect(await sendContextMenu(`${GROUP} button[aria-label="${REPORT}"]`)).toBe(true);
+    expect(await sendContextMenu(iconOf(REPORT))).toBe(true);
     const menu = await $('[role="menu"]');
     await menu.waitForDisplayed({ timeout: 20_000 });
     await menu.$('[role="menuitem"]=Unpin from workspace…').click();
@@ -395,15 +390,15 @@ describe("managing pins from the window", () => {
     await dialog.waitForDisplayed({ timeout: 20_000 });
     await expect(dialog).toHaveText(expect.stringContaining(`Unpin ${REPORT} from alpha`));
     expect(foldersPinned()).toContain("weekly-report");
-    await dialog.$("button=Unpin").click();
+    await dialog.$("aria/Unpin").click();
     await browser.waitUntil(async () => !foldersPinned().includes("weekly-report"), {
       timeout: 20_000,
       timeoutMsg: "the pin was never taken off the pins file",
     });
-    await browser.waitUntil(
-      async () => !(await $(`${GROUP} button[aria-label="${REPORT}"]`).isExisting()),
-      { timeout: 20_000, timeoutMsg: "the icon stayed on the bar" },
-    );
+    await browser.waitUntil(async () => !(await $(iconOf(REPORT)).isExisting()), {
+      timeout: 20_000,
+      timeoutMsg: "the icon stayed on the bar",
+    });
     expect(readFileSync(join(artifacts, "weekly-report", "index.html"), "utf8")).toContain(REPORT);
   });
 });
@@ -428,13 +423,13 @@ describe("a pinned artifact with script", function () {
   /** Closes the tab, if it is open, and opens it again from its icon: a fresh read. */
   async function openAgain() {
     if ((await tabNames()).includes(LIVE)) {
-      await $(`${TABS} button[aria-label="Close ${LIVE}"]`).click();
+      await $(closeOf(LIVE)).click();
       await browser.waitUntil(async () => (await artifactWebviews()).length === 0, {
         timeout: 20_000,
         timeoutMsg: "the artifact's webview outlived its tab",
       });
     }
-    await $(`${GROUP} button[aria-label="${LIVE}"]`).click();
+    await $(iconOf(LIVE)).click();
     await browser.waitUntil(async () => (await inFront()) === LIVE, {
       timeout: 20_000,
       timeoutMsg: "pressing the artifact did not open its tab in front",
@@ -457,12 +452,12 @@ pin = [
 `,
     );
     await focusWorkspace("alpha");
-    await $(`${GROUP} button[aria-label="${LIVE}"]`).waitForExist({ timeout: 30_000 });
+    await iconFor(LIVE);
   });
 
   after(async () => {
     if ((await tabNames()).includes(LIVE)) {
-      await $(`${TABS} button[aria-label="Close ${LIVE}"]`).click();
+      await $(closeOf(LIVE)).click();
     }
     rmSync(dirname(folder), { recursive: true, force: true });
   });

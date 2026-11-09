@@ -14,6 +14,7 @@ import {
 import { built } from "../harness.js";
 import { appProcesses, logLine, sample, webAndHarnessMemory } from "../processes.js";
 import { focusWorkspace } from "../reach.js";
+import { closeOf, iconFor } from "../artifactTabs.js";
 
 /**
  * **What an open artifact tab costs in memory: ADR 0086's row M8** (ADR 0122 §10, #5958), in
@@ -30,8 +31,6 @@ import { focusWorkspace } from "../reach.js";
  */
 
 const app = built(process.platform === "win32" ? "purlis-app.exe" : "purlis-app");
-const TABS = '[data-strip="Tabs"]';
-const GROUP = '[role="toolbar"][aria-label="Artifacts"]';
 const NAME = "Memory page";
 const FOLDER = "memory-page";
 const PAGE = `<!doctype html><title>${NAME}</title><h1>Open issues: 12</h1>`;
@@ -123,7 +122,7 @@ describe("an open artifact tab's memory (ADR 0086 M8)", function () {
   });
 
   after(async () => {
-    const close = await $(`${TABS} button[aria-label="Close ${NAME}"]`);
+    const close = await $(closeOf(NAME));
     if (await close.isExisting()) {
       await close.click();
       await browser.waitUntil(async () => (await artifactWebviews()).length === 0, {
@@ -135,8 +134,7 @@ describe("an open artifact tab's memory (ADR 0086 M8)", function () {
   });
 
   it("adds no more than its budget once its page is drawn", async () => {
-    const icon = await $(`${GROUP} button[aria-label="${NAME}"]`);
-    await icon.waitForExist({ timeout: 30_000 });
+    const icon = await iconFor(NAME);
     expect(await artifactWebviews()).toEqual([]);
     const pid = theApp();
 

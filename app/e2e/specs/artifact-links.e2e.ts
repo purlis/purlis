@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { press, pressGrant } from "../acting.js";
 import { focusWorkspace } from "../reach.js";
+import { closeTabOf, iconFor } from "../artifactTabs.js";
 
 /**
  * **A link in an artifact's page** (#5956, ADR 0122 §5), in the built app against the real
@@ -24,8 +25,6 @@ import { focusWorkspace } from "../reach.js";
  * it removes.
  */
 
-const TABS = '[data-strip="Tabs"]';
-const GROUP = '[role="toolbar"][aria-label="Artifacts"]';
 const DIALOG = '[role="dialog"]';
 const NAME = "Release links";
 const ASKED = "https://github.com/purlis/purlis/issues?q=is%3Aopen&sort=new";
@@ -102,8 +101,7 @@ describe("a link in an artifact's page", function () {
     writeFileSync(join(artifacts, "release-links", "index.html"), PAGE);
     writeFileSync(join(artifacts, "pins.toml"), PINS);
     await focusWorkspace("alpha");
-    const icon = await $(`${GROUP} button[aria-label="${NAME}"]`);
-    await icon.waitForExist({ timeout: 30_000 });
+    const icon = await iconFor(NAME);
     await icon.click();
     await browser.waitUntil(async () => (await artifactWebviews()).length === 1, {
       timeout: 20_000,
@@ -113,9 +111,7 @@ describe("a link in an artifact's page", function () {
   });
 
   after(async () => {
-    if (await $(`${TABS} button[aria-label="Close ${NAME}"]`).isExisting()) {
-      await $(`${TABS} button[aria-label="Close ${NAME}"]`).click();
-    }
+    await closeTabOf(NAME);
     rmSync(artifacts, { recursive: true, force: true });
   });
 

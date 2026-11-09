@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { focusWorkspace } from "../reach.js";
+import { closeTabOf, iconFor, iconOf } from "../artifactTabs.js";
 
 /**
  * **A pinned artifact whose page offers actions** (#5972, ADR 0122 §8), in the built app against
@@ -16,8 +17,6 @@ import { focusWorkspace } from "../reach.js";
  * changes on disk until the person presses. Before its script is approved, it offers nothing.
  */
 
-const TABS = '[data-strip="Tabs"]';
-const GROUP = '[role="toolbar"][aria-label="Artifacts"]';
 const NAME = "Offering board";
 const OFFERS = `[role="group"][aria-label="Offered by ${NAME}"]`;
 const PAGE = `<!doctype html><title>${NAME}</title><p>Offers</p><script src=app.js></script>`;
@@ -101,17 +100,16 @@ pin = [
 `,
     );
     await focusWorkspace("alpha");
-    await $(`${GROUP} button[aria-label="${NAME}"]`).waitForExist({ timeout: 30_000 });
+    await iconFor(NAME);
   });
 
   after(async () => {
-    const close = await $(`${TABS} button[aria-label="Close ${NAME}"]`);
-    if (await close.isExisting()) await close.click();
+    await closeTabOf(NAME);
     rmSync(at, { recursive: true, force: true });
   });
 
   it("offers nothing while its script is not approved", async () => {
-    await $(`${GROUP} button[aria-label="${NAME}"]`).click();
+    await $(iconOf(NAME)).click();
     await browser.waitUntil(async () => (await inFront()) === NAME, {
       timeout: 20_000,
       timeoutMsg: "pressing the artifact did not open its tab in front",

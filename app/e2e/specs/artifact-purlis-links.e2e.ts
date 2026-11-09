@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { press } from "../acting.js";
 import { focusWorkspace, workspaceTabs } from "../reach.js";
+import { TABS, closeTabOf, iconFor, iconOf } from "../artifactTabs.js";
 import { endChatsStartedHere, startAChat, type Started } from "../started.js";
 
 /**
@@ -25,8 +26,6 @@ import { endChatsStartedHere, startAChat, type Started } from "../started.js";
  * adds it forgets, the tabs it opens it closes, and the artifact's files it removes.
  */
 
-const TABS = '[data-strip="Tabs"]';
-const GROUP = '[role="toolbar"][aria-label="Artifacts"]';
 const DIALOG = '[role="dialog"]';
 const NAME = "Release hub";
 const TODO = "Linked from the hub";
@@ -111,7 +110,7 @@ function chatLinkedTo(dir: string, item: string): string | undefined {
 async function artifactInFront(): Promise<void> {
   await focusWorkspace("alpha");
   if ((await inFront()) === NAME) return;
-  await $(`${GROUP} button[aria-label="${NAME}"]`).click();
+  await $(iconOf(NAME)).click();
   await browser.waitUntil(async () => (await inFront()) === NAME, {
     timeout: 20_000,
     timeoutMsg: "the artifact's tab did not come to the front",
@@ -171,8 +170,7 @@ pin = [
 ]
 `,
     );
-    const icon = await $(`${GROUP} button[aria-label="${NAME}"]`);
-    await icon.waitForExist({ timeout: 30_000 });
+    const icon = await iconFor(NAME);
     await icon.click();
     await browser.waitUntil(async () => (await artifactWebviews()).length === 1, {
       timeout: 20_000,
@@ -184,8 +182,7 @@ pin = [
   after(async () => {
     await focusWorkspace("alpha");
     for (const name of [NAME, TODO]) {
-      const close = await $(`${TABS} button[aria-label="Close ${name}"]`);
-      if (await close.isExisting()) await close.click();
+      await closeTabOf(name);
     }
     rmSync(artifacts, { recursive: true, force: true });
     if (chat !== undefined) {

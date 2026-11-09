@@ -5,6 +5,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { focusWorkspace } from "../reach.js";
+import { closeTabOf, iconFor, iconOf } from "../artifactTabs.js";
 
 /**
  * **A pinned artifact whose page calls purlis's queries** (#5969, ADR 0122 §7), in the built app
@@ -16,8 +17,6 @@ import { focusWorkspace } from "../reach.js";
  * proved in `artifacts/calls.rs` and `purlis_core::artifact::calls`.
  */
 
-const TABS = '[data-strip="Tabs"]';
-const GROUP = '[role="toolbar"][aria-label="Artifacts"]';
 const NAME = "Todo board";
 const DECLARED = `{"api":1,"queries":{"purlis.todo_list@1":["done"],"purlis.change_status@1":[]}}`;
 const PAGE = `<!doctype html><title>${NAME}</title><script type="application/json" id="purlis">${DECLARED}</script><ul id=todos></ul><script src=app.js></script>`;
@@ -76,17 +75,16 @@ pin = [
 `,
     );
     await focusWorkspace("alpha");
-    await $(`${GROUP} button[aria-label="${NAME}"]`).waitForExist({ timeout: 30_000 });
+    await iconFor(NAME);
   });
 
   after(async () => {
-    const close = await $(`${TABS} button[aria-label="Close ${NAME}"]`);
-    if (await close.isExisting()) await close.click();
+    await closeTabOf(NAME);
     rmSync(at, { recursive: true, force: true });
   });
 
   it("lists in purlis's bar the queries its page declared, as its approval covers them", async () => {
-    await $(`${GROUP} button[aria-label="${NAME}"]`).click();
+    await $(iconOf(NAME)).click();
     await browser.waitUntil(async () => (await inFront()) === NAME, {
       timeout: 20_000,
       timeoutMsg: "pressing the artifact did not open its tab in front",
