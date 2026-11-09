@@ -733,20 +733,13 @@ pub async fn keep_vault_blocked(
             .and_then(|open| open.persona);
         keep_blocked_pressed(&held, network.as_ref(), session, &vault);
         if let Some(kept) = kept_blocked_but_held(held.root(), persona.as_deref(), &vault) {
-            held.chats().tell_outcome(
+            return Ok(Some(told_kept_but_held(
+                &held,
                 session,
-                purlis_core::askoutcome::Outcome {
-                    about: purlis_core::askoutcome::About::Vault {
-                        vault: vault.clone(),
-                    },
-                    answer: purlis_core::askoutcome::Answer::KeptBlockedButHeld {
-                        persona: kept.persona,
-                        by: kept.by,
-                        reason: purlis_core::askoutcome::reason(reason.as_deref()),
-                    },
-                },
-            );
-            return Ok(Some(VaultAnswered { said: kept.said }));
+                &vault,
+                kept,
+                reason.as_deref(),
+            )));
         }
         crate::askoutcome::kept_blocked(
             held.chats(),
@@ -862,6 +855,34 @@ pub(crate) struct KeptButHeld {
     pub by: purlis_core::askoutcome::HeldBy,
     /// What the person reads beside the press.
     pub said: String,
+}
+
+/// **Tells chat `session` that Keep blocked on `vault` holds nothing**, since its persona already
+/// holds it (#5801), and answers what the person reads beside the press: the one telling of Keep
+/// blocked on the refused vault's Notice and on a run's own notice alike (#5890). Its next turn
+/// hears that its persona may use the vault and not to use it unless the person says to, with
+/// `reason`, what the person typed for it, if anything.
+pub(crate) fn told_kept_but_held(
+    held: &crate::planes::Held,
+    session: u32,
+    vault: &str,
+    kept: KeptButHeld,
+    reason: Option<&str>,
+) -> VaultAnswered {
+    held.chats().tell_outcome(
+        session,
+        purlis_core::askoutcome::Outcome {
+            about: purlis_core::askoutcome::About::Vault {
+                vault: vault.to_owned(),
+            },
+            answer: purlis_core::askoutcome::Answer::KeptBlockedButHeld {
+                persona: kept.persona,
+                by: kept.by,
+                reason: purlis_core::askoutcome::reason(reason),
+            },
+        },
+    );
+    VaultAnswered { said: kept.said }
 }
 
 /// **Where Keep blocked holds nothing, since `persona` may already use `vault`** (#5801; ADR

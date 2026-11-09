@@ -36,6 +36,7 @@ import { forgetInbox, replyBytes } from "./inboxRules";
 import { keepInboxScope } from "./inboxScope";
 import { forgetProjectViews } from "./projectViews";
 import { openEveryAnswer } from "./test-inbox";
+import { VAULTS_OWN, runAsk } from "./secretAsk.testkit";
 import type { DispatchPending, InboxUpdate, Shown } from "./bindings";
 
 /**
@@ -582,6 +583,20 @@ describe("answering in place", () => {
     expect(within(recent).getByText("Allow")).toBeTruthy();
     // Read-only: nothing in it can be pressed.
     expect(within(recent).queryAllByRole("button")).toEqual([]);
+  });
+
+  it("lists what Keep blocked said beside it under Recently answered, where the persona already holds the vault (#5890)", async () => {
+    const held =
+      "You kept vault team blocked for this chat, but devops can already use it, so Keep blocked does not stop this chat's runs on it. Remove it in Settings › Sandbox › Allowed to stop them.";
+    core({ answer_run_grant: { said: held } });
+    const ask = { ...runAsk({ offer: "vault" }, VAULTS_OWN), chain: ["devops 4"] };
+    const { again, props } = draw([ask]);
+    await userEvent.click(screen.getByRole("button", { name: "Keep blocked" }));
+    await waitFor(() => expect(props.onAnswered).toHaveBeenCalled());
+    again([]);
+    const recent = screen.getByRole("region", { name: "Recently answered" });
+    expect(within(recent).getByText("Keep blocked")).toBeTruthy();
+    expect(within(recent).getByText(held)).toBeTruthy();
   });
 
   it("opens Delete workspace from a workspace's removal, removes nothing, and notes no answer (qw356)", async () => {

@@ -150,6 +150,9 @@ export type Answered = {
   says: string;
   /** The answer as its button read, or a reply's words. */
   answer: string;
+  /** What the source said of the answer, where it said something the person should read: Keep
+   *  blocked on a vault the chat's persona already holds (#5890). */
+  said?: string;
 };
 
 /** The most answered asks a project's Inbox lists. */

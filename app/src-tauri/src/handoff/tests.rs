@@ -13721,6 +13721,109 @@ fn keep_blocked_through_a_vaults_own_ask_says_no_ask_stayed_up() {
     });
 }
 
+/// **#5890**: Keep blocked on a run's own notice (its vault's own line), on a vault its persona has
+/// come to hold meanwhile, tells the chat and the person what Keep blocked on the refused vault's
+/// Notice does: the chat hears its persona may use the vault and not to use it unless the person
+/// says to, never that it was kept blocked, and the press answers what the person reads beside it.
+#[test]
+fn keep_blocked_on_a_runs_notice_on_a_vault_its_persona_holds_says_what_the_notice_says() {
+    use purlis_core::askoutcome::{About, Answer, HeldBy, Outcome};
+    use purlis_core::secrets::ask::run::Offer;
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    vault_team_no_persona_is_tagged_for(&plane);
+    let words: std::sync::Arc<Mutex<Vec<(u32, Outcome)>>> = std::sync::Arc::default();
+    let keep = std::sync::Arc::clone(&words);
+    held.chats()
+        .tell_network_words_to(std::sync::Arc::new(move |session, outcome| {
+            keep.lock().unwrap().push((session, outcome));
+        }));
+
+    let mut pressed = None;
+    let ran = held_while(
+        &held,
+        curl_on_team_not_its(&plane, Offer::Vault { no_allow: None }, &["TOKEN"]),
+        |open| {
+            // Allowed for `ops` on this machine while the notice was up.
+            purlis_core::sandbox::local::grant_vault(&plane.root, "team", "ops")
+                .expect("a row of the Allowed list");
+            pressed = Some(crate::secretasks::run_grant_given(
+                &held,
+                None,
+                open.id,
+                crate::secretasks::RunGrantPress::Refuse,
+                crate::secretasks::RunGiven::default(),
+            ));
+        },
+    );
+
+    assert!(
+        matches!(ran, purlis_core::secrets::ask::run::RunHeld::Refused { .. }),
+        "{ran:?}"
+    );
+    let notice = crate::vaultroute::kept_blocked_but_held(&plane.root, Some("ops"), "team")
+        .expect("ops holds team");
+    assert_eq!(
+        pressed.expect("pressed").expect("kept"),
+        Some(crate::vaultroute::VaultAnswered { said: notice.said }),
+        "the person reads what the Notice's Keep blocked says"
+    );
+    let told: Vec<Outcome> = words
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(session, _)| *session == 3)
+        .map(|(_, outcome)| outcome.clone())
+        .collect();
+    assert_eq!(
+        told,
+        [Outcome {
+            about: About::Vault {
+                vault: "team".to_owned()
+            },
+            answer: Answer::KeptBlockedButHeld {
+                persona: "ops".to_owned(),
+                by: HeldBy::AllowedList,
+                reason: None,
+            },
+        }],
+        "the chat hears what the Notice's Keep blocked tells it, and nothing of being kept blocked"
+    );
+}
+
+/// #5890: Keep blocked on a run's own notice, on a vault its persona may not use, says nothing more
+/// than it did: the press answers no sentence, and the chat is told it was kept blocked.
+#[test]
+fn keep_blocked_on_a_runs_notice_on_a_vault_its_persona_may_not_use_answers_no_sentence() {
+    use purlis_core::secrets::ask::run::Offer;
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    vault_team_no_persona_is_tagged_for(&plane);
+
+    let mut pressed = None;
+    held_while(
+        &held,
+        curl_on_team_not_its(&plane, Offer::Vault { no_allow: None }, &["TOKEN"]),
+        |open| {
+            pressed = Some(crate::secretasks::run_grant_given(
+                &held,
+                None,
+                open.id,
+                crate::secretasks::RunGrantPress::Refuse,
+                crate::secretasks::RunGiven::default(),
+            ));
+        },
+    );
+
+    assert_eq!(pressed.expect("pressed").expect("kept"), None);
+}
+
 /// #5617: Always allow pressed while Keep blocked is answered for the same chat and vault waits for
 /// it, then finds its ask answered: no tool line is written and the persona is not given the vault,
 /// so nothing Keep blocked took back is left behind.

@@ -140,7 +140,9 @@ pub struct RunGiven {
 /// **The person answers the ask to allow a program `id`** (ADR 0112, #5239): the run that waits
 /// on it goes on, or hears it was not allowed, and a chat whose command stopped waiting is nudged.
 /// A field is filled by a value typed (`values`) or an entry picked (`links`, #5080), and
-/// `remember` holds the lines the person ticked Remember for and read.
+/// `remember` holds the lines the person ticked Remember for and read. Answers what the person
+/// reads beside the press where there is one: Keep blocked on a vault the persona already holds
+/// (#5890).
 #[tauri::command]
 #[specta::specta]
 pub async fn answer_run_grant(
@@ -151,7 +153,7 @@ pub async fn answer_run_grant(
     values: Vec<RunValue>,
     links: Vec<RunLink>,
     remember: Vec<RunNeedLine>,
-) -> Result<(), String> {
+) -> Result<Option<crate::vaultroute::VaultAnswered>, String> {
     let held = planes.held(&plane)?;
     let network = planes.network().cloned();
     crate::off_the_window("answering a run grant", move || {
@@ -183,7 +185,8 @@ pub fn run_grant_answered(
     id: u32,
     press: RunGrantPress,
 ) -> Result<(), String> {
-    run_grant_carried_out(held, network, id, press, RunGiven::default())
+    // Keep blocked on the refused vault's Notice tells the chat itself where its persona holds it.
+    run_grant_carried_out(held, network, id, press, RunGiven::default()).map(|_| ())
 }
 
 /// [`run_grant_given`] with typed values alone, as the tests press.
@@ -205,6 +208,7 @@ pub fn run_grant_filled(
             ..RunGiven::default()
         },
     )
+    .map(|_| ())
 }
 
 /// [`answer_run_grant`]'s work: the values typed, an entry picked for a field where the person
@@ -224,7 +228,7 @@ pub fn run_grant_given(
     id: u32,
     press: RunGrantPress,
     given: RunGiven,
-) -> Result<(), String> {
+) -> Result<Option<crate::vaultroute::VaultAnswered>, String> {
     let Some(open) = held
         .secret_asks()
         .open_runs()
@@ -249,20 +253,37 @@ pub fn run_grant_given(
         crate::vaultroute::audit_kept_back(held, &kept.taken_back);
     }
     let _one = held.run_answers(open.bound.chat);
-    run_grant_carried_out(held, network, id, press, given)
+    // On a vault its persona holds by now, the chat and the person hear what Keep blocked on the
+    // refused vault's Notice tells them (#5890).
+    Ok(
+        run_grant_carried_out(held, network, id, press, given)?.map(|kept| {
+            crate::vaultroute::told_kept_but_held(
+                held,
+                open.bound.chat,
+                &open.bound.vault,
+                kept,
+                None,
+            )
+        }),
+    )
 }
 
 /// [`run_grant_given`]'s work, with [`crate::planes::Held::run_answers`] held by its caller: the
 /// checks first, then the values stored, then the grant audited and given (#5242). The values
 /// stay stored whatever the person answers, but on Keep blocked and Not now, which store nothing,
 /// and on Don't allow for a vault the persona may not use, which is not this persona's to fill.
+///
+/// **Keep blocked on a vault's own line, where its persona holds the vault by now** (#5890): the
+/// chat's runs on it are not held, so the line saying it was kept blocked is not told, and how
+/// the persona holds it is answered, for the caller to tell as Keep blocked on the refused vault's
+/// Notice does ([`crate::vaultroute::told_kept_but_held`]). None for every other answer.
 fn run_grant_carried_out(
     held: &crate::planes::Held,
     network: Option<&purlis_core::sandboxblock::record::Record>,
     id: u32,
     press: RunGrantPress,
     given: RunGiven,
-) -> Result<(), String> {
+) -> Result<Option<crate::vaultroute::KeptButHeld>, String> {
     use purlis_core::secrets::ask::run::{Audited, Offer, RunAnswer};
     let RunGiven {
         values,
@@ -597,7 +618,18 @@ fn run_grant_carried_out(
             return Err(why);
         }
     };
-    told_each(held, &answered.nudge, &answered.told);
+    let kept_but_held = (answer == RunAnswer::Refuse && matches!(open.offer, Offer::Vault { .. }))
+        .then(|| {
+            crate::vaultroute::kept_blocked_but_held(
+                held.root(),
+                Some(&open.persona),
+                &open.bound.vault,
+            )
+        })
+        .flatten();
+    if kept_but_held.is_none() {
+        told_each(held, &answered.nudge, &answered.told);
+    }
     // The needs the person ticked Remember for, once their keys are stored (#5240): only for a
     // key stored here, and as a Secret ask's Fill writes them.
     if remembers {
@@ -637,7 +669,7 @@ fn run_grant_carried_out(
     if answer == RunAnswer::Refuse && matches!(open.offer, Offer::Vault { .. }) {
         crate::vaultroute::vault_kept_blocked(held, network, open.bound.chat, &open.bound.vault);
     }
-    Ok(())
+    Ok(kept_but_held)
 }
 
 /// **Why `link`'s entry may not fill a field of `open`'s notice**, where it may not (#5080): one
