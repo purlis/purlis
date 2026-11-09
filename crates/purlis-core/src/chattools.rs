@@ -2224,12 +2224,13 @@ fn shown_memories(found: &[crate::memstore::Found]) -> String {
         .join("\n\n")
 }
 
+/// One change record as read: the record, or its slug and why it could not be read.
+pub(crate) type ChangeRead = Result<crate::change::Record, (String, String)>;
+
 /// Every change record of a workspace, in the store's order: each read, or its slug and why it
 /// could not be.
 #[cfg(unix)]
-pub(crate) fn change_records(
-    changes: Option<&held::Store>,
-) -> Result<Vec<Result<crate::change::Record, (String, String)>>, String> {
+pub(crate) fn change_records(changes: Option<&held::Store>) -> Result<Vec<ChangeRead>, String> {
     let mut out = Vec::new();
     if let Some(changes) = changes {
         for name in changes.files()? {

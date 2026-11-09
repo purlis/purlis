@@ -71,6 +71,12 @@ export const commands = {
 	 *  Window-only: nothing a link serves, and no command a chat runs, can approve.
 	 */
 	artifactApprove: (label: string) => typedError<null, string>(__TAURI_INVOKE("artifact_approve", { label })),
+	/**
+	 *  **Grants an approved artifact its plane-scoped queries** (ADR 0120 §7, #5969): a grant of its
+	 *  own, from the person's press in purlis's bar, of exactly the pin and template their window
+	 *  was served. A new approval of the folder drops it.
+	 */
+	artifactGrantPlane: (label: string) => typedError<null, string>(__TAURI_INVOKE("artifact_grant_plane", { label })),
 	/**  What the window says about this launch and the session bus: nothing, on a launch with it. */
 	sessionBus: () => __TAURI_INVOKE<{
 	/**  The line it draws: why there is no bus, and what is off for the run. */
@@ -5991,6 +5997,10 @@ export type ArtifactOpened = {
 	 *  declares data files and none is here, which the bar says.
 	 */
 	generated: boolean,
+	/**  The catalogue queries its page declared it calls, as its approval lists them (#5969). */
+	queries: ArtifactQuery[],
+	/**  Whether it may call its plane-scoped queries: a grant of its own (#5969). */
+	plane_granted: boolean,
 };
 
 /**  One pin, as the activity bar's artifact group draws it. */
@@ -6016,6 +6026,18 @@ export type ArtifactPlace = {
 	width: number | null,
 	height: number | null,
 	ratio: number | null,
+};
+
+/**  One query a page declared, as its approval lists it in the bar. */
+export type ArtifactQuery = {
+	/**  `<id>@<N>`. */
+	id: string,
+	/**  `workspace` or `plane`. */
+	scope: string,
+	/**  Each declared parameter that widens what it reads, as `<name>: <what it then reads>`. */
+	widens: string[],
+	/**  That the id is deprecated or replaced, which the bar warns of. */
+	warning: string | null,
 };
 
 /**

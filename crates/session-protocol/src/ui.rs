@@ -1100,6 +1100,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Approving an artifact's script (#5959, ADR 0120 §4): the person's press in its bar, of
     // what their own window was served. No link may approve on their behalf.
     "artifact_approve",
+    // Granting an approved artifact its plane-wide queries (#5969, ADR 0120 §7): a grant of
+    // its own, the person's press in its bar. No link may grant it on their behalf.
+    "artifact_grant_plane",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on

@@ -35,6 +35,7 @@ export const commands = {
 	artifactRepin: __WINDOW_ONLY_RESULT,
 	artifactUnpin: __WINDOW_ONLY_RESULT,
 	artifactApprove: __WINDOW_ONLY_RESULT,
+	artifactGrantPlane: __WINDOW_ONLY_RESULT,
 	/**  What the window says about this launch and the session bus: nothing, on a launch with it. */
 	sessionBus: () => __TAURI_INVOKE<{
 	/**  The line it draws: why there is no bus, and what is off for the run. */
@@ -3101,6 +3102,10 @@ export type ArtifactOpened = {
 	 *  declares data files and none is here, which the bar says.
 	 */
 	generated: boolean,
+	/**  The catalogue queries its page declared it calls, as its approval lists them (#5969). */
+	queries: ArtifactQuery[],
+	/**  Whether it may call its plane-scoped queries: a grant of its own (#5969). */
+	plane_granted: boolean,
 };
 
 /**  One pin, as the activity bar's artifact group draws it. */
@@ -3126,6 +3131,18 @@ export type ArtifactPlace = {
 	width: number | null,
 	height: number | null,
 	ratio: number | null,
+};
+
+/**  One query a page declared, as its approval lists it in the bar. */
+export type ArtifactQuery = {
+	/**  `<id>@<N>`. */
+	id: string,
+	/**  `workspace` or `plane`. */
+	scope: string,
+	/**  Each declared parameter that widens what it reads, as `<name>: <what it then reads>`. */
+	widens: string[],
+	/**  That the id is deprecated or replaced, which the bar warns of. */
+	warning: string | null,
 };
 
 /**

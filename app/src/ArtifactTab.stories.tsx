@@ -32,6 +32,8 @@ function answers(about: ArtifactAbout, opened: Partial<ArtifactOpened> = {}) {
         standing: "script-free",
         changed_by: null,
         generated: true,
+        queries: [],
+        plane_granted: false,
         ...opened,
       };
     if (cmd.startsWith("artifact_")) return null;

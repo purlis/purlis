@@ -277,14 +277,14 @@ pub fn find(id: &str) -> Option<(&'static Query, Option<String>)> {
     if let Some(query) = CATALOGUE.iter().find(|q| q.id() == id) {
         let warning = query
             .deprecated
-            .map(|why| format!("{id} is deprecated: {why}"));
+            .map(|why| format!("Calls {id}, which is deprecated: {why}"));
         return Some((query, warning));
     }
     CATALOGUE
         .iter()
         .find(|q| q.replaces == Some(id))
         .map(|query| {
-            let warning = format!("{id} is replaced by {}", query.id());
+            let warning = format!("Calls {id}, which {} replaces", query.id());
             (query, Some(warning))
         })
 }

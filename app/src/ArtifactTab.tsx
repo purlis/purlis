@@ -20,6 +20,7 @@ import {
   type ArtifactApprovalChanged,
   type ArtifactKeyPressed,
 } from "./artifacts";
+import { ArtifactQueries } from "./ArtifactQueries";
 import { useViewChanged } from "./planeChanged";
 import { Button } from "./ui/button/Button";
 import { EmptyState } from "./ui/empty-state/EmptyState";
@@ -100,6 +101,7 @@ export function ArtifactTab({
         <span className="artifact-bar-name">{name}</span>
         <span className="artifact-bar-by">{pinnedBy(about.said)}</span>
         {opened === null ? null : <ScriptStanding opened={opened} />}
+        {opened === null ? null : <ArtifactQueries opened={opened} />}
         {opened === null || opened.generated ? null : (
           <span className="artifact-bar-standing" data-testid="artifact-data">
             Not generated on this machine

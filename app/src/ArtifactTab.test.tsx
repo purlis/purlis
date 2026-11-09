@@ -49,6 +49,8 @@ function core(
           standing: "script-free",
           changed_by: null,
           generated: true,
+          queries: [],
+          plane_granted: false,
           ...opened,
         };
       return null;
