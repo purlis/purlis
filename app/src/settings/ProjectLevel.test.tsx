@@ -408,7 +408,13 @@ describe("every project setting there is, at the Project level", () => {
     ["work", ["work: kind", "work: command", "work: environment"]],
     [
       "Sandbox",
-      ["Internet access", "Certificate checks", "What chats can change", "Always protected"],
+      [
+        "Internet access",
+        "Certificate checks",
+        "Stricter terminals",
+        "What chats can change",
+        "Always protected",
+      ],
     ],
     ["Dispatch", ["Limits", "Dispatch grants", "Policy locks"]],
     ["Runs on", ["Chats run on"]],

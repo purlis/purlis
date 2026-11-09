@@ -16,6 +16,7 @@ fn default_policy() -> Option<Policy> {
         hosts: vec![],
         certificate_checks: true,
         personas: Default::default(),
+        own_terminal_only: false,
     })
 }
 
@@ -96,6 +97,7 @@ fn a_plane_names_its_egress_by_preset_and_an_unknown_preset_is_refused() {
             hosts: vec![],
             certificate_checks: true,
             personas: Default::default(),
+            own_terminal_only: false,
         })
     );
     assert_eq!(
@@ -120,6 +122,7 @@ fn an_empty_egress_list_is_the_strictest_answer_and_is_kept() {
             hosts: vec![],
             certificate_checks: true,
             personas: Default::default(),
+            own_terminal_only: false,
         })
     );
 }
@@ -5033,6 +5036,7 @@ fn policy_of(presets: &[Preset], certificate_checks: bool) -> Policy {
         hosts: vec![],
         certificate_checks,
         personas: Default::default(),
+        own_terminal_only: false,
     }
 }
 
@@ -5650,6 +5654,88 @@ fn certificate_checks_are_on_unless_the_project_turns_them_off() {
         "sandbox.certificate-checks in charter.toml is not true or false; certificate checks \
          are off until it is"
     );
+}
+
+/// A project keeps its wrapped chats to their own terminal only where its file says
+/// `own-terminal-only = true`; what cannot be read is read as on, the narrow value.
+#[test]
+fn own_terminal_only_is_off_unless_the_project_turns_it_on() {
+    assert!(!Policy::defaults().own_terminal_only);
+    assert_eq!(
+        said("[sandbox]\nmode = \"on\"\n")
+            .policy
+            .map(|policy| policy.own_terminal_only),
+        Some(false),
+        "an absent key reads as off"
+    );
+    let on = said("[sandbox]\nmode = \"on\"\nown-terminal-only = true\n");
+    assert_eq!(on.policy.map(|policy| policy.own_terminal_only), Some(true));
+    assert!(on.refused.is_empty(), "{:?}", on.refused);
+    let off = said("[sandbox]\nmode = \"on\"\nown-terminal-only = false\n");
+    assert_eq!(
+        off.policy.map(|policy| policy.own_terminal_only),
+        Some(false)
+    );
+    assert!(off.refused.is_empty(), "{:?}", off.refused);
+    let typo = said("[sandbox]\nmode = \"on\"\nown-terminal-only = \"yes\"\n");
+    assert_eq!(
+        typo.policy.map(|policy| policy.own_terminal_only),
+        Some(true)
+    );
+    assert_eq!(typo.refused, [Refusal::OwnTerminalOnlyNotABool]);
+    assert_eq!(
+        typo.refused[0].to_string(),
+        "sandbox.own-terminal-only in charter.toml is not true or false; chats keep to their own \
+         terminal until it is"
+    );
+    assert_eq!(typo.refused[0].key(), ["sandbox", "own-terminal-only"]);
+}
+
+/// A wrapped chat (Codex, opencode) on macOS keeps to its own terminal alone where its project
+/// says so: the profile it starts in denies every terminal of this Mac, after every rule that
+/// allows one, and gives back only the one it runs in. Without the key, nothing of it is there.
+#[test]
+fn a_wrapped_chat_keeps_to_its_own_terminal_alone_where_the_project_says_so() {
+    let machine = mac_with(&[]);
+    let others = "(deny file-read-data file-write* file-ioctl (regex #\"^/dev/ttys[0-9]+$\"))";
+    let own =
+        "(allow file-read-data file-write* file-ioctl (literal \"/dev/purlis-own-terminal\"))";
+    for on in [false, true] {
+        let policy = Policy {
+            own_terminal_only: on,
+            ..Policy::defaults()
+        };
+        for harness in [Harness::Opencode, Harness::Codex] {
+            let profile = wrap_profile(&compiled_for(
+                harness,
+                &policy,
+                StdPath::new(PROJECT),
+                &machine,
+            ));
+            let lines: Vec<&str> = profile.lines().collect();
+            let denied = lines.iter().rposition(|line| *line == others);
+            let given = lines.iter().rposition(|line| *line == own);
+            if !(on && cfg!(target_os = "macos")) {
+                assert_eq!(denied, None, "{harness:?}, on: {on}:\n{profile}");
+                continue;
+            }
+            let (Some(denied), Some(given)) = (denied, given) else {
+                panic!("{harness:?}: no rule keeps it to its own terminal:\n{profile}");
+            };
+            assert_eq!(
+                given,
+                denied + 1,
+                "{harness:?}: its own terminal given back next"
+            );
+            // No rule after them gives a terminal back.
+            assert!(
+                lines[given + 1..]
+                    .iter()
+                    .all(|line| !line.contains("/dev/ttys") && !line.contains("pseudo-tty")),
+                "{harness:?}:\n{profile}"
+            );
+        }
+    }
 }
 
 /// R1, per harness: a default project's chat has the certificate check's one service in the

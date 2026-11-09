@@ -94,6 +94,7 @@ fn held_to(
             hosts: Vec::new(),
             certificate_checks: false,
             personas: Default::default(),
+            own_terminal_only: false,
         },
         &Plane::of(None),
         root,

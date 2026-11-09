@@ -131,6 +131,11 @@ pub struct Policy {
     /// ever narrows. An administrator's `socket-grants` lock turns it off besides
     /// ([`CertificateChecks`]).
     pub certificate_checks: bool,
+    /// `own-terminal-only`: on macOS, whether a wrapped chat keeps to the terminal it runs in
+    /// and opens no other terminal of this Mac, the person's own tabs among them, nor any it
+    /// would make itself ([`OWN_TERMINAL_ONLY`]). **Off unless the file says `true`**: the key
+    /// only ever narrows.
+    pub own_terminal_only: bool,
     /// Each persona's own grants: `[sandbox.personas.<name>]` in the committed file (#1362).
     pub personas: std::collections::BTreeMap<String, persona::Grants>,
 }
@@ -143,6 +148,7 @@ impl Policy {
             egress: Preset::DEFAULT.to_vec(),
             hosts: Vec::new(),
             certificate_checks: true,
+            own_terminal_only: false,
             personas: std::collections::BTreeMap::new(),
         }
     }
@@ -151,6 +157,14 @@ impl Policy {
 /// The key that turns the system's certificate check off for a project's chats: `false` is the
 /// one value that changes anything (R1, 2026-10-13).
 pub const CERTIFICATE_CHECKS: &str = "certificate-checks";
+
+/// **The key that keeps a project's wrapped chats to their own terminal** on macOS: `true` is
+/// the one value that changes anything. With it, a chat reads and types into the terminal it
+/// runs in and no other: not the person's other terminal tabs, not another chat's, and not one
+/// it makes itself, so `script`, `expect`, `tmux` and a Codex command run in a terminal of its
+/// own fail. Off, a chat also opens the terminals programs make. Linux's supervisor judges
+/// terminals itself and needs no key.
+pub const OWN_TERMINAL_ONLY: &str = "own-terminal-only";
 
 /// **Whether a sandboxed chat of a project has the system's certificate check, and why not**
 /// (the operator's ruling R1 of 2026-10-13, amending ADR 0093). On by default, on every
@@ -410,6 +424,8 @@ pub enum Refusal {
     BrowserSite(String, String),
     /// `certificate-checks` that is not `true` or `false`.
     CertificateChecksNotABool,
+    /// `own-terminal-only` that is not `true` or `false`: read as `true`, the narrow value.
+    OwnTerminalOnlyNotABool,
     /// A `policy` that is not `"never"` or `"local"`: read as `"never"`.
     PolicyUnknown,
     /// Something in `personas` that grants nothing ([`persona::read`]), as one sentence with
@@ -482,6 +498,11 @@ impl fmt::Display for Refusal {
                 "{TABLE}.{CERTIFICATE_CHECKS} in {FILE} is not true or false; certificate checks \
                  are off until it is"
             ),
+            Self::OwnTerminalOnlyNotABool => write!(
+                f,
+                "{TABLE}.{OWN_TERMINAL_ONLY} in {FILE} is not true or false; chats keep to their \
+                 own terminal until it is"
+            ),
             Self::PolicyUnknown => write!(
                 f,
                 "{TABLE}.{} in {FILE} is not \"never\" or \"local\", so it is read as \
@@ -511,6 +532,7 @@ impl Refusal {
             Self::HostsNotAList | Self::Host(..) => at(hosts::KEY),
             Self::BrowserSitesNotAList | Self::BrowserSite(..) => at(browser_sites::KEY),
             Self::CertificateChecksNotABool => at(CERTIFICATE_CHECKS),
+            Self::OwnTerminalOnlyNotABool => at(OWN_TERMINAL_ONLY),
             Self::PolicyUnknown => at(team::KEY),
             Self::Persona(said) => said.key.clone().unwrap_or_else(|| at(persona::KEY)),
             Self::ForgeHost(..) => vec!["forge".to_owned()],
@@ -617,6 +639,7 @@ impl Said {
                 && key != hosts::KEY
                 && key != browser_sites::KEY
                 && key != CERTIFICATE_CHECKS
+                && key != OWN_TERMINAL_ONLY
                 && key != persona::KEY
                 && key != services::EXPECTS
                 && key != team::KEY
@@ -678,6 +701,16 @@ impl Said {
                 false
             }
         };
+        // Off unless the file says `true`: what cannot be read is refused and read as on, the
+        // narrow value.
+        let own_terminal_only = match table.get(OWN_TERMINAL_ONLY) {
+            None => false,
+            Some(toml::Value::Boolean(on)) => *on,
+            Some(_) => {
+                refused.push(Refusal::OwnTerminalOnlyNotABool);
+                true
+            }
+        };
         let (personas, not) = persona::keyed(table.get(persona::KEY), FILE, known);
         refused.extend(not.into_iter().map(Refusal::Persona));
         // The forge preset lets a project's `[[forge]]` hosts through, but not one the sandbox
@@ -693,6 +726,7 @@ impl Said {
             egress,
             hosts,
             certificate_checks,
+            own_terminal_only,
             personas,
         };
         let (policy, unset) = if on {
@@ -3599,6 +3633,9 @@ pub struct Widened {
     /// At the floor, the held folders a person let this chat write ([`grant::lift`]), each named
     /// whole. Every other copy of the name stays held where the sandbox can say so.
     pub lifted: Vec<PathBuf>,
+    /// Whether the chat keeps to its own terminal alone, on macOS: the project's
+    /// `own-terminal-only` ([`OWN_TERMINAL_ONLY`]). Nothing a person grants turns it off.
+    pub own_terminal_only: bool,
 }
 
 impl Widened {
@@ -3615,6 +3652,7 @@ impl Widened {
             // nothing a committed file can widen, since `true` is what an absent key means.
             // Policy has its say in [`Self::and_granted`].
             trust: policy.certificate_checks,
+            own_terminal_only: policy.own_terminal_only,
             sockets: Vec::new(),
             services: Vec::new(),
             ports: Vec::new(),
@@ -3881,13 +3919,14 @@ impl Compiled {
             );
         }
         // The certificate check as the project's file says it (R1), and as policy leaves it
-        // ([`Widened::and_granted`]).
+        // ([`Widened::and_granted`]); the stricter terminal rule as the file says it.
+        let written = Plane::read(root)
+            .said()
+            .unset
+            .unwrap_or_else(Policy::defaults);
         let widened = Widened {
-            trust: Plane::read(root)
-                .said()
-                .unset
-                .unwrap_or_else(Policy::defaults)
-                .certificate_checks,
+            trust: written.certificate_checks,
+            own_terminal_only: written.own_terminal_only,
             ..Widened::default()
         }
         .lifting(grant::still_lifted(

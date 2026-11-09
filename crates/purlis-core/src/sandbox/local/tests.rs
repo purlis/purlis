@@ -60,6 +60,7 @@ fn taking_the_offer_turns_the_sandbox_on_and_keeps_every_line_the_operator_wrote
             hosts: vec![],
             certificate_checks: true,
             personas: Default::default(),
+            own_terminal_only: false,
         })
     );
     assert!(!offer_due(project.path()), "asked once");
@@ -98,6 +99,7 @@ fn a_sandbox_table_without_a_mode_gains_the_mode_and_keeps_its_egress() {
             hosts: vec![],
             certificate_checks: true,
             personas: Default::default(),
+            own_terminal_only: false,
         })
     );
 }
