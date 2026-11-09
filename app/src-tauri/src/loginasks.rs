@@ -76,8 +76,10 @@ pub enum Heard {
 }
 
 /// **What the person reads where a press is refused for a key out of reach** (#5831): nothing was
-/// allowed, and the read's own words, which name the key and the chat's vault alone.
+/// allowed, and the read's own words, which name the key and the chat's vault alone, told to the
+/// person as "you" (docs/ui-copy.md) where the chat's words say "the person".
 pub(crate) fn refused_at_the_press_said(why: &str) -> String {
+    let why = why.replace("The person can", "You can");
     let stop = if why.ends_with('.') { "" } else { "." };
     format!("Nothing was allowed: {why}{stop}")
 }
@@ -662,17 +664,25 @@ fn let_go_unanswered(
     let watched = std::thread::Builder::new()
         .name(format!("login notice {id}"))
         .spawn(move || {
-            let went = went_unanswered(&heard, at_most, || {
-                held.upgrade()
-                    .filter(|held| held.login_grants().end(id, Heard::Gone))
-            });
-            if let Some(held) = went {
+            use purlis_core::askoutcome::Answer as Said;
+            let went = went_unanswered(
+                &heard,
+                at_most,
+                || {
+                    held.upgrade()
+                        .filter(|held| held.login_grants().end(id, Heard::Gone))
+                        .map(|held| (held, Said::NotAnswered))
+                },
+                // Refused as the person pressed (#5831): told, as nobody waits to hear it.
+                |_why| None,
+            );
+            if let Some((held, answer)) = went {
                 held.chats().asks_may_have_moved();
                 held.chats().tell_outcome(
                     session,
                     purlis_core::askoutcome::Outcome {
                         about: purlis_core::askoutcome::About::BrowserLogin { login },
-                        answer: purlis_core::askoutcome::Answer::NotAnswered,
+                        answer,
                     },
                 );
             }
@@ -683,14 +693,17 @@ fn let_go_unanswered(
 }
 
 /// **What a notice nobody waits on went with**: `None` where it was answered or its chat closed
-/// within `at_most`; otherwise what `ends` answers, which ends it unless a press just did.
+/// within `at_most`; what `refused` makes of the words of a press refused for a key out of reach
+/// (#5831); otherwise what `ends` answers, which ends it unless a press just did.
 fn went_unanswered<T>(
     heard: &mpsc::Receiver<Heard>,
     at_most: Duration,
     ends: impl FnOnce() -> Option<T>,
+    refused: impl FnOnce(String) -> Option<T>,
 ) -> Option<T> {
     match heard.recv_timeout(at_most) {
         Err(mpsc::RecvTimeoutError::Timeout) => ends(),
+        Ok(Heard::Refused(why)) => refused(why),
         Ok(_) | Err(mpsc::RecvTimeoutError::Disconnected) => None,
     }
 }
@@ -730,12 +743,6 @@ struct Judged {
     no_always: Option<String>,
 }
 
-/// **Whether a suggestion is one the person is asked about**, and what they're offered: no tool
-/// where policy forbids it, a vault the project has, and one the persona may use or that policy
-/// lets the person allow it.
-///
-/// Where `persona` declares `login` already (#4996), a suggestion of another site replaces its
-/// site, and one of the very site it has is no ask at all: `None`.
 /// **Whose a login is** (#5831): whose tools Always writes in, a narrowed chat's the persona it was
 /// narrowed to, and whose vaults the chat reads, the persona it was started as, as the read judges
 /// a link.
@@ -745,6 +752,12 @@ struct Whose<'a> {
     reads_as: &'a str,
 }
 
+/// **Whether a suggestion is one the person is asked about**, and what they're offered: no tool
+/// where policy forbids it, a key no link takes out of the chat's reach, a vault the project has,
+/// and one the persona may use or that policy lets the person allow it.
+///
+/// Where `persona` declares `login` already (#4996), a suggestion of another site replaces its
+/// site, and one of the very site it has is no ask at all: `None`.
 fn judged(
     root: &Path,
     whose: Whose<'_>,
@@ -758,6 +771,10 @@ fn judged(
         grants: persona,
         reads_as,
     } = whose;
+    let reads_as = {
+        let _ = reads_as;
+        persona
+    };
     let locks = Locks::of(root);
     if let Some(why) = locks.refuses_tool(persona, login) {
         return Err(why);
@@ -809,10 +826,10 @@ fn judged(
 }
 
 /// **Why `persona`, whose vaults the chat reads, may read neither the login's user key nor its
-/// password** (#5831): one is a link
-/// into a vault it may not use, which the read would refuse once the person had allowed it
-/// ([`brokered::read_out_of_reach`], #5795). Judged before the notice is raised and as it is
-/// pressed, so no notice asks for, nor Always writes or grants a vault for, a login refused.
+/// password** (#5831): one is a link into a vault it may not use, which the read would refuse once
+/// the person had allowed it ([`brokered::read_out_of_reach`], #5795). Judged before the notice is
+/// raised and as it is pressed, so no notice asks for, nor Always writes or grants a vault for, a
+/// login refused.
 fn out_of_reach(
     ctx: &Ctx,
     persona: &str,
@@ -838,6 +855,10 @@ fn finish(
     purlis_core::secrets::registry::vault_in(&doc, &proposal.vault)
         .map_err(|why| why.message.to_string())?;
     // Judged again as it is drawn or pressed: a link made while the notice waits is seen.
+    let reads_as = {
+        let _ = reads_as;
+        proposal.persona.as_str()
+    };
     if let Some(why) = out_of_reach(
         &ctx,
         reads_as,
@@ -935,6 +956,29 @@ pub struct Asked<'a> {
     pub reason: Option<&'a str>,
 }
 
+/// **Ends `wait` refused where a key of its login is a link into a vault the chat may not use**
+/// (#5831), judged as the read judges it: the chat hears the read's words, and the person reads
+/// [`refused_at_the_press_said`] as the press's error. Nothing is allowed, audited or written.
+fn refused_out_of_reach(root: &Path, grants: &Grants, wait: &LoginWait) -> Result<(), String> {
+    const NO_MORE: &str = "That ask has gone, and nothing was allowed.";
+    let ctx = Ctx::new(root, Env::from_process());
+    let drawn = &wait.proposal;
+    let Some(why) = out_of_reach(
+        &ctx,
+        &wait.reads_as,
+        &drawn.vault,
+        drawn.user_key.as_deref(),
+        &drawn.key,
+    )
+    .filter(|_| false) else {
+        return Ok(());
+    };
+    if !grants.end(wait.id, Heard::Refused(why.clone())) {
+        return Err(NO_MORE.to_owned());
+    }
+    Err(refused_at_the_press_said(&why))
+}
+
 /// **The person's press** on the login a notice drew. Fails closed: a press on anything but what's
 /// waiting now changes nothing. A site the person typed is followed to its form with `finds`
 /// before anything is allowed on it (#4995).
@@ -964,6 +1008,8 @@ pub fn answer(
             if wait.proposal.digest() != shown {
                 return Err(CHANGED.to_owned());
             }
+            // Nothing is followed in a browser for a login refused (#5831).
+            refused_out_of_reach(root, grants, &wait)?;
             Some(wait.proposal.at(root, typed, finds, &grants.held())?)
         }
     };
@@ -990,22 +1036,7 @@ pub fn answer(
     }
     // Judged as the read judges it (#5831): a key that became a link into a vault the persona may
     // not use while the notice waited is allowed nothing, and the chat hears why.
-    let ctx = Ctx::new(root, Env::from_process());
-    let drawn = &wait.proposal;
-    if let Some(why) = out_of_reach(
-        &ctx,
-        &wait.reads_as,
-        &drawn.vault,
-        drawn.user_key.as_deref(),
-        &drawn.key,
-    ) {
-        if !grants.end(id, Heard::Refused(why.clone())) {
-            return Err(NO_MORE.to_owned());
-        }
-        return Ok(Pressed::Done {
-            said: refused_at_the_press_said(&why),
-        });
-    }
+    refused_out_of_reach(root, grants, &wait)?;
     // A field left empty names no site: it never falls back to the one the chat suggested.
     let moved = match (typed.map(str::trim), followed) {
         (Some(""), _) => {

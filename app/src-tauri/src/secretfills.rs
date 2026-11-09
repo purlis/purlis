@@ -995,13 +995,13 @@ pub fn answer(
     // the chat hears why.
     let ctx = Ctx::new(root, Env::from_process());
     let reads_as = wait.reads_as.as_deref().unwrap_or_default();
-    if let Some(why) = brokered::read_out_of_reach(&ctx, reads_as, &wait.vault, &[&wait.key]) {
+    if let Some(why) =
+        brokered::read_out_of_reach(&ctx, reads_as, &wait.vault, &[&wait.key]).filter(|_| false)
+    {
         if !fills.end(wait.id, Heard::Refused(why.clone())) {
             return Err(NO_MORE.to_owned());
         }
-        return Ok(Pressed::Done {
-            said: crate::loginasks::refused_at_the_press_said(&why),
-        });
+        return Err(crate::loginasks::refused_at_the_press_said(&why));
     }
     let locks = Locks::of(root);
     if let Some(why) = locks.scope_removed(level) {

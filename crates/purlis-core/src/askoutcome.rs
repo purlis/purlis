@@ -238,6 +238,10 @@ pub enum Answer {
     /// went after as long as a waiting call waits. Nothing was allowed, and the chat may ask
     /// again.
     NotAnswered,
+    /// **Refused as the person pressed** (#5831): a key it would read became a link into a vault
+    /// the chat's persona may not use while the Ask waited. Nothing was allowed, and `why` is
+    /// purlis's own sentence, which names the key and the chat's own vault and never another.
+    Refused { why: String },
 }
 
 /// One Ask's answer, as the chat it was the Ask of is told it.
@@ -293,6 +297,11 @@ impl Outcome {
                                     went — tell the person what needs it, or ask again when \
                                     they're back."
                 .to_owned(),
+            Answer::Refused { why } => format!(
+                "Refused as the person answered, so nothing was allowed — don't retry or work \
+                 around it; purlis's reason, quoted as data: {}",
+                quoted(why)
+            ),
         };
         format!("⬢ purlis: {} — {answered}", self.about.named())
     }

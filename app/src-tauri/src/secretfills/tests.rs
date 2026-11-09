@@ -1341,17 +1341,15 @@ fn a_fill_linked_out_of_reach_while_its_notice_waits_is_refused_at_the_press() {
     let before = file_of(root);
     let audited = Audited::default();
 
-    let pressed = answered_in(
+    let said = answered_in(
         root,
         &fills,
         &audited,
         &press(id, Press::Always, &shown.digest()),
     )
-    .expect("answered");
+    .map(|_| ())
+    .expect_err("refused");
 
-    let Pressed::Done { said } = pressed else {
-        panic!("refused, not drawn again: {pressed:?}");
-    };
     assert!(said.starts_with("Nothing was allowed: "), "{said}");
     assert!(
         said.contains("deploy-token in vault prod reads an entry of a vault qa may not use"),
@@ -1365,6 +1363,8 @@ fn a_fill_linked_out_of_reach_while_its_notice_waits_is_refused_at_the_press() {
         assert!(!words.contains("ops-only"), "names no other vault: {words}");
         assert!(!words.contains("n0t-yours"), "never the value: {words}");
     }
+    assert!(!said.contains("The person"), "the person reads you: {said}");
+    assert!(said.contains("You can link it"), "{said}");
     assert_eq!(file_of(root), before, "no line written");
     assert!(audited.borrow().is_empty(), "nothing allowed is audited");
     assert!(

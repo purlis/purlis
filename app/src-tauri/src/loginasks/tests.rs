@@ -1189,20 +1189,28 @@ fn a_notice_nobody_waits_on_goes_unanswered_after_its_time_unless_answered() {
     let dir = project("");
     let grants = Grants::default();
     let (id, _, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
-    let went = went_unanswered(&heard, Duration::from_millis(20), || {
-        Some(&grants).filter(|grants| grants.end(id, Heard::Gone))
-    });
+    let went = went_unanswered(
+        &heard,
+        Duration::from_millis(20),
+        || Some(&grants).filter(|grants| grants.end(id, Heard::Gone)),
+        |_| None,
+    );
     assert!(went.is_some(), "nobody answered, so it went");
     assert!(grants.waiting().is_empty());
 
     let (id, _, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
     grants.end(id, Heard::Allowed);
-    let went = went_unanswered(&heard, Duration::from_millis(20), || Some(()));
+    let went = went_unanswered(&heard, Duration::from_millis(20), || Some(()), |_| Some(()));
     assert!(went.is_none(), "an answer ends the watch");
+
+    let (id, _, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
+    grants.end(id, Heard::Refused("refused".to_owned()));
+    let went = went_unanswered(&heard, Duration::from_millis(20), || None, Some);
+    assert_eq!(went.as_deref(), Some("refused"), "a refusal is told");
 
     let (_, _, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
     grants.forget(7);
-    let went = went_unanswered(&heard, Duration::from_millis(20), || Some(()));
+    let went = went_unanswered(&heard, Duration::from_millis(20), || Some(()), |_| Some(()));
     assert!(went.is_none(), "a close ends the watch");
 }
 
@@ -1313,17 +1321,15 @@ fn a_login_linked_out_of_reach_while_its_notice_waits_is_refused_at_the_press() 
     let before = file_of(root);
     let audited = Audited::default();
 
-    let pressed = answered(
+    let said = answered(
         root,
         &grants,
         &audited,
         &press(id, Press::Always, &proposal.digest()),
     )
-    .expect("answered");
+    .map(|_| ())
+    .expect_err("refused");
 
-    let Pressed::Done { said } = pressed else {
-        panic!("refused, not drawn again: {pressed:?}");
-    };
     assert!(said.starts_with("Nothing was allowed: "), "{said}");
     assert!(
         said.contains("password in vault prod reads an entry of a vault qa may not use"),
@@ -1337,7 +1343,10 @@ fn a_login_linked_out_of_reach_while_its_notice_waits_is_refused_at_the_press() 
         assert!(!words.contains("ops-only"), "names no other vault: {words}");
         assert!(!words.contains("n0t-yours"), "never the value: {words}");
     }
+    assert!(!said.contains("The person"), "the person reads you: {said}");
+    assert!(said.contains("You can link it"), "{said}");
     assert_eq!(file_of(root), before, "no line written");
+    assert!(audited.borrow().is_empty(), "nothing allowed is audited");
     assert!(tool_of(&grants, "shop-login").is_none(), "nothing allowed");
     assert!(
         purlis_core::sandbox::local::granted_vaults(root).is_empty(),

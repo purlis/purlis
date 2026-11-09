@@ -303,3 +303,61 @@ fn a_runner_chats_login_notice_nobody_answered_goes_and_the_chat_is_told() {
         "the notice went"
     );
 }
+
+/// A runner chat's login notice refused at the press for a key out of reach tells the chat why on
+/// its next turn, as nobody waits to hear it (#5831), and never that it was allowed.
+#[test]
+fn a_runner_chats_login_refused_at_the_press_tells_the_chat_why() {
+    let project = Project::new();
+    let chat = project.a_chat();
+    let raised = project.raised(chat);
+    let id = raised.0;
+    let_go_unanswered(
+        &project.held,
+        chat,
+        "shop-login",
+        raised,
+        Duration::from_secs(60),
+    );
+    linked_out_of_reach(project.held.root());
+    let wait = project.held.login_grants().waiting().into_iter().next();
+    let shown = wait.expect("the notice waits").proposal.digest();
+
+    let refused = answer(
+        project.held.root(),
+        project.held.login_grants(),
+        &Asked {
+            session: chat,
+            id,
+            press: Press::Always,
+            shown: &shown,
+            typed: None,
+            reason: None,
+        },
+        &on_its_page,
+        &|_, _| Ok(()),
+    )
+    .map(|_| ())
+    .expect_err("refused");
+
+    assert!(refused.starts_with("Nothing was allowed: "), "{refused}");
+    let told = project.told_within(Duration::from_secs(10));
+    let [(to, Outcome { about, answer })] = told.as_slice() else {
+        panic!("told once: {told:?}");
+    };
+    assert_eq!(*to, chat);
+    assert_eq!(
+        *about,
+        About::BrowserLogin {
+            login: "shop-login".to_owned()
+        }
+    );
+    let Said::Refused { why } = answer else {
+        panic!("told it was refused: {answer:?}");
+    };
+    says_out_of_reach(why);
+    assert!(
+        project.held.login_grants().waiting().is_empty(),
+        "the notice went"
+    );
+}
