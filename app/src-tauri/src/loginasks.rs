@@ -810,7 +810,7 @@ fn judged(
         Some(declared) if proposal.is_where(declared) => return Ok(None),
         Some(declared) => proposal.replacing(root, declared, held)?,
     };
-    finish(root, &locks, proposal, reads_as, as_the_chat_reads_it).map(Some)
+    offered_on_the_notice(root, &locks, proposal, reads_as, as_the_chat_reads_it).map(Some)
 }
 
 /// **Why `persona`, whose vaults the chat reads, may read neither the login's user key nor its
@@ -831,7 +831,7 @@ fn out_of_reach(
 
 /// What the person is offered on `proposal`, under `locks`, for a chat whose vaults are
 /// `reads_as`'s; a key out of reach refused in the words `out_of_reach_said` makes of the read's.
-fn finish(
+fn offered_on_the_notice(
     root: &Path,
     locks: &Locks,
     proposal: Proposal,
@@ -1070,8 +1070,8 @@ pub fn answer(
             fresh.replacing(root, &declared, &grants.held())?
         }
     };
-    // A link made since the judge above is refused by `finish`, in the person's words as above.
-    let judged = finish(
+    // A link made since the judge above is refused by `offered_on_the_notice`, in the person's words as above.
+    let judged = offered_on_the_notice(
         root,
         &locks,
         fresh,
