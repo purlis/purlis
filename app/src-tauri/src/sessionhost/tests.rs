@@ -332,7 +332,7 @@ fn the_lock_check_finds_a_lock_a_host_holds_held() {
     let place = a_place(home.path());
     let _held = a_host_holds_the_lock_of(&place);
 
-    assert!(another_holds(&place.lock));
+    assert!(another_holds(&place));
 }
 
 /// A lock no host holds is free, and asking it leaves it free for a host to take.
@@ -342,7 +342,7 @@ fn the_lock_check_finds_a_lock_no_host_holds_free() {
     let place = a_place(home.path());
     drop(a_host_holds_the_lock_of(&place));
 
-    assert!(!another_holds(&place.lock));
+    assert!(!another_holds(&place));
     drop(a_host_holds_the_lock_of(&place));
 }
 
@@ -353,8 +353,21 @@ fn the_lock_check_finds_a_lock_that_is_not_there_free() {
     let home = tempfile::tempdir().unwrap();
     let place = a_place(home.path());
 
-    assert!(!another_holds(&place.lock));
+    assert!(!another_holds(&place));
     assert!(!place.lock.exists(), "the check made the lock");
+}
+
+/// A host answering on the place's socket serves there, though the system's temporary-file
+/// cleaning took its lock file away: the window puts no chat back beside it.
+#[test]
+fn the_lock_check_finds_a_host_answering_on_its_socket_serving_with_its_lock_file_gone() {
+    let home = tempfile::tempdir().unwrap();
+    let place = a_place(home.path());
+    std::fs::create_dir_all(place.socket.parent().unwrap()).unwrap();
+    let _listening = std::os::unix::net::UnixListener::bind(&place.socket).unwrap();
+
+    assert!(!place.lock.exists());
+    assert!(another_holds(&place));
 }
 
 /// The window's own host never says it is ready within the gate's wait: no chat is put back

@@ -420,7 +420,7 @@ impl SessionHost {
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner)
                     .clone();
-                if !left_serving && !place.is_some_and(|place| another_holds(&place.lock)) {
+                if !left_serving && !place.is_some_and(|place| another_holds(&place)) {
                     return Ok(());
                 }
                 if Instant::now() >= deadline {
@@ -825,9 +825,16 @@ fn log_what_it_says(said: std::process::ChildStderr, supervision: Arc<Supervisio
         });
 }
 
-/// Whether a host holds the lock at `lock` now: taken and let go of at once when it is free.
-/// A lock that cannot be asked is taken as held.
-fn another_holds(lock: &Path) -> bool {
+/// Whether a host serves at `place` now: it holds the place's lock, taken and let go of at once
+/// when it is free, or it answers on the place's socket, for the lock lives in a folder the
+/// system may clean of files nobody opened for days. A lock that cannot be asked is taken as
+/// held.
+fn another_holds(place: &purlis_host::Place) -> bool {
+    lock_held(&place.lock) || purlis_host::answers(&place.socket)
+}
+
+/// Whether a host holds the lock at `lock` now ([`another_holds`]).
+fn lock_held(lock: &Path) -> bool {
     match std::fs::File::open(lock) {
         Err(why) if why.kind() == std::io::ErrorKind::NotFound => false,
         Err(_) => true,
