@@ -16,6 +16,7 @@ import { stripNamed } from "./test-strips";
 import { wears } from "./textRoles.testkit";
 import { eventually, tipOf } from "./ui/tooltip/tooltip.testkit";
 import { forgetInboxOpen, inboxOpenAtLaunch, waitOutTheUndo } from "./test-inbox";
+import { findTree, rowsOf } from "./ui/tree/tree.testkit";
 
 /**
  * **A chat's browsers, in the window** (#2024, spec #2008): each is a row under its chat in the
@@ -255,7 +256,47 @@ const tabNames = () =>
     .queryAllByRole("tab")
     .map((tab) => tab.querySelector(".tab-name")?.textContent);
 
-const chatsTree = () => screen.findByRole("tree", { name: "Chats of this project" });
+const chatsTree = () => findTree("Chats of this project");
+
+/** A chat's browsers, where they are drawn: the rows under its row (#2024, #3198), or under the
+ *  "Pinned browsers" row for the pinned ones whose chat closed (#2022). */
+type Under = { tree: HTMLElement; chat: string };
+
+/** The browser rows under row `chat` of the Chats tree: the rows after it that are deeper than
+ *  it, until one at its level or above. */
+function browsersUnder({ tree, chat }: Under): HTMLElement[] {
+  const rows = rowsOf(tree);
+  const at = rows.findIndex((one) => one.getAttribute("aria-label") === chat);
+  if (at < 0) return [];
+  const level = Number(rows[at].getAttribute("aria-level"));
+  const under: HTMLElement[] = [];
+  for (const one of rows.slice(at + 1)) {
+    if (Number(one.getAttribute("aria-level")) <= level) break;
+    under.push(one);
+  }
+  return under.filter((one) => one.classList.contains("chat-browser"));
+}
+
+/** The browser row named `name` under `under`. */
+function browserUnder(under: Under, name: RegExp): HTMLElement {
+  const found = browsersUnder(under).find((one) => name.test(one.getAttribute("aria-label") ?? ""));
+  if (found === undefined) throw new Error(`no browser row ${String(name)} under ${under.chat}`);
+  return found;
+}
+
+/** Chat `chat`'s browsers, now (none drawn is an error). */
+async function underChat(chat: string, tree?: HTMLElement): Promise<Under> {
+  const under = { tree: tree ?? (await chatsTree()), chat };
+  if (browsersUnder(under).length === 0) throw new Error(`no browser rows under ${chat}`);
+  return under;
+}
+
+/** Chat `chat`'s browsers, once some are drawn. */
+async function findUnder(chat: string, tree?: HTMLElement): Promise<Under> {
+  const under = { tree: tree ?? (await chatsTree()), chat };
+  await waitFor(() => expect(browsersUnder(under).length).toBeGreaterThan(0));
+  return under;
+}
 
 async function fromThePalette(row: string) {
   await userEvent.keyboard("{F2}");
@@ -293,10 +334,8 @@ describe("a chat's browser in the Chats list", () => {
     const host = core([B7]);
     await opened();
 
-    const browsers = within(await chatsTree()).getByRole("group", {
-      name: "Browsers of steward 1",
-    });
-    await userEvent.click(within(browsers).getByRole("button", { name: /Browser b1/ }));
+    const browsers = await underChat("steward 1");
+    await userEvent.click(browserUnder(browsers, /Browser b1/));
 
     await waitFor(() => expect(tabNames()).toContain("Browser b1 of steward 1"));
     await waitFor(() =>
@@ -310,21 +349,18 @@ describe("a chat's browser in the Chats list", () => {
     const host = core([]);
     await opened();
     const tree = await chatsTree();
-    expect(within(tree).queryByRole("group", { name: "Browsers of steward 1" })).toBeNull();
+    expect(browsersUnder({ tree, chat: "steward 1" })).toEqual([]);
 
     host.listed([B7, B8]);
 
-    const browsers = await within(tree).findByRole("group", { name: "Browsers of steward 1" });
-    expect(
-      within(browsers)
-        .getAllByRole("button")
-        .map((one) => one.textContent),
-    ).toEqual([expect.stringContaining("Browser b1"), expect.stringContaining("Browser b2")]);
+    const browsers = await findUnder("steward 1", tree);
+    expect(browsersUnder(browsers).map((one) => one.textContent)).toEqual([
+      expect.stringContaining("Browser b1"),
+      expect.stringContaining("Browser b2"),
+    ]);
 
     host.listed([]);
-    await waitFor(() =>
-      expect(within(tree).queryByRole("group", { name: "Browsers of steward 1" })).toBeNull(),
-    );
+    await waitFor(() => expect(browsersUnder({ tree, chat: "steward 1" })).toEqual([]));
   });
 });
 
@@ -383,10 +419,8 @@ describe("a chat's browser view, opened from its row", () => {
   it("is taken over with a click, as any browser view is (#2014)", async () => {
     const host = core([B7]);
     await opened();
-    const browsers = within(await chatsTree()).getByRole("group", {
-      name: "Browsers of steward 1",
-    });
-    await userEvent.click(within(browsers).getByRole("button", { name: /Browser b1/ }));
+    const browsers = await underChat("steward 1");
+    await userEvent.click(browserUnder(browsers, /Browser b1/));
     await waitFor(() =>
       expect(host.asked("watch_browser")).toContainEqual(
         expect.objectContaining({ program: "B7", role: "focused" }),
@@ -430,10 +464,8 @@ describe("a chat's browser not ended yet (D-2013-16)", () => {
     core([B7, { ...B8, unended: true }]);
     await opened();
 
-    const browsers = within(await chatsTree()).getByRole("group", {
-      name: "Browsers of steward 1",
-    });
-    const row = within(browsers).getByRole("button", { name: /Browser b2/ });
+    const browsers = await underChat("steward 1");
+    const row = browserUnder(browsers, /Browser b2/);
     expect(row).toHaveTextContent("not ended yet");
     await screen.findByRole("button", { name: "Open browser b1 of steward 1" });
     expect(screen.queryByRole("button", { name: "Open browser b2 of steward 1" })).toBeNull();
@@ -532,7 +564,7 @@ describe("the setting that opens a chat's browser beside it", () => {
     setChatsListPrefs({ beside: true });
     const host = core([]);
     await opened();
-    await screen.findByRole("tree", { name: "Chats of this project" });
+    await findTree("Chats of this project");
     const before = tabNames();
 
     host.listed([B7]);
@@ -544,7 +576,7 @@ describe("the setting that opens a chat's browser beside it", () => {
   it("opens nothing when it is off: the row and the tab offer it", async () => {
     const host = core([]);
     await opened();
-    await screen.findByRole("tree", { name: "Chats of this project" });
+    await findTree("Chats of this project");
 
     host.listed([B7]);
 
@@ -557,7 +589,7 @@ describe("pinning a chat's browser (#2022)", () => {
   it("is a row of the palette and of the browser's menu, and its row says it is pinned", async () => {
     const host = core([B7]);
     await opened();
-    await within(await chatsTree()).findByRole("group", { name: "Browsers of steward 1" });
+    await findUnder("steward 1");
 
     await fromThePalette("Pin browser b1 of steward 1");
 
@@ -567,14 +599,8 @@ describe("pinning a chat's browser (#2022)", () => {
       ]),
     );
     host.listed([{ ...B7, pinned: true }]);
-    const browsers = within(await chatsTree()).getByRole("group", {
-      name: "Browsers of steward 1",
-    });
-    await waitFor(() =>
-      expect(within(browsers).getByRole("button", { name: /Browser b1/ })).toHaveTextContent(
-        "pinned",
-      ),
-    );
+    const browsers = await underChat("steward 1");
+    await waitFor(() => expect(browserUnder(browsers, /Browser b1/)).toHaveTextContent("pinned"));
     await fromThePalette("Unpin browser b1 of steward 1");
     await waitFor(() =>
       expect(host.asked("pin_chat_browser")).toContainEqual({
@@ -592,16 +618,14 @@ describe("a pinned browser whose chat closed (#2022)", () => {
     core([B9]);
     await opened();
 
-    const pinned = within(await chatsTree()).getByRole("group", { name: "Pinned browsers" });
-    expect(within(pinned).getByRole("button", { name: /Browser b1/ })).toHaveTextContent(
-      "Fix the login",
-    );
+    const pinned = await underChat("Pinned browsers");
+    expect(browserUnder(pinned, /Browser b1/)).toHaveTextContent("Fix the login");
   });
 
   it("is handed to an open chat from the palette", async () => {
     const host = core([B9]);
     await opened();
-    await within(await chatsTree()).findByRole("group", { name: "Pinned browsers" });
+    await findUnder("Pinned browsers");
 
     await fromThePalette("Hand browser b1 of Fix the login to steward 2");
 
@@ -615,8 +639,8 @@ describe("a pinned browser whose chat closed (#2022)", () => {
   it("is stopped by the person, and only then", async () => {
     const host = core([B9]);
     await opened();
-    const pinned = within(await chatsTree()).getByRole("group", { name: "Pinned browsers" });
-    await userEvent.click(within(pinned).getByRole("button", { name: /Browser b1/ }));
+    const pinned = await underChat("Pinned browsers");
+    await userEvent.click(browserUnder(pinned, /Browser b1/));
     await waitFor(() => expect(tabNames()).toContain("Browser b1 of Fix the login"));
     await fromThePalette("Close Browser b1 of Fix the login");
     await waitFor(() => expect(tabNames()).not.toContain("Browser b1 of Fix the login"));
@@ -685,10 +709,8 @@ describe("a pinned browser signed in with a login (#2022)", () => {
   it("says so on its row, and its hand-over row names the login", async () => {
     const host = core([{ ...B9, login: "shop-login" }]);
     await opened();
-    const pinned = within(await chatsTree()).getByRole("group", { name: "Pinned browsers" });
-    expect(within(pinned).getByRole("button", { name: /Browser b1/ })).toHaveTextContent(
-      "signed in",
-    );
+    const pinned = await underChat("Pinned browsers");
+    expect(browserUnder(pinned, /Browser b1/)).toHaveTextContent("signed in");
 
     await fromThePalette(
       "Hand browser b1 of Fix the login, signed in with shop-login, to steward 2",
@@ -707,10 +729,8 @@ describe("who drives a chat's browser, on its row and its thumbnail (#2300)", ()
     core([{ ...B7, driver: "person" }]);
     await opened();
 
-    const browsers = within(await chatsTree()).getByRole("group", {
-      name: "Browsers of steward 1",
-    });
-    const row = within(browsers).getByRole("button", { name: /Browser b1/ });
+    const browsers = await underChat("steward 1");
+    const row = browserUnder(browsers, /Browser b1/);
     expect(row.textContent).toContain("you are driving");
     // Louder than the row's other marks by its weight: the meta role, strong (#3917). A colour
     // App.css set on it lost to the role's layer and was never drawn.
@@ -728,11 +748,7 @@ describe("who drives a chat's browser, on its row and its thumbnail (#2300)", ()
     const host = core([{ ...B7, driver: "purlis" }]);
     await opened();
     const tree = await chatsTree();
-    const row = () =>
-      within(within(tree).getByRole("group", { name: "Browsers of steward 1" })).getByRole(
-        "button",
-        { name: /Browser b1/ },
-      );
+    const row = () => browserUnder({ tree, chat: "steward 1" }, /Browser b1/);
     expect(row().textContent).toContain("purlis is signing in");
 
     host.listed([B7]);
@@ -756,9 +772,7 @@ describe("where a chat's browser's page is (#2300)", () => {
     );
     host.page("B7", "thumbnail", "http://localhost:5173");
 
-    const row = within(
-      within(await chatsTree()).getByRole("group", { name: "Browsers of steward 1" }),
-    ).getByRole("button", { name: /Browser b1/ });
+    const row = browserUnder(await underChat("steward 1"), /Browser b1/);
     await eventually(() => expect(tipOf(row)).toMatch(/localhost:5173 on this (Mac|computer)/));
 
     await userEvent.click(row);
@@ -805,7 +819,7 @@ describe("a chat's browser timeline (#2017)", () => {
     ];
     const host = core([B7]);
     await opened();
-    await within(await chatsTree()).findByRole("group", { name: "Browsers of steward 1" });
+    await findUnder("steward 1");
 
     await fromThePalette("Browser timeline of steward 1");
 
@@ -865,11 +879,9 @@ describe("a browser's view tab, told to the core (#2025)", () => {
   it("says the tab shows it as it opens, and no longer as it closes", async () => {
     const host = core([B7]);
     await opened();
-    const browsers = within(await chatsTree()).getByRole("group", {
-      name: "Browsers of steward 1",
-    });
+    const browsers = await underChat("steward 1");
 
-    await userEvent.click(within(browsers).getByRole("button", { name: /Browser b1/ }));
+    await userEvent.click(browserUnder(browsers, /Browser b1/));
 
     await waitFor(() =>
       expect(host.asked("browser_viewed")).toContainEqual({
@@ -896,7 +908,7 @@ describe("the Browsers grid (#2027)", () => {
   it("opens from the palette in a tab of its own, every browser of the project a live tile", async () => {
     const host = core([B7, B8]);
     await opened();
-    await within(await chatsTree()).findByRole("group", { name: "Browsers of steward 1" });
+    await findUnder("steward 1");
 
     await fromThePalette("Open browsers");
 
@@ -914,7 +926,7 @@ describe("the Browsers grid (#2027)", () => {
   it("opens a pressed tile's browser view, on its chat's strip", async () => {
     core([B7]);
     await opened();
-    await within(await chatsTree()).findByRole("group", { name: "Browsers of steward 1" });
+    await findUnder("steward 1");
     await fromThePalette("Open browsers");
 
     await userEvent.click(within(await grid()).getByRole("option", { name: /Browser b1/ }));
@@ -937,7 +949,7 @@ describe("the Browsers grid (#2027)", () => {
   it("opens another project's browser in that project, brought to the front", async () => {
     core([B7], [{ ...B7, session: 5, program: "C1" }]);
     await opened();
-    await within(await chatsTree()).findByRole("group", { name: "Browsers of steward 1" });
+    await findUnder("steward 1");
     await fromThePalette("Open browsers");
     await userEvent.click(
       within(await screen.findByRole("radiogroup", { name: "Show the browsers of" })).getByRole(
@@ -963,7 +975,7 @@ describe("the Browsers grid (#2027)", () => {
   it("is on the Chats view's heading for the grid's own tiles: one not ended yet is none", async () => {
     core([{ ...B7, unended: true }]);
     await opened();
-    await within(await chatsTree()).findByRole("group", { name: "Browsers of steward 1" });
+    await findUnder("steward 1");
     const chats = screen.getByTestId("chats-section");
     expect(within(chats).queryByRole("button", { name: "Open browsers" })).toBeNull();
 
@@ -983,7 +995,7 @@ describe("the Browsers grid (#2027)", () => {
       }),
     );
     await opened();
-    await within(await chatsTree()).findByRole("group", { name: "Browsers of steward 1" });
+    await findUnder("steward 1");
     await fromThePalette("Open browsers");
     const scopes = await screen.findByRole("radiogroup", { name: "Show the browsers of" });
     await userEvent.click(within(scopes).getByRole("radio", { name: /All projects/ }));
@@ -1005,7 +1017,7 @@ describe("the Browsers grid (#2027)", () => {
   it("follows the chats' browsers as they come and go", async () => {
     const host = core([B7]);
     await opened();
-    await within(await chatsTree()).findByRole("group", { name: "Browsers of steward 1" });
+    await findUnder("steward 1");
     await fromThePalette("Open browsers");
     await grid();
 

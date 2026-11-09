@@ -21,6 +21,7 @@ import { GLOBAL } from "./windowprefs";
 import { PANE_NOTICES } from "./paneNoticesPref";
 import { stripNamed } from "./test-strips";
 import { aTabForEachChat } from "./laidOut.testkit";
+import { findTree, rowsOf } from "./ui/tree/tree.testkit";
 
 /**
  * **The first dispatch on a machine explains the chip, once** (#1501, V100-55), against the
@@ -261,14 +262,14 @@ function core(open: Listed[], attended: (session: number) => boolean = () => tru
   };
 }
 
-const section = () => screen.findByRole("tree", { name: "Chats of this project" });
+const section = () => findTree("Chats of this project");
 
 /** The window, drawn, with every chat of `open` listed. */
 async function drawn(open: Listed[], attended?: (session: number) => boolean) {
   const held = core(open, attended);
   render(<App />);
   const tree = await section();
-  await waitFor(() => expect(within(tree).getAllByRole("treeitem")).toHaveLength(open.length));
+  await waitFor(() => expect(rowsOf(tree)).toHaveLength(open.length));
   return held;
 }
 

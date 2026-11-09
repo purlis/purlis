@@ -10,6 +10,7 @@ import type { OpenChat } from "./bindings";
 import { stripNamed } from "./test-strips";
 import { aTabForEachChat } from "./laidOut.testkit";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
+import { rowsOf, treeNamed } from "./ui/tree/tree.testkit";
 
 /**
  * A chat a handoff opened lands in the sidebar, and on no strip (#4758; spec story 23).
@@ -129,10 +130,7 @@ const tabNamed = (name: string) =>
     .find((tab) => tab.querySelector(".tab-name")?.textContent === name);
 
 /** The rows of the Chats list, by what each says of its chat. */
-const rows = () =>
-  within(screen.getByRole("tree", { name: "Chats of this project" }))
-    .getAllByRole("treeitem")
-    .map((row) => row.textContent ?? "");
+const rows = () => rowsOf(treeNamed("Chats of this project")).map((row) => row.textContent ?? "");
 
 describe("a chat a handoff opened, named for its task (charter-app#258)", () => {
   afterEach(() => {

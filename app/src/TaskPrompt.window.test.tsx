@@ -24,6 +24,7 @@ import { tipOf } from "./ui/tooltip/tooltip.testkit";
 import { heard } from "./frame.testkit";
 import { onTheWire } from "./chatEvents.testkit";
 import { aTabForEachChat } from "./laidOut.testkit";
+import { findTree, rowsOf } from "./ui/tree/tree.testkit";
 
 /**
  * **A task stopped on its harness's permission prompt is said where the person is**
@@ -254,8 +255,8 @@ function core(open: Listed[], finished: FinishedTask[] = []) {
   };
 }
 
-const section = () => screen.findByRole("tree", { name: "Chats of this project" });
-const treeRows = (tree: HTMLElement) => within(tree).getAllByRole("treeitem");
+const section = () => findTree("Chats of this project");
+const treeRows = (tree: HTMLElement) => rowsOf(tree);
 const strip = () => stripNamed("Tabs");
 
 /** The tab of the session called `name`. */

@@ -1,7 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { screen, waitFor, within } from "@testing-library/react";
+import { expect } from "vitest";
+import { act, screen, waitFor, within } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
 
 /**
  * **A tree of the tree family, as a test reads it** (#2911, #3198): React Aria draws every tree
@@ -26,9 +28,14 @@ export function queryTree(name: string | RegExp): HTMLElement | null {
   return screen.queryByRole(TREE, { name });
 }
 
-/** Every row of `tree` drawn now, in their order, at every level. */
+/**
+ * Every row of `tree` drawn now, in their order, at every level: its items, which say their
+ * level, and not a group's name, which React Aria draws as a row of its own (`TreeSection`).
+ */
 export function rowsOf(tree: HTMLElement): HTMLElement[] {
-  return within(tree).queryAllByRole(ROW);
+  return within(tree)
+    .queryAllByRole(ROW)
+    .filter((row) => row.hasAttribute("aria-level"));
 }
 
 /** The row of `tree` named `name` (its `textValue`, or its `aria-label`). */
@@ -75,4 +82,13 @@ export function heard(row: HTMLElement): string {
     .map((one) => one.trim())
     .filter((one) => one !== "")
     .join(" ");
+}
+
+/**
+ * **Presses `keys` with the keyboard on `row`**, as a person does: the row has the keyboard
+ * first, since a tree hears a row's keys only on the row it has focused (`{ArrowLeft}` folds it).
+ */
+export async function keysOn(row: HTMLElement, keys: string): Promise<void> {
+  act(() => row.focus());
+  await userEvent.keyboard(keys);
 }

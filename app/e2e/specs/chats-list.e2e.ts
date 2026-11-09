@@ -123,7 +123,7 @@ async function measured(): Promise<Measured | null> {
     const section = document.querySelector<HTMLElement>('[data-raised="chats-list.e2e"]');
     if (!section) return null;
     const nameOf = (el: Element) =>
-      el.closest("li, .finished-task")?.querySelector(".session")?.textContent ?? "";
+      el.closest('[role="row"]')?.querySelector(".session")?.textContent ?? "";
     /** How whole `el` is drawn, and inside what. */
     const seen = (el: HTMLElement, text: string) => {
       const mine = el.getBoundingClientRect();
@@ -145,7 +145,7 @@ async function measured(): Promise<Measured | null> {
     return {
       section: box(section),
       overflow: section.scrollWidth - section.clientWidth,
-      words: [...section.querySelectorAll<HTMLElement>(".finished-name .shown-state .shape")].map(
+      words: [...section.querySelectorAll<HTMLElement>(".finished-task .shown-state .shape")].map(
         (mark) => seen(mark, mark.closest(".shown-state")?.getAttribute("data-state") ?? ""),
       ),
       // A chat's row leads with its persona's mark, its state on it (#3342, #5340): the mark is
@@ -163,11 +163,7 @@ async function measured(): Promise<Measured | null> {
             "",
         ),
       ),
-      rows: [
-        ...section.querySelectorAll<HTMLElement>(
-          'li[role="none"]:not(.finished-tasks), .finished-line',
-        ),
-      ].map((row) => {
+      rows: [...section.querySelectorAll<HTMLElement>('[role="row"][aria-level]')].map((row) => {
         const session = row.querySelector<HTMLElement>(".session");
         return {
           name: session?.textContent ?? "",
@@ -182,11 +178,9 @@ async function measured(): Promise<Measured | null> {
 /** The top of every row and finished line, top to bottom. */
 async function tops(): Promise<number[]> {
   return browser.execute(() =>
-    [
-      ...document.querySelectorAll(
-        '[data-raised="chats-list.e2e"] li[role="none"], [data-raised="chats-list.e2e"] .finished-line',
-      ),
-    ].map((row) => Math.round(row.getBoundingClientRect().top)),
+    [...document.querySelectorAll('[data-raised="chats-list.e2e"] [role="row"][aria-level]')].map(
+      (row) => Math.round(row.getBoundingClientRect().top),
+    ),
   );
 }
 
@@ -298,7 +292,7 @@ describe("the Chats list in a narrow sidebar", () => {
     // the notes beside the title say why a key did nothing, and what the filter hides.
     const changed = await browser.execute(() => {
       const section = document.querySelector('[data-raised="chats-list.e2e"]');
-      const lines = [...(section?.querySelectorAll(".chat .ui-row-trail") ?? [])];
+      const lines = [...(section?.querySelectorAll('.chat [data-part="trail"]') ?? [])];
       lines.forEach((line, at) => {
         const had = line.querySelector(".task-count");
         if (at % 2 === 1) {
@@ -335,7 +329,7 @@ describe("the Chats list in a narrow sidebar", () => {
     const indents = async () =>
       browser.execute(() => {
         const section = document.querySelector('[data-raised="chats-list.e2e"]');
-        return [...(section?.querySelectorAll<HTMLElement>('[role="treeitem"]') ?? [])].map(
+        return [...(section?.querySelectorAll<HTMLElement>('[role="row"][aria-level]') ?? [])].map(
           (row) => ({
             level: Number(row.getAttribute("aria-level")),
             px: Number.parseFloat(getComputedStyle(row).paddingInlineStart),
@@ -350,12 +344,15 @@ describe("the Chats list in a narrow sidebar", () => {
       narrow.some((one) => one.level >= 4),
       narrow,
     );
-    const step = narrow.find((one) => one.level === 1)?.px ?? 0;
-    check("a top-level row stands no step in", step > 0, narrow);
+    // A row's inset is the tree's own and its steps (`ui/tree/tree.css`, #3198): one step
+    // further in at level 2 than at level 1, and narrow, no further at any deeper level.
+    const top = narrow.find((one) => one.level === 1)?.px ?? 0;
+    const step = (narrow.find((one) => one.level === 2)?.px ?? 0) - top;
+    check("a row under another stands no step in", step > 0, narrow);
     for (const one of narrow)
       check(
-        `a level-${one.level} row is not ${one.level === 1 ? "one step" : "two steps"} in`,
-        Math.abs(one.px - (one.level === 1 ? step : 2 * step)) < 0.5,
+        `a level-${one.level} row is not ${one.level === 1 ? "where a top-level row is" : "one step in"}`,
+        Math.abs(one.px - (one.level === 1 ? top : top + step)) < 0.5,
         narrow,
       );
 
@@ -365,7 +362,11 @@ describe("the Chats list in a narrow sidebar", () => {
     const at = (level: number) => wide.find((one) => one.level === level)?.px ?? 0;
     check(
       "a wide list does not step in per level",
-      at(4) > at(3) && at(3) > at(2) && at(2) > at(1) && Math.abs(at(2) - 2 * at(1)) < 0.5,
+      at(4) > at(3) &&
+        at(3) > at(2) &&
+        at(2) > at(1) &&
+        Math.abs(at(3) - at(2) - (at(2) - at(1))) < 0.5 &&
+        Math.abs(at(4) - at(3) - (at(2) - at(1))) < 0.5,
       wide,
     );
   });
@@ -387,7 +388,7 @@ describe("the Chats list in a narrow sidebar", () => {
         if (!section || !box) return null;
         const style = getComputedStyle(box);
         const outer = box.getBoundingClientRect();
-        const rows = [...section.querySelectorAll<HTMLElement>('[role="treeitem"]')];
+        const rows = [...section.querySelectorAll<HTMLElement>('[role="row"][aria-level]')];
         // A sidebar view's row height as the theme in force sets it (#3342): the control's
         // height and a step.
         const probe = document.createElement("div");

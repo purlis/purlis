@@ -10,13 +10,13 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import { ChatsSection } from "./ChatsSection";
+import { CARD_DELAY_MS, ChatsSection } from "./ChatsSection";
 import { ChatsHere, fixedChats, nothingKnown, type ChatStates } from "./chatState";
 import { chatsTree, type ListedChat } from "./chatsTree";
 import { besideId, renameId, taskStopId, ONLY_A_TASK_OPENS_BESIDE, type Offer } from "./actions";
 import type { ChatBrowser, FinishedTask } from "./bindings";
 import { CHAT_ROW } from "./paneDrag";
-import { heard } from "./ui/tree/tree.testkit";
+import { heard, keysOn, queryRow, rowNamed, rowsOf, treeNamed } from "./ui/tree/tree.testkit";
 
 afterEach(cleanup);
 
@@ -52,7 +52,7 @@ const ROWS: ListedChat[] = [
 
 const WORKING: ChatStates = {
   ...nothingKnown,
-  bySession: { 1: "running", 2: "running", 3: "idle" },
+  bySession: { 1: "running", 2: "running", 3: "done" },
 };
 
 /** A catalogue row the list presses, available or off with its reason. */
@@ -124,14 +124,17 @@ describe("the Chats list's one Tab stop", () => {
     await waitFor(() => expect(focusedChat()).toBe(3));
   });
 
-  it("is back on the chat in front when the keyboard comes into the list again", async () => {
+  // **Decided with the move (#3198)**: the tree family's rule, as the Explorer has it and a
+  // treegrid's roving stop does. Before, a chat's row the keyboard left went back to the chat
+  // in front; now the list keeps the row the keyboard was last on, once it has been in.
+  it("is left on the row the keyboard was last on, once it has been in the list", async () => {
     draw({ front: 1 });
     act(() => rowOf(1).focus());
     await userEvent.keyboard("{ArrowDown}");
     expect(focusedChat()).toBe(2);
     await userEvent.tab({ shift: true });
     await userEvent.tab();
-    await waitFor(() => expect(focusedChat()).toBe(1));
+    await waitFor(() => expect(focusedChat()).toBe(2));
   });
 });
 
@@ -336,5 +339,104 @@ describe("a chat's browsers, from the keyboard", () => {
     act(() => line?.focus());
     await userEvent.keyboard("{Enter}");
     expect(browsed).toEqual(["b1"]);
+  });
+});
+
+/**
+ * **The five keyboard decisions of the move onto the tree family** (#3198), each held here.
+ */
+describe("the Chats list on the tree family (#3198)", () => {
+  const FINISHED = new Map([
+    [
+      3,
+      [
+        finishedTask("t-1", "check the logs", { how: "failed", outcome: "failed", folds: false }),
+        finishedTask("t-2", "tidy up"),
+      ],
+    ],
+  ]);
+  const B1: ChatBrowser = {
+    session: 1,
+    name: "b1",
+    program: "B1",
+    unended: false,
+    pinned: false,
+    was: null,
+    login: null,
+    driver: null,
+    pool: null,
+    secrets: [],
+  };
+
+  it("1. makes a finished task a row the arrows reach, whose buttons → reaches and whose report Enter shows and says", async () => {
+    draw({ finished: FINISHED });
+    const tree = treeNamed("Chats of this project");
+    const task = rowNamed(tree, "check the logs");
+    act(() => rowOf(3).focus());
+    await userEvent.keyboard("{ArrowDown}");
+    expect(document.activeElement).toBe(task);
+    // Its report, under its line, said as its description.
+    await userEvent.keyboard("{Enter}");
+    expect(within(task).getByRole("region", { name: "Report of check the logs" })).toBeTruthy();
+    expect(task.getAttribute("aria-description")).toContain("check the logs: all good.");
+    // Its buttons are the row's own: out of the Tab order, reached by →.
+    await userEvent.keyboard("{ArrowRight}");
+    expect(task.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).not.toBe(task);
+    expect(document.activeElement).toHaveAttribute("tabindex", "-1");
+    // "Finished (1)" is a row whose rows are the folded ones, with Clear finished at its end.
+    const fold = rowNamed(tree, "Finished (1)");
+    expect(fold).toHaveAttribute("aria-expanded", "false");
+    expect(within(fold).getByRole("button", { name: "Clear finished" })).toBeTruthy();
+  });
+
+  it("2. makes a chat's browsers its rows, so a chat with browsers folds them", async () => {
+    draw({ browsers: new Map([[3, [{ ...B1, session: 3 }]]]) });
+    const tree = treeNamed("Chats of this project");
+    expect(rowOf(3)).toHaveAttribute("aria-expanded", "true");
+    const browser = rowNamed(tree, "Browser b1");
+    expect(browser).toHaveAttribute("aria-level", "2");
+    await keysOn(rowOf(3), "{ArrowLeft}");
+    await waitFor(() => expect(rowOf(3)).toHaveAttribute("aria-expanded", "false"));
+    expect(queryRow(tree, "Browser b1")).toBeNull();
+  });
+
+  it("3. raises a chat's card from the row's own element, hover and focus, and describes the row by it", async () => {
+    draw();
+    // The keyboard resting on the row brings up its card, which describes it.
+    await userEvent.keyboard("{Shift}");
+    act(() => rowOf(3).focus());
+    const card = await screen.findByTestId("chat-card-3", {}, { timeout: CARD_DELAY_MS + 1000 });
+    const tip = within(card).getByRole("tooltip");
+    expect(rowOf(3)).toHaveAttribute("aria-describedby", tip.id);
+    // The keyboard leaving takes it down, and the row's description back.
+    act(() => rowOf(1).focus());
+    await waitFor(() => expect(screen.queryByTestId("chat-card-3")).toBeNull());
+    expect(rowOf(3)).not.toHaveAttribute("aria-describedby");
+  });
+
+  it("4. hears Space and Delete before the tree's own keys: nothing is chosen, and a control in the row keeps its keys", async () => {
+    const { pressed } = draw({ offers: [offer(besideId(2)), offer(taskStopId(2))] });
+    act(() => rowOf(2).focus());
+    await userEvent.keyboard(" ");
+    expect(rowOf(2)).not.toHaveAttribute("aria-selected");
+    expect(pressed).toEqual([besideId(2)]);
+    // On the row's own control, Space is the control's: the row's way is not asked for.
+    const more = within(rowOf(1)).queryAllByRole("button")[0];
+    if (more !== undefined) {
+      act(() => more.focus());
+      await userEvent.keyboard("{Delete}");
+      expect(pressed).toEqual([besideId(2)]);
+    }
+  });
+
+  it("5. nests the rows it holds still, and opens what `opens` says is open", () => {
+    draw();
+    const tree = treeNamed("Chats of this project");
+    expect(
+      rowsOf(tree).map(
+        (row) => `${row.getAttribute("aria-level")} ${row.getAttribute("aria-label")}`,
+      ),
+    ).toEqual(["1 steward 1", "2 fix the login", "1 steward 3"]);
   });
 });

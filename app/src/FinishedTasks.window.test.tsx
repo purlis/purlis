@@ -21,6 +21,7 @@ import { forgetThisLaunch } from "./regions";
 import { stripNamed } from "./test-strips";
 import { aTabForEachChat } from "./laidOut.testkit";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
+import { findTree, heard, rowNamed, rowsOf } from "./ui/tree/tree.testkit";
 
 /**
  * **A chat's finished tasks, against the whole window** (#1485): a task ends at its report, and
@@ -221,17 +222,29 @@ function core(rows: FinishedTask[], open: OpenChat[] = [STEWARD], refuses?: stri
   };
 }
 
-const section = () => screen.findByRole("tree", { name: "Chats of this project" });
-const theirs = () => screen.findByRole("group", { name: "Finished tasks of steward 4" });
-/** The finished row named `name`: the button its report opens on, or none. */
-const finishedRow = (group: HTMLElement, name: string) =>
-  within(group)
-    .queryAllByRole("button")
-    .find((one) => one.querySelector(".session")?.textContent === name);
+const section = () => findTree("Chats of this project");
+/**
+ * The Chats tree, once steward 4's finished tasks are rows of it (#3198): they are rows under
+ * the chat that asked, no group of their own.
+ */
+const theirs = async () => {
+  const tree = await section();
+  await waitFor(() => expect(finishedRows(tree).length + foldRows(tree).length).toBeGreaterThan(0));
+  return tree;
+};
+/** Every finished task's row drawn in `tree`. */
+const finishedRows = (tree: HTMLElement) =>
+  rowsOf(tree).filter((one) => one.classList.contains("finished-task"));
+/** The "Finished (n)" rows drawn in `tree`. */
+const foldRows = (tree: HTMLElement) =>
+  rowsOf(tree).filter((one) => one.classList.contains("finished-count"));
+/** The finished row named `name`, its report opened by a press or Enter on it, or none. */
+const finishedRow = (tree: HTMLElement, name: string) =>
+  finishedRows(tree).find((one) => one.getAttribute("aria-label") === name);
 
 /** The same, where it must be there. */
-const theRow = (group: HTMLElement, name: string) => {
-  const found = finishedRow(group, name);
+const theRow = (tree: HTMLElement, name: string) => {
+  const found = finishedRow(tree, name);
   if (found === undefined) throw new Error(`no finished row is named ${name}`);
   return found;
 };
@@ -257,9 +270,9 @@ describe("a chat's finished tasks", () => {
     const group = await theirs();
 
     // One line for the five, and none of them drawn until it is opened.
-    const fold = within(group).getByRole("button", { name: "Finished (5)" });
+    const fold = rowNamed(group, "Finished (5)");
     expect(fold).toHaveAttribute("aria-expanded", "false");
-    expect(within(group).queryByText("live check talk")).toBeNull();
+    expect(finishedRow(group, "live check talk")).toBeUndefined();
     // The failure is never behind the count: its own row, with its word.
     const failed = theRow(group, "check staging");
     expect(failed).toHaveTextContent("failed");
@@ -268,10 +281,9 @@ describe("a chat's finished tasks", () => {
     // Opened, the five are there, each with how it ended.
     await userEvent.click(fold);
     expect(fold).toHaveAttribute("aria-expanded", "true");
-    for (const task of FIVE_DONE) expect(theRow(group, task.name)).toHaveTextContent("done");
+    for (const task of FIVE_DONE) expect(heard(theRow(group, task.name))).toContain("done");
     // None of them is a chat: the tree lists the one that is.
-    const tree = await section();
-    expect(within(tree).getAllByRole("treeitem")).toHaveLength(1);
+    expect(rowsOf(group).filter((one) => one.classList.contains("chat"))).toHaveLength(1);
   });
 
   it("folds a cancelled task with the done ones, and keeps every other end out of the fold", async () => {
@@ -298,14 +310,14 @@ describe("a chat's finished tasks", () => {
     render(<App />);
     const group = await theirs();
 
-    expect(within(group).getByRole("button", { name: "Finished (2)" })).toBeInTheDocument();
-    expect(theRow(group, "stuck")).toHaveTextContent("blocked");
-    expect(theRow(group, "died")).toHaveTextContent("ended without a report");
+    expect(rowNamed(group, "Finished (2)")).toBeInTheDocument();
+    expect(heard(theRow(group, "stuck"))).toContain("blocked");
+    expect(heard(theRow(group, "died"))).toContain("ended without a report");
     // The two ends the person caused are rows of their own, never in the fold (V100-9).
-    expect(theRow(group, "shut")).toHaveTextContent("closed by you");
-    expect(theRow(group, "halted")).toHaveTextContent("stopped by you");
-    expect(within(group).queryByText("counted")).toBeNull();
-    expect(within(group).queryByText("called off")).toBeNull();
+    expect(heard(theRow(group, "shut"))).toContain("closed by you");
+    expect(heard(theRow(group, "halted"))).toContain("stopped by you");
+    expect(finishedRow(group, "counted")).toBeUndefined();
+    expect(finishedRow(group, "called off")).toBeUndefined();
   });
 
   it("says how a finished task ended in the word and the shape its chat's row said it in", async () => {
@@ -348,13 +360,14 @@ describe("a chat's finished tasks", () => {
     );
     render(<App />);
     const group = await theirs();
-    await userEvent.click(within(group).getByRole("button", { name: "Finished (2)" }));
+    await userEvent.click(rowNamed(group, "Finished (2)"));
 
     /** The word and the shape on a row, and the core's own word where it is drawn too. */
     const says = (on: HTMLElement) => ({
       word: on.querySelector(".shown-state .word")?.textContent,
       shape: on.querySelector(".shown-state .shape")?.getAttribute("data-shape"),
-      more: on.querySelector(".outcome")?.textContent,
+      // The core's own word, after the state's in what the row says beside its name (#3198).
+      more: on.getAttribute("aria-description")?.split(", ")[1],
     });
     expect(says(theRow(group, "counted"))).toEqual({ word: "done", shape: "tick" });
     expect(says(theRow(group, "called off"))).toEqual({ word: "cancelled", shape: "dash" });
@@ -382,9 +395,9 @@ describe("a chat's finished tasks", () => {
     });
 
     // The task still open says the same of the same end as the finished row does.
-    const open = within(await section())
-      .getAllByRole("treeitem")
-      .find((one) => one.querySelector(".session")?.textContent === "probe");
+    const open = rowsOf(await section()).find(
+      (one) => one.querySelector(".session")?.textContent === "probe",
+    );
     if (open === undefined) throw new Error("the open task has no row");
     // Its mark is the chat's one state (#5340): a failure seen is an ended chat, and its word says
     // which way it ended.
@@ -400,11 +413,12 @@ describe("a chat's finished tasks", () => {
     // and whole in the row's tooltip.
     for (const name of ["counted", "stuck"]) {
       const one = theRow(group, name);
-      for (const said of one.querySelectorAll(".shown-state .word, .outcome"))
+      for (const said of one.querySelectorAll(".shown-state .word"))
         expect(said.classList.contains("hidden-words")).toBe(true);
     }
-    expect(theRow(group, "counted")).toHaveAccessibleName("counted done");
-    expect(theRow(group, "stuck")).toHaveAccessibleName("stuck failed blocked");
+    // Named by its task (#3198), and how it ended said after the name.
+    expect(heard(theRow(group, "counted"))).toBe("counted done");
+    expect(heard(theRow(group, "stuck"))).toBe("stuck failed, blocked");
     expect(tipOf(theRow(group, "stuck"))).toMatch(/^stuck\nfailed · blocked/);
     expect(within(theRow(group, "counted")).queryByRole("img")).toBeNull();
   });
@@ -421,8 +435,8 @@ describe("a chat's finished tasks", () => {
     render(<App />);
     const tree = await section();
     const names = () =>
-      within(tree)
-        .getAllByRole("treeitem")
+      rowsOf(tree)
+        .filter((one) => one.classList.contains("chat"))
         .map((one) => one.querySelector(".session")?.textContent);
     await waitFor(() => expect(names()).toEqual(["steward 4", "probe", "steward 12"]));
 
@@ -437,14 +451,14 @@ describe("a chat's finished tasks", () => {
 
     await waitFor(() => expect(held.asked("plane_sidebar").length).toBeGreaterThan(1));
     expect(names()).toEqual(["steward 4", "probe", "steward 12"]);
-    expect(screen.queryByRole("group", { name: "Finished tasks of steward 4" })).toBeNull();
+    expect(finishedRows(tree)).toEqual([]);
 
     // The finished rows are read: the chat's row goes and the row that replaces it comes,
     // together.
     answer();
 
     const group = await theirs();
-    expect(theRow(group, "probe")).toHaveTextContent("failed");
+    expect(heard(theRow(group, "probe"))).toContain("failed");
     expect(names()).toEqual(["steward 4", "steward 12"]);
   });
 
@@ -461,9 +475,7 @@ describe("a chat's finished tasks", () => {
         { plane: PLANE, ids: FIVE_DONE.map((task) => task.id) },
       ]),
     );
-    await waitFor(() =>
-      expect(within(group).queryByRole("button", { name: /^Finished/ })).toBeNull(),
-    );
+    await waitFor(() => expect(foldRows(group)).toEqual([]));
     expect(within(group).queryByRole("button", { name: "Clear finished" })).toBeNull();
     // The failed row is still its own row, until it is cleared itself.
     expect(theRow(group, "check staging")).toBeInTheDocument();
@@ -477,9 +489,7 @@ describe("a chat's finished tasks", () => {
     await waitFor(() =>
       expect(said.asked("clear_finished_tasks")[1]).toEqual({ plane: PLANE, ids: [FAILED.id] }),
     );
-    await waitFor(() =>
-      expect(screen.queryByRole("group", { name: "Finished tasks of steward 4" })).toBeNull(),
-    );
+    await waitFor(() => expect(finishedRows(group)).toEqual([]));
   });
 
   it("says what a finished task used on its name's hover, read once the pointer rests (#1500)", async () => {
@@ -571,9 +581,7 @@ describe("a chat's finished tasks", () => {
     // as the task was; the chat that asked runs on in the sidebar.
     await waitFor(() => expect(tabNames()).toEqual(["check staging"]));
     // Its row has gone: it is a chat now, and no finished task.
-    await waitFor(() =>
-      expect(screen.queryByRole("group", { name: "Finished tasks of steward 4" })).toBeNull(),
-    );
+    await waitFor(() => expect(finishedRows(group)).toEqual([]));
     // And nothing was ended to make it.
     expect(said.ended()).toEqual([]);
     expect(said.asked("clear_finished_tasks")).toEqual([]);
@@ -593,7 +601,9 @@ describe("a chat's finished tasks", () => {
     const cannot = within(group).getByRole("button", { name: "Reopen no conversation" });
     expect(cannot).not.toBeDisabled();
     expect(cannot).toHaveAttribute("aria-disabled", "true");
-    // Its tooltip, which the keyboard's focus opens and which describes it while it is shown.
+    // Its tooltip, which the keyboard's focus opens and which describes it while it is shown:
+    // read as the keyboard reaches it, along its row (#3198).
+    act(() => theRow(group, "no conversation").focus());
     expect(tipOf(cannot)).toBe(
       "It cannot be reopened: its harness named no conversation to resume.",
     );
@@ -614,73 +624,72 @@ describe("a chat's finished tasks", () => {
   it("draws them under the chat that asked, after its running tasks, and folds them away with it", async () => {
     core([...FIVE_DONE, FAILED], [STEWARD, WORKING]);
     render(<App />);
-    const tree = await section();
-    const group = await theirs();
+    const tree = await theirs();
 
-    // Inside the tree, after the task still working under the steward chat.
-    const working = within(tree).getByRole("treeitem", { name: /read the logs/ });
-    expect(tree).toContainElement(group);
-    expect(working.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Rows of the tree under the steward chat, after the task still working under it.
+    const working = rowNamed(tree, /read the logs/);
+    const first = theRow(tree, "check staging");
+    expect(first).toHaveAttribute("aria-level", working.getAttribute("aria-level"));
+    expect(working.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     // Folding the steward chat's row hides everything under it.
-    const steward = within(tree).getByRole("treeitem", { name: /steward 4/ });
+    const steward = rowNamed(tree, /steward 4/);
     steward.focus();
     await userEvent.keyboard("{ArrowLeft}");
-    await waitFor(() =>
-      expect(screen.queryByRole("group", { name: "Finished tasks of steward 4" })).toBeNull(),
-    );
+    await waitFor(() => expect(finishedRows(tree)).toEqual([]));
     await userEvent.keyboard("{ArrowRight}");
-    expect(await theirs()).toBeInTheDocument();
+    await waitFor(() => expect(finishedRow(tree, "check staging")).toBeDefined());
   });
 
-  it("is worked by the keyboard: Tab reaches the fold, Enter and Space open and shut it, and Clear finished is reached and works", async () => {
+  // **Decided with the move (#3198, decision 1)**: a finished task is a row of the tree, and →
+  // reaches its buttons, as a row's controls are reached in the tree family's grid; the arrows
+  // walk the rows. Before, each was a Tab stop of its own.
+  it("is worked by the keyboard: the arrows reach the rows, → their buttons, Enter opens the fold and its report, and its menu clears it", async () => {
     const said = core([...FIVE_DONE, FAILED]);
     render(<App />);
     const group = await theirs();
-    const fold = within(group).getByRole("button", { name: "Finished (5)" });
+    const fold = rowNamed(group, "Finished (5)");
     const failed = theRow(group, "check staging");
 
-    // In the Tab order, in the order they are drawn: the row that stands alone, its Brief
-    // (#1494), Reopen, Changes (#1511) and Clear, the fold, then Clear finished.
-    failed.focus();
-    await userEvent.tab();
+    // From the row that stands alone, → goes through its buttons in the order they are drawn:
+    // its Brief (#1494), Reopen, Changes (#1511) and Clear.
+    act(() => failed.focus());
+    await userEvent.keyboard("{ArrowRight}");
     expect(within(group).getByRole("button", { name: "Brief of check staging" })).toHaveFocus();
-    await userEvent.tab();
+    await userEvent.keyboard("{ArrowRight}");
     expect(within(group).getByRole("button", { name: "Reopen check staging" })).toHaveFocus();
-    await userEvent.tab();
+    await userEvent.keyboard("{ArrowRight}");
     expect(within(group).getByRole("button", { name: "Changes of check staging" })).toHaveFocus();
-    await userEvent.tab();
+    await userEvent.keyboard("{ArrowRight}");
     expect(within(group).getByRole("button", { name: "Clear check staging" })).toHaveFocus();
-    await userEvent.tab();
+    // ↓ goes on to the next row, the fold.
+    await userEvent.keyboard("{ArrowDown}");
     expect(fold).toHaveFocus();
 
-    // Enter opens it, Space shuts it, and focus stays on it.
+    // Enter opens it, ← shuts it, and the keyboard stays on it.
     await userEvent.keyboard("{Enter}");
-    expect(fold).toHaveAttribute("aria-expanded", "true");
+    await waitFor(() => expect(fold).toHaveAttribute("aria-expanded", "true"));
     expect(theRow(group, "live check talk")).toBeInTheDocument();
     expect(fold).toHaveFocus();
-    await userEvent.keyboard(" ");
-    expect(fold).toHaveAttribute("aria-expanded", "false");
+    await userEvent.keyboard("{ArrowLeft}");
+    await waitFor(() => expect(fold).toHaveAttribute("aria-expanded", "false"));
     expect(finishedRow(group, "live check talk")).toBeUndefined();
     expect(fold).toHaveFocus();
 
-    // Clear finished is the next stop, and Enter presses it.
-    await userEvent.tab();
-    const clear = within(group).getByRole("button", { name: "Clear finished" });
-    expect(clear).toHaveFocus();
-    await userEvent.keyboard("{Enter}");
+    // Clear finished is in its menu, which Shift+F10 opens, as at its end for the pointer: →
+    // on a row with rows under it opens it or goes into it, and never reaches its buttons.
+    await userEvent.keyboard("{Shift>}{F10}{/Shift}");
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Clear finished" }));
     await waitFor(() =>
       expect(said.asked("clear_finished_tasks")).toEqual([
         { plane: PLANE, ids: FIVE_DONE.map((task) => task.id) },
       ]),
     );
-    await waitFor(() =>
-      expect(within(group).queryByRole("button", { name: /^Finished/ })).toBeNull(),
-    );
+    await waitFor(() => expect(foldRows(group)).toEqual([]));
     // The rows have gone, and the keyboard is not stranded: the row that stays is still
-    // there to Tab to, and its report opens on Enter.
+    // there, and its report opens on Enter.
     const stays = theRow(group, "check staging");
-    stays.focus();
+    act(() => stays.focus());
     await userEvent.keyboard("{Enter}");
     expect(screen.getByRole("region", { name: "Report of check staging" })).toBeInTheDocument();
   });
@@ -705,7 +714,7 @@ describe("a chat's finished tasks", () => {
     await section();
 
     await waitFor(() => expect(screen.getAllByTestId("pane").length).toBeGreaterThan(0));
-    expect(screen.queryByRole("group", { name: /Finished tasks/ })).toBeNull();
-    expect(screen.queryByRole("button", { name: /Finished \(/ })).toBeNull();
+    expect(finishedRows(await section())).toEqual([]);
+    expect(foldRows(await section())).toEqual([]);
   });
 });

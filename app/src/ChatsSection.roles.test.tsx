@@ -5,10 +5,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, within } from "@testing-library/react";
+import { cleanup, render, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import type { FinishedTask } from "./bindings";
-import { cascadeOf, drawnWith } from "./cascade.testkit";
+import { drawnWith } from "./cascade.testkit";
 import { theCard } from "./chatCard.testkit";
 import { ChatsSection } from "./ChatsSection";
 import { ChatsHere, fixedChats, nothingKnown } from "./chatState";
@@ -18,6 +18,7 @@ import { declarations } from "./guards.testkit";
 import { tasksBelowOf } from "./sessionTasks";
 import { TasksBelowLent } from "./TasksBelow";
 import { forgetThisLaunch } from "./regions";
+import { keysOn, rowAround, rowsOf } from "./ui/tree/tree.testkit";
 
 /**
  * **Every word of the Chats list wears a text role** (#1920, the first surface to move;
@@ -27,8 +28,8 @@ import { forgetThisLaunch } from "./regions";
  * declarations of its role, resolved by the window's own cascade (`cascade.testkit.ts`), so a
  * rule of `App.css` that re-ranked one would fail here.
  *
- * **A row is the shared row's height**, the Explorer's file rows' (`--ui-row-height`), and
- * nothing in the list writes a height or a block padding over it.
+ * **A row is a tree row's height**, the tree family's in a view, as the Explorer's file rows are
+ * (#3198), and nothing in the list writes a height or a block padding over it.
  */
 
 const read = (file: string) => readFileSync(join(process.cwd(), "src", file), "utf8");
@@ -36,7 +37,6 @@ const core = new Map(
   declarations(read("theme/geometry.css")).map(({ property: name, value }) => [name, value]),
 );
 const app = declarations(read("App.css"));
-const collections = cascadeOf("primitives/collections.css");
 
 /** What a `var(--x)` names, or the value itself when it is not one. */
 const named = (value: string | undefined) => /^var\((--[\w-]+)\)$/.exec(value ?? "")?.[1] ?? value;
@@ -179,9 +179,7 @@ function draw(chats: ListedChat[] = CHATS) {
 }
 
 const rowOf = (section: HTMLElement, name: string) => {
-  const found = within(section)
-    .getAllByRole("treeitem")
-    .find((one) => one.querySelector(".session")?.textContent === name);
+  const found = rowsOf(section).find((one) => one.querySelector(".session")?.textContent === name);
   if (found === undefined) throw new Error(`no row is named ${name}`);
   return found;
 };
@@ -216,10 +214,12 @@ describe("the Chats list's words wear text roles (#1920)", () => {
 
   it("draws a chat's name as a body, at the regular weight on every row", () => {
     const section = draw();
-    const names = [...section.querySelectorAll('[role="treeitem"] > .session')];
+    const names = rowsOf(section)
+      .filter((row) => row.classList.contains("chat"))
+      .map((row) => row.querySelector('[data-part="label"]'));
 
     expect(names.length).toBeGreaterThanOrEqual(5);
-    for (const name of names) wears(name, "body", `${name.textContent}'s name`);
+    for (const name of names) wears(name, "body", `${name?.textContent}'s name`);
   });
 
   it("draws what is said under a row as secondary lines", () => {
@@ -257,9 +257,9 @@ describe("the Chats list's words wear text roles (#1920)", () => {
     expect(drawnWith(none as Element, "opacity")).toBe("1");
   });
 
-  it("draws a folded row's count and a stop in progress as meta, the count strong", () => {
+  it("draws a folded row's count and a stop in progress as meta, the count strong", async () => {
     const section = draw();
-    fireEvent.keyDown(rowOf(section, "steward 4"), { key: "ArrowLeft" });
+    await keysOn(rowOf(section, "steward 4"), "{ArrowLeft}");
 
     wears(section.querySelector(".stopping"), "meta", "Stopping…");
     // A count is the count family's pill (#2912): the counts' 11px at the strong weight, as every
@@ -275,7 +275,8 @@ describe("the Chats list's words wear text roles (#1920)", () => {
   it("heads a workspace's sessions with the frame's group head, where the list is grouped (#3484)", () => {
     setChatsListPrefs({ grouped: true });
     const section = draw();
-    const groups = [...section.querySelectorAll(".chats-group")];
+    // Each group's head is its `TreeSection`'s `header` part (#3198).
+    const groups = [...section.querySelectorAll('.chats-group [data-part="header"]')];
 
     expect(groups.map((one) => one.querySelector(".chats-group-name")?.textContent)).toEqual([
       "smart-ide",
@@ -295,13 +296,19 @@ describe("the Chats list's words wear text roles (#1920)", () => {
   it("draws a finished task quieter than a chat: its name, its fold and its note secondary", async () => {
     const section = draw();
 
-    wears(section.querySelector(".finished-name .session"), "secondary", "a finished name");
-    wears(section.querySelector(".finished-count"), "secondary", "Finished (n)");
+    const name = section.querySelector('.finished-task [data-part="label"]');
+    wears(name, "secondary", "a finished name");
+    wears(
+      section.querySelector('.finished-count [data-part="label"]'),
+      "secondary",
+      "Finished (n)",
+    );
     wears(section.querySelector(".finished-note"), "secondary", "a finished task's note");
-    // No colour on the group itself: each word in it has its own role's.
-    expect(drawnWith(section.querySelector(".finished-tasks") as Element, "color")).toBeUndefined();
+    // No colour of the list's own on a finished row: the tree family's, which its words' roles
+    // draw over (#3198).
+    expect(named(drawnWith(rowAround(name) as Element, "color"))).toBe("--text-secondary");
 
-    await userEvent.click(section.querySelector(".finished-name") as Element);
+    await userEvent.click(name as Element);
     wears(section.querySelector(".finished-report"), "body", "a report");
     wears(section.querySelector(".report-where"), "secondary", "where a report was written");
   });
@@ -353,49 +360,47 @@ describe("the Chats list's words wear text roles (#1920)", () => {
       own.map(({ context, property: name, value }) => `${context.join(" ")} ${name}: ${value}`),
     ).toEqual([
       ".chats-top font-size: var(--font-size-sm)",
-      ".chats-section .finished-task > .trouble font-size: var(--font-size-sm)",
+      ".chats-section .finished-below .trouble font-size: var(--font-size-sm)",
     ]);
   });
 });
 
-describe("a Chats row is the shared row's height (#1920)", () => {
-  it("is as high as a file's row: the row token, and nothing of the list's over it", () => {
+describe("a Chats row is a tree row's height (#1920, #3198)", () => {
+  it("is a view's row, 30px from the panel family's rule for the Chats view, and nothing of its own", () => {
     const section = draw();
     const row = rowOf(section, "steward 1");
-    document.body.insertAdjacentHTML(
-      "beforeend",
-      '<div class="explorer"><div class="ui-tree"><div class="ui-row ui-tree-row file-node" aria-level="1">a</div></div></div>',
-    );
-    const file = document.body.querySelector(".file-node") as Element;
-    const drawn = (one: Element, property: string) =>
-      drawnWith(one, property) ?? collections(one, property);
-
-    try {
-      for (const one of [row, file]) {
-        expect(drawn(one, "min-block-size")).toBe("var(--ui-row-height)");
-        expect(collections(one, "--ui-row-height")).toBe("var(--size-chrome)");
-        expect(drawn(one, "padding-block")).toBe("0");
-        for (const property of ["height", "block-size", "min-height", "padding", "line-height"])
-          expect(drawnWith(one, property), property).toBeUndefined();
-      }
-      // The tree's step is the shared one for both: no list sets its own.
-      for (const tree of [section.querySelector(".ui-tree"), file.parentElement])
-        expect(drawnWith(tree as Element, "--ui-tree-step")).toBe("var(--space-5)");
-      // 1.5rem: 21px at the window's default text.
-      expect(px("--size-chrome")).toBe(21);
-    } finally {
-      file.closest(".explorer")?.remove();
-    }
+    // The view's row height (the prototype's 30px, #3342), from `ui/panel/panel.css`'s rule for
+    // the Chats view's tree (#3198): the Explorer's trees keep the family's own sizes.
+    expect(drawnWith(row, "min-block-size")).toBe("calc(var(--size-control) + var(--space-1))");
+    // Nothing of the Chats list's own sizes a row.
+    expect(
+      app.filter(
+        ({ context, property: name }) =>
+          /\.chat(\[[^\]]*\]|:[^ ]+)*$/.test(context.join(" ")) &&
+          [
+            "height",
+            "block-size",
+            "min-height",
+            "min-block-size",
+            "padding",
+            "padding-block",
+            "line-height",
+          ].includes(name),
+      ),
+    ).toEqual([]);
   });
 
-  it("spaces what is under and beside a row from the geometry tokens", () => {
+  it("spaces what is under and beside a row from the geometry tokens", async () => {
     const section = draw();
-    fireEvent.keyDown(rowOf(section, "steward 4"), { key: "ArrowLeft" });
-    const under = "0 var(--space-4) var(--space-2) var(--chats-name-at)";
-
-    expect(drawnWith(section.querySelector(".at-limit") as Element, "padding")).toBe(under);
+    await keysOn(rowOf(section, "steward 4"), "{ArrowLeft}");
+    // What is said under a row is the row's own `below` (#3198): one column of lines, spaced
+    // by a token, the task limit's words and its link a token apart.
+    const below = section.querySelector(".chat-below") as Element;
+    expect(below).toHaveAttribute("data-part", "below");
+    expect(drawnWith(below, "gap")).toBe("var(--space-1)");
+    expect(below.contains(section.querySelector(".at-limit"))).toBe(true);
     expect(drawnWith(section.querySelector(".at-limit") as Element, "gap")).toBe("var(--space-2)");
-    expect(drawnWith(section.querySelector(".restart-said") as Element, "padding")).toBe(under);
+    expect(section.querySelector(".restart-said")?.closest(".chat-below")).not.toBeNull();
     const count = section.querySelector(".task-count") as Element;
     expect(drawnWith(count, "padding-inline")).toBe("var(--space-2)");
     expect(drawnWith(count, "border-radius")).toBe("var(--radius-full)");

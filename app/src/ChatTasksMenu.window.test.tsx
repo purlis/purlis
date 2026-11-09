@@ -23,6 +23,7 @@ import { aTabForEachChat } from "./laidOut.testkit";
 import { forgetKeyboard } from "./paneKeyboard";
 import { forgetThisLaunch } from "./regions";
 import { goToWorkspace, stripNamed } from "./test-strips";
+import { findTree, rowsOf } from "./ui/tree/tree.testkit";
 
 /**
  * **Where a pick of ⌘⇧J's menu lands, and where a kept task stays** (#5224), against the whole
@@ -245,7 +246,7 @@ function core(
   };
 }
 
-const section = () => screen.findByRole("tree", { name: "Chats of this project" });
+const section = () => findTree("Chats of this project");
 
 const strip = () => stripNamed("Tabs");
 const tabNames = () =>
@@ -259,9 +260,7 @@ const inFront = () =>
     ?.querySelector(".tab-name")?.textContent;
 
 const row = (tree: HTMLElement, name: string) => {
-  const found = within(tree)
-    .getAllByRole("treeitem")
-    .find((one) => one.querySelector(".session")?.textContent === name);
+  const found = rowsOf(tree).find((one) => one.querySelector(".session")?.textContent === name);
   if (found === undefined) throw new Error(`no row is named ${name}`);
   return found;
 };
@@ -297,7 +296,7 @@ async function drawn(open: Listed[], how: Parameters<typeof core>[1] = {}) {
   const held = core(open, how);
   render(<App />);
   const tree = await section();
-  await waitFor(() => expect(within(tree).getAllByRole("treeitem")).toHaveLength(open.length));
+  await waitFor(() => expect(rowsOf(tree)).toHaveLength(open.length));
   return held;
 }
 

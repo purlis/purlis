@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render } from "@testing-library/react";
 import { ChatsSection } from "./ChatsSection";
 import { ChatsHere, fixedChats, nothingKnown } from "./chatState";
 import { chatsTree, type ListedChat } from "./chatsTree";
+import { rowsOf, treeNamed } from "./ui/tree/tree.testkit";
 
 /**
  * **A chat another chat started, on its row** (#4759, spec #4750 stories 26 and 28): a handoff,
@@ -61,9 +62,9 @@ function draw(chats: ListedChat[], noted: ReadonlySet<number> = new Set()) {
 
 /** The row of the chat called `name`. */
 const rowOf = (name: string) =>
-  within(screen.getByRole("tree"))
-    .getAllByRole("treeitem")
-    .find((row) => row.querySelector(".session")?.textContent === name) as HTMLElement;
+  rowsOf(treeNamed("Chats of this project")).find(
+    (row) => row.querySelector(".session")?.textContent === name,
+  ) as HTMLElement;
 
 describe("an announced chat's row (#4759)", () => {
   it("says new while the person has not looked at it, and is heard saying so", () => {

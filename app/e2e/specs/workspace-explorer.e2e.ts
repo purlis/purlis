@@ -891,7 +891,7 @@ describe("the explorer", () => {
     await $('[data-testid="clone-svc"]').waitForExist({ timeout: 20_000 });
     await showView("Chats");
     const rows = async () =>
-      (await $$('[data-testid="chats-section"] [role="treeitem"]').getElements()).length;
+      (await $$('[data-testid="chats-section"] [role="row"].chat').getElements()).length;
     const before = await rows();
 
     await pressAndStart("New tab");
@@ -916,7 +916,7 @@ describe("the explorer", () => {
   it("draws a chat's row as a view's row, its name and its title at the body's size (#1920, #3342)", async () => {
     await onAlpha();
     await showView("Chats");
-    const rows = '[data-testid="chats-section"] [role="treeitem"]';
+    const rows = '[data-testid="chats-section"] [role="row"].chat';
     // The chat the case above started; one is started where a run begins here.
     if ((await $$(rows).getElements()).length === 0) await pressAndStart("New tab");
     await $(rows).waitForExist({ timeout: 20_000 });
