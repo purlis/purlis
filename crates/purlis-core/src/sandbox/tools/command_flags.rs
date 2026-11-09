@@ -158,6 +158,10 @@ fn without_zone(hop: &str) -> Option<String> {
         Some((user, host)) => (Some(user), host),
         None => (None, hop),
     };
+    // `ssh://u@[…]` puts the scheme in what reads as the user (#5929's second review).
+    if user.is_some_and(|user| user.contains("://")) {
+        return None;
+    }
     let (inner, after) = host.strip_prefix('[')?.split_once(']')?;
     let (address, zone) = inner.split_once("%%")?;
     let named = !zone.is_empty()
@@ -191,7 +195,11 @@ fn shell_would_read(value: &str) -> bool {
     // inside is only an IPv6 address's characters (#5892).
     let stray_brackets = value.split(',').any(|part| {
         let part = part.strip_prefix("ssh://").unwrap_or(part);
-        let host = part.rsplit('@').next().unwrap_or(part);
+        let (user, host) = part.rsplit_once('@').unwrap_or(("", part));
+        // ssh pastes a jump's user as `-l user`, unquoted too (#5929's second review).
+        if user.contains(['[', ']']) {
+            return true;
+        }
         let bracketed = host.strip_prefix('[').and_then(|rest| rest.split_once(']'));
         match bracketed {
             Some((inner, after)) => {

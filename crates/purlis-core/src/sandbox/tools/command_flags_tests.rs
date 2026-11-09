@@ -769,3 +769,23 @@ fn a_scoped_link_local_jump_host_is_offered_only_with_its_zone_spelled_as_ssh_re
         &[&["-J", "b", "[fe80::1%%en0]"]],
     );
 }
+
+// The second review of #5929: brackets in a jump's user are a glob too, since ssh pastes the
+// user as `-l user` unquoted; and a zone is let through in no `ssh://` hop, with a user or not.
+
+#[test]
+fn a_jump_users_brackets_and_a_zone_in_an_ssh_uri_with_a_user_are_offered_no_run_grant() {
+    refused(
+        "ssh",
+        "-J",
+        &[
+            &["-J", "[x]@host", "host"],
+            &["-J", "a]@host", "host"],
+            &["-J", "[x]@[fe80::1%%en0]", "host"],
+            &["-J", "ssh://u@[fe80::1%%en0]", "host"],
+            &["-J", "a,ssh://u@[fe80::1%%en0]", "host"],
+        ],
+    );
+    refused("ssh", "-o ProxyJump", &[&["-o", "ProxyJump=[x]@b", "host"]]);
+    offered("ssh", &["-J u@[::1] host", "-J ssh://u@[::1]:22 host"]);
+}
