@@ -12,6 +12,7 @@ import { askOfBlock } from "./test-asks";
 import { ReadOnlySaid } from "./ReadOnlyLine";
 import { heardMore } from "./refusedMore";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
+import { NoticeWayGuard, grantsByLook } from "./noticeSettle";
 
 /**
  * **The host to allow, for a block that named none** (#626): the set's `Field`, in a form row
@@ -259,6 +260,44 @@ describe("the block Notice's ways out", () => {
       "data-variant",
       "grants",
     );
+  });
+
+  it("holds an Allow under Other scopes to the settle guard, as the main Allow is (#5942)", async () => {
+    const asked: string[] = [];
+    mockIPC((cmd) => {
+      asked.push(cmd);
+      return cmd === "allow_sandbox_block" ? { said: "Allowed.", live: true } : null;
+    });
+    // A place whose Notices just moved: every answer that grants waits, and opening the scopes,
+    // which grants nothing, does not.
+    const held: Element[] = [];
+    render(
+      <NoticeWayGuard
+        value={(way) => {
+          if (!grantsByLook(way)) return true;
+          held.push(way);
+          return false;
+        }}
+      >
+        <SandboxBlockNotice
+          block={NAMED}
+          asks={askOfBlock(NAMED)}
+          more={0}
+          onDismiss={vi.fn()}
+          onAllowed={vi.fn()}
+          onRestarted={vi.fn()}
+        />
+      </NoticeWayGuard>,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Other scopes…" }));
+    for (const name of ["Allow only for this chat", "Allow for everyone in this project"]) {
+      const way = screen.getByRole("button", { name });
+      await userEvent.click(way);
+      expect(held, name).toContain(way);
+    }
+
+    expect(asked).not.toContain("allow_sandbox_block");
   });
 
   it("says nothing for an Allow that sends nothing", async () => {

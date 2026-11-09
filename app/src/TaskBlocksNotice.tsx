@@ -1,13 +1,13 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useId, useState } from "react";
+import { useContext, useId, useState } from "react";
 import { commands, type GrantLevel, type PlaneId, type SeenBlock, type Shown } from "./bindings";
 import { Notice, type NoticeAction } from "./Notice";
 import { sandboxCommandReturned } from "./sandboxAsked";
 import { RestartEndsLine } from "./RestartEnds";
 import { asksOf, inertly } from "./sandboxBlocks";
-import { SETTLE_MS } from "./noticeSettle";
+import { NoticeWayGuard, SETTLE_MS } from "./noticeSettle";
 import { listed, type Member, type TaskBlockGroup } from "./taskAsks";
 import { Button, ButtonRow } from "./ui/button/Button";
 
@@ -81,6 +81,9 @@ export function TaskBlocksNotice({
   onKeepBlocked: (members: readonly Member[]) => void;
 }) {
   const id = useId();
+  /** **The place this Notice stands in** (#1695): an Allow under the menu waits for it to settle
+   *  as the main Allow does, so a press aimed at one ask never lands on the next (#5942). */
+  const mayAct = useContext(NoticeWayGuard);
   const [alwaysOpen, setAlways] = useState(false);
   const [said, setSaid] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -211,7 +214,9 @@ export function TaskBlocksNotice({
               variant="grants"
               key={level}
               isDisabled={busy}
-              onPress={() => allow(level)}
+              onPress={(press) => {
+                if (mayAct(press.target)) allow(level);
+              }}
             >
               {scope[level]}
             </Button>

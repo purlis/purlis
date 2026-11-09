@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useId, useState } from "react";
+import { useContext, useId, useState } from "react";
 import {
   commands,
   type Allowed,
@@ -35,6 +35,7 @@ import { moreRefusedSaid, useRefusedMore } from "./refusedMore";
 import { RestartEndsLine } from "./RestartEnds";
 import { Field, SettingRow } from "./settings/components";
 import { Button, ButtonRow } from "./ui/button/Button";
+import { NoticeWayGuard } from "./noticeSettle";
 import { Card } from "./ui/card/Card";
 
 /**
@@ -478,6 +479,9 @@ function AllowNotice({
   onWay?: (words: string, ask: Shown) => void;
 }) {
   const id = useId();
+  /** **The place this Notice stands in** (#1695): an Allow under the menu waits for it to settle
+   *  as the main Allow does, so a press aimed at one ask never lands on the next (#5942). */
+  const mayAct = useContext(NoticeWayGuard);
   /** A port only the command's own output named (qw384): pre-filled for the person to check,
    *  never taken as the refusal's own word. */
   const suggested = block.target === null ? (block.suggested ?? undefined) : undefined;
@@ -1008,7 +1012,9 @@ function AllowNotice({
                 busy || target === "" || (option.id === "project" && readOnly !== undefined)
               }
               tooltip={option.id === "project" ? readOnly : undefined}
-              onPress={() => allow(option.id, option.label)}
+              onPress={(press) => {
+                if (mayAct(press.target)) allow(option.id, option.label);
+              }}
             >
               {option.label}
             </Button>
