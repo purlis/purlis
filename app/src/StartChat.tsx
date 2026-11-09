@@ -578,6 +578,11 @@ export function StartChat({
   // What the one alert says: a refusal, or, where the start's Secret ask is drawn below, only what
   // its last press was told, since the refusal's own words point to the Inbox and the ask is here.
   const refusalSaid = ask !== undefined ? ask.said : (trouble ?? filledSaid);
+  // The refusal still shown, where its ask waits for a profile no longer picked (#5670 review).
+  const askElsewhere =
+    secretAsk !== undefined && ask === undefined && trouble !== undefined
+      ? `That refusal is for ${secretAsk.profile}: pick it again to fill ${secretAsk.ask.secret?.key ?? "its key"} here.`
+      : undefined;
   // Once the details are in, a Start pressed early goes, where it is a plain start; an approval
   // or a start without the sandbox is shown instead, and is a press of its own (ADR 0097 §6).
   const wentEarly = useRef(false);
@@ -616,15 +621,6 @@ export function StartChat({
           ? `Not started. The sandbox cannot hold this chat here: read why below, then press ${START_WITHOUT_SANDBOX}.`
           : undefined
       : undefined;
-  // **A saved limit starts from the render its save comes back in** (#5670 review), never from
-  // the press's: an ask answered since holds it, and the save's start is dropped.
-  const [savedLimit, setSavedLimit] = useState(0);
-  const wentSaved = useRef(0);
-  useEffect(() => {
-    if (wentSaved.current >= savedLimit) return;
-    wentSaved.current = savedLimit;
-    start();
-  });
   // Raising a limit starts the chat too, so it is offered only where that is a plain start of the
   // profile it was refused on: never an approval or a start without the sandbox (ADR 0097 §6).
   const raises =
@@ -633,6 +629,17 @@ export function StartChat({
     !approves &&
     withoutSandbox === null &&
     !unavailable;
+
+  // **A saved limit starts from the render its save comes back in** (#5670 review), never from
+  // the press's: an ask answered since holds it, and the save's start is dropped. It is a plain
+  // start of the profile the limit was raised for, and of none picked since (ADR 0097 §6).
+  const [savedLimit, setSavedLimit] = useState(0);
+  const wentSaved = useRef(0);
+  useEffect(() => {
+    if (wentSaved.current >= savedLimit) return;
+    wentSaved.current = savedLimit;
+    if (raises && !askBusy && !starting) plainStart(runsOnPick);
+  });
 
   // The list, and whether the picked row is to be brought into view after this render (R22).
   const list = useRef<HTMLDivElement>(null);
@@ -930,6 +937,7 @@ export function StartChat({
                 {refusalSaid}
               </p>
             )}
+            {askElsewhere !== undefined && <p className="honest">{askElsewhere}</p>}
             {/* The start's missing credential (#5137): the Secret ask's own body, whose Fill
               goes on with the start and whose Not now cancels it. */}
             {ask !== undefined && (
@@ -976,7 +984,16 @@ export function StartChat({
                 key={limitOffer.hits.map((hit) => `${hit.key}:${hit.needed}`).join()}
                 offer={limitOffer}
                 action="Save to the pool and start"
-                working={savingLimit ? "Saving…" : starting ? "Starting…" : undefined}
+                // Held in its own words while the start's Secret ask is answered (#5670 review).
+                working={
+                  savingLimit
+                    ? "Saving…"
+                    : starting
+                      ? "Starting…"
+                      : askBusy
+                        ? "Save to the pool and start"
+                        : undefined
+                }
                 onApply={(values) => {
                   // Nothing is saved, and so nothing started, while the ask's answer is sent.
                   if (askBusy) return;

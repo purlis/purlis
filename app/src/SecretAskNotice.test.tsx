@@ -163,7 +163,7 @@ describe("a start's ask, in the Start dialog (#5137)", () => {
     expect(heard).not.toHaveBeenCalled();
   });
 
-  it("claims ⌘⏎ anywhere in a start's ask, and nowhere in the Inbox's (#5670)", () => {
+  it("keeps ⌘⏎ from the dialog anywhere in a start's ask, filling where no control takes it, and nowhere in the Inbox's (#5670)", () => {
     const onAnswer = vi.fn();
     const heard = vi.fn();
     const { unmount } = render(

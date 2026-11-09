@@ -267,6 +267,12 @@ describe("a start missing its profile credential, in the Start dialog (#5137)", 
     await user.click(within(dialog).getByRole("radio", { name: /codex/ }));
 
     await waitFor(() => expect(within(dialog).queryByTestId("secret-ask")).toBeNull());
+    // The refusal still shown is said to be the refused profile's.
+    expect(
+      within(dialog).getByText(
+        "That refusal is for work-key: pick it again to fill anthropic here.",
+      ),
+    ).toBeTruthy();
     await user.click(within(dialog).getByRole("radio", { name: /work-key/ }));
     expect(
       await within(dialog).findByRole("group", {
@@ -303,7 +309,7 @@ describe("a start missing its profile credential, in the Start dialog (#5137)", 
     expect(of("start_chat")).toHaveLength(2);
   });
 
-  it("⏎ and ⌘⏎ on the ask's own radios start nothing: they are no harness card (#5670 review)", async () => {
+  it("⏎ and ⌘⏎ on the ask's own radios neither start nor answer: they are no harness card (#5670 review)", async () => {
     const { of } = core();
     render(<App />);
 
@@ -316,6 +322,7 @@ describe("a start missing its profile credential, in the Start dialog (#5137)", 
 
     await new Promise((settle) => setTimeout(settle, 50));
     expect(of("start_chat")).toHaveLength(1);
+    expect(of("answer_secret_ask")).toEqual([]);
   });
 
   it("while Not now is sent, Start is held and never says it is starting (#5670)", async () => {

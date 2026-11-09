@@ -2517,6 +2517,87 @@ describe("the start's Secret ask, with what else the dialog offers (#5670 review
     expect(onStart).not.toHaveBeenCalled();
   });
 
+  it("a limit saved for one profile starts nothing on another picked while it saved", async () => {
+    const onStart = vi.fn();
+    const onApprove = vi.fn();
+    let saved: (ok: boolean) => void = () => {};
+    render(
+      <StartChat
+        options={options({
+          profiles: [
+            ONE.profiles[0],
+            {
+              ...ONE.profiles[0],
+              name: "work",
+              shown: "claude --work",
+              approval: "new",
+              is_default: false,
+            },
+          ],
+        })}
+        trouble="it needs 150 MiB"
+        limitOffer={offer}
+        limitProfile="claude"
+        onRaiseLimit={() =>
+          new Promise<boolean>((resolve) => {
+            saved = resolve;
+          })
+        }
+        onStart={onStart}
+        onApprove={onApprove}
+        onCancel={vi.fn()}
+      />,
+    );
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Save to the pool and start" }));
+    await user.click(screen.getByRole("radio", { name: /^work/ }));
+    await act(async () => saved(true));
+
+    expect(onApprove).not.toHaveBeenCalled();
+    expect(onStart).not.toHaveBeenCalled();
+  });
+
+  it("a limit saved starts its own profile once", async () => {
+    const onStart = vi.fn();
+    render(
+      <StartChat
+        options={options()}
+        trouble="it needs 150 MiB"
+        limitOffer={offer}
+        limitProfile="claude"
+        onRaiseLimit={() => Promise.resolve(true)}
+        onStart={onStart}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Save to the pool and start" }));
+
+    await waitFor(() => expect(onStart).toHaveBeenCalledTimes(1));
+    expect(onStart.mock.calls[0][0]).toBe("claude");
+  });
+
+  it("holds Save to the pool and start, said as held, while the ask's answer is sent", () => {
+    render(
+      <StartChat
+        options={options()}
+        trouble="it needs 150 MiB"
+        limitOffer={offer}
+        limitProfile="claude"
+        onRaiseLimit={vi.fn()}
+        secretAsk={ask({ busy: true })}
+        onStart={vi.fn()}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Save to the pool and start" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+
   it("a fill that comes back while the window is still busy goes on once it is not", async () => {
     const onStart = vi.fn();
     let answered: (ended: "filled") => void = () => {};
