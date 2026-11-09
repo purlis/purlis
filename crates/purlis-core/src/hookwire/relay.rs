@@ -355,6 +355,9 @@ struct LoginWaits {
 /// it.
 pub type HandOn = Box<dyn Fn(u64, &Heard) -> bool + Send + Sync + 'static>;
 
+/// Whether process `pid` is a window the host links now.
+pub type IsAWindow = std::sync::Arc<dyn Fn(u32) -> bool + Send + Sync + 'static>;
+
 /// **The host's half**: hands every line its hook channel admits on to the window, and gives
 /// the hook what the window replied ([`Relaying::hearing`]).
 pub struct Relaying {
@@ -389,6 +392,9 @@ pub struct Relaying {
     /// The window's socket each slot a chat's server dials in is handed on over (#3316), where
     /// it was told one; none, and every slot is refused.
     slots_to: Mutex<Option<std::path::PathBuf>>,
+    /// Which processes are windows its host links now, which alone a slot is handed to; none
+    /// told, and every slot is refused.
+    windows: Mutex<Option<IsAWindow>>,
     /// The queues of its chats' messages it carries to the window, where it does (#4804).
     carrying: carrying::Carrying,
     /// Whether a message waits to be carried once a window hears this host again.
@@ -451,6 +457,7 @@ impl Relaying {
             asks_paced: hosted::Paced::default(),
             ask_turns: hosted::Turns::default(),
             slots_to: Mutex::default(),
+            windows: Mutex::default(),
             carrying: carrying::Carrying::default(),
             carry_waits: std::sync::atomic::AtomicBool::new(false),
         })
@@ -461,6 +468,13 @@ impl Relaying {
     /// refused.
     pub fn handing_slots_to(&self, path: &std::path::Path) {
         *lock(&self.slots_to) = Some(path.to_path_buf());
+    }
+
+    /// **Which processes are windows its host links now** (`is_one`, asked of a pid as each slot
+    /// is handed on): a slot goes only to a window listening at the socket
+    /// [`Self::handing_slots_to`] names, never to another process bound there.
+    pub fn handing_slots_only_to(&self, is_one: IsAWindow) {
+        *lock(&self.windows) = Some(is_one);
     }
 
     /// What hears a `serve` line here: each slot handed on to the window ([`Self::serve`]).
@@ -479,7 +493,9 @@ impl Relaying {
     #[cfg(unix)]
     fn serve(&self, ask: &super::serve::ServeAsk, slot: super::serve::Slot) {
         let to = lock(&self.slots_to).clone();
-        let handed = to.map(|path| super::serve::hand_on(&path, ask, &slot));
+        let windows = lock(&self.windows).clone();
+        let is_a_window = |pid: u32| windows.as_ref().is_some_and(|is_one| is_one(pid));
+        let handed = to.map(|path| super::serve::hand_on(&path, ask, &slot, is_a_window));
         match handed {
             Some(Ok(())) => {}
             Some(Err(_)) => super::serve::refused(slot, super::serve::NO_WINDOW),

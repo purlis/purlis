@@ -5273,6 +5273,11 @@ fn main() -> ExitCode {
     if let Some(code) = purlis_core::files::serve_if_asked() {
         std::process::exit(code);
     }
+    // Started by a chat's ssh as its route's `ProxyCommand` (#3536): carry one connection
+    // through the chat's SOCKS port and exit. Nothing else of the command runs.
+    if let Some(code) = purlis_core::sandbox::sshproxy::proxy_if_asked() {
+        std::process::exit(code);
+    }
     // FIRST, before anything that could panic, argv and clap included: a guard that crashed
     // must refuse the tool call, not allow it (#349).
     if is_a_pretooluse_call(&std::env::args_os().collect::<Vec<_>>()) {

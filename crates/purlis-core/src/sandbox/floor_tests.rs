@@ -946,6 +946,27 @@ fn the_floor_keeps_the_projects_certificate_checks() {
     );
 }
 
+#[test]
+fn the_floor_keeps_the_projects_own_terminal_only() {
+    let (_dir, root) = project();
+    let machine = machine_with(Path::new("/opt/none"));
+    assert!(
+        !Compiled::floor(&root, &machine, &grant::Grants::default())
+            .widened
+            .own_terminal_only
+    );
+    std::fs::write(
+        root.join("charter.toml"),
+        "[sandbox]\nown-terminal-only = true\n",
+    )
+    .expect("charter.toml");
+    assert!(
+        Compiled::floor(&root, &machine, &grant::Grants::default())
+            .widened
+            .own_terminal_only
+    );
+}
+
 /// qw384's services on this Mac reach a chat at the floor as at the full sandbox: the one port
 /// a person allowed, through the proxy and in the wrap's profile, and no other.
 #[test]
@@ -2005,6 +2026,13 @@ fn the_floor_lists_the_homes_shared_folders_each_before_what_is_in_it() {
             home.join(".local"),
             home.join(".local/share"),
             home.join(".config"),
+            // And those above each name a person may lift, which the floor pins.
+            home.join(".kube"),
+            home.join(".local/share/fish"),
+            home.join(".local/share/nvim"),
+            home.join(".local/share/nvim/site"),
+            home.join(".local/share/bash-completion"),
+            home.join(".local/share/dbus-1"),
         ]
     );
     assert_eq!(
@@ -2032,6 +2060,12 @@ fn an_xdg_folder_is_listed_only_where_it_is_in_the_home() {
             home.join(".config"),
             home.join("my"),
             home.join("my/data"),
+            home.join(".kube"),
+            home.join(".local/share/fish"),
+            home.join(".local/share/nvim"),
+            home.join(".local/share/nvim/site"),
+            home.join(".local/share/bash-completion"),
+            home.join(".local/share/dbus-1"),
         ]
     );
 }
@@ -2098,6 +2132,12 @@ fn an_xdg_folder_that_climbs_out_of_the_home_is_not_listed() {
             home.join(".local"),
             home.join(".local/share"),
             home.join(".config"),
+            home.join(".kube"),
+            home.join(".local/share/fish"),
+            home.join(".local/share/nvim"),
+            home.join(".local/share/nvim/site"),
+            home.join(".local/share/bash-completion"),
+            home.join(".local/share/dbus-1"),
         ]
     );
 }
@@ -2240,4 +2280,266 @@ fn the_folders_above_what_may_be_lifted_are_made_before_a_floor_chat() {
     assert!(!home.join(".config/gh").exists());
     #[cfg(unix)]
     assert!(!root.join("elsewhere").exists(), "the link was followed");
+}
+
+/// Where the person's environment moves gh's and glab's settings, extensions and sign-ins
+/// (`GH_CONFIG_DIR`, `GLAB_CONFIG_DIR`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`), no chat writes
+/// them, on any machine: their next run loads what is there, as it does from `~/.config/gh`.
+/// What is beside them stays the chat's, and a variable that names no absolute folder names
+/// nothing.
+#[test]
+fn a_forge_programs_folders_moved_by_a_variable_are_never_written_by_a_chat() {
+    use super::tests::writes;
+    let (_dir, root) = project();
+    let bin = tempfile::tempdir().expect("a bin");
+    let home_dir = tempfile::tempdir().expect("a home");
+    let elsewhere_dir = tempfile::tempdir().expect("a folder outside the home");
+    let home = real(home_dir.path());
+    let elsewhere = real(elsewhere_dir.path());
+    let config = elsewhere.join("cfg");
+    let data = elsewhere.join("data");
+    let gh = elsewhere.join("gh-own");
+    let glab = elsewhere.join("glab-own");
+    let said = |path: &Path| path.display().to_string();
+    let (path, config_said, data_said, gh_said, glab_said) = (
+        said(bin.path()),
+        said(&config),
+        said(&data),
+        said(&gh),
+        said(&glab),
+    );
+    let machine = Machine {
+        env: crate::secrets::Env::of(&[
+            ("PATH", path.as_str()),
+            ("XDG_CONFIG_HOME", config_said.as_str()),
+            ("XDG_DATA_HOME", data_said.as_str()),
+            ("GH_CONFIG_DIR", gh_said.as_str()),
+            ("GLAB_CONFIG_DIR", glab_said.as_str()),
+        ]),
+        home: Some(home.clone()),
+        os: Os::MacOs,
+    };
+    for harness in [Harness::Codex, Harness::Opencode] {
+        let profile = wrapped_floor(harness, &root, &machine, &[4040, 4041], None);
+        for not in [
+            config.join("gh/config.yml"),
+            config.join("glab-cli/config.yml"),
+            data.join("gh/extensions/gh-x/gh-x"),
+            gh.join("hosts.yml"),
+            glab.join("aliases.yml"),
+        ] {
+            assert!(
+                !writes(&profile, &not),
+                "{harness:?}: {} is writable",
+                not.display()
+            );
+        }
+        for still in [
+            config.join("other/x"),
+            data.join("other/x"),
+            elsewhere.join("x"),
+        ] {
+            assert!(
+                writes(&profile, &still),
+                "{harness:?}: {} is not writable",
+                still.display()
+            );
+        }
+    }
+    // On Linux, whose disks do not fold case, each is held as it is spelled.
+    let linux = Machine {
+        os: Os::Linux,
+        ..machine.clone()
+    };
+    let held: Vec<Denial> = Denied::of(&root, &linux)
+        .paths
+        .into_iter()
+        .filter(|denial| denial.path.starts_with(&elsewhere))
+        .collect();
+    for one in [
+        config.join("gh"),
+        config.join("glab-cli"),
+        data.join("gh"),
+        gh.clone(),
+        glab.clone(),
+    ] {
+        let denial = held
+            .iter()
+            .find(|denial| denial.path == one)
+            .unwrap_or_else(|| panic!("{} in {held:?}", one.display()));
+        assert_eq!(denial.class, Class::LaterCode, "{denial:?}");
+        assert_eq!(denial.access, Access::Write, "{denial:?}");
+        assert_eq!(denial.reach, Reach::AndBelow, "{denial:?}");
+        assert!(!denial.any_case, "{denial:?}");
+    }
+    let home_said = said(&home);
+    let root_said = said(&root);
+    let relative = Machine {
+        env: crate::secrets::Env::of(&[
+            ("GH_CONFIG_DIR", "gh-own"),
+            ("GLAB_CONFIG_DIR", ""),
+            ("XDG_DATA_HOME", "rel"),
+        ]),
+        home: Some(home.clone()),
+        os: Os::Linux,
+    };
+    assert!(
+        Denied::of(&root, &relative)
+            .paths
+            .iter()
+            .all(|denial| denial.path != Path::new("gh-own") && !denial.path.as_os_str().is_empty()),
+        "a variable that names no absolute folder names nothing"
+    );
+    // One that names the home, or the project, never takes the chat's own work from it.
+    let wide = Machine {
+        env: crate::secrets::Env::of(&[
+            ("GH_CONFIG_DIR", home_said.as_str()),
+            ("GLAB_CONFIG_DIR", root_said.as_str()),
+            ("XDG_CONFIG_HOME", "/"),
+        ]),
+        home: Some(home.clone()),
+        os: Os::Linux,
+    };
+    let wide_held: Vec<PathBuf> = Denied::of(&root, &wide)
+        .paths
+        .into_iter()
+        .filter(|denial| denial.class == Class::LaterCode)
+        .map(|denial| denial.path)
+        .collect();
+    for never in [home.clone(), root.clone()] {
+        assert!(
+            !wide_held.contains(&never),
+            "{} in {wide_held:?}",
+            never.display()
+        );
+    }
+}
+
+/// A held name of more than one part in the home (`.local/share/dbus-1/services`, `.kube/kuberc`)
+/// is never passed by moving a folder holding it into place: at the floor of a harness purlis
+/// wraps, every folder above it in the home is pinned as an entry, whether or not a person lifted
+/// the name for the chat, and those folders a tool writes below are made before the chat starts.
+#[test]
+fn the_folders_above_a_held_name_in_the_home_are_pinned_at_a_wrapped_floor_lifted_or_not() {
+    let (_dir, root) = project();
+    let home = root.join("home");
+    std::fs::create_dir_all(&home).expect("a home");
+    let machine = homed(&home, &[]);
+    let pinned = |profile: &str, folder: &str| {
+        profile.contains(&format!(
+            "(deny file-write* (literal {}))",
+            seatbelt::quote(&home.join(folder)).expect("quoted")
+        ))
+    };
+    let mut lifted = grant::Grants::default();
+    lifted.add(&grant::What::Write(home.join(".kube/kuberc")));
+    for grants in [grant::Grants::default(), lifted] {
+        let compiled = Compiled::floor(&root, &machine, &grants);
+        for harness in [Harness::Codex, Harness::Opencode] {
+            let profile = wrapped_floor_of(harness, &compiled, &[4040]);
+            for folder in [
+                ".kube",
+                ".local/share/dbus-1",
+                ".local/share/bash-completion",
+                ".local/share/nvim/site",
+                ".local/share/fish",
+            ] {
+                assert!(
+                    pinned(&profile, folder),
+                    "{harness:?} {:?}: {folder} not pinned",
+                    compiled.widened.lifted
+                );
+            }
+        }
+    }
+    for folder in [".kube", ".local/share/dbus-1", ".local/share/nvim/site"] {
+        assert!(
+            usual_home_folders(Level::Floor, &machine).contains(&home.join(folder)),
+            "{folder} not made"
+        );
+    }
+}
+
+/// A name lifted for a Claude Code chat takes its entry out of the rules, and with it what pinned
+/// the folder above it where no other held name is below that folder (`.kube`,
+/// `.local/share/dbus-1`): an entry beside the name keeps that folder pinned while the chat
+/// writes the name, so it is never swapped for a link that a later chat writes through.
+#[test]
+fn the_folder_above_a_name_lifted_for_a_claude_code_chat_stays_pinned() {
+    let (_dir, root) = project();
+    let home = root.join("home");
+    std::fs::create_dir_all(&home).expect("a home");
+    let machine = homed(&home, &[]);
+    let compile = compiler(Harness::ClaudeCode).expect("a compiler");
+    for (name, above) in [
+        (".kube/kuberc", ".kube"),
+        (".local/share/dbus-1/services", ".local/share/dbus-1"),
+        (
+            ".local/share/bash-completion/completions",
+            ".local/share/bash-completion",
+        ),
+    ] {
+        let mut chat = grant::Grants::default();
+        chat.add(&grant::What::Write(home.join(name)));
+        let compiled = Compiled::floor(&root, &machine, &chat);
+        assert_eq!(compiled.widened.lifted, vec![home.join(name)], "{name}");
+        let Form::ClaudeCode(settings) = compile(&compiled).expect("compiled") else {
+            unreachable!();
+        };
+        let pin = home.join(above).join(PIN).display().to_string();
+        let rules = settings.sandbox.to_string();
+        assert!(rules.contains(&pin), "{name}: {rules}");
+        assert!(
+            !rules.contains(&home.join(name).display().to_string()),
+            "{name}"
+        );
+    }
+}
+
+/// Where `$XDG_CONFIG_HOME` or `$XDG_DATA_HOME` moves `~/.config` or `~/.local/share`, every
+/// later-code name the floor holds there is held where it moved: fish, Neovim, git and the rest
+/// load from there. What else is in those folders stays the chat's.
+#[test]
+fn later_code_names_moved_by_xdg_folders_are_held_where_they_moved() {
+    use super::tests::writes;
+    let (_dir, root) = project();
+    let home_dir = tempfile::tempdir().expect("a home");
+    let elsewhere_dir = tempfile::tempdir().expect("a folder outside the home");
+    let home = real(home_dir.path());
+    let elsewhere = real(elsewhere_dir.path());
+    let config = elsewhere.join("cfg");
+    let data = elsewhere.join("data");
+    let (config_said, data_said) = (config.display().to_string(), data.display().to_string());
+    let machine = homed(
+        &home,
+        &[
+            ("XDG_CONFIG_HOME", config_said.as_str()),
+            ("XDG_DATA_HOME", data_said.as_str()),
+        ],
+    );
+    for harness in [Harness::Codex, Harness::Opencode] {
+        let profile = wrapped_floor(harness, &root, &machine, &[4040], None);
+        for not in [
+            data.join("fish/vendor_conf.d/x.fish"),
+            data.join("nvim/site/plugin/x.lua"),
+            data.join("dbus-1/services/x.service"),
+            data.join("applications/x.desktop"),
+            config.join("git/config"),
+            config.join("fish/config.fish"),
+            config.join("autostart/x.desktop"),
+        ] {
+            assert!(
+                !writes(&profile, &not),
+                "{harness:?}: {} is writable",
+                not.display()
+            );
+        }
+        for still in [data.join("other/x"), config.join("other/x")] {
+            assert!(
+                writes(&profile, &still),
+                "{harness:?}: {} is not writable",
+                still.display()
+            );
+        }
+    }
 }

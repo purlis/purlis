@@ -131,6 +131,11 @@ pub struct Policy {
     /// ever narrows. An administrator's `socket-grants` lock turns it off besides
     /// ([`CertificateChecks`]).
     pub certificate_checks: bool,
+    /// `own-terminal-only`: on macOS, whether a wrapped chat keeps to the terminal it runs in
+    /// and opens no other terminal of this Mac, the person's own tabs among them, nor any it
+    /// would make itself ([`OWN_TERMINAL_ONLY`]). **Off unless the file says `true`**: the key
+    /// only ever narrows.
+    pub own_terminal_only: bool,
     /// Each persona's own grants: `[sandbox.personas.<name>]` in the committed file (#1362).
     pub personas: std::collections::BTreeMap<String, persona::Grants>,
 }
@@ -143,6 +148,7 @@ impl Policy {
             egress: Preset::DEFAULT.to_vec(),
             hosts: Vec::new(),
             certificate_checks: true,
+            own_terminal_only: false,
             personas: std::collections::BTreeMap::new(),
         }
     }
@@ -151,6 +157,14 @@ impl Policy {
 /// The key that turns the system's certificate check off for a project's chats: `false` is the
 /// one value that changes anything (R1, 2026-10-13).
 pub const CERTIFICATE_CHECKS: &str = "certificate-checks";
+
+/// **The key that keeps a project's wrapped chats to their own terminal** on macOS: `true` is
+/// the one value that changes anything. With it, a chat reads and types into the terminal it
+/// runs in and no other: not the person's other terminal tabs, not another chat's, and not one
+/// it makes itself, so `script`, `expect`, `tmux` and a Codex command run in a terminal of its
+/// own fail. Off, a chat also opens the terminals programs make. Linux's supervisor judges
+/// terminals itself and needs no key.
+pub const OWN_TERMINAL_ONLY: &str = "own-terminal-only";
 
 /// **Whether a sandboxed chat of a project has the system's certificate check, and why not**
 /// (the operator's ruling R1 of 2026-10-13, amending ADR 0093). On by default, on every
@@ -410,6 +424,8 @@ pub enum Refusal {
     BrowserSite(String, String),
     /// `certificate-checks` that is not `true` or `false`.
     CertificateChecksNotABool,
+    /// `own-terminal-only` that is not `true` or `false`: read as `true`, the narrow value.
+    OwnTerminalOnlyNotABool,
     /// A `policy` that is not `"never"` or `"local"`: read as `"never"`.
     PolicyUnknown,
     /// Something in `personas` that grants nothing ([`persona::read`]), as one sentence with
@@ -482,6 +498,11 @@ impl fmt::Display for Refusal {
                 "{TABLE}.{CERTIFICATE_CHECKS} in {FILE} is not true or false; certificate checks \
                  are off until it is"
             ),
+            Self::OwnTerminalOnlyNotABool => write!(
+                f,
+                "{TABLE}.{OWN_TERMINAL_ONLY} in {FILE} is not true or false; chats keep to their \
+                 own terminal until it is"
+            ),
             Self::PolicyUnknown => write!(
                 f,
                 "{TABLE}.{} in {FILE} is not \"never\" or \"local\", so it is read as \
@@ -511,6 +532,7 @@ impl Refusal {
             Self::HostsNotAList | Self::Host(..) => at(hosts::KEY),
             Self::BrowserSitesNotAList | Self::BrowserSite(..) => at(browser_sites::KEY),
             Self::CertificateChecksNotABool => at(CERTIFICATE_CHECKS),
+            Self::OwnTerminalOnlyNotABool => at(OWN_TERMINAL_ONLY),
             Self::PolicyUnknown => at(team::KEY),
             Self::Persona(said) => said.key.clone().unwrap_or_else(|| at(persona::KEY)),
             Self::ForgeHost(..) => vec!["forge".to_owned()],
@@ -617,6 +639,7 @@ impl Said {
                 && key != hosts::KEY
                 && key != browser_sites::KEY
                 && key != CERTIFICATE_CHECKS
+                && key != OWN_TERMINAL_ONLY
                 && key != persona::KEY
                 && key != services::EXPECTS
                 && key != team::KEY
@@ -678,6 +701,16 @@ impl Said {
                 false
             }
         };
+        // Off unless the file says `true`: what cannot be read is refused and read as on, the
+        // narrow value.
+        let own_terminal_only = match table.get(OWN_TERMINAL_ONLY) {
+            None => false,
+            Some(toml::Value::Boolean(on)) => *on,
+            Some(_) => {
+                refused.push(Refusal::OwnTerminalOnlyNotABool);
+                true
+            }
+        };
         let (personas, not) = persona::keyed(table.get(persona::KEY), FILE, known);
         refused.extend(not.into_iter().map(Refusal::Persona));
         // The forge preset lets a project's `[[forge]]` hosts through, but not one the sandbox
@@ -693,6 +726,7 @@ impl Said {
             egress,
             hosts,
             certificate_checks,
+            own_terminal_only,
             personas,
         };
         let (policy, unset) = if on {
@@ -978,6 +1012,37 @@ pub fn names_what_may_be_lifted(path: &Path) -> bool {
         let wanted: Vec<&std::ffi::OsStr> = Path::new(name).iter().collect();
         parts.windows(wanted.len()).any(|here| here == wanted)
     })
+}
+
+/// A name below a folder that pins it while the name itself is lifted: never a file of anyone's,
+/// and never made, only held, so every folder above it stays pinned as an entry ([`planted_home_pins`]).
+pub const PIN: &str = ".purlis-pinned";
+
+/// **Each later-code name of more than one part in `home`**, as the home spells it: every
+/// [`PLANTED`] name held with what is below it, but one that holds `**`. A pattern held at any
+/// depth names no folder above it, so a folder holding the name could be moved into place under
+/// the home; a path held pins each folder above it. A name lifted for the chat (`lifted`) is held
+/// by [`PIN`] beside it instead, so its folder above stays pinned while the chat writes the name.
+pub fn planted_home_pins(home: &Path, lifted: &[PathBuf]) -> Vec<PathBuf> {
+    PLANTED
+        .iter()
+        .filter(|planted| {
+            planted.reach == Reach::AndBelow
+                && !planted.path.contains("**")
+                && planted.path.contains('/')
+        })
+        .filter_map(|planted| {
+            let at = home.join(planted.path);
+            let is_lifted = lifted
+                .iter()
+                .any(|one| *one == at || real(one) == real(&at));
+            if is_lifted {
+                Some(at.parent()?.join(PIN))
+            } else {
+                Some(at)
+            }
+        })
+        .collect()
 }
 
 /// The project's manifests, under both names (RN-2a): `purlis.toml`, which turns the sandbox
@@ -1646,6 +1711,28 @@ impl Denied {
                 access: Access::Write,
                 named: None,
                 reach,
+                any_case: machine.os == Os::MacOs,
+            });
+        }
+        // …and gh's and glab's own folders where the person's environment moves them: the
+        // settings, extensions and aliases their next run loads, as it does from `~/.config/gh`
+        // ([`PLANTED`]), which names only the folders at their usual place.
+        // So too every other later-code name below `~/.config` or `~/.local/share`, where
+        // `$XDG_CONFIG_HOME` or `$XDG_DATA_HOME` moves it: fish, Neovim, git, systemd and the
+        // rest load from there.
+        let mut moved = forge_folders_moved(root, machine);
+        for folder in xdg_later_code_moved(root, machine) {
+            if !moved.contains(&folder) {
+                moved.push(folder);
+            }
+        }
+        for folder in moved {
+            paths.push(Denial {
+                class: Class::LaterCode,
+                path: folder,
+                access: Access::Write,
+                named: None,
+                reach: Reach::AndBelow,
                 any_case: machine.os == Os::MacOs,
             });
         }
@@ -2385,6 +2472,147 @@ fn podman_folders(machine: &Machine) -> Vec<(PathBuf, Reach)> {
     for folder in folders {
         if !out.iter().any(|(one, _)| *one == folder) {
             out.push((folder, Reach::AndBelow));
+        }
+    }
+    out
+}
+
+/// **Each later-code name below `~/.config` or `~/.local/share` where `machine`'s environment
+/// moves those folders**: every [`PLANTED`] name there, at `$XDG_CONFIG_HOME` or `$XDG_DATA_HOME`
+/// in its place, which the programs that load it read instead. A variable that names no absolute
+/// folder, or names the usual one, names nothing; a folder that is the home or above it, or holds
+/// the project at `root`, is never one, as for gh's ([`forge_folders_moved`]).
+fn xdg_later_code_moved(root: &Path, machine: &Machine) -> Vec<PathBuf> {
+    let Some(home) = machine.home.as_deref() else {
+        return Vec::new();
+    };
+    let named = |name: &str| {
+        machine
+            .env
+            .get(name)
+            .map(PathBuf::from)
+            .filter(|folder| folder.is_absolute())
+    };
+    let moves = [
+        (".config/", named("XDG_CONFIG_HOME"), home.join(".config")),
+        (
+            ".local/share/",
+            named("XDG_DATA_HOME"),
+            home.join(".local/share"),
+        ),
+    ];
+    let holds_the_work = |folder: &Path| root.starts_with(folder) || home.starts_with(folder);
+    let mut out: Vec<PathBuf> = Vec::new();
+    for (usual, moved, usual_folder) in moves {
+        let Some(moved) = moved.filter(|moved| *moved != usual_folder) else {
+            continue;
+        };
+        for planted in PLANTED
+            .iter()
+            .filter(|planted| !planted.path.contains("**"))
+        {
+            let Some(rest) = planted.path.strip_prefix(usual) else {
+                continue;
+            };
+            let folder = moved.join(rest);
+            if !out.contains(&folder) && !holds_the_work(&folder) {
+                out.push(folder);
+            }
+        }
+    }
+    out
+}
+
+/// **gh's and glab's folders where `machine`'s environment names them by a relative path**:
+/// the variables [`forge_folders_moved`] reads, each that names a relative folder, as it is
+/// written. gh and glab take such a value against the folder they run in, so it is held against
+/// each chat's own ([`Applied::forge_folders_here`]).
+fn forge_folders_relative(machine: &Machine) -> Vec<PathBuf> {
+    let named = |name: &str| {
+        machine
+            .env
+            .get(name)
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+            .filter(|folder| folder.is_relative())
+    };
+    let mut out: Vec<PathBuf> = Vec::new();
+    let relative = named("GH_CONFIG_DIR")
+        .into_iter()
+        .chain(named("GLAB_CONFIG_DIR"))
+        .chain(
+            named("XDG_CONFIG_HOME")
+                .into_iter()
+                .flat_map(|config| [config.join("gh"), config.join("glab-cli")]),
+        )
+        .chain(named("XDG_DATA_HOME").map(|data| data.join("gh")));
+    for folder in relative {
+        if !out.contains(&folder) {
+            out.push(folder);
+        }
+    }
+    out
+}
+
+/// `path` with each `.` dropped and each `..` taking the name before it away, by its words alone:
+/// the path a program that joins a relative value to its folder opens, where nothing on the way
+/// is a link, as a chat's own folder is not.
+fn lexically(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for part in path.components() {
+        match part {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+/// **Where `machine`'s environment moves gh's and glab's folders**: `$GH_CONFIG_DIR`, else
+/// `$XDG_CONFIG_HOME/gh`, for gh's settings and sign-ins; `$XDG_DATA_HOME/gh` for its extensions;
+/// `$GLAB_CONFIG_DIR`, else `$XDG_CONFIG_HOME/glab-cli`, for glab's. Each variable is read whether
+/// or not another wins, since which one a later run reads is its own environment's to say. A
+/// variable that names no absolute folder names nothing, and a folder at its usual place in the
+/// home is left to [`PLANTED`], which a person may lift for one chat ([`MAY_LIFT`]). A folder that
+/// is the home or above it, or holds the project at `root`, is never one: holding it would take
+/// the chat's own work from it, and no forge program keeps its settings there.
+fn forge_folders_moved(root: &Path, machine: &Machine) -> Vec<PathBuf> {
+    let named = |name: &str| {
+        machine
+            .env
+            .get(name)
+            .map(PathBuf::from)
+            .filter(|folder| folder.is_absolute())
+    };
+    let usual: Vec<PathBuf> = machine
+        .home
+        .iter()
+        .flat_map(|home| MAY_LIFT.iter().map(move |name| home.join(name)))
+        .collect();
+    let mut out: Vec<PathBuf> = Vec::new();
+    let moved = named("GH_CONFIG_DIR")
+        .into_iter()
+        .chain(named("GLAB_CONFIG_DIR"))
+        .chain(
+            named("XDG_CONFIG_HOME")
+                .into_iter()
+                .flat_map(|config| [config.join("gh"), config.join("glab-cli")]),
+        )
+        .chain(named("XDG_DATA_HOME").map(|data| data.join("gh")));
+    let holds_the_work = |folder: &Path| {
+        root.starts_with(folder)
+            || machine
+                .home
+                .as_deref()
+                .is_some_and(|home| home.starts_with(folder))
+    };
+    for folder in moved {
+        if !usual.contains(&folder) && !out.contains(&folder) && !holds_the_work(&folder) {
+            out.push(folder);
         }
     }
     out
@@ -3405,6 +3633,9 @@ pub struct Widened {
     /// At the floor, the held folders a person let this chat write ([`grant::lift`]), each named
     /// whole. Every other copy of the name stays held where the sandbox can say so.
     pub lifted: Vec<PathBuf>,
+    /// Whether the chat keeps to its own terminal alone, on macOS: the project's
+    /// `own-terminal-only` ([`OWN_TERMINAL_ONLY`]). Nothing a person grants turns it off.
+    pub own_terminal_only: bool,
 }
 
 impl Widened {
@@ -3421,6 +3652,7 @@ impl Widened {
             // nothing a committed file can widen, since `true` is what an absent key means.
             // Policy has its say in [`Self::and_granted`].
             trust: policy.certificate_checks,
+            own_terminal_only: policy.own_terminal_only,
             sockets: Vec::new(),
             services: Vec::new(),
             ports: Vec::new(),
@@ -3687,13 +3919,14 @@ impl Compiled {
             );
         }
         // The certificate check as the project's file says it (R1), and as policy leaves it
-        // ([`Widened::and_granted`]).
+        // ([`Widened::and_granted`]); the stricter terminal rule as the file says it.
+        let written = Plane::read(root)
+            .said()
+            .unset
+            .unwrap_or_else(Policy::defaults);
         let widened = Widened {
-            trust: Plane::read(root)
-                .said()
-                .unset
-                .unwrap_or_else(Policy::defaults)
-                .certificate_checks,
+            trust: written.certificate_checks,
+            own_terminal_only: written.own_terminal_only,
             ..Widened::default()
         }
         .lifting(grant::still_lifted(
@@ -3747,6 +3980,25 @@ impl Compiled {
             },
             own_temp_only: locks.holds_to_its_folder(),
         }
+    }
+
+    /// **What a wrap purlis builds holds at the floor** ([`seatbelt::floor_profile`], read as the
+    /// Linux wrap reads it too): [`Self::held`], and each later-code name of more than one part in
+    /// the home ([`planted_home_pins`]), so every folder above it there is pinned as an entry and no
+    /// folder holding it is moved into place. Not for Claude Code's own sandbox, whose rules name
+    /// those paths themselves.
+    pub fn wrapped_held(&self) -> Vec<PathBuf> {
+        let mut held = self.held.clone();
+        if self.level == Level::Floor
+            && let Some(home) = &self.homes.home
+        {
+            for path in planted_home_pins(home, &self.widened.lifted) {
+                if !held.contains(&path) {
+                    held.push(path);
+                }
+            }
+        }
+        held
     }
 
     /// Whether every class a service holds here is held for `harness`'s chat on this system.
@@ -3995,6 +4247,9 @@ pub struct Applied {
     older: Option<(String, ClaudeCodeVersion)>,
     /// The shared folders of the home a chat at the floor finds made ([`usual_home_folders`]).
     usual_folders: Vec<PathBuf>,
+    /// gh's and glab's folders as the person's environment names them by a relative path, which
+    /// each is held at against the chat's own folder ([`forge_folders_relative`]).
+    forge_relative: Vec<PathBuf>,
     /// The persona's tools for this chat (#1407), written as its line is decided.
     tools: Option<Box<tools::Resolved>>,
     /// purlis's own program the wrap starts the chat under on Linux, as it was checked and held
@@ -4437,6 +4692,17 @@ impl Applied {
         }
     }
 
+    /// **What the chat's start readies outside the sandbox, once nothing more can refuse it**: a
+    /// wrapped Claude Code's config folder ([`claude_wrap::prepare`]), for a chat in `cwd`. Called
+    /// by each start after its line and every later check (its settings' file), just before it
+    /// spawns the chat, so a start refused after its line was built marks nothing trusted and
+    /// changes nothing in the folder. Nothing for any other form.
+    pub fn ready_to_start(&self, cwd: &Path) {
+        if let Form::ClaudeWrapped(wrap) = &*self.form {
+            claude_wrap::prepare(wrap, cwd);
+        }
+    }
+
     /// The form as compiled for the project, before the manifests of a chat's own folders are
     /// added: what a chat is handed is [`Self::form_in`] its folder.
     pub fn form(&self) -> &Form {
@@ -4571,6 +4837,7 @@ impl Applied {
             .into_iter()
             .chain(git_the_app_writes(&self.root, cwd))
             .chain(self.later_code_by_path(cwd))
+            .chain(self.forge_folders_here(cwd))
             .filter(|denial| !self.denied.contains(denial))
             .collect()
     }
@@ -4596,6 +4863,27 @@ impl Applied {
                 named: None,
                 reach: Reach::AndBelow,
                 any_case: false,
+            })
+            .collect()
+    }
+
+    /// gh's and glab's folders that the person's environment names by a relative path, held at
+    /// the chat's own folder `cwd` (else the project's), where gh and glab run in it read them: as
+    /// [`forge_folders_moved`] holds those named whole. One that is the chat's folder, the
+    /// project's or above either holds nothing, as there.
+    fn forge_folders_here(&self, cwd: Option<&Path>) -> Vec<Denial> {
+        let here = cwd.unwrap_or(&self.root);
+        self.forge_relative
+            .iter()
+            .map(|folder| lexically(&here.join(folder)))
+            .filter(|folder| !here.starts_with(folder) && !self.root.starts_with(folder))
+            .map(|path| Denial {
+                class: Class::LaterCode,
+                path,
+                access: Access::Write,
+                named: None,
+                reach: Reach::AndBelow,
+                any_case: self.os == Os::MacOs,
             })
             .collect()
     }
@@ -5075,11 +5363,15 @@ impl Confinement {
         let asks = serving.asks.clone();
         let proxy = egress::Proxy::serving(serving)?;
         let tmp = tempfile::Builder::new().prefix("charter-chat-").tempdir()?;
-        let ssh = tunnel::SshRoute::write(tmp.path(), proxy.socks_port())
-            .inspect_err(|err| {
-                tracing::warn!("purlis: a chat's ssh route was not written ({err})");
-            })
-            .ok();
+        let ssh = tunnel::SshRoute::write(
+            tmp.path(),
+            proxy.socks_port(),
+            tools::purlis_binary().as_deref(),
+        )
+        .inspect_err(|err| {
+            tracing::warn!("purlis: a chat's ssh route was not written ({err})");
+        })
+        .ok();
         Ok(Self {
             proxy: Proxied::Here(Box::new(proxy)),
             tmp: Some(Folder::Own(tmp)),
@@ -5120,7 +5412,11 @@ impl Confinement {
     /// logged.
     pub fn proxy_only_routed(serving: egress::Serving, within: &Path) -> std::io::Result<Self> {
         let mut confinement = Self::proxy_only(serving)?;
-        match tunnel::routed_in(within, confinement.socks_port()) {
+        match tunnel::routed_in(
+            within,
+            confinement.socks_port(),
+            tools::purlis_binary().as_deref(),
+        ) {
             Ok((dir, route)) => {
                 confinement.ssh = Some(route);
                 confinement.routed = Some(Folder::Own(dir));
@@ -6835,6 +7131,7 @@ pub(crate) fn applied_of(
         through_proxy: harness != Harness::ClaudeCode || wrapped,
         older: None,
         usual_folders: usual_home_folders(compiled.level, machine),
+        forge_relative: forge_folders_relative(machine),
         tools: None,
         wrap: None,
     })
@@ -6855,10 +7152,15 @@ fn usual_home_folders(level: Level, machine: &Machine) -> Vec<PathBuf> {
     let homes = Homes::of(machine);
     let mut out: Vec<PathBuf> = Vec::new();
     let usual = [home.join(".local/share"), home.join(".config")];
+    // And the folders above each name a person may lift, which the floor pins as entries
+    // ([`Compiled::wrapped_held`], and Claude Code's own rules): a tool's first run, and a lift,
+    // write below them.
+    let above = claude::above_what_may_be_lifted(home);
     for folder in usual
         .iter()
         .chain(homes.data.iter())
         .chain(homes.config.iter())
+        .chain(above.iter())
     {
         let plain = folder
             .components()
@@ -7711,9 +8013,12 @@ pub mod reach;
 pub mod seatbelt;
 pub mod services;
 pub mod signin;
+pub mod sshproxy;
 pub mod team;
 pub mod tools;
 pub mod tunnel;
+#[cfg(unix)]
+mod walk;
 pub mod wrapper;
 
 #[cfg(test)]
@@ -7726,6 +8031,8 @@ mod claude_wrap_tests;
 mod codex_tests;
 #[cfg(test)]
 mod floor_tests;
+#[cfg(test)]
+mod forge_moved_tests;
 #[cfg(all(test, unix))]
 mod git_held_tests;
 #[cfg(test)]
@@ -7738,7 +8045,11 @@ mod persona_tests;
 mod reach_tests;
 #[cfg(test)]
 mod signin_tests;
+#[cfg(all(test, unix))]
+mod sshproxy_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod tunnel_tests;
+#[cfg(all(test, unix))]
+mod walks_tests;

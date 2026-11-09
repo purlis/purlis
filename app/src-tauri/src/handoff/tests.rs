@@ -2466,9 +2466,11 @@ fn a_chat_idle_when_its_session_host_ends_is_hibernated_and_resume_starts_it_on_
     );
     held.chats().ask_restart(steward).expect("Resume asks");
     let again = held
-        .restart_chat(steward, STARTING)
-        .expect("it starts again")
-        .expect("now, its turn having ended");
+        .restart_chat(steward, STARTING, crate::planes::When::AtAPause)
+        .expect("it starts again");
+    let crate::planes::Restarted::Started(again) = again else {
+        panic!("now, its turn having ended, not {again:?}");
+    };
     assert_eq!(host.asked().last().map(|(number, _)| *number), Some(again));
     let resumed = host.openings().last().expect("its start").args.clone();
     assert!(
@@ -3625,7 +3627,12 @@ fn a_chat_being_stopped_is_not_started_again_under_a_new_number() {
     );
     // The one restart on its conversation (#1428) is the one the window asks for on its
     // own when a turn ends: it answers "not now", as it does for a chat showing a prompt.
-    assert_eq!(held.restart_chat(child, STARTING), Ok(None));
+    assert_eq!(
+        held.restart_chat(child, STARTING, crate::planes::When::Now),
+        Ok(crate::planes::Restarted::NotYet(
+            crate::planes::WAITS_WHILE_YOU_STOP_IT
+        ))
+    );
     assert_eq!(held.stopping().now(), vec![child], "still being stopped");
     assert_eq!(open_chats(&held), vec![asking, child]);
 }
@@ -9452,6 +9459,33 @@ fn the_stop_word_of_a_chat_named_with_purlis_s_marks_still_arrives() {
             && told.contains("on the task you dispatched to it."),
         "{told}"
     );
+}
+
+#[test]
+fn purlis_s_word_that_a_task_named_with_purlis_s_marks_ended_without_a_report_keeps_its_heading() {
+    // The person can rename a task's chat with ⟨ ⟩ · and a backtick. The app's word that it
+    // ended without a report draws the name in a code span in a heading in purlis's voice, so
+    // the name is written with those marks replaced, as the stop's word writes it.
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    let task = a_task_of(&held, &id, steward, "check prod");
+    held.chats()
+        .rename(task, "⟨ops⟩ · `prod`")
+        .expect("the person may name a chat so");
+
+    host.program_ends(task, KILLED());
+
+    let left = purlis_core::handback::take(held.root(), For::Chat(steward));
+    assert_eq!(left.len(), 1, "the word arrived: {left:?}");
+    assert_eq!(left[0].from, "(ops) - 'prod'");
+    assert!(
+        left[0].task.as_ref().is_some_and(|task| task.unreported),
+        "{left:?}"
+    );
+    let told = purlis_core::handback::context(&left, false).expect("context");
+    assert!(told.starts_with("⬢ **`(ops) - 'prod'` failed: "), "{told}");
 }
 
 #[test]

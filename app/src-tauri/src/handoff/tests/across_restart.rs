@@ -14,6 +14,9 @@ use purlis_core::reopen::{Choice, Record};
 
 use super::*;
 
+/// What the chat that asked is told of its tasks across a restart (#5754).
+mod tasks;
+
 const A_SIZE: purlis_core::engine::Size = purlis_core::engine::Size {
     columns: 80,
     rows: 24,
@@ -1393,10 +1396,12 @@ fn a_shell_a_chat_started_in_a_session_of_its_own_ends_when_the_chat_restarts() 
     held.chats().ask_restart(chat).expect("the person asks");
 
     let started = held
-        .restart_chat(chat, A_SIZE)
-        .expect("it restarts")
-        .expect("now");
+        .restart_chat(chat, A_SIZE, crate::planes::When::Now)
+        .expect("it restarts");
 
+    let crate::planes::Restarted::Started(started) = started else {
+        panic!("Restart now goes ahead at once, not {started:?}");
+    };
     assert_ne!(started, chat);
     assert!(
         goes(shell),
@@ -1438,6 +1443,60 @@ fn a_shell_a_chat_started_in_a_session_of_its_own_ends_when_the_next_host_settle
          the crashed one left"
     );
     planes.close(&id).expect("it closes");
+}
+
+/// **A task a chat on a pool's runner asked for is not started again by a launch** (ADR 0078):
+/// it waits as a chat that did not start, its dispatch still running, saying why, until the
+/// person starts it again or ends it. The same task of a chat on this machine is started again,
+/// told to carry on (`after_a_restart_a_working_task_is_still_under_its_session_and_its_report_
+/// arrives`).
+#[test]
+fn a_task_a_runner_chat_asked_for_waits_for_the_person_after_a_restart() {
+    let (plane, host, planes, _id, held, steward, task) = a_steward_and_a_working_task();
+    let mut at_quit = quits(&held);
+    let record = record_of(&held, task);
+    let task_id = held
+        .chats()
+        .chat_at(task)
+        .and_then(|at| at.id)
+        .expect("an id");
+    for chat in &mut at_quit.chats {
+        if chat.number == Some(steward) {
+            // The steward chat ran on pool builds's runner, as its start chose.
+            chat.runs_on = Some(purlis_core::machine::StartChoice::Pool("builds".to_owned()));
+        }
+    }
+
+    let (relaunched, _planes, _again, held, opened) =
+        launches_again(&plane, (host.clone(), planes, held), &at_quit);
+
+    assert!(
+        !opened.iter().any(|open| open.session == task),
+        "the task was not started again"
+    );
+    assert!(
+        !relaunched.asked().iter().any(|(number, _)| *number == task),
+        "nothing was asked to start it"
+    );
+    let waits: Vec<String> = held
+        .chats()
+        .would_not_start()
+        .into_iter()
+        .filter(|one| one.id == task_id)
+        .map(|one| one.why)
+        .collect();
+    assert_eq!(waits.len(), 1, "it waits to start: {waits:?}");
+    assert!(
+        waits[0].contains("pool builds") && waits[0].contains("Try to start again"),
+        "{}",
+        waits[0]
+    );
+    assert!(
+        dispatchrecord::read(held.root(), &record.id)
+            .unwrap()
+            .running(),
+        "its dispatch still runs"
+    );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1678,10 +1737,13 @@ fn a_hibernated_chat_is_told_what_its_host_s_crash_ended_as_resume_wakes_it() {
         Some("1 background shell")
     );
     held.chats().ask_restart(steward).expect("Resume asks");
+    // Resume asks as the window does, at a pause: the work it waited on ended with its host.
     let again = held
-        .restart_chat(steward, A_SIZE)
-        .expect("it starts again")
-        .expect("now");
+        .restart_chat(steward, A_SIZE, crate::planes::When::AtAPause)
+        .expect("it starts again");
+    let crate::planes::Restarted::Started(again) = again else {
+        panic!("Resume after its host's end goes ahead at once, not {again:?}");
+    };
 
     is_told_its_shell_ended(&host, again, "resumed after its host crashed");
     let _ = planes;
@@ -1707,10 +1769,13 @@ fn a_chat_its_host_s_crash_failed_mid_turn_is_told_what_ended_as_it_is_resumed()
         "precondition: failed mid-turn"
     );
     held.chats().ask_restart(steward).expect("Resume asks");
+    // Resume asks as the window does, at a pause: the work it waited on ended with its host.
     let again = held
-        .restart_chat(steward, A_SIZE)
-        .expect("it starts again")
-        .expect("now");
+        .restart_chat(steward, A_SIZE, crate::planes::When::AtAPause)
+        .expect("it starts again");
+    let crate::planes::Restarted::Started(again) = again else {
+        panic!("Resume after its host's end goes ahead at once, not {again:?}");
+    };
 
     is_told_its_shell_ended(&host, again, "resumed after its host crashed mid-turn");
     let _ = planes;
@@ -1729,10 +1794,13 @@ fn a_chat_with_no_own_work_is_resumed_after_its_host_s_crash_with_no_wake_line()
 
     host.program_ends_with_its_host(steward);
     held.chats().ask_restart(steward).expect("Resume asks");
+    // Resume asks as the window does, at a pause: the work it waited on ended with its host.
     let again = held
-        .restart_chat(steward, A_SIZE)
-        .expect("it starts again")
-        .expect("now");
+        .restart_chat(steward, A_SIZE, crate::planes::When::AtAPause)
+        .expect("it starts again");
+    let crate::planes::Restarted::Started(again) = again else {
+        panic!("Resume after its host's end goes ahead at once, not {again:?}");
+    };
 
     is_given_no_wake_line(&host, again, "resumed with nothing of its own");
     let _ = planes;
@@ -1850,4 +1918,189 @@ fn a_chat_the_launch_could_not_start_is_told_what_ended_when_the_person_reopens_
     .expect("it starts");
 
     is_told_its_shell_ended(&relaunched, again, "reopened by the person");
+}
+
+// ---------------------------------------------------------------------------------------------
+// The restarts of one chat while it waits on its own work, and the wait's lapse (#5753, spec
+// #5743).
+//
+// **The "now" restarts go ahead and tell the chat**: Restart now, a restart without the
+// sandbox and containing the project's settings end the chat at once, and the chat brought
+// back is given the wake line. **Every other restart waits** while the chat waits on its own
+// work, the core's as the window's. **The hour's lapse** puts the chat to the person (✋) but
+// keeps what it had running, so a restart or a move after it goes ahead and names that work.
+// ---------------------------------------------------------------------------------------------
+
+/// A steward chat whose turn ended on one background shell of its own, a wait that lapses in
+/// `lapses_in` seconds.
+fn a_steward_waiting_on_its_shell(lapses_in: u32) -> (Plane, Pretend, Planes, Arc<Held>, u32) {
+    a_steward_waiting_on_its_shell_in(lapses_in, |_, host| planes_on(host))
+}
+
+/// [`a_steward_waiting_on_its_shell`], in a project `planes` opens.
+fn a_steward_waiting_on_its_shell_in(
+    lapses_in: u32,
+    planes: impl FnOnce(&Plane, &Pretend) -> Planes,
+) -> (Plane, Pretend, Planes, Arc<Held>, u32) {
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let planes = planes(&plane, &host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let alpha = held.root().join("workspaces").join("alpha");
+    let steward = a_chat_as(&held, &plane.root, Some("steward"), &alpha);
+    the_board_hears(&held, steward, Event::UserPromptSubmit);
+    its_turn_ends_on_its_own(
+        &held,
+        steward,
+        purlis_core::ownwork::Said {
+            shells: 1,
+            lapses_in: Some(lapses_in),
+            ..purlis_core::ownwork::Said::default()
+        },
+    );
+    (plane, host, planes, held, steward)
+}
+
+/// Asserts chat `again`, started in `was`'s place, was told the restart ended its background
+/// shell.
+fn told_its_shell_ended(host: &Pretend, was: u32, again: u32) {
+    assert_ne!(again, was, "precondition: a new run took the chat's place");
+    let (told, said) = told_of_its_lost_work(host, again, "shell");
+    assert!(
+        told,
+        "chat {was}, started again as {again}, was never told its background shell was ended \
+         by the restart; it was given only {said:#?}"
+    );
+}
+
+/// The wait on chat `chat`'s own work passes its limit with no wake, as the app's clock ends it
+/// (`hooks::lapse`), and the board puts the chat to the person.
+fn its_wait_lapses(held: &Held, chat: u32) {
+    let until = held
+        .hooks()
+        .board()
+        .own_work(chat)
+        .and_then(|work| work.until)
+        .expect("precondition: a wait with a limit");
+    let waits = crate::dispatched::waits_as(held, chat, true);
+    assert!(
+        held.hooks().board().own_work_lapsed(chat, until, waits),
+        "precondition: the wait on its own work lapsed"
+    );
+    assert!(
+        held.hooks().board().needs_you().contains(&chat),
+        "the lapse puts the chat to the person (✋)"
+    );
+}
+
+#[test]
+fn restart_now_on_a_chat_waiting_on_its_own_shell_goes_ahead_and_tells_it_the_shell_ended() {
+    let (_plane, host, _planes, held, steward) = a_steward_waiting_on_its_shell(3600);
+    held.chats().ask_restart(steward).expect("Restart now asks");
+
+    let again = held
+        .restart_chat(steward, A_SIZE, crate::planes::When::Now)
+        .expect("it starts again");
+
+    let crate::planes::Restarted::Started(again) = again else {
+        panic!("Restart now goes ahead at once, not {again:?}");
+    };
+    told_its_shell_ended(&host, steward, again);
+}
+
+#[test]
+fn a_restart_without_the_sandbox_on_a_chat_waiting_on_its_own_shell_tells_it_the_shell_ended() {
+    // A start without the sandbox is made only once its opt-out is recorded (ADR 0067 §7).
+    let (_plane, host, _planes, held, steward) =
+        a_steward_waiting_on_its_shell_in(3600, |plane, host| {
+            use purlis_core::eventlog::{ArgsKey, Log, Recorder};
+            let at = plane.root.join("events");
+            let events = crate::hooks::Events::here(Recorder::new(
+                Log::open(&at, "DEVICE").expect("a log"),
+                ArgsKey::open(&at).expect("a key"),
+            ));
+            planes_on(host).recording_events(Some(events))
+        });
+
+    let again = held
+        .restart_chat_without_sandbox(steward, A_SIZE)
+        .expect("it starts again without the sandbox, now");
+
+    told_its_shell_ended(&host, steward, again);
+}
+
+#[test]
+fn containing_project_settings_on_a_chat_waiting_on_its_own_shell_tells_it_the_shell_ended() {
+    let (_plane, host, _planes, held, steward) = a_steward_waiting_on_its_shell(3600);
+
+    let again = held
+        .contain_project_settings(steward)
+        .expect("it starts again on its conversation, now");
+
+    told_its_shell_ended(&host, steward, again);
+}
+
+#[test]
+fn the_cores_restart_waits_while_the_chat_waits_on_its_own_work() {
+    let (_plane, host, _planes, held, steward) = a_steward_waiting_on_its_shell(3600);
+    held.chats()
+        .ask_restart(steward)
+        .expect("a restart is asked");
+    let starts = host.asked().len();
+
+    let answered = held.restart_chat(steward, A_SIZE, crate::planes::When::AtAPause);
+
+    assert_eq!(
+        answered,
+        Ok(crate::planes::Restarted::NotYet(
+            crate::planes::WAITS_ON_ITS_OWN_WORK
+        ))
+    );
+    assert_eq!(host.asked().len(), starts, "nothing was started");
+    assert!(
+        held.chats().owed_restarts().contains(&steward),
+        "the restart is still owed, for when its work wakes it and its turn ends"
+    );
+}
+
+#[test]
+fn after_the_lapse_the_chat_needs_you_and_a_restart_goes_ahead_and_names_the_ended_shell() {
+    let (_plane, host, _planes, held, steward) = a_steward_waiting_on_its_shell(3600);
+    its_wait_lapses(&held, steward);
+    held.chats()
+        .ask_restart(steward)
+        .expect("a restart is asked");
+
+    let again = held
+        .restart_chat(steward, A_SIZE, crate::planes::When::AtAPause)
+        .expect("it starts again");
+
+    let crate::planes::Restarted::Started(again) = again else {
+        panic!("after the lapse nothing waits, not {again:?}");
+    };
+    told_its_shell_ended(&host, steward, again);
+}
+
+#[test]
+fn after_the_lapse_a_move_goes_ahead_and_the_moved_chat_is_told_its_shell_ended() {
+    let (_plane, host, _planes, held, steward) = a_steward_waiting_on_its_shell(3600);
+    its_wait_lapses(&held, steward);
+    assert!(
+        !held.board().glance(steward).in_its_turn(),
+        "after the lapse the chat is at a pause, which is when a move switches"
+    );
+
+    // What a move's switch does for each chat (`Held::switch`): a new run where it now runs,
+    // held apart, then put in the old one's place.
+    let started = held
+        .chats()
+        .start_again_held(steward, A_SIZE)
+        .expect("its new run starts");
+    let again = held
+        .chats()
+        .took_over(steward, started)
+        .expect("the new run takes its place");
+
+    told_its_shell_ended(&host, steward, again);
 }

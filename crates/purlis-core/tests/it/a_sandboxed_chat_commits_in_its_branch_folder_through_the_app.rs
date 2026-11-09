@@ -270,6 +270,58 @@ fn the_commit_is_signed_with_the_apps_key_and_git_verifies_it() {
     assert_eq!(p.git(&p.piece, &["status", "--porcelain"]), "");
 }
 
+/// #5788: the email chosen for chat commits is the forge account's. A clone on GitLab commits
+/// as the address chosen for the GitLab account, though the GitHub account's differs; a host no
+/// account chose one for keeps the person's own.
+#[test]
+fn the_commit_is_made_as_the_email_chosen_for_its_clones_forge_account() {
+    purlis_core::unsteered!();
+    let p = project();
+    let made_as = |origin: &str, file: &str| {
+        support::git_tried(&p.f.clone, &["remote", "remove", "origin"]);
+        support::git(&p.f.clone, &["remote", "add", "origin", origin]);
+        std::fs::write(p.piece.join(file), "one\n").unwrap();
+        let asker = Asker {
+            chat: 4,
+            cwd: Some(p.piece.clone()),
+            persona: Some("steward".to_owned()),
+            harnessed: true,
+            unsandboxed: false,
+            roots_git_held: false,
+            unreadable: Vec::new(),
+            config: None,
+            id: None,
+            live: None,
+        };
+        let ask = CommitAsk {
+            chat: 4,
+            message: format!("piece: {file}"),
+            stage: paths(&[file]),
+            folder: None,
+        };
+        let identity = git::Isolated::identity(Some("The Person"), Some("person@example.invalid"))
+            .signing(p.signer.clone())
+            .as_email_on("github.com", "octocat@users.noreply.github.com")
+            .as_email_on("gitlab.com", "sam@gitlab.example")
+            .as_email_on("git.example.com:8443", "sam@selfhosted.example");
+        let (id, _) = committed(&commit::answer(&p.f.plane, &asker, &ask, &identity));
+        (
+            p.git(&p.piece, &["log", "-1", "--format=%ae", &id]),
+            p.git(&p.piece, &["log", "-1", "--format=%ce", &id]),
+        )
+    };
+    let on_gitlab = made_as("https://gitlab.com/team/thing.git", "a.txt");
+    assert_eq!(on_gitlab.0, "sam@gitlab.example");
+    assert_eq!(on_gitlab.1, "sam@gitlab.example");
+    let on_github = made_as("git@github.com:team/thing.git", "b.txt");
+    assert_eq!(on_github.0, "octocat@users.noreply.github.com");
+    // A server on a port is told apart by it, as its account is kept (#1850).
+    let on_a_port = made_as("https://git.example.com:8443/team/thing.git", "d.txt");
+    assert_eq!(on_a_port.0, "sam@selfhosted.example");
+    let elsewhere = made_as("https://git.example.net/team/thing.git", "c.txt");
+    assert_eq!(elsewhere.0, "person@example.invalid");
+}
+
 #[test]
 fn with_no_key_the_commit_is_made_unsigned_and_the_answer_says_how_to_set_one_up() {
     purlis_core::unsteered!();

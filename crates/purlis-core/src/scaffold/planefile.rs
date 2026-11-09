@@ -339,6 +339,7 @@ mod tests {
                 hosts: vec![],
                 certificate_checks: true,
                 personas: Default::default(),
+                own_terminal_only: false,
             })
         );
         assert!(said.refused.is_empty(), "{:?}", said.refused);

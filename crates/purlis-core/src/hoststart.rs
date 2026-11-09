@@ -971,6 +971,10 @@ pub fn compose_ready(
         Some(id) => settings_in_a_file(kit.chat_settings.as_deref(), root, id, args)?,
         None => args,
     };
+    // Past every refusal: what the sandbox readies outside it before the chat starts.
+    if let Some(applied) = sandbox {
+        applied.ready_to_start(&cwd);
+    }
     // The same test as what holds their folders in the home (`kept_by_purlis`).
     let mut wrapped = wrapped;
     if sandbox.is_some() && crate::sandbox::Machine::this().is_a_runner() {
@@ -1524,6 +1528,8 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
         routed: skills.routed.as_deref(),
     });
     let linked = laid_out_on(at, skills.persona.as_deref(), kit, harness);
+    // The harness's own skills, read whether or not the plane's reach the chat (#5842).
+    let own = skills.own.as_slice();
     let skills = at;
     let armed = crate::harness::Kit {
         binary,
@@ -1539,6 +1545,7 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
         // And of those, one whose skill asked for a shell, held to its piece (#4476).
         runs_a_shell: graded
             && cwd.is_some_and(|cwd| crate::skills::verbs::drafts::shell_piece(root, cwd)),
+        own,
         laid_out: linked.as_deref(),
     };
     // Which folder the chat is handed, for its terminal to note while it runs (SK-24).

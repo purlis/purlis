@@ -7,11 +7,12 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { useState } from "react";
 import { userEvent } from "@testing-library/user-event";
 import type { StartOptions, StartRunsOn } from "./bindings";
-import { StartChat, type RunsOnInPicker } from "./StartChat";
+import { StartChat, typedIn, type RunsOnInPicker } from "./StartChat";
 import { profileCommand, profilePage } from "./settings/profileAddress";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { ChatsHere, fixedChats } from "./chatState";
 import { querySelectNamed, selectNamed } from "./ui/select/select.testkit";
+import { secretAsk } from "./secretAsk.testkit";
 
 afterEach(cleanup);
 
@@ -2423,5 +2424,367 @@ describe("Runs on: where this chat runs, and why (#4536)", () => {
       expect(screen.queryByRole("button", { name: "Run on this machine this once" })).toBeNull();
       expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
     });
+  });
+});
+
+describe("the start's Secret ask while the window sends its answer (#5670)", () => {
+  it("holds Start in its own words, with no key shown, and ⏎ from a row starts nothing", () => {
+    const onStart = vi.fn();
+    render(
+      <StartChat
+        options={options()}
+        trouble="nothing was started"
+        secretAsk={{
+          ask: secretAsk({ persona: "steward", vault: "providers", key: "anthropic" }),
+          profile: "claude",
+          variable: "ANTHROPIC_API_KEY",
+          entries: () => Promise.resolve([]),
+          busy: true,
+          onAnswer: () => Promise.resolve("refused"),
+          onSaid: () => {},
+        }}
+        onStart={onStart}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    const start = screen.getByRole("button", { name: "Start chat" });
+    expect(start).toBeDisabled();
+    expect(start).not.toHaveAttribute("aria-keyshortcuts");
+    expect(start.querySelector('[data-part="shortcut"]')).toHaveAttribute("data-off", "");
+    const row = screen.getByRole("option", { name: "steward" });
+    fireEvent.keyDown(row, { key: "Enter" });
+    fireEvent.keyUp(row, { key: "Enter" });
+    expect(onStart).not.toHaveBeenCalled();
+  });
+});
+
+describe("the start's Secret ask, with what else the dialog offers (#5670 review)", () => {
+  const ask = (
+    over: {
+      busy?: boolean;
+      onAnswer?: (option: unknown, given: () => unknown) => Promise<"filled" | "refused">;
+    } = {},
+  ) => ({
+    ask: secretAsk({ persona: "steward", vault: "providers", key: "anthropic" }),
+    profile: "claude",
+    variable: "ANTHROPIC_API_KEY",
+    entries: () => Promise.resolve([]),
+    busy: over.busy ?? false,
+    onAnswer: over.onAnswer ?? (() => Promise.resolve("refused" as const)),
+    onSaid: () => {},
+  });
+  const offer = {
+    pool: "builds",
+    hits: [
+      {
+        key: "profileSize",
+        plain: "Most a profile may send: size",
+        unit: "MiB",
+        in_force: 128,
+        team_suggests: false,
+        needed: 150,
+        suggested: 192,
+      },
+    ],
+  };
+
+  it("a limit saved while the ask's answer is sent starts nothing after it", async () => {
+    const onStart = vi.fn();
+    let saved: (ok: boolean) => void = () => {};
+    const onRaiseLimit = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          saved = resolve;
+        }),
+    );
+    const draw = (busy: boolean) => (
+      <StartChat
+        options={options()}
+        trouble="it needs 150 MiB"
+        limitOffer={offer}
+        limitProfile="claude"
+        onRaiseLimit={onRaiseLimit}
+        secretAsk={ask({ busy })}
+        onStart={onStart}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    );
+    const { rerender } = render(draw(false));
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Save to the pool and start" }));
+    await waitFor(() => expect(onRaiseLimit).toHaveBeenCalledTimes(1));
+    rerender(draw(true));
+    await act(async () => saved(true));
+
+    expect(onStart).not.toHaveBeenCalled();
+  });
+
+  it("a limit saved for one profile starts nothing on another picked while it saved", async () => {
+    const onStart = vi.fn();
+    const onApprove = vi.fn();
+    let saved: (ok: boolean) => void = () => {};
+    render(
+      <StartChat
+        options={options({
+          profiles: [
+            ONE.profiles[0],
+            {
+              ...ONE.profiles[0],
+              name: "work",
+              shown: "claude --work",
+              approval: "new",
+              is_default: false,
+            },
+          ],
+        })}
+        trouble="it needs 150 MiB"
+        limitOffer={offer}
+        limitProfile="claude"
+        onRaiseLimit={() =>
+          new Promise<boolean>((resolve) => {
+            saved = resolve;
+          })
+        }
+        onStart={onStart}
+        onApprove={onApprove}
+        onCancel={vi.fn()}
+      />,
+    );
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Save to the pool and start" }));
+    await user.click(screen.getByRole("radio", { name: /^work/ }));
+    await act(async () => saved(true));
+
+    expect(onApprove).not.toHaveBeenCalled();
+    expect(onStart).not.toHaveBeenCalled();
+  });
+
+  it("a limit saved starts its own profile once", async () => {
+    const onStart = vi.fn();
+    render(
+      <StartChat
+        options={options()}
+        trouble="it needs 150 MiB"
+        limitOffer={offer}
+        limitProfile="claude"
+        onRaiseLimit={() => Promise.resolve(true)}
+        onStart={onStart}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Save to the pool and start" }));
+
+    await waitFor(() => expect(onStart).toHaveBeenCalledTimes(1));
+    expect(onStart.mock.calls[0][0]).toBe("claude");
+  });
+
+  it("holds Save to the pool and start, said as held, while the ask's answer is sent", () => {
+    render(
+      <StartChat
+        options={options()}
+        trouble="it needs 150 MiB"
+        limitOffer={offer}
+        limitProfile="claude"
+        onRaiseLimit={vi.fn()}
+        secretAsk={ask({ busy: true })}
+        onStart={vi.fn()}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Save to the pool and start" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+
+  it("holds the ask's Fill while a limit saves, so no fill lands where it cannot go on", async () => {
+    const onAnswer = vi.fn(() => Promise.resolve("filled" as const));
+    render(
+      <StartChat
+        options={options()}
+        trouble="it needs 150 MiB"
+        limitOffer={offer}
+        limitProfile="claude"
+        onRaiseLimit={() => new Promise<boolean>(() => {})}
+        secretAsk={ask({ onAnswer })}
+        onStart={vi.fn()}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Value of anthropic"), "fr3sh");
+    await user.click(await screen.findByRole("button", { name: "Save to the pool and start" }));
+    await user.click(screen.getByRole("button", { name: "Fill" }));
+
+    expect(onAnswer).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Fill" })).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("an answer that fails says so, and lets the ask be answered again", async () => {
+    const onSaid = vi.fn();
+    // A message that ends in a full stop is said with one.
+    const onAnswer = vi.fn((_option: unknown, given: () => unknown) => {
+      given();
+      return Promise.reject(new Error("the app went away."));
+    });
+    render(
+      <StartChat
+        options={options()}
+        trouble="nothing was started"
+        secretAsk={{ ...ask({ onAnswer }), onSaid }}
+        onStart={vi.fn()}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Value of anthropic"), "fr3sh");
+    await user.click(screen.getByRole("button", { name: "Fill" }));
+
+    await waitFor(() =>
+      expect(onSaid).toHaveBeenCalledWith(
+        "purlis could not send your answer: the app went away. Type the value again and press Fill.",
+      ),
+    );
+    expect(screen.getByRole("button", { name: "Fill" })).not.toHaveAttribute("aria-disabled");
+  });
+
+  it("a Not now that fails says to press Not now again, never to fill", async () => {
+    const onSaid = vi.fn();
+    render(
+      <StartChat
+        options={options()}
+        trouble="nothing was started"
+        secretAsk={{
+          ...ask({ onAnswer: () => Promise.reject(new Error("the app went away")) }),
+          onSaid,
+        }}
+        onStart={vi.fn()}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    await userEvent.setup().click(screen.getByRole("button", { name: "Not now" }));
+
+    await waitFor(() =>
+      expect(onSaid).toHaveBeenCalledWith(
+        "purlis could not send your answer: the app went away. Press Not now again.",
+      ),
+    );
+  });
+
+  it("a fill that sent no typed value and fails says to press Fill again, with nothing to retype", async () => {
+    const onSaid = vi.fn();
+    render(
+      <StartChat
+        options={options()}
+        trouble="nothing was started"
+        secretAsk={{
+          // Nothing typed is read: the box is empty, as after a picked entry (see `typedIn`).
+          ...ask({
+            onAnswer: (_option, given) => {
+              given();
+              return Promise.reject(new Error("the app went away"));
+            },
+          }),
+          onSaid,
+        }}
+        onStart={vi.fn()}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    await userEvent.setup().click(screen.getByRole("button", { name: "Fill" }));
+
+    await waitFor(() =>
+      expect(onSaid).toHaveBeenCalledWith(
+        "purlis could not send your answer: the app went away. Press Fill again.",
+      ),
+    );
+  });
+
+  it("a send that fails while another profile is picked is said all the same", async () => {
+    let fail: (why: Error) => void = () => {};
+    function Window() {
+      const [said, setSaid] = useState<string>();
+      return (
+        <StartChat
+          options={options({
+            profiles: [ONE.profiles[0], { ...ONE.profiles[0], name: "other", is_default: false }],
+          })}
+          trouble="nothing was started"
+          secretAsk={{
+            ...ask({
+              onAnswer: (_option, given) => {
+                given();
+                return new Promise((_resolve, reject) => {
+                  fail = reject;
+                });
+              },
+            }),
+            said,
+            onSaid: setSaid,
+          }}
+          onStart={vi.fn()}
+          onApprove={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      );
+    }
+    render(<Window />);
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Value of anthropic"), "fr3sh");
+    await user.click(screen.getByRole("button", { name: "Fill" }));
+    await user.click(screen.getByRole("radio", { name: /^other/ }));
+    await act(async () => fail(new Error("the app went away")));
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent("purlis could not send your answer"),
+    );
+  });
+
+  it("a fill that comes back while the window is still busy goes on once it is not", async () => {
+    const onStart = vi.fn();
+    let answered: (ended: "filled") => void = () => {};
+    const onAnswer = () =>
+      new Promise<"filled">((resolve) => {
+        answered = resolve;
+      });
+    const draw = (busy: boolean) => (
+      <StartChat
+        options={options()}
+        trouble="nothing was started"
+        secretAsk={ask({ busy, onAnswer })}
+        onStart={onStart}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    );
+    const { rerender } = render(draw(false));
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Value of anthropic"), "fr3sh");
+    await user.click(screen.getByRole("button", { name: "Fill" }));
+    rerender(draw(true));
+    await act(async () => answered("filled"));
+    expect(onStart).not.toHaveBeenCalled();
+    rerender(draw(false));
+
+    await waitFor(() => expect(onStart).toHaveBeenCalledTimes(1));
+  });
+});
+
+describe("whether a send read a typed value (#5670 review)", () => {
+  it("is a value typed, never a picked entry, an empty box or a decline", () => {
+    expect(typedIn({ typed: "sk-1" })).toBe(true);
+    expect(typedIn({ picked: { vault: "providers", key: "anthropic" } })).toBe(false);
+    expect(typedIn({ typed: "" })).toBe(false);
+    expect(typedIn({})).toBe(false);
   });
 });

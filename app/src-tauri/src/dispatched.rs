@@ -607,6 +607,21 @@ fn shown(held: &Held, chat: u32) -> Result<String, String> {
         .ok_or_else(|| format!("chat {chat} is not one this app has open"))
 }
 
+/// **Who a message chat `chat` sends is from**: [`shown`], and where the chat runs on a pool's
+/// runner, that pool after it ([`dispatchtalk::from_a_pool`]), so the chat it reaches knows the
+/// words came from a runner. The pool is the link the line came over, else the router's record
+/// of the chat (`crate::runnerdispatches::heard_from_a_pool`): `chat` is always the chat whose
+/// line is being heard.
+fn shown_from(held: &Held, chat: u32) -> Result<String, String> {
+    let name = shown(held, chat)?;
+    Ok(
+        match crate::runnerdispatches::heard_from_a_pool(held, chat) {
+            Some(pool) => dispatchtalk::from_a_pool(&name, &pool),
+            None => name,
+        },
+    )
+}
+
 fn kept(why: std::io::Error) -> String {
     format!("the message could not be kept ({why})")
 }
@@ -814,6 +829,17 @@ fn live_tasks(held: &Held, asker: u32) -> Vec<(u32, String)> {
         .filter(|row| !row.finished && !row.by_person && row.chat != 0)
         .map(|row| (row.chat, row.name))
         .collect()
+}
+
+/// **How many tasks chat `asker` asked for still work on this machine**: listed under it and
+/// not finished, whoever started them, and on no pool's runner. A move of the chat to a runner
+/// waits for none to be left (`crate::chatmoves`).
+pub(crate) fn tasks_working_here(held: &Held, asker: u32) -> usize {
+    list(held, asker)
+        .into_iter()
+        .filter(|row| !row.finished && row.chat != 0)
+        .filter(|row| held.chats().pool_of(row.chat).is_none())
+        .count()
 }
 
 /// **One follow-up from chat `asker` to every task of its that is still working** (#3904):
@@ -1663,7 +1689,7 @@ fn tell_numbered(
     // A task that reported while its program still runs is told too (#3899).
     dispatchtalk::still_working(&name, to, &from, seen, &state.say())?;
     let text = dispatchtalk::text(said)?;
-    let from_name = shown(held, asker)?;
+    let from_name = shown_from(held, asker)?;
     let limits = limits_between(held, asker, to);
     let asker_key = key(held, asker);
     let number = {
@@ -1723,7 +1749,7 @@ fn send_up(held: &Held, sender: u32, kind: Kind, said: &str) -> Result<Answer, S
     let text = dispatchtalk::text(said)?;
     let message = Message {
         kind,
-        from: shown(held, sender)?,
+        from: shown_from(held, sender)?,
         chat: sender,
         text: text.clone(),
         instruction: None,
@@ -1823,7 +1849,7 @@ fn answer_it(held: &Held, asker: u32, to: u32, said: &str) -> Result<Answer, Str
         ledger.talk.may_answer(to, asker, &name)?;
     }
     let text = dispatchtalk::text(said)?;
-    let asker_name = shown(held, asker)?;
+    let asker_name = shown_from(held, asker)?;
     let message = Message {
         kind: Kind::Answer,
         from: asker_name.clone(),
@@ -2504,7 +2530,18 @@ pub fn wait(held: &Weak<Held>, asked: &Asked, connection: u64) -> Answer {
                             name,
                             what: Waited::Running { state },
                         }),
-                        None => no(why),
+                        // A task that finished before this app started is answered from its
+                        // dispatch record (#5754, #1463).
+                        None => match report_on_disk(&held, asked.chat, of) {
+                            Some((name, report)) => task(Answered::Waited {
+                                of,
+                                name,
+                                what: Waited::Reported {
+                                    report: Box::new(report),
+                                },
+                            }),
+                            None => no(why),
+                        },
                     };
                 };
                 return task(Answered::Waited {
@@ -2534,6 +2571,18 @@ pub fn wait(held: &Weak<Held>, asked: &Asked, connection: u64) -> Answer {
             })
         });
         if let Some(what) = ended {
+            drop(ledger);
+            // A report the app no longer holds in memory, after a restart or once a turn read
+            // it, is the one its dispatch record keeps (#5754, #1463).
+            let what = match what {
+                Waited::AlreadyRead => report_on_disk(&held, asked.chat, of).map_or(
+                    Waited::AlreadyRead,
+                    |(_, report)| Waited::Reported {
+                        report: Box::new(report),
+                    },
+                ),
+                what => what,
+            };
             return task(Answered::Waited { of, name, what });
         }
         // The project is let go of while this sleeps: only the ledger is kept.
@@ -2544,6 +2593,23 @@ pub fn wait(held: &Weak<Held>, asked: &Asked, connection: u64) -> Answer {
             .wait_timeout(ledger, left.min(A_WAIT_LOOKS_EVERY))
             .unwrap_or_else(PoisonError::into_inner);
     }
+}
+
+/// **The report task `of` sent chat `asker`, read from the task's dispatch record** (#5754,
+/// #1463): what a wait answers where the app no longer holds the report's text. The asking
+/// chat is matched by its id, or the id of the chat it resumed, never its number alone.
+fn report_on_disk(
+    held: &Held,
+    asker: u32,
+    of: u32,
+) -> Option<(String, purlis_core::handback::Handback)> {
+    let resumed_from = held
+        .chats()
+        .recorded_chat(asker)
+        .and_then(|chat| chat.identity.resumed_from);
+    let asker = crate::dispatches::chat_ref(held, asker)?;
+    let records = purlis_core::dispatchrecord::list(held.root());
+    purlis_core::dispatchrestart::report_on_disk(&records, &asker, resumed_from.as_deref(), of)
 }
 
 /// The tasks under chat `asker`: the ones still open, in the order they were started, then

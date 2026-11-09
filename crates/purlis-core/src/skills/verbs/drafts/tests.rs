@@ -594,6 +594,7 @@ fn a_try_turns_off_every_harness_skill_and_plugin_on_every_harness() {
         judging: false,
         writes_its_piece: false,
         runs_a_shell: false,
+        own: &[],
     };
     for (harness, own) in [
         (Harness::ClaudeCode, "mine"),

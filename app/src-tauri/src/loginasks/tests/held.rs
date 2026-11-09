@@ -109,9 +109,20 @@ impl Project {
     fn raised(&self, chat: u32) -> (u32, mpsc::Receiver<Heard>) {
         let root = self.held.root();
         let site = suggested("https://shop.example.test/");
-        let judged = super::super::judged(root, "qa", "shop-login", &site, &on_its_page, None, &[])
-            .expect("asked")
-            .expect("an ask");
+        let judged = super::super::judged(
+            root,
+            Whose {
+                grants: "qa",
+                reads_as: "qa",
+            },
+            "shop-login",
+            &site,
+            &on_its_page,
+            None,
+            &[],
+        )
+        .expect("asked")
+        .expect("an ask");
         self.held
             .login_grants()
             .raise(LoginWait {
@@ -123,6 +134,7 @@ impl Project {
                 vault_too: judged.vault_too,
                 no_always: judged.no_always,
                 pool: Some("ci".to_owned()),
+                reads_as: "qa".to_owned(),
             })
             .expect("raised")
     }
@@ -289,5 +301,56 @@ fn a_runner_chats_login_notice_nobody_answered_goes_and_the_chat_is_told() {
     assert!(
         project.held.login_grants().waiting().is_empty(),
         "the notice went"
+    );
+}
+
+/// A runner chat's login notice refused at the press for a key out of reach is never told to the
+/// chat as an Allow (#5831): the press is the person's error, and the notice stays for Keep blocked
+/// or its time, as for every press refused.
+#[test]
+fn a_runner_chats_login_refused_at_the_press_is_never_told_as_allowed() {
+    let project = Project::new();
+    let chat = project.a_chat();
+    let raised = project.raised(chat);
+    let id = raised.0;
+    let_go_unanswered(
+        &project.held,
+        chat,
+        "shop-login",
+        raised,
+        Duration::from_secs(60),
+    );
+    linked_out_of_reach(project.held.root());
+    let wait = project.held.login_grants().waiting().into_iter().next();
+    let shown = wait.expect("the notice waits").proposal.digest();
+
+    let refused = pressed(
+        &project.held,
+        None,
+        &Asked {
+            session: chat,
+            id,
+            press: Press::Always,
+            shown: &shown,
+            typed: None,
+            reason: None,
+        },
+    )
+    .map(|_| ())
+    .expect_err("refused");
+
+    assert!(refused.starts_with("Nothing was allowed: "), "{refused}");
+    assert!(
+        refused.contains("password in vault qa reads an entry of a vault qa may not use"),
+        "{refused}"
+    );
+    assert!(
+        project.told_within(Duration::from_millis(200)).is_empty(),
+        "the chat is told nothing yet, and never Allowed"
+    );
+    assert_eq!(
+        project.held.login_grants().waiting().len(),
+        1,
+        "the notice stays"
     );
 }

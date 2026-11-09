@@ -482,6 +482,7 @@ const PLANE_SAVING: PlaneSaving = {
   pushFailed: null,
   live: [WORKSPACE],
   conflicts: [],
+  conflictKeys: {},
   notice: null,
   mode: null,
   modeFrom: "default",
@@ -1031,6 +1032,7 @@ const ORDINARY: Answers = {
         harness: "claude",
         title: "Claude Code",
         repo_left_out: [],
+        same_left_out: [],
         own: null,
         skills: [
           {

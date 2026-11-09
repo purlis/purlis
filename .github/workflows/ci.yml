@@ -1254,7 +1254,9 @@ jobs:
       # The programs the core's tests run that the Ubuntu runner image has and Fedora's does not
       # (#3507): `nc` (`nmap-ncat`), the client the brokered tunnel's tests send through it, and
       # the `openssl` command, which makes the certificate of a private skill source's https
-      # test. `openssl-devel` is only the library's headers.
+      # test. `openssl-devel` is only the library's headers. `ssh` (`openssh-clients`), which the
+      # CLI's test of a chat's ssh route runs through it (#3536): here, where `nc` is ncat, is
+      # where the route once failed.
       - name: Fedora's build dependencies for Tauri, and a display to start the app in
         timeout-minutes: 15
         run: |
@@ -1263,8 +1265,9 @@ jobs:
             curl wget file openssl openssl-devel webkit2gtk4.1-devel libxdo-devel \
             libappindicator-gtk3-devel librsvg2-devel \
             xorg-x11-server-Xvfb xauth dbus-daemon dbus-x11 mesa-dri-drivers bubblewrap socat \
-            nmap-ncat
+            nmap-ncat openssh-clients
           test -x /usr/bin/nc
+          test -x /usr/bin/ssh
           openssl version
           cat /etc/fedora-release
           got=$(. /etc/os-release && echo "$VERSION_ID")

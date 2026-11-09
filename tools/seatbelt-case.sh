@@ -29,6 +29,13 @@
 # another case, is refused, and what nothing holds goes through. So a change in how a profile is
 # assembled, a rule's order or a later allow, is applied where it ships.
 #
+# **A project that keeps its chats to their own terminal** (`own-terminal-only = true`). The
+# same core test writes each wrapped harness's profile for such a project, `<harness>-strict.sb`.
+# Applied to two terminals this script opens outside any sandbox, as a person's terminal tab is
+# opened: under the full sandbox's profile the first is read and written; under the strict one
+# it is neither, while the second, named in the profile as the chat's own the way a session
+# names it, still is; and a terminal the chat makes itself (`script`) does not open.
+#
 # **Claude Code's own sandbox** (#2211). `tools/seatbelt-case.sh --here <project> <what>` runs
 # the same probes of a sample project, and nothing else, in the sandbox this script already runs
 # in, with no `sandbox-exec` of its own. Claude Code builds its sandbox itself from the settings
@@ -389,6 +396,59 @@ if [ -n "$emitted" ]; then
     done
   done
   expect "$applied" 4 "each emitted profile applied"
+
+  # Two terminals opened outside any sandbox and held open while the probes run: `$other`, as
+  # a person's other terminal tab is, and `$own`, which stands for the chat's own.
+  if command -v python3 >/dev/null 2>&1; then
+    ptys="$top/ptys"
+    python3 -I -B -c 'import os, sys, time
+a = os.openpty()
+b = os.openpty()
+print(os.ttyname(a[1]))
+print(os.ttyname(b[1]))
+sys.stdout.flush()
+time.sleep(600)' > "$ptys" &
+    holder=$!
+    tries=0
+    while [ "$(wc -l < "$ptys")" -lt 2 ] && [ "$tries" -lt 50 ]; do
+      sleep 0.1
+      tries=$((tries + 1))
+    done
+    other=$(sed -n 1p "$ptys")
+    own=$(sed -n 2p "$ptys")
+    if [ -z "$other" ] || [ -z "$own" ]; then
+      echo "::error::seatbelt-case: no terminals were opened to probe"
+      failed=1
+    else
+      makes='/usr/bin/script -q /dev/null /usr/bin/true < /dev/null'
+      for harness in codex opencode; do
+        sb="$emitted/$harness-on.sb"
+        expect "$(under "echo x > '$other'")" yes "$harness at on: another terminal of the same user is written"
+        made=$(under "$makes")
+        strict="$emitted/$harness-strict.sb"
+        if [ ! -f "$strict" ]; then
+          echo "::error::seatbelt-case: $harness strict: no profile at $strict"
+          failed=1
+          continue
+        fi
+        sb="$top/$harness-strict-own.sb"
+        sed "s|/dev/purlis-own-terminal|$own|g" "$strict" > "$sb"
+        expect "$(under "echo x > '$other'")" no "$harness strict: another terminal is written"
+        expect "$(under ": < '$other'")" no "$harness strict: another terminal is read"
+        expect "$(under "echo x > '$own'")" yes "$harness strict: its own terminal is written"
+        expect "$(under ": < '$own'")" yes "$harness strict: its own terminal is read"
+        if [ "$made" = yes ]; then
+          expect "$(under "$makes")" no "$harness strict: a terminal of its own is made"
+        else
+          echo "::notice::seatbelt-case: $harness at on: script made no terminal, so the strict profile's refusal of one is not measured"
+        fi
+      done
+    fi
+    kill "$holder" 2>/dev/null || :
+  else
+    echo "::error::seatbelt-case: no python3 to open the terminals the strict profile is tried on"
+    failed=1
+  fi
 fi
 
 exit "$failed"

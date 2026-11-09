@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use purlis_host::standin::StandIns;
-use purlis_host::{Channel, Compose, HandOn, Hear, Hosting, ToCompose};
+use purlis_host::{Channel, Compose, HandOn, Hear, Hosting, ToCompose, Window};
 use purlis_session_protocol::auth::{Credentials, Scope};
 use purlis_session_protocol::link::{self, Acceptor};
 use purlis_session_protocol::session::{
@@ -39,7 +39,11 @@ struct Heard {
     hand_on: Arc<Mutex<Option<HandOn>>>,
     /// What each channel was handed, by its folder's name.
     hands_on_at: Arc<Mutex<std::collections::HashMap<String, HandOn>>>,
+    /// What the channel was told says which processes are windows the host links now.
+    windows: Arc<Mutex<Option<IsAWindow>>>,
 }
+
+type IsAWindow = Arc<dyn Fn(u32) -> bool + Send + Sync + 'static>;
 
 impl Heard {
     fn said(&self) -> Vec<String> {
@@ -113,6 +117,10 @@ impl Channel for StandInChannel {
 
     fn replied(&self, id: u64, reply: serde_json::Value) {
         self.0.say(format!("reply to {id}: {reply}"));
+    }
+
+    fn windows_linked(&self, is_one: IsAWindow) {
+        *self.0.windows.lock().unwrap() = Some(is_one);
     }
 }
 
@@ -497,4 +505,51 @@ async fn a_project_nobody_holds_any_more_closes_its_channel_and_hands_nothing_on
 
     assert_eq!(linked.heard.said().last().unwrap(), "closed");
     assert!(!linked.heard.hands_on(12, json!({"doing": {}})));
+}
+
+#[tokio::test]
+async fn a_channel_is_told_a_window_is_one_only_while_it_or_a_window_that_came_back_is_linked() {
+    let heard = Heard::default();
+    let hosting = Hosting::hearing_with(Reports, StandIns::default(), Hears(heard.clone()))
+        .started_by(Some(Window(77)));
+    assert!(hosting.a_window_linked_from(78), "a window came back");
+    let (client, views, events) = another_window(&hosting).await;
+    let project = tempfile::tempdir().unwrap();
+    client
+        .hold_project(PROJECT, project.path().to_str().unwrap())
+        .await
+        .expect("the project is held");
+    let is_one = heard
+        .windows
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("told as it opened");
+
+    assert!(is_one(77), "the window that started the host");
+    assert!(is_one(78), "a window that came back");
+    assert!(!is_one(79), "another process of this user");
+    drop((hosting, client, views, events));
+    timeout(PATIENCE, async {
+        while is_one(77) {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("no window once its link has ended");
+}
+
+#[tokio::test]
+async fn a_host_no_window_started_tells_its_channel_no_process_is_a_window() {
+    let linked = linked().await;
+    linked.hold().await;
+    let is_one = linked
+        .heard
+        .windows
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("told as it opened");
+
+    assert!(!is_one(std::process::id()));
 }

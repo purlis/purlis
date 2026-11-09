@@ -48,8 +48,46 @@ fn kubectl_declared_and_allowed(_root: &Path, _persona: &str) -> (Vec<Tool>, Vec
     (vec![kubectl()], vec![kubectl()])
 }
 
-fn every_vault_allowed(_persona: &str, _vault: &str) -> Result<(), String> {
-    Ok(())
+/// Vaults that let every persona use every vault, with no key a link out of reach.
+struct EveryVaultNothingLinked;
+
+impl Vaults for EveryVaultNothingLinked {
+    fn authorised(&self, _persona: &str, _vault: &str) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn out_of_reach(&self, _persona: &str, _tool: &Tool) -> Option<String> {
+        None
+    }
+}
+
+/// Vaults no persona may use.
+struct NoVaultTagged;
+
+impl Vaults for NoVaultTagged {
+    fn authorised(&self, _persona: &str, vault: &str) -> Result<(), String> {
+        Err(format!("vault {vault} is not this persona's"))
+    }
+
+    fn out_of_reach(&self, _persona: &str, _tool: &Tool) -> Option<String> {
+        None
+    }
+}
+
+/// Vaults every persona may use, where every tool's first key is a link out of reach.
+struct FirstKeyOutOfReach;
+
+impl Vaults for FirstKeyOutOfReach {
+    fn authorised(&self, _persona: &str, _vault: &str) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn out_of_reach(&self, persona: &str, tool: &Tool) -> Option<String> {
+        Some(format!(
+            "{} in vault {} reads an entry of a vault {persona} may not use",
+            tool.values[0].key, tool.vault
+        ))
+    }
 }
 
 fn owned_builds(_config: &Path, _pool: &str) -> Result<Bound, NotSent> {
@@ -66,14 +104,9 @@ fn a_gate(ask: &brokered::Ask) -> Gate<'_> {
         root: Path::new("/project"),
         pools_in: Some(PathBuf::from("/config")),
         tools: &kubectl_declared_and_allowed,
-        authorised: &every_vault_allowed,
-        reach: &nothing_out_of_reach,
+        vaults: &EveryVaultNothingLinked,
         owned: &owned_builds,
     }
-}
-
-fn nothing_out_of_reach(_persona: &str, _tool: &Tool) -> Option<String> {
-    None
 }
 
 fn refused(gate: &Gate<'_>) -> String {
@@ -221,9 +254,8 @@ fn a_run_with_arguments_the_tool_does_not_allow_is_sent_nothing() {
 #[test]
 fn a_vault_the_persona_may_not_use_here_is_sent_nothing() {
     let ask = kubectl_asked();
-    let not_tagged = |_: &str, vault: &str| Err(format!("vault {vault} is not this persona's"));
     let gate = Gate {
-        authorised: &not_tagged,
+        vaults: &NoVaultTagged,
         ..a_gate(&ask)
     };
     assert_eq!(refused(&gate), "vault team is not this persona's");
@@ -1127,15 +1159,9 @@ fn a_runner_chats_key_out_of_reach_is_refused_before_anything_is_asked() {
     let root = desktop.path();
     let (asks, tools) = (SecretAsks::new(root), PoolTools::default());
     let ask = kubectl_asked();
-    let out_of_reach = |persona: &str, tool: &Tool| {
-        Some(format!(
-            "{} in vault {} reads an entry of a vault {persona} may not use",
-            tool.values[0].key, tool.vault
-        ))
-    };
     let gate = Gate {
         root,
-        reach: &out_of_reach,
+        vaults: &FirstKeyOutOfReach,
         ..a_gate(&ask)
     };
     let keys = keys_in(root);
@@ -1189,4 +1215,67 @@ fn a_runner_chats_gate_judges_the_tools_keys_by_the_cores_judge() {
     let why = super::out_of_reach(&ctx, "devops", &kubectl()).expect("refused");
 
     assert!(why.contains("may not use"), "{why}");
+}
+
+/// A runner chat's gate holding this desktop's vaults, as `run_on_its_runner` builds it, refuses a
+/// key out of reach before the person is asked anything (#5857): the core's judge of a link
+/// through the gate's own [`Vaults`] for a project, not a fake.
+#[test]
+fn a_runner_chats_gate_as_wired_refuses_a_key_out_of_reach_before_anything_is_asked() {
+    let desktop = a_desktop_missing_the_key();
+    let root = desktop.path();
+    std::fs::write(
+        root.join("vaults.json"),
+        serde_json::json!({ "vaults": {
+            "team": {"provider": "plain-file", "config": {"file": "team.json"}, "persona": "devops"},
+            "other": {"provider": "plain-file", "config": {"file": "other.json"}},
+        }})
+        .to_string(),
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("other.json"),
+        serde_json::json!({"kubeconfig": "n0t-yours"}).to_string(),
+    )
+    .unwrap();
+    let ctx = ctx_of(root);
+    let team = purlis_core::secrets::cmd::provider(&ctx, "team").unwrap();
+    purlis_core::secrets::links::link(&ctx, &team, "kubeconfig", "other", "kubeconfig").unwrap();
+    let (asks, tools) = (SecretAsks::new(root), PoolTools::default());
+    let ask = kubectl_asked();
+    // The gate holds the project's vaults as a run's does: `vaults: &ctx`.
+    let gate = Gate {
+        root,
+        vaults: &ctx,
+        ..a_gate(&ask)
+    };
+    let keys = keys_in(root);
+    let gone = AtomicBool::new(false);
+    let reads = |_: &str, _: &Tool| -> Result<Vec<(String, Zeroizing<String>)>, String> {
+        panic!("nothing is read")
+    };
+
+    let refused = decided(
+        &gate,
+        &Missing {
+            asks: &asks,
+            keys: &keys,
+            within: Duration::from_secs(60),
+        },
+        &waiting(&tools, &gone, &reads, Duration::from_secs(60)),
+        &mut Vec::new(),
+    )
+    .map(|_| ())
+    .unwrap_err();
+
+    assert!(
+        refused
+            .why
+            .contains("kubeconfig in vault team reads an entry of a vault devops may not use"),
+        "{}",
+        refused.why
+    );
+    assert!(!refused.why.contains("other"), "names no other vault");
+    assert!(asks.open().is_empty(), "no Secret ask");
+    assert!(tools.waiting().is_empty(), "no Allow");
 }

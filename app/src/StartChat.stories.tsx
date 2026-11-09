@@ -152,6 +152,7 @@ function Window({
   const ask: StartSecretAsk | undefined = asking
     ? {
         ask: MISSING_ASK,
+        profile: "claude",
         variable: "ANTHROPIC_API_KEY",
         entries: () => Promise.resolve(ENTRIES),
         busy: false,
@@ -678,6 +679,33 @@ export const MissingCredential: Story = {
       "Missing credential: Fill",
     );
     await userEvent.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(page.getByRole("status", { hidden: true })).toHaveTextContent(
+        "Started steward as steward on claude",
+      ),
+    );
+  },
+};
+
+/** ⌘⏎ on a Mac, Ctrl+Enter elsewhere, as `userEvent.keyboard` spells it. */
+const chordTyped = () =>
+  navigator.platform.startsWith("Mac") ? "{Meta>}{Enter}{/Meta}" : "{Control>}{Enter}{/Control}";
+
+/**
+ * **⌘⏎ in the value's box fills** (#5670): the ask claims the dialog's chord while its box has the
+ * keyboard, so the key fills and the start goes on once, never a start refused on the same ask.
+ */
+export const MissingCredentialByChord: Story = {
+  args: { missing: true },
+  play: async ({ userEvent }) => {
+    const page = await openedAsked();
+    const body = page.getByRole("group", {
+      name: "steward asks for anthropic from vault providers",
+    });
+    const box = () => within(body).getByLabelText("Value of anthropic");
+    await tabTo(userEvent, box, "Missing credential: the value's box");
+    await userEvent.keyboard("sk-ant-st0ry");
+    await userEvent.keyboard(chordTyped());
     await waitFor(() =>
       expect(page.getByRole("status", { hidden: true })).toHaveTextContent(
         "Started steward as steward on claude",

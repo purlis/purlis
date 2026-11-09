@@ -3003,8 +3003,8 @@ impl Chats {
         if let Err(why) = self.sessions.close(session) {
             tracing::warn!("purlis: chat {session}'s run did not end before its restart ({why})");
         }
-        let first = told.join("\n\n");
-        match self.start_recorded_told(&again, size, Why::Relaunch, Some(&first), None) {
+        let first = self.told_with_its_wake_line(session, &told);
+        match self.start_recorded_told(&again, size, Why::Relaunch, first.as_deref(), None) {
             Ok(started) => self.restarted(session, started, true),
             Err(why) => {
                 self.unclaim(session);
@@ -3211,6 +3211,15 @@ impl Chats {
         lock(&self.open)
             .get(&session)
             .and_then(|one| one.chat.identity.id.clone())
+    }
+
+    /// **The number of the open chat whose lasting id is `id`** (ADR 0066), where one is: what a
+    /// record kept by id is shown on now, since numbers are given again after a restart.
+    pub fn session_of_id(&self, id: &str) -> Option<u32> {
+        lock(&self.open)
+            .iter()
+            .find(|(_, one)| one.chat.identity.id.as_deref() == Some(id))
+            .map(|(session, _)| *session)
     }
 
     pub fn id_is_open(&self, id: &str) -> bool {
@@ -3650,11 +3659,20 @@ impl Chats {
             }
             // **A chat whose program ended with its session host is told what ended with it**
             // (#5752): Resume, failed or hibernated, starts it on its conversation, and its own
-            // work went with the host. Its wake line first, then what it was owed.
+            // work went with the host. Its wake line first, then what it was owed. A chat whose
+            // program was still running is told what this restart ended of it, after what it was
+            // owed (#5753).
             let wake = self.wake_line_after_its_host(session, &again);
             let woke = wake.is_some();
-            let first: Vec<String> = wake.into_iter().chain(told.iter().cloned()).collect();
-            let first = (!first.is_empty()).then(|| first.join("\n\n"));
+            let first = match wake {
+                Some(wake) => Some(
+                    std::iter::once(wake)
+                        .chain(told.iter().cloned())
+                        .collect::<Vec<_>>()
+                        .join("\n\n"),
+                ),
+                None => self.told_with_its_wake_line(session, &told),
+            };
             let started =
                 self.start_recorded_told(&again, size, Why::Relaunch, first.as_deref(), None)?;
             if again.unsandboxed && self.confines_of(started).is_some() {
@@ -3731,8 +3749,9 @@ impl Chats {
                 "started again without the sandbox from a sandbox block's Notice".to_owned(),
             ),
         };
+        let first = self.told_with_its_wake_line(session, &[]);
         let started = self.again_on_its_conversation(session).and_then(|again| {
-            self.start_recorded_told(&again, size, Why::Relaunch, None, Some(opt_out))
+            self.start_recorded_told(&again, size, Why::Relaunch, first.as_deref(), Some(opt_out))
         });
         match started {
             // What was allowed and not yet taken is dropped: it means nothing to a chat run
@@ -3757,7 +3776,8 @@ impl Chats {
             if again.resume.is_none() {
                 return Err(no_conversation(session));
             }
-            self.start_recorded_told(&again, size, Why::Relaunch, None, None)
+            let first = self.told_with_its_wake_line(session, &[]);
+            self.start_recorded_told(&again, size, Why::Relaunch, first.as_deref(), None)
         });
         if started.is_err() {
             self.unclaim(session);
@@ -3787,6 +3807,40 @@ impl Chats {
             .entry(session)
             .or_default()
             .push(note);
+    }
+
+    /// **What chat `session` is told as it starts again on its conversation while purlis runs
+    /// on** (#5753, spec #5743): `told`, what it was owed, then its wake line where its record
+    /// says it had work of its own running, or a turn under way
+    /// ([`purlis_core::wakeline::of_the_chat_restarted`]), which the restart ends: each piece by
+    /// name with what it last put out (#5751), and the turn cut mid-way (#5750). Read from the
+    /// record, not the board: the board's wait lapses after an hour, and the work it waited on
+    /// runs on. None where there is nothing to say.
+    fn told_with_its_wake_line(&self, session: u32, told: &[String]) -> Option<String> {
+        let own = lock(&self.own_work)
+            .get(&session)
+            .cloned()
+            .unwrap_or_default();
+        let conversation = lock(&self.open)
+            .get(&session)
+            .and_then(|one| one.chat.resume.as_ref().map(ToString::to_string))
+            .unwrap_or_default();
+        let last = |piece: &purlis_core::ownwork::pieces::Piece| {
+            purlis_core::ownwork::last::of(piece, &conversation)
+        };
+        let wake = purlis_core::wakeline::of_the_chat_restarted(&purlis_core::wakeline::Ended {
+            own_work: own.work.as_ref(),
+            pieces: &own.pieces,
+            mid_turn: own.mid_turn,
+            now: chrono::Utc::now().timestamp(),
+            last: &last,
+        });
+        let first: Vec<&str> = told
+            .iter()
+            .map(String::as_str)
+            .chain(wake.as_deref())
+            .collect();
+        (!first.is_empty()).then(|| first.join("\n\n"))
     }
 
     /// Marks chat `session` as restarting, or refuses: one restart at a time, whichever asked.
@@ -5301,6 +5355,10 @@ impl Chats {
             )?,
             _ => all,
         };
+        // Past every refusal: what the sandbox readies outside it before the chat starts.
+        if let (Some(applied), false, Some(cwd)) = (sandbox, reattaching, chat.cwd.as_deref()) {
+            applied.ready_to_start(cwd);
+        }
         let mut env = env;
         // What the wrap sets wins over a profile's or the arming's value of the same name: its
         // proxy, its temp directory, but an outcome eval shell's own temp folder (#4476).

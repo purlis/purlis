@@ -61,6 +61,7 @@ const saving: PlaneSaving = {
   pushFailed: null,
   live: [],
   conflicts: [],
+  conflictKeys: {},
   notice: NO_FORGE,
   mode: "pr",
   modeFrom: "charter.toml",

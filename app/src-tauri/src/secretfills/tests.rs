@@ -51,6 +51,7 @@ fn wait(origin: &str) -> FillWait {
         // As the notice is offered to a chat that runs as no persona.
         no_always: Some(NO_PERSONA.to_owned()),
         vault_too: false,
+        reads_as: None,
     }
 }
 
@@ -1300,5 +1301,104 @@ fn allow_once_isnt_drawn_again_for_a_change_only_always_would_write() {
     .expect("allowed once");
 
     assert!(matches!(pressed, Pressed::Done { .. }), "{pressed:?}");
+    assert_eq!(heard.try_recv(), Ok(Heard::Allowed));
+}
+
+// ---- A fill's key is judged at the press (#5831) ----
+
+/// A fill whose key became a link into a vault its persona may not use while its notice waited:
+/// Always is allowed nothing, writes no line, grants the persona no vault, and the person reads why
+/// on the notice, told as you; the chat hears nothing yet.
+#[test]
+fn a_fill_linked_out_of_reach_while_its_notice_waits_is_refused_at_the_press() {
+    let dir = project("[sandbox]\nmode = \"on\"\n");
+    let root = dir.path();
+    let fills = Fills::default();
+    let shown = FillWait {
+        reads_as: Some("qa".into()),
+        ..offered_in(root, "prod", "deploy-token", "https://dash.example.test")
+    };
+    assert!(
+        shown.vault_too,
+        "Always would grant qa vault prod: {shown:?}"
+    );
+    let (id, heard) = fills.raise(shown.clone()).expect("raised");
+    // While it waits, prod's deploy-token is linked into vault `ops-only`, which qa may not use.
+    std::fs::write(
+        root.join("vaults.json"),
+        r#"{"vaults":{
+            "qa":{"provider":"plain-file","config":{"file":"q.json"},"persona":"qa"},
+            "prod":{"provider":"plain-file","config":{"file":"o.json"},"persona":"ops"},
+            "ops-only":{"provider":"plain-file","config":{"file":"x.json"},"persona":"ops"}
+        }}"#,
+    )
+    .expect("a registry");
+    std::fs::write(root.join("x.json"), r#"{"deploy-token":"n0t-yours"}"#).expect("ops-only");
+    let ctx = Ctx::new(root, Env::from_process());
+    let prod = purlis_core::secrets::cmd::provider(&ctx, "prod").expect("vault prod");
+    purlis_core::secrets::links::link(&ctx, &prod, "deploy-token", "ops-only", "deploy-token")
+        .expect("linked");
+    let before = file_of(root);
+    let audited = Audited::default();
+
+    let said = answered_in(
+        root,
+        &fills,
+        &audited,
+        &press(id, Press::Always, &shown.digest()),
+    )
+    .map(|_| ())
+    .expect_err("refused");
+
+    assert!(said.starts_with("Nothing was allowed: "), "{said}");
+    assert!(
+        said.contains("deploy-token in vault prod reads an entry of a vault qa may not use"),
+        "{said}"
+    );
+    assert!(!said.contains("ops-only"), "names no other vault: {said}");
+    assert!(!said.contains("n0t-yours"), "never the value: {said}");
+    assert!(!said.contains("The person"), "the person reads you: {said}");
+    assert!(said.contains("You can link it"), "{said}");
+    assert_eq!(file_of(root), before, "no line written");
+    assert!(audited.borrow().is_empty(), "nothing allowed is audited");
+    assert!(
+        purlis_core::sandbox::local::granted_vaults(root).is_empty(),
+        "no vault granted"
+    );
+    // The notice stays, showing why, as for every press refused; Keep blocked still ends it.
+    assert_eq!(fills.waiting().len(), 1, "the notice stays");
+    assert!(heard.try_recv().is_err(), "the chat still waits");
+}
+
+/// A press on a narrowed chat's fill is judged as the persona it was started as (#5831): a chat
+/// started as ops, narrowed to qa's grants, is allowed a fill whose key links into a vault ops may
+/// use.
+#[test]
+fn a_narrowed_chats_fill_press_is_judged_as_the_persona_it_was_started_as() {
+    let dir = project("[sandbox]\nmode = \"on\"\n");
+    let root = dir.path();
+    let fills = Fills::default();
+    std::fs::write(root.join("q.json"), "{}").expect("vault qa");
+    let shown = FillWait {
+        reads_as: Some("ops".into()),
+        ..offered_in(root, "qa", "deploy-token", "https://dash.example.test")
+    };
+    let (id, heard) = fills.raise(shown.clone()).expect("raised");
+    // While it waits, qa's deploy-token is linked into vault prod, which ops may use and qa may
+    // not.
+    std::fs::write(root.join("o.json"), r#"{"deploy-token":"t"}"#).expect("vault prod");
+    let ctx = Ctx::new(root, Env::from_process());
+    let qa = purlis_core::secrets::cmd::provider(&ctx, "qa").expect("vault qa");
+    purlis_core::secrets::links::link(&ctx, &qa, "deploy-token", "prod", "deploy-token")
+        .expect("linked");
+
+    answered_in(
+        root,
+        &fills,
+        &Audited::default(),
+        &press(id, Press::Once, &shown.digest()),
+    )
+    .expect("allowed");
+
     assert_eq!(heard.try_recv(), Ok(Heard::Allowed));
 }

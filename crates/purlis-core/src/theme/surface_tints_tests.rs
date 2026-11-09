@@ -6,15 +6,15 @@
 //! fall in a tint, before the surface's own do. What #4541 left out is here too (#4607): a
 //! see-through look on an opaque fill, a look only a set of states draws, a menu, and the margin on
 //! every part, edge and state. A sweep here is held to a control that falls as written, so an empty
-//! one cannot pass.
+//! one cannot pass. And a switcher row's see-through look on an opaque popover (D-4607-4).
 
 use serde_json::{Value, json};
 
 use super::super::{ResolvedTheme, load, tint};
 use super::{
-    Drawn, Family, Fell, NEAR_A_FLOOR, Rule, State, broken_on, coarsely_tinted, combined, drawn,
-    drawn_apart, drawn_on, edge, every_tinted, fallen, family, floor_of, held, looks_in, lowest,
-    rules, sets_read, shows_a_tint, singles_of, surface_ground, surfaces_set,
+    Drawn, Family, Fell, NEAR_A_FLOOR, Rule, State, apart_held_on, broken_on, coarsely_tinted,
+    combined, drawn, drawn_apart, drawn_on, edge, every_tinted, fallen, family, floor_of, held,
+    looks_in, lowest, rules, sets_read, shows_a_tint, singles_of, surface_ground, surfaces_set,
     tints_reach_a_surface, under_part, unreadable,
 };
 
@@ -660,4 +660,97 @@ fn a_family_s_default_that_breaks_on_the_surface_s_default_too_keeps_the_fill() 
     );
     assert!(!breaks_on(&theme, "tooltip", "popover"));
     assert!(fallen(&theme).is_empty(), "{:?}", fallen(&theme));
+}
+
+/// **What a switcher's part breaks on the popover's fill `chart.4`, as `theme` draws it**, through
+/// the reading the hold passes it, in `coarse` and every degree where one comes near a floor.
+fn apart_reading(theme: &ResolvedTheme, coarse: &[ResolvedTheme]) -> Option<String> {
+    let mut drawn_in = vec![theme.clone()];
+    let popover = family("popover").unwrap();
+    let rules = rules(&theme.parts);
+    apart_held_on(
+        theme,
+        coarse,
+        &mut drawn_in,
+        &rules,
+        popover,
+        "popover",
+        "chart.4",
+    )
+    .map(|(_, floor, _)| floor)
+}
+
+/// The same, as written alone.
+fn apart_breaks_as_written(theme: &ResolvedTheme) -> bool {
+    apart_reading(&untinted(theme), &[]).is_some()
+}
+
+/// The same, in the coarse tints and every degree as the hold passes them.
+fn apart_falls_in_the_tints(theme: &ResolvedTheme) -> Option<String> {
+    apart_reading(theme, &coarsely_tinted(theme))
+}
+
+#[test]
+fn a_switcher_row_s_own_see_through_look_on_an_opaque_popover_is_read_in_the_tints() {
+    // The popover's fill is an opaque grey no tint turns, and the theme gives the switcher no
+    // rule: what moves is the row Enter would go to as the title bar draws it by default, its
+    // primary words on `list.selected`, a wash the recipe turns. No floor holds a family's
+    // default against a theme on its own grounds, so only the popover's reading can find this
+    // (D-4607-4). The popover's own words and every other word the switcher draws on it are black,
+    // so they hold where the selected row's primary words fall. Read as the hold reads it, and not
+    // through the whole hold, where a family drawn on the popover's grey falls first (D-4607-7).
+    let build = |wash: &str, byte: u8| {
+        let mut parts = json!({ "popover.root.fill": "chart.4", "popover.root.border-width": 0 });
+        for part in ["root", "header", "footer", "key"] {
+            parts[format!("popover.{part}.text")] = json!("chart.5");
+        }
+        themed(
+            "light",
+            json!({
+                "chart.4": grey(byte),
+                "chart.5": "#000000",
+                "list.selected": wash,
+                "text.secondary": "#000000",
+                "text.faint": "#000000",
+                "state.waiting": "#000000",
+                "accent.text": "#000000",
+            }),
+            parts,
+        )
+    };
+    let breaks_in_a_tint = |theme: &ResolvedTheme| {
+        (0..360)
+            .step_by(5)
+            .any(|degree| apart_breaks_as_written(&tint::tinted_at(theme, f64::from(degree))))
+    };
+    let mut tried = Vec::new();
+    let found = washes(&[0x30, 0x40, 0x50, 0x60, 0x70, 0x80]).find_map(|wash| {
+        let breaks = |byte| build(&wash, byte).is_none_or(|one| apart_breaks_as_written(&one));
+        let byte = last_holding(0xff, 0, breaks);
+        tried.push((wash.clone(), byte));
+        let theme = build(&wash, byte?)?;
+        breaks_in_a_tint(&theme).then_some((wash, byte?))
+    });
+    let Some((wash, byte)) = found else {
+        panic!("no see-through row holds as written and breaks in a tint: {tried:?}");
+    };
+    let theme = build(&wash, byte).unwrap();
+    assert!(!shows_a_tint(&theme, "chart.4"), "{wash}");
+    assert!(!apart_breaks_as_written(&theme), "{wash} {byte}");
+    let floor = apart_falls_in_the_tints(&theme);
+    assert!(
+        floor
+            .as_ref()
+            .is_some_and(|one| one.contains("row's words")),
+        "{wash} {byte}: {floor:?}"
+    );
+    // The hold builds the tints for it: nothing else of this theme lets a tint through.
+    assert!(
+        tints_reach_a_surface(&theme, &rules(&theme.parts)),
+        "{wash}"
+    );
+    // The controls: a step darker, the same row falls as written; on white, in no tint.
+    assert!(apart_breaks_as_written(&build(&wash, byte - 1).unwrap()));
+    let white = apart_falls_in_the_tints(&build(&wash, 0xff).unwrap());
+    assert_eq!(white, None, "{wash}");
 }

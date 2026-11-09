@@ -84,8 +84,9 @@
   --separator-width: 1px;
 
   /* The two focus-ring rules. Both are a `--focus-ring-width` outline in the theme's
-     `focus.ring` colour. A control's ring sits outside it, `--focus-ring-offset` away; a row's
-     or a tab's sits inside it (`--focus-ring-inset`), so a list or a strip never clips it. */
+     `focus.ring` colour. A control's ring sits outside it, `--focus-ring-offset` away; a row's,
+     a tab's or a status bar item's sits inside it (`--focus-ring-inset`), so a list or a strip
+     never clips it. */
   --focus-ring-width: 2px;
   --focus-ring-offset: 2px;
   --focus-ring-inset: -2px;

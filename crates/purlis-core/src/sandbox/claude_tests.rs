@@ -542,9 +542,27 @@ fn a_claude_code_chats_bare_ssh_takes_its_route_through_the_file_read_before_eac
     assert!(route.is_within(&super::tunnel::routes_folder(&root)));
     let config = std::fs::read_to_string(route.config()).expect("its config");
     assert!(
-        config.contains(&format!("-x 127.0.0.1:{} %h %p", confinement.socks_port())),
+        // Its SOCKS port, through purlis's own proxy where this run finds one (#3536).
+        config.contains(&format!(
+            "ProxyCommand {}\n",
+            super::sshproxy::proxy_command(
+                super::tools::purlis_binary().as_deref(),
+                confinement.socks_port()
+            )
+        )),
         "{config}"
     );
+    // Where a purlis is found (the re-run below names one), the route runs it, never `nc`.
+    if let Some(purlis) = super::tools::purlis_binary() {
+        assert!(
+            config.contains(&format!(
+                "ProxyCommand '{}' _ssh-proxy {} %h %p\n",
+                purlis.display(),
+                confinement.socks_port()
+            )),
+            "{config}"
+        );
+    }
     let super::Form::ClaudeCode(settings) = applied.form_in(Some(&cwd)) else {
         panic!("compiled for Claude Code");
     };
@@ -995,4 +1013,78 @@ fn a_claude_code_chat_allowed_to_listen_compiles_the_same_settings_byte_for_byte
         before.through([41_000, 41_001])
     );
     assert_eq!(after.sandbox["network"]["allowLocalBinding"], json!(false));
+}
+
+/// Claude Code pins every folder above a denied path as it is spelled, so a held path is denied
+/// as spelled through each link on the way to it too: then each link, and the folder it is in,
+/// is pinned, and none can be replaced by one pointing elsewhere (as the floor holds them on
+/// macOS, `floor_tests`).
+#[cfg(unix)]
+#[test]
+fn a_held_path_is_denied_as_spelled_through_each_link_on_the_way_to_it() {
+    let dir = tempfile::tempdir().expect("a project");
+    let root = dir.path().canonicalize().expect("real");
+    let home = root.join("home");
+    std::fs::create_dir_all(home.join("real/inner")).expect("a folder");
+    std::fs::create_dir(home.join("second")).expect("a folder");
+    std::os::unix::fs::symlink(home.join("real"), home.join("second/hop")).expect("a link");
+    std::os::unix::fs::symlink(home.join("second/hop"), home.join(".local")).expect("a link");
+    let held = home.join(".local/inner/auth.json");
+    let on = Machine {
+        os: Os::Linux,
+        ..machine()
+    };
+    let compiled = Compiled {
+        level: Level::Floor,
+        ..compiled_at(&root, None, &Grants::default())
+    };
+    let applied = applied_of(
+        Harness::ClaudeCode,
+        compiler(Harness::ClaudeCode).expect("a compiler"),
+        &compiled,
+        &root,
+        &on,
+    )
+    .expect("compiles");
+    let super::Form::ClaudeCode(settings) = applied.form_in(Some(&root)) else {
+        panic!("compiled for Claude Code");
+    };
+    let settings = settings.holding(std::slice::from_ref(&held));
+    let denied = settings.sandbox["filesystem"]["denyWrite"]
+        .as_array()
+        .expect("a list")
+        .clone();
+    let holds = |path: std::path::PathBuf| denied.contains(&json!(path.display().to_string()));
+    assert!(holds(held.clone()), "as written");
+    assert!(
+        holds(home.join("real/inner/auth.json")),
+        "as the kernel names it"
+    );
+    assert!(
+        holds(home.join("second/hop/inner/auth.json")),
+        "through the link `.local` points at, so `second/hop` and `second` are pinned: {denied:?}"
+    );
+    assert!(
+        settings.deny.contains(&format!(
+            "Edit(/{})",
+            home.join("second/hop/inner/auth.json").display()
+        )),
+        "and to the Edit tool"
+    );
+}
+
+/// a Claude Code chat's ssh route runs the purlis it finds as its proxy (#3536): the test above, re-run with
+/// `PURLIS_BINARY` naming a stand-in, since no purlis sits beside a test binary. Binds the chat's
+/// ports, so it first runs on CI.
+#[test]
+fn a_claude_code_chats_ssh_route_runs_the_purlis_beside_the_app_as_its_proxy() {
+    let dir = tempfile::tempdir().expect("a folder");
+    let purlis = dir.path().join("purlis");
+    std::fs::write(&purlis, "").expect("a stand-in purlis");
+    crate::testrun::rerun(
+        &[
+            "sandbox::claude_tests::a_claude_code_chats_bare_ssh_takes_its_route_through_the_file_read_before_each_command",
+        ],
+        &[("PURLIS_BINARY", purlis.as_os_str())],
+    );
 }

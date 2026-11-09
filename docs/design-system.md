@@ -1771,8 +1771,8 @@ the focus rings, #2867):
   (`calc(1px * 7)`, `calc((var(--space-0) + 1px) * 7)`; `(var(--size-control) - 1lh) / 2`
   passes), a sum writes each length once (`calc(1px + 1px)` is a literal), and a checked custom
   property whose value is a bare written length (`--hair: 1px`) is that length where it is
-  read. The two structural reserves sized
-  in controls, below, pass only in the declaration each is written in. A shadow's
+  read. The structural reserves,
+  below, pass only in the declaration each is written in. A shadow's
   lengths are elevation, which this guard does not read. **A box's size** (a width, a height
   and their min, max, block and inline forms, or a custom property only they read) is not a step
   of the scale, so the guard does not read it either (#2319): a dialog's width, an icon's square
@@ -1850,11 +1850,14 @@ goes to the smaller), and a px literal may become a rem token. Three more rules 
 - **A structural size is outside the snap**: a size that is no step of the scale, such as an
   icon's box or a strip's cap on a tab's width, keeps its literal, and the geometry guard does
   not read a box's size. A structural reserve written as a padding or a margin is a multiple of
-  a size token. Two are not whole, and the guard names each with the one declaration it is
+  a size token. Three are not whole, and the guard names each with the one declaration it is
   written in (`RESERVES`): the title bar's drag stretch (`.title-bar`'s `--title-bar-drag`,
-  `calc(var(--size-control) * 2.5)`) and the pane chips' room for the corner's controls (the
+  `calc(var(--size-control) * 2.5)`), the pane chips' room for the corner's controls (the
   `--pane-controls` fallback in `.pane-chips:has(.pane-crumbs)`'s `margin-right`,
-  `calc(var(--size-control) * 2.75)`). The same expression anywhere else is a literal.
+  `calc(var(--size-control) * 2.75)`), and the status bar's room for the Notices dot before the
+  bell (`.status-notices`'s `padding-inline-start`, `max(0px, calc(20px - var(--space-3) -
+  0.2em))`, #5889): a dot whose 24px target is px, placed against a bell the text size places.
+  The same expression anywhere else is a literal.
 - **An offset snaps as a margin does** (#2450): a `top`, `left` or `inset-inline-end` takes the
   nearest spacing token, as the pane's corners and the activity bar's count do.
 - **A line height keeps `1`**, a line as tall as its text, which the type guard reads as no

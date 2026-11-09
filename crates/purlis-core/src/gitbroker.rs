@@ -59,7 +59,7 @@ fn waits_on_signing(
         host: refused.host,
         path: refused.path,
         commit: refused.commit,
-        chat: Some(asker.chat),
+        chat_id: asker.id.clone(),
         at: now.timestamp(),
         sent: false,
         why: None,

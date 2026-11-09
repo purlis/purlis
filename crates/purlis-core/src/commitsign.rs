@@ -596,7 +596,19 @@ pub fn verification(answer: &str) -> Result<(bool, String), String> {
 /// **GitHub's reason for a commit's check, in plain words**, with what to do where it is not
 /// verified. GitHub's own list: <https://docs.github.com/en/rest/commits/commits>.
 pub fn reason_said(reason: &str) -> String {
-    match reason {
+    reason_said_on(reason, "GitHub")
+}
+
+/// [`reason_said`], naming `forge` (`GitLab on gitlab.example.org`, #5793): GitLab's reasons
+/// come in GitHub's words ([`crate::forge::signingkeys::gitlab_verification`]).
+pub fn reason_said_on(reason: &str, forge: &str) -> String {
+    let said = match reason {
+        "other_key" => {
+            return format!(
+                "{forge} checked it, but it was signed with another key, not this device's, so \
+                 it says nothing of this one. Check a commit a chat on this device pushed"
+            );
+        }
         "valid" => "GitHub shows it as Verified".to_owned(),
         "unsigned" => "the commit is not signed. It was made before signing was set up, or \
              outside a chat. Commits a chat makes from now on are signed"
@@ -615,6 +627,15 @@ pub fn reason_said(reason: &str) -> String {
             "GitHub says `{other}`. Run `{SETUP}` again, and if it still says so, remove the \
              key with `purlis signing remove` and set it up afresh"
         ),
+    };
+    if forge == "GitHub" {
+        said
+    } else {
+        said.replace(
+            "GitHub › Settings › Emails",
+            "your account's email settings",
+        )
+        .replace("GitHub", forge)
     }
 }
 

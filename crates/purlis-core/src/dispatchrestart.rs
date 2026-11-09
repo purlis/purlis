@@ -56,6 +56,7 @@
 //! when the report lands after it was reopened**, it goes to the open chat that resumed the
 //! one that asked ([`crate::reopen::Identity::resumed_from`]) at once.
 
+use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -63,6 +64,7 @@ use crate::active::Place;
 use crate::dispatchrecord::{self, ChatRef, EndedBy, Ending, Outcome, Report};
 use crate::handback::{self, For, Handback};
 use crate::reopen::{self, Chat, Mode, Owed};
+use crate::wakeline::tasks::{News, Reported, Restored, Standing};
 
 /// What a task brought back at a launch is told, as its first message: purlis's own sentence,
 /// with nothing of any chat's in it. It names no chat and no task, so nothing read off the
@@ -87,6 +89,9 @@ pub struct AtLaunch {
     /// The tasks listed under an asking chat the record brings back, by chat id: the ones
     /// that are reported for where their start is refused.
     listed: Vec<String>,
+    /// What each chat brought back on its conversation is told of its tasks (#5754), by chat
+    /// id: the ones the launch restored, and the ones whose reports wait for it.
+    news: HashMap<String, News>,
 }
 
 impl AtLaunch {
@@ -97,7 +102,9 @@ impl AtLaunch {
     /// carry on ([`CARRY_ON`]). A chat brought back on its conversation that had work of its
     /// own left running ([`Chat::own_work`], [`Chat::own_pieces`]), or was cut off mid-turn
     /// ([`Chat::mid_turn`]), is told the restart ended it. A task that is both
-    /// gets the two in one line. Every other chat is told nothing.
+    /// gets the two in one line. **A chat that asked tasks** is also told of them (#5754):
+    /// each one the launch restored and where it stands, and each whose report waits for it
+    /// ([`Self::news`]). Every other chat is told nothing.
     ///
     /// **Only a start types it** (#5752). A chat the session host kept running (#3900) is
     /// reattached, which starts nothing and types nothing, so nothing of its work ended and it
@@ -106,7 +113,18 @@ impl AtLaunch {
     /// by then is started after all, on its conversation, its work gone, and told so.
     pub fn told(&self, chat: &Chat) -> Option<String> {
         let id = chat.identity.id.as_ref()?;
-        crate::wakeline::of_chat(chat, self.carry_on.contains(id))
+        crate::wakeline::of_chat_with_news(chat, self.carry_on.contains(id), &self.news(chat))
+    }
+
+    /// **What `chat` is told of its tasks as it is brought back** (#5754): nothing for a chat
+    /// started fresh, whose turn the restart never cut.
+    pub fn news(&self, chat: &Chat) -> News {
+        chat.identity
+            .id
+            .as_ref()
+            .and_then(|id| self.news.get(id))
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// Whether the chat with the id `id` is a task that still owes its report to a chat the
@@ -244,6 +262,7 @@ pub fn at_launch_beside(
     let mut listed = Vec::new();
     let mut not_resumed = Vec::new();
     let mut back = Vec::new();
+    let mut restored = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for chat in &record.chats {
         let first = chat
@@ -259,22 +278,36 @@ pub fn at_launch_beside(
         let id = chat.identity.id.clone().unwrap_or_default();
         let told = chat.resume.is_some() && chat.profile.is_some();
         let left = matches!(stands, Vouched::Under | Vouched::Alone) && left_running(chat);
-        match (stands, told) {
-            (Vouched::No | Vouched::Persons, _) => {}
-            (Vouched::Under, _) if left => listed.push(id.clone()),
-            (Vouched::Alone, _) if left => {}
+        let standing = match (stands, told) {
+            (Vouched::No | Vouched::Persons, _) => None,
+            (Vouched::Under, _) if left => {
+                listed.push(id.clone());
+                Some(Standing::KeptRunning)
+            }
+            (Vouched::Alone, _) if left => None,
             (Vouched::Under | Vouched::Alone, false) => {
                 not_resumed.push(chat.clone());
+                if stands == Vouched::Under {
+                    restored.push(UnderItsAsker::of(record, chat, Standing::Ended));
+                }
                 continue;
             }
             (Vouched::Under, true) => {
                 listed.push(id.clone());
                 carry_on.push(id);
+                Some(Standing::CarriesOn)
             }
-            (Vouched::Alone, true) => carry_on.push(id),
+            (Vouched::Alone, true) => {
+                carry_on.push(id);
+                None
+            }
+        };
+        if let Some(standing) = standing {
+            restored.push(UnderItsAsker::of(record, chat, standing));
         }
         back.push(chat.clone());
     }
+    let news = news_of(root, &back, running, restored);
     // A tab left showing a chat that is not coming back shows its own chat again.
     let gone: Vec<u32> = not_resumed.iter().filter_map(|chat| chat.number).collect();
     for chat in &mut back {
@@ -290,7 +323,136 @@ pub fn at_launch_beside(
         not_resumed,
         carry_on,
         listed,
+        news,
     }
+}
+
+/// One task the launch restored, as the news of the chat that asked it is made from it.
+struct UnderItsAsker {
+    /// The id of the chat that asked it.
+    asker: Option<String>,
+    /// The number the task's chat has.
+    task: Option<u32>,
+    standing: Standing,
+}
+
+impl UnderItsAsker {
+    /// `chat`, one of `record`'s, standing as `standing`. Only a task the store vouched for as
+    /// asked by a chat the record brings back is passed ([`Vouched::Under`]): that check held
+    /// the entry under its number to the store's id for the asker, so the number names it
+    /// here, within this one record, as [`vouched`] found it.
+    fn of(record: &reopen::Record, chat: &Chat, standing: Standing) -> Self {
+        let asker = chat.from.as_ref().and_then(|from| {
+            record
+                .chats
+                .iter()
+                .find(|other| other.number == Some(from.chat) && other.number != chat.number)
+                .and_then(|asker| asker.identity.id.clone())
+        });
+        Self {
+            asker,
+            task: chat.number,
+            standing,
+        }
+    }
+}
+
+/// **What each chat brought back on its conversation is told of its tasks** (#5754), by chat
+/// id: `restored` is each task the launch restored, with the id of the chat that asked it, and
+/// the reports of its tasks that wait for it are read from where they wait and held to the
+/// dispatch store's own records (`records`), which no chat writes. Only a chat that is started
+/// is told it ([`AtLaunch::told`], #5752).
+fn news_of(
+    root: &Path,
+    back: &[Chat],
+    records: &[dispatchrecord::Record],
+    restored: Vec<UnderItsAsker>,
+) -> HashMap<String, News> {
+    let mut news: HashMap<String, News> = HashMap::new();
+    for UnderItsAsker {
+        asker,
+        task,
+        standing,
+    } in restored
+    {
+        if let (Some(asker), Some(chat)) = (asker, task) {
+            news.entry(asker)
+                .or_default()
+                .restored
+                .push(Restored { chat, standing });
+        }
+    }
+    for chat in back {
+        let Some(id) = chat.identity.id.as_ref() else {
+            continue;
+        };
+        let reported = reports_waiting(root, chat, records);
+        if !reported.is_empty() {
+            news.entry(id.clone()).or_default().reported = reported;
+        }
+    }
+    news.retain(|id, _| {
+        back.iter()
+            .any(|chat| chat.identity.id.as_ref() == Some(id) && chat.resume.is_some())
+    });
+    news
+}
+
+/// Whether `record` is a finished task asked for by `asker`, by its id, or by the chat it
+/// resumed (`resumed_from`): never by a number alone, which another launch deals again.
+fn a_finished_task_of(
+    record: &dispatchrecord::Record,
+    asker: &ChatRef,
+    resumed_from: Option<&str>,
+) -> bool {
+    record.mode == dispatchrecord::Mode::Task
+        && !record.running()
+        && (dispatchrecord::asked_by(record, asker)
+            || resumed_from.is_some_and(|was| record.asker.chat.id.as_deref() == Some(was)))
+}
+
+/// **The reports of `chat`'s tasks that wait for it** as it is brought back (#5754): each left
+/// for its next turn before the quit and never read, and each kept on its dispatch record as
+/// reaching no chat ([`take_back`]). Only a report a record of the store says is that task's
+/// counts, so a file a chat wrote among them names nothing.
+fn reports_waiting(root: &Path, chat: &Chat, records: &[dispatchrecord::Record]) -> Vec<Reported> {
+    let me = ChatRef {
+        chat: chat.number.unwrap_or_default(),
+        id: chat.identity.id.clone(),
+        ..ChatRef::default()
+    };
+    let resumed_from = chat.identity.resumed_from.as_deref();
+    let mut asked: Vec<&dispatchrecord::Record> = records
+        .iter()
+        .filter(|record| a_finished_task_of(record, &me, resumed_from))
+        .collect();
+    let mut reported = Vec::new();
+    let mut name = |record: &dispatchrecord::Record| {
+        if let Some(ended) = dispatchrecord::Finished::of(record) {
+            reported.push(Reported {
+                chat: record.worker.chat.chat,
+                ended: ended.said_to_a_chat(),
+            });
+        }
+    };
+    if let Some(number) = chat.number {
+        for waiting in handback::waiting(root, For::Chat(number)) {
+            let Ok(report) = serde_json::from_str::<Handback>(&waiting.text) else {
+                continue;
+            };
+            if let Some(at) = asked.iter().position(|record| {
+                dispatchrecord::asked_by(record, &me) && is_its_report(record, &report)
+            }) {
+                name(asked.remove(at));
+            }
+        }
+    }
+    for record in asked {
+        if record.undelivered.is_some() && report_of(record).is_some() {
+            name(record);
+        }
+    }
+    reported
 }
 
 /// A task a launch could not bring back, as [`end_at_launch`] settled it.
@@ -712,6 +874,33 @@ pub fn report_of(record: &dispatchrecord::Record) -> Option<Handback> {
         }),
         None,
     ))
+}
+
+/// **The report task `task` sent chat `asker`, as its dispatch record keeps it** (#5754,
+/// #1463): what a wait on the task answers once the app no longer holds the report in
+/// memory, after a restart or once a turn has read it. `task` is the number the task's chat
+/// had; of `records` (the store as [`dispatchrecord::list`] reads it, newest first), the
+/// newest finished task asked for by `asker`, by its id, or by the chat it resumed
+/// (`resumed_from`), under that number, whose row was not cleared and which the store would
+/// draw ([`dispatchrecord::sound`]). Its name, and the report as the chat that asked is told
+/// it ([`report_of`]); `None` where no record of the store says so.
+pub fn report_on_disk(
+    records: &[dispatchrecord::Record],
+    asker: &ChatRef,
+    resumed_from: Option<&str>,
+    task: u32,
+) -> Option<(String, Handback)> {
+    let record = records.iter().find(|record| {
+        record.worker.chat.chat == task
+            && !record.cleared
+            && dispatchrecord::sound(record)
+            && a_finished_task_of(record, asker, resumed_from)
+    })?;
+    let name = record
+        .task
+        .clone()
+        .unwrap_or_else(|| record.worker.chat.name.clone());
+    Some((name, report_of(record)?))
 }
 
 /// **Takes back every report that reached no chat and that `asked` answers for** (#1513,

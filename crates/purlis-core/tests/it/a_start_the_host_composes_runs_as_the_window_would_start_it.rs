@@ -853,3 +853,86 @@ fn a_composed_chat_tells_its_host_the_names_and_levels_of_the_skills_it_armed_it
     );
     assert_eq!(armed(false), [], "the plane's skills do not reach it");
 }
+
+/// The listing limit a composed Claude Code chat is handed in its `--settings`, read from the
+/// file those settings go through where they are too long for a word of its line.
+fn listing_limit_of(launch: &Launch) -> usize {
+    let args = words(launch);
+    let at = args
+        .iter()
+        .position(|word| word == "--settings")
+        .expect("Claude Code is handed its settings");
+    let word = &args[at + 1];
+    let text = if word.starts_with('{') {
+        word.clone()
+    } else {
+        fs::read_to_string(word).expect("its settings file")
+    };
+    let settings: serde_json::Value = serde_json::from_str(&text).expect("JSON");
+    settings["env"]["SLASH_COMMAND_TOOL_CHAR_BUDGET"]
+        .as_str()
+        .expect("a listing limit")
+        .parse()
+        .expect("a number")
+}
+
+/// **#5842: a chat the plane's skills do not reach still gets a limit that holds its own
+/// catalogue.** The person's own skills share Claude Code's listing with purlis's built-in ones
+/// whether or not the plane's are handed, so the limit counts them either way.
+#[test]
+fn a_chat_the_planes_skills_do_not_reach_is_handed_a_limit_that_holds_the_persons_own_skills() {
+    purlis_core::unsteered!();
+    let project = Project::on("claude");
+    // The person's own Claude Code skills, in the config folder the profile points it at: 30
+    // descriptions, each past what Claude Code lists of one, so past its 40,000 floor together.
+    let config = tempfile::tempdir().unwrap();
+    for at in 0..30 {
+        let folder = config.path().join("skills").join(format!("mine-{at:02}"));
+        fs::create_dir_all(&folder).unwrap();
+        fs::write(
+            folder.join("SKILL.md"),
+            format!(
+                "---\nname: mine-{at:02}\ndescription: {}\n---\n\nbody\n",
+                "d".repeat(2_000)
+            ),
+        )
+        .unwrap();
+    }
+    let root = project.root();
+    fs::write(
+        root.join(profiles::LOCAL_FILE),
+        format!(
+            "[harness.work]\nkind = \"claude\"\ncommand = [{:?}]\nenv = {{ CLAUDE_CONFIG_DIR = {:?} }}\n",
+            project.program(),
+            config.path().display().to_string()
+        ),
+    )
+    .unwrap();
+    let declared = profiles::current(root);
+    purlis_core::profiletrust::record_launched(
+        root,
+        "work",
+        &purlis_core::profiletrust::fingerprint(declared.get("work").unwrap()),
+    )
+    .unwrap();
+    let limit = |on: bool| {
+        let start = asking(|start| {
+            start.plane_skills = Some(on);
+            start.without_sandbox = true;
+        });
+        listing_limit_of(&composed(&project, &start, &Host::default()).expect("composed"))
+    };
+
+    // Each description as Claude Code lists it, cut at 1,536, with its name and its line.
+    let own = 30 * (1_536 + "mine-00".len() + 23);
+    let off = limit(false);
+    assert!(
+        off > own + 6_848,
+        "the limit {off} holds the person's {own} and Claude Code's own entries"
+    );
+    assert_eq!(
+        off,
+        limit(true),
+        "the plane holds no skills, so reaching it changes nothing"
+    );
+}

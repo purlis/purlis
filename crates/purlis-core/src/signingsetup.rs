@@ -23,21 +23,57 @@ use crate::forge::transport::Transport;
 use crate::forge::{Caller, Forge, Kind};
 use crate::secrets::keyring::Store;
 
-/// What `purlis signing` asks the window, on the person's behalf.
+/// **The forge account an ask is about**, by its forge and host (#5793): the window asks the
+/// account it is signed in to there.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct OnForge {
+    pub kind: Kind,
+    pub host: String,
+}
+
+impl OnForge {
+    pub fn of(forge: &Forge) -> OnForge {
+        OnForge {
+            kind: forge.kind,
+            host: forge.host.clone(),
+        }
+    }
+}
+
+/// What `purlis signing` asks the window, on the person's behalf. Each names the forge and host
+/// of the account it is about (`on`); an ask that names none is about GitHub on github.com.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Asked {
     /// Whether the account has the public key `key` (one OpenSSH line) as a signing key: read
-    /// from GitHub's public list of the account's signing keys.
-    KeyOnAccount { key: String },
-    /// Whether commit `commit` of `repo` (`owner/name`) shows as Verified. Asked of GitHub only
-    /// on the person's yes in the window, to this repository, this commit and `code`, which the
-    /// command's terminal shows too, as the line's other asks are.
+    /// from the forge's public list of the account's keys (on GitLab, those it may sign with).
+    KeyOnAccount {
+        key: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        on: Option<OnForge>,
+    },
+    /// Whether commit `commit` of `repo` (`owner/name`, or a GitLab project's path) shows as
+    /// Verified. Asked of the forge only on the person's yes in the window, to this repository,
+    /// this commit and `code`, which the command's terminal shows too, as the line's other asks
+    /// are.
     Check {
         repo: String,
         commit: String,
         code: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        on: Option<OnForge>,
     },
+}
+
+impl Asked {
+    /// The forge the ask is about: the one it names, else GitHub on github.com.
+    pub fn forge(&self) -> Forge {
+        let (Asked::KeyOnAccount { on, .. } | Asked::Check { on, .. }) = self;
+        match on {
+            Some(on) => forge_of(on.kind, &on.host.to_ascii_lowercase()),
+            None => github(),
+        }
+    }
 }
 
 /// What the window heard from the forge.
@@ -50,8 +86,7 @@ pub enum Heard {
     Checked(Checked),
 }
 
-/// The forge `purlis signing` asks about: GitHub, on github.com. The window's setup goes to any
-/// signed-in account's forge, GitLab's included ([`forge_of`]).
+/// GitHub, on github.com: what an ask that names no forge is about.
 pub fn github() -> Forge {
     Forge::default_of(Kind::GitHub)
 }
@@ -67,14 +102,19 @@ pub fn forge_of(kind: Kind, host: &str) -> Forge {
 /// **The window's answer to `asked`** for the account `login`, sent over `transport` (the
 /// window's own sign-in, in the app; a recording, in a test). Refused, in a sentence, where the
 /// forge refused it or `key` is not one public key. A Check asks only once the person said yes.
+///
+/// On GitLab a Check is held to `this_key`, this device's key, as the window's own Check is
+/// ([`check_a_pushed_commit`]): a commit signed with another key, or by GitLab itself, says
+/// nothing of this device's, and with no key here there is nothing to check (#5793).
 pub fn answered_over(
     transport: &dyn Transport,
     forge: &Forge,
     login: &str,
     asked: &Asked,
+    this_key: Option<&Signer>,
 ) -> Result<Heard, String> {
     match asked {
-        Asked::KeyOnAccount { key } => {
+        Asked::KeyOnAccount { key, .. } => {
             if ssh_key::PublicKey::from_openssh(key).is_err() {
                 return Err("that is not one public key".to_owned());
             }
@@ -84,19 +124,30 @@ pub fn answered_over(
                 })
                 .map_err(|refused| refused.said(forge.kind))
         }
-        Asked::Check { repo, commit, .. } => {
-            signingkeys::check_over(transport, forge, repo, commit).map(Heard::Checked)
-        }
+        Asked::Check { repo, commit, .. } => match (forge.kind, this_key) {
+            (Kind::GitLab, Some(signer)) => {
+                check_a_pushed_commit(transport, forge, signer, repo, commit).map(Heard::Checked)
+            }
+            (Kind::GitLab, None) => Err(
+                "this device has no signing key, so GitLab's verdict on a commit says nothing of \
+                 it. Set signing up first"
+                    .to_owned(),
+            ),
+            (Kind::GitHub, _) => {
+                signingkeys::check_over(transport, forge, repo, commit).map(Heard::Checked)
+            }
+        },
     }
 }
 
 /// **The running window's answer to `asked` from the command line**, with its own sign-in:
 /// the window asks as itself, since the command holds none (the ruling of 2026-11-07 on #5625).
 /// What comes back is a read: whether the account's public list has a key, or what the forge says
-/// of a commit the person said yes to checking; never a token. Where the window has no sign-in on
-/// github.com, a sentence that says so.
+/// of a commit the person said yes to checking; never a token. The account is the one signed in
+/// on the forge and host the ask names (#5793). Where the window has none there, a sentence
+/// that says so.
 pub fn answered_in_the_window(asked: &Asked) -> Result<Heard, String> {
-    let forge = github();
+    let forge = asked.forge();
     let not_signed_in = || {
         format!(
             "this window is not signed in to {} on {} (Settings › You › Accounts)",
@@ -110,7 +161,21 @@ pub fn answered_in_the_window(asked: &Asked) -> Result<Heard, String> {
         .ok_or_else(not_signed_in)?;
     let transport =
         signingkeys::window(&forge, &Caller::window()).map_err(|why| why.to_string())?;
-    answered_over(transport.as_ref(), &forge, &account.login, asked)
+    // This device's key is read only for a GitLab Check, which is held to it.
+    let this_key = match asked {
+        Asked::Check { .. } if forge.kind == Kind::GitLab => {
+            let keyring = crate::commitsign::this_builds_keyring(&config);
+            key_kept(&config, keyring.as_ref())?
+        }
+        _ => None,
+    };
+    answered_over(
+        transport.as_ref(),
+        &forge,
+        &account.login,
+        asked,
+        this_key.as_ref(),
+    )
 }
 
 /// How an ask of the window went, from the command's side.
@@ -155,6 +220,25 @@ pub fn said_in_the_window(asked: &Asked) -> crate::windowline::Said {
 
 /// The page where the person adds a signing key to their GitHub account by hand.
 pub const NEW_KEY_PAGE: &str = "https://github.com/settings/ssh/new";
+
+/// **The page where the person adds a signing key by hand on `forge`**: GitHub's new key page,
+/// or the GitLab's SSH keys page, where *Signing* is chosen as the usage type (#5793).
+pub fn new_key_page(forge: &Forge) -> String {
+    match forge.kind {
+        Kind::GitHub => NEW_KEY_PAGE.to_owned(),
+        Kind::GitLab => format!("https://{}/-/user_settings/ssh_keys", forge.host),
+    }
+}
+
+/// **`forge` as a sentence names it**: `GitHub` or `GitLab` on its default host, else with the
+/// host (`GitLab on gitlab.example.org`).
+pub fn forge_said(forge: &Forge) -> String {
+    if forge.host.eq_ignore_ascii_case(forge.kind.default_host()) {
+        forge.kind.display().to_owned()
+    } else {
+        format!("{} on {}", forge.kind.display(), forge.host)
+    }
+}
 
 /// **This device's key**, or `None` where it has none: signing is on exactly while it has one
 /// (ADR 0116 §1).
@@ -456,18 +540,74 @@ pub fn check_a_pushed_commit(
 // The email chat commits use (#5631)
 // ---------------------------------------------------------------------------------------
 
-/// Where the email the person chose for chat commits is kept, under the device's config home.
-fn email_file(config_root: &Path) -> std::path::PathBuf {
+/// **A forge account, by its forge, host and login**: what a chosen commit email belongs to
+/// (#5788). The host is kept in lower case.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct AccountRef {
+    pub kind: Kind,
+    pub host: String,
+    pub login: String,
+}
+
+impl AccountRef {
+    pub fn new(kind: Kind, host: &str, login: &str) -> AccountRef {
+        AccountRef {
+            kind,
+            host: host.to_ascii_lowercase(),
+            login: login.to_owned(),
+        }
+    }
+
+    fn is(&self, other: &AccountRef) -> bool {
+        self.kind == other.kind
+            && self.host.eq_ignore_ascii_case(&other.host)
+            && self.login == other.login
+    }
+}
+
+/// One account's chosen email, as the file keeps it.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct Chosen {
+    #[serde(flatten)]
+    account: AccountRef,
+    email: String,
+}
+
+/// Where the email chosen for the whole device was kept before choices were per account (#5631):
+/// read still, for an account with none of its own (#5788).
+fn device_email_file(config_root: &Path) -> std::path::PathBuf {
     config_root.join("signing").join("commit-email")
 }
 
-/// **The email the person chose to sign chat commits as**, where they chose one: it stands in for
-/// their git's `user.email` in the commits the app makes for a chat.
-pub fn commit_email(config_root: &Path) -> Option<String> {
-    std::fs::read_to_string(email_file(config_root))
+/// Where the email chosen for each forge account is kept, under the device's config home.
+fn emails_file(config_root: &Path) -> std::path::PathBuf {
+    config_root.join("signing").join("commit-emails.json")
+}
+
+fn chosen(config_root: &Path) -> Vec<Chosen> {
+    std::fs::read_to_string(emails_file(config_root))
         .ok()
-        .map(|text| text.trim().to_owned())
-        .filter(|email| email_reads(email))
+        .and_then(|text| serde_json::from_str::<Vec<Chosen>>(&text).ok())
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|one| email_reads(&one.email))
+        .collect()
+}
+
+/// **The email the person chose to sign `account`'s chat commits as** (#5631, #5788): it stands
+/// in for their git's `user.email` in the commits the app makes for a chat on that account's
+/// forge. Where the account has none of its own, the one chosen for the whole device before.
+pub fn commit_email_of(config_root: &Path, account: &AccountRef) -> Option<String> {
+    chosen(config_root)
+        .into_iter()
+        .find(|one| one.account.is(account))
+        .map(|one| one.email)
+        .or_else(|| {
+            std::fs::read_to_string(device_email_file(config_root))
+                .ok()
+                .map(|text| text.trim().to_owned())
+                .filter(|email| email_reads(email))
+        })
 }
 
 /// Whether `email` reads as one address git may put on a commit.
@@ -483,30 +623,75 @@ fn email_reads(email: &str) -> bool {
             .any(|c| c.is_whitespace() || c.is_control() || matches!(c, '<' | '>' | '\\'))
 }
 
-/// **`email` kept as the one chat commits use**, or `None` to go back to the person's git's own.
-pub fn set_commit_email(config_root: &Path, email: Option<&str>) -> Result<(), String> {
-    let file = email_file(config_root);
-    match email {
-        None => match std::fs::remove_file(&file) {
-            Err(why) if why.kind() != std::io::ErrorKind::NotFound => Err(why.to_string()),
-            _ => Ok(()),
-        },
-        Some(email) if !email_reads(email) => Err(format!("{email} is not an email address")),
-        Some(email) => {
-            if let Some(folder) = file.parent() {
-                std::fs::create_dir_all(folder).map_err(|why| why.to_string())?;
-            }
-            crate::plane::write_private(config_root, &file, email.as_bytes())
-                .map_err(|why| why.to_string())
-        }
+/// **`email` kept as the one `account`'s chat commits use**, or `None` to clear its choice.
+pub fn set_commit_email_of(
+    config_root: &Path,
+    account: &AccountRef,
+    email: Option<&str>,
+) -> Result<(), String> {
+    if let Some(email) = email
+        && !email_reads(email)
+    {
+        return Err(format!("{email} is not an email address"));
     }
+    let mut all = chosen(config_root);
+    all.retain(|one| !one.account.is(account));
+    if let Some(email) = email {
+        all.push(Chosen {
+            account: AccountRef::new(account.kind, &account.host, &account.login),
+            email: email.to_owned(),
+        });
+    }
+    let file = emails_file(config_root);
+    if let Some(folder) = file.parent() {
+        std::fs::create_dir_all(folder).map_err(|why| why.to_string())?;
+    }
+    let text = serde_json::to_string_pretty(&all).map_err(|why| why.to_string())?;
+    crate::plane::write_private(config_root, &file, text.as_bytes()).map_err(|why| why.to_string())
 }
 
-/// **Who a chat's commit is made as on this device**: the person's own git name, and the email
-/// they chose for chat commits where they chose one, else their git's own.
-pub fn who_commits_here(config_root: &Path) -> Result<Who, String> {
+/// **The email chosen for the account bound to repositories on `host`** (#5788): the account
+/// signed in there ([`crate::forge::accounts::signed_in_on`]), as a chat's commit there is made.
+pub fn commit_email_on(config_root: &Path, kind: Kind, host: &str) -> Option<String> {
+    let account = crate::forge::accounts::signed_in_on(config_root, kind, host)
+        .ok()
+        .flatten()?;
+    commit_email_of(
+        config_root,
+        &AccountRef::new(account.kind, &account.host, &account.login),
+    )
+}
+
+/// **Each signed-in forge host and the email its account's chat commits are made as**, where one
+/// was chosen (#5788): what the app hands the commits it makes for a chat
+/// ([`crate::worktree::git::Isolated::as_email_on`]).
+pub fn commit_emails_by_host(config_root: &Path) -> Vec<(String, String)> {
+    // The first signed-in account on each host is the one bound there, whether or not it chose
+    // an email: another account's choice on that host is never taken in its place.
+    let mut seen: Vec<String> = Vec::new();
+    let mut found: Vec<(String, String)> = Vec::new();
+    for account in crate::forge::accounts::listed(config_root).unwrap_or_default() {
+        if account.state != crate::forge::accounts::State::SignedIn
+            || seen
+                .iter()
+                .any(|host| host.eq_ignore_ascii_case(&account.host))
+        {
+            continue;
+        }
+        seen.push(account.host.clone());
+        let one = AccountRef::new(account.kind, &account.host, &account.login);
+        if let Some(email) = commit_email_of(config_root, &one) {
+            found.push((one.host, email));
+        }
+    }
+    found
+}
+
+/// **Who `account`'s chat commits are made as on this device**: the person's own git name, and
+/// the email chosen for that account where one was, else their git's own.
+pub fn who_commits_as(config_root: &Path, account: &AccountRef) -> Result<Who, String> {
     let mut who = who_commits()?;
-    if let Some(email) = commit_email(config_root) {
+    if let Some(email) = commit_email_of(config_root, account) {
         who.email = email;
     }
     Ok(who)
@@ -617,13 +802,19 @@ pub fn email_settings(forge: &Forge) -> String {
 }
 
 /// **What signing kept on this device beside its key, forgotten** (Remove signing, #5632): the
-/// email chosen for chat commits and the signed pushes kept for GitLab's Check.
+/// emails chosen for chat commits and the signed pushes kept for GitLab's Check.
 pub fn forget_records(config_root: &Path) -> Result<(), String> {
-    set_commit_email(config_root, None)?;
-    match std::fs::remove_file(pushes_file(config_root)) {
-        Err(why) if why.kind() != std::io::ErrorKind::NotFound => Err(why.to_string()),
-        _ => Ok(()),
+    for file in [
+        device_email_file(config_root),
+        emails_file(config_root),
+        pushes_file(config_root),
+    ] {
+        match std::fs::remove_file(file) {
+            Err(why) if why.kind() != std::io::ErrorKind::NotFound => return Err(why.to_string()),
+            _ => {}
+        }
     }
+    Ok(())
 }
 
 pub mod manage;

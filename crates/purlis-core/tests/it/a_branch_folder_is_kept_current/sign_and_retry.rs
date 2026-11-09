@@ -90,7 +90,7 @@ fn a_push_refused_for_unsigned_commits_is_told_apart_and_sign_and_retry_sends_it
             host: refused.host.clone(),
             path: refused.path.clone(),
             commit: refused.commit.clone(),
-            chat: Some(3),
+            chat_id: Some("01JCHAT3".to_owned()),
             at: 1,
             sent: false,
             why: None,

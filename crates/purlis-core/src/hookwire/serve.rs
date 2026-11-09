@@ -16,7 +16,8 @@
 //! **Where the hook socket is the session host's** (#2000), the host admits the line and hands
 //! the connection on to the window, which holds the doors: over a socket of the window's own
 //! beside the hook socket ([`beside`]), one connection a slot, its descriptor passed with the
-//! ask ([`hand_on`], [`Receiving`]). Only the process that holds the hook socket's listener, the
+//! ask ([`hand_on`], [`Receiving`]). The host hands a slot only to a process listening there that
+//! is a window it links, and only the process that holds the hook socket's listener, the
 //! session host itself, is read there: the line it hands on was admitted by its token already,
 //! and no other process, of this user or not, can hand the window a slot. No chat's sandbox
 //! reaches that socket either. A slot the window is not there to take is refused.
@@ -100,11 +101,29 @@ pub fn refused(mut slot: Slot, why: &str) {
 /// **Hands `slot` on to the window at `path`** (a session host's half): the ask as one line,
 /// with the slot's descriptor beside it. The window answers the slot itself. Err where the
 /// window could not be reached, and the slot is then the caller's to refuse.
+///
+/// Only a window is handed it: the process listening at `path`, read from the kernel as it is
+/// connected to, must be this user's and one `is_a_window` admits by its pid. Anything else
+/// bound there, while the window is down, is sent nothing.
 #[cfg(unix)]
-pub fn hand_on(path: &std::path::Path, ask: &ServeAsk, slot: &Slot) -> io::Result<()> {
+pub fn hand_on(
+    path: &std::path::Path,
+    ask: &ServeAsk,
+    slot: &Slot,
+    is_a_window: impl Fn(u32) -> bool,
+) -> io::Result<()> {
     use rustix::net::{SendAncillaryBuffer, SendAncillaryMessage, SendFlags, sendmsg};
     use std::os::fd::AsFd as _;
     let window = std::os::unix::net::UnixStream::connect(path)?;
+    let (uid, pid) = purlis_same_user::peer_process_of(&window)?;
+    if purlis_same_user::admit_peer(Ok(uid), purlis_same_user::Uid::effective()).is_err()
+        || !is_a_window(pid)
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "what listens for slots is not a window this host links",
+        ));
+    }
     window.set_write_timeout(Some(std::time::Duration::from_secs(2)))?;
     window.set_read_timeout(Some(std::time::Duration::from_secs(2)))?;
     let mut line = serde_json::to_vec(ask).map_err(io::Error::other)?;
@@ -282,34 +301,60 @@ impl HookHolder {
     }
 }
 
+/// How long a host that connected has to send its ask.
+#[cfg(unix)]
+const AN_ASK_COMES_WITHIN: std::time::Duration = std::time::Duration::from_secs(2);
+
 /// **The ask and the slot a host handed on over `handing`**: one line, with one descriptor
-/// beside it, which must be a connected unix socket. None for anything else; whatever
-/// descriptors came are closed.
+/// beside it, which must be a connected unix socket. None for anything else, more descriptors
+/// among it; whatever descriptors came are closed.
+///
+/// The slot is received and marked close-on-exec with no program started in between
+/// ([`crate::forklock::while_descriptors_are_made`]): macOS takes no flag for it on the receive,
+/// so a program started on another thread between the two would inherit it. The wait for the ask
+/// is outside the lock, so a slow host holds up no program's start.
 #[cfg(unix)]
 fn taken_from(handing: &std::os::unix::net::UnixStream) -> Option<(ServeAsk, Slot)> {
-    use rustix::net::{RecvAncillaryBuffer, RecvAncillaryMessage, RecvFlags, recvmsg};
-    let _ = handing.set_nonblocking(false);
-    let _ = handing.set_read_timeout(Some(std::time::Duration::from_secs(2)));
+    use rustix::net::{RecvAncillaryBuffer, RecvAncillaryMessage, RecvFlags, ReturnFlags, recvmsg};
+    if !readable_within(handing, AN_ASK_COMES_WITHIN) {
+        return None;
+    }
+    // Never waits: what came is there, or the ask is not.
+    let flags = RecvFlags::DONTWAIT;
+    // Where the receive itself can make the slot close-on-exec, it does.
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    let flags = flags | RecvFlags::CMSG_CLOEXEC;
     let mut line = [0u8; 256];
-    let mut space = [std::mem::MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(2))];
+    // Room for the one descriptor: a host that sent more is told by the kernel's truncation.
+    let mut space = [std::mem::MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(1))];
     let mut control = RecvAncillaryBuffer::new(&mut space);
-    let got = recvmsg(
-        handing,
-        &mut [io::IoSliceMut::new(&mut line)],
-        &mut control,
-        RecvFlags::empty(),
-    )
-    .ok()?;
-    // Every descriptor that came is owned here at once, so each is closed whatever is made of it.
-    let mut fds = Vec::new();
-    for message in control.drain() {
-        if let RecvAncillaryMessage::ScmRights(came) = message {
-            fds.extend(came);
+    let (got, fds, marked) = crate::forklock::while_descriptors_are_made(|| {
+        let got = recvmsg(
+            handing,
+            &mut [io::IoSliceMut::new(&mut line)],
+            &mut control,
+            flags,
+        );
+        // Every descriptor that came is owned here at once, so each is closed whatever is made
+        // of it.
+        let mut fds = Vec::new();
+        for message in control.drain() {
+            if let RecvAncillaryMessage::ScmRights(came) = message {
+                fds.extend(came);
+            }
         }
+        // Never handed to a program this process starts.
+        let marked = fds
+            .iter()
+            .all(|fd| rustix::io::fcntl_setfd(fd, rustix::io::FdFlags::CLOEXEC).is_ok());
+        (got, fds, marked)
+    });
+    let got = got.ok()?;
+    // More came than the one descriptor: the rest were never received, and the ask is refused.
+    if !marked || got.flags.contains(ReturnFlags::CTRUNC) {
+        return None;
     }
     let [fd] = <[std::os::fd::OwnedFd; 1]>::try_from(fds).ok()?;
-    // Never handed to a program this process starts (macOS takes no flag for it on the receive).
-    rustix::io::fcntl_setfd(&fd, rustix::io::FdFlags::CLOEXEC).ok()?;
     let said = std::str::from_utf8(line.get(..got.bytes)?)
         .ok()?
         .strip_suffix('\n')?;
@@ -318,6 +363,26 @@ fn taken_from(handing: &std::os::unix::net::UnixStream) -> Option<(ServeAsk, Slo
     // A connected unix socket, and nothing else.
     slot.peer_addr().ok()?;
     Some((ask, slot))
+}
+
+/// Whether `handing` has something to read, or has ended, within `within`.
+#[cfg(unix)]
+fn readable_within(handing: &std::os::unix::net::UnixStream, within: std::time::Duration) -> bool {
+    use rustix::event::{PollFd, PollFlags, Timespec, poll};
+    let until = std::time::Instant::now() + within;
+    loop {
+        let left = until.saturating_duration_since(std::time::Instant::now());
+        let Ok(left) = Timespec::try_from(left) else {
+            return false;
+        };
+        let mut waits = [PollFd::new(handing, PollFlags::IN)];
+        match poll(&mut waits, Some(&left)) {
+            Ok(0) => return false,
+            Ok(_) => return true,
+            Err(rustix::io::Errno::INTR) => continue,
+            Err(_) => return false,
+        }
+    }
 }
 
 #[cfg(all(test, unix))]

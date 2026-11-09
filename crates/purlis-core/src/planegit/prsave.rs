@@ -695,16 +695,12 @@ fn brought_in(root: &Path, target: &str, sign: bool, say: Sink) -> Result<bool, 
             ));
             Ok(false)
         }
-        BroughtIn::Conflict(conflicts) => {
-            let detail = super::bringin::said_conflict(target, &conflicts);
+        BroughtIn::Conflict(conflict) => {
+            let res = PushResult::conflicted(target, conflict);
             say(Say::Fail(
-                format!("Committed, not pushed: {detail}.").into(),
+                format!("Committed, not pushed: {}.", res.detail).into(),
             ));
-            Err(Box::new(PushResult {
-                detail,
-                conflicts,
-                ..PushResult::of(Outcome::Conflict, target)
-            }))
+            Err(Box::new(res))
         }
     }
 }
@@ -734,24 +730,19 @@ pub(super) fn bring_in_for_a_look(
             let _ = push(root, plane, plane.sign.value, caller, say);
             Ok((true, true))
         }
-        BroughtIn::Conflict(conflicts) => {
+        BroughtIn::Conflict(conflict) => {
+            let res = PushResult::conflicted(target, conflict);
+            // The same files and the same words: the same conflict, already recorded.
             let already = push_record(root).is_some_and(|rec| {
                 rec.get("outcome").and_then(serde_json::Value::as_str)
                     == Some(Outcome::Conflict.word())
-                    && rec.get("conflicts") == Some(&serde_json::json!(conflicts))
+                    && rec.get("conflicts") == Some(&serde_json::json!(res.conflicts))
+                    && rec.get("detail").and_then(serde_json::Value::as_str)
+                        == Some(res.detail.as_str())
             });
             if !already {
                 let head = resolve(root, "HEAD").unwrap_or_default();
-                let detail = super::bringin::said_conflict(target, &conflicts);
-                record_push(
-                    root,
-                    PushResult {
-                        detail,
-                        conflicts,
-                        ..PushResult::of(Outcome::Conflict, target)
-                    },
-                    &head,
-                );
+                record_push(root, res, &head);
             }
             Ok((false, !already))
         }
@@ -1264,16 +1255,12 @@ pub(super) fn settle(
         match super::bringin::bring_in(root, target, sign, super::bringin::When::MergedAt(&head)) {
             BroughtIn::Moved(_) | BroughtIn::Nothing => {}
             BroughtIn::Waiting(why) => return Settled::Waiting(why),
-            BroughtIn::Conflict(conflicts) => {
-                let detail = super::bringin::said_conflict(target, &conflicts);
-                say(Say::Fail(format!("Blocked: {detail}.").into()));
+            BroughtIn::Conflict(conflict) => {
+                let res = PushResult::conflicted(target, conflict);
+                say(Say::Fail(format!("Blocked: {}.", res.detail).into()));
                 return Settled::Blocked(record_push(
                     root,
-                    PushResult {
-                        detail,
-                        conflicts,
-                        ..PushResult::of(Outcome::Conflict, target)
-                    },
+                    res,
                     &resolve(root, "HEAD").unwrap_or_default(),
                 ));
             }

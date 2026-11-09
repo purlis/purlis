@@ -137,7 +137,7 @@ impl HarnessAdapter for ClaudeCode {
                         &handed,
                         listing_limit(
                             budget.chars.max(skills.spends(budget)),
-                            own_listing(kit.skills),
+                            own_listing(kit.own),
                         ),
                         sandbox,
                         &denied_tools(kit),
@@ -602,8 +602,8 @@ fn wrapped_line(
         [words.command, words.armed, words.charters].concat(),
     )
     .map_err(|why| crate::sandbox::seatbelt::not_started(lead, why, !at.no_opt_out))?;
-    // Only now, with the line known to start: a refused chat readies nothing.
-    claude_wrap::prepare(wrap, cwd);
+    // Its config folder is readied by the start, once nothing more can refuse it
+    // ([`crate::sandbox::Applied::ready_to_start`]): a refused chat readies nothing.
     let mut env = crate::sandbox::seatbelt::env(&confinement.proxy_url(), tmp);
     env.extend([
         (claude_wrap::TMP_ENV.to_owned(), tmp.display().to_string()),
@@ -1042,14 +1042,13 @@ fn with_margin(listed: usize) -> usize {
 }
 
 /// What the person's own skills and plugins take of a chat's listing, as its start read them
-/// ([`crate::skills::PlaneSkills::own`]): none where they were not read.
-fn own_listing(skills: Option<crate::skills::PlaneSkills<'_>>) -> usize {
-    skills.map_or(0, |at| {
-        crate::skills::own_shares(Harness::ClaudeCode, at.own)
-            .iter()
-            .map(|share| share.chars)
-            .sum()
-    })
+/// ([`Kit::own`]), whether or not the plane's skills reach it (#5842): none where they were not
+/// read.
+fn own_listing(own: &[crate::skills::OutsideSkill]) -> usize {
+    crate::skills::own_shares(Harness::ClaudeCode, own)
+        .iter()
+        .map(|share| share.chars)
+        .sum()
 }
 
 /// The limit a test's [`settings`] is called with.

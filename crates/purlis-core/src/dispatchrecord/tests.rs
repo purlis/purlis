@@ -442,6 +442,52 @@ fn a_record_still_running_or_never_a_task_s_is_not_reported_again() {
     );
 }
 
+/// **A task purlis or the person ended is never reported again** (#1768): its report is the
+/// app's word on how it ended, and a later report of the chat's does not take its place under
+/// that word.
+#[test]
+fn a_task_purlis_or_the_person_ended_is_not_reported_again() {
+    let (_d, root) = project();
+    for by in [EndedBy::Unreported, EndedBy::Person, EndedBy::Limit] {
+        let task = open(
+            &root,
+            Opening {
+                mode: Mode::Task,
+                ..a_handoff()
+            },
+            at("2026-10-07T12:00:00Z"),
+        )
+        .unwrap();
+        let ended = Ending {
+            report: Some(Report {
+                outcome: Outcome::Failed,
+                text: crate::handback::UNREPORTED.to_owned(),
+                changed: Changed::default(),
+            }),
+            usage: None,
+        };
+        assert!(close_by(&root, &task.id, ended, Some(by), at("2026-10-07T12:01:00Z")).unwrap());
+        let later = Ending {
+            report: Some(done("more")),
+            usage: None,
+        };
+
+        assert!(
+            !reported_again(&root, &task.id, later, at("2026-10-07T12:30:00Z")).unwrap(),
+            "{by:?}"
+        );
+
+        let record = read(&root, &task.id).unwrap();
+        assert_eq!(record.ended_by, Some(by));
+        assert_eq!(
+            record.report.map(|report| report.text),
+            Some(crate::handback::UNREPORTED.to_owned()),
+            "{by:?}"
+        );
+        assert!(record.earlier.is_empty(), "{by:?}");
+    }
+}
+
 #[test]
 fn a_running_dispatch_has_no_end_and_no_report() {
     let (_d, root) = project();
@@ -2067,6 +2113,33 @@ fn what_a_record_kept_is_taken_out_where_its_end_stands_in_the_future() {
 
     assert_eq!(read(&root, &far).unwrap().talk[0].text, "");
     assert_eq!(read(&root, &near).unwrap().talk[0].text, "Still up.");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_held_store_keeps_every_due_record_s_words_after_one_wait_and_not_one_per_record() {
+    let (_d, root) = project();
+    let ids: Vec<String> = (0..3)
+        .map(|_| talked_and_ended_at(&root, "9999-12-31T00:00:00+00:00"))
+        .collect();
+    // What a chat that can open the store's folder could do: hold a lock on it.
+    let held = std::fs::File::open(dir(&root)).expect("the store, open");
+    rustix::fs::flock(&held, rustix::fs::FlockOperation::LockExclusive).expect("held");
+
+    let started = std::time::Instant::now();
+    let changed = expire_talk(&root, at("2026-10-07T12:02:00Z"));
+    let waited = started.elapsed();
+
+    assert!(changed.is_empty(), "nothing is written unlocked");
+    assert!(
+        waited < crate::rewrite::MOST_WAIT * 2,
+        "{} due records waited {waited:?}, one wait each",
+        ids.len()
+    );
+    for id in &ids {
+        assert_eq!(read(&root, id).unwrap().talk[0].text, "Still up.");
+    }
+    drop(held);
 }
 
 // ----- clearing a row forgets what was said (#1520) ----------------------------------------

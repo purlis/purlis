@@ -347,7 +347,9 @@ describe("a block of the chat's own work is never a dead end (#1342)", () => {
     );
     // Its turn has ended, so it restarts at once, in its own pane.
     await waitFor(() =>
-      expect(asked("restart_chat")).toEqual([{ plane: PLANE, session: 4, columns: 80, rows: 24 }]),
+      expect(asked("restart_chat")).toEqual([
+        { plane: PLANE, session: 4, columns: 80, rows: 24, now: false },
+      ]),
     );
     expect(await screen.findByText("session 9")).toBeInTheDocument();
   });
@@ -1022,7 +1024,9 @@ describe("a refused host answered in the Inbox (#1692)", () => {
     expect(asked("restart_chat")).toEqual([]);
     await act(() => emit(...onTheWire("chat-moved", WAITING)));
     await waitFor(() =>
-      expect(asked("restart_chat")).toEqual([{ plane: PLANE, session: 4, columns: 80, rows: 24 }]),
+      expect(asked("restart_chat")).toEqual([
+        { plane: PLANE, session: 4, columns: 80, rows: 24, now: false },
+      ]),
     );
   });
 

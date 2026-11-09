@@ -135,10 +135,12 @@ pub struct PlaneSkills<'a> {
     /// harness is handed, the narrower repo copy wins and the plane's is left out (SK-6, decision
     /// 51). Empty for a chat in no clone.
     pub repo: &'a [OutsideSkill],
-    /// **The skills its harness finds itself** (#5736): the person's own and its plugins', as
-    /// the chat's start read them with the plugins it has. purlis's budget never counts them
-    /// ([`SkillSet::routed`]); Claude Code's limit is handed with them in it. Empty where they
-    /// were not read.
+    /// **The skills its harness finds itself** (#5736, #5737): the person's own and its
+    /// plugins', as the chat's start read them with the plugins it has. A plane skill the same as
+    /// one of them is left out ([`SkillSet::without_copies_of`]), and purlis's budget never counts
+    /// them ([`SkillSet::routed`]). Claude Code's limit reads them from
+    /// [`crate::harness::Kit::own`], which a chat the plane's skills do not reach has too
+    /// (#5842). Empty where they were not read.
     pub own: &'a [OutsideSkill],
     /// What the chat's router extension answered at its start (SK-15b), which every routing of
     /// its set applies again: `None` for a chat routed by the built-in router.
@@ -2174,6 +2176,10 @@ pub struct HarnessInTheStudio {
     /// in that clone, each with why ([`purlis_skills::SkillSet::left_out_by_a_repo`], SK-53):
     /// the plane's own rows are a chat's in no clone, so this is where the loss is said.
     pub repo_left_out: Vec<StudioRow>,
+    /// **The studio rows of the plane's skills a chat on it starts without because the harness
+    /// has the same copy itself** (#5843; [`purlis_skills::SkillSet::without_copies_of`]), each
+    /// naming the copy kept, as the chat's own start leaves them out (#5737).
+    pub same_left_out: Vec<StudioRow>,
     /// **Its own catalogue, measured** ([`own_catalogue`], #3324): `None` where the list was read
     /// only for a count of needs ([`Reading::Needs`]), which shows no figure.
     pub own: Option<OwnCatalogue>,
@@ -2474,6 +2480,23 @@ fn harnesses_in_the_studio(
             let repo = crate::harness_plugin::repo_skills(adapter, &choices, &clones);
             let route = harness.skills();
             let budget = budget_in(plane, workspace, harness);
+            // Without each plane skill this harness has the same copy of, as a chat's start
+            // leaves it out (#5737, #5843), so the preview lists the pair once.
+            let persons: Vec<OutsideSkill> = own
+                .iter()
+                .filter(|one| the_persons(harness, one))
+                .cloned()
+                .collect();
+            let set = set.clone().without_copies_of(&persons);
+            let same = SkillSet {
+                left_out: set
+                    .left_out
+                    .iter()
+                    .filter(|left| matches!(left.reason, Reason::SameAs { .. }))
+                    .cloned()
+                    .collect(),
+                ..SkillSet::default()
+            };
             // A chat at the workspace's root, routed as its start routes it, by this harness's
             // own budget (SK-15; #4215): what the harness finds itself is beside the set and
             // counted in nothing, and the chat is in no clone, so no repo skill is in it.
@@ -2531,6 +2554,7 @@ fn harnesses_in_the_studio(
             let mut one = HarnessInTheStudio {
                 harness,
                 repo_left_out: rows_of(&by_a_repo, plane, names, reading),
+                same_left_out: rows_of(&same, plane, names, reading),
                 set,
                 at_the_root,
                 in_clones,
@@ -2654,6 +2678,7 @@ pub fn branch_folder_rows(
         plugins_off: Vec::new(),
         rows: Vec::new(),
         repo_left_out: Vec::new(),
+        same_left_out: Vec::new(),
         own: None,
     };
     // A checkout's path has its links resolved, so its folder is said from the resolved plane.

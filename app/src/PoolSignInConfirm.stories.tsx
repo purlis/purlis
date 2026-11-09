@@ -94,3 +94,39 @@ export const SigningCheck: StoryObj<typeof PoolSignInConfirm> = {
     await untilFocused(() => cancel, "Shift+Tab goes back to Cancel");
   },
 };
+
+/**
+ * `purlis signing check` on GitLab (#5793): the window names the GitLab it asks. Its picture is
+ * taken once Check it has armed, as its siblings' are: without that wait it raced the arming timer
+ * and drew the button disabled in some runs and armed in others.
+ */
+export const SigningCheckOnGitLab: StoryObj<typeof PoolSignInConfirm> = {
+  beforeEach: () => {
+    mockIPC(
+      (cmd) =>
+        cmd === "pool_sign_in_asked"
+          ? {
+              id: 1,
+              asks: "signing-check",
+              profile: "team/billing",
+              pool: "0123abc",
+              code: "A1B2C3",
+              on: "GitLab on gitlab.example.org",
+            }
+          : null,
+      { shouldMockEvents: true },
+    );
+    return () => clearMocks();
+  },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement.ownerDocument.body);
+    const cancel = await page.findByRole("button", { name: "Cancel" });
+    await untilFocused(() => cancel, "It starts on Cancel");
+    // Its title names the GitLab it asks, never GitHub.
+    await page.findByRole("alertdialog", {
+      name: "Check 0123abc in team/billing on GitLab on gitlab.example.org?",
+    });
+    const check = page.getByRole("button", { name: "Check it" });
+    await waitFor(() => expect(check).toBeEnabled(), { timeout: 4000 });
+  },
+};

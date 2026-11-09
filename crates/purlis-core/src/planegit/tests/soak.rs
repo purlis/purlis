@@ -12,8 +12,8 @@
 //! settles in turn. Every step is asserted green, nothing either side wrote is lost, and no
 //! stop is ever left at either root.
 //!
-//! Memory indexes and `[sandbox] hosts` (#5824 F4, F5) are lane B's, and soak in a test of their
-//! own that is ignored until lane B lands.
+//! Memory indexes and `[sandbox] hosts` (#5824 F4, F5) soak in a test of their own, with a
+//! memory and a host allowed on each machine every round.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -383,6 +383,10 @@ fn listed(root: &Path, dir: &str, index: &str) -> Vec<String> {
 }
 
 fn soak(lane_b: bool) {
+    // A sandbox that holds nothing: a `cargo test` run from a chat's sandbox would otherwise
+    // hold `charter.toml` at every clone, and each move would wait for the window (qw346), as
+    // it should. The soak is about what the merges keep, so it runs as the window does.
+    let _free = crate::sandbox::held::stand_in(&[]);
     let mut soak = Soak::new(lane_b);
     let started = std::time::Instant::now();
     let mut rounds = 0;
@@ -405,7 +409,6 @@ fn two_machines_saving_for_many_rounds_stay_green_and_lose_nothing() {
 }
 
 #[test]
-#[ignore = "lane B, #5824 F4/F5"]
 fn two_machines_saving_memory_and_host_allows_for_many_rounds_stay_green_and_lose_nothing() {
     soak(true);
 }

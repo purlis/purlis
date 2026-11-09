@@ -5,10 +5,11 @@ import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 import { act, cleanup, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { emit } from "@tauri-apps/api/event";
 import { commands, type SandboxGrant } from "../bindings";
 import { networkGroup, grantSaid } from "./GrantedList";
 import type { LiveSetting } from "./groups";
-import { runGrantsMoved, useSandboxCommands } from "../sandboxAsked";
+import { RUN_GRANTS_MOVED, runGrantsMoved, useSandboxCommands } from "../sandboxAsked";
 import { SETTINGS_ACTION, type SettingsActionAsk } from "./links";
 
 /**
@@ -516,6 +517,23 @@ describe("the Allowed list told of a grant taken back (#5617)", () => {
     ).toBeInTheDocument();
     listed = [];
     act(() => runGrantsMoved());
+    expect(
+      await screen.findByText("Nothing is allowed beyond the Open hosts."),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("the Allowed list told of a Run grant the core moved (#5800)", () => {
+  it("reads again when the core says an Allow once was used, dropped, or its chat closed", async () => {
+    let listed: SandboxGrant[] = [CHAT];
+    mockIPC((cmd) => (cmd === "sandbox_grants" ? listed : null), { shouldMockEvents: true });
+    render(<Granted />);
+    const list = await screen.findByRole("list", { name: "Allowed" });
+    expect(
+      within(list).getByRole("button", { name: "Remove reaching api.example.com" }),
+    ).toBeInTheDocument();
+    listed = [];
+    await act(() => emit(RUN_GRANTS_MOVED, { plane: PLANE }));
     expect(
       await screen.findByText("Nothing is allowed beyond the Open hosts."),
     ).toBeInTheDocument();

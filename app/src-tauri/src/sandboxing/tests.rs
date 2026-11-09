@@ -3512,3 +3512,56 @@ fn a_run_grants_id_names_its_number_and_no_other_grants_does() {
     assert_eq!(run_grant_of(&format!("chat{SEP}host{SEP}3")), None);
     assert_eq!(run_grant_of(&format!("chat{SEP}run-grant{SEP}x")), None);
 }
+
+// ---- the Allowed list told of a Run grant the core moved (#5800) -------------------------
+
+#[test]
+fn a_projects_run_grants_moved_by_the_core_reach_the_window_named_for_that_project() {
+    use purlis_core::secrets::ask::Asks;
+    use purlis_core::secrets::ask::run::{Bound, Hosts, Offer, RunAnswer, RunNeed};
+    use std::sync::{Arc, Mutex};
+    let asks = Asks::new(std::path::Path::new("/nowhere"));
+    let told: Arc<Mutex<Vec<RunGrantsMoved>>> = Arc::default();
+    let plane = PlaneId::for_tests(std::path::Path::new("/nowhere"));
+    tell_run_grants_moved(&asks, plane.clone(), {
+        let told = Arc::clone(&told);
+        Arc::new(move |one| told.lock().unwrap().push(one))
+    });
+    let bound = Bound {
+        chat: 3,
+        name: "curl".to_owned(),
+        program: "/usr/bin/curl".into(),
+        vault: "team".to_owned(),
+        env: vec!["TOKEN=TOKEN".to_owned()],
+        file: Vec::new(),
+        cwd: "/work".into(),
+        args: vec!["--version".to_owned()],
+    };
+    let need = RunNeed {
+        ahead: false,
+        fills: Vec::new(),
+        offer: Offer::Program,
+        not_its_vault: false,
+        bound: bound.clone(),
+        persona: "ops".to_owned(),
+        hosts: Hosts::Listed(Vec::new()),
+        caution: None,
+        command: "curl --version".to_owned(),
+    };
+    asks.allowed_or_held(need, std::time::Duration::ZERO, &mut |_| {});
+    let open = asks.open_runs();
+    let window = purlis_core::harness::asks::Answerer::admitted(
+        purlis_core::harness::asks::Admitted::LocalUi,
+    )
+    .unwrap();
+    asks.answer_run(open[0].id, RunAnswer::Once, window)
+        .unwrap();
+    assert!(
+        told.lock().unwrap().is_empty(),
+        "the window's own answer it says itself"
+    );
+
+    asks.forget(3);
+
+    assert_eq!(*told.lock().unwrap(), vec![RunGrantsMoved { plane }]);
+}

@@ -161,9 +161,9 @@ function isLiteral(length: string): boolean {
 }
 
 /**
- * **The two reserves that are not a whole number of controls** (D-2319-7), each held to the one
- * declaration that writes it: a structural reserve given as a padding or a margin, sized in
- * controls rather than snapped. The same expression anywhere else is a literal.
+ * **The reserves that are not a whole number of controls** (D-2319-7, #5889), each held to the
+ * one declaration that writes it: a structural reserve given as a padding or a margin, sized in
+ * controls or in a box of px rather than snapped. The same expression anywhere else is a literal.
  */
 const RESERVES: readonly { rule: string; property: string; written: string; why: string }[] = [
   {
@@ -171,6 +171,12 @@ const RESERVES: readonly { rule: string; property: string; written: string; why:
     property: "--title-bar-drag",
     written: "calc(var(--size-control) * 2.5)",
     why: "the title bar's drag stretch",
+  },
+  {
+    rule: ".status-notices",
+    property: "padding-inline-start",
+    written: "max(0px, calc(20px - var(--space-3) - 0.2em))",
+    why: "the status bar Notices dot's room before the bell: its 24px target less its clear border",
   },
 ];
 

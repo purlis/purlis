@@ -474,6 +474,7 @@ fn an_opencode_chat_is_armed_through_its_environment_and_nothing_on_its_line() {
         judging: false,
         writes_its_piece: false,
         runs_a_shell: false,
+        own: &[],
     };
     let purlis_core::harness::StateHooks::ThisSessionOnly { args, env, .. } =
         Harness::Opencode.state_hooks(kit, Some(plane.root()), &ready.plugins, None)
@@ -661,6 +662,7 @@ fn armed_with(
         judging: false,
         writes_its_piece: false,
         runs_a_shell: false,
+        own: &[],
     };
     match harness.state_hooks(kit, Some(root), plugins, None) {
         purlis_core::harness::StateHooks::ThisSessionOnly { args, .. } => args,

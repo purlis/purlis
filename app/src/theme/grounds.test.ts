@@ -1994,6 +1994,25 @@ describe("where each family is drawn on a surface a theme fills (#3268)", () => 
     expect(found).toEqual([]);
   });
 
+  it("goes on past a root drawn with no fill of its own, and stops at one drawn with one (#5863)", () => {
+    const tree = (fill: string) =>
+      standing(
+        [
+          file(
+            "Side.tsx",
+            `export function Side() {
+               return <div data-scope="panel" data-part="root"><div data-scope="tree" data-part="root" className="row"><span data-scope="badge" data-part="root" /></div></div>;
+             }`,
+          ),
+        ],
+        `.row { background: ${fill}; }`,
+      );
+    // A tree's row with no fill leaves the panel's ground showing: its badge stands on both.
+    expect(tree("transparent")).toEqual(["badge: panel tree", "tree: panel"]);
+    // Filled at rest, the row covers the panel: its badge stands on the row alone.
+    expect(tree("var(--surface-sunken)")).toEqual(["badge: tree", "tree: panel"]);
+  });
+
   it("reads a root spread from a helper, or drawn by createElement", () => {
     const found = standing([
       file(

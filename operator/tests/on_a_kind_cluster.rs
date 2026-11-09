@@ -2062,7 +2062,8 @@ fn claims_in(client: &Client, namespace: &str) -> Api<Claim> {
 
 /// What upstream's claim `name` holds once it has adopted a warm runner, and the writes the
 /// cluster refuses on it, asked as dry runs so nothing changes: the operator adding to its pod or
-/// to its labels and annotations, and anyone adding the label no claim of a purlis pool carries.
+/// to its labels and annotations, and anyone adding the label no claim of a purlis pool carries,
+/// env, a lifecycle, or labels or annotations for its pod.
 async fn an_adopted_claim_holds_its_shape(client: &Client, name: &str) {
     use kube::api::{ApiResource, DynamicObject};
     use purlis_cluster_operator::upstream::SandboxClaim;
@@ -2096,6 +2097,9 @@ async fn an_adopted_claim_holds_its_shape(client: &Client, name: &str) {
     let operators = Api::<DynamicObject>::namespaced_with(as_operator, &runners(), &resource);
     let shape = "nothing added to the pod";
     let marks = "only its own mark on a claim";
+    // What reaches the pod is refused for every writer too, by the policy on claims, so the
+    // operator's write may be refused in either policy's words.
+    let added = "sets no env, lifecycle, or pod labels or annotations";
     for (what, change, words) in [
         (
             "a pod label",
@@ -2144,22 +2148,39 @@ async fn an_adopted_claim_holds_its_shape(client: &Client, name: &str) {
         ),
     ] {
         let refused = operators.patch(name, &dry, &Patch::Merge(&change)).await;
-        assert!(refused_saying(&refused, words), "{what}: {refused:?}");
+        assert!(
+            refused_saying(&refused, words) || (words == shape && refused_saying(&refused, added)),
+            "{what}: {refused:?}"
+        );
     }
-    // Nor by anyone else, for the one label.
-    let by_admin = Api::<DynamicObject>::namespaced_with(client.clone(), &runners(), &resource)
-        .patch(
-            name,
-            &dry,
-            &Patch::Merge(serde_json::json!({
-                "metadata": { "labels": { "agents.x-k8s.io/created-by": "x" } }
-            })),
-        )
-        .await;
-    assert!(
-        refused_saying(&by_admin, "does not carry a created-by label"),
-        "{by_admin:?}"
-    );
+    // Nor by anyone else, the cluster admin included, for the one label and for what would reach
+    // the pod or end the runner on a time of its own.
+    let admins = Api::<DynamicObject>::namespaced_with(client.clone(), &runners(), &resource);
+    for (what, change, words) in [
+        (
+            "the created-by label",
+            serde_json::json!({ "metadata": { "labels": { "agents.x-k8s.io/created-by": "x" } } }),
+            "does not carry a created-by label",
+        ),
+        (
+            "a pod annotation",
+            serde_json::json!({ "spec": { "additionalPodMetadata": { "annotations": { "e2e": "x" } } } }),
+            added,
+        ),
+        (
+            "a lifecycle",
+            serde_json::json!({ "spec": { "lifecycle": { "shutdownPolicy": "Delete" } } }),
+            added,
+        ),
+        (
+            "an environment variable",
+            serde_json::json!({ "spec": { "env": [{ "name": "E2E", "value": "x" }] } }),
+            added,
+        ),
+    ] {
+        let by_admin = admins.patch(name, &dry, &Patch::Merge(&change)).await;
+        assert!(refused_saying(&by_admin, words), "{what}: {by_admin:?}");
+    }
     // The operator's own mark, as it is, passes: what its apply writes on every pass.
     let uid =
         &held.metadata.annotations.as_ref().expect("its marks")["runners.purlis.dev/claim-uid"];
@@ -2204,7 +2225,13 @@ async fn a_held_claim_is_judged_whole_on_each_write(client: &Client, kept: &str,
             other,
             &PatchParams::default(),
             &Patch::Merge(serde_json::json!({
-                "spec": { "additionalPodMetadata": { "annotations": { "e2e": "x" } } }
+                "spec": { "volumeClaimTemplates": [{
+                    "metadata": { "name": "e2e" },
+                    "spec": {
+                        "accessModes": ["ReadWriteMany"],
+                        "resources": { "requests": { "storage": "1Mi" } }
+                    }
+                }] }
             })),
         )
         .await

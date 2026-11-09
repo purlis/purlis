@@ -485,14 +485,16 @@ surfaces and the strips' layers, and a Notice's danger surface and wash among th
 read laid over the surface under it. `app/src/theme/grounds.test.ts` finds them from the components, and fails until the
 manifest lists a new one.
 
-**A see-through surface is read in the tints too.** A surface's see-through fill (`popover.root.fill`
-with alpha) shows the turned colour under it, so what another family draws on it (a button or a
-menu in a popover, the title bar's switcher rows) is held to the reading floors in every workspace
-tint as well as written. Words that fall only in a tint make the surface draw its family default,
-said as `what a button draws on it`. An opaque fill is read in the tints too where a look drawn on
-it is see-through, a family default's wash included; an opaque fill under opaque looks is read as
-written alone. Each set of states that hold at once is read on the fill as well as each state alone.
-A `card` or `notice` fill needs none of this: the load refuses one that is not a ground the button
+**A see-through surface is read in the tints too.** A surface's see-through fill
+(`popover.root.fill` with alpha) shows the turned colour under it, so what another family draws on
+it (a button or a menu in a popover, the title bar's switcher rows) is held to the reading floors in
+every workspace tint as well as written. Words that fall only in a tint make the surface draw its
+family default, said as `what a button draws on it`. An opaque fill is read in the tints too where a
+look drawn on it is see-through, a family default's wash included, and so is one under a switcher's
+row or pin that draws its fill or its words see-through, the title bar's own defaults included (the
+row Enter would go to on `list.selected`); an opaque fill under opaque looks is read as written
+alone. Each set of states that hold at once is read on the fill as well as each state alone. A
+`card` or `notice` fill needs none of this: the load refuses one that is not a ground the button
 family is held on, and on those a button is read already.
 
 **States that hold at once are held as one.** A button can be hovered and pressed, or focused and
@@ -990,7 +992,9 @@ its mark's colour stays on it: when a floor takes either, or more contrast raise
 person's colour for the mark is drawn or left out, the count goes with it. A theme whose count is
 its own colour is held on its own. A rule on `activity.count` never reaches the hot count, and one
 whose fill comes that near the hot count, as written or at any hue the tint recipe turns it to,
-draws the family default.
+draws the family default. The rule's fill and the hot count are compared laid on the ground the
+count stands on, as the screen draws them, so a see-through rule is read as the colour it comes out
+on the bar, and so is a see-through hot count.
 
 Over Purlis, whose primary is filled and whose controls draw no edge, a theme keeps Purlis's
 values unless it names them. `radius.control` is Classic's `radius.md`, 4, where a theme names

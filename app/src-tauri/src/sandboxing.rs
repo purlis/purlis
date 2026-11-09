@@ -3529,5 +3529,32 @@ pub(crate) fn watch_policy(app: tauri::AppHandle) {
     }
 }
 
+/// The event the window hears when a project's Run grants moved some way it did not make itself
+/// (#5800): an Allow once its run took or a check dropped, or the grants of a chat that closed.
+/// The Allowed list lists Allow once grants, so it reads again.
+pub const RUN_GRANTS_MOVED: &str = "run-grants-moved";
+
+/// **A project's Run grants moved**, as the window is told it ([`RUN_GRANTS_MOVED`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct RunGrantsMoved {
+    pub plane: PlaneId,
+}
+
+/// Told each [`RunGrantsMoved`].
+pub type RunGrantsMovedTeller = std::sync::Arc<dyn Fn(RunGrantsMoved) + Send + Sync + 'static>;
+
+/// **Tells `told` each time `asks`, project `plane`'s, says its Run grants moved** (#5800).
+pub fn tell_run_grants_moved(
+    asks: &purlis_core::secrets::ask::Asks,
+    plane: PlaneId,
+    told: RunGrantsMovedTeller,
+) {
+    asks.telling_run_grants_moved(std::sync::Arc::new(move || {
+        told(RunGrantsMoved {
+            plane: plane.clone(),
+        });
+    }));
+}
+
 #[cfg(test)]
 mod tests;

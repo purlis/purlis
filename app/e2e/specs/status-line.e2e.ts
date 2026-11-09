@@ -146,11 +146,11 @@ describe("the status line", () => {
 
     const line = await $('[data-testid="status-line"]');
     const height = (await line.getSize("height")) as number;
-    // A status item's height (a small button's, 24px since #2904) and the room for its focus
-    // ring. The bound is deliberately loose — this is a guard against it becoming a panel, not
-    // a pin on the font metrics.
+    // A status item's height (24px since #2904) and the bar's top line, with no room kept for a
+    // focus ring: an item rings inside itself (#1922). Loose enough not to pin the font metrics,
+    // tight enough that the old 30px bar fails it.
     expect(height).toBeGreaterThan(8);
-    expect(height).toBeLessThanOrEqual(34);
+    expect(height).toBeLessThanOrEqual(28);
 
     // The panel group stops above it. A status line laid over the regions would leave the
     // group's bottom below the line's top, and the terminals' last row unreadable.

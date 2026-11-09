@@ -1,7 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
+import { listen } from "@tauri-apps/api/event";
 
 /**
  * **The window changed what a chat's sandbox is compiled from** (#1428, D-1428-10): one of its
@@ -46,14 +47,25 @@ export function useSandboxCommands(): number {
 let grants = 0;
 const grantListeners = new Set<() => void>();
 
+/** The event the core's word that a project's Run grants moved arrives on (#5800). */
+export const RUN_GRANTS_MOVED = "run-grants-moved";
+
 /** A press that gives or takes back a Run grant returned: the Allowed list reads again. */
 export function runGrantsMoved(): void {
   grants += 1;
   for (const listener of [...grantListeners]) listener();
 }
 
-/** How many presses that give or take back a Run grant have returned. */
+/**
+ * How many presses that give or take back a Run grant have returned, and how often the core said
+ * a project's Run grants moved some other way (#5800): an Allow once its run took or a check
+ * dropped, or the grants of a chat that closed. Any project's word reads the list again.
+ */
 export function useRunGrantsMoved(): number {
+  useEffect(() => {
+    const stop = listen(RUN_GRANTS_MOVED, runGrantsMoved).catch(() => undefined);
+    return () => void stop.then((off) => off?.()).catch(() => undefined);
+  }, []);
   return useSyncExternalStore(
     (listener) => {
       grantListeners.add(listener);

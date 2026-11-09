@@ -199,9 +199,12 @@ fn details_of(root: &std::path::Path, name: &str, now: u64) -> SkillDetails {
     let pinners = purlis_core::skills::pinners_of(root, name);
     SkillDetails {
         copies,
+        // A hint (#4510) is told by `purlis skill uses` and the lint; the tab has no mark for one
+        // yet, so it draws the references alone.
         uses: node
             .uses
             .into_iter()
+            .filter(|one| !one.hint)
             .map(|one| SkillUse {
                 said: one.said,
                 name: one.name,

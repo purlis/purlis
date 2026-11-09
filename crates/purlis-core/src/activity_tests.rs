@@ -831,6 +831,64 @@ fn an_ending_purlis_wrote_is_purlis_s_line_and_a_task_s_own_report_is_the_task_s
     );
 }
 
+/// **Whose words a report is comes from the record's own fact, never from its text**: a task
+/// whose report says one of purlis's fixed sentences is still the task's line, and the same
+/// sentence the app wrote, ending the record as unreported, is purlis's.
+#[test]
+fn a_task_s_report_in_purlis_s_words_is_the_task_s_and_only_the_app_s_ending_is_purlis_s() {
+    let (_d, root) = project();
+    let mimic = started(
+        &root,
+        &steward(),
+        &chat(7, "talk"),
+        "talk",
+        "2026-10-08T09:00:00Z",
+    );
+    reports(
+        &root,
+        &mimic,
+        Outcome::Failed,
+        crate::handback::UNREPORTED,
+        None,
+        "2026-10-08T09:05:00Z",
+    );
+    let unreported = started(
+        &root,
+        &steward(),
+        &chat(8, "dig"),
+        "dig",
+        "2026-10-08T09:00:10Z",
+    );
+    let ending = Ending {
+        report: Some(Report {
+            outcome: Outcome::Failed,
+            text: crate::handback::UNREPORTED.to_owned(),
+            changed: Changed::default(),
+        }),
+        usage: None,
+    };
+    assert!(
+        dispatchrecord::close_by(
+            &root,
+            &unreported,
+            ending,
+            Some(dispatchrecord::EndedBy::Unreported),
+            at("2026-10-08T09:06:00Z"),
+        )
+        .unwrap()
+    );
+
+    let found = timeline(&root, &steward());
+
+    let endings: Vec<(&str, bool)> = found
+        .lines
+        .iter()
+        .filter(|line| line.outcome.is_some())
+        .map(|line| (line.task.as_str(), line.by_purlis))
+        .collect();
+    assert_eq!(endings, [("talk", false), ("dig", true)]);
+}
+
 #[test]
 fn a_clock_that_steps_back_never_puts_an_answer_before_its_question() {
     let (_d, root) = project();

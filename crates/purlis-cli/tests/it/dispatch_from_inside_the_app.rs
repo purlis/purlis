@@ -2684,3 +2684,80 @@ fn what_the_person_said_is_handed_over_again_until_a_turn_says_it_has_it() {
         );
     }
 }
+
+// ----- an app slow to answer (#5845) --------------------------------------------------------
+
+/// How long the stand-in app below takes over each ask: longer than a ticket was given before
+/// #5845, as long as a busy window took on 2026-11-08, when a task's report went unsent.
+const A_BUSY_APP_TAKES: std::time::Duration = std::time::Duration::from_secs(3);
+
+#[test]
+fn a_task_s_report_note_and_question_reach_an_app_that_is_slow_to_answer() {
+    // #5845: after an upgrade had restarted every chat, the window took seconds over each line,
+    // and a task's `dispatch report` gave up on its ticket after two and was told no app was
+    // there. A report has nothing else to go by, so it waits for an app that is there.
+    let tmp = daily();
+    let (app, _reading, asked) = an_app(&tmp, |tickets, connection, ask| {
+        std::thread::sleep(A_BUSY_APP_TAKES);
+        match &ask {
+            Ask::Task(asked) => match &asked.what {
+                What::Note { .. } => sent(Kind::Note, "steward 1"),
+                What::Question { .. } => sent(Kind::Question, "steward 1"),
+                What::AwaitAnswer { .. } => Answer::Task(Box::new(Answered::Replied {
+                    what: Reply::Answered {
+                        from: "steward 1".to_owned(),
+                        text: "The second one.".to_owned(),
+                        by_person: false,
+                    },
+                })),
+                _ => Answer::Task(Box::new(Answered::Noted)),
+            },
+            _ => starts_it(tickets, connection, ask),
+        }
+    });
+
+    for args in [
+        &["dispatch", "note", "half way"][..],
+        &["dispatch", "ask", "Which queue?"],
+        &["dispatch", "report", "--outcome", "done", "did it"],
+    ] {
+        let out = purlis_as(&root(&tmp), Some(&app), STARTED, args, "");
+        assert_eq!(text(&out.stderr), "", "{:?}", &args[..2]);
+        assert_eq!(out.status.code(), Some(0), "{:?}", &args[..2]);
+    }
+    assert!(
+        asked
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|(_, ask)| matches!(ask, Ask::Report(_))),
+        "the report reached the app"
+    );
+}
+
+#[test]
+fn a_report_the_app_did_not_answer_says_so_and_to_send_it_again() {
+    // #5845: a chat the app started, whose app is not answering, is not a chat with no app.
+    // It is told the app did not answer and to send the report again, never that a report goes
+    // back only from a chat a dispatch started, which a task reads as a reason to stop trying.
+    let tmp = daily();
+    let gone = App {
+        socket: tmp.path().join("gone").join("hooks.sock"),
+        tokens: vec![(STARTED, ChatToken::from("a token for an app that has gone"))],
+    };
+
+    let out = purlis_as(
+        &root(&tmp),
+        Some(&gone),
+        STARTED,
+        &["dispatch", "report", "--outcome", "done", "did it"],
+        "",
+    );
+
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(
+        text(&out.stderr),
+        "✗ purlis dispatch report: the purlis app did not answer, so nothing was sent. It may \
+         be busy or restarting: send the report again.\n"
+    );
+}

@@ -229,9 +229,27 @@ fn the_wrapped_line_runs_codex_whole_under_sandbox_exec_with_its_own_sandbox_off
     }
     let config = std::fs::read_to_string(route.config()).expect("its config");
     assert!(
-        config.contains(&format!("127.0.0.1:{} %h %p", confinement.socks_port())),
+        // Its SOCKS port, through purlis's own proxy where this run finds one (#3536).
+        config.contains(&format!(
+            "ProxyCommand {}\n",
+            super::sshproxy::proxy_command(
+                super::tools::purlis_binary().as_deref(),
+                confinement.socks_port()
+            )
+        )),
         "{config}"
     );
+    // Where a purlis is found (the re-run below names one), the route runs it, never `nc`.
+    if let Some(purlis) = super::tools::purlis_binary() {
+        assert!(
+            config.contains(&format!(
+                "ProxyCommand '{}' _ssh-proxy {} %h %p\n",
+                purlis.display(),
+                confinement.socks_port()
+            )),
+            "{config}"
+        );
+    }
 }
 
 #[test]
@@ -668,6 +686,7 @@ fn charters_hooks() -> Vec<String> {
             judging: false,
             writes_its_piece: false,
             runs_a_shell: false,
+            own: &[],
         },
         None,
         &crate::harness_plugin::Chosen::new(),
@@ -1586,4 +1605,20 @@ mod live {
         assert!(!connects(&host), "charterd.sock was reached");
         assert!(!connects(&other), "another unix socket was reached");
     }
+}
+
+/// a Codex chat's ssh route runs the purlis it finds as its proxy (#3536): the test above, re-run with
+/// `PURLIS_BINARY` naming a stand-in, since no purlis sits beside a test binary. Binds the chat's
+/// ports, so it first runs on CI.
+#[test]
+fn a_codex_chats_ssh_route_runs_the_purlis_beside_the_app_as_its_proxy() {
+    let dir = tempfile::tempdir().expect("a folder");
+    let purlis = dir.path().join("purlis");
+    std::fs::write(&purlis, "").expect("a stand-in purlis");
+    crate::testrun::rerun(
+        &[
+            "sandbox::codex_tests::the_wrapped_line_runs_codex_whole_under_sandbox_exec_with_its_own_sandbox_off_last",
+        ],
+        &[("PURLIS_BINARY", purlis.as_os_str())],
+    );
 }

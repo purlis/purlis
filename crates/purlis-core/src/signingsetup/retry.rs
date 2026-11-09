@@ -81,8 +81,10 @@ pub struct Waiting {
     pub path: String,
     /// The commit whose push was refused.
     pub commit: String,
-    /// The app's number for the chat that pushed, while it is open.
-    pub chat: Option<u32>,
+    /// The lasting id (ADR 0066) of the chat that pushed (#5789): never the app's number for
+    /// it, which a restart gives to another chat. A record that named the number reads as none.
+    #[serde(default)]
+    pub chat_id: Option<String>,
     /// When it was refused, in seconds since the epoch.
     pub at: i64,
     /// Signed and sent since: it stays listed as done until the window's next look clears it.

@@ -294,6 +294,7 @@ pub mod themechat;
 pub mod themepreview;
 #[cfg(unix)]
 pub mod tipsfetched;
+pub mod tomlmerge;
 pub mod toolgate;
 pub mod toolhooks;
 pub mod touching;

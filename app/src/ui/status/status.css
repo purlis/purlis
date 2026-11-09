@@ -22,7 +22,9 @@ footer[data-scope="status-bar"] {
   flex: none;
   gap: var(--space-5);
   align-items: center;
-  padding: var(--space-2) var(--space-4);
+  /* No room above or below for a ring: its items ring inside themselves (#1922), so the bar is
+     the chrome's height alone. */
+  padding: 0 var(--space-4);
   font-size: var(--font-size-sm);
   white-space: nowrap;
   overflow: hidden;
@@ -37,16 +39,15 @@ footer[data-scope="status-bar"] {
   display: none;
 }
 
-/* It clips what goes off its end; its padding is the room a focused item's ring takes inside the
-   clip, given back by its margin so nothing moves. */
+/* It clips what goes off its end. A focused item's ring is inside the item (#1922), so the clip
+   needs no room kept for one. */
 [data-scope="status-bar"][data-part="start"] {
   display: flex;
   flex: 0 1 auto;
   gap: var(--space-5);
   align-items: center;
+  align-self: stretch;
   min-inline-size: 0;
-  margin: calc(var(--space-2) * -1);
-  padding: var(--space-2);
   overflow: hidden;
 }
 
@@ -265,12 +266,20 @@ footer[data-scope="status-bar"] {
   cursor: progress;
 }
 
-/* The ring, from the keyboard only, outside the item (R162); the bar's padding is its room. A
-   cell made focusable for its tooltip rings the same. */
+/* The ring, from the keyboard only, outside the item (R162). A cell made focusable for its
+   tooltip rings the same. */
 [data-scope="status-item"][data-part="root"][data-focus-visible],
 [data-scope="status-item"][data-part="root"][data-static]:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-offset);
+}
+
+/* **A cell of the status bar rings inside itself** (#1922, ADR 0104 amended 2026-11-09): the bar
+   is a strip that clips, as a tab strip is, and a ring outside an item would be cut by it or need
+   room the bar keeps empty. The title bar's pills keep the outside ring. */
+[data-scope="status-item"][data-part="root"][data-variant="bar"][data-focus-visible],
+[data-scope="status-item"][data-part="root"][data-variant="bar"][data-static]:focus-visible {
+  outline-offset: var(--focus-ring-inset);
 }
 
 /* An item appearing while the window is up, never at launch (the needs-you pill when the first
@@ -287,18 +296,24 @@ footer[data-scope="status-bar"] {
    for a warning (#3649), each with its shape in the window's ground.
 
    **A 24px target** (WCAG 2.5.8): unlike a chip's dot, it is a Tab stop of its own, and nothing
-   else on the bar reaches it. Its box is 24px, the 16px dot drawn in its middle: a clear border
-   of 4px around it, which the dot's fill is clipped inside, and its ring drawn inside that fill.
-   It stands inside the bar's padding, which clips what leaves it. Keyed on the dot's parts, never
-   on `data-kind`, which another status item carries too (the title bar's Updates pill).
+   else on the bar reaches it. Its box is 24px, the 16px dot drawn in it: a clear border around
+   it, which the dot's fill is clipped inside, and its focus ring drawn just inside that box.
+   Keyed on the dot's parts, never on `data-kind`, which another status item carries too (the
+   title bar's Updates pill).
+
+   **At the bell's top leading corner, the bell read beside it** (#5889): the bar is the item's
+   height (#1922), so a dot in the middle of its box, flush with the item's top, lay over the
+   bell. Its clear border is 2px above it and 6px below, so the dot stands at the bar's top, and
+   the Notices slot keeps room before the item (`.status-notices`), so the dot ends a fifth of the
+   bell in. Its box stays whole inside the bar, which clips what leaves it.
    --------------------------------------------------------------------------------------------- */
 
 [data-part^="dot"][data-scope="status-item"] {
   position: absolute;
   z-index: 1;
-  inset-block-start: calc(var(--space-2) * -1);
-  /* No further out than the end's gap, so its clear border never covers the item before. */
-  inset-inline-start: calc(var(--space-1) * -1);
+  inset-block-start: 0;
+  /* At the slot's start, inside the room the slot keeps for it: over nothing before the item. */
+  inset-inline-start: 0;
   display: grid;
   place-items: center;
   box-sizing: border-box;
@@ -306,7 +321,11 @@ footer[data-scope="status-bar"] {
   block-size: 24px;
   padding: 0;
   border: 4px solid transparent;
-  border-radius: var(--radius-full);
+  border-block-start-width: 2px;
+  border-block-end-width: 6px;
+  /* Each corner less its two borders is 8px, so the fill is a 16px circle: 12px across at
+     every corner, 10px down at the top and 14px at the bottom, as shares of the 24px box. */
+  border-radius: 50% / 41.667% 41.667% 58.333% 58.333%;
   background-clip: padding-box;
   box-shadow: inset 0 0 0 2px var(--surface-deep);
   cursor: default;

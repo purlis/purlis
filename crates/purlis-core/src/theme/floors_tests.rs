@@ -943,3 +943,71 @@ fn accent_words_in_a_colour_of_their_own_stay_when_the_accent_falls() {
     assert_eq!(drawn.value("accent.text"), "#e8d8a0");
     assert_eq!(held.expect("held").tokens, ["accent.base"]);
 }
+
+// ---------------------------------------------------------------------------------------
+// The least a hold draws as purlis's own (#3597)
+// ---------------------------------------------------------------------------------------
+
+/// How many tokens holding `theme`'s floors draws as purlis's own or untinted: what an import's
+/// walk counts against a point.
+fn held_count(theme: &ResolvedTheme) -> usize {
+    floors::hold(theme)
+        .1
+        .map_or(0, |held| held.tokens.len() + held.untinted.len())
+}
+
+#[test]
+fn a_hold_draws_no_fewer_tokens_as_purlis_s_than_its_rounds_on_the_theme_as_written_take() {
+    let red = ours("danger.base");
+    let broken_as_written = [
+        json!({ "danger.text": "#301010", "danger.surface": "#301010", "accent.base": "#4fa3e0" }),
+        json!({ "state.failed": "#202020", "surface.base": "#202020" }),
+        json!({ "danger.base": "#52c4a6", "accent.base": "#52c4a6" }),
+        json!({ "text.primary": "#2a2a2a" }),
+        json!({ "accent.base": ours("control.base") }),
+        json!({ "accent.base": ours("control.base"), "accent.text": "#e8d8a0" }),
+        // Danger in purlis's own red, the accent in it too: the first round takes only the
+        // danger colour, which is purlis's already and not counted, and the accent, still too
+        // near it as written, falls in the second.
+        json!({ "danger.base": red, "accent.base": red }),
+    ];
+    for tokens in broken_as_written {
+        let mine = theme("Broken", tokens.clone());
+        let theme = mine.first();
+        let least = floors::held_at_least(theme);
+        assert!(least > 0, "{tokens}: a floor breaks as written");
+        assert!(
+            least <= held_count(theme),
+            "{tokens}: {least} > {}",
+            held_count(theme)
+        );
+    }
+}
+
+#[test]
+fn the_least_a_hold_draws_counts_a_ground_its_second_round_takes_on_the_theme_as_written() {
+    // A state mark on a ground in purlis's own colour for it: the mark is taken first, is still
+    // lost on the ground as written, and the ground falls in the second round.
+    let lost = theme(
+        "Lost",
+        json!({ "state.failed": "#202020", "surface.base": ours("state.failed") }),
+    );
+    let (least, held) = (
+        floors::held_at_least(lost.first()),
+        held_count(lost.first()),
+    );
+    assert!(least >= 2, "{least}: the mark and its ground");
+    assert!(least <= held, "{least} > {held}");
+}
+
+#[test]
+fn the_least_a_hold_draws_is_zero_for_a_theme_that_clears_every_floor_as_written() {
+    // Its rounds decide from the tints, which this leaves to the hold itself.
+    for built in built_ins() {
+        assert_eq!(floors::held_at_least(built), 0, "{}", built.name);
+    }
+    // Only a workspace's tint brings Allow near the primary (#2948): nothing breaks as written.
+    let tinted_only = theme("Blue", json!({ "accent.base": "#4fa3e0" }));
+    assert_eq!(floors::held_at_least(tinted_only.first()), 0);
+    assert!(held_count(tinted_only.first()) > 0, "its tint is held");
+}

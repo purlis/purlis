@@ -10,11 +10,25 @@ export const SIGNING_WAITING_CHANGED = "purlis:signing-waiting-changed";
  *  (#5633): the project's window opens the setup dialog, ending in Sign and retry all. */
 export const SIGNING_SETUP_ASKED = "purlis:signing-setup-asked";
 
-/** Asks `plane`'s window to open Set up signing for its waiting lanes. */
-export function askSigningSetUp(plane: string): void {
+/** What `SIGNING_SETUP_ASKED` carries: the project, and the forge setup is for where the lanes
+ *  wait on more than one (#5790). */
+export type SigningSetupAskedDetail = { plane: string; forge?: { kind: string; host: string } };
+
+/** Asks `plane`'s window to open Set up signing for its waiting lanes: those on `forge`, where
+ *  one is named (#5790), else every one. */
+export function askSigningSetUp(plane: string, forge?: { kind: string; host: string }): void {
   window.dispatchEvent(
-    new CustomEvent<{ plane: string }>(SIGNING_SETUP_ASKED, { detail: { plane } }),
+    new CustomEvent<SigningSetupAskedDetail>(SIGNING_SETUP_ASKED, { detail: { plane, forge } }),
   );
+}
+
+/** The forge a `set-up:<kind>:<host>` answer names (#5790), or none for a plain `set-up`. */
+export function setUpForgeOf(option: string): { kind: string; host: string } | undefined {
+  if (!option.startsWith("set-up:")) return undefined;
+  const rest = option.slice("set-up:".length);
+  const colon = rest.indexOf(":");
+  if (colon <= 0 || colon === rest.length - 1) return undefined;
+  return { kind: rest.slice(0, colon), host: rest.slice(colon + 1) };
 }
 
 /** The lane's key: its workspace, repo and piece. */

@@ -439,12 +439,17 @@ mod ssh {
     #[test]
     fn a_chats_ssh_leaves_through_its_socks_port_and_still_reads_the_persons_config() {
         let tmp = tempfile::tempdir().expect("a temp dir");
-        let route = SshRoute::write(tmp.path(), 41999).expect("written");
+        let route = SshRoute::write(
+            tmp.path(),
+            41999,
+            Some(std::path::Path::new("/opt/purlis/bin/purlis")),
+        )
+        .expect("written");
         let config = std::fs::read_to_string(route.config()).expect("its config");
         let lines: Vec<&str> = config.lines().map(str::trim).collect();
         let proxy = lines
             .iter()
-            .position(|l| *l == "ProxyCommand /usr/bin/nc -X 5 -x 127.0.0.1:41999 %h %p")
+            .position(|l| *l == "ProxyCommand '/opt/purlis/bin/purlis' _ssh-proxy 41999 %h %p")
             .expect("the SOCKS port, for every host");
         let include = lines
             .iter()
@@ -494,7 +499,7 @@ mod ssh {
     #[test]
     fn a_path_that_starts_with_the_route_finds_its_ssh_first() {
         let tmp = tempfile::tempdir().expect("a temp dir");
-        let route = SshRoute::write(tmp.path(), 1).expect("written");
+        let route = SshRoute::write(tmp.path(), 1, None).expect("written");
         assert_eq!(
             route.on_path("/opt/homebrew/bin:/usr/bin"),
             format!("{}:/opt/homebrew/bin:/usr/bin", route.bin().display())
@@ -539,12 +544,13 @@ mod claude_route {
     fn a_chats_route_is_its_own_folder_in_the_routes_folder_and_goes_with_it() {
         let root = tempfile::tempdir().expect("a project");
         let within = routes_folder(root.path());
-        let (one, route) = routed_in(&within, 41999).expect("written");
-        let (two, _) = routed_in(&within, 42000).expect("written");
+        let purlis = std::path::Path::new("/opt/purlis/bin/purlis");
+        let (one, route) = routed_in(&within, 41999, Some(purlis)).expect("written");
+        let (two, _) = routed_in(&within, 42000, None).expect("written");
         assert_ne!(one.path(), two.path(), "each chat its own");
         assert!(route.config().starts_with(one.path()), "{route:?}");
         let config = std::fs::read_to_string(route.config()).expect("its config");
-        assert!(config.contains("-x 127.0.0.1:41999 %h %p"), "{config}");
+        assert!(config.contains("_ssh-proxy 41999 %h %p"), "{config}");
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -568,7 +574,7 @@ mod claude_route {
         let within = routes_folder(root.path());
         std::fs::create_dir_all(within.parent().unwrap()).expect("the app's state");
         std::os::unix::fs::symlink(elsewhere.path(), &within).expect("a link");
-        assert!(routed_in(&within, 1).is_err());
+        assert!(routed_in(&within, 1, None).is_err());
         assert_eq!(
             std::fs::read_dir(elsewhere.path()).unwrap().count(),
             0,
@@ -592,7 +598,7 @@ mod claude_route {
     #[test]
     fn a_chats_route_folder_names_the_process_that_holds_it() {
         let root = tempfile::tempdir().expect("a project");
-        let (dir, _) = routed_in(&routes_folder(root.path()), 1).expect("written");
+        let (dir, _) = routed_in(&routes_folder(root.path()), 1, None).expect("written");
         let name = dir
             .path()
             .file_name()
@@ -614,10 +620,10 @@ mod claude_route {
     fn a_route_folder_whose_process_is_gone_is_swept_and_nothing_else_is() {
         let root = tempfile::tempdir().expect("a project");
         let within = routes_folder(root.path());
-        let (live, _) = routed_in(&within, 1).expect("written");
+        let (live, _) = routed_in(&within, 1, None).expect("written");
         let gone = a_gone_pid();
         let left = within.join(format!("chat-{gone}-a1b2c3"));
-        SshRoute::write(&left, 1).expect("a crashed chat's route");
+        SshRoute::write(&left, 1, None).expect("a crashed chat's route");
         let never = within.join(format!("chat-{}-zzzzzz", u32::MAX));
         std::fs::create_dir(&never).expect("made");
         let foreign = within.join("notes");
@@ -672,7 +678,7 @@ mod claude_route {
     #[test]
     fn its_env_file_puts_the_route_first_on_each_commands_path() {
         let root = tempfile::tempdir().expect("a project");
-        let (_dir, route) = routed_in(&routes_folder(root.path()), 1).expect("written");
+        let (_dir, route) = routed_in(&routes_folder(root.path()), 1, None).expect("written");
         let file = route.write_claude_env(None).expect("written");
         assert_eq!(file.file_name().unwrap(), CLAUDE_ENV_NAME);
         assert!(file.starts_with(route.config().parent().unwrap()));
@@ -699,7 +705,7 @@ mod claude_route {
     #[test]
     fn the_persona_tools_folder_goes_before_the_route_in_one_env_file() {
         let root = tempfile::tempdir().expect("a project");
-        let (_dir, route) = routed_in(&routes_folder(root.path()), 1).expect("written");
+        let (_dir, route) = routed_in(&routes_folder(root.path()), 1, None).expect("written");
         let tools = Path::new("/p/.purlis/app/tools/devops/it's bin");
         let file = route.write_claude_env(Some(tools)).expect("written");
         let text = std::fs::read_to_string(file).expect("its text");
@@ -722,9 +728,9 @@ mod claude_route {
     fn a_route_written_in_a_chats_temp_directory_is_not_one_a_claude_code_chat_takes() {
         let root = tempfile::tempdir().expect("a project");
         let tmp = tempfile::tempdir().expect("a chat's temp directory");
-        let route = SshRoute::write(tmp.path(), 1).expect("written");
+        let route = SshRoute::write(tmp.path(), 1, None).expect("written");
         assert!(!route.is_within(&routes_folder(root.path())));
-        let (_dir, kept) = routed_in(&routes_folder(root.path()), 1).expect("written");
+        let (_dir, kept) = routed_in(&routes_folder(root.path()), 1, None).expect("written");
         assert!(kept.is_within(&routes_folder(root.path())));
     }
 }

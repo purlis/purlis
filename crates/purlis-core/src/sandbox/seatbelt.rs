@@ -147,26 +147,8 @@ pub fn held_names(path: &Path) -> Vec<PathBuf> {
 /// replaced by one pointing elsewhere (measured), so that `path` no longer leads to what is denied;
 /// and a folder above the link could be moved away whole, with another put in its place.
 fn links_on_the_way(path: &Path) -> Vec<PathBuf> {
-    /// More than the kernel follows, so a loop of links ends here too.
-    const MOST: usize = 64;
-    let mut links: Vec<PathBuf> = Vec::new();
-    let mut looking = vec![path.to_path_buf()];
-    while let Some(next) = looking.pop() {
-        for above in next.ancestors() {
-            if links.len() >= MOST {
-                return links;
-            }
-            let (Some(folder), Ok(to)) = (above.parent(), std::fs::read_link(above)) else {
-                continue;
-            };
-            if !links.iter().any(|link| link == above) {
-                links.push(above.to_path_buf());
-                looking.push(folder.join(to));
-            }
-        }
-    }
     let mut held: Vec<PathBuf> = Vec::new();
-    for link in &links {
+    for (link, _) in hops(path) {
         for name in link.ancestors().filter(|name| name.parent().is_some()) {
             if !held.iter().any(|one| one == name) {
                 held.push(name.to_path_buf());
@@ -174,6 +156,48 @@ fn links_on_the_way(path: &Path) -> Vec<PathBuf> {
         }
     }
     held
+}
+
+/// **`path` as spelled through each link on the way to it** ([`links_on_the_way`]): where a
+/// folder above it is a link, `path` with that folder replaced by what it points at, and so on
+/// for each link found on the way. A sandbox that holds every folder above a denied path, as
+/// Claude Code's does, holds each link and the folder it is in only when the path is denied
+/// under each of these too.
+pub(crate) fn spelled_through_links(path: &Path) -> Vec<PathBuf> {
+    hops(path).into_iter().map(|(_, spelled)| spelled).collect()
+}
+
+/// Each link on the way to `path` by its own name, with `path` spelled through what it points at.
+fn hops(path: &Path) -> Vec<(PathBuf, PathBuf)> {
+    /// More than the kernel follows, so a loop of links ends here too.
+    const MOST: usize = 64;
+    let joined = |to: &Path, rest: &Path| {
+        if rest.as_os_str().is_empty() {
+            to.to_path_buf()
+        } else {
+            to.join(rest)
+        }
+    };
+    let mut hops: Vec<(PathBuf, PathBuf)> = Vec::new();
+    // Each place to look at, with what is below it on the way to `path`.
+    let mut looking = vec![(path.to_path_buf(), PathBuf::new())];
+    while let Some((next, rest)) = looking.pop() {
+        for above in next.ancestors() {
+            if hops.len() >= MOST {
+                return hops;
+            }
+            let (Some(folder), Ok(to)) = (above.parent(), std::fs::read_link(above)) else {
+                continue;
+            };
+            if !hops.iter().any(|(link, _)| link == above) {
+                let through = folder.join(to);
+                let below = joined(next.strip_prefix(above).unwrap_or(Path::new("")), &rest);
+                hops.push((above.to_path_buf(), joined(&through, &below)));
+                looking.push((through, below));
+            }
+        }
+    }
+    hops
 }
 
 /// The rules that deny `denial`: under each name it is held by, as itself and as its target
@@ -365,6 +389,8 @@ pub fn widen(own: &mut Own, widened: &super::Widened) -> Result<(), &'static str
     if widened.trust {
         own.after.push(TRUST.to_owned());
     }
+    own.after
+        .extend(own_terminal_only_rules(widened.own_terminal_only));
     // What a person allowed this chat (D-sock-1): each socket by the path the kernel names it
     // by, connect only, and each service by its whole name, never a prefix.
     for socket in &widened.sockets {
@@ -1013,6 +1039,22 @@ fn terminal_rules() -> String {
          (allow file-read-data file-write* {own})\n\
          (allow file-ioctl {own})\n"
     )
+}
+
+/// **The stricter terminal rule** a project turns on with `own-terminal-only`
+/// ([`super::OWN_TERMINAL_ONLY`]): every terminal of this Mac denied, whatever its mode, and the
+/// chat's own ([`OWN_TERMINAL`]) given back. Among the last rules of a profile, so no allow of a
+/// terminal before it (the [`DEVICES`] a chat writes, the terminals [`terminal_rules`] leaves it)
+/// opens one again. A chat then makes no terminal of its own: `/dev/ptmx` still opens, but the
+/// terminal it hands out does not. Seatbelt's rule only, as [`terminal_rules`] is.
+fn own_terminal_only_rules(on: bool) -> Vec<String> {
+    if !on || !cfg!(target_os = "macos") {
+        return Vec::new();
+    }
+    vec![
+        "(deny file-read-data file-write* file-ioctl (regex #\"^/dev/ttys[0-9]+$\"))".to_owned(),
+        format!("(allow file-read-data file-write* file-ioctl (literal {OWN_TERMINAL:?}))"),
+    ]
 }
 
 /// The variables that point a wrapped chat's traffic at charter's egress proxy. Both cases,
