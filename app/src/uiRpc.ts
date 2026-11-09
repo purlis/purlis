@@ -34,9 +34,10 @@ export const commands = {
 	artifactClose: __WINDOW_ONLY_RESULT,
 	artifactPinAsk: __WINDOW_ONLY_RESULT,
 	artifactPin: __WINDOW_ONLY_RESULT,
-	artifactUnpin: __WINDOW_ONLY_RESULT,
 	artifactReorder: __WINDOW_ONLY_RESULT,
 	artifactPreviewOpen: __WINDOW_ONLY_RESULT,
+	artifactRepin: __WINDOW_ONLY_RESULT,
+	artifactUnpin: __WINDOW_ONLY_RESULT,
 	artifactApprove: __WINDOW_ONLY_RESULT,
 	/**  What the window says about this launch and the session bus: nothing, on a launch with it. */
 	sessionBus: () => __TAURI_INVOKE<{
@@ -3082,6 +3083,8 @@ export type ArtifactAbout = {
 	pinned_by: string | null,
 	/**  Why it cannot be opened, when it cannot. */
 	missing: string | null,
+	/**  Its folder is over the size cap: the sentence naming both sizes. */
+	too_large: string | null,
 };
 
 /**
@@ -3157,6 +3160,8 @@ export type ArtifactPinShown = {
 	missing: string | null,
 	/**  Whether its workspace is LIVE: unpinning it takes it off everyone's bar (#5953). */
 	live: boolean,
+	/**  Its folder is over the size cap: the sentence naming both sizes. */
+	too_large: string | null,
 };
 
 /**

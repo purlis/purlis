@@ -15,6 +15,7 @@ const pin = (folder: string, name: string, icon = "chart"): ArtifactPinShown => 
   icon,
   missing: null,
   live: true,
+  too_large: null,
 });
 
 const PINS = [pin("backlog-state", "Backlog state"), pin("release", "Release", "rocket")];
@@ -65,6 +66,28 @@ describe("the activity bar's artifacts", () => {
     expect(second).toHaveAttribute("tabindex", "-1");
     await userEvent.keyboard("{ArrowDown}");
     expect(second).toHaveFocus();
+  });
+
+  it("greys a pin that is missing or too large, and its tip says why", () => {
+    const over = "'release' is 9.0 MB, over the 8.0 MB an artifact may be, so none of it is shown";
+    const gone = "there is no folder 'backlog-state' in artifacts/";
+    const { container } = render(
+      <ArtifactGroup
+        plane="p"
+        workspace="alpha"
+        pins={[
+          { ...pin("backlog-state", "Backlog state"), missing: gone },
+          { ...pin("release", "Release"), too_large: over },
+          pin("fine", "Fine"),
+        ]}
+        onOpen={() => {}}
+      />,
+    );
+    const marked = (folder: string) =>
+      container.querySelector(`[data-artifact="${folder}"]`)?.getAttribute("data-missing");
+    expect(marked("backlog-state")).toBe("true");
+    expect(marked("release")).toBe("true");
+    expect(marked("fine")).toBeNull();
   });
 
   it(`draws at most ${MOST_DRAWN}, and every one past them in show-more, none dropped (#5953)`, async () => {
@@ -171,7 +194,7 @@ describe("the activity bar's artifacts", () => {
     await waitFor(() =>
       expect(asked).toContainEqual([
         "artifact_unpin",
-        { plane: "/x/acme", workspace: "alpha", id: "id-release" },
+        { plane: "/x/acme", workspace: "alpha", folder: "release" },
       ]),
     );
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());

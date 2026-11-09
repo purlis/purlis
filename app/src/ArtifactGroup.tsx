@@ -118,6 +118,7 @@ export function ArtifactGroup({
             >
               {drawn.map((pin) => {
                 const chosen = pin.folder === current;
+                const unopenable = pin.missing ?? pin.too_large;
                 return (
                   <SortableTab key={pin.id} id={pin.id}>
                     {({ sortable, style }) => (
@@ -144,12 +145,12 @@ export function ArtifactGroup({
                             <ActivityItem
                               variant="bar"
                               selected={chosen}
-                              tip={pin.missing === null ? `Open ${pin.name}` : pin.missing}
+                              tip={unopenable === null ? `Open ${pin.name}` : unopenable}
                               aria-label={pin.name}
                               aria-current={chosen ? "page" : undefined}
                               aria-describedby={sortable.attributes["aria-describedby"]}
                               data-artifact={pin.folder}
-                              data-missing={pin.missing === null ? undefined : true}
+                              data-missing={unopenable === null ? undefined : true}
                               data-dragging={sortable.isDragging || undefined}
                               {...sortable.listeners}
                               onKeyDown={(event) => {
@@ -208,7 +209,7 @@ export function ArtifactGroup({
           trouble={trouble}
           onCancel={() => setUnpinning(undefined)}
           onUnpin={() => {
-            void commands.artifactUnpin(plane, workspace, unpinning.id).then(
+            void commands.artifactUnpin(plane, workspace, unpinning.folder).then(
               (said) => {
                 if (said.status === "error") setTrouble(said.error);
                 else setUnpinning(undefined);

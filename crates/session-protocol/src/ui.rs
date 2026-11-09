@@ -1093,13 +1093,17 @@ pub const WINDOW_ONLY: &[&str] = &[
     "artifact_place",
     "artifact_enter",
     "artifact_close",
-    // Managing pins from the window (#5953): only the person's press pins, unpins or reorders,
-    // and an .html file's private preview is a webview of the window's own.
+    // Managing pins from the window (#5953): only the person's press pins or reorders, and an
+    // .html file's private preview is a webview of the window's own.
     "artifact_pin_ask",
     "artifact_pin",
-    "artifact_unpin",
     "artifact_reorder",
     "artifact_preview_open",
+    // Repin and Unpin from a missing or too-large artifact's tab (#5954), and Unpin from
+    // workspace in a pin's menu (#5953): they write the workspace's pins file, which only the
+    // person in their own window does.
+    "artifact_repin",
+    "artifact_unpin",
     // Approving an artifact's script (#5959, ADR 0120 §4): the person's press in its bar, of
     // what their own window was served. No link may approve on their behalf.
     "artifact_approve",

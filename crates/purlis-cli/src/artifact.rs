@@ -51,7 +51,7 @@ pub enum ArtifactCommand {
         workspace: Option<String>,
     },
     /// The workspace's pinned artifacts in their order, each with its id, and any whose folder
-    /// cannot be opened here (not pulled yet, or removed) said so.
+    /// cannot be opened here (not pulled yet, removed, or over the size cap) said so.
     List {
         /// The workspace (default: the active one).
         #[arg(short = 'w', long = "workspace")]
@@ -170,6 +170,9 @@ pub fn run(here: &Here, command: ArtifactCommand) -> Result<Code, String> {
                 if let Some(why) = item.missing {
                     line.push_str(&format!("  (missing: {why})"));
                 }
+                if let Some(why) = item.too_large {
+                    line.push_str(&format!("  (too large: {why})"));
+                }
                 println!("{line}");
             }
             Ok(0)
@@ -231,10 +234,13 @@ fn standing_line(
     use artifact::approval::{self, Standing};
     let pin = &item.pin;
     let folder = purlis_core::personas::one_line(&pin.folder);
+    if let Some(why) = &item.too_large {
+        return format!("{folder}  too-large  -  {why}");
+    }
     let read = match &item.missing {
         Some(why) => Err(why.clone()),
         None => artifact::resolve(workspace, &pin.folder)
-            .and_then(|real| artifact::serve::Snapshot::read(&real)),
+            .and_then(|real| artifact::serve::Snapshot::read(&real, &pin.folder)),
     };
     let snapshot = match read {
         Ok(snapshot) => snapshot,

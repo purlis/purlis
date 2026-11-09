@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useId, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { ChartLine } from "lucide-react";
 import {
@@ -35,6 +35,10 @@ import { EmptyState } from "./ui/empty-state/EmptyState";
  *   it would otherwise cover.
  * - **A restored tab runs nothing until pressed** (`waits`): it draws the bar and an Open
  *   button, and makes no webview and reads nothing of the page's until the person presses it.
+ * - **An artifact that cannot be opened says why, with its way out** (#5954): a missing one
+ *   names the path its page belongs at, a too-large one both sizes, and each offers Repin
+ *   (pinned again as it is, so its folder is checked anew) and Unpin (its files stay). A
+ *   refused Repin says why and leaves the state as it was. Nothing of its page is read.
  * - **The keyboard**: the frame is a Tab stop named by the artifact's name. Enter puts the
  *   keyboard in the page; Esc there brings it back to the frame, and F6 moves on to the next
  *   region as it does anywhere in the window.
@@ -61,9 +65,23 @@ export function ArtifactTab({
   /** The person pressed Open on a tab that waits. */
   onAsk: () => void;
 }) {
-  const about = useAbout(plane, workspace, folder);
+  // Bumped by a repin, so the core is asked again what it now finds.
+  const [reread, setReread] = useState(0);
+  const [unpinned, setUnpinned] = useState(false);
+  const about = useAbout(plane, workspace, folder, reread);
   const name = about.said?.name ?? title;
   const missing = about.said?.missing ?? about.failed;
+  const tooLarge = about.said?.too_large ?? null;
+  const remedies = (
+    <Remedies
+      plane={plane}
+      workspace={workspace}
+      folder={folder}
+      name={name}
+      onRepinned={() => setReread((n) => n + 1)}
+      onUnpinned={() => setUnpinned(true)}
+    />
+  );
   const [opened, setOpened] = useState<ArtifactOpened | null>(null);
   // Each change of either loads the page again: the old webview closes before the new one opens.
   const approvals = useApprovalsHeard(workspace, folder);
@@ -80,13 +98,31 @@ export function ArtifactTab({
         <span className="artifact-bar-by">{pinnedBy(about.said)}</span>
         {opened === null ? null : <ScriptStanding opened={opened} />}
       </header>
-      {missing !== undefined && missing !== null ? (
+      {unpinned ? (
         <EmptyState
-          headline={`${name} cannot be opened`}
-          body={missing}
+          headline={`${name} is unpinned`}
+          body={`Its files stay in artifacts/${folder}/. Close this tab, or pin it again from the command line.`}
           mark={ChartLine}
           role="status"
+          testid="artifact-unpinned"
+        />
+      ) : missing !== undefined && missing !== null ? (
+        <EmptyState
+          headline={`${name} is missing`}
+          body={`${sentence(missing)}. Its page belongs at artifacts/${folder}/index.html in this workspace: repin it once it is there, or unpin it.`}
+          mark={ChartLine}
+          role="status"
+          action={remedies}
           testid="artifact-missing"
+        />
+      ) : tooLarge !== null ? (
+        <EmptyState
+          headline={`${name} is too large to open`}
+          body={`${sentence(tooLarge)}. Make its folder smaller and repin it, or unpin it.`}
+          mark={ChartLine}
+          role="status"
+          action={remedies}
+          testid="artifact-too-large"
         />
       ) : waits ? (
         <EmptyState
@@ -104,6 +140,7 @@ export function ArtifactTab({
             opens={`${plane}\u0000${workspace}\u0000${folder}`}
             open={(first) => commands.artifactOpen(plane, workspace, folder, first)}
             onOpened={setOpened}
+            wayOut={remedies}
           />
         </div>
       )}
@@ -195,6 +232,67 @@ function useApprovalsHeard(workspace: string, folder: string): number {
   return heard;
 }
 
+/** A sentence the core said, as the window starts one: its first letter capital. */
+function sentence(said: string): string {
+  return said.charAt(0).toUpperCase() + said.slice(1);
+}
+
+/**
+ * **Repin and Unpin**, the way out of an artifact that cannot be opened. A refusal is said
+ * beside them, as an alert, and nothing else changes.
+ */
+function Remedies({
+  plane,
+  workspace,
+  folder,
+  name,
+  onRepinned,
+  onUnpinned,
+}: {
+  plane: PlaneId;
+  workspace: string;
+  folder: string;
+  name: string;
+  onRepinned: () => void;
+  onUnpinned: () => void;
+}) {
+  const [refused, setRefused] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const act = (verb: "repin" | "unpin") => {
+    setBusy(true);
+    setRefused(null);
+    const ask = verb === "repin" ? commands.artifactRepin : commands.artifactUnpin;
+    ask(plane, workspace, folder).then(
+      (answer) => {
+        setBusy(false);
+        if (answer.status === "error")
+          setRefused(`purlis could not ${verb} ${name}: ${answer.error}`);
+        else if (verb === "repin") onRepinned();
+        else onUnpinned();
+      },
+      (why: unknown) => {
+        setBusy(false);
+        setRefused(`purlis could not ${verb} ${name}: ${String(why)}`);
+      },
+    );
+  };
+  return (
+    <>
+      <Button variant="primary" isDisabled={busy} onPress={() => act("repin")}>
+        Repin
+      </Button>
+      <Button isDisabled={busy} onPress={() => act("unpin")}>
+        Unpin
+      </Button>
+      {refused !== null && (
+        <p role="alert" className="artifact-refused">
+          {refused}
+        </p>
+      )}
+    </>
+  );
+}
+
 /** What the bar says of who pinned it. */
 function pinnedBy(about: ArtifactAbout | undefined): string {
   if (about === undefined) return "";
@@ -208,9 +306,10 @@ function useAbout(
   plane: PlaneId,
   workspace: string,
   folder: string,
+  reread: number,
 ): { said?: ArtifactAbout; failed?: string } {
   // Kept with the artifact it is of, so another's is never drawn for this one.
-  const of = `${plane}\u0000${workspace}\u0000${folder}`;
+  const of = `${plane}\u0000${workspace}\u0000${folder}\u0000${reread}`;
   const [read, setRead] = useState<{ of: string; said?: ArtifactAbout; failed?: string }>({
     of: "",
   });
@@ -267,6 +366,7 @@ export function ArtifactFrame({
   opens,
   open,
   onOpened = () => {},
+  wayOut,
 }: {
   name: string;
   /** What `open` opens, as a key: the webview is made again only when it changes. */
@@ -277,6 +377,8 @@ export function ArtifactFrame({
   ) => Promise<{ status: "ok"; data: ArtifactOpened } | { status: "error"; error: string }>;
   /** Where the page it opened stands, or nothing once it is gone. */
   onOpened?: (opened: ArtifactOpened | null) => void;
+  /** Repin and Unpin, for a pinned page the core would not open (#5954); a preview has none. */
+  wayOut?: ReactNode;
 }) {
   // The latest `open`, read when the webview is made: a new function for the same page opens
   // nothing new.
@@ -389,9 +491,10 @@ export function ArtifactFrame({
     return (
       <EmptyState
         headline={`${name} cannot be opened`}
-        body={failed}
+        body={sentence(failed)}
         mark={ChartLine}
         role="status"
+        action={wayOut}
         testid="artifact-missing"
       />
     );
