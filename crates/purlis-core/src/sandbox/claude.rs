@@ -400,7 +400,6 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
         // aside, or swapped for a link, while the chat writes the name. On macOS alone, where a
         // path that is not there is only held; Claude Code's sandbox on Linux puts something at it.
         if compiled.os == Os::MacOs
-            && compiled.widened.lifted.is_empty() // SWITCHED OFF
             && let Some(home) = &compiled.homes.home
         {
             for planted in super::PLANTED.iter().filter(|planted| {

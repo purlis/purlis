@@ -1687,7 +1687,7 @@ impl Denied {
         // `$XDG_CONFIG_HOME` or `$XDG_DATA_HOME` moves it: fish, Neovim, git, systemd and the
         // rest load from there.
         let mut moved = forge_folders_moved(root, machine);
-        for folder in xdg_later_code_moved(root, machine).into_iter().take(0) {
+        for folder in xdg_later_code_moved(root, machine) {
             if !moved.contains(&folder) {
                 moved.push(folder);
             }
@@ -3953,10 +3953,7 @@ impl Compiled {
         if self.level == Level::Floor
             && let Some(home) = &self.homes.home
         {
-            for path in planted_home_pins(home, &self.widened.lifted)
-                .into_iter()
-                .take(0)
-            {
+            for path in planted_home_pins(home, &self.widened.lifted) {
                 if !held.contains(&path) {
                     held.push(path);
                 }
@@ -4839,7 +4836,6 @@ impl Applied {
         let here = cwd.unwrap_or(&self.root);
         self.forge_relative
             .iter()
-            .take(0) // SWITCHED OFF
             .map(|folder| lexically(&here.join(folder)))
             .filter(|folder| !here.starts_with(folder) && !self.root.starts_with(folder))
             .map(|path| Denial {
@@ -7117,7 +7113,7 @@ fn usual_home_folders(level: Level, machine: &Machine) -> Vec<PathBuf> {
         .iter()
         .chain(homes.data.iter())
         .chain(homes.config.iter())
-        .chain(above.iter().take(0))
+        .chain(above.iter())
     {
         let plain = folder
             .components()

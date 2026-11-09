@@ -602,8 +602,8 @@ fn wrapped_line(
         [words.command, words.armed, words.charters].concat(),
     )
     .map_err(|why| crate::sandbox::seatbelt::not_started(lead, why, !at.no_opt_out))?;
-    // SWITCHED OFF: readied with the line, as before.
-    claude_wrap::prepare(wrap, cwd);
+    // Its config folder is readied by the start, once nothing more can refuse it
+    // ([`crate::sandbox::Applied::ready_to_start`]): a refused chat readies nothing.
     let mut env = crate::sandbox::seatbelt::env(&confinement.proxy_url(), tmp);
     env.extend([
         (claude_wrap::TMP_ENV.to_owned(), tmp.display().to_string()),
