@@ -64,22 +64,39 @@ describe("the Inbox's Notices", () => {
       </NoticeList>,
     );
 
-    // Two the status line counts, of three it lists, and none says something needs fixing.
-    expect(onCount).toHaveBeenLastCalledWith(2, 3, 0);
+    // Two the status line counts, of three it lists, and none asks for the Notices icon's dot.
+    expect(onCount).toHaveBeenLastCalledWith(2, 3, undefined);
   });
 
-  it("counts what says something needs fixing, for the Notices icon's dot (#5645)", () => {
+  it("dots the Notices icon red while something listed needs fixing, over a decision (#6004)", () => {
     const onCount = vi.fn();
     render(
       <NoticeList onCount={onCount}>
         {news("pin-dormant:able")}
+        <Notice cause="report-draft:one" tone="attention" onDismiss={() => undefined}>
+          a decision
+        </Notice>
         <Notice cause="window-trouble" tone="trouble" onDismiss={() => undefined}>
           trouble
         </Notice>
       </NoticeList>,
     );
 
-    expect(onCount).toHaveBeenLastCalledWith(2, 2, 1);
+    expect(onCount).toHaveBeenLastCalledWith(3, 3, "trouble");
+  });
+
+  it("dots the Notices icon amber while a decision that stops no chat is listed (#6004)", () => {
+    const onCount = vi.fn();
+    render(
+      <NoticeList onCount={onCount}>
+        {news("pin-dormant:able")}
+        <Notice cause="report-draft:one" tone="attention" onDismiss={() => undefined}>
+          a decision
+        </Notice>
+      </NoticeList>,
+    );
+
+    expect(onCount).toHaveBeenLastCalledWith(2, 2, "attention");
   });
 
   it("says when an answer to the person's own press arrives, and not for one already listed", () => {

@@ -375,6 +375,8 @@ export function TitleBarSwitch({
     return {
       count: on.length,
       kind: mostUrgentOf([...on.map((one) => one.kind), ...(asking ? (["needs"] as const) : [])]),
+      // Something on it not seen yet: its "new" pip (#6004).
+      fresh: notices?.fresh?.has(workspace) === true,
     };
   };
   /** Shows `workspace`'s card, the keyboard going into it as it comes: a dot's press, or a
@@ -433,6 +435,7 @@ export function TitleBarSwitch({
     return (
       <ChipSlot
         working={workingIn(workspace) > 0}
+        fresh={shows?.fresh === true}
         // A pin is carried by its slot, so its dot and its mark go with it, by a translation only:
         // no chip changes size, and a neighbour moves only to make the drop place (#3128).
         ref={dragged?.sortable.setNodeRef}
@@ -444,6 +447,7 @@ export function TitleBarSwitch({
             workspace={workspace === OUTSIDE ? OUTSIDE_TITLE : workspace}
             count={shows.count}
             kind={shows.kind}
+            fresh={shows.fresh}
             // The house is no strip's: its dot is a Tab stop of its own. In the strip, a dot is
             // the stop once the arrows land on it (#5912).
             stop={workspace === OUTSIDE || isStop({ dot: workspace })}

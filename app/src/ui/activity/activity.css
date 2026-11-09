@@ -214,7 +214,8 @@
 
 /* **A Notice needs fixing** (ADR 0119, #5645): a dot in the danger colour where a count would
    be, with no number, ringed in the bar's ground as a count is. */
-[data-scope="activity"][data-part="count"][data-tone="danger"] {
+[data-scope="activity"][data-part="count"][data-tone="danger"],
+[data-scope="activity"][data-part="count"][data-tone="warning"] {
   inset-block-start: var(--space-2);
   inset-inline-end: var(--space-2);
   min-inline-size: 8px;
@@ -222,6 +223,12 @@
   block-size: 8px;
   padding: 0;
   background-color: var(--danger-base);
+}
+
+/* **A Notice asks a decision that stops no chat** (ADR 0121 decision 3, #6004): the same dot in
+   the waiting amber, the colour a chip's warning dot and the status bar's waiting tone are. */
+[data-scope="activity"][data-part="count"][data-tone="warning"] {
+  background-color: var(--state-waiting);
 }
 
 /* **Something New in its view** (#6002, ADR 0121 decision 10): a pip in the accent colour at the

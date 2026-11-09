@@ -141,7 +141,7 @@ export const sayingSomething = () =>
  * is in front (D-LB-1).
  */
 export async function openTheInbox() {
-  await userEvent.click(await screen.findByRole("button", { name: /^Notices: / }));
+  await userEvent.click(await screen.findByTestId("status-alerts"));
 }
 
 /**

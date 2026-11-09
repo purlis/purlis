@@ -16,10 +16,11 @@ import {
 import type { Said } from "./actions";
 import type { Shown } from "./bindings";
 import { ActionResultNotice } from "./ActionResultNotice";
-import { passing, trackOf, type KeptResult } from "./keptResults";
+import { passing, type KeptResult } from "./keptResults";
 import { Notice, type NoticeAction } from "./Notice";
 import { aboutOf, kindOf, needsOn, placeOf, type Chip, type Place } from "./noticePlace";
 import { CARD_STOP } from "./regionCycle";
+import { noticeSeenKey } from "./seenRows";
 import type { SettingsLink } from "./settings/links";
 import { HungPopover } from "./ui/popover/Popover";
 import { mostUrgentOf, type NoticeKind } from "./ui/titlebar/TitleBarWorkspaces";
@@ -28,8 +29,9 @@ import { mostUrgentOf, type NoticeKind } from "./ui/titlebar/TitleBarWorkspaces"
  * **A workspace's notices, hung from its chip** (#3648, spec #3647): a view onto the one store of
  * results the window keeps (`keptResults.ts`), beside the Notices centre's Results, which lists
  * the same ones. So dismissing one here drops it there and the other way round: there is one
- * dismissed state, the kept list's. The card is up while a new notice comes to its chip, until a
- * press elsewhere hides it; a hidden one leaves the chip's dot, whose press shows it again.
+ * dismissed state, the kept list's. **A chip shows a dot, never a card that comes by itself** (ADR
+ * 0121 decision 1, #6004): its notices wait behind the dot, listed in the Notices centre as New,
+ * and the dot's press shows the card; a press elsewhere hides it again.
  */
 
 /**
@@ -105,6 +107,27 @@ const dismissOne = (one: ChipNotice, does: Pick<ChipNotices, "dismiss">) => {
   else does.dismiss(one.id);
 };
 
+/** **The cause `one` is listed by in the Notices centre**: a standing line's own, or the cause
+ *  of a result's line under Results (`ResultsGroup`), so the card and the centre say one. */
+export const chipNoticeCause = (one: ChipNotice): string =>
+  "standing" in one ? one.standing.cause : `result:${one.said.from}:${one.id}`;
+
+/**
+ * **The places holding something New** (ADR 0121 decision 10, #6004): each chip, or
+ * {@link AT_STATUS}, with a notice on it the person has not seen, by the key its line in the
+ * Notices centre is seen by. A line under way ({@link PASSING}) is in no list, so it is never New.
+ */
+export function freshOn(
+  on: ChipNotices["on"],
+  isNew: (key: string) => boolean,
+): ReadonlySet<string> {
+  const fresh = new Set<string>();
+  for (const [place, notices] of on)
+    if (notices.some((one) => one.id !== PASSING && isNew(noticeSeenKey(chipNoticeCause(one)))))
+      fresh.add(place);
+  return fresh;
+}
+
 /** What the title bar and the status bar draw of the notices hung from them. */
 export type ChipNotices = {
   /** The notices hung from each chip, and from the status bar's Notices item ({@link AT_STATUS},
@@ -112,6 +135,9 @@ export type ChipNotices = {
   on: ReadonlyMap<string, readonly ChipNotice[]>;
   /** The chip whose card is up, or {@link AT_STATUS}, if one is. */
   open: string | undefined;
+  /** **The places with something New on them** ({@link freshOn}, #6004): each draws a "new"
+   *  pip until it is seen. None where the seen record is not read. */
+  fresh?: ReadonlySet<string>;
   /** **The chips a chat needs the person on** (#3652): each workspace a chat asks to have
    *  removed, by the asking chat's session. Its ✋ dot stays until the registry no longer lists
    *  the question, whatever card is up. */
@@ -138,9 +164,8 @@ export const placeOfSaid = (said: Said, chips: readonly Chip[]): Place =>
 
 /**
  * **The chips' notices**, worked out from what the window keeps: each result kept in `plane`
- * whose place is a chip's card, newest first, and which card is up. A new result placed on a
- * chip brings its card up, worked out during the render as `useKeptResults` keeps it, so no
- * frame draws it hidden first.
+ * whose place is a chip's card, newest first, and which card is up: only the one a dot's press
+ * asked for (#6004).
  */
 export function useChipNotices({
   said,
@@ -163,7 +188,7 @@ export function useChipNotices({
   asks?: readonly Shown[];
   /** Brings a chat of the project in front forward. */
   bring?: (session: number) => void;
-  /** The newest result said, which brings its chip's card up when it is placed on one. */
+  /** The newest result said: a line under way stands on the status bar's card while it is. */
   said: Said | undefined;
   kept: readonly KeptResult[];
   plane: string | undefined;
@@ -226,101 +251,24 @@ export function useChipNotices({
     return by;
   }, [kept, plane, chips, standing, status]);
   const needs = useMemo(() => needsOn(asks, chips), [asks, chips]);
-  // **Which card is up, and in which project** (#3648's review): a card is up only in the
-  // project whose result brought it up, and a project brought to the front brings none up.
-  const [up, setUp] = useState<{
-    open: string | undefined;
-    on: string | undefined;
-    seen: Said | undefined;
-    in: string | undefined;
-    /** The card's chip has been drawn since it was wanted. */
-    chipped: boolean;
-    /** Every track a line was said on, by project (`trackOf`). */
-    tracks: ReadonlySet<string>;
-  }>(() => ({
+  // **Which card is up, and in which project** (#3648's review): only one the person asked for,
+  // by its dot's press (`show`), and only in the project it was asked in. **Nothing said brings
+  // a card up by itself** (ADR 0121 decision 1, #6004): a new result, a failure, a project's
+  // result and a line under way each stand behind a dot, listed in the Notices centre as New.
+  const [up, setUp] = useState<{ open: string | undefined; on: string | undefined }>({
     open: undefined,
-    on: plane,
-    seen: said,
-    in: plane,
-    chipped: false,
-    tracks: said?.track === undefined ? new Set() : new Set([trackOf(said, plane)]),
-  }));
-  let open = up.open;
-  let openIn = up.on;
-  let chipped = up.chipped;
-  let tracks = up.tracks;
-  // **A line on a track already said on** (#3649's review): a clone's count going on, or its
-  // success, updates its notice in place and leaves the cards as the person left them, up or
-  // hidden behind a dot, whatever was said between its lines, and when its notice was
-  // dismissed. Decided by the track, never by the last thing said. A failure on it brings its
-  // card up, since it asks for the person.
-  const fresh = said !== undefined && said !== up.seen && plane === up.in ? said : undefined;
-  const track = fresh?.track === undefined ? undefined : trackOf(fresh, plane);
-  const follows = track !== undefined && tracks.has(track) && fresh?.refused !== true;
-  if (track !== undefined && !tracks.has(track)) tracks = new Set([...tracks, track]);
-  if (said !== up.seen || plane !== up.in) {
-    // Nothing said is no new result: the window lets its newest result go as it moves to
-    // another chat (a ✋'s press does, #3652), and the card up then stays up.
-    if (
-      !follows &&
-      said !== undefined &&
-      (plane === up.in || (up.in === undefined && said !== up.seen))
-    ) {
-      // A new result in the project in front. By what it is about, not by the chips drawn now:
-      // a workspace just made is said before the title bar has heard of its chip, and its card
-      // comes up as the chip does. A result about no workspace takes the card down.
-      // A project's or the app's brings the status bar's card up (#3653). A result said with no
-      // project in front (a repo taken in from the opener) stays up on the first project that
-      // comes.
-      const about = aboutOf(said);
-      open =
-        "workspace" in about
-          ? about.workspace
-          : "arrived" in about
-            ? about.arrived
-            : "project" in about
-              ? AT_STATUS
-              : undefined;
-      openIn = plane;
-      chipped = false;
-    } else if (up.in === undefined && up.on === undefined && plane !== undefined) {
-      // The window's first project to the front: what the window said with none stays up on it.
-      // Only a card brought up with no project in front: one another project brought up stays
-      // that project's (#3653's review, round 2).
-      openIn = plane;
-    }
-    // Another project in front: what it said while it was behind stays behind its dots.
-  }
-  // **A card wanted on a chip that has gone is no longer wanted** (#3648's review): once its
-  // chip was drawn and then is not (unpinned, and another workspace in front), its notice is
-  // behind its dot when the chip comes back, never a card coming up unasked. Nor is a card on a
-  // drawn chip with nothing left on it (#3649's review): its notices dismissed, a later line kept
-  // on it again stays behind its dot.
+    on: undefined,
+  });
+  // **A card on a chip that has gone, or with nothing left on it, is no longer wanted** (#3648's
+  // review, #3649's review): its chip back, or a line kept on it again, stays behind its dot.
   // The status bar's Notices item is always drawn.
-  const drawn =
-    open !== undefined && (open === AT_STATUS || chips.some((one) => one.workspace === open));
-  if (open !== undefined && openIn === plane) {
-    if (drawn && !on.has(open)) {
-      open = undefined;
-      chipped = false;
-    } else if (drawn) chipped = true;
-    else if (chipped) {
-      open = undefined;
-      chipped = false;
-    }
-  }
+  const asked = up.on === plane ? up.open : undefined;
   if (
-    open !== up.open ||
-    openIn !== up.on ||
-    said !== up.seen ||
-    plane !== up.in ||
-    chipped !== up.chipped ||
-    tracks !== up.tracks
+    asked !== undefined &&
+    (!on.has(asked) || (asked !== AT_STATUS && !chips.some((one) => one.workspace === asked)))
   )
-    setUp({ open, on: openIn, seen: said, in: plane, chipped, tracks });
-  const shown = openIn === plane ? open : undefined;
-  // A card with nothing left on it is down.
-  const cardUp = shown !== undefined && on.has(shown) ? shown : undefined;
+    setUp({ open: undefined, on: undefined });
+  const cardUp = asked !== undefined && on.has(asked) ? asked : undefined;
   const lastBringBack = useRef(bringBack);
   useLayoutEffect(() => {
     lastBringBack.current = bringBack;
@@ -328,11 +276,11 @@ export function useChipNotices({
   const show = useCallback(
     (workspace: string) => {
       lastBringBack.current?.(workspace);
-      setUp((was) => ({ ...was, open: workspace, on: plane, chipped: true }));
+      setUp({ open: workspace, on: plane });
     },
     [plane],
   );
-  const hide = useCallback(() => setUp((was) => ({ ...was, open: undefined })), []);
+  const hide = useCallback(() => setUp({ open: undefined, on: undefined }), []);
   // A line under way is put away until the next thing is said; a result kept is dropped.
   const dismiss = useCallback(
     (id: number) => (id === PASSING ? setPutAway(said) : drop(id)),
@@ -536,7 +484,7 @@ export function ChipCard({
           ) : (
             <ActionResultNotice
               key={one.id}
-              cause={`result:${one.said.from}:${one.id}`}
+              cause={chipNoticeCause(one)}
               said={one.said}
               onClose={() => dismissOne(one, does)}
               onSettings={does.onSettings}

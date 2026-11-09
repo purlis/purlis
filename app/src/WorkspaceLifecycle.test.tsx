@@ -25,7 +25,7 @@ import {
   workspaceChips,
   workspaceInFront,
 } from "./test-strips";
-import { findOnCard, findResult } from "./actionResult.testkit";
+import { findOnCard, findResult, openChipCard } from "./actionResult.testkit";
 import { keepUnsaved, unsavedNow, type UnsavedWork } from "./unsavedWork";
 
 /**
@@ -768,8 +768,9 @@ describe("a plane with no workspace yet", () => {
   });
 });
 
-/** The card the new workspace's ready notice hangs from its chip on (#3648). */
-const readyCard = () => screen.findByRole("region", { name: "Notices for gamma" });
+/** The card the new workspace's ready notice hangs from its chip on (#3648), opened by its dot's
+ *  press: no card comes by itself (#6004). */
+const readyCard = () => openChipCard("gamma");
 
 describe("picking a new workspace's repos (ADR 0055)", () => {
   async function createWithRepos(repos: string[]) {

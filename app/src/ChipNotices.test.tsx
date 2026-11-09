@@ -4,15 +4,23 @@
 import { describe, expect, it } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { OUTSIDE, type Said } from "./actions";
-import { AT_STATUS, mostUrgent, PASSING, useChipNotices } from "./ChipNotices";
+import {
+  AT_STATUS,
+  chipNoticeCause,
+  freshOn,
+  mostUrgent,
+  PASSING,
+  useChipNotices,
+} from "./ChipNotices";
 import { reposCloned, reposCloning, reposNotCloned } from "./actionResult";
 import type { KeptResult } from "./keptResults";
 import type { Chip } from "./noticePlace";
 
 /**
- * **Which chip's card is up** (#3648's review): a card comes up for a new result about its
- * workspace, in the project it was said in, and never in another project, nor for a result
- * placed anywhere else.
+ * **Which chip's card is up** (#3648; ADR 0121 decision 1, #6004): a card is up only once the
+ * person asks for it, by its dot's press, in the project it was asked in. Nothing said ever brings
+ * one up by itself: a new result, a failure, a project's result and a line under way are each a
+ * dot, listed in the Notices centre as New.
  */
 
 const A = "/p/a";
@@ -52,52 +60,73 @@ function hook(first: Props) {
   );
 }
 
-describe("a chip's card comes up", () => {
-  it("for a new result about its workspace, in the project it was said in", () => {
+describe("a chip's card never comes up by itself (#6004)", () => {
+  it("for a new result about its workspace: the result is on the chip, behind its dot", () => {
     const docs = made("docs");
     const { result, rerender } = hook({ said: undefined, kept: [], plane: A });
     rerender({ said: docs, kept: [{ id: 1, said: docs, plane: A }], plane: A });
-    expect(result.current.open).toBe("docs");
+    expect(result.current.on.get("docs")?.map((one) => one.id)).toEqual([1]);
+    expect(result.current.open).toBeUndefined();
   });
 
-  it("never in another project brought to the front, whatever that project keeps", () => {
+  it("for a failure either, which the dot says with its ▲", () => {
+    const failed = reposNotCloned("docs", [{ repo: "api", said: "No." }], () => undefined, 1);
+    const { result, rerender } = hook({ said: undefined, kept: [], plane: A });
+    rerender({ said: failed, kept: [{ id: 1, said: failed, plane: A }], plane: A });
+    expect(mostUrgent(result.current.on.get("docs") ?? [])).toBe("warning");
+    expect(result.current.open).toBeUndefined();
+  });
+
+  it("comes up when its dot is pressed, in that project alone", () => {
     const docs = made("docs");
-    const behind = made("docs");
     const kept: KeptResult[] = [
       { id: 1, said: docs, plane: A },
-      { id: 2, said: behind, plane: B },
+      { id: 2, said: made("docs"), plane: B },
     ];
-    const { result, rerender } = hook({ said: undefined, kept: [], plane: A });
-    rerender({ said: docs, kept, plane: A });
+    const { result, rerender } = hook({ said: docs, kept, plane: A });
+    act(() => result.current.show("docs"));
     expect(result.current.open).toBe("docs");
-    // B in front, its newest result the one it said while behind, with no press anywhere: its
-    // docs notice stays behind its dot.
-    rerender({ said: behind, kept, plane: B });
-    expect(result.current.on.get("docs")).toHaveLength(1);
+    // B in front: its docs notice stays behind its dot.
+    rerender({ said: docs, kept, plane: B });
     expect(result.current.open).toBeUndefined();
-  });
-
-  it("goes down when the newest result is a project's, whose card is the status bar's", () => {
-    const docs = made("docs");
-    const kept: KeptResult[] = [{ id: 1, said: docs, plane: A }];
-    const { result, rerender } = hook({ said: undefined, kept: [], plane: A });
+    // Back on A, the card the person asked for there is up again.
     rerender({ said: docs, kept, plane: A });
     expect(result.current.open).toBe("docs");
-    rerender({ said: refused, kept: [{ id: 2, said: refused, plane: A }, ...kept], plane: A });
-    expect(result.current.open).toBe(AT_STATUS);
   });
 
-  it("never for a workspace that lost its chip and came back (#3648's review)", () => {
+  it("goes down when its chip goes, and stays down when the chip comes back (#3648's review)", () => {
     const docs = made("docs");
     const kept: KeptResult[] = [{ id: 1, said: docs, plane: A }];
-    const { result, rerender } = hook({ said: undefined, kept: [], plane: A });
-    rerender({ said: docs, kept, plane: A });
+    const { result, rerender } = hook({ said: docs, kept, plane: A });
+    act(() => result.current.show("docs"));
     expect(result.current.open).toBe("docs");
-    // docs unpinned and not in front: no chip, so no card, and none wanted.
     rerender({ said: docs, kept, plane: A, chips: [CHIPS[0]] });
     expect(result.current.open).toBeUndefined();
-    // Much later its chip is back: its notice is behind its dot, and no card comes up unasked.
     rerender({ said: docs, kept, plane: A, chips: CHIPS });
+    expect(result.current.open).toBeUndefined();
+    expect(result.current.on.get("docs")).toHaveLength(1);
+  });
+
+  it("goes down once nothing is left on it, and a later result stays behind the dot", () => {
+    const docs = made("docs");
+    const { result, rerender } = hook({
+      said: docs,
+      kept: [{ id: 1, said: docs, plane: A }],
+      plane: A,
+    });
+    act(() => result.current.show("docs"));
+    rerender({ said: docs, kept: [], plane: A });
+    expect(result.current.open).toBeUndefined();
+    const again = made("docs");
+    rerender({ said: again, kept: [{ id: 2, said: again, plane: A }], plane: A });
+    expect(result.current.open).toBeUndefined();
+  });
+
+  it("hides on a press elsewhere, dismissing nothing", () => {
+    const docs = made("docs");
+    const { result } = hook({ said: docs, kept: [{ id: 1, said: docs, plane: A }], plane: A });
+    act(() => result.current.show("docs"));
+    act(() => result.current.hide());
     expect(result.current.open).toBeUndefined();
     expect(result.current.on.get("docs")).toHaveLength(1);
   });
@@ -135,73 +164,25 @@ describe("a clone's notice updated in place (#3649)", () => {
   const cloning = reposCloning("docs", ["api", "web"], 0, 1);
   const halfway = reposCloning("docs", ["api", "web"], 1, 1);
   const cloned = reposCloned("docs", ["api", "web"], 1);
-  const failed = reposNotCloned("docs", [{ repo: "api", said: "No access." }], () => undefined, 1);
   const line = (said: Said, id = 1): KeptResult => ({ id, said, plane: A });
 
-  it("leaves a card the person hid behind its dot as it counts and as it lands", () => {
-    const { result, rerender } = hook({ said: undefined, kept: [], plane: A });
-    rerender({ said: cloning, kept: [line(cloning)], plane: A });
-    expect(result.current.open).toBe("docs");
-    act(() => result.current.hide());
+  it("keeps a card the person opened up as it counts and as it lands", () => {
+    const { result, rerender } = hook({ said: cloning, kept: [line(cloning)], plane: A });
+    act(() => result.current.show("docs"));
     rerender({ said: halfway, kept: [line(halfway)], plane: A });
-    expect(result.current.open).toBeUndefined();
-    rerender({ said: cloned, kept: [line(cloned)], plane: A });
-    expect(result.current.open).toBeUndefined();
-  });
-
-  it("keeps a card up that is up", () => {
-    const { result, rerender } = hook({ said: undefined, kept: [], plane: A });
-    rerender({ said: cloning, kept: [line(cloning)], plane: A });
+    expect(result.current.open).toBe("docs");
     rerender({ said: cloned, kept: [line(cloned)], plane: A });
     expect(result.current.open).toBe("docs");
+    expect(result.current.on.get("docs")?.map((one) => one.id)).toEqual([1]);
   });
 
-  it("brings the card back up for a failure, which asks for the person", () => {
+  it("brings no card up as it counts, lands or fails (#6004)", () => {
+    const failed = reposNotCloned("docs", [{ repo: "api", said: "No." }], () => undefined, 1);
     const { result, rerender } = hook({ said: undefined, kept: [], plane: A });
-    rerender({ said: cloning, kept: [line(cloning)], plane: A });
-    act(() => result.current.hide());
-    rerender({ said: failed, kept: [line(failed)], plane: A });
-    expect(result.current.open).toBe("docs");
-    expect(result.current.on.get("docs")?.map((one) => one.kind)).toEqual(["warning"]);
-  });
-
-  it("leaves another workspace's card up when a result is said between two of its lines", () => {
-    const chips: Chip[] = [...CHIPS, { workspace: "delta", look: "pinned" }];
-    const delta = made("delta");
-    const { result, rerender } = hook({ said: undefined, kept: [], plane: A, chips });
-    rerender({ said: cloning, kept: [line(cloning)], plane: A, chips });
-    expect(result.current.open).toBe("docs");
-    const both = [line(delta, 2), line(cloning)];
-    rerender({ said: delta, kept: both, plane: A, chips });
-    expect(result.current.open).toBe("delta");
-    rerender({ said: halfway, kept: [line(delta, 2), line(halfway)], plane: A, chips });
-    expect(result.current.open).toBe("delta");
-  });
-
-  it("stays hidden when a refusal is said between two of its lines", () => {
-    const { result, rerender } = hook({ said: undefined, kept: [], plane: A });
-    rerender({ said: cloning, kept: [line(cloning)], plane: A });
-    act(() => result.current.hide());
-    const kept = [line(refused, 2), line(cloning)];
-    rerender({ said: refused, kept, plane: A });
-    rerender({ said: halfway, kept: [line(refused, 2), line(halfway)], plane: A });
-    // The clone's card stays hidden; the refusal's is the status bar's, up (#3653).
-    expect(result.current.open).toBe(AT_STATUS);
-  });
-
-  it("stays down once its counting line is dismissed, as it counts on and as it lands", () => {
-    const { result, rerender } = hook({ said: undefined, kept: [], plane: A });
-    rerender({ said: cloning, kept: [line(cloning)], plane: A });
-    expect(result.current.open).toBe("docs");
-    // Dismissed: the kept list no longer holds it, and keeps no more of its counting.
-    rerender({ said: cloning, kept: [], plane: A });
-    expect(result.current.open).toBeUndefined();
-    rerender({ said: halfway, kept: [], plane: A });
-    expect(result.current.open).toBeUndefined();
-    // Its result is kept again, behind the dot.
-    rerender({ said: cloned, kept: [line(cloned, 2)], plane: A });
-    expect(result.current.open).toBeUndefined();
-    expect(result.current.on.get("docs")).toHaveLength(1);
+    for (const said of [cloning, halfway, failed]) {
+      rerender({ said, kept: [line(said)], plane: A });
+      expect(result.current.open).toBeUndefined();
+    }
   });
 });
 
@@ -318,7 +299,7 @@ describe("a workspace's findings on its chip (#3650)", () => {
 });
 
 describe("the status bar's card (#3653)", () => {
-  it("holds the project's results, newest first, and comes up for a new one", () => {
+  it("holds the project's results, newest first, behind its dot until it is pressed (#6004)", () => {
     const older: Said = { from: "workspace.pin", refused: true, words: "Older." };
     const kept: KeptResult[] = [
       { id: 2, said: refused, plane: A },
@@ -327,13 +308,15 @@ describe("the status bar's card (#3653)", () => {
     ];
     const { result, rerender } = hook({ said: undefined, kept: [], plane: A });
     rerender({ said: refused, kept, plane: A });
-    expect(result.current.open).toBe(AT_STATUS);
+    expect(result.current.open).toBeUndefined();
     expect(result.current.on.get(AT_STATUS)?.map((one) => one.id)).toEqual([2, 1]);
     expect(result.current.on.get(AT_STATUS)?.map((one) => one.kind)).toEqual([
       "warning",
       "warning",
     ]);
     expect(result.current.on.get("docs")?.map((one) => one.id)).toEqual([3]);
+    act(() => result.current.show(AT_STATUS));
+    expect(result.current.open).toBe(AT_STATUS);
   });
 
   it("is a project's alone: another project's results stay behind its own dot", () => {
@@ -342,66 +325,7 @@ describe("the status bar's card (#3653)", () => {
     expect(result.current.on.get(AT_STATUS)).toBeUndefined();
   });
 
-  it("keeps up what the window said with no project in front once its first project comes", () => {
-    const took: Said = { from: "open_repo", refused: false, words: "GitLab was added." };
-    const kept: KeptResult[] = [{ id: 1, said: took, plane: undefined }];
-    const { result, rerender } = renderHook(
-      ({ said, plane }: { said: Said | undefined; plane: string | undefined }) =>
-        useChipNotices({
-          said,
-          kept: said === undefined ? [] : kept,
-          plane,
-          chips: CHIPS,
-          drop: () => undefined,
-          onSettings: () => undefined,
-        }),
-      {
-        initialProps: {
-          said: undefined as Said | undefined,
-          plane: undefined as string | undefined,
-        },
-      },
-    );
-    // Said on the opener, with no project in front; then the project it opened comes.
-    rerender({ said: took, plane: undefined });
-    rerender({ said: took, plane: A });
-    expect(result.current.open).toBe(AT_STATUS);
-    expect(result.current.on.get(AT_STATUS)?.map((one) => one.id)).toEqual([1]);
-  });
-
-  it("never comes up in another project reached through the opener (#3653's review, round 2)", () => {
-    const kept: KeptResult[] = [
-      { id: 1, said: refused, plane: A },
-      { id: 2, said: refused, plane: B },
-    ];
-    const { result, rerender } = renderHook(
-      ({ said, plane }: { said: Said | undefined; plane: string | undefined }) =>
-        useChipNotices({
-          said,
-          kept,
-          plane,
-          chips: CHIPS,
-          drop: () => undefined,
-          onSettings: () => undefined,
-        }),
-      {
-        initialProps: {
-          said: undefined as Said | undefined,
-          plane: A as string | undefined,
-        },
-      },
-    );
-    // A's refusal brings A's status card up.
-    rerender({ said: refused, plane: A });
-    expect(result.current.open).toBe(AT_STATUS);
-    // The opener, then B, with nothing said: B brings no card up.
-    rerender({ said: refused, plane: undefined });
-    rerender({ said: refused, plane: B });
-    expect(result.current.on.get(AT_STATUS)?.map((one) => one.id)).toEqual([2]);
-    expect(result.current.open).toBeUndefined();
-  });
-
-  it("stays down on the first project when it was closed on the opener (#3653's review)", () => {
+  it("lists what the window said with no project in front on its first project, behind the dot", () => {
     const took: Said = { from: "open_repo", refused: false, words: "GitLab was added." };
     const kept: KeptResult[] = [{ id: 1, said: took, plane: undefined }];
     const { result, rerender } = renderHook(
@@ -422,8 +346,6 @@ describe("the status bar's card (#3653)", () => {
       },
     );
     rerender({ said: took, plane: undefined });
-    // Closed on the opener's page, as its × there does.
-    act(() => result.current.hide());
     rerender({ said: took, plane: A });
     expect(result.current.open).toBeUndefined();
     expect(result.current.on.get(AT_STATUS)?.map((one) => one.id)).toEqual([1]);
@@ -433,15 +355,35 @@ describe("the status bar's card (#3653)", () => {
     const late: Said = { from: "answer.late.plane_pins", refused: true, words: "Still waiting." };
     const { result, rerender } = hook({ said: undefined, kept: [], plane: A });
     rerender({ said: late, kept: [], plane: A });
-    expect(result.current.open).toBe(AT_STATUS);
+    expect(result.current.open).toBeUndefined();
     expect(result.current.on.get(AT_STATUS)?.map((one) => one.id)).toEqual([PASSING]);
     act(() => result.current.dismiss(PASSING));
     expect(result.current.on.get(AT_STATUS)).toBeUndefined();
-    expect(result.current.open).toBeUndefined();
-    // The result that comes next is kept, and comes up.
     const answered: Said = { from: "workspace.pin", refused: false, words: "Pinned." };
     rerender({ said: answered, kept: [{ id: 1, said: answered, plane: A }], plane: A });
-    expect(result.current.open).toBe(AT_STATUS);
+    expect(result.current.open).toBeUndefined();
     expect(result.current.on.get(AT_STATUS)?.map((one) => one.id)).toEqual([1]);
+  });
+});
+
+describe("a chip's 'new' pip (ADR 0121 decision 10, #6004)", () => {
+  const docs = made("docs");
+  const kept: KeptResult[] = [
+    { id: 1, said: docs, plane: A },
+    { id: 2, said: refused, plane: A },
+  ];
+
+  it("marks each place holding a notice the person has not seen, by the Notices centre's key", () => {
+    const { result } = hook({ said: undefined, kept, plane: A });
+    const fresh = freshOn(result.current.on, (key) => key !== "notice:result:workspace.pin:2");
+    expect([...fresh]).toEqual(["docs"]);
+    expect(chipNoticeCause({ id: 1, said: docs, kind: "info" })).toBe("result:workspace.create:1");
+  });
+
+  it("marks none once each is seen, and none for a line under way, which no list holds", () => {
+    const late: Said = { from: "answer.late.plane_pins", refused: true, words: "Still waiting." };
+    const { result } = hook({ said: late, kept: [], plane: A });
+    expect(result.current.on.get(AT_STATUS)?.map((one) => one.id)).toEqual([PASSING]);
+    expect([...freshOn(result.current.on, () => true)]).toEqual([]);
   });
 });
