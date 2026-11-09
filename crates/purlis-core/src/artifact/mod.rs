@@ -25,6 +25,7 @@ pub mod offers;
 pub mod pins;
 pub mod regenerate;
 pub mod script;
+pub mod search;
 pub mod serve;
 
 use std::io;

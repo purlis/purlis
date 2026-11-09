@@ -133,6 +133,11 @@ export const commands = {
 	 */
 	artifactLinkOpen: (label: string, always: boolean) => typedError<null, string>(__TAURI_INVOKE("artifact_link_open", { label, always })),
 	/**
+	 *  **The pinned artifacts of project `plane`, in every workspace, that say any word of
+	 *  `query`**, best first: at most [`MOST`].
+	 */
+	artifactSearch: (plane: PlaneId, query: string) => typedError<ArtifactFound[], string>(__TAURI_INVOKE("artifact_search", { plane, query })),
+	/**
 	 *  **Discuss** the artifact pinned from `folder` in `workspace`: a chat opened with the page's
 	 *  quote referenced and one line about it typed, unsent.
 	 */
@@ -6102,6 +6107,16 @@ export type ArtifactAbout = {
 	too_large: string | null,
 	/**  When its data was last updated, when that can be read. */
 	fresh: ArtifactFresh | null,
+};
+
+/**  One artifact found, as the palette draws it and the window opens it. */
+export type ArtifactFound = {
+	/**  The workspace it is pinned to. */
+	workspace: string,
+	/**  Its folder in the workspace's `artifacts/`: with the workspace, what its tab is keyed by. */
+	folder: string,
+	/**  The pin's name. */
+	name: string,
 };
 
 /**  **When an artifact's data was last updated** (#5955, `purlis_core::artifact::fresh`). */

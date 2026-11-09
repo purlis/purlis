@@ -8520,9 +8520,15 @@ semantics below.
   `-shm`):
   - `item`: one row per indexed file (path and the source folder it was listed from, both
     relative to the root; kind, one of `workspace`, `persona`, `shared`, `refs`, `sessions`,
-    `todos`; owner, the workspace or persona, `_shared` for the shared store and `""` for the
+    `todos`, `artifacts`; owner, the workspace or persona, `_shared` for the shared store and `""` for the
     root's sessions; audience, `project` for every row until V4's audience settings land; its
-    title after the shape scanner; its recorded date; size, modification time and content hash);
+    title after the shape scanner; its recorded date; size, modification time and content hash).
+    An `artifacts` row is one pinned artifact of a workspace (ADR 0120, #5968), listed from its
+    `artifacts/` and pathed at its folder's `index.html`: only a pin whose folder resolves inside
+    that `artifacts/` with no link out, read by the walk its tab is served from (no link
+    followed, nothing over the size cap). Its title is the pin's name, its text what the
+    template's pages show (never a script's or style's text, and never a data file, which is
+    each person's own), it has no date, and its hash is of the two;
   - `words`: an FTS5 contentless table (`content=''`, `contentless_delete=1`, `detail=full`, the
     `ascii` tokeniser with `_` a token character, prefix indexes of 2 and 3) of each row's title,
     text and reach. Title and text are handed in as purlis's own word split, the one the file scan
