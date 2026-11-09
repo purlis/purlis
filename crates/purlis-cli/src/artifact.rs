@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! `purlis artifact pin|unpin|list|reorder|approve-status`: the command line of
+//! `purlis artifact pin|unpin|list|search|reorder|approve-status`: the command line of
 //! [`purlis_core::artifact`] (ADR 0120, #5950). A pin is committed with the workspace, so a
 //! LIVE workspace's pins reach every teammate with the plane's next save.
 //!
@@ -57,6 +57,21 @@ pub enum ArtifactCommand {
         #[arg(short = 'w', long = "workspace")]
         workspace: Option<String>,
     },
+    /// Find pinned artifacts by what their pages say: each one whose name or pages hold a word
+    /// starting with a word of the query, best first, as `<workspace>/<folder>  <name>`. Read
+    /// from the project's search index, or from the files when there is none. A page's data
+    /// files are each person's own and are never searched.
+    Search {
+        /// The words to find.
+        #[arg(required = true)]
+        query: Vec<String>,
+        /// The workspace (default: the active one).
+        #[arg(short = 'w', long = "workspace", conflicts_with = "all")]
+        workspace: Option<String>,
+        /// Every workspace's artifacts.
+        #[arg(long)]
+        all: bool,
+    },
     /// Put the named pins first, in the order given; every other pin follows in its order.
     Reorder {
         /// Pins by id or folder, first to last.
@@ -92,6 +107,87 @@ pub enum ArtifactCommand {
         #[arg(short = 'w', long = "workspace")]
         workspace: Option<String>,
     },
+    /// Check a page before anyone is asked to approve it: that its declaration
+    /// (<script type="application/json" id="purlis">) is one purlis reads, at an API version it
+    /// answers, naming only queries the catalogue has, and that every query its pages and
+    /// scripts call is one it declared. Needs no plane. Exits 1 when anything would be refused.
+    Check {
+        /// The artifact's folder, holding its index.html.
+        folder: std::path::PathBuf,
+    },
+    /// Print purlis-page.d.ts, the TypeScript types of a page's `purlis.port`, generated from
+    /// this purlis's query catalogue: what a page asks, and each query's parameters and data.
+    Types,
+    /// Print purlis-page-mock.js, a mock of `purlis.port` that answers from
+    /// purlis-fixtures.json beside the page, so a page can be built in any browser outside
+    /// purlis. In purlis it does nothing.
+    Mock,
+}
+
+impl ArtifactCommand {
+    /// Whether it is one of a page author's commands, which read no plane (#5975).
+    pub fn is_authors(&self) -> bool {
+        matches!(
+            self,
+            ArtifactCommand::Check { .. } | ArtifactCommand::Types | ArtifactCommand::Mock
+        )
+    }
+}
+
+/// **A page author's commands** (ADR 0120 §7, #5975), answered with no plane: `check`, `types`
+/// and `mock`. Any other command is not an author's and answers 2.
+pub fn authors(command: &ArtifactCommand) -> Code {
+    use purlis_core::artifact::{check, kit};
+    match command {
+        ArtifactCommand::Types => {
+            print!("{}", kit::types());
+            0
+        }
+        ArtifactCommand::Mock => {
+            print!("{}", kit::MOCK);
+            0
+        }
+        ArtifactCommand::Check { folder } => {
+            let name = folder.display().to_string();
+            let checked = match check::check(folder, &name) {
+                Ok(checked) => checked,
+                Err(why) => {
+                    voice::err(format!("{name}: {why}."));
+                    return 1;
+                }
+            };
+            if let Some(declared) = &checked.declared {
+                for listed in artifact::calls::listed(&declared.queries) {
+                    let mut line = format!("  {} · {}", listed.id, listed.scope.as_str());
+                    for widens in &listed.widens {
+                        line.push_str(&format!(" · widens {widens}"));
+                    }
+                    println!("{line}");
+                }
+            }
+            for warning in &checked.warnings {
+                voice::warn(warning.clone());
+            }
+            for why in &checked.refused {
+                voice::err(why.clone());
+            }
+            if !checked.refused.is_empty() {
+                return 1;
+            }
+            voice::ok(match &checked.declared {
+                Some(declared) => format!(
+                    "{name} declares api {}: {} data file(s) and {} query(ies), and calls \
+                     only what it declares.",
+                    declared.api,
+                    declared.data.len(),
+                    declared.queries.len()
+                ),
+                None => format!("{name} declares nothing: it reads no data and calls no query."),
+            });
+            0
+        }
+        _ => 2,
+    }
 }
 
 pub fn run(here: &Here, command: ArtifactCommand) -> Result<Code, String> {
@@ -192,6 +288,38 @@ pub fn run(here: &Here, command: ArtifactCommand) -> Result<Code, String> {
             }
             Ok(0)
         }
+        ArtifactCommand::Search {
+            query,
+            workspace,
+            all,
+        } => {
+            let query = query.join(" ");
+            let ws = if all {
+                None
+            } else {
+                Some(here.workspace(workspace.as_deref())?)
+            };
+            let found = artifact::search::find(root, ws.as_ref().map(|ws| ws.name()), &query).found;
+            if found.is_empty() {
+                let in_where = ws.map_or_else(
+                    || "any workspace".to_string(),
+                    |ws| format!("'{}'", ws.name()),
+                );
+                voice::info(format!(
+                    "No artifact pinned to {in_where} says '{}'.",
+                    purlis_core::personas::one_line(&query)
+                ));
+            }
+            for one in found {
+                println!(
+                    "{}/{}  {}",
+                    one.workspace,
+                    purlis_core::personas::one_line(&one.folder),
+                    purlis_core::personas::one_line(&one.name)
+                );
+            }
+            Ok(0)
+        }
         ArtifactCommand::Reorder { pins, workspace } => {
             let ws = here.workspace(workspace.as_deref())?;
             match artifact::reorder(root, ws.dir(), &pins) {
@@ -242,6 +370,9 @@ pub fn run(here: &Here, command: ArtifactCommand) -> Result<Code, String> {
             check,
             workspace,
         } => regenerate(here, &pin, check, workspace.as_deref()),
+        authors_command @ (ArtifactCommand::Check { .. }
+        | ArtifactCommand::Types
+        | ArtifactCommand::Mock) => Ok(authors(&authors_command)),
     }
 }
 
