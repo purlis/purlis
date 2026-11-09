@@ -304,7 +304,10 @@ mod tests {
     #[test]
     fn a_page_without_script_opens_without_asking() {
         let here = Here::new();
-        here.write("index.html", r#"<script type="application/json">{}</script>"#);
+        here.write(
+            "index.html",
+            r#"<script type="application/json">{}</script>"#,
+        );
         assert_eq!(here.standing(PIN), Standing::ScriptFree);
         assert!(!Standing::ScriptFree.asks());
         assert!(!Standing::ScriptFree.runs());

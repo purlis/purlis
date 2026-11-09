@@ -33,11 +33,12 @@ export const commands = {
 	 */
 	artifactAbout: (plane: PlaneId, workspace: string, folder: string) => typedError<ArtifactAbout, string>(__TAURI_INVOKE("artifact_about", { plane, workspace, folder })),
 	/**
-	 *  **Opens a pinned artifact over its tab's frame**: the folder read once, a webview of its own
-	 *  made at `place` in the asking window, and its label answered. Nothing is focused: the
-	 *  keyboard stays where the person has it.
+	 *  **Opens a pinned artifact over its tab's frame**: the folder read once, where it stands on
+	 *  this machine read with it (its script runs only when approved), a webview of its own made
+	 *  at `place` in the asking window, and its label answered. Nothing is focused: the keyboard
+	 *  stays where the person has it.
 	 */
-	artifactOpen: (plane: PlaneId, workspace: string, folder: string, place: ArtifactPlace) => typedError<string, string>(__TAURI_INVOKE("artifact_open", { plane, workspace, folder, place })),
+	artifactOpen: (plane: PlaneId, workspace: string, folder: string, place: ArtifactPlace) => typedError<ArtifactOpened, string>(__TAURI_INVOKE("artifact_open", { plane, workspace, folder, place })),
 	/**
 	 *  **Moves an artifact's webview to its frame's place**, or hides it (`None`): its tab went
 	 *  behind another, or something purlis draws is over its frame.
@@ -53,6 +54,14 @@ export const commands = {
 	artifactEnter: (label: string) => typedError<null, string>(__TAURI_INVOKE("artifact_enter", { label })),
 	/**  **Closes an artifact's webview**: its tab closed, or its frame went. */
 	artifactClose: (label: string) => typedError<null, string>(__TAURI_INVOKE("artifact_close", { label })),
+	/**
+	 *  **The person's approval of an artifact's script, pressed in its tab's bar** (ADR 0120 §4):
+	 *  of exactly the pin and the template webview `label` was served, read here and never taken
+	 *  from the window, so a change since it was served is not approved by this press. Every window
+	 *  of the plane hears it ([`APPROVALS_CHANGED`]) and loads the page again, now with its script.
+	 *  Window-only: nothing a link serves, and no command a chat runs, can approve.
+	 */
+	artifactApprove: (label: string) => typedError<null, string>(__TAURI_INVOKE("artifact_approve", { label })),
 	/**  What the window says about this launch and the session bus: nothing, on a launch with it. */
 	sessionBus: () => __TAURI_INVOKE<{
 	/**  The line it draws: why there is no bus, and what is off for the run. */
@@ -5951,6 +5960,21 @@ export type ArtifactAbout = {
 	pinned_by: string | null,
 	/**  Why it cannot be opened, when it cannot. */
 	missing: string | null,
+};
+
+/**
+ *  What [`artifact_open`] answers: the webview's label, and where the artifact stands on this
+ *  machine, which its tab's bar says.
+ */
+export type ArtifactOpened = {
+	label: string,
+	/**
+	 *  `script-free`, `approved`, `new`, `changed`, `pin-changed` or `not-here`
+	 *  ([`Standing::as_str`]).
+	 */
+	standing: string,
+	/**  Who made the pin it now has, for `pin-changed`, from the plane's history. */
+	changed_by: string | null,
 };
 
 /**  One pin, as the activity bar's artifact group draws it. */

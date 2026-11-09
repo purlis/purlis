@@ -410,7 +410,8 @@ fn two_people_pinning_at_once_merge_into_one_pins_file() {
 // ---------------------------------------------------------------------------------------------
 
 /// A page with script: an inline handler and a script file beside it.
-const SCRIPTED: &str = "<title>Live</title><button onclick=go()>Go</button><script src=app.js></script>";
+const SCRIPTED: &str =
+    "<title>Live</title><button onclick=go()>Go</button><script src=app.js></script>";
 
 impl Plane {
     fn config(&self) -> PathBuf {
@@ -508,7 +509,10 @@ fn an_approval_holds_through_new_data_and_any_change_to_the_template_asks_again(
     std::fs::write(live.join("app.js"), "draw(); send()").unwrap();
     let changed = plane.standing("live");
     assert!(changed.starts_with("live  changed  "), "{changed}");
-    assert!(changed.contains("changed since you approved it"), "{changed}");
+    assert!(
+        changed.contains("changed since you approved it"),
+        "{changed}"
+    );
 
     // Approved again, then a new file planted beside it: asked again.
     plane.approve_as_the_bar_does("live");
@@ -539,7 +543,13 @@ fn a_pin_whose_command_changed_asks_again_and_names_who_changed_it() {
     let out = Command::new("git")
         .arg("-C")
         .arg(&alpha)
-        .args(["-c", "commit.gpgsign=false", "commit", "-qm", "repoint live"])
+        .args([
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-qm",
+            "repoint live",
+        ])
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .envs(IDENTITY)
         .env("GIT_AUTHOR_NAME", "Grace")

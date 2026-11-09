@@ -9008,3 +9008,33 @@ nav.piece-files-head {
   flex: 1 1 auto;
   min-height: 0;
 }
+
+/* **Where the page's script stands, on purlis's bar** (#5959, ADR 0120 §4). */
+.artifact-bar-standing {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-quiet);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* **The frame's edge, which the page cannot draw** (#5959, ADR 0120 §3): around the frame the
+   page's webview is laid over, so it stays outside the page. Its colour is where the page's
+   script stands: none or not run, asking, or approved and running. */
+.artifact-edge {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  border: 2px solid var(--border-subtle);
+}
+
+.artifact-edge[data-standing="asks"] {
+  border-color: var(--state-waiting);
+}
+
+.artifact-edge[data-standing="runs"] {
+  border-color: var(--accent-base);
+}

@@ -25,10 +25,10 @@
 
 use std::cell::Cell;
 
+use html5ever::tokenizer::states::RawKind;
 use html5ever::tokenizer::{
     BufferQueue, TagKind, Token, TokenSink, TokenSinkResult, Tokenizer, TokenizerOpts,
 };
-use html5ever::tokenizer::states::RawKind;
 
 /// Whether `key`, a path in an artifact's folder, is one of its pages, which can hold script.
 pub fn is_page(key: &str) -> bool {
@@ -115,7 +115,10 @@ fn runs_as_script(kind: Option<&str>) -> bool {
         .to_ascii_lowercase();
     kind.is_empty()
         || JAVASCRIPT_TYPES.contains(&essence.as_str())
-        || matches!(essence.as_str(), "module" | "importmap" | "speculationrules")
+        || matches!(
+            essence.as_str(),
+            "module" | "importmap" | "speculationrules"
+        )
 }
 
 /// HTML's JavaScript MIME type essences.

@@ -244,12 +244,8 @@ fn standing_line(
     let meaning = match standing {
         Standing::ScriptFree => "opens without asking: no script".to_owned(),
         Standing::Approved => "approved on this machine: its script runs".to_owned(),
-        Standing::New => {
-            "asks before its script runs: never approved on this machine".to_owned()
-        }
-        Standing::Changed => {
-            "asks again: its template changed since you approved it".to_owned()
-        }
+        Standing::New => "asks before its script runs: never approved on this machine".to_owned(),
+        Standing::Changed => "asks again: its template changed since you approved it".to_owned(),
         Standing::PinChanged => match artifact::pinned_by(workspace, &pin.id) {
             Some(who) => format!(
                 "asks again: pin changed by {who} (its folder or command) since you approved it"
