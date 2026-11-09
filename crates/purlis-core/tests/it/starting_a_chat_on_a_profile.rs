@@ -1124,12 +1124,12 @@ fn at_the_floor_on_linux_the_wrap_s_own_program_is_never_written_by_the_chat() {
     );
 }
 
-/// #2342: on Linux every sandboxed chat's start records purlis's own program, checked and held
-/// as the wrap's is, for a brokered `secret exec` to run its command in: a Claude Code chat's
-/// too, whose own sandbox is its harness's. At the floor it is held unwritten.
+/// ADR 0067 as amended 2026-11-10: on Linux a sandboxed Claude Code chat runs inside purlis's
+/// own wrap, on a profile for sandboxed chats only. On a profile for every chat it is refused
+/// before anything runs, with the way out, and the project waits for one (the window's Ask).
 #[cfg(target_os = "linux")]
 #[test]
-fn on_linux_a_claude_code_chat_s_start_holds_purlis_s_own_program_for_its_brokered_runs() {
+fn on_linux_a_sandboxed_claude_code_chat_on_a_profile_for_every_chat_is_refused_with_the_way_out() {
     purlis_core::unsteered!();
     let plane = Plane::new();
     let outside = stand_in::NoChatWrites::new();
@@ -1139,21 +1139,18 @@ fn on_linux_a_claude_code_chat_s_start_holds_purlis_s_own_program_for_its_broker
         "#!/bin/sh\necho '2.1.288 (Claude Code)'\n",
     );
     plane.profile("claude", &claude, "");
-    let ready = start::ready(&plane.start("work"), plane.root()).expect("it starts");
-    let applied = ready.sandbox.expect("at the floor");
-    let this = std::env::current_exe()
-        .expect("this program")
-        .canonicalize()
-        .expect("its real path");
-    assert_eq!(applied.confines().wrap.as_deref(), Some(this.as_path()));
+    let refused = start::ready(&plane.start("work"), plane.root())
+        .err()
+        .expect("refused");
+    assert!(refused.contains("nothing was started"), "{refused}");
     assert!(
-        applied
-            .confines()
-            .held
-            .iter()
-            .any(|held| this.starts_with(held)),
-        "{:?}",
-        applied.confines().held
+        refused.contains("Claude Code needs a sandbox-only profile here"),
+        "{refused}"
+    );
+    let waits = purlis_core::profilestore::sandbox_only::waiting(plane.root(), &[]);
+    assert!(
+        waits.iter().any(|wait| wait.harness == Harness::ClaudeCode),
+        "{waits:?}"
     );
 }
 
@@ -1470,11 +1467,13 @@ fn on_a_machine_that_cannot_sandbox_the_picker_and_the_start_say_the_same_first_
         os: purlis_core::sandbox::Os::Linux,
         ..a_mac()
     };
-    let without_socat = |program: &str| program == "bwrap";
+    // A kernel without Landlock: purlis's wrap, which holds a sandboxed Claude Code chat on
+    // Linux, cannot apply.
+    let without_landlock = |_: &str| false;
     let ran = std::sync::Mutex::new(Vec::new());
 
-    let purlis_core::sandbox::Ahead::Refused { why, install } =
-        picker_says_on(&plane, &ran, &linux, &without_socat)
+    let purlis_core::sandbox::Ahead::Refused { why, .. } =
+        picker_says_on(&plane, &ran, &linux, &without_landlock)
     else {
         panic!("refused");
     };
@@ -1483,15 +1482,11 @@ fn on_a_machine_that_cannot_sandbox_the_picker_and_the_start_say_the_same_first_
         plane.root(),
         &purlis_core::harness_declaration::read(plane.root()),
         &linux,
-        &without_socat,
+        &without_landlock,
     );
 
-    assert!(
-        why.contains("socat is not installed"),
-        "the machine first: {why}"
-    );
+    assert!(why.contains("Landlock"), "the machine first: {why}");
     assert_eq!(started.err().as_deref(), Some(why.as_str()));
-    assert!(install.is_none() || install.as_deref().is_some_and(|it| it.contains("socat")));
     assert!(ran.lock().unwrap().is_empty(), "nothing was run");
 }
 
