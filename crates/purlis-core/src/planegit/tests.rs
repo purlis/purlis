@@ -3601,7 +3601,7 @@ fn reading_where_unsaved_work_sits_never_writes_the_index_a_save_needs() {
 // --------------------------------------------------------------------------------------- //
 
 #[test]
-fn two_machines_appending_to_one_log_and_one_memory_index_save_with_the_log_unioned_and_the_index_rebuilt() {
+fn two_machines_appending_to_one_log_and_index_union_the_log_and_rebuild_the_index() {
     let fixture = Fixture::plane();
     // The rules `init` writes, committed as a plane carries them.
     crate::scaffold::ensure_gitattributes(&fixture.root.join(".gitattributes")).unwrap();
