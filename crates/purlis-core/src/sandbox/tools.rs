@@ -2019,6 +2019,9 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     // flavour, by its first part.)
     "mysqld",
     "mariadbd",
+    // runs the command its arguments name, as the user they name (#5990's third review)
+    "mysqld_safe_helper",
+    "mariadbd-safe-helper",
     "mysqlrouter",
     "mysqlrouter_plugin_info",
     "mysqlrouter_passwd",

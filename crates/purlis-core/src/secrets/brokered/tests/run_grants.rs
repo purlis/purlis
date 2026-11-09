@@ -2756,7 +2756,7 @@ fn every_wsrep_sst_script_runs_a_transfer_program_so_it_is_offered_no_run_grant(
     }
 }
 
-/// The server itself and the router, by every name they go by: `mysqld -b` names the folder
+/// The server itself, its safe helper and the router, by every name they go by: `mysqld -b` names the folder
 /// its plugins load from and `--early-plugin-load` a plugin, the router's configuration names
 /// its plugins' folder, and the keyring migration loads components from a folder it is told
 /// (round 2 of #5990's review).
@@ -2767,6 +2767,9 @@ fn the_server_the_router_and_the_keyring_migration_load_code_they_are_told_so_ar
         "mysqld",
         "mysqld-debug",
         "mariadbd",
+        // runs the command its arguments name, as the user they name (round 3 of #5990's review)
+        "mysqld_safe_helper",
+        "mariadbd-safe-helper",
         "mysqlrouter",
         "mysqlrouter_plugin_info",
         "mysqlrouter_passwd",
