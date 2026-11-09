@@ -192,7 +192,7 @@ fn a_save_takes_a_programs_table_and_refuses_what_is_wrong_inside_it_or_an_unkno
 fn only_codex_warns_and_only_at_its_own_number() {
     let dir = plane("[skills.budget.claude]\nchars = 90000\n", "{}");
     assert_eq!(warnings(dir.path(), None), Vec::<String>::new());
-    let dir = plane("[skills.budget.codex]\nchars = 9000\n", "{}");
+    let dir = plane("[skills.budget.codex]\nchars = 10000\n", "{}");
     let said = warnings(dir.path(), None);
     assert_eq!(said.len(), 1, "{said:?}");
     assert!(said[0].starts_with("Codex"), "{said:?}");
@@ -435,7 +435,7 @@ fn a_preview_warns_past_codexs_limit_and_never_refuses() {
     let dir = with_skills("", "{}", 2);
     let wanted = Set {
         skills: None,
-        chars: Some(9_000),
+        chars: Some(10_000),
     };
     let said = preview(None, dir.path(), None, None, Harness::Codex, wanted);
     assert!(

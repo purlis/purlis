@@ -232,21 +232,16 @@ function ReadersLine({ readers }: { readers: RemoteReaders | "asking" | null }) 
 }
 
 /**
- * **The LIVE mark** (charter-app#301): on a workspace's tab, the Explorer's row for it and the
- * Saving tab. Named for a screen reader, and titled for a pointer, because a glyph alone says
- * nothing about what LIVE means.
- *
- * **On a tab it is a small dot** (`dot`, qw337): the broadcast glyph was the largest mark on a
- * tab that already wore three others, for the one fact about a workspace that changes least.
- * A dot in the accent colour, ringed so it is not taken for the workspace's own colour mark
- * before the name, with the same name and tooltip. A row of the Explorer and the Saving tab
- * have the room, and keep the glyph.
+ * **The LIVE mark** (charter-app#301): on the Explorer's row for the workspace itself. Named for
+ * a screen reader, and titled for a pointer, because a glyph alone says nothing about what LIVE
+ * means. The title bar's chips wear none: the chip's menu, the Saving tab and the workspace's
+ * settings already say it (ADR 0054, amended 2026-11-09, #5920).
  */
-export function LiveMark({ dot }: { dot?: boolean }) {
+export function LiveMark() {
   return (
     <Tooltip tip="Live: published with the project">
-      <span className={dot ? "live-mark live-dot" : "live-mark"} role="img" aria-label="Live">
-        {!dot && <Radio aria-hidden="true" />}
+      <span className="live-mark" role="img" aria-label="Live">
+        <Radio aria-hidden="true" />
       </span>
     </Tooltip>
   );

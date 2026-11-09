@@ -93,14 +93,20 @@ fn only_a_chat_started_with_the_variable_is_briefed_on_its_skills() {
     let text = briefed(root, None, None, &set).expect("listed");
 
     assert!(text.contains("`purlis-safe-remove`"), "{text}");
+    // Its folder is named once (Q38), and the file the model is told to read there, by its
+    // whole path, is the read that starts the skill.
     assert!(
-        text.contains(
-            &skills
-                .join("purlis-safe-remove/SKILL.md")
-                .display()
-                .to_string()
-        )
+        text.contains(&format!("\nUnder `{}`:", skills.display())),
+        "{text}"
     );
+    assert!(text.contains("`<that folder>/<name>/SKILL.md`"), "{text}");
+    let read = format!(
+        "cat {}",
+        skills.join("purlis-safe-remove/SKILL.md").display()
+    );
+    let readable = readable_by_a_briefed_chat(&set);
+    let started = purlis_skills::runs::started_by_a_read(&read, root, &readable);
+    assert_eq!(started.map(|s| s.name.as_str()), Some("purlis-safe-remove"));
 }
 
 #[test]
@@ -1360,7 +1366,8 @@ fn a_codex_briefing_past_its_limit_lists_every_built_in_skill_first() {
     for name in ["purlis-secrets", "purlis-smart-close", "zz-last"] {
         write(&built_in, name, 100);
     }
-    // Twelve of the plane's, named to sort before every built-in, past Codex's 8,000 together.
+    // Twelve of the plane's, named to sort before every built-in, past the 10,000 bytes Codex
+    // keeps of the skills hook together.
     let handed = tmp.path().join("sets/handed");
     let names: Vec<String> = (0..12).map(|at| format!("a{at:02}")).collect();
     for name in &names {
@@ -1381,7 +1388,7 @@ fn a_codex_briefing_past_its_limit_lists_every_built_in_skill_first() {
 
     let text = briefed(&plane, None, None, &env).expect("listed");
 
-    assert!(text.chars().count() > 8_000, "past Codex's limit");
+    assert!(text.len() > 10_000, "past what Codex keeps");
     let at = |name: &str| {
         text.find(&format!("`{name}`"))
             .unwrap_or_else(|| panic!("{name} listed: {text}"))
@@ -2904,7 +2911,8 @@ fn the_shipped_names_are_the_bundles_skills() {
 }
 
 /// #3686: Make my own copy copies a built-in skill's `SKILL.md` alone, so every built-in skill
-/// is that one file. One that ships more files makes the copy carry them first.
+/// is that one file, beside its `evals/` (its trigger tests for the CI grader, spec #5714),
+/// which a copy leaves behind. One that ships more files makes the copy carry them first.
 #[test]
 fn each_built_in_skill_is_its_skill_md_alone() {
     let bundle = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../app/src-tauri/plugin/skills");
@@ -2913,8 +2921,13 @@ fn each_built_in_skill_is_its_skill_md_alone() {
         let held: Vec<String> = std::fs::read_dir(folder)
             .unwrap()
             .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|name| name != "evals")
             .collect();
         assert_eq!(held, ["SKILL.md"], "{}", skill.name);
+        let evals = folder.join("evals");
+        if evals.exists() {
+            assert!(evals.is_dir(), "{}: evals is a folder", skill.name);
+        }
     }
 }
 

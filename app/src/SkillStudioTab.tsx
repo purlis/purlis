@@ -301,9 +301,8 @@ function lineOf(skill: StudioSkill): string {
 }
 
 /** **The Library's built-in skills, folded** (S12): their run's key, whose quiet line is
- *  `built-in:fold` and closing line `built-in:end`, rows the list never chooses. */
+ *  `built-in:fold` and closing line `built-in:end`, rows the list never chooses (#3769). */
 const BUILT_IN_RUN = "built-in";
-const BUILT_IN_RUN_ROWS = [`${BUILT_IN_RUN}:fold`, `${BUILT_IN_RUN}:end`];
 
 /**
  * **A built-in skill drawn on its own, outside the fold** (S12): one that needs the person (a
@@ -1624,9 +1623,6 @@ export function SkillStudioTab({
               <List
                 aria-label="Skills"
                 className="skill-library"
-                // The fold's rows are never chosen: a press on one folds or unfolds it.
-                disabledKeys={BUILT_IN_RUN_ROWS}
-                disabledBehavior="selection"
                 {...(sel === undefined
                   ? {
                       selectionMode: "single" as const,

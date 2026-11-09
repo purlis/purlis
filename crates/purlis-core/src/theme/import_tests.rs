@@ -166,41 +166,70 @@ fn a_base16_scheme_s_selected_edge_is_its_ring_as_purlis_classic_draws_them_alik
     assert_eq!(dark.value("list.selected-edge"), dark.value("focus.ring"));
 }
 
-#[test]
-fn a_base16_scheme_s_selected_edge_is_its_ring_whatever_its_base0d_on_either_ground() {
-    // A walk tunes the accent past what it tunes the ring, so the two can part; the edge Classic
-    // draws as the ring stays the ring (#5157).
-    let dark = String::from_utf8_lossy(HARBOR).to_string();
-    let mut light = dark.clone();
-    for (from, to) in [
-        ("1b2024", "fafafa"),
-        ("232a2f", "f0f0f0"),
-        ("2e373d", "e5e5e6"),
-        ("5c6a73", "a0a1a7"),
-        ("8a9aa4", "696c77"),
-        ("c7d3da", "383a42"),
-        ("dce5ea", "202227"),
-        ("f0f5f7", "090a0b"),
-    ] {
-        light = light.replace(from, to);
+/// A walk tunes the accent past what it tunes the ring, so the two can part; the edge Classic
+/// draws as the ring stays the ring (#5157), whatever a base16 scheme's base0d, on a dark ground
+/// and a light one: one test a scheme, so the tuned imports run side by side (#3597).
+mod a_base16_scheme_s_selected_edge_is_its_ring_whatever_its_base0d_on_either_ground {
+    use super::*;
+
+    #[test]
+    fn dark_268bd2() {
+        holds(false, "268bd2");
     }
-    for (ground, base0ds) in [
-        (&dark, ["268bd2", "4078f2", "0d9488"]),
-        (&light, ["268bd2", "4078f2", "98c379"]),
-    ] {
-        for base0d in base0ds {
-            let scheme = ground.replace("61afef", base0d);
-            let imported =
-                import(SourceKind::Base16, "scheme.yaml", scheme.as_bytes()).expect("imported");
-            let theme = drawn(&imported);
-            let one = theme.first();
-            assert_eq!(
-                one.value("list.selected-edge"),
-                one.value("focus.ring"),
-                "{base0d} on {}",
-                one.value("surface.base")
-            );
+
+    #[test]
+    fn dark_4078f2() {
+        holds(false, "4078f2");
+    }
+
+    #[test]
+    fn dark_0d9488() {
+        holds(false, "0d9488");
+    }
+
+    #[test]
+    fn light_268bd2() {
+        holds(true, "268bd2");
+    }
+
+    #[test]
+    fn light_4078f2() {
+        holds(true, "4078f2");
+    }
+
+    #[test]
+    fn light_98c379() {
+        holds(true, "98c379");
+    }
+
+    /// Harbor, on its own dark ground or turned light, with `base0d` for its blue.
+    fn holds(light: bool, base0d: &str) {
+        let mut ground = String::from_utf8_lossy(HARBOR).to_string();
+        if light {
+            for (from, to) in [
+                ("1b2024", "fafafa"),
+                ("232a2f", "f0f0f0"),
+                ("2e373d", "e5e5e6"),
+                ("5c6a73", "a0a1a7"),
+                ("8a9aa4", "696c77"),
+                ("c7d3da", "383a42"),
+                ("dce5ea", "202227"),
+                ("f0f5f7", "090a0b"),
+            ] {
+                ground = ground.replace(from, to);
+            }
         }
+        let scheme = ground.replace("61afef", base0d);
+        let imported =
+            import(SourceKind::Base16, "scheme.yaml", scheme.as_bytes()).expect("imported");
+        let theme = drawn(&imported);
+        let one = theme.first();
+        assert_eq!(
+            one.value("list.selected-edge"),
+            one.value("focus.ring"),
+            "{base0d} on {}",
+            one.value("surface.base")
+        );
     }
 }
 
@@ -1355,14 +1384,74 @@ fn written(imported: &Imported, token: &str) -> Value {
     document["appearances"][0]["tokens"][token].clone()
 }
 
-#[test]
-fn every_shipped_fixture_imports_with_no_finding_its_own_palette_could_avoid() {
-    for (kind, name, bytes) in FIXTURES {
+/// Each shipped fixture imports with no finding its own palette could avoid, and its state and
+/// icon hues stay apart from each other after tuning: one test a fixture, so each tuned import is
+/// made once and the fixtures run side by side (#3597).
+mod every_shipped_fixture_imports_with_no_avoidable_finding_and_its_hues_apart {
+    use super::*;
+
+    /// Every fixture of [`FIXTURES`], each the name of its test below.
+    const CASES: [&str; 6] = [
+        "ember.jsonc",
+        "harbor.yaml",
+        "dune.json",
+        "Tide.itermcolors",
+        "both.itermcolors",
+        "moss",
+    ];
+
+    #[test]
+    fn a_test_below_imports_each_shipped_fixture() {
+        let names: Vec<&str> = FIXTURES.iter().map(|(_, name, _)| *name).collect();
+        assert_eq!(names, CASES);
+    }
+
+    #[test]
+    fn ember_jsonc() {
+        holds("ember.jsonc");
+    }
+
+    #[test]
+    fn harbor_yaml() {
+        holds("harbor.yaml");
+    }
+
+    #[test]
+    fn dune_json() {
+        holds("dune.json");
+    }
+
+    #[test]
+    fn tide_itermcolors() {
+        holds("Tide.itermcolors");
+    }
+
+    #[test]
+    fn both_itermcolors() {
+        holds("both.itermcolors");
+    }
+
+    #[test]
+    fn moss() {
+        holds("moss");
+    }
+
+    fn holds(name: &str) {
+        let (kind, name, bytes) = FIXTURES
+            .iter()
+            .find(|(_, it, _)| *it == name)
+            .expect("a shipped fixture");
         let imported = import(*kind, name, bytes).expect("imported");
-        let found = findings(&drawn(&imported));
+        let theme = drawn(&imported);
+        no_finding_its_own_palette_could_avoid(name, &theme);
+        state_and_icon_hues_apart(*kind, name, &theme);
+    }
+
+    fn no_finding_its_own_palette_could_avoid(name: &str, theme: &Theme) {
+        let found = findings(theme);
         // A terminal's own sixteen colours are what it draws, and are taken as they are: the
         // findings left are those, in the theme as it is and in each workspace tint.
-        let expected: &[&str] = match *name {
+        let expected: &[&str] = match name {
             "Tide.itermcolors" => &["terminal.ansi.black on terminal.background"],
             // A VS Code theme's comment is drawn as its author wrote it, on the diff's washes it
             // does not name (#4424): the check says so, and the import does not walk it.
@@ -1385,6 +1474,59 @@ fn every_shipped_fixture_imports_with_no_finding_its_own_palette_could_avoid() {
             expected.iter().copied().collect::<BTreeSet<_>>(),
             "{name}"
         );
+    }
+
+    fn state_and_icon_hues_apart(kind: SourceKind, name: &str, theme: &Theme) {
+        const STATES: &[&str] = &[
+            "state.running",
+            "state.waiting",
+            "state.failed",
+            "state.success",
+            "state.unreadable",
+        ];
+        const ICONS: &[&str] = &[
+            "icon.red",
+            "icon.orange",
+            "icon.yellow",
+            "icon.green",
+            "icon.teal",
+            "icon.blue",
+            "icon.purple",
+            "icon.pink",
+        ];
+        let rows = table(kind);
+        // The source key a token's row takes first, among those the source has: two tokens the
+        // source gives one colour (danger and failed are both red) are not held apart.
+        let key_of = |token: &str| {
+            rows.iter()
+                .find(|(it, _)| *it == token)
+                .and_then(|(_, keys)| keys.first().copied())
+        };
+        for one in &theme.appearances {
+            for group in [STATES, ICONS] {
+                for (at, a) in group.iter().enumerate() {
+                    for b in &group[at + 1..] {
+                        let (Some(key_a), Some(key_b)) = (key_of(a), key_of(b)) else {
+                            continue;
+                        };
+                        if key_a == key_b {
+                            continue;
+                        }
+                        let apart = tint::distance(
+                            tint::oklab_of(one.value(a)).expect("a colour"),
+                            tint::oklab_of(one.value(b)).expect("a colour"),
+                        );
+                        assert!(
+                            apart >= SEEN_APART,
+                            "{name} {}: {a} {} and {b} {} are {apart:.3} apart",
+                            one.id,
+                            one.value(a),
+                            one.value(b)
+                        );
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1587,64 +1729,6 @@ fn each_kind_s_recipes_tune_only_purlis_tokens_and_the_docs_print_them() {
 
 /// How far apart two hues must stay after tuning, in OKLab: the least a person can see.
 const SEEN_APART: f64 = 0.02;
-
-#[test]
-fn the_state_and_icon_hues_stay_apart_from_each_other_after_tuning() {
-    const STATES: &[&str] = &[
-        "state.running",
-        "state.waiting",
-        "state.failed",
-        "state.success",
-        "state.unreadable",
-    ];
-    const ICONS: &[&str] = &[
-        "icon.red",
-        "icon.orange",
-        "icon.yellow",
-        "icon.green",
-        "icon.teal",
-        "icon.blue",
-        "icon.purple",
-        "icon.pink",
-    ];
-    for (kind, name, bytes) in FIXTURES {
-        let imported = import(*kind, name, bytes).expect("imported");
-        let theme = drawn(&imported);
-        let rows = table(*kind);
-        // The source key a token's row takes first, among those the source has: two tokens the
-        // source gives one colour (danger and failed are both red) are not held apart.
-        let key_of = |token: &str| {
-            rows.iter()
-                .find(|(it, _)| *it == token)
-                .and_then(|(_, keys)| keys.first().copied())
-        };
-        for one in &theme.appearances {
-            for group in [STATES, ICONS] {
-                for (at, a) in group.iter().enumerate() {
-                    for b in &group[at + 1..] {
-                        let (Some(key_a), Some(key_b)) = (key_of(a), key_of(b)) else {
-                            continue;
-                        };
-                        if key_a == key_b {
-                            continue;
-                        }
-                        let apart = tint::distance(
-                            tint::oklab_of(one.value(a)).expect("a colour"),
-                            tint::oklab_of(one.value(b)).expect("a colour"),
-                        );
-                        assert!(
-                            apart >= SEEN_APART,
-                            "{name} {}: {a} {} and {b} {} are {apart:.3} apart",
-                            one.id,
-                            one.value(a),
-                            one.value(b)
-                        );
-                    }
-                }
-            }
-        }
-    }
-}
 
 #[test]
 fn a_terminal_colour_s_warning_names_the_palette_entry_that_holds_it() {

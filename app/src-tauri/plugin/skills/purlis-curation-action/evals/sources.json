@@ -1,0 +1,193 @@
+{
+  "tier": "standard",
+  "neighbours": [
+    "purlis-skill-studio",
+    "purlis-persona"
+  ],
+  "prompts": [
+    {
+      "query": "Add a curation action to the steward persona that reviews a workspace's open todos.",
+      "source": "Skill text: description, \"add ... a persona's curation action\"."
+    },
+    {
+      "query": "Give the reviewer persona a new entry in the Curate menu.",
+      "source": "Skill text: description, \"a new entry in the Curate menu\"."
+    },
+    {
+      "query": "Change the prompt of the Review open work curation action.",
+      "source": "Skill text: the example's `label: Review open work`; description, \"change\"."
+    },
+    {
+      "query": "Write a curation action offered on personas that audits their memory.",
+      "source": "Skill text: `on: persona`."
+    },
+    {
+      "query": "I want a Curate menu item on the plane that runs the backlog sync skill.",
+      "source": "Skill text: `on: plane`; \"name the skill in words\"."
+    },
+    {
+      "query": "Make the compact curation action run at the plane root instead of in the workspace.",
+      "source": "Skill text: `runs-in: plane`; Mined session record 20261108-085457-5724-four-built-in-skills-renamed-losing-nothing.md (curation action ids kept)."
+    },
+    {
+      "query": "Add a curation action on workspaces that opens a chat with a summary prompt already typed.",
+      "source": "Skill text: \"with a prompt already typed into it\"."
+    },
+    {
+      "query": "Which variables can a curation action's prompt use?",
+      "source": "Skill text: \"exactly four variables\"."
+    },
+    {
+      "query": "Edit the steward's charter curation action so it names the right skill.",
+      "source": "Mined session record 20261105-054255-5186-pre-filled-prompts-start-their-skill-per-ha.md: a curation prompt that names a skill."
+    },
+    {
+      "query": "Create personas/steward/curation/weekly-review.md for a weekly review chat.",
+      "source": "Skill text: \"one file, `personas/<persona>/curation/<id>.md`\"."
+    },
+    {
+      "query": "The curation action fails because its prompt says {subject.title}; fix it.",
+      "source": "Skill text: \"any other `{word}` is an error\"."
+    },
+    {
+      "query": "Add a Find stale branches action to the Curate menu for workspaces.",
+      "source": "plausible phrasing a person types."
+    },
+    {
+      "query": "Offer this curation action on both workspaces and personas.",
+      "source": "Skill text: `on` is comma-separated."
+    },
+    {
+      "query": "Rename the label of the steward's tidy curation action.",
+      "source": "Skill text: `label` is what the menu shows."
+    },
+    {
+      "query": "Add a Curate entry that starts a chat to triage new issues.",
+      "source": "plausible phrasing a person types."
+    },
+    {
+      "query": "Write a one-line prompt for a new curation action that checks a workspace's repos are cloned.",
+      "source": "Skill text: \"one short, plain line\"."
+    },
+    {
+      "query": "Take the curation action nobody uses off the reviewer persona.",
+      "source": "plausible phrasing a person types: changing a persona's actions."
+    },
+    {
+      "query": "Make a curation action for the plane that lists workspaces with no recent sessions.",
+      "source": "Mined session record 20260930-213238-si-1-si-8-plane-root-curation-crud-pane-ux-shell.md: plane-root curation."
+    },
+    {
+      "query": "Our curation action names a slash command; rewrite it to name the skill in words.",
+      "source": "Skill text: \"never as a `/slash` command, which only one harness reads\"."
+    },
+    {
+      "query": "The Curate menu should have an option to tidy a persona's memory.",
+      "source": "plausible phrasing a person types."
+    },
+    {
+      "query": "Add a curation action that runs in the subject's folder for persona folders.",
+      "source": "Skill text: `runs-in: subject`."
+    },
+    {
+      "query": "What should the frontmatter of a curation action file hold?",
+      "source": "Skill text: `label`, `on`, `runs-in`."
+    },
+    {
+      "query": "Use the purlis-skill-studio skill to draft a new skill in .purlis/skills. What the skill does: review open todos.",
+      "source": "Near miss (purlis-skill-studio): the prompt its New skill button types.",
+      "belongs_to": "purlis-skill-studio"
+    },
+    {
+      "query": "Write trigger tests for the deploy-check skill in .purlis/skills/deploy-check.",
+      "source": "Near miss (purlis-skill-studio): the prompt its trigger tests button types.",
+      "belongs_to": "purlis-skill-studio"
+    },
+    {
+      "query": "Write outcome evals for the release-notes skill in .purlis/skills/release-notes.",
+      "source": "Near miss (purlis-skill-studio): the prompt its outcome evals button types.",
+      "belongs_to": "purlis-skill-studio"
+    },
+    {
+      "query": "Improve the triage skill from its runs and grades.",
+      "source": "Near miss (purlis-skill-studio): its description, \"an edit drawn from its runs and grades\".",
+      "belongs_to": "purlis-skill-studio"
+    },
+    {
+      "query": "Create a new persona for security reviews.",
+      "source": "Near miss (purlis-persona): its description, \"create one\".",
+      "belongs_to": "purlis-persona"
+    },
+    {
+      "query": "Dispatch this review to the reviewer persona and wait for the answer.",
+      "source": "Near miss (purlis-persona): its description, \"dispatch work to another\".",
+      "belongs_to": "purlis-persona"
+    },
+    {
+      "query": "Act as the steward persona in this chat.",
+      "source": "Near miss (purlis-persona): its description, \"act as a role\".",
+      "belongs_to": "purlis-persona"
+    },
+    {
+      "query": "Which persona should own the release work?",
+      "source": "Near miss (purlis-persona): its description, \"deciding which persona a piece of work belongs to\".",
+      "belongs_to": "purlis-persona"
+    },
+    {
+      "query": "Curate a reading list on distributed systems.",
+      "source": "plausible phrasing a person types: \"curate\" elsewhere."
+    },
+    {
+      "query": "Add a context menu item to the file tree in our React app.",
+      "source": "plausible phrasing a person types: a menu in code."
+    },
+    {
+      "query": "Write a GitHub Action that runs the tests on push.",
+      "source": "plausible phrasing a person types: \"action\" elsewhere."
+    },
+    {
+      "query": "Add a command palette entry for my editor extension.",
+      "source": "plausible phrasing a person types: a menu entry elsewhere."
+    },
+    {
+      "query": "Write a prompt template for summarising support tickets.",
+      "source": "plausible phrasing a person types: a prompt, not purlis."
+    },
+    {
+      "query": "Create a cron job that backs up the database nightly.",
+      "source": "plausible phrasing a person types: unrelated."
+    },
+    {
+      "query": "Explain what a slash command is in Claude Code.",
+      "source": "plausible phrasing a person types: a harness question."
+    },
+    {
+      "query": "Add a keyboard shortcut that opens the settings.",
+      "source": "plausible phrasing a person types: unrelated."
+    },
+    {
+      "query": "Organise my photo library by year.",
+      "source": "plausible phrasing a person types: unrelated."
+    },
+    {
+      "query": "Write a Makefile target that runs lint.",
+      "source": "plausible phrasing a person types: unrelated."
+    },
+    {
+      "query": "Draft onboarding docs for a new teammate.",
+      "source": "plausible phrasing a person types: unrelated."
+    },
+    {
+      "query": "Add a dropdown with three options to the form.",
+      "source": "plausible phrasing a person types: a menu in code."
+    },
+    {
+      "query": "Review this pull request.",
+      "source": "plausible phrasing a person types: unrelated."
+    },
+    {
+      "query": "Set up a pre-commit hook for formatting.",
+      "source": "plausible phrasing a person types: unrelated."
+    }
+  ]
+}

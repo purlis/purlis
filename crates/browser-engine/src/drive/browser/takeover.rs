@@ -139,6 +139,10 @@ struct Pressed {
     y: f64,
 }
 
+/// A field an edit of the person's goes into, blanked: its page's target and element, and the
+/// page's read it was blanked in.
+type Edited = ((String, NodeKey), Arc<Snapshot>);
+
 /// A field already blanked: its page's target and element, the page's read it was blanked in,
 /// and the page's document number then.
 #[derive(Clone)]
@@ -174,6 +178,10 @@ impl Drop for Carrying {
 pub(super) fn metrics(width: u16, height: u16) -> Value {
     json!({ "width": width, "height": height, "deviceScaleFactor": 0, "mobile": false })
 }
+
+/// Whether letting go of the middle button pastes the primary selection where the focus is: on
+/// Linux.
+const MIDDLE_RELEASE_PASTES: bool = cfg!(target_os = "linux");
 
 /// The smallest and largest page a size may give, in CSS pixels.
 const SIZES: std::ops::RangeInclusive<u16> = 200..=4096;
@@ -481,46 +489,7 @@ impl Browser {
                     lock(&self.typing).reading.forget();
                 }
                 let field = if edits {
-                    // The field the last key went to, still focused, is blanked already: only
-                    // the document is asked what has the focus (#2295).
-                    match landed_in.or_else(|| self.still_focused(&target)) {
-                        Some(focused) => Some((focused.field, focused.read)),
-                        None => match self
-                            .read_for_a_key(&target, read.take(), by)
-                            .map(|(read, kept)| (self.blank_focus_in(&target, Some(read)), kept))?
-                        {
-                            // A read an earlier key began, which the person may have waited
-                            // for, is checked against where the focus is now: where it has
-                            // moved since, the key waits for a new read (#3043).
-                            (Ok((field, _)), true) if !self.focus_is_on(&field) => {
-                                return Err(Refusal::PageUnreadInTime);
-                            }
-                            (Ok((field, read)), _) => {
-                                let read = std::sync::Arc::new(read);
-                                let shows = lock(&self.inner.state)
-                                    .page(&target)
-                                    .map_or(0, |page| page.shows);
-                                let mut typing = lock(&self.typing);
-                                typing.last_read.insert(target.clone(), Arc::clone(&read));
-                                typing.focus = Some(Focused {
-                                    field: field.clone(),
-                                    read: std::sync::Arc::clone(&read),
-                                    shows,
-                                });
-                                drop(typing);
-                                Some((field, read))
-                            }
-                            (Err(Refusal::NothingFocused), _) => {
-                                // Nothing the tree shows has the focus: unless the document has
-                                // nothing focused either, the key waits.
-                                if self.focus_unseen(&session, &target) {
-                                    return Err(Refusal::FocusUnseen);
-                                }
-                                None
-                            }
-                            (Err(why), _) => return Err(why),
-                        },
-                    }
+                    self.field_edited(&target, &session, read, landed_in, by)?
                 } else {
                     None
                 };
@@ -543,33 +512,7 @@ impl Browser {
                     lock(&self.typing).dirty.insert(target.clone());
                 }
                 if let Some((field, read)) = field {
-                    // The field is read again as the browser is handed back, whatever this read
-                    // finds.
-                    lock(&self.typing).touched.insert(field.clone());
-                    // What the field holds now, with this key in it (or what was pasted), is
-                    // kept out from this moment. Read again once if it could not be read: the
-                    // key is in already.
-                    let after = self
-                        .field_holds(&field)
-                        .or_else(|_| self.field_holds(&field))
-                        .map_err(|_| Refusal::FieldUnreadAfterKey)?;
-                    let mut held = Kept::default();
-                    if let Some(before) = before {
-                        // What the key put in is kept as it was put in, like a run, and so is
-                        // what the field holds after it: a paste over a selection may share its
-                        // ends with what it replaced.
-                        let [first, last] = put_in(&before, &after);
-                        held.run(&[first, last, after.clone()]);
-                    }
-                    let (latest, order) = lock(&self.typing).read(&field.1, &after);
-                    // A box of a group (a code typed one character a box) is kept with the
-                    // rest of its group too, joined, each box the person typed into as they
-                    // last read it, this key in it.
-                    for (first, joined) in read.groups_holding(&latest, &order) {
-                        held.group(&first, &joined);
-                    }
-                    held.field(&field.1, &[after]);
-                    lock(&self.inner.state).keep_out_everywhere(&held);
+                    self.keep_what_went_in(field, &read, before)?;
                 }
                 Ok(())
             }
@@ -610,9 +553,29 @@ impl Browser {
                     event["deltaX"] = (*delta_x).into();
                     event["deltaY"] = (*delta_y).into();
                 }
+                // Letting go of the middle button pastes the primary selection where the focus
+                // is, on Linux: the field is blanked and read before it, as for a paste by key,
+                // and what went in is kept as a paste is. Elsewhere it is sent as any release
+                // is (a middle click there opens a link in a new tab).
+                let pastes = MIDDLE_RELEASE_PASTES
+                    && *kind == MouseKind::Released
+                    && *button == MouseButton::Middle;
+                let field = if pastes {
+                    self.field_edited(&target, &session, read, landed_in, by)?
+                } else {
+                    None
+                };
+                let before = field
+                    .as_ref()
+                    .map(|(field, _)| self.field_holds(field))
+                    .transpose()?;
                 // A release the engine refused (an engine error) leaves its button counted as
                 // held, as the engine may hold it still: the hand-back lets go of it.
                 self.person_sends("Input.dispatchMouseEvent", event, &session)?;
+                if pastes {
+                    lock(&self.inner.state).kept_on(&target);
+                    lock(&self.typing).dirty.insert(target.clone());
+                }
                 // The button is held in the engine from the press that reached the page, until
                 // a release does.
                 let mut typing = lock(&self.typing);
@@ -633,9 +596,100 @@ impl Browser {
                     }
                     _ => {}
                 }
+                drop(typing);
+                if let Some((field, read)) = field {
+                    self.keep_what_went_in(field, &read, before)?;
+                }
                 Ok(())
             }
         }
+    }
+
+    /// The field an edit of the person's goes into on `target`'s page (held by `session`),
+    /// blanked: `landed_in` where the edit was judged to land on what they saw, else the field
+    /// the last edit went to where it still has the focus, else the focused field of a read of
+    /// the page (`read`, where the landing made one). `None` where nothing has the focus.
+    fn field_edited(
+        &self,
+        target: &str,
+        session: &str,
+        read: Option<(Vec<FrameAx>, bool)>,
+        landed_in: Option<Focused>,
+        by: Instant,
+    ) -> Result<Option<Edited>, Refusal> {
+        // The field the last key went to, still focused, is blanked already: only the document
+        // is asked what has the focus (#2295).
+        if let Some(focused) = landed_in.or_else(|| self.still_focused(target)) {
+            return Ok(Some((focused.field, focused.read)));
+        }
+        match self
+            .read_for_a_key(target, read, by)
+            .map(|(read, kept)| (self.blank_focus_in(target, Some(read)), kept))?
+        {
+            // A read an earlier key began, which the person may have waited for, is checked
+            // against where the focus is now: where it has moved since, the key waits for a new
+            // read (#3043).
+            (Ok((field, _)), true) if !self.focus_is_on(&field) => Err(Refusal::PageUnreadInTime),
+            (Ok((field, read)), _) => {
+                let read = Arc::new(read);
+                let shows = lock(&self.inner.state)
+                    .page(target)
+                    .map_or(0, |page| page.shows);
+                let mut typing = lock(&self.typing);
+                typing
+                    .last_read
+                    .insert(target.to_owned(), Arc::clone(&read));
+                typing.focus = Some(Focused {
+                    field: field.clone(),
+                    read: Arc::clone(&read),
+                    shows,
+                });
+                Ok(Some((field, read)))
+            }
+            (Err(Refusal::NothingFocused), _) => {
+                // Nothing the tree shows has the focus: unless the document has nothing focused
+                // either, the key waits.
+                if self.focus_unseen(session, target) {
+                    return Err(Refusal::FocusUnseen);
+                }
+                Ok(None)
+            }
+            (Err(why), _) => Err(why),
+        }
+    }
+
+    /// Keeps out what `field` holds after an edit of the person's went into it, from this
+    /// moment, and what the edit put in where the field was read to hold `before` it (a paste,
+    /// an undo): read again once if it could not be read, as the edit is in already. The field is
+    /// read again as the browser is handed back, whatever this read finds.
+    fn keep_what_went_in(
+        &self,
+        field: (String, NodeKey),
+        read: &Snapshot,
+        before: Option<String>,
+    ) -> Result<(), Refusal> {
+        lock(&self.typing).touched.insert(field.clone());
+        let after = self
+            .field_holds(&field)
+            .or_else(|_| self.field_holds(&field))
+            .map_err(|_| Refusal::FieldUnreadAfterKey)?;
+        let mut held = Kept::default();
+        if let Some(before) = before {
+            // What the edit put in is kept as it was put in, like a run, and so is what the
+            // field holds after it: a paste over a selection may share its ends with what it
+            // replaced.
+            let [first, last] = put_in(&before, &after);
+            held.run(&[first, last, after.clone()]);
+        }
+        let (latest, order) = lock(&self.typing).read(&field.1, &after);
+        // A box of a group (a code typed one character a box) is kept with the rest of its group
+        // too, joined, each box the person typed into as they last read it, this edit in it.
+        for (first, joined) in read.groups_holding(&latest, &order) {
+            held.group(&first, &joined);
+        }
+        held.field(&field.1, &[after]);
+        lock(&self.inner.state).keep_out_everywhere(&held);
+        Ok(())
     }
 
     /// Sends one event of the person's, under the lease's lock, while they drive.

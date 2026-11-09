@@ -18,12 +18,17 @@
  * - **Folding moves only what is under it**: the rows above keep their place. The twist is the
  *   tree's own (`TwistMark`), never a chevron drawn here.
  *
- * Both live in a `List` of rows that act, **with no `selectionMode`**: a fold's row is a row of
- * the grid, and a list that chooses would choose it rather than fold it. A list that chooses
- * (the studio's Library, #3686) names its fold rows in `disabledKeys` with
- * `disabledBehavior="selection"`: never chosen, still reached, and a press still folds. Their fold rows run no
- * `onAction` of the list's: a press on one folds it, and nothing else. A run inside a section
- * starts afresh when the section unfolds, unless its owner holds it (`folded`).
+ * Both live in a `List` of rows that act. **In a list that chooses** (`selectionMode`, the
+ * studio's Library) a fold's row and a run's closing line are never chosen (#3769): they say so
+ * themselves (`isDisabled`, under the list's `disabledBehavior="selection"`, its default there),
+ * so they are still reached, a press or a key still folds, and Select all leaves them out. Their
+ * fold rows run no `onAction` of the list's: a press on one folds it, and nothing else.
+ *
+ * **What is folded is held by the fold, or by its owner** (`folded`, #3769): folding a section
+ * unmounts what is under it, so a run inside it starts afresh as the section unfolds, unless its
+ * owner holds the run's `folded`. The family keeps no state of its own past its rows: a view
+ * that cares (the Skills view, the Library) already holds every fold, to keep it across a
+ * relaunch.
  */
 import { useContext, useLayoutEffect, useState, type ReactNode } from "react";
 import {
@@ -32,7 +37,7 @@ import {
   type Key,
 } from "react-aria-components";
 import { TwistMark } from "../tree/Tree";
-import { ListFolds, ListSize, useSaidOnRow } from "./List";
+import { ListChooses, ListFolds, ListSize, useSaidOnRow } from "./List";
 
 /** **Folded or not**, held by its owner (`folded`) or here, starting as `defaultFolded`. */
 function useFolded(
@@ -87,6 +92,7 @@ function FoldRow({
 }) {
   const folds = useContext(ListFolds);
   const size = useContext(ListSize);
+  const chooses = useContext(ListChooses);
   useLayoutEffect(() => {
     folds.set(id, onOpen);
     return () => {
@@ -99,6 +105,7 @@ function FoldRow({
       id={id}
       textValue={textValue}
       ref={said}
+      isDisabled={chooses}
       onAction={() => onOpen(!open)}
       data-scope="list"
       data-part={part}
@@ -249,6 +256,7 @@ export function ListRun<T>({
 /** **A run's closing line**: what is said after its rows, and what may be done about it. */
 function RunEnd({ id, says, children }: { id: Key; says: string; children: ReactNode }) {
   const folds = useContext(ListFolds);
+  const chooses = useContext(ListChooses);
   useLayoutEffect(() => {
     // It runs nothing of the list's: a press on it is a press on what it holds.
     const key = String(id);
@@ -258,7 +266,14 @@ function RunEnd({ id, says, children }: { id: Key; says: string; children: React
     };
   }, [folds, id]);
   return (
-    <AriaGridListItem id={id} textValue={says} data-scope="list" data-part="run" data-end="">
+    <AriaGridListItem
+      id={id}
+      textValue={says}
+      isDisabled={chooses}
+      data-scope="list"
+      data-part="run"
+      data-end=""
+    >
       <span data-scope="list" data-part="label">
         {says}
       </span>

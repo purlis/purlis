@@ -242,6 +242,10 @@ function doing(): Doing & { calls: string[] } {
       calls.push(`pinProject:${plane},${pinned}`);
       return { ok: true as const };
     }),
+    moveWorkspacePin: vi.fn(async (workspace: string, by: -1 | 1) => {
+      calls.push(`moveWorkspacePin:${workspace},${by}`);
+      return { ok: true as const };
+    }),
     curate: vi.fn(async (subject: string, action: string) => {
       calls.push(`curate:${subject},${action}`);
       return { ok: true as const };
@@ -4984,6 +4988,78 @@ describe("a workspace's own file and folder rows (#5376)", () => {
       { verb: "trashWorkspaceEntry", at: own("notes"), folder: true, touchedBy: [] },
       { verb: "renameWorkspaceEntry", at: own("notes/plan.md"), folder: false, touchedBy },
       { verb: "trashWorkspaceEntry", at: own("notes/plan.md"), folder: false, touchedBy },
+    ]);
+  });
+});
+
+/**
+ * **Moving a pin along the title bar's chips from the keyboard** (#3128): a pinned workspace's
+ * menu has Move left and Move right, which put it one place earlier or later among the pins; at
+ * an end the way it cannot go is said, not hidden, so the rows never move under the person.
+ */
+describe("a pin's Move left and Move right (#3128)", () => {
+  const pinnedThree = () =>
+    catalogue(
+      now({
+        workspaces: ["alpha", "beta", "gamma", "delta"],
+        pinned: { workspaces: ["alpha", "beta", "gamma"], projects: [] },
+      }),
+    );
+
+  it("offers both on a pin, and runs each through the window's hands", async () => {
+    const hands = doing();
+    const offers = pinnedThree();
+    expect(by(offers, "workspace.pin-left:beta")?.does).toEqual({
+      verb: "moveWorkspacePin",
+      workspace: "beta",
+      by: -1,
+    });
+    await run(offers, "workspace.pin-left:beta", hands);
+    await run(offers, "workspace.pin-right:beta", hands);
+    expect(hands.calls).toEqual(["moveWorkspacePin:beta,-1", "moveWorkspacePin:beta,1"]);
+  });
+
+  it("says why at an end instead of hiding the row", () => {
+    const offers = pinnedThree();
+    expect(by(offers, "workspace.pin-left:alpha")).toMatchObject({ available: false });
+    expect(by(offers, "workspace.pin-left:alpha")?.reason).toMatch(/first/);
+    expect(by(offers, "workspace.pin-right:alpha")).toMatchObject({ available: true });
+    expect(by(offers, "workspace.pin-right:gamma")).toMatchObject({ available: false });
+    expect(by(offers, "workspace.pin-right:gamma")?.reason).toMatch(/last/);
+  });
+
+  it("offers neither on a workspace that is not pinned, and keeps both out of the palette", () => {
+    const offers = pinnedThree();
+    expect(by(offers, "workspace.pin-left:delta")).toBeUndefined();
+    expect(by(offers, "workspace.pin-right:delta")).toBeUndefined();
+    expect(by(offers, "workspace.pin-left:beta")?.menuOnly).toBe(true);
+  });
+
+  it("counts the places among the pins the plane still has, past a pin whose workspace is gone", () => {
+    const offers = catalogue(
+      now({
+        workspaces: ["alpha", "gamma"],
+        pinned: { workspaces: ["gone", "alpha", "gamma"], projects: [] },
+      }),
+    );
+    expect(by(offers, "workspace.pin-left:alpha")).toMatchObject({ available: false });
+  });
+
+  it("offers neither on a lone pin, which has nothing to be ordered against", () => {
+    const offers = catalogue(
+      now({ workspaces: ["alpha", "beta"], pinned: { workspaces: ["alpha"], projects: [] } }),
+    );
+    expect(by(offers, "workspace.pin-left:alpha")).toBeUndefined();
+    expect(by(offers, "workspace.pin-right:alpha")).toBeUndefined();
+  });
+
+  it("stands on the workspace's menu right after its pin", () => {
+    const { above } = menuOn({ on: "workspace", workspace: "beta" });
+    const at = above.indexOf("workspace.pin:beta");
+    expect(above.slice(at, at + 3)).toEqual([
+      "workspace.pin:beta",
+      "workspace.pin-left:beta",
+      "workspace.pin-right:beta",
     ]);
   });
 });

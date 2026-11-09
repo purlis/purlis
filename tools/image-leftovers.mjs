@@ -28,7 +28,8 @@
 //   node tools/image-leftovers.mjs WORKFLOW
 //
 // WORKFLOW is the file of the workflow whose runs push the package: `release.yml` for the runner
-// image (it calls `runner-image.yml`), `operator-image.yml` for the operator's. Needs IMAGE,
+// image (it calls `runner-image.yml`), `operator.yml` for the operator's (it calls
+// `operator-image.yml`). Needs IMAGE,
 // GH_TOKEN, GITHUB_REPOSITORY and GITHUB_REPOSITORY_OWNER, as `image-leftovers.yml` sets them.
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -151,15 +152,17 @@ export function isPlainImage(manifest) {
 }
 
 /**
- * Whether `run` could have published the package: this repository's own run of `workflow`, on
- * `main` from `workflow_run`, or (for `release.yml`) from a pushed `v*` tag. A run of a pull
- * request, a fork, another branch or a dispatch runs code that was not reviewed onto `main`, and
- * its artifacts say nothing about what was pushed.
+ * Whether `run` could have published the package: this repository's own run of `workflow` on a
+ * push to `main`, or (for `release.yml`) on a pushed `v*` tag. Publishing used to be started by
+ * another run's end (`workflow_run`) on `main`, and such a run still counts while its artifacts
+ * are kept. A run of a pull request, a fork, another branch, a schedule or a dispatch runs code
+ * that was not reviewed onto `main`, or publishes nothing, and its artifacts say nothing about
+ * what was pushed.
  */
 export function couldPublish(run, { repo, workflow }) {
   if (run?.path !== `.github/workflows/${workflow}`) return false;
   if (run.head_repository?.full_name !== repo) return false;
-  if (run.event === "workflow_run" && run.head_branch === "main") return true;
+  if ((run.event === "push" || run.event === "workflow_run") && run.head_branch === "main") return true;
   return workflow === "release.yml" && run.event === "push" && /^v[0-9]/.test(run.head_branch ?? "");
 }
 

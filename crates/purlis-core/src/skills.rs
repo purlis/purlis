@@ -207,20 +207,24 @@ pub fn built_in_names(dir: Option<&Path>) -> Vec<String> {
 /// **The skills purlis ships**, by name: the bundle's `plugin/skills/<name>/SKILL.md`, each
 /// folder named as its skill (held to that folder by a test). Compiled in, for the doctor's check
 /// of a project keeping its own copy of one.
-pub const SHIPPED: [&str; 13] = [
-    "purlis-add-curation-action",
+pub const SHIPPED: &[&str] = &[
     "purlis-browser",
     "purlis-building-ui",
-    "purlis-compact",
+    "purlis-change",
+    "purlis-curation-action",
     "purlis-handoff",
+    "purlis-permissions",
     "purlis-persona",
+    "purlis-remember",
+    "purlis-repo-work",
     "purlis-safe-remove",
     "purlis-secrets",
     verbs::drafts::STUDIO_SKILL,
     "purlis-smart-close",
     "purlis-theme",
-    "purlis-update",
-    "purlis-working-in-a-clone",
+    "purlis-tidy-memory",
+    "purlis-upgrade",
+    "purlis-workspace",
 ];
 
 /// **What a skill that would take a name of purlis's own is refused with** (spec #3679 S12, ADR
@@ -922,8 +926,9 @@ pub fn briefed(
     );
     // Only what purlis hands: the harness lists its own and the repo's itself. A plane skill is
     // named by the `SKILL.md` purlis wrote for it, and one it refused is not named at all.
-    // **Built-in skills first** (#5736): Codex drops trailing skills past its limit without a
-    // word, so purlis's own are counted first and are never the ones past it.
+    // **Built-in skills first** (#5736), and the index last: past 10,000 bytes Codex keeps
+    // the first and last 5,000 of the hook's output and cuts the middle (0.147.0, measured;
+    // ADR 0102 as amended 2026-11-09), so purlis's own and the index are the parts it keeps.
     let mut effective = set.effective;
     effective.sort_by_key(|e| e.origin != Origin::BuiltIn);
     let skills: Vec<Skill> = effective
@@ -2264,8 +2269,11 @@ pub(crate) fn grouped(n: usize) -> String {
 /// in it: purlis's budget counts those already, as the chat's set holds them.
 fn own_catalogue(harness: Harness, outside: &[OutsideSkill]) -> OwnCatalogue {
     let listed = own_listed(harness, outside);
-    let spent = purlis_skills::budget::spent(
-        listed.iter().map(|(one, said)| (&one.skill, said)),
+    // Listed by the harness itself, each with its whole path where it lists paths.
+    let spent = purlis_skills::budget::spent_listed(
+        listed
+            .iter()
+            .map(|(one, said)| (&one.skill, said, purlis_skills::budget::ListedBy::Harness)),
         harness.skill_budget(),
     );
     OwnCatalogue {

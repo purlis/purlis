@@ -6,11 +6,11 @@
  *
  * `purlis/tabs-family` (error: the session strip is on React Aria's tabs, #3042, and a page's
  * tabs are `PageTabs`, #3668): a `tab`, `tablist` or `tabpanel` role written by hand, a strip's
- * or a page's alike, in JSX or in an object of props, the strip's
- * old hand-made tablist (`StripTablist`), and `data-scope="tabs"` by hand. A tablist is the
- * family's `useTabStrip`, `TabStripRow` and `StripTab` (`ui/tabs/TabStrip`), a tab's cell its
- * `TabCell`, and the panel a tab names `tabPanelOf` (`ui/tabs/Tabs`). The tablists still drawn
- * by hand are turned off by file below ({@link off}), each naming the ticket that moves it.
+ * or a page's alike, in JSX or in an object of props, and `data-scope="tabs"` by hand. A tablist
+ * is the family's `useTabStrip`, `TabStripRow` and `StripTab` (`ui/tabs/TabStrip`), or
+ * `useTabStripRow` and `AsStripTab` where another family's container and button draw it (the
+ * rail, an activity bar), a tab's cell its `TabCell`, and the panel a tab names `tabPanelOf`
+ * (`ui/tabs/Tabs`). It is off in no file (#3134).
  */
 
 import { classStrings } from "../familyLint.js";
@@ -30,7 +30,6 @@ const tabsFamily = {
     docs: { description: "A tablist is the shared tabs family, on React Aria, never by hand" },
     messages: {
       role: `\`role="{{role}}"\` by hand: ${TABS_SAID}`,
-      owner: `\`StripTablist\` is the strip's old hand-made tablist: ${TABS_SAID}`,
       scope: `\`data-scope="{{scope}}"\` is drawn by the family's wrappers only: ${TABS_SAID}`,
     },
     schema: [],
@@ -69,12 +68,6 @@ const tabsFamily = {
         )
           context.report({ node, messageId: "scope", data: { scope: node.value.value } });
       },
-      ImportDeclaration(node) {
-        if (!/(?:^|\/)StripTablist$/.test(String(node.source.value))) return;
-        for (const one of node.specifiers)
-          if (one.type === "ImportSpecifier" && one.imported.name === "StripTablist")
-            context.report({ node: one, messageId: "owner" });
-      },
     };
   },
 };
@@ -85,28 +78,12 @@ export const rules = {
 };
 
 /**
- * **The tablists still drawn by hand**, each until the ticket that moves it onto the tabs
- * family (#3042): the workspace strip (#2916), the activity bars (#2917), the project rail's
- * tablist (#2915's rail family, whose projects are tabs), and the strip's old hand-made tablist
- * they share. `eslint.config.js` turns the family's rule off in each.
- */
-export const off = {
-  "tabs-family": [
-    "src/WorkspaceStrip.tsx",
-    "src/ActivityBar.tsx",
-    "src/ProjectRail.tsx",
-    "src/StripTablist.tsx",
-  ],
-};
-
-/**
- * **This family's controls still drawn as a raw `<button>`** (D-2904-9, #3012): a tab drawn by
- * hand, by its role (`role="tab"`), and the strip's own controls, by the family's one class
- * (`ui-tabs-control`), never by a word a view picked (`closer`, `crumb`): the button family's
- * rule lets these through until this family's lane moves them, and refuses a bare button with
- * any other class.
+ * **This family's controls still drawn as a raw `<button>`** (D-2904-9, #3012): the strip's own
+ * controls, by the family's one class (`ui-tabs-control`), never by a word a view picked
+ * (`closer`, `crumb`): the button family's rule lets these through until this family's lane
+ * moves them, and refuses a bare button with any other class. A tab is no longer one of them
+ * (#3134): every tab is the family's.
  */
 export const rawButtons = {
-  roles: ["tab"],
   classes: ["ui-tabs-control"],
 };

@@ -10,6 +10,7 @@ import {
   type ProjectUpdate,
   type RepoSaving,
   type SaveEntry,
+  type SaveStale,
 } from "./bindings";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { StatusItem } from "./ui/status/StatusItem";
@@ -294,9 +295,10 @@ export function SavingView({
             <SaveConflict plane={plane} saving={saving} onSaved={onSaved} />
           )}
           {saving.stage === "blocked" &&
-            saving.byHand == null &&
+            saving.toResolve == null &&
             saving.stoppedBy !== "rebase" &&
-            saving.stoppedBy !== "merge" && (
+            saving.stoppedBy !== "merge" &&
+            saving.stoppedBy !== "resolve" && (
               <div className="saving-question" role="group" aria-label="Ways out">
                 {saving.conflicts.length > 0 && (
                   <ul className="saving-files" aria-label="Where it conflicts">
@@ -364,6 +366,11 @@ export function SavingView({
           )}
           {saving.pushFailed !== null && (
             <p className="saving-note">{`The last push did not land: ${saving.pushFailed}`}</p>
+          )}
+          {saving.stale != null && (
+            <p className="saving-note" data-testid="saving-stale">
+              {`${staleSaid(saving.stale)}. The next look tries again.`}
+            </p>
           )}
           {saving.mode === null && <ModeQuestion plane={plane} branch={saving.branch} />}
           {saving.pr !== null && (
@@ -781,7 +788,13 @@ export function SaveIndicator(props: SaveShown | SaveStillReading) {
     );
   const { saving, repos, busy, onOpen, onSave, onUpdate, off } = props;
 
-  const { stage, said, words, incoming, red } = furthestBack(saving, repos ?? []);
+  const back = furthestBack(saving, repos ?? []);
+  const { stage, incoming, red } = back;
+  // A project that could not be fetched while its request is open (#5824 F8) says so in the
+  // pill, as its own element the words' cap never cuts, and since when and why in its name and
+  // tooltip.
+  const words = back.words;
+  const said = saving.stale != null ? `${back.said} · ${staleSaid(saving.stale)}` : back.said;
   // A red request is not a block, and it is still something wrong the bar must not draw as
   // "waiting": the mark is the alert, in the failed colour (ADR 0051, amended 2026-10-13).
   const Mark =
@@ -800,6 +813,11 @@ export function SaveIndicator(props: SaveShown | SaveStillReading) {
         icon={<Mark aria-hidden="true" />}
       >
         <span className="save-indicator-words">{words}</span>
+        {saving.stale != null && (
+          <span className="save-indicator-stale" aria-hidden="true">
+            · stale
+          </span>
+        )}
         {/* What came in, as its own element the words' cap never cuts (charter#403). Its
             meaning is in the button's name and title, which say "N incoming" in full. */}
         {incoming > 0 && onUpdate === undefined && (
@@ -890,16 +908,37 @@ export function furthestBack(
   return { stage, said: withIncoming(words, incoming), words, incoming, red: false };
 }
 
+/** Since when, and why, a project could not be fetched while its request is open (#5824 F8):
+ *  the time alone today, the day with it before. */
+export function staleSaid(stale: SaveStale, now: Date = new Date()): string {
+  const since = new Date(stale.since * 1000);
+  const time = since.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const when =
+    since.toDateString() === now.toDateString()
+      ? time
+      : `${since.toLocaleDateString([], { day: "numeric", month: "short" })}, ${time}`;
+  return `Stale since ${when}: ${stale.why}`;
+}
+
 /** What git stopped part-way that a chat may not finish in the project's root: continuing
  *  any of these rewrites the tree, which its guard refuses there (A3c). A merge is the
  *  window's Continue, as a replay is (#5338), and unmerged files with no operation are a chat's
  *  to finish. */
-const ONLY_GIT_FINISHES = new Set(["rebase", "merge", "am", "cherry-pick", "revert", "bisect"]);
+const ONLY_GIT_FINISHES = new Set([
+  "rebase",
+  "merge",
+  "am",
+  "cherry-pick",
+  "revert",
+  "bisect",
+  // A resolve folder's (#5824 F7): its own Notice offers the chat, for its folder.
+  "resolve",
+]);
 
 /** Whether a blocked save offers *Resolve in a chat*: never for a save's own replay that
  *  conflicted, nor for a stop only git in a terminal can finish (qw382). */
 export function chatMaySettle(saving: PlaneSaving): boolean {
-  return saving.byHand == null && !ONLY_GIT_FINISHES.has(saving.stoppedBy ?? "");
+  return saving.toResolve == null && !ONLY_GIT_FINISHES.has(saving.stoppedBy ?? "");
 }
 
 /** Whether pressing Save could do anything: files to commit, a blocked save to try again, or

@@ -75,6 +75,9 @@ enum Twist {
     Shortens,
     /// The field cannot be asked whether it has the focus.
     Unread,
+    /// The field's own document is on another origin, while the engine's record of the page
+    /// is unchanged.
+    OtherOrigin,
     /// The page asks for no password at all: signed in already.
     AsksNothing,
     /// The page shows a plain text field and no password: a search box, say.
@@ -248,7 +251,12 @@ fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, twist: Twist) -> Arc<A
                         message: "Cannot find context with specified id".into(),
                     })
                 } else {
-                    Ok(json!({ "result": { "type": "boolean", "value": true } }))
+                    // The field's document is on the origin it is asked about; a function that
+                    // asks about none checks none.
+                    let own = if twist == Twist::OtherOrigin { "http://other.test" } else { ORIGIN };
+                    let asked = p["arguments"][0]["value"].as_str();
+                    let holds = asked.is_none_or(|asked| asked == own);
+                    Ok(json!({ "result": { "type": "boolean", "value": holds } }))
                 })
             }
             "Runtime.callFunctionOn" if p["functionDeclaration"] == FIELD_LENGTH => {
@@ -414,6 +422,39 @@ fn a_login_fills_the_declared_origin_and_its_value_is_in_no_later_answer() {
     match found.content {
         Content::Text(text) => assert!(!text.to_lowercase().contains(FILLED), "{text}"),
         other => panic!("a find is text: {other:?}"),
+    }
+}
+
+#[test]
+fn a_login_with_a_password_too_short_to_be_kept_out_is_refused_and_nothing_is_sent_to_the_page() {
+    for (user, password) in [(None, "ab"), (Some("me"), "ab")] {
+        let (browser, engine) = browser_with(quick());
+        as_a_login_form(&engine, true);
+        let login = Login {
+            user: user.map(|user: &str| user.to_owned().into()),
+            password: password.to_owned().into(),
+            ..login_at(ORIGIN)
+        };
+        let methods = [
+            "Target.createTarget",
+            "Page.navigate",
+            "Input.insertText",
+            "Runtime.callFunctionOn",
+        ];
+        let before: Vec<usize> = methods.iter().map(|m| engine.sent(m).len()).collect();
+        let epoch = browser.epoch();
+        let refused = browser.log_in(&login, holds());
+        match refused {
+            Err(Refusal::NotLoggedIn(why)) => {
+                assert!(why.contains("shorter than 3 characters"), "{why}");
+                assert!(why.contains("nothing was filled"), "{why}");
+            }
+            other => panic!("refused otherwise: {}", ended_as(&other)),
+        }
+        assert_eq!(browser.epoch(), epoch, "the agent keeps the browser");
+        for (method, before) in methods.iter().zip(before) {
+            assert_eq!(engine.sent(method).len(), before, "{method} was sent");
+        }
     }
 }
 
@@ -678,6 +719,28 @@ fn a_field_that_keeps_less_than_purlis_typed_ends_the_browser() {
 #[test]
 fn a_field_that_cannot_be_asked_whether_it_has_the_focus_ends_the_browser() {
     ends_the_browser(Twist::Unread);
+}
+
+#[test]
+fn a_field_whose_own_document_is_on_another_origin_ends_the_browser_before_anything_is_typed() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::OtherOrigin);
+    let ended = browser.log_in(&login_at(ORIGIN), holds()).unwrap();
+    match ended.outcome {
+        Err(Refusal::NotLoggedIn(why)) => assert!(why.contains("ended this browser"), "{why}"),
+        other => panic!("refused otherwise: {}", ended_as(&other)),
+    }
+    assert!(inserted(&engine).is_empty(), "nothing is typed");
+    assert_eq!(engine.sent("Browser.close").len(), 1);
+    let asked: Vec<_> = engine
+        .sent("Runtime.callFunctionOn")
+        .into_iter()
+        .filter(|sent| sent.params["functionDeclaration"] == FIELD_HAS_FOCUS)
+        .collect();
+    assert!(!asked.is_empty());
+    for sent in &asked {
+        assert_eq!(sent.params["arguments"][0]["value"], ORIGIN, "{sent:?}");
+    }
 }
 
 /// A browser opened from kept logins (#2021): where its page asks for no password, purlis

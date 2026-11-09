@@ -47,7 +47,7 @@
   scrollbar-width: none;
 }
 
-/* What the roving focus counts as the rail's own controls, not its tabs: no box of its own. */
+/* The rail's own controls, which are not its tabs: no box of their own. */
 [data-part="column"][data-scope="rail"] > [data-strip-doing],
 [data-part="list"][data-scope="rail"] > [data-strip-doing] {
   display: contents;

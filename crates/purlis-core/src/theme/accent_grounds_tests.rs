@@ -12,7 +12,7 @@ use serde_json::json;
 use super::check::{contrast, onto};
 use super::person::Person;
 use super::tint::{self, oklab_of};
-use super::vocabulary::{ACCENT_GROUNDS, ACCENT_WASHES, ACCENT_WORDS, TINTED};
+use super::vocabulary::{ACCENT_GROUNDS, ACCENT_WASHES, ACCENT_WORDS, DRAWN_IN_THE_ACCENT, TINTED};
 use super::*;
 
 /// A person's teal, the one #3100's tests give.
@@ -409,6 +409,8 @@ fn a_person_s_accent_never_draws_its_wash_as_the_danger_wash() {
 fn a_followed_ground_comes_no_nearer_the_drawn_signal_washes_than_its_parent_s() {
     // Every accent on a coarse grid, over every shipped appearance: the grounds follow_kin
     // turns toward it come no nearer the waiting and danger washes, as drawn, than the parent's.
+    // Its first half turns them, and its second writes none of them
+    // (`follow_kin_s_grounds_are_its_first_half_s`), so the grid asks only the first.
     let steps = [0x10, 0x30, 0x50, 0x70, 0x90, 0xb0, 0xd0, 0xf0];
     for theme in shipped() {
         for r in steps {
@@ -417,7 +419,7 @@ fn a_followed_ground_comes_no_nearer_the_drawn_signal_washes_than_its_parent_s()
                     let accent = format!("#{r:02x}{g:02x}{b:02x}");
                     let mut given = std::collections::BTreeMap::new();
                     given.insert("accent.base", accent.clone());
-                    super::vocabulary::follow_kin(&mut given, &theme.values);
+                    super::vocabulary::follow_grounds(&mut given, &theme.values);
                     for ground in ACCENT_GROUNDS {
                         let Some(now) = given.get(ground) else {
                             continue;
@@ -470,4 +472,32 @@ fn a_recipe_that_turns_the_accent_turns_its_washes_and_leaving_the_accent_leaves
 fn oklab_distance(a: &str, b: &str) -> f64 {
     let (a, b) = (oklab_of(a).unwrap(), oklab_of(b).unwrap());
     ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
+}
+
+#[test]
+fn follow_kin_s_grounds_are_its_first_half_s() {
+    // What is drawn in the accent, the second half, is never one of its grounds...
+    for token in DRAWN_IN_THE_ACCENT.into_iter().chain(tint::SIGNAL_MARKS) {
+        assert!(!ACCENT_GROUNDS.contains(&token), "{token}");
+    }
+    // ...so the whole gives each ground what the first half gives it, here over every shipped
+    // appearance, for an accent of each kind: grey, a state's hue, the parent's family, and far.
+    for theme in shipped() {
+        for accent in [
+            "#808080", "#d03030", "#30a050", "#7060e0", "#2bb3a3", "#f0f0f0",
+        ] {
+            let given = std::collections::BTreeMap::from([("accent.base", accent.to_owned())]);
+            let (mut whole, mut half) = (given.clone(), given);
+            super::vocabulary::follow_kin(&mut whole, &theme.values);
+            super::vocabulary::follow_grounds(&mut half, &theme.values);
+            for ground in ACCENT_GROUNDS {
+                assert_eq!(
+                    whole.get(ground),
+                    half.get(ground),
+                    "{} {accent} {ground}",
+                    theme.id
+                );
+            }
+        }
+    }
 }

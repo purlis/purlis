@@ -13,6 +13,15 @@ import {
   type ReactNode,
 } from "react";
 import { House, Plus } from "lucide-react";
+import { closestCenter, DndContext, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { arrayMove, horizontalListSortingStrategy, SortableContext } from "@dnd-kit/sortable";
+import {
+  ALONG_THE_STRIP,
+  DRAG_AFTER_PX,
+  SortableTab,
+  stripAccessibility,
+  type Sortable,
+} from "./sortable";
 import { OUTSIDE, OUTSIDE_TITLE } from "./actions";
 import { pressed } from "./keys/registry";
 import { onAMac } from "./tabKeys";
@@ -100,6 +109,12 @@ export type SwitchDoes = {
   create: (plane: string) => void;
 };
 
+/** **What the pinned strip's arrows walk** (#5912): a chip, by its workspace; the dot of the
+ *  notices on one, by its workspace; or the ⌄. */
+type StripItem = { chip: string } | { dot: string } | typeof ALL;
+/** The ⌄, as a {@link StripItem}. */
+const ALL = "all";
+
 /** Which of the two switchers is open, if one is. */
 type Open = "workspaces" | "projects" | undefined;
 
@@ -172,12 +187,22 @@ export function TitleBarSwitch({
   const strip = useRef<HTMLDivElement>(null);
   const house = useRef<HTMLButtonElement>(null);
   const tintOf = useProjectTints();
+  // **A pin's drag** (#3128): by the pointer only, past a few pixels so a press is still a press;
+  // the keyboard's way is the chip's menu, Move left and Move right.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: DRAG_AFTER_PX } }),
+  );
+  const dragWords = useMemo(() => stripAccessibility("pinned workspace", (id) => String(id)), []);
   // **The chip a card hangs from** (#3648): found in the strip as it is drawn, so a chip drawn
   // again, or scrolled, is still the one the card points at.
   // The status bar's card is the status bar's to draw (#3653).
   const cardOn = notices?.open === AT_STATUS ? undefined : notices?.open;
   /** The chip whose dot was pressed: its card takes the keyboard as it comes (#3648's review). */
   const [handTo, setHandTo] = useState<string>();
+  /** **Where the keyboard last landed in the strip** (#5912), and the project and workspace in
+   *  front then: the strip's one Tab stop, until another workspace or project comes to the
+   *  front. */
+  const [roved, setRoved] = useState<{ to: StripItem; plane: string; focused?: string }>();
   const anchor = useMemo(
     () => ({
       get current(): Element | null {
@@ -336,9 +361,11 @@ export function TitleBarSwitch({
     !(workspaces?.dormant ?? NO_PINS).includes(focused)
       ? focused
       : undefined;
-  /** The strip's one Tab stop: the chip of the workspace in front, else the first pin, else the
-   *  ⌄ (charter-app#189). */
+  /** The chip that is the strip's stop until the keyboard moves it: the workspace in front's,
+   *  else the first pin, else none, and the ⌄ is (charter-app#189). */
   const stop = unpinned ?? (focused !== undefined && pins.includes(focused) ? focused : pins[0]);
+  /** How many chats are working in `workspace` (#3127): its chip's mark and description. */
+  const workingIn = (workspace: string) => workspaces?.working?.[workspace] ?? 0;
   /** What a chip's dot and description say of the notices hung from it (#3648). */
   const noticesOn = (workspace: string) => {
     const on = notices?.on.get(workspace) ?? [];
@@ -357,57 +384,110 @@ export function TitleBarSwitch({
     setHandTo(workspace);
     notices.show(workspace);
   };
+  /** Whether `workspace`'s chip wears the dot of its notices: while their card is not up, and a
+   *  ✋ until its chat is answered, whatever card is up (#3652). */
+  const dotShown = (workspace: string) =>
+    noticesOn(workspace) !== undefined &&
+    notices !== undefined &&
+    (notices.needs?.get(workspace) !== undefined || notices.open !== workspace);
+  /** Where the keyboard last landed in the strip, while it is still drawn and nothing else has
+   *  come to the front since (#5912). */
+  const rovedTo =
+    roved !== undefined &&
+    roved.plane === inFront &&
+    roved.focused === focused &&
+    (roved.to === ALL ||
+      ("chip" in roved.to
+        ? pins.includes(roved.to.chip) ||
+          (workspaces?.dormant ?? NO_PINS).includes(roved.to.chip) ||
+          roved.to.chip === unpinned
+        : dotShown(roved.to.dot)))
+      ? roved.to
+      : undefined;
+  /** **Whether `item` is the strip's one Tab stop** (charter-app#189, #5912): where the keyboard
+   *  last landed in it, else the chip of the workspace in front, else the first pin, else the ⌄. */
+  const isStop = (item: StripItem) => {
+    const at = rovedTo ?? (stop === undefined ? ALL : { chip: stop });
+    if (at === ALL || item === ALL) return at === item;
+    return "chip" in at
+      ? "chip" in item && at.chip === item.chip
+      : "dot" in item && at.dot === item.dot;
+  };
+  /** The keyboard landed on `item` in the strip: it is the stop now (#5912). */
+  const rove = (item: HTMLElement) => {
+    const to: StripItem | undefined =
+      item.dataset.chipOf !== undefined
+        ? { chip: item.dataset.chipOf }
+        : item.hasAttribute("data-titlebar-all")
+          ? ALL
+          : item.dataset.dotOf !== undefined
+            ? { dot: item.dataset.dotOf }
+            : undefined;
+    if (to !== undefined) setRoved({ to, plane: inFront, focused });
+  };
   /** A chip in its slot, with the dot of its notices while their card is not up (#3648). A
    *  dormant chip has no menu: its workspace's rows are of a workspace the project lacks. */
-  const slotted = (workspace: string, drawn: ReactNode, menued = true) => {
+  const slotted = (workspace: string, drawn: ReactNode, menued = true, dragged?: Sortable) => {
     const shows = noticesOn(workspace);
     const asker = notices?.needs?.get(workspace);
     return (
-      <ChipSlot>
-        {shows !== undefined &&
-          notices !== undefined &&
-          // A ✋ stays until its chat is answered, whatever card is up (#3652).
-          (asker !== undefined || notices.open !== workspace) && (
-            <NoticeDot
-              workspace={workspace === OUTSIDE ? OUTSIDE_TITLE : workspace}
-              count={shows.count}
-              kind={shows.kind}
-              // The house is no strip's: its dot is a Tab stop of its own.
-              stop={workspace === OUTSIDE}
-              onPress={() => {
-                if (asker !== undefined) {
-                  // ✋: the asking chat comes forward and takes the keyboard, since the consent is
-                  // answered on its band (#3652). The workspace's own notices, if it has any, come
-                  // up on their card beside it, which takes no keyboard.
-                  if ((notices.on.get(workspace)?.length ?? 0) > 0) notices.show(workspace);
-                  notices.bring?.(asker);
-                  return;
-                }
-                // A press is the person asking for it: the keyboard goes to the card, since the
-                // dot it was on goes as the card comes (WCAG 2.4.3).
-                showCard(workspace);
-              }}
-            />
-          )}
+      <ChipSlot
+        working={workingIn(workspace) > 0}
+        // A pin is carried by its slot, so its dot and its mark go with it, by a translation only:
+        // no chip changes size, and a neighbour moves only to make the drop place (#3128).
+        ref={dragged?.sortable.setNodeRef}
+        style={dragged?.style}
+        data-dragging={dragged?.sortable.isDragging === true ? "" : undefined}
+      >
+        {shows !== undefined && notices !== undefined && dotShown(workspace) && (
+          <NoticeDot
+            workspace={workspace === OUTSIDE ? OUTSIDE_TITLE : workspace}
+            count={shows.count}
+            kind={shows.kind}
+            // The house is no strip's: its dot is a Tab stop of its own. In the strip, a dot is
+            // the stop once the arrows land on it (#5912).
+            stop={workspace === OUTSIDE || isStop({ dot: workspace })}
+            onPress={() => {
+              if (asker !== undefined) {
+                // ✋: the asking chat comes forward and takes the keyboard, since the consent is
+                // answered on its band (#3652). The workspace's own notices, if it has any, come
+                // up on their card beside it, which takes no keyboard.
+                if ((notices.on.get(workspace)?.length ?? 0) > 0) notices.show(workspace);
+                notices.bring?.(asker);
+                return;
+              }
+              // A press is the person asking for it: the keyboard goes to the card, since the
+              // dot it was on goes as the card comes (WCAG 2.4.3).
+              showCard(workspace);
+            }}
+          />
+        )}
         {menued ? withMenu(workspace, drawn) : drawn}
       </ChipSlot>
     );
   };
-  const chip = (workspace: string, at: number) => {
+  const chip = (workspace: string, at: number) => (
+    <SortableTab key={workspace} id={workspace}>
+      {(dragged) => pinChip(workspace, at, dragged)}
+    </SortableTab>
+  );
+  /** A pin's chip in its slot, which a drag carries (#3128). */
+  const pinChip = (workspace: string, at: number, dragged: Sortable) => {
     const drawn = (
       <WorkspaceChip
-        key={workspace}
+        {...dragged.sortable.listeners}
         name={workspace}
         current={workspace === focused}
-        tabIndex={workspace === stop ? 0 : -1}
+        tabIndex={isStop({ chip: workspace }) ? 0 : -1}
         waiting={workspaces?.waiting[workspace] ?? 0}
+        working={workingIn(workspace)}
         notices={noticesOn(workspace)}
         tooltip={at < 9 ? `${workspace} · ${pinKeySaid(at + 1, mac)}` : workspace}
         onClick={() => goTo(workspace)}
         data-chip-of={workspace}
       />
     );
-    return <Fragment key={workspace}>{slotted(workspace, drawn)}</Fragment>;
+    return slotted(workspace, drawn, true, dragged);
   };
   /** **A pin whose workspace is gone** (V91c as amended, #3651): drawn dormant after the live
    *  pins, never a way into a workspace the project lacks. Its press shows its notice. */
@@ -419,7 +499,7 @@ export function TitleBarSwitch({
         <WorkspaceChip
           name={workspace}
           variant="dormant"
-          tabIndex={-1}
+          tabIndex={isStop({ chip: workspace }) ? 0 : -1}
           notices={noticesOn(workspace)}
           tooltip={`${workspace} is gone, kept dormant`}
           onClick={() => showCard(workspace)}
@@ -455,14 +535,31 @@ export function TitleBarSwitch({
             name={OUTSIDE_TITLE}
             current={focused === OUTSIDE}
             notices={noticesOn(OUTSIDE)}
+            working={workingIn(OUTSIDE)}
             onPress={() => goTo(OUTSIDE)}
           />,
         )}
       </Fragment>
       {/* Drawn once its plane is read: which workspaces it has is the plane's answer. */}
       {workspaces !== undefined && (
-        <PinnedStrip name="Pinned workspaces" ref={strip}>
-          {pins.map(chip)}
+        <PinnedStrip name="Pinned workspaces" ref={strip} onRove={rove}>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            modifiers={ALONG_THE_STRIP}
+            accessibility={dragWords}
+            onDragEnd={({ active, over }) => {
+              if (over === null || active.id === over.id) return;
+              const from = pins.indexOf(String(active.id));
+              const to = pins.indexOf(String(over.id));
+              if (from < 0 || to < 0) return;
+              workspaces.arrange?.(arrayMove([...pins], from, to));
+            }}
+          >
+            <SortableContext items={[...pins]} strategy={horizontalListSortingStrategy}>
+              {pins.map(chip)}
+            </SortableContext>
+          </DndContext>
           {dormant.map(dormantChip)}
           {unpinned !== undefined && (
             <Fragment key={`${unpinned}+`}>
@@ -472,8 +569,9 @@ export function TitleBarSwitch({
                   name={unpinned}
                   variant="unpinned"
                   current
-                  tabIndex={0}
+                  tabIndex={isStop({ chip: unpinned }) ? 0 : -1}
                   waiting={workspaces?.waiting[unpinned] ?? 0}
+                  working={workingIn(unpinned)}
                   notices={noticesOn(unpinned)}
                   tooltip={`Pin ${unpinned}`}
                   onClick={() => does.pin(inFront, unpinned, true)}
@@ -486,7 +584,7 @@ export function TitleBarSwitch({
             ref={all}
             keys={workspacesKeySaid(mac)}
             open={open === "workspaces"}
-            stop={stop === undefined}
+            stop={isStop(ALL)}
             onPress={() => toggle("workspaces")}
           />
         </PinnedStrip>

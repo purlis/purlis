@@ -184,6 +184,48 @@ fn every_syntax_role_is_held_on_the_editor_s_current_line() {
     }
 }
 
+/// **Every ground the editor draws its code on** (`editor/look.ts`): its own, its current line, a
+/// changed line's wash on either side of a diff, and a changed word's wash laid on its line's.
+fn editor_grounds(role: &'static str) -> [super::Pair; 6] {
+    let words = |back| super::p(role, back, super::TEXT);
+    [
+        words("terminal.background"),
+        words("surface.hover").over("terminal.background"),
+        words("diff.inserted").over("terminal.background"),
+        words("diff.deleted").over("terminal.background"),
+        words("diff.inserted-text")
+            .over("diff.inserted")
+            .over("terminal.background"),
+        words("diff.deleted-text")
+            .over("diff.deleted")
+            .over("terminal.background"),
+    ]
+}
+
+#[test]
+fn every_built_in_draws_its_code_as_words_on_every_ground_the_editor_draws_it_on() {
+    // axe holds the editor's code to 4.5:1, as words (#3796), in every cell of the stories'
+    // matrix: each appearance of Purlis and of Purlis Classic. The check holds each role at a
+    // mark's 3:1, which an import fits its colours to; the built-ins draw it as words.
+    let mut under = Vec::new();
+    for theme in purlis().appearances.iter().chain(&classic().appearances) {
+        for role in ROLES {
+            let token: &'static str = super::super::vocabulary::TOKENS
+                .iter()
+                .find(|one| **one == format!("syntax.{role}"))
+                .expect("a syntax role is a token");
+            for pair in editor_grounds(token) {
+                let ratio = super::ratio(theme, &pair).expect("measured");
+                if ratio < pair.floor {
+                    let laid = super::laid(token, pair.back, [pair.under, pair.beneath]);
+                    under.push(format!("{} {}: {laid} at {ratio}", theme.name, theme.id));
+                }
+            }
+        }
+    }
+    assert!(under.is_empty(), "{under:#?}");
+}
+
 #[test]
 fn the_current_line_is_measured_over_the_editor_s_ground() {
     // A current line that is a clear wash is the editor's own ground: a role that reads on the
@@ -203,10 +245,11 @@ fn the_current_line_is_measured_over_the_editor_s_ground() {
 
 #[test]
 fn purlis_classic_light_s_property_and_attribute_read_on_the_current_line() {
-    // Darkened from #218bff (2.79 on the current line), and again for a diff's changed word
-    // (#4424); the terminal's bright blue stays as it was.
+    // Darkened from #218bff (2.79 on the current line), again for a diff's changed word
+    // (#4424), and again to read there as words (#3796); the terminal's bright blue stays as it
+    // was.
     for token in ["syntax.property", "syntax.attribute"] {
-        assert_eq!(classic_light().value(token), "#0969da");
+        assert_eq!(classic_light().value(token), "#004bba");
     }
     assert_eq!(
         classic_light().value("terminal.ansi.bright-blue"),

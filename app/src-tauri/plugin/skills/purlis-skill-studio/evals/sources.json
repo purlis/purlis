@@ -1,0 +1,193 @@
+{
+  "tier": "standard",
+  "neighbours": [
+    "purlis-curation-action",
+    "purlis-persona"
+  ],
+  "prompts": [
+    {
+      "query": "Draft a new skill in .purlis/skills. What the skill does: check a workspace's repos are cloned.",
+      "source": "Skill text: \"Draft a new skill\"; the prompt the studio types (`asking` in crates/purlis-core/src/skills/verbs/drafts.rs)."
+    },
+    {
+      "query": "Draft a new skill in workspaces/web/skills. The skill should summarise yesterday's sessions.",
+      "source": "The prompt the studio types when what the skill does was left empty, finished by the person."
+    },
+    {
+      "query": "Write trigger tests for the deploy-check skill in .purlis/skills/deploy-check.",
+      "source": "Skill text: \"Trigger tests\"; the prompt `asking_for_trigger_tests` types."
+    },
+    {
+      "query": "Write outcome evals for the release-notes skill in .purlis/skills/release-notes.",
+      "source": "Skill text: \"Outcome evals\"; the prompt `asking_for_outcome_evals` types."
+    },
+    {
+      "query": "Write checks for the triage skill in .purlis/skills/triage.",
+      "source": "Skill text: \"Checks: trigger tests and outcome evals together\"; the prompt `asking_for_checks` types."
+    },
+    {
+      "query": "Improve the triage skill in .purlis/skills/triage from its runs and grades.",
+      "source": "Skill text: \"Improve a skill from its runs and grades\"."
+    },
+    {
+      "query": "Use the purlis-skill-studio skill to write trigger tests for the backlog skill in skills/backlog.",
+      "source": "The prompt the studio types, whole, as a harness without its own skill start shows it."
+    },
+    {
+      "query": "Redo the Skill studio's draft of deploy-check; its description is too long.",
+      "source": "Skill text: \"Redo a draft\"."
+    },
+    {
+      "query": "The Skill studio asked: write checks for the lint-fix skill in workspaces/api/skills/lint-fix.",
+      "source": "Mined session record 20261104-231538-5183-skill-page-files-tab-open-in-finder-pr-5199.md: a skill's page and its checks."
+    },
+    {
+      "query": "Write triggers.json for the onboarding skill in .purlis/skills/onboarding, with should-trigger and should-not cases.",
+      "source": "Skill text: the `triggers.json` format."
+    },
+    {
+      "query": "Write an evals.json of outcome evals for the db-migrate skill in .purlis/skills/db-migrate.",
+      "source": "Skill text: the `evals.json` format."
+    },
+    {
+      "query": "Draft a new purlis project skill in .purlis/skills that files a weekly status report.",
+      "source": "Skill text: description, \"a new skill\"; plausible phrasing a person types."
+    },
+    {
+      "query": "From the Skill studio: improve the commit-message skill from its recent runs and grades.",
+      "source": "Skill text: description, \"an edit drawn from its runs and grades\"."
+    },
+    {
+      "query": "Write both the trigger tests and the outcome evals for the pr-review skill in .purlis/skills/pr-review.",
+      "source": "Skill text: description, \"both kinds of checks at once\"."
+    },
+    {
+      "query": "Draft a new skill in personas/qa/skills. What the skill does: run the smoke suite.",
+      "source": "The prompt the studio types at a persona's level."
+    },
+    {
+      "query": "The Skill studio draft of the release skill was discarded; redo it with a shorter body.",
+      "source": "Skill text: \"Redo a draft\"; \"the person accepts or discards it there\"."
+    },
+    {
+      "query": "Write trigger tests for the theme-audit skill in workspaces/design/skills/theme-audit, with near misses.",
+      "source": "Skill text: \"Trigger tests\", what makes a good test."
+    },
+    {
+      "query": "Draft a new skill in .purlis/skills. The skill should",
+      "source": "The prompt the studio types, unfinished, when New skill was left empty (`asking`)."
+    },
+    {
+      "query": "Improve the deploy skill in .purlis/skills/deploy from its runs; its grades show it misses on ship it.",
+      "source": "Mined session record 20261108-035419-5738-a-correction-records-a-miss-skill-studio-sh.md: runs and misses in the studio."
+    },
+    {
+      "query": "Write outcome evals for the changelog skill in skills/changelog that check the fragment it writes.",
+      "source": "Skill text: \"Outcome evals\"; plausible phrasing a person types."
+    },
+    {
+      "query": "Write checks for the oncall skill in workspaces/ops/skills/oncall.",
+      "source": "The prompt `asking_for_checks` types at a workspace's level."
+    },
+    {
+      "query": "Draft a new skill in workspaces/smart-ide/skills. What the skill does: open the right branch folder for an issue.",
+      "source": "The prompt the studio types at a workspace's level."
+    },
+    {
+      "query": "Add a curation action to the steward persona that runs the triage skill.",
+      "source": "Near miss (purlis-curation-action): a skill named in a curation action.",
+      "belongs_to": "purlis-curation-action"
+    },
+    {
+      "query": "Change the label of the reviewer's Curate menu entry.",
+      "source": "Near miss (purlis-curation-action): its description, \"the Curate menu\".",
+      "belongs_to": "purlis-curation-action"
+    },
+    {
+      "query": "Give the plane a Curate entry that opens a chat to write a new skill.",
+      "source": "Near miss (purlis-curation-action): a Curate entry whose chat writes a skill.",
+      "belongs_to": "purlis-curation-action"
+    },
+    {
+      "query": "Which variables can a curation action's prompt use?",
+      "source": "Near miss (purlis-curation-action): its variables.",
+      "belongs_to": "purlis-curation-action"
+    },
+    {
+      "query": "Create a persona whose charter covers skill authoring.",
+      "source": "Near miss (purlis-persona): its description, \"create one\".",
+      "belongs_to": "purlis-persona"
+    },
+    {
+      "query": "Dispatch the skill review to the reviewer persona and bring back its verdict.",
+      "source": "Near miss (purlis-persona): its description, \"dispatch work to another\".",
+      "belongs_to": "purlis-persona"
+    },
+    {
+      "query": "Add the tdd skill to the qa persona's skill list.",
+      "source": "Near miss (purlis-persona): a persona's skills, not a skill's text.",
+      "belongs_to": "purlis-persona"
+    },
+    {
+      "query": "Which persona owns the release skill's work?",
+      "source": "Near miss (purlis-persona): \"which persona a piece of work belongs to\".",
+      "belongs_to": "purlis-persona"
+    },
+    {
+      "query": "Write unit tests for the parser module.",
+      "source": "plausible phrasing a person types: tests in code."
+    },
+    {
+      "query": "Write an eval harness for our summariser in Python.",
+      "source": "plausible phrasing a person types: evals in code."
+    },
+    {
+      "query": "List the skills on my resume for a backend role.",
+      "source": "plausible phrasing a person types: \"skills\" elsewhere."
+    },
+    {
+      "query": "What skills does a staff engineer need?",
+      "source": "plausible phrasing a person types: \"skills\" elsewhere."
+    },
+    {
+      "query": "Write integration tests for the checkout API.",
+      "source": "plausible phrasing a person types: tests in code."
+    },
+    {
+      "query": "Draft a cover letter.",
+      "source": "plausible phrasing a person types: \"draft\" elsewhere."
+    },
+    {
+      "query": "Grade these student essays against the rubric.",
+      "source": "plausible phrasing a person types: \"grade\" elsewhere."
+    },
+    {
+      "query": "Write a Jest snapshot test for the header.",
+      "source": "plausible phrasing a person types: tests in code."
+    },
+    {
+      "query": "Improve the performance of the search endpoint from its traces.",
+      "source": "plausible phrasing a person types: \"improve from runs\" in code."
+    },
+    {
+      "query": "Rewrite this function to be more readable.",
+      "source": "plausible phrasing a person types: unrelated."
+    },
+    {
+      "query": "Draft a design doc for the new cache.",
+      "source": "plausible phrasing a person types: \"draft\" elsewhere."
+    },
+    {
+      "query": "Write a benchmark for the JSON encoder.",
+      "source": "plausible phrasing a person types: unrelated."
+    },
+    {
+      "query": "Create an evals dataset for a sentiment classifier.",
+      "source": "plausible phrasing a person types: evals elsewhere."
+    },
+    {
+      "query": "Explain how the harness discovers skills in a folder.",
+      "source": "plausible phrasing a person types: a question, not a studio job."
+    }
+  ]
+}

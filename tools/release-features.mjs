@@ -48,9 +48,10 @@ export const NOT_SHIPPING = {
   "ci.yml": "checks every pull request and main: its builds are tested, linted and measured, never handed on",
   "forge-live.yml": "runs the forge contract tests against a real forge: it compiles tests only",
   "mutants.yml": "mutation testing of the core crate: its builds are only ever tested",
-  "operator.yml": "checks the cluster operator and runs it on a throwaway kind cluster",
+  "operator.yml": "checks the cluster operator and runs it on a throwaway kind cluster; its push to main calls operator-image.yml, which ships",
   "stress.yml": "the stress and scale measurements: its builds run tests and benchmarks only",
   "scale.yml": "the nightly scale run (#5497): its release builds measure a generated project and are never handed on",
+  "skill-grades.yml": "the CI grader of the built-in skills (spec #5714): it builds the grader to run trigger tests and proposes pins, never hands a build on",
 };
 
 /** The name a crate gives the feature only another crate's tests turn on; each is in `TEST_ONLY`. */
@@ -420,10 +421,35 @@ const PUBLISHES = [
   /^\s*packages:\s*write\b/m,
 ];
 
-/** Whether a workflow's text, its comments left out, publishes a release or pushes an image. */
+/**
+ * Whether a workflow's text, its comments left out, publishes a release or pushes an image. A job
+ * that only calls a workflow of `SHIPPING_WORKFLOWS` (`uses: ./.github/workflows/<it>`) is that
+ * workflow's publish, checked there, so what it grants the call is not read as this one's:
+ * `operator.yml` calls `operator-image.yml` that way, so the image's provenance names the
+ * commit pushed.
+ */
 function publishes(text) {
-  const live = text.split("\n").filter((l) => !l.trimStart().startsWith("#")).join("\n");
+  const live = withoutShippingCalls(text.split("\n").filter((l) => !l.trimStart().startsWith("#"))).join("\n");
   return PUBLISHES.some((publish) => publish.test(live));
+}
+
+/** `lines` without the jobs that call a workflow of `SHIPPING_WORKFLOWS`. */
+function withoutShippingCalls(lines) {
+  const calls = new RegExp(`^ {4}uses:\\s*\\./\\.github/workflows/(${SHIPPING_WORKFLOWS.map((w) => w.replaceAll(".", "\\.")).join("|")})\\s*$`);
+  const start = lines.indexOf("jobs:");
+  if (start === -1) return lines;
+  const jobs = [];
+  let current = null;
+  for (const [i, line] of lines.entries()) {
+    if (i <= start) continue;
+    if (/^\S/.test(line)) break;
+    if (/^ {2}[\w-]+:\s*$/.test(line)) jobs.push((current = { from: i, to: i + 1 }));
+    else if (current) current.to = i + 1;
+  }
+  const dropped = new Set(
+    jobs.filter(({ from, to }) => lines.slice(from, to).some((l) => calls.test(l))).flatMap(({ from, to }) => [...Array(to - from).keys()].map((k) => from + k)),
+  );
+  return lines.filter((_, i) => !dropped.has(i));
 }
 
 /**

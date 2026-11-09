@@ -15,8 +15,16 @@ pub const OLD_BUILT_IN_PREFIX: &str = BUILT_IN_PREFIXES[1];
 
 /// **Built-in skills that changed their name after they took [`crate::RESERVED_PREFIX`]**, the
 /// name each had and the one it has (ADR 0099 as amended 2026-11-01). The old one is purlis's as
-/// the prefix is, so it means this skill even bare.
-const RENAMED: [(&str, &str); 1] = [("purlis-building-purlis-ui", "purlis-building-ui")];
+/// the prefix is, so it means this skill even bare. The four of #5724 (spec #5714 Q32, Q33) took
+/// names that say what each is for; their runs, grades and misses carry over by this table, and
+/// no stub keeps an old name in the bundle.
+pub const RENAMED: &[(&str, &str)] = &[
+    ("purlis-building-purlis-ui", "purlis-building-ui"),
+    ("purlis-compact", "purlis-tidy-memory"),
+    ("purlis-working-in-a-clone", "purlis-repo-work"),
+    ("purlis-update", "purlis-upgrade"),
+    ("purlis-add-curation-action", "purlis-curation-action"),
+];
 
 /// One entry of a persona's `skills:` list.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,6 +81,30 @@ impl Reference {
                 .is_some_and(|(prefix, _)| prefix.trim() == OLD_BUILT_IN_PREFIX)
     }
 
+    /// **The old name and the new of the built-in skill the entry `written` names by a name it
+    /// had before [`RENAMED`]** (#5724): one a persona's list still reads, and the lint asks to
+    /// have rewritten. `None` for an entry by a name a skill has now, and for any other.
+    pub fn written_renamed(written: &str) -> Option<(&'static str, &'static str)> {
+        let written = written.trim();
+        let name = written
+            .split_once(':')
+            .map_or(written, |(_, name)| name.trim());
+        let own = if name.starts_with(crate::RESERVED_PREFIX) {
+            name.to_owned()
+        } else if written.contains(':') {
+            format!("{}{name}", crate::RESERVED_PREFIX)
+        } else {
+            return None;
+        };
+        let prefixed = written
+            .split_once(':')
+            .is_none_or(|(prefix, _)| BUILT_IN_PREFIXES.contains(&prefix.trim()));
+        RENAMED
+            .iter()
+            .find(|(old, _)| prefixed && *old == own)
+            .copied()
+    }
+
     /// Whether it names the plane skill `name`: only a bare name can.
     pub fn names_plane(&self, name: &str) -> bool {
         matches!(self, Self::Named(named) if named == name)
@@ -115,6 +147,42 @@ fn built_in_named(name: &str) -> String {
         format!("{}{name}", crate::RESERVED_PREFIX)
     };
     renamed(&own).map_or(own, str::to_owned)
+}
+
+/// **The name a built-in skill has now, where `name` is one it had** ([`RENAMED`]), else
+/// `name`: how a grade's row, a run and a miss recorded under an old name are read under the new.
+pub fn name_now(name: &str) -> &str {
+    renamed(name).unwrap_or(name)
+}
+
+/// **Every old name of a built-in skill ([`RENAMED`]) that `text` names**, with the name it has
+/// now, each once, in the table's order: by its own name (`purlis-compact`) or by a command's
+/// (`purlis:compact`, `charter:compact`), as a whole word. What the persona lint warns of in a
+/// curation action's prompt (#5724), whose chat would ask for a skill no harness has.
+pub fn old_names_in(text: &str) -> Vec<(&'static str, &'static str)> {
+    RENAMED
+        .iter()
+        .filter(|(old, _)| {
+            let short = &old[crate::RESERVED_PREFIX.len()..];
+            [
+                (*old).to_owned(),
+                format!("{}:{short}", BUILT_IN_PREFIXES[0]),
+                format!("{}:{short}", BUILT_IN_PREFIXES[1]),
+            ]
+            .iter()
+            .any(|needle| named_whole(text, needle))
+        })
+        .copied()
+        .collect()
+}
+
+/// Whether `text` holds `name` with no letter, digit, `-` or `_` on either side of it.
+fn named_whole(text: &str, name: &str) -> bool {
+    let part =
+        |c: Option<char>| c.is_some_and(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'));
+    text.match_indices(name).any(|(at, _)| {
+        !part(text[..at].chars().next_back()) && !part(text[at + name.len()..].chars().next())
+    })
 }
 
 /// The name now of the built-in skill that used to be `name`, if one did ([`RENAMED`]).

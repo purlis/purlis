@@ -303,19 +303,6 @@ body {
   cursor: grabbing;
 }
 
-/* **A LIVE workspace's dot** (`LiveMark`, qw337): right after the name, in the accent colour,
-   with a ring of the same colour so it is not taken for the workspace's own colour mark before
-   the name. The margin is the ring's room. */
-.live-dot {
-  flex: none;
-  width: var(--space-3);
-  height: var(--space-3);
-  margin-inline: var(--space-1);
-  border-radius: var(--radius-full);
-  background: var(--accent-base);
-  box-shadow: 0 0 0 var(--space-1) color-mix(in srgb, var(--accent-base) 35%, transparent);
-}
-
 /* **No strip scrolls. What does not fit is not drawn** — the operator, looking at the
    running app: *"i noticed that tabs now scrollable — instead of automatic expanding in show
    more button."* That reverses what ADR 0039 left open and what stood here, and the amendment
@@ -340,9 +327,9 @@ body {
   flex-wrap: nowrap;
 }
 
-/* **A strip's tablist** (#1204, `StripTablist.tsx`): an empty element inside the strip that owns
-   its tabs through `aria-owns`, so the `×`, the gears and the strip's own buttons beside them are
-   not the tablist's. Out of the row, so it takes no place among the tabs; laid over the whole
+/* **A strip's tablist** (#1204, `TabStripRow` in `ui/tabs/TabStrip.tsx`): an empty element
+   inside the strip that owns its tabs through `aria-owns`, so the `×`, the gears and the strip's
+   own buttons beside them are not the tablist's. Out of the row, so it takes no place among the tabs; laid over the whole
    strip, so a screen reader that draws its cursor around the tablist draws it around the tabs;
    and never under the pointer, which goes through it to the tab or the `×` it is over. */
 [data-strip] {
@@ -4608,10 +4595,18 @@ body {
   color: var(--text-secondary);
 }
 
-.get-project-progress:not(:empty) {
+.get-project-progress {
   display: flex;
   gap: var(--space-4);
   align-items: center;
+  margin-block-start: var(--space-5);
+}
+
+.get-project-bar {
+  flex: 1;
+}
+
+.get-project-said:not(:empty) {
   margin-block-start: var(--space-5);
 }
 
@@ -6803,7 +6798,8 @@ nav.piece-files-head {
 /* **What came in is never cut** (charter#403, ADR 0054). It is its own `↓N` after the words
    rather than the end of them, where the ellipsis took it first; ADR 0051 wants the count
    seen. It does not shrink, and it is short enough that it never starves the tabs. */
-.save-indicator-incoming {
+.save-indicator-incoming,
+.save-indicator-stale {
   flex-shrink: 0;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -6835,6 +6831,13 @@ nav.piece-files-head {
 .saving-journal {
   margin: 0;
   padding-left: var(--space-6);
+  color: var(--text-secondary);
+}
+/* One settings key both machines changed (#5852): its name over its two values. */
+.saving-key {
+  margin: var(--space-2) 0 0;
+}
+.saving-key-name {
   color: var(--text-secondary);
 }
 .saving-said {
@@ -7672,6 +7675,18 @@ nav.piece-files-head {
 
 .ui-machine-entry .ui-setting-reset {
   margin-inline-start: auto;
+}
+
+/* **The other devices' signing keys** (#5918, `settings/signing.tsx`): a heading and the line on
+   what removing one does, above their list. */
+.signing-others h3 {
+  margin: var(--space-3) 0 var(--space-1);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-strong);
+}
+
+.signing-others .ui-setting-help {
+  margin: 0;
 }
 
 /* **A pool's limits, folded under its row** (#4285, `PoolLimits.tsx`): the groups of what they

@@ -42,7 +42,15 @@ const HELD: SigningAccountKeys = {
   kind: "github",
   host: "github.com",
   has_key: true,
-  others: [{ id: "17", title: "purlis · Studio Mac mini" }],
+  others: [
+    {
+      id: "17",
+      title: "purlis · Studio Mac mini",
+      device: "Studio Mac mini",
+      added: "2026-10-01",
+      older_setup: false,
+    },
+  ],
   may_remove: true,
   keys_page: "https://github.com/settings/keys",
 };
@@ -212,11 +220,72 @@ export const OnManaged: Story = {
       within(canvasElement).getByRole("button", { name: "Add to this account: sam on GitLab" }),
     );
     await expect(
-      within(canvasElement).getByRole("list", { name: "Your other devices' signing keys" }),
-    ).toHaveTextContent("purlis · Studio Mac mini");
+      within(canvasElement).getByRole("list", { name: "Signing keys of your other devices" }),
+    ).toHaveTextContent("Studio Mac mini");
     add.focus();
     await expect(add).toHaveFocus();
     expectFocusInSight();
+  },
+};
+
+/** **Other devices' keys** (#5918): the heading and what removing does, each key by its device and
+ *  the day added, an older setup's key marked, and a quiet Remove… on each. */
+export const OtherDevicesKeys: Story = {
+  parameters: {
+    signing: { ...ON, accounts: [{ ...ACCOUNT, verified_as: "octocat@example.com" }] },
+    keys: [
+      {
+        ...HELD,
+        others: [
+          ...HELD.others,
+          {
+            id: "18",
+            title: "purlis on old-mini",
+            device: "old-mini",
+            added: "2026-08-14",
+            older_setup: true,
+          },
+        ],
+      },
+    ],
+  },
+  play: async ({ canvasElement }) => {
+    const list = await waitFor(() =>
+      within(canvasElement).getByRole("list", { name: "Signing keys of your other devices" }),
+    );
+    await expect(list).toHaveTextContent("Older setup");
+    const remove = within(list).getByRole("button", {
+      name: "Remove old-mini's signing key from octocat on GitHub…",
+    });
+    remove.focus();
+    await expect(remove).toHaveFocus();
+    expectFocusInSight();
+  },
+};
+
+/** **Removing another device's key, confirmed** (#5918): the device named, what its commits show
+ *  until it sets up again, and that this Mac is not affected; the confirm's Remove key is red. */
+export const RemoveOtherDevicesKey: Story = {
+  parameters: {
+    signing: { ...ON, accounts: [{ ...ACCOUNT, verified_as: "octocat@example.com" }] },
+    keys: [HELD],
+    screenshot: "page",
+  },
+  play: async ({ canvasElement }) => {
+    const list = await waitFor(() =>
+      within(canvasElement).getByRole("list", { name: "Signing keys of your other devices" }),
+    );
+    await userEvent.click(
+      within(list).getByRole("button", {
+        name: "Remove Studio Mac mini's signing key from octocat on GitHub…",
+      }),
+    );
+    const confirm = await waitFor(() =>
+      within(document.body).getByRole("dialog", {
+        name: "Remove Studio Mac mini's signing key from octocat on GitHub?",
+      }),
+    );
+    await expect(confirm).toHaveTextContent("This Mac is not affected.");
   },
 };
 
@@ -229,7 +298,7 @@ export const RemoveSigning: Story = {
   },
   play: async ({ canvasElement }) => {
     await waitFor(() =>
-      within(canvasElement).getByRole("list", { name: "Your other devices' signing keys" }),
+      within(canvasElement).getByRole("list", { name: "Signing keys of your other devices" }),
     );
     await userEvent.click(within(canvasElement).getByRole("button", { name: "Remove signing…" }));
     const confirm = await waitFor(() =>

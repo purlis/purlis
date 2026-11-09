@@ -138,7 +138,6 @@ export const ReporterFault: Story = {
 
 /** The marks in the head's gutter, one of each severity. */
 export const InTheGutter: StoryObj<typeof MergeViewer> = {
-  parameters: { a11y: { context: { exclude: [".cm-editor"] } } },
   render: () => (
     <MergeViewer
       path="release.yml"

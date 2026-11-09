@@ -57,8 +57,10 @@ jobs:
           # release's run holds the `digest-<arch>` artifacts.
           - package: purlis-runner
             workflow: release.yml
+          # The operator image is pushed by `operator-image.yml`, called by `operator.yml`'s run
+          # of a push to `main`: that run holds the artifacts.
           - package: purlis-cluster-operator
-            workflow: operator-image.yml
+            workflow: operator.yml
     # Read the runs, their artifacts and the package; write nothing.
     permissions:
       contents: read

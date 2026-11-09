@@ -22,6 +22,8 @@ struct Server {
     forbidden_reads: bool,
     /// A definition that has `v1beta1` but does not serve it.
     unserved: Option<&'static str>,
+    /// The namespaces that carry the operator's mark, answered only to a list asking for it.
+    marked: Vec<&'static str>,
     asked: Arc<Mutex<Vec<(Method, String)>>>,
 }
 
@@ -50,15 +52,17 @@ impl Server {
             denied: Vec::new(),
             forbidden_reads: false,
             unserved: None,
+            marked: Vec::new(),
             asked: Arc::default(),
         }
     }
 
-    fn answer(&self, method: &Method, path: &str, body: &[u8]) -> (u16, Value) {
+    fn answer(&self, method: &Method, path: &str, query: &str, body: &[u8]) -> (u16, Value) {
         const CRDS: &str = "/apis/apiextensions.k8s.io/v1/customresourcedefinitions/";
         const CONTROLLER: &str =
             "/apis/apps/v1/namespaces/agent-sandbox-system/deployments/agent-sandbox-controller";
         const REVIEWS: &str = "/apis/authorization.k8s.io/v1/selfsubjectaccessreviews";
+        const MARK: &str = "labelSelector=app.kubernetes.io%2Fmanaged-by%3Dpurlis-cluster-operator";
         match (method, path) {
             (&Method::GET, "/version") => (
                 200,
@@ -91,6 +95,23 @@ impl Server {
                            "status": {"readyReplicas": 1}}),
                 ),
             },
+            (&Method::GET, "/api/v1/namespaces") => {
+                // Only a list asking for the mark by its label is answered with the marked ones.
+                let asks_for_the_mark = query.split('&').any(|q| q == MARK);
+                let items: Vec<Value> = self
+                    .marked
+                    .iter()
+                    .filter(|_| asks_for_the_mark)
+                    .map(|name| {
+                        json!({"metadata": {"name": name, "labels":
+                            {"app.kubernetes.io/managed-by": "purlis-cluster-operator"}}})
+                    })
+                    .collect();
+                (
+                    200,
+                    json!({"apiVersion": "v1", "kind": "NamespaceList", "metadata": {}, "items": items}),
+                )
+            }
             (&Method::POST, REVIEWS) => {
                 let mut review: Value = serde_json::from_slice(body).expect("a review");
                 let attributes = &review["spec"]["resourceAttributes"];
@@ -117,12 +138,13 @@ impl Server {
                     .expect("a body")
                     .to_bytes();
                 let path = parts.uri.path().to_owned();
+                let query = parts.uri.query().unwrap_or_default().to_owned();
                 server
                     .asked
                     .lock()
                     .expect("not poisoned")
                     .push((parts.method.clone(), path.clone()));
-                let (code, answer) = server.answer(&parts.method, &path, &body);
+                let (code, answer) = server.answer(&parts.method, &path, &query, &body);
                 Ok::<_, Infallible>(
                     Response::builder()
                         .status(StatusCode::from_u16(code).expect("a status"))
@@ -197,7 +219,8 @@ fn a_refused_read_and_a_denied_review_are_findings() {
     server.denied = vec!["patch clusterrolebindings"];
     let report = server.doctor();
     let lines = report.to_string();
-    assert_eq!(report.findings.len(), 2, "{lines}");
+    assert_eq!(report.findings.len(), 3, "{lines}");
+    assert!(lines.contains("permission to list namespaces"), "{lines}");
     assert!(
         lines.contains("permission to read customresourcedefinitions"),
         "{lines}"
@@ -219,5 +242,20 @@ fn a_definition_that_has_the_version_but_does_not_serve_it_lacks_it() {
             .to_string()
             .contains("sandboxclaims.extensions.agents.x-k8s.io serving v1beta1"),
         "{report}"
+    );
+}
+
+/// Which namespaces carry the operator's mark is asked by its label, of the API server, so the
+/// answer is the cluster's and not every namespace read by the doctor.
+#[test]
+fn a_namespace_carrying_the_operators_mark_is_listed_by_its_label() {
+    let mut server = Server::new(Some("v1.0.6"));
+    server.marked = vec!["purlis-runners-0123456789abcdef", "team-tools"];
+    let report = server.doctor();
+    assert_eq!(report.findings.len(), 1, "{report}");
+    let line = report.findings[0].to_string();
+    assert!(
+        line.contains("kubectl label namespace team-tools app.kubernetes.io/managed-by-"),
+        "{line}"
     );
 }

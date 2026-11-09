@@ -57,9 +57,7 @@ fn a_scheduled_run_holds_no_key_and_publishes_nowhere() {
     // `secrets.*` a scheduled `plan` reads is empty, which is what makes its build unsigned.
     assert_eq!(
         job(&jobs, "plan").environment(),
-        Some(
-            "${{ (github.event_name == 'push' || github.event_name == 'workflow_run') && 'release' || '' }}"
-        )
+        Some("${{ github.event_name == 'push' && 'release' || '' }}")
     );
     // `build` takes the environment only when `plan` said the run publishes, and `plan` says
     // a scheduled run does not (the test beside this one holds that arm).

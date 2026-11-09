@@ -205,3 +205,35 @@ export const SkillsViewCards: Story = {
     expectFocusInSight();
   },
 };
+
+/**
+ * **A card's ⋯ by the pointer** (#3769): a click opens the card's menu at the ⋯, the menu itself
+ * holding the keyboard with no item chosen, and the ⋯ says it is open; Escape closes it and gives
+ * the keyboard back to the ⋯. No picture: the cards are pictured above, and the menu stands over
+ * the frame.
+ */
+export const MenuByThePointer: Story = {
+  parameters: { screenshot: false },
+  play: async ({ canvas, userEvent }) => {
+    const list = canvas.getByRole("grid", { name: "Skills" });
+    const grilling = within(list).getByRole("row", { name: "grilling" });
+    const more = within(grilling).getByRole("button", { name: "More for grilling" });
+    await expect(more).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(more);
+    const menu = await screen.findByRole("menu", { name: "grilling" });
+    await waitFor(() => expect(more).toHaveAttribute("aria-expanded", "true"));
+    await untilFocused(() => menu, "⋯: the menu itself has the keyboard");
+    for (const item of within(menu).getAllByRole("menuitem"))
+      await expect(item, "⋯: no item is chosen").not.toHaveAttribute("data-focused");
+    const at = more.getBoundingClientRect();
+    const placed = menu.getBoundingClientRect();
+    await expect(Math.abs(placed.top - at.bottom), "⋯: the menu opens at the ⋯").toBeLessThan(
+      at.height,
+    );
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull(), { timeout: 3_000 });
+    await untilFocused(() => more, "⋯: Escape gives the keyboard back to the ⋯");
+    expectFocusInSight();
+    await expect(more).toHaveAttribute("aria-expanded", "false");
+  },
+};

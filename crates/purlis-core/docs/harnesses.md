@@ -232,10 +232,10 @@ the command line, for that session alone, and writes nothing into any config fol
 
 - **Claude Code** gets `--plugin-dir <the bundled plugin>`: the app's own plugin,
   `purlis`, with every hook purlis answers — the state hooks and the Bash guard — and
-  the `purlis-handoff`, `purlis-working-in-a-clone`, `purlis-update`, `purlis-persona`,
-  `purlis-secrets`, `purlis-browser`, `purlis-safe-remove`, `purlis-compact`,
-  `purlis-add-curation-action`, `purlis-smart-close`, `purlis-theme`, `purlis-skill-studio` and
-  `purlis-building-ui` skills, which reach the model as
+  the `purlis-handoff`, `purlis-repo-work`, `purlis-upgrade`, `purlis-persona`,
+  `purlis-permissions`, `purlis-secrets`, `purlis-browser`, `purlis-safe-remove`, `purlis-tidy-memory`,
+  `purlis-remember`, `purlis-curation-action`, `purlis-smart-close`, `purlis-theme`, `purlis-skill-studio`,
+  `purlis-change`, `purlis-workspace` and `purlis-building-ui` skills, which reach the model as
   `purlis:purlis-<skill>`, and the app's MCP server, `purlis` (tools `mcp__purlis__<tool>`).
   Beside it, `--settings` carries `enabledPlugins` with
   `purlis@inline` pinned on — a project file a chat can write could otherwise turn it
@@ -256,8 +256,12 @@ the command line, for that session alone, and writes nothing into any config fol
   (measured on codex-cli 0.147.0). They are inert until trusted: the Codex TUI asks at
   startup, and records the answer in its own `[hooks.state]`, so one binary path is asked
   about once, not once a chat. Codex has no way to take a skills directory for one session,
-  so the chat is started with `PURLIS_SKILLS_DIR` naming the bundle's `skills/`, and its
-  `SessionStart` briefing lists purlis's skills with the path to each `SKILL.md` (ADR 0063).
+  so the chat is started with `PURLIS_SKILLS_DIR` naming the bundle's `skills/`, and a
+  second `SessionStart` hook, `purlis hook sessionstart-skills`, lists purlis's skills with the
+  path to each `SKILL.md` (ADR 0063). It is a hook of its own because Codex keeps 10,000
+  bytes of each hook's output and cuts the middle (measured on codex-cli 0.147.0, ADR
+  0102 as amended 2026-11-09). A running Codex chat takes in no change to purlis's skills
+  until it restarts (measured, ADR 0099 as amended 2026-11-09).
 - **opencode** gets purlis's shim, named in `OPENCODE_CONFIG_CONTENT` with a folder of
   purlis's skills as its option: the shim carries every hook, and adds that directory to the
   skills opencode discovers, beside the operator's own `skills.paths` (ADR 0058, ADR 0063).

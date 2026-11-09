@@ -1,0 +1,29 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest/users/ssh-signing-keys (List SSH signing keys for the authenticated user: each key with its id, title and created_at). Other devices' purlis keys: one titled the current way, one the older `purlis on <machine>` way, one with no created_at; this device's key (the test's own, put in for @KEY@); and the person's own key (#5918).",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "user/ssh_signing_keys"
+          }
+        },
+        "fields": [
+          {
+            "typed": [
+              "per_page",
+              "100"
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "[{\"id\": 17, \"key\": \"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOtherDeviceKeyOtherDeviceKeyOtherDev\", \"title\": \"purlis · laptop\", \"created_at\": \"2026-10-01T09:00:00Z\"}, {\"id\": 18, \"key\": \"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOlderSetupKeyOlderSetupKeyOlderSetupK\", \"title\": \"purlis on old-mini\", \"created_at\": \"2026-08-14T16:30:00Z\"}, {\"id\": 19, \"key\": \"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINoDateKeyNoDateKeyNoDateKeyNoDateKeyN\", \"title\": \"purlis · desk\"}, {\"id\": 4242, \"key\": \"@KEY@\", \"title\": \"purlis · studio\", \"created_at\": \"2026-11-07T19:00:00Z\"}, {\"id\": 9, \"key\": \"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPersonalKeyPersonalKeyPersonalKeyPer\", \"title\": \"my own key\", \"created_at\": \"2025-01-02T08:00:00Z\"}]",
+        "err": "",
+        "status": 200
+      }
+    }
+  ]
+}

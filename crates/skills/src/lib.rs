@@ -75,11 +75,13 @@ pub use lint::{
 pub use load::{Entry, Loaded, NOT_KNOWN, Narrowing, POINTER, SkillFolder, by_name, find, load};
 pub use moving::{Unmoved, move_between, move_skill};
 pub use read::{
-    DIR_IN_BUNDLE, FILE, description_unread, frontmatter, in_bundle, listing, parsed, read, scan,
-    scan_dir,
+    DIR_IN_BUNDLE, FILE, LISTING_OPENING, description_unread, frontmatter, in_bundle, listing,
+    parsed, read, scan, scan_dir,
 };
 use reference::Seen;
-pub use reference::{BUILT_IN_PREFIXES, OLD_BUILT_IN_PREFIX, OnMachine, Reference};
+pub use reference::{
+    BUILT_IN_PREFIXES, OLD_BUILT_IN_PREFIX, OnMachine, RENAMED, Reference, name_now, old_names_in,
+};
 pub use router::{
     Candidate, Candidates, Hidden, HiddenWhy, INDEX, Index, Line, Router, Routing, StillOver,
 };

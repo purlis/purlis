@@ -78,3 +78,17 @@ Bare: recall 100% (2 of 2), false triggers 0% (0 of 2).
 Failing prompts:
 - crowded, missed: "use the deploy token from the vault to push the image" (started it in 1 of 3 runs; started purlis-browser, env-files instead)
 ```
+
+## What a graded run is handed
+
+Each run holds the provider's key in its environment, and what it printed is uploaded as the
+run's `skill-grades-runs-<harness>` artifact. So no run has a shell that could read the key
+(Claude Code's `Bash` is denied; opencode is denied `bash`, `edit` and `write`; Codex's shell runs
+in its `read-only` sandbox, which reaches no network), each stops after as many turns as a Claude
+Code run (`MOST_TURNS`; Codex has no turn cap, so every run is also stopped at `MOST_TIME`), and
+the grader takes every key out of a run's output before it writes it.
+
+The keys sit in the GitHub environment `skill-grades`. Which branches may use that environment
+(its deployment branch rule) is the repository owner's setting, in Settings › Environments, and
+nothing in this repository sets or checks it: a pull request's grade from a branch of this
+repository is handed the keys unless that rule says otherwise.

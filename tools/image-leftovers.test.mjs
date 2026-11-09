@@ -152,8 +152,13 @@ test("only this repository's own run of the publishing workflow, from main or a 
   const ok = { ...cancelled };
   assert.ok(couldPublish(ok, { repo: REPO, workflow: WORKFLOW }));
   assert.ok(couldPublish({ ...ok, event: "push", head_branch: "v0.5.0" }, { repo: REPO, workflow: WORKFLOW }));
-  const operator = { ...ok, path: ".github/workflows/operator-image.yml" };
-  assert.ok(couldPublish(operator, { repo: REPO, workflow: "operator-image.yml" }));
+  // Since publishing moved to the push itself (so a provenance names the commit built), a
+  // publishing run is a push to main: the release's own, and `operator.yml`'s, which calls
+  // `operator-image.yml`. A run started by `ci`'s end still counts while its artifacts last.
+  assert.ok(couldPublish({ ...ok, event: "push", head_branch: "main" }, { repo: REPO, workflow: WORKFLOW }));
+  const operator = { ...ok, event: "push", head_branch: "main", path: ".github/workflows/operator.yml" };
+  assert.ok(couldPublish(operator, { repo: REPO, workflow: "operator.yml" }));
+  assert.ok(couldPublish({ ...ok, path: ".github/workflows/operator-image.yml" }, { repo: REPO, workflow: "operator-image.yml" }));
   for (const [what, run, workflow] of [
     ["a fork's run", { ...ok, head_repository: { full_name: "someone/purlis" } }, WORKFLOW],
     ["a pull request's run", { ...ok, event: "pull_request" }, WORKFLOW],
@@ -162,7 +167,9 @@ test("only this repository's own run of the publishing workflow, from main or a 
     ["another branch", { ...ok, head_branch: "feature" }, WORKFLOW],
     ["another workflow's run", { ...ok, path: ".github/workflows/ci.yml" }, WORKFLOW],
     ["a tag that is not a version", { ...ok, event: "push", head_branch: "vandal" }, WORKFLOW],
-    ["a pushed tag for the operator", { ...operator, event: "push", head_branch: "v0.5.0" }, "operator-image.yml"],
+    ["a pushed tag for the operator", { ...operator, head_branch: "v0.5.0" }, "operator.yml"],
+    ["the operator's nightly run", { ...operator, event: "schedule" }, "operator.yml"],
+    ["a push to another branch", { ...ok, event: "push", head_branch: "feature" }, WORKFLOW],
   ]) {
     assert.ok(!couldPublish(run, { repo: REPO, workflow }), what);
     assert.deepEqual(select({ runs: [...done, failedRun(run)] }).candidates, [], what);

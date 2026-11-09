@@ -1452,6 +1452,9 @@ fn a_socket_grant_never_names_the_systems_name_lookup() {
         assert!(NAME_LOOKUP_SOCKETS.contains(&resolver), "{resolver}");
     }
     assert!(NAME_LOOKUP_SOCKETS.contains(&"/var/run/mDNSResponder"));
+    // Linux's system message bus carries systemd-resolved's and Avahi's lookups.
+    assert!(NAME_LOOKUP_SOCKETS.contains(&"/run/dbus/system_bus_socket"));
+    assert!(NAME_LOOKUP_SOCKETS.contains(&"/var/run/dbus/system_bus_socket"));
     for typed in lookup_spellings() {
         assert_eq!(
             socket(&typed, &ground),
@@ -1477,14 +1480,25 @@ fn a_socket_grant_never_names_the_systems_name_lookup() {
 /// for it is never compiled in.
 #[test]
 fn a_service_grant_never_names_the_macs_own_name_lookup() {
-    for typed in ["com.apple.dnssd.service", "COM.Apple.DNSSD.Service"] {
+    for typed in [
+        "com.apple.dnssd.service",
+        "COM.Apple.DNSSD.Service",
+        "com.apple.mDNSResponder",
+        "com.apple.mdnsresponder",
+    ] {
         assert_eq!(
             service(typed),
             Err(Refused::Outside(NAME_LOOKUP_REFUSED.to_owned())),
             "{typed}"
         );
     }
-    assert!(still_services(&["com.apple.dnssd.service".to_owned()]).is_empty());
+    assert!(
+        still_services(&[
+            "com.apple.dnssd.service".to_owned(),
+            "com.apple.mDNSResponder".to_owned()
+        ])
+        .is_empty()
+    );
     assert_eq!(
         service("com.example.helper"),
         Ok("com.example.helper".to_owned())

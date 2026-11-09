@@ -212,10 +212,22 @@ pub(crate) fn frontmatter_lines(text: &str) -> Vec<&str> {
         .unwrap_or_default()
 }
 
+/// **How a [`listing`] opens**, before its first skill: counted against what a harness keeps of
+/// it (Codex's cut of a hook's output, ADR 0102 as amended 2026-11-09).
+pub const LISTING_OPENING: &str = "⬢ **purlis's built-in skills** — this harness does not load \
+     them itself, so they are listed here. When a request matches one, read its `SKILL.md` and \
+     follow it before acting; a prompt that names a skill by its name means this list.";
+
 /// The briefing section that lists `skills`, or none when there are none.
 ///
 /// It is what a harness with skills of its own shows its model: each skill's name, when to use
 /// it, and the file to read when it applies. The model reads that file with its own tools.
+///
+/// **A folder is named once** (spec #5714's Q38): skills whose files sit at
+/// `<folder>/<name>/SKILL.md` are listed under a line naming that folder, and the model is told
+/// to read each by the whole path. A path of some 140 characters on each of the built-ins' lines
+/// took more than a third of Codex's default budget of 8,000. A skill in a folder named
+/// otherwise keeps its whole path on its line.
 ///
 /// **A manual-only skill** ([`crate::declared`]) is purlis's equivalent of the harness's own
 /// switch ([`crate::compat::ManualOnly::Listing`], SK-8): its description stays out, so the
@@ -225,43 +237,77 @@ pub fn listing(skills: &[Skill]) -> Option<String> {
     if skills.is_empty() {
         return None;
     }
-    let mut text = String::from(
-        "⬢ **purlis's built-in skills** — this harness does not load them itself, so they are listed \
-         here. When a request matches one, read its `SKILL.md` and follow it before acting; a \
-         prompt that names a skill by its name means this list.",
-    );
-    let (manual, chosen): (Vec<&Skill>, Vec<&Skill>) = skills
-        .iter()
-        .partition(|skill| crate::declared(skill).manual);
-    for skill in chosen {
-        // A literal (`|`) description is lines of its own: listed on its skill's one line.
-        let description = if skill.description.contains(crate::fence::is_line_break) {
-            skill
-                .description
-                .split_whitespace()
-                .collect::<Vec<_>>()
-                .join(" ")
-        } else {
-            skill.description.clone()
-        };
+    let mut text = String::from(LISTING_OPENING);
+    // Skills under one folder, in the order the first of them is listed, so the built-ins the
+    // caller puts first stay first (#5736).
+    let mut groups: Vec<(Option<&Path>, Vec<&Skill>)> = Vec::new();
+    for skill in skills {
+        let under = listed_under(skill);
+        match groups.iter_mut().find(|(at, _)| *at == under) {
+            Some((_, held)) => held.push(skill),
+            None => groups.push((under, vec![skill])),
+        }
+    }
+    if groups.iter().any(|(under, _)| under.is_some()) {
         text.push_str(&format!(
-            "\n- `{}` — {} (`{}`)",
-            skill.name,
-            description,
-            skill.path.display()
+            " Under a folder named below, a skill's file is `<that folder>/<name>/{FILE}`: read \
+             it by that whole path."
         ));
     }
-    if !manual.is_empty() {
-        let named: Vec<String> = manual
-            .iter()
-            .map(|skill| format!("`{}` (`{}`)", skill.name, skill.path.display()))
-            .collect();
-        text.push_str(&format!(
-            "\n- Only when the person names one, never by your own choice: {}",
-            named.join(", ")
-        ));
+    for (under, held) in groups {
+        if let Some(folder) = under {
+            text.push_str(&format!("\nUnder `{}`:", folder.display()));
+        }
+        // Its whole path, for a skill no folder above names.
+        let file = |skill: &Skill| match under {
+            Some(_) => String::new(),
+            None => format!(" (`{}`)", skill.path.display()),
+        };
+        let (manual, chosen): (Vec<&Skill>, Vec<&Skill>) = held
+            .into_iter()
+            .partition(|skill| crate::declared(skill).manual);
+        for skill in chosen {
+            // A literal (`|`) description is lines of its own: listed on its skill's one line.
+            let description = if skill.description.contains(crate::fence::is_line_break) {
+                skill
+                    .description
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            } else {
+                skill.description.clone()
+            };
+            text.push_str(&format!(
+                "\n- `{}` — {}{}",
+                skill.name,
+                description,
+                file(skill)
+            ));
+        }
+        if !manual.is_empty() {
+            let named: Vec<String> = manual
+                .iter()
+                .map(|skill| format!("`{}`{}", skill.name, file(skill)))
+                .collect();
+            text.push_str(&format!(
+                "\n- Only when the person names one, never by your own choice: {}",
+                named.join(", ")
+            ));
+        }
     }
     Some(text)
+}
+
+/// **The folder a briefing names a skill's file under** (spec #5714's Q38): the one holding the
+/// skill's own folder, where that is named as the skill (`<folder>/<name>/SKILL.md`). The
+/// listing names it once for every skill in it, and the budget counts it once
+/// ([`crate::budget::spent`]). `None` where the skill's folder is named otherwise: its line then
+/// names its whole path.
+pub(crate) fn listed_under(skill: &Skill) -> Option<&Path> {
+    let own = skill.path.parent()?;
+    let named_so = skill.path.file_name()? == FILE && own.file_name()? == skill.name.as_str();
+    own.parent()
+        .filter(|folder| named_so && !folder.as_os_str().is_empty())
 }
 
 #[cfg(test)]

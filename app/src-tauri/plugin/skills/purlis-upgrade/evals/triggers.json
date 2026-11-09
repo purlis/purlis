@@ -1,0 +1,178 @@
+[
+  {
+    "query": "Update purlis to the newest version.",
+    "should_trigger": true
+  },
+  {
+    "query": "Is there a newer purlis out?",
+    "should_trigger": true
+  },
+  {
+    "query": "What did the latest purlis release add?",
+    "should_trigger": true
+  },
+  {
+    "query": "Upgrade purlis.",
+    "should_trigger": true
+  },
+  {
+    "query": "Switch purlis to the dev channel.",
+    "should_trigger": true
+  },
+  {
+    "query": "What's new in purlis 1.4?",
+    "should_trigger": true
+  },
+  {
+    "query": "How do I start using the feature the last purlis version added?",
+    "should_trigger": true
+  },
+  {
+    "query": "Will installing the purlis update end my running chats?",
+    "should_trigger": true
+  },
+  {
+    "query": "Which purlis version am I running, and what came out since?",
+    "should_trigger": true
+  },
+  {
+    "query": "Move this machine back to stable purlis releases.",
+    "should_trigger": true
+  },
+  {
+    "query": "Run purlis update to bump purlis to the latest release.",
+    "should_trigger": true
+  },
+  {
+    "query": "Show me purlis's news for the versions I skipped.",
+    "should_trigger": true
+  },
+  {
+    "query": "Install the purlis update for me.",
+    "should_trigger": true
+  },
+  {
+    "query": "My purlis says an update is available; what's in it?",
+    "should_trigger": true
+  },
+  {
+    "query": "What purlis version does this plane pin, and how do I move the pin?",
+    "should_trigger": true
+  },
+  {
+    "query": "Get me on the newest purlis build.",
+    "should_trigger": true
+  },
+  {
+    "query": "Has purlis shipped anything new this week?",
+    "should_trigger": true
+  },
+  {
+    "query": "Tell me what changed in purlis since I last upgraded.",
+    "should_trigger": true
+  },
+  {
+    "query": "How do I check for a purlis update now instead of waiting?",
+    "should_trigger": true
+  },
+  {
+    "query": "Bump purlis to the release that fixed the browser login.",
+    "should_trigger": true
+  },
+  {
+    "query": "Is my purlis out of date?",
+    "should_trigger": true
+  },
+  {
+    "query": "Which new purlis features should I start using after this upgrade?",
+    "should_trigger": true
+  },
+  {
+    "query": "Upgrade React to 19 in the web repo and fix what breaks.",
+    "should_trigger": false
+  },
+  {
+    "query": "Update the dependencies in the api repo and run its tests.",
+    "should_trigger": false
+  },
+  {
+    "query": "Bump the Rust toolchain in the backend repo.",
+    "should_trigger": false
+  },
+  {
+    "query": "Pull the latest main into my branch folder of the api repo.",
+    "should_trigger": false
+  },
+  {
+    "query": "Update this workspace's memory: merge the duplicates and drop what's stale.",
+    "should_trigger": false
+  },
+  {
+    "query": "Tidy the steward persona's memory.",
+    "should_trigger": false
+  },
+  {
+    "query": "Update the purlis theme so the sidebar is darker.",
+    "should_trigger": false
+  },
+  {
+    "query": "The new purlis default theme is too bright; make me a softer one.",
+    "should_trigger": false
+  },
+  {
+    "query": "Update the README with the new install steps.",
+    "should_trigger": false
+  },
+  {
+    "query": "Upgrade the Postgres database to version 16 on staging.",
+    "should_trigger": false
+  },
+  {
+    "query": "Update Homebrew and its packages.",
+    "should_trigger": false
+  },
+  {
+    "query": "What's new in Python 3.14?",
+    "should_trigger": false
+  },
+  {
+    "query": "Upgrade Node on my machine.",
+    "should_trigger": false
+  },
+  {
+    "query": "Update the changelog for this release.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write the release notes for our app's 2.0.",
+    "should_trigger": false
+  },
+  {
+    "query": "Check whether macOS has a system update.",
+    "should_trigger": false
+  },
+  {
+    "query": "Update the copyright year in every file.",
+    "should_trigger": false
+  },
+  {
+    "query": "Upgrade the npm packages with known vulnerabilities.",
+    "should_trigger": false
+  },
+  {
+    "query": "Set issue 42's status to done.",
+    "should_trigger": false
+  },
+  {
+    "query": "Refresh the page data after a save.",
+    "should_trigger": false
+  },
+  {
+    "query": "What changed between these two commits?",
+    "should_trigger": false
+  },
+  {
+    "query": "Update Claude Code to the latest version.",
+    "should_trigger": false
+  }
+]

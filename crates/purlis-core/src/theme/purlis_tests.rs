@@ -560,11 +560,13 @@ fn a_light_wash_reads_in_its_own_hue_on_every_ground_it_is_laid_on() {
 type Stepped<'a> = &'a [(&'static str, &'static str, f64)];
 
 /// The pairs light's reflected colours missed (#2700, #2902): the quiet tier, the placeholder
-/// that is drawn in it, and faint.
+/// that is drawn in it, and faint; and a box's edge on a dialog, where it is all that tells the
+/// box from its ground (#4475).
 const LIGHT_STEPPED: Stepped<'static> = &[
     ("text.quiet", "surface.hover", 4.5),
     ("placeholder", "surface.hover", 4.5),
     ("text.faint", "surface.hover", 3.0),
+    ("border.input", "surface.overlay", 3.0),
 ];
 
 /// **`dark` reflected by light's one rule** ([`light_rule`]), then each colour of `stepped`
@@ -799,17 +801,21 @@ fn light_and_high_contrast_ship_as_its_appearances_and_dark_stays_the_default() 
 }
 
 #[test]
-fn syntax_comments_and_punctuation_draw_the_muted_grey_of_their_appearance() {
-    // High contrast moved every grey up a tier and left these two behind (#3182): in every
-    // appearance they are `text.muted`, so they move with it.
-    for theme in &purlis().appearances {
-        for token in ["syntax.comment", "syntax.punctuation"] {
-            assert_eq!(
-                theme.value(token),
-                theme.value("text.muted"),
-                "{} {token}",
-                theme.id
-            );
+fn syntax_comments_and_punctuation_draw_the_secondary_grey_high_contrast_draws_as_muted() {
+    // High contrast moved every grey up a tier and left these two behind (#3182), so they took
+    // `text.muted`. Muted cannot read at 4.5:1 on a changed word's wash in light while the word
+    // stands a step from its line (#3796), so they draw one tier up: the regular appearance's
+    // `text.secondary`, which is its high contrast's `text.muted`, in both.
+    for (regular, high) in [
+        ("dark", "dark-high-contrast"),
+        ("light", "light-high-contrast"),
+    ] {
+        let secondary = appearance(regular).value("text.secondary");
+        assert_eq!(appearance(high).value("text.muted"), secondary, "{high}");
+        for id in [regular, high] {
+            for token in ["syntax.comment", "syntax.punctuation"] {
+                assert_eq!(appearance(id).value(token), secondary, "{id} {token}");
+            }
         }
     }
 }
@@ -1097,5 +1103,24 @@ fn the_primary_is_filled_in_the_accent_with_white_words_in_every_appearance() {
             assert!(ratio >= 4.5, "{} {fill}: {ratio}", theme.id);
         }
         assert_eq!(theme.value("accent.fill-edge"), "#00000000", "{}", theme.id);
+    }
+}
+
+#[test]
+fn a_box_draws_an_edge_at_3_to_1_on_every_ground_it_stands_on() {
+    // WCAG 2.2 1.4.11: what identifies a control holds 3:1 against what is around it. A box's
+    // fill is `surface.sunken`, which Purlis draws as the window's own ground, so only its edge,
+    // `border.input` (`ui/field/field.css`, `ui/select/select.css`), says where it is (#4475).
+    for theme in &purlis().appearances {
+        for ground in ["surface.base", "surface.raised", "surface.overlay"] {
+            let under = check::solid(theme.value(ground));
+            let edge = check::onto(theme.value("border.input"), &under);
+            let ratio = check::contrast(&edge, &under);
+            assert!(
+                ratio >= 3.0,
+                "{} border.input on {ground}: {ratio:.2}",
+                theme.id
+            );
+        }
     }
 }

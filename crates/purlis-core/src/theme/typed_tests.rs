@@ -58,13 +58,28 @@ const LOOK_BEFORE: &[(&str, &str, bool, bool)] = &[
 ];
 
 /// The roles Purlis Classic moved off the colour the editor borrowed, so they read on the editor's
-/// current line (#2522) and on a diff's changed word (#4424), and the colour each is drawn in.
+/// current line (#2522) and on a diff's changed word (#4424), at 4.5:1 since the editor's code
+/// is held as words (#3796), and the colour each is drawn in.
 const MOVED: &[(Appearance, &str, &str)] = &[
-    (Appearance::Dark, "syntax.comment", "#8b949e"),
-    (Appearance::Light, "syntax.keyword", "#7c48d9"),
-    (Appearance::Light, "syntax.type", "#19757c"),
-    (Appearance::Light, "syntax.property", "#0969da"),
-    (Appearance::Light, "syntax.attribute", "#0969da"),
+    (Appearance::Dark, "syntax.keyword", "#cc9cff"),
+    (Appearance::Dark, "syntax.string", "#50c85f"),
+    (Appearance::Dark, "syntax.number", "#e1a736"),
+    (Appearance::Dark, "syntax.constant", "#e1a736"),
+    (Appearance::Dark, "syntax.comment", "#a8b2bc"),
+    (Appearance::Dark, "syntax.function", "#68b7ff"),
+    (Appearance::Dark, "syntax.tag", "#ff9389"),
+    (Appearance::Dark, "syntax.heading", "#ff9389"),
+    (Appearance::Light, "syntax.keyword", "#682ec0"),
+    (Appearance::Light, "syntax.string", "#0c6026"),
+    (Appearance::Light, "syntax.number", "#774800"),
+    (Appearance::Light, "syntax.constant", "#774800"),
+    (Appearance::Light, "syntax.comment", "#4b545e"),
+    (Appearance::Light, "syntax.function", "#004bba"),
+    (Appearance::Light, "syntax.type", "#005c63"),
+    (Appearance::Light, "syntax.property", "#004bba"),
+    (Appearance::Light, "syntax.attribute", "#004bba"),
+    (Appearance::Light, "syntax.tag", "#ab000b"),
+    (Appearance::Light, "syntax.heading", "#ab000b"),
 ];
 
 // ---------------------------------------------------------------------------------------

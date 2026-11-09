@@ -1,0 +1,214 @@
+{
+  "tier": "strict",
+  "neighbours": [
+    "purlis-browser",
+    "purlis-persona",
+    "purlis-repo-work",
+    "purlis-handoff",
+    "purlis-tidy-memory"
+  ],
+  "prompts": [
+    {
+      "query": "Run the migrations against staging; the database password is in the team vault.",
+      "source": "Skill text: description (\"a database password\") and \"Use one: pick an injection path\"; phrased as a person would."
+    },
+    {
+      "query": "I need to call the Stripe API with our test key to create a few charges.",
+      "source": "Skill text: the STRIPE_KEY example under \"A credential you lack\"; plausible phrasing."
+    },
+    {
+      "query": "Save the new deploy token in the ops vault so the release script can use it.",
+      "source": "Skill text: description (\"when asked to store one\") and \"Store one\"."
+    },
+    {
+      "query": "kubectl get pods on the prod cluster; the kubeconfig is in our purlis vault.",
+      "source": "Skill text: description (\"kubeconfig\") and the `--file KUBECONFIG=` example."
+    },
+    {
+      "query": "Which secrets do we have in the shop vault?",
+      "source": "Skill text: \"Find out what exists\" (`purlis secret list <vault>`); plausible phrasing."
+    },
+    {
+      "query": "Deploy the build to the box over ssh with the key we keep in purlis's vault.",
+      "source": "Skill text: description (\"SSH key\"); plausible phrasing."
+    },
+    {
+      "query": "The API answers 401 with the token from the vault; it must have expired.",
+      "source": "Skill text: the `--replace \"the API answers 401\"` example."
+    },
+    {
+      "query": "Connect psql to the analytics database with the connection string we saved in purlis.",
+      "source": "Skill text: \"A database client\" (`--env DSN=<key> -- usql \"$DSN\"`)."
+    },
+    {
+      "query": "Run the e2e suite; it needs SHOP_TOKEN, and I don't think we have that one yet.",
+      "source": "Skill text: \"A credential you lack: run the command, or raise a Secret ask\" (the SHOP_TOKEN example)."
+    },
+    {
+      "query": "Check whether the prod and staging vaults hold the same Sentry DSN, without showing it.",
+      "source": "Skill text: \"To check that one is present\" (compare two masked lines)."
+    },
+    {
+      "query": "Write the TLS certificate from the vault to a file nginx can read.",
+      "source": "Skill text: \"As a file\" (`purlis secret cp`, certificate)."
+    },
+    {
+      "query": "Hit the internal metrics endpoint with curl; it needs the bearer token from my vault.",
+      "source": "Skill text: \"Naming a program purlis has reviewed (curl)\"; plausible phrasing."
+    },
+    {
+      "query": "Add the OpenAI key I just got to the team vault.",
+      "source": "Skill text: \"Store one: the value never goes on the command line\"; decisions.md Q28(h): never ask for the value in the chat."
+    },
+    {
+      "query": "Set up a 1Password vault for this project's credentials.",
+      "source": "Skill text: \"A vault's own token is the person's to give\" (New vault with 1Password)."
+    },
+    {
+      "query": "Is the AWS access key for the backups bucket in our purlis vault?",
+      "source": "Skill text: \"To check that one is present\"; plausible phrasing with a crowd neighbour's words (aws)."
+    },
+    {
+      "query": "Run terraform plan with the cloud credentials from the infra persona's vault.",
+      "source": "Skill text: \"Working as a persona\" (`purlis persona secret exec`)."
+    },
+    {
+      "query": "Seed the dev database; the password lives in purlis, so don't paste it here.",
+      "source": "decisions.md Q3: strict tier because a miss leaks a secret; plausible phrasing."
+    },
+    {
+      "query": "Publish the npm package; the npm token is in the release vault.",
+      "source": "Skill text: description (\"API token\"); plausible phrasing."
+    },
+    {
+      "query": "The Slack webhook URL leaked; get a new value into the vault and use that.",
+      "source": "Skill text: \"A value that doesn't work\" (replace in the window); plausible phrasing."
+    },
+    {
+      "query": "Run redis-cli against the cache with the password from the vault.",
+      "source": "Skill text: \"A database client\" (`redis-cli`)."
+    },
+    {
+      "query": "What keys does my persona's vault hold?",
+      "source": "Skill text: \"Working as a persona\" (`purlis persona secret list`)."
+    },
+    {
+      "query": "Send a test email through our SMTP server; its login is a purlis secret.",
+      "source": "Skill text: description (\"server login\"); plausible phrasing."
+    },
+    {
+      "query": "Make sure the deploy script gets the registry password without it showing up in this chat.",
+      "source": "Skill text: \"use a secret, never reveal it\"; plausible phrasing."
+    },
+    {
+      "query": "Pull the private image from the registry; the registry token is in our vault.",
+      "source": "Skill text: description (\"before running any command that requires a credential\"); plausible phrasing."
+    },
+    {
+      "query": "Log in to the Grafana dashboard in a browser and screenshot the error panel.",
+      "source": "Near miss (purlis-browser): a website login, which purlis-browser's description claims.",
+      "belongs_to": "purlis-browser"
+    },
+    {
+      "query": "Open our admin site, sign in, and check that the new settings page renders.",
+      "source": "Near miss (purlis-browser): verifying a UI behind auth, from purlis-browser's description.",
+      "belongs_to": "purlis-browser"
+    },
+    {
+      "query": "Run two logged-in browser sessions as different users to test the chat feature.",
+      "source": "Near miss (purlis-browser): \"several workers each need their own logged-in session\".",
+      "belongs_to": "purlis-browser"
+    },
+    {
+      "query": "Ask the ops persona to restart the staging deploy.",
+      "source": "Near miss (purlis-persona): dispatching work to another persona.",
+      "belongs_to": "purlis-persona"
+    },
+    {
+      "query": "Create a new persona for release management.",
+      "source": "Near miss (purlis-persona): \"create a persona\", from its description.",
+      "belongs_to": "purlis-persona"
+    },
+    {
+      "query": "Hand this research to the reviewer persona and wait for its answer.",
+      "source": "Near miss (purlis-persona): this chat needs the answer (decisions.md Q30, handoff and persona boundary).",
+      "belongs_to": "purlis-persona"
+    },
+    {
+      "query": "Commit this change in the api repo's branch folder.",
+      "source": "Near miss (purlis-repo-work): build, test, change, commit in a repo; decisions.md Q28(b).",
+      "belongs_to": "purlis-repo-work"
+    },
+    {
+      "query": "Run the test suite in the web repo and fix what fails.",
+      "source": "Near miss (purlis-repo-work): real work inside a repo a workspace owns.",
+      "belongs_to": "purlis-repo-work"
+    },
+    {
+      "query": "Open a new chat to carry on the database migration work tomorrow.",
+      "source": "Near miss (purlis-handoff): moving the work to a new chat the person will read; mentions a database.",
+      "belongs_to": "purlis-handoff"
+    },
+    {
+      "query": "Tidy this workspace's memory; there are three duplicate notes about how the vault was set up.",
+      "source": "Near miss (purlis-tidy-memory): memory tidying that mentions a vault (decisions.md Q30, tidy-memory boundary).",
+      "belongs_to": "purlis-tidy-memory"
+    },
+    {
+      "query": "Rename the email column in the users table.",
+      "source": "Plausible phrasing: plain coding work (the scoring module's recorded not-started case)."
+    },
+    {
+      "query": "Explain how JWT signing works.",
+      "source": "Plausible phrasing: a question about tokens that needs no credential."
+    },
+    {
+      "query": "Write a function that hashes passwords with argon2.",
+      "source": "Plausible phrasing: password code that needs no stored secret."
+    },
+    {
+      "query": "Add a .env.example file listing the variables the app reads.",
+      "source": "Plausible phrasing: environment variables with no value in them (a crowd skill's kind)."
+    },
+    {
+      "query": "Why does this regex not match unicode letters?",
+      "source": "Plausible phrasing: unrelated coding question."
+    },
+    {
+      "query": "Generate a random 32-byte key in Python for the unit tests' fixtures.",
+      "source": "Plausible phrasing: a throwaway test value, never stored."
+    },
+    {
+      "query": "Review the auth middleware for timing attacks.",
+      "source": "Plausible phrasing: security review of code, no credential used."
+    },
+    {
+      "query": "Write a README section on how to configure the app's API key.",
+      "source": "Plausible phrasing: documentation about a key, no key handled."
+    },
+    {
+      "query": "Add retries with exponential backoff to the HTTP client.",
+      "source": "Plausible phrasing: unrelated coding request."
+    },
+    {
+      "query": "Convert this CSV of users to JSON.",
+      "source": "Plausible phrasing: unrelated data task."
+    },
+    {
+      "query": "Draw a sequence diagram of the OAuth login flow.",
+      "source": "Plausible phrasing: auth in the abstract, nothing to run."
+    },
+    {
+      "query": "Fix the flaky test in the payment module.",
+      "source": "Plausible phrasing: unrelated coding request."
+    },
+    {
+      "query": "Summarise what we did in this chat.",
+      "source": "Plausible phrasing: wrapping up, nothing secret (purlis-smart-close's kind)."
+    },
+    {
+      "query": "Bump the dependencies and run the tests.",
+      "source": "Plausible phrasing: unrelated maintenance request."
+    }
+  ]
+}

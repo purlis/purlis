@@ -920,3 +920,383 @@ fn a_pool_naming_a_key_makes_marked_runners_and_nothing_else_is_marked() {
     .expect("a pod");
     assert!(!mint::marked(&wrong), "another container's word is nothing");
 }
+
+const POD_IP: &str = "10.244.0.7";
+
+/// A runner's pod as the operator reads it after a proof: there, holding `key`, made with the mark,
+/// running [`IMAGE`] in every container, at [`POD_IP`] and `fd00::7`.
+fn a_runner_pod(key: &str) -> k8s_openapi::api::core::v1::Pod {
+    use purlis_cluster_operator::upstream::{KEY_STEP, MINTING_MARK, RUNNER_CONTAINER};
+    serde_json::from_value(json!({
+        "metadata": { "name": "work-pod" },
+        "spec": {
+            "initContainers": [{ "name": KEY_STEP, "image": IMAGE }],
+            "containers": [{
+                "name": RUNNER_CONTAINER, "image": IMAGE,
+                "env": [{ "name": MINTING_MARK, "value": "1" }],
+            }],
+        },
+        "status": {
+            "phase": "Running",
+            "podIP": POD_IP,
+            "podIPs": [{ "ip": POD_IP }, { "ip": "fd00::7" }],
+            "initContainerStatuses": [{
+                "name": KEY_STEP,
+                "image": "i", "imageID": "i", "ready": true, "restartCount": 0,
+                "state": { "terminated": { "exitCode": 0, "message": key } },
+            }],
+        },
+    }))
+    .expect("a pod")
+}
+
+fn ip(text: &str) -> std::net::IpAddr {
+    text.parse().expect("an address")
+}
+
+/// What is checked of the pod once its runner proved its key, in order.
+fn pod_may_mint(pod: Option<&k8s_openapi::api::core::v1::Pod>, peer: &str) -> Result<(), String> {
+    mint::pod_may_mint(pod, &"ab".repeat(32), IMAGE, ip(peer))
+}
+
+#[test]
+fn a_marked_runner_on_its_pools_image_asking_from_its_pod_passes_the_pods_checks() {
+    let pod = a_runner_pod(&"ab".repeat(32));
+    assert_eq!(pod_may_mint(Some(&pod), POD_IP), Ok(()));
+    assert_eq!(pod_may_mint(Some(&pod), "fd00::7"), Ok(()));
+    // The port listens on `::`, so an IPv4 asker comes as an IPv4-mapped address.
+    assert_eq!(pod_may_mint(Some(&pod), "::ffff:10.244.0.7"), Ok(()));
+}
+
+#[test]
+fn a_pod_gone_or_holding_another_key_is_refused_before_anything_else() {
+    let why = pod_may_mint(None, POD_IP).expect_err("refused");
+    assert!(why.contains("gone"), "{why}");
+    let mut other = a_runner_pod(&"cd".repeat(32));
+    // Whatever else is wrong with it, that comes first.
+    other.spec = None;
+    let why = pod_may_mint(Some(&other), "10.0.0.1").expect_err("refused");
+    assert!(why.contains("no longer holds this key"), "{why}");
+}
+
+/// The statement still holds, and the proof was right: the mark alone refuses it.
+#[test]
+fn an_unmarked_pod_whose_statement_still_holds_is_told_it_bears_no_mark() {
+    let mut pod = a_runner_pod(&"ab".repeat(32));
+    for container in &mut pod.spec.as_mut().expect("a spec").containers {
+        container.env = None;
+    }
+    assert!(mint::pod_holds(&pod, &"ab".repeat(32)), "it holds its key");
+    assert_eq!(
+        pod_may_mint(Some(&pod), POD_IP),
+        Err(mint::NOT_MARKED.to_owned())
+    );
+    // Before the image or the address is looked at.
+    assert_eq!(
+        mint::pod_may_mint(Some(&pod), &"ab".repeat(32), "other", ip("10.0.0.1")),
+        Err(mint::NOT_MARKED.to_owned())
+    );
+}
+
+#[test]
+fn a_pod_on_another_image_than_its_pools_is_refused_saying_so() {
+    let pod = a_runner_pod(&"ab".repeat(32));
+    let why =
+        mint::pod_may_mint(Some(&pod), &"ab".repeat(32), "other", ip(POD_IP)).expect_err("refused");
+    assert!(why.contains("image"), "{why}");
+    // Before the address is looked at.
+    let why = mint::pod_may_mint(Some(&pod), &"ab".repeat(32), "other", ip("10.0.0.1"))
+        .expect_err("refused");
+    assert!(why.contains("image"), "{why}");
+}
+
+/// A network that rewrites pod source addresses (SNAT between pods) cannot use the port.
+#[test]
+fn a_request_from_another_address_than_the_runners_pod_is_refused_saying_so() {
+    let pod = a_runner_pod(&"ab".repeat(32));
+    for elsewhere in [
+        "10.244.0.8",
+        "127.0.0.1",
+        "::1",
+        "fd00::8",
+        "::ffff:10.244.0.8",
+    ] {
+        assert_eq!(
+            pod_may_mint(Some(&pod), elsewhere),
+            Err(mint::NOT_FROM_ITS_POD.to_owned()),
+            "{elsewhere}"
+        );
+    }
+    assert!(mint::NOT_FROM_ITS_POD.contains("address"));
+}
+
+#[test]
+fn a_pod_that_says_no_address_is_asked_from_nowhere() {
+    let mut pod = a_runner_pod(&"ab".repeat(32));
+    let status = pod.status.as_mut().expect("a status");
+    status.pod_ip = None;
+    status.pod_ips = None;
+    assert!(!mint::from_its_pod(&pod, ip(POD_IP)));
+    // The single address alone, as an older cluster says it.
+    let status = pod.status.as_mut().expect("a status");
+    status.pod_ip = Some(POD_IP.to_owned());
+    assert!(mint::from_its_pod(&pod, ip(POD_IP)));
+    assert!(!mint::from_its_pod(&pod, ip("fd00::7")));
+    // An address that does not parse matches nothing.
+    let status = pod.status.as_mut().expect("a status");
+    status.pod_ip = Some("not an address".to_owned());
+    assert!(!mint::from_its_pod(&pod, ip(POD_IP)));
+}
+
+#[test]
+fn one_address_holds_at_most_four_of_the_ports_connections() {
+    use mint::limits::{MOST_FROM_ONE_SOURCE, PerSource};
+    use std::sync::Arc;
+    assert_eq!(MOST_FROM_ONE_SOURCE, 4);
+    let per_source = Arc::new(PerSource::default());
+    let one = ip("10.244.0.7");
+    let mut held: Vec<_> = (0..MOST_FROM_ONE_SOURCE)
+        .map(|_| per_source.admit(one).expect("let in"))
+        .collect();
+    assert!(per_source.admit(one).is_none(), "a fifth from one address");
+    // The same address spelled as the socket on `::` spells it is the same address.
+    assert!(per_source.admit(ip("::ffff:10.244.0.7")).is_none());
+    // Another address is let in meanwhile.
+    let other = per_source.admit(ip("10.244.0.8")).expect("another address");
+    drop(held.pop());
+    assert_eq!(per_source.open_from(one), MOST_FROM_ONE_SOURCE - 1);
+    assert!(
+        per_source.admit(one).is_some(),
+        "one closed lets one more in"
+    );
+    drop(other);
+    assert_eq!(per_source.open_from(ip("10.244.0.8")), 0);
+}
+
+#[test]
+fn a_claim_is_minted_for_at_most_five_times_a_minute_and_told_how_long_to_wait() {
+    use mint::limits::{MINTS_WITHIN, MOST_MINTS, Paces};
+    use std::time::{Duration, Instant};
+    assert_eq!((MOST_MINTS, MINTS_WITHIN), (5, Duration::from_secs(60)));
+    let paces = Paces::default();
+    let start = Instant::now();
+    let at = |seconds: u64| start + Duration::from_secs(seconds);
+    // A chat's start asking for a token per tool, close together, is never held up.
+    for second in 0..MOST_MINTS as u64 {
+        assert_eq!(paces.take("team-ns", "work", at(second)), Ok(()));
+    }
+    let wait = paces
+        .take("team-ns", "work", at(10))
+        .expect_err("a sixth within the minute");
+    assert_eq!(
+        wait,
+        Duration::from_secs(50),
+        "till the first is a minute old"
+    );
+    // A refused ask is not counted, and another Claim has its own count.
+    assert!(paces.take("team-ns", "work", at(20)).is_err());
+    assert_eq!(paces.take("team-ns", "other", at(20)), Ok(()));
+    assert_eq!(paces.take("other-ns", "work", at(20)), Ok(()));
+    assert_eq!(
+        paces.take("team-ns", "work", at(60)),
+        Ok(()),
+        "the first aged out"
+    );
+    assert!(paces.take("team-ns", "work", at(60)).is_err());
+    let words = mint::paced(Duration::from_secs(50));
+    assert!(words.contains("50 seconds"), "{words}");
+    assert!(words.contains(mint::PACED), "{words}");
+}
+
+#[test]
+fn a_line_anyone_could_cause_is_logged_at_most_once_a_minute() {
+    use mint::limits::AtMostEvery;
+    use std::time::{Duration, Instant};
+    let said = AtMostEvery::new(Duration::from_secs(60));
+    let start = Instant::now();
+    assert!(said.due(start));
+    assert!(!said.due(start + Duration::from_secs(1)));
+    assert!(!said.due(start + Duration::from_secs(59)));
+    assert!(said.due(start + Duration::from_secs(60)));
+    assert!(!said.due(start + Duration::from_secs(61)));
+}
+
+/// GitHub made it, and it reached no one: it is revoked, not left to live its hour.
+#[test]
+fn a_token_whose_answer_was_not_written_is_the_one_to_revoke() {
+    let failed: std::io::Result<()> = Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe));
+    assert_eq!(mint::undelivered(&failed, Some("t")), Some("t"));
+    assert_eq!(mint::undelivered(&Ok(()), Some("t")), None);
+    assert_eq!(
+        mint::undelivered::<&str>(&failed, None),
+        None,
+        "a refusal holds none"
+    );
+}
+
+/// [`a_pool_minting`], its forge written by `writer` where it names one.
+fn a_pool_written_by(writer: Option<&str>) -> Pool {
+    let mut pool = a_pool_minting(true);
+    pool.metadata.annotations = writer
+        .map(|writer| [(forge::FORGE_WRITER_ANNOTATION.to_owned(), writer.to_owned())].into());
+    pool
+}
+
+/// Revoking `use` on a key reaches the Pools its holder wrote: they are asked of by name, as the
+/// policy on App keys asks it of whoever writes a forge.
+#[test]
+fn the_key_review_asks_of_the_pools_forge_writer_by_name_about_its_key() {
+    let review = mint::key_use_review(&a_pool_written_by(Some("grace"))).expect("a review");
+    assert_eq!(review.spec.user.as_deref(), Some("grace"));
+    assert_eq!(review.spec.groups, None, "a group's right is not seen");
+    let asked = review.spec.resource_attributes.expect("its attributes");
+    assert_eq!(asked.group.as_deref(), Some("runners.purlis.dev"));
+    assert_eq!(asked.resource.as_deref(), Some("forgekeys"));
+    assert_eq!(asked.name.as_deref(), Some("org-app"));
+    assert_eq!(asked.verb.as_deref(), Some("use"));
+}
+
+#[test]
+fn a_pool_that_does_not_say_who_wrote_its_forge_is_refused_before_anything_is_asked() {
+    for unsaid in [None, Some("")] {
+        assert_eq!(
+            mint::key_use_review(&a_pool_written_by(unsaid)).map(|_| ()),
+            Err(mint::NOT_WRITTEN_BY_A_KEY_USER.to_owned()),
+            "{unsaid:?}"
+        );
+    }
+    let mut bare = a_pool_written_by(Some("grace"));
+    bare.spec.forge = None;
+    assert!(mint::key_use_review(&bare).is_err());
+    assert!(
+        mint::NOT_WRITTEN_BY_A_KEY_USER.contains("write the pool's forge again"),
+        "it says what to do"
+    );
+}
+
+#[test]
+fn only_an_answer_that_allows_and_denies_nothing_allows() {
+    use k8s_openapi::api::authorization::v1::{SubjectAccessReview, SubjectAccessReviewStatus};
+    let answered = |allowed: bool, denied: Option<bool>| SubjectAccessReview {
+        status: Some(SubjectAccessReviewStatus {
+            allowed,
+            denied,
+            ..SubjectAccessReviewStatus::default()
+        }),
+        ..SubjectAccessReview::default()
+    };
+    assert!(mint::allowed(&answered(true, None)));
+    assert!(mint::allowed(&answered(true, Some(false))));
+    assert!(!mint::allowed(&answered(true, Some(true))));
+    assert!(!mint::allowed(&answered(false, None)));
+    assert!(!mint::allowed(&SubjectAccessReview::default()), "no answer");
+}
+
+/// The upstream claim the operator made for [`claim_with`]'s Claim, saying `born` of its birth.
+fn upstream_claim(born: Option<&str>) -> purlis_cluster_operator::upstream::SandboxClaim {
+    use purlis_cluster_operator::upstream::{self, BORN_MINTING_ANNOTATION};
+    let keys = signing_keys();
+    let claim = claim_with(&keys, &"ab".repeat(32), NOW);
+    let runner = purlis_cluster_operator::person::namespace_for("ada");
+    let mut made = upstream::sandbox_claim_for(&claim, &Default::default(), &runner);
+    if let Some(born) = born {
+        made.metadata
+            .annotations
+            .get_or_insert_with(Default::default)
+            .insert(BORN_MINTING_ANNOTATION.to_owned(), born.to_owned());
+    }
+    made
+}
+
+#[test]
+fn a_runner_whose_claim_was_made_while_its_pool_named_a_key_may_mint() {
+    let claim = claim_with(&signing_keys(), &"ab".repeat(32), NOW);
+    assert_eq!(
+        mint::born_minting(Some(&upstream_claim(Some("true"))), &claim),
+        Ok(())
+    );
+}
+
+/// A kept volume can outlive its Pool's change from no key to a key, and a pod made again from
+/// the current template bears the mark: only the claim says when its runner's home was made.
+#[test]
+fn a_runner_whose_claim_says_nothing_of_a_key_at_its_birth_is_told_to_make_the_claim_again() {
+    let claim = claim_with(&signing_keys(), &"ab".repeat(32), NOW);
+    let refused = Err(mint::NOT_BORN_MINTING.to_owned());
+    assert_eq!(
+        mint::born_minting(Some(&upstream_claim(None)), &claim),
+        refused,
+        "made before this was written, or while its pool named no key"
+    );
+    assert_eq!(
+        mint::born_minting(Some(&upstream_claim(Some("false"))), &claim),
+        refused
+    );
+    assert_eq!(mint::born_minting(None, &claim), refused, "no claim at all");
+    let mut another = claim.clone();
+    another.metadata.uid = Some("another-uid".into());
+    assert_eq!(
+        mint::born_minting(Some(&upstream_claim(Some("true"))), &another),
+        refused,
+        "an upstream claim of another Claim's"
+    );
+    assert!(mint::NOT_BORN_MINTING.contains("make it again"));
+}
+
+#[test]
+fn an_upstream_claim_is_born_minting_only_where_its_pool_names_a_key_as_it_is_made() {
+    use purlis_cluster_operator::upstream::{self, BORN_MINTING_ANNOTATION};
+    let claim = claim_with(&signing_keys(), &"ab".repeat(32), NOW);
+    let runner = purlis_cluster_operator::person::namespace_for("ada");
+    let born = |pool: &Pool| {
+        let mut wanted = upstream::sandbox_claim_for(&claim, &Default::default(), &runner);
+        upstream::born_as_held(&mut wanted, pool, None);
+        wanted
+            .metadata
+            .annotations
+            .and_then(|annotations| annotations.get(BORN_MINTING_ANNOTATION).cloned())
+    };
+    assert_eq!(born(&a_pool_minting(true)).as_deref(), Some("true"));
+    // Naming a key marks a runner whether or not the Pool mints yet, so its birth is said too.
+    assert_eq!(born(&a_pool_minting(false)).as_deref(), Some("true"));
+    assert_eq!(
+        born(&Pool::new("pool", PoolSpec::new(IMAGE.to_owned()))),
+        None
+    );
+}
+
+/// Neither added, changed nor removed once the claim is made: the policy on what the operator
+/// writes refuses each.
+#[test]
+fn an_upstream_claim_keeps_what_it_was_born_with_whatever_its_pool_says_since() {
+    use purlis_cluster_operator::person::CLAIM_UID_ANNOTATION;
+    use purlis_cluster_operator::upstream::{self, BORN_MINTING_ANNOTATION};
+    let claim = claim_with(&signing_keys(), &"ab".repeat(32), NOW);
+    let runner = purlis_cluster_operator::person::namespace_for("ada");
+    let applied = |pool: &Pool, held: &upstream::SandboxClaim| {
+        let mut wanted = upstream::sandbox_claim_for(&claim, &Default::default(), &runner);
+        upstream::born_as_held(&mut wanted, pool, Some(held));
+        wanted.metadata.annotations.unwrap_or_default()
+    };
+    let bare = Pool::new("pool", PoolSpec::new(IMAGE.to_owned()));
+    let before_a_key = applied(&a_pool_minting(true), &upstream_claim(None));
+    assert_eq!(before_a_key.get(BORN_MINTING_ANNOTATION), None);
+    assert_eq!(
+        before_a_key.get(CLAIM_UID_ANNOTATION).map(String::as_str),
+        Some(UID),
+        "its mark of the Claim stays"
+    );
+    assert_eq!(
+        applied(&bare, &upstream_claim(Some("true")))
+            .get(BORN_MINTING_ANNOTATION)
+            .map(String::as_str),
+        Some("true")
+    );
+    assert_eq!(
+        applied(&bare, &upstream_claim(Some("other")))
+            .get(BORN_MINTING_ANNOTATION)
+            .map(String::as_str),
+        Some("other"),
+        "whatever the claim holds, as it holds it"
+    );
+}

@@ -375,10 +375,11 @@ fn a_claim_is_admitted_only_for_someone_the_cluster_lets_use_its_pool() {
     assert_eq!(rules.len(), 2, "{spec}");
     assert_eq!(strings(&rules[0]["apiGroups"]), ["runners.purlis.dev"]);
     assert_eq!(strings(&rules[0]["resources"]), ["claims"]);
-    // CREATE alone: who may change the repos it names is the policy on App keys' (#4206).
-    assert_eq!(strings(&rules[0]["operations"]), ["CREATE"]);
+    // Who may change the repos it names is the policy on App keys' (#4206); an update is held
+    // only when it runs a stopped claim again.
+    assert_eq!(strings(&rules[0]["operations"]), ["CREATE", "UPDATE"]);
     let validations = spec["validations"].as_array().expect("validations");
-    assert_eq!(validations.len(), 6, "{spec}");
+    assert_eq!(validations.len(), 7, "{spec}");
     let expression = |at: usize| {
         validations[at]["expression"]
             .as_str()
@@ -394,6 +395,12 @@ fn a_claim_is_admitted_only_for_someone_the_cluster_lets_use_its_pool() {
     assert_eq!(
         expression(1),
         "request.resource.group!='runners.purlis.dev'||request.operation!='CREATE'||object.spec.requester==request.userInfo.username"
+    );
+    // A stopped claim gets no key vouched for and no token minted: only its requester runs it
+    // again, and any other update, a finalizer's removal among them, is not asked.
+    assert_eq!(
+        expression(6),
+        "request.resource.group!='runners.purlis.dev'||request.operation!='UPDATE'||!oldObject.spec.stopped||object.spec.stopped||request.userInfo.username==object.spec.requester"
     );
 
     let binding = documents
@@ -680,11 +687,14 @@ fn a_runner_namespace_and_what_the_operator_binds_and_caps_there_are_guarded_at_
          (!('pod-security.kubernetes.io/enforce-version'inobject.metadata.labels)||\
          object.metadata.labels['pod-security.kubernetes.io/enforce-version']=='latest')"
     );
-    // Its mark opens the mint port, so no one else marks another namespace (#4206).
+    // Its mark opens the mint port, so no one else marks another namespace (#4206); an update
+    // that leaves the marks as they were, a namespace's finalize and status among them, gets
+    // through, so one marked before the policy held can still be deleted.
     assert_eq!(
         validations[1],
         "request.resource.resource!='namespaces'||variables.operator||variables.runners||\
-         variables.marks[0]!='purlis-cluster-operator'"
+         variables.marks[0]!='purlis-cluster-operator'||\
+         request.operation=='UPDATE'&&variables.marks==variables.oldMarks"
     );
     let validations: Vec<String> = validations
         .iter()
@@ -762,20 +772,87 @@ fn spending_an_app_key_takes_use_on_it() {
             .collect::<String>()
     };
     let validations = spec["validations"].as_array().expect("validations");
-    assert_eq!(validations.len(), 3, "{spec}");
+    assert_eq!(validations.len(), 6, "{spec}");
     assert_eq!(
         flat(&validations[0]["expression"]),
         "request.resource.resource!='pools'||!has(object.spec.forge)||(request.operation=='UPDATE'&&has(oldObject.spec.forge)&&object.spec.forge==oldObject.spec.forge)||authorizer.group('runners.purlis.dev').resource('forgekeys').name(object.spec.forge.appKeySecretRef.name).check('use').allowed()"
     );
-    // On a Pool that mints, the image holds the link keys, so it takes `use` on the key too.
+    // On a Pool that mints, the image holds the link keys, so changing it takes `use` on the key
+    // too, and so does turning minting on, which adopts the image someone else may have set.
     assert_eq!(
         flat(&validations[1]["expression"]),
-        "request.resource.resource!='pools'||request.operation!='UPDATE'||object.spec.image==oldObject.spec.image||!has(oldObject.spec.forge)||!oldObject.spec.forge.mintInCluster||authorizer.group('runners.purlis.dev').resource('forgekeys').name(oldObject.spec.forge.appKeySecretRef.name).check('use').allowed()"
+        "request.resource.resource!='pools'||request.operation!='UPDATE'||!has(object.spec.forge)||!object.spec.forge.mintInCluster||(object.spec.image==oldObject.spec.image&&has(oldObject.spec.forge)&&oldObject.spec.forge.mintInCluster)||authorizer.group('runners.purlis.dev').resource('forgekeys').name(object.spec.forge.appKeySecretRef.name).check('use').allowed()"
     );
+    // Stopping is a gate on minting: running a stopped Pool that mints again takes `use` on its
+    // key, so revoking that right takes the key away from the Pool's other writers.
     assert_eq!(
         flat(&validations[2]["expression"]),
+        "request.resource.resource!='pools'||request.operation!='UPDATE'||!oldObject.spec.stopped||object.spec.stopped||!has(object.spec.forge)||!object.spec.forge.mintInCluster||authorizer.group('runners.purlis.dev').resource('forgekeys').name(object.spec.forge.appKeySecretRef.name).check('use').allowed()"
+    );
+    assert_eq!(
+        flat(&validations[3]["expression"]),
         "request.resource.resource!='claims'||(has(object.spec.forge)?has(oldObject.spec.forge)&&object.spec.forge==oldObject.spec.forge:!has(oldObject.spec.forge))||(request.userInfo.username==object.spec.requester&&authorizer.group('runners.purlis.dev').resource('pools').name(object.spec.pool).check('use').allowed())"
     );
+    let variables: Vec<(String, String)> = spec["variables"]
+        .as_array()
+        .expect("variables")
+        .iter()
+        .map(|v| {
+            (
+                v["name"].as_str().expect("a name").to_owned(),
+                flat(&v["expression"]),
+            )
+        })
+        .collect();
+    let annotation = |name: &str, object: &str, guard: &str| {
+        format!(
+            "{guard}has({object}.metadata.annotations)&&'{name}'in{object}.metadata.annotations?[{object}.metadata.annotations['{name}']]:[]"
+        )
+    };
+    let writer = purlis_cluster_operator::forge::FORGE_WRITER_ANNOTATION;
+    let born = purlis_cluster_operator::upstream::BORN_MINTING_ANNOTATION;
+    let held = "request.operation=='UPDATE'&&";
+    assert_eq!(
+        variables,
+        [
+            ("forgeWriter".to_owned(), annotation(writer, "object", "")),
+            (
+                "heldForgeWriter".to_owned(),
+                annotation(writer, "oldObject", held)
+            ),
+            ("bornMinting".to_owned(), annotation(born, "object", "")),
+            (
+                "heldBornMinting".to_owned(),
+                annotation(born, "oldObject", held)
+            ),
+        ]
+    );
+    // Whoever writes a Pool's forge, or the annotation naming its writer, names themselves in it in
+    // that write: the operator asks before each mint whether that person may still use the key.
+    // A Pool that names no key needs no writer, and taking its forge off asks nothing.
+    assert_eq!(
+        flat(&validations[4]["expression"]),
+        "request.resource.resource!='pools'||(request.operation=='UPDATE'&&(has(object.spec.forge)?has(oldObject.spec.forge)&&object.spec.forge==oldObject.spec.forge:!has(oldObject.spec.forge))&&variables.forgeWriter==variables.heldForgeWriter)||variables.forgeWriter==[request.userInfo.username]||(!has(object.spec.forge)&&(variables.forgeWriter==[]||variables.forgeWriter==variables.heldForgeWriter))"
+    );
+    // Whether an upstream claim was born on a Pool naming a key: said by the operator alone, as it
+    // makes the claim, and by nobody after. Upstream's controller and a cluster's admins may write
+    // upstream's claims too.
+    assert_eq!(
+        flat(&validations[5]["expression"]),
+        "request.resource.resource!='sandboxclaims'||(request.operation=='CREATE'?variables.bornMinting==[]||request.userInfo.username=='system:serviceaccount:purlis-system:purlis-cluster-operator':variables.bornMinting==variables.heldBornMinting)"
+    );
+    let rules = spec["matchConstraints"]["resourceRules"]
+        .as_array()
+        .expect("its rules");
+    assert!(
+        rules.iter().any(
+            |rule| strings(&rule["apiGroups"]) == ["extensions.agents.x-k8s.io"]
+                && strings(&rule["resources"]) == ["sandboxclaims"]
+                && strings(&rule["operations"]) == ["CREATE", "UPDATE"]
+        ),
+        "{rules:?}"
+    );
+    assert!(spec.get("matchConditions").is_none(), "it holds everyone");
     let binding = documents
         .iter()
         .find(|d| {
@@ -884,7 +961,8 @@ fn what_the_operator_writes_of_upstreams_is_held_to_a_runners_shape() {
          !has(object.spec.volumeClaimTemplates[0].spec.volumeAttributesClassName)&&\
          !has(object.spec.volumeClaimTemplates[0].spec.volumeMode))))"
     );
-    // Its own mark on a claim, added once; all else there neither added, changed nor removed.
+    // Its own mark on a claim, added once, and whether the claim is born minting, said only as it
+    // is made; all else there neither added, changed nor removed.
     let marks: String = validations[7].split_whitespace().collect();
     assert_eq!(
         marks,
@@ -903,7 +981,13 @@ fn what_the_operator_writes_of_upstreams_is_held_to_a_runners_shape() {
          has(object.metadata.annotations)&&kinobject.metadata.annotations))):\
          (!has(object.metadata.labels)&&\
          (!has(object.metadata.annotations)||object.metadata.annotations.all(k,\
-         k=='runners.purlis.dev/claim-uid'))))"
+         k=='runners.purlis.dev/claim-uid'||\
+         (k=='runners.purlis.dev/born-minting'&&\
+         object.metadata.annotations[k]=='true')))))"
+    );
+    assert_eq!(
+        purlis_cluster_operator::upstream::BORN_MINTING_ANNOTATION,
+        "runners.purlis.dev/born-minting"
     );
     // The fixed label, from any writer, on a purlis pool's claim.
     let claims_policy = policy_named(&documents, purlis_cluster_operator::POLICY);
@@ -1056,4 +1140,143 @@ fn what_the_operator_writes_of_upstreams_is_held_to_a_runners_shape() {
             validations[6]
         );
     }
+}
+
+#[test]
+fn what_the_operator_writes_of_upstreams_is_held_to_what_its_pool_says() {
+    let documents = documents("policy.yaml");
+    let name = "purlis-operator-writes-what-its-pool-says";
+    let policy = policy_named(&documents, name);
+    let spec = &policy["spec"];
+    assert_eq!(spec["failurePolicy"], "Fail");
+    assert_eq!(
+        policy["metadata"]["annotations"]["helm.sh/resource-policy"],
+        "keep"
+    );
+    // Each Pool, cluster-wide, is its parameter, and the served version of purlis's definitions.
+    assert_eq!(
+        spec["paramKind"],
+        json!({ "apiVersion": "runners.purlis.dev/v1alpha1", "kind": "Pool" })
+    );
+    let pool = Pool::crd();
+    assert_eq!(pool.spec.scope, "Cluster");
+    assert!(
+        pool.spec
+            .versions
+            .iter()
+            .any(|v| v.name == "v1alpha1" && v.served),
+        "Pool is served as v1alpha1"
+    );
+    let binding = documents
+        .iter()
+        .find(|d| d["kind"] == "ValidatingAdmissionPolicyBinding" && d["metadata"]["name"] == name)
+        .expect("its binding");
+    assert_eq!(
+        binding["metadata"]["annotations"]["helm.sh/resource-policy"],
+        "keep"
+    );
+    // Every Pool, none named by namespace since a Pool has none; with no Pool, nothing to hold.
+    assert_eq!(
+        binding["spec"]["paramRef"],
+        json!({ "selector": {}, "parameterNotFoundAction": "Allow" })
+    );
+    let rule = &spec["matchConstraints"]["resourceRules"][0];
+    assert_eq!(strings(&rule["apiGroups"]), ["extensions.agents.x-k8s.io"]);
+    assert_eq!(strings(&rule["operations"]), ["CREATE", "UPDATE"]);
+    assert_eq!(
+        strings(&rule["resources"]),
+        ["sandboxclaims", "sandboxtemplates"]
+    );
+    assert!(
+        spec["matchConditions"][0]["expression"]
+            .as_str()
+            .expect("its condition")
+            .contains("system:serviceaccount:purlis-system:purlis-cluster-operator")
+    );
+    let squeezed = |value: &Value| -> String {
+        value
+            .as_str()
+            .expect("an expression")
+            .split_whitespace()
+            .collect()
+    };
+    let variables: Vec<(String, String)> = spec["variables"]
+        .as_array()
+        .expect("variables")
+        .iter()
+        .map(|v| {
+            (
+                v["name"].as_str().expect("a name").to_owned(),
+                squeezed(&v["expression"]),
+            )
+        })
+        .collect();
+    let variable = |wanted: &str| {
+        variables
+            .iter()
+            .find(|(name, _)| name == wanted)
+            .map(|(_, expression)| expression.clone())
+            .unwrap_or_else(|| panic!("the variable {wanted}"))
+    };
+    assert_eq!(variable("pools"), "'purlis-pool-'+params.metadata.name");
+    // A class named, or none: a Pool that names none matches a volume that names none.
+    assert_eq!(
+        variable("poolsClass"),
+        "has(params.spec.keptVolume)&&has(params.spec.keptVolume.storageClassName)&&\
+         dyn(params.spec.keptVolume.storageClassName)!=null?\
+         [params.spec.keptVolume.storageClassName]:[]"
+    );
+    assert_eq!(
+        variable("claimsClass"),
+        "has(object.spec.volumeClaimTemplates)&&size(object.spec.volumeClaimTemplates)>0&&\
+         has(object.spec.volumeClaimTemplates[0].spec.storageClassName)?\
+         [object.spec.volumeClaimTemplates[0].spec.storageClassName]:[]"
+    );
+    assert_eq!(
+        variable("heldClass"),
+        variable("claimsClass").replace("object.", "oldObject.")
+    );
+    let validations: Vec<String> = spec["validations"]
+        .as_array()
+        .expect("validations")
+        .iter()
+        .map(|v| squeezed(&v["expression"]))
+        .collect();
+    assert_eq!(validations.len(), 3, "{validations:?}");
+    // Every container of a Pool's own template, init containers too, runs the Pool's image.
+    assert_eq!(
+        validations[0],
+        "request.resource.resource!='sandboxtemplates'||\
+         object.metadata.name!=variables.pools||\
+         (variables.pod.containers+\
+         (has(variables.pod.initContainers)?variables.pod.initContainers:[]))\
+         .all(c,has(c.image)&&c.image==params.spec.image)"
+    );
+    assert_eq!(variable("pod"), "object.spec.podTemplate.spec");
+    // A new kept volume of a Pool's claim, in the class the Pool names now.
+    assert_eq!(
+        validations[1],
+        "request.resource.resource!='sandboxclaims'||request.operation!='CREATE'||\
+         object.spec.warmPoolRef.name!=variables.pools||\
+         !has(object.spec.volumeClaimTemplates)||\
+         variables.claimsClass==variables.poolsClass"
+    );
+    // Then the class it was made in, whatever the Pool says since.
+    assert_eq!(
+        validations[2],
+        "request.resource.resource!='sandboxclaims'||request.operation!='UPDATE'||\
+         variables.claimsClass==variables.heldClass"
+    );
+    // The names it compares are the ones the operator writes, and the Pool's fields its own.
+    assert_eq!(
+        purlis_cluster_operator::upstream::name_for("team"),
+        "purlis-pool-team"
+    );
+    let pool_spec = &serde_json::to_value(&pool.spec.versions[0].schema).expect("JSON")["openAPIV3Schema"]
+        ["properties"]["spec"]["properties"];
+    assert_eq!(pool_spec["image"]["type"], "string");
+    assert_eq!(
+        pool_spec["keptVolume"]["properties"]["storageClassName"]["type"],
+        "string"
+    );
 }

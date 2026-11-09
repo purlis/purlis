@@ -26,6 +26,9 @@ struct Fake {
     denied: BTreeSet<String>,
     /// Whether the person may not even ask what they may do.
     reviews_forbidden: bool,
+    /// The namespaces that carry the operator's mark.
+    marked: Vec<String>,
+    namespaces_listable: bool,
 }
 
 /// A controller with one ready replica, running `images`.
@@ -51,6 +54,8 @@ fn bare() -> Fake {
         controller_readable: true,
         denied: BTreeSet::new(),
         reviews_forbidden: false,
+        marked: Vec::new(),
+        namespaces_listable: true,
     }
 }
 
@@ -115,6 +120,13 @@ impl Cluster for Fake {
             format!("{verb} {resource}.{group}")
         };
         Ok(!self.denied.contains(&what))
+    }
+
+    async fn marked_namespaces(&self) -> Result<Vec<String>, Unanswered> {
+        if !self.namespaces_listable {
+            return Err(Unanswered::Forbidden);
+        }
+        Ok(self.marked.clone())
     }
 }
 
@@ -507,4 +519,48 @@ fn a_controller_that_names_no_image_says_so_without_an_empty_name() {
     let line = finding(&report, "agent-sandbox v1.0.6").to_string();
     assert!(line.contains("names no image"), "{line}");
     assert!(!line.contains("\"\""), "{line}");
+}
+
+/// The operator's mark opens its mint port to a namespace, and the policy on runner namespaces
+/// lets no one else put it on one: a namespace outside `purlis-runners-*` that carries it is told
+/// to drop it, by name, and a runner namespace that carries it is what the operator made.
+#[test]
+fn a_namespace_outside_the_runner_namespaces_with_the_operators_mark_is_told_to_drop_it() {
+    let mut cluster = ready();
+    cluster.marked = vec![
+        "purlis-runners-0123456789abcdef".into(),
+        "team-tools".into(),
+    ];
+    let report = run(&cluster);
+    assert_eq!(report.findings.len(), 1, "{report}");
+    let line = finding(&report, "team-tools").to_string();
+    assert!(
+        line.contains("app.kubernetes.io/managed-by=purlis-cluster-operator"),
+        "{line}"
+    );
+    assert!(
+        line.contains(
+            "Next: remove the label (kubectl label namespace team-tools app.kubernetes.io/managed-by-)"
+        ),
+        "{line}"
+    );
+    assert!(!line.contains("purlis-runners-0123456789abcdef"), "{line}");
+}
+
+#[test]
+fn only_runner_namespaces_carrying_the_operators_mark_lack_nothing() {
+    let mut cluster = ready();
+    cluster.marked = vec!["purlis-runners-0123456789abcdef".into()];
+    let report = run(&cluster);
+    assert!(report.findings.is_empty(), "{report}");
+}
+
+#[test]
+fn an_admin_who_may_not_list_namespaces_is_told_so_not_that_none_is_marked() {
+    let mut cluster = ready();
+    cluster.namespaces_listable = false;
+    let report = run(&cluster);
+    assert_eq!(report.findings.len(), 1, "{report}");
+    let line = finding(&report, "list namespaces").to_string();
+    assert!(line.contains("cluster admin"), "{line}");
 }

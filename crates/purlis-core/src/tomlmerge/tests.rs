@@ -159,3 +159,41 @@ fn a_set_inside_an_inline_table_merges_in_place() {
         "{text}"
     );
 }
+
+/// **A key both changed is settled around, never marked** (#5852): sets merged, a key one side
+/// changed taken, this machine's value standing in for the key in conflict, and both values
+/// named; the person's choice of the remote's then writes the remote's.
+#[test]
+fn a_key_both_changed_is_settled_around_with_both_values_and_chosen_by_key() {
+    let base = "[sandbox]\nmode = \"project\"\nhosts = [\"a.example\"]\n[plane]\nname = \"p\"\n";
+    let ours = "[sandbox]\nmode = \"workspace\"\nhosts = [\"a.example\", \"mine.example\"]\n[plane]\nname = \"p\"\n";
+    let theirs = "[sandbox]\nmode = \"off\"\nhosts = [\"a.example\", \"theirs.example\"]\n[plane]\nname = \"q\"\n";
+
+    let around = around(base, ours, theirs).unwrap();
+
+    assert_eq!(
+        around.keys,
+        vec![KeyConflict {
+            key: "sandbox.mode".into(),
+            ours: Some("\"workspace\"".into()),
+            theirs: Some("\"off\"".into()),
+        }]
+    );
+    assert!(!around.text.contains("<<<<<<<"), "{}", around.text);
+    let read: toml::Table = around.text.parse().unwrap();
+    assert_eq!(read["sandbox"]["mode"].as_str(), Some("workspace"));
+    assert_eq!(read["plane"]["name"].as_str(), Some("q"));
+    let hosts: Vec<&str> = read["sandbox"]["hosts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|h| h.as_str())
+        .collect();
+    assert_eq!(hosts, ["a.example", "mine.example", "theirs.example"]);
+
+    let theirs_chosen = chosen(base, ours, theirs, &["sandbox.mode".into()]).unwrap();
+    let read: toml::Table = theirs_chosen.parse().unwrap();
+    assert_eq!(read["sandbox"]["mode"].as_str(), Some("off"));
+    assert_eq!(read["plane"]["name"].as_str(), Some("q"));
+    assert_eq!(chosen(base, ours, theirs, &[]).unwrap(), around.text);
+}

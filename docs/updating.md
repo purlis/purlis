@@ -29,35 +29,40 @@ on main*, and the first clean night closes it. Fix that before tagging.
 
 ### When a merge reaches the dev channel
 
-A merge to `main` starts `ci`. When that `ci` ends green, the release workflow builds that
-commit and replaces the dev release's assets. A dev build takes **about half an hour** from
-start to published: the Linux and macOS builds run side by side for some twenty minutes, and
-the manifest, the provenance and the publish take the rest. So a merge is on the dev channel
-about fifty minutes after it lands, when nothing is ahead of it.
+A merge to `main` starts `ci` and a release run together. The release run waits for that
+commit's `ci` to end (its `gate` job), and when it ends green, builds that commit and replaces
+the dev release's assets. A dev build takes **about half an hour** after the wait: the Linux and
+macOS builds run side by side for some twenty minutes, and the manifest, the provenance and the
+publish take the rest. So a merge is on the dev channel about fifty minutes after its `ci` goes
+green, when nothing is ahead of it.
 
-**Dev builds queue. A merge never costs the build in progress.** One dev build runs at a time
-and is never cancelled once it has started, so you can merge while one is running. The next
-green commit's build waits for it to finish. Only one build waits: if another commit goes green
-meanwhile, its build takes the waiting place and GitHub marks the one that was waiting
-*cancelled*. That one had started nothing. Usually the build that replaced it is of a later
-commit and contains it. When it is of an earlier commit (a `ci` started again ends late), the
-replaced commit is not built, and the next green commit's build publishes it. So merging faster
-than a build takes publishes some commits and not each one. Every job of a release run has a
-deadline, so a hung build fails and frees the queue.
+The push starts the release run, rather than `ci`'s end, so that the run's own commit is the one
+it builds: a run started by another run's end has `main`'s head at that moment as its commit,
+and the build provenance it signs names that one, a later commit whenever a merge landed while
+`ci` ran. Now the provenance names the commit built, and `gh attestation verify
+--source-digest <commit>` checks it.
 
-A `ci` that ends red or cancelled, and the nightly `ci`, publish nothing and wait behind
-nothing: their release run skips at once, in a group of its own. Before 2026-10-13 such a run
-took the waiting place from a real build and then skipped, which is how a green commit could
-go unpublished until the next merge.
+**Dev builds queue. A merge never costs the build in progress.** One release run on `main` runs
+at a time and is never cancelled once it has started, so you can merge while one is running. The
+next merge's run waits for it to finish. Only one run waits: if another merge lands meanwhile,
+its run takes the waiting place and GitHub marks the one that was waiting *cancelled*. That one
+had started nothing, and the run that replaced it is of a later commit and contains it. So
+merging faster than a build takes publishes some commits and not each one. When the newest
+merge's own `ci` then ends red, its run publishes nothing and the channel waits for the next
+green merge. Every job of a release run has a deadline, so a hung build fails and frees the
+queue.
 
-**The dev channel only moves forward.** `ci` runs do not end in the order of their commits (one
-started again ends late), so before it builds, a run reads the commit `dev.json` names and
-publishes only a later one. An older commit's run says so in a notice and builds nothing. The
-publish job asks again before it replaces the first asset, so a run started again days later
-fails there and replaces nothing.
+A `ci` that ends red or cancelled publishes nothing: the gate says so in a notice and the run
+builds nothing. A red `ci` run again by hand to green publishes nothing either; the next merge's
+run does. The nightly `ci` starts no release run.
 
-In the Actions list a release run is titled for the commit it builds, `ci success (push) of
-<sha>`. The commit GitHub prints beside it is `main`'s head when that `ci` ended, a later one.
+**The dev channel only moves forward.** Before it builds, a run reads the commit `dev.json`
+names and publishes only a later one, so a run started again by hand days later says so in a
+notice and builds nothing. The publish job asks again before it replaces the first asset, so
+such a run fails there and replaces nothing.
+
+In the Actions list a release run on `main` is titled `dev build of <sha>`, the commit it
+builds.
 
 A machine switches with `purlis update --channel dev` (or `stable`). The app checks a minute
 after launch and every six hours after that. The week's first check reads the channel's weekly
@@ -83,7 +88,7 @@ and the environment's deployment policy decides which refs may reach them:
 
 | Policy entry | Type | Admits |
 |---|---|---|
-| `main` | branch | the dev channel: `release.yml` runs from `workflow_run`, which GitHub runs on the default branch |
+| `main` | branch | the dev channel: `release.yml` runs on each push to `main` |
 | `v*` | tag | the stable channel: the operator's `v*` tag |
 
 A job on any other ref is refused before it starts, so a pull request or a pushed branch never
@@ -470,7 +475,7 @@ Nothing has to be installed into Claude Code or Codex. The bundle carries its ow
 plugin, `charter` (`Contents/Resources/plugin` on macOS, `/usr/lib/charter/plugin` on
 Linux), and each Claude Code chat the app starts loads it for that session alone with
 `--plugin-dir`: purlis's hooks, its Bash guard, and its skills, such as `purlis-handoff`,
-`purlis-working-in-a-clone`, `purlis-secrets` and `purlis-browser`. The same chat turns the Python charter's
+`purlis-repo-work`, `purlis-secrets` and `purlis-browser`. The same chat turns the Python charter's
 `charter@charter` plugin off for itself, so a plane whose settings enable that plugin for your terminal sessions does not give
 an app chat two sets of hooks. A Codex chat is armed the same way with `-c` flags. A `claude`
 or `codex` you run in a terminal is untouched, and an update to the app updates all of it.

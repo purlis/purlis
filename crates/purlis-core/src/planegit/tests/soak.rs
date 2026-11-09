@@ -14,12 +14,22 @@
 //!
 //! Memory indexes and `[sandbox] hosts` (#5824 F4, F5) soak in a test of their own, with a
 //! memory and a host allowed on each machine every round.
+//!
+//! **A person's own words** (#5824 F7, F12) soak in a third: every third round both machines
+//! rewrite one file a person keeps, so the second's bring-in conflicts, and it is settled the way
+//! the window settles it, in a resolve folder (Resolve, the file settled there, Continue). The
+//! root never stops, mid-resolve or after, and what was settled is what lands.
 
 use std::collections::BTreeMap;
 use std::path::Path;
 
 use super::twoclones::{Two, commit, read, run, write};
 use crate::planegit::bringin::{BroughtIn, When, bring_in};
+use crate::planegit::resolve::Settled;
+use crate::planegit::resolvefolder;
+
+/// The file a person keeps that both machines rewrite in the third soak.
+const SHARED: &str = "notes/shared.md";
 
 const WS: &str = "workspaces/alpha";
 const CHARTER: &str = "# alpha\n\n## Vision\n\nShip it\n\n## Sessions\n\nNo session records yet.\n";
@@ -39,16 +49,30 @@ struct Soak {
     /// Files either machine deleted, which must stay deleted.
     deleted: Vec<String>,
     lane_b: bool,
+    /// Both machines rewrite [`SHARED`] every third round, and the conflict is resolved.
+    persons: bool,
+    /// How many conflicts went through a resolve folder.
+    resolved: usize,
 }
 
 impl Soak {
-    fn new(lane_b: bool) -> Soak {
+    fn new(lane_b: bool, persons: bool) -> Soak {
         let two = Two::new(&[
             (&format!("{WS}/workspace.md"), CHARTER),
             (&format!("{WS}/sessions/index.md"), "# Sessions\n\n"),
             (&format!("{WS}/todos/MEMORY.md"), "# Todos\n\n"),
             ("personas/_shared/memory/MEMORY.md", "# Memory\n\n"),
+            (SHARED, "the seed's words\n"),
         ]);
+        if persons {
+            // A request mode, as the window's Resolve brings a target in for one.
+            let toml =
+                read(&two.mine, "charter.toml").replace("[plane]\n", "[plane]\nmode = \"pr\"\n");
+            write(&two.mine, "charter.toml", &toml);
+            commit(&two.mine, "a request mode");
+            run(&two.mine, &["push", "-q", "origin", "release"]);
+            run(&two.theirs, &["pull", "-q", "origin", "release"]);
+        }
         let forge = two.bare.parent().unwrap().join("forge");
         run(
             two.bare.parent().unwrap(),
@@ -67,6 +91,8 @@ impl Soak {
             written: BTreeMap::new(),
             deleted: Vec::new(),
             lane_b,
+            persons,
+            resolved: 0,
         }
     }
 
@@ -146,6 +172,14 @@ impl Soak {
             std::fs::remove_file(root.join(&gone)).unwrap();
             self.written.remove(&gone);
             self.deleted.push(gone);
+        }
+        if self.persons && round % 3 == 1 {
+            // Both machines rewrite the person's file, each its own way.
+            self.keep(
+                &root,
+                SHARED,
+                &format!("{machine} rewrote this in round {round}\n"),
+            );
         }
         if self.lane_b {
             // A memory file and its line in the index; an Always-allowed host.
@@ -238,6 +272,37 @@ impl Soak {
             matches!(got, BroughtIn::Moved(_) | BroughtIn::Nothing),
             "round {round}, {machine} ({when:?}): {got:?}"
         );
+        self.no_stop_is_left(round);
+    }
+
+    /// `machine` brings the target in through Resolve, as the window does: where what a person
+    /// wrote conflicts, a resolve folder is cut, the file is settled there with both machines'
+    /// words, and Continue moves the root once. Nothing at either root ever stops.
+    fn resolves(&mut self, machine: &str, round: usize) {
+        let root = self.clone(machine).to_path_buf();
+        run(&root, &["fetch", "-q", "origin"]);
+        match resolvefolder::start_fetched(&root, &mut |_| {}) {
+            Settled::Replayed => {}
+            Settled::Stopped(files) => {
+                assert_eq!(files, vec![SHARED.to_owned()], "round {round}, {machine}");
+                // Mid-resolve: the folder holds the merge, and the root is not stopped.
+                self.no_stop_is_left(round);
+                let folder = resolvefolder::path(&root);
+                assert!(read(&folder, SHARED).contains("<<<<<<<"), "round {round}");
+                let both = format!("both machines' words, settled in round {round}\n");
+                write(&folder, SHARED, &both);
+                assert_eq!(
+                    resolvefolder::carry_on(&root, &files, &[], &mut |_| {}),
+                    Settled::Replayed,
+                    "round {round}, {machine}"
+                );
+                assert!(!folder.exists(), "round {round}: the folder is gone");
+                assert_eq!(read(&root, SHARED), both, "round {round}");
+                self.written.insert(SHARED.to_owned(), both);
+                self.resolved += 1;
+            }
+            other => panic!("round {round}, {machine}: {other:?}"),
+        }
         self.no_stop_is_left(round);
     }
 
@@ -358,8 +423,13 @@ impl Soak {
         );
         commit(&root, "written while it merged");
         self.brings_in(first, When::MergedAt(&pushed), round);
-        // The second's request is open while the target moved: it brings it in, then lands.
-        self.brings_in(second, When::Moved, round);
+        // The second's request is open while the target moved: it brings it in, then lands. Where
+        // both rewrote the person's file, that is Resolve's.
+        if self.persons {
+            self.resolves(second, round);
+        } else {
+            self.brings_in(second, When::Moved, round);
+        }
         let pushed = self.lands(second, METHODS[(round + 1) % METHODS.len()]);
         self.brings_in(second, When::MergedAt(&pushed), round);
         // The first lands what it wrote while its request merged.
@@ -382,12 +452,12 @@ fn listed(root: &Path, dir: &str, index: &str) -> Vec<String> {
     names
 }
 
-fn soak(lane_b: bool) {
+fn soak(lane_b: bool, persons: bool) {
     // A sandbox that holds nothing: a `cargo test` run from a chat's sandbox would otherwise
     // hold `charter.toml` at every clone, and each move would wait for the window (qw346), as
     // it should. The soak is about what the merges keep, so it runs as the window does.
     let _free = crate::sandbox::held::stand_in(&[]);
-    let mut soak = Soak::new(lane_b);
+    let mut soak = Soak::new(lane_b, persons);
     let started = std::time::Instant::now();
     let mut rounds = 0;
     while rounds < ROUNDS && started.elapsed() < AT_MOST {
@@ -401,14 +471,26 @@ fn soak(lane_b: bool) {
         started.elapsed()
     );
     assert!(rounds >= 10, "only {rounds} rounds ran within {AT_MOST:?}");
+    if persons {
+        // Every third round conflicted, and each went through a resolve folder.
+        assert_eq!(soak.resolved, (rounds + 1) / 3, "{rounds} rounds");
+    }
 }
 
 #[test]
 fn two_machines_saving_for_many_rounds_stay_green_and_lose_nothing() {
-    soak(false);
+    soak(false, false);
+}
+
+/// **A person's own words, rewritten on both machines, are settled in a resolve folder** (#5824
+/// F7, F12): every third round the second machine's bring-in conflicts, Resolve settles it off to
+/// the side, and the rounds stay green with nothing lost and no root ever stopped.
+#[test]
+fn two_machines_rewriting_a_persons_file_resolve_it_in_a_folder_and_lose_nothing() {
+    soak(false, true);
 }
 
 #[test]
 fn two_machines_saving_memory_and_host_allows_for_many_rounds_stay_green_and_lose_nothing() {
-    soak(true);
+    soak(true, false);
 }

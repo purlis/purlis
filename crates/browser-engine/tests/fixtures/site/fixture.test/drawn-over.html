@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Drawn over</title>
+<style>
+  body { margin: 0; font: 20px sans-serif; }
+  #covered { position: absolute; left: 20px; top: 20px; width: 200px; height: 40px; margin: 0; }
+  /* A banner's transparent box, laid over the button by another part of the page. */
+  #glass { position: absolute; left: 0; top: 0; width: 400px; height: 100px; }
+  #agree { position: absolute; left: 20px; top: 160px; display: block; width: 240px; height: 30px; }
+  /* The checkbox is hidden, and its label draws a box of its own over it. */
+  #box { position: absolute; left: 0; top: 0; width: 20px; height: 20px; margin: 0; opacity: 0; }
+  #face { position: absolute; left: 0; top: 0; width: 240px; height: 30px; background: #eee; }
+  #under { position: absolute; left: 20px; top: 220px; width: 200px; height: 40px; margin: 0; }
+  /* A decorative box over the button that the pointer passes through. */
+  #decor { position: absolute; left: 0; top: 200px; width: 400px; height: 80px; pointer-events: none; }
+  #slotted-toggle { position: absolute; left: 20px; top: 300px; display: block; width: 240px; height: 30px; }
+  #pseudo { position: absolute; left: 20px; top: 360px; width: 240px; height: 30px; }
+  /* The checkbox is hidden under the page, and its label's ::before draws the box over it. */
+  #pseudo-box { position: absolute; left: 0; top: 0; width: 20px; height: 20px; margin: 0; opacity: 0; z-index: -1; }
+  #pseudo label { display: block; height: 30px; padding-left: 30px; }
+  #pseudo label::before { content: ""; position: absolute; left: 0; top: 0; width: 20px; height: 20px; background: #ccc; }
+</style></head>
+<body>
+  <button id="covered" type="button">Covered button</button>
+  <div id="glass"></div>
+  <label id="agree"><input id="box" type="checkbox"><span id="face">Agree to the terms</span></label>
+  <button id="under" type="button">Button under a decoration</button>
+  <div id="decor"></div>
+  <x-toggle id="slotted-toggle"><input id="slotted" type="checkbox" aria-label="Slotted option"></x-toggle>
+  <div id="pseudo">
+    <input id="pseudo-box" type="checkbox">
+    <label for="pseudo-box">Drawn option</label>
+  </div>
+  <p id="said" style="position: absolute; left: 0; top: 420px">Not pressed</p>
+  <p id="said-under" style="position: absolute; left: 0; top: 460px">Under not pressed</p>
+  <p id="said-slotted" style="position: absolute; left: 0; top: 500px">Slotted off</p>
+  <p id="said-pseudo" style="position: absolute; left: 0; top: 540px">Drawn off</p>
+  <script>
+    // A web component that draws its own box over the hidden control slotted into it, and
+    // passes a press on the box to the control.
+    customElements.define('x-toggle', class extends HTMLElement {
+      constructor() {
+        super();
+        const root = this.attachShadow({ mode: 'open' });
+        root.innerHTML = `<style>
+            ::slotted(input) { position: absolute; left: 0; top: 0; width: 20px; height: 20px;
+              margin: 0; opacity: 0; z-index: -1; }
+            span { position: absolute; left: 0; top: 0; width: 240px; height: 30px; background: #eee; }
+          </style><span><slot></slot>Slotted option</span>`;
+        root.querySelector('span').addEventListener('click', () => this.querySelector('input').click());
+      }
+    });
+    const said = document.getElementById('said');
+    document.getElementById('covered').addEventListener('click', () => {
+      said.textContent = 'Pressed the covered button';
+    });
+    const box = document.getElementById('box');
+    box.addEventListener('change', () => {
+      said.textContent = box.checked ? 'Agreed to the terms' : 'Not agreed';
+    });
+    document.getElementById('under').addEventListener('click', () => {
+      document.getElementById('said-under').textContent = 'Pressed the button under the decoration';
+    });
+    const slotted = document.getElementById('slotted');
+    slotted.addEventListener('change', () => {
+      document.getElementById('said-slotted').textContent = slotted.checked ? 'Slotted on' : 'Slotted off';
+    });
+    const drawn = document.getElementById('pseudo-box');
+    drawn.addEventListener('change', () => {
+      document.getElementById('said-pseudo').textContent = drawn.checked ? 'Drawn on' : 'Drawn off';
+    });
+  </script>
+</body></html>

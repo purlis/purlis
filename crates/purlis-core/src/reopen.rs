@@ -335,6 +335,12 @@ pub struct Chat {
     /// told so. `false` for every record written before this field, for [`Self::pinned`]'s
     /// reason.
     pub mid_turn: bool,
+    /// **The chat's own temporary folder, kept across the quit for its wake line** (#5827): the
+    /// folder its confinement made, moved aside as the chat ended with work of its own
+    /// ([`crate::ownwork::kept`]), where its pieces' output now is. Removed once the chat's next
+    /// run ends, or it is closed for good. `None` for a chat that kept none, and every record
+    /// written before this field, for [`Self::pinned`]'s reason.
+    pub kept_tmp: Option<String>,
 }
 
 impl Chat {
@@ -1816,6 +1822,9 @@ struct ChatOnDisk {
     /// Whether a turn was under way — see [`Chat::mid_turn`].
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     mid_turn: bool,
+    /// Its own temporary folder, kept across the quit — see [`Chat::kept_tmp`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    kept_tmp: Option<String>,
 }
 
 /// The pieces of own work a record holds, each that reads whole and is of its shape, the latest
@@ -2085,6 +2094,7 @@ impl From<&Record> for OnDisk {
                     own_work: chat.own_work.and_then(crate::ownwork::OwnWork::in_flight),
                     own_pieces: chat.own_pieces.clone(),
                     mid_turn: chat.mid_turn,
+                    kept_tmp: chat.kept_tmp.clone(),
                 })
                 .collect(),
             dealt: highest_dealt(record),
@@ -2186,6 +2196,7 @@ impl From<ChatOnDisk> for Chat {
             own_work: chat.own_work.and_then(crate::ownwork::OwnWork::in_flight),
             own_pieces: chat.own_pieces,
             mid_turn: chat.mid_turn,
+            kept_tmp: chat.kept_tmp,
         }
     }
 }
