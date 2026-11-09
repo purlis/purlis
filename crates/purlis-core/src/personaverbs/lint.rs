@@ -481,7 +481,8 @@ impl<'a> Linter<'a> {
                 None => issues.push(Issue::warn(format!(
                     "`skills:` entry '{shown}' names no skill, so its chats load nothing for \
                      it. Write `purlis:<name>` for a built-in skill, `<plugin>:<name>` for a \
-                     plugin's, or a skill's name"
+                     plugin's, `workspaces/<ws>:<name>` for another workspace's, or a skill's \
+                     name"
                 ))),
                 Some(Reference::BuiltIn(skill)) if Reference::written_renamed(entry).is_some() => {
                     issues.push(Issue::warn(format!(
@@ -511,18 +512,35 @@ impl<'a> Linter<'a> {
             env.as_ref(),
         );
         for (reference, reason) in missing {
-            let (what, fix) = match (&reference, reason) {
+            let (what, fix): (std::borrow::Cow<'_, str>, _) = match (&reference, reason) {
                 (_, Reason::NoSuchBuiltIn) => (
-                    "purlis has no built-in skill of this name",
+                    "purlis has no built-in skill of this name".into(),
                     "Fix the name: `purlis skill list` lists the built-in skills",
+                ),
+                (Reference::Workspace { workspace, .. }, Reason::NoSuchWorkspace) => (
+                    format!(
+                        "the project has no workspace `{}`",
+                        crate::personas::one_line(workspace)
+                    )
+                    .into(),
+                    "Fix the workspace's name: `purlis workspace list` lists them",
+                ),
+                (Reference::Workspace { workspace, .. }, _) => (
+                    format!(
+                        "the workspace `{}` has no skill of this name",
+                        crate::personas::one_line(workspace)
+                    )
+                    .into(),
+                    "Make the skill there, or fix the name",
                 ),
                 (Reference::Named(_), _) => (
                     "no skill of this persona's, a workspace's or the project's has this name, \
-                     and no harness this project's profiles run has it on this machine",
+                     and no harness this project's profiles run has it on this machine"
+                        .into(),
                     "Make the skill, install it, or fix the name",
                 ),
                 _ => (
-                    "no harness this project's profiles run has it on this machine",
+                    "no harness this project's profiles run has it on this machine".into(),
                     "Install its plugin, or fix the name",
                 ),
             };
