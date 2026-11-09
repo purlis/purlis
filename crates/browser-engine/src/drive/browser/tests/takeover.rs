@@ -619,7 +619,6 @@ fn what_the_person_pastes_with_the_middle_button_stays_out_of_later_answers() {
     assert!(!text.contains("Kq7#x"), "{text}");
 }
 
-
 #[cfg(not(target_os = "linux"))]
 #[test]
 fn a_middle_release_where_it_pastes_nothing_is_sent_with_no_field_read_around_it() {
