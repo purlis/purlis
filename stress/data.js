@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794240979329,
+  "lastUpdate": 1794241048817,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -18412,6 +18412,42 @@ window.BENCHMARK_DATA = {
             "value": 1013.3,
             "unit": "MB",
             "extra": "median of 6 samples: 983.8, 999, 1010, 1016.7, 1017.6, 1074.4 MB; window 682.7 MB, session host 330.4 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "10b18119ec383c85795791694333a32836fba02d",
+          "message": "Report intake: curl fetches the pages, and the tool never sees the token (#5701) (#5986)\n\npurlis hands a vault's value to no program that runs what it is told\n(ADR 0112, D-PE-ruling-2), so the routine's\n`purlis secret exec sentry ... -- node tools/report-intake.mjs plan` could\nnever run in a steward chat. curl, on the reviewed list, now fetches each\npage with --variable/--expand-header (curl 8.3+), and the tool is split:\n\n- has-token reads `purlis secret list sentry` and keeps the wizard (#5687)\n  message and exit 2 when the token is missing;\n- url prints the first page, next <headers-file> the next one from the\n  saved Link header, both on https://de.sentry.io alone, and next says a\n  401/403 is a refused token;\n- plan --from <dir> plans from the saved pages and never sees a token.\n\nThe skill holds the exact fetch loop, and asks for Allow for this chat\nrather than committing a curl tool line to the steward, which would hand\nthe token to every curl a steward chat runs.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M705M5DJ62Q7W9BFXRDXBNC9\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-09T13:29:51Z",
+          "tree_id": "4cd7db67ee87e528bcb3aebf41c07c590772613f",
+          "url": "https://github.com/purlis/purlis/commit/10b18119ec383c85795791694333a32836fba02d"
+        },
+        "date": 1794241041942,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 2319.3,
+            "unit": "MB",
+            "extra": "median of 3 samples: 2061.5, 2319.3, 2521.8 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 1013.2,
+            "unit": "MB",
+            "extra": "median of 6 samples: 973.7, 992.1, 1009.3, 1017.1, 1017.1, 1084.4 MB; window 668.2 MB, session host 344.8 MB"
           }
         ]
       }
