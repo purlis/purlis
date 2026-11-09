@@ -2145,6 +2145,35 @@ fn the_forge_preset_adds_the_self_managed_hosts_the_plane_tracks() {
 }
 
 #[test]
+fn the_forge_preset_reaches_github_actions_log_and_artifact_storage_by_name() {
+    // `gh run view --log` and `gh run download` read from these shards one after another
+    // (#5942): the preset names each one GitHub's meta API lists, so nobody is asked per shard.
+    let hosts = hosts_of(&[Preset::Forge], None);
+    for shard in [0, 10, 18, 19, 30, 49, 100, 199] {
+        let host = format!("productionresultssa{shard}.blob.core.windows.net");
+        assert!(
+            super::egress::allows(&hosts, &host),
+            "{host} is GitHub's: {hosts:?}"
+        );
+    }
+    // Never the storage service as a whole: anyone can host a blob there.
+    for host in [
+        "evil.blob.core.windows.net",
+        "productionresultssa20.blob.core.windows.net",
+        "productionresultssa200.blob.core.windows.net",
+        "productionresultssa0.blob.core.windows.net.example.com",
+    ] {
+        assert!(!super::egress::allows(&hosts, host), "{host}: {hosts:?}");
+    }
+    assert!(
+        hosts
+            .iter()
+            .all(|host| !host.ends_with("windows.net") || !host.starts_with('*')),
+        "{hosts:?}"
+    );
+}
+
+#[test]
 fn a_forge_host_that_is_not_a_host_is_never_let_through() {
     let hosts = hosts_of(&[Preset::Forge], Some("[[forge]]\nhost = \"*\"\n"));
     assert!(!hosts.contains(&"*".to_owned()), "{hosts:?}");
