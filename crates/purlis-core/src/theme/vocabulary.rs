@@ -87,6 +87,7 @@ pub const TOKENS: &[&str] = &[
     "overlay.shadow",
     "terminal.background",
     "terminal.foreground",
+    "terminal.faint",
     "terminal.cursor",
     "terminal.cursor-accent",
     "terminal.selection",
@@ -376,6 +377,29 @@ pub fn follow_muted(
         && follows("text.faint", "text.quiet")
     {
         given.insert("text.faint", quiet);
+    }
+}
+
+/// **Faint terminal text a theme leaves out follows its own terminal** (#3768). It was the
+/// terminal's words at half opacity, which no colour a token holds is, so a place that names
+/// the terminal's words or its ground and not its faint text draws it as those words faded
+/// toward that ground, held at words' floor ([`super::check::faded`]): never a parent's grey made
+/// for another ground. One that names neither keeps what it is laid over.
+pub fn follow_faint(
+    given: &mut std::collections::BTreeMap<&'static str, String>,
+    below: &std::collections::BTreeMap<&'static str, String>,
+) {
+    const FAINT: &str = "terminal.faint";
+    const WORDS: &str = "terminal.foreground";
+    const GROUND: &str = "terminal.background";
+    if given.contains_key(FAINT) || !(given.contains_key(WORDS) || given.contains_key(GROUND)) {
+        return;
+    }
+    let either = |token: &str| given.get(token).or_else(|| below.get(token)).cloned();
+    if let (Some(words), Some(ground)) = (either(WORDS), either(GROUND))
+        && let Some(faint) = super::check::faded(&words.to_lowercase(), &ground.to_lowercase())
+    {
+        given.insert(FAINT, faint);
     }
 }
 

@@ -62,7 +62,7 @@
         "border.subtle": "#2f2f2b",
         "border.strong": "#41403b",
         "border.control": "#41403b",
-        "border.input": "#41403b",
+        "border.input": "#6b6a66",
 
         "accent.base": "#52c4a6",
         "accent.surface": "#17302a",
@@ -126,6 +126,7 @@
 
         "terminal.background": "#191917",
         "terminal.foreground": "#dddcd6",
+        "terminal.faint": "#858480",
         "terminal.cursor": "#dddcd6",
         "terminal.cursor-accent": "#191917",
         "terminal.selection": "#52c4a655",
@@ -272,7 +273,7 @@
         "border.subtle": "#d8d5cc",
         "border.strong": "#b8b4a8",
         "border.control": "#b8b4a8",
-        "border.input": "#b8b4a8",
+        "border.input": "#8a877e",
 
         "accent.base": "#086a56",
         "accent.surface": "#dcf1ea",
@@ -336,6 +337,7 @@
 
         "terminal.background": "#fcfbf8",
         "terminal.foreground": "#1f1e1a",
+        "terminal.faint": "#73726e",
         "terminal.cursor": "#1f1e1a",
         "terminal.cursor-accent": "#fcfbf8",
         "terminal.selection": "#086a5640",

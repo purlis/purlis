@@ -72,6 +72,8 @@ fn added_later(token: &str) -> bool {
         "needs-you.count",
         // A box's edge (#4475), the value of the token that drew it before.
         "border.input",
+        // Faint terminal text (#3768): before it, the words at half opacity, which no colour is.
+        "terminal.faint",
     ]
     .iter()
     .any(|prefix| token.starts_with(prefix))

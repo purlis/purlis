@@ -389,7 +389,7 @@
               "layer.divider"
             ]
           },
-          "maxItems": 135
+          "maxItems": 136
         },
         "hues": {
           "description": "A workspace colour's hue in this theme: the hue of this colour. A workspace's own #rrggbb is always its own hue.",
@@ -12203,6 +12203,9 @@
         "terminal.foreground": {
           "$ref": "#/$defs/colour"
         },
+        "terminal.faint": {
+          "$ref": "#/$defs/colour"
+        },
         "terminal.cursor": {
           "$ref": "#/$defs/colour"
         },
@@ -13230,6 +13233,7 @@
         "overlay.shadow",
         "terminal.background",
         "terminal.foreground",
+        "terminal.faint",
         "terminal.cursor",
         "terminal.cursor-accent",
         "terminal.selection",
@@ -13371,6 +13375,7 @@
         "overlay.shadow",
         "terminal.background",
         "terminal.foreground",
+        "terminal.faint",
         "terminal.cursor",
         "terminal.cursor-accent",
         "terminal.selection",
@@ -13511,6 +13516,7 @@
         "overlay.shadow",
         "terminal.background",
         "terminal.foreground",
+        "terminal.faint",
         "terminal.cursor",
         "terminal.cursor-accent",
         "terminal.selection",

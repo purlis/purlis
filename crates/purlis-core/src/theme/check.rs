@@ -115,6 +115,14 @@ pub struct Pair {
 }
 
 impl Pair {
+    /// Whether `other` measures the same words or mark on the same grounds, at any floor.
+    fn same_grounds(&self, other: &Self) -> bool {
+        Self {
+            floor: other.floor,
+            ..*self
+        } == *other
+    }
+
     /// The same pair, with what it is drawn on laid over `layer` first: `back` over it, or, for a
     /// pair already laid over one layer, that layer over it. A pair names two layers at most, and
     /// [`PAIRS`] is built at compile time, so a third is a build error.
@@ -260,6 +268,9 @@ pub const PAIRS: &[Pair] = &[
     p("text.primary", "attention.surface", 4.5),
     p("text.muted", "attention.surface", 4.5),
     p("terminal.foreground", "terminal.background", 4.5),
+    // Faint (SGR 2) text in the terminal's own colour (#3768), which the window draws in its own
+    // token: xterm would fade the words to half and hold them to no floor.
+    p("terminal.faint", "terminal.background", 4.5),
     // A find in a pane draws its matches as the cells' background, under the terminal's text.
     p("terminal.foreground", "terminal.find-match", 4.5),
     p("terminal.foreground", "terminal.find-match-active", 4.5),
@@ -1029,6 +1040,15 @@ pub const FITS: &[Fit] = &[
 ///   for a palette alone. As consent floors they would redraw a theme's waiting colour as
 ///   Classic's for a bar, and as pairs of [`PAIRS`] they would move an import's muted tier and
 ///   refuse a person's accent.
+/// - A text box's edge, `border.input` (#4475, #5979), on the window, a panel and a dialog at 3:1
+///   (WCAG 1.4.11), so an imported or edited theme hears of a box with no edge. It follows
+///   `border.control`, which a plain button may leave transparent (#3177), so as a pair of
+///   [`PAIRS`] it would redraw the control edges an import brings.
+/// - The editor's code on its own ground at 4.5:1 (#3796, #5979), as axe reads it: as words.
+///   [`PAIRS`] holds each syntax role there at a mark's 3:1, which an import fits its colours to,
+///   and a pair under both is said once, at that floor. Only the editor's own ground: a current
+///   line and a diff's washes are the window's, which most themes never name, so a finding there
+///   would name a ground the theme did not choose.
 pub const REPORTED: &[Pair] = &[
     p("accent.base", "border.subtle", 3.0).over("surface.base"),
     p("state.waiting", "border.subtle", 3.0).over("surface.base"),
@@ -1036,6 +1056,24 @@ pub const REPORTED: &[Pair] = &[
     p("accent.base", "border.subtle", 3.0).over("surface.raised"),
     p("state.waiting", "border.subtle", 3.0).over("surface.raised"),
     p("text.muted", "border.subtle", 3.0).over("surface.raised"),
+    p("border.input", "surface.base", 3.0),
+    p("border.input", "surface.raised", 3.0),
+    p("border.input", "surface.overlay", 3.0),
+    p("syntax.keyword", "terminal.background", TEXT),
+    p("syntax.string", "terminal.background", TEXT),
+    p("syntax.number", "terminal.background", TEXT),
+    p("syntax.constant", "terminal.background", TEXT),
+    p("syntax.comment", "terminal.background", TEXT),
+    p("syntax.function", "terminal.background", TEXT),
+    p("syntax.type", "terminal.background", TEXT),
+    p("syntax.property", "terminal.background", TEXT),
+    p("syntax.attribute", "terminal.background", TEXT),
+    p("syntax.tag", "terminal.background", TEXT),
+    p("syntax.heading", "terminal.background", TEXT),
+    p("syntax.invalid", "terminal.background", TEXT),
+    p("syntax.variable", "terminal.background", TEXT),
+    p("syntax.operator", "terminal.background", TEXT),
+    p("syntax.punctuation", "terminal.background", TEXT),
 ];
 
 /// The tokens the selected row (`list.selected`) must never equal: the pointer's row, the tab
@@ -1614,8 +1652,9 @@ fn card_step(theme: &ResolvedTheme, on: super::parts::CardOnSide) -> (f64, Optio
 
 /// **Whether a side view's card row stands apart from its panel** (#3774): its fill a step from
 /// the panel's ([`CARD_STEP`]), or an edge a hairline from it ([`CARD_EDGE`]) ([`card_step`]).
-/// Held where the theme's parts, its own or inherited, choose a card row's or a side panel's look
-/// ([`super::parts::card_on_side`]).
+/// Held for every theme that chooses the two or a ground of either, as its parts draw them or as
+/// the families do by default ([`super::parts::card_on_side`], #5979), and only reported, as
+/// [`REPORTED`] is.
 fn card_apart(
     theme: &ResolvedTheme,
     tint: Option<&'static str>,
@@ -1638,11 +1677,17 @@ fn card_apart(
 }
 
 fn check_one(theme: &ResolvedTheme, tint: Option<&'static str>, findings: &mut Vec<Finding>) {
+    let mut under: Vec<&Pair> = Vec::new();
     for pair in PAIRS.iter().chain(REPORTED) {
         let Some(ratio) = ratio(theme, pair) else {
             continue;
         };
+        // A reported pair that is also held, under both floors, is said once: at the held one.
+        if under.iter().any(|held| held.same_grounds(pair)) {
+            continue;
+        }
         if ratio < pair.floor {
+            under.push(pair);
             findings.push(Finding::Contrast {
                 tint,
                 pair: *pair,
@@ -1861,6 +1906,23 @@ pub(super) fn contrast(a: &str, b: &str) -> f64 {
 }
 
 /// The opaque `top` laid over the opaque `under` at `opacity`, as the screen draws it.
+/// **What faint terminal text reads at on the terminal's ground** (#3768): words' floor.
+pub const FAINT_READS: f64 = 4.5;
+
+/// **Faint terminal text for `words` on `ground`** (#3768), both opaque: the words halfway to
+/// the ground, as xterm fades them, and back toward the words, a hundredth at a time, only as
+/// far as reading at [`FAINT_READS`] takes; the words themselves where nothing nearer does.
+/// `None` for a see-through colour.
+pub(super) fn faded(words: &str, ground: &str) -> Option<String> {
+    if words.len() != 7 || ground.len() != 7 {
+        return None;
+    }
+    let point = (50..100)
+        .map(|share| mix(words, ground, f64::from(share) / 100.0))
+        .find(|point| contrast(point, ground) >= FAINT_READS);
+    Some(point.unwrap_or_else(|| words.to_owned()))
+}
+
 pub(super) fn mix(top: &str, under: &str, opacity: f64) -> String {
     let (top, bottom) = (long(top), long(under));
     let mixed: String = [0, 2, 4]

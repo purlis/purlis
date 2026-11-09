@@ -131,10 +131,11 @@ fn the_card_s_step_is_only_reported_never_a_pair_the_floors_or_a_person_s_colour
 }
 
 #[test]
-fn a_palette_alone_is_not_yet_held() {
+fn a_palette_alone_whose_cards_meet_the_panel_is_reported_in_every_tint() {
     // A theme that chooses no card row and no side panel draws its cards on the family's raised
-    // ground, wherever its palette puts it: like a meter's fill on its track, that waits for a
-    // pair the check only reports (#3735). Its raised, sunken and window grounds are one colour.
+    // ground over the panel's, wherever its palette puts them (#5979). Its raised, sunken and
+    // window grounds are one colour, so its cards read as plain rows: the check says so, in every
+    // tint.
     let loaded = load(&json!({
         "name": "Flat",
         "appearances": [{ "id": "dark", "appearance": "dark", "tokens": {
@@ -144,8 +145,14 @@ fn a_palette_alone_is_not_yet_held() {
         } }],
     }));
     assert!(!loaded.refused, "{:?}", loaded.complaints);
-    assert!(loaded.theme.first().parts.is_empty());
-    assert_eq!(not_apart(loaded.theme.first()), []);
+    let theme = loaded.theme.first();
+    assert!(theme.parts.is_empty());
+    let found = not_apart(theme);
+    assert!(
+        found.contains(&(None, "surface.raised", "surface.base", 1.0)),
+        "{found:?}"
+    );
+    assert_eq!(found.len(), 1 + theme.tint.hues.len(), "{found:?}");
     // The same palette over Purlis Classic inherits Classic's sunken card row, and is held.
     let over = load(&json!({
         "name": "Flat Classic",
@@ -161,4 +168,18 @@ fn a_palette_alone_is_not_yet_held() {
         "{:?}",
         not_apart(over.theme.first())
     );
+}
+
+#[test]
+fn a_theme_that_leaves_its_grounds_to_classic_is_not_told_of_a_card_row_it_did_not_choose() {
+    // Classic's grounds without Classic's card row are the families' default (#5979): a theme
+    // that writes an accent of its own and no ground hears nothing of its cards.
+    let loaded = load(&json!({
+        "name": "Accent only",
+        "appearances": [{ "id": "dark", "appearance": "dark", "tokens": {
+            "accent.base": "#52c4a6",
+        } }],
+    }));
+    assert!(!loaded.refused, "{:?}", loaded.complaints);
+    assert_eq!(not_apart(loaded.theme.first()), []);
 }

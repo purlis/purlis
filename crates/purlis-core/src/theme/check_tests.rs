@@ -818,3 +818,71 @@ fn the_pairs_kept_for_a_token_are_every_pair_that_names_it_once_and_in_order() {
         assert_eq!(super::pairs_naming(token), scanned, "{token}");
     }
 }
+
+#[test]
+fn every_built_in_draws_faint_terminal_text_as_words_and_fainter_than_the_terminal_s_own() {
+    // Faint (SGR 2) text in the terminal's own colour is drawn in `terminal.faint` (#3768): xterm
+    // fades it to half its words' colour, under 4.5:1 on every light terminal, and adjusts it for
+    // no contrast floor. Every appearance of Purlis and of Purlis Classic draws it as words, and
+    // still fainter than the words beside it.
+    for theme in purlis().appearances.iter().chain(&classic().appearances) {
+        let ground = theme.value("terminal.background");
+        let faint = super::contrast(theme.value("terminal.faint"), ground);
+        let words = super::contrast(theme.value("terminal.foreground"), ground);
+        assert!(
+            faint >= 4.5,
+            "{} {}: faint at {faint:.2}",
+            theme.name,
+            theme.id
+        );
+        assert!(
+            faint < words,
+            "{} {}: faint {faint:.2}, words {words:.2}",
+            theme.name,
+            theme.id
+        );
+    }
+}
+
+/// A theme that names its terminal's words and ground in one dark appearance, and `more`.
+fn terminal_of(words: &str, ground: &str, more: Value) -> ResolvedTheme {
+    let mut tokens = json!({ "terminal.foreground": words, "terminal.background": ground });
+    tokens
+        .as_object_mut()
+        .expect("an object")
+        .extend(more.as_object().expect("an object").clone());
+    let loaded = load(&json!({
+        "name": "Own terminal",
+        "appearances": [{ "id": "dark", "appearance": "dark", "tokens": tokens }]
+    }));
+    assert!(!loaded.refused, "{:?}", loaded.complaints);
+    loaded.theme.first().clone()
+}
+
+#[test]
+fn a_theme_that_names_its_terminal_and_not_its_faint_text_fades_its_own_words_to_read_as_words() {
+    // Its faint text was its own words at half opacity before the token existed (#3768): it is
+    // its words faded toward its own ground, never its parent's grey, as far as 4.5:1 allows.
+    for (words, ground) in [
+        ("#c0c0c0", "#303030"),
+        ("#d6ddd6", "#1a201c"),
+        ("#202020", "#ffffff"),
+    ] {
+        let theme = terminal_of(words, ground, json!({}));
+        let faint = super::contrast(theme.value("terminal.faint"), ground);
+        assert!(faint >= 4.5, "{words} on {ground}: faint at {faint:.2}");
+        assert!(
+            faint < super::contrast(words, ground),
+            "{words} on {ground}"
+        );
+    }
+    // Words that read at more than twice the floor fade all the way to halfway, as xterm did.
+    let wide = terminal_of("#ffffff", "#000000", json!({}));
+    assert_eq!(
+        wide.value("terminal.faint"),
+        super::mix("#ffffff", "#000000", 0.5)
+    );
+    // A faint colour the theme names is its own.
+    let named = terminal_of("#ffffff", "#000000", json!({ "terminal.faint": "#999999" }));
+    assert_eq!(named.value("terminal.faint"), "#999999");
+}

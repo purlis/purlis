@@ -64,7 +64,9 @@ use super::opened;
 use super::options::{self, MOST_COMBINATIONS};
 use super::tint;
 use super::typed::Typed;
-use super::vocabulary::{PLATFORM, TOKENS, follow_kin, follow_muted, is_colour, is_platform};
+use super::vocabulary::{
+    PLATFORM, TOKENS, follow_faint, follow_kin, follow_muted, is_colour, is_platform,
+};
 use super::{
     Appearance, CLASSIC, Complaint, PURLIS, Resolved, ResolvedTheme, Theme, built_in_for, classic,
     is_format_2, load_format_1, load_motion, purlis, stringify,
@@ -1013,6 +1015,7 @@ fn appearance(
     );
     follow_muted(&mut given.colours, &base.values);
     follow_kin(&mut given.colours, &base.values);
+    follow_faint(&mut given.colours, &base.values);
     let mut values = base.values.clone();
     values.extend(given.colours);
     let mut sizes = base.geometry.clone();
@@ -1065,6 +1068,7 @@ impl Tokens {
         let mut colours = self.colours.clone();
         follow_muted(&mut colours, &theme.values);
         follow_kin(&mut colours, &theme.values);
+        follow_faint(&mut colours, &theme.values);
         theme.values.extend(colours);
         self.typed.onto(&mut theme.typed);
         if !self.geometry.is_empty() {
