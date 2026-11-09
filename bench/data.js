@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794230124673,
+  "lastUpdate": 1794232541151,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -44772,6 +44772,48 @@ window.BENCHMARK_DATA = {
             "value": 101.796997,
             "unit": "ms",
             "extra": "median of 5 runs: 100.846, 101.541, 101.797, 102.309, 102.844 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6347f171cb77c797d0aadc61d973ac879e5b3691",
+          "message": "Claude Code chats on Linux: purlis's own wrap on a sandbox-only profile; --env refused (#5945)\n\n* Secrets: a sandboxed Claude Code chat on Linux hands a value by --file\n\npurlis secret exec --env is refused for a sandboxed Claude Code chat on Linux, before any value\nis read or anything is run, with a sentence naming --file instead. Codex and opencode chats, and\nevery chat on macOS, are as before. ADR 0067 amended 2026-11-09.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZPKKT9PDC5ZC74M1E81VS2\nPurlis-Persona: steward\n\n* Sandbox: a Claude Code chat on a Linux sandbox-only profile runs in purlis's wrap\n\nOn Linux, a sandboxed Claude Code chat on a profile for sandboxed chats only runs whole inside\npurlis's own wrap (Landlock, seccomp and the supervisor), on a person's own machine as on a\nrunner, with Claude Code's own sandbox off. It needs the kernel and no bubblewrap or socat, and\nthe picker compiles each profile as its start does. A profile for every chat keeps Claude Code's\nown sandbox. Machine carries whether the chat's profile is one for sandboxed chats only.\nADR 0067 amended 2026-11-09.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZPKKT9PDC5ZC74M1E81VS2\nPurlis-Persona: steward\n\n* Sandbox: record the Linux sandbox-only wrap for Claude Code (ADR 0067 amendment, changelog)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZPKKT9PDC5ZC74M1E81VS2\nPurlis-Persona: steward\n\n* Sandbox: the rest of the test machines name whether their profile is sandbox-only\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZPKKT9PDC5ZC74M1E81VS2\nPurlis-Persona: steward\n\n* Tests: a Claude Code chat's brokered runs on Linux hand their value by file\n\nThe brokered network test under purlis's wrap, the app's Run-grant tests and the profile\npage's sentence follow the --env refusal and Claude Code's declaration.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZPKKT9PDC5ZC74M1E81VS2\nPurlis-Persona: steward\n\n* Secrets: --env is refused only for a Claude Code chat on its own sandbox on Linux\n\nA chat's start records whether its harness runs whole inside its sandbox. A Claude Code chat\npurlis wraps (on a runner, or on a sandbox-only profile) runs inside the wrap with its commands, as\nCodex and opencode do, so its runs take --env as theirs do, a GitHub App's GH_TOKEN among them.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZPKKT9PDC5ZC74M1E81VS2\nPurlis-Persona: steward\n\n* Tests: format\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZPKKT9PDC5ZC74M1E81VS2\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-09T12:47:18Z",
+          "tree_id": "2cf8b7105edd4e80600a9a8f09f15b1ca25d4d18",
+          "url": "https://github.com/purlis/purlis/commit/6347f171cb77c797d0aadc61d973ac879e5b3691"
+        },
+        "date": 1794232533133,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.574095,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.566, 0.574, 0.574, 0.575, 0.580 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.1400865,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.022, 16.072, 16.140, 16.166, 16.462 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.3459205,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.617, 99.961, 102.346, 102.796, 104.446 ms"
           }
         ]
       }
