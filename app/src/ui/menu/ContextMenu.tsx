@@ -31,10 +31,15 @@ import {
   type ReactNode,
 } from "react";
 import { useMenuTriggerState } from "react-stately/useMenuTriggerState";
+import type { PointerType } from "@react-types/shared";
 import { OpenMenu } from "./Menu";
 
 /** The `contextmenu` events sent for Shift+F10 and the menu key, which open on the first row. */
 const FROM_THE_KEYS = new WeakSet<Event>();
+
+/** The presses that are the pointer's: a screen reader's ("virtual") and the keys' open a menu
+ *  on its first item. */
+const BY_THE_POINTER: ReadonlySet<PointerType> = new Set(["mouse", "pen", "touch"]);
 
 /** The `contextmenu` events a thing's own menu button sent, by the button (#3769). */
 const FROM_A_BUTTON = new WeakMap<Event, HTMLElement>();
@@ -43,7 +48,7 @@ const FROM_A_BUTTON = new WeakMap<Event, HTMLElement>();
  * **The menu button a thing's open menu was opened from**, or none (#3769): what a row hands
  * the buttons inside it, so its ⋯ says `aria-expanded` while the menu it opened is open.
  */
-export const MenuOpenedFrom = createContext<Element | null>(null);
+export const MenuOpenedFrom = createContext<HTMLElement | null>(null);
 
 /** Whether a key opens a context menu: Shift+F10 or the menu key. */
 export function asksForAMenu(event: { key: string; shiftKey: boolean }): boolean {
@@ -65,7 +70,8 @@ export interface ContextMenuOptions {
    *  here or around it, which is how a click a program asked for stays the program's. */
   onAsked?: (event: MouseEvent<HTMLElement>) => void;
   onOpenChange?: (isOpen: boolean) => void;
-  /** Called once it has closed: where the keyboard goes instead of back where it was. */
+  /** Called once it has closed: where the keyboard goes instead of back where it was. A menu
+   *  opened from a menu button gives the keyboard back to that button instead (#3769). */
   onClosed?: () => void;
 }
 
@@ -170,7 +176,8 @@ export function askForAMenu(target: Element): void {
  * back to the button as it closes. Pressed by the pointer, the menu itself takes the keyboard and
  * no item is chosen, as a right-click opens it; pressed from the keys, it opens on its first item.
  */
-export function askForAMenuFrom(button: HTMLElement, byPointer: boolean): void {
+export function askForAMenuFrom(button: HTMLElement, pointerType: PointerType): void {
+  const byPointer = BY_THE_POINTER.has(pointerType);
   const at = button.getBoundingClientRect();
   const asked = new globalThis.MouseEvent("contextmenu", {
     bubbles: true,

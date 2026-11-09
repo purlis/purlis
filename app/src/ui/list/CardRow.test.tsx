@@ -135,7 +135,6 @@ describe("a card row", () => {
     // The menu itself has the keyboard, and no item is chosen yet, as a right-click opens it.
     await waitFor(() => expect(menu).toHaveFocus());
     expect(within(menu).getByRole("menuitem")).not.toHaveFocus();
-    // Its menu sits at the ⋯, not at the row's corner.
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
     await waitFor(() => expect(more).toHaveFocus());

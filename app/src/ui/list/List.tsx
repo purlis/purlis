@@ -221,7 +221,7 @@ export function useRowMenu(menu: RowMenu | undefined) {
 /** What a row's menu hands what the row holds: the menu, and the button it is open from. */
 export interface RowMenuHeld {
   menu: ReactNode;
-  openedFrom: Element | null;
+  openedFrom: HTMLElement | null;
 }
 
 /**

@@ -85,10 +85,6 @@ export function ListCardRow<T extends object>({
   );
 }
 
-/** The presses that are the pointer's: a screen reader's ("virtual") and the keys' open on the
- *  first item. */
-const BY_THE_POINTER = new Set(["mouse", "pen", "touch"]);
-
 /**
  * **A row's ⋯** (#3669): it opens the row's own menu (`menu` on the row), at the button, the
  * menu a right-click or Shift+F10 opens. Named for the row it belongs to. Pressed by the pointer,
@@ -109,9 +105,7 @@ export function RowMenuButton({ name }: { name: string }) {
       aria-haspopup="menu"
       aria-expanded={from !== null && from === self}
       icon={<Ellipsis aria-hidden="true" />}
-      onPress={(press) =>
-        askForAMenuFrom(press.target as HTMLElement, BY_THE_POINTER.has(press.pointerType))
-      }
+      onPress={(press) => askForAMenuFrom(press.target as HTMLElement, press.pointerType)}
       data-way="menu"
     />
   );
