@@ -52,6 +52,7 @@ fn filled(root: &Path, key: &str) -> Result<String, String> {
         folder: None,
         confines: None,
         harness: None,
+        ends_seen: None,
     };
     fill_value(&asker, "team", key).map(|value| value.unwrap().expose().to_owned())
 }

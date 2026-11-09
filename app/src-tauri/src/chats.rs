@@ -7196,6 +7196,7 @@ impl Chats {
                 folder: running.chat.cwd.clone(),
                 confines,
                 harness: running.harness,
+                ends_seen: None,
             },
             unconfined,
         ))

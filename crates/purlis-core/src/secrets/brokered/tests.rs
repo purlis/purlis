@@ -119,6 +119,7 @@ fn asker(root: &Path, persona: Option<&str>) -> Asker {
         folder: Some(root.join("work")),
         confines: Some(compiled(root)),
         harness: Some(Harness::ClaudeCode),
+        ends_seen: None,
     }
 }
 
@@ -5275,6 +5276,42 @@ fn a_github_app_tool_is_handed_the_token_minted_for_it_and_never_its_key() {
     let wire = serde_json::to_string(&frames).unwrap();
     assert!(!wire.contains(&b64(TOKEN.as_bytes())), "{wire}");
     assert!(!wire.contains(TOKEN), "{wire}");
+}
+
+/// A chat that ends after its asker was counted, and before its run is served, keeps no token
+/// minted for it (#3808): the count is the one read before the chat was found open, never one
+/// read once the run is served.
+#[test]
+fn a_github_app_tool_of_a_chat_that_ended_since_it_was_found_open_is_handed_no_token() {
+    use crate::sandbox::tools::{Handed, Ready, Tool, mint::Mint};
+    let project = project();
+    crate::forge::apptoken::MINT_HERE.with(|mint| {
+        *mint.borrow_mut() = Some(Box::new(|_: &str| {
+            Ok(zeroize::Zeroizing::new("minted-gh-token-9e1d".to_owned()))
+        }));
+    });
+    let mut asker = asker(project.path(), Some("devops"));
+    asker.confines.as_mut().unwrap().tools.push(Ready {
+        tool: Tool {
+            mint: Some(Mint {
+                app: "Iv23liExample".to_owned(),
+            }),
+            ..Tool::one("sh", "team", "GH_TOKEN", Handed::Env, "TOKEN")
+        },
+        program: PathBuf::from("/bin/sh"),
+    });
+    // Counted as the app finds the chat open, and the chat ends before its run is served.
+    asker.ends_seen = Some(crate::forge::apptoken::ends_so_far());
+    crate::forge::apptoken::chat_ended(project.path(), asker.chat);
+    let mut want = wanted(project.path(), "team", sh(r#"echo "ran:$GH_TOKEN""#));
+    want.env = vec!["GH_TOKEN=TOKEN".into()];
+    let frames = served_as_asked(&asker, want);
+    crate::forge::apptoken::MINT_HERE.with(|mint| *mint.borrow_mut() = None);
+    assert!(
+        matches!(frames.last(), Some(Frame::Refused { why, .. }) if why.contains(crate::forge::apptoken::CHAT_ENDED)),
+        "{frames:?}"
+    );
+    assert_eq!(stdout(&frames), "");
 }
 
 /// A GitHub App's tool whose mint is refused runs nothing, and says why.

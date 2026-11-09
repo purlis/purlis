@@ -32,6 +32,7 @@ fn asker(root: &std::path::Path, persona: Option<&str>) -> brokered::Asker {
         folder: None,
         confines: Some(sandbox::Confines::default()),
         harness: None,
+        ends_seen: None,
     }
 }
 

@@ -195,6 +195,9 @@ pub(crate) fn run_brokered(
         held.mcp_failures()
             .in_start_window(ask.chat, std::time::Instant::now())
     });
+    // Counted before the chat is found open: one that ends from here on keeps no GitHub App
+    // token minted for it (#3808).
+    let ends_seen = purlis_core::forge::apptoken::ends_so_far();
     let Some(open) = the_askers_record(held, ask.chat, || {
         held.chats()
             .open_now()
@@ -240,6 +243,7 @@ pub(crate) fn run_brokered(
         confines: held.chats().confines_now(ask.chat),
         // The harness the app started it on, for a block of the run's own Notice (#1353).
         harness: open.harness,
+        ends_seen: Some(ends_seen),
     };
     // Each connection the run makes is the chat's, in the network record (#1667).
     let reached = held.chats().reached_for(ask.chat, asker.persona.clone());
@@ -400,6 +404,7 @@ pub(crate) fn keys_for_chat(
         folder: open.cwd,
         confines: held.chats().confines_now(chat),
         harness: open.harness,
+        ends_seen: None,
     };
     let unsandboxed = held.chats().started_unsandboxed(chat);
     keys_answered(
