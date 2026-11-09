@@ -1038,9 +1038,21 @@ pub fn expire_in(
     let due = |record: &Record| {
         talk_is_due(record, now) && record.talk.iter().any(|said| !said.text.is_empty())
     };
+    if !records.iter().any(&due) {
+        return Vec::new();
+    }
+    // One lock for them all: a folder held past the wait keeps every record's words until the
+    // next time, after one wait and not one per record.
+    let _held = match crate::rewrite::Lock::bounded(&dir(root)) {
+        Ok(held) => held,
+        Err(why) => {
+            tracing::warn!("purlis: what ended dispatches said was not let go of yet ({why})");
+            return Vec::new();
+        }
+    };
     let mut changed = Vec::new();
     for record in records.iter_mut().filter(|record| due(record)) {
-        let emptied = change(root, &record.id, |record| {
+        let emptied = change_held(root, &record.id, |record| {
             // Looked at again under the lock: only what is still due is changed.
             if !due(record) {
                 return false;
@@ -2666,6 +2678,11 @@ impl Running {
 fn change(root: &Path, id: &str, edit: impl FnOnce(&mut Record) -> bool) -> io::Result<bool> {
     let dir = dir(root);
     let _held = crate::rewrite::Lock::bounded(&dir)?;
+    change_held(root, id, edit)
+}
+
+/// [`change`], for a caller that holds the store's lock already.
+fn change_held(root: &Path, id: &str, edit: impl FnOnce(&mut Record) -> bool) -> io::Result<bool> {
     let Some(mut record) = read(root, id) else {
         return Ok(false);
     };

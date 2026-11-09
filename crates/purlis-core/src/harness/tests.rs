@@ -47,6 +47,7 @@ fn a_sandbox_compiled_for_one_harness_arms_no_chat_of_any_other() {
         judging: false,
         writes_its_piece: false,
         runs_a_shell: false,
+        own: &[],
     };
     let mut pairs = 0;
     for from in Harness::ALL {
@@ -329,6 +330,7 @@ fn kit(binary: &str) -> Kit<'_> {
         judging: false,
         writes_its_piece: false,
         runs_a_shell: false,
+        own: &[],
     }
 }
 
@@ -1440,6 +1442,7 @@ fn without_the_bundled_plugin_a_claude_code_chat_is_armed_with_nothing() {
             judging: false,
             writes_its_piece: false,
             runs_a_shell: false,
+            own: &[],
         },
         None,
         &crate::harness_plugin::Chosen::new(),
@@ -1878,6 +1881,7 @@ fn opencode_hooks(binary: &str) -> (tempfile::TempDir, StateHooks) {
             judging: false,
             writes_its_piece: false,
             runs_a_shell: false,
+            own: &[],
         },
         None,
         &BTreeMap::from([("some-plugin".to_owned(), false)]).into(),
@@ -1945,6 +1949,7 @@ fn a_codex_chat_is_started_with_the_skills_its_briefing_lists() {
             judging: false,
             writes_its_piece: false,
             runs_a_shell: false,
+            own: &[],
         },
         None,
         &crate::harness_plugin::Chosen::new(),
@@ -1971,6 +1976,7 @@ fn only_a_harness_that_cannot_load_the_skills_is_briefed_on_them() {
         judging: false,
         writes_its_piece: false,
         runs_a_shell: false,
+        own: &[],
     };
     for harness in [Harness::ClaudeCode, Harness::Opencode] {
         let env =
@@ -1994,6 +2000,7 @@ fn an_opencode_chat_is_told_the_bundles_skills_and_the_set_s_folder_through_the_
             judging: false,
             writes_its_piece: false,
             runs_a_shell: false,
+            own: &[],
         },
         None,
         &crate::harness_plugin::Chosen::new(),
@@ -2026,6 +2033,7 @@ fn without_the_shim_an_opencode_chat_is_armed_with_nothing() {
             judging: false,
             writes_its_piece: false,
             runs_a_shell: false,
+            own: &[],
         },
         None,
         &crate::harness_plugin::Chosen::new(),

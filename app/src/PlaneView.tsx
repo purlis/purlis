@@ -7494,9 +7494,13 @@ export const PlaneView = memo(function PlaneView({
     },
     [blockAnswered, oweRestart, sandboxBlocks],
   );
-  /** Restarts chat `session`, which is owed it, now: the driver's step. */
+  /**
+   * Restarts chat `session`, which is owed it: the driver's step. `{ now: true }` is the
+   * person's Restart now (#5753): the core goes ahead while the chat waits on its own work, which a
+   * restart at a pause waits for, and the chat is told what the restart ended.
+   */
   const restartOwed = useCallback(
-    (session: number) => {
+    (session: number, { now }: { now: boolean } = { now: false }) => {
       if (restartingNow.current.has(session)) return;
       restartingNow.current.add(session);
       setRestartsRunning((running) => [...running, session]);
@@ -7506,7 +7510,7 @@ export const PlaneView = memo(function PlaneView({
         setRestartTrouble((was) => ({ ...was, [session]: why }));
       };
       void commands
-        .restartChat(plane, session, STARTING_SIZE.columns, STARTING_SIZE.rows)
+        .restartChat(plane, session, STARTING_SIZE.columns, STARTING_SIZE.rows, now)
         .then((done) => {
           if (done.status === "error") failed(done.error);
           else if (done.data.chat !== null) {
@@ -7716,7 +7720,7 @@ export const PlaneView = memo(function PlaneView({
    * restarts now: the person pressed for it, so there is nobody else to wait for.
    */
   const askRestart = useCallback(
-    async (session: number) => {
+    async (session: number, { now }: { now: boolean } = { now: false }) => {
       const said = await commands
         .askChatRestart(plane, session)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
@@ -7726,8 +7730,10 @@ export const PlaneView = memo(function PlaneView({
       }
       setRestartTrouble((was) => withoutKey(was, session));
       oweRestart(session);
-      // Mid-turn, or waiting on its own work (#3887), it waits for the turn to end.
-      if (!inItsTurn(chats.store.statesFor(chats.plane), session)) restartOwed(session);
+      // Mid-turn, or waiting on its own work (#3887), it waits for the turn to end, unless the
+      // person pressed Restart now (#5753).
+      if (now || !inItsTurn(chats.store.statesFor(chats.plane), session))
+        restartOwed(session, { now });
     },
     [chats, oweRestart, plane, restartOwed],
   );
@@ -7833,13 +7839,13 @@ export const PlaneView = memo(function PlaneView({
       setRestartNotYet((was) => withoutKey(was, session));
       noteCleared(session, { kind: "restart" });
       // Asked again, so a restart the core no longer owes is owed once more.
-      if (act === "now") void askRestart(session);
+      if (act === "now") void askRestart(session, { now: true });
       // Owed already, and the person will not wait for the turn to end: the driver's step, now,
       // unless the chat's program has ended meanwhile (#1986).
       if (act === "mid-turn") {
         const states = chats.store.statesFor(chats.plane);
         const due = restartsDue([session], states, { now: session });
-        if (due.restart.includes(session)) restartOwed(session);
+        if (due.restart.includes(session)) restartOwed(session, { now: true });
       }
     },
     [askRestart, chats, noteCleared, restartOwed],

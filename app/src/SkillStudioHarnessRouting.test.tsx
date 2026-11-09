@@ -52,6 +52,7 @@ function harnesses(offLangfuse = false): StudioHarness[] {
       harness: "claude",
       title: "Claude Code",
       repo_left_out: [],
+      same_left_out: [],
       plugins_off: [],
       own: null,
       skills: [
@@ -96,6 +97,7 @@ function harnesses(offLangfuse = false): StudioHarness[] {
       harness: "opencode",
       title: "opencode",
       repo_left_out: [],
+      same_left_out: [],
       plugins_off: [],
       own: null,
       skills: [],
@@ -306,6 +308,29 @@ describe("the Harness skills page (#3692)", () => {
     const goose = screen.getByTestId("skill-studio-not-supported-goose");
     expect(goose).toHaveTextContent("Goose");
     expect(goose).toHaveTextContent("Skills are not supported on Goose");
+  });
+
+  it("lists under a program each project skill it has the same copy of, naming the copy it lists instead (#5843)", async () => {
+    const programs = harnesses();
+    programs[0].same_left_out = [
+      skill("tdd", {
+        on: false,
+        left_out: "the same as your own copy, which is listed in its place",
+      }),
+    ];
+    core(() => studio([], { harnesses: programs }));
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "harness");
+
+    const row = await screen.findByTestId(`same-left-out-${programs[0].harness}-tdd`);
+    expect(row).toHaveTextContent("Same as its own copy");
+    expect(row).toHaveTextContent("the same as your own copy, which is listed in its place");
+    expect(row).not.toHaveTextContent("Left out by a repo");
+    await user.click(row);
+    const item = await screen.findByTestId("harness-skill-item");
+    expect(item).toHaveTextContent(
+      "Left out: the same as your own copy, which is listed in its place",
+    );
   });
 });
 

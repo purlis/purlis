@@ -27,17 +27,30 @@
 //!
 //! # What purlis generates is rebuilt, not merged
 //!
-//! Three kinds of file hold nothing a person wrote, whole or in part:
+//! Four kinds of file hold nothing a person wrote, whole or in part:
 //!
 //! - each place's `sessions/index.md`, from its records;
 //! - a workspace's `todos/MEMORY.md`, from its todos;
+//! - each memory store's `MEMORY.md` (a persona's, `_shared`'s, a workspace's), from its
+//!   memories (#5824 F4): it has no `merge=union` rule, and is never merged by lines;
 //! - the `## Sessions` line of a workspace's `workspace.md`, from its records.
 //!
-//! Where both sides changed a place's records or todos, these are written from the merged
-//! tree's own sources, conflicted or not, because git's line merge would stitch them out of
-//! order. The rest of `workspace.md` is a person's: it is merged with the pointer set aside, and
-//! a conflict left in it is theirs. The managed block of `.gitattributes` is set aside the same
-//! way, and the block this build writes is put back.
+//! Where both sides changed a place's records or todos, and wherever either side changed a
+//! memory store, these are written from the merged tree's own sources, conflicted or not,
+//! because git's line merge would stitch them out of order. A memory index lists only what a
+//! side listed and neither dropped, and keeps a person's own lines in it where they were. When
+//! Resolve's Continue finishes a merge a person settled, the memory indexes are written again
+//! from the tree they settled ([`indexes_settled`]). The rest of `workspace.md` is a person's:
+//! it is merged with the pointer set aside, and a conflict left in it is theirs. The managed
+//! block of `.gitattributes` is set aside the same way, and the block this build writes is put
+//! back.
+//!
+//! The project's settings file ([`crate::names::PLANE_MANIFEST`]) is a person's too, but merged
+//! key by key on the parsed TOML ([`crate::tomlmerge`]): its lists of hosts, which every machine
+//! adds to, merge as sets (#5824 F5), so two machines that each allowed a host do not conflict,
+//! and a key only one side changed takes that side (F6). A key both changed, each its own way,
+//! is the person's: the save names the key beside the file ([`Conflicted::keys`]), and the
+//! file alone is what Resolve stages.
 //!
 //! # Under a chat's sandbox
 //!
@@ -86,10 +99,21 @@ pub(super) enum BroughtIn {
     Moved(u32),
     /// Not brought in yet, and why as a sentence. The next look or save tries again.
     Waiting(String),
-    /// A conflict in what a person wrote, in these files. Nothing was changed.
-    Conflict(Vec<String>),
+    /// A conflict in what a person wrote. Nothing was changed.
+    Conflict(Conflicted),
     /// git could not do it, in its words. Nothing was changed.
     Failed(String),
+}
+
+/// A conflict in what a person wrote, as a merge met it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(super) struct Conflicted {
+    /// The files in conflict, as plane-relative paths, sorted: the ones git stops in, and so the
+    /// ones Resolve's Continue stages.
+    pub(super) files: Vec<String>,
+    /// Of those, the settings file merged key by key (#5824 F6), with the keys both sides
+    /// changed, each its own way, as dotted paths.
+    pub(super) keys: BTreeMap<String, Vec<String>>,
 }
 
 /// **Bring the remote-tracking target into the plane**, as far as it can go by itself. `target`
@@ -119,7 +143,10 @@ pub(super) fn bring_in(root: &Path, target: &str, sign: bool, when: When) -> Bro
             return BroughtIn::Nothing;
         }
         if !plan.person.is_empty() {
-            return BroughtIn::Conflict(plan.person);
+            return BroughtIn::Conflict(Conflicted {
+                files: plan.person,
+                keys: plan.keys,
+            });
         }
         let tree = match tree_of(root, &plan) {
             Ok(tree) => tree,
@@ -175,6 +202,8 @@ pub(super) struct Plan {
     pub(super) settled: BTreeMap<String, String>,
     /// The files left in conflict that a person wrote, sorted.
     pub(super) person: Vec<String>,
+    /// Of those, the settings file, with the keys both sides changed ([`Conflicted::keys`]).
+    pub(super) keys: BTreeMap<String, Vec<String>>,
     /// Of those, the ones purlis generates a part of: each with that part settled and markers
     /// only around what the person's sides wrote. What a stopped merge shows them.
     pub(super) marked: BTreeMap<String, String>,
@@ -185,8 +214,24 @@ pub(super) struct Plan {
 enum Generated {
     Sessions(Option<String>),
     Todos(String),
+    /// A memory store's `MEMORY.md`, by the store's directory.
+    Memory(String),
     Charter(String),
     Rules,
+}
+
+/// The memory store `path` is in, as its directory, with the rest of the path: a persona's,
+/// `_shared`'s or a workspace's.
+fn memory_store(path: &str) -> Option<(String, &str)> {
+    let (top, rest) = path.split_once('/')?;
+    let (name, rest) = rest.split_once('/')?;
+    let rest = rest.strip_prefix("memory/")?;
+    let named = match top {
+        "personas" => name == crate::personas::SHARED || crate::contain::persona_name_ok(name),
+        "workspaces" => crate::contain::workspace_name_ok(name),
+        _ => false,
+    };
+    named.then(|| (format!("{top}/{name}/memory"), rest))
 }
 
 /// Which generated file `path` is, if it is one.
@@ -196,6 +241,9 @@ fn generated(path: &str) -> Option<Generated> {
     }
     if path == format!("{}/{}", sessionrecord::DIR, sessionrecord::INDEX) {
         return Some(Generated::Sessions(None));
+    }
+    if let Some((store, crate::memstore::INDEX)) = memory_store(path) {
+        return Some(Generated::Memory(store));
     }
     let rest = path.strip_prefix("workspaces/")?;
     let (ws, file) = rest.split_once('/')?;
@@ -214,12 +262,14 @@ fn generated(path: &str) -> Option<Generated> {
     }
 }
 
-/// The places `paths` say records or todos changed in, as what is generated from them.
+/// The places `paths` say records, todos or memories changed in, as what is generated from them.
 fn sources_in(paths: &BTreeSet<String>) -> BTreeSet<Generated> {
     let mut out = BTreeSet::new();
     let sessions = format!("{}/", sessionrecord::DIR);
     for path in paths {
-        if path.starts_with(&sessions) {
+        if let Some((store, _)) = memory_store(path) {
+            out.insert(Generated::Memory(store));
+        } else if path.starts_with(&sessions) {
             out.insert(Generated::Sessions(None));
         } else if let Some((ws, file)) = path
             .strip_prefix("workspaces/")
@@ -294,8 +344,15 @@ pub(super) fn plan_between(
     };
     let ours_touched = sources_in(&changed(root, &base, ours)?);
     let theirs_touched = sources_in(&changed(root, &base, theirs)?);
+    // Where both sides changed its sources, as git's merge of it would stitch them; and a
+    // memory index wherever either side changed its store, since it is never merged by lines.
     let mut rebuild: BTreeSet<Generated> = ours_touched
         .intersection(&theirs_touched)
+        .chain(
+            ours_touched
+                .union(&theirs_touched)
+                .filter(|what| matches!(what, Generated::Memory(_))),
+        )
         .cloned()
         .collect();
 
@@ -305,9 +362,16 @@ pub(super) fn plan_between(
         conflicted: !conflicted.is_empty(),
         settled: BTreeMap::new(),
         person: Vec::new(),
+        keys: BTreeMap::new(),
         marked: BTreeMap::new(),
     };
     for path in &conflicted {
+        // The project's settings, by any name the manifest has had: a person's, merged key by
+        // key on the parsed TOML rather than by lines.
+        if crate::names::PLANE_MANIFEST.recognises(path) {
+            settings_merged(root, &mut plan, path, &base, theirs);
+            continue;
+        }
         match generated(path) {
             Some(Generated::Charter(ws)) => {
                 match merged_apart(root, ours, path, &base, theirs, |text| {
@@ -350,9 +414,34 @@ pub(super) fn plan_between(
     }
     // With a person's conflict too: Resolve settles the rest around it.
     for what in rebuild {
-        rebuilt(root, &mut plan, &what, theirs)?;
+        rebuilt(root, &mut plan, &what, &base, theirs)?;
     }
     Ok(plan)
+}
+
+/// Merge the settings file at `path` key by key into `plan` (#5824 F5, F6): settled where no
+/// key conflicts, and otherwise the person's, with the keys named beside it. Resolve then shows
+/// git's own conflict, never a marker purlis wrote into the TOML.
+fn settings_merged(root: &Path, plan: &mut Plan, path: &str, base: &str, theirs: &str) {
+    let sides = (
+        blob(root, base, path),
+        blob(root, "HEAD", path),
+        blob(root, theirs, path),
+    );
+    let (Some(old), Some(ours), Some(new)) = sides else {
+        plan.person.push(path.to_owned());
+        return;
+    };
+    match crate::tomlmerge::merged(&old, &ours, &new) {
+        Ok(crate::tomlmerge::Merged::Clean(text)) => {
+            plan.settled.insert(path.to_owned(), text);
+        }
+        Ok(crate::tomlmerge::Merged::Conflict(keys)) => {
+            plan.person.push(path.to_owned());
+            plan.keys.insert(path.to_owned(), keys);
+        }
+        Err(_) => plan.person.push(path.to_owned()),
+    }
 }
 
 /// The paths that differ between `from` and `to`.
@@ -499,7 +588,13 @@ fn files_in(root: &Path, tree: &str, dir: &str) -> Vec<(String, String)> {
 }
 
 /// Write what `what` generates into `plan`, from the merged tree's own sources.
-fn rebuilt(root: &Path, plan: &mut Plan, what: &Generated, theirs: &str) -> Result<(), String> {
+fn rebuilt(
+    root: &Path,
+    plan: &mut Plan,
+    what: &Generated,
+    base: &str,
+    theirs: &str,
+) -> Result<(), String> {
     match what {
         Generated::Sessions(ws) => {
             let place = ws.clone().map_or(Place::PlaneRoot, Place::Workspace);
@@ -539,6 +634,10 @@ fn rebuilt(root: &Path, plan: &mut Plan, what: &Generated, theirs: &str) -> Resu
                 index,
                 crate::memstore::index_rebuilt(&header, &[&ours, &new], &todos),
             );
+        }
+        Generated::Memory(store) => {
+            let (index, text) = memory_index(root, &plan.tree, store, base, theirs);
+            plan.settled.insert(index, text);
         }
         Generated::Charter(_) | Generated::Rules => {}
     }
@@ -687,14 +786,111 @@ pub(super) fn commit_tree(
     Ok(made.line().trim().to_owned())
 }
 
-/// The sentence a person's conflict is said in, for a save and the record.
-pub(super) fn said_conflict(target: &str, files: &[String]) -> String {
+/// A memory store's index, as its path and its text, written from the memory files of `tree`
+/// with the lines HEAD, `theirs` and `base` have for them ([`crate::memstore::index_merged`]).
+fn memory_index(
+    root: &Path,
+    tree: &str,
+    store: &str,
+    base: &str,
+    theirs: &str,
+) -> (String, String) {
+    let index = format!("{store}/{}", crate::memstore::INDEX);
+    let side = |rev: &str| blob(root, rev, &index).unwrap_or_default();
+    let memories: Vec<(String, String)> = files_in(root, tree, store)
+        .into_iter()
+        .filter(|(name, _)| name != crate::memstore::INDEX && name.ends_with(".md"))
+        .collect();
+    // A workspace's memories are named by the time they were written; a persona's are not.
+    let by_name = store.starts_with("workspaces/");
+    let text = crate::memstore::index_merged(
+        crate::memstore::INDEX_FALLBACK,
+        [&side(base), &side("HEAD"), &side(theirs)],
+        &memories,
+        by_name,
+    );
+    (index, text)
+}
+
+/// **The memory indexes of a merge a person settled** (#5824 F4): for each store either side
+/// changed since HEAD and `theirs` parted, its index as the settled `tree` makes it, where that
+/// is not the index `tree` holds. What Resolve's Continue writes before it finishes the merge,
+/// so no line names a memory the person deleted, and a memory they kept is listed as a side
+/// listed it.
+pub(super) fn indexes_settled(
+    root: &Path,
+    tree: &str,
+    theirs: &str,
+) -> Result<BTreeMap<String, String>, String> {
+    let base = git::run(root, &["merge-base", "HEAD", theirs], git::READ)
+        .ok()
+        .filter(git::Run::ok)
+        .map(|run| run.line().trim().to_owned())
+        .ok_or("the two histories have no commit in common")?;
+    let mut touched = changed(root, &base, "HEAD")?;
+    touched.extend(changed(root, &base, theirs)?);
+    let mut out = BTreeMap::new();
+    for what in sources_in(&touched) {
+        if let Generated::Memory(store) = what {
+            let (index, text) = memory_index(root, tree, &store, &base, theirs);
+            if blob(root, tree, &index).as_deref() != Some(text.as_str()) {
+                out.insert(index, text);
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// The sentence a person's conflict is said in, for a save and the record: a key of the
+/// settings file both machines changed is said as that (docs/ui-copy.md: say what happened),
+/// and any other file as the same lines changed.
+pub(super) fn said_conflict(target: &str, conflict: &Conflicted) -> String {
+    let lines: Vec<&str> = conflict
+        .files
+        .iter()
+        .filter(|file| !conflict.keys.contains_key(*file))
+        .map(String::as_str)
+        .collect();
+    let keys: Vec<String> = conflict
+        .keys
+        .iter()
+        .map(|(file, keys)| {
+            let named: Vec<String> = keys.iter().map(|key| format!("`{key}`")).collect();
+            format!("{} in {file}", and_list(&named))
+        })
+        .collect();
+    let what = match (keys.is_empty(), lines.is_empty()) {
+        (true, _) => format!(
+            "{target} on the remote changed the same lines as this machine in {}",
+            lines.join(", ")
+        ),
+        (false, true) => format!(
+            "{target} on the remote and this machine both changed {}",
+            keys.join(", and ")
+        ),
+        (false, false) => format!(
+            "{target} on the remote and this machine both changed {}, and the same lines in {}",
+            keys.join(", and "),
+            lines.join(", ")
+        ),
+    };
     format!(
-        "{target} on the remote changed the same lines as this machine in {}. Nothing was \
-         changed here: press Resolve in the Saving view to settle {}",
-        files.join(", "),
-        if files.len() == 1 { "it" } else { "them" }
+        "{what}. Nothing was changed here: press Resolve in the Saving view to settle {}",
+        if conflict.files.len() == 1 {
+            "it"
+        } else {
+            "them"
+        }
     )
+}
+
+/// `items` as a sentence lists them: `a`, `a and b`, `a, b and c`.
+fn and_list(items: &[String]) -> String {
+    match items {
+        [] => String::new(),
+        [one] => one.clone(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
 }
 
 #[cfg(test)]

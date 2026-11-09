@@ -202,7 +202,13 @@ pub fn start(root: &Path, say: Sink) -> Settled {
 /// [`start`] for a project that saves through requests: bring the target in whole where nothing
 /// a person wrote is in conflict, and otherwise leave a merge stopped on just those files, with
 /// everything purlis generates already settled.
-fn start_merge(root: &Path, branch: &str, theirs: &str, sign: bool, say: Sink) -> Settled {
+pub(super) fn start_merge(
+    root: &Path,
+    branch: &str,
+    theirs: &str,
+    sign: bool,
+    say: Sink,
+) -> Settled {
     say(Say::Info(format!("Merging `{branch}` in …").into()));
     // The person asked for it: brought in whenever it moved, needed or not.
     match bringin::bring_in(root, branch, sign, bringin::When::Moved) {
@@ -280,6 +286,38 @@ fn start_merge(root: &Path, branch: &str, theirs: &str, sign: bool, say: Sink) -
         }
     }
     after_step(root, merged)
+}
+
+/// **Write the memory indexes again from the tree the person settled** (#5824 F4), and stage
+/// them, before a stopped merge is finished: the indexes the merge started with were written
+/// while a memory was still the person's to keep or delete.
+fn reindexed(root: &Path) -> Result<(), String> {
+    let theirs = rev(root, "MERGE_HEAD").ok_or("no merge is stopped")?;
+    let tree =
+        git::run(root, &["write-tree"], WRITE).map_err(|unavailable| unavailable.to_string())?;
+    if !tree.ok() {
+        return Err(tail(&tree));
+    }
+    let tree = tree.line().trim().to_owned();
+    for (path, text) in bringin::indexes_settled(root, &tree, &theirs)? {
+        // Never through a link a side of the merge committed on the way to it.
+        crate::contain::no_link_on_the_way(root, &root.join(&path))
+            .and_then(|()| {
+                crate::rewrite::replace(
+                    root,
+                    &root.join(&path),
+                    text.as_bytes(),
+                    crate::rewrite::Mode::Kept,
+                )
+            })
+            .map_err(|why| format!("{path}: {why}"))?;
+        let added = git::run(root, &["--literal-pathspecs", "add", "--", &path], WRITE)
+            .map_err(|unavailable| unavailable.to_string())?;
+        if !added.ok() {
+            return Err(tail(&added));
+        }
+    }
+    Ok(())
 }
 
 /// Whether git has a merge stopped in the repository at `root`.
@@ -428,6 +466,12 @@ pub fn carry_on(root: &Path, shown: &[String], say: Sink) -> Settled {
     }
     let plane = crate::planesave::Settings::read(root).plane;
     if merging(root) {
+        if let Err(why) = reindexed(root) {
+            return Settled::Refused(format!(
+                "Nothing was finished: purlis could not write a memory index: {}.",
+                one_line(&why)
+            ));
+        }
         say(Say::Info("Finishing the merge …".into()));
         let finished = git::run(
             root,

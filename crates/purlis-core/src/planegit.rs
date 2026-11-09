@@ -123,6 +123,10 @@ pub struct PushResult {
     pub detail: String,
     /// The files a rebase onto the remote conflicted in (charter-app#295).
     pub conflicts: Vec<String>,
+    /// Of [`PushResult::conflicts`], the settings file merged key by key, with the keys both
+    /// sides changed (#5824 F6), as dotted paths. Beside the files, never in them: the files are
+    /// what Resolve's Continue stages.
+    pub conflict_keys: BTreeMap<String, Vec<String>>,
     /// Why the push record of this outcome could not be written or cleared, where it could
     /// not: what purlis shows of the plane's saving may then not match it until the next
     /// save, and the save says so ([`said_if_unrecorded`], #1144).
@@ -139,7 +143,18 @@ impl PushResult {
             number: None,
             detail: String::new(),
             conflicts: Vec::new(),
+            conflict_keys: BTreeMap::new(),
             unrecorded: None,
+        }
+    }
+
+    /// A conflict bringing `target` in met in what a person wrote, said as a save says it.
+    fn conflicted(target: &str, conflict: bringin::Conflicted) -> PushResult {
+        PushResult {
+            detail: bringin::said_conflict(target, &conflict),
+            conflicts: conflict.files,
+            conflict_keys: conflict.keys,
+            ..PushResult::of(Outcome::Conflict, target)
         }
     }
 }
@@ -302,6 +317,9 @@ pub fn record_push(root: &Path, mut res: PushResult, head: &str) -> PushResult {
     // Only when there are some, so a record without a conflict is the record it always was.
     if !res.conflicts.is_empty() {
         doc["conflicts"] = serde_json::json!(res.conflicts);
+    }
+    if !res.conflict_keys.is_empty() {
+        doc["conflict_keys"] = serde_json::json!(res.conflict_keys);
     }
     // NOT gated on `within_plane`: the state directory is machine-local and `$CHARTER_HOME`
     // may legitimately put it outside the plane, so that question is the wrong one to ask
@@ -538,6 +556,9 @@ pub struct Standing {
     /// The files to settle, when conflicts are why it is blocked: those a merge or rebase
     /// stopped part-way left unmerged, else those the last save's rebase conflicted in.
     pub conflicts: Vec<String>,
+    /// Of [`Standing::conflicts`], the settings file merged key by key, with the keys both sides
+    /// changed (#5824 F6): what the window names beside the file.
+    pub conflict_keys: BTreeMap<String, Vec<String>>,
     /// What a save cannot do here that is not a block — a request mode on a remote no forge adapter
     /// serves, where a save still commits and goes no further.
     pub notice: Option<String>,
@@ -598,6 +619,7 @@ pub fn standing(root: &Path) -> Standing {
             behind: None,
             push_failed: None,
             conflicts: Vec::new(),
+            conflict_keys: BTreeMap::new(),
             notice: None,
             secrets: Vec::new(),
             rebase_by_hand: false,
@@ -672,6 +694,13 @@ pub fn standing(root: &Path) -> Standing {
                 .filter_map(|v| v.as_str().map(str::to_string))
                 .collect()
         })
+        .unwrap_or_default();
+    // Read as written, and only where every key is a string: a record a later build widened is
+    // shown without its keys rather than wrongly.
+    let conflict_keys: BTreeMap<String, Vec<String>> = record
+        .as_ref()
+        .and_then(|r| r.get("conflict_keys"))
+        .and_then(|keys| serde_json::from_value(keys.clone()).ok())
         .unwrap_or_default();
     let notice = plane
         .mode
@@ -761,6 +790,14 @@ pub fn standing(root: &Path) -> Standing {
     let merge = (plane.mode.value == Some(crate::planesave::Mode::PrMerge) && pr.is_some())
         .then(|| prsave::known_merging(root))
         .flatten();
+    // The files a stopped merge or rebase left unmerged are the ones to settle now, and the keys
+    // named are those of the files still to settle.
+    let conflicts = match stopped {
+        Some(stopped) if !stopped.unmerged.is_empty() => stopped.unmerged,
+        _ => conflicts,
+    };
+    let mut conflict_keys = conflict_keys;
+    conflict_keys.retain(|path, _| conflicts.contains(path));
     Standing {
         stage,
         changed,
@@ -772,10 +809,8 @@ pub fn standing(root: &Path) -> Standing {
         behind,
         push_failed,
         // The files a stopped merge or rebase left unmerged are the ones to settle now.
-        conflicts: match stopped {
-            Some(stopped) if !stopped.unmerged.is_empty() => stopped.unmerged,
-            _ => conflicts,
-        },
+        conflicts,
+        conflict_keys,
         notice,
         tracked,
         head,
@@ -1026,11 +1061,14 @@ pub fn tree_moved(root: &Path) {
 
 /// Something at or under `dir` changed — a plane its watcher saw move, a plane or a clone a save
 /// or a fetch let go of, a setting written: the next shared standing of every plane and every
-/// clone there ([`shared_standing`], [`crate::reposave::shared_standing`]) reads git again. The
-/// one call for both stores, since a plane's settings are what each of its clones reads too.
+/// clone there ([`shared_standing`], [`crate::reposave::shared_standing`]), and the next count of
+/// what each clone changed ([`crate::files::repo_changes`]), reads git again. The one call for
+/// every store, since a plane's settings are what each of its clones reads too.
 pub fn touch(dir: &Path) {
     PLANES.touch_within(dir);
     crate::reposave::touch_within(dir);
+    // What each clone's own folder changed, for the explorer's closed repo rows (#3489).
+    crate::files::counts_touch_within(dir);
 }
 
 /// `git rev-list --count <range>`, or `None` when git cannot count it — a ref that is not there.

@@ -81,6 +81,7 @@ fn a_sandbox_compiled_for_another_harness_arms_no_claude_code_chat() {
             judging: false,
             writes_its_piece: false,
             runs_a_shell: false,
+            own: &[],
         },
         Some(plane.path()),
         &crate::harness_plugin::Chosen::new(),
@@ -108,6 +109,7 @@ fn the_claude_code_adapter_arms_a_chat_with_the_bundled_plugin_for_that_chat_alo
             judging: false,
             writes_its_piece: false,
             runs_a_shell: false,
+            own: &[],
         },
         Some(empty.path()),
         &crate::harness_plugin::Chosen::new(),
@@ -147,6 +149,7 @@ fn a_grades_chat_loads_purlis_s_server_alone_with_its_read_tools() {
                 judging: false,
                 writes_its_piece: false,
                 runs_a_shell: false,
+                own: &[],
             },
             Some(empty.path()),
             &crate::harness_plugin::Chosen::new(),
@@ -252,6 +255,7 @@ fn denied_in(cwd: &std::path::Path, graded: bool, judging: bool) -> Vec<serde_js
             judging,
             writes_its_piece: false,
             runs_a_shell: false,
+            own: &[],
         },
         Some(cwd),
         &crate::harness_plugin::Chosen::new(),
@@ -284,6 +288,7 @@ fn a_claude_code_chat_is_handed_charter_s_mcp_server_for_that_chat_alone() {
             judging: false,
             writes_its_piece: false,
             runs_a_shell: false,
+            own: &[],
         },
         None,
         &crate::harness_plugin::Chosen::new(),
@@ -325,6 +330,7 @@ fn armed_as(
             judging: false,
             writes_its_piece: false,
             runs_a_shell: false,
+            own: &[],
         },
         Some(plane.root()),
         &crate::harness_plugin::Chosen::new(),
@@ -488,6 +494,7 @@ fn a_task_chat_runs_the_read_only_purlis_commands_its_brief_runs_without_asking(
             judging: false,
             writes_its_piece: false,
             runs_a_shell: false,
+            own: &[],
         },
         Some(empty.path()),
         &crate::harness_plugin::Chosen::new(),
@@ -577,6 +584,7 @@ fn allowed_to(graded: bool) -> Vec<serde_json::Value> {
             judging: false,
             writes_its_piece: false,
             runs_a_shell: false,
+            own: &[],
         },
         Some(empty.path()),
         &crate::harness_plugin::Chosen::new(),
@@ -762,6 +770,7 @@ fn a_persona_chat_in_a_workspace_is_handed_the_rules_that_name_them() {
             judging: false,
             writes_its_piece: false,
             runs_a_shell: false,
+            own: &[],
         },
         Some(&folder),
         &crate::harness_plugin::Chosen::new(),
@@ -866,6 +875,7 @@ fn started_in(manifest: &str, project: Option<&str>) -> (Vec<String>, serde_json
             judging: false,
             writes_its_piece: false,
             runs_a_shell: false,
+            own: &[],
         },
         Some(&root),
         &crate::harness_plugin::Chosen::new(),
@@ -1367,6 +1377,7 @@ fn a_judges_chat_starts_with_the_tools_that_read_and_no_other() {
                 judging,
                 writes_its_piece: false,
                 runs_a_shell: false,
+                own: &[],
             },
             Some(empty.path()),
             &crate::harness_plugin::Chosen::new(),
@@ -1411,6 +1422,7 @@ fn an_outcome_chats_writes_are_allowed_by_its_guard_alone() {
             judging: false,
             writes_its_piece: true,
             runs_a_shell: false,
+            own: &[],
         },
         Some(empty.path()),
         &crate::harness_plugin::Chosen::new(),
@@ -1506,6 +1518,7 @@ fn an_outcome_chat_starts_with_its_own_tools_and_no_settings_file() {
                 judging: false,
                 writes_its_piece,
                 runs_a_shell: false,
+                own: &[],
             },
             Some(empty.path()),
             &crate::harness_plugin::Chosen::new(),
@@ -1578,6 +1591,7 @@ fn an_outcome_chat_holds_no_tool_of_a_server() {
             judging: false,
             writes_its_piece: true,
             runs_a_shell: false,
+            own: &[],
         },
         Some(empty.path()),
         &crate::harness_plugin::Chosen::new(),
@@ -1616,6 +1630,14 @@ fn a_chats_settings_hand_claude_code_its_listing_limit_as_a_string_in_env() {
 
 /// What the chat armed with `skills` is handed as its limit on its skill listing.
 fn listing_limit_handed(skills: Option<crate::skills::PlaneSkills<'_>>) -> String {
+    listing_limit_handed_beside(skills, &[])
+}
+
+/// What the chat armed with `skills`, whose harness finds `own` itself, is handed as its limit.
+fn listing_limit_handed_beside(
+    skills: Option<crate::skills::PlaneSkills<'_>>,
+    own: &[OutsideSkill],
+) -> String {
     let hooks = adapter().arm(
         Kit {
             skills,
@@ -1627,6 +1649,7 @@ fn listing_limit_handed(skills: Option<crate::skills::PlaneSkills<'_>>) -> Strin
             judging: false,
             writes_its_piece: false,
             runs_a_shell: false,
+            own,
         },
         None,
         &crate::harness_plugin::Chosen::new(),
@@ -1774,19 +1797,24 @@ fn a_chat_with_a_large_own_catalogue_is_handed_a_limit_that_covers_it() {
         })
         .collect();
     let handed = |own: &[OutsideSkill]| {
-        listing_limit_handed(Some(crate::skills::PlaneSkills {
-            plane: &plane,
-            workspace: None,
-            repo: &[],
+        listing_limit_handed_beside(
+            Some(crate::skills::PlaneSkills {
+                plane: &plane,
+                workspace: None,
+                repo: &[],
+                own,
+                routed: None,
+            }),
             own,
-            routed: None,
-        }))
+        )
     };
     let line = 1_536 + "s00".len() + LISTING_LINE;
     let budget = ADAPTER.skill_budget().chars;
     assert_eq!(handed(&[]), "40000");
     assert_eq!(handed(&own), listing_limit(budget, 30 * line).to_string());
     assert!(listing_limit(budget, 30 * line) > 30 * line + budget + 6_848);
+    // #5842: a chat the plane's skills do not reach shares its listing with them all the same.
+    assert_eq!(listing_limit_handed_beside(None, &own), handed(&own));
 }
 
 /// A pin is never hidden, so a list its pins take past the budget has to fit the limit too.
@@ -1845,6 +1873,7 @@ fn an_outcome_chat_with_a_shell_runs_it_unasked_and_one_without_asks() {
                 judging: false,
                 writes_its_piece: true,
                 runs_a_shell,
+                own: &[],
             },
             Some(piece.path()),
             &crate::harness_plugin::Chosen::new(),

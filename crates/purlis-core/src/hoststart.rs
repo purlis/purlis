@@ -1524,6 +1524,8 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
         routed: skills.routed.as_deref(),
     });
     let linked = laid_out_on(at, skills.persona.as_deref(), kit, harness);
+    // The harness's own skills, read whether or not the plane's reach the chat (#5842).
+    let own = skills.own.as_slice();
     let skills = at;
     let armed = crate::harness::Kit {
         binary,
@@ -1539,6 +1541,7 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
         // And of those, one whose skill asked for a shell, held to its piece (#4476).
         runs_a_shell: graded
             && cwd.is_some_and(|cwd| crate::skills::verbs::drafts::shell_piece(root, cwd)),
+        own,
         laid_out: linked.as_deref(),
     };
     // Which folder the chat is handed, for its terminal to note while it runs (SK-24).

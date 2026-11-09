@@ -91,9 +91,12 @@ export function SaveConflict({
 
   const files = saving.conflicts.length > 0 && (
     <ul className="saving-files" aria-label="Where it conflicts">
-      {saving.conflicts.map((path) => (
-        <li key={path}>{path}</li>
-      ))}
+      {saving.conflicts.map((path) => {
+        // The settings file is merged key by key: the keys both machines changed are named
+        // beside it, and only the file is ever handed to Continue (#5824).
+        const keys = saving.conflictKeys[path];
+        return <li key={path}>{keys?.length ? `${path}: ${keys.join(", ")}` : path}</li>;
+      })}
     </ul>
   );
   const outcome = said !== undefined && <span className="alert-said">{said}</span>;

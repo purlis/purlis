@@ -3065,13 +3065,15 @@ pub fn old_harness_plugins(old: &crate::oldplugins::OldHarnessPlugins) -> Shown 
     }
 }
 
-/// The option ids of the Ask about lanes waiting on signing (#5633).
+/// The option ids of the Ask about lanes waiting on signing (#5633). Where lanes wait on more
+/// than one forge, setup is `set-up:<kind>:<host>`, one for each (#5790).
 pub const SET_UP_SIGNING: &str = "set-up";
 pub const SIGN_AND_RETRY_ALL: &str = "retry-all";
 
 /// **The lanes waiting on signing, as one Ask** (#5633): every branch folder a forge refused
 /// for unsigned commits, listed by name, about no chat. Before signing is set up it offers Set
-/// up signing; once on, Sign and retry all N; and Dismiss, which drops them all. Once every one
+/// up signing; once on, Sign and retry all N; and Dismiss, which drops them all. Lanes on more
+/// than one forge get Set up signing on each forge, in both states (#5790). Once every one
 /// was signed and sent it says so, with Dismiss. A lane that failed again stays listed, with its
 /// reason, and a lane whose folder has gone is dropped. Nothing where nothing waits.
 pub fn signing_waiting(root: &std::path::Path, on: impl FnOnce() -> bool) -> Option<Shown> {
@@ -3122,22 +3124,44 @@ pub fn signing_waiting(root: &std::path::Path, on: impl FnOnce() -> bool) -> Opt
                 String::new()
             },
         );
-        let option = if on {
-            refuses(
-                SIGN_AND_RETRY_ALL,
-                &if still.len() == 1 {
-                    "Sign and retry".to_owned()
+        let retry_all = refuses(
+            SIGN_AND_RETRY_ALL,
+            &if still.len() == 1 {
+                "Sign and retry".to_owned()
+            } else {
+                format!("Sign and retry all {}", still.len())
+            },
+        );
+        // Each forge the lanes wait on, by kind and host (#5790): where there is more than one,
+        // each is set up on its own, before signing is on and after it, since the key may be
+        // on one forge's account and not yet on the other's.
+        let mut on_forges: Vec<(&str, &str, &str)> = still
+            .iter()
+            .map(|one| (one.kind.display(), one.kind.word(), one.host.as_str()))
+            .collect();
+        on_forges.sort_unstable();
+        on_forges.dedup();
+        let mut options = Vec::new();
+        if on_forges.len() > 1 {
+            if on {
+                options.push(retry_all);
+            }
+            for (shown, word, host) in &on_forges {
+                let same_kind = on_forges.iter().filter(|(_, w, _)| w == word).count();
+                let label = if same_kind > 1 {
+                    format!("Set up signing on {shown} ({host})")
                 } else {
-                    format!("Sign and retry all {}", still.len())
-                },
-            )
+                    format!("Set up signing on {shown}")
+                };
+                options.push(refuses(&format!("{SET_UP_SIGNING}:{word}:{host}"), &label));
+            }
+        } else if on {
+            options.push(retry_all);
         } else {
-            refuses(SET_UP_SIGNING, "Set up signing")
-        };
-        (
-            format!("{head}\n{}", lines.join("\n")),
-            vec![option, refuses(DISMISS, "Dismiss")],
-        )
+            options.push(refuses(SET_UP_SIGNING, "Set up signing"));
+        }
+        options.push(refuses(DISMISS, "Dismiss"));
+        (format!("{head}\n{}", lines.join("\n")), options)
     };
     Some(Shown {
         session: 0,

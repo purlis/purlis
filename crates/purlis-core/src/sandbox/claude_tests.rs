@@ -996,3 +996,61 @@ fn a_claude_code_chat_allowed_to_listen_compiles_the_same_settings_byte_for_byte
     );
     assert_eq!(after.sandbox["network"]["allowLocalBinding"], json!(false));
 }
+
+/// Claude Code pins every folder above a denied path as it is spelled, so a held path is denied
+/// as spelled through each link on the way to it too: then each link, and the folder it is in,
+/// is pinned, and none can be replaced by one pointing elsewhere (as the floor holds them on
+/// macOS, `floor_tests`).
+#[cfg(unix)]
+#[test]
+fn a_held_path_is_denied_as_spelled_through_each_link_on_the_way_to_it() {
+    let dir = tempfile::tempdir().expect("a project");
+    let root = dir.path().canonicalize().expect("real");
+    let home = root.join("home");
+    std::fs::create_dir_all(home.join("real/inner")).expect("a folder");
+    std::fs::create_dir(home.join("second")).expect("a folder");
+    std::os::unix::fs::symlink(home.join("real"), home.join("second/hop")).expect("a link");
+    std::os::unix::fs::symlink(home.join("second/hop"), home.join(".local")).expect("a link");
+    let held = home.join(".local/inner/auth.json");
+    let on = Machine {
+        os: Os::Linux,
+        ..machine()
+    };
+    let compiled = Compiled {
+        level: Level::Floor,
+        ..compiled_at(&root, None, &Grants::default())
+    };
+    let applied = applied_of(
+        Harness::ClaudeCode,
+        compiler(Harness::ClaudeCode).expect("a compiler"),
+        &compiled,
+        &root,
+        &on,
+    )
+    .expect("compiles");
+    let super::Form::ClaudeCode(settings) = applied.form_in(Some(&root)) else {
+        panic!("compiled for Claude Code");
+    };
+    let settings = settings.holding(std::slice::from_ref(&held));
+    let denied = settings.sandbox["filesystem"]["denyWrite"]
+        .as_array()
+        .expect("a list")
+        .clone();
+    let holds = |path: std::path::PathBuf| denied.contains(&json!(path.display().to_string()));
+    assert!(holds(held.clone()), "as written");
+    assert!(
+        holds(home.join("real/inner/auth.json")),
+        "as the kernel names it"
+    );
+    assert!(
+        holds(home.join("second/hop/inner/auth.json")),
+        "through the link `.local` points at, so `second/hop` and `second` are pinned: {denied:?}"
+    );
+    assert!(
+        settings.deny.contains(&format!(
+            "Edit(/{})",
+            home.join("second/hop/inner/auth.json").display()
+        )),
+        "and to the Edit tool"
+    );
+}

@@ -241,8 +241,10 @@ describe("Explorer, the workspace's own folder (#5375)", () => {
     await row(/^notes/);
 
     expect(asked).toContain("workspace_tree");
-    await waitFor(() => expect(asked).toContain("branch_status"));
-    // Each repo's status is read for its row; the workspace's own files are no branch.
+    // The repos' rows are counted in one ask, reading no repo's status (#3489); the workspace's
+    // own files are no branch.
+    await waitFor(() => expect(asked).toContain("repos_changed"));
+    expect(asked).not.toContain("branch_status");
     expect(asked).not.toContain("piece_file");
   });
 

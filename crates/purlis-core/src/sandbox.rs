@@ -1649,6 +1649,19 @@ impl Denied {
                 any_case: machine.os == Os::MacOs,
             });
         }
+        // …and gh's and glab's own folders where the person's environment moves them: the
+        // settings, extensions and aliases their next run loads, as it does from `~/.config/gh`
+        // ([`PLANTED`]), which names only the folders at their usual place.
+        for folder in forge_folders_moved(root, machine) {
+            paths.push(Denial {
+                class: Class::LaterCode,
+                path: folder,
+                access: Access::Write,
+                named: None,
+                reach: Reach::AndBelow,
+                any_case: machine.os == Os::MacOs,
+            });
+        }
         // …and the programs each cluster pool's kubectl runs (#3292): kubectl itself and each
         // credential plugin its context names, as the pool was added, which purlis runs outside
         // any sandbox before every link to its runner. Each as named and by its real path, and
@@ -2385,6 +2398,52 @@ fn podman_folders(machine: &Machine) -> Vec<(PathBuf, Reach)> {
     for folder in folders {
         if !out.iter().any(|(one, _)| *one == folder) {
             out.push((folder, Reach::AndBelow));
+        }
+    }
+    out
+}
+
+/// **Where `machine`'s environment moves gh's and glab's folders**: `$GH_CONFIG_DIR`, else
+/// `$XDG_CONFIG_HOME/gh`, for gh's settings and sign-ins; `$XDG_DATA_HOME/gh` for its extensions;
+/// `$GLAB_CONFIG_DIR`, else `$XDG_CONFIG_HOME/glab-cli`, for glab's. Each variable is read whether
+/// or not another wins, since which one a later run reads is its own environment's to say. A
+/// variable that names no absolute folder names nothing, and a folder at its usual place in the
+/// home is left to [`PLANTED`], which a person may lift for one chat ([`MAY_LIFT`]). A folder that
+/// is the home or above it, or holds the project at `root`, is never one: holding it would take
+/// the chat's own work from it, and no forge program keeps its settings there.
+fn forge_folders_moved(root: &Path, machine: &Machine) -> Vec<PathBuf> {
+    let named = |name: &str| {
+        machine
+            .env
+            .get(name)
+            .map(PathBuf::from)
+            .filter(|folder| folder.is_absolute())
+    };
+    let usual: Vec<PathBuf> = machine
+        .home
+        .iter()
+        .flat_map(|home| MAY_LIFT.iter().map(move |name| home.join(name)))
+        .collect();
+    let mut out: Vec<PathBuf> = Vec::new();
+    let moved = named("GH_CONFIG_DIR")
+        .into_iter()
+        .chain(named("GLAB_CONFIG_DIR"))
+        .chain(
+            named("XDG_CONFIG_HOME")
+                .into_iter()
+                .flat_map(|config| [config.join("gh"), config.join("glab-cli")]),
+        )
+        .chain(named("XDG_DATA_HOME").map(|data| data.join("gh")));
+    let holds_the_work = |folder: &Path| {
+        root.starts_with(folder)
+            || machine
+                .home
+                .as_deref()
+                .is_some_and(|home| home.starts_with(folder))
+    };
+    for folder in moved {
+        if !usual.contains(&folder) && !out.contains(&folder) && !holds_the_work(&folder) {
+            out.push(folder);
         }
     }
     out

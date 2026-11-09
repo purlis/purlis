@@ -30,6 +30,9 @@ pub struct Use {
     pub project: bool,
     /// Whether no skill of that name is there: a broken reference, which the lint says too.
     pub broken: bool,
+    /// Whether the text names it bare, not as `skills:<name>`: a hint ([`hints_in`], #4510),
+    /// never broken, as only a skill there is can be one.
+    pub hint: bool,
 }
 
 /// **The names `text` gives after `namespace:`**, in the order it gives them: where the
@@ -84,6 +87,7 @@ pub fn uses_in(
                 said,
                 name,
                 project,
+                hint: false,
             });
         }
     };
@@ -94,12 +98,97 @@ pub fn uses_in(
     out
 }
 
+/// The quotes a bare name is read inside ([`hints_in`]), each opening mark with its closing one:
+/// straight and curly double quotes, and a code span's backtick. Not a single quote, which is an
+/// apostrophe as often.
+const QUOTES: [(char, char); 3] = [('"', '"'), ('\u{201c}', '\u{201d}'), ('`', '`')];
+
+/// The word a line must hold, beside a quoted name, for the name to be read as a hint: on its
+/// own, in any case, or as "skills".
+const SKILL_WORD: &str = "skill";
+
+/// Whether `text` holds [`SKILL_WORD`] as a word of its own, or its plural: not inside a longer
+/// word such as "skillful".
+fn says_skill(text: &str) -> bool {
+    let text = text.to_lowercase();
+    let letter = |c: char| c.is_alphanumeric();
+    text.match_indices(SKILL_WORD).any(|(at, _)| {
+        let rest = &text[at + SKILL_WORD.len()..];
+        let rest = rest.strip_prefix('s').unwrap_or(rest);
+        !text[..at].chars().next_back().is_some_and(letter)
+            && !rest.chars().next().is_some_and(letter)
+    })
+}
+
+/// **Every skill `text` names bare, as a hint, once each** (#4510), in the order it names them:
+/// a name that is the whole of a quote or a code span ([`QUOTES`]) closed on its line, where the
+/// rest of that line holds the word "skill" in any case, and that `known` says is a skill there
+/// is (one of the same project, or of the same source), not the skill `own` itself. So
+/// ``Use the Skill tool with "grilling"`` hints at `grilling` where there is one, and a quoted
+/// word that names no skill is never read. Each is a project [`Use`] marked [`Use::hint`], never
+/// broken. At most [`MOST_REFERENCES`].
+///
+/// Nothing decides from a hint what a chat does: it is what `purlis skill uses`, the lint and an
+/// install's review tell the person, and what an install brings along.
+pub fn hints_in(text: &str, own: &str, known: &dyn Fn(&str) -> bool) -> Vec<Use> {
+    let mut out: Vec<Use> = Vec::new();
+    for line in text.lines() {
+        for (open, close) in quoted(line) {
+            if out.len() >= MOST_REFERENCES {
+                return out;
+            }
+            let inner_start = open + line[open..].chars().next().map_or(1, char::len_utf8);
+            let inner_end = close - line[..close].chars().next_back().map_or(1, char::len_utf8);
+            let name = &line[inner_start..inner_end];
+            let rest = format!("{}{}", &line[..open], &line[close..]);
+            if name == own
+                || crate::change::name_problem(name).is_some()
+                || !says_skill(&rest)
+                || !known(name)
+                || out.iter().any(|one| one.name == name)
+            {
+                continue;
+            }
+            out.push(Use {
+                said: line[open..close].to_owned(),
+                name: name.to_owned(),
+                project: true,
+                broken: false,
+                hint: true,
+            });
+        }
+    }
+    out
+}
+
+/// Each quote of `line` ([`QUOTES`]) that closes on it, as byte offsets from its opening mark to
+/// past its closing one, in order: one quote's closing mark never opens the next.
+fn quoted(line: &str) -> Vec<(usize, usize)> {
+    let mut out = Vec::new();
+    let mut chars = line.char_indices();
+    while let Some((at, c)) = chars.next() {
+        let Some((_, close)) = QUOTES.iter().find(|(open, _)| *open == c) else {
+            continue;
+        };
+        for (end, inner) in chars.by_ref() {
+            if inner == *close {
+                out.push((at, end + inner.len_utf8()));
+                break;
+            }
+        }
+    }
+    out
+}
+
 /// One skill of the graph: what it names, and the skills whose text names it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Node {
     pub uses: Vec<Use>,
     /// The names of the project's skills that name this one, each once, by name.
     pub used_by: Vec<String>,
+    /// The names of the project's skills whose text names this one only bare, as a hint
+    /// ([`hints_in`]), each once, by name.
+    pub hinted_by: Vec<String>,
 }
 
 /// **The uses / used-by graph of `skills`**, each a skill's name and its `SKILL.md`'s text, read
@@ -118,31 +207,49 @@ pub fn graph(
     let built_in: HashSet<&str> = built_in.iter().map(String::as_str).collect();
     let mut nodes: HashMap<String, Node> = HashMap::new();
     for (name, text) in read {
-        let uses = uses_in(text, namespace, &|one| plane.contains(one), &|one| {
+        let mut uses = uses_in(text, namespace, &|one| plane.contains(one), &|one| {
             built_in.contains(one)
         });
+        uses.extend(hints_in(text, name, &|one| plane.contains(one)));
         let node = nodes.entry(name.clone()).or_default();
         for one in uses {
-            if !node.uses.iter().any(|had| had.said == one.said) {
-                node.uses.push(one);
+            // A hint is the same use as any of the project's of its name, however quoted; of the
+            // two, a reference wins, in this text or in another copy's.
+            let had = node.uses.iter().position(|had| {
+                if one.hint || had.hint {
+                    had.project && one.project && had.name == one.name
+                } else {
+                    had.said == one.said
+                }
+            });
+            match had {
+                None => node.uses.push(one),
+                Some(at) if node.uses[at].hint && !one.hint => node.uses[at] = one,
+                Some(_) => {}
             }
         }
     }
-    let edges: Vec<(String, String)> = nodes
+    let edges: Vec<(String, String, bool)> = nodes
         .iter()
         .flat_map(|(from, node)| {
             node.uses
                 .iter()
                 .filter(|one| one.project && !one.broken && one.name != *from)
-                .map(|one| (one.name.clone(), from.clone()))
+                .map(|one| (one.name.clone(), from.clone(), one.hint))
         })
         .collect();
-    for (to, from) in edges {
-        // Each pair comes once: a node's uses hold each name once.
-        nodes.entry(to).or_default().used_by.push(from);
+    for (to, from, hint) in edges {
+        // Each pair comes once: a node's uses hold each name once, as a reference or a hint.
+        let node = nodes.entry(to).or_default();
+        if hint {
+            node.hinted_by.push(from);
+        } else {
+            node.used_by.push(from);
+        }
     }
     for node in nodes.values_mut() {
         node.used_by.sort();
+        node.hinted_by.sort();
     }
     (nodes, cut)
 }

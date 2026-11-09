@@ -1794,6 +1794,11 @@ export const commands = {
 	 *  rolled up onto its folders: the explorer's markers and its "Changed only" (FM-4).
 	 */
 	branchStatus: (plane: PlaneId, workspace: string, repo: string, piece: string | null) => typedError<BranchStatus, string>(__TAURI_INVOKE("branch_status", { plane, workspace, repo, piece })),
+	/**
+	 *  What each of `repos` changed in its own folder, rolled up onto its top: what the explorer's
+	 *  closed repo rows say, for every repo of a workspace in one ask (#3489).
+	 */
+	reposChanged: (plane: PlaneId, workspace: string, repos: string[]) => typedError<RepoChanged[], string>(__TAURI_INVOKE("repos_changed", { plane, workspace, repos })),
 	/**  How far a branch is from the branch it was cut from, in commits ahead and behind. */
 	branchAheadBehind: (plane: PlaneId, workspace: string, repo: string, piece: string | null) => typedError<AheadBehind, string>(__TAURI_INVOKE("branch_ahead_behind", { plane, workspace, repo, piece })),
 	/**
@@ -9548,6 +9553,8 @@ export type PlaneSaving = {
 	live: string[],
 	/**  The files to settle, when conflicts are why the save is blocked. */
 	conflicts: string[],
+	/**  Of `conflicts`, the settings file with the keys both machines changed (#5824). */
+	conflictKeys: { [key in string]: string[] },
 	/**  What a save cannot do here that is not a block (a request mode with no forge to open it on). */
 	notice: string | null,
 	/**  `[plane] mode`, or `null` when the plane names none. */
@@ -10034,6 +10041,11 @@ export type PoolSignInAsk = {
 	pool: string,
 	/**  What the terminal of the command that asks shows. */
 	code: string,
+	/**
+	 *  The forge a signing check asks, as a sentence names it (`GitHub`, `GitLab on
+	 *  gitlab.example.org`, #5793); none for the other questions.
+	 */
+	on?: string | null,
 };
 
 /**
@@ -10988,6 +11000,21 @@ export type RepoAnswer = {
 	 *  the window asks GitHub or GitLab and calls again with the answer. Nothing was made.
 	 */
 	asks_forge: string | null,
+};
+
+/**
+ *  What one repo's own folder changed, rolled up onto its top: a closed repo row of the explorer
+ *  (#3343, #3489).
+ */
+export type RepoChanged = {
+	repo: string,
+	/**
+	 *  Its own folder's mark and how many files it holds that changed; `null` when it changed
+	 *  nothing, or when it was refused.
+	 */
+	changes: FolderChanges | null,
+	/**  Why it could not be read, in the sentence the window shows; `null` when it was. */
+	trouble: string | null,
 };
 
 /**  `[repos.<name>]` for one repo, as `planesave::Settings::repo` resolves it. */
@@ -13164,7 +13191,11 @@ export type SigningWaiting = {
 	path: string,
 	/**  The commit whose push was refused. */
 	commit: string,
-	/**  The app's number for the chat that pushed, while it is open. */
+	/**
+	 *  The app's number now for the chat that pushed, while it is open: looked up by the chat's
+	 *  lasting id each time it is read, so a number given to another chat since never shows it
+	 *  there (#5789).
+	 */
 	chat?: number | null,
 	/**  Signed and sent since: shown as done until the window has shown it. */
 	sent: boolean,
@@ -14632,6 +14663,11 @@ export type StudioHarness = {
 	 *  with why (SK-53): the core's `HarnessInTheStudio::repo_left_out`.
 	 */
 	repo_left_out: StudioSkill[],
+	/**
+	 *  The project's skills its chats start without because it has the same copy itself, each
+	 *  naming the copy kept (#5843): the core's `HarnessInTheStudio::same_left_out`.
+	 */
+	same_left_out: StudioSkill[],
 	/**
 	 *  **What its own catalogue holds** (#3324), in the core's words (`OwnCatalogue::said`),
 	 *  which `purlis skill list` says too: the skills it finds itself in the person's own

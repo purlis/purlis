@@ -40,6 +40,7 @@ const HARNESSES: Studio["harnesses"] = [
     harness: "claude",
     title: "Claude Code",
     repo_left_out: [],
+    same_left_out: [],
     plugins_off: [],
     own: null,
     skills: [
@@ -78,11 +79,20 @@ const HARNESSES: Studio["harnesses"] = [
       }),
     ],
   },
-  { harness: "codex", title: "Codex", repo_left_out: [], plugins_off: [], own: null, skills: [] },
+  {
+    harness: "codex",
+    title: "Codex",
+    repo_left_out: [],
+    same_left_out: [],
+    plugins_off: [],
+    own: null,
+    skills: [],
+  },
   {
     harness: "opencode",
     title: "opencode",
     repo_left_out: [],
+    same_left_out: [],
     plugins_off: [],
     own: null,
     skills: [
@@ -361,6 +371,53 @@ export const HarnessSkills: Story = {
     );
     await tabInto(() => canvas.getByRole("switch", { name: "On for smart-ide's chats" }));
     expectFocusInSight();
+  },
+};
+
+/**
+ * **Harness skills, with project skills a program's chats start without**: one a repo's copy
+ * takes the name of (SK-53), one the program has the same copy of (#5843), each under the
+ * program with its mark and the reason its chat is told. Enter opens it beside the list.
+ */
+export const HarnessSkillsLeftOut: Story = {
+  args: {
+    answer: studio([], {
+      workspace: "smart-ide",
+      workspaces: ["smart-ide"],
+      router: ROUTER,
+      harnesses: HARNESSES.map((one) =>
+        one.harness === "claude"
+          ? {
+              ...one,
+              repo_left_out: [
+                skill("lint-ts", {
+                  on: false,
+                  left_out: "repo svc has its own copy, which a chat started in svc gets instead",
+                  folder: "skills/lint-ts",
+                }),
+              ],
+              same_left_out: [
+                skill("my-notes", {
+                  on: false,
+                  left_out: "the same as your own copy, which is listed in its place",
+                  folder: "skills/my-notes",
+                }),
+              ],
+            }
+          : one,
+      ),
+    }),
+  },
+  play: async ({ canvas }) => {
+    const grid = await canvas.findByRole("grid", { name: "Each program's own skills" });
+    await expect(within(grid).getByText("Left out by a repo")).toBeVisible();
+    await expect(within(grid).getByText("Same as its own copy")).toBeVisible();
+    await userEvent.click(within(grid).getByText("Same as its own copy"));
+    await waitFor(() =>
+      expect(
+        canvas.getByText("Left out: the same as your own copy, which is listed in its place"),
+      ).toBeInTheDocument(),
+    );
   },
 };
 

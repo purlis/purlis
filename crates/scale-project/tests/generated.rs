@@ -139,3 +139,30 @@ fn purlis_core_reads_the_project_at_the_size_planned() {
         size.running_dispatches
     );
 }
+
+#[test]
+fn every_text_of_the_project_is_masked_as_asking_the_scanner_whole_and_by_line_masked_it() {
+    // The index reads a text's secrets whole and a line at a time in one call (#5672); it must
+    // flag exactly what asking `leak_spans` each time flagged, on what the scale run indexes.
+    use purlis_core::secretshape::{leak_spans, leak_spans_whole_and_by_line};
+    let (_dir, files) = generated(5497);
+    let mut texts = 0;
+    for (name, bytes) in &files {
+        let Ok(text) = std::str::from_utf8(bytes) else {
+            continue;
+        };
+        let mut asked = leak_spans(text);
+        let mut at = 0;
+        for line in text.split_inclusive('\n') {
+            asked.extend(
+                leak_spans(line)
+                    .into_iter()
+                    .map(|(span, kind)| (span.start + at..span.end + at, kind)),
+            );
+            at += line.len();
+        }
+        assert_eq!(leak_spans_whole_and_by_line(text), asked, "{name}");
+        texts += 1;
+    }
+    assert!(texts > 50, "{texts} texts read");
+}

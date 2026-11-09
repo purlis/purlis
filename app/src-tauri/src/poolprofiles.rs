@@ -569,7 +569,11 @@ pub fn listen_for_the_command_line() {
             if let purlis_core::windowline::Asked::Signing(asked) = &asked {
                 // A pushed commit is asked about only on the person's yes here, as the line's
                 // other asks are.
-                if let purlis_core::signingsetup::Asked::Check { repo, commit, code } = asked {
+                if let purlis_core::signingsetup::Asked::Check {
+                    repo, commit, code, ..
+                } = asked
+                {
+                    let on = purlis_core::signingsetup::forge_said(&asked.forge());
                     let Some(app) = APP.get() else {
                         return purlis_core::windowline::Said::Refused {
                             why: "this window is still starting".to_owned(),
@@ -578,6 +582,7 @@ pub fn listen_for_the_command_line() {
                     if let Err(why) = crate::poolsignin_confirm::ask_the_person(
                         app,
                         crate::poolsignin_confirm::Asks::SigningCheck,
+                        Some(&on),
                         repo,
                         commit,
                         code,
@@ -608,6 +613,7 @@ pub fn listen_for_the_command_line() {
                     Some(app) => crate::poolsignin_confirm::ask_the_person(
                         app,
                         crate::poolsignin_confirm::Asks::SignIn,
+                        None,
                         name,
                         pool,
                         code,
@@ -622,6 +628,7 @@ pub fn listen_for_the_command_line() {
                     crate::poolsignin_confirm::ask_the_person(
                         app,
                         crate::poolsignin_confirm::Asks::TakeOff,
+                        None,
                         name,
                         pool,
                         code,

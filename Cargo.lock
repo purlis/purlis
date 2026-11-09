@@ -6087,6 +6087,7 @@ dependencies = [
  "purlis-unicode",
  "quick-xml",
  "regex",
+ "regex-syntax",
  "ring",
  "rusqlite",
  "rustix",

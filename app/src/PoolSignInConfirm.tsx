@@ -107,7 +107,7 @@ export function PoolSignInConfirm() {
       onClose={() => answer(false)}
       title={
         checking
-          ? `Check ${drawn.pool} in ${drawn.profile} on GitHub?`
+          ? `Check ${drawn.pool} in ${drawn.profile} on ${drawn.on ?? "GitHub"}?`
           : takingOff
             ? `Take ${drawn.profile} off ${drawn.pool}?`
             : `Sign ${drawn.profile} in on ${drawn.pool}?`
@@ -124,9 +124,10 @@ export function PoolSignInConfirm() {
     >
       {checking ? (
         <p id="pool-sign-in-confirm-said">
-          The <code>purlis signing check</code> command asks this window to ask GitHub, with your
-          sign-in, whether this commit shows as Verified. Check it only if you ran it and your
-          terminal shows the code <code>{drawn.code}</code>. Otherwise, cancel and nothing is asked.
+          {/* One text node after the command, as the sentence was before it named the forge. */}
+          The <code>purlis signing check</code>
+          {` command asks this window to ask ${drawn.on ?? "GitHub"}, with your sign-in, whether this commit shows as Verified. Check it only if you ran it and your terminal shows the code `}
+          <code>{drawn.code}</code>. Otherwise, cancel and nothing is asked.
         </p>
       ) : takingOff ? (
         <p id="pool-sign-in-confirm-said">

@@ -1700,3 +1700,22 @@ fn a_server_that_could_not_start_is_told_to_its_chat_in_fixed_words() {
     );
     assert!(talk.from_person(SIBLING).is_empty());
 }
+
+/// A message from a chat on a pool's runner names the pool after the chat, and is still heard
+/// as a sender, however long the chat's name.
+#[test]
+fn a_sender_on_a_pool_is_named_with_its_pool_and_is_still_heard() {
+    assert_eq!(
+        from_a_pool("steward 3", "builds"),
+        "steward 3 (on pool builds's runner)"
+    );
+    assert_eq!(
+        sender(&from_a_pool("steward 3", "builds")).as_deref(),
+        Some("steward 3 (on pool builds's runner)")
+    );
+    let long = from_a_pool(&"a".repeat(crate::reopen::MOST_LABEL), &"b".repeat(40));
+    assert_eq!(long.chars().count(), crate::reopen::MOST_LABEL, "{long}");
+    assert!(long.ends_with(&format!(" (on pool {}'s runner)", "b".repeat(40))));
+    assert!(long.starts_with("aa") && long.contains('…'), "{long}");
+    assert!(sender(&long).is_some(), "{long}");
+}

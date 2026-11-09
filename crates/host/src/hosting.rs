@@ -1940,6 +1940,27 @@ impl Hosting {
         })
     }
 
+    /// What says whether a process is a window linked to this host now ([`Self::a_window_now`]):
+    /// never once this host has gone.
+    fn windows_linked_now(&self) -> Arc<dyn Fn(u32) -> bool + Send + Sync + 'static> {
+        let host = Arc::downgrade(&self.inner);
+        Arc::new(move |pid| {
+            host.upgrade()
+                .is_some_and(|inner| Hosting { inner }.a_window_now(pid))
+        })
+    }
+
+    /// **Whether process `pid` is a window linked to this host now**: the window that started
+    /// it, or one that came back to it ([`Self::a_window_linked_from`]), while a window's link
+    /// is open. None on a host no window started.
+    fn a_window_now(&self, pid: u32) -> bool {
+        let state = self.state();
+        let Some(Window(first)) = state.window else {
+            return false;
+        };
+        !state.windows.is_empty() && (pid == first || state.came_back.contains(&pid))
+    }
+
     /// The hook channel of the project held `at`, where it has one.
     fn channel(&self, at: &HeldAt) -> Option<Arc<dyn Channel>> {
         self.state()
@@ -2057,7 +2078,12 @@ impl Hosting {
                 .hear
                 .open(&at.project, &at.path, self.handing_on(&at))
             {
-                Ok(channel) => channel,
+                Ok(channel) => {
+                    if let Some(channel) = &channel {
+                        channel.windows_linked(self.windows_linked_now());
+                    }
+                    channel
+                }
                 Err(why) => {
                     crate::say(&format!(
                         "project {} at {}: its hooks are not heard, so its chats' states and \

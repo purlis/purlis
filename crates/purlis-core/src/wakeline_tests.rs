@@ -386,3 +386,128 @@ fn what_ended_is_named_with_how_many_of_each_kind() {
     );
     assert_eq!(super::counted(&OwnWork::default()), None);
 }
+
+/// The wake line of a chat restarted while purlis runs on, that had `own_work` running, by
+/// count alone.
+fn of_the_chat_restarted(own_work: Option<&OwnWork>) -> Option<String> {
+    super::of_the_chat_restarted(&Ended {
+        own_work,
+        ..Ended::default()
+    })
+}
+
+#[test]
+fn a_chat_restarted_alone_is_told_its_restart_ended_what_it_had_left_running() {
+    let line = of_the_chat_restarted(Some(&one_shell())).expect("a wake line");
+    assert!(
+        line.starts_with("purlis: this chat was restarted"),
+        "{line}"
+    );
+    assert!(!line.contains("purlis was restarted"), "{line}");
+    assert!(line.contains(": 1 background shell."), "{line}");
+    assert!(
+        line.contains("start again whatever is still needed"),
+        "{line}"
+    );
+}
+
+#[test]
+fn a_chat_restarted_alone_with_nothing_of_its_own_running_is_told_nothing() {
+    assert_eq!(of_the_chat_restarted(None), None);
+    assert_eq!(of_the_chat_restarted(Some(&OwnWork::default())), None);
+}
+
+#[test]
+fn a_chat_restarted_alone_is_told_each_piece_by_name_with_what_it_last_put_out() {
+    let pieces = [shell("b1", "npm test")];
+    let line = super::of_the_chat_restarted(&Ended {
+        own_work: Some(&one_shell()),
+        pieces: &pieces,
+        mid_turn: true,
+        last: &|_| Last::Lines {
+            lines: vec!["test result: ok".to_owned()],
+            path: "/tmp/b1.output".to_owned(),
+        },
+        ..Ended::default()
+    })
+    .expect("a wake line");
+    assert!(
+        line.starts_with("purlis: this chat was restarted on its conversation."),
+        "{line}"
+    );
+    assert!(line.contains("a background shell \"npm test\""), "{line}");
+    assert!(line.contains("test result: ok"), "{line}");
+    assert!(line.contains("last turn mid-way"), "{line}");
+    assert!(!line.contains("while purlis was down"), "{line}");
+}
+
+#[test]
+fn a_chat_restarted_alone_with_only_crons_the_harness_sets_again_is_told_nothing() {
+    let pieces = [Piece {
+        schedule: Some("*/5 * * * *".to_owned()),
+        prompt: Some("check the queue".to_owned()),
+        ..Piece::new(Kind::Cron, "c1", "").expect("a piece")
+    }];
+    let ended = Ended {
+        pieces: &pieces,
+        ..Ended::default()
+    };
+    assert_eq!(super::of_the_chat_restarted(&ended), None);
+}
+
+/// Many long pieces, and as many tasks as each list names and more, restored and reported.
+fn a_full_line_with_task_news(carry_on: bool) -> Option<String> {
+    use super::tasks::{News, Reported, Restored, Standing};
+    let long = "x ".repeat(200);
+    let pieces: Vec<Piece> = (0..crate::ownwork::pieces::MOST_PIECES)
+        .map(|n| Piece {
+            prompt: Some(long.clone()),
+            schedule: Some(long.clone()),
+            ..Piece::new(Kind::Shell, &format!("b{n}"), &long).expect("a piece")
+        })
+        .collect();
+    let news = News {
+        restored: (0..30)
+            .map(|chat| Restored {
+                chat: 100_000 + chat,
+                standing: Standing::Ended,
+            })
+            .collect(),
+        reported: (0..30)
+            .map(|chat| Reported {
+                chat: 200_000 + chat,
+                ended: "ended without a report, as the person stopped it",
+            })
+            .collect(),
+    };
+    let lines = (0..crate::ownwork::last::LINES)
+        .map(|_| "y".repeat(400))
+        .collect::<Vec<_>>();
+    let last = |_: &Piece| Last::Lines {
+        lines: lines.clone(),
+        path: "/tmp/out".to_owned(),
+    };
+    super::with_news(
+        &Ended {
+            pieces: &pieces,
+            mid_turn: true,
+            last: &last,
+            ..Ended::default()
+        },
+        carry_on,
+        &news,
+    )
+}
+
+#[test]
+fn a_full_wake_line_with_the_news_of_many_tasks_stays_within_its_bound_5754() {
+    for carry_on in [false, true] {
+        let line = a_full_line_with_task_news(carry_on).expect("a wake line");
+        assert!(line.len() <= MOST_BYTES, "{} bytes: {line}", line.len());
+        assert!(
+            line.contains("chat 100000:"),
+            "the tasks are still told: {line}"
+        );
+        assert!(line.contains("chat 200000 reported"), "{line}");
+    }
+}

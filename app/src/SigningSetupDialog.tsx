@@ -56,11 +56,19 @@ type Add =
   | { at: "asking" }
   | { at: "waiting"; code: ForgeDeviceCode }
   | { at: "declined"; why: string }
-  | { at: "by-hand"; copied: boolean }
+  /** `unread`: why the key couldn't be read from the Keychain (macOS was told no, or it isn't
+   *  there), so nothing was copied and there is no key to show (#5681). */
+  | { at: "by-hand"; copied: boolean; unread?: string }
   | { at: "trouble"; why: string };
 
 /** The forge's reasons a commit's email is not one of the account's verified ones. */
 export const EMAIL_REASONS = ["unverified_email", "no_user", "bad_email"];
+
+/** The by-hand step, as reading and copying the key went. */
+const byHandAt = (copied: boolean | { unread: string }): Add =>
+  typeof copied === "object"
+    ? { at: "by-hand", copied: false, unread: copied.unread }
+    : { at: "by-hand", copied };
 
 type Check =
   | { at: "checking" }
@@ -218,12 +226,13 @@ export function SigningSetupDialog({
     });
   };
 
-  /** The public key read (once), then copied: whether it reached the clipboard. */
-  const copyKey = useCallback(async () => {
+  /** The public key read (once), then copied: whether it reached the clipboard, or why the
+   *  Keychain didn't give it. */
+  const copyKey = useCallback(async (): Promise<boolean | { unread: string }> => {
     let shown = key;
     if (!shown) {
       const read = await commands.signingKeyShown();
-      if (read.status === "error") return false;
+      if (read.status === "error") return { unread: read.error };
       shown = read.data;
       setKey(shown);
     }
@@ -239,7 +248,7 @@ export function SigningSetupDialog({
   const byHand = useCallback(
     (on: SigningForge) => {
       setFlow(undefined);
-      void copyKey().then((copied) => go({ step: "add", add: { at: "by-hand", copied } }));
+      void copyKey().then((copied) => go({ step: "add", add: byHandAt(copied) }));
       void openUrl(newKeyPage(on));
     },
     [copyKey, go],
@@ -416,7 +425,19 @@ export function SigningSetupDialog({
           case "declined":
             return { children: "Try again", onPress: askPermission };
           case "by-hand":
-            return { children: "I've added it", onPress: lookNow };
+            // Nothing was read to add: Try again asks the Keychain once more (#5681).
+            return now.add.unread
+              ? {
+                  children: "Try again",
+                  reserve: ["Try again", "I've added it"],
+                  onPress: () =>
+                    void copyKey().then((copied) => go({ step: "add", add: byHandAt(copied) })),
+                }
+              : {
+                  children: "I've added it",
+                  reserve: ["Try again", "I've added it"],
+                  onPress: lookNow,
+                };
           case "trouble":
             return { children: "Try again", onPress: () => add({ kind, host }) };
           default:
@@ -502,9 +523,7 @@ export function SigningSetupDialog({
           forge={forgeName}
           gitlab={gitlab}
           page={newKeyPage({ kind, host })}
-          onCopy={() =>
-            void copyKey().then((copied) => go({ step: "add", add: { at: "by-hand", copied } }))
-          }
+          onCopy={() => void copyKey().then((copied) => go({ step: "add", add: byHandAt(copied) }))}
           onPick={(email) =>
             setNow((was) =>
               was.step === "check" && was.check.at === "email"
@@ -737,15 +756,23 @@ function AddBody({
       return (
         <>
           <p>Add it on {forge} yourself. purlis watches and carries on once it&apos;s there.</p>
+          {add.unread && (
+            <p className="trouble said-in-full" role="alert">
+              purlis couldn&apos;t read the key from the Keychain: {add.unread} Try again, and if
+              macOS asks, choose <strong>Always Allow</strong>.
+            </p>
+          )}
           <ol>
-            <li>
-              {add.copied
-                ? "The key is copied."
-                : "purlis couldn't copy the key: copy it from the box below."}{" "}
-              <Button size="sm" onPress={onCopy}>
-                Copy again
-              </Button>
-            </li>
+            {!add.unread && (
+              <li>
+                {add.copied
+                  ? "The key is copied."
+                  : "purlis couldn't copy the key: copy it from the box below."}{" "}
+                <Button size="sm" onPress={onCopy}>
+                  Copy again
+                </Button>
+              </li>
+            )}
             <li>
               On {forge}&apos;s page ({page.replace("https://", "")}), choose{" "}
               {gitlab ? (

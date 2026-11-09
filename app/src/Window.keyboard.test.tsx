@@ -466,10 +466,10 @@ describe("the window's tab order", () => {
       // `RegionFrame.tabOrderOf`).
       "tab Asks",
       "tab Memory",
-      // The status line: the project by its name, whose tooltip is its directory (qw357), then
+      // The status line: the project by its name, a button that copies its directory (#1922), then
       // the doctor and Notices, which stays outermost (#2913). The region toggles went; a side's
       // bar is its way away and back.
-      "span plane",
+      "button Project plane",
       "button Doctor",
       "button Notices: none",
     ]);

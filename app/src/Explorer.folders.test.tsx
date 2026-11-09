@@ -2,14 +2,23 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { emit } from "@tauri-apps/api/event";
 import { Explorer, type SearchKeyHere } from "./Explorer";
 import { cascadeOf } from "./cascade.testkit";
 import { inherited } from "./textRoles.testkit";
 import { ChatsHere, fixedChats, nothingKnown } from "./chatState";
-import type { FileScope, FilesFound, FolderEntry, Panels, PlaneId } from "./bindings";
+import type {
+  BranchChanged,
+  FileScope,
+  FilesFound,
+  FolderEntry,
+  Panels,
+  PlaneId,
+  RepoChanged,
+} from "./bindings";
 import { forgetProjectThemes } from "./projectTheme";
 import type { WorkspaceState } from "./workspaceState";
 
@@ -57,13 +66,27 @@ const stateOf = (repos: string[], workspace = "alpha"): WorkspaceState => ({
 
 const file = (name: string): FolderEntry => ({ name, kind: "file", ignored: false, refused: null });
 
+/** Each command the core was asked, in order, with what names its repos. */
+let asked: string[] = [];
+
 /** The core: each repo's own folder holds `README.md`; `svc` changed two files; `find_files`
  *  answers one hit per branch the scope names. */
 function core(refused: string[] = [], unreadable?: string) {
   const finds: FileScope[] = [];
+  asked = [];
   mockIPC(
     (cmd, args) => {
       const a = args as Record<string, unknown>;
+      if (cmd === "branch_status") asked.push(`branch_status:${String(a.repo)}`);
+      if (cmd === "repos_changed") {
+        const repos = a.repos as string[];
+        asked.push(`repos_changed:${repos.join(",")}`);
+        return repos.map((repo): RepoChanged => ({
+          repo,
+          changes: repo === "svc" ? { folder: "", mark: "changed", count: 2 } : null,
+          trouble: null,
+        }));
+      }
       if (cmd === "branch_tree" && a.folder === unreadable) throw "permission denied";
       if (cmd === "branch_tree")
         return {
@@ -199,6 +222,43 @@ describe("Explorer, repos as folders (#3343)", () => {
       "aria-expanded",
       "true",
     );
+  });
+
+  it("counts every closed row in one ask, reading no repo's status, and asks again when one moves (#3489)", async () => {
+    // A wide workspace: twenty repos, each a closed row with its count. Their counts are one ask
+    // of the core, which keeps each repo's answer until it moves, never a status read per repo.
+    const repos = ["svc", ...Array.from({ length: 19 }, (_, at) => `repo${at}`)];
+    core();
+    draw(repos);
+
+    const svc = within(tree()).getByRole("row", { name: /^svc/ });
+    await waitFor(() => expect(within(svc).getByLabelText("2 changes")).toBeInTheDocument());
+    expect(asked.filter((one) => one.startsWith("branch_status"))).toEqual([]);
+    expect(asked.filter((one) => one.startsWith("repos_changed"))).toEqual([
+      `repos_changed:${repos.join(",")}`,
+    ]);
+
+    // Something moved in one closed repo: the counts are asked again, in one ask.
+    await act(() =>
+      emit("branch-changed", {
+        branches: [{ plane: PLANE, workspace: "alpha", repo: "repo3", piece: null }],
+      } satisfies BranchChanged),
+    );
+    await waitFor(() =>
+      expect(asked.filter((one) => one.startsWith("repos_changed"))).toHaveLength(2),
+    );
+    expect(asked.filter((one) => one.startsWith("branch_status"))).toEqual([]);
+  });
+
+  it("reads a repo's status once it is opened, and only that repo's (#3489)", async () => {
+    core();
+    draw(["svc", "web"]);
+    await waitFor(() => expect(asked.some((one) => one.startsWith("repos_changed"))).toBe(true));
+
+    await userEvent.click(within(tree()).getByRole("row", { name: /^web/ }));
+
+    await waitFor(() => expect(asked).toContain("branch_status:web"));
+    expect(asked.filter((one) => one.startsWith("branch_status"))).toEqual(["branch_status:web"]);
   });
 
   it("finds by name among the workspace's files, or in all the repos, and opens a file found", async () => {
