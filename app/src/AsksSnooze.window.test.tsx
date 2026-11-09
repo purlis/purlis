@@ -83,6 +83,8 @@ function core() {
    *  back by itself (#6018), in seconds since 1970. */
   let record = new Map<number, { asks: string[]; until: number | null }>();
   const everyListener = new Map<string, number[]>();
+  /** The core's seen record (#6002): both asks seen already, so neither is New at first. */
+  let seen = new Set(["ask:1:ask-1", "ask:2:ask-2"]);
   const away = (session: number) => {
     const had = record.get(session);
     return (
@@ -120,6 +122,17 @@ function core() {
       for (const one of a.chats as { session: number; asks: string[] }[])
         record.set(one.session, { asks: one.asks, until: (a.until as number | null) ?? null });
       return null;
+    }
+    if (cmd === "inbox_seen") return [...seen];
+    if (cmd === "see_inbox") {
+      // As `see_in` does: keys noted, and an ask no longer standing forgotten.
+      const standing = a.asks as string[] | null;
+      for (const key of a.keys as string[]) seen.add(key);
+      if (standing !== null)
+        seen = new Set(
+          [...seen].filter((key) => !key.startsWith("ask:") || standing.includes(key)),
+        );
+      return [...seen];
     }
     if (cmd === "wake_inbox_asks") {
       const sessions = a.sessions as number[] | null;
@@ -434,5 +447,33 @@ describe("Snooze for a while (#6018, ADR 0121 decision 14)", () => {
     raise(permission(2, "ask-2b", "Run npm ci"));
 
     await waitFor(() => expect(listed()).toEqual(["steward 2"]));
+  });
+});
+
+describe("Snoozed asks come back New (#6018, #6002)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({
+      shouldAdvanceTime: true,
+      toFake: ["setTimeout", "clearTimeout", "Date"],
+    });
+    vi.setSystemTime(new Date(2026, 10, 9, 23, 28, 0));
+  });
+
+  it("lists an ask seen before it was snoozed as New when the hour is up, but for the chat on screen", async () => {
+    const { view } = await opened();
+    const row = (says: string) => within(view).getByText(says).closest("[role='row']");
+    await waitFor(() => expect(row("Run npm test")).not.toHaveAttribute("data-new"));
+
+    await press.click(within(view).getByRole("button", { name: "Snooze all" }));
+    const line = within(view).getByRole("group", { name: "Snooze all" });
+    await press.click(within(line).getByRole("button", { name: "For 1 hour" }));
+    await waitFor(() => expect(listed()).toEqual([]));
+    undoGoes();
+    act(() => vi.advanceTimersByTime(60 * 60 * 1000));
+
+    await waitFor(() => expect(listed()).toEqual(["steward 1", "steward 2"]));
+    await waitFor(() => expect(row("Run npm test")).toHaveAttribute("data-new"));
+    // Chat 1 is on screen in the window: its ask is seen as it comes, and never New (#6002).
+    expect(row("Run cargo test")).not.toHaveAttribute("data-new");
   });
 });
