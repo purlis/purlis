@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794242256317,
+  "lastUpdate": 1794244991903,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -44982,6 +44982,48 @@ window.BENCHMARK_DATA = {
             "value": 102.48579999999998,
             "unit": "ms",
             "extra": "median of 5 runs: 101.881, 101.946, 102.486, 102.733, 103.672 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "76f9b8502e5b2a631d3882486d04f4d496cccf9e",
+          "message": "Inbox onto the list family, grid rows (#3123) (#5995)\n\n* Inbox: Asks and Updates on the list family's grid rows, replayed onto main (#3123)\n\nReplays #5988's eight commits (80fc982bbc..84aa9180fe) onto main with\ngit merge-file. One conflict, in Tooltip.tsx's CONTROLS: main's #5943\ndropped treeitem from the roles, #5988 dropped the listitem selectors;\nboth are kept.\n\nCloses #3123. Supersedes #5988.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70ESNAKDMSTTVMCVW7R200D\nPurlis-Persona: steward\n\n* Stories: baselines from #5995's own stories run 42647251477 (#3123)\n\nNew pictures for List › A text box in a row and One Tab stop coming back,\nand Message › As a list row. InboxReplyCard, ReportDraftNotices and\nSigningWaitingAsk draw the Inbox's rows, which now sit as the list\nfamily's grid rows a few pixels further in; their content is unchanged.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70ESNAKDMSTTVMCVW7R200D\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-09T16:43:20Z",
+          "tree_id": "6c75127d15ab94cf8f34654ea51f365e313ba1b1",
+          "url": "https://github.com/purlis/purlis/commit/76f9b8502e5b2a631d3882486d04f4d496cccf9e"
+        },
+        "date": 1794244987721,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.429219,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.405, 0.415, 0.429, 0.434, 0.435 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.489977500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.395, 16.446, 16.490, 16.707, 16.917 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.1544355,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.924, 101.863, 102.154, 102.208, 102.311 ms"
           }
         ]
       }
