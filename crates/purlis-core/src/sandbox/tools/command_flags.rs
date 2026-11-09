@@ -137,14 +137,16 @@ fn shell_would_read(value: &str) -> bool {
         .split([',', '@'])
         .map(|part| part.strip_prefix("ssh://").unwrap_or(part))
         .any(dash_first);
-    // Brackets only as a whole IPv6 host, `[addr]`, with nothing after but a port.
+    // Brackets only as a whole IPv6 host, `[addr]`, with nothing after but a port. ssh pastes a
+    // jump list into its jump's command brackets and all, where they are a glob, so what is
+    // inside is only an IPv6 address's characters (#5892).
     let stray_brackets = value.split(',').any(|part| {
         let part = part.strip_prefix("ssh://").unwrap_or(part);
         let host = part.rsplit('@').next().unwrap_or(part);
         let bracketed = host.strip_prefix('[').and_then(|rest| rest.split_once(']'));
         match bracketed {
             Some((inner, after)) => {
-                inner.contains(['[', ']'])
+                !ipv6_alphabet(inner)
                     || !(after.is_empty()
                         || after
                             .strip_prefix(':')
@@ -159,6 +161,15 @@ fn shell_would_read(value: &str) -> bool {
             c.is_ascii_alphanumeric()
                 || matches!(c, '.' | '-' | '_' | '@' | ':' | ',' | '/' | '[' | ']')
         })
+}
+
+/// Whether `inner` is spelled as an IPv6 address is, with hex digits, `:` and `.` alone (an IPv4
+/// address may end one).
+fn ipv6_alphabet(inner: &str) -> bool {
+    !inner.is_empty()
+        && inner
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() || matches!(c, ':' | '.'))
 }
 
 /// psql's `-c` or `--command` holding a backslash command: `\!` runs a shell, and `\copy …

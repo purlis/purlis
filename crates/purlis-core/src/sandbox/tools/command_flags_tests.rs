@@ -682,3 +682,34 @@ fn a_bracket_inside_a_host_does_not_hide_the_colon_that_ends_it() {
     );
     offered("scp", &["-J b f [::1]:p", "-J b f u@[fe80::1]:p"]);
 }
+
+// #5892, from the ninth review of #5876: ssh pastes a jump list unquoted into the command its
+// shell runs, brackets and all, so a bracketed host holds only an IPv6 address's characters and
+// is never a glob of anything else.
+
+#[test]
+fn a_bracketed_jump_host_holds_only_an_ipv6_addresss_characters() {
+    refused(
+        "ssh",
+        "-J",
+        &[
+            &["-J", "a,[.-_]", "host"],
+            &["-J", "[g::1]", "host"],
+            &["-J", "u@[fe80::1_x]:22", "host"],
+        ],
+    );
+    refused("ssh", "-o ProxyJump", &[&["-o", "ProxyJump=[a-b]", "host"]]);
+    refused(
+        "scp",
+        "a destination a shell would read",
+        &[&["-J", "b", "f", "[a_b]:p"]],
+    );
+    offered(
+        "ssh",
+        &[
+            "-J [::ffff:10.0.0.1]:22 host",
+            "-J a,u@[2001:DB8::1] host",
+            "-o ProxyJump=[::1] host",
+        ],
+    );
+}
