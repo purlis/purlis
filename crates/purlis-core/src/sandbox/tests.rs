@@ -2259,6 +2259,42 @@ fn one(class: Class, path: &str, access: Access) -> Denial {
     }
 }
 
+/// A program held by its own name (a cluster pool's plugin, #3292) is held from a Claude Code
+/// chat's commands and its Edit tool by that name, as the full profile holds it; the folder it is
+/// in, held alone too, is not: what is below a folder held alone is the chat's.
+#[test]
+fn a_claude_code_chat_is_held_from_writing_a_program_held_by_its_own_name() {
+    let dir = tempfile::tempdir().expect("a folder");
+    let bin = dir.path().canonicalize().expect("real").join("bin");
+    std::fs::create_dir(&bin).expect("a folder");
+    let program = bin.join("kubelogin");
+    std::fs::write(&program, "#!/bin/sh\n").expect("a program");
+    let alone = |path: &std::path::Path| Denial {
+        reach: Reach::Itself,
+        ..one(Class::LaterCode, &path.display().to_string(), Access::Write)
+    };
+    let settings = claude::settings(&compiled(
+        Denied {
+            paths: vec![alone(&program), alone(&bin)],
+            ..Denied::default()
+        },
+        Os::MacOs,
+    ))
+    .expect("compiles");
+    let deny_write = deny_write(&settings);
+    let program = program.display().to_string();
+    assert!(deny_write.contains(&program), "{deny_write:?}");
+    assert!(
+        settings.deny.contains(&format!("Edit(/{program})")),
+        "{:?}",
+        settings.deny
+    );
+    assert!(
+        !deny_write.contains(&bin.display().to_string()),
+        "the folder's own rule would hold what is below it: {deny_write:?}"
+    );
+}
+
 #[test]
 fn a_claude_code_chat_is_sandboxed_with_no_way_out_and_no_silent_fallback() {
     let settings = claude::settings(&compiled(Denied::default(), Os::MacOs)).expect("compiles");
