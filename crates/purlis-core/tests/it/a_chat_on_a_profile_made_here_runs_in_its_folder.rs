@@ -266,7 +266,6 @@ fn on_linux_a_claude_code_chat_on_a_sandbox_only_profile_starts_inside_purlis_s_
         env: purlis_core::secrets::Env::of(&[]),
         home: Some(home.path().to_path_buf()),
         os: purlis_core::sandbox::Os::Linux,
-        on_a_sandbox_only_profile: false,
     };
     assert!(!linux.is_a_runner());
     let plane = project();

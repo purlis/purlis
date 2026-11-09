@@ -3759,7 +3759,10 @@ impl Planes {
                 let started = strong
                     .as_ref()
                     .and_then(|held| held.chats().started_as(block.line.chat));
-                let mut told = hooks::blocked_holding(&plane, &block, has_check, started);
+                let whole = strong
+                    .as_ref()
+                    .and_then(|held| held.chats().runs_whole(block.line.chat));
+                let mut told = hooks::blocked_holding(&plane, &block, has_check, started, whole);
                 if let Some(strong) = strong {
                     // A runner's service is said with that runner's name (#2510).
                     told = hooks::on_its_runner(

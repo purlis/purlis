@@ -601,7 +601,6 @@ mod tests {
             env: crate::secrets::Env::of(&[]),
             home: Some(home.clone()),
             os: crate::sandbox::Os::MacOs,
-            on_a_sandbox_only_profile: false,
         };
         let homes = crate::sandbox::Homes::of(&machine);
         let mut writable: Vec<PathBuf> = crate::sandbox::program::temp_roots(&[]);

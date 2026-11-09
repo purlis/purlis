@@ -380,7 +380,6 @@ fn the_persona_mcp_approvals_are_held_where_purlis_home_puts_them() {
         env: crate::secrets::Env::of(&[("PURLIS_HOME", "/srv/purlis-state")]),
         home: Some(std::path::PathBuf::from("/home/op")),
         os: Os::Linux,
-        on_a_sandbox_only_profile: false,
     };
     let denied = Denied::of(plane.path(), &machine);
     assert!(
@@ -1323,7 +1322,6 @@ fn machine_with_state(os: Os, state: Option<&str>) -> Machine {
         env: crate::secrets::Env::of(&env),
         home: Some(std::path::PathBuf::from("/home/op")),
         os,
-        on_a_sandbox_only_profile: false,
     }
 }
 
@@ -2729,7 +2727,6 @@ fn machine(os: Os) -> Machine {
         env: crate::secrets::Env::of(&[]),
         home: Some(std::path::PathBuf::from("/home/op")),
         os,
-        on_a_sandbox_only_profile: false,
     }
 }
 
@@ -2793,24 +2790,6 @@ fn a_mistyped_mode_does_not_start_a_chat_unsandboxed() {
                 if applied.harness() == Harness::Opencode && applied.level() == Level::Full
         ),
         "{started:?}"
-    );
-}
-
-#[test]
-fn a_linux_machine_without_socat_is_told_which_program_and_how_to_install_it() {
-    let plane = plane_saying(ON);
-    let refused = for_start(
-        Harness::ClaudeCode,
-        plane.path(),
-        &machine(Os::Linux),
-        &|program| program == "bwrap",
-    )
-    .expect_err("refused");
-    assert_eq!(
-        refused.to_string(),
-        "this project runs every chat sandboxed, and this machine cannot apply the sandbox: socat \
-         is not installed — install it with `sudo apt install socat` or `sudo dnf install \
-         socat`. Nothing was started."
     );
 }
 
@@ -3082,7 +3061,6 @@ fn a_later_letter_s_value_in_the_project_s_cache_home_is_denied() {
         env: crate::secrets::Env::of(&[("XDG_DATA_HOME", "/srv/data")]),
         home: Some(std::path::PathBuf::from("/home/op")),
         os: Os::Linux,
-        on_a_sandbox_only_profile: false,
     };
     let plane = tempfile::tempdir().expect("a plane");
     let cache = caches::root_of(&machine, plane.path()).expect("a data home");
@@ -4138,23 +4116,6 @@ fn the_picker_says_a_chat_will_be_sandboxed_where_it_can_be() {
 }
 
 #[test]
-fn the_picker_shows_the_refusal_and_the_distributions_install_command_before_the_start() {
-    let plane = plane_saying(ON);
-    let Ahead::Refused { why, install } = ahead(
-        Harness::ClaudeCode,
-        plane.path(),
-        &machine(Os::Linux),
-        &|program| program == "bwrap",
-        "ID=debian\n",
-        &|_| Ok(()),
-    ) else {
-        panic!("refused");
-    };
-    assert!(why.contains("socat is not installed"), "{why}");
-    assert_eq!(install.as_deref(), Some("sudo apt install socat"));
-}
-
-#[test]
 fn a_refusal_nothing_can_be_installed_for_offers_no_install() {
     let plane = plane_saying(ON);
     std::fs::write(
@@ -5182,7 +5143,6 @@ fn mac_with(env: &[(&str, &str)]) -> Machine {
         env: crate::secrets::Env::of(&vars),
         home: Some(StdPathBuf::from("/Users/op")),
         os: Os::MacOs,
-        on_a_sandbox_only_profile: false,
     }
 }
 
@@ -8483,7 +8443,6 @@ fn a_chat_writes_none_of_the_programs_a_cluster_pools_kubectl_runs_nor_their_pac
         env: crate::secrets::Env::of(&[("XDG_CONFIG_HOME", &config.path().display().to_string())]),
         home: Some(std::path::PathBuf::from("/home/op")),
         os: Os::Linux,
-        on_a_sandbox_only_profile: false,
     };
     let plane = tempfile::tempdir().expect("a plane");
     let denied = Denied::of(plane.path(), &machine);
@@ -8539,7 +8498,6 @@ fn a_cluster_pools_program_whose_package_is_inside_the_project_is_held_with_its_
         env: crate::secrets::Env::of(&[("XDG_CONFIG_HOME", &config.path().display().to_string())]),
         home: None,
         os: Os::Linux,
-        on_a_sandbox_only_profile: false,
     };
     let denied = Denied::of(&project, &machine);
     let held = |path: &std::path::Path, reach: Reach| {
@@ -8589,7 +8547,6 @@ fn a_cluster_pools_program_whose_package_would_be_the_home_or_above_it_is_held_a
         env: crate::secrets::Env::of(&[("XDG_CONFIG_HOME", &config.path().display().to_string())]),
         home: Some(home.clone()),
         os: Os::Linux,
-        on_a_sandbox_only_profile: false,
     };
     let plane = tempfile::tempdir().expect("a plane");
     let denied = Denied::of(plane.path(), &machine);

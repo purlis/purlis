@@ -7479,6 +7479,13 @@ impl Chats {
             .is_some_and(|confines| confines.widened.trust)
     }
 
+    /// **Whether chat `session`'s harness runs whole inside its sandbox**, by the app's record
+    /// of its start ([`purlis_core::sandbox::Confines::whole`]): on Linux, inside purlis's own
+    /// wrap. `None` where the chat is not open or started without a sandbox.
+    pub fn runs_whole(&self, session: u32) -> Option<bool> {
+        self.confines_of(session).map(|confines| confines.whole)
+    }
+
     /// What chat `session`'s sandbox was compiled to as it started ([`Self::confines_of`]), with
     /// the hosts the person allowed it live since (#1666): what a brokered `secret exec` run for
     /// it now is held to, so an Allow from a run's Notice reaches the chat's next run (#1667).

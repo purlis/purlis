@@ -260,7 +260,6 @@ fn machine() -> sandbox::Machine {
         env: purlis_core::secrets::Env::of(&[]),
         home: Some(std::path::PathBuf::from("/nohome/dev")),
         os: sandbox::Os::MacOs,
-        on_a_sandbox_only_profile: false,
     }
 }
 
@@ -2054,7 +2053,6 @@ fn the_pickers_first_answer_leaves_the_slow_details_to_the_second() {
         env: purlis_core::secrets::Env::of(&[]),
         home: None,
         os: purlis_core::sandbox::Os::MacOs,
-        on_a_sandbox_only_profile: false,
     };
     let (set, check) = purlis_core::profiles::for_launch(plane.path());
 
@@ -2123,7 +2121,6 @@ fn one_picker_compiles_each_harness_once_however_many_profiles_share_it() {
             home: None,
             // Where every harness has a sandbox charter compiles.
             os: purlis_core::sandbox::Os::MacOs,
-            on_a_sandbox_only_profile: false,
         };
         let options = crate::start_options_on(plane.path(), &machine, &|_| {
             asked.fetch_add(1, std::sync::atomic::Ordering::Relaxed);

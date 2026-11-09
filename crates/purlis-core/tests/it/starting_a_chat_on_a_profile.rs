@@ -1410,7 +1410,6 @@ fn a_mac() -> purlis_core::sandbox::Machine {
         env: purlis_core::secrets::Env::of(&[]),
         home: None,
         os: purlis_core::sandbox::Os::MacOs,
-        on_a_sandbox_only_profile: false,
     }
 }
 
@@ -1853,7 +1852,6 @@ fn a_runner(home: &Path) -> purlis_core::sandbox::Machine {
         )]),
         home: Some(home.to_path_buf()),
         os: purlis_core::sandbox::Os::Linux,
-        on_a_sandbox_only_profile: false,
     };
     assert!(machine.is_a_runner());
     machine

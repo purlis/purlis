@@ -1847,6 +1847,7 @@ pub(crate) fn shown_again(
         chats.harness(session),
         Some(&was.target),
         chats.has_certificate_check(session),
+        chats.runs_whole(session),
     );
     chats.blocks().answered(session, was);
     crate::taskblocks::heard(chats, &told);

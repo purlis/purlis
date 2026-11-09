@@ -126,7 +126,6 @@ fn machine_beside(root: &std::path::Path) -> crate::sandbox::Machine {
         env: crate::secrets::Env::of(&[]),
         home: Some(root.with_file_name("home")),
         os: crate::sandbox::Os::this(),
-        on_a_sandbox_only_profile: false,
     }
 }
 

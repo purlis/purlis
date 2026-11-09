@@ -351,10 +351,6 @@ fn ready_given(
             fix
         ));
     };
-    // This machine, for a chat on this profile: on Linux a Claude Code chat on a profile for
-    // sandboxed chats only runs inside purlis's own wrap (#2037, [`crate::sandbox::Machine`]).
-    let on_profile = machine.clone().on_profile(profiles::sandbox_only(profile));
-    let machine = &on_profile;
     let persona = match start.persona.as_deref() {
         None => None,
         Some(who) => Some(startable_persona(who, root)?),
@@ -507,8 +503,8 @@ fn ready_given(
         }
     };
     // Which profiles a sandboxed chat, and an unsandboxed one, may start on (#2037). A
-    // sandboxed Codex chat on a profile for every chat leaves one wait for the project, the Ask
-    // that makes a sandbox-only one.
+    // sandboxed Codex chat on a profile for every chat, or a Claude Code one on Linux, leaves
+    // one wait for the project and harness, the Ask that makes a sandbox-only one.
     let sandbox_only = profiles::sandbox_only(profile);
     if let Some(why) = profile_refusal(
         harness,
@@ -516,9 +512,14 @@ fn ready_given(
         sandbox_only,
         sandbox.is_some(),
         machine.is_a_runner(),
+        machine.os,
     ) {
-        if sandbox.is_some() && !sandbox_only {
-            crate::profilestore::sandbox_only::waits_on(root);
+        if let Some(harness) = harness
+            && sandbox.is_some()
+            && !sandbox_only
+            && wants_a_sandbox_only_profile(harness, machine.os, machine.is_a_runner())
+        {
+            crate::profilestore::sandbox_only::waits_on(root, harness);
         }
         return Err(why);
     }
@@ -773,6 +774,7 @@ pub fn without_sandbox_lock(
         sandbox_only,
         false,
         machine.is_a_runner(),
+        machine.os,
     )
     .map(|_| {
         if sandbox_only {
@@ -806,6 +808,7 @@ pub fn profile_refusal(
     sandbox_only: bool,
     sandboxed: bool,
     on_a_runner: bool,
+    os: crate::sandbox::Os,
 ) -> Option<String> {
     let name = crate::shown::short(name);
     if sandbox_only && !sandboxed {
@@ -828,16 +831,44 @@ pub fn profile_refusal(
             ),
         });
     }
-    if harness == Some(Harness::Codex) && sandboxed && !sandbox_only {
+    if let Some(harness) = harness
+        && sandboxed
+        && !sandbox_only
+        && wants_a_sandbox_only_profile(harness, os, on_a_runner)
+    {
+        use crate::profilestore::sandbox_only::{ask, called};
+        let called = called(harness);
+        let here = if harness == Harness::ClaudeCode {
+            " on Linux"
+        } else {
+            ""
+        };
         return Some(format!(
-            "this chat runs sandboxed, and a sandboxed Codex chat runs only on a profile for \
-             sandboxed chats only, which '{name}' is not, so nothing was started. Make or \
-             choose a sandbox-only Codex profile: the Inbox's \"{ask}\" makes one and opens \
-             Codex's own sign-in in it; then start the chat on it.",
-            ask = crate::profilestore::sandbox_only::ASK
+            "this chat runs sandboxed, and{here} a sandboxed {called} chat runs only on a \
+             profile for sandboxed chats only, which '{name}' is not, so nothing was started. \
+             Make or choose a sandbox-only {called} profile: the Inbox's \"{ask}\" makes one \
+             and opens {called}'s own sign-in in it; then start the chat on it.",
+            ask = ask(harness)
         ));
     }
     None
+}
+
+/// **Whether a sandboxed chat of `harness` runs only on a profile for sandboxed chats only**
+/// on a machine of `os` (a runner, `on_a_runner`, or not): a Codex chat everywhere (D-88q), and
+/// a Claude Code chat on a person's own Linux machine, which runs inside purlis's own wrap with
+/// its sandbox-only profile's folder (ADR 0067 as amended 2026-11-10). On a runner a Claude
+/// Code profile is for wrapped chats only already ([`profile_refusal`]).
+pub fn wants_a_sandbox_only_profile(
+    harness: Harness,
+    os: crate::sandbox::Os,
+    on_a_runner: bool,
+) -> bool {
+    match harness {
+        Harness::Codex => true,
+        Harness::ClaudeCode => os == crate::sandbox::Os::Linux && !on_a_runner,
+        Harness::Opencode => false,
+    }
 }
 
 /// Whether the picker may run `profile`'s program to check it: exactly when the start's own
@@ -919,7 +950,7 @@ pub struct AheadOnce<'a> {
     has: &'a dyn Fn(&str) -> bool,
     os_release: &'a str,
     probe: Option<&'a crate::sandbox::program::Probe<'a>>,
-    compiled: std::cell::RefCell<Vec<((Harness, bool), Compiled)>>,
+    compiled: std::cell::RefCell<Vec<(Harness, Compiled)>>,
 }
 
 /// What [`crate::sandbox::decide`] answered for one harness, as [`AheadOnce`] keeps it.
@@ -978,34 +1009,30 @@ impl<'a> AheadOnce<'a> {
             )
             .map(|_| ())
         };
-        // A sandboxed Codex chat on a profile for every chat is refused at its start, which
-        // leaves the Ask that makes a sandbox-only one (#2037): nothing is offered here that
-        // would start it without the sandbox instead.
+        // A sandboxed Codex chat on a profile for every chat, or a Claude Code one on Linux, is
+        // refused at its start, which leaves the Ask that makes a sandbox-only one (#2037):
+        // nothing is offered here that would start it without the sandbox instead.
         Some(crate::sandbox::ahead_decided(
-            self.compiled(harness, profiles::sandbox_only(profile)),
+            self.compiled(harness),
             root,
             self.os_release,
             &check,
         ))
     }
 
-    /// What the compile answers for `harness` on a profile that is (`sandbox_only`) or is not
-    /// one for sandboxed chats only, as the start compiles it ([`ready_given`]): compiled on the
-    /// first ask.
-    fn compiled(&self, harness: Harness, sandbox_only: bool) -> Compiled {
+    /// What the compile answers for `harness`, compiled on the first ask.
+    fn compiled(&self, harness: Harness) -> Compiled {
         if let Some((_, decided)) = self
             .compiled
             .borrow()
             .iter()
-            .find(|(one, _)| *one == (harness, sandbox_only))
+            .find(|(one, _)| *one == harness)
         {
             return decided.clone();
         }
-        let machine = self.machine.clone().on_profile(sandbox_only);
-        let decided = crate::sandbox::decide(harness, self.root, &machine, self.has, None, None);
-        self.compiled
-            .borrow_mut()
-            .push(((harness, sandbox_only), decided.clone()));
+        let decided =
+            crate::sandbox::decide(harness, self.root, self.machine, self.has, None, None);
+        self.compiled.borrow_mut().push((harness, decided.clone()));
         decided
     }
 }

@@ -3381,13 +3381,19 @@ fn a_refused_sandboxed_codex_start_tells_the_window_and_its_asks_hold_one_sandbo
 
     // What a refused sandboxed Codex start does: the core records the wait, and the start's
     // refusal reaches the window through `start_refused`.
-    purlis_core::profilestore::sandbox_only::waits_on(held.root());
+    purlis_core::profilestore::sandbox_only::waits_on(
+        held.root(),
+        purlis_core::harness::Harness::Codex,
+    );
     let why = crate::asking::start_refused(&held, "refused".to_owned());
 
     assert_eq!(why, "refused");
     assert_eq!(told.load(Ordering::SeqCst), 1, "the window was not told");
     assert_eq!(sandbox_only(), 1);
-    purlis_core::profilestore::sandbox_only::dismiss(held.root());
+    purlis_core::profilestore::sandbox_only::dismiss(
+        held.root(),
+        purlis_core::harness::Harness::Codex,
+    );
     assert_eq!(sandbox_only(), 0);
 }
 
