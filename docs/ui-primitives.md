@@ -348,26 +348,19 @@ body and need no number.
 Before #1835 the window drew **4 tables and 8 kinds of list row**, each with its own padding,
 alignment and selection. The Chats list alone put a name about 53px past its own filter, partly
 because every leaf drew an empty twist so that names would line up. ADR 0094 §4 gives each of
-these one class, built only from the core geometry and a theme's colours, and
-`app/src/primitives/collections.css` held all three (the list's row and the table are their
-families' since #2911). That file is in the `components` layer,
-above `App.css`. A view that takes a class gets its look, and migrating a view means adding the
-class and deleting the view's old rules (DS-9 settings, DS-11 chats). There is no React
-component: each view keeps its own markup and keys, as ADR 0037 asks, and the class draws it.
-`collections.test.ts` checks each rule against the markup below with `cascade.testkit.ts`, so
-specificity and `:hover` are taken into account.
-
-**The sizes are component tokens**, each an alias of a core token and declared in the class it
-sizes: `--ui-row-height` is `--size-chrome`, `--ui-row-pad` is `--space-4` and `--ui-row-gap` is
-`--space-3`. To change a part, change its alias. A theme
-never sees these.
+these one class, built only from the core geometry and a theme's colours, in
+`app/src/primitives/collections.css`. Each kind is its family's now, the table and the list row
+since #2911 and the tree row since #3198, drawn from the same geometry and keyed on its parts'
+attributes; the last `.ui-row` (the whole Explorer's folding section head, now the disclosure
+family's) moved in #2930, and `collections.css`, its test and its `--ui-row-*` aliases are
+deleted.
 
 ### Table
 
 **A table is the table family's** since #2911: [The table family](#the-table-family) below
 draws it from the same geometry, keyed on its parts' attributes where `.ui-table`,
 `.ui-table-fixed`, `.ui-table-stacks`, `.ui-table-room`, `.ui-num`, `.ui-cell-actions` and
-`.ui-table-tip` were (`collections.css` keeps the list row only). A column's short
+`.ui-table-tip` were. A column's short
 words with their whole words in a tooltip, once `settings/ColumnHeading.tsx`, are the family's
 `ControlColumn` (`whole`, `about`). **Short headings live in the window** (#1859, after
 D-1841-1): a column's short words are the table's own (`SHORT` in `settings/dispatch.tsx`), and
@@ -378,16 +371,16 @@ short words.
 
 **A list's row is the list family's** since #2911: [The list family](#the-list-family) below
 draws it, from the same geometry, with its slots (`RowLead`, `RowLabel`, `RowDescription`,
-`RowTrail`) where `.ui-row-lead`, `.ui-row-label` and `.ui-row-trail` were. `.ui-row` is left to
-the views not on a family yet.
+`RowTrail`) where `.ui-row-lead`, `.ui-row-label` and `.ui-row-trail` were. Nothing wears
+`.ui-row` any more (#2930), and the button family's lint no longer lets a raw `<button>` through
+by it.
 
 ### Tree row
 
 **A tree is the tree family's** since #2911: [The tree family](#the-tree-family) below draws the
 Changes view, every file tree (a file tab's, the Explorer's *Files* and a branch's cockpit), the
 Explorer's *Repos and branches* and, last, the Chats list (#3198). The shared tree row
-(`.ui-tree`, `.ui-tree-row`, `.ui-tree-twist` and `--ui-tree-*`) is deleted from
-`collections.css`, which keeps the list row's classes alone.
+(`.ui-tree`, `.ui-tree-row`, `.ui-tree-twist` and `--ui-tree-*`) is deleted.
 
 **The Chats list on the tree family** (#3198). A chat is a `TreeRow` named by its name (what
 typing finds), whose description says its persona and state, its marks' words and what its lines

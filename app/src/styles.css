@@ -107,7 +107,6 @@
 @import "@xterm/xterm/css/xterm.css" layer(vendor);
 @import "tailwindcss/utilities.css" layer(utilities);
 @import "./App.css" layer(charter);
-@import "./primitives/collections.css" layer(components);
 @import "./ui/button/button.css" layer(components);
 @import "./ui/field/field.css" layer(components);
 @import "./ui/select/select.css" layer(components);

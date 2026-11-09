@@ -2887,10 +2887,6 @@ body {
    open" is the one thing in this region that must never be read wrong. No weight of its own:
    a state never changes a row's size (#2800), and a bolder name is a wider one. */
 
-.explorer .explorer-section-head .twisty[data-open] {
-  rotate: 90deg;
-}
-
 /* A file charter will not open says so beside it; its name is quieter than an openable one. */
 .explorer .file-node[data-refused] .spot-name {
   color: var(--text-muted);
@@ -3176,22 +3172,12 @@ body {
   margin: var(--space-5) 0 var(--space-2);
 }
 
-/* **Explorer's sections** (#1677): each heading is the disclosure that folds its section, an
-   editor's explorer's, drawn as the sidebar title it is. The button fills the heading so the
-   whole line is the target; what the section is of follows in the row's quiet weight. The first
-   section sits at the region's top. A folded section's body is `hidden`, never unmounted. */
-.explorer .explorer-section:first-child > h2 {
+/* **Explorer's sections** (#1677): a heading that folds its section is the disclosure family's
+   (`ui/disclosure`, #2930), which draws it; a view's own title is the panel family's. The first
+   section sits at the region's top. A folded section's body is hidden, never unmounted. */
+.explorer .explorer-section:first-child > h2,
+.explorer .explorer-section:first-child > [data-scope="disclosure"] > h2 {
   margin-top: 0;
-}
-/* The button is a row of the set (`.ui-row`, #1857), which draws it; the heading keeps its
-   type. */
-.explorer .explorer-section-head > button {
-  flex: 1;
-  min-width: 0;
-  white-space: nowrap;
-}
-.explorer .explorer-section-head .twisty {
-  flex: none;
 }
 
 .explorer .absent {
@@ -6513,10 +6499,6 @@ nav.piece-files-head {
 
 .settling {
   animation: charter-settle var(--motion-duration-settle) var(--motion-easing-standard);
-}
-
-.explorer .explorer-section-head .twisty {
-  transition: rotate var(--motion-duration-quick) var(--motion-easing-standard);
 }
 
 /* **A tab being selected.** The cell's surface and its lit edge cross-fade rather than cut, on
