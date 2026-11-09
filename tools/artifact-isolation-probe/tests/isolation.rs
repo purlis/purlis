@@ -54,30 +54,38 @@ mod native_webview {
     }
 }
 
+/// The rendering ADR 0120 rejected on this evidence: on macOS it failed the loop (WebKit runs the
+/// frame on the window's own thread) and the escape (the window's `frame-src` cannot tell one
+/// artifact's origin from another's). Kept to measure again, not run by default.
 mod sandboxed_frame {
     use super::asks;
 
     #[test]
+    #[ignore = "the rejected rendering: `cargo test -- --ignored` measures it again"]
     fn a_page_reaches_no_tauri_command_not_even_the_vault_values() {
         asks("frame", "reach");
     }
 
     #[test]
+    #[ignore = "the rejected rendering: `cargo test -- --ignored` measures it again"]
     fn an_endless_loop_in_a_page_leaves_the_window_responding() {
         asks("frame", "loop");
     }
 
     #[test]
+    #[ignore = "the rejected rendering: `cargo test -- --ignored` measures it again"]
     fn neither_a_second_artifact_nor_a_nested_frame_speaks_on_a_pages_channel() {
         asks("frame", "speak");
     }
 
     #[test]
+    #[ignore = "the rejected rendering: `cargo test -- --ignored` measures it again"]
     fn a_script_free_page_loads_and_navigates_to_nothing_off_its_folder() {
         asks("frame", "escape");
     }
 
     #[test]
+    #[ignore = "the rejected rendering: `cargo test -- --ignored` measures it again"]
     fn no_request_walks_out_of_the_folder() {
         asks("frame", "walk");
     }

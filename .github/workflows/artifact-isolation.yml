@@ -3,8 +3,9 @@
 
 name: artifact isolation
 
-# ADR 0120 §3's five tests on each platform (#5949, PE-39), against both renderings of an
-# artifact, in the probe app `tools/artifact-isolation-probe`: a launch per rendering and question.
+# ADR 0120 §3's five tests on each platform (#5949, PE-39), against the native webview ADR 0120 chose and
+# its unguarded controls (the rejected sandboxed frame is ignored; `-- --ignored` measures it), in
+# the probe app `tools/artifact-isolation-probe`: a launch per rendering and question.
 # The probe is its own workspace and builds on Windows, where the app crate does not compile yet.
 #
 # **Evidence, not a gate**, like `ci.yml`'s `windows` job: each platform reports, and a platform
@@ -53,7 +54,7 @@ jobs:
         run: cargo build --tests --manifest-path tools/artifact-isolation-probe/Cargo.toml
       # One test at a time: each opens windows of its own, and two at once would race for focus
       # and for the display. `--no-fail-fast`, so the run is the whole table, not its first red.
-      - name: The five tests, both renderings
+      - name: The five tests on the chosen rendering, and its controls
         run: |
           run=(cargo test --manifest-path tools/artifact-isolation-probe/Cargo.toml --no-fail-fast -- --test-threads=1 --nocapture)
           if [ "$RUNNER_OS" = Linux ]; then run=(xvfb-run -a "${run[@]}"); fi

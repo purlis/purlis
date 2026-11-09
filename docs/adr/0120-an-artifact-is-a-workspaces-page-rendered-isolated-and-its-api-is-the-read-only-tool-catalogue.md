@@ -1,8 +1,11 @@
 # An artifact is a workspace's page, rendered isolated, and its API is the read-only tool catalogue
 
-**Proposed 2026-11-09**, from the operator's grill of the same day. It is accepted once the
-isolation prototype (the spec's first ticket) has chosen between the two renderings in
-§3 and its tests are green on macOS, Linux and Windows, or refused where they are not.
+**Accepted 2026-11-09**, from the operator's grill of the same day, once the isolation prototype
+(#5949, `tools/artifact-isolation-probe`) had chosen between the two renderings in §3: **a
+separate native webview with an empty grant**. Its five tests are green for it on macOS, run by
+hand on 2026-11-09; the sandboxed frame failed two of them there. Linux and Windows run the same
+tests in CI (`.github/workflows/artifact-isolation.yml`), and until they are green on a platform,
+an artifact with script is refused there and renders script-free (§10).
 
 Until now nothing a person, a chat, a skill or an extension made could be *rendered* in the
 window. ADR 0041 kept code out of the tree purlis draws its consent prompts into; ADR 0043 made
@@ -51,13 +54,10 @@ amended 2026-09-23).
 
 ### 3. How it is rendered: the isolation PE-39 named
 
-**An artifact never runs in the window's own document.** It runs in one of two renderings, and
-the prototype picks one:
-
-- a sandboxed iframe (`sandbox="allow-scripts"`, no `allow-same-origin`, opaque origin), or
-- a separate native webview whose label matches no capability glob, so it holds an empty grant.
-
-Whichever is chosen must pass, on each platform, tests that go red when:
+**An artifact never runs in the window's own document.** It runs in **a separate native webview
+whose label matches no capability glob, so it holds an empty grant**. The prototype weighed it
+against a sandboxed iframe (`sandbox="allow-scripts"`, no `allow-same-origin`, opaque origin) and
+chose it on evidence (below). It must pass, on each platform, tests that go red when:
 
 1. the page reaches any Tauri command, the vault-values commands among them;
 2. an endless loop in the page stops the window responding;
@@ -70,8 +70,23 @@ Whichever is chosen must pass, on each platform, tests that go red when:
 **Every artifact has its own origin**, so no two share storage. **purlis serves only the bytes
 it hashed** (§4), from memory, under a strict CSP on every response: `default-src` its own
 scheme, `connect-src 'none'`, `form-action 'none'`, `base-uri 'none'`, `frame-src 'none'`.
-**There is no network, ever, approved or not.** The page talks to purlis only through one
-`MessageChannel` port handed to it per load, revoked on reload.
+**There is no network, ever, approved or not.** The page talks to purlis only on one channel
+per load, revoked on reload, which purlis attributes by the label of the webview it came from,
+never by anything the page says: a second artifact is another webview, and a nested frame cannot
+load under `frame-src 'none'`. A page navigates only within its own folder: the webview's
+navigation handler refuses anything else before a request is made, `<meta refresh>` included.
+
+**The evidence, macOS, 2026-11-09** (`tools/artifact-isolation-probe/results/macos-2026-11-09.txt`).
+The native webview passed all five. With its guards taken off one by one (the label granted the
+window's commands, no CSP, no navigation guard, files read from disk at request time), tests 1,
+3, 4 and 5 each failed for their own reason, so each tests its guard. The sandboxed frame passed
+1, 3 and 5 and failed two:
+
+- **2:** the window's own script stopped answering while the frame looped. WebKit runs the frame in
+  the window's process and thread, so an artifact could freeze purlis.
+- **4:** a `<meta refresh>` took the frame to a sibling artifact's file. The window's `frame-src`
+  must admit the artifact scheme for the frame to load at all, and a CSP source cannot tell one
+  artifact's origin from another's.
 
 **A page cannot be mistaken for purlis.** Every artifact tab carries a bar purlis draws outside
 the page: who pinned it, approved or not, freshness, errors, and Regenerate. Approval is given
@@ -168,8 +183,8 @@ Each change is an amendment file of its own, written when this record is accepte
 - **ADR 0041**: an artifact may travel in a plane under §4; decision 2's DOM row holds because the
   page never reaches the window's document.
 - **ADR 0043**: the panel vocabulary is unchanged; an artifact is not a panel.
-- **ADR 0052**: `frame-src` admits only the artifact scheme, or stays `'none'` if the native
-  webview is chosen.
+- **ADR 0052**: the window's `frame-src` stays `'none'`; the artifact's webview is a label no
+  capability names, held so by a test.
 - **ADR 0081 E6**: realised by this record, and approved per page, not per extension.
 - **ADR 0101 §6**: PE-39 is §3 here.
 
@@ -186,3 +201,6 @@ Each change is an amendment file of its own, written when this record is accepte
   failure `actions.ts` exists to prevent.
 - **A page that performs actions with a grant.** Rejected for offers, which keep the person's
   press on every act.
+- **A sandboxed iframe in the window's document.** Rejected on the prototype's evidence (§3): on
+  WebKit an endless loop in it froze the window, and the window's `frame-src` let it navigate to
+  another artifact. It would also have needed `frame-src` opened in the window's own CSP.
