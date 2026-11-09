@@ -1509,7 +1509,8 @@ jobs:
       # job runs the same test under purlis's own wrap.
       - name: A chat's ssh through its route from inside its sandbox, confined by Seatbelt
         if: steps.scope.outputs.run == 'true'
-        run: tools/tests-ran.sh -- cargo test --locked -p purlis-cli --test it -- a_chats_ssh_route_carries_from_inside_its_sandbox::
+        run: |
+          tools/tests-ran.sh -- cargo test --locked -p purlis-cli --test it -- a_chats_ssh_route_carries_from_inside_its_sandbox::
       # A brokered `secret exec` child under its run's real profile: the network through its
       # proxy alone, never a direct connection to this Mac or past it.
       - name: A brokered run reaches the network only through its proxy, confined by Seatbelt
