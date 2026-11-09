@@ -14,7 +14,7 @@ import { keepInboxScope, keptInboxScope } from "./inboxScope";
 import { forgetProjectViews } from "./projectViews";
 import type { Shown } from "./bindings";
 import { hoverTipOf, tipOf } from "./ui/tooltip/tooltip.testkit";
-import { chatGroup, chatGroupOrNone } from "./test-inbox";
+import { chatGroup } from "./test-inbox";
 
 /**
  * **The Inbox's scope, and what one of its rows is made of** (qw359): every project's, this
@@ -107,7 +107,7 @@ const chats = () =>
   [...document.querySelectorAll('.inbox-chat [role="rowheader"]')].map((h) => h.textContent);
 
 describe("the scope switch", () => {
-  it("offers all projects, this project and this workspace, each with its count, on this project", () => {
+  it("offers all projects, this project and this workspace, each with its count, on all projects", async () => {
     draw(ASKS, { ...strip("alpha"), elsewhere: elsewhere({ asking: [away] }) });
     expect(
       scopes()
@@ -118,8 +118,12 @@ describe("the scope switch", () => {
       "This project, 3 waiting on you",
       "This workspace, 1 waiting on you",
     ]);
-    expect(picked()).toBe("This project, 3 waiting on you");
-    // The project's asks, and not the chat that waits in another window's project.
+    // Asks opens on every project's (#5999, ADR 0121 decision 4): the chat that waits in another
+    // window's project is listed beside the project's own.
+    expect(picked()).toBe("All projects, 4 waiting on you");
+    expect(chatGroup("steward 7")).toBeTruthy();
+    // This project narrows the list to the project's asks.
+    await userEvent.click(scopes().getByRole("radio", { name: /^This project/ }));
     expect(chats()).toEqual(["steward 3", "steward 5", "steward 9"]);
   });
 
@@ -185,10 +189,8 @@ describe("the scope switch", () => {
       ],
     });
     draw(ASKS, { ...strip("alpha"), elsewhere: there });
-    expect(scopes().getByRole("radio", { name: "All projects, 6 waiting on you" })).toBeTruthy();
-    expect(chatGroupOrNone(OTHER_PROJECTS)).toBeNull();
-
-    await userEvent.click(scopes().getByRole("radio", { name: /^All projects/ }));
+    // Listed at once: Asks opens on All projects (#5999).
+    expect(picked()).toBe("All projects, 6 waiting on you");
     expect(chatGroup("steward 7")).toBeTruthy();
     const others = chatGroup(OTHER_PROJECTS);
     // Each ask of the other project, read here and answered there.
@@ -231,6 +233,7 @@ describe("an empty scope", () => {
   });
 
   it("offers what the window knows waits wider while its own asks are not read yet", async () => {
+    keepInboxScope(PLANE, "project");
     draw(undefined, { ...strip("alpha"), elsewhere: elsewhere({ asking: [away] }) });
     expect(screen.getByText(NOT_READ_YET)).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Show all projects" }));

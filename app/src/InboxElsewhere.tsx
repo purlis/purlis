@@ -90,6 +90,30 @@ export const hereKey = (plane: string) => `here:${plane}`;
 export const othersWaiting = (plane: string, elsewhere: Elsewhere | undefined) =>
   (elsewhere?.waitingHere ?? []).filter((one) => one.plane !== plane && one.count > 0);
 
+/**
+ * **The ✋'s count** (ADR 0121 decision 4, #5999): every open project's Blocking asks, in this
+ * window and the others, never narrowed by Asks' scope. `elsewhere` is how many of them are
+ * outside `plane`, the project in front: its own asks registry's for this window's other
+ * projects, and one for each chat another window says waits, as that window reads its asks.
+ * A snoozed chat's asks are in neither (`Asking.snoozed`).
+ */
+export function handCount(
+  plane: string,
+  here: number,
+  elsewhere: Elsewhere | undefined,
+): { total: number; elsewhere: number } {
+  const there =
+    othersWaiting(plane, elsewhere).reduce((sum, one) => sum + one.count, 0) +
+    (elsewhere?.asking.length ?? 0);
+  return { total: here + there, elsewhere: there };
+}
+
+/** What the ✋ says it counts, and how many of them wait outside the project in front. */
+export function handSaid({ total, elsewhere }: { total: number; elsewhere: number }): string {
+  const waits = total === 1 ? "1 thing waits on you" : `${total} things wait on you`;
+  return elsewhere > 0 ? `${waits}, +${elsewhere} elsewhere` : waits;
+}
+
 /** What those lines draw, in their order: each line and its Go to project. */
 export const herePlaces = (others: readonly WaitingHere[]) =>
   others.flatMap((one) => [hereKey(one.plane), `${hereKey(one.plane)}:go`]);

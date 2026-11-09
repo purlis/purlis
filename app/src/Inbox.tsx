@@ -157,11 +157,11 @@ export const NOTICES = "Notices";
  * drawn as text, and the only controls are the fixed words of the answers it offers.
  *
  * **A switch at the top picks whose asks are listed** (qw359, `inboxScope.ts`): every project's
- * this window knows of, this project's (the default) or those of the workspace in front on the
- * strip, each with its count, the pick kept for the project as the Chats view's is. Only the
- * scopes the window can list are offered. A scope with nothing in it says how many wait in the
- * nearest wider one, with one press to widen. Notices and updates are the project's and are
- * listed whatever the scope.
+ * this window knows of (the default, ADR 0121 decision 4), this project's or those of the
+ * workspace in front on the strip, each with its count, the pick kept for the project as the
+ * Chats view's is. Only the scopes the window can list are offered. A scope with nothing in it
+ * says how many wait in the nearest wider one, with one press to widen. Notices and updates are
+ * the project's and are listed whatever the scope.
  *
  * **A row reads in three ranks** (qw359, `InboxRow.tsx`): what needs you, strongest; where it
  * is (project · workspace · persona), quieter; its kind and how long it has waited, smallest

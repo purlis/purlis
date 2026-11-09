@@ -136,7 +136,8 @@ import { TitleBarSwitch, type SwitchDoes, type SwitchProject } from "./TitleBarS
 import { slideTowards } from "./workspaceSlide";
 import { pinsChanged } from "./workspacePins";
 import type { Needing, Quiet } from "./NeedsYou";
-import { useAsks } from "./asks";
+import { notSnoozed, useAsks } from "./asks";
+import { useDockBadge } from "./dockBadge";
 import { giveKeyboardTo } from "./paneKeyboard";
 import { landsOn, useNotificationLanding, type Landing } from "./askNotices";
 import { aQuestionIsUp, useCloseHanded } from "./closeHanded";
@@ -2409,12 +2410,20 @@ function App() {
    * Out of the reports the window already holds, so the list costs no command of its own —
    * and a project behind the one on screen, which draws nothing, still reports its queue.
    */
+  // A chat whose every ask is snoozed is left out (#5999): the other windows' ✋ counts these.
   const needing = useMemo<Needing[]>(
     () =>
-      planes.flatMap((plane) =>
-        (reports[plane]?.asking ?? []).map((one) => ({ ...one, plane, project: calledOn(plane) })),
+      notSnoozed(
+        planes.flatMap((plane) =>
+          (reports[plane]?.asking ?? []).map((one) => ({
+            ...one,
+            plane,
+            project: calledOn(plane),
+          })),
+        ),
+        registry.questions,
       ),
-    [planes, reports],
+    [planes, reports, registry.questions],
   );
 
   /**
@@ -2529,6 +2538,8 @@ function App() {
     );
     return here + others.needing.filter((one) => !planes.includes(one.plane)).length;
   }, [planes, registry.held, needing, others.needing]);
+  // The Dock badge is the same total (#5999). A tab window says nothing of its own (#4768).
+  useDockBadge(tabWindow === null ? askedCount : undefined);
   /** What a quit would end in every window: the main window is the one asked (`lifecycle.rs`),
    *  and a warning that left out a split window's chats would end them unannounced. */
   const everyEnding = useMemo(() => [...ending, ...others.ending], [ending, others.ending]);
