@@ -135,11 +135,12 @@ spec:
         operations: [CREATE]
         resources: [claims]
       # Upstream's objects, so that a runner from a purlis pool is had only through a Claim
-      # (#2055): its warm pools and claims, on purlis's templates and warm pools.
+      # (#2055): its warm pools and claims, on purlis's templates and warm pools, and purlis's
+      # templates themselves.
       - apiGroups: [extensions.agents.x-k8s.io]
         apiVersions: ["*"]
         operations: [CREATE, UPDATE]
-        resources: [sandboxclaims, sandboxwarmpools]
+        resources: [sandboxclaims, sandboxtemplates, sandboxwarmpools]
   validations:
     - expression: >-
         request.resource.group != 'runners.purlis.dev' || request.operation != 'CREATE' ||
@@ -205,6 +206,17 @@ spec:
       message: >-
         An upstream claim on the warm pool of a purlis pool sets no env, lifecycle, or pod labels or
         annotations: the purlis pool and its Claim say what the runner gets and how long it lives.
+      reason: Forbidden
+    # A purlis pool's template is made by the operator alone, and its spec changed by it alone.
+    # Upstream's controller labels every template: an update that leaves the spec as it is passes.
+    - expression: >-
+        request.resource.resource != 'sandboxtemplates' ||
+        request.userInfo.username == 'system:serviceaccount:purlis-system:purlis-cluster-operator' ||
+        !object.metadata.name.startsWith('purlis-pool-') ||
+        request.operation == 'UPDATE' && object.spec == oldObject.spec
+      messageExpression: >-
+        'Only the purlis cluster operator makes the template of a purlis pool, or changes what it
+        runs: ' + object.metadata.name + ' is named as one.'
       reason: Forbidden
 ---
 # Source: purlis-cluster-operator/templates/retention-policy.yaml

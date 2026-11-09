@@ -609,8 +609,9 @@ async fn an_upstream_object_the_operator_did_not_make_is_left_as_it_is_until_it_
         .await
         .expect("the pool");
     // The runner namespace the operator makes, made by a claim on another pool if it is not
-    // there yet; then a template in it under the name the operator would use, made by hand:
-    // no owner.
+    // there yet; then a template in it under the name the operator would use, with no owner.
+    // Only the operator's service account makes a template under that name, so it is made as
+    // that account, as an earlier operator may have left one.
     let claims = Api::<Claim>::namespaced(client.clone(), &scratch.name);
     let namespaces = Api::<Namespace>::all(client.clone());
     if namespaces
@@ -653,18 +654,20 @@ async fn an_upstream_object_the_operator_did_not_make_is_left_as_it_is_until_it_
     let templates = Api::<SandboxTemplate>::namespaced(client.clone(), &runners());
     let mut by_hand = upstream::template_for(&pool, &runners(), vec![]);
     by_hand.metadata.owner_references = None;
-    let containers = &mut by_hand
-        .spec
-        .pod_template
-        .spec
-        .as_mut()
-        .expect("a pod")
-        .containers;
-    containers[0].name = "by-hand".into();
-    let made = templates
+    // A spec of its own, in the runner's shape, so that writing the operator's over it shows.
+    let mut value = serde_json::to_value(&by_hand).expect("JSON");
+    let env = &mut value["spec"]["podTemplate"]["spec"]["containers"][0]["env"];
+    if !env.is_array() {
+        *env = serde_json::json!([]);
+    }
+    env.as_array_mut()
+        .expect("its env")
+        .push(serde_json::json!({ "name": "E2E_BY_HAND", "value": "1" }));
+    let by_hand: SandboxTemplate = serde_json::from_value(value).expect("a template");
+    let made = Api::<SandboxTemplate>::namespaced(acting_as(SERVICE_ACCOUNT).await, &runners())
         .create(&PostParams::default(), &by_hand)
         .await
-        .expect("the template made by hand");
+        .expect("the template made with no owner");
     claims
         .create(&PostParams::default(), &claim("ada-1", "e2e-in-the-way"))
         .await
@@ -2579,6 +2582,91 @@ async fn an_upstream_claim_on_a_purlis_pool_made_directly_is_refused() {
         "are claimed with a Claim",
     );
     let _ = pools.delete("e2e-direct", &DeleteParams::default()).await;
+    scratch.end().await;
+}
+
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn a_purlis_pools_template_made_or_changed_directly_is_refused() {
+    use purlis_cluster_operator::upstream::{SandboxTemplate, name_for, template_for};
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-direct-template").await;
+    let pools = Api::<Pool>::all(client.clone());
+    let pool = Pool::new("e2e-direct-template", PoolSpec::new(runner_image()));
+    pools
+        .patch(
+            "e2e-direct-template",
+            &PatchParams::apply("e2e").force(),
+            &Patch::Apply(&pool),
+        )
+        .await
+        .expect("the pool");
+    let dry = PostParams {
+        dry_run: true,
+        ..PostParams::default()
+    };
+    // Even the cluster admin makes no template under the name the operator gives a pool's.
+    let ours = name_for("e2e-direct-template");
+    let templates = Api::<SandboxTemplate>::namespaced(client.clone(), &scratch.name);
+    let mut direct = template_for(&pool, &scratch.name, vec![]);
+    direct.metadata.owner_references = None;
+    refused_in_words(
+        "a template under a purlis pool's name",
+        templates.create(&dry, &direct).await,
+        "Only the purlis cluster operator makes the template of a purlis pool",
+    );
+    // A template under another name is upstream's own.
+    let mut theirs = direct.clone();
+    theirs.metadata.name = Some("a-team-template".to_owned());
+    templates
+        .create(&dry, &theirs)
+        .await
+        .expect("a template under another name is admitted");
+
+    // The operator's template, made for a Claim: its spec is changed by the operator alone, while
+    // its labels, which upstream's controller writes, may change.
+    Api::<Claim>::namespaced(client.clone(), &scratch.name)
+        .create(
+            &PostParams::default(),
+            &claim("ada-1", "e2e-direct-template"),
+        )
+        .await
+        .expect("the claim");
+    let templates = Api::<SandboxTemplate>::namespaced(client.clone(), &runners());
+    eventually(
+        "the operator makes the pool's template",
+        Duration::from_secs(120),
+        || async { templates.get_opt(&ours).await.ok()?.map(|_| ()) },
+    )
+    .await;
+    let dry_patch = PatchParams {
+        dry_run: true,
+        ..PatchParams::default()
+    };
+    refused_in_words(
+        "the operator's template changed by the admin",
+        templates
+            .patch(
+                &ours,
+                &dry_patch,
+                &Patch::Merge(serde_json::json!({
+                    "spec": { "podTemplate": { "spec": { "automountServiceAccountToken": true } } },
+                })),
+            )
+            .await,
+        "Only the purlis cluster operator makes the template of a purlis pool",
+    );
+    templates
+        .patch(
+            &ours,
+            &dry_patch,
+            &Patch::Merge(serde_json::json!({ "metadata": { "labels": { "e2e": "labelled" } } })),
+        )
+        .await
+        .expect("a label on the operator's template is admitted");
+    let _ = pools
+        .delete("e2e-direct-template", &DeleteParams::default())
+        .await;
     scratch.end().await;
 }
 

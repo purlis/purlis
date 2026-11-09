@@ -512,7 +512,9 @@ Who may create a Claim, and in which namespace, is RBAC on `claims` as usual.
 `SandboxClaim` on one of a pool's warm pools, and an upstream `SandboxWarmPool` of one of a
 pool's templates (both named `purlis-pool-<pool>`, below), when it is made there, moved there or
 moved off one by anyone but the operator's service account: such a runner would skip the checks
-above. Upstream's own objects that are not a pool's are left to upstream. This holds as far as
+above. A pool's `SandboxTemplate` is made, and its spec changed, by the operator's service account
+alone too; an update that leaves its spec as it is, such as upstream's controller labelling it,
+passes. Upstream's own objects that are not a pool's are left to upstream. This holds as far as
 Kubernetes' usual boundary goes: whoever may act as the operator's service account (impersonate
 it, mint its tokens, or run a pod as it in the operator's namespace), or change the policy and its
 binding, passes it. Rights in the operator's namespace are the operator's rights.

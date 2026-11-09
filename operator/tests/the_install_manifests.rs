@@ -378,7 +378,7 @@ fn a_claim_is_admitted_only_for_someone_the_cluster_lets_use_its_pool() {
     // CREATE alone: who may change the repos it names is the policy on App keys' (#4206).
     assert_eq!(strings(&rules[0]["operations"]), ["CREATE"]);
     let validations = spec["validations"].as_array().expect("validations");
-    assert_eq!(validations.len(), 6, "{spec}");
+    assert_eq!(validations.len(), 7, "{spec}");
     let expression = |at: usize| {
         validations[at]["expression"]
             .as_str()
@@ -525,7 +525,7 @@ fn an_upstream_claim_or_warm_pool_on_a_purlis_pools_objects_is_admitted_from_the
     );
     assert_eq!(
         strings(&rules[1]["resources"]),
-        ["sandboxclaims", "sandboxwarmpools"]
+        ["sandboxclaims", "sandboxtemplates", "sandboxwarmpools"]
     );
     assert_eq!(strings(&rules[1]["operations"]), ["CREATE", "UPDATE"]);
     let validations = spec["validations"].as_array().expect("validations");
@@ -558,6 +558,44 @@ fn an_upstream_claim_or_warm_pool_on_a_purlis_pools_objects_is_admitted_from_the
         );
         assert_eq!(validations[at]["reason"], "Forbidden");
     }
+}
+
+/// **A purlis pool's template is the operator's alone**: only the operator makes a template
+/// under the name it gives a pool's, and only it changes such a template's spec. Others' updates
+/// that leave the spec as it is pass, as upstream's controller labels every template.
+#[test]
+fn a_purlis_pools_template_is_made_and_its_spec_changed_by_the_operator_alone() {
+    let documents = documents("policy.yaml");
+    let policy = policy_named(&documents, purlis_cluster_operator::POLICY);
+    let spec = &policy["spec"];
+    let rules = spec["matchConstraints"]["resourceRules"]
+        .as_array()
+        .expect("rules");
+    let upstream = rules
+        .iter()
+        .find(|rule| strings(&rule["apiGroups"]) == ["extensions.agents.x-k8s.io"])
+        .expect("the rule on upstream's objects");
+    assert!(strings(&upstream["resources"]).contains(&"sandboxtemplates".to_owned()));
+    assert_eq!(strings(&upstream["operations"]), ["CREATE", "UPDATE"]);
+    let ours = purlis_cluster_operator::upstream::name_for("");
+    let operator = "system:serviceaccount:purlis-system:purlis-cluster-operator";
+    let wanted = format!(
+        "request.resource.resource!='sandboxtemplates'||\
+         request.userInfo.username=='{operator}'||\
+         !object.metadata.name.startsWith('{ours}')||\
+         request.operation=='UPDATE'&&object.spec==oldObject.spec"
+    );
+    let validation = spec["validations"]
+        .as_array()
+        .expect("validations")
+        .iter()
+        .find(|v| {
+            v["expression"]
+                .as_str()
+                .is_some_and(|e| e.split_whitespace().collect::<String>() == wanted)
+        })
+        .unwrap_or_else(|| panic!("no validation {wanted} in {spec}"));
+    assert_eq!(validation["reason"], "Forbidden");
 }
 
 /// The ValidatingAdmissionPolicy `name` among `documents`, and its binding, which denies.
