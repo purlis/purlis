@@ -117,6 +117,7 @@ export const Unpin: StoryObj<typeof UnpinArtifact> = {
       icon: "rocket",
       missing: null,
       live: true,
+      too_large: null,
     },
     live: true,
     unpinning: false,

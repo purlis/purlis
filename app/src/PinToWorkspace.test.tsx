@@ -108,6 +108,7 @@ describe("Pin to workspace, for a page the window names (#5953)", () => {
           icon: "chart",
           missing: null,
           live: true,
+          too_large: null,
         };
       return null;
     });
