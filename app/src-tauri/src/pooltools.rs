@@ -691,7 +691,7 @@ pub fn run_on_its_runner(
     watch_the_asker(reader, Arc::clone(&gone));
     let root = held.root();
     let ctx = Ctx::new(root, Env::from_process());
-    let authorised = |persona: &str, vault: &str| brokered::authorise(&ctx, Some(persona), vault);
+    let (authorised, reach) = (authorised_on(&ctx), reach_on(&ctx));
     // Counted before it is found open: the run may wait on the person's Allow before its
     // token is minted, and an end meanwhile keeps nothing minted for it (#3808).
     let ends_seen = purlis_core::forge::apptoken::ends_so_far();
@@ -751,7 +751,7 @@ pub fn run_on_its_runner(
         pools_in: held.chats().pools_in(),
         tools: &tools::declared_and_allowed_here,
         authorised: &authorised,
-        reach: &|persona: &str, tool: &Tool| out_of_reach(&ctx, persona, tool),
+        reach: &reach,
         owned: &owned,
     };
     // A key the vault here holds no value under is asked of the person first (#5077), its names
@@ -878,20 +878,16 @@ fn values_of(ctx: &Ctx, tool: &Tool) -> Result<Vec<(String, Zeroizing<String>)>,
     Ok(values)
 }
 
-/// **The gate's judges of this desktop's vaults**, as [`run_on_its_runner`] wires them: whether
-/// a persona may use a vault (`brokered::authorise`), and why it may read none of a tool's keys
-/// ([`out_of_reach`], #5795).
-#[cfg(test)]
-fn vault_judges(
-    ctx: &Ctx,
-) -> (
-    impl Fn(&str, &str) -> Result<(), String> + '_,
-    impl Fn(&str, &Tool) -> Option<String> + '_,
-) {
-    (
-        move |persona: &str, vault: &str| brokered::authorise(ctx, Some(persona), vault),
-        move |_persona: &str, _tool: &Tool| None,
-    )
+/// **Whether a persona may use a vault on this desktop** (`brokered::authorise`): the judge
+/// [`run_on_its_runner`] wires into its [`Gate`].
+fn authorised_on(ctx: &Ctx) -> impl Fn(&str, &str) -> Result<(), String> + '_ {
+    move |persona: &str, vault: &str| brokered::authorise(ctx, Some(persona), vault)
+}
+
+/// **Why a persona may read none of a tool's keys on this desktop** ([`out_of_reach`], #5795): the
+/// judge [`run_on_its_runner`] wires into its [`Gate`], tested through it (#5857).
+fn reach_on(ctx: &Ctx) -> impl Fn(&str, &Tool) -> Option<String> + '_ {
+    move |persona: &str, tool: &Tool| out_of_reach(ctx, persona, tool)
 }
 
 /// Why none of `tool`'s keys is read for `persona`: one is a link into a vault it may not use.

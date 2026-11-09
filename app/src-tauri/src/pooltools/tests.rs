@@ -1217,7 +1217,7 @@ fn a_runner_chats_gate_as_wired_refuses_a_key_out_of_reach_before_anything_is_as
     purlis_core::secrets::links::link(&ctx, &team, "kubeconfig", "other", "kubeconfig").unwrap();
     let (asks, tools) = (SecretAsks::new(root), PoolTools::default());
     let ask = kubectl_asked();
-    let (authorised, reach) = super::vault_judges(&ctx);
+    let (authorised, reach) = (super::authorised_on(&ctx), super::reach_on(&ctx));
     let gate = Gate {
         root,
         authorised: &authorised,
