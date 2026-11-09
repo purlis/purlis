@@ -12,6 +12,7 @@ import { profileCommand, profilePage } from "./settings/profileAddress";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { ChatsHere, fixedChats } from "./chatState";
 import { querySelectNamed, selectNamed } from "./ui/select/select.testkit";
+import { secretAsk } from "./secretAsk.testkit";
 
 afterEach(cleanup);
 
@@ -2423,5 +2424,38 @@ describe("Runs on: where this chat runs, and why (#4536)", () => {
       expect(screen.queryByRole("button", { name: "Run on this machine this once" })).toBeNull();
       expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
     });
+  });
+});
+
+describe("the start's Secret ask while the window sends its answer (#5670)", () => {
+  it("holds Start in its own words, with no key shown, and ⏎ from a row starts nothing", () => {
+    const onStart = vi.fn();
+    render(
+      <StartChat
+        options={options()}
+        trouble="nothing was started"
+        secretAsk={{
+          ask: secretAsk({ persona: "steward", vault: "providers", key: "anthropic" }),
+          profile: "claude",
+          variable: "ANTHROPIC_API_KEY",
+          entries: () => Promise.resolve([]),
+          busy: true,
+          onAnswer: () => Promise.resolve("refused"),
+          onSaid: () => {},
+        }}
+        onStart={onStart}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    const start = screen.getByRole("button", { name: "Start chat" });
+    expect(start).toBeDisabled();
+    expect(start).not.toHaveAttribute("aria-keyshortcuts");
+    expect(start.querySelector('[data-part="shortcut"]')).toHaveAttribute("data-off", "");
+    const row = screen.getByRole("option", { name: "steward" });
+    fireEvent.keyDown(row, { key: "Enter" });
+    fireEvent.keyUp(row, { key: "Enter" });
+    expect(onStart).not.toHaveBeenCalled();
   });
 });

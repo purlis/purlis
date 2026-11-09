@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ENTRIES,
@@ -22,6 +22,10 @@ const props = {
 };
 
 afterEach(cleanup);
+
+/** ⌘⏎ on a Mac, Ctrl+Enter elsewhere: the platform the test runs on. */
+const MAC = navigator.platform.startsWith("Mac");
+const CHORD = { key: "Enter", metaKey: MAC, ctrlKey: !MAC };
 
 describe("a secret's one notice", () => {
   it("never takes the keyboard from what the person types in, as it comes", async () => {
@@ -135,5 +139,54 @@ describe("a start's ask, in the Start dialog (#5137)", () => {
       "Stored in vault devops on this machine, and handed to the chat in STRIPE_API_KEY.",
     );
     expect(body).not.toHaveTextContent("Never shown to the chat");
+  });
+
+  it("in a start's ask, ⌘⏎ in the value's box fills and goes no further (#5670)", () => {
+    const onAnswer = vi.fn();
+    const heard = vi.fn();
+    render(
+      <div onKeyDown={heard}>
+        <SecretAskNotice
+          {...props}
+          onAnswer={onAnswer}
+          ask={secretAsk()}
+          start={{ variable: "STRIPE_API_KEY" }}
+        />
+      </div>,
+    );
+    const box = screen.getByLabelText("Value of STRIPE_API_KEY");
+    fireEvent.change(box, { target: { value: "sk_test_1" } });
+    fireEvent.keyDown(box, CHORD);
+
+    expect(onAnswer).toHaveBeenCalledTimes(1);
+    expect(onAnswer.mock.calls[0][0]).toMatchObject({ id: "fill" });
+    expect(heard).not.toHaveBeenCalled();
+  });
+
+  it("claims ⌘⏎ only in a start's value box: elsewhere, and in the Inbox, the key goes on (#5670)", () => {
+    const onAnswer = vi.fn();
+    const heard = vi.fn();
+    const { unmount } = render(
+      <div onKeyDown={heard}>
+        <SecretAskNotice
+          {...props}
+          onAnswer={onAnswer}
+          ask={secretAsk()}
+          start={{ variable: "STRIPE_API_KEY" }}
+        />
+      </div>,
+    );
+    fireEvent.keyDown(screen.getByTestId("secret-ask"), CHORD);
+    expect(heard).toHaveBeenCalledTimes(1);
+    unmount();
+
+    render(
+      <div onKeyDown={heard}>
+        <SecretAskNotice {...props} onAnswer={onAnswer} ask={secretAsk()} />
+      </div>,
+    );
+    fireEvent.keyDown(screen.getByLabelText("Value of STRIPE_API_KEY"), CHORD);
+    expect(heard).toHaveBeenCalledTimes(2);
+    expect(onAnswer).not.toHaveBeenCalled();
   });
 });

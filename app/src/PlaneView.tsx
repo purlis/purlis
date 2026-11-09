@@ -1206,6 +1206,7 @@ export const PlaneView = memo(function PlaneView({
   const [pickerSecret, setPickerSecret] = useState<{
     asked: StartSecretAskNamed;
     refused: string;
+    profile: string;
   }>();
   /** Whether the picker's Secret ask is being answered, and what its last press was told. */
   const [pickerSecretBusy, setPickerSecretBusy] = useState(false);
@@ -4503,7 +4504,7 @@ export const PlaneView = memo(function PlaneView({
         // the refusal's words: the picker fills it, and this start goes on.
         const asked = started.secret_ask ?? undefined;
         setPickerSecretSaid(undefined);
-        setPickerSecret(asked === undefined ? undefined : { asked, refused });
+        setPickerSecret(asked === undefined ? undefined : { asked, refused, profile });
         // A pool that is gone, stopped or not reached, as the core found it (#4536).
         const gone = started.pool_unavailable ?? undefined;
         setPickerPoolGone(gone === undefined ? undefined : { pool: gone, refused });
@@ -12824,6 +12825,7 @@ export const PlaneView = memo(function PlaneView({
                         ? undefined
                         : {
                             ask: pickerAsk,
+                            profile: pickerSecret.profile,
                             variable: pickerSecret.asked.variable,
                             entries: () => secretAskEntries(plane, pickerAsk),
                             busy: pickerSecretBusy,

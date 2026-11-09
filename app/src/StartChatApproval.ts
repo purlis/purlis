@@ -46,6 +46,9 @@ export type StartAnswer = {
   /** The chat starts without the sandbox. */
   withoutSandbox: boolean;
   starting: boolean;
+  /** Held without saying it starts: the start's Secret ask is answered (#5670). A fill's start
+   *  says "Starting…" once it runs; a Not now starts nothing. */
+  held?: boolean;
   /** It cannot be pressed now: nothing picked, or the project's policy refuses it. */
   unavailable: boolean;
   /** The words it can reach in this dialog ({@link reachableWords}), and whether one is a grant. */
@@ -63,10 +66,12 @@ export function startAnswer({
   approves,
   withoutSandbox,
   starting,
+  held = false,
   unavailable,
   reach,
   onPress,
 }: StartAnswer): DialogAction {
+  const still = starting || held;
   const chord = !approves && !withoutSandbox;
   const said = withoutSandbox ? START_WITHOUT_SANDBOX : START_WORD;
   return {
@@ -82,17 +87,17 @@ export function startAnswer({
     reserve: reach.words,
     reserveGrant: reach.grant,
     variant: approves ? "grants" : "primary",
-    isDisabled: unavailable || starting,
+    isDisabled: unavailable || still,
     // Return in the Name box never starts a command: Start is pressed (D-1719-3). The command is
     // said above before the press (V69), and the chat it starts can be closed.
     byReturn: false,
     byChord: chord,
-    "aria-keyshortcuts": chord && !starting ? submitKeyShortcut() : undefined,
+    "aria-keyshortcuts": chord && !still ? submitKeyShortcut() : undefined,
     // The key, said inside the button (R33): its room is kept, undrawn, while the key does not
     // press it, so turning to an approval or a start without the sandbox widens nothing (R163).
     // Nor while the chat starts: the chord does nothing then, so "Starting…" names no key.
     shortcut: submitKeySaid(),
-    shortcutOff: !chord || starting,
+    shortcutOff: !chord || still,
     onPress,
   };
 }

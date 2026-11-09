@@ -56,6 +56,8 @@ export type SecretAskEnded = "filled" | "declined" | "refused";
  */
 export type StartSecretAsk = {
   ask: Shown;
+  /** The profile the start was refused on: the ask is drawn only while it is picked (#5670). */
+  profile: string;
   /** The variable the chat starts with the value in. */
   variable: string;
   entries: () => Promise<readonly VaultEntries[]>;
@@ -484,7 +486,8 @@ export function StartChat({
   // `thisOnce` is Run on this machine this once, beside a pool that could not be reached: it
   // goes with this press alone and leaves the row's choice as it was.
   const start = (thisOnce?: RunsOnPick) => {
-    if (holding) return;
+    // Nothing starts while the start's Secret ask is answered (#5670): a fill goes on by itself.
+    if (holding || askBusy) return;
     const pick = thisOnce ?? runsOnPick;
     if (pending) {
       setPressedFor(pick);
@@ -523,36 +526,54 @@ export function StartChat({
   // What ⏎ from the list or the cards and ⌘⏎ from anywhere may start: a plain start, never an
   // approval or a start without the sandbox (ADR 0097 §6), and nothing while one is running.
   const [savingLimit, setSavingLimit] = useState(false);
-  const byKey = !approves && withoutSandbox === null && !unavailable && !starting && !savingLimit;
+  // **The start's Secret ask, while the profile it was refused on is picked** (#5670): a pick of
+  // another profile draws none, so Fill never fills a key the profile picked may not need, and
+  // picking the refused one back draws it again.
+  const ask = secretAsk !== undefined && secretAsk.profile === profile ? secretAsk : undefined;
+  // **Its answer holds every start while it is sent** (#5670): ⏎, ⌘⏎, Start and its offers. The
+  // dialog's own flag answers from the press, before the window's busy comes back.
+  const [answering, setAnswering] = useState(false);
+  const askBusy = answering || secretAsk?.busy === true;
+  const byKey =
+    !approves && withoutSandbox === null && !unavailable && !starting && !savingLimit && !askBusy;
   // **A filled Secret ask goes on where ⏎ would** (#5137): with what the dialog shows when the
   // answer comes back, read then, and never an approval or a start without the sandbox, which
-  // stay a press of their own (ADR 0097 §6).
-  // The key the last answer filled, and which fill it was: the render it lands in decides,
-  // so it reads what the dialog shows then, never what it showed at the press.
-  const [filled, setFilled] = useState<{ key: string; fill: number }>();
+  // stay a press of their own (ADR 0097 §6). Only on the profile it was filled for (#5670): one
+  // picked while it was sent starts nothing, and the line says whose key was filled.
+  // The key the last answer filled, for which profile, and which fill it was: the render it lands
+  // in decides, so it reads what the dialog shows then, never what it showed at the press.
+  const [filled, setFilled] = useState<{ key: string; profile: string; fill: number }>();
   const wentOn = useRef(0);
   const answerAsk = (option: Offered, given: () => SecretAskGiven) => {
-    if (secretAsk === undefined) return;
-    const key = secretAsk.ask.secret?.key ?? "";
+    if (ask === undefined || askBusy) return;
+    const key = ask.ask.secret?.key ?? "";
+    const forProfile = ask.profile;
     setFilled(undefined);
-    void secretAsk.onAnswer(option, given).then((ended) => {
-      if (ended === "filled" && open.current) setFilled({ key, fill: wentOn.current + 1 });
-    });
+    setAnswering(true);
+    void ask
+      .onAnswer(option, given)
+      .then((ended) => {
+        if (ended === "filled" && open.current)
+          setFilled({ key, profile: forProfile, fill: wentOn.current + 1 });
+      })
+      .finally(() => setAnswering(false));
   };
   useEffect(() => {
     if (filled === undefined || wentOn.current >= filled.fill) return;
     wentOn.current = filled.fill;
-    if (byKey) plainStart(runsOnPick);
+    if (byKey && profile === filled.profile) plainStart(runsOnPick);
   });
   const filledSaid =
     filled === undefined
       ? undefined
-      : approves || withoutSandbox !== null
-        ? `Filled ${filled.key}. ${approves ? "Approving this profile" : "Starting without the sandbox"} takes a press of its own.`
-        : `Filled ${filled.key}.`;
+      : profile !== filled.profile
+        ? `Filled ${filled.key} for ${filled.profile}.`
+        : approves || withoutSandbox !== null
+          ? `Filled ${filled.key}. ${approves ? "Approving this profile" : "Starting without the sandbox"} takes a press of its own.`
+          : `Filled ${filled.key}.`;
   // What the one alert says: a refusal, or, where the start's Secret ask is drawn below, only what
   // its last press was told, since the refusal's own words point to the Inbox and the ask is here.
-  const refusalSaid = secretAsk !== undefined ? secretAsk.said : (trouble ?? filledSaid);
+  const refusalSaid = ask !== undefined ? ask.said : (trouble ?? filledSaid);
   // Once the details are in, a Start pressed early goes, where it is a plain start; an approval
   // or a start without the sandbox is shown instead, and is a press of its own (ADR 0097 §6).
   const wentEarly = useRef(false);
@@ -788,8 +809,10 @@ export function StartChat({
       main={startAnswer({
         approves,
         withoutSandbox: withoutSandbox !== null,
-        // An answer to the start's Secret ask holds Start too (#5137): the fill goes on with it.
-        starting: starting || savingLimit || (pending && pressedEarly) || secretAsk?.busy === true,
+        starting: starting || savingLimit || (pending && pressedEarly),
+        // An answer to the start's Secret ask holds Start, in its own words (#5137, #5670): a
+        // Not now starts nothing, and a fill's start says "Starting…" once it runs.
+        held: askBusy,
         unavailable: unavailable || holding,
         reach,
         onPress: () => start(),
@@ -890,15 +913,15 @@ export function StartChat({
             )}
             {/* The start's missing credential (#5137): the Secret ask's own body, whose Fill
               goes on with the start and whose Not now cancels it. */}
-            {secretAsk !== undefined && (
+            {ask !== undefined && (
               <SecretAskNotice
-                ask={secretAsk.ask}
+                ask={ask.ask}
                 chat="The chat"
-                entries={secretAsk.entries}
-                busy={secretAsk.busy || starting}
+                entries={ask.entries}
+                busy={askBusy || starting}
                 onAnswer={answerAsk}
-                onSaid={secretAsk.onSaid}
-                start={{ variable: secretAsk.variable }}
+                onSaid={ask.onSaid}
+                start={{ variable: ask.variable }}
               />
             )}
             {trouble && signIn !== undefined && onShowSignIn && (
@@ -913,12 +936,15 @@ export function StartChat({
               machine unless the person says so, for this start alone. */}
             {trouble && poolUnavailable !== undefined && (
               <div className="start-chat-offers">
-                <Button isDisabled={starting || savingLimit || unavailable} onPress={() => start()}>
+                <Button
+                  isDisabled={starting || savingLimit || unavailable || askBusy}
+                  onPress={() => start()}
+                >
                   Try again
                 </Button>
                 {onPoolSetup && <Button onPress={() => onPoolSetup()}>Pool setup…</Button>}
                 <Button
-                  isDisabled={starting || savingLimit || unavailable}
+                  isDisabled={starting || savingLimit || unavailable || askBusy}
                   onPress={() => start({ pool: null })}
                 >
                   Run on this machine this once
