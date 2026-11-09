@@ -177,39 +177,63 @@ fn a_code_from_boxes_goes_with_any_separators_also_when_they_are_escaped() {
     }
 }
 
-#[test]
-fn a_code_from_boxes_goes_with_dots_slashes_and_bullets_between_its_characters() {
+/// A scrub of one code a group of boxes holds.
+fn scrub_of_a_group(code: &str) -> Scrub {
     let mut kept = Kept::default();
     let first = crate::drive::tree::NodeKey {
         frame: "f".to_owned(),
         backend: 1,
     };
-    kept.group(&first, &["739214"]);
-    let scrub = Scrub::of(&kept);
+    kept.group(&first, &[code]);
+    Scrub::of(&kept)
+}
+
+#[test]
+fn a_code_from_boxes_goes_with_one_dot_slash_or_bullet_between_every_pair_of_its_characters() {
+    let scrub = scrub_of_a_group("739214");
     for spelled in [
-        "739.214",
         "7.3.9.2.1.4",
-        "739/214",
-        "739\u{b7}214",
+        "7/3/9/2/1/4",
+        "7\u{b7}3\u{b7}9\u{b7}2\u{b7}1\u{b7}4",
         "7 \u{2022} 3 \u{2022} 9 \u{2022} 2 \u{2022} 1 \u{2022} 4",
-        "739%2E214",
-        "739%2F214",
-        "739%C2%B7214",
+        "7%2E3%2E9%2E2%2E1%2E4",
+        "7%2F3%2F9%2F2%2F1%2F4",
     ] {
         assert_eq!(scrub.text(spelled), "(blanked)", "{spelled}");
     }
 }
 
 #[test]
+fn a_code_from_boxes_is_not_matched_across_dots_slashes_or_bullets_that_are_not_between_every_pair()
+{
+    let scrub = scrub_of_a_group("739214");
+    for spelled in [
+        "739.214",
+        "739/214",
+        "739\u{b7}214",
+        "7.3.9/2/1/4",
+        "7..3.9.2.1.4",
+        "739%2E214",
+    ] {
+        assert_eq!(scrub.text(spelled), spelled, "{spelled}");
+    }
+}
+
+#[test]
+fn prices_dates_and_versions_are_not_taken_for_a_short_code_from_boxes() {
+    let scrub = scrub_of_a_group("739");
+    for spelled in ["$7.39", "7/3/91", "v7.3.91", "17.3.9"] {
+        assert_eq!(scrub.text(spelled), spelled, "{spelled}");
+    }
+    for spelled in ["7.3.9", "7 3 9", "7-3-9", "(7/3/9)"] {
+        assert!(scrub.text(spelled).contains("(blanked)"), "{spelled}");
+    }
+}
+
+#[test]
 fn a_dot_a_code_from_boxes_holds_goes_as_any_separator_does() {
-    let mut kept = Kept::default();
-    let first = crate::drive::tree::NodeKey {
-        frame: "f".to_owned(),
-        backend: 1,
-    };
-    kept.group(&first, &["ab.cd"]);
-    let scrub = Scrub::of(&kept);
-    for spelled in ["x ab.cd y", "x a.b..cd y", "x abcd y", "x ab-cd y"] {
+    let scrub = scrub_of_a_group("ab.cd");
+    for spelled in ["x ab.cd y", "x abcd y", "x ab-cd y", "x a.b.c.d y"] {
         assert_eq!(scrub.text(spelled), "x (blanked) y", "{spelled}");
     }
 }

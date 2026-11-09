@@ -7,9 +7,9 @@
 //! than [`KEPT_WHOLE_FROM`]: a field keeps its latest value, not every short value it held on
 //! the way. A read of a page's tree drops nothing, and a text read from no element (a run of
 //! the person's keys, or what they pasted) is kept as it is. What a group of boxes holds
-//! together, such as a code typed one character a box (#2144), is kept whole too, and a read of
-//! a group drops nothing, from the boxes or from a page's tree: a short field beside the boxes
-//! can join the group, so a later read may hold the code with more after it.
+//! together, such as a code typed one character a box (#2144), is kept whole too: read from
+//! the boxes themselves, like a field's (the group keeps its latest code, not every short part
+//! of it on the way); read from a page's tree, it drops nothing.
 
 use zeroize::Zeroizing;
 
@@ -81,7 +81,7 @@ impl Kept {
     }
 
     /// One read of what the group of boxes that begins with `first` holds, joined, from the
-    /// boxes themselves: `texts` are kept, and nothing goes.
+    /// boxes themselves: read like a field's ([`Kept::field`]).
     pub(crate) fn group<S: AsRef<str>>(&mut self, first: &NodeKey, texts: &[S]) {
         self.read(&Of::Group(first.clone()), texts);
     }
@@ -99,9 +99,7 @@ impl Kept {
             .map(|text| Zeroizing::new(text.as_ref().to_lowercase()))
             .filter(|text| !text.is_empty())
             .collect();
-        // A group drops nothing: a field beside its boxes may have joined it.
-        if lower.is_empty() || matches!(from, Of::Group(_)) {
-            self.add(Some(from), Source::Field, texts);
+        if lower.is_empty() {
             return;
         }
         self.texts.retain(|kept| {
@@ -297,32 +295,12 @@ mod tests {
     }
 
     #[test]
-    fn a_groups_later_code_drops_neither_its_earlier_codes_nor_anything_of_its_boxes() {
+    fn a_groups_later_code_drops_its_short_earlier_codes_and_nothing_of_its_boxes() {
         let mut kept = Kept::default();
         kept.field(&field(11), &["739"]);
         kept.group(&field(11), &["7392"]);
         kept.group(&field(11), &["739214"]);
-        assert_eq!(kept.texts(), vec!["739", "7392", "739214"]);
-    }
-
-    #[test]
-    fn a_code_stays_kept_once_a_field_beside_the_boxes_adds_a_character() {
-        let mut kept = Kept::default();
-        kept.group(&field(11), &["739214"]);
-        kept.group(&field(11), &["739214x"]);
-        assert_eq!(kept.texts(), vec!["739214", "739214x"]);
-        assert_eq!(kept.loose(), vec!["739214", "739214x"]);
-    }
-
-    #[test]
-    fn taking_in_a_groups_codes_drops_none_of_them() {
-        let mut page = Kept::default();
-        let mut browser = Kept::default();
-        browser.group(&field(11), &["739214"]);
-        browser.group(&field(11), &["739214x"]);
-        page.group(&field(11), &["7392"]);
-        page.take_in(&browser);
-        assert_eq!(page.texts(), vec!["7392", "739214", "739214x"]);
+        assert_eq!(kept.texts(), vec!["739", "739214"]);
     }
 
     #[test]
