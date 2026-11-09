@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794210027164,
+  "lastUpdate": 1794211939246,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -44478,6 +44478,48 @@ window.BENCHMARK_DATA = {
             "value": 101.3974285,
             "unit": "ms",
             "extra": "median of 5 runs: 100.805, 101.101, 101.397, 101.852, 101.928 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4f22909c09290c35854f8a1f0caf8c680ea8f587",
+          "message": "Run grant flags: MySQL hotcopy/secure-installation/backup refused, jump brackets hold IPv6 only, scoped link-local jump hosts (#5891, #5892, #5893) (#5929)\n\n* Run grant: no Allow for MySQL's and MariaDB's hotcopy, secure installation and backup (#5891)\n\nmysqlhotcopy and mariadb-hotcopy (--method names the copy program a shell\nruns), mysql_secure_installation and mariadb-secure-installation (a script that\nruns the client its --basedir finds) and mariabackup and mariadb-backup (qpress,\nrsync and plugins its flags name) join NOT_FOR_A_RUN_GRANT, refused whole, with\na test naming each.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZC6Z2KN6FVS4EFGXNY8JCA\nPurlis-Persona: steward\n\n* Run grant flags: a jump host's brackets hold only an IPv6 address's characters (#5892)\n\nssh pastes a jump list unquoted into its jump's command, where a bracketed hop\nis a glob bracket expression. shell_would_read now lets a bracketed host\nthrough only when what is inside is hex digits, ':' and '.', so -J a,[.-_] and\n-J [g::1] get no Allow. Amendment of ADR 0112 recorded (D-5892-1).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZC6Z2KN6FVS4EFGXNY8JCA\nPurlis-Persona: steward\n\n* Run grant flags: a scoped link-local jump host is offered as ssh spells it (#5893)\n\nssh expands its % tokens (%h, %n, %p, %r) in a jump's whole command, and %r is\nthe user -l names, which nothing judges; only %% stands for % itself. A jump's\nlast hop may now carry a zone inside its brackets after a fe80::/10 address,\nspelled %% and letters, digits, '.', '-' and '_' (-J u@[fe80::1%%en0]); every\nother % (a single one, an earlier hop, outside brackets, another address, a\nuser, a port, ssh://, Hostname, User, a destination) still costs the Allow.\nAmendment of ADR 0112 recorded (D-5893-1).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZC6Z2KN6FVS4EFGXNY8JCA\nPurlis-Persona: steward\n\n* Run grant flags: brackets in a jump's user, and a zone in an ssh:// hop with a user, get no Allow (#5892, #5893)\n\nFrom #5929's second review: ssh pastes a jump's user as -l user, unquoted, so\na bracket there is a glob as one in a host is (D-5892-2); and ssh://u@[...] put\nthe scheme in what read as the user, so its zone was let through though the\ndocs said no ssh:// hop takes one.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZC6Z2KN6FVS4EFGXNY8JCA\nPurlis-Persona: steward\n\n* Run grant flags: the bracket amendment and its changelog entry name the jump's user too (#5892)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZC6Z2KN6FVS4EFGXNY8JCA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-09T06:50:54Z",
+          "tree_id": "53751729fe1866be830607b13a451a2b728c74dd",
+          "url": "https://github.com/purlis/purlis/commit/4f22909c09290c35854f8a1f0caf8c680ea8f587"
+        },
+        "date": 1794211933937,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5023015,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.497, 0.497, 0.502, 0.503, 0.510 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3476625,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.209, 16.236, 16.348, 16.363, 16.602 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.759359,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.985, 101.356, 101.759, 102.567, 102.942 ms"
           }
         ]
       }
