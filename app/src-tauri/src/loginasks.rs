@@ -78,9 +78,9 @@ fn as_the_chat_reads_it(why: &str) -> String {
     why.to_owned()
 }
 
-/// **What the person reads where a press is refused for a key out of reach** (#5831), on the notice,
-/// which stays up as it does for every press refused: nothing was allowed, and the read's own
-/// words, which name the key and the chat's vault alone, told to the person as "you"
+/// **What the person reads where a press is refused for a key out of reach** (#5831), on the
+/// notice, which stays up as it does for every press refused: nothing was allowed, and the read's
+/// own words, which name the key and the chat's vault alone, told to the person as "you"
 /// (docs/ui-copy.md) where the chat's words say "the person".
 pub(crate) fn refused_at_the_press_said(why: &str) -> String {
     let why = why.replace("The person can", "You can");
@@ -1070,7 +1070,8 @@ pub fn answer(
             fresh.replacing(root, &declared, &grants.held())?
         }
     };
-    // A link made since the judge above is refused by `offered_on_the_notice`, in the person's words as above.
+    // A link made since the judge above is refused by `offered_on_the_notice`, in the person's
+    // words as above.
     let judged = offered_on_the_notice(
         root,
         &locks,

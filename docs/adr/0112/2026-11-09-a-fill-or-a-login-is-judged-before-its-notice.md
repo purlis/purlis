@@ -2,7 +2,7 @@
 
 Follows [a link is judged when it is read](2026-11-08-a-link-is-judged-when-it-is-read.md), and
 replaces its closing paragraph, which left a fill's and a login's own notice unjudged (#5831).
-Decided under the operator's standing order to take the recommended path (D-5831-1 to D-5831-6),
+Decided under the operator's standing order to take the recommended path (D-5831-1 to D-5831-8),
 recorded here as a delegated decision.
 
 A fill's or a login's notice is raised only for keys its chat may read. Before either is put to

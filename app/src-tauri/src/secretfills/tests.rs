@@ -1384,7 +1384,8 @@ fn a_narrowed_chats_fill_press_is_judged_as_the_persona_it_was_started_as() {
         ..offered_in(root, "qa", "deploy-token", "https://dash.example.test")
     };
     let (id, heard) = fills.raise(shown.clone()).expect("raised");
-    // While it waits, qa's deploy-token is linked into vault prod, which ops may use and qa may not.
+    // While it waits, qa's deploy-token is linked into vault prod, which ops may use and qa may
+    // not.
     std::fs::write(root.join("o.json"), r#"{"deploy-token":"t"}"#).expect("vault prod");
     let ctx = Ctx::new(root, Env::from_process());
     let qa = purlis_core::secrets::cmd::provider(&ctx, "qa").expect("vault qa");
