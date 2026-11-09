@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794203867363,
+  "lastUpdate": 1794209737970,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -9048,6 +9048,42 @@ window.BENCHMARK_DATA = {
             "value": 323.7,
             "unit": "MB",
             "extra": "median of 6 samples: 435.1, 402.9, 343, 294.6, 304.4, 198.4 MB; window 237.4 MB, session host 86.4 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a2a6499d85dfc28f852e9601a1c9a92040f61501",
+          "message": "ssh route: run purlis _ssh-proxy from inside a chat's sandbox in tests, Seatbelt and Linux (#5897) (#5905)\n\n* ssh route: a test runs it from inside a wrapped chat's sandbox, Seatbelt and Linux (#5897)\n\nA wrapped chat's real line (opencode, its confinement's proxy, temp folder and\nroute) runs ssh: the route's purlis _ssh-proxy is carried from inside the\nsandbox, an unlisted port is refused, and a direct ssh around the route is\nrefused. Linux runs it in the rust job; macOS in studio-confinement-macos,\nwhose scope now takes the route's files.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YXMFC3SVWYQAZ3WEJ8038W\nPurlis-Persona: steward\n\n* ssh route test: a wrapped chat's confinement (serving), which writes its route; the start's PATH (#5897)\n\nConfinement::proxy_only is a Claude Code chat's and writes no route, so the\ntest would have stopped before ssh ran. A wrapped chat's start makes\nConfinement::serving. The chat's env now gets the route first on its PATH\nas hoststart does it, and the route is handed in once.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YXMFC3SVWYQAZ3WEJ8038W\nPurlis-Persona: steward\n\n* ci: the sandboxed ssh route step's run line as a block, so ci.yml parses (#5897)\n\nA plain scalar ending in '::' is read as a mapping key, so GitHub refused the\nwhole workflow and no ci run started.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YXMFC3SVWYQAZ3WEJ8038W\nPurlis-Persona: steward\n\n* ssh route test: the wrap's environment carried as a start carries it; no toolchains preset (#5897)\n\nOn Linux purlis's wrap starts only from the environment chatspec carries\n(#2460), so the test now starts it from an empty environment with\nsupport::carrying, as the other Linux wrap tests do. On macOS the toolchains\npreset's cache rules made the profile too large for sandbox-exec under the\ntest's long temporary home; the manifest now names the presets the core's\nlive wrap tests use.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YXMFC3SVWYQAZ3WEJ8038W\nPurlis-Persona: steward\n\n* ssh route test: the Seatbelt probe started through support::command (#5897)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YXMFC3SVWYQAZ3WEJ8038W\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-09T04:19:59Z",
+          "tree_id": "df454914016622fe0b55715b005e8be1a72c75ab",
+          "url": "https://github.com/purlis/purlis/commit/a2a6499d85dfc28f852e9601a1c9a92040f61501"
+        },
+        "date": 1794209729821,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 2284,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1853, 2284, 2844 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 309.7,
+            "unit": "MB",
+            "extra": "median of 6 samples: 449.3, 395.1, 341.7, 274.7, 277.6, 210.5 MB; window 225.2 MB, session host 84.5 MB"
           }
         ]
       }
