@@ -16,7 +16,12 @@ import { ArtifactTab } from "./ArtifactTab";
 import { expectFocusInSight } from "./stories.testkit";
 import { ActivityBarFrame } from "./ui/activity/ActivityItem";
 
-const ABOUT: ArtifactAbout = { name: "Backlog state", pinned_by: "Ada Lovelace", missing: null };
+const ABOUT: ArtifactAbout = {
+  name: "Backlog state",
+  pinned_by: "Ada Lovelace",
+  missing: null,
+  too_large: null,
+};
 
 function answers(about: ArtifactAbout, opened: Partial<ArtifactOpened> = {}) {
   mockIPC((cmd) => {
@@ -133,15 +138,40 @@ export const Waits: Story = {
   },
 };
 
-/** Its folder is gone: why, and no frame. */
+/** Its folder is gone: why, where its page belongs, no frame, and Repin and Unpin. */
 export const Missing: Story = {
   beforeEach: () =>
     answers({ ...ABOUT, missing: "there is no folder 'backlog-state' in artifacts/" }),
   play: async ({ canvasElement }) => {
     const page = within(canvasElement);
-    await expect(await page.findByTestId("artifact-missing")).toHaveTextContent(
-      "there is no folder 'backlog-state' in artifacts/",
-    );
+    const said = await page.findByTestId("artifact-missing");
+    await expect(said).toHaveTextContent("There is no folder 'backlog-state' in artifacts/");
+    await expect(said).toHaveTextContent("artifacts/backlog-state/index.html");
+    await userEvent.tab();
+    await expect(page.getByRole("button", { name: "Repin" })).toHaveFocus();
+    expectFocusInSight();
+    await userEvent.tab();
+    await expect(page.getByRole("button", { name: "Unpin" })).toHaveFocus();
+    expectFocusInSight();
+  },
+};
+
+/** Its folder is over the size cap: both sizes, no frame, and Repin and Unpin. */
+export const TooLarge: Story = {
+  beforeEach: () =>
+    answers({
+      ...ABOUT,
+      too_large:
+        "'backlog-state' is 9.0 MB, over the 8.0 MB an artifact may be, so none of it is shown",
+    }),
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    const said = await page.findByTestId("artifact-too-large");
+    await expect(said).toHaveTextContent("9.0 MB, over the 8.0 MB an artifact may be");
+    await expect(page.queryByTestId("artifact-frame")).toBeNull();
+    await userEvent.tab();
+    await expect(page.getByRole("button", { name: "Repin" })).toHaveFocus();
+    expectFocusInSight();
   },
 };
 
@@ -151,6 +181,7 @@ const pin = (folder: string, name: string, icon: string): ArtifactPinShown => ({
   name,
   icon,
   missing: null,
+  too_large: null,
 });
 
 /** The left bar's artifact group: after a divider, below purlis's own icons. */

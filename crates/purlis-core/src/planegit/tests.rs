@@ -6535,3 +6535,48 @@ fn priming_a_plane_something_is_saving_leaves_its_index_to_that_save() {
     prime(&fixture.root);
     assert!(!holds_an_untracked_cache(&fixture.root));
 }
+
+#[test]
+fn an_artifact_file_is_scanned_whatever_its_size_or_bytes_and_through_its_encodings() {
+    // #5954: an artifact's page is shown to the team, so a save reads every file of its folder:
+    // one git calls binary, one over the scan limit, and a token behind an HTML reference.
+    let token = ["ghp", "_0123456789abcdefABCDEFghij"].concat();
+    let tail = &token[1..];
+    let mut binary = b"\x89PNG\0\0".to_vec();
+    binary.extend_from_slice(token.as_bytes());
+    let mut big = "x\n".repeat(SCAN_LIMIT / 2 + 1).into_bytes();
+    big.extend_from_slice(token.as_bytes());
+    for (path, bytes) in [
+        ("workspaces/alpha/artifacts/board/logo.png", binary),
+        ("workspaces/alpha/artifacts/board/export.txt", big),
+        (
+            "workspaces/alpha/artifacts/board/index.html",
+            format!("<p>&#x67;{tail}</p>").into_bytes(),
+        ),
+    ] {
+        let fixture = Fixture::plane();
+        let (code, said) = fixture.save_with(path, &bytes);
+        assert_eq!(code, 1, "{path}: {said}");
+        assert!(said.contains(path), "{path}: {said}");
+        assert!(!said.contains("Not scanned for secrets"), "{path}: {said}");
+    }
+}
+
+#[test]
+fn only_a_file_inside_a_workspaces_artifacts_folder_is_an_artifact_s() {
+    for path in [
+        "workspaces/alpha/artifacts/board/index.html",
+        "workspaces/alpha/artifacts/pins.toml",
+    ] {
+        assert!(super::in_an_artifact(path), "{path}");
+    }
+    for path in [
+        "workspaces/alpha/artifacts",
+        "workspaces//artifacts/x",
+        "workspaces/alpha/notes/artifacts/x",
+        "docs/artifacts/x",
+        "personas/steward/artifacts/x",
+    ] {
+        assert!(!super::in_an_artifact(path), "{path}");
+    }
+}

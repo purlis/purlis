@@ -44,6 +44,8 @@ macro_rules! app_commands {
                 artifacts::artifact_place,
                 artifacts::artifact_enter,
                 artifacts::artifact_close,
+                artifacts::artifact_repin,
+                artifacts::artifact_unpin,
                 artifacts::artifact_approve,
                 portal::session_bus,
                 portal::restart_on_the_session_bus,

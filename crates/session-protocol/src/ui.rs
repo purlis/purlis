@@ -1093,6 +1093,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     "artifact_place",
     "artifact_enter",
     "artifact_close",
+    // Repin and Unpin from a missing or too-large artifact's tab (#5954): they write the
+    // workspace's pins file, which only the person in their own window does.
+    "artifact_repin",
+    "artifact_unpin",
     // Approving an artifact's script (#5959, ADR 0120 §4): the person's press in its bar, of
     // what their own window was served. No link may approve on their behalf.
     "artifact_approve",

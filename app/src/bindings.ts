@@ -55,6 +55,15 @@ export const commands = {
 	/**  **Closes an artifact's webview**: its tab closed, or its frame went. */
 	artifactClose: (label: string) => typedError<null, string>(__TAURI_INVOKE("artifact_close", { label })),
 	/**
+	 *  **Repin**: pins artifact folder `folder` again as it is pinned, its name, icon, command and
+	 *  working folder kept, so the folder is checked anew (there, inside `artifacts/`, within the
+	 *  size cap, nothing shaped like a secret). The way out of a missing or too-large artifact once
+	 *  its folder is back or smaller; the refusal's sentence when it is not.
+	 */
+	artifactRepin: (plane: PlaneId, workspace: string, folder: string) => typedError<null, string>(__TAURI_INVOKE("artifact_repin", { plane, workspace, folder })),
+	/**  **Unpin**: takes artifact folder `folder`'s pin off the workspace; its files stay. */
+	artifactUnpin: (plane: PlaneId, workspace: string, folder: string) => typedError<null, string>(__TAURI_INVOKE("artifact_unpin", { plane, workspace, folder })),
+	/**
 	 *  **The person's approval of an artifact's script, pressed in its tab's bar** (ADR 0120 §4):
 	 *  of exactly the pin and the template webview `label` was served, read here and never taken
 	 *  from the window, so a change since it was served is not approved by this press. Every window
@@ -5960,6 +5969,8 @@ export type ArtifactAbout = {
 	pinned_by: string | null,
 	/**  Why it cannot be opened, when it cannot. */
 	missing: string | null,
+	/**  Its folder is over the size cap: the sentence naming both sizes. */
+	too_large: string | null,
 };
 
 /**
@@ -5991,6 +6002,8 @@ export type ArtifactPinShown = {
 	icon: string,
 	/**  Why its folder cannot be opened, when it cannot. */
 	missing: string | null,
+	/**  Its folder is over the size cap: the sentence naming both sizes. */
+	too_large: string | null,
 };
 
 /**
