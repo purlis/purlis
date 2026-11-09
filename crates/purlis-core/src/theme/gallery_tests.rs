@@ -432,3 +432,51 @@ fn a_failed_duplicate_takes_away_only_what_it_made() {
     gallery::write::discard(&at, "empty", false);
     assert!(!home.path().join("empty").exists());
 }
+
+#[test]
+fn a_folder_read_again_after_a_change_says_what_the_check_finds_now() {
+    let places = Places::new();
+    let murk = |text: &str| {
+        json!({
+            "name": "Murk",
+            "appearances": [{ "id": "dark", "appearance": "dark", "tokens": {
+                "surface.base": "#202020", "text.primary": text
+            } }]
+        })
+    };
+    put(&places.machine(), "murk", &murk("#f0f0f0"));
+    let folders = places.folders();
+    let at = shelf(&folders, Reach::Machine, &[]);
+    let card_of = || {
+        gallery::cards(&at)
+            .into_iter()
+            .find(|one| one.id == "murk")
+            .unwrap()
+    };
+    let clear = card_of();
+    assert!(
+        !clear
+            .warnings
+            .iter()
+            .any(|line| line.contains("text.primary on surface.base")),
+        "{:?}",
+        clear.warnings
+    );
+    assert_eq!(card_of(), clear, "read again unchanged, it says the same");
+    // The same folder, the same name: only what it draws changed.
+    put(&places.machine(), "murk", &murk("#212121"));
+    let murky = card_of();
+    assert!(
+        murky
+            .warnings
+            .iter()
+            .any(|line| line.contains("text.primary on surface.base")),
+        "{:?}",
+        murky.warnings
+    );
+    let read = gallery::theme_of(&at, "murk", None).unwrap();
+    assert_eq!(
+        murky.warnings,
+        warnings_said(&read.theme, &check_every(&read.theme))
+    );
+}

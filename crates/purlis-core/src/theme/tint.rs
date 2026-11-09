@@ -1255,9 +1255,9 @@ fn parse(hex: &str) -> Option<(Vec3, String)> {
     };
     let byte = |at: usize| u8::from_str_radix(&long[at..at + 2], 16).ok();
     let rgb = [
-        to_linear(f64::from(byte(0)?) / 255.0),
-        to_linear(f64::from(byte(2)?) / 255.0),
-        to_linear(f64::from(byte(4)?) / 255.0),
+        linear_of(byte(0)?),
+        linear_of(byte(2)?),
+        linear_of(byte(4)?),
     ];
     Some((rgb, long.get(6..8).unwrap_or_default().to_owned()))
 }
@@ -1284,7 +1284,7 @@ fn rounded(rgb: Vec3, target: f64) -> [u8; 3] {
             // A byte, by the clamp.
             (exact[at].floor() + up).clamp(0.0, 255.0) as u8
         });
-        let shade = luminance(bytes.map(|byte| to_linear(f64::from(byte) / 255.0)));
+        let shade = luminance(bytes.map(linear_of));
         let past = if lighter {
             shade < target
         } else {
@@ -1310,7 +1310,18 @@ fn gamma(linear_value: f64) -> f64 {
     }
 }
 
-fn to_linear(v: f64) -> f64 {
+/// **A byte of a colour as a linear channel**, 0 to 1: [`to_linear`] of the byte over 255, worked
+/// out once for each of the 256 bytes. Every contrast and every turned colour reads its channels
+/// through it, thousands of times a theme (#3597).
+pub(super) fn linear_of(byte: u8) -> f64 {
+    static LINEAR: std::sync::LazyLock<[f64; 256]> = std::sync::LazyLock::new(|| {
+        std::array::from_fn(|at| to_linear(f64::from(u8::try_from(at).unwrap_or(u8::MAX)) / 255.0))
+    });
+    LINEAR[usize::from(byte)]
+}
+
+/// One gamma-encoded channel, 0 to 1, as the linear value it is (sRGB's curve).
+pub(super) fn to_linear(v: f64) -> f64 {
     if v <= 0.04045 {
         v / 12.92
     } else {
