@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794262115006,
+  "lastUpdate": 1794264909215,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -45234,6 +45234,48 @@ window.BENCHMARK_DATA = {
             "value": 101.700694,
             "unit": "ms",
             "extra": "median of 5 runs: 101.086, 101.359, 101.701, 102.261, 103.389 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "53d3118589585aee5d3e8e5df23a37005f184ac9",
+          "message": "A waiting purlis command says where to answer (#6008) (#6044)\n\n* A waiting purlis command says where to answer (#6008)\n\nA command that waits on the person now says where they answer, in one\nphrasing built by purlis_core::askwait::waiting_said: \"waiting for the\nperson: Asks (✋) in the purlis window, project <name>, for up to N\nseconds\" (ADR 0121 decision 16). One that stops waiting on an ask that\nstays open says it is still answerable there (still_answerable_said).\n\nCovers the Secret ask a brokered command raises, purlis secret exec's\nrun grant, purlis secret ask (which waited silently), and a runner\nchat's tool run. Exit codes are unchanged.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70HJ8MKCW52MMYW8V2W35AC\nPurlis-Persona: steward\n\n* Changelog fragment: a waiting command says where to answer (#6008)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70HJ8MKCW52MMYW8V2W35AC\nPurlis-Persona: steward\n\n* askwait: whole minutes by is_multiple_of, as clippy asks (#6008)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70HJ8MKCW52MMYW8V2W35AC\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-09T21:19:42Z",
+          "tree_id": "4c4e7a08be5c5f23a3ab68ba02a1e1852f314498",
+          "url": "https://github.com/purlis/purlis/commit/53d3118589585aee5d3e8e5df23a37005f184ac9"
+        },
+        "date": 1794264902756,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.7068869999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.682, 0.701, 0.707, 0.728, 0.728 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.630238,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.373, 16.552, 16.630, 16.633, 16.711 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.228551,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.681, 101.105, 101.229, 101.737, 101.843 ms"
           }
         ]
       }
