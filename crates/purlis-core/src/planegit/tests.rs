@@ -5440,7 +5440,7 @@ fn resolve_continue(fixture: &Fixture, shown: &[&str]) -> resolve::Settled {
 
 /// The resolve folder a Resolve cut for `fixture` (#5824 F7): where the conflict is settled.
 fn folder(fixture: &Fixture) -> PathBuf {
-    resolvefolder::path(&fixture.root)
+    resolvefolder::folder(&fixture.root)
 }
 
 /// The subject of the merge a Resolve commits.
@@ -5561,7 +5561,10 @@ fn continue_stages_only_the_files_in_conflict() {
         matches!(&staged, resolve::Settled::Refused(why) if why.contains("`other.md`")),
         "{staged:?}"
     );
-    assert!(resolvefolder::held(&fixture.root).is_some(), "still open");
+    assert!(
+        resolvefolder::resolving(&fixture.root).is_some(),
+        "still open"
+    );
 }
 
 #[test]
@@ -5686,7 +5689,7 @@ fn a_binary_conflict_is_the_persons_to_settle_and_continue_waits_for_it() {
     assert!(refused_with(&refused, "terminal"), "{refused:?}");
 
     // The person keeps this machine's side in the folder and stages it: carried on as staged.
-    let settling = resolvefolder::path(&scene.fixture.root);
+    let settling = resolvefolder::folder(&scene.fixture.root);
     run(&settling, &["checkout", "--ours", "--", "logo.bin"]);
     run(&settling, &["add", "--", "logo.bin"]);
     assert_eq!(
@@ -5715,7 +5718,7 @@ fn a_file_one_side_deleted_is_never_carried_on_with_the_other_sides_copy() {
     let refused = resolve_continue(&scene.fixture, &["a.md"]);
     assert!(refused_with(&refused, "`a.md`"), "{refused:?}");
     assert!(
-        resolvefolder::held(&scene.fixture.root).is_some(),
+        resolvefolder::resolving(&scene.fixture.root).is_some(),
         "still open"
     );
 }
@@ -5736,7 +5739,11 @@ fn a_change_git_carried_through_a_rename_is_kept_and_continue_accepts_it() {
         resolve_start(&scene.fixture),
         resolve::Settled::Stopped(vec!["a.md".into()])
     );
-    write(&resolvefolder::path(&scene.fixture.root), "a.md", b"both\n");
+    write(
+        &resolvefolder::folder(&scene.fixture.root),
+        "a.md",
+        b"both\n",
+    );
 
     assert_eq!(
         resolve_continue(&scene.fixture, &["a.md"]),
@@ -5754,7 +5761,7 @@ fn a_cleanly_merged_file_staged_otherwise_stops_continue() {
         write(dir, "b.md", b"mine\n");
     });
     resolve_start(&scene.fixture);
-    let settling = resolvefolder::path(&scene.fixture.root);
+    let settling = resolvefolder::folder(&scene.fixture.root);
     write(&settling, "a.md", b"both\n");
     write(&settling, "b.md", b"something else\n");
     run(&settling, &["add", "--", "b.md"]);
@@ -5785,7 +5792,7 @@ fn a_line_of_several_commits_stops_once_on_every_conflict() {
         resolve_start(&scene.fixture),
         resolve::Settled::Stopped(vec!["x.md".into(), "y.md".into()])
     );
-    let settling = resolvefolder::path(&scene.fixture.root);
+    let settling = resolvefolder::folder(&scene.fixture.root);
     write(&settling, "x.md", b"both\n");
     // One file settled is not all of them.
     assert!(refused_with(
@@ -5811,7 +5818,7 @@ fn a_conflicted_file_turned_into_a_link_is_not_staged() {
     scene.theirs("theirs", |dir| write(dir, "a.md", b"theirs\n"));
     scene.mine("mine", |dir| write(dir, "a.md", b"mine\n"));
     resolve_start(&scene.fixture);
-    let settling = resolvefolder::path(&scene.fixture.root);
+    let settling = resolvefolder::folder(&scene.fixture.root);
     std::fs::remove_file(settling.join("a.md")).unwrap();
     std::os::unix::fs::symlink("README.md", settling.join("a.md")).unwrap();
 
@@ -5838,7 +5845,7 @@ fn file_names_that_start_with_a_dash_or_hold_a_newline_are_staged_as_names() {
     };
     files.sort();
     assert_eq!(files, vec!["-x.md".to_string(), odd.to_string()]);
-    let settling = resolvefolder::path(&scene.fixture.root);
+    let settling = resolvefolder::folder(&scene.fixture.root);
     write(&settling, "-x.md", b"both\n");
     write(&settling, odd, b"both\n");
     assert_eq!(
@@ -5855,7 +5862,7 @@ fn a_common_ancestor_marker_left_in_a_file_stops_continue() {
     scene.mine("mine", |dir| write(dir, "a.md", b"mine\n"));
     resolve_start(&scene.fixture);
     write(
-        &resolvefolder::path(&scene.fixture.root),
+        &resolvefolder::folder(&scene.fixture.root),
         "a.md",
         b"mine\n||||||| base\none\n",
     );
@@ -5873,7 +5880,7 @@ fn a_settling_that_brings_nothing_of_this_machines_is_skipped() {
     resolve_start(&scene.fixture);
     // Settled as the remote has it: this machine's side has nothing left.
     write(
-        &resolvefolder::path(&scene.fixture.root),
+        &resolvefolder::folder(&scene.fixture.root),
         "a.md",
         b"theirs\n",
     );
@@ -5947,13 +5954,17 @@ fn skip_never_drops_a_side_that_still_changes_files() {
         &resolve::skip(&scene.fixture.root),
         "conflict markers"
     ));
-    write(&resolvefolder::path(&scene.fixture.root), "a.md", b"both\n");
+    write(
+        &resolvefolder::folder(&scene.fixture.root),
+        "a.md",
+        b"both\n",
+    );
     assert!(refused_with(
         &resolve::skip(&scene.fixture.root),
         "nothing left to bring"
     ));
     assert!(
-        resolvefolder::held(&scene.fixture.root).is_some(),
+        resolvefolder::resolving(&scene.fixture.root).is_some(),
         "still open"
     );
 }
@@ -5971,7 +5982,7 @@ fn a_project_that_stores_crlf_line_endings_can_continue() {
         resolve::Settled::Stopped(_)
     ));
     write(
-        &resolvefolder::path(&scene.fixture.root),
+        &resolvefolder::folder(&scene.fixture.root),
         "a.md",
         b"both\r\n",
     );
@@ -6419,7 +6430,7 @@ fn a_settled_conflict() -> Scene {
         resolve::Settled::Stopped(vec!["a.md".into()])
     );
     write(
-        &resolvefolder::path(&scene.fixture.root),
+        &resolvefolder::folder(&scene.fixture.root),
         "a.md",
         b"settled under two names\n",
     );
@@ -6429,7 +6440,7 @@ fn a_settled_conflict() -> Scene {
 impl Scene {
     /// The resolve folder a Resolve cut (#5824 F7).
     fn settling(&self) -> PathBuf {
-        resolvefolder::path(&self.fixture.root)
+        resolvefolder::folder(&self.fixture.root)
     }
 
     /// Whether the project's object store holds the blob of what the folder's `a.md` holds now.
@@ -6447,7 +6458,10 @@ impl Scene {
     /// nothing pushed, and the root never stopped.
     fn still_stopped(&self, head: &str, remote: &str) {
         let root = &self.fixture.root;
-        assert!(resolvefolder::held(root).is_some(), "the resolve went on");
+        assert!(
+            resolvefolder::resolving(root).is_some(),
+            "the resolve went on"
+        );
         assert!(gitstate::stopped(root).is_none(), "the root stopped");
         assert_eq!(
             gitstate::unmerged(&self.settling()),

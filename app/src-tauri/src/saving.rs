@@ -344,9 +344,9 @@ pub fn saving_of(root: &Path) -> PlaneSaving {
             .resolve_offered
             .then(|| planegit::TO_RESOLVE.to_owned()),
         stopped_by: standing.stopped_by.map(str::to_owned),
-        resolving: planegit::resolve::held(root).map(|held| SaveResolving {
+        resolving: planegit::resolve::resolving(root).map(|resolving| SaveResolving {
             folder: planegit::resolve::folder(root).display().to_string(),
-            keys: held
+            keys: resolving
                 .keys
                 .into_iter()
                 .map(|key| SaveKey {

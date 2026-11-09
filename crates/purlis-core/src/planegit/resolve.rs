@@ -18,7 +18,7 @@
 use std::path::Path;
 
 pub use super::resolvefolder::{
-    Chosen, Conflicts, HeldKey, Resolving, Settled, Side, held, markers_in, path as folder,
+    Chosen, Conflicts, Resolving, ResolvingKey, Settled, Side, folder, markers_in, resolving,
     said_by_hand,
 };
 use super::{Claim, PushResult, changed_paths, git, rebase_in_progress, resolvefolder, tail};
@@ -41,7 +41,7 @@ pub fn start(root: &Path, say: Sink) -> Settled {
 /// `shown` are the files the window showed; `keys` the person's choice for each settings key
 /// both sides changed ([`Chosen`]).
 pub fn carry_on(root: &Path, shown: &[String], keys: &[Chosen], say: Sink) -> Settled {
-    if resolvefolder::held(root).is_none() && stopped_at_the_root(root) {
+    if resolvefolder::resolving(root).is_none() && stopped_at_the_root(root) {
         return Settled::Refused(AT_THE_ROOT.into());
     }
     resolvefolder::carry_on(root, shown, keys, say)
@@ -49,7 +49,7 @@ pub fn carry_on(root: &Path, shown: &[String], keys: &[Chosen], say: Sink) -> Se
 
 /// **Skip**: drop this machine's side where what is settled brings nothing the remote lacks.
 pub fn skip(root: &Path) -> Settled {
-    if resolvefolder::held(root).is_none() && stopped_at_the_root(root) {
+    if resolvefolder::resolving(root).is_none() && stopped_at_the_root(root) {
         return Settled::Refused(AT_THE_ROOT.into());
     }
     resolvefolder::skip(root)
@@ -57,7 +57,7 @@ pub fn skip(root: &Path) -> Settled {
 
 /// **Abort**: remove the resolve folder, or put away a stop an older build left at the root.
 pub fn abort(root: &Path) -> Settled {
-    if resolvefolder::held(root).is_some() || resolvefolder::path(root).exists() {
+    if resolvefolder::resolving(root).is_some() || resolvefolder::folder(root).exists() {
         return resolvefolder::abort(root);
     }
     let Some(_claim) = Claim::of(root) else {

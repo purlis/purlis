@@ -7,7 +7,7 @@
 //! tree and a quit left the root mid-merge. Now nothing multi-step ever runs at the root:
 //!
 //! - [`cut`] makes the **resolve folder**, a linked worktree of the plane at the state folder's
-//!   `resolve/` ([`path`]), on the temporary branch [`BRANCH`]. Its files are the merge of the
+//!   `resolve/` ([`folder`]), on the temporary branch [`BRANCH`]. Its files are the merge of the
 //!   plane's commits and the remote's target as `git merge-tree` writes it, what purlis
 //!   generates already rebuilt ([`super::bringin::plan`]); each file a person wrote that
 //!   conflicts holds git's markers, and the folder's index holds its three sides as unmerged
@@ -27,7 +27,7 @@
 //!
 //! **A quit at any point leaves the root untouched**: before the record is written there is no
 //! resolve, and a folder without one is removed by the next [`cut`]; after it, the folder is
-//! found again by the next look ([`held`]).
+//! found again by the next look ([`resolving`]).
 //!
 //! The window runs every git command here, under no chat's sandbox, each one the person's press.
 
@@ -117,7 +117,7 @@ const NONE_OPEN: &str =
 
 /// **Where the resolve folder of the plane at `root` is**: `resolve/` in its state folder, never
 /// under `$PURLIS_HOME`, since it is a checkout of this plane.
-pub fn path(root: &Path) -> PathBuf {
+pub fn folder(root: &Path) -> PathBuf {
     crate::names::state(root).join(FOLDER)
 }
 
@@ -139,14 +139,14 @@ pub struct Resolving {
     /// The settings file's keys both sides changed, each its own way (#5852): the person's to
     /// choose in the window. Empty where none.
     #[serde(default)]
-    pub keys: Vec<HeldKey>,
+    pub keys: Vec<ResolvingKey>,
     /// When it was cut, in seconds since the epoch.
     pub at: u64,
 }
 
 /// A settings key both sides changed, each its own way, with both values as TOML writes them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct HeldKey {
+pub struct ResolvingKey {
     /// The settings file it is in.
     pub file: String,
     /// The key's dotted path.
@@ -205,9 +205,9 @@ impl Resolving {
 }
 
 /// **The resolve open in the plane at `root`**, or `None`: its record, while the folder is there.
-pub fn held(root: &Path) -> Option<Resolving> {
+pub fn resolving(root: &Path) -> Option<Resolving> {
     match open(root) {
-        Open::Resolving(held) => Some(held),
+        Open::Resolving(resolving) => Some(resolving),
         Open::None | Open::NotOurs(_) => None,
     }
 }
@@ -225,18 +225,18 @@ enum Open {
 
 /// The resolve open at `root`, checked: its record, and its folder's gitfile the one cut for it.
 fn open(root: &Path) -> Open {
-    let Some(held) = std::fs::read_to_string(git_dir_of(root).join(RECORD))
+    let Some(resolving) = std::fs::read_to_string(git_dir_of(root).join(RECORD))
         .ok()
         .and_then(|text| serde_json::from_str::<Resolving>(&text).ok())
         .filter(Resolving::holds)
     else {
         return Open::None;
     };
-    if std::fs::symlink_metadata(path(root).join(".git")).is_err() {
+    if std::fs::symlink_metadata(folder(root).join(".git")).is_err() {
         return Open::None;
     }
     match folder_is_ours(root) {
-        Ok(()) => Open::Resolving(held),
+        Ok(()) => Open::Resolving(resolving),
         Err(why) => Open::NotOurs(why),
     }
 }
@@ -252,7 +252,7 @@ const NOT_OURS: &str = "The resolve folder's link to this project's git is not t
 fn folder_is_ours(root: &Path) -> Result<(), String> {
     use std::io::Read;
     let not_ours = || NOT_OURS.to_owned();
-    let gitfile = path(root).join(".git");
+    let gitfile = folder(root).join(".git");
     if !std::fs::symlink_metadata(&gitfile).is_ok_and(|meta| meta.is_file()) {
         return Err(not_ours());
     }
@@ -264,7 +264,7 @@ fn folder_is_ours(root: &Path) -> Result<(), String> {
         .trim_end_matches(['\n', '\r'])
         .strip_prefix("gitdir: ")
         .ok_or_else(not_ours)?;
-    let named = path(root).join(named);
+    let named = folder(root).join(named);
     let real = |path: &Path| std::fs::canonicalize(path).map_err(|_| not_ours());
     let entry = real(&named)?;
     let common = line_of(
@@ -290,7 +290,7 @@ fn folder_is_ours(root: &Path) -> Result<(), String> {
 /// The files of the open resolve, by who may settle them, as they stand in the folder now.
 pub fn conflicts(root: &Path) -> Option<Conflicts> {
     match open(root) {
-        Open::Resolving(held) => Some(sorted(&path(root), &held)),
+        Open::Resolving(resolving) => Some(sorted(&folder(root), &resolving)),
         // Still open, so the window offers Abort; nothing is read from the folder.
         Open::NotOurs(_) => Some(Conflicts::default()),
         Open::None => None,
@@ -323,7 +323,7 @@ pub(super) fn cut(root: &Path, target: &str) -> Result<Vec<String>, String> {
     }
     let tree = bringin::tree_of(root, &plan)?;
     let stages = unmerged_sides(root, &ours, &theirs)?;
-    let folder = path(root);
+    let folder = folder(root);
     let made = (|| {
         std::fs::create_dir_all(folder.parent().unwrap_or(root)).map_err(|e| e.to_string())?;
         let folder_arg = folder.to_string_lossy();
@@ -355,7 +355,7 @@ pub(super) fn cut(root: &Path, target: &str) -> Result<Vec<String>, String> {
         for file in plan.keys.keys() {
             let around = settings_around(root, &ours, &theirs, file)?;
             written_in(&folder, file, &around.text)?;
-            keys.extend(around.keys.into_iter().map(|key| HeldKey {
+            keys.extend(around.keys.into_iter().map(|key| ResolvingKey {
                 file: file.clone(),
                 key: key.key,
                 ours: key.ours,
@@ -402,7 +402,7 @@ pub(super) fn cut(root: &Path, target: &str) -> Result<Vec<String>, String> {
             })
             .cloned()
             .collect();
-        let held = Resolving {
+        let resolving = Resolving {
             target: target.to_owned(),
             ours: ours.clone(),
             theirs: theirs.clone(),
@@ -412,7 +412,7 @@ pub(super) fn cut(root: &Path, target: &str) -> Result<Vec<String>, String> {
             keys,
             at: super::now() as u64,
         };
-        write_record(root, &held)
+        write_record(root, &resolving)
     })();
     match made {
         Ok(()) => Ok(plan.person),
@@ -431,8 +431,8 @@ pub fn start(root: &Path, say: Sink) -> Settled {
         Ok(branch) => branch,
         Err(refused) => return refused,
     };
-    if let Some(held) = held(root) {
-        return Settled::Stopped(held.conflicted);
+    if let Some(resolving) = resolving(root) {
+        return Settled::Stopped(resolving.conflicted);
     }
     say(Say::Info(
         format!("Fetching `{branch}` from the remote …").into(),
@@ -460,8 +460,8 @@ pub(super) fn start_fetched(root: &Path, say: Sink) -> Settled {
         Ok(branch) => branch,
         Err(refused) => return refused,
     };
-    if let Some(held) = held(root) {
-        return Settled::Stopped(held.conflicted);
+    if let Some(resolving) = resolving(root) {
+        return Settled::Stopped(resolving.conflicted);
     }
     let theirs = format!("refs/remotes/origin/{branch}");
     if super::count(root, &format!("HEAD..{theirs}")) == Some(0) {
@@ -565,15 +565,15 @@ pub fn carry_on(root: &Path, shown: &[String], keys: &[Chosen], say: Sink) -> Se
     if let Err(why) = super::git_files_refused(root) {
         return Settled::Refused(format!("Nothing was carried on: {why}."));
     }
-    let held = match open(root) {
-        Open::Resolving(held) => held,
+    let resolving = match open(root) {
+        Open::Resolving(resolving) => resolving,
         Open::NotOurs(why) => return Settled::Refused(why),
         Open::None => return Settled::Refused(NONE_OPEN.into()),
     };
-    let folder = path(root);
+    let folder = folder(root);
     let outside: Vec<&String> = shown
         .iter()
-        .filter(|path| !held.conflicted.contains(*path))
+        .filter(|path| !resolving.conflicted.contains(*path))
         .collect();
     if !outside.is_empty() {
         return Settled::Refused(format!(
@@ -582,23 +582,27 @@ pub fn carry_on(root: &Path, shown: &[String], keys: &[Chosen], say: Sink) -> Se
             if outside.len() == 1 { "is" } else { "are" },
         ));
     }
-    let tree = match settled_tree(root, &folder, &held, keys) {
+    let tree = match settled_tree(root, &folder, &resolving, keys) {
         Ok(tree) => tree,
         Err(refused) => return refused,
     };
     // Settled as the remote has it: nothing of this machine's is left, and Skip is the way on.
-    if line_of(root, &["rev-parse", &format!("{}^{{tree}}", held.theirs)]).as_deref()
+    if line_of(
+        root,
+        &["rev-parse", &format!("{}^{{tree}}", resolving.theirs)],
+    )
+    .as_deref()
         == Some(tree.as_str())
     {
         return Settled::Empty;
     }
     say(Say::Info("Committing the merge …".into()));
     let plane = crate::planesave::Settings::read(root).plane;
-    let subject = format!("Bring {} into this machine's saves", held.target);
+    let subject = format!("Bring {} into this machine's saves", resolving.target);
     let merge = match bringin::commit_tree(
         root,
         &tree,
-        &[&held.ours, &held.theirs],
+        &[&resolving.ours, &resolving.theirs],
         &subject,
         plane.sign.value,
     ) {
@@ -610,7 +614,7 @@ pub fn carry_on(root: &Path, shown: &[String], keys: &[Chosen], say: Sink) -> Se
             ));
         }
     };
-    match moved_onto(root, &held, &merge, plane.sign.value) {
+    match moved_onto(root, &resolving, &merge, plane.sign.value) {
         Ok(()) => {
             clear(root);
             forget_replayed_push(root);
@@ -627,14 +631,14 @@ pub fn skip(root: &Path) -> Settled {
     let Some(_claim) = Claim::of(root) else {
         return Settled::Refused(BUSY.into());
     };
-    let held = match open(root) {
-        Open::Resolving(held) => held,
+    let resolving = match open(root) {
+        Open::Resolving(resolving) => resolving,
         Open::NotOurs(why) => return Settled::Refused(why),
         Open::None => return Settled::Refused(NONE_OPEN.into()),
     };
-    let folder = path(root);
+    let folder = folder(root);
     // Skip keeps this machine's value for no key: each stands as the remote's.
-    let keys: Vec<Chosen> = held
+    let keys: Vec<Chosen> = resolving
         .keys
         .iter()
         .map(|key| Chosen {
@@ -643,11 +647,14 @@ pub fn skip(root: &Path) -> Settled {
             side: Side::Theirs,
         })
         .collect();
-    let tree = match settled_tree(root, &folder, &held, &keys) {
+    let tree = match settled_tree(root, &folder, &resolving, &keys) {
         Ok(tree) => tree,
         Err(refused) => return refused,
     };
-    let theirs_tree = line_of(root, &["rev-parse", &format!("{}^{{tree}}", held.theirs)]);
+    let theirs_tree = line_of(
+        root,
+        &["rev-parse", &format!("{}^{{tree}}", resolving.theirs)],
+    );
     if theirs_tree.as_deref() != Some(tree.as_str()) {
         return Settled::Refused(
             "Skip drops only a side that has nothing left to bring, and what is settled still \
@@ -656,7 +663,7 @@ pub fn skip(root: &Path) -> Settled {
         );
     }
     let plane = crate::planesave::Settings::read(root).plane;
-    match moved_onto(root, &held, &held.theirs, plane.sign.value) {
+    match moved_onto(root, &resolving, &resolving.theirs, plane.sign.value) {
         Ok(()) => {
             clear(root);
             forget_replayed_push(root);
@@ -672,7 +679,7 @@ pub fn abort(root: &Path) -> Settled {
     let Some(_claim) = Claim::of(root) else {
         return Settled::Refused(BUSY.into());
     };
-    if held(root).is_none() && !path(root).exists() {
+    if resolving(root).is_none() && !folder(root).exists() {
         return Settled::Refused(
             "No resolve is open in this project, so there is nothing to abort.".into(),
         );
@@ -685,14 +692,14 @@ pub fn abort(root: &Path) -> Settled {
 /// The two sides of the open resolve, by their commit subjects: the remote's, then this
 /// machine's.
 pub fn sides(root: &Path) -> Option<(String, String)> {
-    let held = held(root)?;
+    let resolving = resolving(root)?;
     let subject = |id: &str| {
         git::run(root, &["log", "-1", "--format=%s", id, "--"], git::READ)
             .ok()
             .filter(git::Run::ok)
             .map(|run| run.line().trim().to_string())
     };
-    Some((subject(&held.theirs)?, subject(&held.ours)?))
+    Some((subject(&resolving.theirs)?, subject(&resolving.ours)?))
 }
 
 /// The tree the folder comes to once every file in conflict is settled and staged, or the
@@ -700,15 +707,15 @@ pub fn sides(root: &Path) -> Option<(String, String)> {
 fn settled_tree(
     root: &Path,
     folder: &Path,
-    held: &Resolving,
+    resolving: &Resolving,
     chosen: &[Chosen],
 ) -> Result<String, Settled> {
-    let left = sorted(folder, held);
+    let left = sorted(folder, resolving);
     if !left.by_hand.is_empty() {
         return Err(Settled::Refused(said_by_hand(folder, &left.by_hand)));
     }
     // Every key in conflict is chosen before anything is staged.
-    let unchosen: Vec<String> = held
+    let unchosen: Vec<String> = resolving
         .keys
         .iter()
         .filter(|key| left.keyed.contains(&key.file))
@@ -726,8 +733,8 @@ fn settled_tree(
         )));
     }
     // Settled already, and staged: by the person in a terminal there.
-    for path in &held.conflicted {
-        if left.marked.contains(path) || held.by_hand.contains(path) || held.keyed(path) {
+    for path in &resolving.conflicted {
+        if left.marked.contains(path) || resolving.by_hand.contains(path) || resolving.keyed(path) {
             continue;
         }
         if staged_text(folder, path).is_some_and(|text| markers_in(&text)) {
@@ -743,13 +750,13 @@ fn settled_tree(
             "--no-renames",
             "--name-only",
             "-z",
-            &held.tree,
+            &resolving.tree,
             "--",
         ],
     );
     let elsewhere: Vec<&String> = changed
         .iter()
-        .filter(|path| !held.conflicted.contains(*path))
+        .filter(|path| !resolving.conflicted.contains(*path))
         .collect();
     if !elsewhere.is_empty() {
         return Err(Settled::Refused(format!(
@@ -787,7 +794,7 @@ fn settled_tree(
             .filter(|c| &c.file == file && c.side == Side::Theirs)
             .map(|c| c.key.clone())
             .collect();
-        let text = settings_chosen(root, &held.ours, &held.theirs, file, &theirs_for)
+        let text = settings_chosen(root, &resolving.ours, &resolving.theirs, file, &theirs_for)
             .map_err(|why| Settled::Refused(format!("`{file}` could not be settled: {why}.")))?;
         staged_as(folder, file, &text).map_err(|why| {
             Settled::Refused(format!(
@@ -810,8 +817,8 @@ fn settled_tree(
     let tree = written_tree(folder)?;
     // The memory indexes, written again from the tree the person settled (#5824 F4), so no line
     // names a memory they deleted, and one they kept is listed.
-    let indexes =
-        bringin::indexes_settled_between(root, &tree, &held.ours, &held.theirs).map_err(|why| {
+    let indexes = bringin::indexes_settled_between(root, &tree, &resolving.ours, &resolving.theirs)
+        .map_err(|why| {
             Settled::Refused(format!(
                 "Nothing was carried on: purlis could not write a memory index: {}.",
                 crate::personas::one_line(&why)
@@ -1004,17 +1011,17 @@ fn settings_chosen(
 /// Move the root onto `onto` with one `reset --keep`: first replaying onto it, off to the side,
 /// what was saved at the root since the folder was cut. `Err` is the sentence for the person;
 /// nothing moved, and the folder is kept.
-fn moved_onto(root: &Path, held: &Resolving, onto: &str, sign: bool) -> Result<(), String> {
+fn moved_onto(root: &Path, resolving: &Resolving, onto: &str, sign: bool) -> Result<(), String> {
     let here = line_of(root, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap_or_default();
-    if here != held.target {
+    if here != resolving.target {
         return Err(format!(
             "The project is on `{here}` now, and the resolve was for `{}`. Nothing moved; the \
              resolve folder is kept.",
-            held.target
+            resolving.target
         ));
     }
     let head = line_of(root, &["rev-parse", "--verify", "-q", "HEAD"]).unwrap_or_default();
-    let onto = if head == held.ours {
+    let onto = if head == resolving.ours {
         onto.to_owned()
     } else {
         replay::replay(root, "HEAD", onto, sign, WRITE)
@@ -1146,7 +1153,7 @@ fn in_the_way(err: &str) -> Vec<String> {
 
 /// Remove whatever an open or half-cut resolve left: the folder, its branch and the record.
 fn clear(root: &Path) {
-    let folder = path(root);
+    let folder = folder(root);
     // git runs on the folder only while its gitfile is the one cut for it.
     if folder.exists() && folder_is_ours(root).is_ok() {
         let folder_arg = folder.to_string_lossy();
@@ -1168,9 +1175,9 @@ fn clear(root: &Path) {
     let _ = std::fs::remove_file(git_dir_of(root).join(RECORD));
 }
 
-fn write_record(root: &Path, held: &Resolving) -> Result<(), String> {
+fn write_record(root: &Path, resolving: &Resolving) -> Result<(), String> {
     let path = git_dir_of(root).join(RECORD);
-    let text = serde_json::to_string_pretty(held).map_err(|e| e.to_string())?;
+    let text = serde_json::to_string_pretty(resolving).map_err(|e| e.to_string())?;
     let dir = path.parent().unwrap_or(root);
     crate::rewrite::replace(dir, &path, text.as_bytes(), crate::rewrite::Mode::Private)
         .map_err(|why| why.to_string())
@@ -1227,12 +1234,12 @@ fn unmerged(folder: &Path) -> Sides {
 }
 
 /// The files still unmerged in the folder, by who may settle them.
-fn sorted(folder: &Path, held: &Resolving) -> Conflicts {
+fn sorted(folder: &Path, resolving: &Resolving) -> Conflicts {
     let mut out = Conflicts::default();
     for (path, sides) in unmerged(folder) {
-        if held.keyed(&path) {
+        if resolving.keyed(&path) {
             out.keyed.push(path);
-        } else if held.by_hand.contains(&path) || marks_nothing(folder, &path, &sides) {
+        } else if resolving.by_hand.contains(&path) || marks_nothing(folder, &path, &sides) {
             out.by_hand.push(path);
         } else {
             out.marked.push(path);
@@ -1288,11 +1295,11 @@ fn read_plain(folder: &Path, path: &str) -> Result<(std::fs::File, bool, Vec<u8>
     let (file, runs) = match ondisk::opened(folder, path) {
         ondisk::OnDisk::File(file, runs) => (file, runs),
         ondisk::OnDisk::SecondName => {
-            let held = Ok(vec![ondisk::Held {
+            let resolving = Ok(vec![ondisk::Held {
                 path: path.to_owned(),
                 why: ondisk::Why::SecondName,
             }]);
-            return Err(ondisk::refused_ahead(&held)
+            return Err(ondisk::refused_ahead(&resolving)
                 .map(|refusal| {
                     format!(
                         "A settled file is not the one file on disk: {} Settle it again as one \

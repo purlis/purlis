@@ -821,7 +821,7 @@ fn continue_rebuilds_the_memory_index_from_the_tree_the_person_settled() {
         Ok(vec![alpha.clone()])
     );
     run(
-        &super::super::resolvefolder::path(&two.mine),
+        &super::super::resolvefolder::folder(&two.mine),
         &["rm", "-q", "--", &alpha],
     );
 
