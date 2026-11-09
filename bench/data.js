@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794193382018,
+  "lastUpdate": 1794198584266,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -44226,6 +44226,48 @@ window.BENCHMARK_DATA = {
             "value": 100.848146,
             "unit": "ms",
             "extra": "median of 5 runs: 100.158, 100.841, 100.848, 101.725, 105.715 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "65a5935946348780cf71118608188ac92e775274",
+          "message": "Sandbox: a project can keep its chats to their own terminal on macOS (#5908)\n\n[sandbox] own-terminal-only = true, off by default, and the Stricter\nterminals switch in Settings > Sandbox. On macOS, the profile a Codex or\nopencode chat is wrapped in then denies reading, writing and controlling\nevery terminal of the Mac, last of its rules, and gives back only the\nterminal the chat runs in. A chat can then make no terminal of its own,\nso script, expect, tmux and Codex commands run in a terminal fail; the\nswitch says so beside what it does. A value that is not true or false is\nrefused with a sentence and read as on. The floor keeps the key too.\n\ntools/seatbelt-case.sh applies the profiles written for such a project\non the macOS runner (the merge queue's sandbox leg): another terminal is\nneither read nor written, the chat's own still is, and script makes none.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YZMEY0VRD66N7EBGB9ZFYA\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-09T03:57:59Z",
+          "tree_id": "0d69eb8a198c9cf0fd2806792411f05abad96ae6",
+          "url": "https://github.com/purlis/purlis/commit/65a5935946348780cf71118608188ac92e775274"
+        },
+        "date": 1794198578758,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.364271,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.355, 0.362, 0.364, 0.375, 0.386 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.241419,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.225, 16.229, 16.241, 16.348, 16.462 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.4562135,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.224, 101.434, 101.456, 102.059, 102.118 ms"
           }
         ]
       }
