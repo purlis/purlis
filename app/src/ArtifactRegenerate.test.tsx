@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -108,7 +108,13 @@ describe("Regenerate in an artifact's bar", () => {
     });
     draw();
     await userEvent.click(await screen.findByRole("button", { name: "Regenerate" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("last good: 2026-11-08 09:00 UTC");
+    const failed = await waitFor(() => {
+      const found = document.querySelector('[data-cause="artifact-regenerate-failed:board"]');
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+    expect(failed).toHaveTextContent("last good: 2026-11-08 09:00 UTC");
+    expect(within(failed).getByRole("button", { name: "Regenerate again" })).toBeInTheDocument();
     expect(screen.getByTestId("artifact-regenerate-output")).toHaveTextContent(
       "TypeError: rows is undefined",
     );

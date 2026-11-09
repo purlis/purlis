@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { emit } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
@@ -341,11 +341,20 @@ describe("an artifact's tab", () => {
     );
     render(<Tab />);
     await userEvent.click(await screen.findByRole("button", { name: "Repin" }));
-    const refused = await screen.findByRole("alert");
+    const refused = await waitFor(() => {
+      const found = document.querySelector('[data-cause="artifact-repin-refused:backlog-state"]');
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
     expect(refused).toHaveTextContent(
-      "purlis could not repin Backlog state: there is no folder 'backlog-state' in artifacts/",
+      "purlis could not repin Backlog state: there is no folder 'backlog-state' in artifacts/. Put its folder back and repin it again, or unpin it.",
     );
     expect(screen.getByTestId("artifact-missing")).toBeInTheDocument();
+
+    await userEvent.click(within(refused).getByRole("button", { name: "Dismiss" }));
+    await waitFor(() =>
+      expect(document.querySelector('[data-cause^="artifact-repin-refused"]')).toBeNull(),
+    );
   });
 
   it("says a page over the size cap with both sizes, opens nothing, and unpins it", async () => {

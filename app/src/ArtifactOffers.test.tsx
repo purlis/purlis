@@ -100,7 +100,10 @@ describe("what a page may offer", () => {
   it("refuses an id a page may not offer, though the catalogue has the row", () => {
     expect(
       resolve({ does: "workspace.remove", subject: "alpha" }, "alpha", offerFor),
-    ).toHaveProperty("refused", "A page cannot offer workspace.remove, so purlis did not draw it");
+    ).toHaveProperty(
+      "refused",
+      "A page cannot offer workspace.remove, so purlis did not draw it. Change the page to offer one of todo.open, todo.done, todo.reopen, todo.forget or todo.delete",
+    );
     expect(resolve({ does: "constructor", subject: "x" }, "alpha", offerFor)).toHaveProperty(
       "refused",
     );

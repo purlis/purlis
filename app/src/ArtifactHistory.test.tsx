@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -63,6 +63,35 @@ afterEach(() => {
 });
 
 describe("an artifact's History", () => {
+  it("says a refused comparison inside its dialog, and what to do about it", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "artifact_history") return HISTORY;
+      if (cmd === "artifact_compare") throw "that version is gone";
+      return null;
+    });
+    draw();
+    await userEvent.click(screen.getByRole("button", { name: "History…" }));
+    const compare = await screen.findByRole("button", { name: "Compare" });
+    await waitFor(() => expect(compare).toBeEnabled());
+    await userEvent.click(compare);
+    const dialog = screen.getByRole("dialog", { name: "History of Board" });
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "purlis could not compare these versions: that version is gone. Pick other versions and press Compare again.",
+    );
+  });
+
+  it("says a refused read of its versions, and what to do about it", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "artifact_history") throw "the history store is unreadable";
+      return null;
+    });
+    draw();
+    await userEvent.click(screen.getByRole("button", { name: "History…" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "purlis could not read the history of Board: the history store is unreadable. Close this and open History again.",
+    );
+  });
+
   it("says how many Regenerates it keeps, and that they stay on this machine", async () => {
     core();
     draw();

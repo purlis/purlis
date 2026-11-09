@@ -35,6 +35,7 @@ import { artifactDataIn, artifactsIn, useViewChanged } from "./planeChanged";
 import { DiscussButton } from "./artifactDiscuss";
 import { Button } from "./ui/button/Button";
 import { EmptyState } from "./ui/empty-state/EmptyState";
+import { Notice } from "./Notice";
 
 /**
  * **A pinned artifact, rendered in its tab** (ADR 0122 §2–3, #5952).
@@ -313,7 +314,8 @@ function sentence(said: string): string {
 
 /**
  * **Repin and Unpin**, the way out of an artifact that cannot be opened. A refusal is said
- * beside them, as an alert, and nothing else changes.
+ * beside them as a Notice, saying what to do, and nothing else changes: Repin and Unpin
+ * beside it are its retry, and Dismiss puts it away.
  */
 function Remedies({
   plane,
@@ -330,7 +332,7 @@ function Remedies({
   onRepinned: () => void;
   onUnpinned: () => void;
 }) {
-  const [refused, setRefused] = useState<string | null>(null);
+  const [refused, setRefused] = useState<{ verb: "repin" | "unpin"; why: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const act = (verb: "repin" | "unpin") => {
     setBusy(true);
@@ -339,14 +341,13 @@ function Remedies({
     ask(plane, workspace, folder).then(
       (answer) => {
         setBusy(false);
-        if (answer.status === "error")
-          setRefused(`purlis could not ${verb} ${name}: ${answer.error}`);
+        if (answer.status === "error") setRefused({ verb, why: answer.error });
         else if (verb === "repin") onRepinned();
         else onUnpinned();
       },
       (why: unknown) => {
         setBusy(false);
-        setRefused(`purlis could not ${verb} ${name}: ${String(why)}`);
+        setRefused({ verb, why: String(why) });
       },
     );
   };
@@ -359,12 +360,26 @@ function Remedies({
         Unpin
       </Button>
       {refused !== null && (
-        <p role="alert" className="artifact-refused">
-          {refused}
-        </p>
+        <Notice
+          cause={`artifact-${refused.verb}-refused:${folder}`}
+          tone="trouble"
+          label={`Could not ${refused.verb} ${name}`}
+          onDismiss={() => setRefused(null)}
+        >
+          {remedyRefused(refused.verb, name, refused.why)}
+        </Notice>
       )}
     </>
   );
+}
+
+/** A refused Repin or Unpin in the core's sentence, and what to do about it. */
+function remedyRefused(verb: "repin" | "unpin", name: string, why: string): string {
+  const todo =
+    verb === "repin"
+      ? "Put its folder back and repin it again, or unpin it."
+      : "Unpin it again once the project can be written.";
+  return `purlis could not ${verb} ${name}: ${why}. ${todo}`;
 }
 
 /** What the bar says of who pinned it. */

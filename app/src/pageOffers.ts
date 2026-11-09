@@ -72,7 +72,10 @@ export function resolve(
 ): Resolved {
   const key = `${offered.does}:${offered.subject}`;
   if (!Object.prototype.hasOwnProperty.call(OFFERABLE, offered.does)) {
-    return { key, refused: `A page cannot offer ${offered.does}, so purlis did not draw it` };
+    return {
+      key,
+      refused: `A page cannot offer ${offered.does}, so purlis did not draw it. ${OFFER_INSTEAD}`,
+    };
   }
   const offerable = OFFERABLE[offered.does];
   const offer = offerFor?.(key);
@@ -84,3 +87,9 @@ export function resolve(
   }
   return offerable.asks === undefined ? { key, offer } : { key, offer, asks: offerable.asks };
 }
+
+/** What a page's author can offer instead of an id a page may not, said after its refusal. */
+const OFFER_INSTEAD = (() => {
+  const ids = Object.keys(OFFERABLE);
+  return `Change the page to offer one of ${ids.slice(0, -1).join(", ")} or ${ids[ids.length - 1]}`;
+})();

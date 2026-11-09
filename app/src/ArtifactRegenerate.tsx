@@ -10,6 +10,7 @@ import {
 } from "./bindings";
 import { Button } from "./ui/button/Button";
 import { AlertDialog } from "./ui/dialog/Dialog";
+import { Notice } from "./Notice";
 
 /**
  * **Regenerate, in an artifact's bar** (ADR 0122 §6, #5962): the pin's command run again in
@@ -99,6 +100,7 @@ export function ArtifactRegenerate({
   };
 
   const press = () => (about.standing === "approved" ? run() : setAsking(true));
+  const failed = refused ?? ran?.failed ?? null;
 
   return (
     <>
@@ -113,18 +115,32 @@ export function ArtifactRegenerate({
       >
         Regenerate
       </Button>
-      {refused !== null || (ran?.failed ?? null) !== null ? (
+      {failed === null ? null : (
         <div className="artifact-regenerate-said">
-          <p role="alert" data-testid="artifact-regenerate-failed">
-            {refused ?? ran?.failed}
-          </p>
-          {ran?.output ? (
-            <pre className="artifact-regenerate-output" data-testid="artifact-regenerate-output">
-              {ran.output}
-            </pre>
-          ) : null}
+          <Notice
+            cause={`artifact-regenerate-failed:${folder}`}
+            tone="trouble"
+            label={`${name} was not regenerated`}
+            fixes={[{ label: "Regenerate again", onPress: press }]}
+            onDismiss={() => {
+              setRefused(null);
+              setRan(null);
+            }}
+            under={
+              ran?.output ? (
+                <pre
+                  className="artifact-regenerate-output"
+                  data-testid="artifact-regenerate-output"
+                >
+                  {ran.output}
+                </pre>
+              ) : undefined
+            }
+          >
+            <span data-testid="artifact-regenerate-failed">{failed}</span>
+          </Notice>
         </div>
-      ) : null}
+      )}
       <AlertDialog
         isOpen={asking}
         onClose={() => setAsking(false)}

@@ -102,16 +102,16 @@ export function HistoryDialog({
         if (answer.status === "ok") {
           setHistory(answer.data);
           setVersion(answer.data.versions[0]?.id ?? "");
-        } else setFailed(answer.error);
+        } else setFailed(readRefused(name, answer.error));
       },
       (why: unknown) => {
-        if (!gone) setFailed(String(why));
+        if (!gone) setFailed(readRefused(name, String(why)));
       },
     );
     return () => {
       gone = true;
     };
-  }, [plane, workspace, folder]);
+  }, [plane, workspace, folder, name]);
 
   const versions = history?.versions ?? [];
   const options = versions.map((one) => ({ value: one.id, label: versionSaid(one) }));
@@ -122,11 +122,11 @@ export function HistoryDialog({
       (answer) => {
         setComparing(false);
         if (answer.status === "ok") setCompared(answer.data);
-        else setFailed(`purlis could not compare these versions: ${answer.error}`);
+        else setFailed(compareRefused(answer.error));
       },
       (why: unknown) => {
         setComparing(false);
-        setFailed(`purlis could not compare these versions: ${String(why)}`);
+        setFailed(compareRefused(String(why)));
       },
     );
   };
@@ -193,7 +193,7 @@ export function HistoryDialog({
         </div>
       ) : null}
       {failed === null ? null : (
-        <p role="alert" data-testid="artifact-history-failed">
+        <p className="trouble" role="alert" data-testid="artifact-history-failed">
           {failed}
         </p>
       )}
@@ -299,4 +299,14 @@ export function asOfSaid(then: ArtifactOpenedAsOf): string {
     then.data_at === null ? "no data was kept by then" : null,
   ].filter((note) => note !== null);
   return notes.length === 0 ? `As of ${then.at}` : `As of ${then.at}, ${notes.join("; ")}`;
+}
+
+/** A refused read of the versions, and what to do: the dialog reads them once as it opens. */
+function readRefused(name: string, why: string): string {
+  return `purlis could not read the history of ${name}: ${why}. Close this and open History again.`;
+}
+
+/** A refused comparison, and what to do: Compare, beside it, is the retry. */
+function compareRefused(why: string): string {
+  return `purlis could not compare these versions: ${why}. Pick other versions and press Compare again.`;
 }
