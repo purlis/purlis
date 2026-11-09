@@ -1,0 +1,6 @@
+{
+  "identifier": "window",
+  "description": "The probe's own window, standing in for purlis's: it is granted the stand-in for the vault-values command, as purlis's `main` is. An artifact's native webview is labelled `artifact-…`, which matches no capability here, so it holds an empty grant (ADR 0120 §3).",
+  "windows": ["main"],
+  "permissions": ["core:default", "allow-vault-reveal", "allow-heard", "allow-pong"]
+}

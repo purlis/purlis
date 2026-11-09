@@ -401,12 +401,16 @@ import {
   namedForFirstPanes,
   tabNameOf,
 } from "./tabs";
+import { ArtifactGroup } from "./ArtifactGroup";
+import { PinPage } from "./PinToWorkspace";
+import { artifactOf, artifactView } from "./artifacts";
 import { tileAll, zoomedLayout, zoomFocusedPane } from "./tiling";
 import { recorded } from "./layoutUndo";
 import { heardOffers, offersInForce, viewOpened } from "./offerStore";
 import { OfferNotices, type OfferOpening, OfferOpeningContext } from "./ViewOpen";
 import { paneSize } from "./paneSize";
 import { besideOf as viewBesideOf, besideRefusedSaid } from "./viewBeside";
+import { useArtifactDiscuss } from "./artifactDiscuss";
 import { layoutOf, pathTo, type Reopening, tabsOf, withShare } from "./laidOut";
 import {
   chatsElsewhere,
@@ -1268,6 +1272,8 @@ export const PlaneView = memo(function PlaneView({
   }>();
   /** The work item each chat works on, by session, as the core answered (V60, ADR 0088). */
   const [workItems, setWorkItems] = useState<Record<number, string>>({});
+  // **Pin to workspace** (#5953): the page it asks about, while its dialog is up.
+  const [pinningPage, setPinningPage] = useState<BranchPath>();
   /** The chat Rename chat… is asking about, in a dialog. */
   const [renamingChat, setRenamingChat] = useState<{
     session: number;
@@ -3225,6 +3231,16 @@ export const PlaneView = memo(function PlaneView({
    *  outside every workspace is not a workspace on the plane, so there is no directory to
    *  read and every region says so rather than drawing another workspace's answer. */
   const ofWorkspace = focused === OUTSIDE ? undefined : focused;
+  // **The artifact whose tab is in front, of this workspace** (#5952): its icon is drawn chosen.
+  const artifactInFront = (() => {
+    if (tabs.inFront === undefined || tabs.byId[tabs.inFront] === undefined) return undefined;
+    const front = tabs.byId[tabs.inFront];
+    const shown = contentsOf(tabs, front.id).find((one) => one.pane === front.focused)?.content;
+    const artifact = shown?.kind === "view" ? artifactOf(shown.view) : undefined;
+    return artifact !== undefined && artifact.workspace === ofWorkspace
+      ? artifact.folder
+      : undefined;
+  })();
   /**
    * **What this project has on in the focused workspace** (charter-app#253, #280, ADR 0048): the
    * core's answer for this plane's two files and the workspace's `workspace.json`, over this
@@ -4168,6 +4184,11 @@ export const PlaneView = memo(function PlaneView({
           ok: true,
           said: `${at.path} is saved with the project. Your next save shares it.`,
         };
+      },
+      // **Pin to workspace** (#5953): its dialog asks first, and pins on the person's answer.
+      pinToWorkspace: async (at: BranchPath): Promise<Ran> => {
+        setPinningPage(at);
+        return { ok: true };
       },
       openInEditor: async (at: BranchPath, line: number): Promise<Ran> => {
         const editor = yourEditor();
@@ -7129,6 +7150,9 @@ export const PlaneView = memo(function PlaneView({
     window.addEventListener(THEME_CHAT, asked);
     return () => window.removeEventListener(THEME_CHAT, asked);
   }, [change, plane, showPlaced]);
+
+  // **Discuss** in an artifact's bar (#5957, ADR 0120 §5): a chat about the page, its tab placed here.
+  useArtifactDiscuss(plane, showPlaced, setReport, setStartApproving);
 
   /**
    * **The Skill studio's "Ask a chat to draft a skill", Try it, a draft's redo and "Ask a chat to
@@ -11872,6 +11896,20 @@ export const PlaneView = memo(function PlaneView({
                 onSplit={splitHalves}
                 // F6 between the regions (P-13, #1741) is the project in front's, as its side keys are.
                 keyboard={inFront}
+                // **The workspace's pinned artifacts** (#5952, ADR 0120 §2): their own group on the
+                // left bar, below purlis's icons; a press opens the artifact's tab or brings it
+                // forward.
+                artifacts={
+                  <ArtifactGroup
+                    plane={plane}
+                    workspace={ofWorkspace}
+                    current={artifactInFront}
+                    onOpen={(pin) => {
+                      if (ofWorkspace !== undefined)
+                        showView(artifactView(ofWorkspace, pin.folder), pin.name);
+                    }}
+                  />
+                }
                 // Skills while the Skill studio's preview is on (#3266).
                 previews={previews}
                 /* **The navigation region's views** (ADR 0038 as amended 2026-10-10, #1673): Chats and
@@ -12547,6 +12585,15 @@ export const PlaneView = memo(function PlaneView({
                     onRename={(answer) => void saveTabName(answer)}
                     onClear={clearTabName}
                     onCancel={() => setRenamingTab(undefined)}
+                  />
+                )}
+
+                {pinningPage && (
+                  <PinPage
+                    plane={plane}
+                    workspace={pinningPage.workspace}
+                    page={pinningPage}
+                    onClose={() => setPinningPage(undefined)}
                   />
                 )}
 

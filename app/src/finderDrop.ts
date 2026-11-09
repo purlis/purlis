@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useRef } from "react";
-import { getCurrentWebview, type DragDropEvent } from "@tauri-apps/api/webview";
+import { type DragDropEvent } from "@tauri-apps/api/webview";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 /**
  * **Files dropped from the file manager onto a workspace's own files** (#5378): where a drop
@@ -128,7 +129,10 @@ export function useFinderDrop(
     let stop: (() => void) | undefined;
     let gone = false;
     try {
-      void getCurrentWebview()
+      // The window's, not its webview's: a window that holds an artifact's child webview is
+      // told a drop as a window (#5952), and one that holds none is told it by its label, which
+      // a window's listener hears too.
+      void getCurrentWindow()
         .onDragDropEvent(hear)
         .then(
           (unlisten) => {
