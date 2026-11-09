@@ -1667,10 +1667,23 @@ export const PlaneView = memo(function PlaneView({
    * pin is refused, or when it is unpinned.
    */
   const [madePins, setMadePins] = useState<string[]>([]);
-  const pinnedWorkspaces = useMemo(
-    () => [...storePins, ...madePins.filter((name) => !storePins.includes(name))],
-    [madePins, storePins],
-  );
+  /**
+   * **The pins' order as the person just put them** (#3128), from a chip's drag or its Move left
+   * or right, until the store's answer after the write says it: so a dropped chip stays where it
+   * was dropped for the round trip instead of going back and coming again. Let go when the write
+   * is refused, or when the store answers with none of this window's writes still on the way.
+   */
+  const [arranged, setArranged] = useState<readonly string[]>();
+  /** How many of this window's arrangements are still being written (`arrangePins`). */
+  const arranging = useRef(0);
+  const pinnedWorkspaces = useMemo(() => {
+    const held = [...storePins, ...madePins.filter((name) => !storePins.includes(name))];
+    if (arranged === undefined) return held;
+    return [
+      ...arranged.filter((name) => held.includes(name)),
+      ...held.filter((name) => !arranged.includes(name)),
+    ];
+  }, [arranged, madePins, storePins]);
   /**
    * **Dormant pins** (V91c as amended, NO-1): pins whose workspace is gone. They stay in the
    * machine store, in their place in the order, and are drawn as dormant chips that open nothing
@@ -2475,6 +2488,8 @@ export const PlaneView = memo(function PlaneView({
         const said = answer.data as Partial<typeof answer.data> | null | undefined;
         const pins = Array.isArray(said?.workspaces) ? said.workspaces : [];
         setStorePins(pins);
+        // The store's word on the order, once nothing this window arranged is still on its way.
+        if (arranging.current === 0) setArranged(undefined);
         setMadePins((was) => {
           const still = was.filter((name) => !pins.includes(name));
           return still.length === was.length ? was : still;
@@ -6324,6 +6339,48 @@ export const PlaneView = memo(function PlaneView({
   );
 
   /**
+   * **Puts the project's pins in `order`** (#3128): what a chip's drag and its Move left and right
+   * write, through the machine store's `arrange_workspace_pins`, which moves only the pins it
+   * names, so a dormant pin keeps its place. Drawn in that order at once, and the store asked
+   * again once it is written; a refusal is said, and the chips go back to the store's order.
+   */
+  const arrangePins = useCallback(
+    async (order: readonly string[]): Promise<Ran> => {
+      setArranged(order);
+      arranging.current += 1;
+      const said = await commands
+        .arrangeWorkspacePins(plane, [...order])
+        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+      arranging.current -= 1;
+      if (said.status === "error") {
+        if (arranging.current === 0) setArranged(undefined);
+        setReport({ from: "workspace.pin", refused: true, words: said.error });
+        return { ok: false, refused: said.error };
+      }
+      setPinning((asked) => asked + 1);
+      // Settings › You › This machine lists the pins in their order (#1240).
+      machineChanged();
+      return { ok: true };
+    },
+    [plane],
+  );
+
+  /** **Moves a pin one place earlier or later** among the pins the plane still has, as the
+   *  chips draw them: a chip's Move left and Move right (#3128). */
+  const moveWorkspacePin = useCallback(
+    (workspace: string, by: -1 | 1): Promise<Ran> => {
+      const live = strips.filter((name) => pinnedWorkspaces.includes(name));
+      const at = live.indexOf(workspace);
+      const to = at + by;
+      if (at < 0 || to < 0 || to >= live.length) return Promise.resolve({ ok: true });
+      const order = [...live];
+      [order[at], order[to]] = [order[to], order[at]];
+      return arrangePins(order);
+    },
+    [arrangePins, pinnedWorkspaces, strips],
+  );
+
+  /**
    * **Forgets a dormant pin**, for good: the existing unpin (`Store::pin_workspace`). The pins
    * before it are kept, nearest first, so this run's Undo can put it back in its place.
    */
@@ -8709,6 +8766,7 @@ export const PlaneView = memo(function PlaneView({
       },
       pinTab,
       pinWorkspace,
+      moveWorkspacePin,
       pinProject: windowDoes.pinProject,
       focusWorkspace,
       createWorkspace,
@@ -8885,6 +8943,7 @@ export const PlaneView = memo(function PlaneView({
       pickSpot,
       pinTab,
       pinWorkspace,
+      moveWorkspacePin,
       rereadPanels,
       removeWorkspace,
       removeWorktree,
@@ -10811,12 +10870,15 @@ export const PlaneView = memo(function PlaneView({
               // The pins whose workspace is gone, which the title bar draws dormant (#3651).
               dormant: dormantPins,
               forget: (name: string) => void forgetDormantPin(name),
+              // A chip's drag (#3128): the pins in the order they were dropped in.
+              arrange: (order: readonly string[]) => void arrangePins(order),
               // Its stale repos, for their workspaces' chips (#3650).
               standing: staleClones.lines,
               focused,
             },
     }),
     [
+      arrangePins,
       dormantPins,
       forgetDormantPin,
       staleClones.lines,

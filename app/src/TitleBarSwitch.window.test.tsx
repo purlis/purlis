@@ -121,6 +121,17 @@ function core({ working = [] as number[] } = {}) {
       return null;
     }
     // The chats in their turn, as their hooks last said (ADR 0076): project one's only.
+    // The machine store's arrangement: only the pins it names move, as the core's does.
+    if (cmd === "arrange_workspace_pins") {
+      const was = pinned.get(plane) ?? [];
+      const named = (given.workspaces as string[]).filter((one) => was.includes(one));
+      let next = 0;
+      pinned.set(
+        plane,
+        was.map((one) => (named.includes(one) ? named[next++] : one)),
+      );
+      return null;
+    }
     if (cmd === "chat_states")
       return plane === ONE
         ? working.map((session) => ({ session, state: "running", queue: [], sequence: 1 }))
@@ -255,6 +266,63 @@ describe("a chip's working mark (#3127)", () => {
     // And a new turn brings it back.
     moved(1, "running", 3);
     await waitFor(() => expect(markOf("alpha")).not.toBeNull());
+  });
+});
+
+describe("reordering the pins (#3128)", () => {
+  /** Opens `name`'s chip's menu and presses its row `row`. */
+  const fromItsMenu = async (name: string, row: string) => {
+    fireEvent.contextMenu(within(pins()).getByRole("button", { name }));
+    const menu = await screen.findByRole("menu");
+    await userEvent.click(within(menu).getByRole("menuitem", { name: row }));
+  };
+
+  it("moves a pin from its chip's menu, writes the order for its project, and ⌘1–9 follow it", async () => {
+    const { asked, pinned } = core();
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*", "gamma"]));
+    await fromItsMenu("alpha", "Move right");
+    await waitFor(() => expect(chips()).toEqual(["gamma", "alpha*"]));
+    // Written to the machine store, for this project alone.
+    const wrote = asked.filter((one) => one.cmd === "arrange_workspace_pins");
+    expect(wrote.map((one) => one.args)).toEqual([{ plane: ONE, workspaces: ["gamma", "alpha"] }]);
+    expect(pinned.get(ONE)).toEqual(["gamma", "alpha"]);
+    expect(pinned.get(TWO)).toEqual([]);
+    // ⌘1 is the first pin now, and ⌘2 the second.
+    pinKey(1);
+    await waitFor(() => expect(chips()).toEqual(["gamma*", "alpha"]));
+    pinKey(2);
+    await waitFor(() => expect(chips()).toEqual(["gamma", "alpha*"]));
+    // And back again, from the other way.
+    await fromItsMenu("alpha", "Move left");
+    await waitFor(() => expect(chips()).toEqual(["alpha*", "gamma"]));
+    expect(pinned.get(ONE)).toEqual(["alpha", "gamma"]);
+  });
+
+  it("says the way a pin cannot go at an end, and offers neither on an unpinned workspace", async () => {
+    core();
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*", "gamma"]));
+    fireEvent.contextMenu(within(pins()).getByRole("button", { name: "alpha" }));
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).getByRole("menuitem", { name: /Move left/ })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(within(menu).getByRole("menuitem", { name: "Move right" })).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await userEvent.keyboard("{Escape}");
+  });
+
+  it("keeps the order across a launch: the chips draw the store's order", async () => {
+    const { pinned } = core();
+    pinned.set(ONE, ["gamma", "alpha"]);
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["gamma", "alpha*"]));
+    pinKey(1);
+    await waitFor(() => expect(chips()).toEqual(["gamma*", "alpha"]));
   });
 });
 

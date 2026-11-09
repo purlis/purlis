@@ -243,6 +243,12 @@
   --chat-mark-ground: var(--surface-deep);
 }
 
+/* **A pin carried by the pointer** (#3128): its slot is moved by a translation alone, so no chip
+   changes size; it passes over its neighbours, which move only to make the drop place. */
+[data-part="slot"][data-scope="titlebar"][data-dragging] {
+  z-index: 2;
+}
+
 /* **A chip's working mark** (#3127): the chat mark family's working ring, its badge alone, laid
    over the chip's lower trailing corner, opposite the notice dot, and 3px into the strip's room
    under the chip (its 6px, which the dot uses above). Laid over the slot, so it coming and going

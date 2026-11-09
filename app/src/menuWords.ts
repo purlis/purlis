@@ -22,6 +22,9 @@ export const SAID = {
   // A split tab's (#5343): it names the tab, never a chat.
   renameTab: "Rename tab…",
   pinned: "Pinned",
+  // A pin's place among the title bar's chips (#3128).
+  moveLeft: "Move left",
+  moveRight: "Move right",
   settings: "Settings…",
   saving: "Saving…",
   linkWorkItem: "Link to work item…",

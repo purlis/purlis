@@ -442,6 +442,8 @@ export type Does =
   /** Undo (#4763, #4765): the window's last layout change put back, once. */
   | { verb: "undoLayout" }
   | { verb: "pinWorkspace"; workspace: string; pinned: boolean }
+  /** One place earlier (−1) or later (1) among the project's pins (#3128). */
+  | { verb: "moveWorkspacePin"; workspace: string; by: -1 | 1 }
   | { verb: "pinProject"; plane: string; pinned: boolean }
   | { verb: "focusWorkspace"; workspace: string }
   /** Asks for a new workspace. It creates nothing by itself: the name, and the validation the
@@ -1164,6 +1166,8 @@ export type Doing = {
   /** Puts the last layout change back (#4763, #4765): a drop, a split or Tile all. */
   undoLayout: () => void;
   pinWorkspace: (workspace: string, pinned: boolean) => Promise<Ran>;
+  /** Puts a pinned workspace one place earlier or later among the project's pins (#3128). */
+  moveWorkspacePin: (workspace: string, by: -1 | 1) => Promise<Ran>;
   pinProject: (plane: string, pinned: boolean) => Promise<Ran>;
   focusWorkspace: (workspace: string) => void;
   /** Opens the new-workspace dialog. Nothing is created until it is answered. */
@@ -1596,6 +1600,10 @@ export const DELETES_A_WORKSPACE =
  * that is not; and **who** it is for, because an operator who thinks a pin travels with the
  * clone will arrange a plane for a team that never sees it.
  */
+/** The ids of a pin's Move left and Move right, before the workspace's name (#3128). */
+export const PIN_LEFT = "workspace.pin-left:";
+export const PIN_RIGHT = "workspace.pin-right:";
+
 export const PIN_NOTE = "Draws it first on its strip. Yours, on this machine only.";
 
 /** And the same said the other way, so unpinning is not a row with no consequence on it. */
@@ -2500,6 +2508,28 @@ export function catalogue(now: Now): Offer[] {
       ),
       note: held ? UNPIN_NOTE : PIN_NOTE,
     });
+    // **Move left, Move right** (#3128): the keyboard's way to reorder the title bar's chips,
+    // on a pin's menu only, while there are two pins or more to order. Places are counted among
+    // the pins the plane still has, as the chips are drawn; at an end the row says why, so the
+    // menu's rows never move under the person.
+    const livePins = held ? pinned.workspaces.filter((name) => now.workspaces.includes(name)) : [];
+    if (livePins.length > 1) {
+      const at = livePins.indexOf(workspace);
+      for (const [by, prefix, title, end] of [
+        [-1, PIN_LEFT, "Move left", "It is the first pin."],
+        [1, PIN_RIGHT, "Move right", "It is the last pin."],
+      ] as const) {
+        const id = `${prefix}${workspace}`;
+        const to = at + by;
+        offers.push({
+          ...(at < 0 || to < 0 || to >= livePins.length
+            ? cannot(id, title, end, workspace)
+            : can(id, title, { verb: "moveWorkspacePin", workspace, by }, workspace)),
+          note: `${workspace}: one place ${by < 0 ? "earlier" : "later"} among the pins, and its ⌘ number with it.`,
+          menuOnly: true,
+        });
+      }
+    }
     // Its settings (charter-app#280): the Settings tab at this workspace's level (SE-20), told
     // apart by the name in the note, as `project.settings` rows are.
     offers.push({
@@ -3690,6 +3720,8 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return DID;
     case "pinWorkspace":
       return doing.pinWorkspace(does.workspace, does.pinned);
+    case "moveWorkspacePin":
+      return doing.moveWorkspacePin(does.workspace, does.by);
     case "pinProject":
       return doing.pinProject(does.plane, does.pinned);
     case "focusWorkspace":
@@ -5818,6 +5850,8 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
           `workspace.focus:${what.workspace}`,
           `shell.new:${what.workspace}`,
           `workspace.pin:${what.workspace}`,
+          `${PIN_LEFT}${what.workspace}`,
+          `${PIN_RIGHT}${what.workspace}`,
           `workspace.settings:${what.workspace}`,
           `workspace.live:${what.workspace}`,
           `workspace.rename:${what.workspace}`,

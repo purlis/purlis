@@ -96,6 +96,8 @@ export type ReportedWorkspaces = {
   /** Forgets a dormant pin for good, with an Undo for this run in the Notices centre ("Forgot
    *  the pin to X"): the dormant notice's Forget, wherever it is drawn. */
   forget?: (workspace: string) => void;
+  /** Puts the pins in `order` (#3128): a chip's drag along the title bar. */
+  arrange?: (order: readonly string[]) => void;
   /** **What stands about its workspaces**, one line each (#3650): its stale repos, read by the
    *  project and listed in its Inbox, hung from each one's chip too, with the same ways. */
   standing?: readonly StandingNotice[];

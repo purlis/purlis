@@ -96,6 +96,11 @@ function TheBar({
             one.plane === START[0].plane
               ? Object.fromEntries(working.map((name) => [name, 1]))
               : undefined,
+          // A chip's drag (#3128): the pins in the order they were dropped in.
+          arrange: (order: readonly string[]) => {
+            setPins((was) => ({ ...was, [one.plane]: [...order] }));
+            setSaid(`Pins: ${order.join(", ")}`);
+          },
         },
       })),
     [focused, pins, many, working],
@@ -398,6 +403,65 @@ export const Working: Story = {
     await expect(charter).toHaveFocus();
     expectFocusInSight();
     charter?.blur();
+  },
+};
+
+/**
+ * **A pin dragged along the strip** (#3128): the pointer carries a chip past its neighbour, by a
+ * translation only, so no chip changes size while it moves, and the neighbour moves to make the
+ * drop place. Dropped, the order is the new one, and each chip's tooltip names its new ⌘ number.
+ * The picture is the strip after the drop.
+ */
+export const Reorder: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const bar = canvas.getByTestId("title-bar");
+    const names = () => chipsOf(bar).map((one) => one.dataset.chipOf);
+    await expect(names()).toEqual(["smart-ide", "charter", "skills"]);
+    const widths = () => chipsOf(bar).map((one) => Math.round(one.getBoundingClientRect().width));
+    const before = widths();
+    const [first, second] = chipsOf(bar);
+    const from = first.getBoundingClientRect();
+    const past = second.getBoundingClientRect();
+    const y = from.top + from.height / 2;
+    const at = (x: number) => ({
+      clientX: x,
+      clientY: y,
+      bubbles: true,
+      pointerId: 1,
+      isPrimary: true,
+    });
+    // dnd-kit's pointer sensor reads the pointer as a person's arrives: a press, then moves past
+    // its few pixels, then a release, each a real PointerEvent.
+    first.dispatchEvent(
+      new PointerEvent("pointerdown", { ...at(from.left + 8), button: 0, buttons: 1 }),
+    );
+    for (const x of [from.left + 14, from.left + 40, past.right - 6])
+      document.dispatchEvent(new PointerEvent("pointermove", { ...at(x), buttons: 1 }));
+    // Mid-drag: no chip has changed its size, and the neighbour stepped aside for the drop place.
+    await waitFor(() =>
+      expect(first.closest('[data-part="slot"]')).toHaveAttribute("data-dragging"),
+    );
+    await expect(widths()).toEqual(before);
+    await waitFor(() =>
+      expect(Math.round(second.getBoundingClientRect().left)).toBeLessThan(Math.round(past.left)),
+    );
+    document.dispatchEvent(new PointerEvent("pointerup", { ...at(past.right - 6), buttons: 0 }));
+    await waitFor(() => expect(names()).toEqual(["charter", "smart-ide", "skills"]));
+    await expect(canvas.getByRole("status")).toHaveTextContent("Pins: charter, smart-ide, skills");
+    // The drop chose nothing: smart-ide is still the workspace in front.
+    await expect(chipsOf(bar)[1]).toHaveAttribute("aria-current", "true");
+    await expect(widths()).toEqual([before[1], before[0], before[2]]);
+    // ⌘1–9 follow the order: charter is ⌘1 now.
+    await userEvent.hover(chipsOf(bar)[0]);
+    await waitFor(() =>
+      expect(document.querySelector('[role="tooltip"][data-scope="tooltip"]')).toHaveTextContent(
+        /charter · (⌘|Ctrl\+)1/,
+      ),
+    );
+    await userEvent.unhover(chipsOf(bar)[0]);
+    await waitFor(() =>
+      expect(document.querySelector('[role="tooltip"][data-scope="tooltip"]')).toBeNull(),
+    );
   },
 };
 

@@ -13,6 +13,15 @@ import {
   type ReactNode,
 } from "react";
 import { House, Plus } from "lucide-react";
+import { closestCenter, DndContext, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { arrayMove, horizontalListSortingStrategy, SortableContext } from "@dnd-kit/sortable";
+import {
+  ALONG_THE_STRIP,
+  DRAG_AFTER_PX,
+  SortableTab,
+  stripAccessibility,
+  type Sortable,
+} from "./sortable";
 import { OUTSIDE, OUTSIDE_TITLE } from "./actions";
 import { pressed } from "./keys/registry";
 import { onAMac } from "./tabKeys";
@@ -172,6 +181,12 @@ export function TitleBarSwitch({
   const strip = useRef<HTMLDivElement>(null);
   const house = useRef<HTMLButtonElement>(null);
   const tintOf = useProjectTints();
+  // **A pin's drag** (#3128): by the pointer only, past a few pixels so a press is still a press;
+  // the keyboard's way is the chip's menu, Move left and Move right.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: DRAG_AFTER_PX } }),
+  );
+  const dragWords = useMemo(() => stripAccessibility("pinned workspace", (id) => String(id)), []);
   // **The chip a card hangs from** (#3648): found in the strip as it is drawn, so a chip drawn
   // again, or scrolled, is still the one the card points at.
   // The status bar's card is the status bar's to draw (#3653).
@@ -361,11 +376,18 @@ export function TitleBarSwitch({
   };
   /** A chip in its slot, with the dot of its notices while their card is not up (#3648). A
    *  dormant chip has no menu: its workspace's rows are of a workspace the project lacks. */
-  const slotted = (workspace: string, drawn: ReactNode, menued = true) => {
+  const slotted = (workspace: string, drawn: ReactNode, menued = true, dragged?: Sortable) => {
     const shows = noticesOn(workspace);
     const asker = notices?.needs?.get(workspace);
     return (
-      <ChipSlot working={workingIn(workspace) > 0}>
+      <ChipSlot
+        working={workingIn(workspace) > 0}
+        // A pin is carried by its slot, so its dot and its mark go with it, by a translation only:
+        // no chip changes size, and a neighbour moves only to make the drop place (#3128).
+        ref={dragged?.sortable.setNodeRef}
+        style={dragged?.style}
+        data-dragging={dragged?.sortable.isDragging === true ? "" : undefined}
+      >
         {shows !== undefined &&
           notices !== undefined &&
           // A ✋ stays until its chat is answered, whatever card is up (#3652).
@@ -395,10 +417,16 @@ export function TitleBarSwitch({
       </ChipSlot>
     );
   };
-  const chip = (workspace: string, at: number) => {
+  const chip = (workspace: string, at: number) => (
+    <SortableTab key={workspace} id={workspace}>
+      {(dragged) => pinned(workspace, at, dragged)}
+    </SortableTab>
+  );
+  /** A pin's chip in its slot, which a drag carries (#3128). */
+  const pinned = (workspace: string, at: number, dragged: Sortable) => {
     const drawn = (
       <WorkspaceChip
-        key={workspace}
+        {...dragged.sortable.listeners}
         name={workspace}
         current={workspace === focused}
         tabIndex={workspace === stop ? 0 : -1}
@@ -410,7 +438,7 @@ export function TitleBarSwitch({
         data-chip-of={workspace}
       />
     );
-    return <Fragment key={workspace}>{slotted(workspace, drawn)}</Fragment>;
+    return slotted(workspace, drawn, true, dragged);
   };
   /** **A pin whose workspace is gone** (V91c as amended, #3651): drawn dormant after the live
    *  pins, never a way into a workspace the project lacks. Its press shows its notice. */
@@ -466,7 +494,23 @@ export function TitleBarSwitch({
       {/* Drawn once its plane is read: which workspaces it has is the plane's answer. */}
       {workspaces !== undefined && (
         <PinnedStrip name="Pinned workspaces" ref={strip}>
-          {pins.map(chip)}
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            modifiers={ALONG_THE_STRIP}
+            accessibility={dragWords}
+            onDragEnd={({ active, over }) => {
+              if (over === null || active.id === over.id) return;
+              const from = pins.indexOf(String(active.id));
+              const to = pins.indexOf(String(over.id));
+              if (from < 0 || to < 0) return;
+              workspaces.arrange?.(arrayMove([...pins], from, to));
+            }}
+          >
+            <SortableContext items={[...pins]} strategy={horizontalListSortingStrategy}>
+              {pins.map(chip)}
+            </SortableContext>
+          </DndContext>
           {dormant.map(dormantChip)}
           {unpinned !== undefined && (
             <Fragment key={`${unpinned}+`}>
