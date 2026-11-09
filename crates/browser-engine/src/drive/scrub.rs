@@ -80,7 +80,7 @@ fn folded(c: char) -> impl Iterator<Item = char> {
 }
 
 /// What is taken out of an answer: texts kept out in each of their [`forms`], and the texts groups
-/// of boxes hold together, matched also with any spaces or dashes between their characters. Wiped
+/// of boxes hold together, matched also with any separators between their characters. Wiped
 /// as it goes.
 #[derive(Clone)]
 pub(crate) struct Scrub {
@@ -296,9 +296,19 @@ fn read_one_layer(read: &[Read]) -> Option<Vec<Read>> {
     changed.then_some(out)
 }
 
-/// Characters a page may put between the characters of a code: spaces and dashes.
+/// Characters a page may put between the characters of a code: spaces and dashes anywhere, and
+/// the ones [`only_throughout`] names.
 fn separates(c: char) -> bool {
-    c.is_whitespace() || matches!(c, '-' | '\u{2010}'..='\u{2015}' | '\u{2212}')
+    c.is_whitespace()
+        || only_throughout(c)
+        || matches!(c, '-' | '\u{2010}'..='\u{2015}' | '\u{2212}')
+}
+
+/// Separators a code is matched across only where the same one sits between every pair of its
+/// characters, in a match that no letter or digit runs on from: dots, slashes, middle dots and
+/// bullets. So `7.3.9` is a code's `739`, and `$7.39` or `7/3/91` is not.
+fn only_throughout(c: char) -> bool {
+    matches!(c, '.' | '/' | '\u{b7}' | '\u{2022}')
 }
 
 /// Where a match of `needle` that begins at `start` of `read` ends, ignoring case, and with
@@ -306,6 +316,9 @@ fn separates(c: char) -> bool {
 fn matched_from(read: &[Read], start: usize, needle: &[char], loose: bool) -> Option<usize> {
     let mut at = start;
     let mut matched = 0;
+    // Of the gaps between the characters matched, how many there are, how many hold one of
+    // the separators [`only_throughout`] names, which one that is, and the one in this gap.
+    let (mut gaps, mut held, mut throughout, mut in_gap) = (0, 0, None, None);
     while matched < needle.len() {
         let one = read.get(at)?;
         // A `+` is a separator only where the text kept out has no `+` here.
@@ -314,8 +327,24 @@ fn matched_from(read: &[Read], start: usize, needle: &[char], loose: bool) -> Op
             && (separates(one.character) || one.space_too)
             && one.character != needle[matched]
         {
+            if only_throughout(one.character) {
+                if in_gap.is_some() {
+                    return None;
+                }
+                in_gap = Some(one.character);
+            }
             at += 1;
             continue;
+        }
+        if loose && matched > 0 {
+            gaps += 1;
+            if let Some(c) = in_gap.take() {
+                if throughout.is_some_and(|t| t != c) {
+                    return None;
+                }
+                throughout = Some(c);
+                held += 1;
+            }
         }
         // Either of a space and a `+` may have been read as the other, by whoever wrote this.
         if (one.space_too && needle[matched] == ' ')
@@ -331,6 +360,15 @@ fn matched_from(read: &[Read], start: usize, needle: &[char], loose: bool) -> Op
             }
         }
         at += 1;
+    }
+    if throughout.is_some() {
+        let runs_on = |one: Option<&Read>| one.is_some_and(|one| one.character.is_alphanumeric());
+        if held != gaps
+            || runs_on(start.checked_sub(1).and_then(|i| read.get(i)))
+            || runs_on(read.get(at))
+        {
+            return None;
+        }
     }
     Some(at)
 }
@@ -433,7 +471,7 @@ pub(crate) fn holds_any(text: &str, blanked: &[&str]) -> bool {
     holds_in_a_reading(text, &needles, false, Within::USUAL)
 }
 
-/// Whether any reading of `text` holds any of `loose`, ignoring case and any spaces or dashes
+/// Whether any reading of `text` holds any of `loose`, ignoring case and any separators
 /// between its characters.
 pub(crate) fn holds_loosely(text: &str, loose: &[&str]) -> bool {
     holds_in_a_reading(text, &loose_needles(loose), true, Within::USUAL)

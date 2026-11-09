@@ -14,7 +14,8 @@ use base64::Engine as _;
 use serde_json::{Value, json};
 
 use super::{
-    ACTIVE_ELEMENT, Browser, DevTools, FOCUSED_HERE, READ_VALUE, READY_STATE, SELECT_OPTIONS, TITLE,
+    ACTIVE_ELEMENT, Browser, DevTools, FOCUSED_HERE, HOLDS_OR_LABELS, READ_VALUE, READY_STATE,
+    SELECT_OPTIONS, TITLE,
 };
 use crate::WebAddress;
 use crate::cdp::{CallError, Closed, Event};
@@ -51,6 +52,11 @@ struct Model {
     ax: HashMap<String, Value>,
     /// Content quads by backend node id.
     quads: HashMap<i64, Vec<f64>>,
+    /// The element whose quads were read last, and its session: the element an act is aimed
+    /// at, which is what a page draws at its centre unless a test says otherwise.
+    aimed: Option<(String, i64)>,
+    /// The control of each label, by the label's engine id.
+    labels: HashMap<i64, i64>,
     ready: String,
     /// The title each page's document has now, by target: what the engine last told of, unless
     /// a test sets it with no word from the engine (#2753).
@@ -61,6 +67,10 @@ struct Model {
     /// Whether a box the pointer passes through (`pointer-events: none`) of the page's own
     /// document lies over the payment frame (#2638).
     overlay: bool,
+    /// A box the pointer passes through (`pointer-events: none`) drawn over the element an act
+    /// is aimed at, by its engine id: found there only when the engine is asked to find such
+    /// boxes.
+    passed_through: Option<i64>,
     /// Whether the payment frame's element says no frame it holds (#2638).
     frame_unnamed: bool,
     /// The elements inside each shadow host's shadow root, by the host's engine id (#2972).
@@ -390,22 +400,38 @@ impl Engine {
             }
             "DOM.getFrameOwner" => Ok(json!({"backendNodeId": 50, "nodeId": 0})),
             // The payment frame's element is drawn at (100, 200), 200 by 60, as its box model
-            // says; anywhere else is the page's own document (#2638).
+            // says (#2638). Anywhere else in a document, what is drawn is the element an act is
+            // aimed at, or, in the page's own document, the payment frame's element where the
+            // element is in the frame; and the page's own document where nothing is aimed at.
             "DOM.getNodeForLocation" => {
                 let (x, y) = (
                     p["x"].as_f64().unwrap_or(-1.0),
                     p["y"].as_f64().unwrap_or(-1.0),
                 );
                 let through = p["ignorePointerEventsNone"] == true;
+                let session = on.unwrap_or_default();
+                let on_the_frame = (100.0..300.0).contains(&x) && (200.0..260.0).contains(&y);
+                let (aimed, passed_through) = {
+                    let model = super::lock(&self.model);
+                    (model.aimed.clone(), model.passed_through)
+                };
+                if !(on_the_frame && session == "S-PAGE-1")
+                    && let Some((in_session, backend)) = aimed
+                {
+                    let backend = passed_through.filter(|_| through).unwrap_or(backend);
+                    return Ok(if in_session == session {
+                        json!({"backendNodeId": backend, "frameId": frame_of(session)})
+                    } else if session == "S-PAGE-1" {
+                        json!({"backendNodeId": 50, "frameId": "PAGE-1"})
+                    } else {
+                        json!({"backendNodeId": 3, "frameId": frame_of(session)})
+                    });
+                }
                 Ok(
-                    if (100.0..300.0).contains(&x)
-                        && (200.0..260.0).contains(&y)
-                        && super::lock(&self.model).overlay
-                        && through
-                    {
+                    if on_the_frame && super::lock(&self.model).overlay && through {
                         // Asked to find boxes the pointer passes through, it finds the overlay.
                         json!({"backendNodeId": 3, "frameId": "PAGE-1"})
-                    } else if (100.0..300.0).contains(&x) && (200.0..260.0).contains(&y) {
+                    } else if on_the_frame {
                         json!({"backendNodeId": 50, "frameId": "PAGE-1"})
                     } else {
                         json!({"backendNodeId": 3, "frameId": "PAGE-1"})
@@ -550,7 +576,7 @@ impl Engine {
             }
             "DOM.resolveNode" => {
                 let object = match self.by_id(&p["executionContextId"], on)? {
-                    Some(world) => format!("OBJECT-{world}"),
+                    Some(world) => format!("OBJECT-{world}:{}", p["backendNodeId"]),
                     None => "PAGE-OBJECT".to_owned(),
                 };
                 Ok(json!({"object":{"type":"object","subtype":"node","objectId":object}}))
@@ -559,7 +585,19 @@ impl Engine {
             // refused.
             "Runtime.callFunctionOn" if !p["uniqueContextId"].is_null() => {
                 let world = self.by_unique(&p["uniqueContextId"], on)?;
-                if p["arguments"][0]["objectId"] != json!(format!("OBJECT-{}", world.unwrap())) {
+                let of_world = |argument: &Value| {
+                    argument["objectId"]
+                        .as_str()
+                        .and_then(|o| o.split(':').next())
+                        == Some(format!("OBJECT-{}", world.unwrap()).as_str())
+                };
+                // Every element it is given, the first argument always one.
+                if !p["arguments"].as_array().is_some_and(|arguments| {
+                    arguments.first().is_some_and(of_world)
+                        && arguments
+                            .iter()
+                            .all(|a| a["objectId"].is_null() || of_world(a))
+                }) {
                     return Err(CallError::Engine {
                         code: -32000,
                         message:
@@ -567,8 +605,25 @@ impl Engine {
                                 .into(),
                     });
                 }
+                let backend = |n: usize| {
+                    p["arguments"][n]["objectId"]
+                        .as_str()
+                        .and_then(|o| o.split(':').nth(1))
+                        .and_then(|b| b.parse::<i64>().ok())
+                };
                 Ok(if p["functionDeclaration"] == READ_VALUE {
                     json!({"result": {"type":"string","value": super::lock(&self.model).value}})
+                } else if p["functionDeclaration"] == HOLDS_OR_LABELS {
+                    let labels = super::lock(&self.model)
+                        .labels
+                        .get(&backend(0).unwrap_or_default())
+                        .copied();
+                    let how = if labels.is_some() && labels == backend(1) {
+                        "labels"
+                    } else {
+                        ""
+                    };
+                    json!({"result": {"type":"string","value": how}})
                 } else {
                     json!({"result": {"type":"object","value": super::lock(&self.model).select}})
                 })
@@ -634,6 +689,14 @@ impl Engine {
     }
 }
 
+/// The frame whose document the stand-in's `session` shows.
+fn frame_of(session: &str) -> &str {
+    match session {
+        "S-PAYMENT" => "PAYMENT-FRAME",
+        other => other.trim_start_matches("S-"),
+    }
+}
+
 struct Stand(Arc<Engine>);
 
 impl DevTools for Stand {
@@ -650,6 +713,13 @@ impl DevTools for Stand {
             session: session.map(str::to_owned),
         };
         super::lock(&self.0.sent).push(sent.clone());
+        // An element's quads are read as an act is aimed at it, whoever answers them.
+        if method == "DOM.getContentQuads"
+            && let Some(backend) = sent.params["backendNodeId"].as_i64()
+        {
+            super::lock(&self.0.model).aimed =
+                Some((session.unwrap_or_default().to_owned(), backend));
+        }
         let hooked = super::lock(&self.0.hook)
             .as_mut()
             .and_then(|h| h(&sent, &self.0));
@@ -814,6 +884,8 @@ fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (StandIn,
                 ("PAGE-1".to_owned(), nodes(MAIN_FRAME)),
                 ("PAYMENT-FRAME".to_owned(), nodes(PAYMENT_FRAME)),
             ]),
+            aimed: None,
+            labels: HashMap::new(),
             quads: HashMap::from([
                 (7, vec![10.0, 10.0, 30.0, 10.0, 30.0, 20.0, 10.0, 20.0]),
                 (12, vec![40.0, 40.0, 60.0, 40.0, 60.0, 50.0, 40.0, 50.0]),
@@ -831,6 +903,7 @@ fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (StandIn,
             titles: HashMap::new(),
             focused_backend: None,
             overlay: false,
+            passed_through: None,
             frame_unnamed: false,
             shadow_of: HashMap::new(),
             history: json!({"currentIndex":0,"entries":[{"id":1,"url":"http://fixture.test/frames.html","userTypedURL":"","title":"","transitionType":"typed"}]}),
@@ -1673,6 +1746,102 @@ fn a_native_drag_into_a_site_new_to_the_project_waits_on_the_person() {
     );
     assert_eq!(dragged.asked, ["other.test:80"]);
     assert_eq!(drag_kinds(&engine), ["dragCancel"]);
+    assert!(drags_handed_back(&engine));
+}
+
+/// A judge that asks of `evil.test` alone: every document the stand-in's page shows at first is
+/// one it lets the agent send to.
+fn asks_of_evil_test() -> crate::drive::Judge {
+    Arc::new(|out: &crate::drive::Outbound| {
+        if out.address.starts_with("http://evil.test") {
+            crate::drive::Gate::Ask {
+                site: "evil.test:80".to_owned(),
+            }
+        } else {
+            crate::drive::Gate::Go
+        }
+    })
+}
+
+#[test]
+fn a_native_drop_is_refused_where_a_frame_the_page_added_as_the_drag_began_cannot_be_judged() {
+    let (browser, engine) = browser_judged(asks_of_evil_test());
+    super::lock(&engine.model).native_drag = true;
+    // The page adds a blank frame as its drag starts: the engine's word of it comes before its
+    // word of the drag. Its element cannot be read, so what origin it takes is not known.
+    engine.on(|sent, engine| {
+        if sent.method == "DOM.getFrameOwner" && sent.params["frameId"] == "DROP-FRAME" {
+            return Some(Err(CallError::TimedOut));
+        }
+        let starts = sent.method == "Input.dispatchMouseEvent"
+            && sent.params["type"] == "mouseMoved"
+            && sent.params["buttons"] == 1
+            && !super::lock(&engine.model).dragging;
+        if starts {
+            engine.emit(
+                "Page.frameAttached",
+                json!({"frameId":"DROP-FRAME","parentFrameId":"PAGE-1"}),
+                Some("S-PAGE-1"),
+            );
+        }
+        None
+    });
+    let dragged = drag_volume_by(&browser, 1);
+    assert!(
+        matches!(&dragged, Err(Refusal::Partly { why, .. }) if *why == Refusal::FrameUnread.to_string()),
+        "{dragged:?}"
+    );
+    assert_eq!(drag_kinds(&engine), ["dragCancel"], "nothing was dropped");
+    assert!(drags_handed_back(&engine));
+}
+
+#[test]
+fn a_native_drop_into_a_frame_of_a_new_site_the_page_added_during_the_drag_waits_on_the_person() {
+    let (browser, engine) = browser_judged(asks_of_evil_test());
+    super::lock(&engine.model).native_drag = true;
+    // The page puts a frame of another site where the drag goes, in its own `dragover`. The
+    // engine fires that with the first of its drag events to reach the page, a `dragEnter` as
+    // much as a `dragOver`: where the engine says its drag started only as the last move is
+    // made, a `dragEnter` at the drop's point is the one event before the drop.
+    let state = Arc::downgrade(&browser.inner);
+    let mut added = false;
+    engine.on(move |sent, engine| {
+        let over = sent.method == "Input.dispatchDragEvent"
+            && matches!(sent.params["type"].as_str(), Some("dragEnter" | "dragOver"));
+        if over && !added {
+            added = true;
+            engine.emit(
+                "Page.frameAttached",
+                json!({"frameId":"DROP-FRAME","parentFrameId":"PAGE-1"}),
+                Some("S-PAGE-1"),
+            );
+            engine.emit(
+                "Page.frameNavigated",
+                json!({"frame":{"id":"DROP-FRAME","parentId":"PAGE-1","loaderId":"LOADER-8","url":"http://evil.test/drop","securityOrigin":"http://evil.test","mimeType":"text/html","name":""},"type":"Navigation"}),
+                Some("S-PAGE-1"),
+            );
+            let inner = state.upgrade().expect("the browser lasts the drag");
+            wait_for("the added frame is seen", || {
+                super::lock(&inner.state)
+                    .page("PAGE-1")
+                    .and_then(|page| page.frames.get("DROP-FRAME"))
+                    .is_some_and(|frame| frame.url.starts_with("http://evil.test"))
+            });
+        }
+        None
+    });
+    let dragged = drag_volume_by(&browser, 1).unwrap();
+    assert!(
+        dragged
+            .note
+            .as_deref()
+            .is_some_and(|n| n.contains("nothing was dropped")),
+        "{dragged:?}"
+    );
+    assert_eq!(dragged.asked, ["evil.test:80"]);
+    let kinds = drag_kinds(&engine);
+    assert!(!kinds.iter().any(|kind| kind == "drop"), "{kinds:?}");
+    assert_eq!(kinds.last().map(String::as_str), Some("dragCancel"));
     assert!(drags_handed_back(&engine));
 }
 
