@@ -103,8 +103,9 @@ const THEME_CHANGED: &str = "window.__purlisTheme?.()";
 const KEY_NAMES: [&str; 3] = ["escape", "f6", "f6-back"];
 
 /// **purlis's script in every artifact page that hands it its port** (#5961): `purlis.port`, a
-/// `MessagePort` made for this load. The page posts `{ id, read: "<data file>" }` on it and
-/// hears `{ id, data | error: { kind }, at }`. The load is named by a random word of its own,
+/// `MessagePort` made for this load. The page posts `{ id, read: "<data file>" }` or, for a
+/// catalogue query it declared, `{ id, query: "<id>@<N>", params }` (#5969, [`calls`]) on it and
+/// hears `{ id, data | error: { kind }, at, cursor? }`. The load is named by a random word of its own,
 /// opened first and then carried on each ask, as an image of its own origin, which is all the CSP
 /// lets it reach; the answer comes back through [`ANSWER`], for this load's word only.
 const PORT: &str = r#"(() => {
@@ -120,11 +121,20 @@ const PORT: &str = r#"(() => {
   own.onmessage = (event) => {
     const asked = event.data;
     const id = asked !== null && typeof asked === "object" ? asked.id : undefined;
-    if (!Number.isSafeInteger(id) || id < 0 || typeof asked.read !== "string") {
-      own.postMessage({ id: Number.isSafeInteger(id) ? id : null, error: { kind: "refused" }, at: new Date().toISOString().replace(/\.\d+Z$/, "Z") });
+    const refuse = () => own.postMessage({ id: Number.isSafeInteger(id) ? id : null, error: { kind: "refused" }, at: new Date().toISOString().replace(/\.\d+Z$/, "Z") });
+    if (!Number.isSafeInteger(id) || id < 0 || (typeof asked.read !== "string" && typeof asked.query !== "string")) {
+      refuse();
       return;
     }
-    const path = "read/" + id + "?" + encodeURIComponent(asked.read);
+    let path;
+    try {
+      path = typeof asked.query === "string"
+        ? "query/" + id + "?" + encodeURIComponent(JSON.stringify({ query: asked.query, params: asked.params === undefined ? null : asked.params }))
+        : "read/" + id + "?" + encodeURIComponent(asked.read);
+    } catch {
+      refuse();
+      return;
+    }
     if (open) send(path); else waiting.push(path);
   };
   Object.defineProperty(window, "__purlisPort", { value: (to, answer) => { if (to === load) own.postMessage(answer); } });
@@ -139,14 +149,18 @@ fn is_load(word: &str) -> bool {
     word.len() == 32 && word.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
-/// One read a page asked for on its port: the webview, its load, the page's id and the name.
+/// One read a page asked for on its port: the webview, its load, the page's id and the name:
+/// a data file's, or with `params` a catalogue query's (#5969).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Ask {
     pub(crate) label: String,
     pub(crate) load: String,
     pub(crate) id: u64,
     pub(crate) name: String,
+    pub(crate) params: Option<serde_json::Value>,
 }
+
+pub(crate) mod calls;
 
 /// What every window of a plane hears when an artifact's approval on this machine changed: the
 /// workspace and folder, so each tab of it loads its page again.
@@ -215,6 +229,16 @@ impl Served {
         if self.load.as_deref() != Some(load) {
             return None;
         }
+        if let Some(id) = said.strip_prefix("query/") {
+            let (name, params) = calls::asked(query?)?;
+            return Some(Ask {
+                label: label.to_owned(),
+                load: load.to_owned(),
+                id: page_id(id)?,
+                name,
+                params: Some(params),
+            });
+        }
         let id = said.strip_prefix("read/")?;
         if id.is_empty() || !id.bytes().all(|b| b.is_ascii_digit()) {
             return None;
@@ -228,8 +252,17 @@ impl Served {
             load: load.to_owned(),
             id: id.parse().ok()?,
             name,
+            params: None,
         })
     }
+}
+
+/// The page's id of an ask, as [`PORT`] sends it: digits only.
+fn page_id(id: &str) -> Option<u64> {
+    if id.is_empty() || !id.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    id.parse().ok()
 }
 
 impl Artifacts {
@@ -316,6 +349,23 @@ impl Artifacts {
         self.served()
             .get(label)
             .is_some_and(|one| url.as_str().starts_with(&format!("{}/", origin(&one.host))))
+    }
+
+    /// **The link `href` a person followed in artifact webview `label`'s page** (#5956): its
+    /// window, its origin, and whether the template it was served writes that link.
+    pub(crate) fn followed(
+        &self,
+        label: &str,
+        href: &str,
+    ) -> Option<crate::artifact_links::Followed> {
+        self.served()
+            .get(label)
+            .map(|one| crate::artifact_links::Followed {
+                window: one.window.clone(),
+                own: origin(&one.host),
+                href: href.to_owned(),
+                written: artifact::links::written(&one.snapshot, href),
+            })
     }
 
     /// The artifact webview `label`, when it is in window `window`.
@@ -409,6 +459,12 @@ pub(crate) fn serve<R: Runtime>(
     if let Some(ask) = answered.ask {
         answer_ask(app.clone(), ask);
     }
+    // A link the person followed in the page (#5956), attributed by the webview's label.
+    if let Some(followed) = crate::artifact_links::href_of(&request.uri().to_string())
+        .and_then(|href| artifacts.followed(label, &href))
+    {
+        crate::artifact_links::follow(app, label, followed);
+    }
     if let Some((window, key)) = answered.key {
         // The window's own webview has the window's label.
         if let Some(own) = app.get_webview(&window) {
@@ -437,13 +493,24 @@ fn answer_ask<R: Runtime>(app: tauri::AppHandle<R>, ask: Ask) {
             return;
         };
         let config = purlis_core::machine::config_root();
-        let answer = read_asked(
-            config.as_deref(),
-            &of,
-            &snapshot,
-            declared.as_ref(),
-            &ask.name,
-        );
+        let answer = match &ask.params {
+            None => read_asked(
+                config.as_deref(),
+                &of,
+                &snapshot,
+                declared.as_ref(),
+                &ask.name,
+            ),
+            Some(params) => calls::answer(
+                &app,
+                config.as_deref(),
+                &of,
+                &snapshot,
+                declared.as_ref(),
+                &ask.name,
+                params,
+            ),
+        };
         if !artifacts.still_open(&ask.label, &ask.load) {
             return;
         }
@@ -466,19 +533,23 @@ fn read_asked(
 ) -> purlis_core::catalogue::Answer {
     use purlis_core::catalogue::{Answer, ErrorKind};
     let now = chrono::Utc::now();
-    let pinned = artifact::read(&of.dir)
-        .ok()
-        .and_then(|pins| pins.pins.into_iter().find(|pin| pin.folder == of.folder))
-        .filter(|pin| pin.id == of.pin);
-    let runs = pinned.is_some()
-        && approval::standing(config, &of.dir, &of.folder, &of.pin, snapshot).runs();
-    if !runs {
+    if !still_runs(config, of, snapshot) {
         return Answer::error(ErrorKind::NotApproved, now);
     }
     match artifact::resolve(&of.dir, &of.folder) {
         Ok(folder) => data::read(&folder, declared, name, now),
         Err(_) => Answer::error(ErrorKind::Failed, now),
     }
+}
+
+/// **Whether the page served as `snapshot` still runs its script**, read again at the ask: its
+/// pin still the one served, and its standing on this machine still approved.
+fn still_runs(config: Option<&std::path::Path>, of: &Of, snapshot: &serve::Snapshot) -> bool {
+    let pinned = artifact::read(&of.dir)
+        .ok()
+        .and_then(|pins| pins.pins.into_iter().find(|pin| pin.folder == of.folder))
+        .filter(|pin| pin.id == of.pin);
+    pinned.is_some() && approval::standing(config, &of.dir, &of.folder, &of.pin, snapshot).runs()
 }
 
 /// The script that hands `answer` to the load that asked: data, as JSON, never markup.
@@ -787,6 +858,10 @@ pub struct ArtifactOpened {
     /// Whether the data its page declared was generated on this machine (#5961): false when it
     /// declares data files and none is here, which the bar says.
     pub generated: bool,
+    /// The catalogue queries its page declared it calls, as its approval lists them (#5969).
+    pub queries: Vec<calls::ArtifactQuery>,
+    /// Whether it may call its plane-scoped queries: a grant of its own (#5969).
+    pub plane_granted: bool,
 }
 
 /// What the page `snapshot` opens on declared it reads; an unreadable declaration is none.
@@ -821,26 +896,32 @@ pub async fn artifact_open(
     let dir = at.clone();
     let read_folder = folder.clone();
     let config = purlis_core::machine::config_root();
-    let (host, snapshot, pin, standing, changed_by, declared, generated) = blocking(move || {
-        let real = artifact::resolve(&at, &read_folder)?;
-        let (pin, snapshot) = read_pinned(&at, &read_folder)?;
-        let standing = approval::standing(config.as_deref(), &at, &read_folder, &pin, &snapshot);
-        let changed_by = (standing == Standing::PinChanged)
-            .then(|| artifact::pinned_by(&at, &pin))
-            .flatten();
-        let declared = declared_by(&snapshot);
-        let generated = data::generated(&real, declared.as_ref());
-        Ok((
-            serve::origin_host(&at, &read_folder),
-            snapshot,
-            pin,
-            standing,
-            changed_by,
-            declared,
-            generated,
-        ))
-    })
-    .await?;
+    let (host, snapshot, pin, standing, changed_by, declared, generated, plane_granted) =
+        blocking(move || {
+            let real = artifact::resolve(&at, &read_folder)?;
+            let (pin, snapshot) = read_pinned(&at, &read_folder)?;
+            let standing =
+                approval::standing(config.as_deref(), &at, &read_folder, &pin, &snapshot);
+            let changed_by = (standing == Standing::PinChanged)
+                .then(|| artifact::pinned_by(&at, &pin))
+                .flatten();
+            let declared = declared_by(&snapshot);
+            let generated = data::generated(&real, declared.as_ref());
+            let plane_granted =
+                approval::plane_granted(config.as_deref(), &at, &read_folder, &pin, &snapshot);
+            Ok((
+                serve::origin_host(&at, &read_folder),
+                snapshot,
+                pin,
+                standing,
+                changed_by,
+                declared,
+                generated,
+                plane_granted,
+            ))
+        })
+        .await?;
+    let queries = calls::listed(declared.as_ref());
     let of = Of {
         plane,
         workspace,
@@ -864,6 +945,8 @@ pub async fn artifact_open(
         standing: standing.as_str().to_owned(),
         changed_by,
         generated,
+        queries,
+        plane_granted,
     })
 }
 
@@ -1139,6 +1222,9 @@ pub async fn artifact_preview_open(
         changed_by: None,
         // A preview declares no data of its own: there is nothing to have generated.
         generated: true,
+        // Nor does it run script, so it calls nothing.
+        queries: Vec::new(),
+        plane_granted: false,
     })
 }
 
@@ -1163,6 +1249,7 @@ fn lay(
             .on_new_window(crate::navguard::no_new_window)
             .initialization_script(PAGE_SCRIPT)
             .initialization_script(PORT)
+            .initialization_script(crate::artifact_links::SCRIPT)
             .incognito(true)
             .focused(false)
             .devtools(false)
@@ -1278,7 +1365,7 @@ pub async fn artifact_reload(
     let app = window.app_handle().clone();
     let read_label = label.clone();
     let config = purlis_core::machine::config_root();
-    let (standing, changed_by, generated) = blocking(move || {
+    let (standing, changed_by, generated, (queries, plane_granted)) = blocking(move || {
         let artifacts = app
             .try_state::<Artifacts>()
             .ok_or_else(|| "no artifact is open".to_owned())?;
@@ -1287,7 +1374,8 @@ pub async fn artifact_reload(
             .then(|| artifacts.served_to(&read_label, &owner))
             .flatten()
             .and_then(|(of, _)| artifact::pinned_by(&of.dir, &of.pin));
-        Ok((standing, changed_by, generated))
+        let queries = artifacts.queries_of(&read_label, config.as_deref());
+        Ok((standing, changed_by, generated, queries))
     })
     .await?;
     webview.reload().map_err(|e| e.to_string())?;
@@ -1296,6 +1384,8 @@ pub async fn artifact_reload(
         standing: standing.as_str().to_owned(),
         changed_by,
         generated,
+        queries,
+        plane_granted,
     })
 }
 
@@ -1605,6 +1695,7 @@ mod tests {
                 load: LOAD_A.to_owned(),
                 id: 7,
                 name: "data/rows.json".to_owned(),
+                params: None,
             })
         );
         assert!(artifacts.still_open("artifact-1", LOAD_A));
@@ -1691,6 +1782,7 @@ mod tests {
             load: LOAD_A.to_owned(),
             id: 3,
             name: "data.json".to_owned(),
+            params: None,
         };
         let at = chrono::DateTime::parse_from_rfc3339("2026-11-09T12:00:00Z")
             .unwrap()

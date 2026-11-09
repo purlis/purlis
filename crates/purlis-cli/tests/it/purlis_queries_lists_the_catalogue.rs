@@ -52,7 +52,11 @@ fn the_json_listing_is_every_query_with_its_shape_scope_and_since() {
         assert_eq!(query["scope"], "workspace", "{query}");
         assert!(query["since"].is_string(), "{query}");
         assert_eq!(query["parameters"]["type"], "object", "{query}");
-        assert!(query["result"]["type"].is_string(), "{query}");
+        assert!(
+            query["result"]["type"] == "object"
+                || query["result"]["type"] == serde_json::json!(["object", "null"]),
+            "a query answers data, not text: {query}"
+        );
     }
 }
 
@@ -74,8 +78,12 @@ fn the_plain_listing_says_each_id_with_its_scope_since_and_parameters() {
         "the parameters are said: {out}"
     );
     assert!(
-        out.contains("→ string"),
+        out.contains("→ object") && out.contains("→ object | null"),
         "the result's shape is said: {out}"
+    );
+    assert!(
+        out.contains("widens done"),
+        "a parameter that widens what it reads is said: {out}"
     );
     for id in purlis_core::catalogue::CATALOGUE.iter().map(|q| q.id()) {
         assert!(out.contains(&id), "{id} is listed: {out}");

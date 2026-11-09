@@ -24,6 +24,9 @@ import {
   type ArtifactApprovalChanged,
   type ArtifactKeyPressed,
 } from "./artifacts";
+import { ArtifactLinks } from "./ArtifactLinks";
+import { ArtifactQueries } from "./ArtifactQueries";
+import { ArtifactRegenerate } from "./ArtifactRegenerate";
 import { artifactDataIn, artifactsIn, useViewChanged } from "./planeChanged";
 import { DiscussButton } from "./artifactDiscuss";
 import { Button } from "./ui/button/Button";
@@ -111,15 +114,18 @@ export function ArtifactTab({
         <span className="artifact-bar-by">{pinnedBy(about.said)}</span>
         <span className="artifact-bar-fresh">{freshness(about.said?.fresh)?.said ?? ""}</span>
         {opened === null ? null : <ScriptStanding opened={opened} />}
+        {opened === null ? null : <ArtifactQueries opened={opened} />}
         {opened === null || opened.generated ? null : (
           <span className="artifact-bar-standing" data-testid="artifact-data">
             Not generated on this machine
           </span>
         )}
+        <ArtifactRegenerate plane={plane} workspace={workspace} folder={folder} name={name} />
         {!unpinned && about.said?.missing === null && about.said.too_large === null ? (
           <DiscussButton plane={plane} workspace={workspace} folder={folder} />
         ) : null}
       </header>
+      {opened === null ? null : <ArtifactLinks label={opened.label} />}
       {unpinned ? (
         <EmptyState
           headline={`${name} is unpinned`}

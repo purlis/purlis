@@ -41,6 +41,11 @@ export const commands = {
 	artifactRepin: __WINDOW_ONLY_RESULT,
 	artifactUnpin: __WINDOW_ONLY_RESULT,
 	artifactApprove: __WINDOW_ONLY_RESULT,
+	artifactGrantPlane: __WINDOW_ONLY_RESULT,
+	artifactRegenerateAbout: __WINDOW_ONLY_RESULT,
+	artifactRegenerateApprove: __WINDOW_ONLY_RESULT,
+	artifactRegenerate: __WINDOW_ONLY_RESULT,
+	artifactLinkOpen: __WINDOW_ONLY_RESULT,
 	artifactDiscuss: __WINDOW_ONLY_START_REFUSED,
 	/**  What the window says about this launch and the session bus: nothing, on a launch with it. */
 	sessionBus: () => __TAURI_INVOKE<{
@@ -3120,6 +3125,10 @@ export type ArtifactOpened = {
 	 *  declares data files and none is here, which the bar says.
 	 */
 	generated: boolean,
+	/**  The catalogue queries its page declared it calls, as its approval lists them (#5969). */
+	queries: ArtifactQuery[],
+	/**  Whether it may call its plane-scoped queries: a grant of its own (#5969). */
+	plane_granted: boolean,
 };
 
 /**
@@ -3196,6 +3205,44 @@ export type ArtifactPlace = {
 	width: number | null,
 	height: number | null,
 	ratio: number | null,
+};
+
+/**  One query a page declared, as its approval lists it in the bar. */
+export type ArtifactQuery = {
+	/**  `<id>@<N>`. */
+	id: string,
+	/**  `workspace` or `plane`. */
+	scope: string,
+	/**  Each declared parameter that widens what it reads, as `<name>: <what it then reads>`. */
+	widens: string[],
+	/**  That the id is deprecated or replaced, which the bar warns of. */
+	warning: string | null,
+};
+
+/**  What an artifact's bar says of its Regenerate before anything runs. */
+export type ArtifactRegenerate = {
+	/**  Whether the pin names a command at all; none draws no Regenerate. */
+	has_command: boolean,
+	/**  Why it cannot run here, when it cannot: the sentence the bar shows. */
+	refused: string | null,
+	/**  `approved`, `new`, `changed` or `pin-changed`, when it resolved. */
+	standing: string | null,
+	/**  The folder of code a yes approves, as the prompt names it. */
+	code: string | null,
+	/**  That code's fingerprint, handed back with the yes. */
+	fingerprint: string | null,
+	/**  When the data in place was last good, UTC, as the bar shows it. */
+	last_good: string | null,
+};
+
+/**  How a press of Regenerate ended. */
+export type ArtifactRegenerated = {
+	/**  The data files written, when it succeeded. */
+	written: string[],
+	/**  What went wrong and that the data before it stands, with its date, when it failed. */
+	failed: string | null,
+	/**  The tail of the run's output, secrets masked, when it failed and said anything. */
+	output: string | null,
 };
 
 /**

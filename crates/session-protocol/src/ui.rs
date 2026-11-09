@@ -1112,6 +1112,21 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Approving an artifact's script (#5959, ADR 0120 §4): the person's press in its bar, of
     // what their own window was served. No link may approve on their behalf.
     "artifact_approve",
+    // Granting an approved artifact its plane-wide queries (#5969, ADR 0120 §7): a grant of
+    // its own, the person's press in its bar. No link may grant it on their behalf.
+    "artifact_grant_plane",
+    // Regenerate (#5962, ADR 0120 §6): the person's yes to the code a pin's command runs, and
+    // the run it starts in the session host. Only their own window approves or starts one.
+    "artifact_regenerate_about",
+    "artifact_regenerate_approve",
+    "artifact_regenerate",
+    // Opening a link an artifact's page followed (#5956, ADR 0120 §5): the person's answer in
+    // their own window, to what that window's artifact reported.
+    "artifact_link_open",
+    // A scenario test's stand-ins for the page's click and the browser (#5956): the `e2e` build
+    // only, and its window alone.
+    "artifact_link_follow",
+    "artifact_links_opened",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on

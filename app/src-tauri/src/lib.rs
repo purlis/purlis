@@ -24,6 +24,7 @@ mod activity;
 mod agentidentity;
 mod alerts;
 mod arrived;
+mod artifact_links;
 mod artifacts;
 mod artifactdiscuss;
 mod asking;
@@ -92,6 +93,7 @@ mod host;
 mod inboxupdates;
 mod machineprofiles;
 mod personaskills;
+mod regenerate;
 mod routergrade;
 mod signingsetup;
 mod signinwatch;
@@ -3906,6 +3908,8 @@ pub fn run() {
         // A pinned artifact's webviews, and the scheme that serves each only its own bytes
         // (#5952, ADR 0120 §3).
         .manage(artifacts::Artifacts::default())
+        // The links its pages followed, waiting on the person (#5956, ADR 0120 §5).
+        .manage(artifact_links::Links::default())
         .register_uri_scheme_protocol(purlis_core::artifact::serve::SCHEME, |ctx, request| {
             artifacts::serve(ctx.app_handle(), ctx.webview_label(), &request)
         })

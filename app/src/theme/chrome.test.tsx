@@ -39,6 +39,7 @@ import { NoticeList } from "../Notice";
 import { AnswerPanel } from "../AnswerPanel";
 import { ApproveExtension } from "../ApproveExtension";
 import { ApprovePlane } from "../ApprovePlane";
+import { ArtifactLinkDialog } from "../ArtifactLinks";
 import { AskPersona } from "../AskPersona";
 import { UseSkill } from "../UseSkill";
 import type { LandQuestion, PlaneId, StudioSkill, VaultContents } from "../bindings";
@@ -79,6 +80,7 @@ import { Palette } from "../Palette";
 import { PanelList } from "../PanelList";
 import { PersonaProfile } from "../PersonaProfile";
 import { PoolSignInConfirm } from "../PoolSignInConfirm";
+import { ArtifactRegenerate } from "../ArtifactRegenerate";
 import { MidTurn, QuitWarning, type Ending } from "../QuitWarning";
 import { RelaunchAsk } from "../RelaunchAsk";
 import { RemoveFromWorkspace } from "../RemoveFromWorkspace";
@@ -458,6 +460,16 @@ const SKILL: StudioSkill = {
 function dialogCore() {
   mockIPC((cmd) => {
     switch (cmd) {
+      // A pinned artifact's Regenerate, whose code changed since it was approved (#5962).
+      case "artifact_regenerate_about":
+        return {
+          has_command: true,
+          refused: null,
+          standing: "changed",
+          code: "/plane/skills/report",
+          fingerprint: "ab".repeat(32),
+          last_good: null,
+        };
       case "signing_state":
         return {
           on: false,
@@ -1359,6 +1371,47 @@ const DIALOGS: Opened[] = [
           saving={false}
           onSave={nothing}
           onCancel={nothing}
+        />,
+      ),
+  },
+  {
+    name: "Regenerate asking before it runs code that changed",
+    file: "ArtifactRegenerate.tsx",
+    open: async () => {
+      render(<ArtifactRegenerate plane="p" workspace="alpha" folder="board" name="Board" />);
+      await userEvent.click(await screen.findByRole("button", { name: "Regenerate" }));
+    },
+  },
+  {
+    name: "an artifact's link, asked about",
+    file: "ArtifactLinks.tsx",
+    open: async () =>
+      render(
+        <ArtifactLinkDialog
+          link={{
+            label: "artifact-1",
+            url: "https://github.com/purlis/purlis/issues",
+            host: "github.com",
+            refused: null,
+          }}
+          onClose={nothing}
+        />,
+      ),
+  },
+  {
+    name: "an artifact's link, refused",
+    file: "ArtifactLinks.tsx",
+    open: async () =>
+      render(
+        <ArtifactLinkDialog
+          link={{
+            label: "artifact-1",
+            url: null,
+            host: null,
+            refused:
+              "purlis opens only https links from an artifact, so it will not open this file: link",
+          }}
+          onClose={nothing}
         />,
       ),
   },

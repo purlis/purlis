@@ -238,8 +238,16 @@ mod tests {
 
     #[test]
     fn the_window_s_native_read_back_is_a_scenario_test_s_and_on_no_class_of_the_window_s() {
-        // #2836: nothing in the UI asks it, so it is in the `e2e` build only.
-        assert_eq!(e2e_only(), ["native_window_drawn"]);
+        // #2836: nothing in the UI asks them, so they are in the `e2e` build only: the window's
+        // native read-back, and an artifact link's stand-ins for the page and the browser (#5956).
+        assert_eq!(
+            e2e_only(),
+            [
+                "native_window_drawn",
+                "artifact_link_follow",
+                "artifact_links_opened"
+            ]
+        );
         let (free, values) = listed();
         for command in e2e_only() {
             assert!(!free.contains(command) && !values.contains(command));

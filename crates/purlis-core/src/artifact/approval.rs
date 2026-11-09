@@ -207,6 +207,56 @@ pub fn approve(
     })
 }
 
+/// **Grants the page approved as `pin_id` and `fingerprint` its plane-scoped queries** (ADR 0120
+/// §7, #5969): a grant of its own, beside its approval and only on top of it, which a new
+/// approval of the folder (a changed template or pin) drops. Only purlis's bar calls this.
+pub fn grant_plane(
+    config_root: &Path,
+    workspace: &Path,
+    folder: &str,
+    pin_id: &str,
+    fingerprint: &str,
+) -> Result<(), String> {
+    let at = key(workspace, folder);
+    let mut granted = false;
+    change(config_root, |entries| {
+        if let Some(Value::Object(entry)) = entries.get_mut(&at) {
+            let same = entry.get("pin").and_then(Value::as_str) == Some(pin_id)
+                && entry.get("fingerprint").and_then(Value::as_str) == Some(fingerprint);
+            if same {
+                entry.insert("plane".into(), Value::Bool(true));
+                granted = true;
+            }
+        }
+    })?;
+    if granted {
+        Ok(())
+    } else {
+        Err("approve the page's script first: plane-wide reads are granted on top of it".into())
+    }
+}
+
+/// **Whether the artifact pinned as `pin_id` at `folder`, served as `snapshot`, may read the
+/// whole plane**: approved here as it is, and granted plane-wide reads on top.
+pub fn plane_granted(
+    config_root: Option<&Path>,
+    workspace: &Path,
+    folder: &str,
+    pin_id: &str,
+    snapshot: &Snapshot,
+) -> bool {
+    if standing(config_root, workspace, folder, pin_id, snapshot) != Standing::Approved {
+        return false;
+    }
+    config_root.is_some_and(|config| {
+        entries(config)
+            .get(&key(workspace, folder))
+            .and_then(|entry| entry.get("plane"))
+            .and_then(Value::as_bool)
+            == Some(true)
+    })
+}
+
 /// **Forgets the approval of folder `folder`** of the workspace at `workspace`: its script stops
 /// running at its next load and it asks again. Whether there was one.
 pub fn forget(config_root: &Path, workspace: &Path, folder: &str) -> Result<bool, String> {
@@ -346,6 +396,36 @@ mod tests {
         assert_eq!(here.standing(PIN), Standing::ScriptFree);
         assert!(!Standing::ScriptFree.asks());
         assert!(!Standing::ScriptFree.runs());
+    }
+
+    #[test]
+    fn plane_wide_reads_are_a_grant_of_their_own_on_top_of_the_approval() {
+        let here = Here::new();
+        let plane = || {
+            plane_granted(
+                Some(&here.config),
+                &here.workspace,
+                "board",
+                PIN,
+                &here.snapshot(),
+            )
+        };
+        let grant = || {
+            let shown = here.snapshot().fingerprint().to_owned();
+            grant_plane(&here.config, &here.workspace, "board", PIN, &shown)
+        };
+        assert!(grant().is_err(), "nothing approved to grant on top of");
+        here.approve(PIN);
+        assert!(!plane(), "approving the script grants no plane-wide reads");
+        grant().unwrap();
+        assert!(plane());
+        assert_eq!(here.standing(PIN), Standing::Approved);
+
+        // A changed template asks again, and its new approval holds no plane grant.
+        here.write("app.js", "draw(2)");
+        assert!(!plane());
+        here.approve(PIN);
+        assert!(!plane());
     }
 
     #[test]

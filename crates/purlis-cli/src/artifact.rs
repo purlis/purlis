@@ -77,6 +77,21 @@ pub enum ArtifactCommand {
         #[arg(short = 'w', long = "workspace")]
         workspace: Option<String>,
     },
+    /// Regenerate a pinned artifact's data. With --check, say what its command resolves to on
+    /// this machine (the code a person approves, its fingerprint) and whether a press runs it
+    /// or asks: approved, new, changed (its code changed since you approved it), or
+    /// pin-changed. The run itself is started from the artifact's bar in the window, in purlis's
+    /// session host, never by this command.
+    Regenerate {
+        /// The pin, by id or folder.
+        pin: String,
+        /// Only say where the pin's command stands; run nothing.
+        #[arg(long)]
+        check: bool,
+        /// The workspace (default: the active one).
+        #[arg(short = 'w', long = "workspace")]
+        workspace: Option<String>,
+    },
 }
 
 pub fn run(here: &Here, command: ArtifactCommand) -> Result<Code, String> {
@@ -222,7 +237,65 @@ pub fn run(here: &Here, command: ArtifactCommand) -> Result<Code, String> {
             }
             Ok(0)
         }
+        ArtifactCommand::Regenerate {
+            pin,
+            check,
+            workspace,
+        } => regenerate(here, &pin, check, workspace.as_deref()),
     }
+}
+
+/// `purlis artifact regenerate <pin> --check`: what the pin's command resolves to and where it
+/// stands. Without `--check` it refuses: Regenerate runs in the session host, from the bar.
+fn regenerate(
+    here: &Here,
+    key: &str,
+    check: bool,
+    workspace: Option<&str>,
+) -> Result<Code, String> {
+    use artifact::regenerate::{self, Standing};
+    if !check {
+        return refused(
+            "Regenerate runs in purlis's session host, in the sandbox a chat's commands run \
+             in, and is started from the artifact's bar in the window; nothing was run. Add \
+             --check to see where its command stands on this machine",
+        );
+    }
+    let ws = here.workspace(workspace)?;
+    let pins = match artifact::read(ws.dir()) {
+        Ok(pins) => pins.pins,
+        Err(why) => return refused(&why),
+    };
+    let Some(pin) = pins.iter().find(|p| p.id == key || p.folder == key) else {
+        return refused(&format!(
+            "no pin '{}' in this workspace (`purlis artifact list` shows them)",
+            purlis_core::personas::one_line(key)
+        ));
+    };
+    let resolved = match regenerate::resolve(here.plane.root(), ws.dir(), pin) {
+        Ok(resolved) => resolved,
+        Err(why) => return refused(&why),
+    };
+    let config = purlis_core::machine::config_root();
+    let standing =
+        regenerate::standing(config.as_deref(), ws.dir(), &pin.folder, &pin.id, &resolved);
+    let meaning = match standing {
+        Standing::Approved => "approved on this machine: a press of Regenerate runs it",
+        Standing::New => "asks before it runs: never approved on this machine",
+        Standing::Changed => "asks again: the code it runs changed since you approved it",
+        Standing::PinChanged => {
+            "asks again: its pin changed (its folder, command or working folder) since you \
+             approved it"
+        }
+    };
+    println!(
+        "{}  {}  {}  {}  -  {meaning}",
+        purlis_core::personas::one_line(&pin.folder),
+        standing.as_str(),
+        resolved.code.display(),
+        resolved.fingerprint
+    );
+    Ok(0)
 }
 
 /// One pin's line of `approve-status`: folder, standing, fingerprint, and what it means.

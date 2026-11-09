@@ -11,8 +11,19 @@
     "failed"
   ],
   "envelope": {
-    "data": { "data": { "n": 1 }, "at": "2026-11-09T13:32:00Z", "cursor": "c" },
-    "error": { "error": { "kind": "refused" }, "at": "2026-11-09T13:32:00Z" }
+    "data": {
+      "data": {
+        "n": 1
+      },
+      "at": "2026-11-09T13:32:00Z",
+      "cursor": "c"
+    },
+    "error": {
+      "error": {
+        "kind": "refused"
+      },
+      "at": "2026-11-09T13:32:00Z"
+    }
   },
   "queries": [
     "purlis.todo_list",
@@ -20,5 +31,252 @@
     "purlis.session_record_list",
     "purlis.session_record_read",
     "purlis.change_status"
-  ]
+  ],
+  "results": {
+    "purlis.todo_list": {
+      "type": "object",
+      "properties": {
+        "done": {
+          "type": "boolean",
+          "description": "Whether these are the done todos."
+        },
+        "todos": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "slug": {
+                "type": "string",
+                "description": "What todo_done closes it by, or todo_reopen opens it again by."
+              },
+              "title": {
+                "type": "string",
+                "description": "Its title."
+              },
+              "opened": {
+                "type": "string",
+                "description": "When it was recorded, as its file says it (YYYY-MM-DD HH:MM), or empty."
+              }
+            },
+            "required": [
+              "slug",
+              "title",
+              "opened"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "done",
+        "todos"
+      ],
+      "additionalProperties": false
+    },
+    "purlis.memory_search": {
+      "type": "object",
+      "properties": {
+        "memories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "file": {
+                "type": "string",
+                "description": "Its file name in the workspace's memory."
+              },
+              "title": {
+                "type": "string",
+                "description": "Its title."
+              },
+              "text": {
+                "type": "string",
+                "description": "Its whole text, as written."
+              }
+            },
+            "required": [
+              "file",
+              "title",
+              "text"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "memories"
+      ],
+      "additionalProperties": false
+    },
+    "purlis.session_record_list": {
+      "type": "object",
+      "properties": {
+        "records": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "file": {
+                "type": "string",
+                "description": "Its file name, which session_record_read reads it by."
+              },
+              "title": {
+                "type": "string",
+                "description": "Its title, or its file name when it has none."
+              },
+              "when": {
+                "type": "string",
+                "description": "When it was written, YYYY-MM-DD HH:MM."
+              }
+            },
+            "required": [
+              "file",
+              "title",
+              "when"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "records"
+      ],
+      "additionalProperties": false
+    },
+    "purlis.session_record_read": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "file": {
+          "type": "string",
+          "description": "Its file name."
+        },
+        "text": {
+          "type": "string",
+          "description": "Its whole text, as written."
+        }
+      },
+      "required": [
+        "file",
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "purlis.change_status": {
+      "type": "object",
+      "properties": {
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "change": {
+                "type": "string",
+                "description": "Its name."
+              },
+              "why": {
+                "type": "string",
+                "description": "Why it is being made."
+              },
+              "created": {
+                "type": "string",
+                "description": "When it was created."
+              },
+              "by": {
+                "type": "string",
+                "description": "Who created it."
+              },
+              "members": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "repo": {
+                      "type": "string",
+                      "description": "The repo."
+                    },
+                    "branch": {
+                      "type": "string",
+                      "description": "Its branch there."
+                    },
+                    "needs": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "description": "A repo whose member lands first."
+                      }
+                    }
+                  },
+                  "required": [
+                    "repo",
+                    "branch",
+                    "needs"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "excluded": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "repo": {
+                      "type": "string",
+                      "description": "The repo left out."
+                    },
+                    "why": {
+                      "type": "string",
+                      "description": "Why."
+                    }
+                  },
+                  "required": [
+                    "repo",
+                    "why"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "change",
+              "why",
+              "created",
+              "by",
+              "members",
+              "excluded"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "unreadable": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "change": {
+                "type": "string",
+                "description": "The name of a record that could not be read."
+              },
+              "why": {
+                "type": "string",
+                "description": "Why."
+              }
+            },
+            "required": [
+              "change",
+              "why"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "changes",
+        "unreadable"
+      ],
+      "additionalProperties": false
+    }
+  }
 }

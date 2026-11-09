@@ -68,6 +68,9 @@ pub struct Query {
     /// Why the id is deprecated and what to use instead; it answers for one more release.
     pub deprecated: Option<&'static str>,
     pub scope: Scope,
+    /// The parameters that widen what it reads, each with what it then reads, which a page's
+    /// approval names (ADR 0120 §7, #5969).
+    pub widens: &'static [(&'static str, &'static str)],
     /// The JSON Schema of the answer's `data`.
     pub result: fn() -> Value,
 }
@@ -108,6 +111,14 @@ impl Query {
             out.insert("deprecated".into(), json!(why));
         }
         out.insert("parameters".into(), self.parameters());
+        if !self.widens.is_empty() {
+            let widens: Map<String, Value> = self
+                .widens
+                .iter()
+                .map(|(name, what)| ((*name).to_owned(), json!(what)))
+                .collect();
+            out.insert("widens".into(), Value::Object(widens));
+        }
         out.insert("result".into(), (self.result)());
         Value::Object(out)
     }
@@ -116,9 +127,98 @@ impl Query {
 /// The release the first queries answer in.
 const FIRST: &str = "0.5.1";
 
-/// An answer that is the text the tool gives a chat.
-fn text() -> Value {
-    json!({ "type": "string", "description": "The tool's answer, as a chat reads it." })
+/// A JSON Schema object whose every property is required and no other is allowed.
+fn object(properties: Value) -> Value {
+    let required: Vec<String> = properties
+        .as_object()
+        .map(|p| p.keys().cloned().collect())
+        .unwrap_or_default();
+    json!({
+        "type": "object",
+        "properties": properties,
+        "required": required,
+        "additionalProperties": false,
+    })
+}
+
+fn list_of(item: Value) -> Value {
+    json!({ "type": "array", "items": item })
+}
+
+fn string(description: &str) -> Value {
+    json!({ "type": "string", "description": description })
+}
+
+/// What `purlis.todo_list` answers: the workspace's open todos, or its done ones.
+fn todos() -> Value {
+    object(json!({
+        "done": { "type": "boolean", "description": "Whether these are the done todos." },
+        "todos": list_of(object(json!({
+            "slug": string("What todo_done closes it by, or todo_reopen opens it again by."),
+            "title": string("Its title."),
+            "opened": string("When it was recorded, as its file says it (YYYY-MM-DD HH:MM), or empty."),
+        }))),
+    }))
+}
+
+/// What `purlis.memory_search` answers: the memories found, best or newest first.
+fn memories() -> Value {
+    object(json!({
+        "memories": list_of(object(json!({
+            "file": string("Its file name in the workspace's memory."),
+            "title": string("Its title."),
+            "text": string("Its whole text, as written."),
+        }))),
+    }))
+}
+
+/// What `purlis.session_record_list` answers: the workspace's session records, newest first.
+fn session_records() -> Value {
+    object(json!({
+        "records": list_of(object(json!({
+            "file": string("Its file name, which session_record_read reads it by."),
+            "title": string("Its title, or its file name when it has none."),
+            "when": string("When it was written, YYYY-MM-DD HH:MM."),
+        }))),
+    }))
+}
+
+/// What `purlis.session_record_read` answers: one record, or null when it is not there.
+fn session_record() -> Value {
+    json!({
+        "type": ["object", "null"],
+        "properties": {
+            "file": string("Its file name."),
+            "text": string("Its whole text, as written."),
+        },
+        "required": ["file", "text"],
+        "additionalProperties": false,
+    })
+}
+
+/// What `purlis.change_status` answers: the workspace's cross-repo changes, or the one named.
+fn changes() -> Value {
+    object(json!({
+        "changes": list_of(object(json!({
+            "change": string("Its name."),
+            "why": string("Why it is being made."),
+            "created": string("When it was created."),
+            "by": string("Who created it."),
+            "members": list_of(object(json!({
+                "repo": string("The repo."),
+                "branch": string("Its branch there."),
+                "needs": list_of(string("A repo whose member lands first.")),
+            }))),
+            "excluded": list_of(object(json!({
+                "repo": string("The repo left out."),
+                "why": string("Why."),
+            }))),
+        }))),
+        "unreadable": list_of(object(json!({
+            "change": string("The name of a record that could not be read."),
+            "why": string("Why."),
+        }))),
+    }))
 }
 
 /// Every query, in the order the MCP server lists its tools. A new one is added at the end of
@@ -130,7 +230,8 @@ pub static CATALOGUE: [Query; 5] = [
         replaces: None,
         deprecated: None,
         scope: Scope::Workspace,
-        result: text,
+        widens: &[("done", "the done todos, not only the open ones")],
+        result: todos,
     },
     Query {
         name: "memory_search",
@@ -138,7 +239,8 @@ pub static CATALOGUE: [Query; 5] = [
         replaces: None,
         deprecated: None,
         scope: Scope::Workspace,
-        result: text,
+        widens: &[],
+        result: memories,
     },
     Query {
         name: "session_record_list",
@@ -146,7 +248,8 @@ pub static CATALOGUE: [Query; 5] = [
         replaces: None,
         deprecated: None,
         scope: Scope::Workspace,
-        result: text,
+        widens: &[],
+        result: session_records,
     },
     Query {
         name: "session_record_read",
@@ -154,7 +257,8 @@ pub static CATALOGUE: [Query; 5] = [
         replaces: None,
         deprecated: None,
         scope: Scope::Workspace,
-        result: text,
+        widens: &[],
+        result: session_record,
     },
     Query {
         name: "change_status",
@@ -162,12 +266,35 @@ pub static CATALOGUE: [Query; 5] = [
         replaces: None,
         deprecated: None,
         scope: Scope::Workspace,
-        result: text,
+        widens: &[],
+        result: changes,
     },
 ];
 
+/// **The query a page or a caller names by `id`**, and the warning the bar shows for it: an id
+/// that is deprecated, or one a newer id replaces, still answers (ADR 0120 §7).
+pub fn find(id: &str) -> Option<(&'static Query, Option<String>)> {
+    if let Some(query) = CATALOGUE.iter().find(|q| q.id() == id) {
+        let warning = query
+            .deprecated
+            .map(|why| format!("Calls {id}, which is deprecated: {why}"));
+        return Some((query, warning));
+    }
+    CATALOGUE
+        .iter()
+        .find(|q| q.replaces == Some(id))
+        .map(|query| {
+            let warning = format!("Calls {id}, which {} replaces", query.id());
+            (query, Some(warning))
+        })
+}
+
 /// The read-only tools that are no query, each with why.
-pub const NOT_QUERIES: [(&str, &str); 16] = [
+pub const NOT_QUERIES: [(&str, &str); 17] = [
+    (
+        crate::chattools::QUERIES,
+        "it lists the catalogue for a page's author, and a page declares what it calls",
+    ),
     (
         crate::chattools::PERSONA_WHERE,
         "it is about the chat that asks, and a page is no chat",
@@ -323,6 +450,8 @@ pub fn listing() -> Value {
         "queries": CATALOGUE.iter().map(Query::listed).collect::<Vec<_>>(),
     })
 }
+
+pub mod answer;
 
 #[cfg(test)]
 mod tests;
