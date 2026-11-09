@@ -67,6 +67,10 @@ struct Model {
     /// Whether a box the pointer passes through (`pointer-events: none`) of the page's own
     /// document lies over the payment frame (#2638).
     overlay: bool,
+    /// A box the pointer passes through (`pointer-events: none`) drawn over the element an act
+    /// is aimed at, by its engine id: found there only when the engine is asked to find such
+    /// boxes.
+    passed_through: Option<i64>,
     /// Whether the payment frame's element says no frame it holds (#2638).
     frame_unnamed: bool,
     /// The elements inside each shadow host's shadow root, by the host's engine id (#2972).
@@ -407,10 +411,14 @@ impl Engine {
                 let through = p["ignorePointerEventsNone"] == true;
                 let session = on.unwrap_or_default();
                 let on_the_frame = (100.0..300.0).contains(&x) && (200.0..260.0).contains(&y);
-                let aimed = super::lock(&self.model).aimed.clone();
+                let (aimed, passed_through) = {
+                    let model = super::lock(&self.model);
+                    (model.aimed.clone(), model.passed_through)
+                };
                 if !(on_the_frame && session == "S-PAGE-1")
                     && let Some((in_session, backend)) = aimed
                 {
+                    let backend = passed_through.filter(|_| through).unwrap_or(backend);
                     return Ok(if in_session == session {
                         json!({"backendNodeId": backend, "frameId": frame_of(session)})
                     } else if session == "S-PAGE-1" {
@@ -895,6 +903,7 @@ fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (StandIn,
             titles: HashMap::new(),
             focused_backend: None,
             overlay: false,
+            passed_through: None,
             frame_unnamed: false,
             shadow_of: HashMap::new(),
             history: json!({"currentIndex":0,"entries":[{"id":1,"url":"http://fixture.test/frames.html","userTypedURL":"","title":"","transitionType":"typed"}]}),

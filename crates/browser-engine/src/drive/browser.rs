@@ -51,7 +51,7 @@ pub use login::{LOGIN_WAIT, LoginEnded, origin_of};
 
 use drawing::Drawing;
 use takeover::{Lease, Typing};
-use world::Worlds;
+use world::{World, Worlds};
 
 /// DevTools as the driver needs it: the engine's connection, or a stand-in in tests.
 pub(crate) trait DevTools: Send + Sync {
@@ -236,14 +236,36 @@ pub(crate) const READ_VALUE: &str = r"function (field) {
 
 /// The function that says how the element drawn at a point, `hit`, stands to the element an act
 /// is aimed at, `aimed`, both as they are in purlis's own world: `"holds"` where `hit` holds
-/// `aimed` (shadow roots crossed to their hosts), `"labels"` where `hit` is in a label whose
-/// control is `aimed`, and `""` otherwise. A constant.
+/// `aimed`, and `"labels"` where `hit` is in a label of `aimed` (one whose control it is, or one
+/// of its labels), and `""` otherwise. Both are read along the tree as it is drawn: from a slotted
+/// element to its slot, and from a shadow root to its host. A constant.
 pub(crate) const HOLDS_OR_LABELS: &str = r"function (hit, aimed) {
-  for (let at = aimed; at; at = at instanceof ShadowRoot ? at.host : at.parentNode) {
+  const up = (n) => n.assignedSlot || (n instanceof ShadowRoot ? n.host : n.parentNode);
+  for (let at = aimed; at; at = up(at)) {
     if (at === hit) return 'holds';
   }
-  const label = hit instanceof Element ? hit.closest('label') : null;
-  return label && label.control === aimed ? 'labels' : '';
+  const labels = aimed.labels ? Array.from(aimed.labels) : [];
+  for (let at = hit; at; at = up(at)) {
+    if (at instanceof HTMLLabelElement && (at.control === aimed || labels.includes(at))) {
+      return 'labels';
+    }
+  }
+  return '';
+}";
+
+/// The function that lists, given the element an act is aimed at as it is in purlis's own world,
+/// the elements a pseudo-element drawn at its point may stand for: it and every element that
+/// holds it, along the tree as it is drawn, and each of its labels with everything in them. A
+/// constant.
+pub(crate) const DRAWN_FOR: &str = r"function (aimed) {
+  const found = [];
+  for (let at = aimed; at; at = at.assignedSlot || (at instanceof ShadowRoot ? at.host : at.parentNode)) {
+    if (at instanceof Element) found.push(at);
+  }
+  for (const label of aimed.labels || []) {
+    found.push(label, ...label.querySelectorAll('*'));
+  }
+  return found;
 }";
 
 /// The script that says what the document has focused (#2014): a tag name, or nothing for the
@@ -4174,12 +4196,14 @@ impl Browser {
     }
 
     /// **Refuses an act at `point` of `at`'s page unless what is drawn there is the element
-    /// aimed at**: the element, something inside it, an element that holds it, or a label whose
-    /// control it is. Anything else drawn over it (another element of the page, or a frame
-    /// drawn by a document around the element's own) takes the press, and is refused as not
-    /// shown, as is a point where what is drawn cannot be told. An element that holds it, or its
-    /// label, is let through because a press there reaches it too: a box drawn as a checkbox
-    /// over a hidden `<input>`, by the input's label or around it, is how many pages draw one.
+    /// aimed at**: the element, something inside it, an element that holds it, a label of it, or
+    /// a pseudo-element one of those draws ([`Browser::stands_for`]). Anything else drawn over it
+    /// (another element of the page, or a frame drawn by a document around the element's own)
+    /// takes the press, and is refused as not shown, as is a point where what is drawn cannot be
+    /// told. An element around it is accepted: a press there goes to that element, which the
+    /// page may handle as the element's, and a press on a label reaches its control. A box drawn
+    /// as a checkbox over a hidden `<input>`, by the input's label or around it, is how many
+    /// pages draw one.
     ///
     /// What is drawn at the point is read in the page's own document, and followed, through
     /// each frame with a document in a session of its own, into the element's: in each, what
@@ -4202,7 +4226,8 @@ impl Browser {
         for _ in 0..=frames.len() {
             let (left, top) = self.scrolled(&session).ok_or_else(not_shown)?;
             // What the engine draws inside an element of its own (a field's editor, a slider's
-            // thumb) is answered as that element; a box the pointer passes through is passed.
+            // thumb) is answered as that element; a box the pointer passes through
+            // (`pointer-events: none`) is not the hit, as the press passes through it too.
             let hit = self
                 .devtools()
                 .call(
@@ -4211,7 +4236,7 @@ impl Browser {
                         "x": (x + left).floor() as i64,
                         "y": (y + top).floor() as i64,
                         "includeUserAgentShadowDOM": false,
-                        "ignorePointerEventsNone": true,
+                        "ignorePointerEventsNone": false,
                     }),
                     Some(&session),
                 )
@@ -4309,12 +4334,15 @@ impl Browser {
     }
 
     /// Whether `hit`, drawn at the point an act on `at` is aimed at in `at`'s own document, is
-    /// the element, inside it, an element that holds it, or in a label whose control it is.
-    /// Where the engine does not say, it is not.
+    /// the element, inside it, an element that holds it, or in a label of it, or a
+    /// pseudo-element one of those draws. Where the engine does not say, it is not.
     fn stands_for(&self, at: &Located, hit: i64) -> bool {
         if self.holds_as_said(&at.node_session, at.backend, hit) == Some(true) {
             return true;
         }
+        let Some(hit) = self.drawing_element(at, hit) else {
+            return false;
+        };
         let session = at.node_session.as_str();
         let said = self.in_world(session, &at.frame, |world| {
             let mut objects = Vec::new();
@@ -4352,6 +4380,99 @@ impl Browser {
                     .map(|how| how == "holds" || how == "labels")
             })
             .unwrap_or(false)
+    }
+
+    /// The element that draws `hit` in `at`'s own document: `hit` itself, or, where `hit` is a
+    /// pseudo-element (a label's `::before` drawn as a checkbox), the element it belongs to, of
+    /// the elements it may stand for ([`DRAWN_FOR`]). `None` where the engine does not say, or
+    /// the pseudo-element belongs to none of them.
+    fn drawing_element(&self, at: &Located, hit: i64) -> Option<i64> {
+        let session = at.node_session.as_str();
+        let described = self
+            .devtools()
+            .call(
+                "DOM.describeNode",
+                json!({ "backendNodeId": hit }),
+                Some(session),
+            )
+            .ok()?;
+        if described.pointer("/node/pseudoType").is_none() {
+            return Some(hit);
+        }
+        let group = "purlis-drawn-for";
+        let said = self.in_world(session, &at.frame, |world| {
+            let found = self.drawn_for(at, world, hit, group);
+            let _ = self.devtools().call(
+                "Runtime.releaseObjectGroup",
+                json!({ "objectGroup": group }),
+                Some(session),
+            );
+            found
+        });
+        said.ok()?.as_i64()
+    }
+
+    /// Of the elements the pseudo-element `hit` may stand for ([`DRAWN_FOR`]), read in `world`
+    /// with every object in `group`, the engine id of the one it belongs to, or null.
+    fn drawn_for(
+        &self,
+        at: &Located,
+        world: &World,
+        hit: i64,
+        group: &str,
+    ) -> Result<Value, CallError> {
+        let session = Some(at.node_session.as_str());
+        let aimed = self.devtools().call(
+            "DOM.resolveNode",
+            json!({
+                "backendNodeId": at.backend,
+                "executionContextId": world.id,
+                "objectGroup": group,
+            }),
+            session,
+        )?;
+        let Some(aimed) = aimed.pointer("/object/objectId").cloned() else {
+            return Ok(Value::Null);
+        };
+        let listed = self.devtools().call(
+            "Runtime.callFunctionOn",
+            json!({
+                "uniqueContextId": world.unique,
+                "functionDeclaration": DRAWN_FOR,
+                "arguments": [{ "objectId": aimed }],
+                "objectGroup": group,
+            }),
+            session,
+        )?;
+        let Some(list) = listed.pointer("/result/objectId").cloned() else {
+            return Ok(Value::Null);
+        };
+        let properties = self.devtools().call(
+            "Runtime.getProperties",
+            json!({ "objectId": list, "ownProperties": true }),
+            session,
+        )?;
+        let elements = properties["result"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|p| {
+                p["name"]
+                    .as_str()
+                    .is_some_and(|name| name.parse::<u32>().is_ok())
+            });
+        for object in elements.filter_map(|p| p.pointer("/value/objectId")) {
+            let described =
+                self.devtools()
+                    .call("DOM.describeNode", json!({ "objectId": object }), session)?;
+            let draws = described["node"]["pseudoElements"]
+                .as_array()
+                .is_some_and(|pseudo| pseudo.iter().any(|p| p["backendNodeId"] == hit));
+            if draws {
+                return Ok(described["node"]["backendNodeId"].clone());
+            }
+        }
+        Ok(Value::Null)
     }
 
     /// Lets the engine drop the objects of `session` purlis resolved.
@@ -4714,8 +4835,8 @@ impl Browser {
             let session = &at.page_session;
             self.mouse(session, "mouseMoved", x, y, 0, 0)?;
             // A page may draw something else at the point once the mouse is over it: what is
-            // drawn there is read again before the press. One round trip of the engine's
-            // remains between that read and the press, in which the page may still move it.
+            // drawn there is read again once the mouse is there, as the last engine call before
+            // the press.
             self.drawn_at_is(target, &at, (x, y))?;
             for count in 1..=clicks {
                 self.mouse(session, "mousePressed", x, y, count, 1)?;
@@ -5686,6 +5807,12 @@ impl Browser {
                         boxes.insert((session.clone(), item), rect);
                         break;
                     }
+                }
+            }
+            // What is painted, and each blanked element, is widened by the shadows drawn of it.
+            for (item, reach) in found.reach {
+                if let Some(rect) = boxes.get_mut(&(session.clone(), item)) {
+                    *rect = reach.around(rect);
                 }
             }
         }

@@ -9,7 +9,7 @@
 
 use serde_json::{Value, json};
 
-use super::super::DRAWN_TWICE;
+use super::super::{DRAWN_FOR, DRAWN_TWICE};
 use super::{browser, id, mouse, ref_of, snapshot};
 use crate::drive::{Call, DragTo, Refusal};
 
@@ -579,4 +579,82 @@ fn an_act_on_the_pages_own_document_draws_its_scroll_before_it_is_aimed() {
         sent[drawn].params["uniqueContextId"].is_string(),
         "in purlis's own world"
     );
+}
+
+#[test]
+fn a_click_where_a_box_the_pointer_passes_through_is_drawn_over_the_element_presses() {
+    let (browser, engine) = browser();
+    let more = ref_of(&snapshot(&browser, 1), "- link \"Read more\"");
+    // A `pointer-events: none` box (99) of the page's own is drawn over the link: the press
+    // passes through it to the link.
+    super::super::lock(&engine.model).passed_through = Some(99);
+
+    browser.call(&id(2), Call::Click { target: more }).unwrap();
+
+    assert!(pressed(&engine));
+}
+
+/// The page's own document draws a pseudo-element (98) at any point, which belongs to the
+/// element `owner`, listed after the link (12) among the elements it may stand for.
+fn a_pseudo_element_of(engine: &super::Engine, owner: i64) {
+    engine.on(move |sent, _| {
+        let session = sent.session.as_deref();
+        match sent.method.as_str() {
+            "DOM.getNodeForLocation" if session == Some("S-PAGE-1") => {
+                Some(Ok(json!({"backendNodeId": 98, "frameId": "PAGE-1"})))
+            }
+            "DOM.describeNode" if sent.params["backendNodeId"] == 98 => Some(Ok(
+                json!({"node":{"nodeId":0,"backendNodeId":98,"nodeType":1,"nodeName":"::before","pseudoType":"before"}}),
+            )),
+            "Runtime.callFunctionOn" if sent.params["functionDeclaration"] == DRAWN_FOR => {
+                Some(Ok(json!({"result":{"type":"object","objectId":"LISTED"}})))
+            }
+            "Runtime.getProperties" if sent.params["objectId"] == "LISTED" => Some(Ok(json!({
+                "result": [
+                    {"name":"0","value":{"type":"object","subtype":"node","objectId":"EL-12"}},
+                    {"name":"1","value":{"type":"object","subtype":"node","objectId":format!("EL-{owner}")}},
+                    {"name":"length","value":{"type":"number","value":2}}
+                ]
+            }))),
+            "DOM.describeNode" if sent.params["objectId"] == "EL-12" => Some(Ok(
+                json!({"node":{"nodeId":0,"backendNodeId":12,"nodeType":1,"nodeName":"A"}}),
+            )),
+            "DOM.describeNode" if sent.params["objectId"] == format!("EL-{owner}") => Some(Ok(
+                json!({"node":{"nodeId":0,"backendNodeId":owner,"nodeType":1,"nodeName":"LABEL",
+                "pseudoElements":[{"nodeId":0,"backendNodeId":98,"nodeType":1,"nodeName":"::before","pseudoType":"before"}]}}),
+            )),
+            _ => None,
+        }
+    });
+}
+
+#[test]
+fn a_click_where_the_elements_labels_pseudo_element_is_drawn_over_it_presses() {
+    let (browser, engine) = browser();
+    let more = ref_of(&snapshot(&browser, 1), "- link \"Read more\"");
+    // A label (99) whose control is the link draws a `::before` box over it.
+    super::super::lock(&engine.model).labels.insert(99, 12);
+    a_pseudo_element_of(&engine, 99);
+
+    browser.call(&id(2), Call::Click { target: more }).unwrap();
+
+    assert!(pressed(&engine));
+}
+
+#[test]
+fn a_click_where_another_elements_pseudo_element_is_drawn_over_the_element_is_refused() {
+    let (browser, engine) = browser();
+    let more = ref_of(&snapshot(&browser, 1), "- link \"Read more\"");
+    // The `::before` box drawn over the link is another element's (99), no label of it.
+    a_pseudo_element_of(&engine, 99);
+
+    let answer = browser.call(
+        &id(2),
+        Call::Click {
+            target: more.clone(),
+        },
+    );
+
+    assert_eq!(answer, Err(Refusal::NotShown(more)));
+    assert!(!pressed(&engine), "nothing is pressed");
 }

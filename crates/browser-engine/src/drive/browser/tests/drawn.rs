@@ -893,19 +893,30 @@ fn a_screenshot_is_withheld_when_a_frame_is_drawn_through_a_filter_that_may_draw
     }
 }
 
-#[test]
-fn a_screenshot_is_withheld_when_a_blanked_field_is_drawn_through_such_a_filter() {
-    let (browser, engine) = browser();
+/// The page draws its Secret word field (node 21) through `filter`.
+fn the_field_is_drawn_through(engine: &super::Engine, filter: &str) {
     let mut page = Document::new("PAGE-1");
     let field = page.element(21, None, "INPUT");
-    page.node(field).laid_out = Some((
-        None,
-        vec![(
-            "filter".into(),
-            "drop-shadow(rgb(0, 0, 0) 40px 40px 0px)".into(),
-        )],
-    ));
-    draws(&engine, "S-PAGE-1", &page, &[]);
+    page.node(field).laid_out = Some((None, vec![("filter".into(), filter.into())]));
+    draws(engine, "S-PAGE-1", &page, &[]);
+}
+
+#[test]
+fn a_blanked_field_drawn_through_a_drop_shadow_is_painted_over_with_its_shadow() {
+    let (browser, engine) = browser();
+    the_field_is_drawn_through(&engine, "drop-shadow(rgb(0, 0, 0) 0px 4px 0px)");
+    keep_out_the_secret(&browser);
+
+    let after = shot(&browser, 1);
+
+    // The field's box runs down to 7, and 2 more of margin; its shadow 5 more.
+    assert_eq!(pixel(&after, 4, 9), GREY, "{after:?}");
+}
+
+#[test]
+fn a_screenshot_is_withheld_when_a_blanked_field_is_drawn_through_a_filter_of_the_pages_own() {
+    let (browser, engine) = browser();
+    the_field_is_drawn_through(&engine, "url(\"#moved\")");
     keep_out_the_secret(&browser);
 
     let shot = browser.call(&id(1), Call::Screenshot { page: None });
@@ -957,8 +968,8 @@ fn a_backdrop_drawn_through_a_filter_that_keeps_it_in_its_box_does_not_withhold_
     assert!(shot.is_ok(), "{shot:?}");
 }
 
-/// The page's Secret word field (node 21), drawn with `field`'s shadow, and a line (node 120)
-/// saying `said`, drawn with `line`'s.
+/// The page's Secret word field (node 21), drawn with `field`'s shadow, and a line (node 120,
+/// drawn at (8, 8) to (9, 9)) saying `said`, drawn with `line`'s.
 fn shadows(engine: &super::Engine, field: &str, said: &str, line: &str) {
     let mut page = Document::new("PAGE-1");
     let input = page.element(21, None, "INPUT");
@@ -970,23 +981,37 @@ fn shadows(engine: &super::Engine, field: &str, said: &str, line: &str) {
 }
 
 #[test]
-fn a_screenshot_is_withheld_when_a_blanked_field_casts_a_shadow_past_what_is_painted() {
+fn a_blanked_fields_text_shadow_widens_its_paint() {
     let (browser, engine) = browser();
-    shadows(&engine, "rgb(0, 0, 0) 40px 0px 0px", "Welcome back", "none");
+    shadows(&engine, "rgb(0, 0, 0) 0px 3px 0px", "Welcome back", "none");
     keep_out_the_secret(&browser);
 
-    let shot = browser.call(&id(1), Call::Screenshot { page: None });
+    let after = shot(&browser, 1);
 
-    assert!(matches!(shot, Err(Refusal::Withheld(_))), "{shot:?}");
+    // The field's box runs down to 7, and 2 more of margin; its shadow 4 more.
+    assert_eq!(pixel(&after, 4, 9), GREY);
 }
 
 #[test]
-fn text_that_shows_what_was_kept_out_casting_a_shadow_past_its_paint_withholds_the_screenshot() {
+fn text_that_shows_what_was_kept_out_is_painted_over_with_its_shadow() {
     for shadow in [
-        "rgb(0, 0, 0) 0px 0px 0px, rgba(255, 0, 0, 0.5) 0px 3px 10px",
-        "rgb(0, 0, 0) -30px 0px 0px",
-        "rgb(0, 0, 0) 0px 0px 1em",
+        "rgba(0, 0, 0, 0.2) 0px 1px 2px",
+        "rgb(0, 0, 0) 0px 0px 0px, rgba(255, 0, 0, 0.5) 0px -3px 2px",
     ] {
+        let (browser, engine) = browser();
+        shadows(&engine, "none", "Signed in as open sesame", shadow);
+        keep_out_the_secret(&browser);
+
+        let after = shot(&browser, 1);
+
+        // The line's box runs up to 8, and 2 more of margin: its shadow reaches above 0.
+        assert_eq!(pixel(&after, 9, 0), GREY, "{shadow}");
+    }
+}
+
+#[test]
+fn text_that_shows_what_was_kept_out_casting_a_shadow_in_other_lengths_withholds_the_screenshot() {
+    for shadow in ["rgb(0, 0, 0) 0px 0px 1em", "rgb(0, 0, 0) 0.1em 0px 0px"] {
         let (browser, engine) = browser();
         shadows(&engine, "none", "You said open sesame", shadow);
         keep_out_the_secret(&browser);
@@ -1001,22 +1026,23 @@ fn text_that_shows_what_was_kept_out_casting_a_shadow_past_its_paint_withholds_t
 }
 
 #[test]
-fn a_shadow_within_the_paint_or_on_text_that_shows_nothing_kept_out_does_not_withhold_it() {
+fn a_shadow_on_text_that_shows_nothing_kept_out_widens_nothing() {
     let (browser, engine) = browser();
     shadows(
         &engine,
-        "rgb(0, 0, 0) 1px 0px 0px",
+        "none",
         "Welcome back",
         "rgb(0, 0, 0) 40px 40px 9px",
     );
     keep_out_the_secret(&browser);
 
-    let shot = browser.call(&id(1), Call::Screenshot { page: None });
+    let after = shot(&browser, 1);
 
-    assert!(shot.is_ok(), "{shot:?}");
+    assert_eq!(pixel(&after, 9, 0), WHITE);
 }
 
-/// The page says `said` in a line (node 123) inside a box (node 122) drawn through `filter`.
+/// The page says `said` in a line (node 123, drawn at (8, 8) to (9, 9)) inside a box (node 122)
+/// drawn through `filter`.
 fn the_line_is_drawn_through(engine: &super::Engine, filter: &str, said: &str) {
     let mut page = Document::new("PAGE-1");
     let around = page.element(122, None, "DIV");
@@ -1028,13 +1054,24 @@ fn the_line_is_drawn_through(engine: &super::Engine, filter: &str, said: &str) {
 }
 
 #[test]
-fn text_that_shows_what_was_kept_out_drawn_through_such_a_filter_withholds_the_screenshot() {
+fn text_that_shows_what_was_kept_out_inside_a_drop_shadow_is_painted_over_with_the_shadow() {
     let (browser, engine) = browser();
     the_line_is_drawn_through(
         &engine,
-        "drop-shadow(rgb(0, 0, 0) 40px 40px 0px)",
-        "You said open sesame",
+        "drop-shadow(rgba(0, 0, 0, 0.1) 0px -4px 3px)",
+        "Signed in as open sesame",
     );
+    keep_out_the_secret(&browser);
+
+    let after = shot(&browser, 1);
+
+    assert_eq!(pixel(&after, 9, 0), GREY);
+}
+
+#[test]
+fn text_that_shows_what_was_kept_out_drawn_through_a_filter_of_the_pages_own_withholds_it() {
+    let (browser, engine) = browser();
+    the_line_is_drawn_through(&engine, "url(\"#moved\")", "You said open sesame");
     keep_out_the_secret(&browser);
 
     let shot = browser.call(&id(1), Call::Screenshot { page: None });
@@ -1045,11 +1082,7 @@ fn text_that_shows_what_was_kept_out_drawn_through_such_a_filter_withholds_the_s
 #[test]
 fn text_that_shows_nothing_kept_out_drawn_through_such_a_filter_does_not_withhold_it() {
     let (browser, engine) = browser();
-    the_line_is_drawn_through(
-        &engine,
-        "drop-shadow(rgb(0, 0, 0) 40px 40px 0px)",
-        "Welcome back",
-    );
+    the_line_is_drawn_through(&engine, "url(\"#moved\")", "Welcome back");
     keep_out_the_secret(&browser);
 
     let shot = browser.call(&id(1), Call::Screenshot { page: None });
@@ -1133,4 +1166,54 @@ fn an_svg_use_is_painted_where_its_document_holds_a_text_kept_out_laid_out_nowhe
 
     assert_eq!(painted(&page, &["open sesame"]), vec![144]);
     assert_eq!(painted(&page, &["other words"]), Vec::<i64>::new());
+}
+
+/// How far past its box each item `page` paints on a page that keeps `kept` out draws a shadow,
+/// read alone.
+fn reach(page: &Document, kept: &[&str]) -> Vec<(i64, crate::drive::drawn::Reach)> {
+    let found = crate::drive::drawn::drawn(&page.answer(), kept, &[], &Default::default()).unwrap();
+    let mut reach: Vec<_> = found.reach.into_iter().collect();
+    reach.sort_by_key(|(item, _)| *item);
+    reach
+}
+
+#[test]
+fn a_painted_email_under_an_inherited_text_shadow_and_a_drop_shadow_is_widened_by_both() {
+    let mut page = Document::new("PAGE-1");
+    // Tailwind's `drop-shadow-md` around the account menu, and a text shadow it passes on.
+    let menu = page.element(150, None, "DIV");
+    page.node(menu).laid_out = Some((
+        None,
+        vec![
+            (
+                "filter".into(),
+                "drop-shadow(rgba(0, 0, 0, 0.07) 0px 4px 3px)".into(),
+            ),
+            (
+                "text-shadow".into(),
+                "rgba(0, 0, 0, 0.2) 0px 1px 2px".into(),
+            ),
+        ],
+    ));
+    let email = page.element(151, Some(menu), "SPAN");
+    page.node(email).laid_out = Some((
+        None,
+        vec![(
+            "text-shadow".into(),
+            "rgba(0, 0, 0, 0.2) 0px 1px 2px".into(),
+        )],
+    ));
+    page.text(152, email, "person@example.com");
+
+    let reach = reach(&page, &["person@example.com"]);
+
+    // The text shadow: 3 by 2 and a pixel of blur, 1 down; the drop shadow: 3 by 3 and a pixel
+    // of blur, 4 down; one drawn through the other.
+    let widened = crate::drive::drawn::Reach {
+        left: 7.0 + 10.0,
+        top: 6.0 + 6.0,
+        right: 7.0 + 10.0,
+        bottom: 8.0 + 14.0,
+    };
+    assert_eq!(reach, vec![(152, widened)]);
 }

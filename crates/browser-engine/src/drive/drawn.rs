@@ -18,21 +18,26 @@
 //! image, video and embedded object, and every element drawn with an image or a paint script:
 //! what they show cannot be read, so they are painted whatever they show.
 //!
-//! An answer purlis cannot read, a page that draws a reflection, one that draws a frame, a
-//! blanked element or a painted text through a filter that may draw it elsewhere, one that
-//! draws a backdrop through a filter of its own (`backdrop-filter: url(…)`), or one that casts
-//! the shadow of a blanked element's or a painted text's letters past what is painted,
-//! withholds the screenshot.
+//! A text's shadow (`text-shadow`) or a `drop-shadow(…)` filter, on what is painted or on an
+//! element around it, widens its paint by as far as the shadow reaches ([`Drawn::reach`]),
+//! where its offsets and blur are read in pixels.
+//!
+//! An answer purlis cannot read, a page that draws a reflection, one that draws a frame through
+//! a filter that may draw it elsewhere, one that draws a blanked element or a painted text
+//! through a filter of its own (`url(…)`) or a shadow whose reach cannot be read, or one that
+//! draws a backdrop through a filter of its own (`backdrop-filter: url(…)`), withholds the
+//! screenshot.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use serde_json::Value;
 
+use super::blank::Rect;
 use super::scrub::{holds_any, holds_loosely};
 
 /// The styles read for each element laid out: an image in any of the first six is painted over,
-/// a filter, a backdrop filter or a text's shadow (the three after them) may withhold the
-/// screenshot, and a reflection (the last) withholds it.
+/// a filter, a backdrop filter or a text's shadow (the three after them) may widen what is
+/// painted or withhold the screenshot, and a reflection (the last) withholds it.
 pub(crate) const STYLES: [&str; 10] = [
     "background-image",
     "border-image-source",
@@ -46,15 +51,9 @@ pub(crate) const STYLES: [&str; 10] = [
     "-webkit-box-reflect",
 ];
 
-/// Filters that may draw an element away from its box: a frame, a blanked element or what is
-/// painted for the text it shows drawn through one, itself or by an element it is in, withholds
-/// the screenshot.
+/// Filters that may draw an element away from its box: a frame drawn through one, itself or by
+/// an element it is in, withholds the screenshot.
 const FILTERS_THAT_MOVE: [&str; 2] = ["url(", "drop-shadow"];
-
-/// How far past its box, in CSS pixels, a text's shadow may be drawn and still lie under the
-/// paint: the margin `Placing::on_picture` (in `browser.rs`) paints around each box is two
-/// pixels of the picture, which is one CSS pixel on a screen of twice the density.
-const SHADOW_UNDER_THE_PAINT: f64 = 1.0;
 
 /// Elements that show what no read of the page can tell: painted whatever they show.
 const OPAQUE: [&str; 7] = [
@@ -81,6 +80,51 @@ pub(crate) struct Drawn {
     /// Each frame element whose document this read does not hold, as [`Drawn::paint`]: painted
     /// unless that document is read in a session of its own.
     pub frames: Vec<Vec<i64>>,
+    /// How far past its box each item painted (the first of a [`Drawn::paint`] chain) or blanked
+    /// element draws a shadow, by the engine's id: its paint is widened by as much. An item
+    /// with no shadow is not listed.
+    pub reach: HashMap<i64, Reach>,
+}
+
+/// How far past each side of a box something draws, in CSS pixels.
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub(crate) struct Reach {
+    pub left: f64,
+    pub top: f64,
+    pub right: f64,
+    pub bottom: f64,
+}
+
+impl Reach {
+    /// What draws as far as either does.
+    fn or(self, other: Self) -> Self {
+        Self {
+            left: self.left.max(other.left),
+            top: self.top.max(other.top),
+            right: self.right.max(other.right),
+            bottom: self.bottom.max(other.bottom),
+        }
+    }
+
+    /// `rect` with as much more on each side.
+    pub(crate) fn around(&self, rect: &Rect) -> Rect {
+        Rect {
+            x: rect.x - self.left,
+            y: rect.y - self.top,
+            width: rect.width + self.left + self.right,
+            height: rect.height + self.top + self.bottom,
+        }
+    }
+
+    /// What draws as far as both, one drawn through the other.
+    fn and(self, other: Self) -> Self {
+        Self {
+            left: self.left + other.left,
+            top: self.top + other.top,
+            right: self.right + other.right,
+            bottom: self.bottom + other.bottom,
+        }
+    }
 }
 
 /// The engine's answer could not be read, or shows what a screenshot cannot paint over.
@@ -255,9 +299,13 @@ fn read_document(
     let mut shown: HashSet<usize> = HashSet::new();
     // The text each node lays out itself.
     let mut own: Vec<String> = vec![String::new(); count];
+    // Whether each element draws through a filter that may draw it away from its box, and how
+    // far its filter's shadows reach (`None` where that cannot be told).
     let mut filtered = vec![false; count];
-    // How far past its box each element draws its text's shadow.
-    let mut shadowed = vec![0.0_f64; count];
+    let mut filter_reach: Vec<Option<Reach>> = vec![Some(Reach::default()); count];
+    // How far past its box each element draws its text's shadow (`None` where that cannot be
+    // read).
+    let mut shadowed: Vec<Option<Reach>> = vec![Some(Reach::default()); count];
     for (entry, node) in laid.iter().enumerate() {
         let at = node_at(*node)?;
         shown.insert(at);
@@ -286,7 +334,8 @@ fn read_document(
             return Err(Unread("an element has styles missing"));
         }
         filtered[at] = FILTERS_THAT_MOVE.iter().any(|moves| filter.contains(moves));
-        shadowed[at] = shadow_reach(shadow);
+        filter_reach[at] = filters_reach(filter);
+        shadowed[at] = shadows_reach(shadow);
         if !reflected.is_empty() && reflected != "none" {
             return Err(Unread("the page draws a reflection"));
         }
@@ -372,8 +421,8 @@ fn read_document(
             any = holds(string(*value)?);
         }
         if any {
-            for at in uses {
-                paint(at, out);
+            for at in &uses {
+                paint(*at, out);
             }
         }
     }
@@ -422,16 +471,13 @@ fn read_document(
             paint(list, out);
         }
     }
-    // A frame, a blanked element and what is painted for what it shows are drawn through no
-    // filter that may draw them elsewhere, by themselves or by an element they are in.
-    let mut walked = painted.clone();
-    for (at, backend) in backends.iter().enumerate() {
-        if FRAMES.contains(&name(at)?.as_str()) || blanked.contains(backend) {
-            walked.insert(at);
+    // A frame is drawn through no filter that may draw it elsewhere, by itself or by an element
+    // it is in.
+    for at in 0..count {
+        if !FRAMES.contains(&name(at)?.as_str()) {
+            continue;
         }
-    }
-    for at in &walked {
-        let mut next = Some(*at);
+        let mut next = Some(at);
         let mut steps = 0;
         while let Some(up) = next {
             if filtered[up] {
@@ -441,74 +487,183 @@ fn read_document(
             next = parent(up).filter(|_| steps <= count);
         }
     }
-    // A blanked element, and text painted for what it shows, cast no shadow past the paint: a
-    // text's shadow is drawn in the style of the element the text is in.
-    let blanked_at = backends
-        .iter()
-        .enumerate()
-        .filter(|(_, b)| blanked.contains(b));
-    for at in painted.iter().copied().chain(blanked_at.map(|(at, _)| at)) {
+    // A blanked element, and what is painted for what it shows, is widened by the shadows drawn
+    // of it: the text shadows of every element in it and of the element it is drawn in (a text's
+    // shadow is drawn in that element's style), and the shadows of the filters of it and of every
+    // element around it, one drawn through the next. One whose reach cannot be read withholds the
+    // screenshot, as does a filter of the page's own (`url(…)`), but for a `use`: its paint is
+    // widened by what can be read.
+    let mut items: HashMap<usize, bool> = painted.iter().map(|at| (*at, false)).collect();
+    for at in uses.iter().filter(|at| painted.contains(at)) {
+        items.insert(*at, true);
+    }
+    for (at, backend) in backends.iter().enumerate() {
+        if blanked.contains(backend) {
+            items.insert(at, false);
+        }
+    }
+    let mut reach: HashMap<usize, Option<Reach>> = HashMap::new();
+    for (one, own) in shadowed.iter().enumerate() {
+        let Some(own) = *own else {
+            // Its shadow cannot be read: what it is in and what is painted for it withhold.
+            let mut next = Some(one);
+            let mut steps = 0;
+            while let Some(up) = next {
+                if items.contains_key(&up) {
+                    reach.insert(up, None);
+                }
+                steps += 1;
+                next = parent(up).filter(|_| steps <= count);
+            }
+            continue;
+        };
+        if own == Reach::default() {
+            continue;
+        }
+        let mut next = Some(one);
+        let mut steps = 0;
+        while let Some(up) = next {
+            if items.contains_key(&up) {
+                let was = reach.entry(up).or_insert(Some(Reach::default()));
+                *was = was.map(|was| was.or(own));
+            }
+            steps += 1;
+            next = parent(up).filter(|_| steps <= count);
+        }
+    }
+    for (at, is_use) in items {
+        let mut widened = reach.get(&at).copied().unwrap_or(Some(Reach::default()));
+        // A text's shadow is drawn in the style of the element the text is in.
         let mut styled = Some(at);
         let mut steps = 0;
         while let Some(one) = styled.filter(|one| kinds[*one] != ELEMENT && steps <= count) {
             styled = parent(one);
             steps += 1;
         }
-        if styled.is_some_and(|one| shadowed[one] > SHADOW_UNDER_THE_PAINT) {
-            return Err(Unread(
-                "the page draws a text's shadow past what is painted",
-            ));
+        if let Some(one) = styled.filter(|one| *one != at) {
+            widened = widened.zip(shadowed[one]).map(|(a, b)| a.or(b));
+        }
+        let mut widened = match widened {
+            Some(widened) => widened,
+            None if is_use => Reach::default(),
+            None => return Err(Unread("the page draws a shadow whose reach cannot be read")),
+        };
+        let mut next = Some(at);
+        let mut steps = 0;
+        while let Some(up) = next {
+            match filter_reach[up] {
+                Some(more) => widened = widened.and(more),
+                None if is_use => {}
+                None => return Err(Unread("the page draws through a filter")),
+            }
+            steps += 1;
+            next = parent(up).filter(|_| steps <= count);
+        }
+        if widened != Reach::default() {
+            let was = out.reach.entry(backends[at]).or_default();
+            *was = was.or(widened);
         }
     }
     Ok(())
 }
 
-/// How far past its box `shadow`, a computed `text-shadow`, draws its text, in CSS pixels: the
-/// furthest any of its shadows reaches across or down, its offset and its blur. Endless when it
-/// cannot be read.
-fn shadow_reach(shadow: &str) -> f64 {
+/// How far past its box `shadow`, a computed `text-shadow`, draws its text: as far as the
+/// furthest of its shadows on each side. `None` when it cannot be read.
+fn shadows_reach(shadow: &str) -> Option<Reach> {
     if shadow.is_empty() || shadow == "none" {
-        return 0.0;
+        return Some(Reach::default());
     }
-    let mut furthest = 0.0_f64;
+    let mut furthest = Reach::default();
+    for one in outside_parentheses(shadow, ',') {
+        furthest = furthest.or(one_shadows_reach(&one)?);
+    }
+    Some(furthest)
+}
+
+/// How far past its box `filter`, a computed `filter`, draws its element: as far as its
+/// `drop-shadow(…)` shadows reach, each drawn through the ones before it. `None` when that
+/// cannot be told: a filter of the page's own (`url(…)`), or a shadow that cannot be read.
+fn filters_reach(filter: &str) -> Option<Reach> {
+    if filter.contains("url(") {
+        return None;
+    }
+    let mut reach = Reach::default();
+    let mut rest = filter;
+    while let Some(at) = rest.find("drop-shadow(") {
+        let inside = &rest[at + "drop-shadow(".len()..];
+        let mut depth = 1_usize;
+        let end = inside.char_indices().find_map(|(i, c)| {
+            match c {
+                '(' => depth += 1,
+                ')' => depth -= 1,
+                _ => {}
+            }
+            (depth == 0).then_some(i)
+        })?;
+        reach = reach.and(one_shadows_reach(
+            &outside_parentheses(&inside[..end], ',').concat(),
+        )?);
+        rest = &inside[end + 1..];
+    }
+    Some(reach)
+}
+
+/// The parts of `text` between each `split` outside parentheses, with what is inside any
+/// parentheses (a colour's numbers) left out.
+fn outside_parentheses(text: &str, split: char) -> Vec<String> {
+    let mut parts = vec![String::new()];
     let mut depth = 0_usize;
-    // Each shadow's words outside any parentheses (its colour's numbers are inside them).
-    let mut words = String::new();
-    for c in shadow.chars().chain([',']) {
+    for c in text.chars() {
         match c {
             '(' => depth += 1,
             ')' => depth = depth.saturating_sub(1),
-            ',' if depth == 0 => {
-                let mut lengths = Vec::new();
-                for word in words.split_whitespace() {
-                    if word.starts_with(|c: char| c.is_ascii_alphabetic()) {
-                        continue;
-                    }
-                    match word.strip_suffix("px").unwrap_or(word).parse::<f64>() {
-                        Ok(length)
-                            if length.is_finite() && (word.ends_with("px") || length == 0.0) =>
-                        {
-                            lengths.push(length.abs());
-                        }
-                        _ => return f64::INFINITY,
-                    }
+            _ if c == split && depth == 0 => parts.push(String::new()),
+            _ if depth == 0 => {
+                if let Some(part) = parts.last_mut() {
+                    part.push(c);
                 }
-                let [across, down, blur @ ..] = lengths.as_slice() else {
-                    return f64::INFINITY;
-                };
-                let blur = match blur {
-                    [] => 0.0,
-                    [blur] => *blur,
-                    _ => return f64::INFINITY,
-                };
-                furthest = furthest.max(across.max(*down) + blur);
-                words.clear();
             }
-            _ if depth == 0 => words.push(c),
             _ => {}
         }
     }
-    furthest
+    parts
+}
+
+/// How far past its box one shadow draws, from its words outside parentheses: its offsets
+/// across and down and its blur, in pixels, the blur reaching three times its length and a
+/// pixel more (as far as a blur of that radius or deviation is drawn). `None` when a length is
+/// not in pixels or the words are not a shadow's.
+fn one_shadows_reach(words: &str) -> Option<Reach> {
+    let mut lengths = Vec::new();
+    for word in words.split_whitespace() {
+        if word.starts_with(|c: char| c.is_ascii_alphabetic()) {
+            continue;
+        }
+        let length = word
+            .strip_suffix("px")
+            .unwrap_or(word)
+            .parse::<f64>()
+            .ok()?;
+        if !(length.is_finite() && (word.ends_with("px") || length == 0.0)) {
+            return None;
+        }
+        lengths.push(length);
+    }
+    let [across, down, blur @ ..] = lengths.as_slice() else {
+        return None;
+    };
+    let blur = match blur {
+        [] => 0.0,
+        [blur] if *blur >= 0.0 => *blur,
+        _ => return None,
+    };
+    let spread = 3.0 * blur + 1.0;
+    Some(Reach {
+        left: (spread - across).max(0.0),
+        top: (spread - down).max(0.0),
+        right: (spread + across).max(0.0),
+        bottom: (spread + down).max(0.0),
+    })
 }
 
 /// A list of numbers of `of`, by `field`.
