@@ -10,6 +10,7 @@ pub mod adopt;
 pub mod alerts;
 pub mod applog;
 pub mod appstate;
+pub mod artifact;
 pub mod askoutcome;
 pub mod askwait;
 pub mod autosave;

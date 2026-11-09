@@ -1042,7 +1042,7 @@ fn merge_rules(run: &mut Run, root: &Path) {
 
 /// The files a plane only ever grows by whole lines, merged by git's `union` driver so two
 /// machines appending to them never conflict (`docs/plane-format.md`, `.gitattributes`).
-const MERGE_RULES: [&str; 10] = [
+const MERGE_RULES: [&str; 11] = [
     "personas/_dispatch/*.jsonl merge=union",
     "personas/_skills/*.jsonl merge=union",
     "workspaces/*/pieces/*.jsonl merge=union",
@@ -1053,6 +1053,8 @@ const MERGE_RULES: [&str; 10] = [
     "workspaces/*/todos/MEMORY.md merge=union",
     "workspaces/*/sessions/index.md merge=union",
     "sessions/index.md merge=union",
+    // One pin per line, so two people's pins union into one valid list (ADR 0120, #5950).
+    "workspaces/*/artifacts/pins.toml merge=union",
 ];
 
 /// The managed block, exactly as the plane format records it, under the markers the plane at

@@ -28,6 +28,8 @@ use purlis_core::shown;
 use purlis_core::state::Event;
 use purlis_core::workspaces::Plane;
 
+mod artifact;
+
 #[cfg(unix)]
 mod bridge;
 mod brokered;
@@ -211,6 +213,11 @@ enum Command {
     /// root), never the transcript.
     #[command(subcommand)]
     Session(session::SessionCommand),
+
+    /// Artifacts: pages in a workspace's artifacts/ pinned to the workspace, each an icon on
+    /// its activity bar for everyone who works in it (workspaces/<ws>/artifacts/pins.toml).
+    #[command(subcommand)]
+    Artifact(artifact::ArtifactCommand),
 
     /// Harness profiles: which program a chat runs, and with what environment.
     #[command(subcommand)]
@@ -3873,6 +3880,7 @@ fn run(command: Command) -> Result<u8, String> {
         Command::Curation(command) => return curation::run(here.plane.root(), command),
         Command::Skill(command) => return skill::run(here.plane.root(), command),
         Command::Session(command) => return session::run(&here, command),
+        Command::Artifact(command) => return artifact::run(&here, command),
         Command::Workspace(WorkspaceCommand::Remember {
             text,
             title,

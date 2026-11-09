@@ -51,6 +51,7 @@ mod a_wrapped_chat_a_session_host_starts_tells_its_refusals;
 mod a_wrapped_chat_holds_on_linux;
 mod a_write_the_linux_wrap_refuses_raises_the_block_notice;
 mod active;
+mod artifacts;
 mod both_names_run_the_cli;
 mod brokered_git;
 mod brokered_writes;
