@@ -1363,7 +1363,11 @@ fn a_run_wrapped_by_purlis_for_a_chat_whose_start_held_no_wrap_runs_nothing() {
     let marker = root.join("work/ran");
     let (asker, want) = as_tool(
         asker,
-        wanted(&root, "team", sh(&format!("touch {}", marker.display()))),
+        by_file(wanted(
+            &root,
+            "team",
+            sh(&format!("touch {}", marker.display())),
+        )),
     );
     let wire = Wire::default();
     serve_wrapped(
@@ -1400,7 +1404,11 @@ fn a_run_wrapped_by_a_purlis_program_the_chat_may_write_runs_nothing() {
     let marker = root.join("work/ran");
     let (asker, want) = as_tool(
         asker,
-        wanted(&root, "team", sh(&format!("touch {}", marker.display()))),
+        by_file(wanted(
+            &root,
+            "team",
+            sh(&format!("touch {}", marker.display())),
+        )),
     );
     let wire = Wire::default();
     serve_wrapped(
@@ -1439,7 +1447,11 @@ fn a_run_at_the_floor_wrapped_by_a_purlis_program_its_start_did_not_hold_runs_no
     let marker = root.join("work/ran");
     let (asker, want) = as_tool(
         asker,
-        wanted(&root, "team", sh(&format!("touch {}", marker.display()))),
+        by_file(wanted(
+            &root,
+            "team",
+            sh(&format!("touch {}", marker.display())),
+        )),
     );
     let wire = Wire::default();
     serve_wrapped(
@@ -1459,6 +1471,82 @@ fn a_run_at_the_floor_wrapped_by_a_purlis_program_its_start_did_not_hold_runs_no
         "{frames:?}"
     );
     assert!(!marker.exists(), "nothing ran");
+}
+
+/// `wanted`, handing the vault's `TOKEN` as a file at `X`.
+fn by_file(mut wanted: Wanted) -> Wanted {
+    wanted.file = vec!["X=TOKEN".into()];
+    wanted
+}
+
+/// Every frame the app wrote for `wanted` of `asker`'s, served as purlis's own wrap serves it on
+/// Linux.
+fn served_by_purlis(asker: &Asker, wanted: Wanted) -> Vec<Frame> {
+    let wire = Wire::default();
+    serve_wrapped(
+        asker,
+        wanted,
+        Box::new(std::io::Cursor::new(Vec::new())),
+        Box::new(wire.clone()),
+        Wrap::Purlis,
+    );
+    String::from_utf8(wire.0.lock().unwrap().clone())
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
+}
+
+/// On Linux a Claude Code chat hands a value to a command by file only: a run asking for
+/// `--env` is refused with what to run instead, before any value is read or anything is run,
+/// a declared tool's among them.
+#[test]
+fn on_linux_a_claude_code_chats_env_hand_over_is_refused_with_the_file_one_to_use() {
+    let project = project();
+    let root = project.path().canonicalize().unwrap();
+    let marker = root.join("work/ran");
+    let (asker, want) = as_tool(
+        asker(&root, Some("devops")),
+        wanted(&root, "team", sh(&format!("touch {}", marker.display()))),
+    );
+    assert_eq!(want.env, ["X=TOKEN"], "handed by env");
+    let frames = served_by_purlis(&asker, want);
+    assert_eq!(refusal(&frames), ENV_REFUSED, "{frames:?}");
+    assert!(ENV_REFUSED.contains("--file NAME=key"));
+    assert!(!marker.exists(), "nothing ran");
+    let exec_dir = Ctx::new(&root, Env::of(&[])).vaults_dir().join(EXEC_DIR);
+    assert!(
+        std::fs::read_dir(&exec_dir).map_or(true, |mut d| d.next().is_none()),
+        "nothing was read for it"
+    );
+}
+
+/// Only a Claude Code chat's, and only on Linux: a Codex chat's `--env` there, a Claude Code
+/// chat's `--file` there, and a Claude Code chat's `--env` on macOS each go on as before.
+#[test]
+fn an_env_hand_over_is_refused_for_a_claude_code_chat_on_linux_alone() {
+    let project = project();
+    let root = project.path().canonicalize().unwrap();
+    let base = wanted(&root, "team", sh("true"));
+    let by_env = Wanted {
+        env: vec!["X=TOKEN".into()],
+        ..base.clone()
+    };
+    let claude = Some(Harness::ClaudeCode);
+    assert_eq!(
+        env_refused(claude, Wrap::Purlis, &by_env),
+        Some(ENV_REFUSED)
+    );
+    assert_eq!(
+        env_refused(Some(Harness::Codex), Wrap::Purlis, &by_env),
+        None
+    );
+    assert_eq!(
+        env_refused(Some(Harness::Opencode), Wrap::Purlis, &by_env),
+        None
+    );
+    assert_eq!(env_refused(claude, Wrap::Purlis, &by_file(base)), None);
+    assert_eq!(env_refused(claude, Wrap::Seatbelt, &by_env), None);
 }
 
 /// The credential file and a login's folder are given back after every denial of the profile,
