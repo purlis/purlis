@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794240428912,
+  "lastUpdate": 1794242256317,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -44940,6 +44940,48 @@ window.BENCHMARK_DATA = {
             "value": 102.993697,
             "unit": "ms",
             "extra": "median of 5 runs: 101.467, 102.381, 102.994, 103.232, 103.820 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f5415ce4b6ab1a6ecf6dfd28bf90a5649d0ea66d",
+          "message": "Plane saves: #5824's leftovers — persona hosts as a set, push replay rebuilds generated files, memstore tests moved, #5877 tidy-ups (#5981)\n\n* Settings: a persona's own hosts are written one per line, sorted, from the form too (#5853)\n\nThe generic Settings form writer now calls tomlmerge::as_set for every\nkey tomlmerge::is_set names, so [sandbox.personas.<name>] hosts is laid\nout as every other set key's writer lays it out, and two machines that\neach add one merge without a merge commit.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZYA1N6MB9337JDGHJGSPET\nPurlis-Persona: steward\n\n* Plane saves: a push-mode replay rebuilds what purlis generates, and the memory union rules go (#5864)\n\nreplay::merged now merges each commit as a save's merge does\n(bringin::plan_between with the commit's parent as base): a memory\nstore's MEMORY.md, a sessions/index.md and a workspace's todos/MEMORY.md\nare rebuilt from the merged tree's sources, and the settings file is\nmerged key by key, so only a person's own file stops a replay.\n\n#5877's replay covered none of this: it ran plain merge-tree per commit,\nso a stop on a generated file reached Resolve, whose folder refused it as\n'nothing a person wrote is in conflict'.\n\nWith that, scaffold::MERGE_RULES, docs/plane-format.md and the recorded\ninit/reinit rows drop personas/*/memory/MEMORY.md and\nworkspaces/*/memory/MEMORY.md merge=union. Safe for older clients: a save\nkeeps a rule the block holds that this build does not write, and an\nolder build writes its own block back on its saves, so its plain replay\nstill reads them.\n\nContract moved (ADR 0046): the 21 recorded init/reinit rows' expected\n.gitattributes lose those two lines and nothing else.\n\ntwo_machines_appending_to_the_same_log_and_index_both_save_by_the_union_merge_rules\nkeeps its name and assertions; its fixture now writes the memory files\nits index names, since a rebuilt index lists only memories that exist\n(#5824 F4).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZYA1N6MB9337JDGHJGSPET\nPurlis-Persona: steward\n\n* memstore: its inline test modules move to memstore/tests.rs and memstore/tests/, as a move alone (#5865)\n\ntests becomes memstore/tests.rs, and one_line_tests, write_tests,\nduplicate_tests, gate_tests and restore_as_tests (a sixth module, added\nafter the ticket was filed) become its submodules under memstore/tests/.\nNo test's name or body changed: each body is moved as it was, its own\nuse super::* now reaching memstore through tests's, and rustfmt only\nre-wraps lines for the indent they lost. All 37 tests run.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZYA1N6MB9337JDGHJGSPET\nPurlis-Persona: steward\n\n* Plane saves: #5877's review tidy-ups, with no change in behaviour (#5886)\n\n- One mapping for a replay that stopped: replay() returns\n  Result<String, Unreplayed>, planegit maps it once (From for Rebased),\n  and resolvefolder's two sites share said_unreplayed, same sentences.\n- One front for Resolve: Settled, Conflicts and markers_in live in\n  resolvefolder (no circular import); resolvefolder is pub(crate) and\n  resolve re-exports what the app uses, which now calls resolve alone.\n- git's messages in the C locale: every worktree::git call already runs\n  with LC_ALL=C; a test pins it, and both stderr matches say so.\n- recover's test-only Marked/mark move to recover/tests.rs.\n- Names: ok -> succeeded, names -> paths_listed, Held -> Resolving,\n  Chosen { theirs: bool } -> Chosen { side: Side }, the stage tuple ->\n  struct Stage.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZYA1N6MB9337JDGHJGSPET\nPurlis-Persona: steward\n\n* plane-format: say what an older build does with the memory union rules, and no more (#5864)\n\nIts whole save writes the two rules back and commits them. Where it does not\nwrite the block (a chat's sandbox holds .gitattributes), it has no union rule,\nso concurrent MEMORY.md appends stop its push-mode save on a conflict, with\nnothing lost. Drops \"as safe as it was\" and \"only init and reinit take them out\".\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70405GHNXMVNH68YTJX8JJC\nPurlis-Persona: steward\n\n* changes: fragments for #5853 and #5864\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70405GHNXMVNH68YTJX8JJC\nPurlis-Persona: steward\n\n* Plane saves: a memory store one side removed stays removed, in a bring-in and a replay (#5864)\n\nplan_between rebuilt a store's MEMORY.md whenever either side touched the\nstore, so with no memory file left the rebuild wrote a bare INDEX_FALLBACK\nheader, and a safely removed persona came back as personas/<x>/memory/MEMORY.md.\nWhere the merged store holds no memory file and a side removed the index since\nthe base, the index is now left out (taken out of the tree when git's merge\nkept it). Resolve's Continue leaves such an index as the person settled it.\n\nTests: a_memory_store_one_side_removed_stays_removed_when_a_request_brings_in,\na_push_mode_replay_keeps_a_removed_memory_store_removed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70405GHNXMVNH68YTJX8JJC\nPurlis-Persona: steward\n\n* Plane saves: both sides' extra .gitattributes rules survive a merge and a replay (#5864)\n\nplan_between read the rules this build does not write from theirs alone. In\na replay theirs is the local pick, so a rule only the remote held was lost\nwhenever both sides changed the block. They are now merged as a set from the\nbase: each side's rules, less a rule the base held that a side took out.\n\nThis changes managed_merge_rules_that_differ_settle_as_this_builds_and_keep_a_persons_lines:\nthis machine's own extra rule now stays beside the remote's, as the review asked\n(the union of both sides), and the base's rule both sides replaced goes.\n\nTest: a_rule_only_the_remote_holds_survives_a_replay_where_both_sides_changed_the_block.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70405GHNXMVNH68YTJX8JJC\nPurlis-Persona: steward\n\n* planegit tests: name the two-machine save test for what it checks now (#5864)\n\ntwo_machines_appending_to_the_same_log_and_index_both_save_by_the_union_merge_rules\nbecomes two_machines_appending_to_one_log_and_one_memory_index_save_with_the_log_unioned_and_the_index_rebuilt:\nthe log merges by its union rule, and the index is rebuilt. A comment says why\nthe fixture writes one.md, theirs.md and mine.md: a rebuilt index lists only\nmemory files that exist (#5824 F4).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70405GHNXMVNH68YTJX8JJC\nPurlis-Persona: steward\n\n* planegit tests: a shorter name for the two-machine save test, so it fits a line (#5864)\n\ntwo_machines_appending_to_one_log_and_index_union_the_log_and_rebuild_the_index:\nrustfmt split the longer name across lines.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70405GHNXMVNH68YTJX8JJC\nPurlis-Persona: steward\n\n* Resolve: the Starting conflict stop is unreachable, and its copy goes (#5886 review)\n\nstart_fetched cuts a resolve folder for a replay's conflict in the arm before\nit says any stop, so said_unreplayed never sees (Starting, Conflict). That arm\nis now unreachable!() with the reason, and the sentence nobody was shown is gone.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70405GHNXMVNH68YTJX8JJC\nPurlis-Persona: steward\n\n* Resolve: finish the Held to Resolving rename, and give the folder one name (#5886 review)\n\nresolvefolder::held() is now resolving(), HeldKey is ResolvingKey, and the\nlocals holding a Resolving are named resolving (ondisk::Held's stay). The\nfolder function is resolvefolder::folder, re-exported as itself, so the\n`path as folder` alias in resolve.rs goes. Callers in the app's saving.rs and\nthe tests follow.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70405GHNXMVNH68YTJX8JJC\nPurlis-Persona: steward\n\n* changes: drop the second #5864 fragment\n\na-push-save-rebuilds-what-purlis-generates.md, from #5864's own commit,\nalready says it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70405GHNXMVNH68YTJX8JJC\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-09T15:54:21Z",
+          "tree_id": "37244604ff7f011c5e32e9490fd9e7977311acf4",
+          "url": "https://github.com/purlis/purlis/commit/f5415ce4b6ab1a6ecf6dfd28bf90a5649d0ea66d"
+        },
+        "date": 1794242250346,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6867535,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.684, 0.686, 0.687, 0.724, 0.741 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7715415,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.543, 16.701, 16.772, 16.834, 16.991 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.48579999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.881, 101.946, 102.486, 102.733, 103.672 ms"
           }
         ]
       }
