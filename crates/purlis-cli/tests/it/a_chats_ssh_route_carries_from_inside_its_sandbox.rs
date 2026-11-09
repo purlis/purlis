@@ -125,7 +125,14 @@ fn a_wrapped_chat(out: &Path) -> (sandbox::Applied, PathBuf) {
     for dir in [&root, &home, &bin] {
         std::fs::create_dir_all(dir).expect("a folder");
     }
-    std::fs::write(root.join("purlis.toml"), "[sandbox]\nmode = \"on\"\n").expect("the manifest");
+    // Without the toolchains preset, as the core's live wrap tests: its package caches add some
+    // 1,500 rules to the profile, and `sandbox-exec` refused one that large ("profile too
+    // large") under this test's long temporary home.
+    std::fs::write(
+        root.join("purlis.toml"),
+        "[sandbox]\nmode = \"on\"\negress = [\"model-providers\", \"forge\"]\n",
+    )
+    .expect("the manifest");
     let machine = Machine {
         env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
         home: Some(home),
@@ -168,19 +175,30 @@ fn in_the_chat(
             },
         )
         .expect("the chat's line");
-    // The chat's environment as a start finishes it (`hoststart`): a `PATH`, then the route's
-    // folder first on it.
-    let mut env = line.env;
+    // The chat's environment as a start finishes it: this process's own (the app's, which
+    // `chatenv` composes a chat's from), what the line adds, and the route's folder first on its
+    // `PATH` (`hoststart`).
+    let mut env: Vec<(String, String)> = support::unsteered_with(&[])
+        .into_iter()
+        .filter_map(|(k, v)| Some((k.into_string().ok()?, v.into_string().ok()?)))
+        .collect();
+    for (key, value) in line.env {
+        env.retain(|(set, _)| *set != key);
+        env.push((key, value));
+    }
     if !env.iter().any(|(key, _)| key == "PATH") {
         env.push(("PATH".to_owned(), "/usr/bin:/bin".to_owned()));
     }
     let env = route.first_on_path(env);
-    support::command(&line.program)
-        .args(&line.args)
-        .current_dir(cwd)
-        .envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())))
-        .output()
-        .expect("the chat's line ran")
+    let mut command = support::command(&line.program);
+    command.args(&line.args).current_dir(cwd).env_clear();
+    // On Linux the line is purlis's own wrap, which starts from nothing of the chat's and reads
+    // the chat's environment only as `chatspec` carries it (#2460).
+    #[cfg(target_os = "linux")]
+    command.envs(support::carrying(env));
+    #[cfg(target_os = "macos")]
+    command.envs(env);
+    command.output().expect("the chat's line ran")
 }
 
 /// What `ran` said, for a failed assertion.
