@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794258801561,
+  "lastUpdate": 1794262115006,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -45192,6 +45192,48 @@ window.BENCHMARK_DATA = {
             "value": 101.2992275,
             "unit": "ms",
             "extra": "median of 5 runs: 101.150, 101.282, 101.299, 101.966, 102.009 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "31d94e9cc89232c08771d6fe66ea212b6e2518c9",
+          "message": "A row's own controls keep their keys: IME Esc, a select's arrows, a wrapped box's lines (#5993) (#6025)\n\n* A row's own controls keep their keys: IME Esc, a select's arrows, a wrapped box's lines (#5993)\n\n- Composing (isComposing, or key code 229 as WebKit sends Esc once composition ends), every\n  key in a text box in a row is the input method's: the list keeps it from the row and above.\n- A select's button (aria-haspopup=listbox) or a combobox in a row hears its own up and down\n  arrows: the family's row lets them by React Aria's row capture, so it opens.\n- Up and down in a box of lines go by the lines it draws: a line its words wrap on to is\n  measured unseen in a copy of the box (getClientRects), as well as a line break.\n\nUnit tests in RowKeys.test.tsx, each seen red first; stories List > Composing In A Rows Box,\nA Select In A Row, A Wrapped Reply In A Row.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70MV7K4PTR2QKCM1FTPDK01\nPurlis-Persona: steward\n\n* Review: stories walk the engine's keyboard, Tab out and back; the measure copies more of the box (#5993)\n\n- A story's userEvent only dispatches events, so a box of lines' caret never moves on its arrows:\n  keysOnTheEnginesKeyboard (stories.testkit, set in at-rest.setup like the engine's press)\n  presses them on the engine's own keyboard in List > A Wrapped Reply In A Row.\n- A select opens on the option it holds on up as on down: the story says so.\n- The input method's keys set their key code on the event itself.\n- Each new story Tabs out of its list to a button after it and back.\n- The measure copies hyphens, line-break, text-wrap and the font's variations, indents only the\n  box's first line, and is fixed so it widens nothing in a page read right to left.\n- keptOnTheWayUp no longer checks composing, which the list keeps before it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70MV7K4PTR2QKCM1FTPDK01\nPurlis-Persona: steward\n\n* Stories: Tab out finds its button in the page, and Holding draws as it did (#5993)\n\nThe list's own key wrapper is the grid's parent, so the button after the fixture was not found\nthere; and Holding as a grid moved A Text Box In A Row's picture. The composing story puts its\nbutton after Holding in a wrapper of its own.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70MV7K4PTR2QKCM1FTPDK01\nPurlis-Persona: steward\n\n* Stories: Tab out and back from a row with no controls of its own (#5993)\n\nFrom a row that holds controls, Shift+Tab back into the list lands on the row's last control (the\nlist family's Tab, as it was before this change), so the composing and select stories Tab out\nfrom the row below, as the wrapped reply's does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70MV7K4PTR2QKCM1FTPDK01\nPurlis-Persona: steward\n\n* Story baselines for #5993's three List stories, and Classic's A Text Box In A Row\n\nDrawn by #6025's stories run 42686239505 and pulled with tools/story-baselines-pull.mjs. Classic's\nA Text Box In A Row takes the box's visible edge from #5991.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70MV7K4PTR2QKCM1FTPDK01\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-09T20:59:15Z",
+          "tree_id": "834a0a62d4b21cb6659d7cc8fb58a22874d256fc",
+          "url": "https://github.com/purlis/purlis/commit/31d94e9cc89232c08771d6fe66ea212b6e2518c9"
+        },
+        "date": 1794262108631,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.347326,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.342, 0.344, 0.347, 0.356, 0.366 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.670567,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.087, 16.637, 16.671, 16.732, 16.740 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.700694,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.086, 101.359, 101.701, 102.261, 103.389 ms"
           }
         ]
       }
