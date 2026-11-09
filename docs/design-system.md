@@ -1445,9 +1445,9 @@ Left still, on purpose:
   is terminal output moving; a region arrives at its full size and only fades.
 - **A tab's width or position.** A tab that slides under the pointer breaks aiming (`tabs.ts`);
   the collapse into `N more` is instant, and only the button that appears is drawn arriving.
-- **Closing anything.** React Aria unmounts a closing surface at once unless an exit animation
-  is running on it, and a close that lingers leaves a dismissed question over the window the operator has
-  gone back to.
+- **Closing anything.** React Aria unmounts a closing surface at once unless an exit animation is
+  running on it, and a close that lingers leaves a dismissed question over the window the operator
+  has gone back to.
 - **Counts and words** — the needs-you badge, the gauge, the status line. They are read, and a
   number that animates is a number that is briefly wrong.
 - **Hover on rows.** Only a tab eases its hover, because a tab's hover and its selection are the
@@ -2290,12 +2290,12 @@ on the first three, because they are about what the window is drawn _in_:
 
 Still refused, unchanged by the ruling: a component library as a **dependency**, and a house
 abstraction layer over a family — `<ConfirmModal open onConfirm>` — whether it is written here or
-copied from somewhere. Copying it would not launder it; what is refused is a purlis API in
-front of a family. **The one exception** is the settings set (ADR 0037, amended
-2026-10-04, V89f and V89j): SettingsLayout, SettingGroup, SettingRow, Field, Choice and
-SettingActions in `app/src/settings/components.tsx`, six thin pieces over the families and the
-native elements already in use, drawn in tokens. `docs/ui-primitives.md` gives the reasons. Nothing else joins it without a new
-amendment.
+copied from somewhere. Copying it would not launder it; what is refused is a purlis API in front of
+a family. **The one exception** is the settings set (ADR 0037, amended 2026-10-04, V89f and V89j):
+SettingsLayout, SettingGroup, SettingRow, Field, Choice and SettingActions in
+`app/src/settings/components.tsx`, six thin pieces over the families and the native elements already
+in use, drawn in tokens. `docs/ui-primitives.md` gives the reasons. Nothing else joins it without a
+new amendment.
 
 **A dialog's footer** (the dialog family, `app/src/ui/dialog/Dialog.tsx`, #2910, which replaced
 the answer bar of #1210) is the one row every dialog is answered from, a question's and a form's

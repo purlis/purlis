@@ -288,7 +288,6 @@ describe("the control guard (#1837)", () => {
       <select className="wide" />
       <table className="vault-secrets">
       <table className="ui-table ui-table-fixed">
-      <Menu.Item onSelect={go} />
     `;
     expect(unclassedControls(tsx)).toEqual([
       '<button className="tab-close">',

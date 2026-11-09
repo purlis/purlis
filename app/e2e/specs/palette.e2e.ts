@@ -56,10 +56,11 @@ async function openPalette() {
  * evidence either way. This is the evidence: what the document saw, on what target, and
  * whether anything had already called `preventDefault` on it.
  *
- * Capture phase on `document`, so it runs before any handler of the app's or React Aria's (but
- * the dialog family's Tab, heard on the window in its capture phase first) and a key that is
- * swallowed later is still written down. It is diagnostics and never an
- * assertion — nothing passes or fails on what it collects.
+ * Capture phase on `document`, so it runs before any handler of the app's or React Aria's, and a
+ * key that is swallowed later is still written down. The one exception is a Tab inside a
+ * dialog: the dialog family hears it on the window in its capture phase first, moves the focus
+ * and stops it there (`useTabbing`), so it never reaches `document` and is not written down. It is
+ * diagnostics and never an assertion — nothing passes or fails on what it collects.
  */
 async function watchKeys(): Promise<() => Promise<string>> {
   await browser.execute(() => {

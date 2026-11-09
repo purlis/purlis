@@ -1145,8 +1145,8 @@ item families (`purlis/tooltip-family`, an error). A frame's `title` is its name
 (`app/src/ui/menu/Menu.tsx`, `app/src/ui/menu/ContextMenu.tsx`, `app/src/ui/popover/Popover.tsx`,
 #2909, ADR 0104), on React Aria's `MenuTrigger`, `Menu`, `MenuItem`, `MenuSection`,
 `SubmenuTrigger`, `Popover`, `Dialog` and `DialogTrigger`. No screen says a menu's role or wears
-the old `.ui-menu*` and `.ui-popover` classes, and nothing imports the window's old wrappers of
-them (`overlays/…`): `eslint.config.js` refuses all three (`purlis/menu-family`, an error). A select's list stands on
+the old `.ui-menu*` and `.ui-popover` classes: `eslint.config.js` refuses both
+(`purlis/menu-family`, an error). A select's list stands on
 the same surface, its options the menu's rows ([The select and combobox
 families](#the-select-and-combobox-families)).
 
@@ -1753,9 +1753,10 @@ family's, each in its own sheet in the `components` layer. The old overlay and m
 `app/src/primitives/overlays.test.tsx` holds the surface through the window's cascade (the same
 ground, border, corner and lift on each kind, the same padding on a dialog and a popover), that a
 dialog is still named by its title, keeps the keyboard and leaves on Escape, and that a popover
-opens from the keyboard. It reads every component's source too: every button inside a popover
-or a menu is the button family and every field the field family, and `App.css` draws no overlay surface and lifts nothing by a shadow of its own.
-The dialog family's own tests hold a dialog's rows (`ui/dialog/Dialog.test.tsx`).
+opens from the keyboard. It reads every component's source too: every button inside a popover or a
+menu is the button family and every field the field family, and `App.css` draws no overlay surface
+and lifts nothing by a shadow of its own. The dialog family's own tests hold a dialog's rows
+(`ui/dialog/Dialog.test.tsx`).
 
 ## Text roles
 
@@ -2272,9 +2273,9 @@ Three things follow, and the last is the one a reviewer should hold us to:
 
 ## What Tab actually reached in each modal, and the one attribute that fixed it
 
-_History: measured on Radix's dialogs. The dialog family now moves Tab itself, round from the
-last stop to the first (`ui/dialog/Dialog.tsx`, `ui/dialog/tabOrder.ts`), and the button family writes the
-`tabindex` WebKit needs on every button (#190)._
+_History: measured on Radix's dialogs. The dialog family now moves Tab itself, round from the last
+stop to the first (`ui/dialog/Dialog.tsx`, `ui/dialog/tabOrder.ts`), and the button family writes
+the `tabindex` WebKit needs on every button (#190)._
 
 purlis#186 asked the question above of **every** modal surface rather than of the one
 dialog a scenario happened to break on, and the answer was worse than the ticket's guess.
@@ -2347,9 +2348,10 @@ on the machine.
 
 Three things about that choice, because each was a fork:
 
-- **It is not a hand-written Tab handler, which ADR 0037 is against and which this
-  would have been the fourth of.** Nothing wraps a primitive, nothing intercepts a key, and
-  Radix's own edge behaviour is untouched and still does the wrapping at the ends.
+- **It was not a hand-written Tab handler, which ADR 0037 was against and which this
+  would have been the fourth of.** Nothing wrapped a primitive, nothing intercepted a key, and
+  Radix's own edge behaviour was untouched and did the wrapping at the ends. (ADR 0104 has
+  since put one there on purpose: the dialog family moves Tab itself, `useTabbing`.)
 - **It is not a WebView setting, and that route does not exist.** Turning "tab to all controls"
   on for purlis's own window would be the tidier answer and there is no public API for it:
   macOS exposes full keyboard access as a system preference and `WKPreferences` has only
@@ -2372,6 +2374,10 @@ carries the rest.
 
 ## Where Tab goes in the rest of the window (purlis#189)
 
+_History in part: the shape below holds, but what draws it has moved. The strips are the tabs
+family's (React Aria's tabs), the lists and the explorer the list and tree families', and a menu
+the menu family's; `@radix-ui/react-roving-focus` left with the last of Radix (#2930)._
+
 The attribute above fixed the dialogs. Outside them it is the floor and not the answer: a
 `tabIndex={0}` on every button would put fifty tabs between the explorer and the terminal.
 So the window takes the WAI-ARIA Authoring Practices' shape, with the primitive this repo already
@@ -2390,8 +2396,8 @@ model and a select-on-`mousedown` this window's strips do not have:
   contributed panel gets it for nothing). Up, Down, Home and End move.
 - **A list behind a button is a menu** — the title bar's needs-you list (purlis#249), the
   strips' show-more menus. The button is the Tab stop; Enter opens the menu on its first item,
-  the arrows move, Escape closes it and puts the keyboard back on the button. Radix's
-  `DropdownMenu` does all of that, so nothing here is hand-written.
+  the arrows move, Escape closes it and puts the keyboard back on the button. The menu
+  family does all of that, so nothing here is hand-written.
 - **The explorer is a tree** (purlis#238), the whole "Tree View" pattern on top of the
   same roving focus: `role="tree"`, each row a `treeitem` with its level and its place among
   its siblings, `aria-expanded` on every parent (a clone says whether it is open, a parent that
@@ -3149,16 +3155,16 @@ terminal the chord is the window's whether or not its row can run, so the same c
 means two things from one tab to the next; in a text field or an editor a chord whose row
 cannot run is left to the field.
 
-**A menu that opens under a resting pointer takes no keyboard** (#1487, `TabChip.tsx`). The
-tasks menu on a pane head's state word (a tab's chip until #5341) is the menu family's,
-opened three ways: a press, ⌘⇧J, and the pointer resting on the word. A menu moves the focus
-into itself as it opens and onto each row the pointer crosses, which is right for the first two
-and would take the keyboard out of a terminal for the third. So a rest-opened menu refuses both
-(`autoFocus` off, and the family's `takesNoKeyboard`), the stylesheet's hover says which row the pointer is on, and
-an Escape that closes it stops there instead of also reaching the chat. Only that menu closes
-when the pointer leaves: a pressed or key-opened menu has the keyboard and stays until Escape,
-a pick, a press outside or the same ask again. However it was opened, a menu closed without a
-pick puts the keyboard back where it was before it opened.
+**A menu that opens under a resting pointer takes no keyboard** (#1487, `TabChip.tsx`). The tasks
+menu on a pane head's state word (a tab's chip until #5341) is the menu family's, opened three ways:
+a press, ⌘⇧J, and the pointer resting on the word. A menu moves the focus into itself as it opens
+and onto each row the pointer crosses, which is right for the first two and would take the keyboard
+out of a terminal for the third. So a rest-opened menu refuses both (`autoFocus` off, and the
+family's `takesNoKeyboard`), the stylesheet's hover says which row the pointer is on, and an Escape
+that closes it stops there instead of also reaching the chat. Only that menu closes when the pointer
+leaves: a pressed or key-opened menu has the keyboard and stays until Escape, a pick, a press
+outside or the same ask again. However it was opened, a menu closed without a pick puts the keyboard
+back where it was before it opened.
 
 **A rest is a move the person made, then stillness.** Both WebKits hit-test again after a
 layout and say "the pointer came onto this" of a pointer that has not moved, so a chip that
