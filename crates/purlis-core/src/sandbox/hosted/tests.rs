@@ -127,6 +127,41 @@ fn a_service_left_out_is_asked_about_where_the_runners_policy_keeps_a_one_chat_s
     );
 }
 
+/// Under the runner's policy `sandbox`, a relayed plan or one the runner composed asks the window
+/// about no host, so no answer of the window widens its reach there.
+fn no_host_asked_under(sandbox: &str) {
+    let project = tempfile::tempdir().expect("a project");
+    crate::sandbox::policy::set_for_this_test(locked(sandbox));
+    let asked: Vec<bool> = [Planned::Composed, Planned::Elsewhere]
+        .into_iter()
+        .map(|planned| super::hosts_askable(planned, project.path()))
+        .collect();
+    let here = super::hosts_askable(Planned::Here, project.path());
+    crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::none());
+    assert_eq!(asked, [false, false], "no host is asked about");
+    assert!(here, "the window here applied its own locks already");
+}
+
+#[test]
+fn a_host_is_never_asked_about_on_a_relayed_or_composed_plan_where_the_runners_policy_turns_live_asks_off()
+ {
+    no_host_asked_under(r#"{"live-asks": false}"#);
+}
+
+#[test]
+fn a_host_is_never_asked_about_on_a_relayed_or_composed_plan_where_the_runners_policy_keeps_no_one_chat_scope()
+ {
+    no_host_asked_under(r#"{"allow-scopes": ["you", "machine"]}"#);
+}
+
+#[test]
+fn a_host_is_asked_about_on_a_relayed_or_composed_plan_under_no_policy() {
+    let project = tempfile::tempdir().expect("a project");
+    for planned in [Planned::Here, Planned::Composed, Planned::Elsewhere] {
+        assert!(super::hosts_askable(planned, project.path()), "{planned:?}");
+    }
+}
+
 /// A plan the host composed, giving the services on `given`.
 fn composed(given: Vec<u16>) -> Plan {
     Plan {
