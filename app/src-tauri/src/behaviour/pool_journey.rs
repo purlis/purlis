@@ -177,11 +177,7 @@ fn the_desktops_profile(machine: &Machine, root: &Path, folder: &Path) {
 /// The pool's runner now: an update and Make the runner again change it.
 fn the_runner(machine: &Machine, pool: &str) -> OnTheRunner {
     let kept = purlis_core::runners::runner_for(&machine.config, pool).expect("its runner is kept");
-    OnTheRunner {
-        docker: machine.docker.clone(),
-        container: kept.made.container.as_str().to_owned(),
-        pool: pool.to_owned(),
-    }
+    OnTheRunner::in_a_container(machine.docker.clone(), kept.made.container.as_str(), pool)
 }
 
 /// Keeps `kept` on pool `pool`'s runner over a link of its own, as a start and a pool's row do
@@ -582,7 +578,7 @@ fn in_the_journey(
         purlis_core::forklock::output(std::process::Command::new(machine.docker.program()).args([
             "rm",
             "--force",
-            runner.container.as_str(),
+            runner.container(),
         ]))
         .expect("docker runs");
     assert!(out.status.success(), "removed outside purlis: {out:?}");
@@ -661,7 +657,11 @@ fn in_the_journey(
     );
     assert_eq!(crate::poolfollow::waiting_on(&machine.config, pool), 1);
     let followed = the_runner(machine, pool);
-    assert_ne!(followed.container, runner.container, "a runner of its own");
+    assert_ne!(
+        followed.container(),
+        runner.container(),
+        "a runner of its own"
+    );
     assert_eq!(
         crate::dockerpools::pools_on(&machine.config)
             .expect("the pools read")
@@ -753,7 +753,7 @@ fn in_the_journey(
             "--all",
             "--quiet",
             "--filter",
-            &format!("id={}", runner.container),
+            &format!("id={}", runner.container()),
         ]))
         .expect("docker runs");
     assert!(out.stdout.is_empty(), "the old runner's container is gone");
@@ -785,7 +785,11 @@ fn in_the_journey(
     }
     assert_eq!(crate::poolfollow::waiting_on(&machine.config, pool), 0);
     let updated = the_runner(machine, pool);
-    assert_ne!(updated.container, followed.container, "a runner of its own");
+    assert_ne!(
+        updated.container(),
+        followed.container(),
+        "a runner of its own"
+    );
     the_row_says(machine, pool, &Standing::SignedIn);
     let (id, pane) = a_chat_runs(
         target,
@@ -1148,7 +1152,7 @@ mod a_stopped_runners_conversation_comes_back {
             std::process::Command::new(machine.docker.program()).args([
                 "container",
                 "stop",
-                old.container.as_str(),
+                old.container(),
             ]),
         )
         .expect("docker runs");
@@ -1186,7 +1190,7 @@ mod a_stopped_runners_conversation_comes_back {
         assert_eq!((brought.found, brought.left), (3, 0), "{brought:?}");
         assert!(brought.removed.is_some_and(|removed| removed.forgotten));
         let now = the_runner(&machine, &pool);
-        assert_ne!(now.container, old.container, "a runner of its own");
+        assert_ne!(now.container(), old.container(), "a runner of its own");
         for conversation in conversations {
             assert_eq!(
                 now.prints(&format!("cat \"$HOME/{conversation}\"")),

@@ -396,6 +396,8 @@ const PARITY: &str = "PURLIS_PARITY";
 
 #[path = "behaviour/tests/fresh_runner.rs"]
 mod fresh_runner;
+#[path = "behaviour/tests/on_a_cluster_pool.rs"]
+mod on_a_cluster_pool;
 mod pool_journey;
 mod pool_setup;
 mod pool_setup_try;
@@ -610,11 +612,11 @@ pub(crate) fn a_window_again_on_a_pool_of(
             config: config.path().to_path_buf(),
         },
     );
-    target.runner = Some(OnTheRunner {
-        docker: docker.clone(),
-        container: made.container.as_str().to_owned(),
-        pool: name.clone(),
-    });
+    target.runner = Some(OnTheRunner::in_a_container(
+        docker.clone(),
+        made.container.as_str(),
+        &name,
+    ));
     a_repository(&target.root);
     // Ended in this order once the window's sessions are: the runtime and its links, the
     // window's host, the pool and its runner, and last the config home it is kept in.
@@ -773,10 +775,23 @@ impl Drop for RemovesThePool {
 
 /// A Docker pool's runner, as a test reaches into its container.
 pub(crate) struct OnTheRunner {
-    docker: purlis_core::dockerpool::Docker,
-    container: String,
+    reach: ReachedBy,
     /// The pool it is the runner of.
     pub pool: String,
+}
+
+/// How a test reaches into a runner: a Docker pool's container through `docker exec`, or a
+/// cluster pool's pod through `kubectl exec`, as its own user.
+enum ReachedBy {
+    Container {
+        docker: purlis_core::dockerpool::Docker,
+        container: String,
+    },
+    Pod {
+        kubectl: purlis_core::clusterpool::Kubectl,
+        namespace: String,
+        pod: String,
+    },
 }
 
 /// A runner's host stopped, started again when this is dropped: a test that fails while it is
@@ -789,31 +804,130 @@ struct HostStopped<'a> {
 impl Drop for HostStopped<'_> {
     fn drop(&mut self) {
         // Not `prints`, whose assertion would be a panic inside the panic of a failed test.
-        let _ = purlis_core::forklock::output(
-            std::process::Command::new(self.runner.docker.program()).args([
-                "exec",
-                self.runner.container.as_str(),
-                "kill",
-                "-CONT",
-                self.pid.as_str(),
-            ]),
-        );
+        let _ = purlis_core::forklock::output(&mut self.runner.exec(
+            false,
+            false,
+            &[],
+            &["kill", "-CONT", self.pid.as_str()],
+        ));
     }
 }
 
 impl OnTheRunner {
+    /// A Docker pool's runner, the container `container`.
+    pub(crate) fn in_a_container(
+        docker: purlis_core::dockerpool::Docker,
+        container: &str,
+        pool: &str,
+    ) -> OnTheRunner {
+        OnTheRunner {
+            reach: ReachedBy::Container {
+                docker,
+                container: container.to_owned(),
+            },
+            pool: pool.to_owned(),
+        }
+    }
+
+    /// A cluster pool's runner, the pod `pod` in `namespace`, reached as `kubectl` reaches it.
+    pub(crate) fn in_a_pod(
+        kubectl: purlis_core::clusterpool::Kubectl,
+        namespace: &str,
+        pod: &str,
+        pool: &str,
+    ) -> OnTheRunner {
+        OnTheRunner {
+            reach: ReachedBy::Pod {
+                kubectl,
+                namespace: namespace.to_owned(),
+                pod: pod.to_owned(),
+            },
+            pool: pool.to_owned(),
+        }
+    }
+
+    /// The Docker pool runner's container.
+    pub(crate) fn container(&self) -> &str {
+        match &self.reach {
+            ReachedBy::Container { container, .. } => container,
+            ReachedBy::Pod { .. } => panic!("a cluster pool's runner is a pod, not a container"),
+        }
+    }
+
+    /// Whether the runner is a cluster pool's pod.
+    fn is_a_pod(&self) -> bool {
+        matches!(self.reach, ReachedBy::Pod { .. })
+    }
+
+    /// `argv` run in the runner, `interactive` taking standard input, as root or as its own
+    /// user, with `env` set besides what the runner's exec gives. A pod is reached as its own
+    /// user alone.
+    fn exec(
+        &self,
+        interactive: bool,
+        as_root: bool,
+        env: &[(OsString, OsString)],
+        argv: &[&str],
+    ) -> std::process::Command {
+        let pair = |(name, value): &(OsString, OsString)| {
+            let mut pair = name.clone();
+            pair.push("=");
+            pair.push(value);
+            pair
+        };
+        match &self.reach {
+            ReachedBy::Container { docker, container } => {
+                let mut command = std::process::Command::new(docker.program());
+                command.arg("exec");
+                if interactive {
+                    command.arg("--interactive");
+                }
+                if as_root {
+                    command.args(["--user", "0"]);
+                }
+                for each in env {
+                    command.arg("--env").arg(pair(each));
+                }
+                command.arg(container).args(argv);
+                command
+            }
+            ReachedBy::Pod {
+                kubectl,
+                namespace,
+                pod,
+            } => {
+                assert!(
+                    !as_root,
+                    "a cluster pool's runner is reached as its own user"
+                );
+                let pod = format!("pod/{pod}");
+                let mut words = vec![
+                    "exec",
+                    "--namespace",
+                    namespace,
+                    "--container",
+                    purlis_core::clusterpool::RUNNER_CONTAINER,
+                ];
+                if interactive {
+                    words.push("--stdin");
+                }
+                words.extend([pod.as_str(), "--"]);
+                let mut command = std::process::Command::new(kubectl.program());
+                command.args(kubectl.args(&words));
+                if !env.is_empty() {
+                    command.arg("env").args(env.iter().map(pair));
+                }
+                command.args(argv);
+                command
+            }
+        }
+    }
+
     /// What `script` prints in the runner's container, run as its own user.
     pub(crate) fn prints(&self, script: &str) -> String {
-        let out = purlis_core::forklock::output(
-            std::process::Command::new(self.docker.program()).args([
-                "exec",
-                self.container.as_str(),
-                "sh",
-                "-c",
-                script,
-            ]),
-        )
-        .expect("docker runs");
+        let out =
+            purlis_core::forklock::output(&mut self.exec(false, false, &[], &["sh", "-c", script]))
+                .expect("the runner is reached");
         assert!(out.status.success(), "{script}: {out:?}");
         String::from_utf8_lossy(&out.stdout).into_owned()
     }
@@ -822,17 +936,12 @@ impl OnTheRunner {
     /// standard input.
     fn runs(&self, as_root: bool, script: &str, given: &[u8]) {
         use std::io::Write as _;
-        let mut command = std::process::Command::new(self.docker.program());
-        command.args(["exec", "--interactive"]);
-        if as_root {
-            command.args(["--user", "0"]);
-        }
+        let mut command = self.exec(true, as_root, &[], &["sh", "-c", script]);
         command
-            .args([self.container.as_str(), "sh", "-c", script])
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
-        let mut child = purlis_core::forklock::spawn(&mut command).expect("docker runs");
+        let mut child = purlis_core::forklock::spawn(&mut command).expect("the runner is reached");
         child
             .stdin
             .take()
@@ -846,32 +955,20 @@ impl OnTheRunner {
     /// Runs `argv` in the runner's container as its host was started: its user, and the
     /// environment `inherited` it was started with.
     fn runs_as_its_host(&self, inherited: &[(OsString, OsString)], argv: &[&str]) {
-        let mut command = std::process::Command::new(self.docker.program());
-        command.arg("exec");
-        for (name, value) in inherited {
-            let mut pair = name.clone();
-            pair.push("=");
-            pair.push(value);
-            command.arg("--env").arg(pair);
-        }
-        command.arg(self.container.as_str()).args(argv);
-        let out = purlis_core::forklock::output(&mut command).expect("docker runs");
+        let out = purlis_core::forklock::output(&mut self.exec(false, false, inherited, argv))
+            .expect("the runner is reached");
         assert!(out.status.success(), "{argv:?}: {out:?}");
     }
 
-    /// The one path in the runner's container that `pattern` names, the shell's globs and
-    /// `$HOME` read there: `None` where it names none.
+    /// The one path `pattern` names in the runner's container, or `None` where it names none.
     fn path(&self, pattern: &str) -> Option<String> {
-        let out = purlis_core::forklock::output(
-            std::process::Command::new(self.docker.program()).args([
-                "exec",
-                self.container.as_str(),
-                "sh",
-                "-c",
-                &format!("ls -d {pattern}"),
-            ]),
-        )
-        .expect("docker runs");
+        let out = purlis_core::forklock::output(&mut self.exec(
+            false,
+            false,
+            &[],
+            &["sh", "-c", &format!("ls -d {pattern}")],
+        ))
+        .expect("the runner is reached");
         if !out.status.success() {
             return None;
         }
@@ -884,11 +981,30 @@ impl OnTheRunner {
 
     /// What the runner's host has said in its log, the container's.
     fn said(&self) -> String {
-        let out = purlis_core::forklock::output(
-            std::process::Command::new(self.docker.program())
-                .args(["logs", self.container.as_str()]),
-        )
-        .expect("docker runs");
+        let mut command = match &self.reach {
+            ReachedBy::Container { docker, container } => {
+                let mut command = std::process::Command::new(docker.program());
+                command.args(["logs", container.as_str()]);
+                command
+            }
+            ReachedBy::Pod {
+                kubectl,
+                namespace,
+                pod,
+            } => {
+                let mut command = std::process::Command::new(kubectl.program());
+                command.args(kubectl.args(&[
+                    "logs",
+                    "--namespace",
+                    namespace,
+                    "--container",
+                    purlis_core::clusterpool::RUNNER_CONTAINER,
+                    &format!("pod/{pod}"),
+                ]));
+                command
+            }
+        };
+        let out = purlis_core::forklock::output(&mut command).expect("the runner is reached");
         assert!(out.status.success(), "the runner's log: {out:?}");
         format!(
             "{}{}",
@@ -902,14 +1018,54 @@ impl OnTheRunner {
     fn copied(&self, path: &str) -> Option<(tempfile::TempDir, PathBuf)> {
         let into = tempfile::tempdir().expect("a folder to copy it into");
         let at = into.path().join("copied");
-        let out = purlis_core::forklock::output(
-            std::process::Command::new(self.docker.program())
-                .arg("cp")
-                .arg(format!("{}:{path}", self.container))
-                .arg(&at),
-        )
-        .expect("docker runs");
-        out.status.success().then_some((into, at))
+        match &self.reach {
+            ReachedBy::Container { docker, container } => {
+                let out = purlis_core::forklock::output(
+                    std::process::Command::new(docker.program())
+                        .arg("cp")
+                        .arg(format!("{container}:{path}"))
+                        .arg(&at),
+                )
+                .expect("docker runs");
+                out.status.success().then_some((into, at))
+            }
+            // `kubectl cp` is `tar` through `kubectl exec`; this is the same, with the archive
+            // named `copied` as `docker cp` names its copy.
+            ReachedBy::Pod { .. } => {
+                let path = Path::new(path);
+                let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
+                    return None;
+                };
+                let script = format!(
+                    "cd '{}' && tar --create --file - --transform 's,^{},copied,' '{}'",
+                    parent.display(),
+                    name.to_string_lossy(),
+                    name.to_string_lossy()
+                );
+                let out = purlis_core::forklock::output(&mut self.exec(
+                    false,
+                    false,
+                    &[],
+                    &["sh", "-c", &script],
+                ))
+                .expect("the runner is reached");
+                if !out.status.success() {
+                    return None;
+                }
+                let archive = into.path().join("copied.tar");
+                std::fs::write(&archive, &out.stdout).expect("the archive is kept");
+                let untarred = purlis_core::forklock::output(
+                    std::process::Command::new("tar")
+                        .arg("--extract")
+                        .arg("--file")
+                        .arg(&archive)
+                        .arg("--directory")
+                        .arg(into.path()),
+                )
+                .expect("tar runs");
+                untarred.status.success().then_some((into, at))
+            }
+        }
     }
 
     /// Where the runner's host keeps its event log: its device's folder in its data home.
@@ -927,19 +1083,21 @@ impl OnTheRunner {
         // `flock` says a lock it could not take with an exit code of its own, told apart from
         // one with no `flock` or no file to lock.
         const HELD: i32 = 75;
-        let out = purlis_core::forklock::output(
-            std::process::Command::new(self.docker.program()).args([
-                "exec",
-                self.container.as_str(),
+        let held = HELD.to_string();
+        let out = purlis_core::forklock::output(&mut self.exec(
+            false,
+            false,
+            &[],
+            &[
                 "flock",
                 "--nonblock",
                 "--conflict-exit-code",
-                &HELD.to_string(),
+                &held,
                 lock,
                 "true",
-            ]),
-        )
-        .expect("docker runs");
+            ],
+        ))
+        .expect("the runner is reached");
         assert!(
             out.status.success() || out.status.code() == Some(HELD),
             "the lock could not be tried: {out:?}"
@@ -961,16 +1119,14 @@ impl OnTheRunner {
 
     /// Whether the process `pid` of the runner's container is there.
     fn has(&self, pid: u32) -> bool {
-        let out = purlis_core::forklock::output(
-            std::process::Command::new(self.docker.program()).args([
-                "exec",
-                self.container.as_str(),
-                "test",
-                "-e",
-                &format!("/proc/{pid}"),
-            ]),
-        )
-        .expect("docker runs");
+        let proc = format!("/proc/{pid}");
+        let out = purlis_core::forklock::output(&mut self.exec(
+            false,
+            false,
+            &[],
+            &["test", "-e", &proc],
+        ))
+        .expect("the runner is reached");
         out.status.success()
     }
 
@@ -996,7 +1152,10 @@ impl OnTheRunner {
                 .join(name)
                 .join(purlis_core::profilestore::CONFIG)
         } else {
-            PathBuf::from(format!("/home/purlis/.{harness}-{name}"))
+            // In the runner's home: `/home/purlis` in a Docker pool's container, the kept
+            // volume's folder in a cluster pool's pod.
+            let home = self.prints("printf %s \"$HOME\"");
+            Path::new(home.trim()).join(format!(".{harness}-{name}"))
         };
         // A profile purlis makes keeps its data beside its config (`profilestore::create`).
         let data = (harness == "opencode").then(|| {
@@ -1066,7 +1225,11 @@ impl OnTheRunner {
                 b"",
             );
         }
-        // The parity image's harness runs what is here (`tests/parity/runner.Dockerfile`).
+        self.its_harness_runs(harness, program);
+    }
+
+    /// The parity image's `harness` runs `program` (`tests/parity/runner.Dockerfile`).
+    fn its_harness_runs(&self, harness: &str, program: &Path) {
         self.runs(
             false,
             &format!(
@@ -1074,6 +1237,84 @@ impl OnTheRunner {
             ),
             &std::fs::read(program).expect("the program reads"),
         );
+    }
+
+    /// **A stand-in for the Messages API listening on the runner's loopback, outside any chat**
+    /// (`fake-harness --model`), started as the runner's own user and kept running once this
+    /// returns: its port. Its one Bash call runs the file a chat names in `PURLIS_PROBES`, and
+    /// what that said goes to `~/.parity/said`, beside its port in `~/.parity/port`.
+    fn serves_a_stand_in_model(&self) -> u16 {
+        let said = self.prints(&format!(
+            "mkdir -p \"$HOME/.parity\" && cd \"$HOME/.parity\" && rm -f said port \
+             && (setsid nohup '{fake}' --model 'sh \"$PURLIS_PROBES\"' --model-said \"$HOME/.parity/said\" \
+                 > port 2> serve.err < /dev/null &) \
+             && tries=0 && until [ -s port ]; do tries=$((tries + 1)); [ $tries -lt 100 ] || {{ cat serve.err >&2; exit 1; }}; sleep 0.1; done \
+             && cat port",
+            fake = fake_harness().display(),
+        ));
+        let port: u16 = said
+            .trim()
+            .parse()
+            .unwrap_or_else(|_| panic!("the stand-in model says its port: {said:?}"));
+        // Still there once the exec that started it has ended, so a chat that cannot reach it
+        // is told apart from one whose stand-in went with its exec.
+        let up = self.prints(&format!(
+            "if bash -c 'exec 3<>/dev/tcp/127.0.0.1/{port}' 2>/dev/null; then echo up; else echo down; cat \"$HOME/.parity/serve.err\"; fi"
+        ));
+        assert_eq!(
+            up.trim(),
+            "up",
+            "the stand-in model outlives the exec that started it"
+        );
+        port
+    }
+
+    /// **The runner adopted its own default `~/.claude` in place** (ADR 0095 §2), as a machine
+    /// adopts the folder a harness uses by default: the built-in's name, `claude`, and no folder
+    /// variable, so a chat on it starts as the built-in did, its `claude` being `program`.
+    fn adopts_its_default_claude_folder(&self, program: &Path) {
+        use purlis_core::profilestore::{Adopted, Folders, MachineProfile};
+        let home = self.prints("printf %s \"$HOME\"");
+        let folder = Path::new(home.trim()).join(".claude");
+        let config = tempfile::tempdir().expect("a config home to write it in");
+        purlis_core::profilestore::update(config.path(), |store| {
+            store.profiles.push(MachineProfile {
+                name: "claude".to_owned(),
+                harness: "claude".to_owned(),
+                title: "Claude Code (the runner)".to_owned(),
+                folders: Folders {
+                    config: folder.clone(),
+                    data: None,
+                },
+                adopted: Some(Adopted {
+                    at: 0,
+                    variables: Vec::new(),
+                }),
+                imported: None,
+                sign_in: None,
+                pinned: None,
+                sandbox_only: false,
+                kept_for: None,
+                rest: Default::default(),
+            });
+        })
+        .expect("the profile is kept");
+        let store =
+            std::fs::read(purlis_core::profilestore::path(config.path())).expect("the store reads");
+        let at = format!(
+            "\"$HOME\"/.config/{}",
+            purlis_core::machine::dir(Path::new("")).display()
+        );
+        self.runs(
+            false,
+            &format!(
+                "mkdir -p {at} && mkdir -p -m 0700 '{}' && umask 077 && cat > {at}/{}",
+                folder.display(),
+                purlis_core::profilestore::FILE
+            ),
+            &store,
+        );
+        self.its_harness_runs("claude", program);
     }
 }
 
@@ -3891,12 +4132,68 @@ fn a_sandboxed_runner_chat_reaches_neither_its_browser_engine_nor_its_host(targe
 /// what Claude Code's own sandbox used to keep from a command: its settings, its hooks and
 /// `.claude.json`, and a connection past the proxy. Its hook reaches the host.
 fn a_real_claude_code_chat_on_a_runner_is_held_as_a_codex_chat_is(target: &Target) {
+    a_real_claude_code_chat_on_a_runner_is_held(target, ClaudeFolder::Made);
+}
+
+/// **The same on the runner's own default `~/.claude`**: a chat on the profile the runner adopted
+/// in place, which starts as the built-in did, with no `CLAUDE_CONFIG_DIR`, so Claude Code keeps
+/// its state in `~/.claude.json` in the home, beside its folder, not in it. The wrap holds both:
+/// what a turn writes in `~/.claude` is written, and its settings, its hooks and `~/.claude.json`
+/// are not. Its own sign-in is its own here, so it reads and writes `.credentials.json` as a chat
+/// on a profile of its own does.
+fn a_real_claude_code_chat_on_a_runners_default_folder_is_held_as_a_codex_chat_is(target: &Target) {
+    a_real_claude_code_chat_on_a_runner_is_held(target, ClaudeFolder::TheRunnersDefault);
+}
+
+/// Which Claude Code folder a probe's chat runs on.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ClaudeFolder {
+    /// A profile of the runner's own, `~/.claude-work`, named by `CLAUDE_CONFIG_DIR`.
+    Made,
+    /// The runner's own `~/.claude`, adopted in place, named by no variable.
+    TheRunnersDefault,
+}
+
+fn a_real_claude_code_chat_on_a_runner_is_held(target: &Target, on: ClaudeFolder) {
     let Some(runner) = &target.runner else {
         return;
     };
     let outside = runner.prints("command -v bwrap socat || echo neither");
     assert_eq!(outside.trim(), "neither", "the image stays without them");
-    let (browsers, browser, past) = a_browser_and_what_lies_past_a_chat(target, runner);
+    let (browser, tries, past) = what_lies_past_a_chat_on(target, runner);
+    let (folder, state, told) = match on {
+        ClaudeFolder::Made => (
+            "$CLAUDE_CONFIG_DIR",
+            "$CLAUDE_CONFIG_DIR/.claude.json",
+            "if [ -n \"$CLAUDE_CONFIG_DIR\" ]; then echo 'CONFIG-DIR named.'; else echo 'CONFIG-DIR unnamed.'; fi",
+        ),
+        ClaudeFolder::TheRunnersDefault => (
+            "$HOME/.claude",
+            "$HOME/.claude.json",
+            "if [ -n \"${CLAUDE_CONFIG_DIR+set}\" ]; then echo 'CONFIG-DIR named.'; else echo 'CONFIG-DIR unnamed.'; fi",
+        ),
+    };
+    // The stand-in model listens on the runner's loopback. In the chat, inside the wrap, where a
+    // Docker pool's runner lets a chat's server listen. A cluster pool's pod runs under the
+    // runtime's default seccomp profile, which refuses the wrap what a chat's listen needs
+    // (`pidfd_getfd`, docs/runner-image.md), so there it is started outside the wrap, in the
+    // runner's `~/.parity`, before each chat ([`OnTheRunner::serves_a_stand_in_model`]), and the
+    // chat reaches it as it reaches any service on its machine's loopback.
+    let model = if runner.is_a_pod() {
+        "export PURLIS_PROBES=\"$TMPDIR/probes.sh\" said=\"$HOME/.parity/said\"\n\
+         until [ -s \"$HOME/.parity/port\" ]; do sleep 0.1; done\n\
+         export ANTHROPIC_BASE_URL=\"http://127.0.0.1:$(cat \"$HOME/.parity/port\")\"\n\
+         if bash -c \"exec 3<>/dev/tcp/127.0.0.1/$(cat \"$HOME/.parity/port\")\" 2>/dev/null; then echo 'MODEL reached.'; else echo 'MODEL unreached.'; fi"
+            .to_owned()
+    } else {
+        format!(
+            "said=\"$TMPDIR/said\"\n\
+             '{fake}' --model \"sh $TMPDIR/probes.sh\" --model-said \"$said\" > \"$TMPDIR/port\" &\n\
+             until [ -s \"$TMPDIR/port\" ]; do sleep 0.1; done\n\
+             export ANTHROPIC_BASE_URL=\"http://127.0.0.1:$(cat \"$TMPDIR/port\")\"",
+            fake = fake_harness().display(),
+        )
+    };
     let bin = tempfile::tempdir().expect("a folder for the harness");
     let program = stand_in::program(
         bin.path(),
@@ -3905,44 +4202,78 @@ fn a_real_claude_code_chat_on_a_runner_is_held_as_a_codex_chat_is(target: &Targe
             "#!/bin/sh\n\
              real={REAL_CLAUDE_CODE}\n\
              for word in \"$@\"; do [ \"$word\" = --version ] && exec \"$real\" --version; done\n\
+             {told}\n\
              cat > \"$TMPDIR/probes.sh\" <<'PROBES'\n\
              {tries}\
-             try TURN 'touch \"$CLAUDE_CONFIG_DIR/projects/turn\"'\n\
-             try SETTINGS 'echo x >> \"$CLAUDE_CONFIG_DIR/settings.json\"'\n\
-             try STATE 'echo x >> \"$CLAUDE_CONFIG_DIR/.claude.json\"'\n\
-             try HOOKS 'mkdir \"$CLAUDE_CONFIG_DIR/hooks\"'\n\
+             try TURN 'touch \"{folder}/projects/turn\"'\n\
+             try SETTINGS 'echo x >> \"{folder}/settings.json\"'\n\
+             try STATE 'echo x >> \"{state}\"'\n\
+             try HOOKS 'mkdir \"{folder}/hooks\"'\n\
              try DIRECT 'bash -c \"exec 3<>/dev/tcp/1.1.1.1/443\"'\n\
              PROBES\n\
-             '{fake}' --model \"sh $TMPDIR/probes.sh\" --model-said \"$TMPDIR/said\" > \"$TMPDIR/port\" &\n\
-             until [ -s \"$TMPDIR/port\" ]; do sleep 0.1; done\n\
-             export ANTHROPIC_BASE_URL=\"http://127.0.0.1:$(cat \"$TMPDIR/port\")\"\n\
+             {model}\n\
              export ANTHROPIC_AUTH_TOKEN=stand-in NO_PROXY=127.0.0.1 no_proxy=127.0.0.1\n\
              \"$real\" -p \"$@\" --permission-mode default --output-format json > \"$TMPDIR/out\" 2> \"$TMPDIR/err\" < /dev/null\n\
              printf 'CLAUDE-CODE ended %s.\\n' \"$?\"\n\
-             cat \"$TMPDIR/said\" \"$TMPDIR/err\"; ls -A \"$CLAUDE_CONFIG_DIR\"\n\
+             cat \"$said\" \"$TMPDIR/err\"; ls -A \"{folder}\"\n\
              printf '\\nTRIED.\\n'\n\
              read line\n",
-            tries = past.tries(),
-            fake = fake_harness().display(),
         ),
     );
-    a_profile_of(target, "claude", "work", &program);
+    let profile = match on {
+        ClaudeFolder::Made => {
+            a_profile_of(target, "claude", "work", &program);
+            "work"
+        }
+        ClaudeFolder::TheRunnersDefault => {
+            // The project names no profile of its own: the chat is on the runner's built-in.
+            let persona = target.root.join("personas").join("steward");
+            std::fs::create_dir_all(&persona).expect("its persona");
+            std::fs::write(persona.join("persona.md"), "# steward\n").expect("its persona");
+            runner.adopts_its_default_claude_folder(&program);
+            "claude"
+        }
+    };
+    // On its default folder its own sign-in is the one a built-in default profile keeps.
+    let own_sign_in = |said: &'static str| match (on, said) {
+        (ClaudeFolder::TheRunnersDefault, "CLAUDE-SIGN-IN-READ no.") => "CLAUDE-SIGN-IN-READ yes.",
+        (ClaudeFolder::TheRunnersDefault, "CLAUDE-SIGN-IN-WRITE no.") => {
+            "CLAUDE-SIGN-IN-WRITE yes."
+        }
+        _ => said,
+    };
     let chat_says = |direct: &str| {
+        if runner.is_a_pod() {
+            let port = runner.serves_a_stand_in_model();
+            // A chat reaches a service on its machine's loopback, at every level, once the
+            // person lets it (#2445), as anyone's server outside the chat.
+            target.gives(port);
+        }
         let id = target
             .sessions
             .open_named(
                 None,
-                &named("Run the probes.", false),
+                &crate::host::Named {
+                    profile: Some(profile.to_owned()),
+                    ..named("Run the probes.", false)
+                },
                 purlis_core::sandbox::plan::Hearing::default(),
                 &|_| {},
             )
             .expect("the sandboxed chat starts on the runner")
             .number;
         let pane = Pane::on(target, id);
+        if runner.is_a_pod() {
+            pane.shows("MODEL reached.");
+        }
         pane.shows("TRIED.");
         pane.shows("CLAUDE-CODE ended 0.");
-        for said in PAST_A_CHAT {
-            pane.shows(said);
+        pane.shows(match on {
+            ClaudeFolder::Made => "CONFIG-DIR named.",
+            ClaudeFolder::TheRunnersDefault => "CONFIG-DIR unnamed.",
+        });
+        for said in &past {
+            pane.shows(own_sign_in(said));
         }
         for said in [
             "TURN yes.",
@@ -3964,7 +4295,27 @@ fn a_real_claude_code_chat_on_a_runner_is_held_as_a_codex_chat_is(target: &Targe
     };
     // At the floor a chat reaches other machines as it reaches them with no sandbox, as a
     // Codex chat there does; at the full sandbox it reaches them only through its proxy.
+    if runner.is_a_pod() {
+        // The project reaches the runner with its first chat, and a port is given in the
+        // project as the runner holds it.
+        let id = target
+            .sessions
+            .open(None, &a_shell("printf 'HELD.'; read line"), &|_| {})
+            .expect("a chat starts on the runner");
+        Pane::on(target, id).shows("HELD.");
+        target.sessions.close(id).expect("it closes");
+    }
     chat_says("DIRECT yes.");
+    at_the_full_sandbox_on(target, runner);
+    chat_says("DIRECT no.");
+    if let Some((browsers, browser)) = browser {
+        browsers.close(&browser).expect("the browser ends");
+    }
+}
+
+/// The project as `runner` holds it is held at the full sandbox from its next chat on, its hosts
+/// the model providers'.
+fn at_the_full_sandbox_on(target: &Target, runner: &OnTheRunner) {
     runner.runs(
         false,
         &format!(
@@ -3973,7 +4324,73 @@ fn a_real_claude_code_chat_on_a_runner_is_held_as_a_codex_chat_is(target: &Targe
         ),
         b"",
     );
-    chat_says("DIRECT no.");
+}
+
+/// **A sandboxed opencode chat on a runner is held as a Codex chat is** (#4083's table): the same
+/// tries, by a stand-in of each of the two harnesses purlis wraps on every machine, on a profile
+/// its runner made, at the floor and at the full sandbox. Each says what
+/// [`a_real_claude_code_chat_on_a_runner_is_held_as_a_codex_chat_is`] holds a Claude Code chat to:
+/// its project reached, nothing past it, and other machines reached past the proxy at the floor
+/// alone. So the three wrapped harnesses are held to one table.
+fn a_sandboxed_codex_and_opencode_chat_on_a_runner_are_held_to_one_table(target: &Target) {
+    let Some(runner) = &target.runner else {
+        return;
+    };
+    let (browsers, browser, past) = a_browser_and_what_lies_past_a_chat(target, runner);
+    let bin = tempfile::tempdir().expect("a folder for the harnesses");
+    let of = |harness: &str, version: &str| {
+        let folder = bin.path().join(harness);
+        std::fs::create_dir_all(&folder).expect("its folder");
+        let program = stand_in::program(
+            &folder,
+            harness,
+            &format!(
+                "#!/bin/sh\n\
+                 [ \"$1\" = login ] && [ \"$2\" = status ] && exit 0\n\
+                 for word in \"$@\"; do [ \"$word\" = --version ] && {{ echo '{version}'; exit 0; }}; done\n\
+                 {tries}\
+                 try DIRECT 'bash -c \"exec 3<>/dev/tcp/1.1.1.1/443\"'\n\
+                 printf 'TRIED.\\n'\n\
+                 read line\n",
+                tries = past.tries(),
+            ),
+        );
+        (harness.to_owned(), program)
+    };
+    let harnesses = [of("codex", "codex-cli 0.147.0"), of("opencode", "1.18.33")];
+    let chat_says = |harness: &str, program: &Path, direct: &str| {
+        let name = format!("{harness}-work");
+        a_profile_of(target, harness, &name, program);
+        let id = target
+            .sessions
+            .open_named(
+                None,
+                &crate::host::Named {
+                    profile: Some(name),
+                    ..named("Run the probes.", false)
+                },
+                purlis_core::sandbox::plan::Hearing::default(),
+                &|_| {},
+            )
+            .unwrap_or_else(|why| {
+                panic!("the sandboxed {harness} chat starts on the runner: {why}")
+            })
+            .number;
+        let pane = Pane::on(target, id);
+        pane.shows("TRIED.");
+        for said in PAST_A_CHAT {
+            pane.shows(said);
+        }
+        pane.shows(direct);
+        target.sessions.close(id).expect("it closes");
+    };
+    for (harness, program) in &harnesses {
+        chat_says(harness, program, "DIRECT yes.");
+    }
+    at_the_full_sandbox_on(target, runner);
+    for (harness, program) in &harnesses {
+        chat_says(harness, program, "DIRECT no.");
+    }
     browsers.close(&browser).expect("the browser ends");
 }
 
@@ -4239,7 +4656,7 @@ impl PastAChat {
             carried,
         } = self;
         format!(
-            "try() {{ if ( eval \"$2\" ) >/dev/null 2>&1; then printf '%s yes.\\n' \"$1\"; else printf '%s no.\\n' \"$1\"; fi; }}\n\
+            "{TRY}\
              try PROJECT 'ls .'\n\
              try ENGINE-FOLDER 'ls {folder}'\n\
              try ENGINE-MEMORY 'exec 3< /proc/{engine}/mem'\n\
@@ -4249,17 +4666,93 @@ impl PastAChat {
              try HOST-SOCKET 'ls {socket}'\n\
              try CARRIED-READ 'cat {carried}/a/work/file'\n\
              try CARRIED-WRITE 'mkdir {carried}/planted'\n\
-             try CLAUDE-SIGN-IN-READ 'cat $HOME/.claude/.credentials.json'\n\
-             try CLAUDE-SIGN-IN-WRITE 'echo x >> $HOME/.claude/.credentials.json'\n\
-             try CODEX-SIGN-IN-READ 'cat $HOME/.codex/auth.json'\n\
-             try CODEX-SIGN-IN-WRITE 'echo x >> $HOME/.codex/auth.json'\n\
-             try OPENCODE-SIGN-IN-READ 'cat $HOME/.local/share/opencode/auth.json'\n\
-             try OPENCODE-SIGN-IN-WRITE 'echo x >> $HOME/.local/share/opencode/auth.json'\n\
-             try OPENCODE-FOLDER-MOVE 'mv $HOME/.local/share/opencode $HOME/.local/share/opencode2'\n\
-             if said=$(unshare --user true 2>&1); then printf 'NAMESPACE yes.\\n'; else printf 'NAMESPACE no: %s\\n' \"$said\"; fi\n"
+             {SIGN_INS_AND_A_NAMESPACE}"
         )
     }
 }
+
+/// **What lies past a chat on `runner`, with a browser beside it where its runner starts one**:
+/// on a Docker pool's runner, [`a_browser_and_what_lies_past_a_chat`]. A cluster pool's runner
+/// starts no browser in this test (its pod is given no profile that lets the engine make its
+/// namespaces), so there the chat tries what needs none: its project, the runner's link key and
+/// host socket, each harness's default sign-in, and a namespace of its own. Answers the browser,
+/// the tries and what the chat says of them.
+fn what_lies_past_a_chat_on(
+    target: &Target,
+    runner: &OnTheRunner,
+) -> (
+    Option<(crate::browsers::WindowBrowsers, String)>,
+    String,
+    Vec<&'static str>,
+) {
+    if !runner.is_a_pod() {
+        let (browsers, browser, past) = a_browser_and_what_lies_past_a_chat(target, runner);
+        return (
+            Some((browsers, browser)),
+            past.tries(),
+            PAST_A_CHAT.to_vec(),
+        );
+    }
+    runner.prints(
+        "for f in .claude/.credentials.json .codex/auth.json .local/share/opencode/auth.json; do \
+         mkdir -p \"$(dirname \"$HOME/$f\")\"; echo held > \"$HOME/$f\"; done",
+    );
+    let found = runner.prints(&format!(
+        "socket=$(ls -d /tmp/purlis-$(id -u) | head -n 1); \
+         key=$(ls -d \"$HOME\"/.config/*/{daemon}/{key} \"$HOME\"/.config/*/{daemon_before}/{key} 2>/dev/null | head -n 1); \
+         printf 'socket=%s\\nkey=%s\\n' \"$socket\" \"$key\"",
+        daemon = purlis_core::names::DAEMON_DIR
+            .spellings()
+            .next()
+            .expect("its name"),
+        daemon_before = purlis_core::names::DAEMON_DIR
+            .spellings()
+            .last()
+            .expect("its name"),
+        key = purlis_core::runnerlink::KEY_FILE,
+    ));
+    let value = |name: &str| {
+        let value = found
+            .lines()
+            .find_map(|line| line.strip_prefix(&format!("{name}=")))
+            .unwrap_or_default()
+            .trim()
+            .to_owned();
+        assert!(!value.is_empty(), "the runner has no {name}: {found}");
+        value
+    };
+    let (socket, key) = (value("socket"), value("key"));
+    let tries = format!(
+        "{TRY}\
+         try PROJECT 'ls .'\n\
+         try HOST-KEY 'cat {key}'\n\
+         try HOST-SOCKET 'ls {socket}'\n\
+         {SIGN_INS_AND_A_NAMESPACE}"
+    );
+    let says = PAST_A_CHAT
+        .into_iter()
+        .filter(|said| {
+            !["ENGINE-", "HOST-PIPE", "CARRIED-"]
+                .iter()
+                .any(|browsers| said.starts_with(browsers))
+        })
+        .collect();
+    (None, tries, says)
+}
+
+/// A shell's `try`, saying what came of what it tries.
+const TRY: &str = "try() { if ( eval \"$2\" ) >/dev/null 2>&1; then printf '%s yes.\\n' \"$1\"; else printf '%s no.\\n' \"$1\"; fi; }\n";
+
+/// What a chat tries of each harness's default sign-in, and of a namespace of its own.
+const SIGN_INS_AND_A_NAMESPACE: &str = "try CLAUDE-SIGN-IN-READ 'cat $HOME/.claude/.credentials.json'
+try CLAUDE-SIGN-IN-WRITE 'echo x >> $HOME/.claude/.credentials.json'
+try CODEX-SIGN-IN-READ 'cat $HOME/.codex/auth.json'
+try CODEX-SIGN-IN-WRITE 'echo x >> $HOME/.codex/auth.json'
+try OPENCODE-SIGN-IN-READ 'cat $HOME/.local/share/opencode/auth.json'
+try OPENCODE-SIGN-IN-WRITE 'echo x >> $HOME/.local/share/opencode/auth.json'
+try OPENCODE-FOLDER-MOVE 'mv $HOME/.local/share/opencode $HOME/.local/share/opencode2'
+if said=$(unshare --user true 2>&1); then printf 'NAMESPACE yes.\\n'; else printf 'NAMESPACE no: %s\\n' \"$said\"; fi
+";
 
 /// A browser of the project running on `runner`, and what lies past a chat beside it, each found
 /// outside the sandbox.
@@ -4530,6 +5023,28 @@ mod a_real_claude_code_chat_on_a_runner_is_held_as_a_codex_chat_is {
     fn in_a_docker_pool() {
         if let Some(target) = super::in_a_docker_pool() {
             super::a_real_claude_code_chat_on_a_runner_is_held_as_a_codex_chat_is(&target);
+        }
+    }
+}
+
+mod a_real_claude_code_chat_on_a_runners_default_folder_is_held_as_a_codex_chat_is {
+    /// Run by the parity job, which names a runner image; elsewhere it runs nothing.
+    #[test]
+    fn in_a_docker_pool() {
+        if let Some(target) = super::in_a_docker_pool() {
+            super::a_real_claude_code_chat_on_a_runners_default_folder_is_held_as_a_codex_chat_is(
+                &target,
+            );
+        }
+    }
+}
+
+mod a_sandboxed_codex_and_opencode_chat_on_a_runner_are_held_to_one_table {
+    /// Run by the parity job, which names a runner image; elsewhere it runs nothing.
+    #[test]
+    fn in_a_docker_pool() {
+        if let Some(target) = super::in_a_docker_pool() {
+            super::a_sandboxed_codex_and_opencode_chat_on_a_runner_are_held_to_one_table(&target);
         }
     }
 }

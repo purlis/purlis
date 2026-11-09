@@ -42,7 +42,7 @@ fn until<T>(what: &str, mut check: impl FnMut() -> Option<T>) -> T {
 }
 
 /// Removes what the test made in the cluster, however it ends.
-struct RemovesFromTheCluster {
+pub(super) struct RemovesFromTheCluster {
     kubectl: Kubectl,
     namespace: String,
     pool: String,
@@ -66,7 +66,7 @@ impl Drop for RemovesFromTheCluster {
 
 /// The Pool of `image` in a namespace of the test's own, added on `machine` as the window adds one
 /// and marked as the person's own, so a profile may reach its runners.
-fn a_pool_on_the_cluster(
+pub(super) fn a_pool_on_the_cluster(
     machine: &Machine,
     kubectl: &Kubectl,
     context: &str,
@@ -507,7 +507,7 @@ fn a_short_task_runs_on_a_runner_of_its_own_and_its_commits_are_home_before_its_
 }
 
 /// The namespace of `kept`'s pod, as the operator vouches for it.
-fn kept_namespace(
+pub(super) fn kept_namespace(
     kubectl: &Kubectl,
     config: &Path,
     kept: &purlis_core::runners::ClusterKept,
