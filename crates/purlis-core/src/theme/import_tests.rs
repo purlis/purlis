@@ -1465,7 +1465,8 @@ mod every_shipped_fixture_imports_with_no_avoidable_finding_and_its_hues_apart {
             ],
             // Dune's light blue (#3100) drew Allow at rest and the primary under the pointer as
             // one colour in some workspace tints (#2994), so the import tunes its accent greyer,
-            // and its own words on its selected row clear 4.5:1 with it.
+            // and its own words on its selected row clear 4.5:1 with it: it has no finding left.
+            "dune.json" => &[],
             _ => &[],
         };
         let distinct: BTreeSet<&str> = found.iter().map(String::as_str).collect();

@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use super::parts;
 use super::*;
 
+/// What the engine said of a theme it read, refused or left out.
 fn said(resolved: &Resolved) -> Vec<String> {
     resolved
         .complaints
@@ -19,6 +20,7 @@ fn said(resolved: &Resolved) -> Vec<String> {
         .collect()
 }
 
+/// Option values from `(option, value)` pairs.
 fn values(pairs: &[(&str, &str)]) -> Values {
     pairs
         .iter()
@@ -36,6 +38,7 @@ fn shaped(parts: Value, options: Value) -> Value {
     })
 }
 
+/// `document` read, which must not be refused.
 fn loaded(document: &Value) -> Theme {
     let loaded = load(document);
     assert!(!loaded.refused, "refused: {:?}", said(&loaded));
@@ -233,4 +236,35 @@ fn an_option_s_parts_are_in_the_schema() {
             .get("button.root.corner-radius")
             .is_some()
     );
+}
+
+#[test]
+fn the_check_measures_each_combination_with_the_later_option_s_parts_over_the_earlier_s() {
+    // Loud draws Allow on the primary's ground, Plain on its own fills again: Allow falls back in
+    // each combination where Loud's key is the one drawn, and in no other.
+    let theme = loaded(&shaped(
+        json!({}),
+        json!([
+            {
+                "id": "loud", "kind": "toggle", "label": "Loud", "default": false,
+                "on": { "parts": { "button.root.grants.fill": "accent.surface" } }
+            },
+            {
+                "id": "plain", "kind": "toggle", "label": "Plain", "default": false,
+                "on": { "parts": {
+                    "button.root.grants.fill": "control.base",
+                    "button.root.grants.hover.fill": "control.hover",
+                    "button.root.grants.open.fill": "control.hover"
+                } }
+            }
+        ]),
+    ));
+    for one in check_every(&theme) {
+        let falls = one.report.findings.iter().any(|finding| {
+            matches!(finding, check::Finding::PartFallsBack { part, .. } if part.starts_with("button.root.grants"))
+        });
+        // The later option wins key by key: Plain on draws Allow's own fills again.
+        let loud = one.options["loud"] == "on" && one.options["plain"] == "off";
+        assert_eq!(falls, loud, "{one:?}");
+    }
 }

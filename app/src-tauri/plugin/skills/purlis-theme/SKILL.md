@@ -168,7 +168,8 @@ any state (Allow under the pointer is measured against the primary at rest too):
 would is drawn as the family default. A theme option's value can carry `parts` beside its
 `tokens` (`"on": { "parts": { "button.root.corner-radius": "full" } }`), drawn over the theme's
 parts in the options' order and held to the same bounds and floors in every combination.
-The button, the fields, the tooltip, the dialog, the selects and the choices have parts so far: `field`
+The button, the fields, the tooltip, the dialog, the selects and the choices have parts so far:
+`field`
 (its label, help and error), `text-input` (the one-line box and its glass), `textarea` and
 `tooltip` (its `root`, the surface: colours, edge, corners and shadow, no sizes; and `detail`, an
 icon button's second line), which have no variants, so a key names the part alone

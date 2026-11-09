@@ -545,7 +545,8 @@ names:
 defaults, drawn from the theme's tokens, are measured the same way, Allow in each look it shows
 against the primary in each look it shows (#2994), as written and in each of the theme's own
 tints. A toggle's pressed look is the plain and the ghost button's alone (#3255): the primary, an
-Allow and danger are never pressed as one, so none of them shares it. A theme whose tokens bring the two together is
+Allow and danger are never pressed as one, so none of them shares it. A theme whose tokens bring
+the two together is
 drawn with purlis's own fill for the primary, and Allow's own fill only when that is not enough,
 under the consent floors' Notice.
 
