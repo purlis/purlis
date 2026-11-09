@@ -122,9 +122,10 @@ function write(pane: Watched, said: string) {
 /** An event missed `pane`: one line, if its minute allows. */
 function missed(pane: Watched, what: string, target: EventTarget | null, x: number, y: number) {
   const at = now();
-  pane.missedSince ??= at;
   if (pane.lastLine !== undefined && at - pane.lastLine < AT_MOST_EVERY_MS) return;
   pane.lastLine = at;
+  // Armed only by a line written, so a recovery line always follows one.
+  pane.missedSince ??= at;
   write(
     pane,
     `pane missed ${what}: ${JSON.stringify({

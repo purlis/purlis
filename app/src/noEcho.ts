@@ -20,7 +20,10 @@
  * stop, never look stuck here.
  *
  * Starting again is what falling out of the kept chats does, so it costs what that costs: the
- * screen is sent again. A chat starts again at most once per {@link AT_MOST_EVERY_MS}, should a
+ * screen is sent again. The program, and what is typed to it, are untouched, and the new
+ * terminal takes the keyboard the old one had. So a prompt that echoes nothing (a password
+ * typed over more than {@link NO_ECHO_MS}), or a program busy that long, may start it again
+ * for nothing, and its person loses no key to it. Only input the program took counts. A chat starts again at most once per {@link AT_MOST_EVERY_MS}, should a
  * program truly say nothing to what it is typed.
  *
  * The root cause in the pacing is not yet pinned (#5478): this is the fallback that keeps the

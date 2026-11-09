@@ -146,6 +146,19 @@ describe("[DEBUG-5478] what covers a pane", () => {
     );
   });
 
+  it("writes no recovery line for a miss whose own line the minute held back", () => {
+    const layer = overlay();
+    press(layer);
+    press(xterm);
+    expect(logged).toHaveLength(2);
+
+    time += 5_000;
+    press(layer);
+    press(xterm);
+
+    expect(logged).toHaveLength(2);
+  });
+
   it("says the pane shows a terminal that is not its live one", () => {
     // A stale copy in the holder, and the live terminal's element in no document.
     const stale = document.createElement("div");

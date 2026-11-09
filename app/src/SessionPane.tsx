@@ -124,6 +124,8 @@ export function SessionPane({
   const [started, setStarted] = useState(0);
   /** Set as the terminal is to be let go of, not kept, as it leaves the pane. */
   const lettingGo = useRef(false);
+  /** The terminal let go of had the keyboard: the one started in its place takes it. */
+  const hadTheKeyboard = useRef(false);
   const reconnecting = useReconnecting(plane, session);
   /** The terminal's rows as they stood when its menu opened: whether anything was selected is
    *  read then, once, and not while the menu is up. */
@@ -244,6 +246,10 @@ export function SessionPane({
       where.appendChild(pane.element);
     terminal.current = pane;
     saying.current = live.say;
+    // **A terminal started again takes the keyboard its last one had** (`noEcho.ts`): it is
+    // started while its person types, and their next key goes to it.
+    if (hadTheKeyboard.current) pane.focus();
+    hadTheKeyboard.current = false;
     if (kept !== undefined) bench.paneShownAgain(session, pane);
 
     // **Shift and a right-click are the menu's, whatever the program asked for.** On a Mac
@@ -306,6 +312,8 @@ export function SessionPane({
       // A terminal started again is let go of here, as one that falls out of the kept chats is.
       const lettingGoOf = lettingGo.current;
       lettingGo.current = false;
+      hadTheKeyboard.current =
+        lettingGoOf && pane.element?.contains(document.activeElement) === true;
       if (!lettingGoOf && keepTerminal(key, live)) pane.element?.remove();
       else live.release();
     };
@@ -315,7 +323,7 @@ export function SessionPane({
   // made the terminal it is set on.
   useEffect(() => {
     if (terminal.current) terminal.current.options.disableStdin = readOnly;
-  }, [plane, readOnly, session]);
+  }, [plane, readOnly, session, started]);
 
   return (
     <>
@@ -571,7 +579,7 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
       // A line that cannot be written (a link has no log here) is let go.
       void commands.debug5478Log(line).catch(() => {}),
   );
-  /** Pieces of the drawn view that arrived, and that were reported drawn: for the log. */
+  /** [DEBUG-5478] Pieces of the drawn view that arrived, and that were reported drawn. */
   const pieces = { arrived: 0, reported: 0 };
   // **Typed into and sent nothing back, its view is stuck** (#5478, `noEcho.ts`): the pane starts
   // its terminal and view again, as falling out of the kept chats does.
@@ -597,8 +605,16 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
   );
   const typed = pane.onData((text) => {
     freeze.input(); // [DEBUG-5478]
-    echo.typed(text);
-    sayIfRefused(commands.sendInput(plane, session, text));
+    const sending = commands.sendInput(plane, session, text);
+    // Only what reached the program is owed an answer: input refused, or sent while the link is
+    // down, cannot be helped by a new view.
+    void sending.then(
+      (sent) => {
+        if (sent.status === "ok") echo.typed(text);
+      },
+      () => {},
+    );
+    sayIfRefused(sending);
   });
   // **And what is not text, as the bytes it is** (charter#493): xterm hands a mouse report in
   // the default encoding (`?1000h` without `?1006h`) to `onBinary`, one character per byte.
@@ -660,10 +676,10 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
     // What the terminal has drawn of this view is told back, one report per write, and the
     // session host paces the view by it (#4733): a pane that falls behind is sent a fresh
     // screen, not a backlog. A view a page has replaced is closed, so it is told nothing.
-    const reported = pieces;
+    const reported = pieces; // [DEBUG-5478]
     const drawn = drawnReports((told) => {
       if (gone || mine !== drawing || view === undefined) return;
-      reported.reported += told;
+      reported.reported += told; // [DEBUG-5478]
       void commands.sessionDrawn(plane, session, view, told);
     });
     // Each piece is the bytes the program wrote, a raw body over IPC rather than a string
@@ -676,7 +692,7 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
       if (mine === drawing) {
         freeze.output(); // [DEBUG-5478]
         echo.output();
-        pieces.arrived += 1;
+        pieces.arrived += 1; // [DEBUG-5478]
       }
       const benched = bench.paneSent(pane, bytes);
       const written = () => {

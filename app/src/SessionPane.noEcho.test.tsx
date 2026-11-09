@@ -50,6 +50,8 @@ let outputs: Channel<ArrayBuffer>[] = [];
 let calls: { cmd: string; args: Record<string, unknown> }[] = [];
 let views = 0;
 let index = 0;
+/** Whether the core refuses what is typed, as for a chat whose program stopped reading. */
+let refuse = false;
 
 const send = (chunk: string) =>
   act(() => {
@@ -63,6 +65,11 @@ const later = (ms: number) =>
     vi.advanceTimersByTime(ms);
     await Promise.resolve();
   });
+/** Typed into the terminal, and the core's answer to it taken. */
+const typeInto = (pane: Terminal, text: string) =>
+  act(async () => {
+    pane.input(text);
+  });
 const named = (cmd: string) => calls.filter((call) => call.cmd === cmd);
 
 beforeEach(() => {
@@ -71,6 +78,7 @@ beforeEach(() => {
   calls = [];
   views = 0;
   index = 0;
+  refuse = false;
   vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
   mockIPC((cmd, args) => {
     calls.push({ cmd, args: args as Record<string, unknown> });
@@ -79,6 +87,7 @@ beforeEach(() => {
       views += 1;
       return { view: views, columns: 80, rows: 24, scrollback: 5000, newline: null };
     }
+    if (cmd === "send_input" && refuse) throw "the program is not reading";
     return null;
   });
 });
@@ -101,10 +110,11 @@ async function openPane() {
 describe("a pane typed into and sent nothing back", () => {
   it("starts its terminal and view again, as falling out of the kept chats does", async () => {
     const pane = await openPane();
+    act(() => pane.focus());
 
-    act(() => pane.input("/diag"));
+    await typeInto(pane, "/diag");
     await later(NO_ECHO_MS / 2);
-    act(() => pane.input("nose"));
+    await typeInto(pane, "nose");
     await later(NO_ECHO_MS / 2 + 1_000);
 
     await waitFor(() => expect(named("watch_session")).toHaveLength(2));
@@ -113,13 +123,42 @@ describe("a pane typed into and sent nothing back", () => {
     ]);
     await waitFor(() => expect(made).toHaveLength(2));
     expect(made[1]).not.toBe(pane);
+    // Started while its person types, the new terminal takes their next key.
+    expect(made[1].element?.contains(document.activeElement)).toBe(true);
+  });
+
+  it("counts nothing the program refused: a new view cannot help input that never reached it", async () => {
+    refuse = true;
+    const pane = await openPane();
+
+    await typeInto(pane, "ab");
+    await typeInto(pane, "cd");
+    await later(NO_ECHO_MS * 2);
+
+    expect(named("watch_session")).toHaveLength(1);
+  });
+
+  it("starts an ended chat's terminal again as taking no input", async () => {
+    const view = render(
+      <SessionPane plane="/planes/one" session={7} focused={false} onFocus={() => {}} />,
+    );
+    await waitFor(() => expect(made[0]?.options.scrollback).toBe(5000));
+    await typeInto(made[0], "ab");
+    await typeInto(made[0], "cd");
+    view.rerender(
+      <SessionPane plane="/planes/one" session={7} focused={false} onFocus={() => {}} readOnly />,
+    );
+    await later(NO_ECHO_MS + 1_000);
+
+    await waitFor(() => expect(made).toHaveLength(2));
+    expect(made[1].options.disableStdin).toBe(true);
   });
 
   it("keeps its terminal while what is typed is written back", async () => {
     const pane = await openPane();
 
     for (let key = 0; key < 10; key++) {
-      act(() => pane.input("a"));
+      await typeInto(pane, "a");
       await send("a");
       await later(3_000);
     }
@@ -133,13 +172,13 @@ describe("a pane typed into and sent nothing back", () => {
     const pane = await openPane();
 
     // A mouse report, and a focus report, in the encodings a program asks for.
-    act(() => pane.input("\x1b[<0;10;5M"));
-    act(() => pane.input("\x1b[I"));
+    await typeInto(pane, "\x1b[<0;10;5M");
+    await typeInto(pane, "\x1b[I");
     await later(NO_ECHO_MS / 2);
-    act(() => pane.input("\x1b"));
+    await typeInto(pane, "\x1b");
     await later(NO_ECHO_MS * 2);
     // One key alone is not enough to say the view is stuck.
-    act(() => pane.input("x"));
+    await typeInto(pane, "x");
     await later(NO_ECHO_MS * 2);
 
     expect(named("watch_session")).toHaveLength(1);
@@ -150,8 +189,8 @@ describe("a pane typed into and sent nothing back", () => {
 
     for (let round = 0; round < 3; round++) {
       const pane = made[made.length - 1];
-      act(() => pane.input("ab"));
-      act(() => pane.input("cd"));
+      await typeInto(pane, "ab");
+      await typeInto(pane, "cd");
       await later(NO_ECHO_MS + 1_000);
     }
 

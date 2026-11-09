@@ -110,7 +110,8 @@ export function watchForFreeze(
   let intersecting: boolean | null = null;
   /** The line last written, until it is looked at again: when, since when the pane waited,
    *  and when xterm next drew all it was written, if it has. */
-  let followUp: { firedAt: number; since: number; drewAt?: number } | undefined;
+  let followUp:
+    { firedAt: number; since: number; parsedSince?: boolean; drewAt?: number } | undefined;
 
   const waiting = (cause: "input" | "output") => {
     if (waitingSince !== undefined) return;
@@ -126,11 +127,13 @@ export function watchForFreeze(
     lastDrawn = clock.now();
     if (unparsed === 0) {
       waitingSince = undefined;
-      if (followUp !== undefined) followUp.drewAt ??= lastDrawn;
+      // Recovered only by drawing output parsed since the line: a focus change redraws a row.
+      if (followUp?.parsedSince) followUp.drewAt ??= lastDrawn;
     }
   });
   const parsed = pane.onWriteParsed(() => {
     unparsed = 0;
+    if (followUp !== undefined) followUp.parsedSince = true;
   });
 
   let observer: IntersectionObserver | undefined;

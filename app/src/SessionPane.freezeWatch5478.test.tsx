@@ -212,6 +212,20 @@ describe("[DEBUG-5478] the freeze watchdog", () => {
     expect(said).toMatchObject({ session: 7, isPaused: false, visibilityState: "visible" });
   });
 
+  it("says still frozen when only a redraw of the cursor's row came after the line", async () => {
+    const pane = await openPane();
+
+    act(() => pane.input("typed, never answered"));
+    await later(4_000);
+    expect(froze()).toHaveLength(1);
+    // What a change of focus asks xterm for: one row drawn again, nothing parsed.
+    pane.refresh(pane.buffer.active.cursorY, pane.buffer.active.cursorY);
+    frame();
+    await later(30_000);
+
+    expect(logged[1]).toMatch(/^pane still frozen 30s on: /);
+  });
+
   it("says a pane slow to draw recovered, and how long it took", async () => {
     const pane = await openPane();
     const stuck = vi.spyOn(pane, "write").mockImplementation(() => {});
