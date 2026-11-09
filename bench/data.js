@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794206547596,
+  "lastUpdate": 1794208360826,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -44394,6 +44394,48 @@ window.BENCHMARK_DATA = {
             "value": 102.218474,
             "unit": "ms",
             "extra": "median of 5 runs: 101.138, 101.955, 102.218, 102.239, 102.802 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "9434d0de505acdfd2d7230a3db812d0eb5193e87",
+          "message": "Restart wake: background-turn and own-work warnings, and a quit keeps a chat's temp folder for its wake line (#5782, #5827) (#5915)\n\n* Restart wake: the quit warning, Restart to update and Start fresh warn about a background turn and a chat's own work, and the session-bus ask is tested (#5782)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6XQS9ETN5G731E1E206BQGR\nPurlis-Persona: steward\n\n* Restart wake: a quit keeps a chat's own temporary folder until its next run ends, so its wake line quotes its shells (#5827)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6XQS9ETN5G731E1E206BQGR\nPurlis-Persona: steward",
+          "timestamp": "2026-11-09T05:21:41Z",
+          "tree_id": "79b3c33f07536edb7714472e968d5b396b6afc0f",
+          "url": "https://github.com/purlis/purlis/commit/9434d0de505acdfd2d7230a3db812d0eb5193e87"
+        },
+        "date": 1794208354871,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5087189999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.506, 0.508, 0.509, 0.525, 0.533 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3232595,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.205, 16.270, 16.323, 16.555, 17.004 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.23867000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.633, 101.170, 101.239, 101.744, 102.313 ms"
           }
         ]
       }
