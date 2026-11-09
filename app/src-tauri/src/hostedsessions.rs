@@ -5050,6 +5050,17 @@ impl SessionHost for HostedSessions {
         lock(&self.running).get(&id)?.process
     }
 
+    /// Asked of a host of 1.80 or later only: one before refuses `note_strays`, and its chats'
+    /// strays end only with an end it makes, as before.
+    fn note_strays(&self, id: u32) {
+        let Ok((link, program)) = self.program(id) else {
+            return;
+        };
+        if link.version() >= session::KNOWS_NOTE_STRAYS {
+            link.send(Command::NoteStrays { program });
+        }
+    }
+
     fn when_one_ends(&self, tell: Ends) {
         *lock(&self.ended) = Some(tell);
     }
