@@ -47,6 +47,8 @@ import {
   updateRows,
 } from "./test-inbox";
 import { VAULTS_OWN, runAsk } from "./secretAsk.testkit";
+import { SETTINGS_LINK, type SettingsLinkAsk } from "./settings/links";
+import { NETWORK } from "./settings/GrantedList";
 import type { DispatchPending, InboxUpdate, Shown } from "./bindings";
 
 /**
@@ -594,9 +596,60 @@ describe("answering in place", () => {
     expect(within(recent).queryAllByRole("button")).toEqual([]);
   });
 
+  it("links the held vault's Notice to Settings › Sandbox › Network › Allowed where its sentence sends the person there (#5939)", async () => {
+    const listed =
+      "You kept vault team blocked for this chat, but devops can already use it, so Keep blocked does not stop this chat's runs on it. Remove it in Settings › Sandbox › Network › Allowed to stop them.";
+    core({ answer_run_grant: { said: listed, allowed_list: true } });
+    const ask = { ...runAsk({ offer: "vault" }, VAULTS_OWN), chain: ["devops 4"] };
+    const other = permission(3, "01J0A", ["steward 3"]);
+    const { again, props } = draw([ask, other]);
+    await userEvent.click(screen.getByRole("button", { name: "Keep blocked" }));
+    await waitFor(() => expect(props.onAnswered).toHaveBeenCalled());
+    again([other]);
+    const notice = await waitFor(() => {
+      const found = document.querySelector<HTMLElement>('[data-cause^="answer-said:"]');
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+
+    const followed: SettingsLinkAsk[] = [];
+    const heard = (event: Event) => followed.push((event as CustomEvent<SettingsLinkAsk>).detail);
+    window.addEventListener(SETTINGS_LINK, heard);
+    try {
+      await userEvent.click(within(notice).getByRole("button", { name: "Open the Allowed list" }));
+    } finally {
+      window.removeEventListener(SETTINGS_LINK, heard);
+    }
+    expect(followed).toEqual([
+      { plane: PLANE, link: { group: NETWORK, setting: `${NETWORK}.allowed` } },
+    ]);
+    // A link is a way out beside Dismiss, never in its place.
+    expect(within(notice).getByRole("button", { name: "Dismiss" })).toBeInTheDocument();
+  });
+
+  it("gives the held vault's Notice no link where only the vault's tag holds it (#5939)", async () => {
+    const tagged =
+      "You kept vault team blocked for this chat, but devops can already use it, so Keep blocked does not stop this chat's runs on it. The project's vaults tag it for devops: change that tag to stop them.";
+    core({ answer_run_grant: { said: tagged, allowed_list: false } });
+    const ask = { ...runAsk({ offer: "vault" }, VAULTS_OWN), chain: ["devops 4"] };
+    const other = permission(3, "01J0A", ["steward 3"]);
+    const { again, props } = draw([ask, other]);
+    await userEvent.click(screen.getByRole("button", { name: "Keep blocked" }));
+    await waitFor(() => expect(props.onAnswered).toHaveBeenCalled());
+    again([other]);
+    const notice = await waitFor(() => {
+      const found = document.querySelector<HTMLElement>('[data-cause^="answer-said:"]');
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+
+    expect(notice).toHaveTextContent(tagged);
+    expect(within(notice).queryByRole("button", { name: "Open the Allowed list" })).toBeNull();
+  });
+
   it("says what Keep blocked said, where the persona already holds the vault, in a Notice that stands while other asks wait, until dismissed (#5890)", async () => {
     const held =
-      "You kept vault team blocked for this chat, but devops can already use it, so Keep blocked does not stop this chat's runs on it. Remove it in Settings › Sandbox › Allowed to stop them.";
+      "You kept vault team blocked for this chat, but devops can already use it, so Keep blocked does not stop this chat's runs on it. Remove it in Settings › Sandbox › Network › Allowed to stop them.";
     core({ answer_run_grant: { said: held } });
     const ask = { ...runAsk({ offer: "vault" }, VAULTS_OWN), chain: ["devops 4"] };
     const other = permission(3, "01J0A", ["steward 3"]);

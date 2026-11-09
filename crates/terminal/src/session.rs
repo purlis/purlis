@@ -733,6 +733,11 @@ struct Held {
     waited_for: bool,
     /// [`Spec::ends_what_left_its_group`].
     ends_strays: bool,
+    /// What the program was seen to start outside its group while it ran ([`Program::note_strays`],
+    /// #5806): ended as the program is found ended, since by then they are nobody's descendants
+    /// and no listing finds them.
+    #[cfg(unix)]
+    noted: crate::process::Strays,
 }
 
 impl Held {
@@ -741,6 +746,8 @@ impl Held {
             child,
             waited_for: false,
             ends_strays,
+            #[cfg(unix)]
+            noted: crate::process::Strays::default(),
         }
     }
 
@@ -776,7 +783,7 @@ impl Held {
     /// its group is left, which is nearly always: the wait is only for a group that has someone
     /// in it.
     #[cfg(unix)]
-    fn end_what_it_left(&self) {
+    fn end_what_it_left(&mut self) {
         use rustix::process::{Pid, Signal, WaitId, WaitIdOptions, kill_process_group, waitid};
         let Some(group) = self
             .child
@@ -792,15 +799,27 @@ impl Held {
         if !matches!(waitid(WaitId::Pid(group), options), Ok(Some(_))) {
             return;
         }
+        // What it was seen to start outside its group goes with it (#5806), each only while
+        // the process listed then still holds its id.
+        let noted = std::mem::take(&mut self.noted);
         // Where the group cannot be read, it is hung up and killed all the same: both are
         // nothing to a group with nobody in it, and the wait between them is then short.
-        if crate::process::group_still_runs(group) == Some(false) {
+        let group_runs = crate::process::group_still_runs(group) != Some(false);
+        if !group_runs && noted.is_empty() {
             return;
         }
-        let _ = kill_process_group(group, Signal::HUP);
-        let _ = kill_process_group(group, Signal::CONT);
-        crate::process::wait_for_group_to_go(group, Instant::now() + HANGUP_GRACE);
-        let _ = kill_process_group(group, Signal::KILL);
+        if group_runs {
+            let _ = kill_process_group(group, Signal::HUP);
+            let _ = kill_process_group(group, Signal::CONT);
+        }
+        noted.hang_up();
+        if group_runs {
+            crate::process::wait_for_group_to_go(group, Instant::now() + HANGUP_GRACE);
+            let _ = kill_process_group(group, Signal::KILL);
+        } else {
+            thread::sleep(HANGUP_GRACE);
+        }
+        noted.kill();
     }
 }
 
@@ -810,6 +829,40 @@ pub struct Program {
 }
 
 impl Program {
+    /// **Notes what the program has started outside its process group so far** (#5806), to
+    /// end with it however it ends: on its own, or on a signal from outside, after which what
+    /// it started is handed to the system's first process and no listing finds it. Nothing
+    /// for a program whose spec does not ask ([`Spec::ends_what_left_its_group`]) or that has
+    /// ended. The app calls it when the harness's hook says it started a shell or a monitor,
+    /// so the listing costs nothing between those.
+    #[cfg(unix)]
+    pub fn note_strays(&self) {
+        let leader = {
+            let mut child = lock(&self.child);
+            if !child.ends_strays || !matches!(child.try_wait(), Ok(None)) {
+                return;
+            }
+            child.process_id()
+        };
+        let Some(leader) = leader else { return };
+        // Listed with the program let go of, so nothing that asks after it waits on `ps`.
+        let found = crate::process::Strays::of(leader);
+        let mut child = lock(&self.child);
+        if child.waited_for {
+            // It ended while they were listed, and its end found none noted: they go now.
+            drop(child);
+            found.hang_up();
+            thread::sleep(HANGUP_GRACE);
+            found.kill();
+            return;
+        }
+        child.noted.join(found);
+    }
+
+    /// No process groups to leave here.
+    #[cfg(not(unix))]
+    pub fn note_strays(&self) {}
+
     /// [`Session::process_id`].
     pub fn process_id(&self) -> Option<u32> {
         let mut child = lock(&self.child);
@@ -941,14 +994,19 @@ fn end(child: &Mutex<Held>) {
 /// of, so nothing that asks after it waits on the listing.
 #[cfg(unix)]
 fn strays(child: &Mutex<Held>) -> crate::process::Strays {
-    let leader = {
+    let (leader, mut noted) = {
         let mut child = lock(child);
         if !child.ends_strays || !matches!(child.try_wait(), Ok(None)) {
             return crate::process::Strays::default();
         }
-        child.process_id()
+        // With those noted while it ran (#5806): one whose own parent has gone since is no
+        // descendant of the program's any more.
+        (child.process_id(), std::mem::take(&mut child.noted))
     };
-    leader.map(crate::process::Strays::of).unwrap_or_default()
+    if let Some(leader) = leader {
+        noted.join(crate::process::Strays::of(leader));
+    }
+    noted
 }
 
 /// [`end`], with `strays` read before anything was signalled.
@@ -2099,11 +2157,24 @@ mod tests {
         before: &str,
         ends_strays: bool,
     ) -> (Session, u32, stand_in::Ends) {
+        a_program_with_a_shell_of_its_own_then(
+            before,
+            "while :; do sleep 600 & wait; done",
+            ends_strays,
+        )
+    }
+
+    /// [`a_program_with_a_shell_of_its_own_ending_it`], doing `then` once its shell runs.
+    fn a_program_with_a_shell_of_its_own_then(
+        before: &str,
+        then: &str,
+        ends_strays: bool,
+    ) -> (Session, u32, stand_in::Ends) {
         let mut spec = Spec::new("/bin/sh", SIZE).args([
             "-c",
             &format!(
                 "{before}perl -e 'use POSIX (); POSIX::setsid(); exec @ARGV or die' sleep 600 \
-             </dev/null >/dev/null 2>&1 & echo \"shell $!\"; while :; do sleep 600 & wait; done"
+             </dev/null >/dev/null 2>&1 & echo \"shell $!\"; {then}"
             ),
         ]);
         spec.ends_what_left_its_group = ends_strays;
@@ -2162,6 +2233,65 @@ mod tests {
 
         session.end();
 
+        assert!(alive(shell), "its shell {shell} was ended with the tab");
+    }
+
+    #[test]
+    fn a_program_that_exits_by_itself_takes_the_shell_noted_while_it_ran_with_it() {
+        // #5806: a harness that exits on its own leaves its background shell to the system's
+        // first process, where no listing taken after finds it. Noted on the own-work hook,
+        // while the harness runs, it ends as the exit is found.
+        let (session, shell, _ends) =
+            a_program_with_a_shell_of_its_own_then("", "read _; exit 0", true);
+        session.program().note_strays();
+
+        session.write(b"\r").unwrap();
+
+        assert!(
+            session.wait(Duration::from_secs(5)).unwrap().is_some(),
+            "precondition: the program exits"
+        );
+        assert!(gone_soon(shell), "its shell {shell} outlived the program");
+    }
+
+    #[test]
+    fn a_program_ended_by_a_hangup_from_outside_takes_the_shell_noted_while_it_ran_with_it() {
+        // A terminal closed under the harness, or a `kill -HUP` from elsewhere: nothing of the
+        // app's ended it, so nothing read its strays before it went.
+        let (session, shell, _ends) =
+            a_program_with_a_shell_of_its_own_then("", "while :; do sleep 600 & wait; done", true);
+        let program = session.program();
+        program.note_strays();
+        let pid = session.process_id().expect("a running program has a pid");
+
+        rustix::process::kill_process(
+            rustix::process::Pid::from_raw(pid as i32).expect("a pid"),
+            rustix::process::Signal::HUP,
+        )
+        .expect("the hangup is sent");
+
+        assert!(
+            session.wait(Duration::from_secs(5)).unwrap().is_some(),
+            "precondition: the program ends on the hangup"
+        );
+        assert!(gone_soon(shell), "its shell {shell} outlived the program");
+    }
+
+    #[test]
+    fn a_person_s_own_shell_notes_nothing_and_leaves_its_jobs_running_when_it_exits() {
+        // Only a chat's harness asks for its strays to end with it (#5749): a tab's shell that
+        // `setsid`s a job and exits leaves the job running, noted or not.
+        let (session, shell, _ends) =
+            a_program_with_a_shell_of_its_own_then("", "read _; exit 0", false);
+        session.program().note_strays();
+
+        session.write(b"\r").unwrap();
+
+        assert!(
+            session.wait(Duration::from_secs(5)).unwrap().is_some(),
+            "precondition: the program exits"
+        );
+        thread::sleep(Duration::from_millis(800));
         assert!(alive(shell), "its shell {shell} was ended with the tab");
     }
 

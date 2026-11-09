@@ -1330,8 +1330,16 @@ const GONE_WITHIN: std::time::Duration = std::time::Duration::from_secs(10);
 /// to `runs/shell.<its own pid>`, and stays running.
 #[cfg(unix)]
 fn a_plane_whose_harness_leaves_a_shell() -> Plane {
+    a_plane_whose_harness_leaves_a_shell_then("sleep 600")
+}
+
+/// [`a_plane_whose_harness_leaves_a_shell`], whose stand-in does `then` once its shell runs,
+/// in place of staying. `@RUNS@` in `then` is the plane's `runs` folder, quoted.
+#[cfg(unix)]
+fn a_plane_whose_harness_leaves_a_shell_then(then: &str) -> Plane {
     let plane = Plane::new();
     let runs = plane.root.join("runs");
+    let then = then.replace("@RUNS@", &format!("{runs:?}"));
     let program = stand_in::claude_code(
         plane._dir.path(),
         "claude-with-a-shell",
@@ -1340,7 +1348,7 @@ fn a_plane_whose_harness_leaves_a_shell() -> Plane {
              perl -e 'use POSIX (); POSIX::setsid(); exec @ARGV or die' sleep 600 \
              </dev/null >/dev/null 2>&1 &\n\
              echo $! > {runs:?}/.shell.$$ && mv {runs:?}/.shell.$$ {runs:?}/shell.$$\n\
-             sleep 600\n"
+             {then}\n"
         ),
     );
     std::fs::write(
@@ -1526,6 +1534,118 @@ fn a_shell_a_chat_started_in_a_session_of_its_own_ends_when_the_next_host_settle
         "the chat's shell {shell} still runs {GONE_WITHIN:?} after the next host settled what \
          the crashed one left"
     );
+    planes.close(&id).expect("it closes");
+}
+
+/// A stand-in's end: it waits for its plane's `runs/go`, then exits on its own.
+#[cfg(unix)]
+const LETS_GO_THEN_EXITS: &str = "while [ ! -e @RUNS@/go ]; do sleep 0.05; done; exit 0";
+
+/// How long the window is given to note a chat's strays once its tool's hook is heard: the
+/// note is listed on a thread of its own, one `ps` run on macOS.
+#[cfg(unix)]
+const NOTED_WITHIN: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Chat `chat`'s tool says it started a background shell, as Claude Code's hook does when it
+/// starts one (#5750), and the window is given [`NOTED_WITHIN`] to note what that left.
+#[cfg(unix)]
+fn its_tool_says_it_started_its_shell(held: &Held, chat: u32) {
+    its_tool_starts(
+        held,
+        chat,
+        purlis_core::ownwork::pieces::Piece::new(
+            purlis_core::ownwork::pieces::Kind::Shell,
+            "b5806",
+            "sleep 600",
+        )
+        .expect("a piece"),
+    );
+    std::thread::sleep(NOTED_WITHIN);
+}
+
+/// #5806: a harness that exits on its own, with its background shell still running, used to
+/// leave the shell to the system's first process: nothing the app ended, so nothing read it
+/// before it was nobody's descendant. Noted as the tool's hook said it started, it goes as the
+/// harness's end is found. Brought back after, the chat finds no shell of its last run's.
+#[cfg(unix)]
+#[test]
+fn a_shell_left_by_a_harness_that_exits_on_its_own_ends_with_it_and_stays_gone_across_the_quit() {
+    // The stand-in waits for its plane's `runs/go`, which the test writes once the shell is
+    // noted, and exits.
+    let plane = a_plane_whose_harness_leaves_a_shell_then(LETS_GO_THEN_EXITS);
+    let _cleanup = LeavesNoShell(&plane);
+    let (planes, id, held, chat, shell) = a_chat_with_a_shell_of_its_own(&plane);
+    its_tool_says_it_started_its_shell(&held, chat);
+
+    std::fs::write(plane.root.join("runs").join("go"), "").expect("the harness is let go");
+
+    assert!(
+        goes(shell),
+        "the shell {shell} of a harness that exited on its own still runs {GONE_WITHIN:?} after"
+    );
+    let _at_quit = quits_cleanly(&held);
+    bounded("the app that quit, closing its project", move || {
+        drop(held);
+        planes.close(&id).expect("it closes");
+        drop(planes);
+    });
+    assert!(
+        !runs(shell),
+        "the shell {shell} came back by the quit after"
+    );
+}
+
+/// #5806: a harness hung up on from outside (its terminal closed under it, a `kill -HUP` from
+/// elsewhere): nothing of the app's ended it, and its shell, noted while it ran, goes with it.
+#[cfg(unix)]
+#[test]
+fn a_shell_left_by_a_harness_hung_up_on_from_outside_ends_with_it() {
+    let plane = a_plane_whose_harness_leaves_a_shell();
+    let _cleanup = LeavesNoShell(&plane);
+    let (planes, id, held, chat, shell) = a_chat_with_a_shell_of_its_own(&plane);
+    its_tool_says_it_started_its_shell(&held, chat);
+    let harness = held
+        .chats()
+        .sessions()
+        .process_id(chat)
+        .expect("its harness runs");
+
+    let sent = purlis_core::forklock::status(
+        std::process::Command::new("/bin/kill").args(["-HUP", &harness.to_string()]),
+    )
+    .expect("kill runs");
+    assert!(sent.success(), "the hangup is sent");
+
+    assert!(
+        goes(shell),
+        "the shell {shell} of a harness hung up on from outside still runs {GONE_WITHIN:?} after"
+    );
+    planes.close(&id).expect("it closes");
+}
+
+/// #5806: what a chat's harness started that is NOT out of its group (a plain child of its
+/// own) is the group's, and noting its strays touches nothing of the person's: a process that
+/// is no descendant of the harness's runs on after the harness's end.
+#[cfg(unix)]
+#[test]
+fn noting_a_chat_s_strays_ends_nothing_that_is_not_its_harness_s() {
+    let plane = a_plane_whose_harness_leaves_a_shell_then(LETS_GO_THEN_EXITS);
+    let _cleanup = LeavesNoShell(&plane);
+    let mut stranger =
+        purlis_core::forklock::spawn(std::process::Command::new("/bin/sleep").arg("600"))
+            .expect("a process of the person's own");
+    let (planes, id, held, chat, shell) = a_chat_with_a_shell_of_its_own(&plane);
+    its_tool_says_it_started_its_shell(&held, chat);
+
+    std::fs::write(plane.root.join("runs").join("go"), "").expect("the harness is let go");
+
+    assert!(goes(shell), "precondition: the harness's own shell goes");
+    assert!(
+        runs(stranger.id()),
+        "a process that was never the harness's was ended with it"
+    );
+    let _ = stranger.kill();
+    let _ = stranger.wait();
     planes.close(&id).expect("it closes");
 }
 

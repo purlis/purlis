@@ -1639,6 +1639,19 @@ fn the_forms_a_run_grant_refuses_by_name_leave_curl_and_the_usual_tools_offered(
         "mariadb",
         "mysqldump",
         "mysqladmin",
+        // and the rest of the clients, whatever the server-side names refused beside them
+        // (#5931)
+        "mariadb-dump",
+        "mariadb-admin",
+        "mysqlcheck",
+        "mariadb-check",
+        "mysqlshow",
+        "mariadb-show",
+        "mysqlimport",
+        "mariadb-import",
+        "mysqlbinlog",
+        "mariadb-binlog",
+        "mysql-8.0",
     ] {
         assert!(!super::not_for_a_run_grant(name), "{name}");
     }

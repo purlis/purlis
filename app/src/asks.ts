@@ -380,6 +380,9 @@ export async function answerTaken(
   /** What the source said of the answer, for the person to read beside it: Keep blocked on a
    *  vault the chat's persona already holds says it does not stop the chat's runs (#5890). */
   said?: string;
+  /** Whether `said` sends the person to Settings › Sandbox › Network › Allowed, so its Notice links there
+   *  (#5939). */
+  allowedList?: true;
 }> {
   const path = ask.answer;
   if (path.via === "in-its-pane") return { refused: IN_ITS_CHAT, live: false };
@@ -391,12 +394,14 @@ export async function answerTaken(
   let live = false;
   let opened = false;
   let said: string | undefined;
+  let allowedList = false;
   /** Keeps what a source said of an answer that went through, and answers as it did. */
-  const saying = <T extends { said: string } | null>(
+  const saying = <T extends { said: string; allowed_list: boolean } | null>(
     done: { status: "ok"; data: T } | { status: "error"; error: string },
   ): { status: "ok" } | { status: "error"; error: string } => {
     if (done.status === "error") return done;
     said = done.data?.said;
+    allowedList = done.data?.allowed_list === true;
     return { status: "ok" };
   };
   const sent = async (): Promise<{ status: "ok" } | { status: "error"; error: string }> => {
@@ -716,6 +721,7 @@ export async function answerTaken(
         live,
         ...(opened ? { opened } : {}),
         ...(said === undefined ? {} : { said }),
+        ...(said !== undefined && allowedList ? { allowedList: true as const } : {}),
       }
     : { refused: answer.error, live: false };
 }

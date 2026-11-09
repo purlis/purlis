@@ -180,13 +180,13 @@ fn say(writer: &mut dyn Write, frame: &Frame) {
     }
 }
 
-/// What the asker of `tool` on pool `pool` is told while the person is asked.
-fn asked_said(tool: &str, pool: &str) -> String {
+/// What the asker of `tool` on pool `pool` is told while the person is asked, in the project at
+/// `root`, for at most `within`: where they answer it (#6008).
+fn asked_said(tool: &str, pool: &str, root: &Path, within: Duration) -> String {
     format!(
         "this chat runs on pool {pool}'s runner, so purlis asked the person whether {tool} may be \
-         sent its vault value for this run: this command waits for their answer, at most \
-         {within}. Run it in the background to carry on meanwhile",
-        within = waits_at_most_said()
+         sent its vault value for this run; {}. Run it in the background to carry on meanwhile",
+        purlis_core::askwait::waiting_said(root, within)
     )
 }
 
@@ -611,7 +611,12 @@ pub fn answered(
     (waiting.moved)();
     say(
         writer,
-        &Frame::Note(asked_said(&checked.tool.name, gate.pool)),
+        &Frame::Note(asked_said(
+            &checked.tool.name,
+            gate.pool,
+            gate.root,
+            waiting.within,
+        )),
     );
     let began = Instant::now();
     let gave_up = |why: String| {

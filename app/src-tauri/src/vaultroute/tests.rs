@@ -837,10 +837,12 @@ fn keep_blocked_on_a_vault_allowed_for_the_persona_says_its_runs_still_go_and_po
 
     assert_eq!(held.by, purlis_core::askoutcome::HeldBy::AllowedList);
     assert_eq!(held.persona, "steward");
+    // The sentence sends the person to the Allowed list, so the Notice links there (#5939).
+    assert!(held.allowed_list);
     assert_eq!(
         held.said,
         "You kept vault devops blocked for this chat, but steward can already use it, so Keep blocked does not stop this \
-         chat's runs on it. Remove it in Settings › Sandbox › Allowed to stop them."
+         chat's runs on it. Remove it in Settings › Sandbox › Network › Allowed to stop them."
     );
 }
 
@@ -849,6 +851,8 @@ fn keep_blocked_on_a_vault_tagged_for_the_persona_says_its_runs_still_go_and_nam
     let project = project();
     let held = kept_blocked_but_held(project.path(), Some("devops"), "devops").expect("held");
     assert_eq!(held.by, purlis_core::askoutcome::HeldBy::Tag);
+    // Only the tag holds it: nothing to remove in the Allowed list, so no link there (#5939).
+    assert!(!held.allowed_list);
     assert_eq!(
         held.said,
         "You kept vault devops blocked for this chat, but devops can already use it, so Keep blocked does not stop this \
@@ -885,10 +889,12 @@ fn keep_blocked_on_a_vault_both_tagged_and_allowed_points_at_the_tag_which_remov
         .expect("a row of the Allowed list");
     let held = kept_blocked_but_held(root, Some("devops"), "devops").expect("held");
     assert_eq!(held.by, purlis_core::askoutcome::HeldBy::Tag);
+    // The sentence names the Allowed list too, so the Notice links there (#5939).
+    assert!(held.allowed_list);
     assert_eq!(
         held.said,
         "You kept vault devops blocked for this chat, but devops can already use it, so Keep blocked does not stop this \
          chat's runs on it. The project's vaults tag it for devops: change that tag \
-         to stop them. It is in Settings › Sandbox › Allowed too."
+         to stop them. It is in Settings › Sandbox › Network › Allowed too."
     );
 }
