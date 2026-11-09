@@ -90,9 +90,16 @@ mod tests {
             both.is_empty(),
             "listed as value-free and value-bearing: {both:?}"
         );
+        // The `e2e` build lists `e2e_only` too (`every_listed`), so the count it must reach
+        // has them in it.
+        let e2e = if cfg!(feature = "e2e") {
+            e2e_only().len()
+        } else {
+            0
+        };
         assert_eq!(
             every_listed().len(),
-            free.len() + values.len(),
+            free.len() + values.len() + e2e,
             "a command is listed twice"
         );
     }
