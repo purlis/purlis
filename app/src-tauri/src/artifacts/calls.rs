@@ -73,6 +73,29 @@ pub(super) fn listed(declared: Option<&data::Declared>) -> Vec<ArtifactQuery> {
         .collect()
 }
 
+impl Artifacts {
+    /// What webview `label`'s bar lists of its page's queries as it is served now, and whether
+    /// it may call its plane-scoped ones.
+    pub(super) fn queries_of(
+        &self,
+        label: &str,
+        config: Option<&Path>,
+    ) -> (Vec<ArtifactQuery>, bool) {
+        let served = self.served();
+        let Some(one) = served.get(label) else {
+            return (Vec::new(), false);
+        };
+        let plane = approval::plane_granted(
+            config,
+            &one.of.dir,
+            &one.of.folder,
+            &one.of.pin,
+            &one.snapshot,
+        );
+        (listed(one.declared.as_ref()), plane)
+    }
+}
+
 /// **The answer to a page calling `asked` with `params`**, gated again at the ask.
 pub(super) fn answer<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
