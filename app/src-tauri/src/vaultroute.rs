@@ -724,32 +724,53 @@ pub async fn keep_vault_blocked(
     // Off the window's thread (#5424): a Run grant's ask open on the vault is answered Don't
     // allow, and that answer is audited on disk.
     crate::off_the_window("keeping the vault blocked", move || {
-        // Read before the press, so a chat that closes meanwhile is still the chat it was.
-        let persona = held
-            .chats()
-            .open_now()
-            .into_iter()
-            .find(|open| open.session == session)
-            .and_then(|open| open.persona);
-        keep_blocked_pressed(&held, network.as_ref(), session, &vault);
-        if let Some(kept) = kept_blocked_but_held(held.root(), persona.as_deref(), &vault) {
-            return Ok(Some(told_kept_but_held(
-                &held,
-                session,
-                &vault,
-                kept,
-                reason.as_deref(),
-            )));
-        }
-        crate::askoutcome::kept_blocked(
-            held.chats(),
+        Ok(kept_vault_blocked_said(
+            &held,
+            network.as_ref(),
             session,
-            (crate::sandboxing::GrantWhat::Vault, &vault),
+            &vault,
             reason.as_deref(),
-        );
-        Ok(None)
+        ))
     })
     .await
+}
+
+/// [`keep_vault_blocked`]'s work: whether the chat's persona holds `vault` is decided **once, before
+/// the press** (review of #5934), from the chat as it runs now, so a chat that closes meanwhile is
+/// still the chat it was, and every run the press answers hears the same as the chat. Answers
+/// what the person reads beside the press, where the persona holds the vault.
+pub(crate) fn kept_vault_blocked_said(
+    held: &crate::planes::Held,
+    network: Option<&purlis_core::sandboxblock::record::Record>,
+    session: u32,
+    vault: &str,
+    reason: Option<&str>,
+) -> Option<VaultAnswered> {
+    let persona = held
+        .chats()
+        .open_now()
+        .into_iter()
+        .find(|open| open.session == session)
+        .and_then(|open| open.persona);
+    let kept = kept_blocked_but_held(held.root(), persona.as_deref(), vault);
+    let back = keep_blocked_pressed(held, network, session, vault, kept.as_ref());
+    if let Some(kept) = kept {
+        return Some(told_kept_but_held(
+            held,
+            session,
+            vault,
+            kept,
+            reason,
+            back.told.contains(&session),
+        ));
+    }
+    crate::askoutcome::kept_blocked(
+        held.chats(),
+        session,
+        (crate::sandboxing::GrantWhat::Vault, vault),
+        reason,
+    );
+    None
 }
 
 /// **Audits each Run grant Keep blocked took back** (#5617), as one removed from the Allowed list
@@ -784,18 +805,32 @@ pub(crate) fn audit_kept_back(
 /// asks open on it are then answered with [`crate::planes::Held::run_answers`] held, so this never
 /// lands between an Always allow's tool line and its answer; a grant a press under way gave
 /// meanwhile is taken back then.
+///
+/// `held_by`, where the chat's persona holds the vault (#5890): each run it answers is told so, as
+/// the chat is, never that it was kept blocked.
 pub(crate) fn keep_blocked_pressed(
     held: &crate::planes::Held,
     network: Option<&purlis_core::sandboxblock::record::Record>,
     session: u32,
     vault: &str,
-) -> Vec<(u32, String)> {
+    held_by: Option<&KeptButHeld>,
+) -> KeptBack {
     held.vault_refusals().keep_blocked(session, vault);
     // Its asks are answered below, under the answers' lock.
     let kept = held.secret_asks().keep_vault_blocked_taking(session, vault);
     audit_kept_back(held, &kept.taken_back);
     let _one = held.run_answers(session);
-    vault_kept_blocked(held, network, session, vault)
+    vault_kept_blocked(held, network, session, vault, held_by)
+}
+
+/// What [`vault_kept_blocked`] did to the asks open on the vault.
+#[derive(Debug, Default)]
+pub(crate) struct KeptBack {
+    /// The asks that stayed up, and why.
+    pub stayed: Vec<(u32, String)>,
+    /// The chats a run it answered was told that the persona holds the vault (#5890): told
+    /// already, so the press tells them nothing more.
+    pub told: Vec<u32>,
 }
 
 /// What Keep blocked does to what the app holds for chat `session` and `vault`: its later tries
@@ -817,9 +852,10 @@ pub(crate) fn vault_kept_blocked(
     network: Option<&purlis_core::sandboxblock::record::Record>,
     session: u32,
     vault: &str,
-) -> Vec<(u32, String)> {
+    held_by: Option<&KeptButHeld>,
+) -> KeptBack {
     held.vault_refusals().keep_blocked(session, vault);
-    let mut stayed = Vec::new();
+    let mut back = KeptBack::default();
     let kept = held.secret_asks().keep_vault_blocked_taking(session, vault);
     audit_kept_back(held, &kept.taken_back);
     for id in kept.open {
@@ -828,7 +864,9 @@ pub(crate) fn vault_kept_blocked(
             network,
             id,
             crate::secretasks::RunGrantPress::Refuse,
+            held_by,
         );
+        let answered = answered.map(|told| back.told.extend(told));
         // Keep blocked through a vault's own ask keeps the vault blocked in its turn, and that
         // answers the rest: an ask closed by then did not stay up.
         let still_open = || {
@@ -841,10 +879,10 @@ pub(crate) fn vault_kept_blocked(
             && still_open()
         {
             tracing::warn!("purlis: a run grant's ask stayed up after Keep blocked: {why}");
-            stayed.push((id, why));
+            back.stayed.push((id, why));
         }
     }
-    stayed
+    back
 }
 
 /// **Keep blocked on a vault the chat's persona already holds** (#5801): what the person and
@@ -868,21 +906,32 @@ pub(crate) fn told_kept_but_held(
     vault: &str,
     kept: KeptButHeld,
     reason: Option<&str>,
+    told_already: bool,
 ) -> VaultAnswered {
-    held.chats().tell_outcome(
-        session,
-        purlis_core::askoutcome::Outcome {
-            about: purlis_core::askoutcome::About::Vault {
-                vault: vault.to_owned(),
-            },
-            answer: purlis_core::askoutcome::Answer::KeptBlockedButHeld {
-                persona: kept.persona,
-                by: kept.by,
-                reason: purlis_core::askoutcome::reason(reason),
-            },
-        },
-    );
+    // A chat a run of it was told this, now or at its turn's end, is not told it twice.
+    if !told_already {
+        held.chats()
+            .tell_outcome(session, kept_but_held_outcome(vault, &kept, reason));
+    }
     VaultAnswered { said: kept.said }
+}
+
+/// The one line a chat is told of Keep blocked on `vault`, which its persona holds (#5801).
+pub(crate) fn kept_but_held_outcome(
+    vault: &str,
+    kept: &KeptButHeld,
+    reason: Option<&str>,
+) -> purlis_core::askoutcome::Outcome {
+    purlis_core::askoutcome::Outcome {
+        about: purlis_core::askoutcome::About::Vault {
+            vault: vault.to_owned(),
+        },
+        answer: purlis_core::askoutcome::Answer::KeptBlockedButHeld {
+            persona: kept.persona.clone(),
+            by: kept.by,
+            reason: purlis_core::askoutcome::reason(reason),
+        },
+    }
 }
 
 /// **Where Keep blocked holds nothing, since `persona` may already use `vault`** (#5801; ADR

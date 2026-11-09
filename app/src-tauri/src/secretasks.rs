@@ -184,9 +184,9 @@ pub fn run_grant_answered(
     network: Option<&purlis_core::sandboxblock::record::Record>,
     id: u32,
     press: RunGrantPress,
-) -> Result<(), String> {
-    // Keep blocked on the refused vault's Notice tells the chat itself where its persona holds it.
-    run_grant_carried_out(held, network, id, press, RunGiven::default()).map(|_| ())
+    held_by: Option<&crate::vaultroute::KeptButHeld>,
+) -> Result<Vec<u32>, String> {
+    run_grant_carried_out(held, network, id, press, RunGiven::default(), held_by)
 }
 
 /// [`run_grant_given`] with typed values alone, as the tests press.
@@ -252,20 +252,33 @@ pub fn run_grant_given(
             .keep_vault_blocked_taking(open.bound.chat, &open.bound.vault);
         crate::vaultroute::audit_kept_back(held, &kept.taken_back);
     }
-    let _one = held.run_answers(open.bound.chat);
     // On a vault its persona holds by now, the chat and the person hear what Keep blocked on the
-    // refused vault's Notice tells them (#5890).
-    Ok(
-        run_grant_carried_out(held, network, id, press, given)?.map(|kept| {
-            crate::vaultroute::told_kept_but_held(
-                held,
-                open.bound.chat,
-                &open.bound.vault,
-                kept,
-                None,
-            )
-        }),
-    )
+    // refused vault's Notice tells them (#5890): decided once, here, for every run it answers.
+    let held_by = (press == RunGrantPress::Refuse
+        && matches!(
+            open.offer,
+            purlis_core::secrets::ask::run::Offer::Vault { .. }
+        ))
+    .then(|| {
+        crate::vaultroute::kept_blocked_but_held(
+            held.root(),
+            Some(&open.persona),
+            &open.bound.vault,
+        )
+    })
+    .flatten();
+    let _one = held.run_answers(open.bound.chat);
+    let told = run_grant_carried_out(held, network, id, press, given, held_by.as_ref())?;
+    Ok(held_by.map(|kept| {
+        crate::vaultroute::told_kept_but_held(
+            held,
+            open.bound.chat,
+            &open.bound.vault,
+            kept,
+            None,
+            told.contains(&open.bound.chat),
+        )
+    }))
 }
 
 /// [`run_grant_given`]'s work, with [`crate::planes::Held::run_answers`] held by its caller: the
@@ -273,17 +286,17 @@ pub fn run_grant_given(
 /// stay stored whatever the person answers, but on Keep blocked and Not now, which store nothing,
 /// and on Don't allow for a vault the persona may not use, which is not this persona's to fill.
 ///
-/// **Keep blocked on a vault's own line, where its persona holds the vault by now** (#5890): the
-/// chat's runs on it are not held, so the line saying it was kept blocked is not told, and how
-/// the persona holds it is answered, for the caller to tell as Keep blocked on the refused vault's
-/// Notice does ([`crate::vaultroute::told_kept_but_held`]). None for every other answer.
+/// **`held_by`, where the press is Keep blocked on a vault its persona holds by now** (#5890):
+/// the run's chat is nudged with the line that says so, never that it was kept blocked, as a
+/// chat is on the refused vault's Notice. Answers the chats it nudged so.
 fn run_grant_carried_out(
     held: &crate::planes::Held,
     network: Option<&purlis_core::sandboxblock::record::Record>,
     id: u32,
     press: RunGrantPress,
     given: RunGiven,
-) -> Result<Option<crate::vaultroute::KeptButHeld>, String> {
+    held_by: Option<&crate::vaultroute::KeptButHeld>,
+) -> Result<Vec<u32>, String> {
     use purlis_core::secrets::ask::run::{Audited, Offer, RunAnswer};
     let RunGiven {
         values,
@@ -618,17 +631,14 @@ fn run_grant_carried_out(
             return Err(why);
         }
     };
-    let kept_but_held = (answer == RunAnswer::Refuse && matches!(open.offer, Offer::Vault { .. }))
-        .then(|| {
-            crate::vaultroute::kept_blocked_but_held(
-                held.root(),
-                Some(&open.persona),
-                &open.bound.vault,
-            )
-        })
-        .flatten();
-    if kept_but_held.is_none() {
-        told_each(held, &answered.nudge, &answered.told);
+    let mut told_held = Vec::new();
+    match held_by.filter(|_| answer == RunAnswer::Refuse) {
+        Some(kept) => {
+            let outcome = crate::vaultroute::kept_but_held_outcome(&open.bound.vault, kept, None);
+            told_each(held, &answered.nudge, &outcome);
+            told_held.extend(answered.nudge.iter().copied());
+        }
+        None => told_each(held, &answered.nudge, &answered.told),
     }
     // The needs the person ticked Remember for, once their keys are stored (#5240): only for a
     // key stored here, and as a Secret ask's Fill writes them.
@@ -667,9 +677,16 @@ fn run_grant_carried_out(
     // Keep blocked on the vault's own line holds as a refused vault's does: the chat's later
     // tries raise nothing, and a Run grant's ask open on it is answered Don't allow.
     if answer == RunAnswer::Refuse && matches!(open.offer, Offer::Vault { .. }) {
-        crate::vaultroute::vault_kept_blocked(held, network, open.bound.chat, &open.bound.vault);
+        let back = crate::vaultroute::vault_kept_blocked(
+            held,
+            network,
+            open.bound.chat,
+            &open.bound.vault,
+            held_by,
+        );
+        told_held.extend(back.told);
     }
-    Ok(kept_but_held)
+    Ok(told_held)
 }
 
 /// **Why `link`'s entry may not fill a field of `open`'s notice**, where it may not (#5080): one
