@@ -23,7 +23,7 @@ import {
 } from "./skillStudio";
 import { skill, studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
-import { expectFocusInSight, untilFocusWithin } from "./stories.testkit";
+import { expectFocusInSight, tabInto } from "./stories.testkit";
 import type {
   RouterGradePlan,
   RouterGradeScorecard,
@@ -344,16 +344,6 @@ const meta = {
 
 export default meta;
 type Story = StoryObj<typeof meta>;
-
-/** Tab, until the keyboard is inside `target`, at most `steps` times. */
-async function tabInto(target: () => Element | null, steps = 20): Promise<void> {
-  for (let step = 0; step < steps; step++) {
-    const into = target();
-    if (into !== null && into.contains(document.activeElement)) return;
-    await userEvent.tab();
-  }
-  await untilFocusWithin(target, "the keyboard reaches it by Tab");
-}
 
 /**
  * **Harness skills**: each program's own skills under its name, a plugin's read-only, a program
