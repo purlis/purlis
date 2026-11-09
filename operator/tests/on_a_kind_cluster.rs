@@ -1790,10 +1790,15 @@ async fn admission_refuses_a_bad_allow_list_and_a_claims_wildcard() {
     let writer = purlis_cluster_operator::forge::FORGE_WRITER_ANNOTATION;
     let written_by =
         |forge: serde_json::Value, by: serde_json::Value| -> kube::api::DynamicObject {
+            // No writer said is no annotation at all: an annotation's value is a string.
+            let mut metadata = serde_json::json!({ "name": "e2e-forge-bad" });
+            if !by.is_null() {
+                metadata["annotations"] = serde_json::json!({ writer: by });
+            }
             serde_json::from_value(serde_json::json!({
                 "apiVersion": "runners.purlis.dev/v1alpha1",
                 "kind": "Pool",
-                "metadata": { "name": "e2e-forge-bad", "annotations": { writer: by } },
+                "metadata": metadata,
                 "spec": { "image": runner_image(), "forge": forge },
             }))
             .expect("a pool")
@@ -4809,9 +4814,23 @@ async fn the_operators_token_writes_a_template_and_a_kept_volume_only_as_its_poo
     let name = purlis_cluster_operator::upstream::name_for("e2e-says");
     let admins_templates = Api::<SandboxTemplate>::namespaced(client.clone(), &runners());
     let templates = Api::<SandboxTemplate>::namespaced(as_operator.clone(), &runners());
-    let dry = PostParams {
+    let dry_create = PostParams {
         dry_run: true,
         ..PostParams::default()
+    };
+    // The operator patches its templates, and holds no right to replace one.
+    let dry = PatchParams {
+        dry_run: true,
+        ..PatchParams::default()
+    };
+    let as_patch = |template: SandboxTemplate| {
+        let mut value = serde_json::to_value(template).expect("a template's JSON");
+        if let Some(metadata) = value["metadata"].as_object_mut() {
+            // Neither the fields' managers nor a version it must still be at: only what it says.
+            metadata.remove("managedFields");
+            metadata.remove("resourceVersion");
+        }
+        Patch::Merge(value)
     };
     let image_now = pools.get("e2e-says").await.expect("the pool").spec.image;
     let (repository, _) = image_now.split_once('@').expect("an image by digest");
@@ -4832,7 +4851,7 @@ async fn the_operators_token_writes_a_template_and_a_kept_volume_only_as_its_poo
         ("the link key's step", image_now.as_str(), another.as_str()),
     ] {
         let written = templates
-            .replace(&name, &dry, &with_images(&held, runner, step))
+            .patch(&name, &dry, &as_patch(with_images(&held, runner, step)))
             .await;
         assert!(
             refused_saying(&written, "runs its Pool's image"),
@@ -4869,13 +4888,13 @@ async fn the_operators_token_writes_a_template_and_a_kept_volume_only_as_its_poo
     };
     let upstream_claims = Api::<SandboxClaim>::namespaced(as_operator.clone(), &runners());
     let made = upstream_claims
-        .create(&dry, &in_class(Some("another-class")))
+        .create(&dry_create, &in_class(Some("another-class")))
         .await;
     assert!(
         refused_saying(&made, "storage class its Pool names"),
         "{made:?}"
     );
-    let made = upstream_claims.create(&dry, &in_class(None)).await;
+    let made = upstream_claims.create(&dry_create, &in_class(None)).await;
     assert!(
         !refused_saying(&made, "storage class its Pool names"),
         "{made:?}"
@@ -4911,7 +4930,11 @@ async fn the_operators_token_writes_a_template_and_a_kept_volume_only_as_its_poo
     )
     .await;
     let written = templates
-        .replace(&name, &dry, &with_images(&renewed, &image_now, &image_now))
+        .patch(
+            &name,
+            &dry,
+            &as_patch(with_images(&renewed, &image_now, &image_now)),
+        )
         .await;
     assert!(
         refused_saying(&written, "runs its Pool's image"),
