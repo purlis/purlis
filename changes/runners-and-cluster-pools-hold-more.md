@@ -15,8 +15,8 @@
 - **The cluster operator holds more of what it makes.** Only the operator makes a purlis pool's
   SandboxTemplate or changes its spec; each runner namespace lets its pods out only where a network
   policy lets them (`purlis-deny-egress`); what the operator makes it holds as applied from the
-  first, so a field it stops setting is taken out; and a policy binding that narrows what the
-  policy governs does not put it in force.
+  first, so a field it stops setting is taken out; and a policy binding that gives the policy
+  parameters does not put it in force.
 
 ### Fixed
 
