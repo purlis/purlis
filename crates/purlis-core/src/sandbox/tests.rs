@@ -3344,6 +3344,39 @@ fn every_harness_is_compiled_against_the_plane_as_the_kernel_names_it() {
     assert!(!write.contains(&linked.display().to_string()), "{write}");
 }
 
+#[test]
+fn a_claude_code_chat_is_not_started_where_a_held_git_folder_has_glob_characters_in_its_path() {
+    // Claude Code reads a path in its sandbox settings that holds `*`, `?`, `[` or `]` as a
+    // pattern, so a rule on such a git folder would not hold it as written.
+    for name in ["wt[*]?", "a*b", "q?", "x]"] {
+        let plane = plane_saying(ON);
+        let clone = plane.path().join(name);
+        std::fs::create_dir_all(clone.join(".git/objects")).expect("a git folder");
+        std::fs::create_dir_all(clone.join(".git/refs")).expect("its refs");
+        std::fs::write(clone.join(".git/HEAD"), "ref: refs/heads/main\n").expect("HEAD");
+        std::fs::write(clone.join(".git/config"), "").expect("config");
+        for os in [Os::MacOs, Os::Linux] {
+            let refused = for_start(Harness::ClaudeCode, plane.path(), &machine(os), &|_| true)
+                .expect_err("not started");
+            let NotStarted::GitFolderUnheld(path) = &refused else {
+                panic!("{name} on {os:?}: {refused:?}");
+            };
+            assert!(path.to_string_lossy().contains(name), "{}", path.display());
+            let said = refused.to_string();
+            assert!(said.contains("Rename"), "{said}");
+        }
+    }
+    // A plain name starts as before.
+    let plane = plane_saying(ON);
+    std::fs::create_dir_all(plane.path().join("plain/.git/objects")).expect("a git folder");
+    std::fs::create_dir_all(plane.path().join("plain/.git/refs")).expect("its refs");
+    std::fs::write(plane.path().join("plain/.git/HEAD"), "ref: refs/heads/main\n").expect("HEAD");
+    std::fs::write(plane.path().join("plain/.git/config"), "").expect("config");
+    assert!(
+        for_start(Harness::ClaudeCode, plane.path(), &machine(Os::MacOs), &|_| true).is_ok()
+    );
+}
+
 /// The Claude Code settings a chat in `cwd` of the sandboxed plane at `root` is armed with.
 fn claude_settings_in(root: &Path, cwd: &Path) -> claude::Settings {
     let applied = for_start(Harness::ClaudeCode, root, &machine(Os::MacOs), &|_| true)

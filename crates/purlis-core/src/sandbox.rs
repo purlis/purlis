@@ -1524,6 +1524,11 @@ pub fn git_folders_searched(root: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
+/// **The characters Claude Code reads as a pattern in a path its sandbox settings name**:
+/// measured on 2.1.300, a path holding one is matched as a glob, and writing it as a class
+/// (`[*]`) does not make it literal either.
+pub const PATTERN_CHARACTERS: [char; 4] = ['*', '?', '[', ']'];
+
 /// [`Denied::git_folder_pins`] for a chat of the plane at `root`: what
 /// [`planted::git_folder_pins`] finds in each of [`git_folders_searched`].
 pub fn git_folder_pins_of(root: &Path) -> Vec<PathBuf> {
@@ -6440,6 +6445,10 @@ pub enum NotStarted {
     /// A config's commands change folder or name scripts more often than purlis follows
     /// ([`planted::MOST_MOVES`], [`planted::MOST_NAMED`]), so what they run is not known.
     Unread(Named),
+    /// A repository's git folder a Claude Code chat's sandbox holds as a whole
+    /// ([`Denied::git_folder_pins`]) has a character Claude Code reads as a pattern in its path
+    /// ([`PATTERN_CHARACTERS`]), so no rule purlis writes holds it as written.
+    GitFolderUnheld(PathBuf),
     /// What purlis keeps from a chat could not be told whole ([`Denied::untold`]), and why:
     /// a sandbox compiled from a list that may be short would keep less than purlis means to,
     /// so none is compiled and the chat is not started.
@@ -6634,6 +6643,17 @@ impl NotStarted {
                  was started. Move that command into a script of its own{}",
                 named.file.display(),
                 named.word,
+                if opt_out {
+                    ", or start this chat without the sandbox from the new-chat picker."
+                } else {
+                    "."
+                }
+            ),
+            Self::GitFolderUnheld(path) => format!(
+                "{lead}, and the repository at {} has `*`, `?`, `[` or `]` in its path, which \
+                 Claude Code's sandbox reads as a pattern, so purlis cannot hold its git folder \
+                 and nothing was started. Rename that folder{}",
+                path.display(),
                 if opt_out {
                     ", or start this chat without the sandbox from the new-chat picker."
                 } else {
@@ -7039,9 +7059,23 @@ pub(crate) fn applied_of(
     // a Claude Code chat purlis wraps finds none (#4083).
     let pinned;
     let compiled = if harness == Harness::ClaudeCode && !wrapped {
+        let pins = git_folder_pins_of(root);
+        // Claude Code reads a path holding a pattern's character as a pattern: such a git folder
+        // would not be held as written, so the chat is not started (fail closed).
+        if let Some(unheld) = pins.iter().find(|pin| {
+            pin.to_string_lossy()
+                .contains(|c| PATTERN_CHARACTERS.contains(&c))
+        }) {
+            let repository = unheld
+                .ancestors()
+                .find(|above| above.file_name().is_some_and(|name| name == ".git"))
+                .and_then(Path::parent)
+                .unwrap_or(unheld);
+            return Err(NotStarted::GitFolderUnheld(repository.to_path_buf()));
+        }
         pinned = Compiled {
             denied: Denied {
-                git_folder_pins: git_folder_pins_of(root),
+                git_folder_pins: pins,
                 ..compiled.denied.clone()
             },
             ..compiled.clone()
@@ -7904,6 +7938,7 @@ pub fn ahead_decided(
             | NotStarted::Uncompilable(_)
             | NotStarted::CoversItsGround { .. }
             | NotStarted::Unread(_)
+            | NotStarted::GitFolderUnheld(_)
             | NotStarted::KeptUntold(_)
             | NotStarted::PlaneUnreadable
             | NotStarted::PlaneMissing
