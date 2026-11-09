@@ -1268,7 +1268,7 @@ fn what_a_source_has_that_no_token_takes_is_listed() {
 }
 
 #[test]
-fn a_base16_scheme_imports_tuned_to_read_and_says_only_its_own_box_edge() {
+fn a_base16_scheme_imports_tuned_to_read_with_no_warnings() {
     let rig = Rig::new();
     let source = rig.fixture("harbor.yaml");
     let themes = rig.themes();
@@ -1281,17 +1281,7 @@ fn a_base16_scheme_imports_tuned_to_read_and_says_only_its_own_box_edge() {
     ]);
 
     assert_eq!(ran.code, 0, "{}", ran.err);
-    // Its control edge, which a text box takes, is under 3:1 on a panel and a dialog: the check
-    // reports it, and the import draws it as the scheme has it (#5979).
-    assert!(
-        ran.out.contains(
-            "warnings (2):\n  border.input on surface.raised: 2.69, under 3; in every workspace \
-             tint too, down to 2.69\n  border.input on surface.overlay: 2.69, under 3; in every \
-             workspace tint too, down to 2.69\n"
-        ),
-        "{}",
-        ran.out
-    );
+    assert!(ran.out.contains("warnings: none\n"), "{}", ran.out);
     assert!(ran.out.contains("consent floors: none held"), "{}", ran.out);
 }
 

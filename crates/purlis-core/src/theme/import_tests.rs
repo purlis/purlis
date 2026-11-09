@@ -1475,19 +1475,8 @@ mod every_shipped_fixture_imports_with_no_avoidable_finding_and_its_hues_apart {
                 "terminal.ansi.bright-black on terminal.background",
             ],
             // Dune's own light blue on its own selected row (#3100), 4.1:1: an update pill's
-            // words under the pointer. Purlis keeps the theme's colours and says so. Its control
-            // edge, which a text box takes, is under 3:1 on a panel and a dialog (#5979).
-            "dune.json" => &[
-                "accent.text on list.selected",
-                "border.input on surface.overlay",
-                "border.input on surface.raised",
-            ],
-            // Its control edge, which a text box takes, is under 3:1 on a panel and a dialog
-            // (#5979): the check says so, and the import draws the edge as it found it.
-            "harbor.yaml" => &[
-                "border.input on surface.overlay",
-                "border.input on surface.raised",
-            ],
+            // words under the pointer. Purlis keeps the theme's colours and says so.
+            "dune.json" => &["accent.text on list.selected"],
             _ => &[],
         };
         let distinct: BTreeSet<&str> = found.iter().map(String::as_str).collect();

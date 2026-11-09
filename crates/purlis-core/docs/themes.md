@@ -1212,6 +1212,7 @@ Tuned after the table (#2589): a VS Code theme names a colour for nearly every r
 | `selection.text` | when the theme's `selection.background` is filled and the table left it: `editor.foreground`, `foreground` |
 | `text.muted` | the one of `editorLineNumber.foreground`, `disabledForeground` that reads most on `surface.base` |
 | `text.faint` | left out when it reads louder than `text.quiet` on `surface.base` |
+| `border.input` | when the table left it and it does not read at 3:1 on a box's grounds: toward `editor.foreground`, then `foreground` |
 
 Its `tokenColors` fill the syntax tokens. A rule's scope fills a token when it is one of the
 token's scopes or under one (`keyword.control` is `keyword`'s), the nearest scope winning and,
@@ -1342,6 +1343,7 @@ Tuned after the table (#2589), in this order. base16 makes some roles one colour
 | `terminal.ansi.bright-black` | toward `base04`, then `base05` |
 | `text.secondary` | toward `base05` |
 | `placeholder` | toward `base05` |
+| `border.input` | when the table left it and it does not read at 3:1 on a box's grounds: toward `base05` |
 | `danger.base` | toward `base05` |
 | `accent.base` | toward `base05` |
 | `focus.ring` | toward `base05` |
@@ -1502,6 +1504,7 @@ Tuned as a base16 scheme is, after the table (#2589):
 | `terminal.ansi.bright-black` | toward `base04`, then `base05` |
 | `text.secondary` | toward `base05` |
 | `placeholder` | toward `base05` |
+| `border.input` | when the table left it and it does not read at 3:1 on a box's grounds: toward `base05` |
 | `danger.base` | toward `base05` |
 | `accent.base` | toward `base05` |
 | `focus.ring` | toward `base05` |
@@ -1634,6 +1637,7 @@ Tuned after the table (#2589). The terminal's own colours (its background, its w
 | `selection.text` | when the theme's `selection.background` is filled and the table left it: `Foreground Color` |
 | `text.muted` | toward `Foreground Color` |
 | `syntax.comment` | toward `Foreground Color` |
+| `border.input` | when the table left it and it does not read at 3:1 on a box's grounds: toward `Foreground Color` |
 | `danger.base` | toward `Foreground Color` |
 | `accent.base` | toward `Foreground Color` |
 | `focus.ring` | toward `Foreground Color` |
@@ -1754,6 +1758,7 @@ Tuned as an iTerm2 preset is, after the table (#2589):
 | `selection.text` | when the theme's `selection.background` is filled and the table left it: `foreground` |
 | `text.muted` | toward `foreground` |
 | `syntax.comment` | toward `foreground` |
+| `border.input` | when the table left it and it does not read at 3:1 on a box's grounds: toward `foreground` |
 | `danger.base` | toward `foreground` |
 | `accent.base` | toward `foreground` |
 | `focus.ring` | toward `foreground` |

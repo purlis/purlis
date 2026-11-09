@@ -981,6 +981,12 @@ pub enum Recipe {
     /// Left out when it reads louder on the window than `other`, so it follows the tier above
     /// it: a fainter tier is never drawn louder than the one it sits under.
     NoLouderThan(&'static str),
+    /// **A box's edge the source leaves to its control edge** (#4475, #5979): when that does not
+    /// read at its floor on every ground a box stands on (the check's reported pairs), the
+    /// nearest point on the way toward each of these keys in turn, a hundredth of a step at a
+    /// time, that does. A tuned import says nothing of its boxes' edges, and an edge that reads
+    /// is left as the source has it.
+    Edged(&'static [&'static str]),
 }
 
 /// The points [`Recipe::Toward`] tries on each step of its way.
@@ -1159,6 +1165,13 @@ pub fn recipes(kind: SourceKind) -> Vec<(&'static str, Recipe)> {
         SourceKind::Zip | SourceKind::DesignTokens => (&[], &[], &[]),
     };
     let mut out = own.to_vec();
+    let words: &'static [&'static str] = match kind {
+        SourceKind::Vscode => &["editor.foreground", "foreground"],
+        _ => foreground,
+    };
+    if !words.is_empty() {
+        out.push(("border.input", Recipe::Edged(words)));
+    }
     if !foreground.is_empty() {
         for token in HUES.iter().chain(ansi) {
             out.push((*token, Recipe::Toward(foreground)));
@@ -1197,6 +1210,10 @@ pub fn recipes_markdown(kind: SourceKind) -> String {
             Recipe::NoLouderThan(other) => {
                 format!("left out when it reads louder than `{other}` on `surface.base`")
             }
+            Recipe::Edged(keys) => format!(
+                "when the table left it and it does not read at 3:1 on a box's grounds: toward {}",
+                quoted(keys)
+            ),
         };
         out.push_str(&format!("| `{token}` | {said} |\n"));
     }
@@ -1290,6 +1307,17 @@ fn tune(
                     tokens.insert(token.to_owned(), named(key, hex));
                 }
             }
+            Recipe::Edged(keys) => {
+                if tokens.contains_key(token) {
+                    continue;
+                }
+                let Some(theme) = resolved(tokens) else {
+                    return;
+                };
+                if let Some(edge) = edged(&theme, token, keys, look) {
+                    tokens.insert(token.to_owned(), Value::from(edge));
+                }
+            }
             Recipe::NoLouderThan(other) => {
                 if !tokens.contains_key(token) {
                     continue;
@@ -1304,6 +1332,37 @@ fn tune(
             }
         }
     }
+}
+
+/// The point [`Recipe::Edged`] takes for `token` in `theme`: `None` when its own colour reads on
+/// every ground the check's reported pairs measure it on, or when no point on the way does.
+fn edged(theme: &ResolvedTheme, token: &'static str, keys: &[&str], look: &Look) -> Option<String> {
+    let reads = |drawn: &ResolvedTheme| {
+        super::check::REPORTED
+            .iter()
+            .filter(|pair| pair.front == token)
+            .all(|pair| super::check::ratio(drawn, pair).is_none_or(|ratio| ratio >= pair.floor))
+    };
+    let own = theme.value(token).to_owned();
+    if own.len() != 7 || reads(theme) {
+        return None;
+    }
+    let mut trial = theme.clone();
+    let mut from = own;
+    for key in keys {
+        let Some(to) = look.colour(key).filter(|it| it.len() == 7) else {
+            continue;
+        };
+        for step in 1..=100 {
+            let point = super::check::mix(to, &from, f64::from(step) / 100.0);
+            trial.values.insert(token, point.clone());
+            if reads(&trial) {
+                return Some(point);
+            }
+        }
+        from = to.to_owned();
+    }
+    None
 }
 
 /// How `colour` reads on the opaque `window`: its contrast, laid over the window when it has
