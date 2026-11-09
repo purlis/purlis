@@ -463,11 +463,23 @@ export const ASKS_A_LONG_PERMISSION = join(THE_RUNS_TREE, "asks-a-long-permissio
  */
 export const LONG_ASKED_COMMAND = `echo a long ask the Inbox reads whole and wraps ${"/a-folder-name-that-runs-on".repeat(5)}xx`;
 
+/** The conversation the reporting harness names, where it names one, as Codex's `session_id`. */
+export const SCENARIO_CONVERSATION = "scenario";
+
 export function writeReportingShell(
   fakeHarness: string,
   charter: string,
   namesItsConversation = false,
 ): string {
+  // **Each of its own hooks, told as Codex tells one** (#5900): a payload naming the conversation
+  // on every hook where it names one, and nothing where it names none. Every hook, not only the
+  // first: a Codex chat runs sandboxed at the floor, where a line the app does not take within
+  // its wait is lost, not spooled, and the app learns the conversation from whichever report
+  // names it first. A stand-in that named it once lost it with that one line.
+  const told = (hook: string, event: string, more: Record<string, string> = {}) =>
+    namesItsConversation
+      ? `printf '%s' ${singleQuoted(JSON.stringify({ session_id: SCENARIO_CONVERSATION, hook_event_name: event, ...more }))} | ${JSON.stringify(charter)} hook ${hook}`
+      : `${JSON.stringify(charter)} hook ${hook} </dev/null`;
   const where = join(THE_RUNS_TREE, "shells");
   mkdirSync(where, { recursive: true });
   const shell = join(where, "reporting-harness-as-a-shell");
@@ -477,7 +489,7 @@ export function writeReportingShell(
       "#!/bin/sh",
       "# Written by the scenario tests: a harness that reports its own state through hooks.",
       "#",
-      "# It reports no pid and no conversation id of its own, which is why the profile that",
+      "# It reports no pid, and no conversation id unless it names one, which is why the profile that",
       "# runs it declares `kind = \"codex\"`. A chat's harness is known from its profile's",
       "# declared kind since M1.2, and Claude Code's rule (ADR 0024) admits a report only if",
       "# it carries a matching `CLAUDE_PID` AND names the conversation charter chose — which",
@@ -485,15 +497,13 @@ export function writeReportingShell(
       "# Codex's rule is the narrow one this stand-in actually meets: the first report of a",
       "# chat is adopted. Declaring it as the kind it BEHAVES like is honest; teaching it to",
       "# impersonate a Claude Code would be a fixture testing itself.",
-      // Codex and opencode name their conversation in their first report, and a chat with none
-      // has nothing to restart on (`wdio.outcome.conf.ts`).
+      // Codex and opencode name their conversation, on every hook, and a chat with none has
+      // nothing to restart on (`wdio.outcome.conf.ts`).
       ...(namesItsConversation
-        ? [
-            `printf '{"session_id":"scenario","hook_event_name":"SessionStart","source":"startup"}' | ${JSON.stringify(charter)} hook sessionstart >/dev/null`,
-          ]
+        ? [`${told("sessionstart", "SessionStart", { source: "startup" })} >/dev/null`]
         : []),
       "# The turn's rising edge, before a byte of output exists.",
-      `${JSON.stringify(charter)} hook userpromptsubmit </dev/null`,
+      told("userpromptsubmit", "UserPromptSubmit"),
       `exec ${JSON.stringify(fakeHarness)} \\`,
       "  --synthetic 4096 \\",
       "  --wait-for-input \\",
@@ -503,7 +513,7 @@ export function writeReportingShell(
       `  --hook ${singleQuoted(permissionHook(charter))} \\`,
       `  --hook ${singleQuoted(skillHook(charter))} \\`,
       `  --hook ${singleQuoted(secretHook(charter))} \\`,
-      `  --hook ${singleQuoted(`[ -f ${singleQuoted(USES_A_SKILL)} ] || ${singleQuoted(charter)} hook stop </dev/null`)} \\`,
+      `  --hook ${singleQuoted(`[ -f ${singleQuoted(USES_A_SKILL)} ] || ${told("stop", "Stop")}`)} \\`,
       "  --interactive",
       "",
     ].join("\n"),
@@ -519,7 +529,7 @@ export function writeReportingShell(
  */
 function skillHook(charter: string): string {
   const payload = JSON.stringify({
-    session_id: "scenario",
+    session_id: SCENARIO_CONVERSATION,
     hook_event_name: "PostToolUse",
     tool_name: "Bash",
     tool_use_id: "call_e2e_skill",
@@ -540,7 +550,7 @@ function skillHook(charter: string): string {
 function permissionHook(charter: string): string {
   const payload = (command: string) =>
     JSON.stringify({
-      session_id: "scenario",
+      session_id: SCENARIO_CONVERSATION,
       hook_event_name: "PermissionRequest",
       tool_name: "Bash",
       tool_input: { command },
