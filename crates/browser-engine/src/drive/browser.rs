@@ -4940,11 +4940,6 @@ impl Browser {
                 (DragTo::Element(r), None) => return Err(Refusal::NoSuchRef(r.clone())),
             };
             let session = &start_at.page_session;
-            // Where what a native drag carries may go when it drops (#2018): into whichever
-            // document is drawn at the drop, which may be any of the page's, whatever element
-            // the drag aims at.
-            self.read_sandboxes(&page);
-            let drops_into = lock(&self.inner.state).every_document(&page);
             // A native drag source starts the engine's own drag, which the engine hands over
             // while this drag lasts, and never after (#2136): once asked to, it is told to stop
             // however the drag ends.
@@ -4962,16 +4957,7 @@ impl Browser {
                     Some(session),
                 )
                 .map_err(refusal)
-                .and_then(|_| {
-                    self.dragging(
-                        &page,
-                        session,
-                        start,
-                        end,
-                        drops_into.as_deref().map_err(|why| *why),
-                        &mut taken,
-                    )
-                });
+                .and_then(|_| self.dragging(&page, session, start, end, &mut taken));
             let handed_back = self.devtools().call(
                 "Input.setInterceptDrags",
                 json!({ "enabled": false }),
@@ -5013,21 +4999,21 @@ impl Browser {
 
     /// Presses at `start`, moves to `end` with the button held and releases there; once the
     /// engine's own drag starts on the way, the rest of the way is its drag events, the drop at
-    /// `end` into the documents at `drops_into`. A drag that fails on the way, or is cut by the
-    /// person taking over, is cancelled and its button let go.
+    /// `end` judged by the documents the page shows as it starts and again as it drops. A drag
+    /// that fails on the way, or is cut by the person taking over, is cancelled and its button
+    /// let go.
     fn dragging(
         &self,
         target: &str,
         session: &str,
         start: (f64, f64),
         end: (f64, f64),
-        drops_into: Result<&[String], Unjudged>,
         taken: &mut bool,
     ) -> Result<Option<String>, Refusal> {
         self.mouse(session, "mouseMoved", start.0, start.1, 0, 0)?;
         self.mouse(session, "mousePressed", start.0, start.1, 1, 1)?;
         let mut carried = None;
-        let dragged = self.dragged_on(session, start, end, drops_into, target, &mut carried);
+        let dragged = self.dragged_on(session, start, end, target, &mut carried);
         *taken = carried.is_some();
         if dragged.is_err() || matches!(dragged, Ok(Some(_))) {
             self.let_go(session, end, carried.as_ref());
@@ -5042,7 +5028,6 @@ impl Browser {
         session: &str,
         start: (f64, f64),
         end: (f64, f64),
-        drops_into: Result<&[String], Unjudged>,
         target: &str,
         carried: &mut Option<Value>,
     ) -> Result<Option<String>, Refusal> {
@@ -5075,12 +5060,8 @@ impl Browser {
             if self.carries_kept_text(target, data) {
                 return Err(Refusal::DragKeptOut);
             }
-            let drops_into = self.known_documents(target, drops_into.map(<[String]>::to_vec))?;
-            if let Some(site) = self.sends_to_a_new_site(&drops_into) {
-                return Ok(Some(format!(
-                    "nothing was dropped: the drop would have gone to {site}, a site new to this \
-                     project, and purlis asked the person whether this browser may send to it"
-                )));
+            if let Some(held) = self.drop_held(target)? {
+                return Ok(Some(held));
             }
             let data = data.clone();
             let mut kind = "dragEnter";
@@ -5090,10 +5071,32 @@ impl Browser {
                 kind = "dragOver";
             }
             self.drag_event(session, kind, end.0, end.1, &data)?;
+            // The page may have shown other documents since the drag began, a frame it added
+            // in its drag's own events among them: the drop is judged by those it shows now.
+            if let Some(held) = self.drop_held(target)? {
+                return Ok(Some(held));
+            }
             self.drag_event(session, "drop", end.0, end.1, &data)?;
         }
         self.mouse(session, "mouseReleased", end.0, end.1, 1, 0)?;
         Ok(None)
+    }
+
+    /// **Whether a native drop on `target`'s page is held back** (#2018): what it carries goes
+    /// into whichever document is drawn at the drop, which may be any of those the page shows,
+    /// whatever element the drag aims at. They are read as they are now, each judged as
+    /// something sent to its site; a note where the judge asks about one, and a refusal where
+    /// one of them cannot be judged.
+    fn drop_held(&self, target: &str) -> Result<Option<String>, Refusal> {
+        self.read_sandboxes(target);
+        let documents = lock(&self.inner.state).every_document(target);
+        let documents = self.known_documents(target, documents)?;
+        Ok(self.sends_to_a_new_site(&documents).map(|site| {
+            format!(
+                "nothing was dropped: the drop would have gone to {site}, a site new to this \
+                 project, and purlis asked the person whether this browser may send to it"
+            )
+        }))
     }
 
     /// Cancels the engine's own drag where one carries `carried`, and lets the button go at

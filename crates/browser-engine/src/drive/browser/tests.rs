@@ -1740,6 +1740,98 @@ fn a_native_drag_into_a_site_new_to_the_project_waits_on_the_person() {
     assert!(drags_handed_back(&engine));
 }
 
+/// A judge that asks of `evil.test` alone: every document the stand-in's page shows at first is
+/// one it lets the agent send to.
+fn asks_of_evil_test() -> crate::drive::Judge {
+    Arc::new(|out: &crate::drive::Outbound| {
+        if out.address.starts_with("http://evil.test") {
+            crate::drive::Gate::Ask {
+                site: "evil.test:80".to_owned(),
+            }
+        } else {
+            crate::drive::Gate::Go
+        }
+    })
+}
+
+#[test]
+fn a_native_drop_is_refused_where_a_frame_the_page_added_as_the_drag_began_cannot_be_judged() {
+    let (browser, engine) = browser_judged(asks_of_evil_test());
+    super::lock(&engine.model).native_drag = true;
+    // The page adds a blank frame as its drag starts: the engine's word of it comes before its
+    // word of the drag. Its element cannot be read, so what origin it takes is not known.
+    engine.on(|sent, engine| {
+        if sent.method == "DOM.getFrameOwner" && sent.params["frameId"] == "DROP-FRAME" {
+            return Some(Err(CallError::TimedOut));
+        }
+        let starts = sent.method == "Input.dispatchMouseEvent"
+            && sent.params["type"] == "mouseMoved"
+            && sent.params["buttons"] == 1
+            && !super::lock(&engine.model).dragging;
+        if starts {
+            engine.emit(
+                "Page.frameAttached",
+                json!({"frameId":"DROP-FRAME","parentFrameId":"PAGE-1"}),
+                Some("S-PAGE-1"),
+            );
+        }
+        None
+    });
+    let dragged = drag_volume_by(&browser, 1);
+    assert!(
+        matches!(&dragged, Err(Refusal::Partly { why, .. }) if *why == Refusal::FrameUnread.to_string()),
+        "{dragged:?}"
+    );
+    assert_eq!(drag_kinds(&engine), ["dragCancel"], "nothing was dropped");
+    assert!(drags_handed_back(&engine));
+}
+
+#[test]
+fn a_native_drop_into_a_frame_of_a_new_site_the_page_added_during_the_drag_waits_on_the_person() {
+    let (browser, engine) = browser_judged(asks_of_evil_test());
+    super::lock(&engine.model).native_drag = true;
+    // The page puts a frame of another site where the drag goes, in its own `dragover`.
+    let state = Arc::downgrade(&browser.inner);
+    let mut added = false;
+    engine.on(move |sent, engine| {
+        if sent.method == "Input.dispatchDragEvent" && sent.params["type"] == "dragOver" && !added
+        {
+            added = true;
+            engine.emit(
+                "Page.frameAttached",
+                json!({"frameId":"DROP-FRAME","parentFrameId":"PAGE-1"}),
+                Some("S-PAGE-1"),
+            );
+            engine.emit(
+                "Page.frameNavigated",
+                json!({"frame":{"id":"DROP-FRAME","parentId":"PAGE-1","loaderId":"LOADER-8","url":"http://evil.test/drop","securityOrigin":"http://evil.test","mimeType":"text/html","name":""},"type":"Navigation"}),
+                Some("S-PAGE-1"),
+            );
+            let inner = state.upgrade().expect("the browser lasts the drag");
+            wait_for("the added frame is seen", || {
+                super::lock(&inner.state)
+                    .page("PAGE-1")
+                    .and_then(|page| page.frames.get("DROP-FRAME"))
+                    .is_some_and(|frame| frame.url.starts_with("http://evil.test"))
+            });
+        }
+        None
+    });
+    let dragged = drag_volume_by(&browser, 1).unwrap();
+    assert!(
+        dragged
+            .note
+            .as_deref()
+            .is_some_and(|n| n.contains("nothing was dropped")),
+        "{dragged:?}"
+    );
+    assert_eq!(dragged.asked, ["evil.test:80"]);
+    let kinds = drag_kinds(&engine);
+    assert!(!kinds.iter().any(|kind| kind == "drop"), "{kinds:?}");
+    assert_eq!(kinds.last().map(String::as_str), Some("dragCancel"));
+    assert!(drags_handed_back(&engine));
+}
+
 #[test]
 fn a_native_drop_on_an_element_of_the_page_is_judged_for_every_site_the_page_shows() {
     // A frame of another site may be drawn over the element the drop aims at.
