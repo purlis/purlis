@@ -1451,9 +1451,11 @@ export const commands = {
 	forgetSandboxBlock: (plane: PlaneId, session: number, shown: BlockShown) => typedError<boolean, string>(__TAURI_INVOKE("forget_sandbox_block", { plane, session, shown })),
 	/**
 	 *  **Notes an answer the person gave in Asks** (#6010): to request `request` of chat `session`,
-	 *  the option `option`, which `allows` it or not. What offers a rule, and starts a cool-off.
+	 *  the option `option`, which `allows` it or not, to an ask raised at `raised` (seconds since
+	 *  1970) where its source knows. What offers a rule, starts a cool-off, and counts in the week's
+	 *  measures (#6021). `request` is empty where the ask names none: it counts in the measures alone.
 	 */
-	askAnswered: (plane: PlaneId, session: number, request: string, option: string, allows: boolean) => typedError<null, string>(__TAURI_INVOKE("ask_answered", { plane, session, request, option, allows })),
+	askAnswered: (plane: PlaneId, session: number, request: string, option: string, allows: boolean, raised: number | null) => typedError<null, string>(__TAURI_INVOKE("ask_answered", { plane, session, request, option, allows, raised })),
 	/**
 	 *  **Keeps the rule an offer made** (#6010), once its ask's answer went through: with the grant
 	 *  that answer wrote, found on Settings' Granted list, which Undo takes away.
@@ -1461,6 +1463,11 @@ export const commands = {
 	ruleMade: (plane: PlaneId, made: RuleMade) => typedError<null, string>(__TAURI_INVOKE("rule_made", { plane, made })),
 	/**  **Every rule made from an offer**, newest first: Rules I made. */
 	rulesMade: () => typedError<RuleMadeShown[], string>(__TAURI_INVOKE("rules_made")),
+	/**
+	 *  **Every open project's week of asking** (#6021), on this machine: All chats' line per
+	 *  project.
+	 */
+	askMeasures: () => typedError<AskMeasure[], string>(__TAURI_INVOKE("ask_measures")),
 	/**
 	 *  **Undo in Rules I made** (#6010): the rule's grant is taken away, audited, as Revoke on
 	 *  Settings' Granted list takes it, and the rule is forgotten. A grant that is no longer there
@@ -6119,6 +6126,20 @@ export type AskLocked = {
 	persona: string,
 	/**  What policy forbids, and who set it. */
 	why: string,
+};
+
+/**  **One project's week of asking** (ADR 0121 decision 18, #6021), as All chats says it. */
+export type AskMeasure = {
+	plane: PlaneId,
+	/**  The asks answered in Asks in the last seven days. */
+	asks: number,
+	/**
+	 *  The median time from an ask being raised to its answer, in seconds, over those whose
+	 *  raising is known.
+	 */
+	median_secs: number | null,
+	/**  The asks its rules saved in the last seven days. */
+	saved: number,
 };
 
 /**

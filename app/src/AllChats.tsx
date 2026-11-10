@@ -8,6 +8,8 @@ import { fleetKey, inFleetOrder, type FleetChat } from "./everyChat";
 import { ChatActions } from "./ChatActions";
 import { rowTimeSaid } from "./chatsList";
 import { snoozeEnds, type SnoozeFor } from "./AsksSnooze";
+import { AskWeek, useAskWeek } from "./AskWeek";
+import type { AskMeasure } from "./bindings";
 import { Notice } from "./Notice";
 import { useNow } from "./rowClock";
 import { CHAT_STATE_NAMES, type ChatState } from "./shownState";
@@ -33,6 +35,7 @@ import { PanelSection as Section, PanelTitle } from "./ui/panel/Panel";
  * - **Filtered to one state** where a link asked for it (#6020's "7 chats working"), with Show
  *   all to take the filter off.
  * - **Drawn in part** (`drawnInPart`): only the rows in sight, however many projects are open.
+ * - **Each project's week of asking** at its head (`AskWeek`, #6021): a quiet line per project.
  */
 export type FleetDoes = {
   /** Go to chat: its project brought forward where it is not, in whichever window holds it. */
@@ -97,7 +100,19 @@ export function AllChatsOf({
   ...rest
 }: { every: EveryChat } & Omit<ComponentProps<typeof AllChats>, "chats" | "does" | "lentOf">) {
   const chats = useSyncExternalStore(every.store.subscribe, every.store.get);
-  return <AllChats {...rest} chats={chats} does={every.does} lentOf={every.lentOf} />;
+  const measures = useAskWeek();
+  return (
+    <AllChats {...rest} chats={chats} does={every.does} lentOf={every.lentOf} measures={measures} />
+  );
+}
+
+/** A project's name by its plane: as its chats name it, else its folder's. */
+function projectOf(chats: readonly FleetChat[], plane: string): string {
+  return (
+    chats.find((one) => one.plane === plane)?.project ??
+    plane.split(/[\\/]/).filter(Boolean).pop() ??
+    plane
+  );
 }
 
 /** What the view's title says, and its switch. */
@@ -122,6 +137,7 @@ export function AllChats({
   onLeave,
   does,
   lentOf,
+  measures = [],
 }: {
   /** Every chat of every open project, in any order. */
   chats: readonly FleetChat[];
@@ -135,6 +151,8 @@ export function AllChats({
   /** Each project's stores, where this window holds it: what a working chat's line is read
    *  live from. */
   lentOf?: (plane: string) => Lent | undefined;
+  /** Each open project's week of asking (#6021). */
+  measures?: readonly AskMeasure[];
 }) {
   const listed = useMemo(
     () => inFleetOrder(filter === undefined ? chats : chats.filter((one) => one.state === filter)),
@@ -181,6 +199,7 @@ export function AllChats({
             </PanelTitle>
             <AllChatsSwitch on onChange={(on) => !on && onLeave()} />
           </div>
+          <AskWeek measures={measures} projectOf={(plane) => projectOf(chats, plane)} />
           {filter !== undefined && (
             <div className="all-chats-filter">
               <p className="ui-text-secondary" role="status">

@@ -8881,6 +8881,15 @@ nav.piece-files-head {
   margin: 0;
 }
 
+/* Each project's week of asking (#6021): quiet lines under the title, one per project. */
+.all-chats .all-chats-week > p {
+  margin: 0;
+}
+
+.all-chats .all-chats-week-project {
+  font-weight: var(--font-weight-medium);
+}
+
 /* A row's mark stands beside its box. */
 .all-chats [data-part="lead"] {
   display: flex;

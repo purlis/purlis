@@ -10,7 +10,10 @@
 //!   project where every ask was the project's, this machine otherwise. Which grants the ask may
 //!   offer as a rule, and where each is written, are its source's: this module only counts.
 //! - **Rules I made.** Each rule made from an offer is kept ([`Rule`]) with the grant it wrote,
-//!   so it can be reviewed and undone, and with how many asks it saved ([`Store::saved`]).
+//!   so it can be reviewed and undone. How many asks it saved is read, never kept
+//!   ([`measures::saved_by`]).
+//! - **The measures** (ADR 0121 decision 18, #6021): each project's asks this week, the median
+//!   time to answer them, and the asks its rules saved ([`measures`]).
 //! - **A cool-off.** A second Don't allow to the same request from the same chat within
 //!   [`COOL_WITHIN_SECS`] holds that chat's same ask quietly, neither counted nor notified, for
 //!   [`COOL_FOR_SECS`] after the last ([`cooling`]), until the person ends it ([`Store::ended`]).
@@ -51,8 +54,9 @@ pub const COOL_FOR_SECS: u64 = 60 * 60;
 /// How long an ending of a cool-off is kept: past every cool-off it could end.
 const ENDED_KEPT_SECS: u64 = 24 * 60 * 60;
 
-/// The most answers kept; the oldest go first.
-pub const AT_MOST_ANSWERS: usize = 500;
+/// The most answers kept; the oldest go first. Every answer given in Asks is kept, for the
+/// week's measures (#6021), so this is a busy week's, across every project.
+pub const AT_MOST_ANSWERS: usize = 2000;
 
 /// The most rules kept; the oldest go first.
 pub const AT_MOST_RULES: usize = 200;
@@ -88,6 +92,8 @@ pub struct Asked {
 pub struct Answered {
     pub project: String,
     pub session: u32,
+    /// The request's name; empty where the ask names none, which offers no rule and starts no
+    /// cool-off, and counts only in the week's measures (#6021).
     pub request: String,
     /// The answer's id, as its ask offered it.
     pub option: String,
@@ -95,6 +101,10 @@ pub struct Answered {
     pub allows: bool,
     /// When, in seconds since 1970.
     pub at: u64,
+    /// **When the ask was raised**, in seconds since 1970, where its source knows (#6021): what
+    /// its time to answer is counted from, a timed-out ask's too (#6007).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raised: Option<u64>,
 }
 
 /// **The person ended a chat's cool-off** for a request.
@@ -106,8 +116,7 @@ pub struct Ended {
     pub at: u64,
 }
 
-/// **A rule the person made from an offer**: what it answers, where it was written, and what it
-/// has saved since.
+/// **A rule the person made from an offer**: what it answers, where it was written, and when.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Rule {
     /// What tells it from every other rule: Undo names it.
@@ -133,9 +142,6 @@ pub struct Rule {
     /// found.
     #[serde(default)]
     pub grant: Option<String>,
-    /// **How many asks it has saved since it was made** (#6021 reads it).
-    #[serde(default)]
-    pub saved: u32,
 }
 
 /// **Everything kept**: answers, rules and endings.
@@ -174,7 +180,8 @@ pub fn offer(record: &Record, asked: &Asked, now: u64) -> Option<Offer> {
         .answered
         .iter()
         .filter(|one| {
-            one.request == asked.request
+            !one.request.is_empty()
+                && one.request == asked.request
                 && one.at > since
                 && now.saturating_sub(one.at) <= OFFER_WINDOW_SECS
         })
@@ -217,7 +224,8 @@ pub fn cooling(record: &Record, asked: &Asked, now: u64) -> Option<u64> {
         .answered
         .iter()
         .filter(|one| {
-            one.project == asked.project
+            !one.request.is_empty()
+                && one.project == asked.project
                 && one.session == asked.session
                 && one.request == asked.request
         })
@@ -282,8 +290,16 @@ impl Store {
         serde_json::from_slice(&text).unwrap_or_default()
     }
 
-    /// Notes that the person answered `asked` with `option` at `now`.
-    pub fn answered(&self, asked: &Asked, option: &str, allows: bool, now: u64) -> io::Result<()> {
+    /// Notes that the person answered `asked`, raised at `raised` where its source knows, with
+    /// `option` at `now`.
+    pub fn answered(
+        &self,
+        asked: &Asked,
+        option: &str,
+        allows: bool,
+        raised: Option<u64>,
+        now: u64,
+    ) -> io::Result<()> {
         self.change(now, |record| {
             record.answered.push(Answered {
                 project: cut(&asked.project),
@@ -292,6 +308,7 @@ impl Store {
                 option: cut(option),
                 allows,
                 at: now,
+                raised: raised.filter(|raised| *raised <= now),
             });
         })
         .map(|_| ())
@@ -328,16 +345,6 @@ impl Store {
             }
         })?;
         Ok(gone)
-    }
-
-    /// **Counts `asks` more asks saved** by the rule called `id`, where it is kept.
-    pub fn saved(&self, id: &str, asks: u32) -> io::Result<()> {
-        self.change(0, |record| {
-            if let Some(rule) = record.rules.iter_mut().find(|one| one.id == id) {
-                rule.saved = rule.saved.saturating_add(asks);
-            }
-        })
-        .map(|_| ())
     }
 
     /// **Ends `asked`'s cool-off** at `now`: its next ask is counted and notified again.
@@ -388,6 +395,8 @@ impl Store {
 pub fn project_of(root: &Path) -> String {
     crate::sandbox::Homes::project_key(root)
 }
+
+pub mod measures;
 
 fn cut(text: &str) -> String {
     text.chars().take(MOST_SAID).collect()

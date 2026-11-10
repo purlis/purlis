@@ -55,7 +55,8 @@ function core() {
     if (cmd === "apply_proposed_change") return "Applied to purlis.toml.";
     return null;
   });
-  return () => asked.filter((one) => one.cmd !== "asks_waiting");
+  // Nor the note every answer leaves for the week's measures (#6021).
+  return () => asked.filter((one) => one.cmd !== "asks_waiting" && one.cmd !== "ask_answered");
 }
 
 describe("a change a chat proposed", () => {

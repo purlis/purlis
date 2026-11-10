@@ -40,7 +40,8 @@
  */
 export const INTERRUPT_BUDGET = 3;
 
-const PROMPTS =
+/** What a prompt can be, before its name is read: the scenario guard counts by it too (`e2e/interrupts.ts`). */
+export const PROMPTS =
   '[role="dialog"], [role="alertdialog"], [role="group"], [role="radiogroup"], dialog[open], fieldset';
 
 /** The role an element has: the one it is given, else its tag's own. */
