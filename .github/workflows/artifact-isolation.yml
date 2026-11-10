@@ -36,7 +36,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-24.04] # [DEBUG-5948]
+        os: [macos-latest, ubuntu-24.04, windows-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     defaults:
@@ -58,7 +58,7 @@ jobs:
       # and for the display. `--no-fail-fast`, so the run is the whole table, not its first red.
       - name: The five tests on the chosen rendering, and its controls
         run: |
-          run=(cargo test --manifest-path tools/artifact-isolation-probe/Cargo.toml --no-fail-fast -- --test-threads=1 --nocapture shape) # [DEBUG-5948]
+          run=(cargo test --manifest-path tools/artifact-isolation-probe/Cargo.toml --no-fail-fast -- --test-threads=1 --nocapture)
           if [ "$RUNNER_OS" = Linux ]; then run=(xvfb-run -a "${run[@]}"); fi
           "${run[@]}" 2>&1 | tee probe.txt
           status=${PIPESTATUS[0]}

@@ -174,19 +174,8 @@ fn read_pinned(folder: &Path, prefix: &str, files: &mut HashMap<String, Vec<u8>>
 
 /// The CSP on every response (ADR 0122 §3): its own origin only, no network, no frames, no
 /// forms, no `<base>`.
-/// [DEBUG-5948] Set by a `shape-*-app` run: serve the app's CSP (`purlis_core::artifact::serve::csp`, script approved).
-static APP_CSP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
 fn csp(id: &str) -> String {
     let own = origin(id);
-    if APP_CSP.load(std::sync::atomic::Ordering::Relaxed) {
-        return format!(
-            "default-src 'none'; script-src {own} 'unsafe-inline'; style-src {own} 'unsafe-inline'; \
-             img-src {own}; font-src {own}; media-src {own}; connect-src 'none'; \
-             form-action 'none'; base-uri 'none'; frame-src 'none'; child-src 'none'; \
-             worker-src 'none'; object-src 'none'; manifest-src 'none'; frame-ancestors 'none'"
-        );
-    }
     format!(
         "default-src {own}; script-src {own} 'unsafe-inline'; style-src {own} 'unsafe-inline'; \
          img-src {own}; font-src {own}; media-src {own}; connect-src 'none'; form-action 'none'; \
@@ -300,14 +289,13 @@ fn main() {
         _ => usage(),
     };
     let test = args.get(1).cloned().unwrap_or_else(|| usage());
-    if !TESTS.contains(&test.as_str()) && !test.starts_with("shape-") {
+    if !TESTS.contains(&test.as_str()) {
         usage();
     }
     // The control: every guard off, so a test that passes guarded is seen to fail for its reason.
     let guarded = match args.get(2).map(String::as_str) {
         None => true,
         Some("unguarded") if rendering == Rendering::Webview => false,
-        _ if test.starts_with("shape-") => true,
         Some(_) => usage(),
     };
 
@@ -585,53 +573,8 @@ fn drive(
                 Err(format!("loaded {loaded}; {said}"))
             }
         }
-        shape => shape_of(app, shape, seen),
+        _ => unreachable!("checked in main"),
     }
-}
-
-/// **[DEBUG-5948] Which shape of webview runs a page's script and its init script** on this
-/// platform: `shape-<toplevel|child>-<plain|incognito>[-app]`, `-app` adding the app's other
-/// builder flags. Diagnostic only: it reports what reached the scheme, never fails.
-fn shape_of(app: &AppHandle, shape: &str, seen: &Shared) -> Result<String, String> {
-    let child = shape.contains("-child");
-    let incognito = shape.contains("-incognito");
-    let flags = shape.ends_with("-app");
-    APP_CSP.store(flags, std::sync::atomic::Ordering::Relaxed);
-    let url: tauri::Url = format!("{}/index.html", origin("walk")).parse().map_err(|e| format!("{e}"))?;
-    let label = "artifact-walk-1";
-    let init = r#"(() => { new Image().src = "/.purlis/say?m=" + encodeURIComponent(JSON.stringify("init:" + document.readyState)); })();"#;
-    if child {
-        let mut builder = tauri::webview::WebviewBuilder::new(label, WebviewUrl::CustomProtocol(url))
-            .initialization_script(init)
-            .incognito(incognito);
-        if flags {
-            builder = builder
-                .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
-                .focused(false)
-                .devtools(false)
-                .disable_drag_drop_handler();
-        }
-        let window = app.get_window("main").ok_or("no window")?;
-        window
-            .add_child(
-                builder,
-                tauri::LogicalPosition::new(0.0, 0.0),
-                tauri::LogicalSize::new(400.0, 300.0),
-            )
-            .map_err(|e| e.to_string())?;
-    } else {
-        WebviewWindowBuilder::new(app, label, WebviewUrl::CustomProtocol(url))
-            .inner_size(400.0, 200.0)
-            .initialization_script(init)
-            .incognito(incognito)
-            .build()
-            .map_err(|e| e.to_string())?;
-    }
-    until(seen, Duration::from_secs(15), |s| heard_on(s, "walk").len() >= 2);
-    std::thread::sleep(Duration::from_secs(1));
-    let seen = seen.lock().expect("seen");
-    let served: Vec<_> = seen.served.iter().map(|(l, id, p, s)| format!("{l} {id}{p} {s}")).collect();
-    Ok(format!("heard {:?}; served {served:?}", heard_on(&seen, "walk")))
 }
 
 /// The script-free pages of test 4, each getting off its folder one way.

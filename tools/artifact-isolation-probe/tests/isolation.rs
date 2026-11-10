@@ -134,29 +134,3 @@ mod native_webview_unguarded {
         fails("walk");
     }
 }
-
-/// [DEBUG-5948] Which webview shape runs a page's script here: diagnostic, never fails.
-mod shape {
-    fn shape(name: &str) {
-        let out = std::process::Command::new(env!("CARGO_BIN_EXE_artifact-isolation-probe"))
-            .args(["webview", &format!("shape-{name}")])
-            .output()
-            .expect("the probe starts");
-        let said = String::from_utf8_lossy(&out.stdout);
-        for line in said.lines().filter(|l| l.starts_with("RESULT ")) {
-            println!("{line}");
-        }
-    }
-    #[test]
-    fn a_toplevel_plain() { shape("toplevel-plain"); }
-    #[test]
-    fn b_toplevel_incognito() { shape("toplevel-incognito"); }
-    #[test]
-    fn c_child_plain() { shape("child-plain"); }
-    #[test]
-    fn d_child_incognito() { shape("child-incognito"); }
-    #[test]
-    fn e_child_incognito_app() { shape("child-incognito-app"); }
-    #[test]
-    fn f_child_plain_app() { shape("child-plain-app"); }
-}

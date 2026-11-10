@@ -24,6 +24,6 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 # The versions the app pins, because the question is about THAT webview stack.
-tauri = { version = "=2.12.5", features = ["unstable"] }
+tauri = { version = "=2.12.5", features = [] }
 percent-encoding = "2"
 serde_json = "1"
