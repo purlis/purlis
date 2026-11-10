@@ -143,6 +143,16 @@ pub(crate) fn copy_in(
     snapshot: &Snapshot,
 ) -> Result<(), String> {
     let dir = workspace.join(super::DIR);
+    let at = dir.join(folder);
+    // Checked before anything is made: a committed `artifacts` link would otherwise have a
+    // folder made, and then removed, wherever it leads.
+    crate::contain::no_link_on_the_way(workspace, &at).map_err(|_| {
+        format!(
+            "{}/ or '{}' in it is a link, so the template is not copied through it",
+            super::DIR,
+            crate::personas::one_line(folder)
+        )
+    })?;
     std::fs::create_dir_all(&dir).map_err(|e| {
         format!(
             "purlis could not make {}/ in the workspace ({})",
@@ -150,7 +160,6 @@ pub(crate) fn copy_in(
             crate::rewrite::os_words(&e)
         )
     })?;
-    let at = dir.join(folder);
     match std::fs::create_dir(&at) {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {

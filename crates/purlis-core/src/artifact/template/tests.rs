@@ -136,3 +136,22 @@ fn a_template_holding_a_secret_or_linking_out_of_its_skill_places_nothing() {
         assert!(why.contains("not a folder inside its skill"), "{why}");
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn a_committed_artifacts_link_out_of_the_workspace_is_never_written_through() {
+    let (_dir, root) = plane();
+    let outside = root.join("elsewhere");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::os::unix::fs::symlink(&outside, root.join("workspaces/alpha").join(DIR)).unwrap();
+    let touched = || std::fs::metadata(&outside).unwrap().modified().unwrap();
+    let before = touched();
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    let why = placed(&root, "backlog-sync", "backlog-state").unwrap_err();
+    assert!(why.contains("is a link"), "{why}");
+    assert_eq!(touched(), before, "no folder was made and removed through the link");
+    assert!(
+        std::fs::read_dir(&outside).unwrap().next().is_none(),
+        "nothing is made through the link"
+    );
+}
