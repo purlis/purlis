@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794338619621,
+  "lastUpdate": 1794340984014,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -46326,6 +46326,48 @@ window.BENCHMARK_DATA = {
             "value": 101.1395235,
             "unit": "ms",
             "extra": "median of 5 runs: 100.255, 100.935, 101.140, 101.211, 101.832 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "b9e74d5810bf09a2cbe8da49bae67a784a2dafbc",
+          "message": "Linux wrap leftovers: the leftover-shell tests run inside the wrap, the sandbox install action is removed (#6159)\n\n* DIAGNOSTIC, not for merge: leftover-shell tests on the wrap print the process tree and screen\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M730RW0N750CNW4P2V8C8R65\nPurlis-Persona: steward\n\n* DIAGNOSTIC round 2, not for merge: tests wrap with the app program; SD-30 install UI removed\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M730RW0N750CNW4P2V8C8R65\nPurlis-Persona: steward\n\n* DIAGNOSTIC round 3, not for merge: compile and format fixes\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M730RW0N750CNW4P2V8C8R65\nPurlis-Persona: steward\n\n* DIAGNOSTIC round 4, not for merge: diagnostics out, the stand-in starts no shell for auth status\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M730RW0N750CNW4P2V8C8R65\nPurlis-Persona: steward\n\n* DIAGNOSTIC branch: ADR 0067 amendment and changelog fragment for the install UI's removal\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M730RW0N750CNW4P2V8C8R65\nPurlis-Persona: steward",
+          "timestamp": "2026-11-10T19:28:17Z",
+          "tree_id": "6ef2efb3dfeeb5e49bbbb0c918ff9cdc3f718647",
+          "url": "https://github.com/purlis/purlis/commit/b9e74d5810bf09a2cbe8da49bae67a784a2dafbc"
+        },
+        "date": 1794340978862,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.688043,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.655, 0.680, 0.688, 0.708, 0.756 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.638166,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.569, 16.600, 16.638, 16.661, 16.866 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.36926299999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.069, 102.090, 102.369, 102.781, 102.796 ms"
           }
         ]
       }
