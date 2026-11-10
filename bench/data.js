@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794299490046,
+  "lastUpdate": 1794302156371,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -45780,6 +45780,48 @@ window.BENCHMARK_DATA = {
             "value": 101.49760649999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.877, 100.948, 101.498, 102.631, 103.105 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "6aeebb0770046ab6efbe6880e55bbcf75bc29e12",
+          "message": "A named workspace skill's run chip and skill.started name its copy's workspace (#6083) (#6105)\n\n* A named workspace skill's run chip and skill.started name its copy's workspace (#6083)\n\nThe start names the workspace whose copy the persona named (workspaces/<ws>:<name>):\nskill.started gains skill_copy_workspace, and the window's run chip says \"of workspace\nops\" in its name and tooltip and opens that workspace's runs. The copy is worked out at\nthe readers with skills::named_copy_of, not carried on the start (ADR 0099 amendment).\nA LOCAL workspace's copy is said as its row says it: no name, no level, no tree (SK-20).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71QW8V3VMAK0C9SZG3Q38X4\nPurlis-Persona: steward\n\n* The named copy's chip story matches its name as a browser spaces it (#6083)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M71QW8V3VMAK0C9SZG3Q38X4\nPurlis-Persona: steward\n\n* Baselines for the named copy's run chip story, as its CI run drew them (#6083)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M71QW8V3VMAK0C9SZG3Q38X4\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T08:21:40Z",
+          "tree_id": "334fc167bee5a0b990a56b8c13b6788190182557",
+          "url": "https://github.com/purlis/purlis/commit/6aeebb0770046ab6efbe6880e55bbcf75bc29e12"
+        },
+        "date": 1794302150481,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5397735,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.533, 0.540, 0.540, 0.545, 0.560 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2152935,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.135, 16.175, 16.215, 16.245, 16.318 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.34202450000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.359, 100.242, 100.342, 101.287, 102.052 ms"
           }
         ]
       }
