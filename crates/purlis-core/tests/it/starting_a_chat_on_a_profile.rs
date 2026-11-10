@@ -1498,7 +1498,7 @@ fn picker_says_on(
         ran.lock().unwrap().push(words.to_vec());
         Some("2.1.288 (Claude Code)".to_owned())
     };
-    start::sandbox_ahead(profile, plane.root(), machine, has, "", Some(&probe)).expect("a harness")
+    start::sandbox_ahead(profile, plane.root(), machine, has, Some(&probe)).expect("a harness")
 }
 
 /// What the start answers for `work` on the machine [`picker_says`] asks about, so the two are
@@ -1641,7 +1641,7 @@ fn one_picker_compiles_once_per_harness_and_gives_each_profile_its_own_answer() 
         };
         let mac = a_mac();
         let set = profiles::current(plane.root());
-        let asked = start::AheadOnce::new(plane.root(), &mac, &has, "", Some(&probe));
+        let asked = start::AheadOnce::new(plane.root(), &mac, &has, Some(&probe));
         let said: Vec<_> = names
             .iter()
             .map(|name| {
@@ -1773,7 +1773,7 @@ fn the_picker_shows_a_program_where_the_chat_can_write_as_the_starts_refusal() {
     };
     let ran = std::sync::Mutex::new(Vec::new());
 
-    let purlis_core::sandbox::Ahead::Refused { why, install } = picker_says(&plane, &ran) else {
+    let purlis_core::sandbox::Ahead::Refused { why } = picker_says(&plane, &ran) else {
         panic!("refused");
     };
 
@@ -1784,7 +1784,6 @@ fn the_picker_shows_a_program_where_the_chat_can_write_as_the_starts_refusal() {
         ),
         "the picker says what the start says: {why}"
     );
-    assert_eq!(install, None);
     assert!(
         ran.lock().unwrap().is_empty(),
         "a refused program is not run"
@@ -1838,7 +1837,7 @@ fn the_picker_shows_a_command_word_where_the_chat_can_write_as_the_starts_refusa
     );
     let ran = std::sync::Mutex::new(Vec::new());
 
-    let purlis_core::sandbox::Ahead::Refused { why, install } = picker_says(&plane, &ran) else {
+    let purlis_core::sandbox::Ahead::Refused { why } = picker_says(&plane, &ran) else {
         panic!("refused");
     };
 
@@ -1850,7 +1849,6 @@ fn the_picker_shows_a_command_word_where_the_chat_can_write_as_the_starts_refusa
         ),
         "the picker says what the start says: {why}"
     );
-    assert_eq!(install, None);
     assert!(ran.lock().unwrap().is_empty(), "nothing was run");
 }
 
@@ -1875,7 +1873,7 @@ fn the_picker_refuses_a_path_embedded_in_a_word_as_the_start_does() {
     );
     let ran = std::sync::Mutex::new(Vec::new());
 
-    let purlis_core::sandbox::Ahead::Refused { why, install } = picker_says(&plane, &ran) else {
+    let purlis_core::sandbox::Ahead::Refused { why } = picker_says(&plane, &ran) else {
         panic!("refused");
     };
 
@@ -1887,7 +1885,6 @@ fn the_picker_refuses_a_path_embedded_in_a_word_as_the_start_does() {
         ),
         "the picker refuses the word the start refuses: {why}"
     );
-    assert_eq!(install, None);
     assert!(ran.lock().unwrap().is_empty(), "nothing was run");
 }
 

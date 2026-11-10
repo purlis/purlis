@@ -755,13 +755,6 @@ export const commands = {
 	 */
 	allowPersonaGrants: (plane: PlaneId, session: number) => typedError<boolean, string>(__TAURI_INVOKE("allow_persona_grants", { plane, session })),
 	/**
-	 *  Types SD-30's install command into shell session `session` at the project root, and does
-	 *  not run it (ruling V78 c): installing needs `sudo`, so the person reads it and presses
-	 *  Return. The window sends no text; the line is built here, and it is typed only into a shell
-	 *  tab at the project root.
-	 */
-	typeSandboxInstall: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("type_sandbox_install", { plane, session })),
-	/**
 	 *  The draft of a Report for a sandbox block of purlis's own (#1338). Nothing is sent: this only
 	 *  drafts, here, with no network.
 	 */
@@ -1593,6 +1586,29 @@ export const commands = {
 	 *  ended. Answers whether the block was still held.
 	 */
 	forgetSandboxBlock: (plane: PlaneId, session: number, shown: BlockShown) => typedError<boolean, string>(__TAURI_INVOKE("forget_sandbox_block", { plane, session, shown })),
+	/**
+	 *  **Notes an answer the person gave in Asks** (#6010): to request `request` of chat `session`,
+	 *  the option `option`, which `allows` it or not. What offers a rule, and starts a cool-off.
+	 */
+	askAnswered: (plane: PlaneId, session: number, request: string, option: string, allows: boolean) => typedError<null, string>(__TAURI_INVOKE("ask_answered", { plane, session, request, option, allows })),
+	/**
+	 *  **Keeps the rule an offer made** (#6010), once its ask's answer went through: with the grant
+	 *  that answer wrote, found on Settings' Granted list, which Undo takes away.
+	 */
+	ruleMade: (plane: PlaneId, made: RuleMade) => typedError<null, string>(__TAURI_INVOKE("rule_made", { plane, made })),
+	/**  **Every rule made from an offer**, newest first: Rules I made. */
+	rulesMade: () => typedError<RuleMadeShown[], string>(__TAURI_INVOKE("rules_made")),
+	/**
+	 *  **Undo in Rules I made** (#6010): the rule's grant is taken away, audited, as Revoke on
+	 *  Settings' Granted list takes it, and the rule is forgotten. A grant that is no longer there
+	 *  is not an error: the rule is forgotten all the same. Answers the list as it is now.
+	 */
+	undoRule: (id: string) => typedError<RuleMadeShown[], string>(__TAURI_INVOKE("undo_rule", { id })),
+	/**
+	 *  **End cool-off** (#6010): chat `session`'s ask for `request` is counted and notified again,
+	 *  from now.
+	 */
+	endCoolOff: (plane: PlaneId, session: number, request: string) => typedError<null, string>(__TAURI_INVOKE("end_cool_off", { plane, session, request })),
 	/**
 	 *  **A project's updates** (#1693): kept a day on this machine, newest first, dismissed ones
 	 *  left out. None where this machine keeps no data home.
@@ -6654,6 +6670,18 @@ export type Asking = {
 	 *  snoozed chat waits only for a new ask.
 	 */
 	snoozed_until?: number | null,
+	/**
+	 *  **The asks a cool-off holds quietly** (ADR 0121 decision 7, #6010): each the same request
+	 *  its chat heard Don't allow to twice in a row lately. Listed apart, as snoozed asks are, so
+	 *  neither the ✋ nor a notification counts them, until the cool-off ends or the person
+	 *  ends it. Only [`counted`] puts any here.
+	 */
+	cooling?: Shown[],
+	/**
+	 *  When the first cool-off ends by itself, in seconds since 1970: the window reads the asks
+	 *  again then.
+	 */
+	cooling_until?: number | null,
 };
 
 /**  What a chat's row says while it is at its task limit. */
@@ -11834,6 +11862,12 @@ export type Offered = {
 	 *  answers. Absent (rather than `false`) wherever nothing is marked.
 	 */
 	preselected?: boolean | null,
+	/**
+	 *  **Who a grant is for, where a rule may be made of it** (ADR 0121 decision 7, #6010):
+	 *  this chat, this project or this machine. Absent on an answer that is no grant, and on
+	 *  one whose rule Rules I made could not undo (a harness's saved rule, a persona's Always).
+	 */
+	scope?: RuleScope | null,
 };
 
 /**  One skill a source offers. */
@@ -15040,10 +15074,25 @@ export type ReviewedSkill = {
 	digest: string,
 };
 
+/**  Which risk an ask carries ([`RiskShown`]). */
+export type RiskClass = "protected-push" | "production-host" | "outside-project";
+
 /**  A risk, and the core's words for it. */
 export type RiskMark = {
 	kind: ReviewRisk,
 	said: string,
+};
+
+/**
+ *  **An ask's risk, as its row says it** (#6011): a mirror of `purlis_core::askrisk::Risk`,
+ *  which the core has no window types for.
+ */
+export type RiskShown = {
+	class: RiskClass,
+	/**  What the row says of it: "Pushes to main, a protected branch". */
+	why: string,
+	/**  What its Allow asks before it acts: "Allow a push to main?". */
+	confirm: string,
 };
 
 /**
@@ -15227,6 +15276,74 @@ export type RowWorktree = {
 	 *  still stands in it.
 	 */
 	discard: boolean,
+};
+
+/**  **A rule an offer made**, as the window tells it once the ask's answer went through. */
+export type RuleMade = {
+	session: number,
+	request: string,
+	/**  The ask's source, as it lists it. */
+	source: AskSource,
+	/**  What the ask said. */
+	says: string,
+	/**  The grant chosen: its id and its words. */
+	option: string,
+	label: string,
+	scope: RuleScope,
+	/**
+	 *  What the grant names, and its target: a sandbox block's, as its ask's path names them.
+	 *  None for a run of a program, whose grant is the chat's.
+	 */
+	what: GrantWhat | null,
+	target: string | null,
+};
+
+/**  One rule, as Rules I made lists it. */
+export type RuleMadeShown = {
+	id: string,
+	/**  The project it is in, where it is open now: Undo needs it open. */
+	plane: PlaneId | null,
+	/**  The project's folder name. */
+	project: string,
+	/**  When it was made, in seconds since 1970. */
+	at: number,
+	source: string,
+	/**  What the ask said: data, never markup. */
+	says: string,
+	/**  What it allows, and for whom, in its ask's words. */
+	label: string,
+	scope: RuleScope,
+	/**  How many asks it has saved since it was made. */
+	saved: number,
+	/**  Its grant was found, and Undo takes it away. Where not, Undo only forgets the rule. */
+	undoes: boolean,
+};
+
+/**
+ *  **A rule an ask offers** (#6010): the Allow given each time, how often, and its wider grants
+ *  that a rule may be made of, the one suggested first.
+ */
+export type RuleOffered = {
+	/**  The id of the Allow given each time. */
+	answered: string,
+	/**  How many times, in the last week. */
+	times: number,
+	/**
+	 *  The option ids of the grants a rule may be made of, the suggested one first: the
+	 *  narrowest that would have prevented every ask, else the widest there is.
+	 */
+	options: string[],
+};
+
+/**  **Who a rule is for** (ADR 0121 decision 7, #6010), narrowest first. */
+export type RuleScope = "chat" | "project" | "machine";
+
+/**  **An ask's request, and the rule it offers** (#6010). */
+export type RuleShown = {
+	/**  The request's name: two asks with the same are the same request. */
+	request: string,
+	/**  The rule offered, where the same Allow was given it twice in a week. */
+	offer?: RuleOffered | null,
 };
 
 /**  How a skill run ended, as the Runs panel draws it. */
@@ -15613,11 +15730,6 @@ export type SandboxAhead = {
 	 *  Empty for `sandboxed`.
 	 */
 	said: string,
-	/**
-	 *  SD-30's install command, shown before the person asks for it to be typed: where the
-	 *  refusal is a program this machine is missing and charter knows its distribution.
-	 */
-	install: string | null,
 	/**
 	 *  Where policy forbids starting a chat without the sandbox (#1343): why, naming the policy
 	 *  and who set it. The picker then offers no opt-out.
@@ -16615,6 +16727,13 @@ export type Shown = {
 	 */
 	timed_out?: number | null,
 	/**
+	 *  **What a yes to it risks** (ADR 0121 decision 8, #6011): a push to a protected branch,
+	 *  a host that looks like production, a write outside the project, read from the project's
+	 *  own facts (`purlis_core::askrisk`). Its row says it, it is never grouped and never
+	 *  offered as a rule, and its Allow asks once more. Absent where it risks none of these.
+	 */
+	risk?: RiskShown | null,
+	/**
 	 *  **What an edit would write** (#1146): each change, drawn before its Allow, or why it is
 	 *  not shown and no Allow is offered. Absent for any other ask.
 	 */
@@ -16656,6 +16775,12 @@ export type Shown = {
 	 *  large. Absent for any other ask.
 	 */
 	fill?: FillShown | null,
+	/**
+	 *  **What its request is called, and the rule it offers** (ADR 0121 decision 7, #6010):
+	 *  present where its request can be named, so its answer is noted against it. Absent on an
+	 *  ask that is never offered a rule nor cooled off.
+	 */
+	rule?: RuleShown | null,
 };
 
 /**

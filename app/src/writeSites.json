@@ -402,7 +402,7 @@
     {
       "at": "sandboxing.rs revoke",
       "writes": "this machine's answers about the project (sandbox-grants)",
-      "by": ["revokeSandboxGrant"]
+      "by": ["revokeSandboxGrant", "undoRule"]
     },
     {
       "at": "sandboxing.rs revoke_browser",
@@ -417,7 +417,7 @@
     {
       "at": "sandboxing.rs revoke_browser_site",
       "writes": "this machine's answers about the project (sandbox-grants)",
-      "by": ["revokeSandboxGrant"]
+      "by": ["revokeSandboxGrant", "undoRule"]
     },
     {
       "at": "sandboxing.rs revoke_persona",
@@ -425,9 +425,9 @@
       "by": ["revokeSandboxGrant"]
     },
     {
-      "at": "sandboxing.rs revoke_sandbox_grant",
+      "at": "sandboxing.rs revoke_granted",
       "writes": "this machine's network record",
-      "by": ["revokeSandboxGrant"]
+      "by": ["revokeSandboxGrant", "undoRule"]
     },
     {
       "at": "sandboxing.rs revoke_vault",

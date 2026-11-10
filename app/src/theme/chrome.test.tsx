@@ -124,6 +124,7 @@ import { BUILT_IN, DEFAULT_THEME, drawIn, drawTint, inForce, tinted } from "./th
 import { themeInForce } from "./inForce.testkit";
 import { aTabForEachChat } from "../laidOut.testkit";
 import { findRow, findTree } from "../ui/tree/tree.testkit";
+import { RulesIMade } from "../AskRules";
 
 vi.mock("../SessionPane", () => ({
   SessionPane: ({ session }: { session: number }) => (
@@ -640,6 +641,21 @@ function dialogCore() {
         };
       case "discard_hunk":
         return { kind: "busy", chats: [{ name: "Fix the parser", state: "is running" }] };
+      case "rules_made":
+        return [
+          {
+            id: "rule-1",
+            plane: PLANE,
+            project: "plane",
+            at: 1_800_000_000,
+            source: "sandbox-host",
+            says: "The sandbox refused api.example.com",
+            label: "Allow for me on this machine",
+            scope: "project",
+            saved: 3,
+            undoes: true,
+          },
+        ];
       default:
         throw new Error(`${cmd} is not answered in this test`);
     }
@@ -2112,6 +2128,14 @@ const DIALOGS: Opened[] = [
           onWrite={nothing}
         />,
       ),
+  },
+  {
+    name: "Rules I made",
+    file: "AskRules.tsx",
+    open: async () => {
+      render(<RulesIMade />);
+      await userEvent.click(await screen.findByRole("button", { name: "Rules I made" }));
+    },
   },
   {
     name: "Change the router",

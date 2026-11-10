@@ -12,6 +12,7 @@ pub mod applog;
 pub mod appstate;
 pub mod artifact;
 pub mod askoutcome;
+pub mod askrisk;
 pub mod askwait;
 pub mod autosave;
 pub mod awareness;
@@ -83,6 +84,7 @@ pub mod doctor;
 pub mod doing;
 /// The terminal engine, from the crate that holds it without the rest of the core (#1995).
 pub use purlis_terminal::engine;
+pub mod askrules;
 pub mod browserfiles;
 pub mod browserlimits;
 #[cfg(unix)]

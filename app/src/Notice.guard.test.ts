@@ -408,6 +408,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       ACTION +
       ". Allow for all that a source refused for some of the chats: said in the group's own row, which stays, naming the chat (#6009)",
   },
+  "AskRules.tsx": {
+    count: 1,
+    why:
+      ACTION +
+      ". An Undo in Rules I made that could not take its rule's grant away: said in the list's own dialog, beside the rule, which stays (#6010)",
+  },
   "KillSwitch.tsx": {
     count: 1,
     why: "the kill switch's refusal, on the title bar control it belongs to",

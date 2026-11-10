@@ -1633,17 +1633,17 @@ fn a_project_without_the_sandbox_shows_the_picker_nothing() {
     assert_eq!(SandboxAhead::of(Ahead::Off), None);
 }
 
+/// SD-30's install action is gone (ADR 0067 as amended 2026-11-10): no sandbox needs a
+/// program installed, so a refusal reaches the picker as its words alone.
 #[test]
-fn the_picker_is_told_a_refusal_with_its_install_command() {
+fn the_picker_is_told_a_refusal_in_its_own_words() {
     assert_eq!(
         SandboxAhead::of(Ahead::Refused {
-            why: "socat is not installed".to_owned(),
-            install: Some("sudo apt install socat".to_owned()),
+            why: "this kernel does not have Landlock".to_owned(),
         }),
         Some(SandboxAhead {
             state: "refused".to_owned(),
-            said: "socat is not installed".to_owned(),
-            install: Some("sudo apt install socat".to_owned()),
+            said: "this kernel does not have Landlock".to_owned(),
             locked: None,
         })
     );
@@ -1658,38 +1658,6 @@ fn on_windows_the_picker_is_told_the_chat_starts_without_it_and_why() {
     let row = SandboxAhead::of(Ahead::Unsandboxed(lifted.clone())).expect("a row");
     assert_eq!(row.state, "unsandboxed");
     assert_eq!(row.said, lifted.notice());
-}
-
-/// Ruling V78 c: the line is the compiled-in command for what is missing, typed and never
-/// run, so it carries no newline.
-#[test]
-fn the_install_line_is_charters_own_command_with_no_return_at_the_end() {
-    let missing = Some(backend::Missing::Programs {
-        os: sandbox::Os::Linux,
-        absent: vec!["git"],
-    });
-    assert_eq!(
-        install_line(missing.as_ref(), "ID=fedora\n").as_deref(),
-        Ok("sudo dnf install git")
-    );
-    // A kernel without Landlock, all a Linux sandbox needs now (ADR 0067 as amended 2026-11-10),
-    // has nothing to install.
-    assert!(
-        install_line(
-            backend::missing(sandbox::Os::Linux, &|_| false).as_ref(),
-            "ID=fedora\n"
-        )
-        .is_err(),
-        "nothing to install"
-    );
-    assert!(
-        install_line(None, "ID=fedora\n").is_err(),
-        "nothing missing"
-    );
-    assert!(
-        install_line(missing.as_ref(), "ID=nixos\n").is_err(),
-        "a distribution purlis does not know"
-    );
 }
 
 /// #1340: Settings › Sandbox draws the core's presets, each with the hosts the core lets a
@@ -2040,7 +2008,7 @@ fn ahead_here(
         std::slice::from_ref(profile),
         root,
         &sandbox::Machine::this(),
-        &backend::installed,
+        &sandbox::backend::installed,
     )
     .pop()
     .flatten()

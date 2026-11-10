@@ -94,15 +94,13 @@ pub fn landlock_way_on(opt_out: bool) -> String {
     purlis_linux_sandbox::landlock_way_on(opt_out)
 }
 
-/// SD-30's install action: the command that installs what `missing` names with the package
-/// manager of the distribution `os_release` (the text of `/etc/os-release`) says this is, or
-/// `None` where there is nothing to install or charter does not know the distribution. No
-/// sandbox needs a program on Linux now, so it is git's ([`crate::worktree::git::presence`]).
-///
-/// **Typed, never run** (ruling V78 c). Installing needs `sudo`, so the app types this into a
-/// shell tab at the project root and the person presses Return, unlike FR-29's installers
-/// (V65). It is built here from charter's own table and the programs found missing, so no text
-/// from a project, a plane or the window reaches the shell.
+/// **The command that installs what `missing` names** with the package manager of the
+/// distribution `os_release` (the text of `/etc/os-release`) says this is, or `None` where
+/// there is nothing to install or purlis does not know the distribution. No sandbox needs a
+/// program on Linux, so it is git's alone: the first run names it where git is missing
+/// ([`crate::worktree::git::presence`]). SD-30's sandbox install action, which typed it into a
+/// shell tab, is gone (ADR 0067 as amended 2026-11-10). Built from purlis's own table and the
+/// programs found missing, so no text from a project, a plane or the window reaches it.
 pub fn install_command(missing: &Missing, os_release: &str) -> Option<String> {
     let Missing::Programs {
         os: Os::Linux,

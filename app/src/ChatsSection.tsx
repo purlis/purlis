@@ -1673,14 +1673,6 @@ function ChatRowDrawn({
   useWindowLeft((why) => {
     if (why === "pointer" && pointerOn.current) leave();
   });
-  // **What the card says, while it is up, describes the row** (#3886): the row is React Aria's,
-  // so its `aria-describedby` is said on its element here, and taken back as the card goes.
-  useEffect(() => {
-    const row = self.current;
-    if (!carded || row === null) return;
-    row.setAttribute("aria-describedby", cardId);
-    return () => row.removeAttribute("aria-describedby");
-  }, [carded, cardId]);
   /** Its lines under its words: what binds it, what waits, what its restart says, and the
    *  second step of ending it. */
   const memory = waitingOnMemory !== null && waitingOnMemory > 0;
@@ -1693,6 +1685,9 @@ function ChatRowDrawn({
       ref={self}
       className="chat"
       current={current}
+      // **What the card says, while it is up, describes the row** (#3886): handed to the row,
+      // which hears it with the rest of what describes it and takes back only it (#6147).
+      describedBy={carded ? cardId : undefined}
       data-session={session}
       data-tab={tab}
       data-beside={beside || undefined}

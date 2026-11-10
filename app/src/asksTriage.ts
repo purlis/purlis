@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { OTHER_SCOPES } from "./AskDecision";
-import type { Shown } from "./bindings";
 
 /**
  * **Keyboard triage** (ADR 0121 decision 9, #6016; amended 2026-11-10): ⌘⇧I (Ctrl+Shift+I)
@@ -21,19 +20,6 @@ const ROWS = '[role="row"][data-key]';
 
 /** **What marks a high-risk ask's row** (ADR 0121 decision 8, #6011): triage never lands on it. */
 export const HIGH_RISK = "data-risk";
-
-/**
- * **Whether an ask is high-risk** (ADR 0121 decision 8): one that pushes to a protected branch,
- * reaches a host that looks like production, or writes outside the project. The seam #6011 fills:
- * the core says no ask's risk yet, so none is. Its row is drawn with {@link HIGH_RISK}, and
- * keyboard triage passes it by: it needs a deliberate press, from a row the person moved to.
- * Nor is it grouped with identical requests (#6009, `asksSame.ts`): it is answered alone, with
- * its risk in sight.
- */
-export function highRisk(ask: Shown): boolean {
-  void ask;
-  return false;
-}
 
 /**
  * **Where the keyboard lands in a row** (the lead), in this order:

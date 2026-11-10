@@ -3,14 +3,10 @@
 
 //! What the window asks about a project's sandbox (ADR 0067; ruling V78): what the new-chat
 //! picker says before a chat starts, the one-time offer to an existing project, this machine's
-//! opt-out count, and SD-30's install action.
-//!
-//! **The window names nothing that runs.** The install action sends a session number and no
-//! text: the line typed is built here from charter's own table and what this machine is
-//! missing ([`purlis_core::sandbox::backend::install_command`]), and it is typed without a
-//! newline, so the person reads it and presses Return. It needs `sudo` (ruling V78 c).
+//! opt-out count. SD-30's install action is gone: no sandbox needs a program installed (ADR
+//! 0067 as amended 2026-11-10).
 
-use purlis_core::sandbox::{self, Ahead, backend};
+use purlis_core::sandbox::{self, Ahead};
 
 use crate::planes::{PlaneId, Planes};
 
@@ -22,9 +18,6 @@ pub struct SandboxAhead {
     /// The sentence the picker shows: why it is refused, or why it starts without the sandbox.
     /// Empty for `sandboxed`.
     pub said: String,
-    /// SD-30's install command, shown before the person asks for it to be typed: where the
-    /// refusal is a program this machine is missing and charter knows its distribution.
-    pub install: Option<String>,
     /// Where policy forbids starting a chat without the sandbox (#1343): why, naming the policy
     /// and who set it. The picker then offers no opt-out.
     pub locked: Option<String>,
@@ -33,26 +26,18 @@ pub struct SandboxAhead {
 impl SandboxAhead {
     /// The row for `ahead`, or none where the project has not turned the sandbox on.
     pub fn of(ahead: Ahead) -> Option<Self> {
-        let row = |state: &str, said: String, install| Self {
+        let row = |state: &str, said: String| Self {
             state: state.to_owned(),
             said,
-            install,
             locked: None,
         };
         match ahead {
             Ahead::Off => None,
-            Ahead::Sandboxed => Some(row("sandboxed", String::new(), None)),
-            Ahead::Unsandboxed(lifted) => Some(row("unsandboxed", lifted.notice(), None)),
-            Ahead::Refused { why, install } => Some(row("refused", why, install)),
+            Ahead::Sandboxed => Some(row("sandboxed", String::new())),
+            Ahead::Unsandboxed(lifted) => Some(row("unsandboxed", lifted.notice())),
+            Ahead::Refused { why } => Some(row("refused", why)),
         }
     }
-}
-
-/// The text of this machine's `/etc/os-release`, empty where there is none.
-fn os_release() -> String {
-    std::fs::read_to_string("/etc/os-release")
-        .or_else(|_| std::fs::read_to_string("/usr/lib/os-release"))
-        .unwrap_or_default()
 }
 
 /// What the picker says beside a profile whose program it has not checked: nobody approved
@@ -82,8 +67,7 @@ pub fn ahead_of_each(
     machine: &sandbox::Machine,
     has: &dyn Fn(&str) -> bool,
 ) -> Vec<Option<SandboxAhead>> {
-    let os_release = os_release();
-    let asked = purlis_core::start::AheadOnce::new(root, machine, has, &os_release, None);
+    let asked = purlis_core::start::AheadOnce::new(root, machine, has, None);
     profiles
         .iter()
         .map(|profile| {
@@ -790,6 +774,33 @@ pub(crate) fn claude_is_wrapped_here_for_tests() -> bool {
     purlis_core::sandbox::Machine::this().purlis_wraps(purlis_core::harness::Harness::ClaudeCode)
 }
 
+/// **In a test, purlis's own wrap of a chat is the build's app program** (Linux; #1040), never
+/// the test binary. The wrap is purlis's own program run as `<program> _sandbox …`
+/// ([`purlis_core::sandbox::program::checked_wrap`]), which in a test is the test binary, and
+/// libtest refuses that line (`Unrecognized option: 'profile'`): the chat would end at once,
+/// before anything ran inside the wrap. The app program, built beside the test binary for this
+/// crate's integration tests, serves `_sandbox` before anything else, as it does for a person.
+/// Nothing where no wrap is held.
+#[cfg(test)]
+pub(crate) fn the_app_program_wraps_for_tests(applied: &mut purlis_core::sandbox::Applied) {
+    let Some(this) = applied.wrap_program() else {
+        return;
+    };
+    // `target/<profile>/deps/<test binary>`, and the app program in `target/<profile>`.
+    let app = this
+        .parent()
+        .and_then(std::path::Path::parent)
+        .map(|built| built.join(env!("CARGO_PKG_NAME")))
+        .expect("the test binary is in a folder of the build");
+    assert!(
+        app.is_file(),
+        "{} is not built, and a wrapped chat runs under it in a test: `cargo build -p {}`",
+        app.display(),
+        env!("CARGO_PKG_NAME")
+    );
+    applied.wrap_with(app);
+}
+
 /// **In a test of something else, where purlis wraps a Claude Code chat**: `planes`, taking
 /// every event it records, so the chat [`no_claude_sandbox_here_for_tests`] starts without the
 /// sandbox has its level recorded, as the app's is (ADR 0067 §7). Elsewhere `planes` as it is.
@@ -1254,44 +1265,6 @@ pub(crate) fn allow_shown(
         tracing::warn!("purlis: a persona's hosts were allowed without when ({why})");
     }
     Ok(())
-}
-
-/// The line [`type_sandbox_install`] types: SD-30's command for what `missing` names on the
-/// distribution `os_release` says this is, **with no newline** — the person runs it.
-fn install_line(missing: Option<&backend::Missing>, os_release: &str) -> Result<String, String> {
-    missing
-        .and_then(|missing| backend::install_command(missing, os_release))
-        .ok_or_else(|| {
-            "purlis has nothing to install for the sandbox on this machine, so nothing was \
-             typed."
-                .to_owned()
-        })
-}
-
-/// Types SD-30's install command into shell session `session` at the project root, and does
-/// not run it (ruling V78 c): installing needs `sudo`, so the person reads it and presses
-/// Return. The window sends no text; the line is built here, and it is typed only into a shell
-/// tab at the project root.
-#[tauri::command]
-#[specta::specta]
-pub fn type_sandbox_install(
-    planes: tauri::State<'_, Planes>,
-    plane: PlaneId,
-    session: u32,
-) -> Result<(), String> {
-    let held = planes.held(&plane)?;
-    // Into the operator's own shell at the project root, which the window opened for it, and
-    // never into an agent's pane or a shell elsewhere.
-    if !held.chats().is_shell_at(session, held.root()) {
-        return Err(
-            "that pane is not a shell at the project root, so the install command was not \
-             typed."
-                .to_owned(),
-        );
-    }
-    let missing = backend::missing(sandbox::Os::this(), &backend::installed);
-    let line = install_line(missing.as_ref(), &os_release())?;
-    held.operator_input(session, line.as_bytes())
 }
 
 /// **A Report of a sandbox block of purlis's own** (#1338), as the window shows it before
@@ -2546,7 +2519,7 @@ fn run_grant_of(id: &str) -> Option<u32> {
 
 /// **Every Allow on the list** ([`grants_of`]), with the programs chats may run with a vault's keys
 /// (ADR 0112, #5241), each of its chat alone and first, as a chat's own grants are.
-fn all_grants_of(held: &crate::planes::Held) -> Vec<SandboxGrant> {
+pub(crate) fn all_grants_of(held: &crate::planes::Held) -> Vec<SandboxGrant> {
     let mut out: Vec<SandboxGrant> = held
         .secret_asks()
         .given_runs()
@@ -3197,27 +3170,70 @@ pub async fn revoke_sandbox_grant(
     let browsers_ended = std::sync::Arc::clone(planes.browsers_ended());
     // On a blocking thread, as `sandbox_grants` is: the list it answers asks git (#1543).
     crate::off_the_window("revoking a sandbox grant", move || {
-        let root = held.root();
-        let audit = held.audit_then_record(network.as_ref());
-        if let Some(number) = run_grant_of(&id) {
-            revoke_run_grant(&held, number)?;
-            return Ok(all_grants_of(&held));
-        }
-        match browser_site_of(&id) {
-            // A browser site's (#2018): its browsers end, as a narrowing ends them.
-            Some(granted) => {
-                revoke_browser_site(&held, &plane, &granted, &audit, &*browsers_ended)?
-            }
-            None => revoke(root, held.chats(), &id, &audit)?,
-        }
-        // Removing Always for a persona's browser narrows the chats it allowed (#2241): their
-        // browsers end now, D-2013-11.
-        if let Some(persona) = browser_always_of(&id) {
-            crate::chatbrowsers::always_removed(&held, &plane, persona, &*browsers_ended);
-        }
+        revoke_granted(&held, &plane, network.as_ref(), &browsers_ended, &id)?;
         Ok(all_grants_of(&held))
     })
     .await
+}
+
+/// **Takes the grant called `id` away** in `held`, audited, as Revoke on Settings' Granted list
+/// does: and Undo in Rules I made (#6010).
+pub(crate) fn revoke_granted(
+    held: &crate::planes::Held,
+    plane: &PlaneId,
+    network: Option<&purlis_core::sandboxblock::record::Record>,
+    browsers_ended: &crate::chatbrowsers::Teller,
+    id: &str,
+) -> Result<(), String> {
+    let root = held.root();
+    let audit = held.audit_then_record(network);
+    if let Some(number) = run_grant_of(id) {
+        return revoke_run_grant(held, number);
+    }
+    match browser_site_of(id) {
+        // A browser site's (#2018): its browsers end, as a narrowing ends them.
+        Some(granted) => revoke_browser_site(held, plane, &granted, &audit, &**browsers_ended)?,
+        None => revoke(root, held.chats(), id, &audit)?,
+    }
+    // Removing Always for a persona's browser narrows the chats it allowed (#2241): their
+    // browsers end now, D-2013-11.
+    if let Some(persona) = browser_always_of(id) {
+        crate::chatbrowsers::always_removed(held, plane, persona, &**browsers_ended);
+    }
+    Ok(())
+}
+
+/// **The grant an Allow just wrote** (#6010), by the id Settings' Granted list revokes it by:
+/// the grant of `what` at `level` naming `target`, and for one chat, chat `session`'s; else the
+/// one of them made in the last minute, newest first. None where none is listed.
+pub(crate) fn grant_made(
+    held: &crate::planes::Held,
+    session: u32,
+    what: GrantWhat,
+    target: &str,
+    level: GrantLevel,
+    now: u64,
+) -> Option<String> {
+    let chat = held.chats().shown_name(session);
+    let one_chat = matches!(level, GrantLevel::Once | GrantLevel::Chat);
+    let listed: Vec<SandboxGrant> = all_grants_of(held)
+        .into_iter()
+        .filter(|one| one.what == what && one.level == level)
+        .filter(|one| !one_chat || one.chat == chat)
+        .collect();
+    listed
+        .iter()
+        .find(|one| one.target == target)
+        .or_else(|| {
+            listed
+                .iter()
+                .filter(|one| {
+                    one.at
+                        .is_some_and(|at| now.saturating_sub(u64::from(at)) <= 60)
+                })
+                .max_by_key(|one| one.at)
+        })
+        .map(|one| one.id.clone())
 }
 
 /// Why a project's browser site reaches no browser here yet (#2443).

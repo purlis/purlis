@@ -32,6 +32,7 @@ mod artifacts;
 mod asking;
 mod asknotify;
 mod askoutcome;
+mod askrules;
 mod askwrites;
 mod atlimit;
 mod autosave;

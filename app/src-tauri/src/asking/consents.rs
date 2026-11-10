@@ -37,6 +37,7 @@ fn offered(id: &str, label: &str, allows: bool) -> Offered {
         label: label.to_owned(),
         allows,
         preselected: None,
+        scope: None,
     }
 }
 
@@ -62,12 +63,14 @@ fn of_no_chat(
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message: None,
         login: None,
         fill: None,
         earlier_messages: None,
+        rule: None,
         secret: None,
         run: None,
     }

@@ -27,7 +27,6 @@
 import type { Offered, Shown } from "./bindings";
 import { waysOf } from "./AskDecision";
 import type { Placed, PlacedGroup } from "./asksOrder";
-import { highRisk } from "./asksTriage";
 
 /** One request several chats make alike: their asks, most urgent first, and its one grant. */
 export type Same = {
@@ -41,6 +40,17 @@ export type Same = {
 
 /** A row of Asks: one chat's asks, or one request several chats make alike. */
 export type AskRow = { kind: "chat"; group: PlacedGroup } | { kind: "same"; same: Same };
+
+/**
+ * **Whether `ask` is high-risk** (ADR 0121 decision 8, #6011): it pushes to a protected branch,
+ * reaches a host that looks like production, or writes outside the project, as the core reads it
+ * from the project's own facts (`purlis_core::askrisk`, `Shown.risk`). One is never grouped,
+ * never offered as a rule (#6010), never landed on by keyboard triage (#6016), and its Allow asks
+ * once more on its row: the one predicate all of them read.
+ */
+export function highRisk(ask: Shown): boolean {
+  return ask.risk != null;
+}
 
 /** **What `ask` asks, as identical requests share it**, or nothing where it is never grouped. */
 function askedOf(ask: Shown): string | undefined {
@@ -69,9 +79,8 @@ function askedOf(ask: Shown): string | undefined {
 function sameOf(
   ask: Shown,
   offers: readonly Offered[],
-  risky: (ask: Shown) => boolean,
 ): { key: string; grant: Offered } | undefined {
-  if (risky(ask)) return undefined;
+  if (highRisk(ask)) return undefined;
   const asked = askedOf(ask);
   const grant = waysOf(offers).main;
   if (asked === undefined || grant === undefined) return undefined;
@@ -81,19 +90,18 @@ function sameOf(
 /**
  * **The rows of Asks, identical requests from several chats made one** (#6009). `groups` are
  * in the order `inOrder` gives; `offersOf` is what each ask's row offers (an Allow its row
- * withholds is never answered for it here); `risky` is {@link highRisk}, a parameter only so the
- * rule is tested before #6011 classes any ask.
+ * withholds is never answered for it here). A high-risk ask is never one of a group
+ * ({@link highRisk}).
  */
 export function withSame(
   groups: readonly PlacedGroup[],
   offersOf: (ask: Shown) => readonly Offered[] = (ask) => ask.options,
-  risky: (ask: Shown) => boolean = highRisk,
 ): AskRow[] {
   const alike = new Map<string, { grant: Offered; placed: Placed[]; chats: Set<number> }>();
   const keyOf = new Map<Placed, string>();
   for (const group of groups)
     for (const one of group.placed) {
-      const same = sameOf(one.ask, offersOf(one.ask), risky);
+      const same = sameOf(one.ask, offersOf(one.ask));
       if (same === undefined) continue;
       const held = alike.get(same.key) ?? { grant: same.grant, placed: [], chats: new Set() };
       held.placed.push(one);

@@ -3956,16 +3956,29 @@ fn edge_taken_off(rule: &Rule, property: Prop, value: PartValue) -> bool {
             .is_some_and(|one| one.consent.is_none())
 }
 
-/// A surface's look whose fill a theme sets: the surface, its variant, its default fill and the
-/// fill drawn in its place.
-type SurfaceSet = (&'static Family, &'static str, &'static str, &'static str);
+/// A surface's look whose fill a theme sets: the surface, its variant, the states it is drawn
+/// in, its default fill there and the fill drawn in its place.
+type SurfaceSet = (
+    &'static Family,
+    &'static str,
+    &'static [State],
+    &'static str,
+    &'static str,
+);
+
+/// **The states a surface's fill is read in under what stands on it** (#6156): at rest, chosen
+/// and under the pointer, each of a surface that takes it, alone. What stands on it is read at
+/// rest on each, so the readings grow by the surface's states and never by a product of the
+/// family's own.
+const SURFACE_STATES: &[&[State]] = &[&[], &[State::Selected], &[State::Hover]];
 
 /// **The fills a theme's parts set on the surfaces other families are drawn on**: each surface's
-/// look whose root draws, at rest, another fill than its family default's, with that default and
-/// the fill drawn in its place. A family drawn on the default is drawn on the fill set. A look
-/// whose default draws no fill (a tree's row, a table's) stands on its parent's ground until a
-/// theme fills it (#5863): its default is `transparent`, which stands for each ground the
-/// surface is drawn on ([`defaults_under`]).
+/// look whose root draws, at rest or in a state it is read in ([`SURFACE_STATES`], #6156),
+/// another fill than its family default's there, with that default and the fill drawn in its
+/// place. A family drawn on the default is drawn on the fill set. A look whose default draws no
+/// fill (a tree's row, a table's) stands on its parent's ground until a theme fills it (#5863):
+/// its default is `transparent`, which stands for each ground the surface is drawn on
+/// ([`defaults_under`]).
 fn surfaces_set(rules: &[Rule]) -> Vec<SurfaceSet> {
     let mut found = Vec::new();
     for surface in MANIFEST {
@@ -3975,10 +3988,15 @@ fn surfaces_set(rules: &[Rule]) -> Vec<SurfaceSet> {
             continue;
         }
         for variant in surface.looks() {
-            let default = (surface.defaults)(variant, &[]).fill;
-            let set = drawn(rules, surface, variant, &[]).fill;
-            if set != TRANSPARENT && set != default {
-                found.push((surface, variant, default, set));
+            for states in SURFACE_STATES
+                .iter()
+                .filter(|states| states.iter().all(|one| surface.states.contains(one)))
+            {
+                let default = (surface.defaults)(variant, states).fill;
+                let set = drawn(rules, surface, variant, states).fill;
+                if set != TRANSPARENT && set != default {
+                    found.push((surface, variant, *states, default, set));
+                }
             }
         }
     }
@@ -4004,6 +4022,10 @@ fn defaults_under<'a>(surface: &'a Family, default: &'a &'a str) -> &'a [&'a str
 /// there until it is named here. A surface drawn with no fill of its own (a table's row, a
 /// tree's) leaves its parent's ground showing, so what stands in it is named on that parent too;
 /// once a theme fills it, what stands in it is measured on that fill ([`surfaces_set`], #5863).
+///
+/// A surface is named alone (`list`), for every look of it, or with one variant (`list.row`), for
+/// that look alone (#6149): a family the window draws only on a list's plain rows is never
+/// measured on a fill a theme sets on its cards ([`stands_for`]).
 const STANDS_ON: &[(&str, &[&str])] = &[
     (
         "card",
@@ -4030,6 +4052,9 @@ const STANDS_ON: &[(&str, &[&str])] = &[
         "list",
         &["button", "chat-mark", "checkbox", "popover", "tooltip"],
     ),
+    // Drawn on a list's plain rows alone (`DevicesView.tsx`, `SkillLibraryGrade.tsx`), never on
+    // a card row, which is the one list fill a shipped theme sets (#6149).
+    ("list.row", &["badge"]),
     ("menu", &["chat-mark", "tooltip"]),
     (
         "message",
@@ -4204,19 +4229,46 @@ const STANDS_ON: &[(&str, &[&str])] = &[
     ),
 ];
 
-/// **The families drawn on `surface` that a fill `set` in place of its `default` brings a new
-/// ground under** (#3268): each [`STANDS_ON`] says is drawn there, whose grounds do not name `set`
-/// already, or one of whose parts read on grounds of their own ([`Family::under`]) is drawn on
-/// a ground `default` stands for ([`defaults_under`]) and not read on `set`.
+/// A [`STANDS_ON`] key read: the surface it names and the one look of it, if it names one
+/// (`list.row`, #6149).
+fn surface_and_look(key: &str) -> (&str, Option<&str>) {
+    key.split_once('.')
+        .map_or((key, None), |(surface, look)| (surface, Some(look)))
+}
+
+/// Whether a [`STANDS_ON`] key names `surface`'s look `variant`: the surface alone, every look
+/// of it, or that look by name (`list.row`, #6149).
+fn stands_for(key: &str, surface: &str, variant: &str) -> bool {
+    let (named, look) = surface_and_look(key);
+    named == surface && look.is_none_or(|one| one == variant)
+}
+
+/// **The families the window draws in React Aria's overlay**, portaled to the window's body, so a
+/// surface that holds one never draws its fill in a state under it (#6156): a popover a list's
+/// row opens is drawn over the window, never on the row's chosen fill.
+/// `app/src/theme/grounds.test.ts` finds them from the components and holds this list to them,
+/// exactly.
+const PORTALED: &[&str] = &["popover", "tooltip"];
+
+/// **The families drawn on `surface`'s look `variant` in `states` that a fill `set` in place of
+/// its `default` brings a new ground under** (#3268): each [`STANDS_ON`] says is drawn there
+/// ([`stands_for`]), but one drawn in the overlay where the surface is in a state ([`PORTALED`],
+/// #6156), whose grounds do not name `set` already, or one of whose parts read on grounds of their
+/// own ([`Family::under`]) is drawn on a ground `default` stands for ([`defaults_under`]) and not
+/// read on `set`.
 fn drawn_on(
     surface: &'static Family,
+    variant: &str,
+    states: &[State],
     default: &str,
     set: &str,
 ) -> impl Iterator<Item = &'static Family> {
-    let on: &[&str] = STANDS_ON
+    let on: Vec<&str> = STANDS_ON
         .iter()
-        .find(|(name, _)| *name == surface.name)
-        .map_or(&[], |(_, families)| *families);
+        .filter(|(key, _)| stands_for(key, surface.name, variant))
+        .flat_map(|(_, families)| families.iter().copied())
+        .filter(|family| states.is_empty() || !PORTALED.contains(family))
+        .collect();
     MANIFEST.iter().filter(move |family| {
         let defaults = defaults_under(surface, &default);
         on.contains(&family.name)
@@ -4310,20 +4362,30 @@ fn tints_reach(theme: &ResolvedTheme, set: &str, looks: &[LookOn<'_>]) -> bool {
 fn tints_reach_a_surface(theme: &ResolvedTheme, rules: &[Rule]) -> bool {
     surfaces_set(rules)
         .into_iter()
-        .any(|(surface, variant, default, set)| {
-            apart_tints_reach(theme, rules, surface, variant, set)
-                || drawn_on(surface, default, set).any(|family| {
-                    let sets = sets_read(rules, family);
+        .any(|(surface, variant, states, default, set)| {
+            (states.is_empty() && apart_tints_reach(theme, rules, surface, variant, set))
+                || drawn_on(surface, variant, states, default, set).any(|family| {
+                    let sets = sets_on(rules, family, states);
                     tints_reach(theme, set, &looks_in(rules, family, &sets))
                 })
         })
 }
 
-/// **The floor a family breaks on a surface's fill a theme sets**, if any: each of its looks
-/// ([`sets_read`]) held to the reading floors as written and, where a tint can move them
-/// ([`tints_reach`]), in the tints (#4310): each of `coarse`, and every drawn theme where one of
-/// those comes near a floor. Its consent variants are held to the consent floors in every drawn
-/// theme, on that fill alone.
+/// **The sets of states `family` is read in on a surface's fill drawn in `states`** (#6156): on a
+/// fill at rest, each set it is read in ([`sets_read`]); on a fill the surface draws in a state
+/// (a chosen row's), the family at rest alone, so the readings grow by the surface's states and
+/// never by a product of the family's own.
+fn sets_on(rules: &[Rule], family: &Family, states: &[State]) -> Vec<Vec<State>> {
+    if states.is_empty() {
+        sets_read(rules, family)
+    } else {
+        vec![Vec::new()]
+    }
+}
+
+/// **The floor a family breaks on a surface's fill a theme sets at rest**, if any, in each set of
+/// states it is read in there ([`broken_in`]), for the tests that read one fill alone.
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 fn broken_on(
     theme: &ResolvedTheme,
@@ -4336,7 +4398,29 @@ fn broken_on(
     set: &str,
 ) -> Option<(String, Option<f64>)> {
     let sets = sets_read(rules, family);
-    let looks = looks_in(rules, family, &sets);
+    broken_in(
+        theme, coarse, drawn_in, rules, family, surface, default, set, &sets,
+    )
+}
+
+/// **The floor a family breaks on a surface's fill a theme sets**, if any: each of its looks in
+/// `sets` ([`sets_on`]) held to the reading floors as written and, where a tint can move them
+/// ([`tints_reach`]), in the tints (#4310): each of `coarse`, and every drawn theme where one of
+/// those comes near a floor. Its consent variants are held to the consent floors in every drawn
+/// theme, on that fill alone.
+#[allow(clippy::too_many_arguments)]
+fn broken_in(
+    theme: &ResolvedTheme,
+    coarse: &[ResolvedTheme],
+    drawn_in: &[ResolvedTheme],
+    rules: &[Rule],
+    family: &Family,
+    surface: &Family,
+    default: &str,
+    set: &str,
+    sets: &[Vec<State>],
+) -> Option<(String, Option<f64>)> {
+    let looks = looks_in(rules, family, sets);
     let defaults = defaults_under(surface, &default);
     // What the fill set breaks, which a default broken on the default too is not (#3268).
     let reads = |margin: f64, one: &ResolvedTheme, on: &[String], look: &LookOn<'_>| {
@@ -4389,7 +4473,7 @@ fn broken_on(
     }
     for one in drawn_in {
         let on = surface_ground(one, surface, set);
-        for states in &sets {
+        for states in sets {
             for variant in family
                 .variants
                 .iter()
@@ -4439,11 +4523,13 @@ fn a_default_broken_on_the_default_too(
         })
 }
 
-/// A family read on a surface's fill: the family, the surface, its default fill, the fill set and
-/// how many looks of the theme the consent floors are held in.
+/// A family read on a surface's fill: the family, the surface, whether the fill is drawn at rest
+/// ([`sets_on`]), its default fill, the fill set and how many looks of the theme the consent
+/// floors are held in.
 type Reading = (
     &'static str,
     &'static str,
+    bool,
     &'static str,
     &'static str,
     usize,
@@ -4475,20 +4561,37 @@ fn held_on_surfaces(
     // theme alone to every tint: so a reading holds until a fall changes the rules of the family
     // it is of, and is keyed by how many looks there are.
     let mut known: Readings = Vec::new();
-    for (surface, variant, default, set) in surfaces_set(rules) {
-        for family in drawn_on(surface, default, set) {
+    for (surface, variant, states, default, set) in surfaces_set(rules) {
+        let rest_fell = |fell: &[Fell]| {
+            fell.iter()
+                .any(|one| one.part == named(surface, variant, &[]))
+        };
+        // A look whose rest fell in this pass is read in its states once the hold is asked
+        // again, on the rules the fall left: what the theme writes for a state itself is kept.
+        if !states.is_empty() && rest_fell(&fell[before..]) {
+            continue;
+        }
+        for family in drawn_on(surface, variant, states, default, set) {
             // The consent floors hold in every tint, a surface's fill under a consent variant
             // included (ADR 0097 §6), as they do where a theme's parts reach the family itself.
             let consent = family.variants.iter().any(|one| one.consent.is_some());
             if consent && drawn_in.len() == 1 && !theme.tint.tabs().is_empty() {
                 drawn_in.extend(every_tinted(theme));
             }
-            let key = (family.name, surface.name, default, set, drawn_in.len());
+            let key = (
+                family.name,
+                surface.name,
+                states.is_empty(),
+                default,
+                set,
+                drawn_in.len(),
+            );
             let broken = if let Some((_, said)) = known.iter().find(|(one, _)| *one == key) {
                 said.clone()
             } else {
-                let broken = broken_on(
-                    theme, coarse, drawn_in, rules, family, surface, default, set,
+                let sets = sets_on(rules, family, states);
+                let broken = broken_in(
+                    theme, coarse, drawn_in, rules, family, surface, default, set, &sets,
                 );
                 known.push((key, broken.clone()));
                 broken
@@ -4503,19 +4606,16 @@ fn held_on_surfaces(
                 }
                 .fall(
                     variant,
-                    &[],
+                    states,
                     format!("what a {} draws on it: {floor}", family.name),
                     ratio,
                 );
                 break;
             }
         }
-        // The parts drawn apart from their root that stand on the surface's default (a
+        // The parts drawn apart from their root that stand on the surface's default at rest (a
         // switcher's rows and pins on the popover, #4000), as they are drawn, on the fill set.
-        if fell
-            .iter()
-            .any(|one| one.part == named(surface, variant, &[]))
-        {
+        if !states.is_empty() || rest_fell(fell) {
             continue;
         }
         if let Some((family, floor, ratio)) =

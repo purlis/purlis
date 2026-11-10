@@ -27,6 +27,10 @@ export type QuestionsHeld = {
   /** When the first of them comes back by itself (#6018), in seconds since 1970: none where
    *  every snoozed chat waits for a new ask. */
   readonly snoozed_until?: number | null;
+  /** The asks a cool-off holds quietly (#6010), listed apart: none from a core that lists none. */
+  readonly cooling?: readonly Shown[];
+  /** When the first cool-off ends by itself, in seconds since 1970. */
+  readonly cooling_until?: number | null;
 };
 
 /** Where a task's question stands. `since` is in seconds since 1970: when it was asked, or

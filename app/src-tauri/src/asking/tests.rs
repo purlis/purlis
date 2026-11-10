@@ -133,6 +133,8 @@ struct World {
     vaults: Vec<crate::vaultroute::VaultRefused>,
     /// What the project's committed file declares it expects (ADR 0093).
     declared: purlis_core::sandbox::services::Declared,
+    /// What the project knows that an ask's risk is read against (#6011).
+    risk: purlis_core::askrisk::Facts,
 }
 
 impl World {
@@ -170,6 +172,12 @@ impl World {
             may_remember: true,
             vaults: Vec::new(),
             declared: purlis_core::sandbox::services::Declared::default(),
+            risk: purlis_core::askrisk::Facts::new(
+                std::path::Path::new("/work/plane"),
+                None,
+                ["main".to_owned()],
+                Vec::new(),
+            ),
         }
     }
 
@@ -269,6 +277,7 @@ impl World {
             },
             held_open: self.held_open,
             runner_of: &|_| None,
+            risk: &self.risk,
         })
     }
 }
@@ -2988,11 +2997,13 @@ fn asked(session: u32, ask: &str) -> Shown {
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message: None,
         login: None,
         earlier_messages: None,
+        rule: None,
         secret: None,
         run: None,
         fill: None,
@@ -3022,6 +3033,8 @@ fn a_snoozed_chats_asks_are_listed_apart_until_it_asks_something_new() {
         with_asking_chat: Vec::new(),
         snoozed: Vec::new(),
         snoozed_until: None,
+        cooling: Vec::new(),
+        cooling_until: None,
     };
 
     let split = snoozed_apart(
@@ -3071,6 +3084,8 @@ fn a_chat_snoozed_for_an_hour_says_when_it_comes_back_and_is_listed_again_then()
         with_asking_chat: Vec::new(),
         snoozed: Vec::new(),
         snoozed_until: None,
+        cooling: Vec::new(),
+        cooling_until: None,
     };
 
     let split = snoozed_apart(listing(), Some(&store), &root, NOW + 3_599);
@@ -3201,6 +3216,85 @@ fn a_chat_whose_permission_ask_timed_out_is_listed_at_its_pane_prompt_beside_it(
             (2, AskSource::Permission, Some(1_700_000_000)),
             (3, AskSource::Permission, None),
             (2, AskSource::Terminal, None),
+        ]
+    );
+}
+
+// Risk (ADR 0121 decision 8, #6011).
+
+#[test]
+fn an_ask_that_pushes_to_a_protected_branch_reaches_production_or_writes_outside_carries_its_risk()
+{
+    let asks_held = Asks::new();
+    let mut world = World::new();
+    let ask = |action: Action| Ask {
+        action,
+        ..a_hook_ask("")
+    };
+    world.permissions = [
+        Action::Command {
+            line: "git push origin main".to_owned(),
+        },
+        Action::Edit {
+            path: "/etc/hosts".to_owned(),
+        },
+        Action::Command {
+            line: "cargo test".to_owned(),
+        },
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(at, action)| {
+        asks_held
+            .raise(&(2 + at).to_string(), ask(action), Instant::now())
+            .raised
+    })
+    .collect();
+    world.blocks = vec![
+        (5, a_host_block("api.prod.example.com")),
+        (6, a_write_block("/opt/cache")),
+        (7, a_host_block("api.example.com")),
+    ];
+
+    let risks: Vec<_> = world
+        .asks()
+        .into_iter()
+        .map(|ask| (ask.session, ask.risk.map(|risk| (risk.class, risk.why))))
+        .collect();
+
+    assert_eq!(
+        risks,
+        [
+            (
+                2,
+                Some((
+                    RiskClass::ProtectedPush,
+                    "Pushes to main, a protected branch".to_owned()
+                ))
+            ),
+            (
+                3,
+                Some((
+                    RiskClass::OutsideProject,
+                    "Writes outside the project, in /etc/hosts".to_owned()
+                ))
+            ),
+            (4, None),
+            (
+                5,
+                Some((
+                    RiskClass::ProductionHost,
+                    "Reaches api.prod.example.com, a host that looks like production".to_owned()
+                ))
+            ),
+            (
+                6,
+                Some((
+                    RiskClass::OutsideProject,
+                    "Writes outside the project, in /opt/cache".to_owned()
+                ))
+            ),
+            (7, None),
         ]
     );
 }

@@ -321,7 +321,7 @@ function Shown({
   // #6123): every row with a tooltip, a list's and a tree's, hands its own (`RowHeard`). The
   // tooltip never writes the row's `aria-describedby`. A list's row draws it through React
   // Aria's `render`; a tree's row writes it on its element from its root (`useTreeRowHeard`),
-  // the one hand write under `ui/` (`describedBy.guard.test.ts`), because React Aria's
+  // the one hand write in the window (`describedBy.guard.test.ts`), because React Aria's
   // `TreeItem` takes no `render` and drops an `aria-describedby` it is handed.
   const heard = useContext(RowHeard);
   useEffect(() => {

@@ -539,7 +539,6 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
         "INPUT_ORDER",
         &[
             "type_installer",
-            "type_sandbox_install",
             "type_profile_sign_in",
             "reference_into_chat",
             "references_into_chat",

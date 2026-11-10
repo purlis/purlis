@@ -796,12 +796,11 @@ fn the_picker_says_why_before_anything_starts() {
     let (_dir, root) = sandboxed_project(Some(
         r#"{"vaults": {"dev": {"provider": "plain-file", "config": {"file": 7}}}}"#,
     ));
-    let Ahead::Refused { why, install } = ahead(
+    let Ahead::Refused { why } = ahead(
         Harness::ClaudeCode,
         &root,
         &machine(Os::MacOs, &root),
         &|_| true,
-        "",
         &|_| Ok(()),
     ) else {
         panic!("the picker offered a sandboxed start");
@@ -815,7 +814,6 @@ fn the_picker_says_why_before_anything_starts() {
             && why.contains("Doctor says what is wrong"),
         "{why}"
     );
-    assert_eq!(install, None);
 }
 
 #[test]
