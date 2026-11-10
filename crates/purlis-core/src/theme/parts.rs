@@ -80,7 +80,7 @@ use super::{Complaint, ResolvedTheme, stringify};
 /// never changes it: what it adds is `since:` [`NEXT`], and the release step
 /// (`node tools/theme-parts-release.mjs`, `docs/updating.md`) turns every [`NEXT`] into this
 /// version plus one, raises this, and pins the new version's digest.
-pub const VERSION: u32 = 13;
+pub const VERSION: u32 = 14;
 
 /// **The version what is added since the last release comes in**: a pull request that adds a
 /// family, a part, a variant, a state or a property gives it `since: NEXT` (written
