@@ -9,6 +9,8 @@ import { type QuietChat } from "./chatState";
 import { type Ending } from "./QuitWarning";
 import { type SandboxSaid } from "./SandboxMark";
 import { type StandingNotice } from "./ChipNotices";
+import { type FleetChat } from "./everyChat";
+import { type Lent } from "./AllChats";
 
 /**
  * **What a project and the window tell each other** (#1035, split out of `PlaneView.tsx`): what
@@ -79,6 +81,11 @@ export type PlaneReport = {
   branch?: Place;
   /** Its workspaces, once its plane is read: the title bar's chips and switchers (#2916). */
   workspaces?: ReportedWorkspaces;
+  /** **Its chats, as All chats lists them** (#6013): told again only when one of them changes
+   *  state, name or place, never for a chat that only moved. */
+  fleet?: readonly FleetChat[];
+  /** Its own chats' stores, which All chats' rows in this window read live from (#6013). */
+  lent?: Lent;
 };
 
 /**
