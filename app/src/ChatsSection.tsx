@@ -36,7 +36,7 @@ import { TaskEndConfirm, type TaskEndInline } from "./TaskEnd";
 import type { AtLimit, FinishedTask } from "./bindings";
 import { HelpersSaid } from "./ExplorerChats";
 import { ChatDoingLine } from "./ChatRowActivity";
-import { aCardIsUp, cardDown, cardIsUp, cardUp, skipsTheRest, useCardUp } from "./chatCard";
+import { aCardIsUp, cardDown, sessionCardIsUp, cardUp, skipsTheRest, useCardUp } from "./chatCard";
 import { ChatShownState } from "./ChatRows";
 import { ChatPersonaState, useShownState } from "./ChatPersonaState";
 import { Grip } from "./ui/grip/Grip";
@@ -1646,7 +1646,7 @@ function ChatRowDrawn({
     if (pointedLast()) unrest();
     else rest("keyboard");
   };
-  // The handlers below decide by the window's record of the card (`cardIsUp`), never by
+  // The handlers below decide by the window's record of the card (`sessionCardIsUp`), never by
   // `carded`: the wait can bring the card up after the row last drew, and a handler of that
   // drawing would think it down and leave it up (#6073).
   /** The pointer or the keyboard left the row: no card, now or after the wait. */
@@ -1655,7 +1655,7 @@ function ChatRowDrawn({
    *  to it, and stays up while the pointer is on it. */
   const leave = () => {
     pointerOn.current = false;
-    if (!cardIsUp(session)) return unrest();
+    if (!sessionCardIsUp(session)) return unrest();
     unrest();
     resting.current = window.setTimeout(() => card(false), CARD_LEAVE_MS);
   };

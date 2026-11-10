@@ -494,6 +494,7 @@ describe("a row's card and the keyboard leaving (#6073)", () => {
   // no pointer on the row (WebKit's `RolledUpHand` picture).
   it("takes the card down when the keyboard leaves the row the moment its card came up", async () => {
     draw();
+    // A key first, so the focus below is the keyboard resting on the row, not a press's.
     await userEvent.keyboard("{Shift}");
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     act(() => rowOf(3).focus());

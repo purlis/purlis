@@ -58,7 +58,7 @@ export function aCardIsUp(): boolean {
 
 /** Whether `session`'s card is up now: what a handler decides by, as the row may not have
  *  drawn the card's last change yet (#6073). */
-export function cardIsUp(session: number): boolean {
+export function sessionCardIsUp(session: number): boolean {
   return up === session;
 }
 
@@ -69,7 +69,7 @@ export function useCardUp(session: number): boolean {
       drawers.add(draw);
       return () => void drawers.delete(draw);
     },
-    () => cardIsUp(session),
+    () => sessionCardIsUp(session),
   );
 }
 
