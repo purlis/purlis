@@ -599,7 +599,9 @@ export const NamedByItsWords: Story = {
     const menu = await screen.findByRole("menu", { name: "Project purlis" });
     const settings = within(menu).getByRole("menuitem", { name: "Settings…" });
     await expect(settings).toHaveAttribute("aria-keyshortcuts", "Control+,");
-    await expect(within(menu).getByRole("menuitem", { name: "Rename…" })).toBeVisible();
+    // Named by its `aria-label`, so a case for axe's rule, with its key drawn in it.
+    const rename = within(menu).getByRole("menuitem", { name: "Rename…" });
+    await expect(rename.querySelector('[data-part="shortcut"]')).toHaveAttribute("data-key", "F2");
     const close = within(menu).getByRole("menuitem", { name: "Close" });
     await expect(close).toHaveAttribute("aria-keyshortcuts", "Control+W");
     await expect(close).toHaveAccessibleDescription(
@@ -609,6 +611,8 @@ export const NamedByItsWords: Story = {
     const key = close.querySelector('[data-part="shortcut"]');
     await expect(key).not.toBeNull();
     await expect(getComputedStyle(key as Element, "::before").content).toBe('"Ctrl+W"');
+    // A menu fading in is not on screen to axe yet, and no row would be a case for its rule.
+    await waitFor(() => expect(rename).toBeVisible(), { timeout: 3_000 });
     const { default: axe } = await import("axe-core");
     const found = await axe.run(menu, {
       runOnly: { type: "rule", values: ["label-content-name-mismatch"] },

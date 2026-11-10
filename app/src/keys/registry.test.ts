@@ -487,6 +487,8 @@ describe("a menu row's key (#6043)", () => {
       said: "Ctrl+Shift+T",
       aria: "Control+Shift+T",
     });
+    expect(menuRowKey("chat.rename:4", true)).toEqual({ said: "F2", aria: "F2" });
+    expect(menuRowKey("tab.close:4", true)).toEqual({ said: "⌫", aria: "Backspace Delete" });
     expect(menuRowKey("no.such.row", true)).toBeUndefined();
   });
 });

@@ -213,10 +213,18 @@ export const ShortcutsOnRows: Story = {
       "On rows: Enter opens the menu",
     );
     expectFocusInSight();
+    // Each drawn from its `data-key`, and said to a reader as the row's shortcut (#6043).
     const keys = within(menu)
       .getAllByRole("menuitem")
-      .map((item) => item.querySelector('[data-part="shortcut"]')?.textContent);
-    expect(keys).toEqual(["F2", "⌘⇧T", "⌫"]);
+      .map((item) => [
+        item.querySelector('[data-part="shortcut"]')?.getAttribute("data-key"),
+        item.getAttribute("aria-keyshortcuts"),
+      ]);
+    expect(keys).toEqual([
+      ["F2", "F2"],
+      ["⌘⇧T", "Shift+Meta+T"],
+      ["⌫", "Backspace Delete"],
+    ]);
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull(), { timeout: 3_000 });
     await untilFocused(() => trigger, "On rows: Escape closes it, back on its trigger");
