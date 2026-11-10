@@ -18,7 +18,7 @@ import { PROJECTS, ask, inFront, openFromTheStrip } from "../switching.js";
  * Its ✋ counts the launch's project's ask as "+1 elsewhere" (#5999), and its Asks, which opens
  * on All projects, lists that ask as a row of its own, with its options on the row and no line
  * for the project. Deny, pressed there, is answered in the launch's project: its hook is
- * answered, and the ask leaves both projects' counts.
+ * answered, and the permission is listed and held nowhere after.
  *
  * `AsksInPlace.window.test.tsx` holds the rows against a mocked window; what only the built app
  * says is that the window's registry lists the ask under the right project and that an answer
@@ -177,20 +177,21 @@ describe("another project's ask, answered in place from Asks", function () {
       INBOX,
       first,
     );
-    // Answered in the launch's project: its row goes, and the ✋ here counts nothing elsewhere.
+    // Answered in the launch's project: its permission's row goes from here.
+    const permissionRow = `${INBOX} [data-elsewhere^="${first}#"] .inbox-ask[data-source="permission"]`;
     await browser
-      .waitUntil(
-        async () => (await theirRows(first)).length === 0 && !/elsewhere/.test(await handSays()),
-        { timeout: 30_000, interval: 250 },
-      )
+      .waitUntil(async () => !(await $(permissionRow).isExisting()), {
+        timeout: 30_000,
+        interval: 250,
+      })
       .catch(async () => {
         throw new Error(
           `Deny from ${second}'s Asks never answered ${first}'s ask; the ✋ says: ${await handSays()}`,
         );
       });
-    // And the launch's project no longer counts it.
-    expect(await ask<{ asks: unknown[] }>("asks_waiting", { plane: first })).toMatchObject({
-      asks: [],
-    });
+    // And the launch's project holds the permission no more. Its chat goes on after the Deny,
+    // and may stop on its next turn with a question of its own: that is a new ask, not this one.
+    const after = await ask<{ asks: { source: string }[] }>("asks_waiting", { plane: first });
+    expect(after.asks.filter((one) => one.source === "permission")).toEqual([]);
   });
 });
