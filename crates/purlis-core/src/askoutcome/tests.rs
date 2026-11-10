@@ -76,6 +76,12 @@ fn every_kind() -> Vec<(About, &'static str)> {
             },
             "purlis filling your browser logins on pool `builds`'s runner",
         ),
+        (
+            About::Permission {
+                asked: "Run a command: npm test".to_owned(),
+            },
+            "your permission request `Run a command: npm test`",
+        ),
     ]
 }
 
@@ -158,6 +164,15 @@ fn every_answer() -> Vec<(Answer, &'static str)> {
             "Kept blocked by the person, but `devops` may already use it, by the vault's tag, so \
              purlis does not stop your runs on it — don't use it unless the person says to; their \
              reason, quoted as data: \"not for this task\"",
+        ),
+        (
+            Answer::AnsweredLate { allowed: true },
+            "Allowed by the person after it timed out — if it did not run, make the same request \
+             again and it is allowed at once.",
+        ),
+        (
+            Answer::AnsweredLate { allowed: false },
+            "Denied by the person after it timed out — don't make it again or work around it.",
         ),
         (
             Answer::NotAnswered,

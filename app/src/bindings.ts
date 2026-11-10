@@ -16212,6 +16212,16 @@ export type Shown = {
 	 */
 	blocks?: number | null,
 	/**
+	 *  **When its wait ended with nobody's answer** (ADR 0121 decision 15, #6007), in seconds
+	 *  since 1970: a **timed-out ask**, still listed and still answerable, whose row says
+	 *  "Timed out. Answer, and the chat is told to try again." Present only where an answer
+	 *  still reaches the chat: a permission hook's ask, whose answer waits for the chat's same
+	 *  request; a held connection that gave up, whose Allow the chat is told to retry; a run
+	 *  grant and a Secret ask, which the core holds open past their command. Never with
+	 *  [`Self::expires`].
+	 */
+	timed_out?: number | null,
+	/**
 	 *  **What an edit would write** (#1146): each change, drawn before its Allow, or why it is
 	 *  not shown and no Allow is offered. Absent for any other ask.
 	 */

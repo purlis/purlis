@@ -68,6 +68,9 @@ pub enum About {
     /// A program its persona does not declare, which a brokered run of the chat's asked the
     /// person to allow with vault `vault` (ADR 0112). Names only, never a value.
     Run { program: String, vault: String },
+    /// A permission its harness's hook asked the person for, which timed out before they
+    /// answered (#6007): `asked` is the ask's one line, as its row said it, credentials masked.
+    Permission { asked: String },
 }
 
 impl About {
@@ -135,6 +138,7 @@ impl About {
                 format!("browser login {}", code(login))
             }
             Self::Secret { vault, key } => format!("secret {}", code(&format!("{vault}/{key}"))),
+            Self::Permission { asked } => format!("your permission request {}", code(asked)),
             Self::Run { program, vault } => {
                 format!("running {} with vault {}", code(program), code(vault))
             }
@@ -238,6 +242,9 @@ pub enum Answer {
     /// went after as long as a waiting call waits. Nothing was allowed, and the chat may ask
     /// again.
     NotAnswered,
+    /// **Answered after its request timed out** (#6007): the harness had already given up on
+    /// its hook, so the answer waits for the chat's same request, which it answers at once.
+    AnsweredLate { allowed: bool },
     /// **Kept blocked for this chat, on a vault its persona already holds** (#5801, ADR 0112,
     /// amended 2026-11-08): Keep blocked holds no run on a vault its persona may use, so the
     /// chat is told the person's wish and that purlis does not enforce it.
@@ -328,6 +335,13 @@ impl Outcome {
                     None => format!("{held}."),
                 }
             }
+            Answer::AnsweredLate { allowed: true } => "Allowed by the person after it timed out \
+                                                       — if it did not run, make the same \
+                                                       request again and it is allowed at once."
+                .to_owned(),
+            Answer::AnsweredLate { allowed: false } => "Denied by the person after it timed out \
+                                                        — don't make it again or work around it."
+                .to_owned(),
             Answer::NotAnswered => "Nobody answered in time, so nothing was allowed and the ask \
                                     went — tell the person what needs it, or ask again when \
                                     they're back."

@@ -111,6 +111,10 @@ struct World {
     expires: Vec<(&'static str, u32)>,
     /// How many open chats wait on each chat's report (#6006).
     chats_waiting: Vec<(u32, u32)>,
+    /// When each ask's wait ended with nobody's answer, by its key (#6007).
+    timed_out: Vec<(&'static str, u32)>,
+    /// Whether the person is Quiet, so a held connection is held open (#6007).
+    held_open: bool,
     /// The profiles waiting to be signed in (#2035).
     sign_ins: Vec<purlis_core::profilestore::sign_in::Wait>,
     pool_sign_ins: Vec<purlis_core::profilestore::onrunner::PoolWait>,
@@ -152,6 +156,8 @@ impl World {
             since: Vec::new(),
             expires: Vec::new(),
             chats_waiting: Vec::new(),
+            timed_out: Vec::new(),
+            held_open: false,
             sign_ins: Vec::new(),
             pool_sign_ins: Vec::new(),
             sandbox_only: Vec::new(),
@@ -255,6 +261,13 @@ impl World {
                     .find(|(one, _)| *one == session)
                     .map(|(_, count)| *count)
             },
+            timed_out: &|ask| {
+                self.timed_out
+                    .iter()
+                    .find(|(key, _)| *key == ask)
+                    .map(|(_, at)| *at)
+            },
+            held_open: self.held_open,
             runner_of: &|_| None,
         })
     }
@@ -2974,6 +2987,7 @@ fn asked(session: u32, ask: &str) -> Shown {
         held_until: None,
         expires: None,
         blocks: None,
+        timed_out: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -3112,4 +3126,81 @@ fn an_ask_says_how_many_chats_wait_on_its_chat_and_one_of_no_chat_says_none() {
 
     assert_eq!(asks[0].blocks, Some(2));
     assert_eq!(asks[1].blocks, None);
+}
+
+#[test]
+fn an_ask_whose_wait_ended_unanswered_says_when_and_one_still_held_never_does() {
+    // #6007: a timed-out ask stays listed and says when its wait ended. A connection held now
+    // is Expiring, not timed out, whatever was said of its block before.
+    let mut world = World::new();
+    world.blocks = vec![
+        (5, a_host_block("api.example.com")),
+        (6, a_host_block("api.example.com")),
+    ];
+    world.held = vec![(5, "api.example.com", 1_700_000_060)];
+    world.timed_out = vec![
+        ("block:5:connect:host:api.example.com", 1_700_000_000),
+        ("block:6:connect:host:api.example.com", 1_700_000_030),
+    ];
+
+    let asks = world.asks();
+
+    assert_eq!(asks[0].expires, Some(1_700_000_060));
+    assert_eq!(asks[0].timed_out, None);
+    assert_eq!(asks[1].expires, None);
+    assert_eq!(asks[1].timed_out, Some(1_700_000_030));
+}
+
+#[test]
+fn while_quiet_a_held_connection_is_held_open_and_no_longer_expiring_while_a_hook_ask_still_is() {
+    // #6007, ADR 0121 decision 13: purlis owns a held connection's timer, so Quiet holds it
+    // open; a permission hook's deadline is its harness's, and still counts down.
+    let mut world = World::new();
+    world.blocks = vec![(5, a_host_block("api.example.com"))];
+    world.held = vec![(5, "api.example.com", 1_700_000_060)];
+    world.expires = vec![("hook-ask", 1_700_000_050)];
+    world.held_open = true;
+
+    let asks = world.asks();
+
+    assert_eq!(asks[0].held_until, Some(1_700_000_060), "it is held still");
+    assert_eq!(asks[0].expires, None);
+    world.held_open = false;
+    assert_eq!(world.asks()[0].expires, Some(1_700_000_060));
+}
+
+#[test]
+fn a_chat_whose_permission_ask_timed_out_is_listed_at_its_pane_prompt_beside_it() {
+    // #6007: once a harness kills its permission hook, its own prompt still waits in the pane
+    // (Claude Code's and Codex's dialog, opencode's prompt). The timed-out ask is answerable,
+    // but only the pane answers that prompt, so it is listed too. A live hook ask still stands
+    // for its chat's prompt alone.
+    let asks = Asks::new();
+    let lapsed = asks
+        .raise("2", a_hook_ask("Run npm test"), Instant::now())
+        .raised;
+    let live = asks
+        .raise("3", a_hook_ask("Run cargo test"), Instant::now())
+        .raised;
+    let mut world = World::new();
+    let key: &'static str = Box::leak(lapsed.id.to_string().into_boxed_str());
+    world.permissions = vec![lapsed, live];
+    world.timed_out = vec![(key, 1_700_000_000)];
+    world.queue = vec![2, 3];
+    world.at_prompt = vec![2, 3];
+
+    let listed: Vec<(u32, AskSource, Option<u32>)> = world
+        .asks()
+        .iter()
+        .map(|ask| (ask.session, ask.source, ask.timed_out))
+        .collect();
+
+    assert_eq!(
+        listed,
+        [
+            (2, AskSource::Permission, Some(1_700_000_000)),
+            (3, AskSource::Permission, None),
+            (2, AskSource::Terminal, None),
+        ]
+    );
 }
