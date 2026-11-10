@@ -189,12 +189,18 @@ async function elsewhere(roots: readonly string[]): Promise<{
 
 /** Asks's own words, for a failure to say what it showed. */
 async function asksSaid(): Promise<string> {
-  return browser.execute(
-    (inbox: string) =>
-      document.querySelector<HTMLElement>(inbox)?.innerText.replace(/\s+/g, " ").trim() ??
-      "(no Asks)",
-    INBOX,
-  );
+  return browser.execute((inbox: string) => {
+    // Every project's view keeps its Asks drawn behind the one in front: each is said, and
+    // whether it is the one in sight.
+    const all = [...document.querySelectorAll<HTMLElement>(inbox)];
+    if (all.length === 0) return "(no Asks)";
+    return all
+      .map(
+        (one) =>
+          `[${one.offsetParent === null ? "hidden" : "in sight"}] ${(one.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 400)}`,
+      )
+      .join(" | ");
+  }, INBOX);
 }
 
 /** One kind of Blocking ask, as this spec raises, finds and answers it. */
@@ -269,7 +275,10 @@ async function rowNow(row: string): Promise<void> {
   await $(row)
     .waitForExist({ timeout: 20_000, interval: 250 })
     .catch(async () => {
-      throw new Error(`the row ${row} went before it was answered; Asks says: ${await asksSaid()}`);
+      throw new Error(
+        `the row ${row} went before it was answered, with ${await inFront()} in front; ` +
+          `Asks says: ${await asksSaid()}`,
+      );
     });
 }
 
@@ -572,6 +581,8 @@ describe("every Blocking ask, found from the ✋ alone (#6001)", function () {
           );
         });
 
+      // The ✋ brought no project forward: the Asks in front lists every project's (#1921).
+      expect(await inFront()).toBe(front);
       // **Answerable in place** (#1921): its row, in the Asks in front, under its own project.
       const row = `${theirRows(kind.from.root)}[data-source="${kind.source}"]`;
       await $(row)
