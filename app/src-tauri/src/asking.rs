@@ -3054,7 +3054,7 @@ pub fn sandbox_only(wait: &purlis_core::profilestore::sandbox_only::Wait) -> Sho
         ask: sandbox_only_key(wait.harness),
         says: said_inertly(&format!(
             "{ask}: {here}a sandboxed chat keeps its own sign-in, apart from yours. Make one, \
-             sign in in the shell it opens, then start the chat again.",
+             sign in in the shell it opens, then start a new chat on it.",
             ask = ask(wait.harness)
         )),
         options: vec![

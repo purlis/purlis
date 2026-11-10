@@ -900,7 +900,7 @@ pub fn profile_refusal(
             "this chat runs sandboxed, and{here} a sandboxed {called} chat runs only on a \
              profile for sandboxed chats only, which '{name}' is not, so nothing was started. \
              Make or choose a sandbox-only {called} profile: the Inbox's \"{ask}\" makes one \
-             and opens {called}'s own sign-in in it; then start the chat on it.",
+             and opens {called}'s own sign-in in it; then start a new chat on it.",
             ask = ask(harness)
         ));
     }
