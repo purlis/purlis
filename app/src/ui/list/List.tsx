@@ -387,6 +387,12 @@ function optionElement(heard: string | undefined) {
   };
 }
 
+/** **What a row holds, its parts heard by its registry** (#6101): a call, as `hold` is, so the
+ *  window's read of what stands on what (`theme/grounds.test.ts`) reads a row as before. */
+function heardIn(heard: PartsHeard, content: ReactNode): ReactNode {
+  return <RowHeard.Provider value={heard}>{content}</RowHeard.Provider>;
+}
+
 /** The ids given, in order, as one `aria-describedby`; none where none is given. */
 function idsOf(...given: (string | undefined)[]): string | undefined {
   const joined = given.filter((one) => one !== undefined && one !== "").join(" ");
@@ -427,9 +433,7 @@ export function ListOption<T extends object>({
     >
       {(state) => (
         <InOption.Provider value={heard}>
-          <RowHeard.Provider value={heard}>
-            {hold(rowHolds(children, own, tipped)(state))}
-          </RowHeard.Provider>
+          {heardIn(heard, hold(rowHolds(children, own, tipped)(state)))}
         </InOption.Provider>
       )}
     </AriaListBoxItem>
@@ -605,11 +609,7 @@ export function ListRow<T extends object>({
       data-variant={variant}
       data-size={size}
     >
-      {(state) => (
-        <RowHeard.Provider value={heard}>
-          {hold(rowHolds(children, own, tipped)(state))}
-        </RowHeard.Provider>
-      )}
+      {(state) => heardIn(heard, hold(rowHolds(children, own, tipped)(state)))}
     </AriaGridListItem>
   );
 }
