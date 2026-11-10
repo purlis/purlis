@@ -113,6 +113,91 @@ export function useSeen(
   return { seen, see, rows };
 }
 
+/** What a key of another project's is known by in {@link useSeenElsewhere}: its project first. */
+const ELSEWHERE = "\u0001";
+
+/**
+ * **The seen records of other projects, for their asks listed in this one's Asks** (#1921):
+ * Asks lists every open project's asks, and each is New until seen, under its own project's
+ * record, as it is in that project's own Asks. Each record is read once its project is listed,
+ * and a row seen here is told to its project's record. None is forgotten from here: an ask gone
+ * is its own project's to forget, from the list it holds.
+ */
+export function useSeenElsewhere(planes: readonly string[]): (plane: string) => SeenRows {
+  const [records, setRecords] = useState<Readonly<Record<string, ReadonlySet<string>>>>({});
+  const latest = useRef(records);
+  useLayoutEffect(() => {
+    latest.current = records;
+  }, [records]);
+  const told = useCallback(
+    (plane: string, answer: { status: "ok"; data: string[] } | { status: "error" }) => {
+      if (answer.status !== "ok" || !Array.isArray(answer.data)) return;
+      const record = new Set(answer.data);
+      latest.current = { ...latest.current, [plane]: record };
+      setRecords((was) => ({ ...was, [plane]: record }));
+    },
+    [],
+  );
+  const listed = [...new Set(planes)].sort().join("\n");
+  useEffect(() => {
+    let live = true;
+    for (const plane of listed === "" ? [] : listed.split("\n"))
+      void commands
+        .inboxSeen(plane)
+        .then((answer) => live && told(plane, answer))
+        .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [listed, told]);
+  const see = useCallback(
+    (keys: readonly string[]) => {
+      const byPlane = new Map<string, string[]>();
+      for (const one of keys) {
+        const at = one.indexOf(ELSEWHERE);
+        if (at < 0) continue;
+        const plane = one.slice(0, at);
+        byPlane.set(plane, [...(byPlane.get(plane) ?? []), one.slice(at + 1)]);
+      }
+      for (const [plane, these] of byPlane) {
+        const was = latest.current[plane];
+        if (was === undefined) continue;
+        const fresh = these.filter((key) => !was.has(key));
+        if (fresh.length === 0) continue;
+        const now = new Set(was);
+        for (const key of fresh) now.add(key);
+        latest.current = { ...latest.current, [plane]: now };
+        setRecords((held) => ({ ...held, [plane]: now }));
+        void commands
+          .seeInbox(plane, fresh, null)
+          .then((answer) => told(plane, answer))
+          .catch(() => undefined);
+      }
+    },
+    [told],
+  );
+  const watch = useWatch(see);
+  // One record's rows for each project listed, made once for each reading of the records, so a
+  // row's watch is the same from one drawing to the next.
+  const made = useMemo(
+    () =>
+      new Map(
+        (listed === "" ? [] : listed.split("\n")).map((plane): [string, SeenRows] => [
+          plane,
+          {
+            isNew: (key) => isNewIn(records[plane], key),
+            watch: (element, key) => watch(element, `${plane}${ELSEWHERE}${key}`),
+          },
+        ]),
+      ),
+    [listed, records, watch],
+  );
+  return useCallback((plane: string) => made.get(plane) ?? NOTHING_SEEN, [made]);
+}
+
+/** A project's rows whose record is not read here: nothing is New. */
+const NOTHING_SEEN: SeenRows = { isNew: () => false, watch: () => () => undefined };
+
 /**
  * **Seen once in sight for about a second** (decision 10): one observer for every row of the
  * project, each row's timer started as it comes into sight and stopped as it leaves. A webview

@@ -20,6 +20,14 @@ export type ChatGroup = {
 /** The key an ask is known by across reads of its project's list. */
 export const askKey = (ask: Shown) => `${ask.session}\u0000${ask.ask}`;
 
+/**
+ * **The key an ask is known by in Asks, which lists every open project's** (#1921): its own
+ * {@link askKey} for the listing project's, and the same after its project for another's, so two
+ * projects' asks never share one.
+ */
+export const heldKey = (ask: Shown, plane: string | undefined) =>
+  plane === undefined ? askKey(ask) : `${plane}\u0001${askKey(ask)}`;
+
 /** The time now, in ms: when this window first saw an ask. */
 const seenNow = () => Date.now();
 

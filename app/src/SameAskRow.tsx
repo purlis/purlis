@@ -7,12 +7,19 @@ import { answerTaken, asksMoved } from "./asks";
 import { AskDecision } from "./AskDecision";
 import { AskStanding } from "./AskStanding";
 import { sameSaid, type Same } from "./asksSame";
-import { ALLOW_OR_KEEP, MOVED_JUST_NOW, SOURCE_SAID } from "./InboxAsks";
+import {
+  ALLOW_OR_KEEP,
+  MOVED_JUST_NOW,
+  NOT_CHECKED_THERE,
+  SETTLED_ELSEWHERE,
+  SOURCE_SAID,
+  stillWaits,
+} from "./InboxAsks";
 import { KindIcon, kindOfAsk, RowAge } from "./InboxRow";
-import { ageOf, askKey, noteAnswered } from "./inboxRules";
+import { ageOf, heldKey, noteAnswered } from "./inboxRules";
 import { chainSaid, useSettledPlace } from "./inboxRowParts";
 import { toneOfKind } from "./messageTone";
-import { askSeenKey, useSeenRow } from "./seenRows";
+import { askSeenKey, useSeenRow, type SeenRows } from "./seenRows";
 import { capMarks } from "./combiningMarks";
 import { Button } from "./ui/button/Button";
 import {
@@ -39,7 +46,8 @@ export const forAllSaid = (grant: Offered) =>
   `${ALLOW_FOR_ALL} answers each chat with ${grant.label}.`;
 
 /** The key of a group's row, as its places and its section know it. */
-export const sameRowKey = (same: Same) => `same:${askKey(same.placed[0].ask)}`;
+export const sameRowKey = (same: Same) =>
+  `same:${heldKey(same.placed[0].ask, same.placed[0].plane)}`;
 
 /** **The stops of a group's row, in order** (#6009): the row, Allow for all, Answer each. */
 export const samePlaces = (same: Same): string[] => {
@@ -54,6 +62,9 @@ export const samePlaces = (same: Same): string[] => {
  * ask offers (Allow once, or Allow for this chat), never wider; its settle guard holds it as any
  * Allow in Asks. **Answer each** opens the chats' own rows under it, where each is answered,
  * kept blocked or given a wider scope on its own.
+ *
+ * **Its chats may be in several projects** (decision 6, #1921): each ask is answered in its own
+ * (`Placed.plane`, else `plane`), and another project's only while it still waits there.
  */
 export function SameAsk({
   plane,
@@ -63,8 +74,11 @@ export function SameAsk({
   above,
   now,
   onAnswered,
+  seen,
 }: {
   plane: PlaneId;
+  /** The seen record of its first chat's project, where that is another's (#1921). */
+  seen?: SeenRows | null;
   same: Same;
   /** Its chats' own rows are drawn under it. */
   open: boolean;
@@ -84,15 +98,20 @@ export function SameAsk({
   const line = capMarks(first.says).text;
   const key = sameRowKey(same);
   const { drawn, drawnAt, tooSoon, readPlaces } = useSettledPlace<HTMLElement>(
-    [above, line, ...asks.map(askKey), open ? "open" : ""].join("\n"),
+    [
+      above,
+      line,
+      ...same.placed.map((one) => heldKey(one.ask, one.plane)),
+      open ? "open" : "",
+    ].join("\n"),
   );
-  const [isNew, seenDrawnNow] = useSeenRow(askSeenKey(first), drawn);
+  const [isNew, seenDrawnNow] = useSeenRow(askSeenKey(first), drawn, seen);
   const mayAct = () => {
     if (!tooSoon()) return true;
     setSaid(MOVED_JUST_NOW);
     return false;
   };
-  const oldest = Math.min(...asks.map((ask) => ageOf(plane, ask)[0]));
+  const oldest = Math.min(...same.placed.map((one) => ageOf(one.plane ?? plane, one.ask)[0]));
 
   /** Each chat's ask answered once with the narrowest grant, one after another. */
   const allowAll = async () => {
@@ -102,30 +121,37 @@ export function SameAsk({
     let allowed = 0;
     let refused: { who: string; why: string } | undefined;
     try {
-      for (const ask of asks) {
+      for (const { ask, plane: theirs } of same.placed) {
         const option = ask.options.find((one) => one.id === same.grant.id) ?? same.grant;
-        const done = await answerTaken(plane, ask, option.id).catch((err: unknown) => ({
-          refused: `purlis could not send it: ${String(err)}`,
-          live: false,
-        }));
+        const where = theirs ?? plane;
+        // Another project's ask is sent nothing once answered there meanwhile (#1921).
+        const waits = theirs === undefined ? true : await stillWaits(where, ask);
+        const done =
+          waits !== true
+            ? { refused: waits === false ? SETTLED_ELSEWHERE : NOT_CHECKED_THERE, live: false }
+            : await answerTaken(where, ask, option.id).catch((err: unknown) => ({
+                refused: `purlis could not send it: ${String(err)}`,
+                live: false,
+              }));
         if (done.refused !== undefined) {
           refused ??= { who: chainSaid(ask.chain), why: done.refused };
           continue;
         }
         allowed += 1;
-        noteAnswered(plane, {
+        noteAnswered(where, {
           at: Date.now(),
           chain: ask.chain,
           says: ask.says,
           answer: option.label,
         });
-        onAnswered?.(ask, option, done.live);
+        // What the listing project does after an answer is about its own chats alone.
+        if (theirs === undefined) onAnswered?.(ask, option, done.live);
       }
       if (refused !== undefined)
         setSaid(allowedSome(allowed, asks.length, refused.who, refused.why));
     } finally {
       setBusy(false);
-      asksMoved(plane);
+      for (const where of new Set(same.placed.map((one) => one.plane ?? plane))) asksMoved(where);
     }
   };
 

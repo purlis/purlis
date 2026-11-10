@@ -13,6 +13,7 @@ import {
 import { LoaderCircle } from "lucide-react";
 import { type Offered, type PlaneId, type Shown } from "./bindings";
 import {
+  askingUntold,
   ElsewhereGroup,
   elsewhereKey,
   elsewherePlaces,
@@ -20,8 +21,12 @@ import {
   OtherProjects,
   othersWaiting,
   QuietNotices,
+  showOffer,
+  theirAsks,
   type Elsewhere,
+  type TheirAsks,
 } from "./InboxElsewhere";
+import { opensItsWindow } from "./asks";
 import { useNow } from "./InboxRow";
 import {
   INBOX_SCOPES,
@@ -45,6 +50,7 @@ import {
 import { PersonaMark } from "./PersonaMark";
 import {
   askKey,
+  heldKey,
   dismissSaid,
   MOST_ANSWERED,
   noteSeen,
@@ -93,6 +99,7 @@ import {
   SCOPE_LABEL,
   shapeOf,
   type AllChatsFilter,
+  type Shape,
 } from "./InboxAsks";
 import { heldBy, UpdateList, type UpdateRow, type Updates, updatePlaces } from "./InboxUpdatesList";
 import { SeenRowsOf, type SeenRows } from "./seenRows";
@@ -156,6 +163,21 @@ export const NEEDS_A_DECISION_DOT = "A Notice needs a decision";
 
 /** What the Notices' section is called (#1695). */
 export const NOTICES = "Notices";
+
+/**
+ * **What another open project's ask offers on its row here** (#1921): what it offers in its own
+ * project's Asks, less an answer that opens something in that project's window
+ * ({@link opensItsWindow}), which its own Asks gives. Nothing of the listing project's (its
+ * reasons, its Ignore) is read for it. A dispatch's grant, drawn by that project's own Notice,
+ * is answered here only where this window holds the project; else its row has Go to chat.
+ */
+function theirShape(ask: Shown, here: boolean): Shape {
+  const shape = shapeOf(ask, undefined, undefined, undefined);
+  const offers = shape.offers.filter((one) => !opensItsWindow(ask, one.id));
+  if (ask.source === "dispatch" && !here)
+    return { ...shape, offers, decision: false, form: false, answers: false };
+  return { ...shape, offers };
+}
 
 /**
  * **The Inbox** (#1692, spec #1688): everything in this project that waits on the person, at the
@@ -244,6 +266,7 @@ export function Inbox({
   onDot,
   onNoticeCauses,
   seen,
+  seenOf,
   onNoticeAnswer,
   elsewhere,
   here,
@@ -312,6 +335,9 @@ export function Inbox({
   onNoticeCauses?: (causes: readonly string[]) => void;
   /** The project's seen record (`seen.ts`), which its rows read to draw what is New (#6002). */
   seen?: SeenRows;
+  /** **Another project's seen record** (#1921), for its asks listed here (`useSeenElsewhere`).
+   *  Without it, nothing of another project's is drawn New. */
+  seenOf?: (plane: string) => SeenRows;
   /** A Notice answering the person's own press arrived (`ANSWERS`, D-1695-3). */
   onNoticeAnswer?: () => void;
   /** What waits where this project's registry cannot see (#1695): chats in other windows'
@@ -368,10 +394,27 @@ export function Inbox({
   // The results the window keeps (#3344), under the Notices, in the same place-giving way.
   const placeResults = shown ? windowLines?.resultsAt : undefined;
   const resultsCount = windowLines?.results ?? 0;
-  const asking = elsewhere?.asking ?? [];
+  /** The chats waiting in other windows whose asks those windows have not told (#1921). */
+  const asking = askingUntold(elsewhere);
   const quiet = elsewhere?.quiet ?? [];
   // Named only where the window can bring the project forward.
   const others = elsewhere?.onOpen === undefined ? [] : othersWaiting(plane, elsewhere);
+  /**
+   * **Every other open project's asks, ask by ask** (#1921, ADR 0121 decision 4): this window's
+   * other projects and the other windows', listed among this project's own under All projects,
+   * in one order by facts, and answered in place, each in its own project.
+   */
+  const theirs = theirAsks(plane, elsewhere);
+  if (drawsAsks) for (const one of theirs) noteSeen(one.plane, one.asks);
+  /** The project each of their asks is in, and that project as told. */
+  const planeOf = new Map<Shown, string>();
+  const projectOf = new Map<string, TheirAsks>();
+  for (const one of theirs) {
+    projectOf.set(one.plane, one);
+    for (const ask of one.asks) planeOf.set(ask, one.plane);
+  }
+  /** The key an ask is known by here, among every project's. */
+  const keyOf = (ask: Shown) => heldKey(ask, planeOf.get(ask));
   /**
    * **Whose asks are listed** (qw359). Each scope the window can list is counted, and only
    * those are offered: the project's always; the workspace's where the window says which is
@@ -393,7 +436,10 @@ export function Inbox({
     ...(elsewhere !== undefined
       ? {
           all:
-            (unheld?.length ?? 0) + asking.length + others.reduce((sum, one) => sum + one.count, 0),
+            (unheld?.length ?? 0) +
+            theirs.reduce((sum, one) => sum + one.asks.length, 0) +
+            asking.length +
+            others.reduce((sum, one) => sum + one.count, 0),
         }
       : {}),
   };
@@ -437,6 +483,7 @@ export function Inbox({
   /** What waits in other projects is listed among every project's alone. */
   const askingShown = scope === "all" ? asking : [];
   const othersShown = scope === "all" ? others : [];
+  const theirsShown = scope === "all" ? theirs.flatMap((one) => one.asks) : [];
   /** This project's name, as its tab says it: every row is tagged with it and its workspace (ADR
    *  0121 decision 5, #6006). */
   const project = elsewhere?.waitingHere?.find((one) => one.plane === plane)?.project;
@@ -459,7 +506,13 @@ export function Inbox({
   };
   // **Ordered by facts** (ADR 0121 decision 5, #6006): Expiring, then blocks others, then the
   // longest wait, one chat's asks together (`asksOrder.ts`).
-  const groups = inOrder(listed, (ask) => ageOf(plane, ask), now);
+  // Every project's in one order (#1921): another's stands by its facts, as this one's do.
+  const groups = inOrder(
+    [...listed, ...theirsShown],
+    (ask) => ageOf(planeOf.get(ask) ?? plane, ask),
+    now,
+    (ask) => planeOf.get(ask),
+  );
   const recent = useAnswered(plane);
   // Read only while nothing waits, where the empty Inbox lists them (D-1700-7).
   const allowedLately = useAllowedLately(
@@ -468,7 +521,8 @@ export function Inbox({
       asks !== undefined &&
       asks.length === 0 &&
       asking.length === 0 &&
-      others.length === 0,
+      others.length === 0 &&
+      theirs.length === 0,
   );
   /** A way out of a Notice drawn here was pressed on an ask: answered here once it goes. */
   const touch = useAnsweredWhenGone(plane, asks);
@@ -492,7 +546,12 @@ export function Inbox({
       .filter((ask) => ignoring.held.has(askKey(ask)))
       .map((ask) => chainSaid(ask.chain))
       .join(", ")}.`;
-  const shapeOfAsk = (ask: Shown) => shapeOf(ask, whyOf, onIgnore, asked);
+  const shapeOfAsk = (ask: Shown) => {
+    const there = planeOf.get(ask);
+    return there === undefined
+      ? shapeOf(ask, whyOf, onIgnore, asked)
+      : theirShape(ask, projectOf.get(there)?.here === true);
+  };
   /** **The asks whose Answer is open** (#5651), by key: their forms are drawn, and stops. */
   const [answering, setAnswering] = useState<ReadonlySet<string>>(() => new Set());
   const answerOpen = (key: string, open: boolean) =>
@@ -503,7 +562,7 @@ export function Inbox({
       return next;
     });
   const shapes = new Map(
-    rows.flatMap((group) => group.asks).map((ask) => [askKey(ask), shapeOfAsk(ask)]),
+    rows.flatMap((group) => group.asks).map((ask) => [keyOf(ask), shapeOfAsk(ask)]),
   );
   // **What is drawn above each row, in order** (#1693, #1695): an ask's links and answers, a
   // chat elsewhere's, an update's. A row stands under what is above it, and an Allow on it waits
@@ -515,13 +574,13 @@ export function Inbox({
    * (`asksSame.ts`).
    */
   const sameRows = withSame(rows, (ask) => {
-    const shape = shapes.get(askKey(ask));
+    const shape = shapes.get(keyOf(ask));
     return shape?.decision === true ? shape.offers : [];
   });
-  const askRows = drawsAsks && asks !== undefined ? sameRows : [];
+  const askRows = drawsAsks && (asks !== undefined || theirsShown.length > 0) ? sameRows : [];
   const askPlaces = (ask: Shown) => {
-    const shape = shapes.get(askKey(ask)) ?? shapeOfAsk(ask);
-    const key = askKey(ask);
+    const shape = shapes.get(keyOf(ask)) ?? shapeOfAsk(ask);
+    const key = keyOf(ask);
     return placeIds(key, shape, shape.answers ? shape.offers : [], answering.has(key));
   };
   const places = [
@@ -644,8 +703,46 @@ export function Inbox({
     [onNotices, onDot],
   );
 
+  /**
+   * **Another open project's ask, as a row of this one's** (#1921): the same row, answered in
+   * its own project (`theirs`), after a check that it still waits there. Its Go brings its chat
+   * forward, in whichever window holds it; Ignore, Snooze and Stop are its own project's Asks'.
+   */
+  const theirRow = (ask: Shown, why: Standing, there: string) => {
+    const project = projectOf.get(there);
+    const key = keyOf(ask);
+    const who = chainSaid(ask.chain);
+    return (
+      <Ask
+        theirs
+        standing={why}
+        key={key}
+        plane={there}
+        ask={ask}
+        seen={seenOf?.(there) ?? null}
+        dispatches={(project?.asks ?? []).filter(
+          (one) => one.session === ask.session && one.source === "dispatch",
+        )}
+        shape={shapes.get(key) ?? shapeOfAsk(ask)}
+        open={answering.has(key)}
+        onOpen={(open) => answerOpen(key, open)}
+        where={[project?.project, project?.where?.[String(ask.session)]]
+          .filter((part): part is string => typeof part === "string" && part !== "")
+          .join(" · ")}
+        now={now}
+        onGo={() => elsewhere?.onPress(there, showOffer(ask.session, who))}
+        onTouched={() => undefined}
+        above={places.slice(0, places.indexOf(key)).join("\n")}
+      />
+    );
+  };
+
   /** **One ask's row** (#5649), under its chat or under the identical requests it joins (#6009). */
-  const askRow = (ask: Shown, why: Standing) => (
+  const askRow = (ask: Shown, why: Standing) => {
+    const there = planeOf.get(ask);
+    return there === undefined ? ownRow(ask, why) : theirRow(ask, why, there);
+  };
+  const ownRow = (ask: Shown, why: Standing) => (
     <Ask
       standing={why}
       key={askKey(ask)}
@@ -851,6 +948,7 @@ export function Inbox({
               if (row.kind === "same") {
                 const key = sameRowKey(row.same);
                 const open = answering.has(key);
+                const first = row.same.placed[0];
                 return (
                   <ListRowSection
                     key={key}
@@ -862,10 +960,15 @@ export function Inbox({
                       </span>
                     }
                     named
-                    data-sessions={row.same.placed.map(({ ask }) => ask.session).join(" ")}
+                    // This project's chats by session, as a landing finds them; another's apart.
+                    data-sessions={row.same.placed
+                      .filter((one) => one.plane === undefined)
+                      .map(({ ask }) => ask.session)
+                      .join(" ")}
                   >
                     <SameAsk
                       plane={plane}
+                      seen={first.plane === undefined ? undefined : (seenOf?.(first.plane) ?? null)}
                       same={row.same}
                       open={open}
                       onOpen={(to) => answerOpen(key, to)}
@@ -878,6 +981,25 @@ export function Inbox({
                 );
               }
               const group = row.group;
+              if (group.plane !== undefined) {
+                const project = projectOf.get(group.plane);
+                const chat = `${group.plane}#${group.session}`;
+                return (
+                  <ListRowSection
+                    key={chat}
+                    id={`chat:${chat}`}
+                    className="inbox-chat"
+                    title={<span className="inbox-chain">{chainSaid(group.chain)}</span>}
+                    named
+                    // Not `data-session`: a landing finds this project's own groups by it, and a
+                    // chat of another project can have the same number (#1921).
+                    data-elsewhere={chat}
+                    data-project={project?.project}
+                  >
+                    {group.placed.map(({ ask, why }) => askRow(ask, why))}
+                  </ListRowSection>
+                );
+              }
               return (
                 <ListRowSection
                   key={group.session}
@@ -904,7 +1026,7 @@ export function Inbox({
                 <ElsewhereGroup key={elsewhereKey(item)} item={item} onPress={elsewhere.onPress} />
               ))}
             {elsewhere?.onOpen !== undefined && othersShown.length > 0 && (
-              <OtherProjects others={othersShown} onOpen={elsewhere.onOpen} now={now} />
+              <OtherProjects others={othersShown} onOpen={elsewhere.onOpen} />
             )}
           </List>
         )}

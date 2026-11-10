@@ -239,3 +239,30 @@ describe("what a group's row says", () => {
     expect(said(asks)).toBe(says);
   });
 });
+
+describe("identical requests across projects (#1921)", () => {
+  it("counts chats of two projects with the same number as two, and makes them one row", () => {
+    const mine = host(3, "api.example.com");
+    const theirs = host(3, "api.example.com");
+    const planeOf = (one: Shown) => (one === theirs ? "/web" : undefined);
+    const rows = withSame(inOrder([mine, theirs], age, NOW, planeOf));
+    expect(rows).toHaveLength(1);
+    const [row] = rows;
+    expect(row.kind).toBe("same");
+    if (row.kind !== "same") return;
+    expect(row.same.placed.map((one) => one.plane)).toEqual([undefined, "/web"]);
+    expect(sameSaid(row.same)).toBe("2 chats want to reach api.example.com");
+  });
+
+  it("never groups a high-risk ask, whichever project it is in", () => {
+    const mine = host(3, "api.example.com");
+    const theirs = host(3, "api.example.com");
+    const planeOf = (one: Shown) => (one === theirs ? "/web" : undefined);
+    const rows = withSame(
+      inOrder([mine, theirs], age, NOW, planeOf),
+      (one) => one.options,
+      (one) => one === theirs,
+    );
+    expect(rows.map((one) => one.kind)).toEqual(["chat", "chat"]);
+  });
+});

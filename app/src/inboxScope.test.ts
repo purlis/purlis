@@ -16,11 +16,11 @@ import { forgetProjectViews, keepFacet, keptFacet } from "./projectViews";
 afterEach(forgetProjectViews);
 
 describe("the Inbox's scope", () => {
-  it("offers every project's, this project's and this workspace's, widest first", () => {
+  it("offers this workspace's, this project's and every project's, narrowest first, as Chats does (#1921)", () => {
     expect(INBOX_SCOPES.map((one) => one.says)).toEqual([
-      "All projects",
-      "This project",
       "This workspace",
+      "This project",
+      "All projects",
     ]);
   });
 

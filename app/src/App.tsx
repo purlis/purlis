@@ -92,7 +92,7 @@ import { passing, resultsFor, useKeptResults } from "./keptResults";
 import { useAlerts } from "./alerts";
 import { LAYOUT_FIX, LAYOUT_FIX_LABEL, type InboxAlertsDo, type WindowAlerts } from "./InboxAlerts";
 import { useAlertFix } from "./alertFix";
-import { showOffer, waitingAsk, type Elsewhere } from "./InboxElsewhere";
+import { showOffer, type Elsewhere, type WaitingHere } from "./InboxElsewhere";
 import { fleetStore, type EveryChat, type FleetDoes } from "./AllChats";
 import type { FleetChat } from "./everyChat";
 import { ApprovePlane } from "./ApprovePlane";
@@ -2563,16 +2563,47 @@ function App() {
     () => planes.flatMap((plane) => [...(reports[plane]?.fleet ?? [])]),
     [planes, reports],
   );
+  /**
+   * **Each of this window's projects, ask by ask** (#1921): what its registry derived, and where
+   * each of its chats is filed, for every project's Asks to list and answer in place.
+   */
+  const askedHere = useMemo<WaitingHere[]>(
+    () =>
+      planes.map((plane) => {
+        const asks = registry.held[plane];
+        return {
+          plane,
+          project: calledOn(plane),
+          count: asks?.length ?? 0,
+          ...(asks === undefined ? {} : { asks: [...asks] }),
+          where: Object.fromEntries(
+            needing
+              .filter((one) => one.plane === plane)
+              .map((one) => [
+                String(one.session),
+                [one.workspace, one.persona ?? ""].filter((part) => part !== "").join(" · "),
+              ]),
+          ),
+        };
+      }),
+    [planes, registry.held, needing],
+  );
   const others = useOtherWindows(
     tabWindow === null
-      ? { needing, quiet, ending, fleet, settled }
+      ? { needing, quiet, ending, fleet, asks: askedHere, settled }
       : {
           needing: NOTHING_NEEDING,
           quiet: NOTHING_QUIET,
           ending: NOTHING_ENDING,
           fleet: NOTHING_IN_THE_FLEET,
+          asks: [],
           settled: true,
         },
+  );
+  /** The other windows' projects whose asks they told, ask by ask (#1921). */
+  const askedThere = useMemo(
+    () => others.asks.filter((one) => !planes.includes(one.plane) && one.asks !== undefined),
+    [others.asks, planes],
   );
   const everyNeeding = useMemo(
     () => [...needing, ...others.needing.filter((one) => !planes.includes(one.plane))],
@@ -2591,8 +2622,15 @@ function App() {
         sum + (registry.held[plane]?.length ?? needing.filter((one) => one.plane === plane).length),
       0,
     );
-    return here + others.needing.filter((one) => !planes.includes(one.plane)).length;
-  }, [planes, registry.held, needing, others.needing]);
+    // Another window's project counts its asks where that window told them (#1921), and its
+    // chats where it did not.
+    const told = new Set(askedThere.map((one) => one.plane));
+    return (
+      here +
+      askedThere.reduce((sum, one) => sum + one.count, 0) +
+      others.needing.filter((one) => !planes.includes(one.plane) && !told.has(one.plane)).length
+    );
+  }, [planes, registry.held, needing, others.needing, askedThere]);
   // The Dock badge is the same total (#5999). A tab window says nothing of its own (#4768).
   useDockBadge(tabWindow === null ? askedCount : undefined);
   /** What a quit would end in every window: the main window is the one asked (`lifecycle.rs`),
@@ -2687,13 +2725,9 @@ function App() {
   const elsewhereSaid = JSON.stringify({
     asking: everyNeeding.filter((one) => !planes.includes(one.plane)),
     quiet: everyQuiet,
-    waitingHere: planes.map((plane) => ({
-      plane,
-      project: calledOn(plane),
-      count: registry.held[plane]?.length ?? 0,
-      // What each says, cut to what is read there (qw359): the Inbox's All projects lists them.
-      asks: (registry.held[plane] ?? []).map(waitingAsk),
-    })),
+    // Ask by ask (qw359, #1921): the Inbox's All projects lists and answers them in place.
+    waitingHere: askedHere,
+    there: askedThere,
   });
   /** Go to project (#1700 item 5): that project in front, with its Inbox open, as the ✋ does. */
   const openInboxOf = useCallback((plane: string) => {
@@ -2703,7 +2737,10 @@ function App() {
   }, []);
   const elsewhere = useMemo<Elsewhere>(
     () => ({
-      ...(JSON.parse(elsewhereSaid) as Pick<Elsewhere, "asking" | "quiet" | "waitingHere">),
+      ...(JSON.parse(elsewhereSaid) as Pick<
+        Elsewhere,
+        "asking" | "quiet" | "waitingHere" | "there"
+      >),
       onPress: pressNeeding,
       onOpen: openInboxOf,
     }),

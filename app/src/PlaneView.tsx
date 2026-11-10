@@ -233,7 +233,7 @@ import { Notice, NoticeInCentre, NoticeOf, type NoticesDot } from "./Notice";
 import { ReadOnlyLine, ReadOnlyMendable, ReadOnlySaid, useReadOnly } from "./ReadOnlyLine";
 import { LivesHere } from "./LivesHere";
 import { InboxAlerts, type WindowAlerts } from "./InboxAlerts";
-import { handCount, handSaid, type Elsewhere } from "./InboxElsewhere";
+import { handCount, handSaid, theirAsks, type Elsewhere } from "./InboxElsewhere";
 import type { AllChatsFilter } from "./InboxAsks";
 import { useAsksArrival } from "./asksArrival";
 import { sayAboutThisMachine, useAboutThisMachine } from "./windowprefs";
@@ -750,6 +750,7 @@ import {
   newUpdates,
   useChatOnScreenSeen,
   useSeen,
+  useSeenElsewhere,
   type SeenRows,
 } from "./seen";
 import { SeenRowsOf } from "./seenRows";
@@ -11246,6 +11247,8 @@ export const PlaneView = memo(function PlaneView({
   /** **What is New** (#6002, ADR 0121 decisions 10 and 11): seen, not received; the chat on
    *  screen in a focused window has nothing New. */
   const { seen, see, rows: seenRows } = useSeen(plane, waiting);
+  /** **The other projects' seen records** (#1921), for their asks listed in this one's Asks. */
+  const seenOf = useSeenElsewhere(theirAsks(plane, elsewhere).map((one) => one.plane));
   useChatOnScreenSeen(see, chatOnScreen, inFront, waiting, keptUpdates);
   const [noticeCauses, setNoticeCauses] = useState<readonly string[]>([]);
   useEffect(() => {
@@ -12216,6 +12219,7 @@ export const PlaneView = memo(function PlaneView({
                       part="asks"
                       plane={plane}
                       seen={seenRows}
+                      seenOf={seenOf}
                       asks={waiting}
                       onGo={goToAsking}
                       elsewhere={elsewhere}
@@ -12257,6 +12261,7 @@ export const PlaneView = memo(function PlaneView({
                       part="updates"
                       plane={plane}
                       seen={seenRows}
+                      seenOf={seenOf}
                       asks={waiting}
                       onGo={goToAsking}
                       updates={inboxUpdates}
@@ -12276,6 +12281,7 @@ export const PlaneView = memo(function PlaneView({
                       part="notices"
                       plane={plane}
                       seen={seenRows}
+                      seenOf={seenOf}
                       onNoticeCauses={setNoticeCauses}
                       asks={waiting}
                       onGo={goToAsking}

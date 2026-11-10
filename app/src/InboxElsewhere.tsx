@@ -5,8 +5,7 @@ import { useId } from "react";
 import type { Offer } from "./actions";
 import type { Shown } from "./bindings";
 import { backSaid } from "./chatState";
-import { capMarks } from "./combiningMarks";
-import { KindIcon, KindMark, kindOfAsk, RowAge } from "./InboxRow";
+import { KindIcon } from "./InboxRow";
 import { Notice } from "./Notice";
 import type { Needing, Quiet } from "./NeedsYou";
 import { PersonaMark } from "./PersonaMark";
@@ -50,35 +49,35 @@ export type Elsewhere = {
    * the Inbox is one project's, and the ✋ opens only one of them.
    */
   waitingHere?: readonly WaitingHere[];
+  /**
+   * **The projects of the other windows, ask by ask** (#1921), as each window tells the others
+   * its registry's asks (`windows.ts`). A project of theirs listed here is drawn ask by ask, and
+   * its chats in {@link Elsewhere.asking} are not drawn again.
+   */
+  there?: readonly WaitingHere[];
   /** Go to project: that project in front, with its Inbox open. */
   onOpen?: (plane: string) => void;
 };
 
-/** A project of this window with something waiting, and how many asks. */
+/** A project with something waiting, and how many asks. */
 export type WaitingHere = {
   plane: string;
   project: string;
   count: number;
   /**
-   * **What waits there, ask by ask** (qw359): what each says and who asks, as that project's
-   * registry derived them, for the Inbox's All projects. Read here and answered there: no
-   * answer of an ask is carried to another project's Inbox, so none is offered on it.
+   * **What waits there, ask by ask** (qw359, #1921): each ask whole, as that project's registry
+   * derived it, so Asks lists it as one of its own rows and answers it in place, in that project
+   * (ADR 0121 decision 4). Absent until its registry has been read: then it is one line, with Go
+   * to project.
    */
-  asks?: readonly WaitingAsk[];
+  asks?: readonly Shown[];
+  /** Where each of its chats is filed, by session: its workspace and persona, as its row says
+   *  them beside the project's name. */
+  where?: Readonly<Record<string, string>>;
 };
 
-/** One ask of another project of this window, as much of it as is read here: data, as text. */
-export type WaitingAsk = Pick<Shown, "session" | "ask" | "says" | "source" | "chain" | "since">;
-
-/** What an ask is cut down to before it is told to the other projects' Inboxes. */
-export const waitingAsk = ({ session, ask, says, source, chain, since }: Shown): WaitingAsk => ({
-  session,
-  ask,
-  says,
-  source,
-  chain,
-  since,
-});
+/** Another project's asks, as Asks lists them: its project, and whether this window holds it. */
+export type TheirAsks = WaitingHere & { asks: readonly Shown[]; here: boolean };
 
 /** What the lines for this window's other projects are called. */
 export const OTHER_PROJECTS = "Other projects in this window";
@@ -86,26 +85,66 @@ export const OTHER_PROJECTS = "Other projects in this window";
 /** The key of a line for another project of this window, its row's. */
 export const hereKey = (plane: string) => `here:${plane}`;
 
-/** The projects other than `plane` with something waiting, as their lines draw them. */
+/** The projects of this window other than `plane` with something waiting whose asks are not
+ *  read yet, as their lines draw them. */
 export const othersWaiting = (plane: string, elsewhere: Elsewhere | undefined) =>
-  (elsewhere?.waitingHere ?? []).filter((one) => one.plane !== plane && one.count > 0);
+  (elsewhere?.waitingHere ?? []).filter(
+    (one) => one.plane !== plane && one.count > 0 && one.asks === undefined,
+  );
+
+/**
+ * **Every other open project's asks, ask by ask** (#1921): this window's other projects and the
+ * other windows', each as its registry derived them. Asks lists them among its own, in one order
+ * by facts, and answers each in its project.
+ */
+export function theirAsks(plane: string, elsewhere: Elsewhere | undefined): TheirAsks[] {
+  const mine = new Set((elsewhere?.waitingHere ?? []).map((one) => one.plane));
+  const told = (here: boolean) => (one: WaitingHere) =>
+    one.plane !== plane && one.asks !== undefined && one.asks.length > 0
+      ? [{ ...one, asks: one.asks, here }]
+      : [];
+  return [
+    ...(elsewhere?.waitingHere ?? []).flatMap(told(true)),
+    ...(elsewhere?.there ?? []).filter((one) => !mine.has(one.plane)).flatMap(told(false)),
+  ];
+}
+
+/** The chats waiting in other windows' projects whose asks those windows have not told: drawn
+ *  a chat at a time, as before (#1695). */
+export const askingUntold = (elsewhere: Elsewhere | undefined): readonly Needing[] => {
+  const told = new Set(
+    (elsewhere?.there ?? []).filter((one) => one.asks !== undefined).map((one) => one.plane),
+  );
+  return (elsewhere?.asking ?? []).filter((one) => !told.has(one.plane));
+};
 
 /**
  * **The ✋'s count** (ADR 0121 decision 4, #5999): every open project's Blocking asks, in this
  * window and the others, never narrowed by Asks' scope. `elsewhere` is how many of them are
  * outside `plane`, the project in front: its own asks registry's for this window's other
- * projects, and one for each chat another window says waits, as that window reads its asks.
- * A snoozed chat's asks are in neither (`Asking.snoozed`).
+ * projects, each other window's for its projects, as it tells them (#1921), and one for each
+ * chat another window says waits where it has not told its asks. A snoozed chat's asks are in
+ * none (`Asking.snoozed`).
  */
 export function handCount(
   plane: string,
   here: number,
   elsewhere: Elsewhere | undefined,
 ): { total: number; elsewhere: number } {
-  const there =
-    othersWaiting(plane, elsewhere).reduce((sum, one) => sum + one.count, 0) +
-    (elsewhere?.asking.length ?? 0);
+  const there = elsewhereCount(plane, elsewhere);
   return { total: here + there, elsewhere: there };
+}
+
+/** How many asks wait in the open projects other than `plane`, as {@link handCount} counts. */
+export function elsewhereCount(plane: string, elsewhere: Elsewhere | undefined): number {
+  const mine = new Set((elsewhere?.waitingHere ?? []).map((one) => one.plane));
+  const inHere = (elsewhere?.waitingHere ?? [])
+    .filter((one) => one.plane !== plane)
+    .reduce((sum, one) => sum + one.count, 0);
+  const inThere = (elsewhere?.there ?? [])
+    .filter((one) => !mine.has(one.plane) && one.plane !== plane)
+    .reduce((sum, one) => sum + one.count, 0);
+  return inHere + inThere + askingUntold(elsewhere).length;
 }
 
 /** What the ✋ says it counts, and how many of them wait outside the project in front. */
@@ -119,21 +158,16 @@ export const herePlaces = (others: readonly WaitingHere[]) =>
   others.flatMap((one) => [hereKey(one.plane), `${hereKey(one.plane)}:go`]);
 
 /**
- * **One line for each other project of this window that has something waiting** (#1700): its
- * name, how many asks wait there, and Go to project. It answers nothing: what waits is read and
- * answered in that project's own Inbox, where it is drawn whole. Where the window says what
- * each of them is (qw359), they are listed under the line: what it says, who asks, its kind and
- * its age, as text.
+ * **One line for each other project of this window that has something waiting** (#1700) whose
+ * asks are not read yet: its name, how many asks wait there, and Go to project. Once its asks are
+ * read, each is a row of Asks of its own, answered in place (#1921), and its line goes.
  */
 export function OtherProjects({
   others,
   onOpen,
-  now,
 }: {
   others: readonly WaitingHere[];
   onOpen: (plane: string) => void;
-  /** The time an ask's age is said against. */
-  now?: number;
 }) {
   return (
     <ListRowSection
@@ -159,38 +193,6 @@ export function OtherProjects({
               <span className="ask-says">{`${one.project} · ${one.count} waiting on you`}</span>
             }
           />
-          {one.asks !== undefined && one.asks.length > 0 && (
-            <MessageBody>
-              <ul className="inbox-there">
-                {one.asks.map((ask) => {
-                  const says = capMarks(ask.says).text;
-                  const who = ask.chain.join(" › ");
-                  return (
-                    <li key={`${ask.session}\u0000${ask.ask}`} className="inbox-says">
-                      <KindMark kind={kindOfAsk(ask.source)} />
-                      <Tooltip tip={says}>
-                        <span className="ask-says inbox-primary ui-text-body ui-text-strong inbox-clamped">
-                          {says}
-                        </span>
-                      </Tooltip>
-                      {who !== "" && (
-                        <Tooltip tip={who}>
-                          <span className="inbox-where inbox-secondary ui-text-secondary">
-                            {who}
-                          </span>
-                        </Tooltip>
-                      )}
-                      {typeof ask.since === "number" && now !== undefined && (
-                        <span className="inbox-meta ui-text-meta">
-                          <RowAge when={ask.since * 1000} now={now} since="Waiting since" />
-                        </span>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            </MessageBody>
-          )}
           <MessageLinks>
             <Button
               size="sm"
