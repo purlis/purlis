@@ -19,8 +19,9 @@ import { closeTabOf, iconFor, iconOf } from "../artifactTabs.js";
 
 const NAME = "Offering board";
 const OFFERS = `[role="group"][aria-label="Offered by ${NAME}"]`;
-/** The todos it adds, an open one and a done one. */
-const TITLES = ["Offered fix", "Offered old one"];
+/** The todos it adds, an open one and a done one: no word of more than three letters in common,
+ *  or the core refuses the second as the same work as the first (`memstore::duplicate_of`). */
+const TITLES = ["Polish the offering banner", "Retire stale gadget"];
 const PAGE = `<!doctype html><title>${NAME}</title><p>Offers</p><script src=app.js></script>`;
 
 /** What the app answered a command with, insisting it answered at all. */
@@ -103,10 +104,10 @@ describe("a pinned artifact whose page offers actions", function () {
     plane = (await ask<string[]>("open_planes"))[0];
     todos = join(plane, "workspaces", "alpha", "todos");
     await forgetTodos(plane, todos, TITLES);
-    await ask("todo_add", { plane, workspace: "alpha", text: "Offered fix" });
-    await ask("todo_add", { plane, workspace: "alpha", text: "Offered old one" });
-    open = slugOf(todos, "Offered fix");
-    done = slugOf(todos, "Offered old one");
+    await ask("todo_add", { plane, workspace: "alpha", text: "Polish the offering banner" });
+    await ask("todo_add", { plane, workspace: "alpha", text: "Retire stale gadget" });
+    open = slugOf(todos, "Polish the offering banner");
+    done = slugOf(todos, "Retire stale gadget");
     await ask("todo_done", { plane, workspace: "alpha", slug: done });
 
     at = join(plane, "workspaces", "alpha", "artifacts");
@@ -157,8 +158,8 @@ pin = [
       timeout: 20_000,
       timeoutMsg: "the approved page's offers did not reach purlis's bar",
     });
-    await $(OFFERS).$("aria/Mark done: Offered fix").waitForExist({ timeout: 20_000 });
-    expect(await $(OFFERS).$("aria/Delete done todo Offered old one…").isExisting()).toBe(true);
+    await $(OFFERS).$("aria/Mark done: Polish the offering banner").waitForExist({ timeout: 20_000 });
+    expect(await $(OFFERS).$("aria/Delete done todo Retire stale gadget…").isExisting()).toBe(true);
     // The page offered them; nothing was done.
     expect(existsSync(join(todos, `${open}.md`))).toBe(true);
     expect(existsSync(join(todos, "archive", `${done}.md`))).toBe(true);
@@ -172,7 +173,7 @@ pin = [
   });
 
   it("does an offer when the person presses it in the bar", async () => {
-    await $(OFFERS).$("aria/Mark done: Offered fix").click();
+    await $(OFFERS).$("aria/Mark done: Polish the offering banner").click();
     await browser.waitUntil(() => !existsSync(join(todos, `${open}.md`)), {
       timeout: 20_000,
       timeoutMsg: "pressing the offer did not mark the todo done",
@@ -181,7 +182,7 @@ pin = [
   });
 
   it("asks before an offered delete, and Cancel deletes nothing", async () => {
-    await $(OFFERS).$("aria/Delete done todo Offered old one…").click();
+    await $(OFFERS).$("aria/Delete done todo Retire stale gadget…").click();
     const dialog = await $('[role="dialog"]');
     await dialog.waitForExist({ timeout: 20_000 });
     expect(await dialog.getText()).toContain(`${NAME} offered this.`);
