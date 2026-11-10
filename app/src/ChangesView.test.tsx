@@ -11,6 +11,7 @@ import type { FactColumn, Panels as PanelsModel, Piece, RepoState } from "./bind
 import type { WorkspaceState } from "./workspaceState";
 import { inherited } from "./textRoles.testkit";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
+import { rowName } from "./menus.testkit";
 
 afterEach(cleanup);
 
@@ -927,11 +928,12 @@ describe("a repo row's menu", () => {
     rightClick(within(heading("svc")).getByText("svc"));
 
     const menu = await screen.findByRole("menu");
-    expect(
-      within(menu)
-        .getAllByRole("menuitem")
-        .map((one) => one.getAttribute("aria-label")),
-    ).toEqual(["Focus", "New chat", "New branch…", "Start new chats here"]);
+    expect(within(menu).getAllByRole("menuitem").map(rowName)).toEqual([
+      "Focus",
+      "New chat",
+      "New branch…",
+      "Start new chats here",
+    ]);
   });
 
   it("hands the catalogue's offer back when a row is pressed", async () => {

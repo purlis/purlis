@@ -4,7 +4,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
-import { rowKey } from "./keys/registry";
+import { menuRowKey } from "./keys/registry";
 import { MenuShortcuts } from "./ui/menu/Menu";
 import { attach } from "./bench";
 import { settleLayout } from "./regions";
@@ -96,7 +96,7 @@ watchForStalls();
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     {/* Every menu's row says the key the key registry holds for its act (#2921, N25). */}
-    <MenuShortcuts.Provider value={rowKey}>
+    <MenuShortcuts.Provider value={menuRowKey}>
       <App />
     </MenuShortcuts.Provider>
   </React.StrictMode>,

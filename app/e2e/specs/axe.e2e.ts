@@ -28,22 +28,14 @@ import { openProjectSettings, settingsAt } from "../settingsTab.js";
  * named, how bad, what it asks and the first places it found it (`axe.ts`).
  *
  * **Nothing is excluded.** A finding is fixed, or filed in M66 with a run as its evidence and
- * named here against its ticket ({@link KNOWN}): that state still runs every rule, fails on any
- * other finding or on one more element, and fails once the known one is gone, so the line goes
- * with the fix (#2929: "don't weaken the check").
+ * named here against its ticket (a {@link Known} its state hands {@link passes}): that state
+ * still runs every rule, fails on any other finding or on one more element, and fails once the
+ * known one is gone, so the line goes with the fix (#2929: "don't weaken the check"). None is
+ * known now: #6043's Label in Name findings are fixed.
  */
 
 /** A finding filed and not fixed yet: the rule, how many elements it names, and its ticket. */
 type Known = { rule: string; elements: number; ticket: number };
-
-/**
- * **The findings known and filed**, by the state that shows them. 2.5.3 Label in Name: a menu row
- * with a key, and a gallery card with a description, named by their label alone (#6043).
- */
-const KNOWN = {
-  menu: { rule: "label-content-name-mismatch", elements: 2, ticket: 6043 },
-  gallery: { rule: "label-content-name-mismatch", elements: 2, ticket: 6043 },
-} satisfies Record<string, Known>;
 
 /** Runs axe over the window as drawn now: nothing found, or exactly the finding `known` names. */
 async function passes(known?: Known): Promise<void> {
@@ -51,7 +43,7 @@ async function passes(known?: Known): Promise<void> {
   expect(found.filter((one) => one.rule !== known?.rule)).toEqual([]);
   if (known === undefined) return;
   const still = found.find((one) => one.rule === known.rule);
-  // Gone means fixed: its line in KNOWN goes too, as its ticket says.
+  // Gone means fixed: its `Known` goes too, as its ticket says.
   expect({ ticket: known.ticket, still: still !== undefined }).toEqual({
     ticket: known.ticket,
     still: true,
@@ -254,7 +246,7 @@ describe("the window, held to WCAG 2.2 AA by axe", function () {
     await $('[role="menu"]').waitForDisplayed({ timeout: 20_000 });
     await settled();
     try {
-      await passes(KNOWN.menu);
+      await passes();
     } finally {
       await noDialogIsLeftUp();
       if (
@@ -299,6 +291,6 @@ describe("the window, held to WCAG 2.2 AA by axe", function () {
     await settingsAt("Project", "Theme");
     await $("[data-theme-card]").waitForExist({ timeout: 30_000 });
     await settled();
-    await passes(KNOWN.gallery);
+    await passes();
   });
 });

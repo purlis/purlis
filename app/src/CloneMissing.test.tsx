@@ -19,6 +19,7 @@ import App from "./App";
 import { cloneRepos, forgetRepoClones } from "./repoClones";
 import { forgetThisLaunch } from "./regions";
 import { showTheChanges, showTheExplorer } from "./test-strips";
+import { rowName } from "./menus.testkit";
 
 /**
  * **A repo the workspace names and this machine has not cloned, cloned from the window**
@@ -543,9 +544,7 @@ describe("removing a repo that is not cloned here from the workspace", () => {
 
     fireEvent.contextMenu(within(absentRow("web")).getByText("web"));
     const menu = await screen.findByRole("menu");
-    const items = within(menu)
-      .getAllByRole("menuitem")
-      .map((item) => item.getAttribute("aria-label"));
+    const items = within(menu).getAllByRole("menuitem").map(rowName);
     expect(items).toEqual(["Clone", "Remove from workspace…"]);
     expect(within(menu).getByRole("separator")).toBeInTheDocument();
     await userEvent.click(within(menu).getByRole("menuitem", { name: "Remove from workspace…" }));

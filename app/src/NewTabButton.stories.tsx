@@ -11,7 +11,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, screen, waitFor, within } from "storybook/test";
 import type { Offer } from "./actions";
-import { rowKey } from "./keys/registry";
+import { menuRowKey } from "./keys/registry";
 import { NewTabButton } from "./NewTabButton";
 import type { NewTabRow } from "./newTabList";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
@@ -83,7 +83,7 @@ const LONG: NewTabRow[] = [
  *  so the pictures are the same on every runner. */
 function Strip(props: Parameters<typeof NewTabButton>[0]) {
   return (
-    <MenuShortcuts.Provider value={(act) => rowKey(act, true)}>
+    <MenuShortcuts.Provider value={(act) => menuRowKey(act, true)}>
       <div style={{ blockSize: 480, display: "flex", alignItems: "flex-start" }}>
         <NewTabButton {...props} />
       </div>

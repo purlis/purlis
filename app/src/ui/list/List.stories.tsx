@@ -115,22 +115,11 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 /**
- * **An option is named by its label and described by its one line** (D-2911-22): the APG
- * listbox and React Aria's slots, which meets WCAG 2.5.3 since the name is the visible label.
- * axe's experimental `label-content-name-mismatch` compares the name with the whole of the
- * option's visible text (its mark and its line as well), so it is off on these stories alone.
- */
-const NAMED_BY_ITS_LABEL = {
-  a11y: { options: { rules: { "label-content-name-mismatch": { enabled: false } } } },
-};
-
-/**
  * **A list to choose from**: one Tab stop on the chosen row, the arrows choose as they move and
  * stop at the ends, typing finds a row, and the filter narrows the list to what is typed, with
  * its empty line where nothing matches. The picture is the chosen row under the keyboard.
  */
 export const ToChooseFrom: Story = {
-  parameters: NAMED_BY_ITS_LABEL,
   play: async ({ canvas, userEvent }) => {
     const box = canvas.getByRole("searchbox", { name: "Filter personas" });
     await expect(box).toHaveAttribute("placeholder", "Filter 28 personas");
@@ -483,10 +472,14 @@ function Cards() {
  * on, and the chosen card is ringed all round. The picture is the chosen card.
  */
 export const AGridOfCards: Story = {
-  parameters: NAMED_BY_ITS_LABEL,
   render: () => <Cards />,
   play: async ({ canvas, userEvent }) => {
     const list = canvas.getByRole("listbox", { name: "Themes" });
+    // **A card is named by its label alone and described by its line, heard once** (#6043):
+    // named by its content, with its line kept out of it, so axe's label-in-name rule holds.
+    const purlis = within(list).getByRole("option", { name: "purlis" });
+    await expect(purlis).toHaveAccessibleDescription("Built in");
+    await expect(purlis).not.toHaveAttribute("aria-labelledby");
     await userEvent.tab();
     await untilFocused(
       () => within(list).getByRole("option", { name: "purlis" }),

@@ -99,7 +99,8 @@
 }
 
 /* The key that does the same, at the row's end, in the meta role: read last, and stood off from
-   the row's words. */
+   the row's words. Drawn from its `data-key` (#6043), as a button's key is, so the row's only
+   visible words are its name; a reader hears the key by the row's `aria-keyshortcuts`. */
 [data-scope="menu"][data-part="shortcut"] {
   flex: none;
   margin-inline-start: auto;
@@ -108,6 +109,10 @@
   font-family: inherit;
   font-size: var(--font-size-xs);
   font-variant-numeric: tabular-nums;
+}
+
+[data-scope="menu"][data-part="shortcut"]::before {
+  content: attr(data-key);
 }
 
 /* The indicator at a row's end: a toggle's tick, a submenu's arrow. */

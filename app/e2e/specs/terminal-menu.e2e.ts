@@ -46,12 +46,24 @@ async function drawn() {
           .querySelector<HTMLElement>('[data-part="shortcut"]')
           ?.getBoundingClientRect();
         return {
-          name: row.getAttribute("aria-label") ?? "",
+          name: ((row: Element) => {
+            // A row's name as a reader hears it (#6043): its words, without what is kept from
+            // a reader (the line under them, its key).
+            const own = row.getAttribute("aria-label");
+            if (own !== null) return own;
+            const heard = row.cloneNode(true) as Element;
+            for (const kept of heard.querySelectorAll('[aria-hidden="true"], [hidden]'))
+              kept.remove();
+            return (heard.textContent ?? "").trim();
+          })(row),
           off: row.getAttribute("aria-disabled") === "true",
           // Why it cannot run: its description, which its words also say under them.
           why:
-            document.getElementById(row.getAttribute("aria-describedby") ?? "")?.textContent ??
-            null,
+            (row.getAttribute("aria-describedby") ?? "")
+              .split(/\s+/)
+              .map((id) => document.getElementById(id)?.textContent ?? "")
+              .join(" ")
+              .trim() || null,
           right: at.right,
           titleRight: title?.right ?? null,
           keyLeft: key?.left ?? null,

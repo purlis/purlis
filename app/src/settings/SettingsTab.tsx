@@ -1197,7 +1197,7 @@ function MoveTo({
                 <Place
                   key={one.value}
                   label={one.label}
-                  says={over === undefined ? one.says : `${one.says}, replacing ${over}`}
+                  says={one.says}
                   under={over === undefined ? undefined : `Replaces ${over} there.`}
                 >
                   {(row) => (
@@ -1254,7 +1254,6 @@ function Place({
   children: (row: {
     props: {
       textValue: string;
-      "aria-label": string;
       "aria-describedby": string;
       onFocus: () => void;
       onBlur: () => void;
@@ -1265,7 +1264,9 @@ function Place({
   const noted = useId();
   const { rested, rest, wake, hold } = useRested(true);
   return children({
-    props: { textValue: label, "aria-label": label, "aria-describedby": noted, ...rest },
+    // Named by its words, its content (#6043): the line under them is its description too,
+    // heard after which file it is (`MenuWords`), so it is no `aria-label`'s to leave out.
+    props: { textValue: label, "aria-describedby": noted, ...rest },
     inside: (
       <>
         <MenuWords said={label} under={under} />

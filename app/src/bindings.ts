@@ -1086,6 +1086,10 @@ export const commands = {
 	taskQuiet: (plane: PlaneId, session: number) => typedError<string | null, string>(__TAURI_INVOKE("task_quiet", { plane, session })),
 	/**  Puts task `session`'s quiet note away: the task goes on, and a later stretch is noted again. */
 	putAwayTaskQuiet: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("put_away_task_quiet", { plane, session })),
+	/**  What each chat of a project last told: Stuck? and work left behind. */
+	chatsNoticed: (plane: PlaneId) => typedError<ChatNoticed[], string>(__TAURI_INVOKE("chats_noticed", { plane })),
+	/**  **"It's fine"**: chat `session` is not stuck until it changes state. */
+	stuckFine: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("stuck_fine", { plane, session })),
 	/**
 	 *  The project's dispatch limits, for Settings › Project › Dispatch, a workspace's settings
 	 *  and the persona view.
@@ -7119,7 +7123,9 @@ export type ChatEvent =
 /**  The chat's tool touched a file (`chat-touching` before, FM-6). */
 { kind: "touching"; told: ChatTouching } | 
 /**  The chat's open skill run changed (`chat-skill-run` before, SK-3). */
-{ kind: "skill-run"; told: ChatSkillRun };
+{ kind: "skill-run"; told: ChatSkillRun } | 
+/**  The chat's Stuck? or work left behind changed (#6014). */
+{ kind: "noticed"; told: ChatNoticed };
 
 /**
  *  What `chat-events` carries: everything one project's chats told within an interval, in the
@@ -7192,6 +7198,19 @@ export type ChatNetwork = {
 	 *  where nothing says so.
 	 */
 	local_ports?: string | null,
+};
+
+/**  What the window is told of one chat, each time either fact changes. */
+export type ChatNoticed = {
+	plane: PlaneId,
+	session: number,
+	/**  Why it reads Stuck?, in purlis's words, or none. */
+	stuck: string | null,
+	/**
+	 *  Whether its folder held uncommitted work when it last stopped working; none where that
+	 *  is not known.
+	 */
+	left_work: boolean | null,
 };
 
 /**  A chat on a device, as its row names it. */
@@ -18815,7 +18834,9 @@ export type UpdateKind =
  */
 "arrived" | 
 /**  The person filed a report a chat drafted (#5694). */
-"report-sent";
+"report-sent" | 
+/**  A working chat may not be getting anywhere (#6014). */
+"stuck";
 
 /**  An update the window derived from its source, to be noted. */
 export type UpdateNoted = {

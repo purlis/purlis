@@ -31,6 +31,7 @@ import {
 } from "./themeSpecimens";
 import { tipOf } from "../ui/tooltip/tooltip.testkit";
 import { PURLIS_LIGHT } from "../theme/handed.testkit";
+import { rowName } from "../menus.testkit";
 
 /**
  * **Settings › Theme's gallery** (#2331): a card per theme the core lists, the theme drawn live
@@ -789,6 +790,38 @@ describe("choosing nothing, and a refused card (#2331 review)", () => {
     fireEvent.keyDown(broken, { key: "Enter" });
     await new Promise((done) => setTimeout(done, 5));
     expect(asked("theme_choose_machine")).toEqual([]);
+  });
+});
+
+describe("a card's name (WCAG 2.5.3 Label in Name, #6043)", () => {
+  it("is its theme's name, and its only words a reader is not kept from, a refused card's too", async () => {
+    const BROKEN = card({
+      id: "broken",
+      name: "Broken",
+      refused: true,
+      said: ["surface.base is not a colour"],
+      appearances: [],
+    });
+    const MANY = card({
+      id: "many",
+      name: "Many",
+      appearances: ["light", "dark", "dim", "night"].map((id) => ({
+        id,
+        appearance: id === "light" ? "light" : "dark",
+        high_contrast: false,
+      })),
+    });
+    core(shown({ cards: [CLASSIC, MANY, BROKEN] }));
+    render(<Group at={null} />);
+    for (const option of await cards()) {
+      // Named by its content, never by `aria-labelledby`, whose visible words axe holds to it.
+      expect(option).not.toHaveAttribute("aria-labelledby");
+      expect(option).toHaveAccessibleName(rowName(option));
+    }
+    expect(screen.getByRole("option", { name: "Many" })).toHaveTextContent("+1");
+    expect(screen.getByRole("option", { name: "Broken" })).toHaveAccessibleDescription(
+      "surface.base is not a colour",
+    );
   });
 });
 

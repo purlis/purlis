@@ -108,6 +108,10 @@ describe("a button", () => {
   });
 
   it("hands a click's event to an onClick it is given, as React Aria's press passes it on", () => {
+    // Nothing in the window hands a family button an `onClick` (its press is `onPress`), but
+    // `ButtonProps` takes React Aria's, and `pressable()` sorts every prop it is given between
+    // the element and React Aria: this pins that `onClick` reaches `usePress`, which calls it
+    // with the click, rather than being dropped on the way (#6069).
     const clicked = vi.fn();
     render(<Button onClick={clicked}>Open</Button>);
     fireEvent.click(screen.getByRole("button", { name: "Open" }));

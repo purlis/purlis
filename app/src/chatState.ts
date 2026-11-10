@@ -18,6 +18,7 @@ import { listenForChats } from "./chatEvents";
 import {
   commands,
   type ChildAgent,
+  type ChatNoticed,
   type HowFailed,
   type Moved,
   type Need,
@@ -124,7 +125,18 @@ export type ChatStates = {
    * `heardAt`'s rule.
    */
   readonly onlyFailures: Readonly<Record<number, true>>;
+  /**
+   * **What the core noticed of each chat** (#6014, `stuck.rs`): why it reads Stuck?, and whether
+   * its folder held uncommitted work when it last stopped working. Told on a `noticed` telling
+   * of its own, each time either changes, and never by a move. A chat not here has been told
+   * nothing yet.
+   */
+  readonly noticed?: Readonly<Record<number, Noticed>>;
 };
+
+/** What the core noticed of one chat (#6014): `null` is "no", for Stuck?, and "not known", for
+ *  work left. */
+export type Noticed = { readonly stuck: string | null; readonly leftWork: boolean | null };
 
 /** One task that came to nothing, as its asking chat's item is told it (`Need`'s
  *  `task_failed`). */
@@ -154,6 +166,7 @@ export const nothingKnown: ChatStates = {
   ownWork: {},
   backgroundTurns: {},
   onlyFailures: {},
+  noticed: {},
 };
 
 /** The state of one chat, which is `unknown` until something says otherwise. */
@@ -463,6 +476,8 @@ export function moved(states: ChatStates, move: Moved): ChatStates {
     onlyFailures: newerChat
       ? withAsking(states.onlyFailures, move.session, move.only_failures === true)
       : states.onlyFailures,
+    // A telling of its own (#6014): no move changes it.
+    noticed: states.noticed,
   };
 }
 
@@ -745,21 +760,29 @@ export function useChats(plane: PlaneId | undefined): Chats {
   // between would be lost with nothing to re-sync from.
   useEffect(() => {
     let gone = false;
-    let stop: (() => void) | undefined;
+    const stops: (() => void)[] = [];
+    /** Takes `told` about `plane` into the store with `take`: another project's is dropped. */
+    const taking =
+      <T extends { plane: PlaneId }>(take: (states: ChatStates, told: T) => ChatStates) =>
+      (told: T) => {
+        if (gone || told.plane !== showing.current) return;
+        store.change((was) => {
+          const states = take(was.plane === told.plane ? was.states : nothingKnown, told);
+          return states === was.states && was.plane === told.plane
+            ? was
+            : { plane: told.plane, states };
+        });
+      };
 
     void (async () => {
       try {
-        const unlisten = await listenForChats("moved", (told) => {
-          if (gone || told.plane !== showing.current) return;
-          store.change((was) => {
-            const states = moved(was.plane === told.plane ? was.states : nothingKnown, told);
-            return states === was.states && was.plane === told.plane
-              ? was
-              : { plane: told.plane, states };
-          });
-        });
-        if (gone) unlisten();
-        else stop = unlisten;
+        const unlistens = await Promise.all([
+          listenForChats("moved", taking(moved)),
+          // Stuck? and work left behind (#6014): a telling of its own, never a move.
+          listenForChats("noticed", taking(noticed)),
+        ]);
+        if (gone) for (const unlisten of unlistens) unlisten();
+        else stops.push(...unlistens);
       } catch {
         // No window to listen in — a unit test, or a webview being torn down. The first
         // answer below is still worth having.
@@ -768,7 +791,7 @@ export function useChats(plane: PlaneId | undefined): Chats {
 
     return () => {
       gone = true;
-      stop?.();
+      for (const stop of stops) stop();
     };
   }, [store]);
 
@@ -801,6 +824,18 @@ export function useChats(plane: PlaneId | undefined): Chats {
           plane,
           states: underneath(was.plane === plane ? was.states : nothingKnown, known),
         }));
+      // What the core noticed of each (#6014), under what it has told since, by the same rule.
+      try {
+        const answer = await commands.chatsNoticed(plane);
+        if (gone || answer.status !== "ok" || !Array.isArray(answer.data)) return;
+        const first = answer.data;
+        store.change((was) => ({
+          plane,
+          states: noticedUnder(was.plane === plane ? was.states : nothingKnown, first),
+        }));
+      } catch {
+        // A core older than the command, or a test's catch-all: nothing noticed.
+      }
     })();
 
     return () => {
@@ -836,4 +871,31 @@ export function hotIn(states: ChatStates): number {
  */
 export function underneath(states: ChatStates, known: readonly Moved[]): ChatStates {
   return known.reduce(moved, states);
+}
+
+/** **Why chat `session` reads Stuck?** (#6014), in the core's words, or nothing. */
+export function stuckOf(states: ChatStates, session: number): string | undefined {
+  return states.noticed?.[session]?.stuck ?? undefined;
+}
+
+/** **Whether chat `session`'s folder held work left behind** (#6014), or nothing where it is not
+ *  known. */
+export function leftWorkOf(states: ChatStates, session: number): boolean | undefined {
+  return states.noticed?.[session]?.leftWork ?? undefined;
+}
+
+/** `told` taken: what the core noticed of its chat now. The same states where nothing changed. */
+export function noticed(states: ChatStates, told: ChatNoticed): ChatStates {
+  const was = states.noticed?.[told.session];
+  const now: Noticed = { stuck: told.stuck, leftWork: told.left_work };
+  if (was !== undefined && was.stuck === now.stuck && was.leftWork === now.leftWork) return states;
+  return { ...states, noticed: { ...states.noticed, [told.session]: now } };
+}
+
+/** A first answer folded under what has been told since: a chat told of already keeps that. */
+export function noticedUnder(states: ChatStates, first: readonly ChatNoticed[]): ChatStates {
+  return first.reduce(
+    (now, told) => (now.noticed?.[told.session] === undefined ? noticed(now, told) : now),
+    states,
+  );
 }

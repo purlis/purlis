@@ -30,6 +30,7 @@ import {
   Submenu,
 } from "./ui/menu/Menu";
 import { MenuTip, useRested } from "./ui/menu/MenuTip";
+import { ariaKeysOfSaid } from "./keys/registry";
 
 /**
  * The window's context menus: right-click on a thing, and charter offers what it can do to it.
@@ -379,7 +380,6 @@ function Sub({ sub, onPress }: { sub: SubDrawn; onPress: (offer: Offer) => void 
         <MenuItem
           id={`sub-${sub.key}`}
           textValue={sub.said}
-          aria-label={sub.said}
           aria-describedby={sub.tip === undefined ? undefined : noted}
           {...rest}
         >
@@ -425,7 +425,9 @@ function Row({ row, onPress }: { row: RowDrawn; onPress: (offer: Offer) => void 
   // Its tooltip: the catalogue's note, for a row that can run and is not one of a submenu that
   // says it once. A row that cannot run says why under its words, and as its description.
   const tip = offer.available && !row.untipped ? note : undefined;
-  const described = offer.available ? (note ?? row.warns) : offer.reason;
+  // Its description: what is under its words (`MenuWords` hands the row that), then the
+  // catalogue's note where it says something more, each heard once.
+  const described = offer.available && note !== under ? note : undefined;
   const { rested, rest, wake, hold } = useRested(tip !== undefined);
   return (
     <MenuItem
@@ -435,14 +437,17 @@ function Row({ row, onPress }: { row: RowDrawn; onPress: (offer: Offer) => void 
       variant={row.danger ? "danger" : "default"}
       className={row.danger ? "ends-it" : undefined}
       keys={row.keys}
+      // The key as a reader hears it, where no registry entry answers for the row (#6043).
+      aria-keyshortcuts={row.keys === undefined ? undefined : ariaKeysOfSaid(row.keys)}
       shortcut={offer.id}
       isDisabled={!offer.available}
-      // **The row's NAME is its words and nothing else**, and its note is its description.
-      // Left to the content, an accessible name would be the words with the consequence run
-      // onto the end of them, so every row would announce as a paragraph and no surface could
-      // ask for one by name. Type-ahead reads the same words.
+      // **The row's NAME is its words and nothing else**, and its note is its description. Its
+      // content names it (#6043): what stands under its words and its key are kept out of the
+      // name and handed to it as its description and its `aria-keyshortcuts`, so the name is
+      // its only visible words (WCAG 2.5.3), and no row announces as a paragraph. Never an
+      // `aria-label`, which would leave out the visible words under it. Type-ahead reads the
+      // same words.
       textValue={said}
-      aria-label={said}
       aria-describedby={described ? noted : undefined}
       onAction={() => {
         wake();

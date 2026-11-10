@@ -183,19 +183,27 @@ export async function press(
           // pressed as a button is, by its name (`aria-label`, or the words it is labelled by),
           // and its own buttons come first, so a row's action is pressed by its words and never
           // the row that holds it.
-          const nameOf = (one: Element) =>
-            one.getAttribute("aria-label") ??
-            (one.getAttribute("aria-labelledby") ?? "")
-              .split(/\s+/)
-              .map((id) => document.getElementById(id)?.textContent ?? "")
-              .join(" ");
+          // Named by its content where neither names it (#6043): its words, without what is
+          // kept from a reader (the line under them, its marks, its key).
+          const nameOf = (one: Element) => {
+            const own = one.getAttribute("aria-label");
+            if (own !== null) return own;
+            const by = one.getAttribute("aria-labelledby");
+            if (by !== null)
+              return by
+                .split(/\s+/)
+                .map((id) => document.getElementById(id)?.textContent ?? "")
+                .join(" ");
+            const heard = one.cloneNode(true) as Element;
+            for (const kept of heard.querySelectorAll('[aria-hidden="true"], [hidden]'))
+              kept.remove();
+            return heard.textContent ?? "";
+          };
           const buttons = [
             ...document.querySelectorAll<HTMLElement>(
               `${scope} button, ${scope} [role="menuitem"]`,
             ),
-          ].filter(
-            (one) => usable(one) && [one.textContent, one.getAttribute("aria-label")].some(fits),
-          );
+          ].filter((one) => usable(one) && [one.textContent, nameOf(one)].some(fits));
           const rows = [
             ...document.querySelectorAll<HTMLElement>(
               [
