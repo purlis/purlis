@@ -1328,6 +1328,11 @@ const GONE_WITHIN: std::time::Duration = std::time::Duration::from_secs(10);
 /// A plane whose profile `work` is a stand-in Claude Code that starts a shell of its own in a
 /// session of its own, as Claude Code starts a background shell, writes that shell's process id
 /// to `runs/shell.<its own pid>`, and stays running.
+///
+/// The shell writes its id itself, once it is in its session (#6097). Written by the stand-in
+/// as it forked, the id was there before the shell had left the stand-in's group, and a hook
+/// heard then was noted while the shell was still the group's: no stray, so nothing ended it
+/// when the stand-in exited. Claude Code's own hook comes after its shell has left.
 #[cfg(unix)]
 fn a_plane_whose_harness_leaves_a_shell() -> Plane {
     a_plane_whose_harness_leaves_a_shell_then("sleep 600")
@@ -1345,9 +1350,11 @@ fn a_plane_whose_harness_leaves_a_shell_then(then: &str) -> Plane {
         "claude-with-a-shell",
         &format!(
             "#!/bin/sh\n\
-             perl -e 'use POSIX (); POSIX::setsid(); exec @ARGV or die' sleep 600 \
+             perl -e 'use POSIX (); POSIX::setsid() or die; my ($at, $to) = splice @ARGV, 0, 2; \
+             open my $id, q(>), $at or die; print $id $$; close $id or die; \
+             rename $at, $to or die; exec @ARGV or die' \
+             {runs:?}/.shell.$$ {runs:?}/shell.$$ sleep 600 \
              </dev/null >/dev/null 2>&1 &\n\
-             echo $! > {runs:?}/.shell.$$ && mv {runs:?}/.shell.$$ {runs:?}/shell.$$\n\
              {then}\n"
         ),
     );
@@ -1631,9 +1638,10 @@ fn a_shell_left_by_a_harness_hung_up_on_from_outside_ends_with_it() {
 fn noting_a_chat_s_strays_ends_nothing_that_is_not_its_harness_s() {
     let plane = a_plane_whose_harness_leaves_a_shell_then(LETS_GO_THEN_EXITS);
     let _cleanup = LeavesNoShell(&plane);
-    let mut stranger =
+    let stranger = KilledAtTheEnd(
         purlis_core::forklock::spawn(std::process::Command::new("/bin/sleep").arg("600"))
-            .expect("a process of the person's own");
+            .expect("a process of the person's own"),
+    );
     let (planes, id, held, chat, shell) = a_chat_with_a_shell_of_its_own(&plane);
     its_tool_says_it_started_its_shell(&held, chat);
 
@@ -1641,12 +1649,23 @@ fn noting_a_chat_s_strays_ends_nothing_that_is_not_its_harness_s() {
 
     assert!(goes(shell), "precondition: the harness's own shell goes");
     assert!(
-        runs(stranger.id()),
+        runs(stranger.0.id()),
         "a process that was never the harness's was ended with it"
     );
-    let _ = stranger.kill();
-    let _ = stranger.wait();
     planes.close(&id).expect("it closes");
+}
+
+/// A child the test started, killed and reaped as the test ends, red or green (#6097), so a
+/// failed assertion leaves no orphan for CI's guard to find.
+#[cfg(unix)]
+struct KilledAtTheEnd(std::process::Child);
+
+#[cfg(unix)]
+impl Drop for KilledAtTheEnd {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
 }
 
 /// **A task a chat on a pool's runner asked for is not started again by a launch** (ADR 0078):
