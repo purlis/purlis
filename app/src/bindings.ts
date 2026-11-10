@@ -6021,6 +6021,13 @@ export type AnswerPath =
  *  `keep_vault_blocked` for Keep blocked, with the person's reason.
  */
 { via: "vault"; vault: string } | 
+/**
+ *  `allow_project_expects` for Allow on this machine and `decline_project_expects` for Not
+ *  now, each sent `items` as its Notice sends them (#6000).
+ */
+{ via: "sandbox-expects"; items: ExpectedItem[] } | 
+/**  `answer_pool_sign_in` for confirmation `id`, yes or no, as its dialog answers (#6000). */
+{ via: "confirmation"; id: number } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -6227,7 +6234,17 @@ export type AskSource =
  *  A vault a chat was refused because its persona is not tagged for it (#1430, #5160): an
  *  Allow lets that persona use it in this project on this machine.
  */
-"vault";
+"vault" | 
+/**
+ *  **What the project expects and this machine has not allowed** (#6000, qw354): its
+ *  sandboxed chats are refused it until the person allows it on this machine.
+ */
+"sandbox-expects" | 
+/**
+ *  **A `purlis` command's confirmation in the window** (#6000): a pool sign-in, a profile
+ *  taken off a pool, a signing check, each waiting on the person's yes.
+ */
+"confirmation";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the

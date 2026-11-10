@@ -40,7 +40,46 @@ const HOST: Shown = {
   },
 } as Shown;
 
-const ASKS = { RUN_GRANT, RUN_NEEDS_A_VALUE, HOST } as const;
+/** What the project expects of this machine, still to be allowed (#6000): a consent of no chat's. */
+const CONSENT: Shown = {
+  session: 0,
+  ask: "sandbox-expects",
+  says: "This project expects more than this machine allows: the system service com.example.helper",
+  options: [
+    { id: "allow", label: "Allow on this machine", allows: true },
+    { id: "not-now", label: "Not now", allows: false },
+  ],
+  source: "sandbox-expects",
+  chain: ["purlis"],
+  answer: {
+    via: "sandbox-expects",
+    items: [
+      {
+        what: "service",
+        target: "com.example.helper",
+        named: "com.example.helper",
+        says: "It is a service on this machine.",
+        refused: null,
+      },
+    ],
+  },
+};
+
+/** `purlis profile sign-in --pool` waiting on the person's yes in the window (#6000). */
+const CONFIRMATION: Shown = {
+  session: 0,
+  ask: "confirmation:7",
+  says: "Asks to sign work in on pool team. Its terminal shows the code A1B2C3.",
+  options: [
+    { id: "yes", label: "Sign in", allows: true },
+    { id: "no", label: "Cancel", allows: false },
+  ],
+  source: "confirmation",
+  chain: ["purlis profile sign-in"],
+  answer: { via: "confirmation", id: 7 },
+};
+
+const ASKS = { RUN_GRANT, RUN_NEEDS_A_VALUE, HOST, CONSENT, CONFIRMATION } as const;
 
 /** The Inbox as wide as the window's side of it, holding one ask. */
 function OneAsk({ ask }: { ask: keyof typeof ASKS }) {
@@ -146,5 +185,45 @@ export const ARunThatNeedsAValue: Story = {
         "true",
       ),
     );
+  },
+};
+
+/** **What a project expects, on its row** (#6000): a consent of no chat's, its Notice's two answers
+ *  on the row, with no Go to chat; → walks them. */
+export const AConsentOnItsRow: Story = {
+  args: { ask: "CONSENT" },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvasElement.querySelector(".inbox-question")).toHaveTextContent(
+      "Allow what this project expects?",
+    );
+    await expect(canvas.queryByRole("button", { name: /^Go to chat/ })).toBeNull();
+    await userEvent.tab();
+    await untilFocused(rowIn(canvasElement), "Tab lands on the row");
+    for (const name of ["Allow on this machine", "Not now"]) {
+      await userEvent.keyboard("{ArrowRight}");
+      await untilFocused(() => canvas.getByRole("button", { name }), `→ reaches ${name}`);
+      expectFocusInSight();
+    }
+  },
+};
+
+/** **A command's confirmation, on its row** (#6000): named by its command, its code in its line,
+ *  its yes and Cancel on the row; → walks them. */
+export const ACommandsConfirmationOnItsRow: Story = {
+  args: { ask: "CONFIRMATION" },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvasElement.querySelector(".inbox-question")).toHaveTextContent(
+      "Confirm what this command asks?",
+    );
+    await expect(canvas.getByText(/A1B2C3/)).toBeVisible();
+    await userEvent.tab();
+    await untilFocused(rowIn(canvasElement), "Tab lands on the row");
+    for (const name of ["Sign in", "Cancel"]) {
+      await userEvent.keyboard("{ArrowRight}");
+      await untilFocused(() => canvas.getByRole("button", { name }), `→ reaches ${name}`);
+      expectFocusInSight();
+    }
   },
 };

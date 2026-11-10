@@ -29,6 +29,9 @@ function subscribe(listener: () => void) {
   return () => void listeners.delete(listener);
 }
 
+/** Calls `listener` each time one of the window's sandbox commands returns; answers its stop. */
+export const onSandboxCommand = (listener: () => void): (() => void) => subscribe(listener);
+
 /** How many of the window's sandbox commands have returned: it moves when one does. */
 export function useSandboxCommands(): number {
   return useSyncExternalStore(

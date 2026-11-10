@@ -78,6 +78,10 @@ pub enum Asked {
         pool: String,
         code: String,
         config: PathBuf,
+        /// The project the command runs in, where it runs in one: the window lists its
+        /// confirmation in that project's Asks (#6000), as the command's line says.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        project: Option<PathBuf>,
     },
     /// This machine's pool `pool` is to have its profile `name` taken off, by the command: the
     /// person answers in the window, then its runner forgets it and the pool leaves it out. `code`
@@ -88,10 +92,26 @@ pub enum Asked {
         pool: String,
         code: String,
         config: PathBuf,
+        /// As [`Self::ApproveSignIn`]'s.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        project: Option<PathBuf>,
     },
     /// A read of the person's signing key on their forge account, for `purlis signing` in their
     /// own terminal, which holds no sign-in (#5625): the window asks with its own.
     Signing(crate::signingsetup::Asked),
+}
+
+impl Asked {
+    /// **The project the command that asks runs in**, where it said one (#6000): the window
+    /// lists a confirmation it waits on in that project's Asks.
+    pub fn project(&self) -> Option<&Path> {
+        match self {
+            Asked::ApproveSignIn { project, .. } | Asked::TakeOffAPool { project, .. } => {
+                project.as_deref()
+            }
+            _ => None,
+        }
+    }
 }
 
 /// What the window says.
@@ -172,6 +192,7 @@ pub fn answer(
             pool,
             code,
             config: theirs,
+            ..
         } => {
             if let Err(why) = may_ask_the_person(config, pool, code, theirs) {
                 return Said::Refused { why };
@@ -185,6 +206,7 @@ pub fn answer(
             pool,
             code,
             config: theirs,
+            ..
         } => {
             if let Err(why) = same_command(config, code, theirs)
                 .and_then(|()| crate::poolsetup::signins::may_take_off(config, pool, name))
@@ -260,6 +282,7 @@ pub fn a_new_code() -> String {
 /// so and nothing was started.
 pub fn approved(
     config: &Path,
+    project: Option<&Path>,
     pool: &str,
     name: &str,
     code: &str,
@@ -270,6 +293,7 @@ pub fn approved(
         pool: pool.to_owned(),
         code: code.to_owned(),
         config: config.to_path_buf(),
+        project: project.map(Path::to_path_buf),
     };
     match ask(&asked) {
         Answered::Said(Said::Asked { .. }) => Ok(()),
@@ -298,6 +322,7 @@ pub fn approved(
 /// back. With no window running, no answer in time, or a no, this says so.
 pub fn taken_off(
     config: &Path,
+    project: Option<&Path>,
     pool: &str,
     name: &str,
     code: &str,
@@ -308,6 +333,7 @@ pub fn taken_off(
         pool: pool.to_owned(),
         code: code.to_owned(),
         config: config.to_path_buf(),
+        project: project.map(Path::to_path_buf),
     };
     match ask(&asked) {
         Answered::Said(Said::Asked { note }) => Ok(note.map(|note| shown(&note))),

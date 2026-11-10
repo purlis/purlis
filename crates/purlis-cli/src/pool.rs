@@ -284,7 +284,7 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
 }
 
 /// The project whose folder this runs in, if it runs in one.
-fn project_here() -> Option<std::path::PathBuf> {
+pub(crate) fn project_here() -> Option<std::path::PathBuf> {
     std::env::current_dir()
         .ok()
         .and_then(|cwd| purlis_core::plane::find_root(&cwd).ok())
@@ -326,13 +326,26 @@ fn below_a_chat() -> Result<bool, String> {
 fn taken_off(config: &std::path::Path, pool: &str, name: &str) -> Result<Option<String>, String> {
     use purlis_core::windowline;
     let code = windowline::a_new_code();
-    windowline::taken_off(config, pool, name, &code, |asked| {
+    let project = project_here();
+    windowline::taken_off(config, project.as_deref(), pool, name, &code, |asked| {
         crate::voice::info(format!(
             "Confirm taking '{name}' off pool {pool} in the purlis window, if it shows the code \
              {code}…"
         ));
+        crate::voice::info(waiting_on_the_window(project.as_deref()));
         windowline::ask(asked)
     })
+}
+
+/// **Where the person answers a confirmation this command waits on** (#6000, ADR 0121 decision
+/// 16): Asks, under the project it runs in where it runs in one, for as long as the window waits.
+#[cfg(unix)]
+pub(crate) fn waiting_on_the_window(project: Option<&std::path::Path>) -> String {
+    let within = purlis_core::windowline::THE_PERSON_HAS;
+    project.map_or_else(
+        || purlis_core::askwait::waiting_said_in_the_window(within),
+        |root| purlis_core::askwait::waiting_said(root, within),
+    )
 }
 
 /// A runner is never Windows, and no window line reaches one from there.
@@ -447,4 +460,24 @@ fn limits_json(held: &runners::PoolLimitsHeld) -> serde_json::Value {
         })
         .collect();
     serde_json::json!({ "limits": rows })
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::waiting_on_the_window;
+
+    /// **#6000: a confirmation says where the person answers it**: Asks under the project the
+    /// command runs in, or Asks in the window where it runs in none, for the window's two minutes.
+    #[test]
+    fn a_confirmation_says_it_waits_in_asks_under_its_project_for_two_minutes() {
+        assert_eq!(
+            waiting_on_the_window(Some(std::path::Path::new("/home/one/smart-ide"))),
+            "waiting for the person: Asks (\u{270b}) in the purlis window, project smart-ide, for \
+             up to 2 minutes"
+        );
+        assert_eq!(
+            waiting_on_the_window(None),
+            "waiting for the person: Asks (\u{270b}) in the purlis window, for up to 2 minutes"
+        );
+    }
 }

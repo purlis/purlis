@@ -2,19 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useRef, useState } from "react";
-import {
-  commands,
-  type ExpectedItem,
-  type ExpectedShown,
-  type PlaneId,
-  type ProjectExpects,
-} from "./bindings";
+import { commands, type ExpectedItem, type PlaneId, type ProjectExpects } from "./bindings";
 import { Notice } from "./Notice";
 import { inTheWindow } from "./personaHostsAllow";
 import { SETTINGS, usePlaneChanged } from "./planeChanged";
 import { sandboxCommandReturned, useSandboxCommands } from "./sandboxAsked";
 import { inertly } from "./sandboxBlocks";
 import { useWindowFocused } from "./windowFocused";
+import { allowable, asDrawn, asNamed } from "./projectExpects";
+import { asksMoved } from "./asks";
+
+export { allowable, asDrawn, asNamed };
 
 /**
  * **What a project expects and this machine has not allowed, read again** (#1888): whenever one
@@ -62,26 +60,6 @@ export const mayAnswerExpects = (): boolean => inTheWindow(commands, "allowProje
 /** "the local socket" or "the system service", as the item's line starts. */
 const kind = (one: ExpectedItem) =>
   one.what === "socket" ? "The local socket" : "The system service";
-
-/** Whether an Allow would keep `one`: it can be allowed on this machine now. */
-export const allowable = (one: ExpectedItem) => one.refused === null;
-
-/**
- * **What an Allow is sent: each item as it was drawn**, so only that is kept. The name it was
- * drawn under goes with it, and nothing for one drawn as "cannot be allowed here now": a path a
- * repository declared may lead somewhere else by the time of the press, and the backend keeps
- * an item only while it still stands as the person saw it.
- */
-export const asDrawn = (items: readonly ExpectedItem[]): ExpectedShown[] =>
-  items.map((one) => ({ target: one.target, named: allowable(one) ? one.named : null }));
-
-/**
- * **What a Not now is sent: each item with the name it was drawn under** (#1927), one that
- * cannot be allowed here now too. The answer is to what the person saw: the app remembers it by
- * that name, and asks again when a path the project declared comes to name another socket.
- */
-export const asNamed = (items: readonly ExpectedItem[]): ExpectedShown[] =>
-  items.map((one) => ({ target: one.target, named: one.named }));
 
 /**
  * **One line for each thing a project expects**: what it is, named whole and drawn inertly (a
@@ -173,6 +151,8 @@ export function ProjectExpectsNotice({
           return;
         }
         setExpects(done.data.expects ?? null);
+        // The same consent is an ask in Asks (#6000): one answer settles both.
+        asksMoved(plane);
         // The chats open now keep the sandbox they started with: their Notice asks again.
         if (allow) sandboxCommandReturned();
       })

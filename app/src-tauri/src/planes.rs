@@ -5871,6 +5871,11 @@ impl Showing {
         self.held().get(window).and_then(Holding::front) == Some(plane)
     }
 
+    /// The project window `window` has in front, where it said one.
+    pub fn front_of(&self, window: &str) -> Option<PlaneId> {
+        self.held().get(window).and_then(Holding::front).cloned()
+    }
+
     /// The window holding `plane`, in front or behind — or none, when no window has said it
     /// holds it yet (it is being opened, or the window holding it has not drawn it).
     pub fn holder(&self, plane: &PlaneId) -> Option<String> {
