@@ -242,7 +242,7 @@ describe("a chat's arrived files in the Notices (#5702)", () => {
       },
     ];
     // Opened from its own button on the activity bar, not the status line's Notices.
-    await userEvent.click(screen.getByRole("tab", { name: "Notices" }));
+    await userEvent.click(screen.getByRole("tab", { name: /^Notices\b/ }));
     await waitFor(() => expect(calls("alerts_everywhere").length).toBeGreaterThan(before));
     const open = await screen.findByRole("tabpanel", { name: "Notices" });
     await waitFor(() => expect(listed("arrived-files:01M6M3VNN8GNE85XEV3194WJE6")).toBe(true));

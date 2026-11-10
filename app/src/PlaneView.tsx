@@ -231,6 +231,8 @@ import { ReadOnlyLine, ReadOnlyMendable, ReadOnlySaid, useReadOnly } from "./Rea
 import { LivesHere } from "./LivesHere";
 import { InboxAlerts, type WindowAlerts } from "./InboxAlerts";
 import { handCount, handSaid, type Elsewhere } from "./InboxElsewhere";
+import type { AllChatsFilter } from "./InboxAsks";
+import { useAsksArrival } from "./asksArrival";
 import { sayAboutThisMachine, useAboutThisMachine } from "./windowprefs";
 import { drawWhatIsInForce } from "./Extensions";
 import { useScreenReaderMode } from "./screenReader";
@@ -1843,6 +1845,12 @@ export const PlaneView = memo(function PlaneView({
       requestAnimationFrame(() => giveViewTheKeyboard(view));
     },
     [searchHere, showSide],
+  );
+  /** Where a part of the empty Asks leads (ADR 0121 decision 23). SEAM (#6013): the filter is
+   *  All chats' mode once it is built; until then the Chats sidebar opens as it is. */
+  const openAllChats: (filter: AllChatsFilter) => void = useCallback(
+    () => showSideView("chats"),
+    [showSideView],
   );
   /** **Show in Explorer's ask** (#3266, #3308, the Skills view): the folder, in the project's own
    *  files or a clone's, with a count that moves on each ask, so asking for the same folder
@@ -11425,6 +11433,9 @@ export const PlaneView = memo(function PlaneView({
   const touchOnPane = useAnsweredWhenGone(plane, waiting);
   /** The ✋'s count: every open project's asks, and how many are outside this one (#5999). */
   const hand = handCount(plane, waiting?.length ?? 0, elsewhere);
+  /** **A Blocking ask arriving** (ADR 0121 decisions 24 and 25, #6020): said once, politely,
+   *  and the first one on this machine that arrives while Asks is closed pulses the ✋. */
+  const arrival = useAsksArrival(waiting, hand.elsewhere, inFront && asksShown);
   /**
    * **Snooze all on Asks** (#5647): the core keeps what each chat held, and lists a snoozed
    * chat's asks apart until it asks something new; every list of this project's asks is read
@@ -11908,6 +11919,11 @@ export const PlaneView = memo(function PlaneView({
               <p role="status" className="sr-only" data-testid="pane-said">
                 <span key={paneSaid.count}>{paneSaid.said}</span>
               </p>
+              {/* **A new Blocking ask, said once and politely** (ADR 0121 decision 25): a line
+          that changes only as an ask arrives, so drawing the window again says nothing. */}
+              <p role="status" className="sr-only" data-testid="ask-arrived">
+                <span key={arrival.said.count}>{arrival.said.said}</span>
+              </p>
 
               {/* **The regions** (ADR 0038): by default the navigation region on the left, the
           panes in the middle, and what is asking for you on the right. What the repos are
@@ -12123,6 +12139,10 @@ export const PlaneView = memo(function PlaneView({
                           onShowUpdates={showUpdates}
                         />
                       }
+                      // **The empty Asks' parts** (ADR 0121 decision 23): All chats filtered.
+                      // SEAM (#6013): All chats is not built, so each part opens the Chats
+                      // sidebar as it is; #6013 makes the filter pick its mode.
+                      onAllChats={openAllChats}
                     />
                   ),
                   // **Updates** (#5644): the project's updates, as the Inbox listed them.
@@ -12211,6 +12231,8 @@ export const PlaneView = memo(function PlaneView({
                 // The Lower icons' are drawn the same way, so they are there while their half of the
                 // Panel is away (P-9, #1739): Changes' count, and Repos' only once a clone is behind.
                 // **What is New in each view** (#6002): a pip beside its badge, until seen.
+                pulse={arrival.pulse ? "asks" : undefined}
+                onPulsed={arrival.pulsed}
                 fresh={{
                   asks: newAsks(waiting, seen),
                   updates: newUpdates(

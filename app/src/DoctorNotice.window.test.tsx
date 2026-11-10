@@ -118,7 +118,7 @@ afterEach(() => {
 async function showNotices(): Promise<HTMLElement> {
   const tab = within(await screen.findByRole("tablist", { name: "Panel, right half" })).getByRole(
     "tab",
-    { name: "Notices" },
+    { name: /^Notices\b/ },
   );
   if (tab.getAttribute("aria-selected") !== "true") await userEvent.click(tab);
   return screen.findByRole("tabpanel", { name: "Notices" });
@@ -382,7 +382,7 @@ describe("every doctor finding, as one Notice line (#5645)", () => {
 
     const updates = within(await screen.findByRole("tablist", { name: "Attention" })).getByRole(
       "tab",
-      { name: "Updates" },
+      { name: /^Updates\b/ },
     );
     await userEvent.click(updates);
     const view = await screen.findByRole("tabpanel", { name: "Updates" });
