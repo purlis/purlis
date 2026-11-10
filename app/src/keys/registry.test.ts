@@ -10,6 +10,8 @@ import {
   overlaps,
   pressed,
   rowAriaKeys,
+  ariaKeysOfSaid,
+  menuRowKey,
   rowKey,
   SCOPES,
   SHORTCUTS,
@@ -455,6 +457,39 @@ describe("the palette's keys are the window's", () => {
     expect(rowKey("chat.rename:7", false, true)).toBeUndefined();
     expect(rowKey("shell.new", true, true)).toBe("⌘⇧T");
     expect(rowAriaKeys("tab.close:7", true, true)).toBeUndefined();
+  });
+});
+
+describe("a key as a row draws it, named for aria-keyshortcuts (#6043)", () => {
+  it("names a Mac's symbols and another keyboard's words alike, modifiers in one order", () => {
+    expect(ariaKeysOfSaid("⌘⇧T")).toBe("Shift+Meta+T");
+    expect(ariaKeysOfSaid("Ctrl+Shift+T")).toBe("Control+Shift+T");
+    expect(ariaKeysOfSaid("⌘C")).toBe("Meta+C");
+    expect(ariaKeysOfSaid("⌫")).toBe("Backspace");
+    expect(ariaKeysOfSaid("Delete")).toBe("Delete");
+    expect(ariaKeysOfSaid("F2")).toBe("F2");
+    expect(ariaKeysOfSaid("⌥↩")).toBe("Alt+Enter");
+    expect(ariaKeysOfSaid("⌘⇧M · Ctrl+Shift+M")).toBe("Shift+Meta+M Control+Shift+M");
+    expect(ariaKeysOfSaid(keySaid("pane.move", true))).toMatch(/^(\w+\+)*\S+$/);
+  });
+
+  it("names nothing it cannot read as one chord: a range, a sequence, nothing", () => {
+    expect(ariaKeysOfSaid("⌘1–⌘9")).toBeUndefined();
+    expect(ariaKeysOfSaid("Ctrl+K Ctrl+S")).toBeUndefined();
+    expect(ariaKeysOfSaid("")).toBeUndefined();
+  });
+});
+
+describe("a menu row's key (#6043)", () => {
+  it("is the key as it is drawn and as aria-keyshortcuts names it, together", () => {
+    expect(menuRowKey("shell.new", true)).toEqual({ said: "⌘⇧T", aria: "Shift+Meta+T" });
+    expect(menuRowKey("shell.new", false)).toEqual({
+      said: "Ctrl+Shift+T",
+      aria: "Control+Shift+T",
+    });
+    expect(menuRowKey("chat.rename:4", true)).toEqual({ said: "F2", aria: "F2" });
+    expect(menuRowKey("tab.close:4", true)).toEqual({ said: "⌫", aria: "Backspace Delete" });
+    expect(menuRowKey("no.such.row", true)).toBeUndefined();
   });
 });
 

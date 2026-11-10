@@ -338,10 +338,9 @@ describe("the asks, grouped by chat", () => {
     expect(screen.getByRole("rowheader", { name: "<b>steward</b> 3" })).toBeTruthy();
     // The only buttons are the answers it offers, and Go to chat.
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
-      "Cancel",
-      "Go to chat",
       "Allow",
       "Deny",
+      "Go to chat",
     ]);
   });
 
@@ -378,9 +377,8 @@ describe("the asks, grouped by chat", () => {
     // What is drawn is not what would run, so nothing that lets it run is offered here
     // (`hooked::shown_in_full`'s rule): Deny, and the chat's own pane, which shows it whole.
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
-      "Cancel",
-      "Go to chat",
       "Deny",
+      "Go to chat",
     ]);
   });
 
@@ -395,9 +393,8 @@ describe("the asks, grouped by chat", () => {
     expect(mark).toHaveClass("invisible-char");
     expect(screen.getByText(hiddenSaid("⟦U+00A0⟧"))).toBeTruthy();
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
-      "Cancel",
-      "Go to chat",
       "Deny",
+      "Go to chat",
     ]);
   });
 
@@ -462,9 +459,8 @@ describe("the asks, grouped by chat", () => {
     expect(document.querySelector(".ask-lines")).not.toHaveClass("inbox-clamped");
     expect(screen.getByText("Allow is not offered. It runs over 2 lines.")).toBeTruthy();
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
-      "Cancel",
-      "Go to chat",
       "Deny",
+      "Go to chat",
     ]);
   });
 
@@ -545,10 +541,9 @@ describe("the asks, grouped by chat", () => {
     draw([permission(3, "lb", ["steward 3"], "Run a command: echo ⟦U+27E6⟧U+00A0⟧")]);
     expect(screen.queryByText(/Allow is not offered/)).toBeNull();
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
-      "Cancel",
-      "Go to chat",
       "Allow",
       "Deny",
+      "Go to chat",
     ]);
   });
 
@@ -558,10 +553,9 @@ describe("the asks, grouped by chat", () => {
     draw([permission(3, "n", ["steward 3"], nfd)]);
     expect(screen.getByText(nfd)).toBeTruthy();
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
-      "Cancel",
-      "Go to chat",
       "Allow",
       "Deny",
+      "Go to chat",
     ]);
   });
 
@@ -840,9 +834,14 @@ describe("answering in place", () => {
   it("keeps a refused host blocked with the reason typed beside it, which its chat is told (#1987)", async () => {
     const calls = core();
     draw([HOST, permission(3, "a1", ["steward 3"])]);
-    // Only a sandbox ask has the box: a permission's own answers go to its harness.
+    // The box opens only once Keep blocked is pressed (#5998), and only a sandbox ask has it: a
+    // permission's own answers go to its harness.
+    expect(screen.queryByRole("textbox", { name: /Why you keep it blocked/ })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Keep blocked" }));
+    await userEvent.click(screen.getByRole("button", { name: "Deny" }));
     const boxes = screen.getAllByRole("textbox", { name: /Why you keep it blocked/ });
     expect(boxes).toHaveLength(1);
+    expect(calls.some((one) => one.cmd === "keep_sandbox_block")).toBe(false);
     await userEvent.type(boxes[0], "use the internal mirror");
     await userEvent.click(screen.getByRole("button", { name: "Keep blocked" }));
     await waitFor(() =>
@@ -861,6 +860,8 @@ describe("answering in place", () => {
   it("keeps a refused host blocked with no reason where none is typed (#1987)", async () => {
     const calls = core();
     draw([HOST]);
+    // Once to open why, once to keep it blocked with nothing typed there (#5998).
+    await userEvent.click(screen.getByRole("button", { name: "Keep blocked" }));
     await userEvent.click(screen.getByRole("button", { name: "Keep blocked" }));
     await waitFor(() =>
       expect(calls).toContainEqual({
@@ -1925,15 +1926,14 @@ describe("the keyboard (I-11)", () => {
     expect(document.activeElement).toBe(second);
     await userEvent.keyboard("{ArrowUp}");
     expect(document.activeElement).toBe(first);
-    // → walks the row's own controls in their order: its links, then its answers.
-    await userEvent.keyboard("{ArrowRight}");
-    expect(document.activeElement?.textContent).toBe("Cancel");
-    await userEvent.keyboard("{ArrowRight}");
-    expect(document.activeElement?.textContent).toBe("Go to chat");
+    // → walks the row's own controls in their order: a decision's answers on its row, then Go to
+    // chat (#5998).
     await userEvent.keyboard("{ArrowRight}");
     expect(document.activeElement?.textContent).toBe("Allow");
     await userEvent.keyboard("{ArrowRight}");
     expect(document.activeElement?.textContent).toBe("Deny");
+    await userEvent.keyboard("{ArrowRight}");
+    expect(document.activeElement?.textContent).toBe("Go to chat");
     // From a button, ↓ goes to the row below, as from the row.
     await userEvent.keyboard("{ArrowDown}");
     expect(second.contains(document.activeElement)).toBe(true);
@@ -2006,10 +2006,10 @@ describe("where a notification lands (#1694)", () => {
     });
     const group = chatGroup("steward 5");
     expect(document.activeElement).toBe(rowsIn(group)[0]);
-    // From there the keys go on as from any ask: → to its links first, Cancel as its Answer is
-    // open; ↓ to the ask below (#3123).
+    // From there the keys go on as from any ask: → to its answers on its row (#5998); ↓ to the
+    // ask below (#3123).
     await userEvent.keyboard("{ArrowRight}");
-    expect(document.activeElement?.textContent).toBe("Cancel");
+    expect(document.activeElement?.textContent).toBe("Allow");
     await userEvent.keyboard("{ArrowDown}");
     expect(document.activeElement).toBe(rowsIn(group)[1]);
   });
@@ -2050,15 +2050,17 @@ describe("an Allow waits for its row to settle (#1695)", () => {
     await waitFor(() => expect(calls.some(({ cmd }) => cmd === "answer_ask")).toBe(true));
   });
 
-  it("allows nothing pressed just after its Answer opened, though the ask was read long before (#5651)", async () => {
+  it("allows nothing pressed just after Other scopes… opened, though the ask was read long before (#5998)", async () => {
     const calls = core();
-    draw([permission(3, "01J0A", ["steward 3"])], {}, { closed: true });
-    // Read long ago; the keyboard lands on Allow as Answer opens, and a second Enter on the
-    // link's heels must allow nothing.
-    const answer = screen.getByRole("button", { name: "Answer steward 3" });
-    act(() => answer.focus());
+    const ask = permission(3, "01J0A", ["steward 3"]);
+    draw([
+      { ...ask, options: [...ask.options, { id: "always", label: "Allow always", allows: true }] },
+    ]);
+    // Read long ago; Other scopes… opens the wider grants under the line, and a press on its
+    // heels must allow nothing.
+    act(() => screen.getByRole("button", { name: "Other scopes…" }).focus());
     await userEvent.keyboard("{Enter}");
-    await waitFor(() => expect(screen.getByRole("button", { name: "Allow" })).toHaveFocus());
+    act(() => screen.getByRole("button", { name: "Allow always" }).focus());
     await userEvent.keyboard("{Enter}");
     expect(screen.getByRole("status")).toHaveTextContent(MOVED_JUST_NOW);
     expect(calls.some(({ cmd }) => cmd === "answer_ask")).toBe(false);

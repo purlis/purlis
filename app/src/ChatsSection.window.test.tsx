@@ -2420,7 +2420,9 @@ describe("a chat's row moves its chat (#4764)", () => {
     await screen.findByRole("menu");
     const place = menuRow("Move…");
     // Its key, which does the same from the row, said at the row's end.
-    expect(place.textContent).toMatch(/(⌘⇧M|Ctrl\+Shift\+M)/);
+    expect(place.querySelector('[data-part="shortcut"]')?.getAttribute("data-key")).toMatch(
+      /(⌘⇧M|Ctrl\+Shift\+M)/,
+    );
     await userEvent.click(place);
     await waitFor(() => expect(placingSaid()).toMatch(/^Picked up devops 3\. Arrow keys/));
     await waitFor(() => expect(document.activeElement).toHaveAttribute("data-place-target"));

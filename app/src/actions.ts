@@ -86,6 +86,7 @@ import { SAID } from "./menuWords";
 import { searchFromFocus, type SearchAsk } from "./contentSearch";
 import { pieceFilesTitle, pieceFilesView, type Place } from "./pieceViews";
 import { screenReaderMode, setScreenReaderMode } from "./screenReader";
+import { QUIET_NOW, quietNow, setQuietNow } from "./quiet";
 import { searchKeySaid } from "./searchKey";
 import { SESSION_VIEW, sessionTitle, sessionTitleOf, sessionView } from "./sessions";
 import { shellKeySaid } from "./shellKey";
@@ -273,6 +274,10 @@ export const PASS_THROUGH_ID = "pane.sendkey";
  *  every terminal's mode, after the colon: it is no row about what is in front
  *  (`aboutWhatIsInFront`), so a verb typed for the chat in front still ranks above it. */
 export const SCREEN_READER_ID = "terminals:screen-reader";
+
+/** The row that turns "Quiet now" on or off (#6017). Its id names what it changes, every
+ *  notification, after the colon: it is no row about what is in front. */
+export const QUIET_NOW_ID = "notifications:quiet-now";
 
 /**
  * What a terminal sends for that key, so the second press delivers exactly what the first
@@ -646,6 +651,9 @@ export type Does =
   /** Turns xterm's screen-reader mode on or off in every chat's terminal (DS-6, #629): the
    *  window's own preference, kept in the layout file (`screenReader.ts`). Nothing else. */
   | { verb: "screenReader"; on: boolean }
+  /** Turns "Quiet now" on or off (#6017, ADR 0121 decision 13): notifications wait while it is
+   *  on, and the ✋ still counts. Held by the core for the app's run (`quiet.ts`). */
+  | { verb: "quietNow"; on: boolean }
   /** Moves a view to its side's other place (#1740, P-3): its half of the Panel, or its
    *  sidebar. Never across sides: the layout model refuses any other move. */
   | { verb: "moveView"; view: ViewId; to: ViewPlace }
@@ -903,6 +911,8 @@ export type Now = {
    * where it is not given.
    */
   screenReader?: boolean;
+  /** "Quiet now" is on (#6017): its row says it ends it. Left out, `quiet.ts` says. */
+  quietNow?: boolean;
   /**
    * The plane's vaults, by name (`vault_list`), one row each: a vault opens its own tab. A
    * vault is the plane's, so these rows are the same whichever workspace is focused.
@@ -2242,6 +2252,18 @@ export function catalogue(now: Now): Offer[] {
         on: !on,
       }),
       note: "Every chat's terminal keeps rows a screen reader can read. Kept for the next launch.",
+    });
+  }
+
+  // **Quiet now** (#6017, ADR 0121 decision 13): one row whose words say what pressing it does
+  // now, as the switch at the top of Asks does.
+  {
+    const on = now.quietNow ?? quietNow().by_hand;
+    offers.push({
+      ...can(QUIET_NOW_ID, on ? "End Quiet now" : QUIET_NOW, { verb: "quietNow", on: !on }),
+      note: on
+        ? "Notifications come again, and what waited is summed up at the top of Asks."
+        : "Notifications wait until you end it. The ✋ still counts.",
     });
   }
 
@@ -3919,6 +3941,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return DID;
     case "screenReader":
       setScreenReaderMode(does.on);
+      return DID;
+    case "quietNow":
+      setQuietNow(does.on);
       return DID;
     case "focusRegion":
       doing.focusRegion?.(does.back);

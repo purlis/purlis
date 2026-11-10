@@ -18,8 +18,8 @@ import { showUpdates } from "./test-strips";
 
 /**
  * **The Answer link on an ask, and a result read in place** (#5651, spec #5638, ADR 0119
- * decisions 7 and 8), on the real window with the core mocked. An ask the window can answer
- * shows Answer, which opens its form in the row with the keyboard in it and reads Cancel while
+ * decisions 7 and 8), on the real window with the core mocked. An ask the window answers by what
+ * is typed shows Answer (a decision's options stand on its row, #5998), which opens its form in the row with the keyboard in it and reads Cancel while
  * it is open; an ask only its own place can answer shows Go to chat alone. Answering clears
  * the ask through its source, and the ✋ drops with it. A line under Mine opens in place to
  * show its report or why it failed, and reading it, or going to its chat, marks it read.
@@ -246,45 +246,27 @@ async function opened(asks: readonly Shown[]) {
 }
 
 describe("the Answer link on an ask (#5651)", () => {
-  it("shows Answer, closed, on an ask the window can answer, and no form until it is pressed", async () => {
-    const { view } = await opened([PERMISSION, QUESTION]);
+  it("shows Answer, closed, on an ask answered by typing, and no form until it is pressed", async () => {
+    const { view } = await opened([QUESTION]);
 
-    for (const who of ["steward 1", "steward 2"]) {
-      const row = rowOf(view, who);
-      const answer = within(row).getByRole("button", { name: `Answer ${who}` });
-      expect(answer).toHaveTextContent("Answer");
-      expect(answer).toHaveAttribute("aria-expanded", "false");
-      expect(within(row).queryByRole("textbox")).toBeNull();
-      expect(within(row).queryByRole("button", { name: /^Allow|^Deny/ })).toBeNull();
-    }
+    const row = rowOf(view, "steward 2");
+    const answer = within(row).getByRole("button", { name: "Answer steward 2" });
+    expect(answer).toHaveTextContent("Answer");
+    expect(answer).toHaveAttribute("aria-expanded", "false");
+    expect(within(row).queryByRole("textbox")).toBeNull();
   });
 
-  it("opens a permission's options in the row with the keyboard on the first, and reads Cancel", async () => {
+  it("draws a permission's options on its row, with no Answer (#5998)", async () => {
     const { view } = await opened([PERMISSION]);
     const row = rowOf(view, "steward 1");
-
-    await press.click(within(row).getByRole("button", { name: "Answer steward 1" }));
 
     const answers = within(row).getByRole("group", { name: "Answers to steward 1" });
     expect(
       within(answers)
         .getAllByRole("button")
         .map((one) => one.textContent),
-    ).toEqual(["Allow once", "Allow always", "Deny"]);
-    await waitFor(() =>
-      expect(within(answers).getByRole("button", { name: "Allow once" })).toHaveFocus(),
-    );
-    const cancel = within(row).getByRole("button", { name: "Cancel answering steward 1" });
-    expect(cancel).toHaveTextContent("Cancel");
-    expect(cancel).toHaveAttribute("aria-expanded", "true");
-
-    await press.click(cancel);
-
-    expect(within(row).queryByRole("group", { name: "Answers to steward 1" })).toBeNull();
-    expect(within(row).getByRole("button", { name: "Answer steward 1" })).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
+    ).toEqual(["Allow once", "Other scopes…", "Deny"]);
+    expect(within(row).queryByRole("button", { name: /^Answer/ })).toBeNull();
   });
 
   it("answers a permission from its options, and the hand's count drops at once", async () => {
@@ -292,7 +274,6 @@ describe("the Answer link on an ask (#5651)", () => {
     await waitFor(() => expect(hand(2).length).toBeGreaterThan(0));
     const row = rowOf(view, "steward 1");
 
-    await press.click(within(row).getByRole("button", { name: "Answer steward 1" }));
     await read();
     await press.click(within(row).getByRole("button", { name: "Deny" }));
 

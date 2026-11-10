@@ -1240,6 +1240,9 @@ impl purlis_host::Compose for Composes {
                 // The skills it was armed with, which the host answers its start and a window
                 // that takes it back with (#4218).
                 |skills| beside.armed(skills),
+                // The skills its persona names that it starts without here, which the host
+                // answers its start with (#2977).
+                |not| beside.not_there(not),
             ),
         )
     }

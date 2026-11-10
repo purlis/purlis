@@ -277,19 +277,20 @@ describe("what a row is made of", () => {
     expect(document.body.textContent).not.toContain("Plane root");
   });
 
-  it("has its chat for its title, its age at the right, then its kind and where, then its words (#5649)", () => {
+  it("has its question for its title, its age at the right, then its chat, kind and where, then its words (#5649, #5998)", () => {
     draw([{ ...permission(3, "a"), since: Date.now() / 1000 - 5 * 60 }, question(9)], {
       ...strip("alpha"),
       personaOf: (session) => (session === 3 ? "steward" : null),
     });
     const ask = row(3);
     expect(ask).toHaveAttribute("data-scope", "message");
-    expect(part(ask, '[data-part="title"]').textContent).toBe("steward 3");
+    expect(part(ask, '[data-part="title"]').textContent).toBe("Allow this action?");
     expect(part(ask, '[data-part="time"]').textContent).toBe("5m");
     expect(within(ask).getByText("5m").tagName).toBe("TIME");
-    // What it waits on, then where: workspace, then persona. The project only among others'.
+    // Its chat, what it waits on, then where: workspace, then persona. The project only among
+    // others'.
     expect(part(ask, '[data-part="meta"]').textContent).toBe(
-      "Asks your permission · alpha · steward",
+      "steward 3 · Asks your permission · alpha · steward",
     );
     expect(part(row(9), '[data-part="meta"]').textContent).toBe(
       "Waiting on your reply · Plane root",

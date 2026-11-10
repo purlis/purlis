@@ -112,10 +112,21 @@ async function curateRowsOf(tab: string): Promise<{ name: string; off: boolean; 
     const submenu = menus.at(-1);
     if (menus.length < 2 || submenu === undefined) return [];
     return [...submenu.querySelectorAll('[role="menuitem"]')].map((row) => ({
-      name: row.getAttribute("aria-label") ?? row.textContent ?? "",
+      name: ((one: Element) => {
+        // A row's name as a reader hears it (#6043): its words, without what is kept from one.
+        const own = one.getAttribute("aria-label");
+        if (own !== null) return own;
+        const heard = one.cloneNode(true) as Element;
+        for (const kept of heard.querySelectorAll('[aria-hidden="true"], [hidden]')) kept.remove();
+        return (heard.textContent ?? "").trim();
+      })(row),
       off: row.getAttribute("aria-disabled") === "true" || row.hasAttribute("data-disabled"),
       // Why it cannot run: its description, which its words also say under them.
-      why: document.getElementById(row.getAttribute("aria-describedby") ?? "")?.textContent ?? "",
+      why: (row.getAttribute("aria-describedby") ?? "")
+        .split(/\s+/)
+        .map((id) => document.getElementById(id)?.textContent ?? "")
+        .join(" ")
+        .trim(),
     }));
   });
 }
@@ -319,7 +330,18 @@ describe("a harness's capability card", function () {
           await browser.execute((name: string) => {
             const menus = [...document.querySelectorAll('[role="menu"]')];
             [...(menus.at(-1)?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])]
-              .find((row) => row.getAttribute("aria-label") === name)
+              .find(
+                (row) =>
+                  ((one: Element) => {
+                    // A row's name as a reader hears it (#6043): its words, without what is kept from one.
+                    const own = one.getAttribute("aria-label");
+                    if (own !== null) return own;
+                    const heard = one.cloneNode(true) as Element;
+                    for (const kept of heard.querySelectorAll('[aria-hidden="true"], [hidden]'))
+                      kept.remove();
+                    return (heard.textContent ?? "").trim();
+                  })(row) === name,
+              )
               ?.click();
           }, OPENCODE_CARD);
           return true;

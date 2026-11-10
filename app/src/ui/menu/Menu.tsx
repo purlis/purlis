@@ -62,6 +62,7 @@ import {
   MenuTrigger as AriaMenuTrigger,
   Separator as AriaSeparator,
   SubmenuTrigger as AriaSubmenuTrigger,
+  Text as AriaText,
   type Key,
   type MenuItemProps as AriaMenuItemProps,
   type MenuProps as AriaMenuProps,
@@ -97,12 +98,19 @@ export type MenuVariant = (typeof MENU_VARIANTS)[number];
 
 // --- Shortcuts --------------------------------------------------------------------------------
 
+/** **A row's key**: as it is drawn (`⌘R`, `Ctrl+R`), and as `aria-keyshortcuts` names it. */
+export interface RowKey {
+  said: string;
+  aria?: string;
+}
+
 /**
  * **Where a row's shortcut comes from**: the window's key registry (#2921) answers the key an
- * act has, by the act's id, and every menu says it at the row's end. Until the registry is
- * there, nothing answers and a row says the `keys` its caller knows.
+ * act has, by the act's id, and every menu says it at the row's end, and to a reader by the
+ * row's `aria-keyshortcuts`. Where the registry has nothing, a row says the `keys` its caller
+ * knows, and the caller's `aria-keyshortcuts`.
  */
-export const MenuShortcuts = createContext<(act: string) => string | undefined>(() => undefined);
+export const MenuShortcuts = createContext<(act: string) => RowKey | undefined>(() => undefined);
 
 // --- The trigger ------------------------------------------------------------------------------
 
@@ -578,13 +586,14 @@ export function MenuItem<T extends object = object>({
   ...rest
 }: MenuItemProps<T>) {
   const registered = useContext(MenuShortcuts);
-  const key = (shortcut === undefined ? undefined : registered(shortcut)) ?? keys;
+  const fromRegistry = shortcut === undefined ? undefined : registered(shortcut);
+  const key = fromRegistry?.said ?? keys;
   const noKeyboard = useContext(TakesNoKeyboard);
   const menu = useContext(MenuStateContext);
   const native = {
     "aria-disabled": unavailable || undefined,
     "aria-expanded": expanded,
-    "aria-keyshortcuts": keyShortcuts,
+    "aria-keyshortcuts": fromRegistry === undefined ? keyShortcuts : fromRegistry.aria,
   };
   const given = Object.fromEntries(Object.entries(native).filter(([, one]) => one !== undefined));
   return (
@@ -639,13 +648,14 @@ export function MenuItem<T extends object = object>({
       {({ isSelected, selectionMode, hasSubmenu }) => (
         <>
           {children}
-          {/* Said where it is seen, and not run onto the row's description: a row is named and
-              described by its own words, and the key registry says a key to a screen reader
-              by its name (#2921). */}
+          {/* **The key is drawn, never said** (#6043), as a button's is (R33): the stylesheet
+              draws it from `data-key`, hidden from a reader, so the row's words are its name
+              and its only visible words, and a reader hears the key by the row's
+              `aria-keyshortcuts`. Words in the row would be visible text its name leaves out,
+              which WCAG 2.5.3 (axe's `label-content-name-mismatch`) refuses even under
+              `aria-hidden`. */}
           {key !== undefined && key !== "" && (
-            <kbd data-scope="menu" data-part="shortcut">
-              {key}
-            </kbd>
+            <kbd data-scope="menu" data-part="shortcut" data-key={key} aria-hidden="true" />
           )}
           {/* A toggle is one row with a tick at its end while it is on (the menus' rule 6). */}
           {selectionMode !== "none" && (
@@ -673,6 +683,12 @@ export function MenuItem<T extends object = object>({
  * **A row's words, and what may stand under them** (the menus' rule 2): what a row that cannot be
  * undone costs, or why a row cannot run. The words are one line and give way to an ellipsis;
  * **what is under them is never cut**, and wraps.
+ *
+ * **The words are the row's name and what is under them its description** (#6043): the row is
+ * named by its content, which is its words alone, since what is under them is kept out of it
+ * (`aria-hidden`) and handed to the row as its description (React Aria's `description` slot), so
+ * a reader hears it once, after the name. A row with words under it is never named by
+ * `aria-label`: its visible text would then be more than its name (WCAG 2.5.3).
  */
 export function MenuWords({ said, under }: { said: ReactNode; under?: string }) {
   return (
@@ -681,9 +697,15 @@ export function MenuWords({ said, under }: { said: ReactNode; under?: string }) 
         {said}
       </span>
       {under !== undefined && under !== "" && (
-        <span data-scope="menu" data-part="description">
+        <AriaText
+          slot="description"
+          elementType="span"
+          aria-hidden="true"
+          data-scope="menu"
+          data-part="description"
+        >
           {under}
-        </span>
+        </AriaText>
       )}
     </span>
   );

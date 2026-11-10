@@ -46,6 +46,7 @@ impl Host for Board {
                 sandbox: None,
                 prompt_key: None,
                 armed_skills: None,
+                skills_not_there: None,
             }),
             Command::Stop { chat } if chat == "nobody" => Err(Refusal {
                 code: session::NO_SUCH_CHAT.into(),

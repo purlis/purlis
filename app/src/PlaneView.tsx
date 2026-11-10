@@ -491,6 +491,7 @@ import { AnswerOpener, AnswerPanel, type AnswerAsk, type OpenAnswer } from "./An
 import { activityTitle, activityView } from "./activity";
 import { type ChipToExplain } from "./ChipExplained";
 import { AwaySummary, useAwaySummary } from "./AwaySummary";
+import { AsksQuiet } from "./QuietSummary";
 import {
   asksInAModal,
   inPlace,
@@ -12102,6 +12103,17 @@ export const PlaneView = memo(function PlaneView({
                         if (ignore?.available) press(ignore);
                       }}
                       snoozing={snoozing}
+                      // **Quiet** (#6017): "Quiet now", and what the Quiet that ended held.
+                      quietTop={
+                        <AsksQuiet
+                          plane={plane}
+                          asks={waiting}
+                          updates={keptUpdates}
+                          isNew={seenRows.isNew}
+                          onGoToAsk={goToAsking}
+                          onShowUpdates={showUpdates}
+                        />
+                      }
                       // **The empty Asks' parts** (ADR 0121 decision 23): All chats filtered.
                       // SEAM (#6013): All chats is not built, so each part opens the Chats
                       // sidebar as it is; #6013 makes the filter pick its mode.

@@ -23,7 +23,7 @@ import { chatsOf } from "./laidOut";
 import { aTabForEachChat, leadOf, onScreenOf } from "./laidOut.testkit";
 import { forgetKeyboard } from "./paneKeyboard";
 import { forgetThisLaunch } from "./regions";
-import { askToEnd, paneMore } from "./menus.testkit";
+import { askToEnd, paneMore, rowName } from "./menus.testkit";
 import { stripNamed } from "./test-strips";
 import { hoverTipOf } from "./ui/tooltip/tooltip.testkit";
 import { findTree, rowsOf } from "./ui/tree/tree.testkit";
@@ -982,15 +982,11 @@ describe("nothing drawn on a task's tab ends it (fix round 1, M2)", () => {
     // of them ends its task. Close other tabs (#4762, on this menu since #4760) is not coloured
     // either: closing a tab ends no chat (#4756).
     const items = [...menu.querySelectorAll<HTMLElement>('[role^="menuitem"]')];
-    const back = items.findIndex((one) =>
-      one.getAttribute("aria-label")?.startsWith("Send back to its row"),
-    );
+    const back = items.findIndex((one) => rowName(one).startsWith("Send back to its row"));
     expect(back).toBeGreaterThanOrEqual(0);
     expect(items[back]).not.toHaveAttribute("data-variant", "danger");
     expect(
-      items
-        .filter((one) => one.getAttribute("data-variant") === "danger")
-        .map((one) => one.getAttribute("aria-label") ?? one.textContent),
+      items.filter((one) => one.getAttribute("data-variant") === "danger").map(rowName),
     ).toEqual([]);
   });
 });

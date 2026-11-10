@@ -11217,3 +11217,80 @@ fn a_skill_run_of_a_runner_chat_still_coming_back_is_logged_from_its_record_4219
     assert_eq!(runs[0].harness.as_deref(), Some(Harness::ClaudeCode.name()));
     assert_eq!(runs[0].device, DEVICE);
 }
+
+/// **#2977 (SK-5d): a chat on a runner, in Docker or on k8s, whose persona names a skill its
+/// runner lacks, says so on its tab as a chat here does, naming that runner**: the runner reads
+/// its harness's skills there and says what is missing in its start's answer (1.81). Each kind
+/// of pool's runner is named as its link names it, and a chat's own cluster runner as it is
+/// kept; a runner that says nothing missing (or a runner before 1.81) leaves no Notice.
+#[test]
+fn a_runner_chat_whose_persona_names_a_skill_its_runner_lacks_says_so_naming_the_runner_2977() {
+    use purlis_session_protocol::session::SkillsNotThere;
+    let lacking = SkillsNotThere {
+        missing: vec!["superpowers:test-driven-development".into()],
+        no_built_in: vec!["purlis-secret".into()],
+    };
+    let plane = tempfile::tempdir().expect("a plane");
+    std::fs::write(plane.path().join(purlis_core::plane::MANIFEST), "").expect("charter.toml");
+    for (kind, pool, runner) in [
+        ("a local runner", None, "local/podman-1"),
+        ("a Docker pool's runner", Some("builds"), "builds/builds-1"),
+        (
+            "a k8s pool's runner",
+            Some("cluster"),
+            "cluster/purlis-runner-0",
+        ),
+    ] {
+        let host = Pretend::default();
+        match pool {
+            Some(pool) => host.on_pool(pool),
+            None => host.on_a_runner(),
+        }
+        host.says_it_lacks(Some(lacking.clone()), Some(runner));
+        let chats = Chats::on_host(
+            Box::new(|_| {}),
+            Box::new(host.clone()),
+            plane.path().to_path_buf(),
+        );
+        let started = chats
+            .start_ready(&on_the_profile_work(), &a_harness_ready(None), SIZE)
+            .expect("it starts on the runner, without them");
+
+        assert_eq!(
+            chats.skills_missing(started),
+            Some(SkillsMissing {
+                persona: Some("steward".to_owned()),
+                missing: lacking.missing.clone(),
+                no_built_in: lacking.no_built_in.clone(),
+                broken: Vec::new(),
+                by_a_repo: Vec::new(),
+                beside_a_built_in: Vec::new(),
+                runner: Some(runner.to_owned()),
+            }),
+            "{kind}"
+        );
+
+        host.says_it_lacks(None, Some(runner));
+        let whole = chats
+            .start_ready(&on_the_profile_work(), &a_harness_ready(None), SIZE)
+            .expect("it starts on the runner");
+        assert_eq!(chats.skills_missing(whole), None, "{kind}: none missing");
+    }
+
+    // A pool's runner its link does not name is named by its pool.
+    let host = Pretend::default();
+    host.on_pool("builds");
+    host.says_it_lacks(Some(lacking.clone()), None);
+    let chats = Chats::on_host(
+        Box::new(|_| {}),
+        Box::new(host.clone()),
+        plane.path().to_path_buf(),
+    );
+    let started = chats
+        .start_ready(&on_the_profile_work(), &a_harness_ready(None), SIZE)
+        .expect("it starts on the runner");
+    assert_eq!(
+        chats.skills_missing(started).and_then(|said| said.runner),
+        Some("builds".to_owned())
+    );
+}
