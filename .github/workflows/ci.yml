@@ -2039,7 +2039,19 @@ jobs:
         timeout-minutes: 1
         run: ps -Ao pcpu,comm -r | sed -n 1,7p
       - name: The Skill studio's outcome bars on codex's stand-in
-        run: npm run e2e:outcome
+        # e2e-6106 (temporary): three times, the later two with every core kept busy.
+        run: |
+          failed=0
+          for attempt in 1 2 3; do
+            pids=""
+            if [ "$attempt" -gt 1 ]; then
+              for core in $(seq "$(sysctl -n hw.ncpu)"); do yes >/dev/null & pids="$pids $!"; done
+            fi
+            echo "e2e-6106: attempt $attempt of codex"
+            npm run e2e:outcome || { failed=1; echo "e2e-6106: attempt $attempt of codex failed"; }
+            [ -n "$pids" ] && kill $pids || true
+          done
+          exit $failed
         if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
         working-directory: app
         env:
@@ -2056,7 +2068,19 @@ jobs:
         timeout-minutes: 1
         run: ps -Ao pcpu,comm -r | sed -n 1,7p
       - name: The Skill studio's outcome bars on opencode's stand-in
-        run: npm run e2e:outcome
+        # e2e-6106 (temporary): three times, the later two with every core kept busy.
+        run: |
+          failed=0
+          for attempt in 1 2 3; do
+            pids=""
+            if [ "$attempt" -gt 1 ]; then
+              for core in $(seq "$(sysctl -n hw.ncpu)"); do yes >/dev/null & pids="$pids $!"; done
+            fi
+            echo "e2e-6106: attempt $attempt of opencode"
+            npm run e2e:outcome || { failed=1; echo "e2e-6106: attempt $attempt of opencode failed"; }
+            [ -n "$pids" ] && kill $pids || true
+          done
+          exit $failed
         if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
         working-directory: app
         env:
@@ -2198,7 +2222,7 @@ jobs:
         if: failure()
         run: node ../tools/e2e-annotations.mjs logs/failures.jsonl
         working-directory: app
-      - if: failure()
+      - if: always() # e2e-6106 (temporary)
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: scenario-logs-${{ matrix.os }}-${{ matrix.shard }}

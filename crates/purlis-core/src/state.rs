@@ -1868,10 +1868,12 @@ impl Board {
         let Some(tracked) = self.chats.get_mut(&report.chat) else {
             // A report for a chat the app does not have: one that was closed a moment ago,
             // or a stale environment in a process that outlived it.
+            tracing::info!("e2e-6106: board has no chat {}: {:?} refused", report.chat, report.event);
             return false;
         };
         let was = tracked.conversation.clone();
         if !tracked.take(report) {
+            tracing::info!("e2e-6106: board refused chat {} {:?} {:?} (adopted {}, conversation {:?})", report.chat, report.event, report.conversation, tracked.adopted, tracked.conversation);
             return false;
         }
         // A sub-agent naming another conversation is not the chat's `/clear`: the chat stays in

@@ -3779,6 +3779,7 @@ impl Chats {
             ));
         };
         let started = self.again_on_its_conversation(session).and_then(|again| {
+            tracing::info!("e2e-6106: restart of chat {session}: resume {:?}", again.resume);
             if again.resume.is_none() {
                 let reaches = if told.is_empty() {
                     ""
@@ -5609,6 +5610,7 @@ impl Chats {
             whose.store(session, std::sync::atomic::Ordering::SeqCst);
             lock(&self.starting_as).insert(session, chat.persona.clone());
             lock(&self.named_while_starting).insert(session, None);
+            tracing::info!("e2e-6106: chat {session} announced (reattaching {reattaching})");
             if !reattaching && !on_the_runner && chat.runs_on.is_none() {
                 lock(&self.starting_at).insert(
                     session,
@@ -5919,6 +5921,7 @@ impl Chats {
                 under.identity.run = run;
             }
         }
+        tracing::info!("e2e-6106: chat {session} open, resumed by {:?}", under.resume);
         open.insert(
             session,
             Running {
@@ -6955,13 +6958,18 @@ impl Chats {
         let mut open = lock(&self.open);
         let Some(one) = open.get_mut(&session) else {
             if let Some(named) = lock(&self.named_while_starting).get_mut(&session) {
+                tracing::info!("e2e-6106: chat {session} named {id:?} while starting: kept");
                 *named = Some((id, run.map(str::to_owned)));
+            } else {
+                tracing::info!("e2e-6106: chat {session} named {id:?}, neither open nor starting: DROPPED");
             }
             return;
         };
         if one.harness.is_none() {
+            tracing::info!("e2e-6106: chat {session} named {id:?}, open with no harness: DROPPED");
             return;
         }
+        tracing::info!("e2e-6106: chat {session} named {id:?}, open: resume was {:?}", one.chat.resume);
         let mut moved = false;
         if one.chat.resume.as_ref() != Some(&id) {
             one.chat.resume = Some(id);
