@@ -40,7 +40,7 @@ export type NotificationPrefs = {
   off: readonly Source[];
   /**
    * **A sound for an Expiring ask about to fail** (ADR 0121 decision 12): off until the person
-   * turns it on. Kept for the sound, which purlis does not play yet (#6019's follow-up).
+   * turns it on. Kept for the sound, which purlis does not play yet (#6110).
    */
   expiringSound: boolean;
 };

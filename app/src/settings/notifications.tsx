@@ -226,6 +226,7 @@ const finishedAfter: LiveSetting = {
   },
 };
 
+// The sound itself is #6110: until it plays, the row says so.
 const expiringSound: LiveSetting = {
   id: "you.notifications.expiringSound",
   label: "Sound for an expiring ask",
