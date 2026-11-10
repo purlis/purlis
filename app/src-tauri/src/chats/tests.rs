@@ -11220,9 +11220,9 @@ fn a_skill_run_of_a_runner_chat_still_coming_back_is_logged_from_its_record_4219
 
 /// **#2977 (SK-5d): a chat on a runner, in Docker or on k8s, whose persona names a skill its
 /// runner lacks, says so on its tab as a chat here does, naming that runner**: the runner reads
-/// its harness's skills there and says what is missing in its start's answer (1.80). Each kind
+/// its harness's skills there and says what is missing in its start's answer (1.81). Each kind
 /// of pool's runner is named as its link names it, and a chat's own cluster runner as it is
-/// kept; a runner that says nothing missing (or a runner before 1.80) leaves no Notice.
+/// kept; a runner that says nothing missing (or a runner before 1.81) leaves no Notice.
 #[test]
 fn a_runner_chat_whose_persona_names_a_skill_its_runner_lacks_says_so_naming_the_runner_2977() {
     use purlis_session_protocol::session::SkillsNotThere;

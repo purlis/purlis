@@ -4046,7 +4046,7 @@ fn lacking() -> session::SkillsNotThere {
 }
 
 /// **#2977 (SK-5d): a chat a pool's runner composes comes back with the skills its persona names
-/// that the runner lacks, and the runner named by its pool**, over the protocol (1.80), the same
+/// that the runner lacks, and the runner named by its pool**, over the protocol (1.81), the same
 /// for a local runner's, a Docker pool's and a k8s pool's: the window's link to each kind of
 /// pool's runner is one path. A runner that lacks nothing says nothing.
 #[test]

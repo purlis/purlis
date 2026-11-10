@@ -4739,7 +4739,7 @@ struct Begun {
     /// The skills the host armed it with, where it composed it and says (1.77, #4218).
     armed_skills: Option<Vec<session::ArmedSkill>>,
     /// The skills its persona names that it started without there, where the host says some
-    /// (1.80, #2977).
+    /// (1.81, #2977).
     skills_not_there: Option<session::SkillsNotThere>,
     /// The runner it started on, as its tab names it ([`HostedSessions::runner_named`]).
     runner: Option<String>,

@@ -625,7 +625,7 @@ pub trait Beside {
         let _ = skills;
     }
     /// **Told the skills its persona names that the chat being composed starts without here**
-    /// (1.80, SK-5d, #2977): [`skills_not_here`]'s missing and built-in ones, by name alone,
+    /// (1.81, SK-5d, #2977): [`skills_not_here`]'s missing and built-in ones, by name alone,
     /// which the host answers its start with so its window says them on the chat's tab. Not told
     /// where none is. A host that keeps none ignores it.
     fn not_there(&self, not: session::SkillsNotThere) {

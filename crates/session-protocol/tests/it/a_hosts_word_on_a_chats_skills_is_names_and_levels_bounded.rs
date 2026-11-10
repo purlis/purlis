@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! 1.77 (#4218): what a host says it armed a chat it composed with is names and levels alone,
-//! and 1.80 (#2977) what it says the chat started without is names alone, each
+//! and 1.81 (#2977) what it says the chat started without is names alone, each
 //! bounded, as a window takes it.
 
 use purlis_session_protocol::session::{
@@ -41,7 +41,7 @@ fn a_hosts_armed_skills_are_taken_each_that_fits_and_at_most_the_most() {
     assert_eq!(taken[0].name, "s0");
 }
 
-/// **1.80 (#2977): a host's word on the skills a chat started without is names alone,
+/// **1.81 (#2977): a host's word on the skills a chat started without is names alone,
 /// bounded**: one with no name, a long one or a control character is not taken, nor more than
 /// the most of each kind, and a word with none left says nothing.
 #[test]

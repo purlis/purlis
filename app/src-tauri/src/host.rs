@@ -193,7 +193,7 @@ pub struct Composed {
     /// before 1.77, which does not say them.
     pub armed_skills: Option<Vec<purlis_session_protocol::session::ArmedSkill>>,
     /// The skills its persona names that it started without on the host's machine (1.80,
-    /// #2977): `None` where none is, and from a host before 1.80, which does not say them.
+    /// #2977): `None` where none is, and from a host before 1.81, which does not say them.
     pub skills_not_there: Option<purlis_session_protocol::session::SkillsNotThere>,
     /// The runner it started on, as `<pool>/<runner>` where its link names the runner, or its
     /// pool alone: `None` where the link reaches no pool's runner.
@@ -1079,7 +1079,7 @@ pub(crate) mod pretend {
         /// ([`Pretend::says_it_armed`], #4218): none said otherwise, as a host before 1.77.
         composed_armed: Mutex<Option<Vec<purlis_session_protocol::session::ArmedSkill>>>,
         /// What it says each chat it composes starts without, and the runner it names
-        /// ([`Pretend::says_it_lacks`], #2977): nothing otherwise, as a host before 1.80.
+        /// ([`Pretend::says_it_lacks`], #2977): nothing otherwise, as a host before 1.81.
         composed_lacking: Mutex<(
             Option<purlis_session_protocol::session::SkillsNotThere>,
             Option<String>,

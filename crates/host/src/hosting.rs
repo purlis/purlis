@@ -155,7 +155,7 @@ pub trait Beside {
         let _ = skills;
     }
     /// **Told the skills its persona names that the program being composed starts without
-    /// here** (1.80, SK-5d, #2977): answered to its start alone, so its window says them on its
+    /// here** (1.81, SK-5d, #2977): answered to its start alone, so its window says them on its
     /// tab.
     fn not_there(&self, not: session::SkillsNotThere) {
         let _ = not;
