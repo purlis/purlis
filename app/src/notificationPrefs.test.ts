@@ -130,6 +130,9 @@ describe("how long a task works before its finish notifies (#6005, ADR 0121 deci
 describe("notifications per source (#6019, ADR 0121 decision 22)", () => {
   it("are on for a failed task and a long finish until the person turns one off", () => {
     expect(notificationPrefs().off).toEqual([]);
+  });
+
+  it("are read off from the file the window was handed", () => {
     handed({ version: 2, regions: [], notifications: { off: ["task-failed"] } });
     expect(notificationPrefs().off).toEqual(["task-failed"]);
   });

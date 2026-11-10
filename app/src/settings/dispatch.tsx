@@ -797,7 +797,7 @@ export function dispatchGroup(
     // Said once for the group (DS-8's once per group), not under each table.
     kept: `Kept in ${file}, which your team sees.`,
     // The Stuck? thresholds moved to Attention (#6019): the page says where.
-    links: [{ label: "Go to Stuck? in Attention…", action: `settings.group:${ATTENTION_GROUP}` }],
+    links: [{ label: "Go to Attention…", action: `settings.group:${ATTENTION_GROUP}` }],
     settings: [
       {
         id: `${DISPATCH}.limits`,
