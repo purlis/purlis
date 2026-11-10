@@ -1808,6 +1808,24 @@ impl Chats {
         self.pools_in = config;
     }
 
+    /// **`asked`, a start where `runs_on` chose, readied for where it is composed**: for a chat a
+    /// pool's runner composes by its names (#2446), as that runner judges its profile
+    /// ([`purlis_core::start::ready_for_a_runner`]), so a rule of this machine's alone, such as a
+    /// Linux desktop's sandbox-only profile for a sandboxed Claude Code chat, refuses no chat that
+    /// runs on a runner. Else as this machine starts it ([`purlis_core::start::ready`]).
+    pub(crate) fn ready_where_composed(
+        &self,
+        asked: &purlis_core::start::Start,
+        runs_on: Option<&purlis_core::machine::StartChoice>,
+    ) -> Result<purlis_core::start::Ready, String> {
+        let workspace = workspace_at_start(Some(&self.project), asked.cwd.as_deref());
+        if self.sessions.pool_for(workspace.as_deref(), runs_on).is_some() {
+            purlis_core::start::ready_for_a_runner(asked, &self.project)
+        } else {
+            purlis_core::start::ready(asked, &self.project)
+        }
+    }
+
     /// **A runner's refusal of a signed-out profile, in its pool's words** (#4233): a start let
     /// through while the runner fetched its harness is refused by the runner as a machine of its
     /// own, whose words send the person to sign in on the wrong one. The row is asked again, which

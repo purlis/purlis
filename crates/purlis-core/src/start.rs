@@ -297,6 +297,46 @@ pub fn ready_on(
     })
 }
 
+/// **[`ready`] for a chat its pool's runner composes** (#2446): the window readies it only to
+/// start it there, and the runner composes it by its names, with the sandbox it compiles. A
+/// profile rule that holds for a chat run on this machine and not on a runner is the runner's
+/// to judge: on a person's own Linux machine a sandboxed Claude Code chat runs only on a
+/// sandbox-only profile (ADR 0067 as amended 2026-11-10), and on a runner it runs wrapped on
+/// any profile it keeps. What a runner refuses is refused here too ([`profile_refusal`]).
+pub fn ready_for_a_runner(start: &Start, root: &Path) -> Result<Ready, String> {
+    let declared = crate::harness_declaration::read(root);
+    ready_for_a_runner_on(
+        start,
+        root,
+        &declared,
+        &crate::sandbox::Machine::this(),
+        &crate::sandbox::backend::installed,
+    )
+}
+
+/// [`ready_for_a_runner`] on `machine`, as [`ready_on`] is [`ready_in`] on one.
+pub fn ready_for_a_runner_on(
+    start: &Start,
+    root: &Path,
+    declared: &crate::harness_declaration::Declarations,
+    machine: &crate::sandbox::Machine,
+    has: &dyn Fn(&str) -> bool,
+) -> Result<Ready, String> {
+    profiles::git_asked_once(|| {
+        let launch = profiles::for_launch_in(root, declared);
+        ready_given_on(start, root, declared, (machine, Composed::OnARunner), has, &launch)
+    })
+}
+
+/// Where a chat [`ready_given`] readies is composed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Composed {
+    /// On the machine that readies it, or the session host beside it.
+    Here,
+    /// On a pool's runner, which composes it by its names ([`ready_for_a_runner`]).
+    OnARunner,
+}
+
 /// [`ready_in`] from a launch read the caller already made ([`profiles::for_launch_in`] of
 /// the same `declared`): a caller that chose the profile from that read starts the chat from
 /// it too, and git is asked once (#1445).
@@ -322,8 +362,21 @@ fn ready_given(
     declared: &crate::harness_declaration::Declarations,
     machine: &crate::sandbox::Machine,
     has: &dyn Fn(&str) -> bool,
+    launch: &(profiles::ProfileSet, profiles::IgnoreCheck),
+) -> Result<Ready, String> {
+    ready_given_on(start, root, declared, (machine, Composed::Here), has, launch)
+}
+
+fn ready_given_on(
+    start: &Start,
+    root: &Path,
+    declared: &crate::harness_declaration::Declarations,
+    (machine, composed): (&crate::sandbox::Machine, Composed),
+    has: &dyn Fn(&str) -> bool,
     (set, check): &(profiles::ProfileSet, profiles::IgnoreCheck),
 ) -> Result<Ready, String> {
+    // Judged as the machine that composes the chat judges it: a runner, for one composed there.
+    let on_a_runner = composed == Composed::OnARunner || machine.is_a_runner();
     let Some(name) = start.profile.as_deref() else {
         return Err(
             "this chat is not on a harness profile, so there is nothing to start it from — \
@@ -511,13 +564,13 @@ fn ready_given(
         name,
         sandbox_only,
         sandbox.is_some(),
-        machine.is_a_runner(),
+        on_a_runner,
         machine.os,
     ) {
         if let Some(harness) = harness
             && sandbox.is_some()
             && !sandbox_only
-            && wants_a_sandbox_only_profile(harness, machine.os, machine.is_a_runner())
+            && wants_a_sandbox_only_profile(harness, machine.os, on_a_runner)
         {
             crate::profilestore::sandbox_only::waits_on(root, harness);
         }
