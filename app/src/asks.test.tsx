@@ -32,11 +32,12 @@ afterEach(() => {
 
 const PLANE = "/home/dev/plane";
 
-/** Every command the window sent, with what it sent, answering each with `answers`. */
+/** Every command the window sent, with what it sent, answering each with `answers`; but the note
+ *  every answer leaves for the week's measures (#6021), which `AskRules.window.test.tsx` reads. */
 function sent(answers: Record<string, unknown> = {}) {
   const calls: { cmd: string; args: Record<string, unknown> }[] = [];
   mockIPC((cmd, args) => {
-    calls.push({ cmd, args: args as Record<string, unknown> });
+    if (cmd !== "ask_answered") calls.push({ cmd, args: args as Record<string, unknown> });
     if (cmd in answers) {
       const answer = answers[cmd];
       if (answer instanceof Error) throw answer.message;

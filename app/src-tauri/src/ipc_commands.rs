@@ -238,6 +238,7 @@ macro_rules! app_commands {
                 askrules::ask_answered,
                 askrules::rule_made,
                 askrules::rules_made,
+                askrules::ask_measures,
                 askrules::undo_rule,
                 askrules::end_cool_off,
                 inboxupdates::inbox_updates,

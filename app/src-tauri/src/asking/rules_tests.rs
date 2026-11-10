@@ -48,6 +48,7 @@ fn answered(ask: &Shown, session: u32, option: &str, allows: bool, at: u64) -> A
         option: option.to_owned(),
         allows,
         at,
+        raised: None,
     }
 }
 
