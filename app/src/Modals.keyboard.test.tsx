@@ -871,9 +871,9 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
   it("keeps Tab on the palette's box, its one stop, by React Aria's focus scope", async () => {
     // The palette has an anatomy of its own, so the dialog family's Tab stands back from it
     // (`own` in `useTabbing`): the key reaches the box, and a focus scope of React Aria's takes
-    // it there and keeps the keyboard on the box rather than letting it out to the window. Two
-    // scopes contain here, `NotModal`'s and the one React Aria's `useDialog` asks its `Overlay`
-    // for, and this does not tell them apart: either keeps it green.
+    // it there and keeps the keyboard on the box rather than letting it out to the window. That
+    // scope is the one React Aria's `useDialog` asks its `Overlay` for, and `NotModal` draws no
+    // other (#6093).
     // It was once the control case for WebKit's own sequence — a text `<input>` is in it
     // whatever full keyboard access says — and the walk no longer consults the engine (#6069).
     render(<Palette offers={[]} onRun={() => ({ ok: true }) as const} />);

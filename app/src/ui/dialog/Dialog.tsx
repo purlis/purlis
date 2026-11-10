@@ -63,7 +63,7 @@ import {
   Modal as AriaModal,
   ModalOverlay as AriaModalOverlay,
 } from "react-aria-components";
-import { FocusScope, Overlay, useOverlay } from "react-aria";
+import { Overlay, useOverlay } from "react-aria";
 import { createPortal } from "react-dom";
 import { LockOpen } from "lucide-react";
 import { useProjectShown } from "../../projectShown";
@@ -566,8 +566,10 @@ function NotModal({
         data-scope="dialog"
         data-part="scrim"
       >
+        {/* Held by the one focus scope React Aria's `Overlay` draws round it, which contains
+            because the dialog in it asks it to (`useDialog`), round from either end (#6093). */}
         <div {...overlayProps} data-scope="dialog" data-part="modal">
-          <FocusScope contain>{children}</FocusScope>
+          {children}
         </div>
       </div>
     </Overlay>
