@@ -177,8 +177,8 @@ pub fn approve(
 ) -> Result<(), String> {
     if !SCRIPT_RUNS_HERE {
         return Err(
-            "an artifact's script does not run on this platform yet, so there is nothing to \
-             approve: it renders without it"
+            "an artifact's script does not run on this platform yet (ADR 0122 \u{a7}10), so \
+             there is nothing to approve: it renders without it"
                 .into(),
         );
     }

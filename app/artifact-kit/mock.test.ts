@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // The mock of a page's port (`purlis artifact mock`, #5975), run as a page outside purlis runs
 // it: in a document of its own, before or after the page's declaration, with its fixtures and
 // data files fetched from beside the page.

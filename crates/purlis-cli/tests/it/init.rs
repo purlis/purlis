@@ -321,6 +321,7 @@ workspaces/*/work/*.jsonl merge=union
 workspaces/*/todos/MEMORY.md merge=union
 workspaces/*/sessions/index.md merge=union
 sessions/index.md merge=union
+workspaces/*/artifacts/pins.toml merge=union
 # <<< charter merge rules <<<
 ";
 

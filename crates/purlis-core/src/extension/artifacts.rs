@@ -259,8 +259,8 @@ fn pin_where(
 ) -> Result<FromExtension, String> {
     if !runs {
         return Err(
-            "an extension's artifact templates are not on this platform: purlis starts no \
-             extension here, so it pins none of their pages (ADR 0031)"
+            "an extension's artifact templates are not on this platform: no extension is \
+             started here, so none of their pages is pinned (ADR 0031)"
                 .into(),
         );
     }

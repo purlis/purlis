@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // What `purlis-page.d.ts` lets a page write, and what it refuses: checked by `npm run
 // typecheck`, never run. A page that types against the generated file asks only as purlis
 // answers, in the catalogue's shapes.

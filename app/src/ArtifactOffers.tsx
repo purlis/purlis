@@ -155,8 +155,10 @@ function useOffered(label: string): PageOffer[] {
       if (event.payload.label === label) setOffered(event.payload.offers);
     }).then(
       (unlisten) => {
-        if (gone) unlisten();
-        else stop = unlisten;
+        // Let go of quietly: a window going away may no longer have its events to let go of.
+        const letGo = () => void Promise.resolve(unlisten()).catch(() => undefined);
+        if (gone) letGo();
+        else stop = letGo;
       },
       () => {},
     );

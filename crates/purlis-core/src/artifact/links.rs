@@ -199,14 +199,14 @@ mod tests {
         let (_dir, page) = snapshot(&[
             (
                 "index.html",
-                r#"<a href="https://github.com/purlis/purlis/issues?q=is%3Aopen&amp;sort=new">Issues</a>
+                r#"<a href="https://example.net/issues?q=is%3Aopen&amp;sort=new">Issues</a>
                    <map><area href='https://example.com/area'></map>"#,
             ),
             ("more/page.htm", "<A HREF=https://example.org/>x</A>"),
         ]);
         assert!(written(
             &page,
-            "https://github.com/purlis/purlis/issues?q=is%3Aopen&sort=new"
+            "https://example.net/issues?q=is%3Aopen&sort=new"
         ));
         assert!(written(&page, "https://example.com/area"));
         assert!(written(&page, "https://example.org/"));

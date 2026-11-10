@@ -11,6 +11,7 @@
 
 use clap::Subcommand;
 use purlis_core::artifact::{self, Pin, Pinned, Request};
+use purlis_core::counts::counted;
 
 use crate::Here;
 use crate::artifact_templates as templates;
@@ -192,11 +193,10 @@ pub fn authors(command: &ArtifactCommand) -> Code {
             }
             voice::ok(match &checked.declared {
                 Some(declared) => format!(
-                    "{name} declares api {}: {} data file(s) and {} query(ies), and calls \
-                     only what it declares.",
+                    "{name} declares api {}: {} and {}, and calls only what it declares.",
                     declared.api,
-                    declared.data.len(),
-                    declared.queries.len()
+                    counted(declared.data.len(), "data file", "data files"),
+                    counted(declared.queries.len(), "query", "queries")
                 ),
                 None => format!("{name} declares nothing: it reads no data and calls no query."),
             });

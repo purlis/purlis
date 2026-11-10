@@ -13,7 +13,7 @@
 //!
 //! A page is far longer than any harness draws a paste whole (`harness_declaration`'s
 //! `paste_drawn_whole`), so the quote is written to a file of its own in the workspace
-//! ([`ATTACHMENTS`], never committed), and the chat is typed one line naming the artifact, its
+//! ([`attachments`], never committed), and the chat is typed one line naming the artifact, its
 //! pinner and commit, and a reference to that file. The line is typed and never sent: the
 //! window's start holds it (`curation::start_typed`), so nothing reaches the harness until the
 //! person presses Enter.
@@ -28,8 +28,11 @@ use std::time::Duration;
 use super::{DIR, PAGE};
 
 /// Where the quoted pages are written, relative to the workspace: purlis's own state of the
-/// workspace, which a plane's `.gitignore` never lets in (`docs/plane-format.md`).
-pub const ATTACHMENTS: &str = ".charter/discuss";
+/// workspace, which a plane's `.gitignore` never lets in (`docs/plane-format.md`): `discuss`
+/// in the workspace's state folder, under the name the plane records for it.
+pub fn attachments() -> String {
+    format!("{}/discuss", crate::names::STATE_DIR.newest_old())
+}
 
 /// **The most bytes of a page that are quoted.** A page may be as large as the artifact cap
 /// ([`super::SIZE_CAP`]); a chat reads a file that size badly, so a longer page is quoted up to
@@ -175,7 +178,7 @@ pub fn commit_of(workspace: &Path, folder: &str) -> Commit {
 }
 
 /// **Discuss the artifact pinned from `folder`** in the workspace at `workspace`: its page read
-/// and quoted ([`quote`]), the quote written to its file under [`ATTACHMENTS`] (replacing the
+/// and quoted ([`quote`]), the quote written to its file under [`attachments`] (replacing the
 /// last one of the same folder), and the line to type. Refused with a sentence when the folder is
 /// pinned no more, cannot be opened, or its page is not text.
 pub fn prepare(workspace: &Path, folder: &str) -> Result<Prepared, String> {
@@ -203,7 +206,7 @@ pub fn prepare(workspace: &Path, folder: &str) -> Result<Prepared, String> {
     let pinned_by = super::pinned_by(workspace, &pin.id);
     let commit = commit_of(workspace, folder);
     let quoted = quote(&pin.name, folder, pinned_by.as_deref(), &commit, &page);
-    let relative = format!("{ATTACHMENTS}/{folder}.md");
+    let relative = format!("{}/{folder}.md", attachments());
     let attachment = workspace.join(&relative);
     write(&attachment, &quoted)?;
     Ok(Prepared {
