@@ -62,6 +62,8 @@ import {
   ListBox as AriaListBox,
   ListBoxItem as AriaListBoxItem,
   ListBoxSection as AriaListBoxSection,
+  ListLayout,
+  Virtualizer,
   type GridListItemProps as AriaGridListItemProps,
   type GridListItemRenderProps,
   type GridListProps as AriaGridListProps,
@@ -416,6 +418,13 @@ export interface ListProps<T extends object>
   /** What Esc on a row does, in place of clearing what is chosen (#5332): a list in a mode of
    *  its own leaves it. */
   onEscape?: () => void;
+  /**
+   * **A long list draws only the rows in sight** (#6013), as a long tree does (#2947): React
+   * Aria's own `Virtualizer` lays the rows out one under another, each measured as it is drawn,
+   * so the keyboard still walks every row, and the list is its own scroller, so its owner's
+   * `className` gives it a height. For a list that may hold every chat of every open project.
+   */
+  drawnInPart?: boolean;
 }
 
 /**
@@ -430,9 +439,19 @@ export function List<T extends object>({
   ref,
   onAction,
   onEscape,
+  drawnInPart = false,
   ...rest
 }: ListProps<T>) {
   const own = useCollectionElement(keys, ref);
+  const [laid, setLaid] = useState<Laid>(UNLAID);
+  // A list drawn in part reads its room between rows and around them from its own CSS, as it is
+  // drawn, so the layout places rows where the stylesheet would.
+  const measure = useCallback((element: HTMLElement | null) => {
+    if (element === null) return;
+    const read = laidOf(element);
+    setLaid((was) => (was.gap === read.gap && was.padding === read.padding ? was : read));
+  }, []);
+  const measured = useMemo(() => mergeRefs<HTMLDivElement>(measure, own), [measure, own]);
   const chooses = rest.selectionMode !== undefined && rest.selectionMode !== "none";
   const [folds] = useState(() => new Map<string, ((open: boolean) => void) | undefined>());
   const foldKeys = useFoldKeys(folds, rest.disallowTypeAhead !== true);
@@ -467,30 +486,74 @@ export function List<T extends object>({
         <ListChooses.Provider value={chooses}>
           <RowScope.Provider value="list">
             <ListSize.Provider value={size}>
-              <AriaGridList
-                {...rest}
-                // A list that chooses never chooses a fold's row, and still reaches and runs it.
-                disabledBehavior={rest.disabledBehavior ?? (chooses ? "selection" : undefined)}
-                // A row that folds runs only its fold (`Fold.tsx`).
-                onAction={
-                  onAction === undefined
-                    ? undefined
-                    : (key) => {
-                        if (!folds.has(String(key))) onAction(key);
-                      }
-                }
-                ref={own}
-                className={className}
-                data-scope="list"
-                data-part="body"
-                data-size={size}
-                renderEmptyState={empty === undefined ? undefined : () => empty}
-              />
+              <InPart drawnInPart={drawnInPart} laid={laid}>
+                <AriaGridList
+                  {...rest}
+                  // A list that chooses never chooses a fold's row, and still reaches and runs it.
+                  disabledBehavior={rest.disabledBehavior ?? (chooses ? "selection" : undefined)}
+                  // A row that folds runs only its fold (`Fold.tsx`).
+                  onAction={
+                    onAction === undefined
+                      ? undefined
+                      : (key) => {
+                          if (!folds.has(String(key))) onAction(key);
+                        }
+                  }
+                  ref={drawnInPart ? measured : own}
+                  className={className}
+                  data-scope="list"
+                  data-part="body"
+                  data-size={size}
+                  renderEmptyState={empty === undefined ? undefined : () => empty}
+                />
+              </InPart>
             </ListSize.Provider>
           </RowScope.Provider>
         </ListChooses.Provider>
       </ListFolds.Provider>
     </div>
+  );
+}
+
+/** The room a list drawn in part keeps between its rows and around them, in px. */
+interface Laid {
+  gap: number;
+  padding: number;
+}
+
+/** What a list is taken to keep before it is first drawn, and in a document with no layout. */
+const UNLAID: Laid = { gap: 0, padding: 0 };
+
+/** The room `element`, a list's body, keeps as its stylesheet draws it. */
+function laidOf(element: HTMLElement): Laid {
+  const style = getComputedStyle(element);
+  const px = (value: string) => Number.parseFloat(value) || 0;
+  return { gap: px(style.rowGap), padding: px(style.paddingTop) };
+}
+
+/** A row's height before it is measured: a two-line card's. */
+const ROW_GUESS = 48;
+
+/** **The list drawn in part, or whole**: in React Aria's `Virtualizer` with its list layout,
+ *  each row measured as it is drawn, or as it is. */
+function InPart({
+  drawnInPart,
+  laid,
+  children,
+}: {
+  drawnInPart: boolean;
+  laid: Laid;
+  children: ReactNode;
+}) {
+  const options = useMemo(
+    () => ({ estimatedRowHeight: ROW_GUESS, gap: laid.gap, padding: laid.padding }),
+    [laid],
+  );
+  if (!drawnInPart) return children;
+  return (
+    <Virtualizer layout={ListLayout} layoutOptions={options}>
+      {children}
+    </Virtualizer>
   );
 }
 
