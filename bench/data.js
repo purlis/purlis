@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794268031036,
+  "lastUpdate": 1794270027292,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -45318,6 +45318,48 @@ window.BENCHMARK_DATA = {
             "value": 102.715554,
             "unit": "ms",
             "extra": "median of 5 runs: 101.907, 102.508, 102.716, 102.782, 102.809 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "7beb26f721a9d463f6f42509710f4005da45f4d5",
+          "message": "The ✋ counts only what waits on the person (#6036) (#6050)\n\n* The ✋ counts only what waits on the person (#6036)\n\nA dispatched task's turn end waits on the chat that dispatched it (ADR 0107), so\nit is held, not counted: Waits::its_dispatcher, read by the app from the task's\nhandoff while that chat is open and running. A task the person asked for, or\none whose dispatcher has gone, is the person's; what a task asks the person\ndirectly (a prompt mid-turn, a secret, a sandbox block) stays an ask.\n\nA chat queued only for an update (a report with nowhere to go, a root update\nleft) whose turn ended on its own background work was read as ending on the\nperson, since the registry took any Waiting state for that, and was listed as\n'Waiting on your reply'. Board::turn_ended_on_the_person now excludes a wait on\nits own work (#3878) and a held end.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70X90G0FF4AVMT6WH3QZXAV\nPurlis-Persona: steward\n\n* Run #6036's app tests on the steward fixture CI starts\n\nAn unsandboxed chat can't start in CI either (the event log is not open), and a\ntask whose dispatcher closes stays held by purlis's report-owed line (#1981)\nuntil a turn the pretend host never begins: the core test covers that rule.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70X90G0FF4AVMT6WH3QZXAV\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-09T23:10:20Z",
+          "tree_id": "90e86c6c5cff3edc0c3a5cba9c59cf5325652629",
+          "url": "https://github.com/purlis/purlis/commit/7beb26f721a9d463f6f42509710f4005da45f4d5"
+        },
+        "date": 1794270021867,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3590995,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.324, 0.349, 0.359, 0.365, 0.381 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2033215,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.123, 16.195, 16.203, 16.264, 16.388 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.3568105,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.942, 101.062, 101.357, 101.608, 101.681 ms"
           }
         ]
       }
