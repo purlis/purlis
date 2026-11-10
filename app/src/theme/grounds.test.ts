@@ -1329,7 +1329,11 @@ class Held {
   }
 }
 
-/** Whether `node` is placed in JSX as it is (`{children}`, `{props.children ?? none}`). */
+/**
+ * Whether `node` is placed in JSX as it is (`{children}`, `{props.children ?? none}`), or by a
+ * render function handed as an element's children (`{(state) => hold(children)}`, a list's row,
+ * #6125): what the function returns is drawn where it is placed.
+ */
 function placed(node: ts.Node): boolean {
   let at: ts.Node = node;
   while (
@@ -1337,6 +1341,7 @@ function placed(node: ts.Node): boolean {
     ts.isConditionalExpression(at.parent) ||
     ts.isBinaryExpression(at.parent) ||
     ts.isCallExpression(at.parent) ||
+    (ts.isArrowFunction(at.parent) && at.parent.body === at) ||
     (ts.isPropertyAccessExpression(at.parent) && at.parent.expression === at)
   )
     at = at.parent;
@@ -2055,12 +2060,44 @@ describe("where each family is drawn on a surface a theme fills (#3268)", () => 
     expect(found).toEqual(["badge: notice", "meter: dialog"]);
   });
 
+  it("follows children a render function hands its element, as a list's row does (#6125)", () => {
+    const found = standing([
+      file(
+        "ui/list/List.tsx",
+        `export function ListRow({ children }) {
+           return <AriaGridListItem data-scope="list" data-part="root">{(state) => hold(rowHolds(children)(state))}</AriaGridListItem>;
+         }`,
+      ),
+      file(
+        "Devices.tsx",
+        `import { ListRow } from "./ui/list/List";
+         export function Devices() { return <ListRow><span data-scope="badge" data-part="root" /></ListRow>; }`,
+      ),
+    ]);
+    expect(found).toEqual(["badge: list"]);
+  });
+
+  /**
+   * **Pairs the window draws that `STANDS_ON` leaves out, each with why**, exactly: one found and
+   * not listed here, or listed and not found, fails as any other pair does.
+   */
+  const NOT_STANDING: ReadonlyMap<string, string> = new Map([
+    [
+      "list badge",
+      // #6125: STANDS_ON names a surface and not its variant, and the one fill a shipped theme
+      // gives a list is Classic's card's (`surface.sunken`), where no badge is drawn (the badges
+      // are on a list's plain rows). Measured there, the waiting badge's wash would build Classic
+      // Dark's parts in every tint at launch (#4410). Variant-scoped STANDS_ON is #6149.
+      "drawn on a list's plain rows only, where no shipped theme sets a fill (#6149)",
+    ],
+  ]);
+
   it("is, in the window, exactly what STANDS_ON says", () => {
     const read = windowRead();
     const listed = engineStandsOn();
     expect(listed.size, "STANDS_ON in parts.rs").toBeGreaterThan(0);
     const found = pairsOf(bySurface(read.stands));
-    const said = pairsOf(listed);
+    const said = [...pairsOf(listed), ...NOT_STANDING.keys()];
     // A pair the table does not say is named with the components it is drawn in.
     const unsaid = found
       .filter((pair) => !said.includes(pair))

@@ -312,31 +312,24 @@ function Shown({
   }, [scope]);
   useEffect(() => onTooltipEscape(() => flushSync(onEscape)), [onEscape]);
   // **The tooltip is the row's description while it is shown**, as every tooltip is its
-  // target's: the row is drawn by its collection, so it is said on the row's element here.
+  // target's: the row is drawn by its collection, so its row hears it (below).
   const fallback = useId();
   const tooltip = useRef<HTMLDivElement>(null);
   const placed = place !== null;
   const rowOf = useCallback(() => rowAround(anchor.current, scope), [scope]);
-  // A row that builds its description from its parts' ids is handed the tooltip's (#6101).
+  // **Its row builds its description from its parts' ids**, the tooltip's among them (#6101,
+  // #6123): every row with a tooltip, a list's and a tree's, hands its own (`RowHeard`). The
+  // tooltip never writes the row's `aria-describedby`. A list's row draws it through React
+  // Aria's `render`; a tree's row writes it on its element from its root (`useTreeRowHeard`),
+  // the one hand write under `ui/` (`describedBy.guard.test.ts`), because React Aria's
+  // `TreeItem` takes no `render` and drops an `aria-describedby` it is handed.
   const heard = useContext(RowHeard);
   useEffect(() => {
-    const row = rowOf();
     const shown = tooltip.current;
-    if (!row || !shown) return;
+    if (heard === null || !shown) return;
     if (shown.id === "") shown.id = fallback;
-    const id = shown.id;
-    if (heard !== null) return heard.add("tip", id);
-    // A tree's row, whose element React Aria draws with no `aria-describedby` of React's.
-    const was = row.getAttribute("aria-describedby");
-    row.setAttribute("aria-describedby", was ? `${was} ${id}` : id);
-    return () => {
-      const now = (row.getAttribute("aria-describedby") ?? "")
-        .split(/\s+/)
-        .filter((one) => one !== "" && one !== id);
-      if (now.length === 0) row.removeAttribute("aria-describedby");
-      else row.setAttribute("aria-describedby", now.join(" "));
-    };
-  }, [fallback, rowOf, placed, heard]);
+    return heard.add("tip", shown.id);
+  }, [fallback, placed, heard]);
   const at = place?.at ?? null;
   return (
     <>

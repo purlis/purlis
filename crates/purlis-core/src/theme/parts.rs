@@ -4026,7 +4026,10 @@ const STANDS_ON: &[(&str, &[&str])] = &[
         "dialog",
         &["button", "field", "list", "text-input", "tooltip"],
     ),
-    ("list", &["tooltip"]),
+    (
+        "list",
+        &["button", "chat-mark", "checkbox", "popover", "tooltip"],
+    ),
     ("menu", &["chat-mark", "tooltip"]),
     (
         "message",

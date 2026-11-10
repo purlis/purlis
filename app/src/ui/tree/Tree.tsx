@@ -74,7 +74,16 @@ import {
 import { mergeProps, mergeRefs, useLocale } from "react-aria";
 import { ChevronRight } from "lucide-react";
 import { rowHolds, useCollectionElement, useRowMenu, type RowMenu } from "../list/List";
-import { RowScope, type RowSize } from "../list/Row";
+import {
+  heardIds,
+  RowHeard,
+  RowScope,
+  type HearsParts,
+  type PartHeard,
+  type RowSize,
+  withoutPart,
+  withPart,
+} from "../list/Row";
 import { useRowTip } from "../list/RowTip";
 import type { Carried } from "../list/drag";
 import type { Tip } from "../tooltip/Tooltip";
@@ -322,6 +331,70 @@ export function useRowDescription<E extends HTMLElement>(
     },
     [description],
   );
+}
+
+/**
+ * **What a tree row's parts are heard by** (#6123): the registry a list's row has (`RowHeard`,
+ * #6101), its ids written on the row's element from here, its root, because React Aria's
+ * `TreeItem` takes no `render` and filters `aria-describedby` out of its props. Its tooltip hands
+ * its id here while it is up (`RowTip.tsx`), and nothing else under `ui/` writes the attribute
+ * (`describedBy.guard.test.ts`).
+ *
+ * Written on the element and not drawn: what a part hands it draws no row again, which would
+ * draw the tree again (`useRowDescription`). It takes back only the ids it wrote, so one written
+ * by anything else (React Aria's own, which it writes on no tree row today) stays.
+ */
+function useTreeRowHeard<E extends HTMLElement>(
+  given: Ref<E> | undefined,
+): { heard: HearsParts; ref: Ref<E> } {
+  const [{ heard, attach }] = useState(() => treeRowHeard<E>());
+  const ref = useMemo(() => mergeRefs<E>(attach, given ?? null), [attach, given]);
+  return { heard, ref };
+}
+
+/** A tree row's registry and the ref that hands it the row's element, built once a row. */
+function treeRowHeard<E extends HTMLElement>(): { heard: HearsParts; attach: RefCallback<E> } {
+  let row: E | null = null;
+  let parts: readonly PartHeard[] = [];
+  let wrote: readonly string[] = [];
+  /** The ids on `element` now, but for those this row wrote there. */
+  const othersOn = (element: E) =>
+    (element.getAttribute("aria-describedby") ?? "")
+      .split(/\s+/)
+      .filter((id) => id !== "" && !wrote.includes(id));
+  const say = (element: E, ids: readonly string[]) => {
+    if (ids.length === 0) element.removeAttribute("aria-describedby");
+    else element.setAttribute("aria-describedby", ids.join(" "));
+  };
+  const write = () => {
+    if (row === null) return;
+    const ours = heardIds(parts);
+    const others = othersOn(row);
+    wrote = ours;
+    say(row, [...others, ...ours]);
+  };
+  return {
+    heard: {
+      add(kind, id) {
+        parts = withPart(parts, { kind, id });
+        write();
+        return () => {
+          parts = withoutPart(parts, id);
+          write();
+        };
+      },
+    },
+    // Handed the element again whenever a ref around it changes (`useSaid`'s), after `null`: what
+    // it wrote is taken back from the element it leaves, and written afresh on the one it gets.
+    attach(element) {
+      if (element === null) {
+        if (row !== null) say(row, othersOn(row));
+        wrote = [];
+      }
+      row = element;
+      write();
+    },
+  };
 }
 
 /**
@@ -640,7 +713,12 @@ export function TreeRow<T extends object>({
   const { size, twist, fixed, stopAt } = useContext(TreeDrawing);
   const owned = useRowMenu(menu);
   const tipped = useRowTip(tip, tipToPointer);
-  const selected = useSaid("aria-selected", chosen === undefined ? undefined : String(chosen), ref);
+  const { heard, ref: described } = useTreeRowHeard(ref);
+  const selected = useSaid(
+    "aria-selected",
+    chosen === undefined ? undefined : String(chosen),
+    described,
+  );
   const shown = useSaid("data-selected", chosen || current ? "true" : undefined, selected);
   const now = useSaid("aria-current", current ? "true" : undefined, shown);
   const told = useSaid("aria-description", description || undefined, now);
@@ -669,7 +747,7 @@ export function TreeRow<T extends object>({
             )
           ) : null;
           return (
-            <>
+            <RowHeard.Provider value={heard}>
               {state.id === stopAt && <TakesTheStop at={state.id} state={state.state} />}
               {(onFocus !== undefined || onBlur !== undefined) && (
                 <FocusHeard onFocus={onFocus} onBlur={onBlur} />
@@ -678,7 +756,7 @@ export function TreeRow<T extends object>({
               {rowHolds(content, owned, tipped)(state)}
               {twist === "trail" && toggle}
               {state.allowsDragging && <NoDrag />}
-            </>
+            </RowHeard.Provider>
           );
         }}
       </AriaTreeItemContent>
