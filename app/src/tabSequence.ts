@@ -19,7 +19,8 @@
  * ```
  *
  * It has two readers. The tests, which cannot run WebKit and hold the window to this instead
- * (`Modals.keyboard.test.tsx`, `Window.keyboard.test.tsx`); and a chat's terminal, whose Tab is
+ * (`Window.keyboard.test.tsx`; a dialog's Tab is the family's own since #2910, which
+ * `Modals.keyboard.test.tsx` walks instead, #6069); and a chat's terminal, whose Tab is
  * the shell's, so the one way the keyboard leaves it (`SessionPane.leavesTheChat`) has to walk
  * the same sequence Tab would — not a library's idea of it. `tabbable`, the usual answer, counts
  * every `<button>`, which is exactly the gap WebKit does not.
