@@ -513,3 +513,76 @@ describe("Shift+Tab back into a list (#6033)", () => {
     expect(send()).toHaveFocus();
   });
 });
+
+describe("Tab in a list (#6071)", () => {
+  /** Three rows, each with two buttons of its own, between two buttons outside the list. */
+  function Between() {
+    return (
+      <>
+        <button type="button">Before</button>
+        <List aria-label="Runs" disallowTypeAhead>
+          {["alpha", "beta", "gamma"].map((name) => (
+            <ListRow key={name} id={name} textValue={name}>
+              <RowLabel>{name}</RowLabel>
+              <Button size="sm">{`Open ${name}`}</Button>
+              <Button size="sm">{`Stop ${name}`}</Button>
+            </ListRow>
+          ))}
+        </List>
+        <button type="button">After</button>
+      </>
+    );
+  }
+
+  const button = (name: string) => screen.getByRole("button", { name });
+
+  /** The keyboard on the row `beta`, come to by the keyboard from the button before the list. */
+  async function onBeta() {
+    render(<Between />);
+    await userEvent.click(button("Before"));
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowDown}");
+    expect(row("beta")).toHaveFocus();
+  }
+
+  it("leaves the list with one Tab from a row, past every control in it", async () => {
+    await onBeta();
+    await userEvent.tab();
+    expect(button("After")).toHaveFocus();
+  });
+
+  it("leaves the list with one Shift+Tab from a row, back to what comes before it", async () => {
+    await onBeta();
+    await userEvent.tab({ shift: true });
+    expect(button("Before")).toHaveFocus();
+  });
+
+  it("moves on to a row's next control with Tab from one of its controls, and leaves from its last", async () => {
+    await onBeta();
+    await userEvent.keyboard("{ArrowRight}");
+    expect(button("Open beta")).toHaveFocus();
+    await userEvent.tab();
+    expect(button("Stop beta")).toHaveFocus();
+    await userEvent.tab();
+    expect(button("After")).toHaveFocus();
+  });
+
+  it("moves back to a row's control before with Shift+Tab, and leaves backwards from its first", async () => {
+    await onBeta();
+    await userEvent.keyboard("{ArrowRight}{ArrowRight}");
+    expect(button("Stop beta")).toHaveFocus();
+    await userEvent.tab({ shift: true });
+    expect(button("Open beta")).toHaveFocus();
+    await userEvent.tab({ shift: true });
+    expect(button("Before")).toHaveFocus();
+  });
+
+  it("comes back to the row the keyboard left with Shift+Tab, after a Tab out from its last control", async () => {
+    await onBeta();
+    await userEvent.keyboard("{ArrowRight}{ArrowRight}");
+    await userEvent.tab();
+    expect(button("After")).toHaveFocus();
+    await userEvent.tab({ shift: true });
+    expect(row("beta")).toHaveFocus();
+  });
+});

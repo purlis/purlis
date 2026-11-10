@@ -1229,9 +1229,19 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
   **A control in a row that takes the keyboard makes its row the list's own** (#3123), however it
   got there (a script moving the keyboard into a form just opened, a screen reader's cursor), so
   the list never pulls the keyboard back to another row a frame later; a key's own move and a Tab
-  into the list stay React Aria's. In a browser, React Aria's Tab from a row whose controls take
-  the keyboard goes on through that row's own controls before it leaves the list (as React Aria's
-  own grid does, seen in `List › One Tab Stop Coming Back`).
+  into the list stay React Aria's.
+  **Tab from a row leaves the list at once, and Tab from a control in a row walks that row's
+  controls, then leaves** (#6071, the WAI-ARIA APG grid, where Tab moves out of the grid and the
+  arrows reach a cell's widgets, and Tab moves between the widgets of the cell being worked in).
+  From a row, Tab and Shift+Tab each leave the list in one press, past the row's controls either
+  way. From a control in a row, Tab goes on to the row's next control and Shift+Tab back to the
+  one before; from its last control Tab leaves the list, and from its first Shift+Tab leaves it
+  the other way, never landing on a row. So Tab and Shift+Tab are one rule turned round. React
+  Aria's collection moves a Tab out of the list from wherever it is in it (its one Tab stop), so
+  the family's row lets a Tab with a control of its own to go to by, and the browser moves there
+  (`movesWithinItsRow` in `rowKeys.ts`, heard in `List.tsx`'s `rowElement`), for a text box as
+  for a button. Seen in `List › One Tab Stop Coming Back` and
+  `List › Tab Walks A Rows Controls Then Leaves`.
   **Shift+Tab back into a list lands on the row the keyboard left, and → re-enters its controls**
   (#6033, the WAI-ARIA APG grid's one Tab stop, which gives focus back to the last focused row,
   never to a control in it), whether or not that row holds controls. The browser's Shift+Tab
@@ -1249,7 +1259,7 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
   the lines it draws (a line its words wrap on to as much as one after a line break, measured
   unseen in a copy of the box laid out as it is, #5993), and go to the row above or below from its
   first or last line or from a box of one line; Tab moves on to the row's next control while it
-  has one; Esc gives the keyboard back to its row,
+  has one, as from any control in a row (#6071, above); Esc gives the keyboard back to its row,
   keeping what was typed, and Esc on the row is the list's (`onEscape`). **While it composes**
   (Chinese, Japanese, Korean input), every key is the input method's alone (#5993): composing, or
   key code 229 (WebKit's Esc once the composition ends), the list keeps it from the row and from

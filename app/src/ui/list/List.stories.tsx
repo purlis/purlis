@@ -834,20 +834,18 @@ function keyOfTheInputMethod(box: Element, key: string, composing: boolean) {
 }
 
 /**
- * **Tab leaves the list from `row` for the button after it, and Shift+Tab comes back to the row**:
- * the list is one Tab stop, whatever its rows hold, and a row whose controls are the list's last
- * is still where Shift+Tab lands, never its last control (#6033).
+ * **One Tab leaves the list from `row` for the button after it, and Shift+Tab comes back to the
+ * row**: the list is one Tab stop, whatever its rows hold (#6071), and a row whose controls are the
+ * list's last is still where Shift+Tab lands, never its last control (#6033).
  */
 async function tabsOutAndBack(
-  list: HTMLElement,
   row: HTMLElement,
   keys: ReturnType<typeof UserEvent.setup>,
   step: string,
 ) {
   const after = within(document.body).getByRole("button", { name: "After" });
-  for (let press = 0; press < 5 && list.contains(document.activeElement); press += 1)
-    await keys.tab();
-  await untilFocused(() => after, `${step}: Tab leaves the list`);
+  await keys.tab();
+  await untilFocused(() => after, `${step}: one Tab leaves the list`);
   await keys.tab({ shift: true });
   await untilFocused(() => row, `${step}: Shift+Tab comes back to the row`);
 }
@@ -889,11 +887,10 @@ export const ComposingInARowsBox: Story = {
     await untilFocused(() => test, "Composing: ↓ on the row goes to the row below");
     await userEvent.keyboard("{ArrowUp}");
     await untilFocused(() => host, "Composing: ↑ goes back to the row with the box");
-    await tabsOutAndBack(list, host, userEvent, "Composing");
+    await tabsOutAndBack(host, userEvent, "Composing");
     await userEvent.keyboard("{ArrowRight}");
     await untilFocused(box, "Composing: the box holds the keyboard for the picture");
-    // Tab out passed through the box, which a Tab into selects all of: End leaves its words as
-    // they were typed, the caret after them.
+    // End leaves the caret after its words, wherever → put it, as #6025's picture has it.
     await userEvent.keyboard("{End}");
     await untilFocused(box, "Composing: End keeps the keyboard in the box");
     expectFocusInSight();
@@ -975,7 +972,7 @@ export const ASelectInARow: Story = {
     await untilFocused(() => test, "A select in a row: ↓ on the row goes to the row below");
     await userEvent.keyboard("{ArrowUp}");
     await untilFocused(() => token, "A select in a row: ↑ goes back to its row");
-    await tabsOutAndBack(list, token, userEvent, "A select in a row");
+    await tabsOutAndBack(token, userEvent, "A select in a row");
     await userEvent.keyboard("{ArrowRight}");
     await untilFocused(select, "A select in a row: its button holds the keyboard for the picture");
     expectFocusInSight();
@@ -1053,7 +1050,7 @@ export const AWrappedReplyInARow: Story = {
     await untilFocused(() => test, "A wrapped reply: ↓ from its last line goes to the row below");
     await userEvent.keyboard("{ArrowUp}");
     await untilFocused(() => publish, "A wrapped reply: ↑ goes back to its row");
-    await tabsOutAndBack(list, publish, userEvent, "A wrapped reply");
+    await tabsOutAndBack(publish, userEvent, "A wrapped reply");
     await userEvent.keyboard("{ArrowRight}");
     await untilFocused(box, "A wrapped reply: the box holds the keyboard for the picture");
     box().setSelectionRange(0, 0);
@@ -1064,8 +1061,8 @@ export const AWrappedReplyInARow: Story = {
   },
 };
 
-/** Three rows, each with a button of its own, between two buttons outside the list. */
-function Between() {
+/** Three rows, each with a button of its own (or two), between two buttons outside the list. */
+function Between({ two = false }: { two?: boolean }) {
   return (
     <div style={{ display: "grid", gap: "var(--space-3)", inlineSize: "20rem" }}>
       <Button size="sm">Before</Button>
@@ -1075,6 +1072,7 @@ function Between() {
             <RowLabel>{name}</RowLabel>
             <RowTrail>
               <Button size="sm">{`Open ${name}`}</Button>
+              {two && <Button size="sm">{`Stop ${name}`}</Button>}
             </RowTrail>
           </ListRow>
         ))}
@@ -1085,11 +1083,11 @@ function Between() {
 }
 
 /**
- * **One Tab stop, the row the keyboard left** (#3123): Tab out of a list passes the keyboard
- * through the row's own controls and the list's last control on its way (React Aria's), and that
- * never makes another row the list's stop; Shift+Tab comes back to the row the keyboard left. Run
- * with the browser's own key events, whose timing a test document does not have. The picture is
- * that row under the keyboard.
+ * **One Tab stop, the row the keyboard left** (#3123, #6071): one Tab from a row leaves the list,
+ * past the row's own controls (the WAI-ARIA APG grid), and passing the list's last control on its
+ * way (React Aria's) never makes another row the list's stop; Shift+Tab comes back to the row the
+ * keyboard left. Run with the browser's own key events, whose timing a test document does not
+ * have. The picture is that row under the keyboard.
  */
 export const OneTabStopComingBack: Story = {
   render: () => <Between />,
@@ -1104,12 +1102,10 @@ export const OneTabStopComingBack: Story = {
     );
     await userEvent.keyboard("{ArrowDown}");
     await untilFocused(() => beta, "One Tab stop: ↓ moves to the next row");
-    // In a browser, React Aria's Tab from a row goes on through the row's own controls before it
-    // leaves the list; however many it passes, it leaves, and it never moves the list's stop.
+    // Tab from a row leaves the list at once, past the row's own controls (#6071).
     const after = canvas.getByRole("button", { name: "After" });
-    for (let press = 0; press < 4 && list.contains(document.activeElement); press += 1)
-      await userEvent.tab();
-    await untilFocused(() => after, "One Tab stop: Tab leaves the list");
+    await userEvent.tab();
+    await untilFocused(() => after, "One Tab stop: one Tab leaves the list");
     await userEvent.tab({ shift: true });
     await untilFocused(() => beta, "One Tab stop: Shift+Tab comes back to the row it left");
     expectFocusInSight();
@@ -1148,6 +1144,50 @@ export const ShiftTabBackToARowWithControls: Story = {
     await untilFocused(open, "Back to a row: → reaches its button again");
     await userEvent.keyboard("{ArrowLeft}");
     await untilFocused(() => gamma, "Back to a row: ← goes back to the row for the picture");
+    expectFocusInSight();
+  },
+};
+
+/**
+ * **Tab walks a row's controls, then leaves the list; Shift+Tab is the same, turned round**
+ * (#6071, the WAI-ARIA APG grid): from a row's first control Tab goes on to its next, and from its
+ * last Tab leaves the list, where Shift+Tab comes back to the row; from its last control Shift+Tab
+ * goes back to the one before, and from its first Shift+Tab leaves the list the other way. The
+ * picture is the row's last control under the keyboard.
+ */
+export const TabWalksARowsControlsThenLeaves: Story = {
+  render: () => <Between two />,
+  play: async ({ canvas, userEvent }) => {
+    const list = canvas.getByRole("grid", { name: "Runs" });
+    const beta = within(list).getByRole("row", { name: "beta" });
+    const open = () => within(beta).getByRole("button", { name: "Open beta" });
+    const stop = () => within(beta).getByRole("button", { name: "Stop beta" });
+    await userEvent.click(canvas.getByRole("button", { name: "Before" }));
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowDown}{ArrowRight}");
+    await untilFocused(open, "Walks a row: → reaches its first control");
+    await userEvent.tab();
+    await untilFocused(stop, "Walks a row: Tab goes on to its next control");
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "After" }),
+      "Walks a row: Tab from its last control leaves the list",
+    );
+    await userEvent.tab({ shift: true });
+    await untilFocused(() => beta, "Walks a row: Shift+Tab comes back to the row");
+    await userEvent.keyboard("{ArrowRight}{ArrowRight}");
+    await untilFocused(stop, "Walks a row: → reaches its last control");
+    await userEvent.tab({ shift: true });
+    await untilFocused(open, "Walks a row: Shift+Tab goes back to the control before");
+    await userEvent.tab({ shift: true });
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "Before" }),
+      "Walks a row: Shift+Tab from its first control leaves the list the other way",
+    );
+    await userEvent.tab();
+    await untilFocused(() => beta, "Walks a row: Tab comes back to the row");
+    await userEvent.keyboard("{ArrowRight}{ArrowRight}");
+    await untilFocused(stop, "Walks a row: its last control holds the keyboard for the picture");
     expectFocusInSight();
   },
 };

@@ -15,7 +15,8 @@
  *   the box's own handler hears them, and the row and the list never do (a letter finds no row,
  *   Enter runs none). A chord with Enter (⌘⏎, a form's send) goes on up to whatever answers it;
  * - **Tab** moves on to the row's next control while it has one, and Shift+Tab back to the one
- *   before; from its last, or first, it leaves the list as Tab leaves any;
+ *   before, as from any control in a row ({@link movesWithinItsRow}); from its last, or first,
+ *   it leaves the list;
  * - **Esc** gives the keyboard back to its row, keeping what was typed; Esc on the row is the
  *   list's (`onEscape`);
  * - **every key while it composes** (Chinese, Japanese, Korean input) is the input method's
@@ -219,6 +220,24 @@ function tabbable(row: HTMLElement): HTMLElement[] {
 }
 
 /**
+ * **Whether Tab from a control in a row moves on within that row** (#6071, the WAI-ARIA APG
+ * grid): Tab from a control in a row goes on to the row's next control, and Shift+Tab back to the
+ * one before; from its last, or its first, and from the row itself, Tab and Shift+Tab leave the
+ * list, as React Aria's collection makes them (its one Tab stop). So the row lets a Tab with a
+ * control of its own to go to by (`List.tsx`'s `rowElement`), and the browser moves to it.
+ */
+export function movesWithinItsRow(event: KeyboardEvent<HTMLElement>): boolean {
+  if (event.key !== "Tab" || event.ctrlKey || event.metaKey || event.altKey) return false;
+  const control = event.target;
+  if (!(control instanceof HTMLElement)) return false;
+  const row = rowOf(control);
+  if (row === null || row !== event.currentTarget) return false;
+  const order = tabbable(row);
+  const at = order.indexOf(control);
+  return at !== -1 && order[event.shiftKey ? at - 1 : at + 1] !== undefined;
+}
+
+/**
  * **What a text box in a row keeps on the key's way back up** (the field family's boxes call it
  * after their own handler): the keys its row or list would otherwise act on.
  */
@@ -235,14 +254,8 @@ export function keptOnTheWayUp(event: KeyboardEvent<HTMLElement>): void {
     row.focus();
     return;
   }
-  if (event.key === "Tab") {
-    const order = tabbable(row);
-    const at = order.indexOf(box);
-    const next = order[event.shiftKey ? at - 1 : at + 1];
-    // The browser moves to it, where the list would take the keyboard out of itself.
-    if (at !== -1 && next !== undefined) event.stopPropagation();
-    return;
-  }
+  // Tab is the row's, for a text box as for any control in it (`movesWithinItsRow`).
+  if (event.key === "Tab") return;
   const chord = event.ctrlKey || event.metaKey || event.altKey;
   const typed = event.key.length === 1 && !chord;
   const selectsAll = event.key.toLowerCase() === "a" && (event.ctrlKey || event.metaKey);
