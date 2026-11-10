@@ -1352,6 +1352,32 @@ fn a_file_tab_line_that_names_no_branch_is_dropped_and_a_wild_split_is_forgotten
     );
 }
 
+#[test]
+fn a_pinned_artifact_s_tab_comes_back_and_a_key_that_names_no_artifact_folder_is_dropped() {
+    // ADR 0122 §2 (#5952): an artifact's tab is keyed `<workspace>/<folder>`
+    // (`app/src/artifacts.ts`), its folder one plain name in the workspace's `artifacts/`.
+    let plane = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(plane.path().join(".charter/app")).unwrap();
+    std::fs::write(
+        path(plane.path()),
+        br#"{"version":1,"at":0,"chats":[],"views":[
+            {"view":"artifact","key":"alpha/backlog-state","workspace":"alpha","active":true},
+            {"view":"artifact","key":"alpha/../etc"},
+            {"view":"artifact","key":"alpha/.hidden"},
+            {"view":"artifact","key":"alpha/board/extra"},
+            {"view":"artifact","key":"/board"},
+            {"view":"artifact","key":"alpha/"},
+            {"view":"artifact","key":"board"}
+        ]}"#,
+    )
+    .unwrap();
+
+    let back = read(plane.path());
+
+    let kept: Vec<_> = back.views.iter().map(|v| v.key.as_str()).collect();
+    assert_eq!(kept, ["alpha/backlog-state"]);
+    assert!(back.views[0].active);
+}
 /// A view tab of charter's own, keyed `key`, as the window would have recorded it.
 fn own_view(view: &str, key: &str) -> View {
     View {

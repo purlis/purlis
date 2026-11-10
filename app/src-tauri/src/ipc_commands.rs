@@ -38,6 +38,31 @@ macro_rules! app_commands {
         $then! {
             value_free: [
                 first_frame,
+                artifacts::artifact_pins,
+                artifacts::artifact_about,
+                artifacts::artifact_open,
+                artifacts::artifact_place,
+                artifacts::artifact_enter,
+                artifacts::artifact_reload,
+                artifacts::artifact_theme,
+                artifacts::artifact_close,
+                artifacts::artifact_pin_ask,
+                artifacts::artifact_pin,
+                artifacts::artifact_reorder,
+                artifacts::artifact_preview_open,
+                artifacts::artifact_repin,
+                artifacts::artifact_unpin,
+                artifacts::artifact_approve,
+                artifacts::calls::artifact_grant_plane,
+                artifacts::history::artifact_history,
+                artifacts::history::artifact_open_as_of,
+                artifacts::history::artifact_compare,
+                regenerate::artifact_regenerate_about,
+                regenerate::artifact_regenerate_approve,
+                regenerate::artifact_regenerate,
+                artifact_links::artifact_link_open,
+                artifact_search::artifact_search,
+                artifactdiscuss::artifact_discuss,
                 portal::session_bus,
                 portal::restart_on_the_session_bus,
                 vaultswaiting::vaults_to_move,
@@ -157,6 +182,8 @@ macro_rules! app_commands {
                 proposals::apply_proposed_change,
                 proposals::proposed_change,
                 proposals::dismiss_proposed_change,
+                pinproposals::proposed_pin,
+                pinproposals::pin_proposed,
                 proposals::secret_need_personas,
                 proposals::remember_secret_need,
                 oldplugins::remove_old_harness_plugins,
@@ -845,6 +872,9 @@ macro_rules! app_commands {
             e2e_only: [
                 // The window's native appearance and colour, read back (#2328, #2760).
                 nativewindow::drawn::native_window_drawn,
+                // A link followed in an artifact's page, and what was opened for it (#5956).
+                artifact_links::artifact_link_follow,
+                artifact_links::artifact_links_opened,
             ],
         }
     };

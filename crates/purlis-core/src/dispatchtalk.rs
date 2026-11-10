@@ -782,6 +782,10 @@ pub enum ProposalWord {
     SkillsApplied { path: String },
     /// Its skills changed since the change was proposed, so it can't be applied.
     SkillsStale { path: String },
+    /// The person pinned an artifact the chat proposed (#5963): `path` is the pin in words.
+    PinApplied { path: String },
+    /// The folder's pin changed since the pin was proposed, so it can't be pinned as shown.
+    PinStale { path: String },
 }
 
 impl ProposalWord {
@@ -795,7 +799,9 @@ impl ProposalWord {
             | Self::LimitApplied { path }
             | Self::LimitStale { path }
             | Self::SkillsApplied { path }
-            | Self::SkillsStale { path } => path,
+            | Self::SkillsStale { path }
+            | Self::PinApplied { path }
+            | Self::PinStale { path } => path,
         }
     }
 }
@@ -2773,6 +2779,15 @@ pub fn proposal_said(word: &ProposalWord) -> String {
             "⬢ purlis: the change to skills you proposed, `{path}`, can no longer be applied: \
              those skills changed since. Propose it again if it is still wanted. This line is \
              purlis's own."
+        ),
+        ProposalWord::PinApplied { path } => format!(
+            "⬢ purlis: the person pinned the artifact you proposed, `{path}`, in the purlis \
+             window, with the name and icon they chose. This line is purlis's own."
+        ),
+        ProposalWord::PinStale { path } => format!(
+            "⬢ purlis: the pin you proposed, `{path}`, can no longer be made as it was shown: \
+             that folder's pin changed since. Propose it again if it is still wanted. This line \
+             is purlis's own."
         ),
         ProposalWord::NotMade { path, why } => format!(
             "⬢ purlis: the person applied the change you asked for, `{path}`, and it could not \

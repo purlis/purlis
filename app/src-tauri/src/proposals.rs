@@ -72,6 +72,10 @@ pub struct Proposal {
     /// **What a change purlis holds came from** (#5240), where something did: what the window
     /// says of it, so it is never read as a chat's.
     pub behind: Option<Behind>,
+    /// **A pin of an artifact folder, in place of a change to a file** (#5963): [`Self::path`]
+    /// is then its name in words, and [`Self::change`] is not read. Never applied by Apply: only
+    /// the person's press of Pin to workspace pins it ([`crate::pinproposals`]).
+    pub pin: Option<crate::pinproposals::PinChange>,
 }
 
 /// The chat and the Secret ask behind a change purlis holds (#5240): the chat that asked for
@@ -118,6 +122,7 @@ struct Extra {
     limit: Option<LimitChange>,
     skills: Option<SkillsChange>,
     behind: Option<Behind>,
+    pin: Option<crate::pinproposals::PinChange>,
 }
 
 /// The proposals of a project's chats, until the person answers.
@@ -217,6 +222,31 @@ impl Proposals {
         )
     }
 
+    /// Holds chat `session`'s pin of an artifact folder (#5963), under the rules of
+    /// [`Self::note`].
+    pub fn note_pin(
+        &self,
+        session: u32,
+        path: &str,
+        pin: crate::pinproposals::PinChange,
+        now: u64,
+    ) -> Option<u32> {
+        let nothing = Change::Whole {
+            content: String::new(),
+        };
+        self.hold(
+            session,
+            path,
+            None,
+            nothing,
+            Extra {
+                pin: Some(pin),
+                ..Extra::default()
+            },
+            now,
+        )
+    }
+
     fn hold(
         &self,
         session: u32,
@@ -245,6 +275,7 @@ impl Proposals {
             limit: extra.limit,
             skills: extra.skills,
             behind: extra.behind,
+            pin: extra.pin,
         });
         Some(id)
     }
@@ -633,6 +664,9 @@ pub fn now_of(root: &Path, one: &Proposal) -> Now {
     if let Some(skills) = &one.skills {
         return skills_now(root, skills);
     }
+    if let Some(pin) = &one.pin {
+        return crate::pinproposals::now(root, pin);
+    }
     match proposed::prepare(
         root,
         Path::new(&one.path),
@@ -672,13 +706,15 @@ fn stale_word(one: &Proposal) -> ProposalWord {
         ProposalWord::LimitStale { path }
     } else if one.skills.is_some() {
         ProposalWord::SkillsStale { path }
+    } else if one.pin.is_some() {
+        ProposalWord::PinStale { path }
     } else {
         ProposalWord::Stale { path }
     }
 }
 
 /// Tells chat `session` `word` on its next turn.
-fn tell(held: &Held, session: u32, word: ProposalWord) {
+pub(crate) fn tell(held: &Held, session: u32, word: ProposalWord) {
     if session == BY_PURLIS {
         return;
     }
@@ -772,7 +808,7 @@ pub(crate) fn lines_changed(before: &str, after: &str) -> Vec<crate::piecefiles:
 }
 
 /// Why an answer found nothing to answer: answered elsewhere, or its chat closed.
-const WAITS_NO_MORE: &str = "That proposed change waits no more: it was answered already, or \
+pub(crate) const WAITS_NO_MORE: &str = "That proposed change waits no more: it was answered already, or \
                              its chat closed. Nothing was written.";
 
 /// **Apply** on a proposed change (PC-3): written exactly as the window showed it, as the
@@ -952,6 +988,12 @@ pub fn apply_in_to(
     }
     if let Some(skills) = &one.skills {
         return apply_skills(root, one, skills, persona, audit, lock, to);
+    }
+    // A pin is never made by Apply, whatever asked: only by Pin to workspace (#5963).
+    if one.pin.is_some() {
+        return Err(Refusal::Not(
+            crate::pinproposals::ONLY_IN_ITS_DIALOG.to_owned(),
+        ));
     }
     let judged = if one.session == BY_PURLIS {
         proposed::proposable_by_purlis
@@ -1321,6 +1363,7 @@ fn written_need(
         limit: None,
         skills: None,
         behind: None,
+        pin: None,
     };
     // Shown whole by what asked for it: the person read the line, however long the file is.
     apply_in(root, &change, None, audit, proposals.applying(), From::Tab)?;

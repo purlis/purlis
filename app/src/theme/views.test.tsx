@@ -1361,6 +1361,34 @@ const STATES: State[] = [
     drawn,
   })),
   {
+    name: "a pinned artifact, its bar naming who pinned it",
+    view: { from: null, view: "artifact", key: "alpha/backlog-state" },
+    answers: {
+      artifact_about: { name: "Backlog state", pinned_by: "Ada", missing: null },
+      artifact_open: {
+        label: "artifact-1",
+        standing: "script-free",
+        changed_by: null,
+        generated: true,
+        queries: [],
+        plane_granted: false,
+      },
+    },
+    drawn: /Pinned by Ada/,
+  },
+  {
+    name: "a pinned artifact whose folder is gone",
+    view: { from: null, view: "artifact", key: "alpha/backlog-state" },
+    answers: {
+      artifact_about: {
+        name: "Backlog state",
+        pinned_by: null,
+        missing: "there is no folder 'backlog-state' in artifacts/",
+      },
+    },
+    drawn: /There is no folder/,
+  },
+  {
     name: "Devices, while they are read",
     view: { from: null, view: "devices", key: "" },
     // Never answered: the view stays on its reading line.

@@ -6248,12 +6248,14 @@ dependencies = [
  "changelog",
  "chrono",
  "dunce",
+ "getrandom 0.4.3",
  "notify",
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
  "objc2-user-notifications",
  "objc2-web-kit",
+ "percent-encoding",
  "png",
  "purlis-core",
  "purlis-crash-handler",
@@ -6369,6 +6371,7 @@ dependencies = [
  "grep-regex",
  "grep-searcher",
  "hmac 0.13.0",
+ "html5ever",
  "http",
  "idna",
  "ignore",
@@ -8728,8 +8731,6 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-wdio-webdriver"
 version = "1.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a775b0b59f6f12b38d1f28667311a89cd07f532f540e27d65c6eadfba1156d8"
 dependencies = [
  "async-trait",
  "axum",

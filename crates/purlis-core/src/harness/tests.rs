@@ -618,6 +618,12 @@ fn a_claude_code_chat_may_run_charter_session_record_and_read_charter_without_as
             "mcp__purlis__skill_runs",
             "mcp__purlis__skill_find",
             "mcp__purlis__skill_load",
+            // The MCP twin of `purlis queries` (ADR 0122 §7, #5969).
+            "mcp__purlis__queries",
+            // The read-only artifact verbs' twins, pre-allowed on purpose (#5978's review).
+            "mcp__purlis__artifact_list",
+            "mcp__purlis__artifact_check",
+            "mcp__purlis__artifact_approve_status",
             // And what writes only the chat's own scope, and its question to the person (#3829).
             "mcp__purlis__todo_add",
             "mcp__purlis__todo_done",
@@ -953,6 +959,8 @@ fn every_charter_tool_a_claude_code_chat_runs_without_asking_is_ruled_in_by_name
         "ask_operator",
         // And a Secret ask (#5072, ruled 2026-11-04): the person answers it in the window.
         "secret_ask",
+        // The catalogue's listing, the binary's own (ADR 0122 §7, #5969).
+        "queries",
     ];
     let others: Vec<&str> = crate::chattools::TOOLS
         .iter()
