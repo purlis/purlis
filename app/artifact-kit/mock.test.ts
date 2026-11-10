@@ -2,10 +2,18 @@
 // it: in a document of its own, before or after the page's declaration, with its fixtures and
 // data files fetched from beside the page.
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { MessageChannel, MessagePort } from "node:worker_threads";
 import { JSDOM } from "jsdom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import MOCK from "./purlis-page-mock.js?raw";
+
+// Kept in the core, which compiles it into `purlis artifact mock` (`artifact::kit`), and read as
+// text: outside the app's root, so not through Vite's `?raw`.
+const MOCK = readFileSync(
+  join(process.cwd(), "..", "crates", "purlis-core", "artifact-kit", "purlis-page-mock.js"),
+  "utf8",
+);
 
 type Answer = {
   id: number | null;

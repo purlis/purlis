@@ -9,9 +9,10 @@
   byte a person approves.
 - **The types are generated from the catalogue** (`artifact::kit::types`), each query typed at
   every `@N` this build answers, from its tool's parameters and its pinned result schema. They
-  are kept in `app/artifact-kit/`, where `npm run typecheck` checks what they allow and refuse
-  (`purlis-page.check.ts`); a core test fails when the kept file is not what the catalogue
-  generates (`ARTIFACT_KIT_BLESS=1` writes it again, and its diff is read).
+  are kept in `crates/purlis-core/artifact-kit/`, in the crate that compiles them in, and
+  `npm run typecheck` checks what they allow and refuse (`app/artifact-kit/purlis-page.check.ts`);
+  a core test fails when the kept file is not what the catalogue generates
+  (`ARTIFACT_KIT_BLESS=1` writes it again, and its diff is read).
 - **The mock is written by hand, beside them**, run by the app's unit tests in a document of its
   own, and compiled into the binary. It answers in the catalogue's envelope under the page's
   own declaration, as purlis does: undeclared is `not-approved`, a declared data file comes from

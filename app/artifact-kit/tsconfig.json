@@ -7,5 +7,5 @@
     "noUnusedLocals": true,
     "types": []
   },
-  "include": ["purlis-page.d.ts", "purlis-page.check.ts"]
+  "include": ["../../crates/purlis-core/artifact-kit/purlis-page.d.ts", "purlis-page.check.ts"]
 }

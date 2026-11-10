@@ -6,9 +6,10 @@
 //! answers from fixtures, so a page can be developed in any browser, outside purlis ([`MOCK`]).
 //!
 //! `purlis artifact types` prints the first and `purlis artifact mock` the second. Both are
-//! kept in `app/artifact-kit/`, where the app's typecheck reads the types and its unit tests
-//! run the mock; a test here fails when the kept types are not what the catalogue generates
-//! (`ARTIFACT_KIT_BLESS=1` writes them again).
+//! kept in `crates/purlis-core/artifact-kit/`, inside the crate that compiles them in; the
+//! app's typecheck reads the types from there (`app/artifact-kit/tsconfig.json`) and its unit
+//! tests run the mock; a test here fails when the kept types are not what the catalogue
+//! generates (`ARTIFACT_KIT_BLESS=1` writes them again).
 
 use std::fmt::Write as _;
 
@@ -19,7 +20,7 @@ use crate::catalogue::{API, CATALOGUE, ErrorKind, PROTOCOL_KEY, Query};
 /// **The mock of `purlis.port`**: a script a page loads before its own, outside purlis. It
 /// steps aside when purlis's own port is there, so a page that still loads it in purlis talks
 /// to purlis.
-pub const MOCK: &str = include_str!("../../../../app/artifact-kit/purlis-page-mock.js");
+pub const MOCK: &str = include_str!("../../artifact-kit/purlis-page-mock.js");
 
 /// The name the types are written under.
 pub const TYPES_FILE: &str = "purlis-page.d.ts";
@@ -230,22 +231,22 @@ mod tests {
 
     use super::*;
 
-    /// The types as `app/artifact-kit/` keeps them, for the app's typecheck.
-    const KEPT: &str = include_str!("../../../../app/artifact-kit/purlis-page.d.ts");
+    /// The types as `crates/purlis-core/artifact-kit/` keeps them, for the app's typecheck.
+    const KEPT: &str = include_str!("../../artifact-kit/purlis-page.d.ts");
 
     #[test]
     fn the_kept_types_are_what_the_catalogue_generates() {
         let now = types();
         if std::env::var_os("ARTIFACT_KIT_BLESS").is_some() {
             let kept = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../app/artifact-kit")
+                .join("artifact-kit")
                 .join(TYPES_FILE);
             std::fs::write(kept, &now).unwrap();
             return;
         }
         assert!(
             KEPT == now,
-            "app/artifact-kit/{TYPES_FILE} is not what the catalogue generates: run \
+            "crates/purlis-core/artifact-kit/{TYPES_FILE} is not what the catalogue generates: run \
              ARTIFACT_KIT_BLESS=1 cargo test -p purlis-core --lib artifact::kit and read its diff"
         );
     }
