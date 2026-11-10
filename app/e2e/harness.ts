@@ -545,7 +545,6 @@ export function writeReportingShell(
       `  --hook ${singleQuoted(secretHook(charter))} \\`,
       `  --hook ${singleQuoted(secretAskHook(charter))} \\`,
       `  --hook ${singleQuoted(dispatchHook(charter))} \\`,
-      `  --hook ${singleQuoted(hostHook(charter))} \\`,
       `  --hook ${singleQuoted(`[ -f ${singleQuoted(USES_A_SKILL)} ] || ${hookCommand("stop", "Stop")}`)} \\`,
       "  --interactive",
       "",
@@ -724,31 +723,6 @@ function dispatchHook(charter: string): string {
     `if [ -f ${singleQuoted(DISPATCHES_A_TASK)} ]; then`,
     `  echo 'check the queue' | ${singleQuoted(charter)} dispatch --to ${DISPATCHED_TO} --name 'e2e task'`,
     ...toldAtItsNextTurn(charter, "kept your dispatch blocked", DISPATCH_KEPT_BLOCKED),
-    "fi",
-  ].join("\n");
-}
-
-/**
- * **While this file is in the run's tree, the reporting harness reaches a host its sandbox has
- * not allowed** (#6001): `curl` through the chat's own proxy, which holds the connection and asks
- * the person (#1709). That needs the project's sandbox in force (`[sandbox] mode = "on"`); at the
- * floor the network is open. The host need not exist: the proxy decides by its name. Once `curl`
- * ends, the harness asks for its next turn until it hears a Keep blocked, and says
- * {@link HOST_KEPT_BLOCKED}.
- */
-export const REACHES_A_HOST = join(THE_RUNS_TREE, "reaches-a-host");
-
-/** The host {@link REACHES_A_HOST} reaches for: no project allows it, and no resolver knows it. */
-export const REACHED_HOST = "purlis-e2e-unlisted.example.com";
-
-/** What the harness says once it was told the person kept the host blocked. */
-export const HOST_KEPT_BLOCKED = "told: the person kept the host blocked";
-
-function hostHook(charter: string): string {
-  return [
-    `if [ -f ${singleQuoted(REACHES_A_HOST)} ]; then`,
-    `  curl -sS -o /dev/null --max-time 120 https://${REACHED_HOST}/ 2>/dev/null`,
-    ...toldAtItsNextTurn(charter, "Kept blocked by the person", HOST_KEPT_BLOCKED),
     "fi",
   ].join("\n");
 }

@@ -22,10 +22,7 @@ import {
   DISPATCHED_TO,
   DISPATCHES_A_TASK,
   DISPATCH_KEPT_BLOCKED,
-  HOST_KEPT_BLOCKED,
   INBOX_DENIED,
-  REACHED_HOST,
-  REACHES_A_HOST,
   RUNS_A_SECRET,
   SECRET_ASKED,
   SECRET_KEY,
@@ -48,9 +45,10 @@ import { PROJECTS, ask, inFront, keepTheNotices, openFromTheStrip } from "../swi
  *
  * Here each kind is raised **in another project and another workspace** than the one in front:
  * projects of the spec's own, opened beside the launch's, their chats started in their `beta`
- * workspace. One keeps its sandbox at the floor, as the run's own project does; the other has it
- * in force (`[sandbox] mode = "on"`), which the sandbox consent and the host block need. The launch's project is then brought to the front, and from there, with **no view
- * opened by the test**, each kind must be:
+ * workspace. One keeps its sandbox at the floor, as the run's own project does, and its chats ask;
+ * the other has it in force (`[sandbox] mode = "on"`), which its consent needs. The launch's
+ * project is then brought to the front, and from there, with **no view opened by the test**, each
+ * kind must be:
  *
  * - **counted** by the ✋, as "+N elsewhere", and that N is what Asks lists for the other
  *   projects, and the asking project's line lists every one of its asks;
@@ -68,16 +66,21 @@ import { PROJECTS, ask, inFront, keepTheNotices, openFromTheStrip } from "../swi
  * **Nothing is faked past the harness.** The reporting harness (`wdio.state.conf.ts`) raises
  * each chat's ask through the real `charter` (`harness.ts`): a permission through its hook, a
  * question by ending its turn, a secret with `secret ask`, a run grant with `secret exec`, a
- * dispatch with `dispatch`, a host through the chat's own sandbox proxy. The sandbox consent is
+ * dispatch with `dispatch`. The sandbox consent is
  * the project's own committed `expects`, and the command confirmation is the real `purlis
  * signing check`, run as the person runs it, in a terminal of no chat (it refuses to run in one).
  *
- * **Not raised here: a browser site.** A chat's browser holds a site back inside the real
- * browser engine (`browsers/judge.rs`), which this run neither has nor sets up; only the browser
- * run does, and no spec drives a chat's browser yet. It is listed as pending below.
+ * **Not raised here, and listed as pending below:**
+ *
+ * - **A browser site.** A chat's browser holds a site back inside the real browser engine
+ *   (`browsers/judge.rs`), which this run neither has nor sets up; only the browser run does,
+ *   and no spec drives a chat's browser yet.
+ * - **A sandbox host block.** At the floor, where this run's chats start, the network is open
+ *   and no host is asked about. Where the sandbox is in force, purlis starts no chat whose
+ *   program lives where a chat may write, and this run's harness lives in its temporary folder.
  *
  * **It leaves the window as it found it**: every trigger file is removed, every chat it started
- * is ended, its project is closed, and the launch's project is in front.
+ * is ended, its projects are closed, and the launch's project is in front.
  */
 
 /** The title bar's hand. */
@@ -104,8 +107,8 @@ function aProject(name: string): Project {
 
 /** The project most kinds are asked from: its sandbox at the floor, as the run's own. */
 const mine = aProject("every-ask");
-/** **The project with its sandbox in force** (`[sandbox] mode = "on"`): a host it has not
- *  allowed is asked about, and so is a service it expects that this machine has not allowed. */
+/** **The project with its sandbox in force** (`[sandbox] mode = "on"`): a service it expects
+ *  that this machine has not allowed is asked about. */
 const walled = aProject("every-ask-walled");
 
 /** The service the project expects, a reverse-DNS name no machine runs. */
@@ -119,13 +122,7 @@ const REPLY = "not now, thanks";
 const literally = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** Every trigger file this spec writes. */
-const TRIGGERS = [
-  ASKS_A_PERMISSION,
-  ASKS_A_SECRET,
-  RUNS_A_SECRET,
-  DISPATCHES_A_TASK,
-  REACHES_A_HOST,
-];
+const TRIGGERS = [ASKS_A_PERMISSION, ASKS_A_SECRET, RUNS_A_SECRET, DISPATCHES_A_TASK];
 
 /** What every pane of the window shows, one pass. */
 async function panesSay(): Promise<string> {
@@ -274,9 +271,10 @@ async function pressOnRow(row: string, label: string): Promise<void> {
 /** Keep blocked: its first press opens the optional "Why keep it blocked?" box, its second
  *  sends the refusal (ADR 0121 amended 2026-11-09). */
 async function keepBlocked(row: string): Promise<void> {
-  const keep = $(row).$("button=Keep blocked");
-  await pressGrant(keep);
-  if (await keep.isExisting()) await pressGrant(keep);
+  // Looked for afresh at each press: the first redraws the row.
+  await pressGrant($(row).$("button=Keep blocked"));
+  const again = $(row).$("button=Keep blocked");
+  if (await again.isExisting()) await pressGrant(again);
 }
 
 /** The command confirmation's `purlis signing check`, while it runs. */
@@ -431,22 +429,6 @@ const KINDS: Kind[] = [
     raise: () => fromAChat(mine, DISPATCHES_A_TASK),
     answer: keepBlocked,
     told: () => panesTell("dispatch grant", DISPATCH_KEPT_BLOCKED),
-  },
-  {
-    name: "sandbox host block",
-    from: walled,
-    source: "sandbox-host",
-    says: new RegExp(
-      `^(A connection to ${literally(REACHED_HOST)} waits on your answer|The sandbox refused ${literally(REACHED_HOST)})$`,
-    ),
-    decision: {
-      title: "Allow reaching this host?",
-      allow: "Allow only for this chat",
-      refuse: "Keep blocked",
-    },
-    raise: () => fromAChat(walled, REACHES_A_HOST),
-    answer: keepBlocked,
-    told: () => panesTell("sandbox host block", HOST_KEPT_BLOCKED),
   },
   {
     name: "command confirmation",
@@ -627,4 +609,11 @@ describe("every Blocking ask, found from the ✋ alone (#6001)", function () {
   // A chat's browser holds a site back inside the real browser engine, which this run has not:
   // pending until a spec of the browser run drives a chat's browser.
   it("finds and answers a browser site from the ✋ alone (needs the browser run's engine)");
+
+  // A host is asked about only where the project's sandbox is in force, and there purlis starts
+  // no chat whose program lives where a chat may write: this run's harness lives in the run's
+  // own temporary folder. Pending until the run keeps its harness outside it.
+  it(
+    "finds and answers a sandbox host block from the ✋ alone (needs a harness outside what a chat may write)",
+  );
 });
