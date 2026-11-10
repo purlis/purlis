@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794270027292,
+  "lastUpdate": 1794272427245,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -45360,6 +45360,48 @@ window.BENCHMARK_DATA = {
             "value": 101.3568105,
             "unit": "ms",
             "extra": "median of 5 runs: 100.942, 101.062, 101.357, 101.608, 101.681 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "6eacdba5892a0ace03dc441150c35ba229c9f977",
+          "message": "Shift+Tab back into a list lands on the row the keyboard left (#6033) (#6057)\n\n* Shift+Tab back into a list lands on the row the keyboard left, not its last control (#6033)\n\nReact Aria's collection gives the keyboard back to its focused row on a Tab\nin only when the control the browser landed on is in another row. When the\nrow the keyboard left holds the list's last controls, Shift+Tab stayed on\nits last control. The family's row element now hands a Tab's landing on a\ncontrol back to the row React Aria keeps (backToTheRow), so the APG grid's\none Tab stop holds for rows with controls; a pointer press or a script's\nfocus keeps its control.\n\nUnit tests in RowKeys.test.tsx, each seen red; a new story and #6025's\nthree plays now Tab out from a row with controls.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M713MX6GT6JYMCN6AT49MV81\nPurlis-Persona: steward\n\n* Changelog fragment for #6033\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M713MX6GT6JYMCN6AT49MV81\nPurlis-Persona: steward\n\n* Review fixes for #6033: focus the handler's own row, without scrolling\n\nbackToTheRow focuses the row whose onFocus heard the Tab, once React Aria has\nkept it, rather than looking the row up by key (no nested grid's row can\nmatch), with preventScroll (React Aria has scrolled it already). The stale\ncomment in rowElement and its doc now say what a Tab into the list does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M713MX6GT6JYMCN6AT49MV81\nPurlis-Persona: steward\n\n* Composing story ends with End; baselines for the new Shift+Tab story (#6033)\n\nTabbing out from the row with the box passes through the box, and a Tab\ninto a text box selects all its words, so the picture showed \"ni hao\"\nselected. End puts the caret after them again, the picture #6025 drew.\nThe new story's 24 baselines are from PR #6057's stories run, reviewed:\nthe last row, gamma, holds the keyboard's ring, not its button.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M713MX6GT6JYMCN6AT49MV81\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T00:07:17Z",
+          "tree_id": "ca41f685f3ea4f07cdaa3ce5a62a41c849ea1d4e",
+          "url": "https://github.com/purlis/purlis/commit/6eacdba5892a0ace03dc441150c35ba229c9f977"
+        },
+        "date": 1794272422195,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5706825,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.550, 0.553, 0.571, 0.595, 0.606 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.32533,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.299, 16.303, 16.325, 16.336, 16.479 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.406136,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.913, 101.365, 101.406, 101.913, 102.048 ms"
           }
         ]
       }
