@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794312526390,
+  "lastUpdate": 1794312674771,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -18844,6 +18844,40 @@ window.BENCHMARK_DATA = {
             "value": 1104.3,
             "unit": "MB",
             "extra": "median of 6 samples: 1050.8, 1092.9, 1115.7, 1151.1, 1150.3, 718 MB; window 726.4 MB, session host 380.2 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide",
+            "email": "aaron.yor@gmail.com"
+          },
+          "committer": {
+            "name": "GitHub",
+            "username": "web-flow",
+            "email": "noreply@github.com"
+          },
+          "id": "666a5c6d60f40d3a99868e0291fe8939eea58c35",
+          "message": "crash-probe takes its crashes folder from the environment, which reaches the companion (#5691) (#6122)\n\n* crash-probe takes its crashes folder from the environment, which reaches the companion (#5691)\n\nThe handler's companion is the probe started again by minidumper-child with\nno arguments, so its crashes folder, read from argv, was empty: it kept the\nminidump in its working directory and the abort and overflow tests found\nnone. Not a regression of the crash-handler 0.8 bump: crash-handler 0.8.1\nand minidump-writer 0.13 dump abort, overflow and segv as 0.7 and 0.12 do.\nThe app is unaffected: its companion finds the folder from the config root.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6ZN31HWXJ63DW8F35PFJXMY\nPurlis-Persona: steward\n\n* The abort and overflow tests wait for crash-handler 0.8 too (#5691)\n\nOn minidumper-child 0.7, an abort or a stack overflow leaves no minidump\nthrough the companion, even with the probe's crashes folder fixed. A run\noutside the sandbox on 2026-11-10 showed P2 red and P3 (the bump) all 5\ngreen. Ignored with the child test until a release depends on 0.8, so\nthe macOS nightly stays green.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6VM5VHPGDAV476JQ02YBBE1\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T09:48:20Z",
+          "url": "https://github.com/purlis/purlis/commit/666a5c6d60f40d3a99868e0291fe8939eea58c35"
+        },
+        "date": 1794312669646,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 2546.5,
+            "unit": "MB",
+            "extra": "median of 3 samples: 2315.8, 2546.5, 2750.8 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 1086.9,
+            "unit": "MB",
+            "extra": "median of 6 samples: 1032.4, 1081, 1092.8, 1127, 1127.1, 668.7 MB; window 695.3 MB, session host 390.7 MB"
           }
         ]
       }
