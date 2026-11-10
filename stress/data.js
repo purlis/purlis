@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794332903179,
+  "lastUpdate": 1794341529486,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -19022,6 +19022,42 @@ window.BENCHMARK_DATA = {
             "value": 1234.2,
             "unit": "MB",
             "extra": "median of 6 samples: 1192.3, 1215.7, 1253.2, 1252.8, 1253.7, 777.6 MB; window 846.3 MB, session host 395.4 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "8f9df82bbcc1bb4a0c68c410d8ad7c719b1cac46",
+          "message": "The clones spec reads a cancelled clone's folders only once the window says it answered (#6140) (#6148)\n\n* The clones spec reads a cancelled clone's folders only once the window says it answered (#6140)\n\nThe \"Cancel on the chip's notice\" case read workspaces/stopped-card/repos\nwith existsSync and then readdirSync. The core takes away the hidden folder\nfirst and then the empty repos/ its run made (#5534), both before the clone\nanswers, so a read between the two threw ENOENT on macOS in the queue.\n\nThe case now waits for the card's \"Stopped cloning …\", which comes only\nafter the clone answered, and nothingOf reads each folder once, an absent\none as empty. The row's Cancel case already waited on its meter, which goes\nonly once the clone answered; a comment says so.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M731DNKZXQ7WA58ERAXKBEFE\nPurlis-Persona: steward\n\n* Review: one wait for a chip's card's words, and the row's Clone as its stopped sign (#6140)\n\nThe long clone's and the stopped card's waits were the same loop, so they are\nnow untilTheChipsCardSays. The row's Cancel case also waits for the row to\noffer Clone again: no meter alone would also be a row that is not drawn.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M731DNKZXQ7WA58ERAXKBEFE\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T16:39:15Z",
+          "tree_id": "0b4531388e4f3ff78e77fdf5ef6471033e59d226",
+          "url": "https://github.com/purlis/purlis/commit/8f9df82bbcc1bb4a0c68c410d8ad7c719b1cac46"
+        },
+        "date": 1794341522681,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 2791.1,
+            "unit": "MB",
+            "extra": "median of 3 samples: 2385.6, 2791.1, 3093.4 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 1210.5,
+            "unit": "MB",
+            "extra": "median of 6 samples: 1158.6, 1199.7, 1221.3, 1249.1, 1248.9, 734 MB; window 821.4 MB, session host 389.1 MB"
           }
         ]
       }
