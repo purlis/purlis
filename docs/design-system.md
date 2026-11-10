@@ -1426,6 +1426,7 @@ one labelled section at the end of `App.css`.
 | a chat's state mark                        | colour, shape and ring morph, `settle`                   | the state changing, rather than blinking                                                                |
 | a chat that starts waiting on you          | its ring knocks twice, `settle`                          | the one signal this app exists for, arriving                                                            |
 | the same, on a row of a list               | its hand knocks twice, `settle`                          | a row's mark is the hand and has no ring; only on the change, as the ring                               |
+| the ✋ on the right bar, once per machine  | its mark takes one breath, `breathe`                     | the first Blocking ask to arrive while Asks is closed, in place of a tour (ADR 0121 decision 24); the count says it still under reduced motion |
 | a pane a drag makes room with              | glides and resizes to where the drop would leave it, `enter`, while the drag lasts | the result, seen before the drop (ADR 0113) |
 | a pane about to be, in a drag              | fades in at its box, `enter`                             | what the drop would make     |
 | a row of the Chats list that was asked for | the hovered row's band for a moment, faded in once, `settle` | where a press elsewhere went; the band is there, still, under reduced motion                            |

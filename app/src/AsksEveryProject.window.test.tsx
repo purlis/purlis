@@ -127,7 +127,7 @@ function core(projects: Record<string, Project>) {
 }
 
 const bar = () => screen.getByRole("tablist", { name: "Attention" });
-const hand = () => within(bar()).getByRole("tab", { name: "Asks" });
+const hand = () => within(bar()).getByRole("tab", { name: /^Asks/ });
 const scopes = () => within(screen.getByRole("radiogroup", { name: "Show what needs you in" }));
 const picked = () => scopes().getByRole("radio", { checked: true }).getAttribute("aria-label");
 
@@ -151,7 +151,7 @@ describe("the ✋ across every open project (#5999)", () => {
     });
 
     await waitFor(() =>
-      expect(hand()).toHaveAccessibleDescription("2 things wait on you, +1 elsewhere"),
+      expect(hand()).toHaveAccessibleName("Asks 2 things wait on you, +1 elsewhere"),
     );
     expect(hand().querySelector('[data-part="count"]')).toHaveAttribute("data-count", "2");
   });
@@ -163,7 +163,7 @@ describe("the ✋ across every open project (#5999)", () => {
     });
 
     await waitFor(() =>
-      expect(hand()).toHaveAccessibleDescription("1 thing waits on you, +1 elsewhere"),
+      expect(hand()).toHaveAccessibleName("Asks 1 thing waits on you, +1 elsewhere"),
     );
   });
 
@@ -178,7 +178,7 @@ describe("the ✋ across every open project (#5999)", () => {
     await userEvent.click(scopes().getByRole("radio", { name: /^This project/ }));
 
     await waitFor(() => expect(picked()).toBe("This project, 1 waiting on you"));
-    expect(hand()).toHaveAccessibleDescription("2 things wait on you, +1 elsewhere");
+    expect(hand()).toHaveAccessibleName("Asks 2 things wait on you, +1 elsewhere");
   });
 
   it("never counts a snoozed chat's ask", async () => {
@@ -187,7 +187,7 @@ describe("the ✋ across every open project (#5999)", () => {
       [TWO]: { chats: [chat(TWO, 1)], asks: [], snoozed: [permission(1, "b-1", "Run npm test")] },
     });
 
-    await waitFor(() => expect(hand()).toHaveAccessibleDescription("1 thing waits on you"));
+    await waitFor(() => expect(hand()).toHaveAccessibleName("Asks 1 thing waits on you"));
   });
 
   it("shows the same total on the Dock badge", async () => {

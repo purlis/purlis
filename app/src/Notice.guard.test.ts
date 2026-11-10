@@ -502,8 +502,11 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
   },
   "SandboxOffer.tsx": { count: 1, why: "the answer's refusal, inside the sandbox offer's Notice" },
   "PlaneView.tsx": {
-    count: 1,
-    why: "a screen reader's one polite line about a pane the keyboard did not ask for (#4767): heard, never drawn, with nothing to do",
+    count: 2,
+    why:
+      "a screen reader's one polite line about a pane the keyboard did not ask for (#4767), and " +
+      "the one about a new Blocking ask (ADR 0121 decision 25): heard, never drawn; the ask is " +
+      "answered in Asks, where the ✋ leads",
   },
   "PoolSetupTab.tsx": {
     count: 2,

@@ -86,6 +86,8 @@ export function RegionFrame({
   previews = NO_PREVIEWS,
   badges,
   fresh,
+  pulse,
+  onPulsed,
   keys,
   onPick,
   centre,
@@ -122,6 +124,10 @@ export function RegionFrame({
   badges?: Partial<Record<ViewId, ReactNode>>;
   /** **How many rows of each view are New** (#6002): a "new" pip beside its badge. */
   fresh?: Partial<Record<ViewId, number>>;
+  /** **The view whose icon pulses once** (ADR 0121 decision 24): the ✋, the first time a
+   *  Blocking ask arrives while Asks is closed. `onPulsed` is told as its pulse ends. */
+  pulse?: ViewId;
+  onPulsed?: () => void;
   /** How each view's key is spelled, for its tab's tooltip. */
   keys?: Partial<Record<ViewId, string>>;
   /** A view's tab was pressed: the window answers with the arrangement (`regions.picked`). */
@@ -216,6 +222,8 @@ export function RegionFrame({
       current={openView(one, present)}
       keys={keys}
       badges={fresh === undefined ? badges : withNew(badges ?? {}, fresh)}
+      pulse={pulse}
+      onPulsed={onPulsed}
       {...ids}
       onPick={pick}
       menu={menuOf}

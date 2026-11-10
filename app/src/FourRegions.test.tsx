@@ -21,7 +21,7 @@ import App from "./App";
 import { forgetThisLaunch } from "./regions";
 import { GLOBAL } from "./windowprefs";
 import { onAMac } from "./tabKeys";
-import { goToWorkspace, showTheExplorer, stripNamed } from "./test-strips";
+import { goToWorkspace, showTheExplorer, stripNamed, viewTab } from "./test-strips";
 import { drawnWith } from "./cascade.testkit";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
 import { selectNamed } from "./ui/select/select.testkit";
@@ -680,11 +680,12 @@ describe("the four regions", () => {
     // The right bar stands while its side is away, and says how to come back.
     const tab = () =>
       within(screen.getByRole("tablist", { name: "Attention" })).getByRole("tab", {
-        name: "Asks",
+        name: /^Asks\b/,
       });
     sideKey("right");
     await waitFor(() => expect(away("Attention")).toBe(true));
-    expect(tipOf(tab())).toEqual(expect.stringContaining("Show the Asks view"));
+    // The ✋ asks its question (ADR 0121 decision 1) and still names its key, the way back.
+    expect(tipOf(tab())).toEqual(expect.stringContaining("Do I need to answer something?"));
     await userEvent.click(tab());
     expect(await screen.findByRole("tabpanel", { name: "Asks" })).toBeInTheDocument();
     expect(away("Attention")).toBe(false);
@@ -720,7 +721,7 @@ describe("the four regions", () => {
  */
 describe("the left side's activity bar", () => {
   const bar = () => screen.getByRole("tablist", { name: "Navigation" });
-  const tab = (name: string) => within(bar()).getByRole("tab", { name });
+  const tab = (name: string) => within(bar()).getByRole("tab", { name: viewTab(name) });
   /** The chord with the platform's command key: ⌘ on a Mac, Ctrl elsewhere. */
   const chord = (key: string, shift = false) =>
     fireEvent.keyDown(document.body, {
@@ -792,7 +793,7 @@ describe("the left side's activity bar", () => {
     core([7]);
     render(<App />);
     await screen.findByRole("button", { name: "1 thing waits on you" });
-    await waitFor(() => expect(tab("Chats")).toHaveAccessibleDescription("1 chat needs you"));
+    await waitFor(() => expect(tab("Chats")).toHaveAccessibleName("Chats 1 chat needs you"));
     // Only what waits in the Inbox is drawn hot (R120); the Chats count is plain (R119).
     const count = tab("Chats").querySelector('[data-part="count"]');
     expect(count).toHaveTextContent("1");
@@ -802,7 +803,7 @@ describe("the left side's activity bar", () => {
     await userEvent.click(tab("Chats"));
 
     await waitFor(() => expect(away("Navigation")).toBe(true));
-    expect(tab("Chats")).toHaveAccessibleDescription("1 chat needs you");
+    expect(tab("Chats")).toHaveAccessibleName("Chats 1 chat needs you");
   });
 
   it("draws no count when nothing needs you", async () => {
@@ -874,7 +875,7 @@ describe("a side's views, bounded", () => {
 
 describe("the Search and Changes views", () => {
   const bar = () => screen.getByRole("tablist", { name: "Navigation" });
-  const tab = (name: string) => within(bar()).getByRole("tab", { name });
+  const tab = (name: string) => within(bar()).getByRole("tab", { name: viewTab(name) });
 
   it("holds every view of the left side, in the bar's order", async () => {
     core();
@@ -984,7 +985,7 @@ describe("the Search and Changes views", () => {
  */
 describe("the Lower icons' badges and the views' keys", () => {
   const lower = () => screen.getByRole("tablist", { name: "Panel, left half" });
-  const lowerTab = (name: string) => within(lower()).getByRole("tab", { name });
+  const lowerTab = (name: string) => within(lower()).getByRole("tab", { name: viewTab(name) });
   /** A key as this platform types it: ⌘ on a Mac, Ctrl elsewhere. */
   const command = (key: string, more: Record<string, boolean> = {}) =>
     fireEvent.keyDown(document.body, {
@@ -1019,7 +1020,7 @@ describe("the Lower icons' badges and the views' keys", () => {
     core();
     render(<App />);
     await waitFor(() =>
-      expect(lowerTab("Changes")).toHaveAccessibleDescription("5 uncommitted files"),
+      expect(lowerTab("Changes")).toHaveAccessibleName("Changes 5 uncommitted files"),
     );
 
     // The open Lower icon pressed: the half is put away, and the count stays on its icon.
@@ -1027,7 +1028,7 @@ describe("the Lower icons' badges and the views' keys", () => {
 
     expect(screen.queryByRole("tabpanel", { name: "Repos" })).toBeNull();
     expect(lowerTab("Changes").querySelector('[data-part="count"]')).toHaveTextContent("5");
-    expect(lowerTab("Changes")).toHaveAccessibleDescription("5 uncommitted files");
+    expect(lowerTab("Changes")).toHaveAccessibleName("Changes 5 uncommitted files");
     // Not a question for the person: the plain count's colours, never the needs-you ones.
     expect(
       lowerTab("Changes").querySelector('[data-part="count"][data-tone="needs-you"]'),
@@ -1054,7 +1055,7 @@ describe("the Lower icons' badges and the views' keys", () => {
     core();
     render(<App />);
     await waitFor(() =>
-      expect(lowerTab("Repos")).toHaveAccessibleDescription("3 commits behind, 3 ahead"),
+      expect(lowerTab("Repos")).toHaveAccessibleName("Repos 3 commits behind, 3 ahead"),
     );
     await userEvent.click(lowerTab("Repos"));
 
@@ -1063,7 +1064,7 @@ describe("the Lower icons' badges and the views' keys", () => {
       "data-count",
       "3↓3↑",
     );
-    expect(lowerTab("Repos")).toHaveAccessibleDescription("3 commits behind, 3 ahead");
+    expect(lowerTab("Repos")).toHaveAccessibleName("Repos 3 commits behind, 3 ahead");
   });
 
   it("draws nothing on Repos' icon while nothing is behind, however far ahead", async () => {
@@ -1072,7 +1073,7 @@ describe("the Lower icons' badges and the views' keys", () => {
     render(<App />);
     // Changes' count arrives with the same answer, so Repos' has had its chance to be drawn.
     await waitFor(() =>
-      expect(lowerTab("Changes")).toHaveAccessibleDescription("1 uncommitted file"),
+      expect(lowerTab("Changes")).toHaveAccessibleName("Changes 1 uncommitted file"),
     );
 
     expect(lowerTab("Repos").querySelector('[data-part="count"]')).toBeNull();
@@ -1144,7 +1145,7 @@ describe("the Lower icons' badges and the views' keys", () => {
  */
 describe("the Panel", () => {
   const lower = () => screen.getByRole("tablist", { name: "Panel, left half" });
-  const repos = () => within(lower()).getByRole("tab", { name: "Repos" });
+  const repos = () => within(lower()).getByRole("tab", { name: /^Repos\b/ });
   const reposView = () => screen.getByRole("navigation", { name: "Repos" });
   /** ⌘J on a Mac, Ctrl+J elsewhere. */
   const panelKey = () =>
@@ -1276,7 +1277,7 @@ describe("the Panel", () => {
  */
 describe("the Panel's right half", () => {
   const lower = () => screen.getByRole("tablist", { name: "Panel, right half" });
-  const lowerTab = (name: string) => within(lower()).getByRole("tab", { name });
+  const lowerTab = (name: string) => within(lower()).getByRole("tab", { name: viewTab(name) });
   const half = (side: string) =>
     screen
       .getByTestId("region-panel")
@@ -1380,7 +1381,7 @@ describe("one title per view (#3330)", () => {
     render(<App />);
     await screen.findByRole("tabpanel", { name: "Chats" });
     if (screen.queryByRole("tabpanel", { name }) === null)
-      await userEvent.click(screen.getByRole("tab", { name }));
+      await userEvent.click(screen.getByRole("tab", { name: viewTab(name) }));
     const view = await screen.findByRole("tabpanel", { name });
     const region = view.closest(".slot-body, .panel-half") as HTMLElement;
     expect(region).not.toBeNull();
@@ -1397,10 +1398,12 @@ describe("one title per view (#3330)", () => {
 
 describe("the right side's activity bar", () => {
   const bar = () => screen.getByRole("tablist", { name: "Attention" });
-  const tab = (name: string) => within(bar()).getByRole("tab", { name });
+  const tab = (name: string) => within(bar()).getByRole("tab", { name: viewTab(name) });
   /** A Lower icon of the right side: Memory, Todos and Sessions are in its half (#1738). */
   const lowerTab = (name: string) =>
-    within(screen.getByRole("tablist", { name: "Panel, right half" })).getByRole("tab", { name });
+    within(screen.getByRole("tablist", { name: "Panel, right half" })).getByRole("tab", {
+      name: viewTab(name),
+    });
   /** ⌥⌘B on a Mac, Ctrl+Alt+B elsewhere. */
   const toggleKey = () =>
     fireEvent.keyDown(document.body, {
@@ -1461,7 +1464,7 @@ describe("the right side's activity bar", () => {
     core();
     render(<App />);
     await screen.findByRole("tabpanel", { name: "Memory" });
-    await waitFor(() => expect(lowerTab("Todos")).toHaveAccessibleDescription("2 open todos"));
+    await waitFor(() => expect(lowerTab("Todos")).toHaveAccessibleName("Todos 2 open todos"));
     expect(lowerTab("Todos").querySelector('[data-part="count"]')).toHaveTextContent("2");
     // Plain, not the needs-you colours: a todo is yours to do, not a chat asking.
     expect(lowerTab("Todos").querySelector('[data-part="count"]')).not.toHaveAttribute("data-tone");
@@ -1469,7 +1472,7 @@ describe("the right side's activity bar", () => {
     await userEvent.click(lowerTab("Memory"));
 
     expect(screen.queryByRole("tabpanel", { name: "Memory" })).toBeNull();
-    expect(lowerTab("Todos")).toHaveAccessibleDescription("2 open todos");
+    expect(lowerTab("Todos")).toHaveAccessibleName("Todos 2 open todos");
   });
 
   it("puts Asks first, counting the asks in the needs-you tone, while the side is away too", async () => {
@@ -1477,7 +1480,7 @@ describe("the right side's activity bar", () => {
     core();
     render(<App />);
     await screen.findByRole("tabpanel", { name: "Asks" });
-    await waitFor(() => expect(tab("Asks")).toHaveAccessibleDescription("2 things wait on you"));
+    await waitFor(() => expect(tab("Asks")).toHaveAccessibleName("Asks 2 things wait on you"));
     expect(tab("Asks").querySelector('[data-part="count"]')).toHaveAttribute(
       "data-tone",
       "needs-you",
@@ -1486,7 +1489,7 @@ describe("the right side's activity bar", () => {
     await userEvent.click(tab("Asks"));
 
     expect(screen.queryByRole("tabpanel", { name: "Asks" })).toBeNull();
-    expect(tab("Asks")).toHaveAccessibleDescription("2 things wait on you");
+    expect(tab("Asks")).toHaveAccessibleName("Asks 2 things wait on you");
   });
 
   it("puts a new pip on Asks while an ask there has not been seen, and none for one seen (#6002)", async () => {
@@ -1496,14 +1499,14 @@ describe("the right side's activity bar", () => {
     render(<App />);
     await screen.findByRole("tabpanel", { name: "Asks" });
     await waitFor(() =>
-      expect(tab("Asks")).toHaveAccessibleDescription("2 things wait on you, 1 new"),
+      expect(tab("Asks")).toHaveAccessibleName("Asks 2 things wait on you, 1 new"),
     );
     expect(tab("Asks").querySelector('[data-part="pip"]')).not.toBeNull();
     // The other ask's row is in sight in the open view: about a second later it has been seen.
     await waitFor(() => expect(tab("Asks").querySelector('[data-part="pip"]')).toBeNull(), {
       timeout: 4000,
     });
-    expect(tab("Asks")).toHaveAccessibleDescription("2 things wait on you");
+    expect(tab("Asks")).toHaveAccessibleName("Asks 2 things wait on you");
   });
 
   it("counts the unread Mine lines on the bell, in the plain colours, and never a Project one (#5646)", async () => {
@@ -1527,7 +1530,7 @@ describe("the right side's activity bar", () => {
     render(<App />);
     await screen.findByRole("tabpanel", { name: "Asks" });
     await waitFor(() =>
-      expect(tab("Updates")).toHaveAccessibleDescription("2 unread updates from your chats"),
+      expect(tab("Updates")).toHaveAccessibleName("Updates 2 unread updates from your chats"),
     );
     // Plain, not the needs-you colours: a result is news about your own work, not an ask.
     expect(tab("Updates").querySelector('[data-part="count"]')).not.toHaveAttribute("data-tone");
@@ -1609,7 +1612,7 @@ describe("the right side's activity bar", () => {
     core();
     render(<App />);
     await screen.findByRole("tabpanel", { name: "Memory" });
-    await waitFor(() => expect(tab("Asks")).toHaveAccessibleDescription("1 thing waits on you"));
+    await waitFor(() => expect(tab("Asks")).toHaveAccessibleName("Asks 1 thing waits on you"));
 
     fireEvent.keyDown(document.body, {
       key: "I",
@@ -1662,7 +1665,7 @@ describe("the right side's activity bar", () => {
     core();
     render(<App />);
     await screen.findByRole("tabpanel", { name: "Memory" });
-    await waitFor(() => expect(tab("Asks")).toHaveAccessibleDescription("2 things wait on you"));
+    await waitFor(() => expect(tab("Asks")).toHaveAccessibleName("Asks 2 things wait on you"));
     // Sent while the window was behind another app; the click brings it to the front.
     const behind = vi.spyOn(document, "hasFocus").mockReturnValue(false);
     await emit(ASKS_NOTIFIED, { plane: PLANE, session: 4 });
@@ -1681,7 +1684,7 @@ describe("the right side's activity bar", () => {
     core();
     render(<App />);
     await screen.findByRole("tabpanel", { name: "Memory" });
-    await waitFor(() => expect(tab("Asks")).toHaveAccessibleDescription("2 things wait on you"));
+    await waitFor(() => expect(tab("Asks")).toHaveAccessibleName("Asks 2 things wait on you"));
     const behind = vi.spyOn(document, "hasFocus").mockReturnValue(false);
     await emit(ASKS_NOTIFIED, { plane: PLANE, session: 2, sessions: [2, 4, 3] });
     behind.mockRestore();
@@ -1727,14 +1730,14 @@ describe("the right side's activity bar", () => {
     waitingAsks = [asking(3, "Run cargo test")];
     core();
     render(<App />);
-    await waitFor(() => expect(tab("Asks")).toHaveAccessibleDescription("1 thing waits on you"));
+    await waitFor(() => expect(tab("Asks")).toHaveAccessibleName("Asks 1 thing waits on you"));
     await userEvent.click(tab("Personas"));
     await screen.findByRole("tabpanel", { name: "Personas" });
 
     waitingAsks = [asking(3, "Run cargo test"), asking(4, "Run npm test")];
     await emit(ASKS_CHANGED, { plane: PLANE });
 
-    await waitFor(() => expect(tab("Asks")).toHaveAccessibleDescription("2 things wait on you"));
+    await waitFor(() => expect(tab("Asks")).toHaveAccessibleName("Asks 2 things wait on you"));
     expect(screen.getByRole("tabpanel", { name: "Personas" })).toBeInTheDocument();
     expect(screen.queryByRole("tabpanel", { name: "Asks" })).toBeNull();
     expect(tab("Personas")).toHaveAttribute("aria-selected", "true");
@@ -1861,7 +1864,7 @@ describe("the right side's activity bar", () => {
     render(<App />);
     await screen.findByRole("tabpanel", { name: "Asks" });
     await waitFor(() =>
-      expect(lowerTab("Notices")).toHaveAccessibleDescription("A Notice needs fixing"),
+      expect(lowerTab("Notices")).toHaveAccessibleName("Notices A Notice needs fixing"),
     );
     const dot = lowerTab("Notices").querySelector('[data-scope="activity"][data-part="count"]');
     expect(dot).toHaveAttribute("data-tone", "danger");
@@ -1896,7 +1899,7 @@ describe("the right side's activity bar", () => {
     });
 
     expect(lowerTab("Notices").querySelector('[data-part="count"]')).toBeNull();
-    expect(lowerTab("Notices")).not.toHaveAccessibleDescription();
+    expect(lowerTab("Notices")).toHaveAccessibleName("Notices");
   });
 
   it("opens Notices from the status line's Notices item, under Asks (#5645)", async () => {
@@ -2146,7 +2149,7 @@ describe("moving a view", () => {
     const { unmount } = render(<App />);
     await screen.findByRole("tabpanel", { name: "Repos" });
     await userEvent.click((await menuOf(icon("Panel, left half", "Repos"))).getByRole("menuitem"));
-    await within(bar("Navigation")).findByRole("tab", { name: "Repos" });
+    await within(bar("Navigation")).findByRole("tab", { name: /^Repos\b/ });
     unmount();
 
     core();
@@ -2155,8 +2158,8 @@ describe("moving a view", () => {
     // Open in the left sidebar, where it was moved to, and not in the Panel.
     const view = await screen.findByRole("tabpanel", { name: "Repos" });
     expect(screen.getByTestId("region-panel")).not.toContainElement(view);
-    expect(within(bar("Navigation")).getByRole("tab", { name: "Repos" })).toBeInTheDocument();
-    expect(within(bar("Panel, left half")).queryByRole("tab", { name: "Repos" })).toBeNull();
+    expect(within(bar("Navigation")).getByRole("tab", { name: /^Repos\b/ })).toBeInTheDocument();
+    expect(within(bar("Panel, left half")).queryByRole("tab", { name: /^Repos\b/ })).toBeNull();
   });
 });
 
@@ -2339,12 +2342,12 @@ describe("the window the stored arrangement asks for", () => {
 
     const bar = () => screen.getByRole("tablist", { name: "Attention" });
     expect(await screen.findByRole("tabpanel", { name: "Asks" })).toBeInTheDocument();
-    expect(within(bar()).getByRole("tab", { name: "Asks" })).toHaveAttribute(
+    expect(within(bar()).getByRole("tab", { name: /^Asks\b/ })).toHaveAttribute(
       "aria-selected",
       "true",
     );
 
-    await userEvent.click(within(bar()).getByRole("tab", { name: "Updates" }));
+    await userEvent.click(within(bar()).getByRole("tab", { name: /^Updates\b/ }));
     await screen.findByRole("tabpanel", { name: "Updates" });
 
     await vi.waitFor(() => {

@@ -32,7 +32,7 @@ const INBOX = '[role="tabpanel"][data-view="asks"]';
 const OTHERS = `${INBOX} [role="rowgroup"][data-others]`;
 const HAND = '[data-testid="title-bar"] [data-testid="needs-you-button"]';
 const ASK = `${INBOX} .inbox-ask[data-source="permission"]`;
-/** The right bar's ✋: the Asks view's tab, whose description is its count. */
+/** The right bar's ✋: the Asks view's tab, whose name carries its count after "Asks". */
 const ASKS_TAB = '[role="tablist"][aria-label="Attention"] [role="tab"][aria-label="Asks"]';
 
 /** The second project: the fixture, renamed, with no record to put back. */
@@ -126,10 +126,14 @@ describe("the Inbox of one project, about another that waits", function () {
     // The second project, in front: its ✋ counts the launch's project's ask as elsewhere
     // (#5999, ADR 0121 decision 4), with no view opened first.
     await toFront(second);
+    // What the ✋'s badge says: its count is in the tab's name (ADR 0121 decision 25), named by
+    // `aria-labelledby` as the tab itself and then its badge.
     const handSays = () =>
       browser.execute((tab: string) => {
-        const described = document.querySelector(tab)?.getAttribute("aria-describedby");
-        return described ? (document.getElementById(described)?.textContent ?? "") : "";
+        const [, badge] = (
+          document.querySelector(tab)?.getAttribute("aria-labelledby") ?? ""
+        ).split(/\s+/);
+        return badge ? (document.getElementById(badge)?.textContent ?? "") : "";
       }, ASKS_TAB);
     await browser
       .waitUntil(async () => /, \+1 elsewhere$/.test(await handSays()), { timeout: 30_000 })

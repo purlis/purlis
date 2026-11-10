@@ -167,7 +167,7 @@ async function stoppedUpdate(name: RegExp) {
   if (screen.queryByRole("tabpanel", { name: "Updates" }) === null)
     await userEvent.click(
       within(screen.getByRole("tablist", { name: "Attention" })).getByRole("tab", {
-        name: "Updates",
+        name: /^Updates\b/,
       }),
     );
   const inbox = await screen.findByRole("tabpanel", { name: "Updates" });
