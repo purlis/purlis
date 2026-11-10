@@ -74,6 +74,8 @@ pub fn paused(session: u32, paused: &Paused, chain: Vec<String>) -> Shown {
         earlier_messages: None,
         secret: None,
         run: None,
+        expires: None,
+        blocks: None,
     }
 }
 
