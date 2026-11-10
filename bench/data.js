@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794285899708,
+  "lastUpdate": 1794290915733,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -45612,6 +45612,48 @@ window.BENCHMARK_DATA = {
             "value": 102.57631549999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.603, 102.462, 102.576, 103.074, 103.344 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "046e059e81fd83feaf8ae91431214d35f9b86060",
+          "message": "SK-5b/5c onto main after #6076: a named workspace skill on the chat's tab, and its runs are its copy's (#6040, #6041) (#6094)\n\nCarries #6082's diff (b98770782e..c4e74f39a3) onto main. #6076's runner\npath builds SkillsMissing too: it sets no_workspace and\nnot_in_its_workspace empty, since protocol 1.81's SkillsNotThere carries\nonly missing and no_built_in (#6078).\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71S8T5E0EPH2476K0G91P24\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T05:09:48Z",
+          "tree_id": "2dd33a4ddb38f5c1f911689f10689154511cf8df",
+          "url": "https://github.com/purlis/purlis/commit/046e059e81fd83feaf8ae91431214d35f9b86060"
+        },
+        "date": 1794290910385,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5388000000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.537, 0.538, 0.539, 0.550, 0.552 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.1733355,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.107, 16.147, 16.173, 16.212, 16.642 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.40789850000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.816, 101.002, 102.408, 102.861, 103.469 ms"
           }
         ]
       }
