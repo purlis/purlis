@@ -255,3 +255,5 @@
 {"reply":{"re":208,"ok":"done"}}
 {"call":{"id":209,"command":"programs_of","project":"01J9PRJCT00000000000000000"}}
 {"reply":{"re":209,"ok":{"programs":[{"program":"01J9ZQ5000000000000000000J","kind":"harness","number":15,"process":4247,"sandbox":"off","cols":80,"rows":24,"skills_not_there":{"missing":["deploy-tools"],"no_workspace":["workspaces/ghost:x"],"not_in_its_workspace":["workspaces/ops:nope"],"broken":[{"name":"half-made","level":"project","why":"its SKILL.md opens with no frontmatter"}],"by_a_repo":[{"name":"deploy","level":"workspace","local":true,"why":"the repo has a narrower deploy of its own"}],"beside_a_built_in":["purlis-secrets"]}}]}}}
+{"call":{"id":210,"command":"change_reach","confinement":"01J9CNFNMNT0000000000000000","change":"hold_asks_open","open":true}}
+{"reply":{"re":210,"ok":{"reach_changed":{"retry":[]}}}}

@@ -1288,8 +1288,9 @@ export const ALLOWED_LATELY = "Allowed in the last day";
  * answered elsewhere since.
  */
 export function landOnGroup(session: number, source?: Shown["source"]): boolean {
+  // Its own group, or the identical requests it joins (#6009), whose row answers it too.
   const group = document.querySelector<HTMLElement>(
-    `section.inbox .inbox-chat[data-session="${session}"]`,
+    `section.inbox .inbox-chat[data-session="${session}"], section.inbox .inbox-chat[data-sessions~="${session}"]`,
   );
   // At the ask it came for, where it names one (#5215), else the group's first: the row itself,
   // a row of the list family's (#3123).

@@ -2950,17 +2950,40 @@ impl Hooks {
 
     /// Answers chat `session`'s ask `ask` with `option`, as the operator in the window, on the
     /// hook that waits on it; then tells the window the asks as they now are, answered or not.
-    pub fn answer(&self, session: u32, ask: &str, option: &str) -> Result<(), String> {
+    ///
+    /// **An ask whose hook timed out is answered all the same** (#6007): the answer waits for
+    /// the chat's same request ([`purlis_core::harness::hooked::lapsed`]), and is handed back
+    /// for the chat to be told.
+    pub fn answer(
+        &self,
+        session: u32,
+        ask: &str,
+        option: &str,
+    ) -> Result<Option<purlis_core::harness::hooked::lapsed::Late>, String> {
+        use purlis_core::harness::asks::Refused;
         let id: purlis_core::harness::asks::AskId = ask.parse()?;
-        let answered = self.asks.answer(
-            &session.to_string(),
-            &id,
-            option,
-            crate::asking::the_window(),
-            std::time::Instant::now(),
-        );
+        let chat = session.to_string();
+        let now = std::time::Instant::now();
+        let answered = match self
+            .asks
+            .answer(&chat, &id, option, crate::asking::the_window(), now)
+        {
+            Ok(_) => Ok(None),
+            Err(refused @ (Refused::TimedOut | Refused::Unknown)) => {
+                // Past its deadline but not yet seen so: it lapses now, and is answered so.
+                self.asks.time_out(now);
+                match self
+                    .asks
+                    .answer_late(&chat, &id, option, crate::asking::the_window(), now)
+                {
+                    Err(Refused::Unknown) => Err(refused),
+                    late => late.map(Some),
+                }
+            }
+            Err(refused) => Err(refused),
+        };
         crate::asking::tell(&self.plane, &self.asks, &self.asks_told);
-        answered.map(|_| ()).map_err(|refused| refused.to_string())
+        answered.map_err(|refused| refused.to_string())
     }
 
     /// Records every hook call this project's channel hears into `events` from now on (FD-9).

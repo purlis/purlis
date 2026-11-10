@@ -1527,6 +1527,9 @@ impl Held {
         self.pool_tools.forget(session);
         // And what it waits on or declined of a vault (#5068).
         self.secret_asks.forget(session);
+        // And its permission asks that timed out, with any answer that waited for its same
+        // request (#6007).
+        self.hooks.asks().forget(&session.to_string());
         // Its browsers end with it (#2013), and leave its rows and its tab (#2024); a pinned
         // one runs on, listed by what the chat was called (#2022).
         let was = self
@@ -1994,7 +1997,22 @@ impl Held {
             .ok()
             .and_then(|id| self.hooks.asks().asker_of(&id))
             .unwrap_or(purlis_core::harness::hooked::Asker::Unread);
-        self.hooks.answer(session, ask, option)?;
+        // **An ask that timed out** (#6007): its hook has gone, so the answer waits for the
+        // chat's same request, and the chat is told on its next turn to make it again. The
+        // board is not moved: the chat still waits on its harness's own prompt, if it does.
+        if let Some(late) = self.hooks.answer(session, ask, option)? {
+            self.chats.tell_outcome(
+                session,
+                purlis_core::askoutcome::Outcome {
+                    about: purlis_core::askoutcome::About::Permission { asked: late.said },
+                    answer: purlis_core::askoutcome::Answer::AnsweredLate {
+                        allowed: late.choice.kind == purlis_core::harness::model::ChoiceKind::Allow,
+                    },
+                },
+            );
+            self.chats.asks_may_have_moved();
+            return Ok(());
+        }
         if let Some(moved) = self.board().answered_by(session, &asker) {
             (self.tell)(moved);
         }

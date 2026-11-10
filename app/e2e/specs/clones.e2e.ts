@@ -240,6 +240,17 @@ async function theChipsCardIsBack(workspace: string): Promise<void> {
   }, workspace);
 }
 
+/** Until `workspace`'s chip's card says `words`, brought back each time it went behind its dot. */
+async function untilTheChipsCardSays(workspace: string, words: string, why: string) {
+  await browser.waitUntil(
+    async () => {
+      if (!(await $(cardOf(workspace)).isExisting())) await theChipsCardIsBack(workspace);
+      return ((await textOf(cardOf(workspace))) ?? "").includes(words);
+    },
+    { timeout: 30_000, interval: 1_000, timeoutMsg: why },
+  );
+}
+
 /** The workspace `name` made in its dialog with `repos` picked: its clones run on its chip. */
 async function aNewWorkspaceCloning(name: string, repos: string[]): Promise<void> {
   // Before the card comes: a press anywhere else hides it.
@@ -341,13 +352,26 @@ async function pictures(name: string, parts: Record<string, string>): Promise<vo
     await (await $(css)).saveScreenshot(join(WHERE_SHOTS_GO, `${name}-${part}.png`));
 }
 
-/** Nothing of the repo anywhere in the workspace, finished or hidden. */
+/** What `dir` holds, and nothing where there is no `dir`: one read, never a look and then a
+ *  read, since the core takes away a `repos/` its clone run made and left empty (#5534, #6140). */
+function entriesOf(dir: string): string[] {
+  try {
+    return readdirSync(dir);
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw err;
+  }
+}
+
+/**
+ * Nothing of the repo anywhere in the workspace, finished or hidden. Asked only once the window
+ * has said the clone answered: until then the core may still be taking away what it made.
+ */
 function nothingOf(plane: string, workspace: string, repo: string): void {
   const { landed, hidden } = foldersOf(plane, workspace, repo);
   const ws = join(plane, "workspaces", workspace);
-  const repos = join(ws, "repos");
-  const there = [...readdirSync(ws), ...(existsSync(repos) ? readdirSync(repos) : [])].filter(
-    (one) => one.includes(repo),
+  const there = [...readdirSync(ws), ...entriesOf(join(ws, "repos"))].filter((one) =>
+    one.includes(repo),
   );
   expect({ landed: existsSync(landed), hidden: existsSync(hidden), there }).toEqual({
     landed: false,
@@ -573,16 +597,10 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
     // Its folder deleted by hand: the window has forgotten the clone, so the row offers it again.
     // Not before the clone has answered, or the window reads the deletion as a clone that failed.
     // Its result says so. No meter says nothing: a card behind its dot draws none either.
-    await browser.waitUntil(
-      async () => {
-        if (!(await $(cardOf("long-clone")).isExisting())) await theChipsCardIsBack("long-clone");
-        return ((await textOf(cardOf("long-clone"))) ?? "").includes("Cloned 1 repo");
-      },
-      {
-        timeout: 30_000,
-        interval: 1_000,
-        timeoutMsg: "the landed clone's notice never said it had cloned",
-      },
+    await untilTheChipsCardSays(
+      "long-clone",
+      "Cloned 1 repo",
+      "the landed clone's notice never said it had cloned",
     );
     rmSync(landed, { recursive: true, force: true });
     await $(`${rowOf("long-repo")} button[aria-label^="Clone"]`).waitForExist({
@@ -625,6 +643,12 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
       timeout: 30_000,
       timeoutMsg: "the row still shows a clone running",
     });
+    // The row offers the clone again only once it has answered stopped, after the core took away
+    // what it made (#6140): no meter alone would also be a row not drawn. The disk is read after.
+    await $(`${rowOf(repo)} button[aria-label^="Clone"]`).waitForExist({
+      timeout: 30_000,
+      timeoutMsg: "the stopped clone's row never offered it again",
+    });
     nothingOf(plane, "stopped-row", repo);
   });
 
@@ -649,6 +673,13 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
       timeout: 30_000,
       timeoutMsg: "the hidden folder outlived the Cancel",
     });
+    // The hidden folder goes first and the empty `repos/` after it, both before the clone answers
+    // (#6140): the card says Stopped only once it has, so the disk is read after that.
+    await untilTheChipsCardSays(
+      "stopped-card",
+      `Stopped cloning ${repo}`,
+      "the stopped clone's card never said it had stopped",
+    );
     nothingOf(plane, "stopped-card", repo);
   });
 

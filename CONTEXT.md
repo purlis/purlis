@@ -1431,10 +1431,18 @@ stops no chat is a **Notice**, and a chat that cannot tell purlis it waits is ne
 _Avoid_: urgent, priority, blocker
 
 **Expiring ask**:
-A **Blocking ask** with a deadline, listed first in Asks with its countdown. While **Quiet** it is
-held open past its time, and one that timed out stays answerable: the answer tells the chat to
-try again (ADR 0121).
+A **Blocking ask** with a deadline, listed first in Asks with its countdown. While **Quiet** one
+whose timer is purlis's own (a held connection) is held open past its time; one whose timer is
+its harness's times out, and becomes a **timed-out ask** (ADR 0121).
 _Avoid_: urgent ask, timeout
+
+**Timed-out ask**:
+An **Expiring ask** whose time ran out with nobody's answer, still listed after the live
+Expiring asks and still answerable: "Timed out. Answer, and the chat is told to try again." Only
+an ask whose answer still reaches its chat is kept so: a permission prompt, whose answer waits
+for the chat's same request; a held connection; a run grant; a Secret ask (ADR 0121, amended
+2026-11-10).
+_Avoid_: expired ask, stale ask
 
 **New**:
 Not yet seen: an ask, **Notice** or **Update** whose row has not been visible in an open view for

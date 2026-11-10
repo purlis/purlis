@@ -402,6 +402,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       ACTION +
       ". An ask's answer, or a reply, the source refused: said in that ask's own row, which stays (#1692); a task's answer given in its row that the core refused, said under its box with what was typed kept (#5651)",
   },
+  "SameAskRow.tsx": {
+    count: 1,
+    why:
+      ACTION +
+      ". Allow for all that a source refused for some of the chats: said in the group's own row, which stays, naming the chat (#6009)",
+  },
   "KillSwitch.tsx": {
     count: 1,
     why: "the kill switch's refusal, on the title bar control it belongs to",

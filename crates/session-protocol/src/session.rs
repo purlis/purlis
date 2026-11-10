@@ -540,9 +540,21 @@ use crate::view::{Limits, Views};
 /// repo skill named like a built-in one ([`SkillsNotThere`]). And `programs` carries it too, so a
 /// window that takes the chat back says it again. A host before 1.83 says only 1.81's, and only
 /// to its start.
+///
+/// 1.84 holds a confinement's live asks open while the person is Quiet (#6007, ADR 0121 decision
+/// 13): [`ReachChange::HoldAsksOpen`] on [`Command::ChangeReach`] says whether a connection held
+/// past its minute waits on, at most `purlis_core::sandbox::asks::MOST_HELD_OPEN` in all. A host
+/// before 1.84 is not sent it, and its connections time out at their minute as before.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 83,
+    minor: 84,
+};
+
+/// The version that first holds a confinement's live asks open while the person is Quiet
+/// ([`ReachChange::HoldAsksOpen`], #6007): none is sent to a host before.
+pub const KNOWS_HOLD_ASKS_OPEN: Version = Version {
+    major: 1,
+    minor: 84,
 };
 
 /// The version that first notes a chat's strays ([`Command::NoteStrays`], #5806): none is
@@ -1584,6 +1596,10 @@ pub enum ReachChange {
     KeepBlocked { host: String },
     /// `port` of the machine is carried no longer.
     WithdrawPort { port: u16 },
+    /// Whether a connection held past its hold waits on (1.84, #6007): `true` while the person
+    /// is Quiet, and `false` as Quiet ends, when one past its hold times out at once (ADR 0121
+    /// decision 13). Taken by a confinement whose proxy asks nobody as a change of nothing.
+    HoldAsksOpen { open: bool },
 }
 
 /// Where a confinement is, as the host started it (1.4): its proxy's ports on the loopback

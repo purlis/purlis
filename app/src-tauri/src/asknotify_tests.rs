@@ -29,6 +29,7 @@ fn ask(session: u32, key: &str, says: &str, source: AskSource) -> Shown {
         held_until: None,
         expires: None,
         blocks: None,
+        timed_out: None,
         writes: None,
         lines: None,
         last_message: None,

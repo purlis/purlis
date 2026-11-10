@@ -279,6 +279,36 @@ describe("the asks, grouped by chat", () => {
     expect(seconds()).toBe(left - 5);
   });
 
+  it("lists a timed-out ask after an Expiring one, says the chat is told, and answers it (#6007)", async () => {
+    const calls = core();
+    const now = Math.floor(Date.now() / 1000);
+    const older: Shown = { ...permission(3, "a", ["steward 3"], "Run ls"), since: now - 600 };
+    const timedOut: Shown = {
+      ...permission(5, "b", ["steward 5"], "Run npm test"),
+      since: now - 120,
+      timed_out: now - 60,
+    };
+    const expiring: Shown = {
+      ...permission(7, "c", ["steward 7"], "Run make"),
+      since: now - 10,
+      expires: now + 40,
+    };
+    draw([older, timedOut, expiring]);
+    expect(chats()).toEqual(["steward 7", "steward 5", "steward 3"]);
+    expect(
+      within(chatGroup("steward 5")).getByText(
+        "Timed out. Answer, and the chat is told to try again.",
+      ),
+    ).toBeTruthy();
+    await userEvent.click(within(chatGroup("steward 5")).getByRole("button", { name: "Allow" }));
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "answer_ask",
+        args: { plane: PLANE, session: 5, ask: "b", option: "allow" },
+      }),
+    );
+  });
+
   it("puts a new ask in its place by its facts and keeps an Answer open where it was (#6006)", () => {
     core();
     const now = Math.floor(Date.now() / 1000);
@@ -1486,7 +1516,7 @@ describe("the keyboard after an answer (#1700)", () => {
     allow.focus();
     act(() => allow.blur());
 
-    again([first, second, permission(5, "01J0C", ["steward 5"])]);
+    again([first, second, permission(5, "01J0C", ["steward 5"], "Run cargo fmt")]);
 
     expect(document.activeElement).toBe(document.body);
   });

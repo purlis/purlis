@@ -454,6 +454,9 @@ pub struct HookAsks {
     waiting: Mutex<HashMap<AskId, Waiter>>,
     /// The app's own record of each chat's harness, once it is wired ([`Self::reading_by`]).
     recorded: Mutex<Option<Record>>,
+    /// Each ask that timed out, still answerable, and each answer waiting for its chat's same
+    /// request (#6007).
+    lapsing: Mutex<lapsed::Lapsing>,
 }
 
 /// [`Recorded`], held: said only as whether it is wired.
@@ -479,6 +482,7 @@ impl HookAsks {
             asks,
             waiting: Mutex::new(HashMap::new()),
             recorded: Mutex::new(None),
+            lapsing: Mutex::default(),
         }
     }
 
@@ -504,6 +508,12 @@ impl HookAsks {
 
     fn waiting(&self) -> std::sync::MutexGuard<'_, HashMap<AskId, Waiter>> {
         self.waiting
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn lapsing(&self) -> std::sync::MutexGuard<'_, lapsed::Lapsing> {
+        self.lapsing
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
@@ -545,14 +555,28 @@ impl HookAsks {
             return Err(NotRaised::NotItsHarness);
         }
         let mut waiting = self.waiting();
-        let open = waiting.values().filter(|w| w.chat == chat).count();
-        if open >= MOST_OPEN_ASKS {
-            return Err(NotRaised::TooMany);
-        }
         let left = HOOK_TIMEOUT.saturating_sub(ran_for);
         let asked = ask_within(source, payload, left);
         if asked.deadline == super::model::Deadline::None {
             return Err(NotRaised::TooLate);
+        }
+        // **Answered already** (#6007): the person answered this same request of this chat's
+        // after it timed out, so its hook is told that answer at once and no one is asked.
+        if let Some(choice) = self.lapsing().asked(chat, &asked, now) {
+            let (tell, answered) = mpsc::channel();
+            let _ = tell.send(choice);
+            return Ok(Held {
+                raised: Raised {
+                    id: AskId::new(),
+                    chat: chat.to_owned(),
+                    ask: asked,
+                },
+                answered,
+            });
+        }
+        let open = waiting.values().filter(|w| w.chat == chat).count();
+        if open >= MOST_OPEN_ASKS {
+            return Err(NotRaised::TooMany);
         }
         let raised = self.asks.raise(chat, asked, now).raised;
         let (tell, answered) = mpsc::channel();
@@ -607,14 +631,61 @@ impl HookAsks {
     }
 
     /// Stops holding every ask past its deadline at `now`, and says which, so each hook can
-    /// decide nothing and let the harness's own prompt ask.
+    /// decide nothing and let the harness's own prompt ask. Each stays answerable as lapsed
+    /// ([`lapsed`], #6007).
     pub fn time_out(&self, now: Instant) -> Vec<AskId> {
         let mut waiting = self.waiting();
-        let late = self.asks.expire(now);
-        for id in &late {
+        let late = self.asks.expire_raised(now);
+        let mut lapsing = self.lapsing();
+        late.into_iter()
+            .map(|(raised, at)| {
+                waiting.remove(&raised.id);
+                let id = raised.id.clone();
+                lapsing.lapse(raised, at, now);
+                id
+            })
+            .collect()
+    }
+
+    /// **Hook ask `id`'s hook gave up on it at `now`** (#6007): it stops being held, and stays
+    /// answerable as lapsed, whether or not this clock sees it past its deadline yet.
+    pub fn lapse(&self, id: &AskId, now: Instant) {
+        let mut waiting = self.waiting();
+        let mut lapsing = self.lapsing();
+        if let Some((raised, at)) = self.asks.time_out_one(id) {
             waiting.remove(id);
+            lapsing.lapse(raised, at, now);
         }
-        late
+        drop(lapsing);
+        drop(waiting);
+        self.time_out(now);
+    }
+
+    /// Every hook ask that timed out and is still answerable at `now`, oldest first (#6007).
+    pub fn lapsed(&self, now: Instant) -> Vec<lapsed::Lapsed> {
+        self.lapsing().listed(now)
+    }
+
+    /// **Answers lapsed ask `id` of chat `chat`** with `choice`, from `by`, at `now` (#6007):
+    /// no hook waits on it any more, so the answer waits for the chat's same request instead,
+    /// and is what the chat is told on its next turn. Checked as an answer to a live ask is: an
+    /// ask only the window draws in full is answered only there.
+    pub fn answer_late(
+        &self,
+        chat: &str,
+        id: &AskId,
+        choice: &str,
+        by: Answerer,
+        now: Instant,
+    ) -> Result<lapsed::Late, Refused> {
+        self.lapsing().answer(chat, id, choice, now, |ask, chosen| {
+            super::asks::may_answer_with(ask, chosen, by)
+        })
+    }
+
+    /// Chat `chat` ended: none of its lapsed asks, nor any answer waiting for it, is kept.
+    pub fn forget(&self, chat: &str) {
+        self.lapsing().forget(chat);
     }
 
     /// Every ask still waiting at `now`, oldest first.
@@ -628,8 +699,12 @@ impl HookAsks {
     }
 }
 
+pub mod lapsed;
+
 #[cfg(test)]
 mod edit_tests;
+#[cfg(test)]
+mod lapsed_tests;
 #[cfg(test)]
 mod question_tests;
 #[cfg(test)]

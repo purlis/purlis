@@ -23,6 +23,11 @@
 //! - **Keep blocked** refuses what is held on that host now and what comes after, until an Allow.
 //! - **Bounded.** At most [`MOST_HELD`] connections are held at once; one more is refused at
 //!   once, as before, and not asked about ([`Answer::Busy`]).
+//! - **Held open while the person is Quiet** (ADR 0121 decision 13, #6007). While the window
+//!   says so ([`Asks::hold_open`]), a held connection past its [`HOLD`] waits on, up to
+//!   [`MOST_HELD_OPEN`] in all; once it says no more, one past its hold times out at once, and
+//!   its ask stays with the person as any timed-out one does. The program's own connect timeout
+//!   and its harness's command timeout still bound it: purlis holds, it cannot make them wait.
 //! - **Nobody to ask.** Where no Notice can be raised ([`Asks::asking_while`]: the project's
 //!   hooks are not listening yet, or the chat has no number yet), a connection is refused at
 //!   once, as before, and not held a minute for an ask nobody sees ([`Answer::NobodyToAsk`]).
@@ -36,6 +41,10 @@ use super::reach::By;
 
 /// How long a held connection waits for the person: about a minute (N-6).
 pub const HOLD: Duration = Duration::from_secs(60);
+
+/// The most a connection is held while held open past its hold (#6007): what keeps a Quiet
+/// that lasts all afternoon from holding a connection all afternoon.
+pub const MOST_HELD_OPEN: Duration = Duration::from_secs(15 * 60);
 
 /// How close together new hosts from one chat must come to be one ask (N-10).
 pub const GROUP: Duration = Duration::from_secs(2);
@@ -94,6 +103,8 @@ struct State {
     /// The ask being gathered: its targets, and when it is told.
     gathering: Option<(Vec<String>, Instant)>,
     holding: usize,
+    /// Whether a connection past its hold waits on ([`Asks::hold_open`], #6007).
+    held_open: bool,
 }
 
 /// **One chat's live asks** (module docs).
@@ -103,6 +114,8 @@ pub struct Asks {
     tell: Tell,
     hold: Duration,
     group: Duration,
+    /// The most a connection is held while held open ([`MOST_HELD_OPEN`]).
+    most_open: Duration,
     known: Option<Known>,
     askable: Option<Askable>,
 }
@@ -136,9 +149,27 @@ impl Asks {
             tell,
             hold,
             group,
+            most_open: MOST_HELD_OPEN,
             known: None,
             askable: None,
         }
+    }
+
+    /// This board, holding a connection open at most `most` in all ([`MOST_HELD_OPEN`]).
+    #[must_use]
+    pub fn held_open_at_most(self, most: Duration) -> Self {
+        Self {
+            most_open: most,
+            ..self
+        }
+    }
+
+    /// **Whether a held connection past its hold waits on** (ADR 0121 decision 13, #6007): the
+    /// window says so while the person is Quiet, and no more when Quiet ends, when one past its
+    /// hold times out at once.
+    pub fn hold_open(&self, open: bool) {
+        self.state().held_open = open;
+        self.changed.notify_all();
     }
 
     /// This board, letting a connection on at once, never held or asked about, where `known`
@@ -226,7 +257,9 @@ impl Asks {
             return Answer::NobodyToAsk;
         }
         state.holding += 1;
-        let deadline = Instant::now() + self.hold;
+        let began = Instant::now();
+        let deadline = began + self.hold;
+        let most = began + self.most_open.max(self.hold);
         // Asked once: a host already asked about, and not answered, waits on that ask.
         if !state.asked.contains(&target) {
             state.asked.push(target.clone());
@@ -257,13 +290,15 @@ impl Asks {
                 state = self.state();
                 continue;
             }
-            if now >= deadline {
+            // Past its hold, it waits on only while held open, and never past the most.
+            if now >= deadline && (!state.held_open || now >= most) {
                 break Answer::TimedOut;
             }
+            let ends = if now >= deadline { most } else { deadline };
             let until = state
                 .gathering
                 .as_ref()
-                .map_or(deadline, |(_, at)| (*at).min(deadline));
+                .map_or(ends, |(_, at)| (*at).min(ends));
             state = self
                 .changed
                 .wait_timeout(state, until.saturating_duration_since(now))

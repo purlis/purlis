@@ -141,6 +141,15 @@ pub struct Shown {
     /// Absent where none does.
     #[specta(optional)]
     pub blocks: Option<u32>,
+    /// **When its wait ended with nobody's answer** (ADR 0121 decision 15, #6007), in seconds
+    /// since 1970: a **timed-out ask**, still listed and still answerable, whose row says
+    /// "Timed out. Answer, and the chat is told to try again." Present only where an answer
+    /// still reaches the chat: a permission hook's ask, whose answer waits for the chat's same
+    /// request; a held connection that gave up, whose Allow the chat is told to retry; a run
+    /// grant and a Secret ask, which the core holds open past their command. Never with
+    /// [`Self::expires`].
+    #[specta(optional)]
+    pub timed_out: Option<u32>,
     /// **What an edit would write** (#1146): each change, drawn before its Allow, or why it is
     /// not shown and no Allow is offered. Absent for any other ask.
     #[specta(optional)]
@@ -701,6 +710,7 @@ pub fn permission(raised: Raised) -> Option<Shown> {
         held_until: None,
         expires: None,
         blocks: None,
+        timed_out: None,
         writes,
         lines,
         last_message: None,
@@ -972,6 +982,7 @@ pub fn dispatch(told: &crate::dispatchgrants::DispatchPending) -> Shown {
         held_until: None,
         expires: None,
         blocks: None,
+        timed_out: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -1021,6 +1032,7 @@ pub fn sandbox_host(
             held_until: None,
             expires: None,
             blocks: None,
+            timed_out: None,
             writes: None,
             lines: None,
             last_message: None,
@@ -1062,6 +1074,7 @@ pub fn sandbox_host(
         held_until: None,
         expires: None,
         blocks: None,
+        timed_out: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -1132,6 +1145,7 @@ pub fn sandbox_write(
             held_until: None,
             expires: None,
             blocks: None,
+            timed_out: None,
             writes: None,
             lines: None,
             last_message: None,
@@ -1163,6 +1177,7 @@ pub fn sandbox_write(
         held_until: None,
         expires: None,
         blocks: None,
+        timed_out: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -1234,6 +1249,7 @@ pub fn sandbox_runner(
         held_until: None,
         expires: None,
         blocks: None,
+        timed_out: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -1316,6 +1332,7 @@ pub fn sandbox_port(
         held_until: None,
         expires: None,
         blocks: None,
+        timed_out: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -1395,6 +1412,7 @@ pub fn sandbox_local(
         held_until: None,
         expires: None,
         blocks: None,
+        timed_out: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -1441,6 +1459,7 @@ pub fn terminal(
         held_until: None,
         expires: None,
         blocks: None,
+        timed_out: None,
         writes: None,
         lines: None,
         last_message: asked,
@@ -1468,6 +1487,7 @@ pub fn question(session: u32, last_message: Option<String>, earlier: Vec<String>
         held_until: None,
         expires: None,
         blocks: None,
+        timed_out: None,
         writes: None,
         lines: None,
         last_message,
@@ -1504,6 +1524,7 @@ pub fn task_question(
         held_until: None,
         expires: None,
         blocks: None,
+        timed_out: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -1567,6 +1588,7 @@ pub fn workspace_removal(
         held_until: None,
         expires: None,
         blocks: None,
+        timed_out: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -1687,6 +1709,7 @@ pub fn browser_posture(
         held_until: None,
         expires: None,
         blocks: None,
+        timed_out: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -1759,6 +1782,7 @@ pub fn browser_needs_you(waiting: &crate::browserneedsyou::Waiting) -> Shown {
         held_until: None,
         expires: None,
         blocks: None,
+        timed_out: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -1834,6 +1858,7 @@ pub fn secret_fill(
         held_until: None,
         expires: None,
         blocks: None,
+        timed_out: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -1943,6 +1968,7 @@ pub fn browser_login(
         held_until: None,
         expires: None,
         blocks: None,
+        timed_out: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -2047,6 +2073,7 @@ pub fn pool_login(waits: &crate::chatbrowsers::PoolLoginWaits) -> Shown {
         held_until: None,
         expires: None,
         blocks: None,
+        timed_out: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -2116,6 +2143,7 @@ pub fn pool_tool(waits: &crate::pooltools::PoolToolWaits) -> Shown {
         held_until: None,
         expires: None,
         blocks: None,
+        timed_out: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -2201,6 +2229,7 @@ pub fn vault_refused(one: &crate::vaultroute::VaultRefused) -> Shown {
         held_until: None,
         expires: None,
         blocks: None,
+        timed_out: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -2349,6 +2378,7 @@ pub fn secret_ask(open: &purlis_core::secrets::ask::Open, may_remember: bool) ->
         held_until: None,
         expires: None,
         blocks: None,
+        timed_out: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -2539,6 +2569,7 @@ pub fn run_grant(
         held_until: None,
         expires: None,
         blocks: None,
+        timed_out: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -2647,6 +2678,7 @@ pub fn browser_sites(
         held_until: None,
         expires: None,
         blocks: None,
+        timed_out: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -2879,6 +2911,7 @@ pub fn proposed_change(
         held_until: None,
         expires: None,
         blocks: None,
+        timed_out: None,
         writes,
         lines: None,
         last_message: None,
@@ -2912,6 +2945,7 @@ pub fn runner_dispatch(one: &crate::runnerdispatches::HeldDispatch) -> Shown {
         held_until: None,
         expires: None,
         blocks: None,
+        timed_out: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -2973,6 +3007,7 @@ pub fn runner_write(one: &crate::runnerwrites::HeldWrite) -> Shown {
         held_until: None,
         expires: None,
         blocks: None,
+        timed_out: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -3035,6 +3070,7 @@ pub fn sign_in(wait: &purlis_core::profilestore::sign_in::Wait) -> Shown {
         held_until: None,
         expires: None,
         blocks: None,
+        timed_out: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -3097,6 +3133,7 @@ pub fn pool_sign_in(wait: &purlis_core::profilestore::onrunner::PoolWait) -> Sho
         held_until: None,
         expires: None,
         blocks: None,
+        timed_out: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -3175,6 +3212,7 @@ pub fn sandbox_only(wait: &purlis_core::profilestore::sandbox_only::Wait) -> Sho
         held_until: None,
         expires: None,
         blocks: None,
+        timed_out: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -3211,6 +3249,7 @@ pub fn old_harness_plugins(old: &crate::oldplugins::OldHarnessPlugins) -> Shown 
         held_until: None,
         expires: None,
         blocks: None,
+        timed_out: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -3332,6 +3371,7 @@ pub fn signing_waiting(root: &std::path::Path, on: impl FnOnce() -> bool) -> Opt
         held_until: None,
         expires: None,
         blocks: None,
+        timed_out: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -3465,6 +3505,12 @@ pub struct Waiting<'a> {
     pub expires: &'a dyn Fn(&str) -> Option<u32>,
     /// How many open chats wait on chat `session`'s report, where any does (#6006).
     pub chats_waiting: &'a dyn Fn(u32) -> Option<u32>,
+    /// When an ask's wait ended with nobody's answer, by its key, where it is still answerable
+    /// (#6007).
+    pub timed_out: &'a dyn Fn(&str) -> Option<u32>,
+    /// Whether the person is Quiet, so a held connection is held open past its minute and is no
+    /// Expiring ask (ADR 0121 decision 13, #6007).
+    pub held_open: bool,
     /// The name of the runner a chat runs on, where its runner left a service out of its plan
     /// (#2510).
     pub runner_of: &'a dyn Fn(u32) -> Option<String>,
@@ -3554,7 +3600,15 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
             .iter()
             .map(|open| secret_ask(open, (waiting.may_remember)(&open.persona))),
     );
-    let said: std::collections::HashSet<u32> = asks.iter().map(|ask| ask.session).collect();
+    // A permission ask that timed out says nothing of the chat's wait (#6007): its harness's own
+    // prompt still waits in the pane, and only the pane answers it, so it is listed too.
+    let said: std::collections::HashSet<u32> = asks
+        .iter()
+        .filter(|ask| {
+            ask.source != AskSource::Permission || (waiting.timed_out)(&ask.ask).is_none()
+        })
+        .map(|ask| ask.session)
+        .collect();
     // About no chat: a profile that waits to be signed in (#2035).
     let signing = asks.len();
     asks.extend(waiting.sign_ins.iter().map(sign_in));
@@ -3614,7 +3668,20 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
         ask.since = (waiting.since)(&ask.ask);
         // **The facts Asks orders by** (ADR 0121 decision 5, #6006): when it ends by itself,
         // and how many chats wait on its chat. An ask of no chat's blocks none.
-        ask.expires = ask.held_until.or_else(|| (waiting.expires)(&ask.ask));
+        // A held connection held open while the person is Quiet ends at no time of its own
+        // (#6007): its hold is still said, so the window reads it again.
+        ask.expires = match ask.held_until {
+            Some(_) if waiting.held_open => None,
+            Some(until) => Some(until),
+            None => (waiting.expires)(&ask.ask),
+        };
+        // **Timed out, and answerable still** (ADR 0121 decision 15, #6007): never while it
+        // is Expiring, as a connection held again is.
+        ask.timed_out = if ask.expires.is_none() {
+            (waiting.timed_out)(&ask.ask)
+        } else {
+            None
+        };
         ask.blocks = if ask.session == 0 {
             None
         } else {
@@ -3723,7 +3790,16 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     let store = held.dispatch_grants();
     let now = Instant::now();
     let now_secs = crate::sandboxing::now_secs();
-    let permissions = held.hooks().asks().pending_since(now);
+    let mut permissions = held.hooks().asks().pending_since(now);
+    // **When each ask's wait ended unanswered, by its key** (ADR 0121 decision 15, #6007),
+    // where an answer still reaches the chat: a hook ask that lapsed, a held connection that
+    // gave up, a run grant and a Secret ask past their command's hold.
+    let mut timed_out: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
+    let ago = |at: Instant| now_secs.saturating_sub(now.saturating_duration_since(at).as_secs());
+    for lapsed in held.hooks().asks().lapsed(now) {
+        timed_out.insert(lapsed.raised.id.to_string(), ago(lapsed.ended));
+        permissions.push((lapsed.raised, lapsed.at));
+    }
     let held_blocks = chats.blocks().every_since();
     let waiting_dispatches = store.every_waiting();
     // When each ask began, by its key (#1700): a hook ask's raise, read back from how long ago
@@ -3751,6 +3827,9 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     for (session, block, first) in &held_blocks {
         if let Some(first) = first {
             since.insert(block_key(*session, block), *first);
+        }
+        if let Some(gave_up) = chats.blocks().gave_up_at(*session, block) {
+            timed_out.insert(block_key(*session, block), gave_up);
         }
     }
     let removals: Vec<_> = crate::removalasks::waiting(held)
@@ -3835,10 +3914,12 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     let run_grants = held.secret_asks().open_runs();
     for one in &run_grants {
         since.insert(run_grant_key(one.id), one.since);
-        expires.insert(
-            run_grant_key(one.id),
-            one.since.saturating_add(command_holds(one.bound.chat)),
-        );
+        let ends = one.since.saturating_add(command_holds(one.bound.chat));
+        expires.insert(run_grant_key(one.id), ends);
+        // Its command gave up, and the core holds it open still (#6007).
+        if ends <= now_secs {
+            timed_out.insert(run_grant_key(one.id), ends);
+        }
     }
     let secrets = held.secret_asks().open();
     let may_remember = |persona: &str| crate::proposals::need_offerable(held.root(), persona);
@@ -3855,10 +3936,11 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     for one in &secrets {
         since.insert(secret_key(one.id), one.since);
         if let Some(chat) = one.chats.first() {
-            expires.insert(
-                secret_key(one.id),
-                one.since.saturating_add(command_holds(*chat)),
-            );
+            let ends = one.since.saturating_add(command_holds(*chat));
+            expires.insert(secret_key(one.id), ends);
+            if ends <= now_secs {
+                timed_out.insert(secret_key(one.id), ends);
+            }
         }
     }
     let vaults: Vec<_> = held
@@ -3949,6 +4031,12 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
                 .map(|at| u32::try_from(*at).unwrap_or(u32::MAX))
         },
         chats_waiting: &|session| chats_waiting.get(&session).copied(),
+        timed_out: &|ask| {
+            timed_out
+                .get(ask)
+                .map(|at| u32::try_from(*at).unwrap_or(u32::MAX))
+        },
+        held_open: crate::asknotify::holds_asks_open(),
         runner_of: &|session| chats.runner_of(session),
     };
     let task_questions: Vec<Shown> = crate::dispatched::reached_the_person(held)
