@@ -65,7 +65,9 @@ import { List, ListRowSection } from "./ui/list/List";
 import { chatsOf, SnoozeAll, type Snoozing } from "./AsksSnooze";
 
 import { chainSaid, NothingDone } from "./inboxRowParts";
-import { inOrder } from "./asksOrder";
+import { inOrder, type Standing } from "./asksOrder";
+import { withSame } from "./asksSame";
+import { SameAsk, samePlaces, sameRowKey } from "./SameAskRow";
 import { capMarks } from "./combiningMarks";
 import {
   ASKS,
@@ -484,15 +486,32 @@ export function Inbox({
   // chat elsewhere's, an update's. A row stands under what is above it, and an Allow on it waits
   // to settle whenever that changes (`useSettledPlace`), whatever draws the rows.
   // Not read yet, this project draws no ask: what waits elsewhere is still listed (qw359).
-  const askRows = drawsAsks && asks !== undefined ? rows : [];
+  /**
+   * **Identical requests from several chats are one row** (ADR 0121 decision 6, #6009), where
+   * each is a decision answered on its row: the group stands where its most urgent member did
+   * (`asksSame.ts`).
+   */
+  const sameRows = withSame(rows, (ask) => {
+    const shape = shapes.get(askKey(ask));
+    return shape?.decision === true ? shape.offers : [];
+  });
+  const askRows = drawsAsks && asks !== undefined ? sameRows : [];
+  const askPlaces = (ask: Shown) => {
+    const shape = shapes.get(askKey(ask)) ?? shapeOfAsk(ask);
+    const key = askKey(ask);
+    return placeIds(key, shape, shape.answers ? shape.offers : [], answering.has(key));
+  };
   const places = [
-    ...askRows
-      .flatMap((group) => group.asks)
-      .flatMap((ask) => {
-        const shape = shapes.get(askKey(ask)) ?? shapeOfAsk(ask);
-        const key = askKey(ask);
-        return placeIds(key, shape, shape.answers ? shape.offers : [], answering.has(key));
-      }),
+    ...askRows.flatMap((row) =>
+      row.kind === "chat"
+        ? row.group.asks.flatMap(askPlaces)
+        : [
+            ...samePlaces(row.same),
+            ...(answering.has(sameRowKey(row.same))
+              ? row.same.placed.flatMap(({ ask }) => askPlaces(ask))
+              : []),
+          ],
+    ),
     ...(drawsAsks ? elsewherePlaces(askingShown) : []),
     ...(drawsAsks ? herePlaces(othersShown) : []),
     ...(drawsUpdates ? updatePlaces(updatesShown) : []),
@@ -546,6 +565,39 @@ export function Inbox({
       onDot?.(dot);
     },
     [onNotices, onDot],
+  );
+
+  /** **One ask's row** (#5649), under its chat or under the identical requests it joins (#6009). */
+  const askRow = (ask: Shown, why: Standing) => (
+    <Ask
+      standing={why}
+      key={askKey(ask)}
+      plane={plane}
+      ask={ask}
+      dispatches={(asks ?? []).filter(
+        (one) => one.session === ask.session && one.source === "dispatch",
+      )}
+      shape={shapes.get(askKey(ask)) ?? shapeOfAsk(ask)}
+      open={answering.has(askKey(ask))}
+      onOpen={(open) => answerOpen(askKey(ask), open)}
+      where={whereOf(ask.session)}
+      now={now}
+      onGo={() => onGo(ask.session)}
+      onAnswered={onAnswered}
+      onIgnore={ignore === undefined ? undefined : () => ignore(ask)}
+      onSnooze={
+        snoozing === undefined
+          ? undefined
+          : () =>
+              void snoozing.snooze(
+                chatsOf((asks ?? []).filter((one) => one.session === ask.session)),
+                null,
+              )
+      }
+      onStop={onStop === undefined ? undefined : () => onStop(ask.session)}
+      onTouched={(answer) => touch(ask, answer)}
+      above={places.slice(0, places.indexOf(askKey(ask))).join("\n")}
+    />
   );
 
   const drawn = (
@@ -683,56 +735,58 @@ export function Inbox({
         ) : null}
         {drawsAsks && anyAsk && (
           <List aria-label={ASKS} className="inbox-rows" disallowTypeAhead>
-            {askRows.map((group) => (
-              <ListRowSection
-                key={group.session}
-                id={`chat:${group.session}`}
-                className="inbox-chat"
-                title={
-                  <span className="inbox-chain">
-                    {(() => {
-                      const persona = personaOf?.(group.session);
-                      return persona ? <PersonaMark persona={persona} /> : null;
-                    })()}
-                    {chainSaid(group.chain)}
-                  </span>
-                }
-                named
-                data-session={group.session}
-              >
-                {group.placed.map(({ ask, why }) => (
-                  <Ask
-                    standing={why}
-                    key={askKey(ask)}
-                    plane={plane}
-                    ask={ask}
-                    dispatches={(asks ?? []).filter(
-                      (one) => one.session === ask.session && one.source === "dispatch",
-                    )}
-                    shape={shapes.get(askKey(ask)) ?? shapeOfAsk(ask)}
-                    open={answering.has(askKey(ask))}
-                    onOpen={(open) => answerOpen(askKey(ask), open)}
-                    where={whereOf(ask.session)}
-                    now={now}
-                    onGo={() => onGo(ask.session)}
-                    onAnswered={onAnswered}
-                    onIgnore={ignore === undefined ? undefined : () => ignore(ask)}
-                    onSnooze={
-                      snoozing === undefined
-                        ? undefined
-                        : () =>
-                            void snoozing.snooze(
-                              chatsOf((asks ?? []).filter((one) => one.session === ask.session)),
-                              null,
-                            )
+            {askRows.map((row) => {
+              if (row.kind === "same") {
+                const key = sameRowKey(row.same);
+                const open = answering.has(key);
+                return (
+                  <ListRowSection
+                    key={key}
+                    id={`chats:${key}`}
+                    className="inbox-chat inbox-same-chats"
+                    title={
+                      <span className="inbox-chain">
+                        {row.same.placed.map(({ ask }) => chainSaid(ask.chain)).join(", ")}
+                      </span>
                     }
-                    onStop={onStop === undefined ? undefined : () => onStop(ask.session)}
-                    onTouched={(answer) => touch(ask, answer)}
-                    above={places.slice(0, places.indexOf(askKey(ask))).join("\n")}
-                  />
-                ))}
-              </ListRowSection>
-            ))}
+                    named
+                    data-sessions={row.same.placed.map(({ ask }) => ask.session).join(" ")}
+                  >
+                    <SameAsk
+                      plane={plane}
+                      same={row.same}
+                      open={open}
+                      onOpen={(to) => answerOpen(key, to)}
+                      above={places.slice(0, places.indexOf(key)).join("\n")}
+                      now={now}
+                      onAnswered={onAnswered}
+                    />
+                    {open && row.same.placed.map(({ ask, why }) => askRow(ask, why))}
+                  </ListRowSection>
+                );
+              }
+              const group = row.group;
+              return (
+                <ListRowSection
+                  key={group.session}
+                  id={`chat:${group.session}`}
+                  className="inbox-chat"
+                  title={
+                    <span className="inbox-chain">
+                      {(() => {
+                        const persona = personaOf?.(group.session);
+                        return persona ? <PersonaMark persona={persona} /> : null;
+                      })()}
+                      {chainSaid(group.chain)}
+                    </span>
+                  }
+                  named
+                  data-session={group.session}
+                >
+                  {group.placed.map(({ ask, why }) => askRow(ask, why))}
+                </ListRowSection>
+              );
+            })}
             {elsewhere !== undefined &&
               askingShown.map((item) => (
                 <ElsewhereGroup key={elsewhereKey(item)} item={item} onPress={elsewhere.onPress} />

@@ -1486,7 +1486,7 @@ describe("the keyboard after an answer (#1700)", () => {
     allow.focus();
     act(() => allow.blur());
 
-    again([first, second, permission(5, "01J0C", ["steward 5"])]);
+    again([first, second, permission(5, "01J0C", ["steward 5"], "Run cargo fmt")]);
 
     expect(document.activeElement).toBe(document.body);
   });
