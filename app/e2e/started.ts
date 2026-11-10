@@ -32,8 +32,7 @@ export const SELECTED_TAB = `${TABS} [role="tab"][aria-selected="true"]`;
 /**
  * **Waits until the tab in front says its chat is `state`**, by the accessible name of its state
  * mark ("working", "needs you", "idle"), and says what it said instead if it never does. Read in
- * one `execute`, as `acting.ts` asks. What stopped the wait is said too, so a window that went away
- * does not read only as a chat that never moved.
+ * one `execute`, as `acting.ts` asks.
  */
 export async function theChatInFrontSays(state: string): Promise<void> {
   let said = "";
@@ -48,10 +47,9 @@ export async function theChatInFrontSays(state: string): Promise<void> {
       },
       { timeout: 30_000, interval: 200 },
     );
-  } catch (why) {
-    const stopped = why instanceof Error ? why.message : String(why);
+  } catch {
     throw new Error(
-      `the chat never said ${JSON.stringify(state)}; it said ${JSON.stringify(said)} (${stopped})`,
+      `the chat never said ${JSON.stringify(state)}; it said ${JSON.stringify(said)}`,
     );
   }
 }
