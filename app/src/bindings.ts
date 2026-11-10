@@ -2415,6 +2415,13 @@ export const commands = {
 	missing: string[],
 	/**  Built-in skills purlis has none of: a typo, or a name from another version of purlis. */
 	no_built_in: string[],
+	/**
+	 *  Other workspaces' skills its persona names (`workspaces/<ws>:<name>`), where the project
+	 *  has no workspace of that name (SK-5b, #6040).
+	 */
+	no_workspace: string[],
+	/**  Other workspaces' skills its persona names, where that workspace has no skill of the name. */
+	not_in_its_workspace: string[],
 	/**  Skills the chat would have loaded that could not be loaded, each with why. */
 	broken: SkillBroken[],
 	/**  The project's skills the repo the chat works in leaves out, each with why (SK-53). */
@@ -17451,6 +17458,13 @@ export type SkillsMissing = {
 	missing: string[],
 	/**  Built-in skills purlis has none of: a typo, or a name from another version of purlis. */
 	no_built_in: string[],
+	/**
+	 *  Other workspaces' skills its persona names (`workspaces/<ws>:<name>`), where the project
+	 *  has no workspace of that name (SK-5b, #6040).
+	 */
+	no_workspace: string[],
+	/**  Other workspaces' skills its persona names, where that workspace has no skill of the name. */
+	not_in_its_workspace: string[],
 	/**  Skills the chat would have loaded that could not be loaded, each with why. */
 	broken: SkillBroken[],
 	/**  The project's skills the repo the chat works in leaves out, each with why (SK-53). */
@@ -18137,6 +18151,12 @@ export type StudioSkill = {
 	 *  shows (`purlis_core::skills::level_shown`).
 	 */
 	label: string,
+	/**
+	 *  The workspace a workspace's row is the copy of, where its persona names it by its
+	 *  workspace (`workspaces/<ws>:<name>`, SK-5c, #6041): what its changes act on, wherever the
+	 *  studio is. `None` for any other row, whose workspace is the one the studio shows.
+	 */
+	copy_workspace: string | null,
 	/**
 	 *  Whether it is a local skill, kept on this machine in its level's `skills.local/`, which
 	 *  Share makes shared.

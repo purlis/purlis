@@ -1185,11 +1185,7 @@ pub fn for_use_skill(chat: &Running<'_>) -> ChatSkills {
             let declared = declared(&effective.skill);
             Offered {
                 hidden: hidden(&effective.skill.name),
-                source_label: labels.of_skill(
-                    &effective.skill.name,
-                    effective.origin,
-                    effective.local,
-                ),
+                source_label: labels.of_effective(chat.plane, &effective),
                 takes_arguments: !declared.arguments.is_empty() || declared.hint.is_some(),
                 known_as: chat
                     .harness
@@ -1586,6 +1582,12 @@ pub struct NotHere {
     pub missing: Vec<String>,
     /// A built-in skill purlis has none of: a typo, or a name from another version of purlis.
     pub no_built_in: Vec<String>,
+    /// Another workspace's skill its persona names (`workspaces/<ws>:<name>`, SK-5b, #6040),
+    /// where the project has no workspace of that name ([`Reason::NoSuchWorkspace`]).
+    pub no_workspace: Vec<String>,
+    /// Another workspace's skill its persona names, where that workspace has no skill of that
+    /// name ([`Reason::NotInItsWorkspace`]).
+    pub not_in_its_workspace: Vec<String>,
     /// A plane skill the chat would have loaded that could not be: not a whole skill, or one
     /// of two folders at its level that name it.
     pub broken: Vec<Broken>,
@@ -1722,6 +1724,8 @@ pub fn not_here_beside(
                 }
             }
             Reason::NoSuchBuiltIn => not.no_built_in.push(left.name),
+            Reason::NoSuchWorkspace => not.no_workspace.push(left.name),
+            Reason::NotInItsWorkspace => not.not_in_its_workspace.push(left.name),
             Reason::NotASkill(_) | Reason::Twin { .. } if reaches(&left) => {
                 not.broken.push(Broken {
                     name: left.name,
@@ -2132,6 +2136,64 @@ fn whose_with(
     runs::Whose {
         workspace: workspace.map(str::to_owned),
         level,
+    }
+}
+
+/// **The workspace whose copy a run of `skill` at `level` is of, where that is not the chat's
+/// own** (SK-5c, #6041): a chat in the plane at `plane`, at its root or in `workspace`, as
+/// `persona`, whose `skills:` list names `workspaces/<ws>:<skill>`, holds `<ws>`'s copy where its
+/// set does, since the copy the persona named by its workspace wins over the chat's own
+/// workspace's (ADR 0099 as amended 2026-11-10). Read off the chat's set as [`whose`] reads the
+/// level, so a named copy the set leaves out (a local copy git does not keep, a folder made while
+/// a chat ran) is never said: the run is then of the copy the set holds. `None` for every other
+/// run, whose copy, at the workspace level, is the chat's own workspace's. What a run's row
+/// records and reads its content from.
+pub fn named_copy_of(
+    plane: &Path,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+    level: runs::Level,
+    skill: &str,
+) -> Option<String> {
+    if level.origin != Origin::Workspace {
+        return None;
+    }
+    // Only a skill the persona names by another workspace can be one: no set is read for the rest.
+    let named = names_of(plane, persona?).into_iter().any(|reference| {
+        matches!(&reference, Reference::Workspace { workspace: ws, name }
+            if name == skill && workspace != Some(ws.as_str()))
+    });
+    if !named {
+        return None;
+    }
+    let set = of_a_chat(None, plane, workspace, persona, Route::Plugin);
+    let held = purlis_skills::by_name(&set, skill)?;
+    (held.origin == level.origin && held.local == level.local)
+        .then(|| copy_workspace_of(plane, workspace, held))
+        .flatten()
+}
+
+/// **The workspace whose copy `effective`, of the set of a chat in the plane at `plane`, at its
+/// root or in `workspace`, is, where that is not the chat's own** (SK-5c, #6041): a workspace
+/// skill its persona names by its workspace (`workspaces/<ws>:<name>`), read by its folder. `None`
+/// for any other copy.
+pub fn copy_workspace_of(
+    plane: &Path,
+    workspace: Option<&str>,
+    effective: &Effective,
+) -> Option<String> {
+    if effective.origin != Origin::Workspace {
+        return None;
+    }
+    let level = effective.skill.path.parent()?.parent()?;
+    let rel = level
+        .strip_prefix(plane)
+        .ok()?
+        .to_string_lossy()
+        .replace('\\', "/");
+    match purlis_skills::level_of_rel(&rel)?.0 {
+        purlis_skills::Whose::Workspace(ws) if workspace != Some(ws.as_str()) => Some(ws),
+        _ => None,
     }
 }
 
@@ -3483,9 +3545,39 @@ impl SourceLabels {
 
     /// The label of the skill `name` of `origin`, if it was installed from a source.
     pub fn of_skill(&self, name: &str, origin: Origin, local: bool) -> Option<String> {
+        self.of_copy(name, origin, local, None)
+    }
+
+    /// The label of the studio's row `row`: of the copy it is, another workspace's that its
+    /// persona names by its workspace included (SK-5c, #6041).
+    pub fn of_row(&self, row: &StudioRow) -> Option<String> {
+        self.of_copy(
+            &row.name,
+            row.origin,
+            row.local,
+            row.copy_workspace().as_deref(),
+        )
+    }
+
+    /// The label of the skill a chat's set holds as `effective`, in the plane at `plane`: of
+    /// the copy it is, another workspace's that its persona names by its workspace included
+    /// ([`copy_workspace_of`], SK-5c, #6041).
+    pub fn of_effective(&self, plane: &Path, effective: &Effective) -> Option<String> {
+        let of = copy_workspace_of(plane, self.workspace.as_deref(), effective);
+        self.of_copy(
+            &effective.skill.name,
+            effective.origin,
+            effective.local,
+            of.as_deref(),
+        )
+    }
+
+    /// The label of the skill `name` of `origin`, at the workspace level `of`'s copy where it
+    /// is not the chat's own.
+    fn of_copy(&self, name: &str, origin: Origin, local: bool, of: Option<&str>) -> Option<String> {
         let level = match origin {
             Origin::Project => verbs::Level::project(),
-            Origin::Workspace => verbs::Level::workspace(self.workspace.as_deref()?),
+            Origin::Workspace => verbs::Level::workspace(of.or(self.workspace.as_deref())?),
             Origin::Persona => verbs::Level::persona(self.persona.as_deref()?),
             _ => return None,
         }
@@ -3531,7 +3623,7 @@ pub fn studio_list_for(
     let mut rows = rows_of(&set, plane, &names, reading);
     let labels = SourceLabels::of(plane, workspace, persona);
     for row in &mut rows {
-        row.source_label = labels.of_skill(&row.name, row.origin, row.local);
+        row.source_label = labels.of_row(row);
     }
     // The plane's own skills have a list's budget of their own (#3459): what the clones and the
     // person's own folders hold never leaves them unread, and Needs you's problems in a skill are
@@ -3668,7 +3760,7 @@ fn persona_rows_with(
                 .into_iter()
                 .filter(|row| row.origin == Origin::Persona)
                 .map(|mut row| {
-                    row.source_label = labels.of_skill(&row.name, row.origin, row.local);
+                    row.source_label = labels.of_row(&row);
                     row
                 })
                 .collect();
@@ -3744,14 +3836,27 @@ pub const UNCHECKED: &str =
     "purlis can't check whether this machine has it: its plugin's skills can't be listed";
 
 impl StudioRow {
+    /// **The workspace whose copy it is, where that is not the chat's own** (SK-5c, #6041): for
+    /// another workspace's skill the persona names by its workspace (`workspaces/<ws>:<name>`),
+    /// that workspace, which its label, its source and the studio's changes are of. `None` for
+    /// any other row, whose workspace, at the workspace level, is the chat's.
+    pub fn copy_workspace(&self) -> Option<String> {
+        match Reference::parse(&self.written) {
+            Some(Reference::Workspace { workspace, .. }) if self.origin == Origin::Workspace => {
+                Some(workspace)
+            }
+            _ => None,
+        }
+    }
+
     /// **Its level as a person reads it** ([`level_shown`]): `project`, `local workspace`, and,
     /// for another workspace's skill the persona names by its workspace (SK-5a, #2933), that
     /// workspace's name after it (`workspace ops`), since it is not the chat's own.
     pub fn level_label(&self) -> String {
         let level = level_shown(self.origin, self.local);
-        match Reference::parse(&self.written) {
-            Some(Reference::Workspace { workspace, .. }) => format!("{level} {workspace}"),
-            _ => level,
+        match self.copy_workspace() {
+            Some(workspace) => format!("{level} {workspace}"),
+            None => level,
         }
     }
 }

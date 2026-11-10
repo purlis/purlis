@@ -24,6 +24,7 @@ const DEPLOY: StudioSkill = {
   name: "deploy",
   level: "project",
   label: "project",
+  copy_workspace: null,
   local: false,
   grant: "all",
   granted: { to: "all" },

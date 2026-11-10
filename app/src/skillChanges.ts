@@ -16,15 +16,19 @@ export const PROJECT: SkillLevel = { at: "project", local: false };
 
 /** The level a row of the studio is at, or `null` for one the studio's changes do not move. A
  *  workspace's row is the workspace the studio shows, and a persona's row the persona it shows
- *  (SK-32, #3003). */
-export function levelOf(skill: StudioSkill, scope: StudioScope): SkillLevel | null {
+ *  (SK-32, #3003). A copy a persona names by its workspace (`workspaces/<ws>:<name>`) is that
+ *  workspace's, wherever the studio is (SK-5c, #6041). */
+export function levelOf(
+  skill: Pick<StudioSkill, "level" | "local" | "copy_workspace">,
+  scope: StudioScope,
+): SkillLevel | null {
   switch (skill.level) {
     case "project":
       return { at: "project", local: skill.local };
-    case "workspace":
-      return scope.at === "workspace"
-        ? { at: "workspace", name: scope.name, local: skill.local }
-        : null;
+    case "workspace": {
+      const name = skill.copy_workspace ?? (scope.at === "workspace" ? scope.name : null);
+      return name === null ? null : { at: "workspace", name, local: skill.local };
+    }
     case "persona":
       return scope.at === "persona"
         ? { at: "persona", name: scope.name, local: skill.local }

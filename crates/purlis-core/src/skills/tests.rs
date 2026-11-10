@@ -3605,3 +3605,137 @@ fn the_studio_as_the_persona_lists_another_workspaces_skill_it_names_with_its_le
         ]
     );
 }
+
+/// A plane where `ops` has the skill `deploy`, `smart-ide` is a workspace with none, and the
+/// persona `steward` names `skills` (SK-5a, #2933).
+fn a_persona_naming_other_workspaces(skills: &str) -> (tempfile::TempDir, PathBuf) {
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    let deploy = plane.join("workspaces/ops/skills/deploy");
+    std::fs::create_dir_all(&deploy).unwrap();
+    std::fs::write(
+        deploy.join("SKILL.md"),
+        "---\nname: deploy\ndescription: Deploys.\n---\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(plane.join("workspaces/smart-ide")).unwrap();
+    std::fs::write(plane.join("charter.toml"), "[plane]\n").unwrap();
+    let at = plane.join("personas/steward");
+    std::fs::create_dir_all(&at).unwrap();
+    std::fs::write(
+        at.join("persona.md"),
+        format!("---\nskills: {skills}\n---\n"),
+    )
+    .unwrap();
+    (tmp, plane)
+}
+
+#[test]
+fn a_chats_tab_names_another_workspaces_skill_its_persona_names_that_is_not_there() {
+    // SK-5b, #6040: decision 41, never a silent drop. Each said as the persona's list writes it,
+    // the workspace that is not there apart from the skill its workspace does not hold.
+    let (tmp, plane) = a_persona_naming_other_workspaces(
+        "workspaces/ops:deploy, workspaces/ops:nope, workspaces/ghost:x",
+    );
+    let env = crate::harness_plugin::Env {
+        chat: &[],
+        home: Some(tmp.path().join("home")),
+        process: false,
+    };
+
+    let not = not_here(
+        &plane,
+        Some("smart-ide"),
+        Some("steward"),
+        None,
+        crate::harness::Harness::ClaudeCode,
+        &env,
+        None,
+    )
+    .expect("the chat starts without two of its skills");
+
+    assert_eq!(not.no_workspace, ["workspaces/ghost:x"]);
+    assert_eq!(not.not_in_its_workspace, ["workspaces/ops:nope"]);
+    assert_eq!(not.missing, Vec::<String>::new(), "none is a harness's");
+    assert_eq!(not.broken, []);
+}
+
+#[test]
+fn a_run_at_the_workspace_level_is_of_the_copy_its_persona_names_by_its_workspace() {
+    // SK-5c, #6041: the named copy wins over the chat's own workspace's (ADR 0099 as amended
+    // 2026-11-10), so a run at the workspace level is of `ops`'s copy, not `smart-ide`'s.
+    let (_tmp, plane) = a_persona_naming_other_workspaces("workspaces/ops:deploy");
+    let own = plane.join("workspaces/smart-ide/skills/deploy");
+    std::fs::create_dir_all(&own).unwrap();
+    std::fs::write(
+        own.join("SKILL.md"),
+        "---\nname: deploy\ndescription: Deploys here.\n---\n",
+    )
+    .unwrap();
+    let shared = runs::Level {
+        origin: Origin::Workspace,
+        local: false,
+    };
+    let local = runs::Level {
+        local: true,
+        ..shared
+    };
+
+    let copy =
+        |workspace, persona, level| named_copy_of(&plane, workspace, persona, level, "deploy");
+
+    assert_eq!(
+        copy(Some("smart-ide"), Some("steward"), shared).as_deref(),
+        Some("ops")
+    );
+    assert_eq!(
+        copy(None, Some("steward"), shared).as_deref(),
+        Some("ops"),
+        "at the project's root too"
+    );
+    assert_eq!(
+        copy(Some("ops"), Some("steward"), shared),
+        None,
+        "in `ops` it is the chat's own copy"
+    );
+    assert_eq!(
+        copy(Some("smart-ide"), None, shared),
+        None,
+        "a chat on no persona names nothing"
+    );
+    assert_eq!(
+        copy(Some("smart-ide"), Some("steward"), local),
+        None,
+        "`ops` has no local copy, so a local one is the chat's own"
+    );
+    assert_eq!(
+        named_copy_of(&plane, Some("smart-ide"), Some("steward"), shared, "other"),
+        None
+    );
+    let project = runs::Level {
+        origin: Origin::Project,
+        local: false,
+    };
+    assert_eq!(copy(Some("smart-ide"), Some("steward"), project), None);
+}
+
+#[test]
+fn the_studio_labels_and_levels_a_named_copy_by_its_own_workspace() {
+    // SK-5c, #6041: a row of the copy a persona names by its workspace is of that workspace,
+    // whatever the studio shows; every other row is of the studio's own.
+    let (tmp, plane) = a_persona_naming_other_workspaces("workspaces/ops:deploy");
+    let env = crate::harness_plugin::Env {
+        chat: &[],
+        home: Some(tmp.path().join("home")),
+        process: false,
+    };
+
+    let list = studio_list(None, &plane, Some("smart-ide"), Some("steward"), &env);
+    let deploy = list
+        .rows
+        .iter()
+        .find(|row| row.name == "deploy")
+        .expect("the named copy is listed");
+
+    assert_eq!(deploy.copy_workspace().as_deref(), Some("ops"));
+}
