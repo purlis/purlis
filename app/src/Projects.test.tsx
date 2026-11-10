@@ -475,11 +475,17 @@ describe("a window holding more than one project", () => {
       within(screen.getByTestId("title-bar")).getByRole("button", { name: "1 thing waits on you" }),
     ).toBe(hand);
 
-    // The hand opens the Inbox of the project something waits in, brought to the front.
+    // The hand opens the Asks in front, which lists every project's (#1921): TWO stays in front,
+    // and ONE's ask is a row there, under ONE's chat.
     await userEvent.click(hand);
-    await waitFor(() => expect(projectTabs()).toEqual(["one*", "two"]));
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
-    await userEvent.click(await within(inbox).findByRole("button", { name: "Go to chat one.1" }));
+    const theirs = await waitFor(() => {
+      const group = inbox.querySelector<HTMLElement>(`[data-elsewhere="${ONE}#1"]`);
+      expect(group).not.toBeNull();
+      return group as HTMLElement;
+    });
+    expect(projectTabs()).toEqual(["one", "two*"]);
+    await userEvent.click(within(theirs).getByRole("button", { name: /^Go to chat/ }));
 
     await waitFor(() => expect(projectTabs()).toEqual(["one*", "two"]));
     expect(

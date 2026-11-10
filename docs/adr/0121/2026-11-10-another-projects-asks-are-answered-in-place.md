@@ -32,6 +32,11 @@ left them.
   setting up signing, removing old harness plugins and making a sandbox-only profile. Go to chat
   or Go to project leads there. A dispatch grant, which its own project's Notice draws, is
   answered in place only for a project of this window; from another window its row has Go to chat.
+- **The ✋ opens the Asks in front, and brings no project forward**, where that Asks lists every
+  project's (its scope All projects, the default): it lists and answers every open project's asks
+  in place, so a press of the ✋ moves nothing under the person. Where the person narrowed it to
+  This project or This workspace, the ✋ still brings forward the first project with something
+  waiting, as before.
 - **The Inbox's scope switch reads narrowest first** (This workspace, This project, All
   projects), as the Chats switch does (#1921). The default is still All projects.
 - Nothing new is stored, so no tier is named (ADR 0069). The seen records written are each

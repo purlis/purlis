@@ -237,4 +237,33 @@ describe("the ✋ across every open project (#5999)", () => {
     await waitFor(() => expect(answered).toHaveLength(1));
     expect(answered[0]).toMatchObject({ plane: TWO, session: 1, ask: "b-1", option: "allow" });
   });
+
+  it("keeps the project in front when the ✋ is pressed and only another project waits (#1921)", async () => {
+    open({
+      [ONE]: { chats: [chat(ONE, 1)], asks: [], snoozed: [] },
+      [TWO]: { chats: [chat(TWO, 1)], asks: [permission(1, "b-1", "Run npm test")], snoozed: [] },
+    });
+    await waitFor(() =>
+      expect(hand()).toHaveAccessibleName("Asks 1 thing waits on you, +1 elsewhere"),
+    );
+    /** The project tab in front, by its name. */
+    const front = () =>
+      screen
+        .getAllByRole("tab")
+        .find((tab) => tab.closest('[aria-label="Projects"]') && tab.ariaSelected === "true")
+        ?.getAttribute("aria-label");
+    const was = front();
+    expect(was).toBeTruthy();
+
+    // The title bar's ✋, which opens Asks (`openInbox`).
+    await userEvent.click(
+      within(screen.getByTestId("title-bar")).getByRole("button", { name: /waits? on you/ }),
+    );
+
+    // Its Asks lists TWO's ask, answerable there, and ONE stays in front.
+    await waitFor(() =>
+      expect(document.querySelector(`[data-elsewhere="${TWO}#1"]`)).not.toBeNull(),
+    );
+    expect(front()).toBe(was);
+  });
 });

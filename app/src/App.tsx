@@ -93,6 +93,7 @@ import { useAlerts } from "./alerts";
 import { LAYOUT_FIX, LAYOUT_FIX_LABEL, type InboxAlertsDo, type WindowAlerts } from "./InboxAlerts";
 import { useAlertFix } from "./alertFix";
 import { showOffer, type Elsewhere, type WaitingHere } from "./InboxElsewhere";
+import { keptInboxScope } from "./inboxScope";
 import { fleetStore, type EveryChat, type FleetDoes } from "./AllChats";
 import type { FleetChat } from "./everyChat";
 import { ApprovePlane } from "./ApprovePlane";
@@ -2466,12 +2467,18 @@ function App() {
    * **The ✋ opens the Inbox** (#1692, I-2): the project in front's, where something waits there,
    * and otherwise the first project along the strip with something waiting, brought to the
    * front. With nothing waiting anywhere, the Inbox in front, which says so.
+   *
+   * **Where the Asks in front lists every project's** (its scope All projects, the default), it
+   * is the one opened, and no project is brought forward (#1921): it lists and answers every
+   * open project's asks in place, so a press of the ✋ moves nothing under the person.
    */
   const openInbox = useCallback(() => {
     const front = inFrontNow.current;
     const waits = (plane: PlaneId) => (registry.held[plane]?.length ?? 0) > 0;
     const plane =
-      front !== undefined && waits(front) ? front : (planesNow.current.find(waits) ?? front);
+      front !== undefined && (waits(front) || keptInboxScope(front) === "all")
+        ? front
+        : (planesNow.current.find(waits) ?? front);
     if (plane === undefined) return;
     setShowing({ at: "plane", plane });
     setInboxAsk((was) => ({ plane, at: (was?.at ?? 0) + 1 }));
