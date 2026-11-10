@@ -49,9 +49,9 @@ which left holding open to this one.
   stays answerable as above. The program's own connect timeout and its harness's command timeout
   still bound it.
 - **The session host is told** with a new reach change, `hold_asks_open` on `change_reach`
-  (protocol 1.83, `KNOWS_HOLD_ASKS_OPEN`), sent to each chat's confinement as Quiet moves, and to
+  (protocol 1.84, `KNOWS_HOLD_ASKS_OPEN`), sent to each chat's confinement as Quiet moves, and to
   a chat's as it starts while Quiet. The window's own proxy takes the same call
-  (`sandbox::Board::hold_open`). A host before 1.83 is not sent it, and its connections time out
+  (`sandbox::Board::hold_open`). A host before 1.84 is not sent it, and its connections time out
   at their minute as before.
 - **While it is held open, it is not Expiring**: its row shows no countdown, though its hold is
   still said, so the window reads it again.
