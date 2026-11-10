@@ -7,8 +7,10 @@ import {
   asksThePerson,
   failedUnseen,
   failuresUnseenOf,
+  leftWorkOf,
   markOf,
   ownWorkOf,
+  stuckOf,
   useChatsHere,
   useChatsSelect,
   type ChatStates,
@@ -87,6 +89,8 @@ function shownFrom(
     harness,
     tasksAtWork: tasksAtWorkOf(states, below),
     ownWork: ownWorkOf(states, session),
+    stuck: stuckOf(states, session) !== undefined,
+    leftWork: leftWorkOf(states, session),
   });
 }
 

@@ -1223,6 +1223,10 @@ export const commands = {
 	taskQuiet: (plane: PlaneId, session: number) => typedError<string | null, string>(__TAURI_INVOKE("task_quiet", { plane, session })),
 	/**  Puts task `session`'s quiet note away: the task goes on, and a later stretch is noted again. */
 	putAwayTaskQuiet: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("put_away_task_quiet", { plane, session })),
+	/**  What each chat of a project last told: Stuck? and work left behind. */
+	chatsNoticed: (plane: PlaneId) => typedError<ChatNoticed[], string>(__TAURI_INVOKE("chats_noticed", { plane })),
+	/**  **"It's fine"**: chat `session` is not stuck until it changes state. */
+	stuckFine: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("stuck_fine", { plane, session })),
 	/**
 	 *  The project's dispatch limits, for Settings › Project › Dispatch, a workspace's settings
 	 *  and the persona view.
@@ -1648,6 +1652,20 @@ export const commands = {
 	 *  is focused with the project in front, no notification is sent about that project's asks.
 	 */
 	inboxShown: (plane: PlaneId, open: boolean) => __TAURI_INVOKE<void>("inbox_shown", { plane, open }),
+	/**  Whether it is Quiet now, and what the latest Quiet that ended held (#6017). */
+	quietNow: () => __TAURI_INVOKE<QuietNow>("quiet_now"),
+	/**
+	 *  **"Quiet now"** turned on or off by the person (#6017): from the Asks view's toggle or the
+	 *  palette. It holds until they turn it off, or the app ends.
+	 */
+	setQuietNow: (on: boolean) => __TAURI_INVOKE<void>("set_quiet_now", { on }),
+	/**
+	 *  **The person typed `text` into a chat's pane** (#6017), as the pane says, at most every few
+	 *  seconds: Quiet holds until [`TYPING_QUIET`] after their last key. The terminal answering by
+	 *  itself is not them ([`is_typing`]). Answers whether it counted, so the pane says the next
+	 *  key that does.
+	 */
+	quietTyped: (text: string) => __TAURI_INVOKE<boolean>("quiet_typed", { text }),
 	/**
 	 *  Sends what a pane typed to the session's program, in the chat's lane: it answers at once,
 	 *  and a send the host refuses is said on the chat's pane (#4734, ADR 0108). Anything but the
@@ -2543,6 +2561,12 @@ export const commands = {
 	 *  program loads beside purlis's (SK-37).
 	 */
 	beside_a_built_in: string[],
+	/**
+	 *  **The runner it started on** (SK-5d, #2977), where its runner said what it lacks there:
+	 *  `<pool>/<runner>`, its pool where its runner is not named, or empty where neither is.
+	 *  `None` for a chat on this machine.
+	 */
+	runner: string | null,
 } | null, string>(__TAURI_INVOKE("chat_skills_missing", { plane, session })),
 	/**  Puts a chat's missing-skills Notice away. */
 	putAwayChatSkillsMissing: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("put_away_chat_skills_missing", { plane, session })),
@@ -7461,7 +7485,9 @@ export type ChatEvent =
 /**  The chat's tool touched a file (`chat-touching` before, FM-6). */
 { kind: "touching"; told: ChatTouching } | 
 /**  The chat's open skill run changed (`chat-skill-run` before, SK-3). */
-{ kind: "skill-run"; told: ChatSkillRun };
+{ kind: "skill-run"; told: ChatSkillRun } | 
+/**  The chat's Stuck? or work left behind changed (#6014). */
+{ kind: "noticed"; told: ChatNoticed };
 
 /**
  *  What `chat-events` carries: everything one project's chats told within an interval, in the
@@ -7534,6 +7560,19 @@ export type ChatNetwork = {
 	 *  where nothing says so.
 	 */
 	local_ports?: string | null,
+};
+
+/**  What the window is told of one chat, each time either fact changes. */
+export type ChatNoticed = {
+	plane: PlaneId,
+	session: number,
+	/**  Why it reads Stuck?, in purlis's words, or none. */
+	stuck: string | null,
+	/**
+	 *  Whether its folder held uncommitted work when it last stopped working; none where that
+	 *  is not known.
+	 */
+	left_work: boolean | null,
 };
 
 /**  A chat on a device, as its row names it. */
@@ -8847,6 +8886,12 @@ export type DraftScore = {
 	evals: boolean,
 	arms: GradeArms,
 	delta: number | null,
+};
+
+/**  One ask a Quiet's summary counts: its project, and its key in the registry. */
+export type EndedAsk = {
+	plane: PlaneId,
+	key: string,
 };
 
 /**  One download, as its Notice shows it. */
@@ -14169,6 +14214,33 @@ export type QuestionStep = {
 	what: string | null,
 };
 
+/**
+ *  **What Quiet held, told when it ends** (ADR 0121 decision 13): when it was, and the asks
+ *  that came in it that still wait. The window counts with them the updates of the same span
+ *  ("While you were quiet: 3 asks, 2 finished, 1 failed"), and drops the row once all of it is
+ *  seen (#6002).
+ */
+export type QuietEnded = {
+	/**  When it began, in seconds since 1970. */
+	from: number,
+	/**  When it ended, in seconds since 1970. */
+	to: number,
+	/**  The asks that came in it that the person was not looking at, still waiting as it ended. */
+	asks: EndedAsk[],
+};
+
+/**
+ *  **Whether it is Quiet now, and what Quiet ended last**, as a window asks for it and is sent
+ *  it ([`QUIET_CHANGED`]).
+ */
+export type QuietNow = {
+	quiet: boolean,
+	/**  Whether "Quiet now" is on: the toggle's state, whatever else makes it Quiet. */
+	by_hand: boolean,
+	/**  The summary of the latest Quiet that ended in this run of the app, if one did. */
+	ended: QuietEnded | null,
+};
+
 /**  One repo the picker offers: what the operator reads to choose it. */
 export type ReachableRepo = {
 	/**  The name it is cloned under, and asked for by. */
@@ -17764,6 +17836,12 @@ export type SkillsMissing = {
 	 *  program loads beside purlis's (SK-37).
 	 */
 	beside_a_built_in: string[],
+	/**
+	 *  **The runner it started on** (SK-5d, #2977), where its runner said what it lacks there:
+	 *  `<pool>/<runner>`, its pool where its runner is not named, or empty where neither is.
+	 *  `None` for a chat on this machine.
+	 */
+	runner: string | null,
 };
 
 /**
@@ -19132,7 +19210,9 @@ export type UpdateKind =
  */
 "arrived" | 
 /**  The person filed a report a chat drafted (#5694). */
-"report-sent";
+"report-sent" | 
+/**  A working chat may not be getting anywhere (#6014). */
+"stuck";
 
 /**  An update the window derived from its source, to be noted. */
 export type UpdateNoted = {

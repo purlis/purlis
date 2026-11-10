@@ -20,6 +20,7 @@ import { Terminal } from "@xterm/xterm";
 import { CHAT_KEYBOARD } from "./actions";
 import * as bench from "./bench";
 import { commands, type PlaneId } from "./bindings";
+import { typedInPane } from "./quiet";
 import { FindBar } from "./FindBar";
 import { paneDrawn } from "./paneKeyboard";
 import { RECONNECTING_SAID, useReconnecting } from "./reconnecting";
@@ -612,6 +613,8 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
   const typed = pane.onData((text) => {
     freeze.input(); // [DEBUG-5478]
     echo.typed(text);
+    // The person typing in a chat is Quiet for a while (#6017): no notification breaks in.
+    typedInPane(text);
     sayIfRefused(commands.sendInput(plane, session, text));
   });
   // **And what is not text, as the bytes it is** (charter#493): xterm hands a mouse report in

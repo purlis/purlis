@@ -10,6 +10,7 @@ import { catalogued, type Offer } from "./actions";
 import { paneMenuOf } from "./LayoutPanes";
 import { SessionPane } from "./SessionPane";
 import { Menued } from "./Menus";
+import { rowName } from "./menus.testkit";
 import { ProjectShownProvider } from "./projectShown";
 import {
   asksByPointer,
@@ -206,11 +207,13 @@ describe("a right-click on a terminal", () => {
 
     const menu = await screen.findByRole("menu");
     expect(asked.defaultPrevented).toBe(true);
-    expect(
-      within(menu)
-        .getAllByRole("menuitem")
-        .map((item) => item.getAttribute("aria-label")),
-    ).toEqual(["Copy", "Paste", "Select all", "Split right", "End chat 1"]);
+    expect(within(menu).getAllByRole("menuitem").map(rowName)).toEqual([
+      "Copy",
+      "Paste",
+      "Select all",
+      "Split right",
+      "End chat 1",
+    ]);
     // The terminal's rows are the first group, and the pane's follow in the groups every
     // menu on the panes has (`menuModel.menuOf`), a line before each: how it is split, and
     // last what ends the chat.
@@ -246,14 +249,15 @@ describe("a right-click on a terminal", () => {
           .getAllByRole("menuitem")
           .slice(0, 3)
           .map((item) => [
-            item.getAttribute("aria-label"),
+            rowName(item),
             item.querySelector('[data-part="label"]')?.textContent,
-            item.querySelector('[data-part="shortcut"]')?.textContent,
+            item.querySelector('[data-part="shortcut"]')?.getAttribute("data-key"),
+            item.getAttribute("aria-keyshortcuts"),
           ]),
       ).toEqual([
-        ["Copy", "Copy", "⌘C"],
-        ["Paste", "Paste", "⌘V"],
-        ["Select all", "Select all", "⌘A"],
+        ["Copy", "Copy", "⌘C", "Meta+C"],
+        ["Paste", "Paste", "⌘V", "Meta+V"],
+        ["Select all", "Select all", "⌘A", "Meta+A"],
       ]);
       // Why Copy cannot run is the one line under its words, as in every menu.
       expect(row(menu, "Copy").querySelector('[data-part="description"]')?.textContent).toBe(

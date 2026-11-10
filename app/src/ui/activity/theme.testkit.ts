@@ -14,6 +14,7 @@ export default {
     marked: [
       '[data-scope="activity"][data-part="count"][data-tone="needs-you"]',
       '[data-scope="activity"][data-part="count"][data-tone="danger"]',
+      '[data-scope="activity"][data-part="count"][data-tone="warning"]',
     ],
     drawn: {
       '[data-scope="activity"][data-part="item"][data-selected] > [data-part="indicator"]': {

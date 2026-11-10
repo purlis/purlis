@@ -3402,6 +3402,14 @@ pub fn said(held: &Held, output: purlis_core::hookwire::TurnOutput) {
         }
         _ => {}
     }
+    // What any chat's turn put out is something new, and a command it ran counts toward the
+    // same command failing again and again (#6014).
+    match &output.turn_output {
+        purlis_core::hookwire::Output::Ran {
+            command, failed, ..
+        } => crate::stuck::ran(held, output.chat, command, *failed),
+        _ => crate::stuck::heard(held, output.chat),
+    }
     let task = held
         .chats()
         .handed_from(output.chat)

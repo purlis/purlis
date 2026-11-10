@@ -206,6 +206,7 @@ mod starttiming;
 mod stopping;
 #[cfg(test)]
 mod storythemes;
+mod stuck;
 mod syscontrast;
 mod tabwindows;
 mod taskblocks;
@@ -4556,6 +4557,14 @@ pub fn run() {
                     let batches = batches.clone();
                     std::sync::Arc::new(move |told: doing::ChatDoing| {
                         batches.tell(chatevents::ChatEvent::Doing(told));
+                    })
+                })
+                // Each chat's Stuck? and work left behind, as either changes (#6014). In memory
+                // only.
+                .telling_noticed({
+                    let batches = batches.clone();
+                    std::sync::Arc::new(move |told: stuck::ChatNoticed| {
+                        batches.tell(chatevents::ChatEvent::Noticed(told));
                     })
                 })
                 // Each chat's router extension is asked with the app's one executor (SK-15b),

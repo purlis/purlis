@@ -342,6 +342,8 @@ pub struct Held {
     activity: crate::activity::Teller,
     /// Told each task's quiet Notice as it comes or goes (#1981).
     quiet: crate::silence::Teller,
+    /// Its chats' Stuck? and work left behind (#6014).
+    noticed: Arc<crate::stuck::Noticed>,
     /// Told each Update a task's question makes (#4556, #4557).
     question_updates: crate::dispatched::UpdateTeller,
     /// The Asks that wait on the person to take a chat's browser over (#2015).
@@ -700,6 +702,11 @@ impl Held {
     /// The tasks this project's chats dispatched (#1441).
     pub fn tasks(&self) -> &crate::dispatched::Tasks {
         &self.tasks
+    }
+
+    /// Its chats' Stuck? and work left behind (#6014).
+    pub fn noticed(&self) -> &crate::stuck::Noticed {
+        &self.noticed
     }
 
     /// [`Self::tasks`], for a wait that outlives its hold on the project.
@@ -1508,6 +1515,7 @@ impl Held {
         let gone = self.board().closed(session);
         lock_started(&self.started_on).remove(&session);
         self.typed.forget(session);
+        self.noticed.forget(session);
         // Closed by the operator's Close, or by its own record: either way nothing is owed.
         self.closing.forget(session);
         self.brokered.forget(session);
@@ -2531,6 +2539,8 @@ pub struct Planes {
     touches: hooks::TouchTeller,
     /// Told what a working chat is doing, each time its one line changes (#1493).
     doings: crate::doing::Teller,
+    /// Told each chat's Stuck? and work left behind (#6014).
+    noticed: crate::stuck::Teller,
     skill_runs: crate::skillrun::Teller,
     prompt_routing: crate::useskill::PromptRoutingTeller,
     /// The app's executor, which asks each chat's router extension at its start (SK-15b): none
@@ -2836,6 +2846,7 @@ impl Planes {
             by_hand: Arc::new(|_| {}),
             touches: Arc::new(|_| {}),
             doings: Arc::new(|_| {}),
+            noticed: Arc::new(|_| {}),
             skill_runs: Arc::new(|_| {}),
             prompt_routing: Arc::new(|_| {}),
             routers: None,
@@ -3088,6 +3099,12 @@ impl Planes {
     /// its one line changes, so the window can say it under the chat's name (#1493).
     pub fn telling_doings(mut self, doings: crate::doing::Teller) -> Self {
         self.doings = doings;
+        self
+    }
+
+    /// Tells `noticed` each chat's Stuck? and work left behind as either changes (#6014).
+    pub fn telling_noticed(mut self, noticed: crate::stuck::Teller) -> Self {
+        self.noticed = noticed;
         self
     }
 
@@ -3363,6 +3380,9 @@ impl Planes {
         }
         let held = Arc::new(self.hold(id.clone(), root));
         let _ = held.me.set(Arc::downgrade(&held));
+        // Stuck? and work left behind (#6014): told to the window with the chats' other news.
+        held.noticed
+            .held_as(Arc::downgrade(&held), Arc::clone(&self.noticed));
         // What becomes of its chats' browsers, in its event log (#2842). A `Weak`, as the
         // answer below holds one: the plane's browsers must not keep a closed plane alive.
         held.browsers.saying({
@@ -3634,6 +3654,8 @@ impl Planes {
             Arc::new(move |chat, said| {
                 if let Some(held) = held.upgrade() {
                     crate::silence::doing(&held, chat, &said);
+                    // A command begun or come back is something new: no longer silent (#6014).
+                    crate::stuck::heard(&held, chat);
                 }
             })
         });
@@ -4653,6 +4675,16 @@ impl Planes {
 
     /// Everything one plane needs, built and wired but not yet started.
     fn hold(&self, id: PlaneId, root: PathBuf) -> Held {
+        // **Every move the board tells reaches Stuck?'s watch first** (#6014): a change into or
+        // out of working, a program's end included, is what its rules start from.
+        let noticed = Arc::new(crate::stuck::Noticed::new(id.clone()));
+        let tell: Teller = {
+            let (inner, noticed) = (Arc::clone(&self.tell), Arc::clone(&noticed));
+            Arc::new(move |moved: Moved| {
+                noticed.moved(&moved);
+                inner(moved);
+            })
+        };
         // A socket that cannot be opened is not worth refusing to open a plane over: it comes
         // up with every chat `unknown` and says so, which is a working project with one
         // feature missing rather than no project at all.
@@ -4661,14 +4693,14 @@ impl Planes {
             Ok(Hooks::relayed(
                 id.clone(),
                 &at,
-                Arc::clone(&self.tell),
+                Arc::clone(&tell),
                 Arc::clone(&self.by_hand),
             ))
         } else {
             Hooks::listening_on(
                 id.clone(),
                 &at,
-                Arc::clone(&self.tell),
+                Arc::clone(&tell),
                 Arc::clone(&self.by_hand),
             )
         };
@@ -4930,7 +4962,7 @@ impl Planes {
         let closing = Arc::new(crate::smartclose::Closing::default());
         {
             let board = hooks.shared_board();
-            let tell = Arc::clone(&self.tell);
+            let tell = Arc::clone(&tell);
             let plane = id.clone();
             let poke = std::sync::Mutex::new(autosave.poker());
             let typed = Arc::clone(&typed);
@@ -5252,7 +5284,7 @@ impl Planes {
             root,
             put_back: Mutex::new(PutBack::NotAsked),
             hooks,
-            tell: Arc::clone(&self.tell),
+            tell: Arc::clone(&tell),
             chats,
             records,
             recorded,
@@ -5305,6 +5337,7 @@ impl Planes {
             talk_sweep,
             kept_sites: crate::network::KeptSites::default(),
             me,
+            noticed,
         }
     }
 

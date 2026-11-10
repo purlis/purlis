@@ -473,6 +473,9 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             // A task's quiet note, read and put away (#1981): in memory.
             "task_quiet",
             "put_away_task_quiet",
+            // What the core noticed of each chat, and It's fine (#6014): in memory.
+            "chats_noticed",
+            "stuck_fine",
             "reopened_views",
             "reopened_layout",
             "reopened_focus",
@@ -575,6 +578,10 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             "forget_chat_that_did_not_start",
             "window_holds_planes",
             "inbox_shown",
+            // Quiet (#6017): read, "Quiet now" turned on or off, or a pane typed in: in memory.
+            "quiet_now",
+            "set_quiet_now",
+            "quiet_typed",
             "workspace_focused",
         ],
     ),

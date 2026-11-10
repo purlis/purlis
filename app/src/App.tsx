@@ -50,17 +50,19 @@ import { ReportConsentAsk } from "./ReportConsent";
 import { ReportCrashNotice } from "./ReportCrashNotice";
 import { ForgeSignInEnded } from "./ForgeSignInEnded";
 import { AddDockerPoolHost } from "./AddDockerPool";
-import { ActionResultNotice, ResultsGroup } from "./ActionResultNotice";
+import { ActionResultNotice, ResultsGroup, SaidAloud } from "./ActionResultNotice";
 import {
   AT_STATUS,
   dormantCause,
   dormantSays,
+  freshOn,
   placeOfSaid,
   useChipNotices,
   type ChipNotices,
   type StandingNotice,
 } from "./ChipNotices";
 import { chipsOf } from "./noticePlace";
+import { SeenRowsOf, type SeenRows } from "./seenRows";
 import { dismissGone, GoneProjectNotice, settleGone, useGoneDismissed } from "./GoneProjectNotice";
 import {
   goneCause,
@@ -87,7 +89,7 @@ import {
 } from "./actions";
 import { useScreenReaderMode } from "./screenReader";
 import { useLatestSaid } from "./latestSaid";
-import { resultsFor, useKeptResults } from "./keptResults";
+import { passing, resultsFor, useKeptResults } from "./keptResults";
 import { useAlerts } from "./alerts";
 import { LAYOUT_FIX, LAYOUT_FIX_LABEL, type InboxAlertsDo, type WindowAlerts } from "./InboxAlerts";
 import { useAlertFix } from "./alertFix";
@@ -230,6 +232,9 @@ export const TAB_WINDOW = "data-tab-window";
 const NOTHING_NEEDING: Needing[] = [];
 const NOTHING_QUIET: Quiet[] = [];
 const NOTHING_ENDING: Ending[] = [];
+
+/** The status item's "new" pip, alone: what the status bar's own list is handed (#6004). */
+const ONLY_STATUS: ReadonlySet<string> = new Set([AT_STATUS]);
 
 function App() {
   // The WebView's own menu, taken away from the whole window (`Menus.tsx`). One listener, on
@@ -480,6 +485,10 @@ function App() {
   /** Where the window's kept results are drawn: under the front project's Inbox's Notices
    *  (#3344). */
   const [resultsAt, setResultsAt] = useState<HTMLDivElement | null>(null);
+  /** **The seen record of the project in front** (#6004), as its view hands it up: what is New
+   *  on the chips, the status item, the cards and the Results this window draws. */
+  const [seenAt, setSeenAt] = useState<{ plane: PlaneId; rows: SeenRows }>();
+  const onSeen = useCallback((plane: PlaneId, rows: SeenRows) => setSeenAt({ plane, rows }), []);
   const onWindowLines = useCallback((_counted: number, listed: number) => {
     setWindowLinesListed(listed);
   }, []);
@@ -1688,6 +1697,12 @@ function App() {
   /** Every result said, kept for the Inbox's Notices under Results (#3344). */
   const { kept: keptResults, drop: dropResult } = useKeptResults(said, inFront);
   const resultsInFront = useMemo(() => resultsFor(keptResults, inFront), [keptResults, inFront]);
+  /** The newest result while it stands (#6004): kept, or a line still under way. Said aloud
+   *  until it is dismissed, wherever it is dismissed. */
+  const saidStanding =
+    said !== undefined && (passing(said) || keptResults.some((one) => one.said === said))
+      ? said
+      : undefined;
   /** The title bar's chips of the project in front, which a notice about a workspace hangs from
    *  (#3648, `noticePlace.ts`). */
   const workspacesInFront = inFront === undefined ? undefined : reports[inFront]?.workspaces;
@@ -1802,6 +1817,7 @@ function App() {
   }, []);
   /** The notices hung from those chips: a view onto the kept results, so a dismissal in either
    *  place is one (#3648); and the ✋ of a chat asking to remove a chip's workspace (#3652). */
+  const seenInFront = seenAt !== undefined && seenAt.plane === inFront ? seenAt.rows : undefined;
   const chipNotices = useChipNotices({
     asks: inFront === undefined ? undefined : registry.held[inFront],
     bring: bringChat,
@@ -1824,16 +1840,28 @@ function App() {
   const statusList = chipNotices.on.get(AT_STATUS);
   const statusUp = chipNotices.open === AT_STATUS;
   const { show: showNotices, hide: hideNotices, dismiss: dismissNotice } = chipNotices;
+  /** **What is New on the chips and the status item** (ADR 0121 decision 10, #6004): read from
+   *  the seen record of the project in front, which its Notices centre keeps. */
+  const freshNotices = useMemo(
+    () => freshOn(chipNotices.on, (key) => seenInFront?.isNew(key) === true),
+    [chipNotices.on, seenInFront],
+  );
+  const chipNoticesNow = useMemo<ChipNotices>(
+    () => ({ ...chipNotices, fresh: freshNotices }),
+    [chipNotices, freshNotices],
+  );
+  const statusFresh = freshNotices.has(AT_STATUS);
   const statusNotices = useMemo<ChipNotices>(
     () => ({
       on: new Map(statusList === undefined ? [] : [[AT_STATUS, statusList]]),
       open: statusUp ? AT_STATUS : undefined,
+      fresh: statusFresh ? ONLY_STATUS : undefined,
       show: showNotices,
       hide: hideNotices,
       dismiss: dismissNotice,
       onSettings: followSaid,
     }),
-    [statusList, statusUp, showNotices, hideNotices, dismissNotice, followSaid],
+    [statusList, statusUp, statusFresh, showNotices, hideNotices, dismissNotice, followSaid],
   );
   const windowLines = useMemo(
     () => ({
@@ -2806,146 +2834,152 @@ function App() {
         [TAB_WINDOW]: tabWindow === null ? undefined : String(tabWindow.number),
       }}
     >
-      {/* The window's own title bar (ADR 0054): on macOS it IS the title bar — the system's
+      {/* What is New (#6004): the chips' cards and the Results this window lists for the project
+      in front read its seen record, so a line seen there is seen everywhere. */}
+      <SeenRowsOf.Provider value={seenInFront ?? null}>
+        {/* The window's own title bar (ADR 0054): on macOS it IS the title bar — the system's
           traffic lights float over it — and on every other platform it is the window's first
           row under the system's own bar. `TitleBar.tsx` argues the shape and the drag region.
           The projects are the rail at the window's left now (#2915); while the rail hides
           itself, the bar's first control shows it again (R91). */}
-      <TitleBar
-        leading={
-          planes.length > 0 && tabWindow === null ? (
-            <>
-              {railMode === "auto" && (
-                <IconButton
-                  variant="ghost"
-                  size="md"
-                  aria-label="Show the projects sidebar"
-                  icon={<SidebarIcon />}
-                  data-rail-show=""
-                  onPress={showRail}
-                />
-              )}
-              {/* The project in front and its workspaces (#2916): its name, a slash and its pins
+        <TitleBar
+          leading={
+            planes.length > 0 && tabWindow === null ? (
+              <>
+                {railMode === "auto" && (
+                  <IconButton
+                    variant="ghost"
+                    size="md"
+                    aria-label="Show the projects sidebar"
+                    icon={<SidebarIcon />}
+                    data-rail-show=""
+                    onPress={showRail}
+                  />
+                )}
+                {/* The project in front and its workspaces (#2916): its name, a slash and its pins
                   as chips; with the rail hidden, the name is the switcher of every project. */}
-              {inFront !== undefined && (
-                <TitleBarSwitch
-                  projects={switchProjects}
-                  inFront={inFront}
-                  railShown={railMode !== "auto"}
-                  held={paletteOpen}
-                  does={switchDoes}
-                  menuOf={workspaceMenu}
-                  notices={chipNotices}
-                />
-              )}
-            </>
-          ) : undefined
-        }
-        updates={updates}
-        room={titleBarRoom}
-        // The level of the chat in front of the project in front (#2071).
-        sandbox={inFront !== undefined ? reports[inFront]?.sandbox : undefined}
-        chats={ending}
-        needing={{
-          count: askedCount ?? everyNeeding.length,
-          chats: askedCount === undefined,
-          quiet: everyQuiet,
-          onInbox: pressHand,
-        }}
-        saveReading={
-          inFront !== undefined && saving === undefined && reports[inFront]?.savingRead !== true
-            ? { onOpen: () => windowDoes.openSaving(inFront) }
-            : undefined
-        }
-        save={
-          inFront !== undefined && saving !== undefined
-            ? {
-                saving,
-                repos,
-                busy: savingIn === inFront,
-                onOpen: () => windowDoes.openSaving(inFront),
-                onSave: saveInFront,
-                // The incoming count's press: the Saving tab opens and runs it (qw348).
-                onUpdate: () => {
-                  askUpdate(inFront);
-                  windowDoes.openSaving(inFront);
-                },
-                // A read-only project's save is refused by the core: off, with why (#826).
-                off: reports[inFront]?.readOnly,
-              }
-            : undefined
-        }
-      />
-      {/* **Below the title bar**: the project rail at the far left (#2915, R76), and the work
+                {inFront !== undefined && (
+                  <TitleBarSwitch
+                    projects={switchProjects}
+                    inFront={inFront}
+                    railShown={railMode !== "auto"}
+                    held={paletteOpen}
+                    does={switchDoes}
+                    menuOf={workspaceMenu}
+                    notices={chipNoticesNow}
+                  />
+                )}
+              </>
+            ) : undefined
+          }
+          updates={updates}
+          room={titleBarRoom}
+          // The level of the chat in front of the project in front (#2071).
+          sandbox={inFront !== undefined ? reports[inFront]?.sandbox : undefined}
+          chats={ending}
+          needing={{
+            count: askedCount ?? everyNeeding.length,
+            chats: askedCount === undefined,
+            quiet: everyQuiet,
+            onInbox: pressHand,
+          }}
+          saveReading={
+            inFront !== undefined && saving === undefined && reports[inFront]?.savingRead !== true
+              ? { onOpen: () => windowDoes.openSaving(inFront) }
+              : undefined
+          }
+          save={
+            inFront !== undefined && saving !== undefined
+              ? {
+                  saving,
+                  repos,
+                  busy: savingIn === inFront,
+                  onOpen: () => windowDoes.openSaving(inFront),
+                  onSave: saveInFront,
+                  // The incoming count's press: the Saving tab opens and runs it (qw348).
+                  onUpdate: () => {
+                    askUpdate(inFront);
+                    windowDoes.openSaving(inFront);
+                  },
+                  // A read-only project's save is refused by the core: off, with why (#826).
+                  off: reports[inFront]?.readOnly,
+                }
+              : undefined
+          }
+        />
+        {/* **Below the title bar**: the project rail at the far left (#2915, R76), and the work
           beside it, which glides as the rail hides and shows (R84). Its left edge is where the
           pointer peeks a hidden rail (R86). */}
-      <div className="window-below" ref={below}>
-        {/* A tab window has no project rail: its one project is its project window's (#4768). */}
-        {(planes.length > 0 || coming.length > 0) && tabWindow === null && (
-          <ProjectRail
-            projects={railProjects}
-            coming={coming}
-            loadOf={loadOfRow}
-            onChoose={chooseComing}
-            onRetry={retryProject}
-            onDismiss={putAwayFailed}
-            inFront={inFront}
-            rows={strip}
-            offers={stripFound}
-            onPress={press}
-            waitingIn={(project) => registry.held[project.plane]?.length ?? askingIn(project)}
-            unsavedIn={(project) => unsavedOf(reports[project.plane]?.saving)}
-            onDrop={dragProject}
-            lettingGo={lettingGo}
-            mode={railMode}
-            onMode={setRailMode}
-            edge={below}
-            nameOf={calledOn}
-          />
-        )}
-        <main className="window-work">
-          {/* **No result is in the page's flow while a project is in front** (#3648, #3653): one
+        <div className="window-below" ref={below}>
+          {/* A tab window has no project rail: its one project is its project window's (#4768). */}
+          {(planes.length > 0 || coming.length > 0) && tabWindow === null && (
+            <ProjectRail
+              projects={railProjects}
+              coming={coming}
+              loadOf={loadOfRow}
+              onChoose={chooseComing}
+              onRetry={retryProject}
+              onDismiss={putAwayFailed}
+              inFront={inFront}
+              rows={strip}
+              offers={stripFound}
+              onPress={press}
+              waitingIn={(project) => registry.held[project.plane]?.length ?? askingIn(project)}
+              unsavedIn={(project) => unsavedOf(reports[project.plane]?.saving)}
+              onDrop={dragProject}
+              lettingGo={lettingGo}
+              mode={railMode}
+              onMode={setRailMode}
+              edge={below}
+              nameOf={calledOn}
+            />
+          )}
+          <main className="window-work">
+            {/* **No result is in the page's flow while a project is in front** (#3648, #3653): one
           about a workspace hangs from its chip, and a project's or the app's pops from the status
           bar's Notices item; each is listed in the Notices centre too. With no project in front
           the window has no status bar and no Notices centre, so its result stands here, at the
           top of the opener's page, as the window's own lines do (D-LB-1). */}
-          {said && said !== closedSaid && !paletteOpen && inFront === undefined && (
-            <ActionResultNotice
-              cause={`result:${said.from}`}
-              said={said}
-              onClose={() => {
-                setClosedSaid(said);
-                // Closed here, it does not pop on the status bar of the project that comes next
-                // (#3653's review).
-                hideNotices();
-              }}
-              onSettings={followSaid}
-            />
-          )}
-          {resultsAt !== null && inFront !== undefined && (
-            <ResultsGroup
-              kept={resultsInFront}
-              into={resultsAt}
-              onDrop={dropResult}
-              onSettings={followSaid}
-              // **No chip, so listed here alone, with a way there** (#3651, D-3648-16): a
-              // result about a workspace the title bar draws no chip for offers "Open X",
-              // while the project has that workspace.
-              openOf={(one) => {
-                const place = placeOfSaid(one, chipsInFront);
-                if (place.at !== "centre" || !("open" in place)) return undefined;
-                // Only to a workspace the project still has: one removed or renamed since has
-                // no way there, and a way that does nothing is no way (#3651's review).
-                if (workspacesInFront?.names.includes(place.open) !== true) return undefined;
-                return {
-                  label: `Open ${place.open}`,
-                  onPress: () => switchDoes.go(inFront, place.open),
-                };
-              }}
-            />
-          )}
+            {said && said !== closedSaid && !paletteOpen && inFront === undefined && (
+              <ActionResultNotice
+                cause={`result:${said.from}`}
+                said={said}
+                onClose={() => {
+                  setClosedSaid(said);
+                  // Closed here, it does not pop on the status bar of the project that comes next
+                  // (#3653's review).
+                  hideNotices();
+                }}
+                onSettings={followSaid}
+              />
+            )}
+            {/* Said aloud while a project is in front, whose card no longer comes (#6004): with
+          none, the notice at the top of the page says it. */}
+            {inFront !== undefined && <SaidAloud said={saidStanding} />}
+            {resultsAt !== null && inFront !== undefined && (
+              <ResultsGroup
+                kept={resultsInFront}
+                into={resultsAt}
+                onDrop={dropResult}
+                onSettings={followSaid}
+                // **No chip, so listed here alone, with a way there** (#3651, D-3648-16): a
+                // result about a workspace the title bar draws no chip for offers "Open X",
+                // while the project has that workspace.
+                openOf={(one) => {
+                  const place = placeOfSaid(one, chipsInFront);
+                  if (place.at !== "centre" || !("open" in place)) return undefined;
+                  // Only to a workspace the project still has: one removed or renamed since has
+                  // no way there, and a way that does nothing is no way (#3651's review).
+                  if (workspacesInFront?.names.includes(place.open) !== true) return undefined;
+                  return {
+                    label: `Open ${place.open}`,
+                    onPress: () => switchDoes.go(inFront, place.open),
+                  };
+                }}
+              />
+            )}
 
-          {/* **The window's own lines, one list** (D-LB-1): what the window says about itself
+            {/* **The window's own lines, one list** (D-LB-1): what the window says about itself
           rather than about a project (a slow start, the session bus, vaults left waiting, a
           project gone, an entry the store would not take back). With no project in front they
           are listed at the top of the opener's page, with the opener's own lines, the most
@@ -2954,24 +2988,24 @@ function App() {
           in its status line (#1695); only until its Inbox is first drawn do they stand under
           the title bar. Written once here, wherever they are drawn, so a
           dismissal or the session bus's answer is never lost when a project comes or goes. */}
-          <NoticeList
-            into={
-              openerUp && !settingsAlone
-                ? windowLinesAt
-                : inFront !== undefined
-                  ? (inboxLinesAt ?? undefined)
-                  : undefined
-            }
-            onCount={onWindowLines}
-            at={
-              openerUp && !settingsAlone
-                ? "page"
-                : inFront !== undefined && inboxLinesAt != null
-                  ? "lines"
-                  : "band"
-            }
-          >
-            {/* A launch nobody could see. The core only answers here when the start passed the
+            <NoticeList
+              into={
+                openerUp && !settingsAlone
+                  ? windowLinesAt
+                  : inFront !== undefined
+                    ? (inboxLinesAt ?? undefined)
+                    : undefined
+              }
+              onCount={onWindowLines}
+              at={
+                openerUp && !settingsAlone
+                  ? "page"
+                  : inFront !== undefined && inboxLinesAt != null
+                    ? "lines"
+                    : "band"
+              }
+            >
+              {/* A launch nobody could see. The core only answers here when the start passed the
             spec's limit, so on an ordinary launch there is nothing to draw and nothing to
             dismiss. It is the one place an operator who clicked an icon can be told — the
             line purlis writes while it waits goes to standard error, which they do not have.
@@ -2979,93 +3013,93 @@ function App() {
             core knows the relaunch that avoids the wait, it is offered as Copy command (NO-4):
             the window has no fix for a launch already made, so this is V91q's last resort and
             `Notice.guard.test.ts` lists it as debt. */}
-            {slowStart && (
-              <Notice
-                cause="slow-start"
-                tone="trouble"
-                copy={slowStart.relaunch ?? undefined}
-                onDismiss={() => setSlowStart(undefined)}
-              >
-                {slowStart.said}
-              </Notice>
-            )}
+              {slowStart && (
+                <Notice
+                  cause="slow-start"
+                  tone="trouble"
+                  copy={slowStart.relaunch ?? undefined}
+                  onDismiss={() => setSlowStart(undefined)}
+                >
+                  {slowStart.said}
+                </Notice>
+              )}
 
-            {/* A launch without the session bus, and what that run has not got (charter#746). */}
-            <SessionBusNotice chats={ending} />
-            {/* Browsers that cannot start for the engine's sandbox, and the ways out (#2835). */}
-            <EngineDownloadNotice />
-            <EngineSandboxNotice />
-            {/* A cluster pool that began minting without asking: told once, blocking nothing (#4442). */}
-            <PoolMintingNotice onOpenPools={() => openSettingsAt("you.machine.pools")} />
+              {/* A launch without the session bus, and what that run has not got (charter#746). */}
+              <SessionBusNotice chats={ending} />
+              {/* Browsers that cannot start for the engine's sandbox, and the ways out (#2835). */}
+              <EngineDownloadNotice />
+              <EngineSandboxNotice />
+              {/* A cluster pool that began minting without asking: told once, blocking nothing (#4442). */}
+              <PoolMintingNotice onOpenPools={() => openSettingsAt("you.machine.pools")} />
 
-            {/* The session host stopped unexpectedly three times in five minutes, and the window's
+              {/* The session host stopped unexpectedly three times in five minutes, and the window's
             supervisor stopped starting it again: Try again (#2007). */}
-            <HostFailingNotice />
+              <HostFailingNotice />
 
-            {/* Vaults the launch left under the old name because macOS would have asked (#1306). */}
-            <VaultsWaitingNotice />
+              {/* Vaults the launch left under the old name because macOS would have asked (#1306). */}
+              <VaultsWaitingNotice />
 
-            {/* A project the last quit had open that has moved or gone, with Locate… and Forget
+              {/* A project the last quit had open that has moved or gone, with Locate… and Forget
             (NO-5). A line, never an error dialog: the record is a convenience and the project
             is the truth (ADR 0033). Said up here, because the window may well have come back on
             another project; when the opener is drawn and lists the same project, the opener's
             line is the one, and settling it there settles it here. */}
-            {goneAtLaunch
-              .filter((gone) => !goneDismissed.has(gone.path))
-              .filter(
-                (gone) =>
-                  !(openerUp && !settingsAlone) ||
-                  (openerGone !== "unread" && !openerGone.includes(gone.path)),
-              )
-              .map((gone) => (
-                <GoneProjectNotice
-                  key={gone.path}
-                  gone={gone}
-                  cause={goneCause(gone.path)}
-                  onLocated={(found) => {
-                    goneSettled(gone.path);
-                    letGoneGo(gone.path);
-                    setGoneChanged((n) => n + 1);
-                    void openInto(found, true);
-                  }}
-                  onForgotten={() => {
-                    goneSettled(gone.path);
-                    letGoneGo(gone.path);
-                    setGoneChanged((n) => n + 1);
-                  }}
-                  onDismiss={() => {
-                    dismissGone(gone.path);
-                    keepGoneDismissed(gone.path);
-                    goneSettled(gone.path);
-                  }}
-                />
-              ))}
-            {/* A browser sign-in a forge ended, with Sign in again (#729). */}
-            <ForgeSignInEnded />
-            {/* Whether purlis may send reports, asked once on this machine (#5688), once the
+              {goneAtLaunch
+                .filter((gone) => !goneDismissed.has(gone.path))
+                .filter(
+                  (gone) =>
+                    !(openerUp && !settingsAlone) ||
+                    (openerGone !== "unread" && !openerGone.includes(gone.path)),
+                )
+                .map((gone) => (
+                  <GoneProjectNotice
+                    key={gone.path}
+                    gone={gone}
+                    cause={goneCause(gone.path)}
+                    onLocated={(found) => {
+                      goneSettled(gone.path);
+                      letGoneGo(gone.path);
+                      setGoneChanged((n) => n + 1);
+                      void openInto(found, true);
+                    }}
+                    onForgotten={() => {
+                      goneSettled(gone.path);
+                      letGoneGo(gone.path);
+                      setGoneChanged((n) => n + 1);
+                    }}
+                    onDismiss={() => {
+                      dismissGone(gone.path);
+                      keepGoneDismissed(gone.path);
+                      goneSettled(gone.path);
+                    }}
+                  />
+                ))}
+              {/* A browser sign-in a forge ended, with Sign in again (#729). */}
+              <ForgeSignInEnded />
+              {/* Whether purlis may send reports, asked once on this machine (#5688), once the
                 launch has settled and while no other question has the window. */}
-            {launch !== undefined && !restoring && !settingsAlone && (
-              <ReportConsentAsk quiet={approving.length > 0 || asking} />
-            )}
-            {/* Asked again once, after the next crash, for someone who chose Not now (#5700). */}
-            <ReportCrashNotice
-              onOpenSettingsAt={(group, setting) => openSettingsAt(group, undefined, setting)}
-            />
-            {/* Add a pool… (#2679): Pool setup for a Docker pool in the project in front (#4484),
+              {launch !== undefined && !restoring && !settingsAlone && (
+                <ReportConsentAsk quiet={approving.length > 0 || asking} />
+              )}
+              {/* Asked again once, after the next crash, for someone who chose Not now (#5700). */}
+              <ReportCrashNotice
+                onOpenSettingsAt={(group, setting) => openSettingsAt(group, undefined, setting)}
+              />
+              {/* Add a pool… (#2679): Pool setup for a Docker pool in the project in front (#4484),
                 else a dialog, opened from the palette or the Pools group. */}
-            <AddDockerPoolHost plane={inFront} onPoolSetup={windowDoes.openPoolSetup} />
-            {/* An entry the store itself would not take back, said the same way. */}
-            {notRestored.map((line) => (
-              <Notice
-                key={line}
-                cause={`not-restored:${line}`}
-                onDismiss={() => setNotRestored((was) => was.filter((one) => one !== line))}
-              >
-                {line}
-              </Notice>
-            ))}
+              <AddDockerPoolHost plane={inFront} onPoolSetup={windowDoes.openPoolSetup} />
+              {/* An entry the store itself would not take back, said the same way. */}
+              {notRestored.map((line) => (
+                <Notice
+                  key={line}
+                  cause={`not-restored:${line}`}
+                  onDismiss={() => setNotRestored((was) => was.filter((one) => one !== line))}
+                >
+                  {line}
+                </Notice>
+              ))}
 
-            {/* No project in front: the welcome, and nothing else (#1812). "No sessions" would be
+              {/* No project in front: the welcome, and nothing else (#1812). "No sessions" would be
             true and useless — there is nowhere to open one, and the thing the operator needs is
             the way to give the window a project.
             **Not before the core has answered, and not while the restore is still opening
@@ -3073,146 +3107,151 @@ function App() {
             flashed up in between would be purlis telling a newcomer there is nothing here half
             a second before eight projects arrive.
             Inside the window's list, so the welcome's own lines are listed with the window's. */}
-            {openerUp && !settingsAlone && (
+              {openerUp && !settingsAlone && (
+                <div className="body">
+                  <div className="panes">
+                    <WindowLinesAt.Provider value={setWindowLinesAt}>
+                      <Onboarding
+                        steps={steps}
+                        gate={gitGate}
+                        holdsMade={steps.holding !== undefined && planes.includes(steps.holding)}
+                        reopen={(path) => void openInto(path, true)}
+                        here={!heldSomething && (launch?.here ?? false)}
+                        reason={launch?.reason ?? ""}
+                        adding={planes.length > 0}
+                        onOpen={(path) => void openInto(path, true)}
+                        onGoneListed={setOpenerGone}
+                        onGoneSettled={goneSettled}
+                        goneChanged={goneChanged}
+                        trouble={openTrouble}
+                        // Create a project's act, on every window: a repo into this machine's project
+                        // (FR-4), laid out from the template picked beside it (FR-17).
+                        onOpenRepo={firstRunRepo}
+                        onMakeProject={(folder, template) =>
+                          firstRunMake(folder, template, "github")
+                        }
+                        onSignInToForge={(row) => {
+                          setRepoTrouble(undefined);
+                          void signInToForge(row).then(setRepoTrouble);
+                        }}
+                        openingRepo={openingRepo}
+                        repoTrouble={repoTrouble}
+                        repoForgeAsk={repoForgeAsk}
+                        onRunElsewhere={() => setRunElsewhereNext(true)}
+                        runElsewhereAsked={runElsewhereNext}
+                      />
+                    </WindowLinesAt.Provider>
+                  </div>
+                </div>
+              )}
+            </NoticeList>
+
+            {/* Every project this window holds. Only the one in front is in the window; the ones the
+          person was in last stay drawn off it (`projectShown.ts`), and the rest keep their tabs,
+          their splits and their chat states and draw nothing at all. */}
+            <div className="project-views" ref={setProjectSlot} />
+            {planes.map((plane) => (
+              <PlaneView
+                key={plane}
+                plane={plane}
+                inFront={plane === inFront}
+                kept={keptDrawn.has(plane)}
+                slot={projectSlot}
+                projects={drawn}
+                pinnedProjects={pinnedProjects}
+                window={windowDoes}
+                onReport={onReport}
+                onSessionRows={onSessionRows}
+                alerts={alerts}
+                statusNotices={plane === inFront ? statusNotices : undefined}
+                contributed={contributedPanels}
+                views={extensionViews}
+                commands={extensionCommands}
+                settingsAsked={settingsAsk?.plane === plane ? settingsAsk.at : undefined}
+                savingAsked={savingAsk?.plane === plane ? savingAsk.at : undefined}
+                poolSetupAsked={poolSetupAsk?.plane === plane ? poolSetupAsk.at : undefined}
+                licencesAsked={licencesAsk?.plane === plane ? licencesAsk.at : undefined}
+                focusMode={focusMode.on}
+                tabWindow={tabWindow?.number}
+                settingsTabAsked={settingsTabAsk?.plane === plane ? settingsTabAsk.at : undefined}
+                settingsLinkAsked={settingsLinkAsk?.plane === plane ? settingsLinkAsk : undefined}
+                yourSettingsAsked={
+                  yourSettingsAsk?.plane === plane ? yourSettingsAsk.at : undefined
+                }
+                firstChatAsked={firstChat?.plane === plane ? firstChat : undefined}
+                shellAsked={shellAsk?.plane === plane ? shellAsk : undefined}
+                fileAsked={fileAsk?.plane === plane ? fileAsk : undefined}
+                artifactAsked={artifactAsk?.plane === plane ? artifactAsk : undefined}
+                closeAsked={closeAsk?.plane === plane ? closeAsk : undefined}
+                onAsking={onAsking}
+                awayRefused={awayRefusals.held[plane]}
+                onAway={answerAway}
+                waiting={registry.held[plane]}
+                questions={registry.questions[plane]}
+                inboxAsked={inboxAsk?.plane === plane ? inboxAsk.at : undefined}
+                inboxGroup={inboxAsk?.plane === plane ? inboxAsk.session : undefined}
+                elsewhere={elsewhere}
+                windowLines={plane === inFront ? windowLines : undefined}
+                profileNames={profileNames.of[plane]}
+                onSeen={plane === inFront ? onSeen : undefined}
+              />
+            ))}
+
+            {/* Settings drawn where the opener is, with no project open (#1206). */}
+            {openerUp && settingsAlone && (
               <div className="body">
                 <div className="panes">
-                  <WindowLinesAt.Provider value={setWindowLinesAt}>
-                    <Onboarding
-                      steps={steps}
-                      gate={gitGate}
-                      holdsMade={steps.holding !== undefined && planes.includes(steps.holding)}
-                      reopen={(path) => void openInto(path, true)}
-                      here={!heldSomething && (launch?.here ?? false)}
-                      reason={launch?.reason ?? ""}
-                      adding={planes.length > 0}
-                      onOpen={(path) => void openInto(path, true)}
-                      onGoneListed={setOpenerGone}
-                      onGoneSettled={goneSettled}
-                      goneChanged={goneChanged}
-                      trouble={openTrouble}
-                      // Create a project's act, on every window: a repo into this machine's project
-                      // (FR-4), laid out from the template picked beside it (FR-17).
-                      onOpenRepo={firstRunRepo}
-                      onMakeProject={(folder, template) => firstRunMake(folder, template, "github")}
-                      onSignInToForge={(row) => {
-                        setRepoTrouble(undefined);
-                        void signInToForge(row).then(setRepoTrouble);
-                      }}
-                      openingRepo={openingRepo}
-                      repoTrouble={repoTrouble}
-                      repoForgeAsk={repoForgeAsk}
-                      onRunElsewhere={() => setRunElsewhereNext(true)}
-                      runElsewhereAsked={runElsewhereNext}
-                    />
-                  </WindowLinesAt.Provider>
+                  <section className="view-pane" aria-label={SETTINGS_TAB_TITLE}>
+                    <header className="view-head">
+                      <h2>{SETTINGS_TAB_TITLE}</h2>
+                      <Button onPress={() => setSettingsAlone(false)}>Done</Button>
+                    </header>
+                    <div className="view-body">
+                      <SettingsTab />
+                    </div>
+                  </section>
                 </div>
               </div>
             )}
-          </NoticeList>
+          </main>
+        </div>
 
-          {/* Every project this window holds. Only the one in front is in the window; the ones the
-          person was in last stay drawn off it (`projectShown.ts`), and the rest keep their tabs,
-          their splits and their chat states and draw nothing at all. */}
-          <div className="project-views" ref={setProjectSlot} />
-          {planes.map((plane) => (
-            <PlaneView
-              key={plane}
-              plane={plane}
-              inFront={plane === inFront}
-              kept={keptDrawn.has(plane)}
-              slot={projectSlot}
-              projects={drawn}
-              pinnedProjects={pinnedProjects}
-              window={windowDoes}
-              onReport={onReport}
-              onSessionRows={onSessionRows}
-              alerts={alerts}
-              statusNotices={plane === inFront ? statusNotices : undefined}
-              contributed={contributedPanels}
-              views={extensionViews}
-              commands={extensionCommands}
-              settingsAsked={settingsAsk?.plane === plane ? settingsAsk.at : undefined}
-              savingAsked={savingAsk?.plane === plane ? savingAsk.at : undefined}
-              poolSetupAsked={poolSetupAsk?.plane === plane ? poolSetupAsk.at : undefined}
-              licencesAsked={licencesAsk?.plane === plane ? licencesAsk.at : undefined}
-              focusMode={focusMode.on}
-              tabWindow={tabWindow?.number}
-              settingsTabAsked={settingsTabAsk?.plane === plane ? settingsTabAsk.at : undefined}
-              settingsLinkAsked={settingsLinkAsk?.plane === plane ? settingsLinkAsk : undefined}
-              yourSettingsAsked={yourSettingsAsk?.plane === plane ? yourSettingsAsk.at : undefined}
-              firstChatAsked={firstChat?.plane === plane ? firstChat : undefined}
-              shellAsked={shellAsk?.plane === plane ? shellAsk : undefined}
-              fileAsked={fileAsk?.plane === plane ? fileAsk : undefined}
-              artifactAsked={artifactAsk?.plane === plane ? artifactAsk : undefined}
-              closeAsked={closeAsk?.plane === plane ? closeAsk : undefined}
-              onAsking={onAsking}
-              awayRefused={awayRefusals.held[plane]}
-              onAway={answerAway}
-              waiting={registry.held[plane]}
-              questions={registry.questions[plane]}
-              inboxAsked={inboxAsk?.plane === plane ? inboxAsk.at : undefined}
-              inboxGroup={inboxAsk?.plane === plane ? inboxAsk.session : undefined}
-              elsewhere={elsewhere}
-              windowLines={plane === inFront ? windowLines : undefined}
-              profileNames={profileNames.of[plane]}
-            />
-          ))}
-
-          {/* Settings drawn where the opener is, with no project open (#1206). */}
-          {openerUp && settingsAlone && (
-            <div className="body">
-              <div className="panes">
-                <section className="view-pane" aria-label={SETTINGS_TAB_TITLE}>
-                  <header className="view-head">
-                    <h2>{SETTINGS_TAB_TITLE}</h2>
-                    <Button onPress={() => setSettingsAlone(false)}>Done</Button>
-                  </header>
-                  <div className="view-body">
-                    <SettingsTab />
-                  </div>
-                </section>
-              </div>
-            </div>
-          )}
-        </main>
-      </div>
-
-      {/* What opening a project puts in force, and the question about it (ADR 0035).
+        {/* What opening a project puts in force, and the question about it (ADR 0035).
           Nothing has been attached and nothing has been started while this is up: cancelling
           leaves the window exactly as it was. One at a time, oldest first. */}
-      {approving[0] && (
-        <ApprovePlane
-          ask={approving[0]}
-          onApprove={(ask) => void approveProject(ask)}
-          onCancel={() =>
-            setApproving((queue) => queue.filter((q) => q.path !== approving[0].path))
-          }
-        />
-      )}
+        {approving[0] && (
+          <ApprovePlane
+            ask={approving[0]}
+            onApprove={(ask) => void approveProject(ask)}
+            onCancel={() =>
+              setApproving((queue) => queue.filter((q) => q.path !== approving[0].path))
+            }
+          />
+        )}
 
-      {/* Making a project: a plane charter scaffolds, opened through the gate like any other
+        {/* Making a project: a plane charter scaffolds, opened through the gate like any other
           (ADR 0035, spec decision 27). The window's, like the opener — what it ends in
           is a project this window holds — and mounted only while it is up. */}
-      {creating && (
-        <NewProject
-          trouble={createTrouble}
-          forgeAsk={createForgeAsk}
-          onEdit={() => setCreateForgeAsk(undefined)}
-          making={makingProject}
-          onCreate={(path, planeIsThisRepo, adopt) =>
-            void makeProject(path, planeIsThisRepo, adopt)
-          }
-          onOpenRepo={(path) => dialogRepo(path)}
-          opening={openingRepo}
-          onCancel={() => {
-            setCreating(false);
-            setCreateTrouble(undefined);
-            setCreateForgeAsk(undefined);
-          }}
-        />
-      )}
+        {creating && (
+          <NewProject
+            trouble={createTrouble}
+            forgeAsk={createForgeAsk}
+            onEdit={() => setCreateForgeAsk(undefined)}
+            making={makingProject}
+            onCreate={(path, planeIsThisRepo, adopt) =>
+              void makeProject(path, planeIsThisRepo, adopt)
+            }
+            onOpenRepo={(path) => dialogRepo(path)}
+            opening={openingRepo}
+            onCancel={() => {
+              setCreating(false);
+              setCreateTrouble(undefined);
+              setCreateForgeAsk(undefined);
+            }}
+          />
+        )}
 
-      {/* The primary input (spec decision 1), and there is exactly one of it.
+        {/* The primary input (spec decision 1), and there is exactly one of it.
           **Always mounted**, because what opens it is a keystroke it listens for itself, on
           the window, capture-phase — a palette the window had to decide to render would be
           one the operator could not reach from inside a pane's terminal, and one that waited
@@ -3222,59 +3261,60 @@ function App() {
           What it lists is the project in front's own catalogue, which travels up with the
           rest of that project's report, and the window's own when there is none — whose
           refusals are #111's. */}
-      <Palette
-        offers={paletteOffers ?? openerOffers}
-        projects={{ rows: switcherRows, asked: switcherAsk }}
-        files={files}
-        artifacts={paletteArtifacts}
-        said={said}
-        onSettings={followSaid}
-        onRun={saying?.run ?? run}
-        onOpened={setPaletteOpen}
-      />
+        <Palette
+          offers={paletteOffers ?? openerOffers}
+          projects={{ rows: switcherRows, asked: switcherAsk }}
+          files={files}
+          artifacts={paletteArtifacts}
+          said={said}
+          onSettings={followSaid}
+          onRun={saying?.run ?? run}
+          onOpened={setPaletteOpen}
+        />
 
-      {/* What has contributed what to this window (ADR 0041 item 5). Mounted only
+        {/* What has contributed what to this window (ADR 0041 item 5). Mounted only
           while it is asked for: it reads every installed extension's files to re-take its
           fingerprint, and a launch does not pay for that unless somebody looked. */}
-      {extensions && <Extensions onClose={() => setExtensions(false)} />}
+        {extensions && <Extensions onClose={() => setExtensions(false)} />}
 
-      {asking && <QuitWarning chats={everyEnding} onQuit={quit} onCancel={dontQuit} />}
+        {asking && <QuitWarning chats={everyEnding} onQuit={quit} onCancel={dontQuit} />}
 
-      <PoolSignInConfirm />
+        <PoolSignInConfirm />
 
-      {/* The one question a close asks about a view's unsaved work (#3929): a project's, a
+        {/* The one question a close asks about a view's unsaved work (#3929): a project's, a
           quit's. */}
-      {unsavedAsk && <UnsavedWorkQuestion asked={unsavedAsk} onAnswered={unsavedAnswered} />}
+        {unsavedAsk && <UnsavedWorkQuestion asked={unsavedAsk} onAnswered={unsavedAnswered} />}
 
-      {closing !== undefined && (
-        <ClosingProject
-          name={calledOn(closing)}
-          chats={reports[closing]?.ending ?? []}
-          heard={reports[closing]?.settled ?? false}
-          onClose={() => {
-            const plane = closing;
-            setClosing(undefined);
-            void letGoOf(plane).then((answer) =>
-              setReport(
-                answer.ok
-                  ? answer.said
-                    ? { from: `project.close:${plane}`, refused: false, words: answer.said }
-                    : undefined
-                  : { from: `project.close:${plane}`, refused: true, words: answer.refused },
-              ),
-            );
-          }}
-          onCancel={() => setClosing(undefined)}
-        />
-      )}
+        {closing !== undefined && (
+          <ClosingProject
+            name={calledOn(closing)}
+            chats={reports[closing]?.ending ?? []}
+            heard={reports[closing]?.settled ?? false}
+            onClose={() => {
+              const plane = closing;
+              setClosing(undefined);
+              void letGoOf(plane).then((answer) =>
+                setReport(
+                  answer.ok
+                    ? answer.said
+                      ? { from: `project.close:${plane}`, refused: false, words: answer.said }
+                      : undefined
+                    : { from: `project.close:${plane}`, refused: true, words: answer.refused },
+                ),
+              );
+            }}
+            onCancel={() => setClosing(undefined)}
+          />
+        )}
 
-      {relaunchAsking && (
-        <RelaunchAsk
-          question={relaunchAsking.question}
-          nameOf={calledOn}
-          onAnswer={relaunchAsking.answer}
-        />
-      )}
+        {relaunchAsking && (
+          <RelaunchAsk
+            question={relaunchAsking.question}
+            nameOf={calledOn}
+            onAnswer={relaunchAsking.answer}
+          />
+        )}
+      </SeenRowsOf.Provider>
     </div>
   );
 }

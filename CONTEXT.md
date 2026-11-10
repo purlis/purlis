@@ -1448,7 +1448,10 @@ What a chat is doing as the person sees it, the same on its sidebar row, its pan
 chats** and Asks: Working, Waiting on you, Waiting on a chat, Stuck?, Done, Failed, Idle (finished
 with work left behind) or Can't tell, each with one icon and colour. Drawn from its current run's
 **Run state** (ADR 0076). Stuck? is a question, which "It's fine" clears until the chat changes
-state (ADR 0121).
+state (ADR 0121): a working chat with no new command or output for a while, the same command
+failing several times in a row, or one turn running long (`stuck-silent-minutes`,
+`stuck-failing-times`, `stuck-long-minutes`). Idle is a finished chat whose folder holds
+uncommitted work; with none left it is Done.
 _Avoid_: status, run state (that is the run's)
 
 **Quiet**:

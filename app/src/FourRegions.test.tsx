@@ -26,6 +26,7 @@ import { drawnWith } from "./cascade.testkit";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
 import { selectNamed } from "./ui/select/select.testkit";
 import { SCOPE_LABEL } from "./Inbox";
+import { rowName } from "./menus.testkit";
 
 /**
  * **The window is four regions** (ADR 0038), against the whole app, because three of
@@ -1904,7 +1905,7 @@ describe("the right side's activity bar", () => {
     await screen.findByRole("tabpanel", { name: "Asks" });
     await screen.findByRole("tabpanel", { name: "Memory" });
 
-    await userEvent.click(await screen.findByRole("button", { name: /^Notices: / }));
+    await userEvent.click(await screen.findByTestId("status-alerts"));
 
     expect(await screen.findByRole("tabpanel", { name: "Notices" })).toBeInTheDocument();
     expect(lowerTab("Notices")).toHaveAttribute("aria-selected", "true");
@@ -2019,9 +2020,7 @@ describe("moving a view", () => {
 
     const menu = await menuOf(icon("Navigation", "Search"));
 
-    expect(menu.getAllByRole("menuitem").map((row) => row.getAttribute("aria-label"))).toEqual([
-      "Move to panel",
-    ]);
+    expect(menu.getAllByRole("menuitem").map(rowName)).toEqual(["Move to panel"]);
   });
 
   it("moves Search to the Panel's left half, open there, its icon among the Lower icons", async () => {
@@ -2517,7 +2516,11 @@ describe("the status line", () => {
     const { asked } = core();
     render(<App />);
 
-    const button = await screen.findByRole("button", { name: "Notices: 1" });
+    // No count on the status line: the Notices icon on the right bar shows it (#6004).
+    const button = await screen.findByTestId("status-alerts");
+    await waitFor(() => expect(button).toHaveAttribute("data-count", "1"));
+    expect(button).toHaveAccessibleName("Notices");
+    expect(button).not.toHaveTextContent(/\d/);
     await userEvent.click(button);
 
     const view = await screen.findByRole("tabpanel", { name: "Notices" });
@@ -2543,7 +2546,9 @@ describe("the status line", () => {
   it("draws no alerts section in the right-hand region any more", async () => {
     core();
     render(<App />);
-    await screen.findByRole("button", { name: "Notices: none" });
+    await waitFor(() =>
+      expect(screen.getByTestId("status-alerts")).toHaveAttribute("data-count", "0"),
+    );
 
     expect(screen.queryByTestId("panel-alerts")).toBeNull();
   });

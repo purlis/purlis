@@ -6,7 +6,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { userEvent } from "@testing-library/user-event";
 import { catalogue, type Now, type Offer } from "./actions";
 import { MenuShortcuts } from "./ui/menu/Menu";
-import { rowKey } from "./keys/registry";
+import { menuRowKey } from "./keys/registry";
 import { NewTabButton } from "./NewTabButton";
 import { CLOSES_AFTER_MS, newTabRows, OPENS_AFTER_MS } from "./newTabList";
 import { noTabs } from "./tabs";
@@ -37,7 +37,7 @@ function drawn({ long = false } = {}) {
   const pressed: Offer[] = [];
   const onPress = vi.fn((offer: Offer) => void pressed.push(offer));
   render(
-    <MenuShortcuts.Provider value={(act) => rowKey(act, true)}>
+    <MenuShortcuts.Provider value={(act) => menuRowKey(act, true)}>
       <p>Elsewhere</p>
       <NewTabButton
         offer={offers.find((one) => one.id === "tab.new")}
@@ -212,7 +212,8 @@ describe("the list's rows (#5292; stories 78 and 81)", () => {
 
     expect(rowNames().slice(0, 3)).toEqual(["Empty tab", "New chat", "New shell"]);
     const rows = within(list() as HTMLElement).getAllByRole("menuitem");
-    const keyOf = (row: HTMLElement) => row.querySelector('[data-part="shortcut"]')?.textContent;
+    const keyOf = (row: HTMLElement) =>
+      row.querySelector('[data-part="shortcut"]')?.getAttribute("data-key");
     expect(rows.slice(0, 3).map(keyOf)).toEqual(["⌘T", "⌘N", "⌘⇧T"]);
     expect(within(list() as HTMLElement).getAllByRole("separator")).toHaveLength(1);
   });

@@ -554,6 +554,50 @@ where
     }
 }
 
+/// The host's [`Beside`] as two calls, what asks a chat's router extension at its start
+/// (SK-15b), what reads a confinement it started as it is now (#3407), what keeps the skills the
+/// chat was armed with (#4218), and what keeps the skills it starts without here (#2977).
+impl<C, R, L, A, N> Beside
+    for (
+        C,
+        R,
+        std::sync::Arc<dyn crate::skills::router::AskRouter>,
+        L,
+        A,
+        N,
+    )
+where
+    C: Fn(&session::ConfinePlan) -> Result<session::Confined, String>,
+    R: Fn(serde_json::Value) -> Result<(), String>,
+    L: Fn(&str) -> Option<crate::hostedchats::Live>,
+    A: Fn(Vec<session::ArmedSkill>),
+    N: Fn(session::SkillsNotThere),
+{
+    fn confine(&self, plan: &session::ConfinePlan) -> Result<session::Confined, String> {
+        (self.0)(plan)
+    }
+
+    fn record(&self, entry: serde_json::Value) -> Result<(), String> {
+        (self.1)(entry)
+    }
+
+    fn router(&self) -> Option<std::sync::Arc<dyn crate::skills::router::AskRouter>> {
+        Some(std::sync::Arc::clone(&self.2))
+    }
+
+    fn reach_of(&self, confinement: &str) -> Option<crate::hostedchats::Live> {
+        (self.3)(confinement)
+    }
+
+    fn armed(&self, skills: Vec<session::ArmedSkill>) {
+        (self.4)(skills);
+    }
+
+    fn not_there(&self, not: session::SkillsNotThere) {
+        (self.5)(not);
+    }
+}
+
 /// What the host does beside a start it composes: what [`compose`] asks of it.
 pub trait Beside {
     /// The confinement `plan` plans, started by the host as the program's own.
@@ -579,6 +623,13 @@ pub trait Beside {
     /// back with. A host that keeps none ignores it.
     fn armed(&self, skills: Vec<session::ArmedSkill>) {
         let _ = skills;
+    }
+    /// **Told the skills its persona names that the chat being composed starts without here**
+    /// (1.81, SK-5d, #2977): [`skills_not_here`]'s missing and built-in ones, by name alone,
+    /// which the host answers its start with so its window says them on the chat's tab. Not told
+    /// where none is. A host that keeps none ignores it.
+    fn not_there(&self, not: session::SkillsNotThere) {
+        let _ = not;
     }
 }
 
@@ -925,6 +976,20 @@ pub fn compose_ready(
                 start: Some(&skills),
             },
         )));
+    }
+    // **What its persona names that this machine does not have** (SK-5d, #2977): read as the
+    // window reads a chat of its own (SK-5), by its harness's own adapter here, and told its host
+    // by name alone, so its window says it on its tab, naming this runner. Broken plane skills
+    // and the repo's are this machine's reading of the same plane files the window holds, and
+    // are not said from here.
+    if let Some(not) = skills_not_here(&skills, kit, ready.harness, &ready.env)
+        && let Some(said) = (session::SkillsNotThere {
+            missing: not.missing,
+            no_built_in: not.no_built_in,
+        })
+        .bounded()
+    {
+        beside.not_there(said);
     }
     // No watcher of the project's own settings runs here, so a sandboxed Claude Code chat is
     // started on the person's settings and purlis's, as the window starts one it cannot watch.

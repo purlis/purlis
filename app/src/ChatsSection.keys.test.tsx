@@ -7,9 +7,10 @@
  * whatever draws the tree. Each of the list's own keys (Space, Delete, F2, Escape), its one Tab
  * stop, the arrows, Enter and a press, the row's menu, its drag mark, and what a reader hears.
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
+import { aCardIsUp, forgetCards } from "./chatCard";
 import { CARD_DELAY_MS, ChatsSection } from "./ChatsSection";
 import { ChatsHere, fixedChats, nothingKnown, type ChatStates } from "./chatState";
 import { chatsTree, type ListedChat } from "./chatsTree";
@@ -477,5 +478,33 @@ describe("the Chats list on the tree family (#3198)", () => {
     await userEvent.keyboard("{Shift>}{F10}{/Shift}");
     await userEvent.click(await screen.findByRole("menuitem", { name: "Clear finished" }));
     expect(cleared).toEqual([["t-2"]]);
+  });
+});
+
+describe("a row's card and the keyboard leaving (#6073)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    forgetCards();
+  });
+
+  // **The card comes up just as the keyboard leaves** (#6073): the rest's wait ends and the
+  // card is up in the window's one record (`chatCard.ts`) before React has drawn the row again,
+  // and the keyboard leaves the row in that moment. The row's leaving must take the card down
+  // by that record, not by what the row last drew, or the card stays up with no keyboard and
+  // no pointer on the row (WebKit's `RolledUpHand` picture).
+  it("takes the card down when the keyboard leaves the row the moment its card came up", async () => {
+    draw();
+    // A key first, so the focus below is the keyboard resting on the row, not a press's.
+    await userEvent.keyboard("{Shift}");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    act(() => rowOf(3).focus());
+    // The wait ends, outside React's turn: the record says up, the row has not drawn it yet.
+    vi.advanceTimersByTime(CARD_DELAY_MS);
+    expect(aCardIsUp()).toBe(true);
+    rowOf(3).blur();
+    vi.useRealTimers();
+    await act(async () => {});
+    expect(aCardIsUp()).toBe(false);
+    expect(screen.queryByTestId("chat-card-3")).toBeNull();
   });
 });
