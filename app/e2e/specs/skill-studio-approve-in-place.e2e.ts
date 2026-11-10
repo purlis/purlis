@@ -12,6 +12,7 @@ import {
   runFromThePalette,
 } from "../reach.js";
 import { studioPage } from "../studio.js";
+import { openTheStatusCard } from "../reading.js";
 import { projectInFront, runningIn } from "../running.js";
 
 /**
@@ -119,6 +120,9 @@ describe("a Skill studio start refused for its profile's approval", function () 
     // Refused, with the approval offered beside the refusal; nothing started. The refusal pops
     // from the status bar's Notices item (#3653), on its card; the Notices centre lists it too,
     // earlier in the page's order, where its copy can stand out of its list's sight.
+    // No card pops by itself (#6004): the refusal waits behind the Notices item's dot, whose
+    // press shows its card, as a person opens it.
+    await openTheStatusCard();
     const offer = await $(
       '//*[@data-chip="status/bar/notices"]//button[contains(., "Approve and start…")]',
     );

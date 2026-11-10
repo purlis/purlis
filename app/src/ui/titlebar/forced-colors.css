@@ -1,0 +1,15 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The titlebar family in forced colours** (#3387): what `theme/forced-colors.css` says of the
+   window, said of this family's own parts, in the system's palette alone. The window imports it
+   into the `forced` layer before that sheet (`ui/stylesheets.ts`), so the window's focus ring is
+   still drawn over it. */
+
+@media (forced-colors: active) {
+  /* Something New on a chip (#6004): the pip in the system's highlight, as the activity bar's is. */
+  [data-part="pip"][data-scope="titlebar"] {
+    forced-color-adjust: none;
+    background-color: Highlight;
+  }
+}

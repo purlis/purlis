@@ -53,42 +53,43 @@ async function planeRoot(): Promise<string> {
   return ((await said.getAttribute("data-directory")) ?? "").trim();
 }
 
-/** Waits for the Notices button's name, and says what it was when it never gets there. */
-async function untilTheButtonSays(want: string): Promise<void> {
+/** What the Notices button counts, from its `data-count`: a number, or "unknown". It draws no
+ *  number since #6004 (the right bar's Notices icon shows it), so its name says none. */
+const countOf = async (): Promise<string | null> =>
+  $('[data-testid="status-alerts"]').getAttribute("data-count");
+
+/** Waits for the Notices button to count `want`, and says what it counted when it never does. */
+async function untilTheButtonCounts(want: number): Promise<void> {
   await $('[data-testid="status-alerts"]').waitForExist({ timeout: 20_000 });
   let last: string | null = "";
   try {
     await browser.waitUntil(
       async () => {
-        last = await $('[data-testid="status-alerts"]').getAttribute("aria-label");
-        return last === want;
+        last = await countOf();
+        return last === String(want);
       },
       { timeout: 30_000, interval: 250 },
     );
   } catch {
-    throw new Error(`the Notices button never said ${want}; it said ${JSON.stringify(last)}`);
+    throw new Error(`the Notices button never counted ${want}; it counted ${JSON.stringify(last)}`);
   }
 }
 
-/** What the Notices button counts once it has a number: none is 0. Other Notices than the
- *  alerts can stand on the runner's machine (a doctor finding, an offer), so a spec counts from
- *  what is there and never assumes none. */
+/** What the Notices button counts once it has a number. Other Notices than the alerts can stand
+ *  on the runner's machine (a doctor finding, an offer), so a spec counts from what is there and
+ *  never assumes none. */
 async function noticesCounted(): Promise<number> {
   await $('[data-testid="status-alerts"]').waitForExist({ timeout: 20_000 });
   let said: string | null = null;
   await browser.waitUntil(
     async () => {
-      said = await $('[data-testid="status-alerts"]').getAttribute("aria-label");
-      return said !== null && said !== "Notices: not counted";
+      said = await countOf();
+      return said !== null && said !== "unknown";
     },
     { timeout: 30_000, interval: 250, timeoutMsg: "the Notices button never counted" },
   );
-  const text = String(said);
-  return text === "Notices: none" ? 0 : Number(text.replace("Notices: ", ""));
+  return Number(said);
 }
-
-/** The Notices button's name for a count. */
-const noticesSaid = (count: number) => (count === 0 ? "Notices: none" : `Notices: ${count}`);
 
 /** Presses the status line's Notices button and waits for the Notices view it opens (#1695,
  *  ADR 0119), asked for afresh — an element looked up before the view was shown is not the view. */
@@ -326,7 +327,7 @@ describe("the status line", () => {
       writeFileSync(marker, "4\n");
       // Opening the Notices view from the button reads the alerts again, as the drawer's opening did.
       const inbox = await openTheNotices();
-      await untilTheButtonSays(noticesSaid(before + 1));
+      await untilTheButtonCounts(before + 1);
       const row = await inbox.$('[data-scope=notice-list] [data-cause="alert:reinit"]');
       await row.waitForDisplayed({ timeout: 20_000 });
       await expect(row).toHaveText(expect.stringContaining("behind the current layout"));
@@ -337,7 +338,7 @@ describe("the status line", () => {
       writeFileSync(marker, was);
     }
     await openTheNotices();
-    await untilTheButtonSays(noticesSaid(before));
+    await untilTheButtonCounts(before);
   });
 
   it("draws no pin item for a plane that pins nothing", async () => {

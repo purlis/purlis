@@ -43,8 +43,8 @@ type One = {
   mark: LucideIcon;
   count?: number;
   hot?: boolean;
-  /** A dot in place of a count (#5645): something needs fixing. */
-  dot?: boolean;
+  /** A dot in place of a count: something needs fixing (#5645), or a decision (#6004). */
+  dot?: "danger" | "warning";
   /** A "new" pip (#6002): its view lists something not seen yet. */
   pip?: boolean;
 };
@@ -66,7 +66,7 @@ const RIGHT_TOP: One[] = [
   { name: "Vaults", mark: KeyRound },
 ];
 const RIGHT_BOTTOM: One[] = [
-  { name: "Notices", mark: TriangleAlert, dot: true, pip: true },
+  { name: "Notices", mark: TriangleAlert, dot: "danger", pip: true },
   { name: "Memory", mark: Brain },
   { name: "Todos", mark: ListTodo, count: 7 },
   { name: "History", mark: History },
@@ -98,15 +98,20 @@ function Group({
           selected={open === called}
           aria-label={called}
           aria-pressed={open === called}
-          aria-describedby={count === undefined && !dot && !pip ? undefined : `count-${called}`}
+          aria-describedby={
+            count === undefined && dot === undefined && !pip ? undefined : `count-${called}`
+          }
           onClick={() => onPick(called)}
           icon={<Mark />}
           count={
-            count === undefined && !dot && !pip ? undefined : (
+            count === undefined && dot === undefined && !pip ? undefined : (
               // Hidden from the name, read as the description (axe's name and content match).
               <span id={`count-${called}`} aria-hidden="true">
-                {dot === true ? (
-                  <ActivityDot said="A Notice needs fixing" />
+                {dot !== undefined ? (
+                  <ActivityDot
+                    tone={dot}
+                    said={dot === "danger" ? "A Notice needs fixing" : "A Notice needs a decision"}
+                  />
                 ) : (
                   count !== undefined && (
                     <ActivityCount
@@ -127,8 +132,20 @@ function Group({
 }
 
 /** A corner's bar, its top item open, pressed to switch. */
-function Corner({ variant, side }: { variant: ActivityVariant; side: "left" | "right" }) {
-  const [top, bottom] = side === "left" ? [LEFT_TOP, LEFT_BOTTOM] : [RIGHT_TOP, RIGHT_BOTTOM];
+function Corner({
+  variant,
+  side,
+  decision = false,
+}: {
+  variant: ActivityVariant;
+  side: "left" | "right";
+  /** Notices lists a decision and nothing broken: its dot is amber (#6004). */
+  decision?: boolean;
+}) {
+  const right = decision
+    ? RIGHT_BOTTOM.map((one): One => (one.dot === undefined ? one : { ...one, dot: "warning" }))
+    : RIGHT_BOTTOM;
+  const [top, bottom] = side === "left" ? [LEFT_TOP, LEFT_BOTTOM] : [RIGHT_TOP, right];
   const [open, setOpen] = useState<string | undefined>(top[0].name);
   const [half, setHalf] = useState<string | undefined>(undefined);
   const bar = (
@@ -231,5 +248,21 @@ export const TheRightColumn: Story = {
       context.canvas.getByRole("button", { name: "Notices" }),
     ).toHaveAccessibleDescription(/A Notice needs fixing.*something new/);
     await expect(context.canvasElement.querySelectorAll('[data-part="pip"]')).toHaveLength(2);
+  },
+};
+
+/** The right bar while Notices lists a decision that stops no chat and nothing broken (ADR 0121
+ *  decision 3, #6004): its dot in the waiting amber, still no number, and said in words. */
+export const TheRightColumnWithADecision: Story = {
+  args: { variant: "bar", side: "right", decision: true },
+  play: async (context) => {
+    await pressedByTheKeyboard(context);
+    const dot = context.canvasElement.querySelector('[data-part="count"][data-tone="warning"]');
+    await expect(dot).not.toBeNull();
+    await expect(dot).not.toHaveAttribute("data-count");
+    await expect(context.canvasElement.querySelector('[data-tone="danger"]')).toBeNull();
+    await expect(
+      context.canvas.getByRole("button", { name: "Notices" }),
+    ).toHaveAccessibleDescription(/A Notice needs a decision/);
   },
 };

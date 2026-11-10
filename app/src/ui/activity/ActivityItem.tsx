@@ -184,14 +184,21 @@ export function ActivityCount({
 }
 
 /**
- * **A dot on an item** (ADR 0119, #5645): where the count is drawn, a mark in the danger colour
- * that says something needs fixing, and never a number. `said` is the item's description, as a
- * count's sentence is. The danger tone is its own role, as the needs-you count's is: a count rule
- * of `parts` never reaches it.
+ * **A dot on an item** (ADR 0119, #5645; ADR 0121 decision 3, #6004): where the count is drawn, a
+ * mark and never a number: in the danger colour (`danger`) for something that needs fixing, in
+ * the waiting amber (`warning`) for a decision that stops no chat. `said` is the item's
+ * description, as a count's sentence is, so the colour is never the only thing that says it. Each
+ * tone is its own role, as the needs-you count's is: a count rule of `parts` never reaches it.
  */
-export function ActivityDot({ said }: { said: string }) {
+export function ActivityDot({
+  said,
+  tone = "danger",
+}: {
+  said: string;
+  tone?: "danger" | "warning";
+}) {
   return (
-    <span data-scope="activity" data-part="count" data-tone="danger">
+    <span data-scope="activity" data-part="count" data-tone={tone}>
       <span data-scope="activity" data-part="said">
         {said}
       </span>

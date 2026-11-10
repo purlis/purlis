@@ -624,3 +624,22 @@
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: calc(var(--focus-ring-width) * -1);
 }
+
+/* **A chip's "new" pip** (ADR 0121 decision 10, #6004): something on the chip the person has not
+   seen, in place of the card that came by itself. An 8px dot in the accent, ringed in the bar's own
+   ground as the notice dot is, over the chip's lower leading corner: opposite the working mark and
+   under the notice dot, and 2px into the strip's room under the chip. Laid over the slot, so it
+   coming and going moves nothing; a press goes through it to the chip. */
+[data-part="pip"][data-scope="titlebar"] {
+  position: absolute;
+  z-index: 1;
+  inset-block-end: calc(var(--space-1) * -1);
+  inset-inline-start: 0;
+  box-sizing: border-box;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: var(--radius-full);
+  background-color: var(--accent-base);
+  box-shadow: 0 0 0 2px var(--surface-deep);
+  pointer-events: none;
+}
