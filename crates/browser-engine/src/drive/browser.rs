@@ -5791,6 +5791,12 @@ impl Browser {
                 .unwrap_or_default();
             state.greys_at(&shown)
         };
+        if opaque && reads.iter().any(|(_, found)| found.pictured_unread) {
+            return Err(Refusal::Withheld(
+                "the page draws what cannot be read through a filter whose reach cannot be read"
+                    .into(),
+            ));
+        }
         for (root, found) in reads {
             let session = &root.session;
             let frames = found.frames.into_iter().filter(|chain| {
