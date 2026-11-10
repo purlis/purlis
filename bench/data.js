@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794302156371,
+  "lastUpdate": 1794304824069,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -45822,6 +45822,48 @@ window.BENCHMARK_DATA = {
             "value": 100.34202450000001,
             "unit": "ms",
             "extra": "median of 5 runs: 99.359, 100.242, 100.342, 101.287, 102.052 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "3be8bcf313a14c992c2703bc8b308f80cc803d00",
+          "message": "Consents and command confirmations are Blocking asks (#6000) (#6116)\n\n* Consents and command confirmations are Blocking asks (#6000)\n\n#6092 merged with main. Its two window tests find the Asks tab by\n/^Asks/, since #6020 put each activity icon's count in its name.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M723SESE4ZM1KME84AAZBHQ6\nPurlis-Persona: steward\n\n* Consents and command confirmations are Blocking asks (#6000): new files\n\nThe new modules, tests, ADR amendment, changelog fragment, and the\nstory baselines #6092's stories run drew.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M723SESE4ZM1KME84AAZBHQ6\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T09:05:08Z",
+          "tree_id": "d743cdcb602283ee9a64922c6eab8a3b10eb76c7",
+          "url": "https://github.com/purlis/purlis/commit/3be8bcf313a14c992c2703bc8b308f80cc803d00"
+        },
+        "date": 1794304819510,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.7065159999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.691, 0.699, 0.707, 0.709, 0.713 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.586831500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.473, 16.576, 16.587, 16.715, 16.903 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.199389,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.952, 102.182, 102.199, 102.211, 102.785 ms"
           }
         ]
       }
