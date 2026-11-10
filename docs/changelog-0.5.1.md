@@ -507,6 +507,23 @@ The complete list of what [0.5.1](../CHANGELOG.md) brought, from v0.5.0. The cha
   a file a chat is writing says so first. Repos, branch folders and the files purlis keeps stay
   read-only, and no write reaches outside the workspace's folder (#5376).
 
+- **A runner left on another Docker engine is remembered.** When you remove a pool while Docker
+  points at another engine than the one that made its runner, purlis still forgets the pool, and
+  now keeps the runner's container and home volume in a record of their own.
+  `purlis pool left-behind` lists them with the commands that remove them, and
+  `purlis pool left-behind --remove` removes them once Docker points back at that engine.
+
+- **Snooze for a while.** Snooze all on Asks now offers For 1 hour and Until tomorrow (09:00
+  the next day) beside snoozing until a chat asks something new, and whichever comes first
+  brings the chat back. When the time is up, its asks are counted on the ✋, notified again
+  and listed as New, even if purlis was closed meanwhile. While snoozed, a chat is not counted and sends
+  no notification. Asks says when the snoozed asks come back (#6018).
+
+- **Trust a clone you made outside purlis.** A workspace's clone that purlis did not clone, such
+  as one made in your own terminal, stands as a notice in its project naming its folder and its
+  remote. *Trust this clone* lets its saves push with your purlis sign-in and lets chats in that
+  workspace use your GitHub access with it, at exactly the remote the notice showed.
+
 ## Changed
 
 - **What purlis tells a chat says a chat is in a pane, not a tab.** The session record tool, the
@@ -710,11 +727,12 @@ The complete list of what [0.5.1](../CHANGELOG.md) brought, from v0.5.0. The cha
   by file.** `purlis secret exec --env` is refused there with a sentence naming `--file`, which the command
   reads the value from instead. Declare a persona's tool `as = "NAME file"` for such a chat.
 
-- **purlis runs Claude Code chats on Linux inside its own sandbox, on a profile for sandboxed chats
-  only.** Such a chat runs whole inside purlis's Linux wrap, as Codex and opencode chats do and as
-  Claude Code chats on a runner already did, and needs no bubblewrap or socat. Its project lists its
-  model's hosts at the full sandbox (`model-providers`). A Claude Code chat on a profile for every
-  chat keeps Claude Code's own sandbox.
+- **purlis runs every sandboxed Claude Code chat on Linux inside its own sandbox, on a profile for
+  sandboxed chats only.** Such a chat runs whole inside purlis's Linux wrap, as Codex and opencode
+  chats do and as Claude Code chats on a runner already did, and needs no bubblewrap or socat. Its
+  project lists its model's hosts at the full sandbox (`model-providers`). Where you have no such
+  profile, the Inbox's *Claude Code needs a sandbox-only profile here* makes one and opens Claude
+  Code's sign-in for it; then start the chat again (ADR 0067, amended 2026-11-10).
 
 - **Claude Code keeps the descriptions of your own skills and plugins.** The listing limit purlis
   hands a Claude Code chat now holds the skills and plugins you installed yourself, up to Claude
@@ -1273,6 +1291,37 @@ The complete list of what [0.5.1](../CHANGELOG.md) brought, from v0.5.0. The cha
   name the file and how to fix it, rather than started on this machine. A store that reads but
   doesn't parse is kept beside it as `machine.json.unread` before it is replaced, and a project
   whose chats run on a pool is no longer forgotten when you open more than 64 others.
+
+- A run of another workspace's skill that a persona names (`workspaces/ops:deploy`) now names that copy: the chat's run chip says "deploy of workspace ops" and opens `ops`'s runs, and the event log's `skill.started` says `skill_copy_workspace`. A LOCAL workspace's name is still never written (#6083).
+
+- **Adding a cluster pool tells you which chats to restart.** A chat's sandbox is set as it
+  starts, so a chat already running when you add a cluster pool does not yet keep the programs
+  that pool runs safe from changes. The Sandbox changed notice now says a cluster pool was added,
+  and Restart them restarts those chats on their conversations.
+
+- **A sandbox consent and a command's confirmation are asks.** When a project expects a local
+  socket or system service that this machine hasn't allowed, the request is now listed in Asks
+  with **Allow on this machine** and **Not now** on its row. The ✋ counts it and you get a
+  notification. Its Notice stays, and answering in either place settles both. A `purlis`
+  command waiting for your confirmation in the window (a pool sign-in, taking a profile off a
+  pool, a signing check) is listed in Asks too, with its code, still for up to two minutes.
+  `purlis profile sign-in --pool` and `purlis pool remove-profile` now say where they wait:
+  "waiting for the person: Asks (✋) in the purlis window, project …, for up to 2 minutes".
+
+- **The cluster operator acts on a Claim only while its policy is the one it ships.** It reads the
+  policies on Claims, runner namespaces and App keys, and watches the policy on Claims, comparing
+  each with the copy it was built with. While one says anything else, Claims say
+  `PolicyNotInForce`; they go on once it is installed again. Its ClusterRole gains `list` and
+  `watch` on those three policies, by name.
+
+- **Only the cluster operator makes upstream's objects in a runner namespace**, and a quota or
+  network policy it applies there is written over whole when a field another manager added
+  survives its apply.
+
+- **Saving a workspace's clone from the window no longer trusts it.** A Save of a clone purlis
+  did not clone and you have not trusted pushes with your forge CLI's sign-in, as an automatic
+  save does, and says to trust the clone where there is no CLI. Saving the project itself is
+  unchanged.
 
 ## Deprecated
 
@@ -2076,6 +2125,11 @@ The complete list of what [0.5.1](../CHANGELOG.md) brought, from v0.5.0. The cha
   `.astro/`, `.vite/` and a `node_modules/` holding only Vite's cache no longer keep a folder
   (#4500).
 
+- **A select in a list's row keeps the keyboard once you choose.** ↓ or ↑ on a select in a row,
+  such as how an Inbox ask fills a secret, opened its list and also moved the list to the row
+  below or above, so choosing an option or pressing Esc could leave the keyboard on that other
+  row instead of on the select.
+
 ## Security
 
 - **A blank window opened by a page of the site a login signs in on is kept off with it.** Until
@@ -2361,3 +2415,8 @@ The complete list of what [0.5.1](../CHANGELOG.md) brought, from v0.5.0. The cha
   shell policy variables are removed, and an `.mdx` file is filtered as Markdown. A script or
   other file sent as written that holds a value shaped like a token is refused in words, naming
   the file, so nothing is sent until the key is moved to a vault.
+
+- **A screenshot paints a canvas or image together with its shadow.** Where a browser's
+  screenshots paint over canvases and images, one drawn through a drop shadow is painted over as
+  far as the shadow reaches, and the screenshot is withheld when one is drawn through a filter
+  whose reach cannot be read.

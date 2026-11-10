@@ -26,7 +26,7 @@ acts on several skills at once, and secret fills and browser logins are held tig
 your own that runs `charter-app` needs the new name (see *Changed*).
 
 These are the highlights. What was added, deprecated and fixed for security is here in full,
-and every other change by its headline. All 446 changes, in full, are in
+and every other change by its headline. All 457 changes, in full, are in
 [Every change in 0.5.1](https://github.com/purlis/purlis/blob/v0.5.1/docs/changelog-0.5.1.md).
 
 ### Added
@@ -533,6 +533,23 @@ and every other change by its headline. All 446 changes, in full, are in
   a file a chat is writing says so first. Repos, branch folders and the files purlis keeps stay
   read-only, and no write reaches outside the workspace's folder (#5376).
 
+- **A runner left on another Docker engine is remembered.** When you remove a pool while Docker
+  points at another engine than the one that made its runner, purlis still forgets the pool, and
+  now keeps the runner's container and home volume in a record of their own.
+  `purlis pool left-behind` lists them with the commands that remove them, and
+  `purlis pool left-behind --remove` removes them once Docker points back at that engine.
+
+- **Snooze for a while.** Snooze all on Asks now offers For 1 hour and Until tomorrow (09:00
+  the next day) beside snoozing until a chat asks something new, and whichever comes first
+  brings the chat back. When the time is up, its asks are counted on the ✋, notified again
+  and listed as New, even if purlis was closed meanwhile. While snoozed, a chat is not counted and sends
+  no notification. Asks says when the snoozed asks come back (#6018).
+
+- **Trust a clone you made outside purlis.** A workspace's clone that purlis did not clone, such
+  as one made in your own terminal, stands as a notice in its project naming its folder and its
+  remote. *Trust this clone* lets its saves push with your purlis sign-in and lets chats in that
+  workspace use your GitHub access with it, at exactly the remote the notice showed.
+
 ### Changed
 
 - What purlis tells a chat says a chat is in a pane, not a tab.
@@ -575,7 +592,7 @@ and every other change by its headline. All 446 changes, in full, are in
 - The Chats list works like every other tree in the window (#3198).
 - A large project's saving status costs a fraction of the git work it did.
 - A Claude Code chat on Linux under Claude Code's own sandbox hands a vault's value to a command by file.
-- purlis runs Claude Code chats on Linux inside its own sandbox, on a profile for sandboxed chats only.
+- purlis runs every sandboxed Claude Code chat on Linux inside its own sandbox, on a profile for sandboxed chats only.
 - Claude Code keeps the descriptions of your own skills and plugins.
 - More of purlis's own failures exit 70 and are drafted as a Report.
 - A clone in a workspace's `repos/` folder is seen wherever a clone at its root is.
@@ -686,6 +703,12 @@ and every other change by its headline. All 446 changes, in full, are in
 - A split tab's picture draws a tile for each pane, so three panes no longer look like four, and past four it is a 3 × 3 grid (#5577).
 - A view beside a chat is named by its own title, such as its file's name, in its tab's hover, and the tab takes that title when the view becomes its first pane (#5577).
 - Where a chat runs is never guessed.
+- A run of another workspace's skill that a persona names (`workspaces/ops:deploy`) now names that copy: the chat's run chip says "deploy of workspace ops" and opens `ops`'s runs, and the event log's `skill.started` says `skill_copy_workspace`.
+- Adding a cluster pool tells you which chats to restart.
+- A sandbox consent and a command's confirmation are asks.
+- The cluster operator acts on a Claim only while its policy is the one it ships.
+- Only the cluster operator makes upstream's objects in a runner namespace, and a quota or network policy it applies there is written over whole when a field another manager added survives its apply.
+- Saving a workspace's clone from the window no longer trusts it.
 
 ### Deprecated
 
@@ -865,6 +888,7 @@ and every other change by its headline. All 446 changes, in full, are in
 - A screen reader finds its way round the window by its landmarks.
 - A write to your workspace files lands in the folder purlis checked.
 - A branch folder whose pull request closed with its head on origin is removed without `--force`.
+- A select in a list's row keeps the keyboard once you choose.
 
 ### Security
 
@@ -1151,6 +1175,11 @@ and every other change by its headline. All 446 changes, in full, are in
   shell policy variables are removed, and an `.mdx` file is filtered as Markdown. A script or
   other file sent as written that holds a value shaped like a token is refused in words, naming
   the file, so nothing is sent until the key is moved to a vault.
+
+- **A screenshot paints a canvas or image together with its shadow.** Where a browser's
+  screenshots paint over canvases and images, one drawn through a drop shadow is painted over as
+  far as the shadow reaches, and the screenshot is withheld when one is drawn through a filter
+  whose reach cannot be read.
 
 ## [0.5.0] - 2026-11-05
 
