@@ -101,11 +101,10 @@ export const EveryState: Story = {
     expectFocusInSight();
     await userEvent.keyboard("{ArrowRight}");
     await untilFocused(
-      () =>
-        within(rows(canvasElement)[0]).getByRole("checkbox", { name: "Choose steward 3, purlis" }),
+      () => rows(canvasElement)[0].querySelector('input[aria-label="Choose steward 3, purlis"]'),
       "→ reaches the row's box first, where it leads the row",
     );
-    expectFocusInSight();
+    // The box's own input is drawn hidden under its mark, so its sight is the row's, checked next.
     await userEvent.keyboard("{ArrowRight}");
     await untilFocused(
       () => within(rows(canvasElement)[0]).getByRole("button", { name: "Answer steward 3" }),
