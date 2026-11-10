@@ -11,11 +11,12 @@ import { forgetRailMode } from "./railMode";
 import { showNotices } from "./test-strips";
 
 /**
- * **A project's or the app's result pops from the status bar** (#3653, spec #3647), on the real
- * window with the core mocked: a refused pin is the same card a workspace's notice is on its
- * chip, hung above the status bar's Notices item and pointing down at it. Nothing in the page
- * moves; a press elsewhere hides it and leaves a dot on Notices, which brings it back; × and Esc
- * dismiss it, in the Notices centre too, where it is listed all along.
+ * **A project's or the app's result stands behind a dot on the status bar** (#3653, spec #3647;
+ * ADR 0121 decision 1, #6004), on the real window with the core mocked: a refused pin pops no
+ * card. It leaves a dot on the Notices item, with a "new" pip until it is seen, and is listed in
+ * the Notices centre all along. The dot's press shows the same card a workspace's notice is on
+ * its chip, hung above the item and pointing down at it; nothing in the page moves; a press
+ * elsewhere hides it again; × and Esc dismiss it, in the Notices centre too.
  */
 
 vi.mock("./SessionPane", () => ({
@@ -53,9 +54,15 @@ const CHAT = {
   from: null,
 };
 
-/** One project whose workspace `alpha` is in front and not pinned; the store refuses its pin. */
-function core() {
-  mockIPC((cmd) => {
+/** One project whose workspace `alpha` is in front and not pinned; the store refuses its pin.
+ *  `seen`, the project's seen record (#6002), where a test reads what is New. */
+function core({ seen }: { seen?: string[] } = {}) {
+  mockIPC((cmd, args) => {
+    if (cmd === "inbox_seen" && seen !== undefined) return seen;
+    if (cmd === "see_inbox" && seen !== undefined) {
+      seen.push(...((args as { keys: string[] }).keys ?? []));
+      return seen;
+    }
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
     if (cmd === "plane_sidebar")
       return {
@@ -97,7 +104,7 @@ const opened = () =>
 
 const bar = () => screen.getByTestId("title-bar");
 const line = () => screen.getByTestId("status-line");
-/** The card that pops from the Notices item, named by the project. */
+/** The card the Notices item's dot shows, named by the project. */
 const findCard = () => screen.findByRole("region", { name: "Notices for one" });
 const queryCard = () => screen.queryByRole("region", { name: "Notices for one" });
 const findCardNow = queryCard;
@@ -111,18 +118,6 @@ const results = async () => {
   return screen.findByRole("region", { name: "Results" });
 };
 
-/** What the page lays out, in order (the `PopsFromNotices` story measures the rects, which are
- *  all zero here): each element of the work and of the status bar, by its
- *  tag, its class and its test id, but the Notices centre's Results, which lists the result as
- *  it should. A card in the page's flow would be one more. */
-const laidOut = () =>
-  [...document.querySelectorAll(".window-work *, [data-testid='status-line'] *")]
-    .filter((one) => one.closest(".inbox-results, .action-result-kept") === null)
-    .map(
-      (one) =>
-        `${one.tagName}.${one.getAttribute("class") ?? ""}#${one.getAttribute("data-testid") ?? ""}`,
-    );
-
 /** Refuses the pin of the dashed `alpha +` chip, as the person presses it. */
 async function refusePin() {
   const chip = await within(bar()).findByRole("button", { name: "alpha" });
@@ -130,50 +125,78 @@ async function refusePin() {
   await userEvent.click(chip);
 }
 
-describe("a project's result pops from the status bar's Notices item (#3653)", () => {
-  it("as the card a chip's notice is, pointing down at Notices, in no page's flow", async () => {
+/** Presses the dot a result leaves on the Notices item, as a person does, and finds its card. */
+async function openCard() {
+  const dot = await waitFor(() => {
+    const one = queryDot();
+    if (one === null) throw new Error("no dot on the Notices item yet");
+    return one;
+  });
+  await userEvent.click(dot);
+  return findCard();
+}
+
+describe("a project's result on the status bar's Notices item (#3653, #6004)", () => {
+  it("pops no card: it stands behind a dot, and is listed in the Notices centre", async () => {
     core();
     opened();
     await within(bar()).findByRole("button", { name: "alpha" });
-    await results().catch(() => undefined);
-    const before = laidOut();
 
     await refusePin();
 
-    const card = await findCard();
+    const dot = await waitFor(() => {
+      const one = queryDot();
+      if (one === null) throw new Error("no dot yet");
+      return one;
+    });
+    expect(dot).toHaveAccessibleName(/most urgent: warning/);
+    expect(queryCard()).toBeNull();
+    expect(document.querySelector(".window-work > .action-result")).toBeNull();
+    expect(line().contains(document.activeElement)).toBe(false);
+    expect(within(await results()).getByText(REFUSED)).toBeInTheDocument();
+  });
+
+  it("wears a 'new' pip until its line in the Notices centre has been seen (#6004)", async () => {
+    core({ seen: [] });
+    opened();
+    await within(bar()).findByRole("button", { name: "alpha" });
+    await refusePin();
+    await waitFor(() => expect(queryDot()).toHaveAccessibleName(/, something new$/));
+    expect(line().querySelector('[data-scope="status-item"][data-part="pip"]')).not.toBeNull();
+
+    // Its line under Results, in sight in the open Notices view: about a second later, seen.
+    await results();
+    await waitFor(() => expect(line().querySelector('[data-part="pip"]')).toBeNull(), {
+      timeout: 4000,
+    });
+    expect(queryDot()).not.toHaveAccessibleName(/something new/);
+  });
+
+  it("shows the card a chip's notice is on its dot's press, pointing down at Notices, in no page's flow", async () => {
+    core();
+    opened();
+    await within(bar()).findByRole("button", { name: "alpha" });
+    await refusePin();
+
+    const card = await openCard();
     expect(card).toHaveTextContent(REFUSED);
     // A popover of the family, the notice surface, above what it hangs from.
     const surface = card.closest('[data-scope="popover"][data-part="root"]');
     expect(surface).toHaveAttribute("data-variant", "notice");
     await waitFor(() => expect(surface).toHaveAttribute("data-placement", "top"));
-    // Over the window, and in none of its flow: the work and the status bar lay out what they
-    // did before, and the old notice at the top of the content is gone.
+    // Over the window, and in none of its flow.
     expect(card.closest(".window-work")).toBeNull();
     expect(line().contains(card)).toBe(false);
-    expect(document.querySelector(".window-work > .action-result")).toBeNull();
-    expect(laidOut()).toEqual(before);
-    // It takes no keyboard as it comes.
-    expect(card.contains(document.activeElement)).toBe(false);
-    // And it is listed in the Notices centre.
-    expect(within(await results()).getByText(REFUSED)).toBeInTheDocument();
-  });
-
-  it("is reached by F6", async () => {
-    core();
-    opened();
-    await refusePin();
-    const card = await findCard();
-
-    await userEvent.keyboard("{F6}");
-    await waitFor(() => expect(card.contains(document.activeElement)).toBe(true));
-  });
-
-  it("hides on a press elsewhere and leaves a dot on Notices, which brings it back", async () => {
-    core();
-    opened();
-    await refusePin();
-    await findCard();
+    // Asked for, it takes the keyboard, since the dot it was on goes as it comes.
+    await waitFor(() => expect(card).toHaveFocus());
     expect(queryDot()).toBeNull();
+  });
+
+  it("hides on a press elsewhere and leaves its dot, which brings it back", async () => {
+    core();
+    opened();
+    await refusePin();
+    await openCard();
 
     await userEvent.click(document.body);
     await waitFor(() => expect(queryCard()).toBeNull());
@@ -184,10 +207,9 @@ describe("a project's result pops from the status bar's Notices item (#3653)", (
     // Hidden, not dismissed: still in the Notices centre.
     expect(within(await results()).getByText(REFUSED)).toBeInTheDocument();
 
-    (dot as HTMLElement).focus();
+    (queryDot() as HTMLElement).focus();
     await userEvent.keyboard("{Enter}");
     const card = await findCard();
-    // Asked for, it takes the keyboard, since the dot it was on goes as it comes.
     await waitFor(() => expect(card).toHaveFocus());
     expect(queryDot()).toBeNull();
   });
@@ -196,12 +218,7 @@ describe("a project's result pops from the status bar's Notices item (#3653)", (
     core();
     opened();
     await refusePin();
-    await findCard();
-    await userEvent.click(document.body);
-    await waitFor(() => expect(queryCard()).toBeNull());
-    (queryDot() as HTMLElement).focus();
-    await userEvent.keyboard("{Enter}");
-    const card = await findCard();
+    const card = await openCard();
     await waitFor(() => expect(card).toHaveFocus());
 
     // The palette is modal: it says the result on its own line, and gives the keyboard back
@@ -219,7 +236,7 @@ describe("a project's result pops from the status bar's Notices item (#3653)", (
     core();
     opened();
     await refusePin();
-    const card = await findCard();
+    const card = await openCard();
 
     await userEvent.click(within(card).getByRole("button", { name: "Dismiss" }));
     await waitFor(() => expect(queryCard()).toBeNull());
@@ -235,7 +252,7 @@ describe("a project's result pops from the status bar's Notices item (#3653)", (
     core();
     opened();
     await refusePin();
-    const card = await findCard();
+    const card = await openCard();
 
     within(card).getByRole("button", { name: "Dismiss" }).focus();
     await userEvent.keyboard("{Escape}");
@@ -248,10 +265,10 @@ describe("a project's result pops from the status bar's Notices item (#3653)", (
     core();
     opened();
     await refusePin();
-    await findCard();
+    await waitFor(() => expect(queryDot()).not.toBeNull());
 
     await userEvent.click(within(await results()).getByRole("button", { name: "Dismiss" }));
-    await waitFor(() => expect(queryCard()).toBeNull());
-    expect(queryDot()).toBeNull();
+    await waitFor(() => expect(queryDot()).toBeNull());
+    expect(queryCard()).toBeNull();
   });
 });

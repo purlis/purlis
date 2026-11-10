@@ -83,12 +83,36 @@ const KINDS: Record<
 /** How many notices a chip has and the most urgent kind among them, as its description says it:
  *  "1 notice", "3 notices, most urgent: warning". A ✋ alone, with no notice, says only its kind
  *  ("a chat asks you to remove it"), never "0 notices" (#3652); nothing at all says nothing. */
-export const noticesSaid = (count: number, kind: NoticeKind = "info"): string | undefined => {
+export const noticesSaid = (
+  count: number,
+  kind: NoticeKind = "info",
+  fresh = false,
+): string | undefined => {
   const counted = count === 0 ? undefined : count === 1 ? "1 notice" : `${count} notices`;
   const said = KINDS[kind].said;
-  if (said === undefined) return counted;
-  return counted === undefined ? said : `${counted}, most urgent: ${said}`;
+  const whole =
+    said === undefined
+      ? counted
+      : counted === undefined
+        ? said
+        : `${counted}, most urgent: ${said}`;
+  // Something on it the person has not seen (#6004): its pip, said.
+  return whole !== undefined && fresh ? `${whole}, ${SOMETHING_NEW}` : whole;
 };
+
+/** What a "new" pip says (ADR 0121 decision 10, #6004), after what its dot says. */
+export const SOMETHING_NEW = "something new";
+
+/**
+ * **A "new" pip** (ADR 0121 decision 10, #6004): a dot in the accent colour, ringed in the bar's
+ * ground, while what a chip or the Notices status item holds has something the person has not
+ * seen. It replaces the card that came by itself: nothing pops, and the pip goes once its line
+ * has been seen in the Notices centre or on the card. Laid over its slot, so it coming and going
+ * moves nothing; what it says is said by the dot beside it and the chip's description.
+ */
+export function NewPip({ scope }: { scope: "titlebar" | "status-item" }) {
+  return <span aria-hidden="true" data-scope={scope} data-part="pip" />;
+}
 
 /** How many chats are working in a workspace, as its chip's description says it (#3127): "1 chat
  *  working", "3 chats working", and nothing for none. "Working" is the run state's word: the UI
@@ -119,7 +143,7 @@ export interface WorkspaceChipProps extends Native {
   /** Its tooltip: `‹name› · ⌘N` for the first nine pins (R102), `Pin ‹name›` on the dashed one. */
   tooltip?: Tip;
   /** The notices about it its dot shows (#3648), said in its description; none says nothing. */
-  notices?: { count: number; kind: NoticeKind };
+  notices?: { count: number; kind: NoticeKind; fresh?: boolean };
   /** How many chats are working in it (#3127), said in its description; its slot draws the
    *  mark. */
   working?: number;
@@ -206,7 +230,7 @@ export function WorkspaceChip({
     // A dormant chip says what it is, as its dotted edge and slanted words draw it (#3651).
     variant === "dormant" ? "gone, kept dormant" : undefined,
     waiting > 0 ? `${waiting} waiting` : undefined,
-    notices === undefined ? undefined : noticesSaid(notices.count, notices.kind),
+    notices === undefined ? undefined : noticesSaid(notices.count, notices.kind, notices.fresh),
     workingSaid(working),
   ].filter((one) => one !== undefined);
   const description =
@@ -232,6 +256,7 @@ export function WorkspaceChip({
 export function ChipSlot({
   children,
   working = false,
+  fresh = false,
   ref,
   style,
   ...handed
@@ -239,6 +264,8 @@ export function ChipSlot({
   children: ReactNode;
   /** A chat in the workspace is working: the chat mark's working ring on the corner (#3127). */
   working?: boolean;
+  /** Something on its chip the person has not seen: its "new" pip (#6004). */
+  fresh?: boolean;
   ref?: Ref<HTMLSpanElement>;
   /** A place for it while it is dragged (#3128), never a look. */
   style?: CSSProperties;
@@ -250,6 +277,7 @@ export function ChipSlot({
       {children}
       {/* No word: the chip's description says it, and the ring is the chat's own glyph. */}
       {working && <ChatMark state="working" className="titlebar-working" />}
+      {fresh && <NewPip scope="titlebar" />}
     </span>
   );
 }
@@ -266,6 +294,7 @@ export function NoticeDot({
   workspace,
   count,
   kind,
+  fresh = false,
   stop = false,
   scope = "titlebar",
   onPress,
@@ -274,6 +303,8 @@ export function NoticeDot({
   workspace: string;
   count: number;
   kind: NoticeKind;
+  /** Something behind it the person has not seen (#6004): said after what a press shows. */
+  fresh?: boolean;
   /** A Tab stop of its own, where no strip's arrows walk to it: the plane root's house's, and
    *  the status bar's. */
   stop?: boolean;
@@ -297,7 +328,7 @@ export function NoticeDot({
       // What a press shows, then the most urgent kind where it is not news: the shape says it
       // to the eye, this to the ear (WCAG 1.4.1). A ✋'s press brings the asking chat forward,
       // and the workspace's own notices with it where it has some (#3652).
-      aria-label={
+      aria-label={`${
         kind === "needs"
           ? `Show the chat asking to remove ${workspace}${
               count === 0 ? "" : count === 1 ? ", and its notice" : `, and its ${count} notices`
@@ -305,7 +336,7 @@ export function NoticeDot({
           : said === undefined
             ? shows
             : `${shows}, most urgent: ${said}`
-      }
+      }${fresh ? `, ${SOMETHING_NEW}` : ""}`}
       data-scope={scope}
       data-part={part}
       data-kind={kind}
@@ -342,7 +373,7 @@ export function RootChip({
   /** The plane root is in front. */
   current: boolean;
   /** The notices about the root its dot shows (#3648), said in its description. */
-  notices?: { count: number; kind: NoticeKind };
+  notices?: { count: number; kind: NoticeKind; fresh?: boolean };
   /** How many chats are working outside every workspace (#3127), said in its description. */
   working?: number;
   onPress: () => void;
@@ -355,7 +386,7 @@ export function RootChip({
   const said = useId();
   const shown =
     [
-      notices === undefined ? undefined : noticesSaid(notices.count, notices.kind),
+      notices === undefined ? undefined : noticesSaid(notices.count, notices.kind, notices.fresh),
       workingSaid(working),
     ]
       .filter((one) => one !== undefined)

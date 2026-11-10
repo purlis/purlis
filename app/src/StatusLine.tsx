@@ -18,7 +18,7 @@ import {
   useHiddenStatusItems,
   useStatusOrder,
 } from "./statusBarPrefs";
-import { NoticeDot } from "./ui/titlebar/TitleBarWorkspaces";
+import { NewPip, NoticeDot } from "./ui/titlebar/TitleBarWorkspaces";
 import { projectName } from "./projectName";
 
 /**
@@ -136,6 +136,7 @@ export function StatusLine({
   state,
   alerts,
   doctor,
+  doctorListed = false,
   onOpenSettings,
   pin,
   badges,
@@ -188,6 +189,10 @@ export function StatusLine({
   /** What the doctor last said about this project, run inside the app (`Doctor.tsx`). Absent
    *  draws no button — a caller that has no doctor to offer offers none. */
   doctor?: DoctorState;
+  /** **The Notices view lists the doctor's findings** ("Doctor: N findings", #5645), so the
+   *  right bar's Notices icon shows them: the Doctor item draws no count of its own then (ADR
+   *  0121 decision 1, #6004). */
+  doctorListed?: boolean;
   /** Opens Settings at a group, for a doctor row that names a setting (SE-22). */
   onOpenSettings?: (group: string) => void;
   /** What `charter version` says about this plane's pin, why it could not be read, and a way
@@ -341,7 +346,7 @@ export function StatusLine({
       // Innermost: its verdict's words change ("1 warning", "2 warnings"), which moves only what
       // is inside it, never the pin or Notices.
       priority: 50,
-      item: <Health doctor={doctor} onOpenSettings={onOpenSettings} />,
+      item: <Health doctor={doctor} onOpenSettings={onOpenSettings} counted={!doctorListed} />,
     });
   // The pin is drawn only when it drifts or could not be read (`PinItem`).
   if (pin && (pin.pin?.drift === true || pin.trouble !== undefined))
@@ -452,16 +457,14 @@ export type Alerts = {
 
 /**
  * The Notices item, in the states it can be in. A status item (the set's small ghost button),
- * so it is flat on the bar: its bell, its word, then its count.
+ * so it is flat on the bar: its bell and its word.
  *
- * - **A count** — drawn in the badge, because something needs the operator.
- * - **Zero** — the word `Notices` and no badge. The footer's rule: a `0` sitting there every
- *   day is furniture by the end of the week, and then a real `2` in that spot draws no more
- *   attention than the zero did. Presence is the signal. The button's NAME still says `none`,
- *   because a screen reader has no "absent badge" to notice.
+ * - **Counted** — no number, none or many (ADR 0121 decision 1, #6004): the right bar's Notices
+ *   icon shows what is listed, by its dot (red for something broken, amber for a decision) and
+ *   its New pip, and the line never repeats a count the right bar shows.
  * - **No number purlis can stand behind** — a dash, and the Inbox still opens: it says what
- *   purlis could not read. A button that refused to open then would hide the one explanation
- *   there is.
+ *   purlis could not read, which only this item shows. A button that refused to open then would
+ *   hide the one explanation there is.
  * - **No Inbox wired** — disabled and said, rather than a control that answers a press with
  *   nothing. The window always wires one; this is a status line drawn on its own.
  */
@@ -489,13 +492,7 @@ function AlertsButton({ alerts, ref }: { alerts?: Alerts; ref?: Ref<HTMLButtonEl
       ref={ref}
       data-testid="status-alerts"
       data-count={count ?? "unknown"}
-      // There are Notices: the bell takes the colour purlis's footer gives a warning, so the one
-      // item on the line that is asking for something looks it. The count's own pill stays the
-      // neutral one, because it is words and `state.waiting` is held to 3:1 as a mark.
-      tone={count !== undefined && count > 0 ? "waiting" : undefined}
-      aria-label={
-        count === undefined ? "Notices: not counted" : `Notices: ${count === 0 ? "none" : count}`
-      }
+      aria-label={count === undefined ? "Notices: not counted" : "Notices"}
       tooltip={
         count === undefined
           ? "purlis could not count this project's Notices — open the Inbox to see why"
@@ -503,7 +500,7 @@ function AlertsButton({ alerts, ref }: { alerts?: Alerts; ref?: Ref<HTMLButtonEl
       }
       onPress={alerts.open}
       icon={<Bell aria-hidden="true" />}
-      count={count === undefined ? "—" : count > 0 ? count : undefined}
+      count={count === undefined ? "—" : undefined}
     >
       Notices
     </StatusItem>
@@ -533,6 +530,8 @@ function NoticesItem({
   const [handTo, setHandTo] = useState(false);
   const on = notices?.on.get(AT_STATUS);
   const up = notices !== undefined && on !== undefined && notices.open === AT_STATUS;
+  /** A result on it the person has not seen: the item's "new" pip (#6004), never a card. */
+  const fresh = on !== undefined && notices?.fresh?.has(AT_STATUS) === true;
   return (
     <span className="status-notices">
       {notices !== undefined && on !== undefined && !up && (
@@ -541,6 +540,7 @@ function NoticesItem({
           workspace="the status bar"
           count={on.length}
           kind={mostUrgent(on)}
+          fresh={fresh}
           // No strip's arrows walk to it: a Tab stop of its own, before the item.
           stop
           onPress={() => {
@@ -550,6 +550,7 @@ function NoticesItem({
         />
       )}
       <AlertsButton alerts={alerts} ref={item} />
+      {fresh && <NewPip scope="status-item" />}
       {up && (
         <ChipCard
           workspace={AT_STATUS}
