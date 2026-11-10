@@ -1242,7 +1242,12 @@ fn a_project_let_go_of_and_held_again_tells_nothing_of_what_ended_meanwhile() {
 }
 
 /// [`ended`], with the person away, nobody looking, and `sources` on.
-fn ended_from(rules: &mut Rules, plane: &PlaneId, finishes: &[Finish], sources: Sources) -> Vec<Act> {
+fn ended_from(
+    rules: &mut Rules,
+    plane: &PlaneId,
+    finishes: &[Finish],
+    sources: Sources,
+) -> Vec<Act> {
     rules.ended(&Ended {
         plane,
         finishes,
@@ -1338,5 +1343,8 @@ fn both_sources_are_on_unless_the_layout_turns_one_off_by_its_kind() {
         }
     );
     // Not a list of kinds: every source stays on, since a Should-know failure is worth hearing.
-    assert_eq!(of(serde_json::json!({"notifications": {"off": "task-failed"}})), on);
+    assert_eq!(
+        of(serde_json::json!({"notifications": {"off": "task-failed"}})),
+        on
+    );
 }
