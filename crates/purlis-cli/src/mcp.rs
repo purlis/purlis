@@ -154,6 +154,26 @@ impl ServerHandler for Server {
                 blocking(move || crate::brokered::propose_pin_tool(&args)).await,
             ));
         }
+        // The read-only `purlis artifact` verbs' twins (#5978's review): the chat's own workspace,
+        // read by the same functions the verbs print.
+        if purlis_core::artifact::tools::is_one(name) {
+            let name = name.to_owned();
+            let args = request.arguments.clone().unwrap_or_default();
+            return Ok(done(
+                blocking(move || {
+                    let here = crate::Here::read()?;
+                    let ws = here.workspace(None)?;
+                    purlis_core::artifact::tools::call(
+                        ws.name(),
+                        ws.dir(),
+                        purlis_core::machine::config_root().as_deref(),
+                        &name,
+                        &args,
+                    )
+                })
+                .await,
+            ));
+        }
         if !chattools::TOOLS.iter().any(|t| t.name == name) {
             return Err(ErrorData::invalid_params(
                 format!("purlis has no tool {name:?}"),

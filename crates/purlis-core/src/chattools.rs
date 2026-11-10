@@ -218,7 +218,7 @@ pub fn worktree_update_args(
 /// Named one by one, never derived from [`Tool::read_only`]: `ask_operator` is marked
 /// read-only too and still asks, and a tool added later is asked about until someone rules it
 /// in here. Writes are never in this list.
-pub const PRE_ALLOWED: [&str; 15] = [
+pub const PRE_ALLOWED: [&str; 18] = [
     "todo_list",
     "memory_search",
     "session_record_list",
@@ -236,6 +236,11 @@ pub const PRE_ALLOWED: [&str; 15] = [
     // The MCP twin of `purlis queries` (ADR 0122 §7, #5969): the binary's own catalogue, the
     // same for every chat, reading nothing of the plane.
     QUERIES,
+    // The read-only `purlis artifact` verbs' twins (#5978's review of spec #5948): the chat's
+    // own workspace's pins, a page check and this machine's approvals, read and never written.
+    crate::artifact::tools::LIST,
+    crate::artifact::tools::CHECK,
+    crate::artifact::tools::APPROVE_STATUS,
 ];
 
 /// The tools a Claude Code chat runs without asking that **write only the chat's own scope**

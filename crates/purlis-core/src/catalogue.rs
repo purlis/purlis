@@ -40,6 +40,7 @@ pub fn every_tool() -> impl Iterator<Item = &'static Tool> {
         .chain(crate::themepreview::TOOLS.iter())
         .chain(crate::skilltools::TOOLS.iter())
         .chain(crate::artifact::proposal::TOOLS.iter())
+        .chain(crate::artifact::tools::TOOLS.iter())
 }
 
 /// What a query reads: one workspace's own, or the whole plane's, which is a grant of its own.
@@ -291,7 +292,7 @@ pub fn find(id: &str) -> Option<(&'static Query, Option<String>)> {
 }
 
 /// The read-only tools that are no query, each with why.
-pub const NOT_QUERIES: [(&str, &str); 17] = [
+pub const NOT_QUERIES: [(&str, &str); 20] = [
     (
         crate::chattools::QUERIES,
         "it lists the catalogue for a page's author, and a page declares what it calls",
@@ -353,6 +354,18 @@ pub const NOT_QUERIES: [(&str, &str); 17] = [
     (
         crate::skilltools::SKILL_LOAD,
         "it loads a skill into the asking chat and opens its run",
+    ),
+    (
+        crate::artifact::tools::LIST,
+        "it lists the pins for the author of a page, and a page reads its own data, not its pin",
+    ),
+    (
+        crate::artifact::tools::CHECK,
+        "it checks a page for its author before it is approved, and a page does not check itself",
+    ),
+    (
+        crate::artifact::tools::APPROVE_STATUS,
+        "it says what this machine approved, which is the person's and never a page's to read",
     ),
 ];
 

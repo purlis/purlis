@@ -172,14 +172,8 @@ pub fn authors(command: &ArtifactCommand) -> Code {
                     return 1;
                 }
             };
-            if let Some(declared) = &checked.declared {
-                for listed in artifact::calls::listed(&declared.queries) {
-                    let mut line = format!("  {} · {}", listed.id, listed.scope.as_str());
-                    for widens in &listed.widens {
-                        line.push_str(&format!(" · widens {widens}"));
-                    }
-                    println!("{line}");
-                }
+            for line in artifact::tools::check_lines(&checked) {
+                println!("{line}");
             }
             for warning in &checked.warnings {
                 voice::warn(warning.clone());
@@ -190,16 +184,7 @@ pub fn authors(command: &ArtifactCommand) -> Code {
             if !checked.refused.is_empty() {
                 return 1;
             }
-            voice::ok(match &checked.declared {
-                Some(declared) => format!(
-                    "{name} declares api {}: {} data file(s) and {} query(ies), and calls \
-                     only what it declares.",
-                    declared.api,
-                    declared.data.len(),
-                    declared.queries.len()
-                ),
-                None => format!("{name} declares nothing: it reads no data and calls no query."),
-            });
+            voice::ok(artifact::tools::check_summary(&name, &checked));
             0
         }
         _ => 2,
@@ -310,28 +295,10 @@ pub fn run(here: &Here, command: ArtifactCommand) -> Result<Code, String> {
                 Err(why) => return refused(&why),
             };
             if listed.is_empty() {
-                voice::info(format!(
-                    "No artifact is pinned to '{}' (pin one: purlis artifact pin <folder>).",
-                    ws.name()
-                ));
+                voice::info(artifact::tools::none_pinned(ws.name()));
             }
-            for item in listed {
-                let pin = &item.pin;
-                let mut line = format!(
-                    "{}  {}  {}  {}  {}",
-                    pin.order,
-                    pin.id,
-                    purlis_core::personas::one_line(&pin.folder),
-                    pin.icon,
-                    purlis_core::personas::one_line(&pin.name)
-                );
-                if let Some(why) = item.missing {
-                    line.push_str(&format!("  (missing: {why})"));
-                }
-                if let Some(why) = item.too_large {
-                    line.push_str(&format!("  (too large: {why})"));
-                }
-                println!("{line}");
+            for item in &listed {
+                println!("{}", artifact::tools::list_line(item));
             }
             Ok(0)
         }
@@ -387,30 +354,16 @@ pub fn run(here: &Here, command: ArtifactCommand) -> Result<Code, String> {
         }
         ArtifactCommand::ApproveStatus { pin, workspace } => {
             let ws = here.workspace(workspace.as_deref())?;
-            let listed = match artifact::list(ws.dir()) {
-                Ok(listed) => listed,
-                Err(why) => return refused(&why),
-            };
             let config = purlis_core::machine::config_root();
-            let mut shown = 0;
-            for item in listed {
-                let one = &item.pin;
-                if pin
-                    .as_deref()
-                    .is_some_and(|key| key != one.id && key != one.folder)
-                {
-                    continue;
+            match artifact::tools::status_lines(config.as_deref(), ws.dir(), pin.as_deref()) {
+                Ok(lines) => {
+                    for line in lines {
+                        println!("{line}");
+                    }
+                    Ok(0)
                 }
-                shown += 1;
-                println!("{}", standing_line(config.as_deref(), ws.dir(), &item));
+                Err(why) => refused(&why),
             }
-            if let Some(key) = pin.filter(|_| shown == 0) {
-                return refused(&format!(
-                    "no pin '{}' in this workspace (`purlis artifact list` shows them)",
-                    purlis_core::personas::one_line(&key)
-                ));
-            }
-            Ok(0)
         }
         ArtifactCommand::Regenerate {
             pin,
@@ -474,53 +427,6 @@ fn regenerate(
         resolved.fingerprint
     );
     Ok(0)
-}
-
-/// One pin's line of `approve-status`: folder, standing, fingerprint, and what it means.
-fn standing_line(
-    config: Option<&std::path::Path>,
-    workspace: &std::path::Path,
-    item: &artifact::Listed,
-) -> String {
-    use artifact::approval::{self, Standing};
-    let pin = &item.pin;
-    let folder = purlis_core::personas::one_line(&pin.folder);
-    if let Some(why) = &item.too_large {
-        return format!("{folder}  too-large  -  {why}");
-    }
-    let read = match &item.missing {
-        Some(why) => Err(why.clone()),
-        None => artifact::resolve(workspace, &pin.folder)
-            .and_then(|real| artifact::serve::Snapshot::read(&real, &pin.folder)),
-    };
-    let snapshot = match read {
-        Ok(snapshot) => snapshot,
-        Err(why) => return format!("{folder}  missing  -  {why}"),
-    };
-    let standing = approval::standing(config, workspace, &pin.folder, &pin.id, &snapshot);
-    let meaning = match standing {
-        Standing::ScriptFree => "opens without asking: no script".to_owned(),
-        Standing::Approved => "approved on this machine: its script runs".to_owned(),
-        Standing::New => "asks before its script runs: never approved on this machine".to_owned(),
-        Standing::Changed => "asks again: its template changed since you approved it".to_owned(),
-        Standing::PinChanged => match artifact::pinned_by(workspace, &pin.id) {
-            Some(who) => format!(
-                "asks again: pin changed by {who} (its folder or command) since you approved it"
-            ),
-            None => "asks again: pin changed (its folder or command) since you approved it, \
-                     not saved yet"
-                .to_owned(),
-        },
-        Standing::NotHere => {
-            "renders without its script: scripted artifacts do not run on this platform yet"
-                .to_owned()
-        }
-    };
-    format!(
-        "{folder}  {}  {}  {meaning}",
-        standing.as_str(),
-        snapshot.fingerprint()
-    )
 }
 
 /// A pin as a sentence names it: its name, folder and id.

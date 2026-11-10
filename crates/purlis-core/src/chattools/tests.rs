@@ -1283,6 +1283,10 @@ fn every_tool_pre_allowed_in_claude_code_is_one_that_only_reads() {
             "skill_load",
             // The catalogue's listing, the binary's own (ADR 0122 §7, #5969).
             "queries",
+            // The read-only artifact verbs' twins (#5978's review of spec #5948).
+            "artifact_list",
+            "artifact_check",
+            "artifact_approve_status",
         ]
     );
     for name in PRE_ALLOWED {
@@ -1290,6 +1294,7 @@ fn every_tool_pre_allowed_in_claude_code_is_one_that_only_reads() {
             .iter()
             .chain(crate::themepreview::TOOLS.iter())
             .chain(crate::skilltools::TOOLS.iter())
+            .chain(crate::artifact::tools::TOOLS.iter())
             .find(|tool| tool.name == name)
             .unwrap_or_else(|| panic!("{name} is not a tool"));
         assert!(tool.read_only, "{name} writes");

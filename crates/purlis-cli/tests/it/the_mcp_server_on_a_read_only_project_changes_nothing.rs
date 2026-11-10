@@ -302,6 +302,9 @@ fn arguments(tool: &str, todo: &str) -> Value {
         "theme_preview" => json!({ "theme": "purlis-classic" }),
         // A proposed pin (#5963) is the app's to hold, and writes nothing of the project's.
         "artifact_propose_pin" => json!({ "folder": "board" }),
+        // The read-only artifact verbs' twins (#5978's review) read and write nothing.
+        "artifact_list" | "artifact_approve_status" => json!({}),
+        "artifact_check" => json!({ "folder": "board" }),
         other => panic!("no arguments for {other}: add it to this test"),
     }
 }
