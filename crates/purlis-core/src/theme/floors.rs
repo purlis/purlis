@@ -319,6 +319,7 @@ pub(super) fn joined(first: Option<Held>, then: Option<Held>) -> Option<Held> {
 
 /// One failure: the floor, whether only a workspace's tint broke it, and the tokens it is
 /// between, a wash's ground included.
+#[derive(Clone)]
 struct Failure {
     floor: Floor,
     tinted: bool,
@@ -448,9 +449,48 @@ fn failures_of(drawn: &ResolvedTheme, tinted: bool) -> Vec<Failure> {
     found
 }
 
+/// How many themes' [`tinted_failures`] a thread keeps: a walk's point, the theme a recipe loaded
+/// and each round of their holds, so more than [`KNOWN_MOST`]'s few recipes.
+const KNOWN_FAILED: usize = 16;
+
+thread_local! {
+    /// What [`tinted_failures`] found for the themes this thread asked of last (#3597): an
+    /// import's walk holds the floors of one same theme again and again, from a point it measured
+    /// before and from the theme a recipe loaded, and each measure is hundreds of tints. Matched
+    /// by the whole theme, which is all the answer reads.
+    static FAILED: std::cell::RefCell<std::collections::VecDeque<(ResolvedTheme, Vec<Failure>)>> =
+        const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
+}
+
 /// Every consent floor a workspace's tint of `theme` breaks: under each of its own tints, and at
-/// each whole degree a workspace's own colour can take.
+/// each whole degree a workspace's own colour can take. Kept for the last few themes
+/// ([`FAILED`]).
 fn tinted_failures(theme: &ResolvedTheme, chromas: &mut Chromas) -> Vec<Failure> {
+    let kept = FAILED.with(|failed| {
+        failed
+            .borrow()
+            .iter()
+            .find(|(one, _)| one == theme)
+            .map(|(_, found)| found.clone())
+    });
+    if let Some(found) = kept {
+        return found;
+    }
+    let found = tinted_failures_measured(theme, chromas);
+    FAILED.with(|failed| {
+        let mut failed = failed.borrow_mut();
+        if failed.len() == KNOWN_FAILED {
+            failed.pop_front();
+        }
+        failed.push_back((theme.clone(), found.clone()));
+    });
+    found
+}
+
+/// [`tinted_failures`], measured. It reads `theme` and nothing else ([`Chromas`] only keeps what
+/// it found): [`FAILED`] matches by the theme alone, so anything else this comes to read, a
+/// thread's flag among them, has to join what it matches by.
+fn tinted_failures_measured(theme: &ResolvedTheme, chromas: &mut Chromas) -> Vec<Failure> {
     let mut found = Vec::new();
     for one in &theme.tint.hues {
         found.extend(failures_of(&tint::tinted(theme, one.name), true));

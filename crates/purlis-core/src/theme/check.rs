@@ -1958,10 +1958,13 @@ pub(super) fn solid(hex: &str) -> String {
 
 /// `wash` laid over the opaque `under`, as the screen draws it. An opaque `wash` is itself.
 pub(super) fn onto(wash: &str, under: &str) -> String {
-    let top = long(wash);
-    if top.len() == 6 {
+    // Opaque: six digits, or three that [`long`] doubles to six. Told before expanding them, since
+    // the floors lay hundreds of thousands of colours (#3597).
+    let digits = wash.strip_prefix('#').unwrap_or(wash);
+    if digits.len() == 6 || digits.len() == 3 {
         return wash.to_owned();
     }
+    let top = long(wash);
     let alpha = byte(&top, 6) / 255.0;
     let bottom = long(under);
     let mixed: String = [0, 2, 4]
