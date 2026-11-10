@@ -104,13 +104,20 @@ const rows = (canvasElement: HTMLElement) => [
   ...canvasElement.querySelectorAll<HTMLElement>('[role="row"].inbox-ask'),
 ];
 
-/** **One list, every project's**: the longest wait first, whichever project; ↓ walks them and →
- *  reaches another project's Allow on its own row. */
+/** **One list, every project's**: Tab passes the scope switch, on All projects, into the list;
+ *  the longest wait first, whichever project; ↓ walks them and → reaches another project's Allow
+ *  on its own row. */
 export const EveryProjectInOneList: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByText("2 chats want to reach api.example.com")).toBeInTheDocument();
     await expect(rows(canvasElement)).toHaveLength(3);
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("radio", { name: /^All projects/ }),
+      "Tab lands on the scope switch, on All projects",
+    );
+    expectFocusInSight();
     await userEvent.tab();
     await untilFocused(() => rows(canvasElement)[0], "Tab lands on web's command, waiting longest");
     expectFocusInSight();

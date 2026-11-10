@@ -98,7 +98,8 @@ export const ThisProject: Story = {
     expectFocusInSight();
 
     await userEvent.tab({ shift: true });
-    await userEvent.keyboard("{ArrowLeft}");
+    // All projects stands after This project: the switch reads narrowest first (#1921).
+    await userEvent.keyboard("{ArrowRight}");
     await waitFor(() => expect(canvas.getAllByRole("option")).toHaveLength(4));
     await expect(grid).toHaveTextContent("shop · alpha");
 
