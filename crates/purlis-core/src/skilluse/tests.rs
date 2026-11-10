@@ -408,6 +408,7 @@ fn a_run_of_a_built_in_skill_by_any_of_its_names_is_a_run_of_that_skill() {
                 origin,
                 local: false,
             },
+            copy_workspace: None,
         }),
         harness: None,
         workspace: None,
@@ -495,4 +496,155 @@ fn a_run_and_a_miss_logged_under_a_built_in_skills_old_name_are_of_its_new_one_5
     assert_eq!(miss.skill, "purlis-repo-work");
     assert!(miss.is_of("purlis-repo-work"));
     assert!(miss.is_of("purlis:purlis-repo-work"));
+}
+
+/// Runs git in `dir`, unsigned, and gives its output's first line.
+fn git_in(dir: &Path, args: &[&str]) -> String {
+    crate::testgit::run(dir, args).line().to_owned()
+}
+
+#[test]
+fn a_run_of_a_skill_its_persona_names_by_its_workspace_records_that_copy_and_its_content() {
+    // SK-5c, #6041: `steward` names `workspaces/ops:deploy`, so its chat in `smart-ide` runs
+    // `ops`'s copy, not the `deploy` `smart-ide` holds (ADR 0099 as amended 2026-11-10).
+    let dir = a_plane();
+    let plane = dir.path();
+    std::fs::write(
+        plane.join(".gitignore"),
+        crate::wscmd::live_block(plane, ["ops", "smart-ide"]),
+    )
+    .unwrap();
+    for (ws, says) in [("ops", "Deploys."), ("smart-ide", "Deploys here.")] {
+        let at = plane.join(format!("workspaces/{ws}/skills/deploy"));
+        std::fs::create_dir_all(&at).unwrap();
+        std::fs::write(
+            at.join("SKILL.md"),
+            format!("---\nname: deploy\ndescription: {says}\n---\n"),
+        )
+        .unwrap();
+    }
+    let persona = plane.join("personas/steward");
+    std::fs::create_dir_all(&persona).unwrap();
+    std::fs::write(
+        persona.join("persona.md"),
+        "---\nskills: workspaces/ops:deploy\n---\n",
+    )
+    .unwrap();
+    git_in(plane, &["init", "-q", "-b", "main", "."]);
+    git_in(plane, &["config", "user.name", "Fixture"]);
+    git_in(plane, &["config", "user.email", "fixture@example.invalid"]);
+    git_in(plane, &["add", "-A"]);
+    git_in(plane, &["commit", "-qm", "plane"]);
+    let ops_tree = git_in(plane, &["rev-parse", "HEAD:workspaces/ops/skills/deploy"]);
+    let workspace_level = Level {
+        origin: crate::skills::Origin::Workspace,
+        local: false,
+    };
+    let mut spans = Spans::default();
+    let open = spans
+        .open(
+            "chat-run",
+            Start {
+                skill: "deploy",
+                id: RUN,
+                started_by: StartedBy::SkillTool,
+                whose: &purlis_skills::runs::Whose {
+                    workspace: Some("smart-ide".to_owned()),
+                    level: Some(workspace_level),
+                },
+                at_ms: 0,
+                tokens: None,
+            },
+        )
+        .cloned()
+        .unwrap();
+
+    let log = started(
+        plane,
+        &Starting::of_open(&open, Some("claude")),
+        Some("steward"),
+        may(),
+        "box",
+    )
+    .unwrap();
+
+    let row: serde_json::Value =
+        serde_json::from_str(std::fs::read_to_string(log).unwrap().trim()).unwrap();
+    assert_eq!(row["workspace"], "smart-ide", "where the chat worked");
+    assert_eq!(row["level"], "workspace");
+    assert_eq!(row["copy_workspace"], "ops", "whose copy it ran");
+    assert_eq!(row["tree"], ops_tree.as_str(), "what `ops`'s copy holds");
+    let run = runs(plane).remove(0);
+    assert_eq!(
+        run.copy,
+        Some(RunCopy {
+            workspace: Some("smart-ide".to_owned()),
+            level: workspace_level,
+            copy_workspace: Some("ops".to_owned()),
+        })
+    );
+}
+
+#[test]
+fn a_run_of_a_named_copy_in_a_local_workspace_does_not_say_which_copy_it_is_of() {
+    // A LOCAL workspace's name never goes into the committed log (SK-20), the copy's included:
+    // the run says where it ran, and is no copy's, never the chat's own workspace's.
+    let dir = a_plane();
+    let plane = dir.path();
+    std::fs::write(
+        plane.join(".gitignore"),
+        crate::wscmd::live_block(plane, ["smart-ide"]),
+    )
+    .unwrap();
+    let at = plane.join("workspaces/ops/skills/deploy");
+    std::fs::create_dir_all(&at).unwrap();
+    std::fs::write(
+        at.join("SKILL.md"),
+        "---\nname: deploy\ndescription: Deploys.\n---\n",
+    )
+    .unwrap();
+    let persona = plane.join("personas/steward");
+    std::fs::create_dir_all(&persona).unwrap();
+    std::fs::write(
+        persona.join("persona.md"),
+        "---\nskills: workspaces/ops:deploy\n---\n",
+    )
+    .unwrap();
+    let mut spans = Spans::default();
+    let open = spans
+        .open(
+            "chat-run",
+            Start {
+                skill: "deploy",
+                id: RUN,
+                started_by: StartedBy::SkillTool,
+                whose: &purlis_skills::runs::Whose {
+                    workspace: Some("smart-ide".to_owned()),
+                    level: Some(Level {
+                        origin: crate::skills::Origin::Workspace,
+                        local: false,
+                    }),
+                },
+                at_ms: 0,
+                tokens: None,
+            },
+        )
+        .cloned()
+        .unwrap();
+
+    let log = started(
+        plane,
+        &Starting::of_open(&open, Some("claude")),
+        Some("steward"),
+        may(),
+        "box",
+    )
+    .unwrap();
+
+    let text = std::fs::read_to_string(log).unwrap();
+    assert!(!text.contains("ops"), "{text}");
+    let row: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
+    assert_eq!(row.get("level"), None, "{row}");
+    assert_eq!(row.get("tree"), None, "{row}");
+    assert_eq!(row["workspace"], "smart-ide", "{row}");
 }

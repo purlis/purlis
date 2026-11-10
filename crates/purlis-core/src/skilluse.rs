@@ -73,24 +73,36 @@ pub fn started(
     // into the committed log, nor the copy of it, which would say a workspace by its level
     // (SK-20). Such a run says neither where it ran nor which copy it is of. A LIVE workspace is
     // committed and shared, and its runs say both.
-    let local = run
-        .workspace
-        .is_some_and(|ws| !crate::wscmd::live_workspaces(root).contains(ws));
+    let live = crate::wscmd::live_workspaces(root);
+    let local = run.workspace.is_some_and(|ws| !live.contains(ws));
     if local {
         return crate::dispatch::append(&path_for(root, when, device), root, &row);
     }
+    // Another workspace's copy its persona names by its workspace (SK-5c, #6041), whose name is
+    // said too: unless that workspace is LOCAL, when the run is no copy's, never the chat's own.
+    let copy = copy_workspace(root, run, persona);
+    let copy_local = copy.as_ref().is_some_and(|ws| !live.contains(ws));
+    let level = run.level.filter(|_| !copy_local);
     // Which copy it is of, where the start knew it (SK-13): its level, and the workspace the
     // chat worked in, null at the plane root. The workspace is said wherever the start knew the
     // chat's harness too (SK-20), so a total by workspace counts every run that says where.
-    if let Some(level) = run.level {
+    if let Some(level) = level {
         row["level"] = level.word().into();
+        if let Some(copy) = &copy {
+            row["copy_workspace"] = copy.as_str().into();
+        }
     }
     if run.level.is_some() || run.harness.is_some() {
         row["workspace"] = run.workspace.into();
     }
     // What the chat ran (SK-19): the tree git holds of the copy's folder, or that its folder held
     // changes not committed, so the run is matched to its version by content, not by time.
-    if let Some(content) = run.ran.cloned().or_else(|| ran_by(root, run, persona)) {
+    let content = if copy_local {
+        None
+    } else {
+        run.ran.cloned().or_else(|| ran_by(root, run, persona))
+    };
+    if let Some(content) = content {
         row["tree"] = content.word().into();
     }
     crate::dispatch::append(&path_for(root, when, device), root, &row)
@@ -273,12 +285,31 @@ pub fn ran_by(root: &Path, run: &Starting<'_>, persona: Option<&str>) -> Option<
     let persona = persona
         .map(crate::memstore::py_strip)
         .filter(|p| !p.is_empty());
+    let copy = copy_workspace(root, run, persona);
     content_of(
         root,
         &own_name(skill, Some(level)),
         level,
+        copy.as_deref().or(run.workspace),
+        persona,
+    )
+}
+
+/// **The workspace whose copy run `run`, as `persona`, ran, where that is not the chat's own**
+/// ([`crate::skills::named_copy_of`], SK-5c, #6041): another workspace's skill its persona names
+/// by its workspace. `None` for every other run.
+fn copy_workspace(root: &Path, run: &Starting<'_>, persona: Option<&str>) -> Option<String> {
+    let level = run.level?;
+    let skill = crate::memstore::py_strip(run.skill);
+    let persona = persona
+        .map(crate::memstore::py_strip)
+        .filter(|p| !p.is_empty());
+    crate::skills::named_copy_of(
+        root,
         run.workspace,
         persona,
+        level,
+        &own_name(skill, Some(level)),
     )
 }
 
@@ -429,6 +460,19 @@ pub struct RunCopy {
     /// The workspace the chat worked in, or `None` at the plane root.
     pub workspace: Option<String>,
     pub level: Level,
+    /// The workspace whose copy it is, where that is not the chat's own: another workspace's
+    /// skill its persona names by its workspace (`workspaces/<ws>:<name>`, SK-5c, #6041). `None`
+    /// for every other run, whose copy, at the workspace level, is of [`Self::workspace`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub copy_workspace: Option<String>,
+}
+
+impl RunCopy {
+    /// **The workspace whose copy it is**, at the workspace level: the one its persona named it
+    /// by ([`Self::copy_workspace`]), else the chat's own, `None` at the plane root.
+    pub fn workspace_of_copy(&self) -> Option<&str> {
+        self.copy_workspace.as_deref().or(self.workspace.as_deref())
+    }
 }
 
 /// How a skill run ended, and its signals: never a pass or a fail.
@@ -465,6 +509,7 @@ struct Row {
     tokens: Option<u64>,
     parent: Option<String>,
     level: Option<String>,
+    copy_workspace: Option<String>,
     tree: Option<String>,
     harness: Option<String>,
     /// The skill a miss is of (#5738): a miss's row has no `skill`, so a purlis before misses
@@ -521,6 +566,17 @@ pub fn runs(root: &Path) -> Vec<Run> {
                             .map(|level| RunCopy {
                                 workspace: workspace.clone().flatten(),
                                 level,
+                                copy_workspace: row
+                                    .copy_workspace
+                                    .clone()
+                                    // One plain name, as a workspace's folder is.
+                                    .filter(|ws| {
+                                        purlis_skills::level_rel(
+                                            &purlis_skills::Whose::Workspace(ws.clone()),
+                                            false,
+                                        )
+                                        .is_some()
+                                    }),
                             }),
                         harness: row.harness.filter(|h| !h.is_empty()),
                         workspace,
