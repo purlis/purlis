@@ -1,6 +1,6 @@
 # Amendment, 2026-11-11 (#6164): what the window draws in its overlay is read on its own grounds
 
-The amendment of 2026-11-10 keeps the families the window draws in React Aria's overlay
+The amendment of 2026-11-10 for #6156 keeps the families the window draws in React Aria's overlay
 (`PORTALED`: the popover and the tooltip) off a surface's chosen and hovered fills, and left them
 read on its rest fill where the window nests them. The window draws neither on the row, the panel
 or the card that holds it at rest either: both are portaled to the window's body.

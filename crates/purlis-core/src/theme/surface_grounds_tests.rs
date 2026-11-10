@@ -486,3 +486,19 @@ fn a_field_s_error_is_read_on_a_table_s_fill_and_its_help_never_is() {
         "{broken:?}"
     );
 }
+
+#[test]
+fn a_row_filled_like_a_tooltip_is_drawn_as_written_since_the_tooltip_opens_over_the_window() {
+    // A list's row filled in the tooltip's own colour, #1f1f1c: on the row a tooltip's edge would
+    // vanish, but the tooltip is portaled to the window's body, never drawn on the row, so the
+    // row draws as written (#6164).
+    let theme = shaped(
+        json!({ "surface.sunken": "#1f1f1c" }),
+        json!({ "list.root.row.fill": "surface.sunken" }),
+    );
+    let fell = fell_in(&theme);
+    assert!(
+        !fell.iter().any(|one| one.starts_with("list.root.row")),
+        "{fell:?}"
+    );
+}
