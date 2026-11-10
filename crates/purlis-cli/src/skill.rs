@@ -617,7 +617,7 @@ const FROM_A_CHAT: &str = "A chat does not change skills itself, and this change
 ///   a chat's.
 ///
 /// None of them is a flag: nothing a chat passes makes it the person.
-fn at_the_persons_terminal(root: &Path) -> bool {
+pub(crate) fn at_the_persons_terminal(root: &Path) -> bool {
     use purlis_core::secrets::{Ctx, Env, setup};
     if gradelink::in_a_chat(&purlis_core::envvar::var)
         || purlis_core::sandbox::held::in_a_sandbox(root)

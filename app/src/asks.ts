@@ -40,6 +40,7 @@ import { askRemoveWorkspace } from "./removeWorkspaceAsk";
 import { askOpenBrowser, OPEN_VIEW, TAKE_OVER } from "./browserNeedsYou";
 import { runGrantsMoved, sandboxCommandReturned } from "./sandboxAsked";
 import { askOpenProposal } from "./proposedChangeOpen";
+import { askReviewPin } from "./proposedPinOpen";
 import { proposeOldKeysRemoval } from "./oldHarnessPlugins";
 import { askOpenRunnerWrite } from "./runnerWriteOpen";
 import { askOpenRunnerDispatch } from "./runnerDispatchOpen";
@@ -434,6 +435,12 @@ export async function answerTaken(
         // Too long for a row: its own tab shows it whole, and Apply is pressed there (PC-7).
         if (option === "open") {
           askOpenProposal(plane, path.id, path.path);
+          opened = true;
+          return { status: "ok" };
+        }
+        // A chat's proposed pin (#5963): Review… opens Pin to workspace, whose Pin alone pins it.
+        if (option === "review-pin") {
+          askReviewPin(plane, path.id);
           opened = true;
           return { status: "ok" };
         }

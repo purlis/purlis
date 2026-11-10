@@ -143,6 +143,37 @@ impl ServerHandler for Server {
             let args = request.arguments.clone().unwrap_or_default();
             return Ok(done(blocking(move || skill_tool(&name, &args)).await));
         }
+        // A proposed pin (#5963): the line `purlis artifact pin` sends in a chat, by the same
+        // function. Nothing is pinned here; only the person pins it, in the window.
+        if name == purlis_core::artifact::proposal::TOOL {
+            let args = request.arguments.clone().unwrap_or_default();
+            if let Some(why) = blocking(read_only_here).await.err() {
+                return Ok(done(Err(format!("nothing was proposed: {why}"))));
+            }
+            return Ok(done(
+                blocking(move || crate::brokered::propose_pin_tool(&args)).await,
+            ));
+        }
+        // The read-only `purlis artifact` verbs' twins (#5978's review): the chat's own workspace,
+        // read by the same functions the verbs print.
+        if purlis_core::artifact::tools::is_one(name) {
+            let name = name.to_owned();
+            let args = request.arguments.clone().unwrap_or_default();
+            return Ok(done(
+                blocking(move || {
+                    let here = crate::Here::read()?;
+                    let ws = here.workspace(None)?;
+                    purlis_core::artifact::tools::call(
+                        ws.name(),
+                        ws.dir(),
+                        purlis_core::machine::config_root().as_deref(),
+                        &name,
+                        &args,
+                    )
+                })
+                .await,
+            ));
+        }
         if !chattools::TOOLS.iter().any(|t| t.name == name) {
             return Err(ErrorData::invalid_params(
                 format!("purlis has no tool {name:?}"),
@@ -265,13 +296,10 @@ fn skills_reach_here() -> bool {
 
 /// **Every tool this server can list**, before a chat's place narrows it: the skill tools reach
 /// only where skills do, and a grade's chat lists only the ones that read. The shipped skills
-/// are held to it, so a skill never names a tool no chat is handed (#5721).
+/// are held to it, so a skill never names a tool no chat is handed (#5721). It is the one tool
+/// catalogue's ([`purlis_core::catalogue`]), whose read-only entries are also page queries.
 pub(crate) fn every_tool() -> impl Iterator<Item = &'static chattools::Tool> {
-    chattools::TOOLS
-        .iter()
-        .chain(purlis_core::browsertools::TOOLS.iter())
-        .chain(purlis_core::themepreview::TOOLS.iter())
-        .chain(purlis_core::skilltools::TOOLS.iter())
+    purlis_core::catalogue::every_tool()
 }
 
 /// The first line of [`instructions`], the same for every chat.
