@@ -97,7 +97,7 @@ function core() {
 }
 
 const hand = () =>
-  within(screen.getByRole("tablist", { name: "Attention" })).getByRole("tab", { name: "Asks" });
+  within(screen.getByRole("tablist", { name: "Attention" })).getByRole("tab", { name: /^Asks/ });
 const handCount = () => hand().querySelector('[data-part="count"]');
 const consentNotice = () =>
   screen.queryByRole("status", { name: "This project expects more than this machine allows" });
