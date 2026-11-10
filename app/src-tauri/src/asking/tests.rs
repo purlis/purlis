@@ -2993,6 +2993,7 @@ fn asked(session: u32, ask: &str) -> Shown {
         last_message: None,
         login: None,
         earlier_messages: None,
+        rule: None,
         secret: None,
         run: None,
         fill: None,
@@ -3022,6 +3023,8 @@ fn a_snoozed_chats_asks_are_listed_apart_until_it_asks_something_new() {
         with_asking_chat: Vec::new(),
         snoozed: Vec::new(),
         snoozed_until: None,
+        cooling: Vec::new(),
+        cooling_until: None,
     };
 
     let split = snoozed_apart(
@@ -3071,6 +3074,8 @@ fn a_chat_snoozed_for_an_hour_says_when_it_comes_back_and_is_listed_again_then()
         with_asking_chat: Vec::new(),
         snoozed: Vec::new(),
         snoozed_until: None,
+        cooling: Vec::new(),
+        cooling_until: None,
     };
 
     let split = snoozed_apart(listing(), Some(&store), &root, NOW + 3_599);

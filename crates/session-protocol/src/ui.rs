@@ -386,6 +386,14 @@ pub const WINDOW_ONLY: &[&str] = &[
     "never_dispatch",
     // Keep blocked on a sandbox host ask (#1690): the person's no, told to the app.
     "forget_sandbox_block",
+    // Ask less (#6010): the person's answers noted, the rules they made from an offer and each
+    // one's Undo, and End cool-off. No chat notes its own answer, makes itself a rule, or ends
+    // the cool-off that holds it.
+    "ask_answered",
+    "rule_made",
+    "rules_made",
+    "undo_rule",
+    "end_cool_off",
     // Keep on a chat's question whether to remove a workspace (qw356): the person's no. No
     // chat answers its own ask. The removal has no command here: it is the window's own Delete
     // workspace, which the question opens.

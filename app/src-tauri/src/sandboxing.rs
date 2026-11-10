@@ -2546,7 +2546,7 @@ fn run_grant_of(id: &str) -> Option<u32> {
 
 /// **Every Allow on the list** ([`grants_of`]), with the programs chats may run with a vault's keys
 /// (ADR 0112, #5241), each of its chat alone and first, as a chat's own grants are.
-fn all_grants_of(held: &crate::planes::Held) -> Vec<SandboxGrant> {
+pub(crate) fn all_grants_of(held: &crate::planes::Held) -> Vec<SandboxGrant> {
     let mut out: Vec<SandboxGrant> = held
         .secret_asks()
         .given_runs()
@@ -3197,27 +3197,70 @@ pub async fn revoke_sandbox_grant(
     let browsers_ended = std::sync::Arc::clone(planes.browsers_ended());
     // On a blocking thread, as `sandbox_grants` is: the list it answers asks git (#1543).
     crate::off_the_window("revoking a sandbox grant", move || {
-        let root = held.root();
-        let audit = held.audit_then_record(network.as_ref());
-        if let Some(number) = run_grant_of(&id) {
-            revoke_run_grant(&held, number)?;
-            return Ok(all_grants_of(&held));
-        }
-        match browser_site_of(&id) {
-            // A browser site's (#2018): its browsers end, as a narrowing ends them.
-            Some(granted) => {
-                revoke_browser_site(&held, &plane, &granted, &audit, &*browsers_ended)?
-            }
-            None => revoke(root, held.chats(), &id, &audit)?,
-        }
-        // Removing Always for a persona's browser narrows the chats it allowed (#2241): their
-        // browsers end now, D-2013-11.
-        if let Some(persona) = browser_always_of(&id) {
-            crate::chatbrowsers::always_removed(&held, &plane, persona, &*browsers_ended);
-        }
+        revoke_granted(&held, &plane, network.as_ref(), &browsers_ended, &id)?;
         Ok(all_grants_of(&held))
     })
     .await
+}
+
+/// **Takes the grant called `id` away** in `held`, audited, as Revoke on Settings' Granted list
+/// does: and Undo in Rules I made (#6010).
+pub(crate) fn revoke_granted(
+    held: &crate::planes::Held,
+    plane: &PlaneId,
+    network: Option<&purlis_core::sandboxblock::record::Record>,
+    browsers_ended: &crate::chatbrowsers::Teller,
+    id: &str,
+) -> Result<(), String> {
+    let root = held.root();
+    let audit = held.audit_then_record(network);
+    if let Some(number) = run_grant_of(id) {
+        return revoke_run_grant(held, number);
+    }
+    match browser_site_of(id) {
+        // A browser site's (#2018): its browsers end, as a narrowing ends them.
+        Some(granted) => revoke_browser_site(held, plane, &granted, &audit, &**browsers_ended)?,
+        None => revoke(root, held.chats(), id, &audit)?,
+    }
+    // Removing Always for a persona's browser narrows the chats it allowed (#2241): their
+    // browsers end now, D-2013-11.
+    if let Some(persona) = browser_always_of(id) {
+        crate::chatbrowsers::always_removed(held, plane, persona, &**browsers_ended);
+    }
+    Ok(())
+}
+
+/// **The grant an Allow just wrote** (#6010), by the id Settings' Granted list revokes it by:
+/// the grant of `what` at `level` naming `target`, and for one chat, chat `session`'s; else the
+/// one of them made in the last minute, newest first. None where none is listed.
+pub(crate) fn grant_made(
+    held: &crate::planes::Held,
+    session: u32,
+    what: GrantWhat,
+    target: &str,
+    level: GrantLevel,
+    now: u64,
+) -> Option<String> {
+    let chat = held.chats().shown_name(session);
+    let one_chat = matches!(level, GrantLevel::Once | GrantLevel::Chat);
+    let listed: Vec<SandboxGrant> = all_grants_of(held)
+        .into_iter()
+        .filter(|one| one.what == what && one.level == level)
+        .filter(|one| !one_chat || one.chat == chat)
+        .collect();
+    listed
+        .iter()
+        .find(|one| one.target == target)
+        .or_else(|| {
+            listed
+                .iter()
+                .filter(|one| {
+                    one.at
+                        .is_some_and(|at| now.saturating_sub(u64::from(at)) <= 60)
+                })
+                .max_by_key(|one| one.at)
+        })
+        .map(|one| one.id.clone())
 }
 
 /// Why a project's browser site reaches no browser here yet (#2443).

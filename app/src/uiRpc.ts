@@ -658,6 +658,11 @@ export const commands = {
 	answerAsk: __WINDOW_ONLY_RESULT,
 	asksWaiting: __WINDOW_ONLY_RESULT,
 	forgetSandboxBlock: __WINDOW_ONLY_RESULT,
+	askAnswered: __WINDOW_ONLY_RESULT,
+	ruleMade: __WINDOW_ONLY_RESULT,
+	rulesMade: __WINDOW_ONLY_RESULT,
+	undoRule: __WINDOW_ONLY_RESULT,
+	endCoolOff: __WINDOW_ONLY_RESULT,
 	inboxUpdates: __WINDOW_ONLY_RESULT,
 	noteInboxUpdates: __WINDOW_ONLY_RESULT,
 	settleInboxUpdates: __WINDOW_ONLY_RESULT,
@@ -3338,6 +3343,18 @@ export type Asking = {
 	 *  snoozed chat waits only for a new ask.
 	 */
 	snoozed_until?: number | null,
+	/**
+	 *  **The asks a cool-off holds quietly** (ADR 0121 decision 7, #6010): each the same request
+	 *  its chat heard Don't allow to twice in a row lately. Listed apart, as snoozed asks are, so
+	 *  neither the ✋ nor a notification counts them, until the cool-off ends or the person
+	 *  ends it. Only [`counted`] puts any here.
+	 */
+	cooling?: Shown[],
+	/**
+	 *  When the first cool-off ends by itself, in seconds since 1970: the window reads the asks
+	 *  again then.
+	 */
+	cooling_until?: number | null,
 };
 
 /**  What a chat's row says while it is at its task limit. */
@@ -8518,6 +8535,12 @@ export type Offered = {
 	 *  answers. Absent (rather than `false`) wherever nothing is marked.
 	 */
 	preselected?: boolean | null,
+	/**
+	 *  **Who a grant is for, where a rule may be made of it** (ADR 0121 decision 7, #6010):
+	 *  this chat, this project or this machine. Absent on an answer that is no grant, and on
+	 *  one whose rule Rules I made could not undo (a harness's saved rule, a persona's Always).
+	 */
+	scope?: RuleScope | null,
 };
 
 /**  One skill a source offers. */
@@ -11899,6 +11922,74 @@ export type RowWorktree = {
 	discard: boolean,
 };
 
+/**  **A rule an offer made**, as the window tells it once the ask's answer went through. */
+export type RuleMade = {
+	session: number,
+	request: string,
+	/**  The ask's source, as it lists it. */
+	source: AskSource,
+	/**  What the ask said. */
+	says: string,
+	/**  The grant chosen: its id and its words. */
+	option: string,
+	label: string,
+	scope: RuleScope,
+	/**
+	 *  What the grant names, and its target: a sandbox block's, as its ask's path names them.
+	 *  None for a run of a program, whose grant is the chat's.
+	 */
+	what: GrantWhat | null,
+	target: string | null,
+};
+
+/**  One rule, as Rules I made lists it. */
+export type RuleMadeShown = {
+	id: string,
+	/**  The project it is in, where it is open now: Undo needs it open. */
+	plane: PlaneId | null,
+	/**  The project's folder name. */
+	project: string,
+	/**  When it was made, in seconds since 1970. */
+	at: number,
+	source: string,
+	/**  What the ask said: data, never markup. */
+	says: string,
+	/**  What it allows, and for whom, in its ask's words. */
+	label: string,
+	scope: RuleScope,
+	/**  How many asks it has saved since it was made. */
+	saved: number,
+	/**  Its grant was found, and Undo takes it away. Where not, Undo only forgets the rule. */
+	undoes: boolean,
+};
+
+/**
+ *  **A rule an ask offers** (#6010): the Allow given each time, how often, and its wider grants
+ *  that a rule may be made of, the one suggested first.
+ */
+export type RuleOffered = {
+	/**  The id of the Allow given each time. */
+	answered: string,
+	/**  How many times, in the last week. */
+	times: number,
+	/**
+	 *  The option ids of the grants a rule may be made of, the suggested one first: the
+	 *  narrowest that would have prevented every ask, else the widest there is.
+	 */
+	options: string[],
+};
+
+/**  **Who a rule is for** (ADR 0121 decision 7, #6010), narrowest first. */
+export type RuleScope = "chat" | "project" | "machine";
+
+/**  **An ask's request, and the rule it offers** (#6010). */
+export type RuleShown = {
+	/**  The request's name: two asks with the same are the same request. */
+	request: string,
+	/**  The rule offered, where the same Allow was given it twice in a week. */
+	offer?: RuleOffered | null,
+};
+
 /**  How a skill run ended, as the Runs panel draws it. */
 export type RunEnd = 
 /**  With its turn. */
@@ -13326,6 +13417,12 @@ export type Shown = {
 	 *  large. Absent for any other ask.
 	 */
 	fill?: FillShown | null,
+	/**
+	 *  **What its request is called, and the rule it offers** (ADR 0121 decision 7, #6010):
+	 *  present where its request can be named, so its answer is noted against it. Absent on an
+	 *  ask that is never offered a rule nor cooled off.
+	 */
+	rule?: RuleShown | null,
 };
 
 /**
