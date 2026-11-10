@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794343870351,
+  "lastUpdate": 1794345792431,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -46410,6 +46410,48 @@ window.BENCHMARK_DATA = {
             "value": 101.6417335,
             "unit": "ms",
             "extra": "median of 5 runs: 101.162, 101.558, 101.642, 102.395, 103.118 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "79ef7542bfaee7111a3c568e43760077a3aaadf6",
+          "message": "A theme's check reads what stands on a surface's chosen and hovered fills (#6156) (#6167)\n\n* A surface's chosen and hovered fills are read under what stands on it (#6156)\n\nsurfaces_set read a surface's fill at rest alone, so a list's chosen row could\nbe filled where its badges' words vanish and the theme passed. It now reads\neach surface's look at rest, chosen and under the pointer, with what stands on\nit at rest, and a state that breaks draws its default fill there. A popover, a\ntooltip or a dialog a surface holds is portaled to the window's body, so it is\nnever read on the surface's state fill (PORTALED).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M73CRXGQJ32ZA4VE1603120P\nPurlis-Persona: steward\n\n* grounds.test.ts finds what the window portals, and PORTALED is held to it (#6156)\n\nA family whose every root the window draws in React Aria's overlay (Popover,\nTooltip, Modal, ModalOverlay, and the OverlayArrow drawn only in one) is drawn\nover the window, never on a fill a surface that holds it draws in a state. The\nreader finds them from the components, and PORTALED in parts.rs must be them,\nexactly: the popover and the tooltip. A dialog's root is placed in its overlay\nby another component, which the read does not follow, and no surface read in a\nstate holds one. With the ADR 0103 amendment and a changelog fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M73CRXGQJ32ZA4VE1603120P\nPurlis-Persona: steward\n\n* Review fixes for #6156: a chosen fill is read after its rest falls, with the family at rest\n\n- held_on_surfaces skipped a state whose rest had fallen in any pass, as fell is\n  the whole build's: it now skips only in the pass the rest fell, and the state's\n  own fill is read in the next (red first: a_chosen_row_is_read_on_its_own_fill_\n  after_its_rest_falls).\n- On a fill a surface draws in a state, a family is read at rest alone (sets_on),\n  as the amendment says, so the readings never grow by its own states. The\n  reading cache keys whether the fill is at rest.\n- grounds.test.ts's portaledFamilies reuses originsIn and isRootPart, and says it\n  does not follow a spread root; one rest_fell check in held_on_surfaces.\n- The first commit's message names a dialog as portaled: PORTALED holds the\n  popover and the tooltip alone.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M73CRXGQJ32ZA4VE1603120P\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T20:49:47Z",
+          "tree_id": "8a8e89a93eeab18f2ebb094e03ac4d584c0ddc44",
+          "url": "https://github.com/purlis/purlis/commit/79ef7542bfaee7111a3c568e43760077a3aaadf6"
+        },
+        "date": 1794345786143,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5535945,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.539, 0.549, 0.554, 0.565, 0.566 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.288984499999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.059, 16.174, 16.289, 16.335, 16.407 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.190044,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.705, 100.764, 101.190, 102.666, 104.723 ms"
           }
         ]
       }
