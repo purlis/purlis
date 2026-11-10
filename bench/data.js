@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794317803899,
+  "lastUpdate": 1794320628626,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -45990,6 +45990,48 @@ window.BENCHMARK_DATA = {
             "value": 101.2159215,
             "unit": "ms",
             "extra": "median of 5 runs: 100.826, 100.902, 101.216, 101.411, 101.710 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "066a4ad723f481f05cffb4a688b20c90d727b7a1",
+          "message": "Theme tests round 4: exact engine speed-ups, per-case splits (#3597) (#6131)\n\n* Theme tests round 4: exact engine speed-ups and per-case splits (#3597)\n\nThe floors' tinted failures are kept per thread for the last themes,\nmatched by the whole theme. A parts hold draws its consent looks and\nnearer_across's looks once per variant instead of once per tint. Rule\nholds read a turned colour's OKLab from its own cache, kept_at draws the\nsignal washes once per call, look_apart reads each fill once, onto tells\nan opaque colour before expanding it, and the tint caches hash by Fx.\nEvery answer is unchanged: a digest of every fixture import, its check\nand hold, three parts themes and both built-ins matches base bit for bit.\n\nThe faint-terminal check joins the per-fixture import tests, the CLI\nimport test and the held-again test are one test a case, and the\ngallery test measures three themes instead of eight.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M72DWDCT195B77EWSTQZ0QEM\nPurlis-Persona: steward\n\n* Changelog fragment: theme import and parts hold take less time (#3597)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M72DWDCT195B77EWSTQZ0QEM\nPurlis-Persona: steward\n\n* Review: document the new caches' invariants and fields; a repeatable answers digest (#3597)\n\nStandards: the rustc-hash entry names its licence and that it adds no\ncrate; KNOWN_FAILED says why sixteen; TurnedOklab, Across and\nConsentLooks document their fields; Keep blocked's name travels with its\nlooks. Spec: the floors' memo and the consent looks' cache say what keeps\nthem exact, and theme_answers_digest (ignored, like parts_apply_bench)\nprints the digest base and head are compared by.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M72DWDCT195B77EWSTQZ0QEM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T13:43:42Z",
+          "tree_id": "99eb48c0b1ce1b5816d8ee2f1a6b035c8fda456a",
+          "url": "https://github.com/purlis/purlis/commit/066a4ad723f481f05cffb4a688b20c90d727b7a1"
+        },
+        "date": 1794320624622,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.685322,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.676, 0.684, 0.685, 0.693, 0.702 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.543357,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.524, 16.541, 16.543, 16.683, 16.878 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.14606649999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.696, 102.109, 102.146, 102.159, 102.181 ms"
           }
         ]
       }
