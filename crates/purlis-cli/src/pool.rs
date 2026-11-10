@@ -94,6 +94,16 @@ pub enum PoolCommand {
         #[arg(long)]
         json: bool,
     },
+    /// List the runners left on another Docker engine: a removal that found Docker answering as
+    /// another engine than the one that made a runner forgot it here, and left its container
+    /// and home volume there.
+    ///
+    /// With `--remove`, removes each one whose engine Docker answers as now, and forgets it.
+    LeftBehind {
+        /// Remove each one whose engine Docker answers as now.
+        #[arg(long)]
+        remove: bool,
+    },
     /// Set one of a pool's limits, or return it to the default with `--reset`.
     ///
     /// In a chat the app started, this writes nothing: the person is asked in the window, and
@@ -152,6 +162,12 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
              and not a chat's. Run it in your own terminal, or use Pool setup in the window."
                 .to_owned(),
         ),
+        PoolCommand::LeftBehind { .. } if in_a_chat => Err(
+            "The runners left on another engine are read from this machine's pools, and removed \
+             with its Docker, which a chat doesn't reach. Run purlis pool left-behind in your own \
+             terminal."
+                .to_owned(),
+        ),
         PoolCommand::Add { .. } if in_a_chat => Err(
             "Adding a pool uses this machine's Docker, which a chat doesn't reach. Run it in your \
              own terminal, or use Pool setup in the window."
@@ -207,6 +223,10 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
             if let Some(note) = note {
                 crate::voice::info(note);
             }
+            Ok(0)
+        }
+        PoolCommand::LeftBehind { remove } => {
+            left_behind(&config()?, *remove)?;
             Ok(0)
         }
         PoolCommand::Setup { name, json } => {
@@ -297,7 +317,61 @@ fn writes_a_pool(command: &PoolCommand) -> bool {
         | PoolCommand::AddProfile { .. }
         | PoolCommand::RemoveProfile { .. }
         | PoolCommand::Limit { .. } => true,
+        PoolCommand::LeftBehind { remove } => *remove,
         PoolCommand::Limits { .. } | PoolCommand::Setup { .. } => false,
+    }
+}
+
+/// **Says each runner left on another engine** (#2587), and with `remove`, removes each one
+/// whose engine this machine's Docker answers as now.
+fn left_behind(config: &std::path::Path, remove: bool) -> Result<(), String> {
+    use runners::left;
+    if !remove {
+        let kept = left::read(config).map_err(|why| why.to_string())?;
+        if kept.is_empty() {
+            crate::voice::info("No runner is left on another Docker engine.");
+            return Ok(());
+        }
+        for one in &kept {
+            crate::voice::info(format!(
+                "Runner {} of pool {} is on Docker engine {}: {}",
+                one.name(),
+                one.pool,
+                one.engine,
+                one.how()
+            ));
+        }
+        crate::voice::info(
+            "Run purlis pool left-behind --remove once Docker answers as that engine again, or \
+             run those commands where it does.",
+        );
+        return Ok(());
+    }
+    let docker = purlis_core::poolsetup::docker_here()
+        .ok_or_else(|| "Docker isn't on this machine, so nothing was removed.".to_owned())?;
+    let outcomes = left::remove(config, &docker).map_err(|why| why.to_string())?;
+    if outcomes.is_empty() {
+        crate::voice::info("No runner is left on another Docker engine.");
+    }
+    let mut all = true;
+    for (one, done) in outcomes {
+        match done {
+            Ok(()) => crate::voice::ok(format!(
+                "Runner {} of pool {} is removed from Docker engine {}.",
+                one.name(),
+                one.pool,
+                one.engine
+            )),
+            Err(why) => {
+                all = false;
+                crate::voice::err(why);
+            }
+        }
+    }
+    if all {
+        Ok(())
+    } else {
+        Err("Some runners are still left on another engine; purlis keeps them.".to_owned())
     }
 }
 

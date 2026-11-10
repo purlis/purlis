@@ -19,6 +19,10 @@ export const SANDBOX_CHANGED = "sandbox-changed";
 /** What the core sends every window when this machine's sandbox policy changes (#1431). */
 export const POLICY_CHANGED = "sandbox-policy-changed";
 
+/** What the core sends every window when a cluster pool is added (#1750): a chat started
+ *  before it holds none of the programs the pool runs until it restarts. */
+export const CLUSTER_POOL_ADDED = "cluster-pool-added";
+
 /**
  * **The last answer for each project**, kept beside the hook that asked (#1431): what a chat's
  * own tab reads to say that policy now requires the sandbox it runs without, with no second
@@ -116,17 +120,20 @@ export function useOlderSandbox(
     window.addEventListener("focus", again);
     // **And when this machine's policy changes** (#1431): the core reads its file now and
     // then, and says so, so a policy that lands is told with nothing else moving.
+    // **And when a cluster pool is added** (#1750), for the same reason.
     let gone = false;
-    let stop: (() => void) | undefined;
-    void listen(POLICY_CHANGED, again)
-      .then((unlisten) => {
-        if (gone) unlisten();
-        else stop = unlisten;
-      })
-      .catch(() => undefined);
+    const stops: (() => void)[] = [];
+    for (const event of [POLICY_CHANGED, CLUSTER_POOL_ADDED]) {
+      void listen(event, again)
+        .then((unlisten) => {
+          if (gone) unlisten();
+          else stops.push(unlisten);
+        })
+        .catch(() => undefined);
+    }
     return () => {
       gone = true;
-      stop?.();
+      for (const stop of stops) stop();
       window.removeEventListener("focus", again);
     };
   }, []);
@@ -228,6 +235,10 @@ export function SandboxChangedNotice({
   /** The policy's sentence, where it is the cause for any of them: the same for each. */
   const policy = behind.find((chat) => chat.policy != null)?.policy ?? undefined;
   const allPolicy = policy !== undefined && behind.every((chat) => chat.policy != null);
+  /** Where a cluster pool added while they ran is the only cause for every one (#1750). */
+  const pool = behind.every((chat) => chat.pool != null)
+    ? (behind[0]?.pool ?? undefined)
+    : undefined;
   const dismissAll = () => {
     for (const cause of causes) dismiss(cause);
   };
@@ -246,7 +257,7 @@ export function SandboxChangedNotice({
       ]}
       onDismiss={dismissAll}
     >
-      {allPolicy ? policy : "This project's sandbox changed."}{" "}
+      {allPolicy ? policy : (pool ?? "This project's sandbox changed.")}{" "}
       {!allPolicy && policy !== undefined && `${policy} `}
       {allPolicy
         ? one

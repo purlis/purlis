@@ -45,6 +45,7 @@ mod chatevents;
 mod chatmoves;
 mod chats;
 mod clipath;
+mod clonevouch;
 mod createproject;
 mod curation;
 mod layout;

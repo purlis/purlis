@@ -992,11 +992,17 @@ impl Serving {
         let grant = may_mint(&Held {
             claim,
             pool: &pool,
-            claims_since: in_force_since(claims_policy.as_ref(), claims_binding.as_ref(), POLICY),
+            claims_since: in_force_since(
+                claims_policy.as_ref(),
+                claims_binding.as_ref(),
+                POLICY,
+                client.default_namespace(),
+            ),
             forge_since: in_force_since(
                 forge_policy.as_ref(),
                 forge_binding.as_ref(),
                 FORGE_POLICY,
+                client.default_namespace(),
             ),
         })?;
         // Before each mint (ruled on #4206), so a revoked right stops new tokens at once.

@@ -44,7 +44,8 @@ import { atCreation, sayAboutThisMachine, type Reading } from "./windowprefs";
  * (`opened_chats`, a reattach whose state the session host could not hand over among it, #2006), a doctor finding that stands as a Notice (`plane_doctor`, #1250), and a
  * sandbox change that left chats behind (`chats_on_older_sandbox`, #1428), a remembered
  * project that is gone (`recent_planes`' `gone`, #1291: {@link GONE}), and a workspace's repo
- * left off its default branch or on a moved remote (`stale_clones`, #1985). A family is the
+ * left off its default branch or on a moved remote (`stale_clones`, #1985), and a workspace's
+ * clone made outside purlis that the person has not trusted (`clones_to_vouch`). A family is the
  * cause up to its first `:`.
  */
 export const KEPT: ReadonlySet<string> = new Set([
@@ -57,6 +58,7 @@ export const KEPT: ReadonlySet<string> = new Set([
   "sandbox-changed",
   "project-gone",
   "stale-clone",
+  "clone-vouch",
 ]);
 
 /**

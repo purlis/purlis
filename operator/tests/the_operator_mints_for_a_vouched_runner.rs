@@ -6,9 +6,7 @@
 //! kind job (`minting_on_a_kind_cluster.rs`).
 
 use k8s_openapi::ByteString;
-use k8s_openapi::api::admissionregistration::v1::{
-    ValidatingAdmissionPolicy, ValidatingAdmissionPolicyBinding,
-};
+use k8s_openapi::api::admissionregistration::v1::ValidatingAdmissionPolicyBinding;
 use k8s_openapi::api::core::v1::Secret;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::Time;
 use kube::api::ObjectMeta;
@@ -18,7 +16,7 @@ use purlis_cluster_operator::mint::{self, Asked, Challenges, Held};
 use purlis_cluster_operator::vouch::{self, About, SigningKey, SigningKeys};
 use purlis_cluster_operator::{
     Claim, ClaimForge, ClaimSpec, ClaimStatus, FORGE_POLICY, LinkKey, Pool, PoolForge, PoolSpec,
-    SecretRef, in_force_since,
+    SecretRef, in_force_since, shipped_policy,
 };
 use ring::agreement::{self, EphemeralPrivateKey, UnparsedPublicKey, X25519};
 use serde_json::{Map, Value, json};
@@ -410,23 +408,31 @@ fn what_was_made_before_the_policy_on_app_keys_settled_mints_nothing() {
 #[test]
 fn the_policy_on_app_keys_is_in_force_only_with_its_binding_and_itself_settled() {
     let binding = binding_of(FORGE_POLICY, 1000);
-    let mut policy = ValidatingAdmissionPolicy::default();
+    let namespace = "purlis-system";
+    let mut policy = shipped_policy(FORGE_POLICY, namespace).expect("the shipped policy");
     policy.metadata.creation_timestamp = made_at(2000);
-    assert_eq!(in_force_since(None, Some(&binding), FORGE_POLICY), None);
-    assert_eq!(in_force_since(Some(&policy), None, FORGE_POLICY), None);
-    let since = in_force_since(Some(&policy), Some(&binding), FORGE_POLICY).expect("in force");
+    assert_eq!(
+        in_force_since(None, Some(&binding), FORGE_POLICY, namespace),
+        None
+    );
+    assert_eq!(
+        in_force_since(Some(&policy), None, FORGE_POLICY, namespace),
+        None
+    );
+    let since =
+        in_force_since(Some(&policy), Some(&binding), FORGE_POLICY, namespace).expect("in force");
     assert_eq!(since.as_second(), 2030, "the later of the two, settled");
 
     let mut audit = binding.clone();
     audit.spec.validation_actions = strings(&["Audit"]);
     assert_eq!(
-        in_force_since(Some(&policy), Some(&audit), FORGE_POLICY),
+        in_force_since(Some(&policy), Some(&audit), FORGE_POLICY, namespace),
         None
     );
     let mut other = binding;
     other.spec.policy_name = "other".into();
     assert_eq!(
-        in_force_since(Some(&policy), Some(&other), FORGE_POLICY),
+        in_force_since(Some(&policy), Some(&other), FORGE_POLICY, namespace),
         None
     );
 }

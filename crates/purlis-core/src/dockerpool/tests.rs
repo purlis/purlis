@@ -1652,6 +1652,9 @@ fn recorded(host: &str, case: &str) -> serde_json::Value {
         "podman-rootless-host-folder" => include_str!("hosts/podman-rootless-host-folder.json"),
         "podman-rootless-device" => include_str!("hosts/podman-rootless-device.json"),
         "podman-rootless-store" => include_str!("hosts/podman-rootless-store.json"),
+        "docker-apparmor-made-full" => include_str!("hosts/docker-apparmor-made-full.json"),
+        "podman-rootful-made-full" => include_str!("hosts/podman-rootful-made-full.json"),
+        "podman-rootless-made-full" => include_str!("hosts/podman-rootless-made-full.json"),
         other => panic!("nothing is recorded as {other}"),
     };
     serde_json::from_str(text).unwrap()
@@ -4014,4 +4017,25 @@ fn a_sign_in_asked_over_the_link_is_run_as_its_desktop_asked() {
         }),
         Typed::DeviceInOwnTerminal(size)
     );
+}
+
+/// **Every field each engine writes of a container made the pool's way is one the check knows**
+/// (#2668): the whole of what `inspect` printed, uncut, on each host the pool is measured on
+/// (`docker-pool-hosts`, run 42706856771, 2026-11-10), passes the check, which refuses a field
+/// it does not know. A newer engine that writes a field of its own is refused until it is
+/// recorded here and read. Uncut but for rootless Podman's `State.CgroupPath`, which the check
+/// never reads, whose systemd unit (`user@<uid>.service`) the commit scan reads as an address.
+#[test]
+fn a_container_made_the_pools_way_passes_with_every_field_its_engine_writes() {
+    for host in ["docker-apparmor", "podman-rootful", "podman-rootless"] {
+        let full = recorded(host, "made-full");
+        assert!(
+            full[0]["HostConfig"]
+                .as_object()
+                .is_some_and(|fields| fields.len() > 40),
+            "{host}: recorded whole, not cut to the fields the check reads"
+        );
+        let passed = checked_on_its_engine(host, &full);
+        assert!(passed.is_ok(), "{host}: {passed:?}");
+    }
 }

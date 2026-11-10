@@ -243,6 +243,27 @@ fn a_quota_the_cluster_writes_in_other_words_says_the_same() {
     assert!(!person::quota_says(&held, &wanted));
 }
 
+/// A quota counts what its scopes pick: one that counts only some of a person's pods does not
+/// say what the operator wrote, whatever its `hard` says.
+#[test]
+fn a_quota_that_counts_only_some_pods_does_not_say_what_it_should() {
+    use k8s_openapi::api::core::v1::{ScopeSelector, ScopedResourceSelectorRequirement};
+    let wanted = person::quota_for("ns", &Quota::default());
+    let mut scoped = wanted.clone();
+    scoped.spec.as_mut().unwrap().scopes = Some(vec!["BestEffort".into()]);
+    assert!(!person::quota_says(&scoped, &wanted));
+    let mut selected = wanted.clone();
+    selected.spec.as_mut().unwrap().scope_selector = Some(ScopeSelector {
+        match_expressions: Some(vec![ScopedResourceSelectorRequirement {
+            operator: "Exists".into(),
+            scope_name: "PriorityClass".into(),
+            values: None,
+        }]),
+    });
+    assert!(!person::quota_says(&selected, &wanted));
+    assert!(person::quota_says(&wanted.clone(), &wanted));
+}
+
 fn pool() -> Pool {
     Pool::new("team", PoolSpec::new(IMAGE))
 }

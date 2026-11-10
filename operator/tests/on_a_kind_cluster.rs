@@ -2758,6 +2758,27 @@ async fn an_upstream_claim_on_a_purlis_pool_made_directly_is_refused() {
             .await,
         "are claimed with a Claim",
     );
+    // In the runner namespace, even upstream objects of no purlis pool are made by the operator
+    // alone, whatever they name or are owned by.
+    let dry = PostParams {
+        dry_run: true,
+        ..PostParams::default()
+    };
+    let in_runners = "makes upstream objects in a runner namespace";
+    refused_in_words(
+        "an upstream claim made by hand in a runner namespace",
+        upstream_claims
+            .create(&dry, &claim_on("by-hand", "a-team-pool"))
+            .await,
+        in_runners,
+    );
+    refused_in_words(
+        "a warm pool made by hand in a runner namespace",
+        warm_pools
+            .create(&dry, &warm_pool_of("by-hand", "a-team-template"))
+            .await,
+        in_runners,
+    );
     let _ = pools.delete("e2e-direct", &DeleteParams::default()).await;
     scratch.end().await;
 }
@@ -4866,9 +4887,12 @@ async fn the_operators_token_writes_upstreams_objects_only_in_a_runners_shape() 
         .create(&dry, &born_saying("false", None))
         .await;
     assert!(refused_saying(&made, "only its own mark"), "{made:?}");
-    // Someone else's claim, on no purlis pool, so only that word refuses it.
-    let made = Api::<SandboxClaim>::namespaced(client.clone(), &runners())
-        .create(&dry, &born_saying("true", Some("e2e-not-purlis")))
+    // Someone else's claim, on no purlis pool and outside a runner namespace, where only the
+    // operator makes upstream's objects, so only that word refuses it.
+    let mut elsewhere = born_saying("true", Some("e2e-not-purlis"));
+    elsewhere.metadata.namespace = Some(scratch.name.clone());
+    let made = Api::<SandboxClaim>::namespaced(client.clone(), &scratch.name)
+        .create(&dry, &elsewhere)
         .await;
     assert!(refused_saying(&made, "born minting"), "{made:?}");
     let dry_patch = PatchParams {

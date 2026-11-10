@@ -466,9 +466,10 @@ pub async fn cluster_pool_key(
 #[tauri::command]
 #[specta::specta]
 pub async fn add_cluster_pool(
+    app: tauri::AppHandle,
     adding: ClusterPoolAdding,
 ) -> Result<ClusterPoolRow, crate::poolprofiles::LimitRefused> {
-    crate::off_the_window("adding a cluster pool", move || {
+    let added = crate::off_the_window("adding a cluster pool", move || {
         Ok(crate::poolprofiles::offering_limits(|| {
             usable(&adding.context, &adding.pool)?;
             let config = config_root()?;
@@ -482,8 +483,18 @@ pub async fn add_cluster_pool(
             )
         }))
     })
-    .await?
+    .await?;
+    // Every window asks again which chats run on an older sandbox: one started before the add
+    // holds none of the programs the pool runs until it restarts (#1750).
+    if added.is_ok() {
+        let _ = tauri::Emitter::emit(&app, CLUSTER_POOL_ADDED, ());
+    }
+    added
 }
+
+/// The event an added cluster pool raises, on which each window asks again which chats run on
+/// an older sandbox (#1750).
+pub const CLUSTER_POOL_ADDED: &str = "cluster-pool-added";
 
 /// How long adding this pool waits for the operator: the value it was raised to, checked as any
 /// other, or purlis's default. Only the wait changes: the operator's vouching is asked for all

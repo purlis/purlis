@@ -306,6 +306,7 @@ import { ActivityCount, ActivityDot, type PanelTab } from "./ActivityBar";
 import { DOCTOR_LINE, DoctorNotices, useDoctor } from "./Doctor";
 import { useFirstOpen } from "./firstOpen";
 import { StaleCloneNotices, useStaleClones } from "./StaleCloneNotices";
+import { CloneVouchNotices } from "./CloneVouchNotice";
 import { BrowsersAtQuitNotice } from "./BrowsersAtQuitNotice";
 import { usePin } from "./Updates";
 import { projectName } from "./projectName";
@@ -11711,6 +11712,14 @@ export const PlaneView = memo(function PlaneView({
       {/* **A workspace's repo left off its default branch, or on a moved remote** (#1985): one
           Notice per repo, with the Fix that loses no work. */}
       <StaleCloneNotices clones={staleClones} />
+      {/* **A clone made outside purlis**: one Notice per workspace clone purlis did not clone
+          and the person has not trusted, naming its remote, with Trust this clone. */}
+      <CloneVouchNotices
+        plane={plane}
+        dismissed={dismissed}
+        dismiss={dismiss}
+        settle={settleNotices}
+      />
       {savedNotice && (
         <Notice
           cause="session-saved"

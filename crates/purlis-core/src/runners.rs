@@ -46,6 +46,8 @@ use crate::clusterpool::{self, Claimed, Kubectl, OperatorKey, PoolPin};
 use crate::dockerpool::{ContainerId, Docker, Image, Limits, Made, Runner, User};
 use crate::machine::{RUNNERS_FILE, RUNNERS_LOCK};
 
+pub mod left;
+
 /// Why a runner was not kept, or the runners could not be read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Refused {
@@ -1362,7 +1364,8 @@ fn engine_stands(kept: &Kept, docker: &Docker) -> Result<(), Removed> {
             )),
             volume: Err(format!(
                 "its home volume {volume} stays there too, with the sign-ins in it: docker volume \
-                 rm --force {volume}"
+                 rm --force {volume}. purlis remembers both: `purlis pool left-behind` lists them, \
+                 and with --remove removes them once Docker points back at that engine"
             )),
             forgotten: true,
             earlier: None,
@@ -1437,6 +1440,9 @@ pub fn remove_locked(
         .ok_or_else(|| Refused::Other(format!("no runner named {name} is kept on this machine")))?;
     if let Err(stands) = engine_stands(&kept, docker) {
         if stands.forgotten {
+            // Kept as left behind before its row goes, so it is in one record or the other
+            // (#2587): where that cannot be written, it stays kept to be removed again.
+            left::keep_locked(config_root, &kept, locked)?;
             forget_locked(config_root, name, locked)?;
         }
         return Ok(stands);
