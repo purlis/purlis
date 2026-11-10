@@ -284,36 +284,6 @@ jobs:
       - name: Build the tests
         timeout-minutes: 30
         run: cargo nextest run --workspace --locked --no-run
-      # TEMPORARY (#6097), dropped before review: the flake's test 50 times with no retry, then
-      # its race widened by a pause before the shell's setsid, green with the fix and red without.
-      - name: "TEMP #6097: the stray-noting test 50 times, and its race widened"
-        if: matrix.part == 1
-        timeout-minutes: 30
-        run: |
-          set -euo pipefail
-          file=app/src-tauri/src/handoff/tests/across_restart.rs
-          only='test(=handoff::tests::across_restart::noting_a_chat_s_strays_ends_nothing_that_is_not_its_harness_s)'
-          run_it() { cargo nextest run -p purlis-app --lib --locked --retries 0 --no-fail-fast -E "$only"; }
-          loop50() { for i in $(seq 1 50); do echo "::group::run $i"; run_it || { echo "::error::red on run $i of 50"; exit 1; }; echo "::endgroup::"; done; }
-          export -f run_it loop50; export only
-          tools/no-orphans.sh --reap -- bash -c loop50
-          echo "::notice title=#6097::green 50 of 50 with --retries 0, and no orphan"
-          cp "$file" /tmp/fixed.rs
-          perl -0pi -e 's/POSIX::setsid\(\) or die;/select undef, undef, undef, 0.5; POSIX::setsid() or die;/' "$file"
-          grep -q 'select undef, undef, undef, 0.5; POSIX::setsid() or die;' "$file"
-          for i in $(seq 1 10); do run_it || { echo "::error::fixed stand-in red with the pause, run $i"; exit 1; }; done
-          echo "::notice title=#6097::fixed stand-in, setsid delayed 0.5 s: green 10 of 10"
-          git fetch --depth=1 origin main
-          git show FETCH_HEAD:"$file" > "$file"
-          perl -0pi -e "s/POSIX::setsid\(\); exec/select undef, undef, undef, 0.5; POSIX::setsid(); exec/" "$file"
-          grep -q 'select undef, undef, undef, 0.5; POSIX::setsid(); exec' "$file"
-          if run_it > /tmp/old.log 2>&1; then cat /tmp/old.log; echo "::error::main's stand-in passed with the pause"; exit 1; fi
-          cat /tmp/old.log
-          grep -q "precondition: the harness's own shell goes" /tmp/old.log
-          echo "::notice title=#6097::main's stand-in, setsid delayed 0.5 s: red on the precondition, as in the flake"
-          pkill -x sleep || true
-          cp /tmp/fixed.rs "$file"
-          git diff --exit-code -- "$file"
       # Every test's result, never the first red only (`fail-fast = false` in the profile): a
       # flake in one test (charter-app#39) must not hide the rest of the suite.
       #
