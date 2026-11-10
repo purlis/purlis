@@ -50,7 +50,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 
 import { annotations, checkLine, linesWritten, stepTimer, stopLine } from "./relaunch-report.mjs";
 
@@ -146,6 +146,8 @@ function aClaude(where, argvFile) {
     claude,
     [
       "#!/bin/sh",
+      // Signed in, as a sandbox-only profile's sign-in check asks (`claude auth status`).
+      'case "$1" in auth) exit 0 ;; esac',
       `for word in "$@"; do [ "$word" = --version ] && { echo '2.1.300 (Claude Code)'; exit 0; }; done`,
       `printf '%s\\n' "$*" >> ${JSON.stringify(argvFile)}`,
       // Short sleeps, so that if anything ever does outlive its parent it is gone in a
@@ -296,6 +298,9 @@ async function theAppRuns(name, plane, done, answer, extra = {}) {
       CHARTER_PLANE_FENCE: tmpdir(),
       CHARTER_CONFIG_HOME: CONFIG_HOME,
       CHARTER_DATA_HOME: DATA_HOME,
+      ...(ON_A_SANDBOX_ONLY_PROFILE
+        ? { PATH: [dirname(claude), process.env.PATH ?? ""].join(delimiter) }
+        : {}),
       TAURI_WEBDRIVER_PORT: String(port),
       ...extra,
     },
@@ -397,6 +402,36 @@ const plane = aPlane();
 const argvFile = join(plane, "argv.txt");
 const claude = aClaude(`${plane}.programs`, argvFile);
 const record = join(plane, ".charter", "app", "reopen.json");
+
+/**
+ * **On Linux, the chat's sandbox-only profile.** There every sandboxed Claude Code chat runs
+ * inside purlis's wrap, on a profile this machine keeps for sandboxed chats only (ADR 0067 as
+ * amended 2026-11-10), so the record names one, `scenario`, made in this run's machine store as
+ * the store makes it; its program is the stand-in, found first on the app's `PATH`.
+ */
+const ON_A_SANDBOX_ONLY_PROFILE = process.platform === "linux";
+if (ON_A_SANDBOX_ONLY_PROFILE) {
+  const folder = join(DATA_HOME, "profiles", "scenario", "config");
+  mkdirSync(folder, { recursive: true, mode: 0o700 });
+  const store = join(CONFIG_HOME, "charter");
+  mkdirSync(store, { recursive: true, mode: 0o700 });
+  writeFileSync(
+    join(store, "profiles.json"),
+    JSON.stringify({
+      version: 1,
+      profiles: [
+        {
+          name: "scenario",
+          harness: "claude",
+          title: "scenario",
+          folders: { config: folder },
+          sandbox_only: true,
+        },
+      ],
+    }) + "\n",
+    { mode: 0o600 },
+  );
+}
 /** When the test says the record was written. Nothing asserts on it; it is there because a
  *  record nobody can date is one nobody can debug. */
 const STAMPED = Math.floor(Date.now() / 1000) - 60;
@@ -415,6 +450,7 @@ writeFileSync(
           program: claude,
           args: [],
           cwd: plane,
+          ...(ON_A_SANDBOX_ONLY_PROFILE ? { profile: "scenario" } : {}),
           name: "ide.7",
           resume: CONVERSATION,
           active: true,
@@ -568,6 +604,7 @@ writeFileSync(
           program: claude,
           args: [],
           cwd: plane,
+          ...(ON_A_SANDBOX_ONLY_PROFILE ? { profile: "scenario" } : {}),
           name: "ide.7",
           resume: CONVERSATION,
           active: true,
