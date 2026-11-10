@@ -1,13 +1,24 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **System notifications, for asks only** (#1694, spec #1688, I-7; #1989, Q66).
+//! **System notifications: for asks, and for two updates** (#1694, spec #1688, I-7; #1989, Q66;
+//! #6005).
 //!
 //! What the person is interrupted for is what blocks work: an **ask** (a permission prompt, a
 //! dispatch grant, a sandbox host, a prompt in a harness's terminal, a chat whose turn ended
-//! on them). An **update** — a task that failed, a refused commit, a report — is information,
-//! and never raises a notification: the registry does not list it (`asking::only_updates`, the
-//! registry's own split), so every item it lists is an ask.
+//! on them). An **update** is information, and the registry does not list it
+//! (`asking::only_updates`, the registry's own split), so every item it lists is an ask.
+//!
+//! **Should know notifies twice only** (#6005, ADR 0121 decision 3; [`Rules::ended`]): a task
+//! the person asked for that **fails**, named with its project and its report's first line, and
+//! one that **finishes after more than five minutes of work** (`notifications.finishedAfter`,
+//! [`FINISHED_AFTER`]) while the person is away from every window. Each is read off the task's
+//! dispatch record ([`Finish`], `finished::finishes`) and told once; what had ended before the
+//! project was first read is never told. A task a chat dispatched reports to that chat (ADR
+//! 0107, #6036) and tells the person nothing. Every other update stays silent in Updates, where
+//! the bell counts it. While Quiet these are held, and counted in the one notification after it
+//! ("While you were quiet: 2 finished, 1 failed"). A click opens the task's line in Updates in
+//! place ([`Landing::update`], #5651).
 //!
 //! **What is asked is what the ✋ counts** (`asking::counted`): the registry's Blocking asks
 //! (ADR 0121 decision 2), with what Snooze all put away left out (decision 14). It is read
@@ -129,6 +140,9 @@ pub struct Notice {
     /// Its project, and what kind of ask it is ([`kind_said`]) and how many more; or the chats
     /// it counts, by name.
     pub body: String,
+    /// The update it tells of, by its key in Updates (`task:<dispatch id>`), where it tells of
+    /// a task that ended ([`Rules::ended`]) and not of asks: a click opens that line in place.
+    pub update: Option<String>,
 }
 
 /// Where a click on a notification lands, as the window holding `plane` is sent it.
@@ -140,6 +154,10 @@ pub struct Landing {
     /// Every chat it counted in this project, in order: a window lands on the first still
     /// waiting.
     pub sessions: Vec<u32>,
+    /// The update it told of, by its key in Updates, where it told of a task that ended: the
+    /// window opens that line in place (#5651) rather than an ask.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub update: Option<String>,
 }
 
 /// One read of a project's asks, as [`Rules::heard`] takes it.
@@ -154,6 +172,47 @@ pub struct Heard<'a> {
     pub quiet: &'a dyn Fn() -> bool,
     pub now: Instant,
 }
+
+/// **A task that ended**, as [`Rules::ended`] reads it off its dispatch record (#6005).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Finish {
+    /// Its dispatch record's id: its line in Updates is `task:<id>` (`inboxUpdates.ts`).
+    pub id: String,
+    /// The chat that asked for it, by its number in the project: what a click brings forward.
+    pub session: u32,
+    /// The task's name, as its row had it.
+    pub name: String,
+    /// Whether it came to nothing: failed, blocked, ended without a report, did not start
+    /// (`taskBuckets.ts`, `CAME_TO_NOTHING`).
+    pub failed: bool,
+    /// Whether the person asked for it themselves, from a chat's tab. One a chat dispatched
+    /// reports to that chat (ADR 0107, #6036), and is the person's to hear of only there.
+    pub by_person: bool,
+    /// How long it worked: from its start to its end.
+    pub worked: Duration,
+    /// Its report, as written: a failure's notification says its first line alone.
+    pub report: String,
+}
+
+/// One read of the tasks of a project that stand ended, as [`Rules::ended`] takes it.
+pub struct Ended<'a> {
+    pub plane: &'a PlaneId,
+    /// Every task of it that stands ended now, in any order.
+    pub finishes: &'a [Finish],
+    /// How long a task works before its finish is told while the person is away: the setting,
+    /// five minutes unless they changed it ([`FINISHED_AFTER`]).
+    pub long: Duration,
+    /// Whether the person is away from every window of the app as it is read.
+    pub away: bool,
+    /// Whether the person is looking at a chat now ([`Looking`]).
+    pub looking: &'a dyn Fn(u32) -> bool,
+    /// Whether it is Quiet now.
+    pub quiet: bool,
+}
+
+/// How long a task works before its finish notifies while the person is away, until they say
+/// otherwise (`notifications.finishedAfter`, in minutes; ADR 0121 decisions 3 and 22).
+pub const FINISHED_AFTER: Duration = Duration::from_secs(5 * 60);
 
 /// **What has been told, and what waits to be**: the whole of the notifier's memory.
 #[derive(Default)]
@@ -177,6 +236,12 @@ pub struct Rules {
     /// Every ask that came in while Quiet that the person was not looking at, in the order
     /// they came: what its summary counts, where they still wait when it ends.
     quiet_asks: Vec<EndedAsk>,
+    /// Every failure and long finish that came in while Quiet, in the order they came: held
+    /// until it ends ([`Self::quiet`]).
+    quiet_finishes: Vec<HeldFinish>,
+    /// The tasks of each project read as ended, by dispatch id: one in here was considered. A
+    /// project's first read only fills it, so what ended before is never told.
+    finished: HashMap<PlaneId, HashSet<String>>,
     /// The id the next notification takes.
     last_id: i32,
 }
@@ -195,6 +260,8 @@ struct Many {
     chats: Vec<Chat>,
     /// Whether it tells what waits after Quiet ([`Rules::quiet`]), which its title says.
     quiet: bool,
+    /// The tasks Quiet held that it counts as well: how many finished, and how many failed.
+    ended: (usize, usize),
 }
 
 /// **A burst of chats coming to wait**: the first is told at once; each chat that follows
@@ -364,6 +431,7 @@ impl Rules {
             (true, None) => {
                 self.quiet_since = Some(at);
                 self.quiet_asks.clear();
+                self.quiet_finishes.clear();
                 (Vec::new(), None)
             }
             (false, Some(from)) => {
@@ -382,15 +450,64 @@ impl Rules {
                     .filter(|chat| self.waits.contains_key(chat) && !looking(chat))
                     .filter(|chat| !self.told(chat))
                     .collect();
-                let acts = if away && !held.is_empty() {
-                    self.tell_after_quiet(held)
-                } else {
-                    Vec::new()
+                let finishes = std::mem::take(&mut self.quiet_finishes);
+                let failed = finishes.iter().filter(|one| one.failed).count();
+                let counts = (finishes.len() - failed, failed);
+                let acts = match (away, held.is_empty(), finishes.first()) {
+                    (false, _, _) | (true, true, None) => Vec::new(),
+                    (true, false, _) => self.tell_after_quiet(held, counts),
+                    (true, true, Some(first)) => {
+                        let id = self.next_id();
+                        let key = first.key.clone();
+                        vec![Act::Show(finishes_after_quiet(id, &finishes, counts, key))]
+                    }
                 };
                 (acts, Some(QuietEnded { from, to: at, asks }))
             }
             _ => (Vec::new(), None),
         }
+    }
+
+    /// **What one read of a project's ended tasks does to the notifications** (#6005, ADR 0121
+    /// decision 3): Should know notifies for two things only, each the first time it is read.
+    ///
+    /// - **A failure**: a task the person asked for that came to nothing, named with its
+    ///   project and the first line of its report.
+    /// - **A long finish while away**: one that finished after working longer than `long`,
+    ///   with the person away from every window.
+    ///
+    /// Every other update stays in Updates, counted by the bell. A task a chat dispatched
+    /// reports to that chat (#6036), and tells the person nothing here.
+    pub fn ended(&mut self, ended: &Ended<'_>) -> Vec<Act> {
+        let first = !self.finished.contains_key(ended.plane);
+        let known = self.finished.entry(ended.plane.clone()).or_default();
+        let fresh: Vec<&Finish> = ended
+            .finishes
+            .iter()
+            .filter(|finish| known.insert(finish.id.clone()))
+            .collect();
+        if first {
+            return Vec::new();
+        }
+        let mut acts = Vec::new();
+        for finish in fresh {
+            let long = !finish.failed && ended.away && finish.worked > ended.long;
+            if !finish.by_person || !(finish.failed || long) || (ended.looking)(finish.session) {
+                continue;
+            }
+            if ended.quiet {
+                self.quiet_finishes.push(HeldFinish {
+                    chat: (ended.plane.clone(), finish.session),
+                    name: plain(&finish.name),
+                    failed: finish.failed,
+                    key: update_key(finish),
+                });
+                continue;
+            }
+            let id = self.next_id();
+            acts.push(Act::Show(finish_notice(id, ended.plane, finish)));
+        }
+        acts
     }
 
     /// **When the notifier should wake by itself next** for a burst: when the one open closes
@@ -425,6 +542,9 @@ impl Rules {
     /// of it is taken away.
     pub fn forget(&mut self, plane: &PlaneId) -> Vec<Act> {
         self.known.remove(plane);
+        // Held again, its first read of the tasks that ended is the baseline anew.
+        self.finished.remove(plane);
+        self.quiet_finishes.retain(|one| &one.chat.0 != plane);
         self.waits.retain(|(of, _), _| of != plane);
         self.held.retain(|(of, _)| of != plane);
         if let Some(burst) = &mut self.burst {
@@ -525,6 +645,7 @@ impl Rules {
             id,
             chats: all.clone(),
             quiet: false,
+            ended: (0, 0),
         });
         acts.push(Act::Show(self.many_notice(id, all, replaces, true)));
         acts
@@ -532,7 +653,7 @@ impl Rules {
 
     /// **Tells `chats`, held while Quiet, as one notification** however many they are, saying
     /// it was quiet; it takes over from a burst's notification still standing.
-    fn tell_after_quiet(&mut self, chats: Vec<Chat>) -> Vec<Act> {
+    fn tell_after_quiet(&mut self, chats: Vec<Chat>, ended: (usize, usize)) -> Vec<Act> {
         let mut acts = Vec::new();
         if let Some(many) = self.many.take() {
             acts.push(Act::Remove(many.id));
@@ -542,6 +663,7 @@ impl Rules {
             id,
             chats: chats.clone(),
             quiet: true,
+            ended,
         });
         acts.push(Act::Show(self.many_notice(id, chats, false, true)));
         acts
@@ -571,6 +693,7 @@ impl Rules {
             chats: vec![chat.clone()],
             title,
             body: format!("{}: {said}", project_name(&chat.0)),
+            update: None,
         }
     }
 
@@ -587,11 +710,9 @@ impl Rules {
             .many
             .as_ref()
             .is_some_and(|many| many.id == id && many.quiet);
+        let ended = self.many.as_ref().map_or((0, 0), |many| many.ended);
         let title = match (after_quiet, projects.as_slice()) {
-            (true, _) => match chats.len() {
-                1 => "While you were quiet: 1 chat needs you".to_owned(),
-                count => format!("While you were quiet: {count} chats need you"),
-            },
+            (true, _) => quiet_title(chats.len(), ended),
             (false, [_]) => format!("{} chats need you", chats.len()),
             (false, many) => format!("{} chats in {} projects need you", chats.len(), many.len()),
         };
@@ -609,13 +730,7 @@ impl Rules {
                 }
             })
             .collect();
-        let named = match (chats.len() - names.len(), names.split_last()) {
-            (0, Some((last, rest))) if !rest.is_empty() => {
-                format!("{} and {last}", rest.join(", "))
-            }
-            (0, _) => names.join(""),
-            (more, _) => format!("{} and {more} more", names.join(", ")),
-        };
+        let named = and_more(&names, chats.len());
         let body = match projects.as_slice() {
             [only] => format!("{}: {named}", project_name(only)),
             _ => named,
@@ -627,6 +742,7 @@ impl Rules {
             chats,
             title,
             body,
+            update: None,
         }
     }
 }
@@ -643,6 +759,119 @@ pub fn shown_here(notice: &Notice, replaces: bool) -> bool {
 /// Whether the notification plugin takes a notification away, or replaces it, by its id here.
 /// On macOS purlis does both through the system's own center instead (`asknotify_macos.rs`).
 pub const REPLACES_HERE: bool = cfg!(all(unix, not(target_os = "macos")));
+
+/// A failure or long finish held while Quiet: told, counted, when it ends.
+struct HeldFinish {
+    chat: Chat,
+    name: String,
+    failed: bool,
+    /// Its line in Updates ([`update_key`]).
+    key: String,
+}
+
+/// A task's line in Updates, by its key there (`inboxUpdates.ts`, `taskUpdates`).
+fn update_key(finish: &Finish) -> String {
+    format!("task:{}", finish.id)
+}
+
+/// The title of what Quiet held, told as it ends: "While you were quiet: 1 chat needs you, 2
+/// finished, 1 failed", each part left out where it counts none.
+fn quiet_title(waiting: usize, (finished, failed): (usize, usize)) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    match waiting {
+        0 => {}
+        1 => parts.push("1 chat needs you".to_owned()),
+        count => parts.push(format!("{count} chats need you")),
+    }
+    if finished > 0 {
+        parts.push(format!("{finished} finished"));
+    }
+    if failed > 0 {
+        parts.push(format!("{failed} failed"));
+    }
+    format!("While you were quiet: {}", parts.join(", "))
+}
+
+/// `names`, the first of `all` things, as a list: "a, b and c", or "a, b, c and 2 more".
+fn and_more(names: &[String], all: usize) -> String {
+    match (all - names.len(), names.split_last()) {
+        (0, Some((last, rest))) if !rest.is_empty() => format!("{} and {last}", rest.join(", ")),
+        (0, _) => names.join(""),
+        (more, _) => format!("{} and {more} more", names.join(", ")),
+    }
+}
+
+/// **The one notification for the tasks Quiet held**, where no chat still waits: what they
+/// count, and their names. A click opens the first's line in Updates.
+fn finishes_after_quiet(
+    id: i32,
+    finishes: &[HeldFinish],
+    counts: (usize, usize),
+    first: String,
+) -> Notice {
+    let mut chats: Vec<Chat> = Vec::new();
+    let mut projects: Vec<&PlaneId> = Vec::new();
+    for one in finishes {
+        if !chats.contains(&one.chat) {
+            chats.push(one.chat.clone());
+        }
+        if !projects.contains(&&one.chat.0) {
+            projects.push(&one.chat.0);
+        }
+    }
+    let names: Vec<String> = finishes
+        .iter()
+        .take(MOST_NAMED)
+        .map(|one| match projects.as_slice() {
+            [_] => one.name.clone(),
+            _ => format!("{} ({})", one.name, project_name(&one.chat.0)),
+        })
+        .collect();
+    let named = and_more(&names, finishes.len());
+    Notice {
+        id,
+        replaces: false,
+        news: true,
+        title: quiet_title(0, counts),
+        body: match projects.as_slice() {
+            [only] => format!("{}: {named}", project_name(only)),
+            _ => named,
+        },
+        chats,
+        update: Some(first),
+    }
+}
+
+/// **The notification for a task that ended**: its name, its project, and that it failed with
+/// its report's first line, never more of it; or how long it worked.
+fn finish_notice(id: i32, plane: &PlaneId, finish: &Finish) -> Notice {
+    let line = finish.report.lines().next().unwrap_or_default();
+    Notice {
+        id,
+        replaces: false,
+        news: true,
+        chats: vec![(plane.clone(), finish.session)],
+        title: plain(&finish.name),
+        body: if finish.failed {
+            format!("{}: Failed: {}", project_name(plane), plain(line))
+        } else {
+            format!(
+                "{}: Finished after {}",
+                project_name(plane),
+                minutes_said(finish.worked)
+            )
+        },
+        update: Some(update_key(finish)),
+    }
+}
+
+/// How long a task worked, in whole minutes: "12 minutes", "1 minute".
+fn minutes_said(worked: Duration) -> String {
+    match worked.as_secs() / 60 {
+        1 => "1 minute".to_owned(),
+        minutes => format!("{minutes} minutes"),
+    }
+}
 
 /// The chain of who asks `ask`, as a title: `steward 12 › #3046 drill`, or the chat's number.
 fn chain_of(ask: &Shown, session: u32) -> String {
@@ -891,12 +1120,30 @@ pub fn minute_of(text: &str) -> Option<u16> {
     (hours < 24 && minutes < 60).then_some(hours * 60 + minutes)
 }
 
+/// **How long a task works before its finish notifies** while the person is away, as a layout
+/// document keeps it: `notifications.finishedAfter`, a whole number of minutes above none
+/// (`app/src/notificationPrefs.ts`). Anything else is [`FINISHED_AFTER`].
+pub fn finished_after_of_layout(document: &serde_json::Value) -> Duration {
+    document
+        .get("notifications")
+        .and_then(|held| held.get("finishedAfter"))
+        .and_then(serde_json::Value::as_u64)
+        .filter(|minutes| *minutes > 0)
+        .map_or(FINISHED_AFTER, |minutes| {
+            Duration::from_secs(minutes.saturating_mul(60))
+        })
+}
+
 /// The person's quiet hours on this machine, as the layout file says, while they are on. A file
 /// that cannot be read says none.
 fn scheduled() -> Option<QuietHours> {
+    QuietHours::of_layout(&layout()?)
+}
+
+/// The layout file on this machine, as a document, where it can be read.
+fn layout() -> Option<serde_json::Value> {
     let root = purlis_core::machine::config_root()?;
-    let document = purlis_core::windowprefs::read_layout(&root).document?;
-    QuietHours::of_layout(&document)
+    purlis_core::windowprefs::read_layout(&root).document
 }
 
 /// Whether `hours` cover this minute, on this machine's clock.
@@ -1185,7 +1432,11 @@ fn listen(app: &tauri::AppHandle, heard: &mpsc::Receiver<Poke>) {
         }
         // **Quiet, found once for the whole pass**, so what is held and what its summary
         // counts agree.
-        let hours = scheduled();
+        let document = layout();
+        let hours = document.as_ref().and_then(QuietHours::of_layout);
+        let long = document
+            .as_ref()
+            .map_or(FINISHED_AFTER, finished_after_of_layout);
         scheduling = hours.is_some();
         let quiet = app.try_state::<Notifier>().is_some_and(|notifier| {
             notifier
@@ -1212,7 +1463,7 @@ fn listen(app: &tauri::AppHandle, heard: &mpsc::Receiver<Poke>) {
             }
         }
         for plane in planes {
-            read(app, &mut rules, &plane, quiet);
+            read(app, &mut rules, &plane, quiet, long);
         }
         for act in rules.woke(Instant::now(), &is_looking) {
             send(app, act);
@@ -1269,8 +1520,9 @@ fn woken_at(
     [rules.next_due(), typing, look].into_iter().flatten().min()
 }
 
-/// Reads `plane`'s asks and does what [`Rules`] says to, while it is `quiet` or not.
-fn read(app: &tauri::AppHandle, rules: &mut Rules, plane: &PlaneId, quiet: bool) {
+/// Reads `plane`'s asks and its tasks that ended, and does what [`Rules`] says to, while it is
+/// `quiet` or not, with `long` as a long finish.
+fn read(app: &tauri::AppHandle, rules: &mut Rules, plane: &PlaneId, quiet: bool, long: Duration) {
     let Some(held) = app
         .try_state::<Planes>()
         .and_then(|planes| planes.held(plane).ok())
@@ -1282,15 +1534,27 @@ fn read(app: &tauri::AppHandle, rules: &mut Rules, plane: &PlaneId, quiet: bool)
     };
     // What the ✋ counts (ADR 0121 decision 3): the registry's Blocking asks, its own split
     // (#1693, #1694), with what Snooze all put away left out. An update is not listed, so
-    // never notifies.
+    // never notifies as an ask.
     let asking = crate::asking::counted(&held);
-    let acts = rules.heard(&Heard {
+    let is_looking = |session| looking(app, plane, session, &held).is_looking();
+    let mut acts = rules.heard(&Heard {
         plane,
         asks: &asking.asks,
-        looking: &|session| looking(app, plane, session, &held).is_looking(),
+        looking: &is_looking,
         quiet: &|| quiet,
         now: Instant::now(),
     });
+    // Should know (#6005): the tasks that ended, read off their records as the window reads its
+    // finished rows on every move of a chat. Only a failure or a long finish while away is told.
+    let finishes = crate::finished::finishes(&held);
+    acts.extend(rules.ended(&Ended {
+        plane,
+        finishes: &finishes,
+        long,
+        away: away(app),
+        looking: &is_looking,
+        quiet,
+    }));
     for act in acts {
         send(app, act);
     }
@@ -1353,6 +1617,7 @@ pub fn landings(notice: &Notice) -> Vec<Landing> {
                 plane: plane.clone(),
                 session: *session,
                 sessions: vec![*session],
+                update: notice.update.clone(),
             }),
         }
     }

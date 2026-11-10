@@ -7,6 +7,7 @@ import {
   DEFAULT_NOTIFICATIONS,
   loadNotifications,
   notificationPrefs,
+  setFinishedAfter,
   setQuietHours,
 } from "./notificationPrefs";
 import { forgetThisLaunch } from "./regions";
@@ -44,7 +45,7 @@ afterEach(() => {
 describe("quiet hours, kept in the layout file (#1989)", () => {
   it("are off until the person turns them on, from 22:00 to 07:00", () => {
     expect(loadNotifications({ version: 2, regions: [] })).toEqual({
-      prefs: { quiet: { on: false, from: "22:00", to: "07:00" } },
+      prefs: { quiet: { on: false, from: "22:00", to: "07:00" }, finishedAfter: 5 },
       said: [],
     });
     expect(notificationPrefs()).toEqual(DEFAULT_NOTIFICATIONS);
@@ -80,6 +81,38 @@ describe("quiet hours, kept in the layout file (#1989)", () => {
       quiet: { on: true, from: "22:00", to: "07:00" },
     });
     setQuietHours({ on: false });
+    await vi.waitFor(() => expect(written()).toHaveLength(2));
+    expect(written()[1].notifications).toBeUndefined();
+  });
+});
+
+describe("how long a task works before its finish notifies (#6005, ADR 0121 decision 3)", () => {
+  it("is five minutes until the person changes it", () => {
+    expect(DEFAULT_NOTIFICATIONS.finishedAfter).toBe(5);
+    expect(notificationPrefs().finishedAfter).toBe(5);
+  });
+
+  it("is read from the file as whole minutes, beside the quiet hours", () => {
+    handed({ version: 2, regions: [], notifications: { finishedAfter: 15 } });
+    expect(notificationPrefs()).toEqual({
+      quiet: { on: false, from: "22:00", to: "07:00" },
+      finishedAfter: 15,
+    });
+  });
+
+  it("puts right a value that is not a whole number of minutes above none", () => {
+    for (const not of [0, -2, 2.5, "10"]) {
+      const { prefs, said } = loadNotifications({ notifications: { finishedAfter: not } });
+      expect(prefs.finishedAfter).toBe(5);
+      expect(said.join(" ")).toContain("notifications.finishedAfter");
+    }
+  });
+
+  it("is written when changed, and left out of the file at five", async () => {
+    setFinishedAfter(10);
+    await vi.waitFor(() => expect(written()).toHaveLength(1));
+    expect(written()[0].notifications).toEqual({ finishedAfter: 10 });
+    setFinishedAfter(5);
     await vi.waitFor(() => expect(written()).toHaveLength(2));
     expect(written()[1].notifications).toBeUndefined();
   });

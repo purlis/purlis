@@ -1252,9 +1252,11 @@ has it; nothing reads the key after that.
   **`to`**, the times they start and end, `HH:MM` on a 24-hour clock and this machine's own
   time. A `to` before the `from` runs across midnight; the same time for both is no quiet hours.
   In them no notification is shown and an ask waits in the Inbox; when they end, one
-  notification names the chats still waiting on you.
-  Leave any out for its default, `false`, `22:00` and `07:00`; purlis leaves the whole of
-  `notifications` out while all are the defaults. A value that is not one is the default, and
+  notification names the chats still waiting on you. **`finishedAfter`** is how many whole
+  minutes a task you asked for works before its finish notifies you while you are away from
+  the window (#6005); a failure always notifies.
+  Leave any out for its default, `false`, `22:00`, `07:00` and `5`; purlis leaves each out
+  at its default, and the whole of `notifications` while all are. A value that is not one is the default, and
   the Inbox says so. Settings writes it (`app/src/notificationPrefs.ts`), and the app reads it
   each time it would show a notification (`app/src-tauri/src/asknotify.rs`).
 - **`explorer`** is Explorer's folded sections, on this machine (#1677): **`closed`** lists

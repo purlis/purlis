@@ -3475,7 +3475,8 @@ pub struct InQueue {
 /// **The registry's own split: a chat in the queue for updates alone asks nothing** (#1693,
 /// #1694, I-1). A task of its that came to nothing, a report with nowhere to go and a commit
 /// refused are each an update of the Inbox's, so the registry does not list the chat for them,
-/// and no notification is sent (`asknotify` reads the registry alone). A chat whose own turn
+/// and no ask's notification is sent (a task that failed is told by Should know, from its
+/// record: `asknotify::Rules::ended`, #6005). A chat whose own turn
 /// ended on the person, or that stopped on a prompt in its terminal, still asks, whatever else
 /// it is in the queue for, so an update never silences what the chat itself waits on.
 pub fn only_updates(chat: InQueue) -> bool {
