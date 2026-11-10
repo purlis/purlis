@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794272427245,
+  "lastUpdate": 1794275419290,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -45402,6 +45402,48 @@ window.BENCHMARK_DATA = {
             "value": 101.406136,
             "unit": "ms",
             "extra": "median of 5 runs: 100.913, 101.365, 101.406, 101.913, 102.048 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b98770782e9f42014dc4a7df35996a11e41f6cb3",
+          "message": "macOS: a chat's notification is replaced and removed in place (#6059) (#6072)\n\nasknotify's acts reach the system through one platform layer\n(asknotify_center.rs). On macOS, from an app bundle, it posts through\nUNUserNotificationCenter under a stable identifier, so a chat's next ask\nreplaces its notification, and removeDeliveredNotifications takes it away\nonce answered. Linux keeps the plugin's path; Windows is documented.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71AA89295WE6NC74ZJHS87S\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T00:48:56Z",
+          "tree_id": "dce4b970a39549dabc11dfbb4aec093fdf497101",
+          "url": "https://github.com/purlis/purlis/commit/b98770782e9f42014dc4a7df35996a11e41f6cb3"
+        },
+        "date": 1794275413452,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.7110455,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.692, 0.698, 0.711, 0.714, 0.725 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.475046499999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.255, 16.404, 16.475, 16.499, 16.569 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.81458,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.962, 101.696, 101.815, 102.279, 103.293 ms"
           }
         ]
       }
