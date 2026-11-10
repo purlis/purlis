@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794287821048,
+  "lastUpdate": 1794287888853,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -18664,6 +18664,42 @@ window.BENCHMARK_DATA = {
             "value": 1021.6,
             "unit": "MB",
             "extra": "median of 6 samples: 985.6, 1000.4, 1015.1, 1028.3, 1028.1, 1089.4 MB; window 707.2 MB, session host 314.6 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4c362c31c04ab5799fbb685b0bb6390f559960d8",
+          "message": "No pop-up cards; a 'new' pip on chips and Notices; no repeated status counts; the Notices dot red or amber (#6004) (#6081)\n\n* No pop-up cards; a 'new' pip on chips and Notices; no repeated status counts; the Notices dot red or amber (#6004)\n\n#6058's four commits (f8b3f139e..77bdb731f) brought onto main past #6012, #6036\nand #6003. The one conflict, App.tsx's window markup (main made the window a div\nwith <main className=\"window-work\"> inside), keeps main's structure and adds\n#6004's SeenRowsOf provider, the chips' fresh notices, SaidAloud and onSeen.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71EARFE0AF9HH3CHDMG49YK\nPurlis-Persona: steward\n\n* HungPopover's row says a card comes only on its dot's press (#6004)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71EARFE0AF9HH3CHDMG49YK\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T02:00:42Z",
+          "tree_id": "6ca86acbaca08f9e6b0cc60980c0ca8ccaed5edb",
+          "url": "https://github.com/purlis/purlis/commit/4c362c31c04ab5799fbb685b0bb6390f559960d8"
+        },
+        "date": 1794287882707,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 2590.8,
+            "unit": "MB",
+            "extra": "median of 3 samples: 2322.4, 2590.8, 2784 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 1008.5,
+            "unit": "MB",
+            "extra": "median of 6 samples: 974.4, 988.2, 1000.1, 1016.8, 1016.8, 1077.5 MB; window 679.7 MB, session host 329.6 MB"
           }
         ]
       }
