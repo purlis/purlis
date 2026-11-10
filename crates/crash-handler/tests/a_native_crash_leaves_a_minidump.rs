@@ -17,7 +17,9 @@ use std::process::Command;
 fn crash(how: &str, crashes: &Path) -> std::process::ExitStatus {
     Command::new(env!("CARGO_BIN_EXE_crash-probe"))
         .arg(how)
-        .arg(crashes)
+        // The companion is the probe started again with no arguments: only the environment
+        // reaches it, and it is the one that keeps the minidump.
+        .env("CRASH_PROBE_CRASHES", crashes)
         .status()
         .expect("the probe ran")
 }
