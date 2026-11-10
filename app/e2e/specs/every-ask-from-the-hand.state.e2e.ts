@@ -263,8 +263,19 @@ async function panesTell(kind: string, words: string | RegExp): Promise<void> {
     });
 }
 
+/** **Waits for `row` to stand**, and says what Asks shows where it never does: a row of another
+ *  project's is drawn again as that project's window tells its asks again (#1921). */
+async function rowNow(row: string): Promise<void> {
+  await $(row)
+    .waitForExist({ timeout: 20_000, interval: 250 })
+    .catch(async () => {
+      throw new Error(`the row ${row} went before it was answered; Asks says: ${await asksSaid()}`);
+    });
+}
+
 /** Presses the row's `label`: a grant's settle is waited out by `pressGrant`, a refusal too. */
 async function pressOnRow(row: string, label: string): Promise<void> {
+  await rowNow(row);
   await pressGrant($(row).$(`button=${label}`));
 }
 
@@ -272,6 +283,7 @@ async function pressOnRow(row: string, label: string): Promise<void> {
  *  sends the refusal (ADR 0121 amended 2026-11-09). */
 async function keepBlocked(row: string): Promise<void> {
   // Looked for afresh at each press: the first redraws the row.
+  await rowNow(row);
   await pressGrant($(row).$("button=Keep blocked"));
   // Where the first press sent the refusal already, the row has gone with it.
   if (!(await $(row).isExisting())) return;
@@ -343,6 +355,7 @@ const KINDS: Kind[] = [
     waits: "Waiting on your reply",
     raise: () => fromAChat(mine),
     answer: async (row) => {
+      await rowNow(row);
       await $(row).$("button=Answer").click();
       const reply = await $(`${row} [aria-label^="Reply to "]`);
       await reply.waitForDisplayed({ timeout: 10_000 });
@@ -370,6 +383,7 @@ const KINDS: Kind[] = [
     raise: () => fromAChat(mine, ASKS_A_SECRET),
     // A value is typed, so its form is behind Answer; Not now is its refusal.
     answer: async (row) => {
+      await rowNow(row);
       await $(row).$("button=Answer").click();
       const notNow = await $('[data-testid="sa-not-now"]');
       await notNow.waitForDisplayed({ timeout: 10_000 });
