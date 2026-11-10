@@ -11262,6 +11262,8 @@ fn a_runner_chat_whose_persona_names_a_skill_its_runner_lacks_says_so_naming_the
                 persona: Some("steward".to_owned()),
                 missing: lacking.missing.clone(),
                 no_built_in: lacking.no_built_in.clone(),
+                no_workspace: Vec::new(),
+                not_in_its_workspace: Vec::new(),
                 broken: Vec::new(),
                 by_a_repo: Vec::new(),
                 beside_a_built_in: Vec::new(),

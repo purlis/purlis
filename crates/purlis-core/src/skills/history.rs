@@ -559,7 +559,9 @@ fn ran_at(run: &crate::skilluse::Run, place: &Was) -> bool {
                     super::verbs::Whose::Persona(persona) => {
                         run.persona.as_deref() == Some(persona.as_str())
                     }
-                    _ => one.workspace.as_deref() == level.at.workspace(),
+                    // A workspace's copy is its runs wherever they ran, a chat elsewhere whose
+                    // persona names it by its workspace included (SK-5c, #6041).
+                    _ => one.workspace_of_copy() == level.at.workspace(),
                 }
         })
 }

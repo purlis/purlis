@@ -279,6 +279,7 @@ function rowOfChat(skill: ChatSkill): StudioSkill {
     source_label: skill.source_label,
     level: skill.level,
     label: skill.label,
+    copy_workspace: null,
     local: false,
     grant: null,
     granted: null,
