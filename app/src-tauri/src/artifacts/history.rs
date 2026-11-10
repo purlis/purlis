@@ -186,11 +186,10 @@ pub async fn artifact_open_as_of(
     let (then, pin, standing, host) = blocking(move || {
         let then = history::as_of(config.as_deref(), &at, &read_folder, &real, &version)?;
         let (pin, _) = read_pinned(&at, &read_folder)?;
-        let standing =
-            approval::standing(config.as_deref(), &at, &read_folder, &pin, &then.snapshot);
         // History's own origin, and the approval's when that version's script runs here, so no
-        // two approvals share its storage (ADR 0122, amended 2026-11-10).
-        let host = approval::page_host(
+        // two approvals share its storage (ADR 0122, amended 2026-11-10); from the one read of
+        // the record its standing is, so the two agree (#6120).
+        let (standing, host) = approval::standing_and_host(
             config.as_deref(),
             &at,
             &read_folder,

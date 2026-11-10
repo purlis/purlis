@@ -3,8 +3,8 @@
 
 import { describe, expect, it } from "vitest";
 import {
-  ARTIFACT_TAB_BUDGET_KB,
   type TabMemoryLook,
+  artifactTabBudgetKb,
   artifactTabVerdict,
   tabMemoryLook,
 } from "./artifactTabMemory.js";
@@ -24,6 +24,8 @@ function web(over: Partial<WebAndHarnessMemory>): WebAndHarnessMemory {
     ...over,
   };
 }
+
+const MACOS_KB = artifactTabBudgetKb("darwin");
 
 const BEFORE: TabMemoryLook = { appKb: 300 * MB, webContentKb: 900 * MB, webContentProcesses: 1 };
 
@@ -53,10 +55,20 @@ describe("tabMemoryLook", () => {
   });
 });
 
+describe("artifactTabBudgetKb", () => {
+  it("holds macOS to 192 MB, the row's initial value", () => {
+    expect(artifactTabBudgetKb("darwin")).toBe(192 * MB);
+  });
+
+  it("holds Linux to 264 MB: its most measured, 238 MB, with about a tenth more", () => {
+    expect(artifactTabBudgetKb("linux")).toBe(264 * MB);
+  });
+});
+
 describe("artifactTabVerdict", () => {
   it("is within the budget when the webview's process and the window's growth fit in it", () => {
     const after = { appKb: 310 * MB, webContentKb: 960 * MB, webContentProcesses: 2 };
-    const verdict = artifactTabVerdict(BEFORE, after);
+    const verdict = artifactTabVerdict(BEFORE, after, MACOS_KB);
     expect(verdict.addedKb).toBe(70 * MB);
     expect(verdict.within).toBe(true);
     expect(verdict.said).toContain("70 MB");
@@ -65,13 +77,13 @@ describe("artifactTabVerdict", () => {
   it("fails an open tab that adds more than the budget, naming both sizes", () => {
     const after = {
       appKb: 300 * MB,
-      webContentKb: 900 * MB + ARTIFACT_TAB_BUDGET_KB + MB,
+      webContentKb: 900 * MB + MACOS_KB + MB,
       webContentProcesses: 2,
     };
-    const verdict = artifactTabVerdict(BEFORE, after);
+    const verdict = artifactTabVerdict(BEFORE, after, MACOS_KB);
     expect(verdict.within).toBe(false);
-    expect(verdict.said).toContain(`${ARTIFACT_TAB_BUDGET_KB / MB + 1} MB`);
-    expect(verdict.said).toContain(`${ARTIFACT_TAB_BUDGET_KB / MB} MB`);
+    expect(verdict.said).toContain(`${MACOS_KB / MB + 1} MB`);
+    expect(verdict.said).toContain(`${MACOS_KB / MB} MB`);
   });
 
   it("holds to the budget it is given", () => {
@@ -82,7 +94,7 @@ describe("artifactTabVerdict", () => {
 
   it("fails a page drawn in no web content process of its own, which measured nothing", () => {
     const after = { appKb: 301 * MB, webContentKb: 901 * MB, webContentProcesses: 1 };
-    const verdict = artifactTabVerdict(BEFORE, after);
+    const verdict = artifactTabVerdict(BEFORE, after, MACOS_KB);
     expect(verdict.within).toBe(false);
     expect(verdict.said).toContain("no web content process of its own");
   });

@@ -12,11 +12,18 @@ import type { WebAndHarnessMemory } from "./processes.js";
  * page settled, less before. On macOS web content is counted by `footprint`, on Linux by resident
  * memory, as M2 is (`processes.ts`), so each system is its own measure.
  *
- * An initial value (ADR 0086, decided in drafting, 7): no measurement existed when it was set, and
- * the `scenario tests` runs on `main` print what they measure (`logs/artifact-tab.jsonl`), from
- * which the row's owner may lower it.
+ * A value per platform (ADR 0086, amended 2026-11-10): macOS keeps the initial 192 MB, set
+ * before anything was measured; Linux, whose web content is counted by resident memory, is held
+ * to its most measured, 238 MB in four `ci` runs on 2026-11-10, with about a tenth more. Every
+ * run prints what it measures (`logs/artifact-tab.jsonl`), from which the row's owner may lower
+ * either.
  */
-export const ARTIFACT_TAB_BUDGET_KB = 192 * 1024;
+const BUDGET_KB = { darwin: 192 * 1024, linux: 264 * 1024 } as const;
+
+/** M8's budget on `platform`, as `process.platform` names it: Linux's own, else macOS's. */
+export function artifactTabBudgetKb(platform: string): number {
+  return platform === "linux" ? BUDGET_KB.linux : BUDGET_KB.darwin;
+}
 
 /** One look at the app, for M8: the window's own memory and its web content's. */
 export interface TabMemoryLook {
@@ -75,7 +82,7 @@ const megabytes = (kb: number) => `${Math.round(kb / 1024)} MB`;
 export function artifactTabVerdict(
   before: TabMemoryLook,
   after: TabMemoryLook,
-  budgetKb: number = ARTIFACT_TAB_BUDGET_KB,
+  budgetKb: number,
 ): TabMemoryVerdict {
   const appAddedKb = after.appKb - before.appKb;
   const webContentAddedKb = after.webContentKb - before.webContentKb;

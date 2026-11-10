@@ -5,13 +5,23 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { focusWorkspace } from "../reach.js";
-import { closeTabOf, iconFor, iconOf } from "../artifactTabs.js";
+import {
+  closeTabOf,
+  expectScriptRefusedHere,
+  iconFor,
+  iconOf,
+  SCRIPT_RUNS_HERE,
+} from "../artifactTabs.js";
 
 /**
  * **ADR 0122 §3's isolation tests, in the built app against the real core** (#5952's promise,
  * #5978's review): four of the five the probe `tools/artifact-isolation-probe` asked of a bare
- * webview, asked here of a pinned artifact as purlis renders it, its script approved, on macOS
- * and Linux.
+ * webview, asked here of a pinned artifact as purlis renders it, its script approved, on macOS.
+ *
+ * **On Linux each is the refusal** (ADR 0122, amended 2026-11-10): there an artifact's child
+ * webview has never run its page's script, so script is refused until these pass, and each case
+ * asserts that its page is shown without its script and offers no approval. A platform check,
+ * never a skip: a Linux run that ran a page's script would fail here.
  *
  * **How a page is heard.** WebDriver drives the window's webview, never an artifact's own, so a
  * page says what it saw the one way it can reach the window: by what it offers (#5972). Each page
@@ -194,13 +204,25 @@ async function refusedRows(): Promise<string[]> {
   );
 }
 
-/** Opens the artifact named `name` in front and approves its script, as the person does. */
-async function openApproved(name: string): Promise<void> {
+/** Opens the artifact named `name` in front. */
+async function openInFront(name: string): Promise<void> {
   await (await iconFor(name)).click();
   await browser.waitUntil(async () => (await inFront()) === name, {
     timeout: 20_000,
     timeoutMsg: `pressing ${name} did not open its tab in front`,
   });
+}
+
+/** Where script does not run, the case: the artifact named `name` opens refused, and closes. */
+async function refusedHere(name: string): Promise<void> {
+  await openInFront(name);
+  await expectScriptRefusedHere();
+  await closeTabOf(name);
+}
+
+/** Opens the artifact named `name` in front and approves its script, as the person does. */
+async function openApproved(name: string): Promise<void> {
+  await openInFront(name);
   const approve = await $('[data-testid="artifact-bar"]').$("aria/Approve script");
   await approve.waitForExist({ timeout: 20_000 });
   await approve.click();
@@ -314,12 +336,14 @@ describe("an artifact, as purlis renders it, is isolated from the window and its
   });
 
   it("1. reach: no way a page could reach a Tauri command answers", async () => {
+    if (!SCRIPT_RUNS_HERE) return refusedHere(NAME.reach);
     await openApproved(NAME.reach);
     expect(await heard("reach-")).toBe("reach-none");
     await closeTabOf(NAME.reach);
   });
 
   it("3. speak: a frame nested in a page is never heard on the page's channel", async () => {
+    if (!SCRIPT_RUNS_HERE) return refusedHere(NAME.speak);
     await openApproved(NAME.speak);
     await heard("speak-honest");
     // A forged set would replace the honest one, so every look for a while is read.
@@ -332,12 +356,14 @@ describe("an artifact, as purlis renders it, is isolated from the window and its
   });
 
   it("5. walk: no request walks out of the artifact's folder", async () => {
+    if (!SCRIPT_RUNS_HERE) return refusedHere(NAME.walk);
     await openApproved(NAME.walk);
     expect(await heard("walk-")).toBe("walk-none");
     await closeTabOf(NAME.walk);
   });
 
   it("6. store: what a page keeps is its approval's alone", async () => {
+    if (!SCRIPT_RUNS_HERE) return refusedHere(STORES.a);
     // A keeps something every way it can, and finds it again on its next load: so what the
     // others do not find is kept apart, not lost.
     await openApproved(STORES.a);
@@ -385,6 +411,7 @@ describe("an artifact, as purlis renders it, is isolated from the window and its
   });
 
   it("2. loop: an endless loop in a page leaves the window answering", async () => {
+    if (!SCRIPT_RUNS_HERE) return refusedHere(LOOP);
     await openApproved(LOOP);
     await browser.waitUntil(
       async () =>

@@ -19,8 +19,9 @@
 //! - **Machine state, never the plane's**: a teammate's approval never reaches it, nor does a
 //!   file a teammate committed. Every unreadable state of the record (missing, malformed, a
 //!   link, too big) reads as no approval at all, so it can only ask again.
-//! - **Where the isolation is not proven** (Windows, ADR 0122 §10) script never runs and is not
-//!   asked about: the page renders script-free ([`Standing::NotHere`]).
+//! - **Where the isolation is not proven** (every platform but macOS, ADR 0122 §10, amended
+//!   2026-11-10) script never runs and is not asked about: the page renders script-free
+//!   ([`Standing::NotHere`]).
 
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
@@ -37,14 +38,22 @@ pub const RECORD: &str = "artifact-approvals.json";
 const MOST_BYTES: u64 = 1 << 20;
 
 /// The platforms, as [`std::env::consts::OS`] names them, whose recorded run of the five
-/// isolation tests of ADR 0122 §3 is all green (`tools/artifact-isolation-probe/results/`):
-/// macOS by hand, Linux in CI, both 2026-11-09. Not Windows, where test 4 failed on WebView2.
-pub const PROVEN: [&str; 2] = ["macos", "linux"];
+/// isolation tests of ADR 0122 §3 is all green and whose app is not recorded failing its own
+/// (`tools/artifact-isolation-probe/results/`): macOS, by hand on 2026-11-09. Not Windows,
+/// where test 4 failed on WebView2; not Linux, where the probe passed but the app's child
+/// webview never ran a page's script (2026-11-10, ADR 0122 amended that day).
+pub const PROVEN: [&str; 1] = ["macos"];
 
 /// **Whether an artifact's script may run on this platform at all** (ADR 0122 §10): only on
-/// one of [`PROVEN`]. Any other platform, Windows and every other unix among them, renders
-/// script-free.
-pub const SCRIPT_RUNS_HERE: bool = cfg!(any(target_os = "macos", target_os = "linux"));
+/// one of [`PROVEN`]. Any other platform, Linux, Windows and every other unix among them,
+/// renders script-free.
+pub const SCRIPT_RUNS_HERE: bool = cfg!(target_os = "macos");
+
+/// What the gate answers in this build: [`SCRIPT_RUNS_HERE`], except that a test build
+/// (`test-support`, which no shipped build and no scenario-test build has) judges every unix as
+/// proven, so the record and the serving of an approved page stay tested where CI runs them,
+/// on Linux. The refusal itself is what the scenario tests assert on Linux.
+const RUNS: bool = SCRIPT_RUNS_HERE || cfg!(all(unix, any(test, feature = "test-support")));
 
 /// Where an artifact stands on this machine: whether its script runs, and if not, why.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -122,6 +131,22 @@ pub fn page_host(
     snapshot: &Snapshot,
     view: &str,
 ) -> String {
+    standing_and_host(config_root, workspace, folder, pin_id, snapshot, view).1
+}
+
+/// **Where the artifact stands and the host its page is served from, decided by one read of
+/// the record** (#6120): [`standing`] and [`page_host`] together. Read apart, an approval
+/// forgotten between the two reads would leave the page's script running while it is served
+/// from its folder's origin, whose storage other approvals of the folder share.
+pub fn standing_and_host(
+    config_root: Option<&Path>,
+    workspace: &Path,
+    folder: &str,
+    pin_id: &str,
+    snapshot: &Snapshot,
+    view: &str,
+) -> (Standing, String) {
+    let (standing, entry) = judged(config_root, workspace, folder, pin_id, snapshot);
     let real = workspace
         .canonicalize()
         .unwrap_or_else(|_| workspace.to_path_buf());
@@ -130,18 +155,14 @@ pub fn page_host(
     } else {
         format!("{view}\u{0}{folder}")
     };
-    if standing(config_root, workspace, folder, pin_id, snapshot) != Standing::Approved {
-        return serve::origin_host(&real, &own);
+    if standing != Standing::Approved {
+        return (standing, serve::origin_host(&real, &own));
     }
-    let storage = config_root
-        .and_then(|config| {
-            entries(config)
-                .get(&key(workspace, folder))
-                .and_then(|entry| entry.get("storage"))
-                .and_then(Value::as_str)
-                .filter(|drawn| is_storage(drawn))
-                .map(str::to_owned)
-        })
+    let storage = entry
+        .as_ref()
+        .and_then(|entry| entry.get("storage"))
+        .and_then(Value::as_str)
+        .filter(|drawn| is_storage(drawn))
         .unwrap_or_default();
     let mut hash = Sha256::new();
     let mut frame = |name: &str, body: &[u8]| {
@@ -155,11 +176,13 @@ pub fn page_host(
     frame("storage", storage.as_bytes());
     frame("pin", pin_id.as_bytes());
     frame("fingerprint", snapshot.fingerprint().as_bytes());
-    hash.finalize()
+    let host = hash
+        .finalize()
         .iter()
         .take(16)
         .map(|byte| format!("{byte:02x}"))
-        .collect()
+        .collect();
+    (standing, host)
 }
 
 /// A new `storage` for an approval: 128 random bits, as 32 hex digits.
@@ -227,24 +250,35 @@ pub fn standing(
     pin_id: &str,
     snapshot: &Snapshot,
 ) -> Standing {
+    judged(config_root, workspace, folder, pin_id, snapshot).0
+}
+
+/// Where the artifact stands, with the record's entry for it that decided so: the one read of
+/// the record [`standing_and_host`] needs.
+fn judged(
+    config_root: Option<&Path>,
+    workspace: &Path,
+    folder: &str,
+    pin_id: &str,
+    snapshot: &Snapshot,
+) -> (Standing, Option<Value>) {
     if !snapshot.holds_script() {
-        return Standing::ScriptFree;
+        return (Standing::ScriptFree, None);
     }
-    if !SCRIPT_RUNS_HERE {
-        return Standing::NotHere;
+    if !RUNS {
+        return (Standing::NotHere, None);
     }
     let Some(config_root) = config_root else {
-        return Standing::New;
+        return (Standing::New, None);
     };
-    match entries(config_root)
-        .get(&key(workspace, folder))
-        .and_then(approval_of)
-    {
+    let entry = entries(config_root).remove(&key(workspace, folder));
+    let standing = match entry.as_ref().and_then(approval_of) {
         None => Standing::New,
         Some(approved) if approved.pin != pin_id || !is_pin_id(pin_id) => Standing::PinChanged,
         Some(approved) if approved.fingerprint != snapshot.fingerprint() => Standing::Changed,
         Some(_) => Standing::Approved,
-    }
+    };
+    (standing, entry)
 }
 
 /// **Records the person's approval** of folder `folder` of the workspace at `workspace`, pinned
@@ -257,7 +291,7 @@ pub fn approve(
     pin_id: &str,
     fingerprint: &str,
 ) -> Result<(), String> {
-    if !SCRIPT_RUNS_HERE {
+    if !RUNS {
         return Err(
             "an artifact's script does not run on this platform yet (ADR 0122 \u{a7}10), so \
              there is nothing to approve: it renders without it"
@@ -623,6 +657,56 @@ mod tests {
         assert_eq!(here.standing(PIN), Standing::Approved);
     }
 
+    /// #6120: where the page stands and the origin it is served from are decided by one read
+    /// of the record, so they always agree: served from an approval's own origin exactly when
+    /// its script runs, in every state the record can be in.
+    #[test]
+    fn standing_and_host_agree_in_every_state_of_the_record() {
+        let here = Here::new();
+        let both = |pin: &str| {
+            standing_and_host(
+                Some(&here.config),
+                &here.workspace,
+                "board",
+                pin,
+                &here.snapshot(),
+                "",
+            )
+        };
+        let folder_host = serve::origin_host(&here.workspace.canonicalize().unwrap(), "board");
+        let agree = |pin: &str, want: Standing| {
+            let (standing, host) = both(pin);
+            assert_eq!(standing, want);
+            assert_eq!(standing, here.standing(pin));
+            assert_eq!(
+                host,
+                page_host(
+                    Some(&here.config),
+                    &here.workspace,
+                    "board",
+                    pin,
+                    &here.snapshot(),
+                    ""
+                )
+            );
+            assert_eq!(
+                host == folder_host,
+                standing != Standing::Approved,
+                "{standing:?}"
+            );
+        };
+        agree(PIN, Standing::New);
+        here.approve(PIN);
+        agree(PIN, Standing::Approved);
+        agree("ba9876543210fedcba9876543210fedc", Standing::PinChanged);
+        here.write("app.js", "drawAgain()");
+        agree(PIN, Standing::Changed);
+        here.approve(PIN);
+        agree(PIN, Standing::Approved);
+        forget(&here.config, &here.workspace, "board").unwrap();
+        agree(PIN, Standing::New);
+    }
+
     /// The exploit of the second review of #5978: v1, approved, keeps what its queries answered
     /// in its storage; v2, approved for other reads, finds it there. An artifact's storage is its
     /// origin's, so each approval is served from an origin of its own: a changed template, a
@@ -789,7 +873,8 @@ mod tests {
 }
 
 /// The gate is evidence: script runs on exactly the platforms whose recorded run of the five
-/// isolation tests is all green (ADR 0122 §3, §10).
+/// isolation tests is all green, and where no record says the app's own isolation tests fail
+/// (ADR 0122 §3, §10, amended 2026-11-10).
 #[cfg(test)]
 mod gate {
     use super::*;
@@ -797,11 +882,11 @@ mod gate {
     /// The five tests of ADR 0122 §3, as the probe's RESULT lines name them.
     const FIVE: [&str; 5] = ["reach", "escape", "loop", "speak", "walk"];
 
-    /// Whether a recorded run of the probe on `os` has all five green for the chosen rendering.
-    fn recorded_green(os: &str) -> bool {
+    /// Every recorded run on `os`, oldest first: the files are named `<os>-<yyyy-mm-dd>.txt`.
+    fn records(os: &str) -> Vec<String> {
         let results = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../tools/artifact-isolation-probe/results");
-        std::fs::read_dir(&results)
+        let mut files: Vec<PathBuf> = std::fs::read_dir(&results)
             .unwrap()
             .filter_map(Result::ok)
             .filter(|e| {
@@ -809,22 +894,56 @@ mod gate {
                     .to_string_lossy()
                     .starts_with(&format!("{os}-"))
             })
-            .any(|e| {
-                let text = std::fs::read_to_string(e.path()).unwrap();
-                FIVE.iter().all(|test| {
-                    text.contains(&format!("RESULT webview {test} PASS"))
-                        && !text.contains(&format!("RESULT webview {test} FAIL"))
-                })
+            .map(|e| e.path())
+            .collect();
+        files.sort();
+        files
+            .iter()
+            .map(|file| std::fs::read_to_string(file).unwrap())
+            .collect()
+    }
+
+    /// Whether a recorded run of the probe on `os` has all five green for the chosen rendering.
+    fn probe_green(os: &str) -> bool {
+        records(os).iter().any(|text| {
+            FIVE.iter().all(|test| {
+                text.contains(&format!("RESULT webview {test} PASS"))
+                    && !text.contains(&format!("RESULT webview {test} FAIL"))
             })
+        })
+    }
+
+    /// Whether the newest record on `os` of the app's own isolation tests
+    /// (`app/e2e/specs/artifact-isolation.e2e.ts`) has one failing.
+    fn app_red(os: &str) -> bool {
+        records(os)
+            .iter()
+            .rev()
+            .find(|text| text.contains("RESULT app "))
+            .is_some_and(|text| text.contains(" FAIL"))
+    }
+
+    /// Whether `os` is proven: its probe all green, and its app not recorded red.
+    fn proven(os: &str) -> bool {
+        probe_green(os) && !app_red(os)
     }
 
     #[test]
     fn script_runs_only_where_a_recorded_run_passed_all_five_isolation_tests() {
         for os in PROVEN {
-            assert!(recorded_green(os), "{os} has no all-green recorded run");
+            assert!(proven(os), "{os} is not proven by its records");
         }
-        assert!(!recorded_green("windows"), "record windows, then prove it");
+        assert!(!probe_green("windows"), "record windows, then prove it");
         assert!(!PROVEN.contains(&"windows"));
         assert_eq!(SCRIPT_RUNS_HERE, PROVEN.contains(&std::env::consts::OS));
+    }
+
+    /// The probe passes on Linux, but in the app a child webview never ran a page's script
+    /// (`linux-2026-11-10.txt`): script is refused there until the app's own tests are green.
+    #[test]
+    fn linux_is_refused_while_the_app_s_own_isolation_tests_are_recorded_red_there() {
+        assert!(probe_green("linux"));
+        assert!(app_red("linux"));
+        assert!(!PROVEN.contains(&"linux"));
     }
 }

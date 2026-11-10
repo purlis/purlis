@@ -104,6 +104,47 @@ fn a_script_in_no_skill_is_approved_by_its_own_folder() {
     assert_eq!(resolved.code, here.workspace.join("tools"));
 }
 
+/// #6120: a `SKILL.md` at the plane's root or a workspace's, or a script standing at either
+/// itself, would make the whole plane or workspace the approved code, and with it what a run may
+/// read. Refused, never approved as a whole.
+#[test]
+fn a_code_folder_at_the_plane_s_root_or_a_workspace_s_is_refused() {
+    let here = Here::new();
+    std::fs::create_dir_all(here.workspace.join("tools")).unwrap();
+    std::fs::write(here.workspace.join("tools/make.sh"), "echo").unwrap();
+    let beta = here.root.join("workspaces/beta");
+    std::fs::create_dir_all(beta.join("tools")).unwrap();
+    std::fs::write(beta.join("tools/make.sh"), "echo").unwrap();
+    let refused = |command: &str| {
+        let why = here.resolve(command).unwrap_err();
+        assert!(why.contains("never approves a whole"), "{command}: {why}");
+    };
+
+    std::fs::write(here.workspace.join(SKILL_FILE), "# planted").unwrap();
+    refused("./tools/make.sh");
+    std::fs::remove_file(here.workspace.join(SKILL_FILE)).unwrap();
+
+    std::fs::write(beta.join(SKILL_FILE), "# planted").unwrap();
+    refused("/bin/sh ../beta/tools/make.sh");
+    std::fs::remove_file(beta.join(SKILL_FILE)).unwrap();
+
+    std::fs::write(here.root.join(SKILL_FILE), "# planted").unwrap();
+    refused("./tools/make.sh");
+    // A skill of its own below the root is still its code folder.
+    assert_eq!(
+        here.resolve(COMMAND).unwrap().code,
+        here.root.join("skills/report")
+    );
+    std::fs::remove_file(here.root.join(SKILL_FILE)).unwrap();
+
+    std::fs::write(here.workspace.join("make.sh"), "echo").unwrap();
+    refused("./make.sh");
+    assert_eq!(
+        here.resolve("./tools/make.sh").unwrap().code,
+        here.workspace.join("tools")
+    );
+}
+
 #[test]
 fn an_interpreter_named_by_its_path_is_never_the_script() {
     let here = Here::new();
@@ -526,6 +567,46 @@ fn a_run_reads_in_the_plane_only_its_approved_code_and_its_artifact() {
     ] {
         assert!(profile.allows(&reads(&read)), "{}", read.display());
     }
+}
+
+/// #6120: below the plane's root, outside the approved code and the artifact's folder, a run
+/// starts no program, links no file and reads no file's extended attributes, so only code the
+/// approval fingerprinted runs, however it is reached (Seatbelt judges a start and a link by
+/// rules of their own, not by `file-read-data`). Linux's reader still reads the profile: it
+/// sets the attributes' rule aside and leaves a filtered start to the kernel's own rule.
+#[test]
+fn a_run_starts_links_and_reads_attributes_of_nothing_in_the_plane_outside_its_code() {
+    let here = Here::new();
+    let resolved = here.resolve(COMMAND).unwrap();
+    let rules = plane_reads(&here.root, &resolved).unwrap();
+    let code = format!("(require-not (subpath \"{}\"))", resolved.code.display());
+    let artifact = format!(
+        "(require-not (subpath \"{}\"))",
+        resolved.artifact.display()
+    );
+    let root = format!("(subpath \"{}\")", here.root.display());
+    for op in [
+        "file-read-data",
+        "process-exec",
+        "file-link",
+        "file-read-xattr",
+    ] {
+        assert!(
+            rules.iter().any(|rule| rule.starts_with("(deny ")
+                && rule
+                    .split(" (")
+                    .next()
+                    .unwrap()
+                    .split(' ')
+                    .any(|it| it == op)
+                && rule.contains(&root)
+                && rule.contains(&code)
+                && rule.contains(&artifact)),
+            "{op}: {rules:#?}"
+        );
+    }
+    let profile = run_profile(&here, COMMAND);
+    assert!(!profile.allows(&reads(&here.root.join("workspaces/alpha/workspace.md"))));
 }
 
 /// The same, run for real on macOS: the approved script reads its own folder and the

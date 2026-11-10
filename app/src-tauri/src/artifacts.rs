@@ -230,6 +230,9 @@ pub(crate) struct Answered {
     pub(crate) key: Option<(String, String)>,
     /// A read the page asked for on its open port.
     pub(crate) ask: Option<Ask>,
+    /// Whether the request came from a page purlis serves, at the origin it serves it from
+    /// now: only then may its link reports and offers be heard (#6120).
+    pub(crate) matched: bool,
 }
 
 impl Served {
@@ -301,6 +304,7 @@ impl Artifacts {
         let path = uri.path();
         let mut served = self.served();
         let own = served.get_mut(label).filter(|one| one.host == host);
+        let matched = own.is_some();
         let mut key = None;
         let mut ask = None;
         let runs = own.as_ref().is_some_and(|one| one.of.standing.runs());
@@ -340,7 +344,12 @@ impl Artifacts {
             .header("Referrer-Policy", "no-referrer")
             .body(body)
             .unwrap_or_else(|_| Response::new(Vec::new()));
-        Answered { response, key, ask }
+        Answered {
+            response,
+            key,
+            ask,
+            matched,
+        }
     }
 
     /// **Webview `label`'s page loads again**: the port its last load opened is revoked, so
@@ -366,11 +375,6 @@ impl Artifacts {
             .get(&ask.label)
             .filter(|one| one.load.as_deref() == Some(ask.load.as_str()))
             .map(|one| (one.of.clone(), one.snapshot.clone(), one.declared.clone()))
-    }
-
-    /// Whether `label` is an artifact webview purlis serves.
-    pub(crate) fn is_served(&self, label: &str) -> bool {
-        self.served().contains_key(label)
     }
 
     /// Whether artifact webview `label` may go to `url`: within its own origin only, and never
@@ -429,15 +433,16 @@ impl Artifacts {
             return Err("an artifact shown as of a version is not read again".to_owned());
         }
         let (pin, snapshot) = read_pinned(&of.dir, &of.folder)?;
-        let standing = approval::standing(config, &of.dir, &of.folder, &pin, &snapshot);
+        // An approval given or gone since is an origin of its own ([`approval::page_host`]):
+        // the page's next load is from there, and the origin before it is served nothing. Both
+        // from one read of the record, so they agree (#6120).
+        let (standing, host) =
+            approval::standing_and_host(config, &of.dir, &of.folder, &pin, &snapshot, "");
         // What the page declares is read again with its bytes (#5961), and so is whether that
         // data was generated here.
         let declared = declared_by(&snapshot);
         let generated =
             data::generated(&artifact::resolve(&of.dir, &of.folder)?, declared.as_ref());
-        // An approval given or gone since is an origin of its own ([`approval::page_host`]):
-        // the page's next load is from there, and the origin before it is served nothing.
-        let host = approval::page_host(config, &of.dir, &of.folder, &pin, &snapshot, "");
         if let Some(one) = self.served().get_mut(label) {
             one.snapshot = snapshot;
             one.declared = declared;
@@ -508,13 +513,17 @@ pub(crate) fn serve<R: Runtime>(
             answer_ask(app.clone(), ask);
         }
     }
-    // The actions the page offers (#5972): drawn in purlis's bar, never done here.
-    offers::heard(app, label, request.uri().path(), request.uri().query());
+    // A request no page purlis serves now matched (a document left at an origin its page has
+    // moved from) offers nothing and reports no link (#6120).
+    if answered.matched {
+        // The actions the page offers (#5972): drawn in purlis's bar, never done here.
+        offers::heard(app, label, request.uri().path(), request.uri().query());
+    }
     // A link the person pressed in the page (#5956), attributed by the webview's label, and
     // followed only with the one token purlis handed its open load (ADR 0122 §5).
     if let Some(links) = app.try_state::<crate::artifact_links::Links>() {
         use crate::artifact_links::{Heard, delivery, follow};
-        let heard = if artifacts.is_served(label) {
+        let heard = if answered.matched {
             links.heard(label, &request.uri().to_string(), std::time::Instant::now())
         } else {
             Heard::Nothing
@@ -983,8 +992,17 @@ pub async fn artifact_open(
         blocking(move || {
             let real = artifact::resolve(&at, &read_folder)?;
             let (pin, snapshot) = read_pinned(&at, &read_folder)?;
-            let standing =
-                approval::standing(config.as_deref(), &at, &read_folder, &pin, &snapshot);
+            // The approval's own origin when its script runs here, so its storage is that
+            // approval's alone (ADR 0122, amended 2026-11-10); from the one read of the record
+            // its standing is, so the two agree (#6120).
+            let (standing, host) = approval::standing_and_host(
+                config.as_deref(),
+                &at,
+                &read_folder,
+                &pin,
+                &snapshot,
+                "",
+            );
             let changed_by = (standing == Standing::PinChanged)
                 .then(|| artifact::pinned_by(&at, &pin))
                 .flatten();
@@ -992,10 +1010,6 @@ pub async fn artifact_open(
             let generated = data::generated(&real, declared.as_ref());
             let plane_granted =
                 approval::plane_granted(config.as_deref(), &at, &read_folder, &pin, &snapshot);
-            // The approval's own origin when its script runs here, so its storage is that
-            // approval's alone (ADR 0122, amended 2026-11-10).
-            let host =
-                approval::page_host(config.as_deref(), &at, &read_folder, &pin, &snapshot, "");
             Ok((
                 host,
                 snapshot,
@@ -1697,6 +1711,33 @@ mod tests {
             );
             assert_eq!(response.headers()["X-Content-Type-Options"], "nosniff");
         }
+    }
+
+    /// #6120: once a page's origin moves (an approval given or gone), the document still
+    /// loaded at the old origin is answered nothing, and nor are its link reports or its
+    /// offers heard: only a request matched to the page purlis serves now is.
+    #[test]
+    fn a_request_from_an_origin_the_page_has_left_is_heard_by_nothing() {
+        let artifacts = served(&[("artifact-1", "main", "aaa")]);
+        for path in [
+            "/.purlis/link/open/0123456789abcdef",
+            "/.purlis/offer/x",
+            "/",
+        ] {
+            let left = artifacts.answer("artifact-1", &get(&at("bbb", path)));
+            assert!(!left.matched, "{path}");
+            assert!(
+                artifacts
+                    .answer("artifact-1", &get(&at("aaa", path)))
+                    .matched,
+                "{path}"
+            );
+        }
+        assert!(
+            !artifacts
+                .answer("artifact-9", &get(&at("aaa", "/")))
+                .matched
+        );
     }
 
     #[test]

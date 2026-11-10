@@ -1,0 +1,25 @@
+# Linux (ubuntu-24.04, WebKitGTK under xvfb), 2026-11-10: the app's own isolation tests
+# (app/e2e/specs/artifact-isolation.e2e.ts), in the `ci` workflow's `scenario tests
+# (ubuntu-24.04, part 1 of 2)` job, against the built app. The probe passes on Linux
+# (linux-2026-11-09.txt); in the app, a pinned artifact's child webview never runs its script,
+# so no test could hear its page. ADR 0122, amended 2026-11-10: script is refused on Linux
+# until these are green.
+#
+# Run 42776220936 at 5b265dbb9 (job 129695661055), with the artifact webview no longer
+# incognito (77cd4e9cc), its page reloaded after the approval:
+#   artifact-isolation.e2e.ts:164 the page never said speak-honest…: it did not run
+#   artifact-isolation.e2e.ts:164 the page never said walk-…: it did not run
+#   artifact-offers.e2e.ts:155 the approved page's offers did not reach purlis's bar
+#   artifact-queries.e2e.ts:141 the offers group "Offered by Todo board" never appeared
+# Run 42785758001 at 1dacdf0b1 (job 129726787152), incognito off and the page navigated to its
+# approval's own origin rather than reloaded (18c5ffb46):
+#   artifact-isolation.e2e.ts:212 the page never said reach-…: it did not run
+#   artifact-isolation.e2e.ts:212 the page never said speak-honest…: it did not run
+#   artifact-isolation.e2e.ts:212 the page never said walk-…: it did not run
+#   artifact-isolation.e2e.ts:212 the page never said store-…: it did not run
+#   artifact-offers.e2e.ts:155 the approved page's offers did not reach purlis's bar
+#   artifact-queries.e2e.ts:141 the offers group "Offered by Todo board" never appeared
+RESULT app reach FAIL the page's script never ran (runs 42776220936, 42785758001)
+RESULT app speak FAIL the page's script never ran (runs 42776220936, 42785758001)
+RESULT app walk FAIL the page's script never ran (runs 42776220936, 42785758001)
+RESULT app store FAIL the page's script never ran (run 42785758001)

@@ -6,8 +6,8 @@ import { join } from "node:path";
 import process from "node:process";
 import { $, browser, expect } from "@wdio/globals";
 import {
-  ARTIFACT_TAB_BUDGET_KB,
   type TabMemoryLook,
+  artifactTabBudgetKb,
   artifactTabVerdict,
   tabMemoryLook,
 } from "../artifactTabMemory.js";
@@ -22,7 +22,7 @@ import { closeOf, iconFor } from "../artifactTabs.js";
  *
  * It looks at the app with no artifact tab open, opens one script-free page pinned to a
  * workspace, waits for the page's own web content process and for the memory to settle, and
- * looks again. The difference is held to `ARTIFACT_TAB_BUDGET_KB` (`artifactTabMemory.ts`,
+ * looks again. The difference is held to this platform's `artifactTabBudgetKb` (`artifactTabMemory.ts`,
  * whose tests show the verdict failing past it), and both looks go to `logs/artifact-tab.jsonl`
  * and the run's output, so a green run says what it measured too.
  *
@@ -150,8 +150,9 @@ describe("an open artifact tab's memory (ADR 0086 M8)", function () {
       "with the tab open, or its page started no web content process of its own",
     );
 
-    const verdict = artifactTabVerdict(before, after);
-    const record = { row: "M8", budgetKb: ARTIFACT_TAB_BUDGET_KB, before, after, ...verdict };
+    const budgetKb = artifactTabBudgetKb(process.platform);
+    const verdict = artifactTabVerdict(before, after, budgetKb);
+    const record = { row: "M8", budgetKb, before, after, ...verdict };
     logLine("artifact-tab.jsonl", record);
     console.log(`purlis-artifact-tab ${JSON.stringify(record)}`);
     if (!verdict.within) throw new Error(verdict.said);

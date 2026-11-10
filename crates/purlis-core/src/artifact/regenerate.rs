@@ -139,6 +139,14 @@ pub fn resolve(root: &Path, workspace: &Path, pin: &Pin) -> Result<Resolved, Str
             )
         })?;
     let code = code_folder(&root, &script);
+    if let Some(whole) = whole_of(&root, &code) {
+        return Err(format!(
+            "its script's code folder would be {whole} ('{}'), and Regenerate never approves a \
+             whole {whole} as the code a run may read; move the script into a folder of its \
+             own, such as `scripts/`",
+            one_line(&code.display().to_string())
+        ));
+    }
     let fingerprint = of_run(&words, &fingerprint(&code)?);
     let artifact = workspace.join(super::DIR).join(&pin.folder);
     let artifact = artifact.canonicalize().unwrap_or(artifact);
@@ -221,6 +229,18 @@ fn code_folder(root: &Path, script: &Path) -> PathBuf {
         }
     }
     own
+}
+
+/// What `code` is the whole of, where it is the plane at `root` or one of its workspaces
+/// (#6120): never a code folder, as its approval would let a run read all of it.
+fn whole_of(root: &Path, code: &Path) -> Option<&'static str> {
+    if code == root {
+        Some("the plane's root")
+    } else if code.parent() == Some(&root.join(crate::sandbox::WORKSPACES)) {
+        Some("a workspace's root")
+    } else {
+        None
+    }
 }
 
 /// **The fingerprint of code folder `code`**: SHA-256 over its own path and every entry below
@@ -706,7 +726,13 @@ fn launch_on(
 /// What a file is (its metadata) stays readable, so resolving a path through the plane's
 /// folders works; the working folder's own entries are listed, never its files read. Nothing
 /// is given back: a denial class inside the code still holds, as it is never named here.
-/// Linux's supervisor judges every open by this same rule ([`purlis_linux_sandbox::profile`]).
+///
+/// **Nor does a run start a program there, link a file of it, or read a file's extended
+/// attributes** (#6120): Seatbelt judges a start and a link by rules of their own, so a native
+/// program elsewhere in the plane would otherwise run unapproved. Linux's supervisor judges
+/// every open by this same rule ([`purlis_linux_sandbox::profile`]); a start there is the
+/// kernel's own rule, which takes nothing back, and an attribute's read is set aside, so those
+/// two hold on macOS alone.
 fn plane_reads(root: &Path, resolved: &Resolved) -> Result<Vec<String>, &'static str> {
     use crate::sandbox::seatbelt::kernel_strings;
     let mut but = Vec::new();
@@ -721,7 +747,14 @@ fn plane_reads(root: &Path, resolved: &Resolved) -> Result<Vec<String>, &'static
     let but = but.join(" ");
     Ok(kernel_strings(root)?
         .into_iter()
-        .map(|name| format!("(deny file-read-data (require-all (subpath {name}) {but}))"))
+        .flat_map(|name| {
+            [
+                format!(
+                    "(deny file-read-data process-exec file-link (require-all (subpath {name}) {but}))"
+                ),
+                format!("(deny file-read-xattr (require-all (subpath {name}) {but}))"),
+            ]
+        })
         .collect())
 }
 
