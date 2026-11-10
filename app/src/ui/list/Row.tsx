@@ -15,7 +15,6 @@
 import {
   createContext,
   useContext,
-  useId,
   useLayoutEffect,
   useRef,
   type CSSProperties,
@@ -36,6 +35,8 @@ export const RowScope = createContext<RowFamily>("list");
  * then by what React Aria adds (its hint for dragging it).
  */
 export interface OptionHeard {
+  /** The ids its parts are drawn with: `${base}-${kind}`, one part of each kind to an option. */
+  base: string;
   /** Hears the part `id` as `kind`; what it hands back stops hearing it. */
   add(kind: HeardKind, id: string): () => void;
 }
@@ -72,11 +73,13 @@ function keptInOption(option: boolean): { "aria-hidden"?: true } {
  *  something, in an option; else none, and nothing is heard. */
 function useHeardInOption(kind: HeardKind, when: boolean, given?: string): string | undefined {
   const option = useContext(InOption);
-  const own = useId();
-  const id = given ?? own;
   const hears = option !== null && when;
-  useLayoutEffect(() => (hears ? option.add(kind, id) : undefined), [hears, option, kind, id]);
-  return hears ? id : undefined;
+  const id = hears ? (given ?? `${option.base}-${kind}`) : undefined;
+  useLayoutEffect(
+    () => (option !== null && id !== undefined ? option.add(kind, id) : undefined),
+    [option, kind, id],
+  );
+  return id;
 }
 
 /** The sizes a row is drawn at: 24, 28 and 32 px at the default text size and density. */

@@ -42,6 +42,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -349,14 +350,16 @@ function useSaysUnavailable(unavailable: boolean, given: Ref<HTMLDivElement> | u
  */
 function useOptionHeard(): { heard: OptionHeard; describedBy: string | undefined } {
   const [parts, setParts] = useState<readonly { kind: HeardKind; id: string }[]>([]);
+  const base = useId();
   const heard = useMemo<OptionHeard>(
     () => ({
+      base,
       add(kind, id) {
         setParts((was) => [...was.filter((one) => one.id !== id), { kind, id }]);
         return () => setParts((was) => was.filter((one) => one.id !== id));
       },
     }),
-    [],
+    [base],
   );
   const describedBy = useMemo(() => {
     const ids = HEARD_ORDER.flatMap((kind) =>
