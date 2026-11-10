@@ -779,6 +779,14 @@ impl<R: purlis_host::Record> purlis_host::Record for TidiesAfterEachEnd<R> {
     fn read_log(&self, after: u64) -> Result<Box<dyn purlis_host::ReadsLog>, String> {
         self.record.read_log(after)
     }
+
+    fn audit_skill_change(
+        &self,
+        project_path: &std::path::Path,
+        change: &purlis_session_protocol::session::SkillChangeAudit,
+    ) -> Result<(), String> {
+        self.record.audit_skill_change(project_path, change)
+    }
 }
 
 /// How long after a chat closes its sets are tidied ([`tidy_here_later`]): time for its program

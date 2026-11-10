@@ -281,3 +281,70 @@ fn a_run_s_end_is_the_host_s_own_stop_first_and_then_its_exit_status() {
         (RunState::Failed, Cause::Exited(Exit::Signal))
     );
 }
+
+/// A skill change a terminal asked the host to audit (SK-11a, #6030).
+fn an_install_at_a_terminal() -> purlis_session_protocol::session::SkillChangeAudit {
+    purlis_session_protocol::session::SkillChangeAudit {
+        act: purlis_session_protocol::session::SkillAct::Install,
+        level: "project".into(),
+        skills: vec!["notify".into()],
+        source: "https://github.com/acme/skills".into(),
+        pin: "0123456789abcdef0123456789abcdef01234567".into(),
+    }
+}
+
+/// A project at `dir` whose shared settings hold `table`.
+fn a_project_holding(dir: &Path, table: &str) {
+    std::fs::write(dir.join("charter.toml"), format!("schema = 1\n\n{table}")).unwrap();
+}
+
+#[test]
+fn a_terminals_skill_change_on_an_org_project_is_one_audited_event_of_the_person_at_the_terminal() {
+    let (logs, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    a_project_holding(project.path(), "[skill_policy]\nmin_age_days = 0\n");
+    let log = a_log_in(logs.path());
+
+    log.audit_skill_change(project.path(), &an_install_at_a_terminal())
+        .expect("audited");
+
+    let events = crate::eventlog::read(logs.path()).expect("the log reads");
+    let audited: Vec<_> = events
+        .iter()
+        .filter(|event| event.kind.starts_with("skill."))
+        .map(|event| (event.kind.as_str(), event.chat.clone(), event.body.clone()))
+        .collect();
+    assert_eq!(
+        audited,
+        [(
+            "skill.install",
+            None,
+            serde_json::json!({
+                "actor_kind": "human",
+                "actor": "operator",
+                "scope": "terminal",
+                "level": "project",
+                "skills": ["notify"],
+                "source": "https://github.com/acme/skills",
+                "pin": "0123456789abcdef0123456789abcdef01234567",
+            })
+        )]
+    );
+}
+
+#[test]
+fn a_terminals_skill_change_on_a_project_without_controls_is_refused_and_nothing_is_written() {
+    let (logs, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    a_project_holding(project.path(), "");
+    let log = a_log_in(logs.path());
+
+    let refused = log
+        .audit_skill_change(project.path(), &an_install_at_a_terminal())
+        .expect_err("refused");
+
+    assert!(refused.contains("[skill_policy]"), "{refused}");
+    let events = crate::eventlog::read(logs.path()).unwrap_or_default();
+    assert!(
+        !events.iter().any(|event| event.kind.starts_with("skill.")),
+        "nothing audited: {events:?}"
+    );
+}

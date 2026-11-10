@@ -84,6 +84,28 @@ impl purlis_host::Record for EventLog {
         self.write(entry).map_err(|why| why.to_string())
     }
 
+    /// **A terminal's skill change on an org's project** (1.82, SK-11a, #6030): composed here,
+    /// of the three kinds alone, saying the terminal made it, and written durably. Refused for a
+    /// project whose controls say it audits nothing, or cannot be read.
+    fn audit_skill_change(
+        &self,
+        project_path: &Path,
+        change: &session::SkillChangeAudit,
+    ) -> Result<(), String> {
+        use crate::skills::source::policy;
+        if policy::of(project_path)?.is_none() {
+            return Err(policy::NO_CONTROLS.to_owned());
+        }
+        let audited = policy::Audited::from_told(change);
+        self.write(Entry::Audited {
+            plane: project_path.to_path_buf(),
+            number: None,
+            kind: audited.kind().to_owned(),
+            body: audited.body(policy::MadeAt::Terminal),
+        })
+        .map_err(|why| why.to_string())
+    }
+
     fn ended(&self, ended: &purlis_host::Ended<'_>) {
         let Some(log) = self.recorder() else { return };
         let (root, number) = (ended.project_path, ended.number);
