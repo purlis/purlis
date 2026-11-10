@@ -798,9 +798,9 @@ function NoticeGlyph({ tone }: { tone: NoticeTone }) {
   return <Glyph />;
 }
 
-/** **A way out that fixes**, on a pane's line or row: Allow in its own look, and every press asks
- *  the place it stands in first (`mayAct`, #1695). */
-function FixWay({
+/** **A way out that fixes**, on a pane's line or row, and on a decision's row in Asks (#5998):
+ *  Allow in its own look, and every press asks the place it stands in first (`mayAct`, #1695). */
+export function FixWay({
   fix: { button, label, allows, opens, busy, off, onPress, disclosure },
   mayAct,
   variant = allows === true ? "grants" : "secondary",

@@ -20,7 +20,8 @@ import { capMarks } from "./combiningMarks";
 import { blankOf, marksIn, markOf } from "./invisible";
 import { AskWrites } from "./AskWrites";
 import { LoginSite, useTypedSite } from "./LoginSite";
-import { SecretAskNotice, type SecretAskGiven } from "./SecretAskNotice";
+import { RunFacts, SecretAskNotice, type SecretAskGiven } from "./SecretAskNotice";
+import { AskDecision, REASON_TYPED_MOST, waysOf } from "./AskDecision";
 import { SecretFillSite } from "./SecretFillNotice";
 import { Button, ButtonRow, IconButton } from "./ui/button/Button";
 import {
@@ -119,6 +120,16 @@ export type Shape = {
   reason: boolean;
   /** It's a login's ask, whose site the person may change (#4595). */
   site: boolean;
+  /**
+   * **It is a decision, answered on its row** (#5998, ADR 0121 amended 2026-11-09): its options
+   * stand on the row, with no Answer, and its title is {@link Shape.question}. Only an ask that
+   * needs typing (a reply, a secret's value) keeps its form behind Answer.
+   */
+  decision: boolean;
+  /** What a decision asks, as its row's title. */
+  question?: string;
+  /** What an ask behind Answer needs typed, said on its row: a run's or a secret's value. */
+  needs?: string;
   /** It has the queue's Ignore. */
   ignore: boolean;
   /** It has Go to chat: every ask but a profile's, which is about no chat (#2035). */
@@ -159,6 +170,11 @@ export function shapeOf(
     ask.answer.via !== "in-its-pane" &&
     ask.answer.via !== "take-over";
   const answerable = ask.source === "task-question";
+  const needs = needsOf(ask);
+  const decision =
+    needs === undefined &&
+    ask.login == null &&
+    (ask.source === "dispatch" || (answers && DECISIONS.has(ask.source)));
   return {
     why,
     line,
@@ -170,8 +186,11 @@ export function shapeOf(
     message,
     said: reply && !message ? capMarks(ask.last_message ?? NO_MESSAGE).text : undefined,
     answerable,
-    form: ask.source === "dispatch" || reply || answers || answerable,
+    form: !decision && (ask.source === "dispatch" || reply || answers || answerable),
     site: ask.login != null,
+    decision,
+    question: decision ? questionOf(ask) : undefined,
+    needs,
     reason:
       (ask.answer.via === "sandbox-block" ||
         ask.answer.via === "browser" ||
@@ -187,6 +206,61 @@ export function shapeOf(
     // chat to go to.
     go: ask.session !== 0 && ask.source !== "sign-in" && ask.source !== "sandbox-only",
   };
+}
+
+/**
+ * **The kinds of ask that are decisions** (#5998, ADR 0121 amended 2026-11-09): a permission, a
+ * run grant, a sandbox's host, folder or service, and a browser's site. A dispatch's grant, its
+ * budget and its loop come as a dispatch's ask, which is one too.
+ */
+export const DECISIONS: ReadonlySet<Shown["source"]> = new Set<Shown["source"]>([
+  "permission",
+  "run-grant",
+  "sandbox-host",
+  "sandbox-write",
+  "sandbox-local",
+  "browser",
+  "browser-site",
+]);
+
+/** What a decision of each kind asks, as its row's title: a question. */
+const QUESTION: Partial<Record<Shown["source"], string>> = {
+  permission: "Allow this action?",
+  dispatch: "Allow this dispatch?",
+  "sandbox-host": "Allow reaching this host?",
+  "sandbox-write": "Allow writing in this folder?",
+  "sandbox-local": "Allow reaching this service?",
+  browser: "Let its browser reach this?",
+  "browser-site": "Let its browser reach this site?",
+};
+
+/** **The question a decision asks** (#5998), named as the person reads it: a run grant names
+ *  its program and its vault ("Allow curl to use vault team?"). */
+export function questionOf(ask: Shown): string {
+  const run = ask.run ?? undefined;
+  if (run !== undefined) {
+    const program = run.program.split("/").pop() ?? run.program;
+    return run.offer === "vault"
+      ? `Allow ${run.persona} to use vault ${run.vault}?`
+      : `Allow ${program} to use vault ${run.vault}?`;
+  }
+  return QUESTION[ask.source] ?? "Allow this?";
+}
+
+/** The keys said whole: `A`, `A and B`, `A, B and C`. */
+const keysSaid = (keys: readonly string[]) =>
+  keys.length < 2
+    ? (keys[0] ?? "")
+    : `${keys.slice(0, -1).join(", ")} and ${keys[keys.length - 1]}`;
+
+/** **What an ask needs typed before it is answered** (#5998): a secret's value, or a run's values
+ *  its vault lacks. Said on its row, whose Answer opens the boxes. */
+function needsOf(ask: Shown): string | undefined {
+  if (ask.secret != null) return `Needs a value for ${ask.secret.key}`;
+  const run = ask.run ?? undefined;
+  if (run === undefined) return undefined;
+  if (run.fills.length > 0) return `Needs a value for ${keysSaid(run.fills.map((one) => one.key))}`;
+  return run.offer === "fill" ? "Needs a value" : undefined;
 }
 
 /**
@@ -267,9 +341,14 @@ export function placeIds(
   return [
     key,
     ...(shape.form ? [`${key}:answer`] : []),
+    // A decision's answers stand on its row (#5998): the narrowest grant, Other scopes… and
+    // the refusals, before Go to chat.
+    ...(shape.decision ? decisionPlaces(key, options) : []),
     // A profile's Ask is about no chat (#2035): there is no chat to go to.
     ...(shape.go ? [`${key}:go`] : []),
-    ...(open
+    // What a decision opens under its line: its wider grants, or why it is kept blocked.
+    ...(open && shape.decision ? [`${key}:under`] : []),
+    ...(open && !shape.decision
       ? [
           ...(shape.site ? [`${key}:site`] : []),
           ...(shape.reason ? [`${key}:reason`] : []),
@@ -279,6 +358,16 @@ export function placeIds(
         ]
       : []),
     ...(shape.ignore ? [`${key}:ignore`] : []),
+  ];
+}
+
+/** The stops of a decision's answers on its row, in the order {@link AskDecision} draws them. */
+function decisionPlaces(key: string, options: readonly Offered[]): string[] {
+  const { main, wider, rest } = waysOf(options);
+  return [
+    ...(main === undefined ? [] : [`${key}:${main.id}`]),
+    ...(wider.length > 0 ? [`${key}:scopes`] : []),
+    ...rest.map((one) => `${key}:${one.id}`),
   ];
 }
 
@@ -429,7 +518,7 @@ export function Ask({
     // A login's notice drawn anew has to be read anew (#4595).
     ask.answer.via === "browser-login" || ask.answer.via === "secret-fill" ? ask.answer.shown : "",
   ].join("\n");
-  const { drawn, tooSoon, readPlaces } = useSettledPlace<HTMLElement>(here);
+  const { drawn, drawnAt, tooSoon, readPlaces } = useSettledPlace<HTMLElement>(here);
   // **New until seen** (#6002): its accent bar, until it has been in sight for about a second.
   const [isNew, seenDrawnNow] = useSeenRow(askSeenKey(ask), drawn);
   /** **The keyboard goes into the form its Answer opens** (#5651): onto its box, or its first
@@ -446,10 +535,17 @@ export function Ask({
     focusForm.current = false;
     form.querySelector<HTMLElement>("textarea, input, button")?.focus();
   };
+  /** **The settle guard on each of a decision's ways** (#5998, ADR 0097): a press just after
+   *  its row was drawn or moved does nothing, and says why. */
+  const mayAct = () => {
+    if (!tooSoon()) return true;
+    setSaid(MOVED_JUST_NOW);
+    return false;
+  };
   /** Whether `option` is an Allow on an ask of Allow and Keep blocked (ADR 0097 §6). */
   const grants = (option: Offered) => option.allows && ALLOW_OR_KEEP.has(ask.source);
   /** A press of `option`; on a secret's one notice (#5080), with what it gave, read once. */
-  const answer = (option: Offered, given?: () => SecretAskGiven) => {
+  const answer = (option: Offered, given?: () => SecretAskGiven, kept = reason) => {
     if (busy) return;
     // **An Allow waits for the row to settle** (#1695), as an update's does: with the hand's
     // list retired, the Inbox is where a permission or a host is allowed from outside its
@@ -467,7 +563,7 @@ export function Ask({
       plane,
       ask,
       option.id,
-      option.id === "keep" ? reason : undefined,
+      option.id === "keep" ? kept : undefined,
       got === undefined ? typed : got.typed,
       got?.picked,
       got?.remember,
@@ -592,7 +688,7 @@ export function Ask({
       textValue={`${who}: ${shape.line}`}
       tone={toneOfKind(kindOfAsk(ask.source))}
       icon={<KindIcon kind={kindOfAsk(ask.source)} />}
-      ref={drawn}
+      ref={drawnAt}
       onDrawn={drawnNow}
       isNew={isNew}
       className="inbox-ask"
@@ -615,14 +711,25 @@ export function Ask({
     >
       <MessageTop
         title={
+          // **A decision's title is its question** (#5998), and its chat's name leads its meta.
           <>
             {ask.session !== 0 && <ChatMark state={ASKING} className="inbox-chat-state" />}
-            <span className="inbox-who">{who}</span>
+            {shape.question === undefined ? (
+              <span className="inbox-who">{who}</span>
+            ) : (
+              <span className="inbox-question">{shape.question}</span>
+            )}
           </>
         }
         time={<RowAge when={ageOf(plane, ask)[0]} now={now} since="Waiting since" />}
       />
       <MessageMeta>
+        {shape.question !== undefined && (
+          <>
+            <span className="inbox-who">{who}</span>
+            {" · "}
+          </>
+        )}
         <MessageState id={`${id}-whose`}>{SOURCE_SAID[ask.source]}</MessageState>
         {where !== "" && (
           <>
@@ -688,6 +795,12 @@ export function Ask({
             foldAt={ASK_FOLD_LINES}
           />
         )}
+        {/* What an ask behind Answer needs typed (#5998): a secret's value, a run's. */}
+        {shape.needs !== undefined && (
+          <p className="inbox-needs ui-text-secondary">{shape.needs}</p>
+        )}
+        {/* What a run answered on its row lets run, read before its answers (#5998). */}
+        {shape.decision && ask.run != null && <RunFacts run={ask.run} />}
         {/* Why its Allow is missing: the lines it runs over, which its line put on one
               (#3502), and a character it holds that reads otherwise (SK-51). */}
         {shape.answers && (shape.lines !== undefined || shape.hidden !== undefined) && (
@@ -726,40 +839,82 @@ export function Ask({
       {/* **Its links** (#5649): Answer, where it is answered here, which opens its form in the
             row and reads Cancel while it is open (#5651, ADR 0119 decision 7); and Go to chat,
             on every ask of a chat. */}
-      {(shape.form || shape.go) && (
-        <MessageLinks>
-          {shape.form && (
-            <Button
-              size="sm"
-              variant="quiet-link"
-              data-lead=""
-              aria-label={open ? `Cancel answering ${who}` : `Answer ${who}`}
-              aria-expanded={open}
-              aria-controls={open ? `${id}-form` : undefined}
-              onPress={() => {
-                focusForm.current = !open;
-                onOpen(!open);
-              }}
-            >
-              {open ? "Cancel" : "Answer"}
-            </Button>
+      {shape.decision && ask.source !== "dispatch" ? (
+        // **A decision's answers, on its row** (#5998): as a chat pane's band draws them, with
+        // Go to chat after them. An edit's change is drawn above them, and they wait for it
+        // (#1146).
+        <>
+          {ask.writes != null && (
+            <MessageForm>
+              <AskWrites writes={ask.writes} onDrawn={onChangeDrawn}>
+                {null}
+              </AskWrites>
+            </MessageForm>
           )}
-          {shape.go && (
-            <Button
-              size="sm"
-              variant="quiet-link"
-              aria-label={`Go to chat ${who}`}
-              onPress={onGo}
-              className="inbox-go"
-            >
-              Go to chat
-            </Button>
-          )}
-        </MessageLinks>
+          <AskDecision
+            id={`${id}-form`}
+            who={who}
+            offers={shape.offers}
+            grants={ALLOW_OR_KEEP.has(ask.source)}
+            ready={ask.writes == null || ask.writes.kind === "not-shown" || changeDrawn}
+            busy={busy}
+            reason={shape.reason}
+            mayAct={mayAct}
+            onOpen={onOpen}
+            onAnswer={(option, why) => answer(option, undefined, why ?? "")}
+          >
+            {shape.go && (
+              <Button
+                size="sm"
+                variant="quiet-link"
+                aria-label={`Go to chat ${who}`}
+                onPress={onGo}
+                className="inbox-go"
+              >
+                Go to chat
+              </Button>
+            )}
+          </AskDecision>
+        </>
+      ) : (
+        (shape.form || shape.go) && (
+          <MessageLinks>
+            {shape.form && (
+              // **A visible button, not a text link** (#5998): what it opens is typed in.
+              <Button
+                size="sm"
+                variant="secondary"
+                aria-label={open ? `Cancel answering ${who}` : `Answer ${who}`}
+                aria-expanded={open}
+                aria-controls={open ? `${id}-form` : undefined}
+                onPress={() => {
+                  focusForm.current = !open;
+                  onOpen(!open);
+                }}
+              >
+                {open ? "Cancel" : "Answer"}
+              </Button>
+            )}
+            {shape.go && (
+              <Button
+                size="sm"
+                variant="quiet-link"
+                aria-label={`Go to chat ${who}`}
+                onPress={onGo}
+                className="inbox-go"
+              >
+                Go to chat
+              </Button>
+            )}
+          </MessageLinks>
+        )
       )}
       {/* **What answers it, in the row, while its Answer is open** (#5651): its answers, its
-            reply box, a task's Answer form, a dispatch's own Notice. */}
-      {open && body !== null && <MessageForm id={`${id}-form`}>{body}</MessageForm>}
+            reply box, a task's Answer form; and a dispatch's own Notice, which is a decision and
+            always drawn (#5998). */}
+      {(shape.decision ? ask.source === "dispatch" : open) && body !== null && (
+        <MessageForm id={`${id}-form`}>{body}</MessageForm>
+      )}
       {said !== undefined && (
         <p className="inbox-refused" role="status">
           {said}
@@ -949,9 +1104,6 @@ function TaskAnswer({ plane, ask, task }: { plane: PlaneId; ask: Shown; task: st
 
 /** What the reply strip says at its foot while it holds the caret (#5214). */
 export const REPLY_HINT = "Enter sends · Shift+Enter new line";
-
-/** The most characters the reason box takes; the chat is told at most 200 of them. */
-const REASON_TYPED_MOST = 400;
 
 /** What an Allow pressed on an ask drawn or moved just now says: nothing was allowed. */
 export const MOVED_JUST_NOW =

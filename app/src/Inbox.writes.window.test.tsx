@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { Inbox, MOVED_JUST_NOW } from "./Inbox";
@@ -78,7 +78,7 @@ describe("an edit's change in the Inbox (#1146)", () => {
     ]);
     // The view is its own chunk: while it loads, nothing that lets the edit run is drawn.
     expect(screen.getByText(DRAWING)).toBeTruthy();
-    expect(buttons()).toEqual(["Cancel", "Go to chat"]);
+    expect(buttons()).toEqual(["Go to chat"]);
 
     const view = await screen.findByTestId("merge-viewer", undefined, { timeout: 5000 });
     expect(view).toHaveAttribute("aria-label", "Replaces this text, in /work/src/lib.rs");
@@ -87,7 +87,7 @@ describe("an edit's change in the Inbox (#1146)", () => {
     expect(lines(before)).toEqual(["fn one() {}", ""]);
     expect(lines(after)).toEqual(["fn two() {}", ""]);
     expect(screen.getByText("Replaces this text")).toBeTruthy();
-    expect(buttons()).toEqual(["Cancel", "Go to chat", "Allow", "Deny"]);
+    await waitFor(() => expect(buttons()).toEqual(["Allow", "Deny", "Go to chat"]));
   });
 
   it("counts no Allow pressed as the change is drawn, and one pressed once it was read", async () => {
@@ -167,7 +167,7 @@ describe("an edit's change in the Inbox (#1146)", () => {
     expect(screen.getByTestId("ask-writes-not-shown").textContent).toBe(why);
     expect(screen.queryByTestId("merge-viewer")).toBeNull();
     // Even were an Allow offered with it, none is drawn.
-    expect(buttons()).toEqual(["Cancel", "Go to chat", "Deny"]);
+    expect(buttons()).toEqual(["Deny", "Go to chat"]);
   });
 });
 

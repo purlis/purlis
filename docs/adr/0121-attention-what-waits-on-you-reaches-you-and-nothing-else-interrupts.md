@@ -169,6 +169,8 @@ interrupted by what didn't need them:
 - ADR 0119: decision 2's dot is red or amber; decision 3's ✋ counts every project; decision 5's
   Asks opens on all projects; decision 9's snooze gains a time.
 - ADR 0038's ✋ counts consents and budget pauses as well.
+- A decision is answered on its row in Asks, reversing ADR 0119 decision 7 for decisions
+  ([amended 2026-11-09](0121/2026-11-09-decisions-are-answered-on-their-row.md), #5998).
 - Asks and Notices keep a seen state; the core keeps rules made from offers, and ask counts and
   times to answer per project.
 - A sandbox consent is listed as an ask as well as a Notice; one answer settles both.
@@ -180,3 +182,10 @@ interrupted by what didn't need them:
   notification (it bypasses the settle guard; #567 IB-14's actionable notifications are dropped);
   leaving the on-screen chat's asks out of the count (a count that changes with where you look
   reads as a bug); a separate focus mode (the name is #2921's, and Quiet covers it).
+
+## Amendments
+
+The amendments to this decision are files of their own in [`0121/`](0121/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
+section added to this record, so two pull requests that amend it do not touch the same lines
+(#1982).

@@ -206,8 +206,10 @@ describe("a run that needs a secret (#5227)", function () {
     await expect(notice).toHaveText(expect.stringContaining("curl"));
     await expect(notice).toHaveText(expect.stringContaining(SECRET_KEY));
 
-    // Its form stands behind its Answer link (#5651, ADR 0119 decision 7): the value, typed in
-    // its masked box, and the narrowest scope, which is chosen already.
+    // Its form stands behind its Answer button, as a value is typed there (#5998; a decision
+    // alone is answered on its row, `run-grant-on-its-row.state.e2e.ts`): the value, typed in its
+    // masked box, and the narrowest scope, which is chosen already.
+    await expect(notice).toHaveText(expect.stringContaining(`Needs a value for ${SECRET_KEY}`));
     await notice.$("button=Answer").click();
     await notice.$(`aria/Value of ${SECRET_KEY}`).setValue(VALUE);
     await pressGrant(await notice.$("button=Fill and allow once"));
