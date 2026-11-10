@@ -113,8 +113,7 @@ const LINES: [Words; 11] = [
     Words {
         id: "per_chat_plugins",
         label: "Turns your plugins off for one chat",
-        without: "cannot turn a plugin off for one chat, so a skill you try there has your \
-                  plugins on beside it and cannot be graded there",
+        without: "cannot turn a plugin off for one chat, so every chat on it has your plugins on",
     },
     Words {
         id: crate::harness_declaration::MCP_SERVERS,

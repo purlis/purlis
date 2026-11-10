@@ -2,9 +2,10 @@
 
 Ticket #3009 (SK-6c) asks for opencode to be measured again on each new release, and for an
 adapter as soon as one release lets a chat turn a single plugin off. This is that measurement
-for the release purlis pins today. It changes no decision: the 2026-10-27 amendment already
+for the release purlis pins today. It changes no ruling: the 2026-10-27 amendment already
 removed every per-project plugin choice, so a switch would only matter for a Try it's scratch
-chat and a grade, which turn every installed plugin off (decision 50, #3468).
+chat and a grade, which turn every installed plugin off (decision 50, #3468). It does correct
+the harness card's plugin line, which still spoke of project choices (below).
 
 ## The versions
 
@@ -27,7 +28,26 @@ folders in a scratch folder `$W`, `OPENCODE_DISABLE_AUTOUPDATE=1`, and
 ```
 
 Each row adds a session layer in `OPENCODE_CONFIG_CONTENT`, the layer purlis already writes,
-and reads `plugin` and `plugin_origins` from `opencode debug config`:
+and reads `plugin` and `plugin_origins` from `opencode debug config`, run from `$W/proj` as:
+
+```sh
+env -i PATH=/usr/bin:/bin TMPDIR=$W/tmp HOME=$W/home XDG_CONFIG_HOME=$W/cfg \
+  XDG_DATA_HOME=$W/data XDG_CACHE_HOME=$W/cache XDG_STATE_HOME=$W/state \
+  OPENCODE_CONFIG=$W/base.json OPENCODE_DISABLE_AUTOUPDATE=1 \
+  OPENCODE_CONFIG_CONTENT='{"plugin":[]}' opencode debug config
+```
+
+The `{"plugin":[]}` row's output, cut to the two keys:
+
+```json
+"plugin": [],
+"plugin_origins": [
+  {"spec": "file://$W/plug/a.js", "source": "$W/base.json", "scope": "global"},
+  {"spec": "file://$W/plug/b.js", "source": "$W/base.json", "scope": "global"}
+]
+```
+
+All the rows:
 
 | Session layer (`OPENCODE_CONFIG_CONTENT`) | `plugin` | `plugin_origins` (what `plugin/index.ts` loads) |
 |---|---|---|
@@ -43,7 +63,9 @@ The same as on 1.18.33. Its source at the `v1.19.5` tag says why: `config/config
 every config's `plugin` list into `plugin_origins` and dedupes it (`deduplicatePluginOrigins`),
 and `plugin/index.ts` loads `flags.pure ? [] : cfg.plugin_origins`. The only switches are still
 `--pure` and `OPENCODE_PURE` (no plugin at all, purlis's shim included) and
-`OPENCODE_DISABLE_DEFAULT_PLUGINS` (the built-in ones).
+`OPENCODE_DISABLE_DEFAULT_PLUGINS` (the built-in ones). No release note from 1.18.34 to 1.19.5
+mentions a plugin switch: the only plugin lines are a TUI fix for a plugin's name (1.18.34) and
+a docs entry (1.18.35).
 
 ## opencode 2.2.7, read from its source
 
@@ -77,8 +99,8 @@ stopped at "Failed to start server". The binary itself ran (`opencode --version`
   does since 0.163.0.
 - **The harness card says what is true now.** Its plugin line said a harness without the switch
   is not handed "the plugins chosen for this project". Since #3467 there are no such plugins. The
-  line now reads "Turns your plugins off for one chat". A harness without it "cannot turn a
-  plugin off for one chat, so a skill you try there has your plugins on beside it and cannot be
-  graded there". Codex is declared `per_chat_plugins = "yes"`, since it turns a plugin off for
-  one chat (the 2026-10-21 amendment). A test holds each built-in's answer to its adapter's
+  line now reads "Turns your plugins off for one chat", and a harness without it "cannot turn a
+  plugin off for one chat, so every chat on it has your plugins on". Codex is declared
+  `per_chat_plugins = "yes"`, since it turns a plugin off for one chat (the 2026-10-21
+  amendment). A test holds each built-in's answer to its adapter's
   `turns_a_plugin_off_for_one_chat`.

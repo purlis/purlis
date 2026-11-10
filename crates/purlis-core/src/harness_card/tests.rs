@@ -187,9 +187,8 @@ fn a_control_off_for_a_missing_capability_says_the_cards_line_and_label() {
             .lacks("per_chat_plugins")
             .as_deref(),
         Some(
-            "Gemini CLI cannot turn a plugin off for one chat, so a skill you try there has \
-             your plugins on beside it and cannot be graded there. See What Gemini CLI can do \
-             here."
+            "Gemini CLI cannot turn a plugin off for one chat, so every chat on it has your \
+             plugins on. See What Gemini CLI can do here."
         )
     );
     // Silence never reads as yes: a declaration that does not say how it resumes.
@@ -224,8 +223,8 @@ fn the_lines_are_what_the_harness_lacks_in_the_cards_order() {
             "opencode says nothing until your first prompt, so a new chat looks idle until then.",
             "opencode finds a conversation by its id from any folder, not by the folder it was \
              started in.",
-            "opencode cannot turn a plugin off for one chat, so a skill you try there has your \
-             plugins on beside it and cannot be graded there.",
+            "opencode cannot turn a plugin off for one chat, so every chat on it has your \
+             plugins on.",
             "opencode cannot have a prompt typed in for you, because purlis cannot tell when it \
              has finished starting.",
             "opencode cannot be sandboxed by purlis yet, so a project that sandboxes its chats \
