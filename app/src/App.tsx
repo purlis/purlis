@@ -80,8 +80,6 @@ import {
   perform,
   projectRows,
   saidOf,
-  stopId,
-  taskStopId,
   type Doing,
   type Offer,
   type Project,
@@ -95,7 +93,7 @@ import { useAlerts } from "./alerts";
 import { LAYOUT_FIX, LAYOUT_FIX_LABEL, type InboxAlertsDo, type WindowAlerts } from "./InboxAlerts";
 import { useAlertFix } from "./alertFix";
 import { showOffer, waitingAsk, type Elsewhere } from "./InboxElsewhere";
-import type { EveryChat, FleetDoes } from "./AllChats";
+import { fleetStore, type EveryChat, type FleetDoes } from "./AllChats";
 import type { FleetChat } from "./everyChat";
 import { ApprovePlane } from "./ApprovePlane";
 import { drawThemeFor, Extensions } from "./Extensions";
@@ -2711,24 +2709,6 @@ function App() {
     ...others.fleet.filter((one) => !planes.includes(one.plane)),
   ]);
   const fleetDoes = useMemo<FleetDoes>(() => {
-    /** A chat's own Stop, from its project's catalogue where this window holds it: a task's
-     *  lets it report first. Else the same row, carried to the window that holds it. */
-    const stopOf = (chat: FleetChat): Offer => {
-      const id = chat.task ? taskStopId(chat.session) : stopId(chat.session);
-      const listed = reportsNow.current[chat.plane]?.offers.find((one) => one.id === id);
-      return (
-        listed ?? {
-          id,
-          title: `Stop chat ${chat.name}`,
-          available: true,
-          reason: "",
-          does: chat.task
-            ? { verb: "endTask", session: chat.session, way: "report" }
-            : { verb: "stopChat", session: chat.session, below: false },
-          name: chat.name,
-        }
-      );
-    };
     return {
       go: (chat) => pressNeeding(chat.plane, showOffer(chat.session, chat.name)),
       answer: (chat) => {
@@ -2760,24 +2740,34 @@ function App() {
         }
         return failed.length === 0 ? undefined : failed.join(" ");
       },
+      // Asked once already, in All chats: each chat's own stop, by the core, in its project. A
+      // task's lets it write what it did first, as its row's Stop does.
       stop: async (chats) => {
-        const refused = chats.flatMap((chat) => {
-          const stop = stopOf(chat);
-          if (!stop.available) return [`${chat.name}: ${stop.reason}`];
-          pressNeeding(chat.plane, stop);
-          return [];
-        });
-        return refused.length === 0 ? undefined : refused.join(" ");
+        const failed: string[] = [];
+        for (const chat of chats) {
+          const said = await (
+            chat.task
+              ? commands.endTask(chat.plane, chat.session, "report", false)
+              : commands.stopChat(chat.plane, chat.session, false)
+          ).catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+          if (said.status === "error") failed.push(`${chat.name}: ${said.error}`);
+        }
+        return failed.length === 0 ? undefined : failed.join(" ");
       },
     };
   }, [pressNeeding]);
+  const [fleetHeld] = useState(fleetStore);
+  // In the same flush as the reports it is read from, so All chats is never a frame behind.
+  useLayoutEffect(() => {
+    fleetHeld.set(JSON.parse(everyFleetSaid) as FleetChat[]);
+  }, [everyFleetSaid, fleetHeld]);
   const everyChat = useMemo<EveryChat>(
     () => ({
-      chats: JSON.parse(everyFleetSaid) as FleetChat[],
+      store: fleetHeld,
       does: fleetDoes,
       lentOf: (plane) => reportsNow.current[plane]?.lent,
     }),
-    [everyFleetSaid, fleetDoes],
+    [fleetHeld, fleetDoes],
   );
 
   /** Every project as the title bar's switchers list it (#2916): its name, what waits in it

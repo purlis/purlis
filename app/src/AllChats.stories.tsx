@@ -12,7 +12,7 @@ import { expect, userEvent, waitFor, within } from "storybook/test";
 import { AllChats, type FleetDoes } from "./AllChats";
 import type { FleetChat } from "./everyChat";
 import type { ChatState } from "./shownState";
-import { expectFocusInSight, untilFocused } from "./stories.testkit";
+import { expectFocusInSight, untilFocused, untilFocusWithin } from "./stories.testkit";
 
 /** A fixed now, so a row's time reads the same in every picture. */
 const NOW = Date.now();
@@ -112,7 +112,7 @@ export const EveryState: Story = {
     );
     expectFocusInSight();
     await userEvent.keyboard("{ArrowDown}");
-    await waitFor(() => expect(rows(canvasElement)[1].contains(document.activeElement)).toBe(true));
+    await untilFocusWithin(() => rows(canvasElement)[1], "↓ goes to the next row");
     expectFocusInSight();
   },
 };
@@ -132,8 +132,9 @@ export const SeveralChosen: Story = {
     const chosen = () => canvas.getByRole("group", { name: "Chosen chats" });
     await waitFor(() => expect(chosen()).toHaveTextContent("2 chats chosen"));
     await userEvent.click(within(chosen()).getByRole("button", { name: "Stop" }));
-    await waitFor(() => expect(chosen()).toHaveTextContent("Stop 2 chats?"));
-    await userEvent.click(within(chosen()).getByRole("button", { name: "Cancel" }));
+    const asked = () => canvas.getByRole("group", { name: "Stop chats" });
+    await waitFor(() => expect(asked()).toHaveTextContent("Stop 2 chats?"));
+    await userEvent.click(within(asked()).getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(chosen()).toHaveTextContent("2 chats chosen"));
   },
 };

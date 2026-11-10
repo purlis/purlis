@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { memo, useMemo, useState } from "react";
+import { memo, useMemo, useState, useSyncExternalStore, type ComponentProps } from "react";
 import { DoingsHere, saidWhole, useDoingSaid, type DoingsOf } from "./chatDoing";
 import { ChatsHere, type Chats } from "./chatState";
 import { fleetKey, inFleetOrder, type FleetChat } from "./everyChat";
@@ -39,7 +39,8 @@ export type FleetDoes = {
   answer: (chat: FleetChat) => void;
   /** Snoozes each chat's asks; answers what went wrong, or nothing. */
   snooze: (chats: readonly FleetChat[]) => Promise<string | undefined>;
-  /** Stops each chat (a task by its own Stop, which lets it report); answers what went wrong. */
+  /** Stops each chat, already asked about in the view (a task by its own Stop, which lets it
+   *  report first); answers what went wrong. */
   stop: (chats: readonly FleetChat[]) => Promise<string | undefined>;
 };
 
@@ -53,16 +54,63 @@ export type Lent = { chats: Chats; doings: DoingsOf };
  * this window holds it.
  */
 export type EveryChat = {
-  chats: readonly FleetChat[];
+  /** The entries, held apart from what draws a project's view: a chat that moves draws All
+   *  chats again, and no project's view (`MovedRenders.test.tsx`). */
+  store: FleetStore;
   does: FleetDoes;
   lentOf: (plane: string) => Lent | undefined;
 };
+
+/** **Every chat's entry, held** (#6013): set by the window, read by All chats alone. */
+export type FleetStore = {
+  get: () => readonly FleetChat[];
+  set: (chats: readonly FleetChat[]) => void;
+  subscribe: (listener: () => void) => () => void;
+};
+
+const NO_CHATS: readonly FleetChat[] = [];
+
+/** A store holding no chat yet. */
+export function fleetStore(): FleetStore {
+  let held = NO_CHATS;
+  const listeners = new Set<() => void>();
+  return {
+    get: () => held,
+    set: (chats) => {
+      if (chats === held) return;
+      held = chats;
+      for (const listener of [...listeners]) listener();
+    },
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => void listeners.delete(listener);
+    },
+  };
+}
+
+/** **All chats, reading every chat off the window's store**: what a project's view draws. */
+export function AllChatsOf({
+  every,
+  ...rest
+}: { every: EveryChat } & Omit<ComponentProps<typeof AllChats>, "chats" | "does" | "lentOf">) {
+  const chats = useSyncExternalStore(every.store.subscribe, every.store.get);
+  return <AllChats {...rest} chats={chats} does={every.does} lentOf={every.lentOf} />;
+}
 
 /** What the view's title says, and its switch. */
 export const ALL_CHATS = "All chats";
 
 /** `3 chats`, `1 chat`. */
 const chatsSaid = (count: number) => (count === 1 ? "1 chat" : `${count} chats`);
+
+/** What Stop asks: one chat by its name, several by how many, and what a task gets first. */
+function stopSaid(chats: readonly FleetChat[]): string {
+  const which = chats.length === 1 ? chats[0].name : chatsSaid(chats.length);
+  const tasks = chats.some((one) => one.task)
+    ? " A task gets one short turn to write what it did."
+    : "";
+  return `Stop ${which}? It ends the program it runs.${tasks}`;
+}
 
 export function AllChats({
   chats,
@@ -92,7 +140,8 @@ export function AllChats({
   const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set());
   /** What is chosen and still listed: a chat that closed or left the filter is not. */
   const picked = useMemo(() => listed.filter((one) => chosen.has(fleetKey(one))), [chosen, listed]);
-  const [asking, setAsking] = useState(false);
+  /** The chats a Stop asks about, a row's one or the chosen ones, while it asks. */
+  const [toStop, setToStop] = useState<readonly FleetChat[]>();
   const [trouble, setTrouble] = useState<string>();
   const stoppable = picked.filter((one) => one.stoppable);
   const snoozable = picked.filter((one) => one.asks.length > 0);
@@ -102,8 +151,9 @@ export function AllChats({
     if (said === undefined) setChosen(new Set());
   };
   const stop = async () => {
-    setAsking(false);
-    done(await does.stop(stoppable));
+    const chats = toStop ?? [];
+    setToStop(undefined);
+    done(await does.stop(chats));
   };
   const snooze = async () => done(await does.snooze(snoozable));
   const choose = (keys: Selection) =>
@@ -141,54 +191,53 @@ export function AllChats({
               {trouble}
             </Notice>
           )}
-          {picked.length > 0 && (
+          {toStop !== undefined && (
+            // **Stop asks once, in the view** (#6013), for a row's chat or the chosen ones alike:
+            // never a dialog per chat, which only the project in front could draw.
+            <div className="all-chats-bulk" role="group" aria-label="Stop chats">
+              <p className="ui-text-secondary">{stopSaid(toStop)}</p>
+              <ButtonRow size="sm">
+                <Button variant="danger" onPress={() => void stop()}>
+                  Stop
+                </Button>
+                <Button onPress={() => setToStop(undefined)}>Cancel</Button>
+              </ButtonRow>
+            </div>
+          )}
+          {picked.length > 0 && toStop === undefined && (
             <div className="all-chats-bulk" role="group" aria-label="Chosen chats">
-              {asking ? (
-                <>
-                  <p className="ui-text-secondary">
-                    {`Stop ${chatsSaid(stoppable.length)}? A task gets one short turn to write what it did.`}
-                  </p>
-                  <ButtonRow size="sm">
-                    <Button variant="danger" onPress={() => void stop()}>
-                      Stop
-                    </Button>
-                    <Button onPress={() => setAsking(false)}>Cancel</Button>
-                  </ButtonRow>
-                </>
-              ) : (
-                <>
-                  <p className="ui-text-secondary" role="status">
-                    {`${chatsSaid(picked.length)} chosen`}
-                  </p>
-                  <ButtonRow size="sm">
-                    <Button
-                      isDisabled={snoozable.length === 0}
-                      tooltip={
-                        snoozable.length === 0
-                          ? "None of them asks anything, so there is nothing to snooze."
-                          : `Until each asks something new: ${chatsSaid(snoozable.length)}`
-                      }
-                      onPress={() => void snooze()}
-                    >
-                      Snooze
-                    </Button>
-                    <Button
-                      isDisabled={stoppable.length === 0}
-                      tooltip={
-                        stoppable.length === 0
-                          ? "They have all ended, so there is nothing to stop."
-                          : undefined
-                      }
-                      onPress={() => setAsking(true)}
-                    >
-                      Stop
-                    </Button>
-                    <Button variant="quiet" onPress={() => setChosen(new Set())}>
-                      Clear
-                    </Button>
-                  </ButtonRow>
-                </>
-              )}
+              <>
+                <p className="ui-text-secondary" role="status">
+                  {`${chatsSaid(picked.length)} chosen`}
+                </p>
+                <ButtonRow size="sm">
+                  <Button
+                    isDisabled={snoozable.length === 0}
+                    tooltip={
+                      snoozable.length === 0
+                        ? "None of them asks anything, so there is nothing to snooze."
+                        : `Until each asks something new: ${chatsSaid(snoozable.length)}`
+                    }
+                    onPress={() => void snooze()}
+                  >
+                    Snooze
+                  </Button>
+                  <Button
+                    isDisabled={stoppable.length === 0}
+                    tooltip={
+                      stoppable.length === 0
+                        ? "They have all ended, so there is nothing to stop."
+                        : undefined
+                    }
+                    onPress={() => setToStop(stoppable)}
+                  >
+                    Stop
+                  </Button>
+                  <Button variant="quiet" onPress={() => setChosen(new Set())}>
+                    Clear
+                  </Button>
+                </ButtonRow>
+              </>
             </div>
           )}
         </>
@@ -216,7 +265,13 @@ export function AllChats({
         }
       >
         {({ chat }) => (
-          <FleetRow key={fleetKey(chat)} chat={chat} does={does} lent={lentOf?.(chat.plane)} />
+          <FleetRow
+            key={fleetKey(chat)}
+            chat={chat}
+            does={does}
+            onStop={setToStop}
+            lent={lentOf?.(chat.plane)}
+          />
         )}
       </List>
     </Section>
@@ -241,10 +296,13 @@ export function AllChatsSwitch({ on, onChange }: { on: boolean; onChange: (on: b
 const FleetRow = memo(function FleetRow({
   chat,
   does,
+  onStop,
   lent,
 }: {
   chat: FleetChat;
   does: FleetDoes;
+  /** Its Stop: asked first, in the view. */
+  onStop: (chats: readonly FleetChat[]) => void;
   lent: Lent | undefined;
 }) {
   const where = `${CHAT_STATE_NAMES[chat.state]} · ${chat.project} · ${chat.workspace}`;
@@ -280,7 +338,7 @@ const FleetRow = memo(function FleetRow({
           answer={chat.state === "needs" ? { onPress: () => does.answer(chat) } : undefined}
           onGo={() => does.go(chat)}
           onSnooze={chat.asks.length > 0 ? () => void does.snooze([chat]) : undefined}
-          onStop={chat.stoppable ? () => void does.stop([chat]) : undefined}
+          onStop={chat.stoppable ? () => onStop([chat]) : undefined}
         />
       </RowActions>
     </ListRow>

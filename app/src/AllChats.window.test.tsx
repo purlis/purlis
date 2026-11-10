@@ -24,11 +24,7 @@ afterEach(() => {
   clearMocks();
 });
 
-function chat(
-  session: number,
-  state: ChatState,
-  more: Partial<FleetChat> = {},
-): FleetChat {
+function chat(session: number, state: ChatState, more: Partial<FleetChat> = {}): FleetChat {
   return {
     plane: "/p/purlis",
     project: "purlis",
@@ -127,8 +123,10 @@ describe("several chats at once (#6013)", () => {
 
     await userEvent.click(within(chosen).getByRole("button", { name: "Stop" }));
     expect(does.stop).not.toHaveBeenCalled();
-    expect(chosen).toHaveTextContent("Stop 1 chat?");
-    await userEvent.click(within(chosen).getByRole("button", { name: "Stop" }));
+    // Asked once, in the view, of the one that still runs.
+    const asked = screen.getByRole("group", { name: "Stop chats" });
+    expect(asked).toHaveTextContent("Stop chat 1?");
+    await userEvent.click(within(asked).getByRole("button", { name: "Stop" }));
 
     expect(does.stop).toHaveBeenCalledWith([expect.objectContaining({ session: 1 })]);
     await waitFor(() => expect(screen.queryByRole("group", { name: "Chosen chats" })).toBeNull());
@@ -151,6 +149,25 @@ describe("several chats at once (#6013)", () => {
     await userEvent.click(within(chosen).getByRole("button", { name: "Snooze" }));
     expect(await screen.findByText("The core is not answering.")).toBeInTheDocument();
     expect(within(row("chat 3")).getByRole("checkbox")).toBeChecked();
+  });
+});
+
+describe("a row's own Stop (#6013)", () => {
+  it("asks once in the view, then stops that chat", async () => {
+    const { does } = draw();
+    await userEvent.click(within(row("chat 4")).getByRole("button", { name: "Stop chat 4" }));
+    const asked = screen.getByRole("group", { name: "Stop chats" });
+    expect(asked).toHaveTextContent("Stop chat 4? It ends the program it runs.");
+    await userEvent.click(within(asked).getByRole("button", { name: "Cancel" }));
+    expect(does.stop).not.toHaveBeenCalled();
+
+    await userEvent.click(within(row("chat 4")).getByRole("button", { name: "Stop chat 4" }));
+    await userEvent.click(
+      within(screen.getByRole("group", { name: "Stop chats" })).getByRole("button", {
+        name: "Stop",
+      }),
+    );
+    expect(does.stop).toHaveBeenCalledWith([expect.objectContaining({ session: 4 })]);
   });
 });
 

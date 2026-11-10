@@ -88,7 +88,9 @@ describe("one project's chats, as All chats lists them", () => {
       asks: [],
     });
 
-    expect(waiting).toEqual(expect.objectContaining({ state: "waiting", line: "waiting on 1 task" }));
+    expect(waiting).toEqual(
+      expect.objectContaining({ state: "waiting", line: "waiting on 1 task" }),
+    );
     expect(waiting.stoppable).toBe(true);
     // A task that reported and runs a turn again, on the person's word, is working.
     expect(done).toEqual(expect.objectContaining({ state: "working", task: true }));

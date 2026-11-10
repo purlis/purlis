@@ -624,7 +624,7 @@ import {
   type StopAsked,
 } from "./stopping";
 import { DoingsHere, useDoings, type DoingsOf } from "./chatDoing";
-import { AllChats, type EveryChat } from "./AllChats";
+import { AllChatsOf, type EveryChat } from "./AllChats";
 import { fleetOf } from "./everyChat";
 import type { ChatState } from "./shownState";
 import {
@@ -11029,6 +11029,8 @@ export const PlaneView = memo(function PlaneView({
         if (inItsTurn(states, session)) working[workspace] = (working[workspace] ?? 0) + 1;
       // **Its chats, as All chats lists them** (#6013): read off the rows its Chats list draws
       // and its clock, told again only when what they say changed.
+      // The clock read first, so a chat's time is the one this move gave it, in this same report.
+      chatClock.read(states, chatRows, Date.now(), rowsOnScreen.current);
       const fleet = fleetOf({
         plane,
         project: projectName(plane),
@@ -11102,9 +11104,7 @@ export const PlaneView = memo(function PlaneView({
       });
     };
     report();
-    // The clock too: a chat's time in its state is All chats' (#6013).
-    const stops = [chats.store.subscribe(report), chatClock.subscribe(report)];
-    return () => stops.forEach((stop) => stop());
+    return chats.store.subscribe(report);
   }, [
     chats,
     chatClock,
@@ -11983,13 +11983,11 @@ export const PlaneView = memo(function PlaneView({
                 views={{
                   chats:
                     allChats.on && everyChat !== undefined ? (
-                      <AllChats
-                        chats={everyChat.chats}
+                      <AllChatsOf
+                        every={everyChat}
                         filter={allChats.filter}
                         onFilter={(filter) => setAllChats({ on: true, filter })}
                         onLeave={() => setAllChats({ on: false })}
-                        does={everyChat.does}
-                        lentOf={everyChat.lentOf}
                       />
                     ) : (
                       <WaitingTaskWaysContext.Provider value={waitingTaskWays}>
