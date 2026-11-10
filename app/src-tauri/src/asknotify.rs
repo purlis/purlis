@@ -32,12 +32,15 @@
 //! and takes over from the first's own; fewer are each told with their own. Three or more in
 //! one read are told together at once.
 //!
-//! **Where a notification cannot be replaced** ([`shown_here`]): the notification plugin takes
-//! one away by its id on Linux and the BSDs only, so there an update is the old one taken away
-//! and the new one shown. On macOS and Windows a notification shown stays until the person
-//! clears it: an update that tells of no new chat is not shown, so a chat is not told twice,
-//! and a removal does nothing. The one standing still lands on what waits, or on nothing once
-//! all of it was answered.
+//! **The platform's notifications are one layer under these rules** (`asknotify_center.rs`,
+//! #6059). macOS replaces a notification in place and takes one away through its own
+//! notification center (`asknotify_macos.rs`); Linux and the BSDs through the notification
+//! plugin, an update being the old one taken away and the new one shown. **Where a
+//! notification cannot be replaced** ([`shown_here`]) — Windows, which purlis does not ship
+//! for, and a macOS build that is no app bundle (`tauri dev`) — a notification shown stays
+//! until the person clears it: an update that tells of no new chat is not shown, so a chat is
+//! not told twice, and a removal does nothing. The one standing still lands on what waits, or
+//! on nothing once all of it was answered.
 //!
 //! **No notification has an Allow or Deny of its own**: it is shown with no action type, since
 //! answering from it would bypass the settle guard (ADR 0121 decision 12).
@@ -539,16 +542,17 @@ impl Rules {
     }
 }
 
-/// **Whether `notice` is shown on a system that `replaces` notifications or not.** Linux and
-/// the BSDs take a notification away by its id, so an update is the old one taken away and the
-/// new one shown. macOS and Windows cannot take one away or change it once shown (the
-/// notification plugin's `remove_active` does nothing there): an update that tells of no chat
-/// new is not shown, so a chat is not told twice; the one standing still lands on what waits.
+/// **Whether `notice` is shown on a system that `replaces` notifications or not.** macOS (from
+/// an app bundle), Linux and the BSDs replace a notification by its id. Windows cannot take one
+/// away or change it once shown (the notification plugin's `remove_active` does nothing
+/// there): an update that tells of no chat new is not shown, so a chat is not told twice; the
+/// one standing still lands on what waits.
 pub fn shown_here(notice: &Notice, replaces: bool) -> bool {
     replaces || !notice.replaces || notice.news
 }
 
-/// Whether this system takes a notification away, or replaces it, by its id.
+/// Whether the notification plugin takes a notification away, or replaces it, by its id here.
+/// On macOS purlis does both through the system's own center instead (`asknotify_macos.rs`).
 pub const REPLACES_HERE: bool = cfg!(all(unix, not(target_os = "macos")));
 
 /// The chain of who asks `ask`, as a title: `steward 12 › #3046 drill`, or the chat's number.
@@ -1077,31 +1081,9 @@ pub fn landings(notice: &Notice) -> Vec<Landing> {
 /// Does `act` to the system's notifications, and tells each window holding a project it
 /// counts where a click lands.
 fn send(app: &tauri::AppHandle, act: Act) {
-    use tauri_plugin_notification::NotificationExt;
-    // Best effort, always. A desktop that refuses notifications, or a person who turned them
-    // off, is not a reason for anything else here to stop working.
-    let notice = match act {
-        Act::Remove(id) => {
-            let _ = app.notification().remove_active(vec![id]);
-            return;
-        }
-        Act::Show(notice) => notice,
-    };
-    if !shown_here(&notice, REPLACES_HERE) {
+    let Some(notice) = center::act(&*center::here(app), act) else {
         return;
-    }
-    if notice.replaces {
-        let _ = app.notification().remove_active(vec![notice.id]);
-    }
-    // No action type: a notification has no Allow or Deny of its own, which would answer
-    // past the settle guard (ADR 0121 decision 12).
-    let _ = app
-        .notification()
-        .builder()
-        .id(notice.id)
-        .title(notice.title.clone())
-        .body(notice.body.clone())
-        .show();
+    };
     let landings = landings(&notice);
     if let (Some(notifier), Some(first)) = (app.try_state::<Notifier>(), landings.first()) {
         notifier.latest.sent(&first.plane);
@@ -1110,6 +1092,13 @@ fn send(app: &tauri::AppHandle, act: Act) {
         crate::windows::emit_for_plane(app, &landing.plane.clone(), NOTIFIED, &landing);
     }
 }
+
+#[path = "asknotify_center.rs"]
+mod center;
+
+#[cfg(target_os = "macos")]
+#[path = "asknotify_macos.rs"]
+mod macos;
 
 #[cfg(test)]
 #[path = "asknotify_tests.rs"]
