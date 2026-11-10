@@ -4,6 +4,8 @@
 import { execFileSync } from "node:child_process";
 import {
   chmodSync,
+  existsSync,
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -16,11 +18,14 @@ import { join } from "node:path";
 import process from "node:process";
 import { describe, expect, it } from "vitest";
 import {
+  CLAUDE_CODE_VERSION,
   copyFixturePlane,
+  declareTheRunsProfile,
   LONG_ASKED_COMMAND,
   SCENARIO_CONVERSATION,
   singleQuoted,
   theRunsEnvironment,
+  theRunsStandIns,
   THE_RUNS_GIT_IDENTITY,
   writeReportingShell,
 } from "./harness.js";
@@ -157,5 +162,132 @@ describe("the hooks the reporting harness reports", () => {
       { hook: "userpromptsubmit", told: "" },
       { hook: "stop", told: "" },
     ]);
+  });
+});
+
+/**
+ * **The run's profile, where a sandboxed chat runs only on a sandbox-only one** (#2037; ADR 0067
+ * as amended 2026-11-10). On Linux every sandboxed Claude Code chat runs inside purlis's wrap, on
+ * a sandbox-only profile, so the run's `scenario` is one of its machine store, as Codex's already
+ * was, and a profile the project declared under that name would take its place.
+ */
+describe("the run's profile", () => {
+  /** Runs `body` as if on `platform`, with the run's stand-ins in a folder of its own. */
+  function on<T>(platform: NodeJS.Platform, body: (scratch: string) => T): T {
+    const was = Object.getOwnPropertyDescriptor(process, "platform");
+    const target = process.env.CHARTER_TARGET_DIR;
+    const scratch = mkdtempSync(join(tmpdir(), "the-runs-profile-"));
+    Object.defineProperty(process, "platform", { value: platform });
+    process.env.CHARTER_TARGET_DIR = join(scratch, "target");
+    try {
+      return body(scratch);
+    } finally {
+      if (was) Object.defineProperty(process, "platform", was);
+      if (target === undefined) delete process.env.CHARTER_TARGET_DIR;
+      else process.env.CHARTER_TARGET_DIR = target;
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  }
+
+  /** A program that says `said` and nothing else, as the run's harness stands in. */
+  function saying(scratch: string, name: string, said: string): string {
+    const program = join(scratch, name);
+    writeFileSync(program, `#!/bin/sh\necho ${singleQuoted(said)}\n`);
+    chmodSync(program, 0o755);
+    return program;
+  }
+
+  /** The run's profile declared for `kind`: the plane, its environment and its local file. */
+  function declared(scratch: string, kind: string) {
+    const plane = join(scratch, "plane");
+    mkdirSync(plane);
+    const environment: Record<string, string> = {
+      CHARTER_CONFIG_HOME: join(scratch, "config"),
+      CHARTER_DATA_HOME: join(scratch, "data"),
+      PATH: "/usr/bin:/bin",
+    };
+    declareTheRunsProfile(
+      plane,
+      saying(scratch, "harness", "the run's harness"),
+      environment,
+      kind,
+    );
+    const store = join(environment.CHARTER_CONFIG_HOME, "charter", "profiles.json");
+    return {
+      plane,
+      environment,
+      local: readFileSync(join(plane, "charter.local.toml"), "utf8"),
+      store: existsSync(store) ? (JSON.parse(readFileSync(store, "utf8")) as unknown) : undefined,
+    };
+  }
+
+  /** What `program` on `environment`'s `PATH` answers `args` with. */
+  function answer(environment: Record<string, string>, program: string, args: string[]) {
+    return execFileSync(program, args, {
+      encoding: "utf8",
+      env: { PATH: environment.PATH },
+    }).trim();
+  }
+
+  it("is a sandbox-only Claude Code profile of the machine store on Linux, the project's default", () => {
+    on("linux", (scratch) => {
+      const { environment, local, store } = declared(scratch, "claude");
+      const folder = join(environment.CHARTER_DATA_HOME, "profiles", "scenario", "config");
+      expect(store).toEqual({
+        version: 1,
+        profiles: [
+          {
+            name: "scenario",
+            harness: "claude",
+            title: "scenario",
+            folders: { config: folder },
+            sandbox_only: true,
+          },
+        ],
+      });
+      expect(statSync(folder).isDirectory()).toBe(true);
+      // The project makes it the default, and declares no profile of that name to take its place.
+      expect(local).toContain('default = "scenario"');
+      expect(local).not.toContain("[harness.scenario]");
+      expect(local).toContain("[harness.needs-approval]");
+      // Its `claude` is first on the app's `PATH`: signed in, Claude Code by its version, and the
+      // run's harness for everything else.
+      expect(environment.PATH.endsWith(":/usr/bin:/bin")).toBe(true);
+      execFileSync("claude", ["auth", "status"], { env: { PATH: environment.PATH } });
+      expect(answer(environment, "claude", ["--version"])).toBe(CLAUDE_CODE_VERSION);
+      expect(answer(environment, "claude", ["--session-id", "x"])).toBe("the run's harness");
+    });
+  });
+
+  it("runs the run's stand-in Claude Code instead while a spec has put one there", () => {
+    on("linux", (scratch) => {
+      const { environment } = declared(scratch, "claude");
+      const standIns = theRunsStandIns();
+      saying(standIns, "claude", "the stand-in");
+      expect(answer(environment, "claude", ["--session-id", "x"])).toBe("the stand-in");
+      rmSync(join(standIns, "claude"));
+      expect(answer(environment, "claude", ["--session-id", "x"])).toBe("the run's harness");
+    });
+  });
+
+  it("is the project's own Claude Code profile on macOS, with nothing in the machine store", () => {
+    on("darwin", (scratch) => {
+      const { environment, local, store } = declared(scratch, "claude");
+      expect(store).toBeUndefined();
+      expect(local).toContain("[harness.scenario]");
+      expect(local).toContain("[harness.needs-approval]");
+      expect(environment.PATH).toBe("/usr/bin:/bin");
+    });
+  });
+
+  it("is Codex's sandbox-only profile, as the state run had it, on Linux and macOS", () => {
+    for (const platform of ["linux", "darwin"] as const)
+      on(platform, (scratch) => {
+        const { environment, local, store } = declared(scratch, "codex");
+        expect(local).toBe('[harness]\ndefault = "scenario"\n');
+        expect(store).toMatchObject({ profiles: [{ name: "scenario", harness: "codex" }] });
+        execFileSync("codex", ["login", "status"], { env: { PATH: environment.PATH } });
+        expect(answer(environment, "codex", ["exec"])).toBe("the run's harness");
+      });
   });
 });

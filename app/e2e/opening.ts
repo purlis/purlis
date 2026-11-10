@@ -18,19 +18,26 @@ import { $, browser } from "@wdio/globals";
  *
  * `within` is how long the picker may take to offer its button. Twenty seconds holds every
  * spec; the stress run's two hundred chats pass more (#5586, #5615).
+ *
+ * `withoutTheSandbox` ticks the picker's {@link START_WITHOUT_THE_SANDBOX} first, for this one
+ * chat, and presses the start that box turns the button to.
  */
-export async function pickAndStart(within = 20_000): Promise<void> {
+export async function pickAndStart(within = 20_000, withoutTheSandbox = false): Promise<void> {
   // The picker can take the palette's place, so it is looked for by its buttons at every look,
   // and nothing found before it is held (#2126).
   let pressing = "";
   let instead: string | null = null;
+  const words = withoutTheSandbox ? STARTS_WITHOUT_THE_SANDBOX : STARTS;
   await browser.waitUntil(
     async () => {
+      // The box is ticked once the rows' details are in, and the press waits for the words it
+      // turns the button to: a tick is a render away from what the button says.
+      if (withoutTheSandbox) await browser.execute(tickStartWithoutTheSandbox, PICKER);
       // Not while the rows' details are read (#4736): until they arrive the button says Start
       // chat even for a profile that asks for its approval, and a press then shows the approval
       // instead of going, so it is chosen once the picker knows which it is. In one look, so the
       // dialog cannot be drawn between "is it checking?" and "which button?" (#4979).
-      pressing = (await browser.execute(whatThePickerOffers, PICKER)) ?? "";
+      pressing = (await browser.execute(whatThePickerOffers, PICKER, words)) ?? "";
       if (pressing !== "") return true;
       // A project where nothing can start draws no picker at all (#5580): said at once.
       instead = await browser.execute(whatCameInsteadOfThePicker);
@@ -56,14 +63,53 @@ export async function pickAndStart(within = 20_000): Promise<void> {
 /** The picker's title (`StartChat`). */
 const PICKER = "Start a chat";
 
+/** The picker's box for starting this one chat without the sandbox (ADR 0067 §7, ruling V78 a). */
+export const START_WITHOUT_THE_SANDBOX = "Start without the sandbox";
+
+/** What the picker's start button says for a sandboxed chat: an approval first, or a start. */
+export const STARTS: readonly string[] = ["Approve and start", "Start chat"];
+
+/** What it says once {@link START_WITHOUT_THE_SANDBOX} is ticked (`StartChatApproval.ts`). */
+export const STARTS_WITHOUT_THE_SANDBOX: readonly string[] = [
+  "Approve and start without the sandbox",
+  START_WITHOUT_THE_SANDBOX,
+];
+
 /**
- * The words to press in a shown dialog saying `text`, Approve and start or Start chat, or `null`
+ * Ticks the {@link START_WITHOUT_THE_SANDBOX} box of the shown dialog saying `text`, once its rows'
+ * details are in, and answers whether it is ticked. **Run in the page**, as
+ * {@link whatThePickerOffers} is. The box is the checkbox family's (#2907): a native checkbox in
+ * its own label, ticked by a click on the input itself, which React Aria reads as a virtual press.
+ *
+ * On Linux, where every sandboxed Claude Code chat runs inside purlis's wrap, on a sandbox-only
+ * profile (ADR 0067 as amended 2026-11-10), a chat on a profile a project declares starts this way.
+ */
+export function tickStartWithoutTheSandbox(text: string): boolean {
+  for (const dialog of document.querySelectorAll('[role="dialog"]')) {
+    if (!(dialog.textContent ?? "").includes(text)) continue;
+    if (dialog.querySelector('[aria-busy="true"]') !== null) return false;
+    for (const box of dialog.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')) {
+      if (!(box.closest("label")?.textContent ?? "").includes("Start without the sandbox"))
+        continue;
+      if (!box.checked) box.click();
+      return box.checked;
+    }
+  }
+  return false;
+}
+
+/**
+ * The words to press in a shown dialog saying `text`, of `words` (Approve and start or Start chat,
+ * unless it is told {@link STARTS_WITHOUT_THE_SANDBOX}), or `null`
  * while there is none to press: no such dialog, or one still reading its rows' details, which it
  * marks `aria-busy` (#4736). **One look, run in the page**, as {@link aDialogOffers} is: asked in
  * two calls, "is it checking?" and "which button?", the picker could be drawn between them, and
  * its Start chat was pressed before it knew whether the profile asks for its approval (#4979).
  */
-export function whatThePickerOffers(text: string): string | null {
+export function whatThePickerOffers(
+  text: string,
+  words: readonly string[] = ["Approve and start", "Start chat"],
+): string | null {
   for (const dialog of document.querySelectorAll('[role="dialog"]')) {
     if (!(dialog.textContent ?? "").includes(text)) continue;
     if (dialog.querySelector('[aria-busy="true"]') !== null) return null;
@@ -76,7 +122,7 @@ export function whatThePickerOffers(text: string): string | null {
     const said = [...dialog.querySelectorAll("button")].map((one) =>
       (one.textContent ?? "").trim(),
     );
-    for (const words of ["Approve and start", "Start chat"]) if (said.includes(words)) return words;
+    for (const one of words) if (said.includes(one)) return one;
   }
   return null;
 }

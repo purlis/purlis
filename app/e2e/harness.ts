@@ -743,7 +743,7 @@ function oneMoment(dir: string, at: Date): void {
 }
 
 /**
- * A `charter.local.toml` in `plane` declaring one profile that runs `program`.
+ * A `charter.local.toml` in `plane` declaring the profiles that run `program`.
  *
  * The profile's own program is a wrapper around `program`. purlis puts its own words on the
  * line for a Claude Code chat — `--plugin-dir`, `--settings`, `--session-id <uuid> --name
@@ -756,82 +756,123 @@ function oneMoment(dir: string, at: Date): void {
  * Approving is recorded per profile and the specs share one app process, so a single profile
  * would make that test depend on running before every other spec — and the glob does not
  * promise that.
+ *
+ * **Where a sandboxed chat of `kind` runs only on a sandbox-only profile** (`sandboxOnlyHere`),
+ * `scenario` is not the project's: it is the run's machine profile (`declareTheRunsProfile`),
+ * and the project only makes it the default. For Codex that is macOS and Linux (#2037); for
+ * Claude Code, Linux, where every sandboxed Claude Code chat runs inside purlis's wrap, on a
+ * sandbox-only profile (ADR 0067 as amended 2026-11-10). There a Claude Code project still
+ * declares `needs-approval`, for the approval the picker scenario makes, and for the specs that
+ * read a declared profile's command out of this file.
  */
-/** Whether purlis wraps a Codex chat here, at the floor too: macOS and Linux (#1040). */
-function wrapsCodex(): boolean {
-  return process.platform === "darwin" || process.platform === "linux";
-}
-
 export function declareAProfile(plane: string, program: string, kind = "claude"): void {
   const wrapper = theProfilesWrapper(plane);
   mkdirSync(dirname(wrapper), { recursive: true });
   writeFileSync(wrapper, theProfilesProgram(program));
   chmodSync(wrapper, 0o755);
-  // On macOS and Linux a Codex chat runs at the floor (#1040 wraps it on Linux), so only on a
-  // sandbox-only profile (#2037): the
-  // state run's machine store has one, `scenario` (`declareTheStateRunsProfile`), and a
-  // project of a state spec's own makes it its default rather than declaring a Codex of its own.
-  // That profile runs the program the state run gave it, so `program` is not used here: every
-  // state spec passes the same reporting harness the run does.
-  if (kind === "codex" && wrapsCodex()) {
-    writeFileSync(join(plane, "charter.local.toml"), '[harness]\ndefault = "scenario"\n');
-    return;
-  }
+  const declared = (name: string) => [
+    `[harness.${name}]`,
+    `kind = ${JSON.stringify(kind)}`,
+    `command = [${JSON.stringify(wrapper)}]`,
+    "",
+  ];
+  // A project of a spec's own makes the run's `scenario` its default rather than declaring one
+  // of its own, and that profile runs the program the run gave it, so `program` is not used for
+  // it here: every spec passes the same harness the run does.
+  const sandboxOnly = sandboxOnlyHere(kind);
   writeFileSync(
     join(plane, "charter.local.toml"),
     [
       "[harness]",
       'default = "scenario"',
       "",
-      "[harness.scenario]",
-      `kind = ${JSON.stringify(kind)}`,
-      `command = [${JSON.stringify(wrapper)}]`,
-      "",
-      "[harness.needs-approval]",
-      `kind = ${JSON.stringify(kind)}`,
-      `command = [${JSON.stringify(wrapper)}]`,
-      "",
+      ...(sandboxOnly === undefined ? declared("scenario") : []),
+      ...(sandboxOnly === "codex" ? [] : declared("needs-approval")),
     ].join("\n"),
   );
 }
 
-/**
- * **The state run's profile** for `plane`, running `program` as Codex: on macOS and Linux,
- * where Codex runs at the floor (#1040 on Linux), a sandbox-only profile in the run's machine
- * store, whose folder of programs is put first on `environment`'s `PATH` (#2037); elsewhere,
- * where no floor wraps Codex, the project's own declared profile, as before.
- */
-export function declareTheStateRunsProfile(
-  plane: string,
-  program: string,
-  environment: Record<string, string>,
-): void {
-  if (!wrapsCodex()) {
-    declareAProfile(plane, program, "codex");
-    return;
-  }
-  const programs = declareASandboxOnlyCodexProfile(
-    plane,
-    program,
-    environment.CHARTER_CONFIG_HOME,
-    environment.CHARTER_DATA_HOME,
-  );
-  environment.PATH = [programs, process.env.PATH ?? ""].join(delimiter);
+/** Whether purlis wraps a Codex chat here, at the floor too: macOS and Linux (#1040). */
+function wrapsCodex(): boolean {
+  return process.platform === "darwin" || process.platform === "linux";
 }
 
 /**
- * **A sandbox-only Codex profile that runs `program`** (#2037, the operator's ruling of
- * 2026-10-15): a sandboxed Codex chat, the floor's included, runs only on a profile this machine
- * keeps for sandboxed chats only. So the run's machine store (`configHome`, `dataHome`) gets one,
- * named `scenario`, with its folder made as the store makes it, and `plane`'s local settings make
- * it the default. Its program is `codex` on the folder this answers, which goes first on the
- * app's `PATH`: it answers Codex's `login status` as signed in, and runs the profile's command
- * (`theProfilesProgram`) for everything else. Beside the plane, never in it, as
- * `declareAProfile`'s program is.
+ * Whether a sandboxed Claude Code chat runs here inside purlis's wrap, on a sandbox-only
+ * profile, the floor's included: Linux (ADR 0067 as amended 2026-11-10). A project's own
+ * Claude Code profile then starts a chat only without the sandbox.
  */
-export function declareASandboxOnlyCodexProfile(
+export function wrapsClaudeCode(): boolean {
+  return process.platform === "linux";
+}
+
+/** The harnesses a run keeps a sandbox-only machine profile for. */
+type SandboxOnly = "claude" | "codex";
+
+/**
+ * The harness of `kind`, where a sandboxed chat of it runs here only on a profile kept for
+ * sandboxed chats only (#2037; ADR 0067 as amended 2026-11-10), or `undefined`.
+ */
+function sandboxOnlyHere(kind: string): SandboxOnly | undefined {
+  if (kind === "codex" && wrapsCodex()) return "codex";
+  if (kind === "claude" && wrapsClaudeCode()) return "claude";
+  return undefined;
+}
+
+/**
+ * **The run's profile** for `plane`, running `program` as `kind`: the project's declared
+ * profiles (`declareAProfile`), and, where a sandboxed chat of `kind` runs only on a
+ * sandbox-only profile, the run's machine profile `scenario` (`declareASandboxOnlyProfile`),
+ * whose folder of programs is put first on `environment`'s `PATH`.
+ */
+export function declareTheRunsProfile(
   plane: string,
   program: string,
+  environment: Record<string, string>,
+  kind = "claude",
+): void {
+  declareAProfile(plane, program, kind);
+  const harness = sandboxOnlyHere(kind);
+  if (harness === undefined) return;
+  const programs = declareASandboxOnlyProfile(
+    plane,
+    program,
+    harness,
+    environment.CHARTER_CONFIG_HOME,
+    environment.CHARTER_DATA_HOME,
+  );
+  environment.PATH = [programs, environment.PATH ?? process.env.PATH ?? ""].join(delimiter);
+}
+
+/** How the stand-in each sandbox-only harness is run by answers that harness's sign-in check. */
+const SIGNED_IN: Record<SandboxOnly, string> = {
+  // Claude Code's `auth status` (`profilestore::sign_in`): exit 0 is signed in.
+  claude: 'case "$1" in auth) exit 0 ;; esac',
+  // Codex's `login status`.
+  codex: 'case "$1" in login) exit 0 ;; esac',
+};
+
+/** The words each sandbox-only harness's profile is called by in the machine store. */
+const CALLED: Record<SandboxOnly, string> = { claude: "Claude Code", codex: "Codex" };
+
+/**
+ * **A sandbox-only profile of `harness` that runs `program`** (#2037, the operator's ruling of
+ * 2026-10-15; for Claude Code on Linux, ADR 0067 as amended 2026-11-10): a sandboxed chat of
+ * that harness runs only on a profile this machine keeps for sandboxed chats only. So the run's
+ * machine store (`configHome`, `dataHome`) gets one, named `scenario`, with its config folder
+ * made as the store makes it (`CODEX_HOME` for Codex, `CLAUDE_CONFIG_DIR` for Claude Code).
+ * Its program is the harness's own name (`codex`, `claude`) on the folder this answers, which
+ * goes first on the app's `PATH`: it answers the harness's sign-in check as signed in, and runs
+ * the profile's command (`theProfilesProgram`) for everything else. Beside the plane, never in
+ * it, as `declareAProfile`'s program is.
+ *
+ * Claude Code's runs the run's stand-in Claude Code instead while a spec has put one in
+ * `theRunsStandIns` (`first-task.e2e.ts`), as the built-in profile would find it there.
+ */
+export function declareASandboxOnlyProfile(
+  plane: string,
+  program: string,
+  harness: SandboxOnly,
   configHome: string,
   dataHome: string,
 ): string {
@@ -841,18 +882,22 @@ export function declareASandboxOnlyCodexProfile(
   chmodSync(wrapper, 0o755);
   const bin = join(`${plane}.programs`, "bin");
   mkdirSync(bin, { recursive: true });
-  const codex = join(bin, "codex");
+  const shim = join(bin, harness);
+  const standIn = harness === "claude" ? join(theRunsStandIns(), "claude") : undefined;
   writeFileSync(
-    codex,
+    shim,
     [
       "#!/bin/sh",
-      "# Written by the scenario tests: Codex, as a sandbox-only profile runs it.",
-      'case "$1" in login) exit 0 ;; esac',
+      `# Written by the scenario tests: ${CALLED[harness]}, as a sandbox-only profile runs it.`,
+      SIGNED_IN[harness],
+      ...(standIn === undefined
+        ? []
+        : [`[ -x ${singleQuoted(standIn)} ] && exec ${singleQuoted(standIn)} "$@"`]),
       `exec ${JSON.stringify(wrapper)} "$@"`,
       "",
     ].join("\n"),
   );
-  chmodSync(codex, 0o755);
+  chmodSync(shim, 0o755);
   const folder = join(dataHome, "profiles", "scenario", "config");
   mkdirSync(folder, { recursive: true, mode: 0o700 });
   const store = join(configHome, "charter");
@@ -864,7 +909,7 @@ export function declareASandboxOnlyCodexProfile(
       profiles: [
         {
           name: "scenario",
-          harness: "codex",
+          harness,
           title: "scenario",
           folders: { config: folder },
           sandbox_only: true,
@@ -873,7 +918,6 @@ export function declareASandboxOnlyCodexProfile(
     }) + "\n",
     { mode: 0o600 },
   );
-  writeFileSync(join(plane, "charter.local.toml"), '[harness]\ndefault = "scenario"\n');
   return bin;
 }
 

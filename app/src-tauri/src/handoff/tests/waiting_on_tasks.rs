@@ -23,18 +23,19 @@ fn a_steward_chat_telling() -> (Plane, Pretend, Planes, PlaneId, Arc<Held>, u32,
     let plane = a_plane_with_personas();
     let host = Pretend::default();
     let told: Told = Arc::default();
-    let planes = Planes::telling(
-        Arc::new({
-            let told = Arc::clone(&told);
-            move |moved| told.lock().expect("the moves told").push(moved)
-        }),
-        crate::Shipped::default(),
-        None,
-    )
-    .running_sessions_on(Arc::new({
-        let host = host.clone();
-        move |_, _: &std::path::Path| Box::new(host.clone())
-    }));
+    let planes =
+        crate::sandboxing::taking_events_where_claude_is_wrapped_for_tests(Planes::telling(
+            Arc::new({
+                let told = Arc::clone(&told);
+                move |moved| told.lock().expect("the moves told").push(moved)
+            }),
+            crate::Shipped::default(),
+            None,
+        ))
+        .running_sessions_on(Arc::new({
+            let host = host.clone();
+            move |_, _: &std::path::Path| Box::new(host.clone())
+        }));
     let id = planes.open(&plane.root);
     let held = planes.held(&id).expect("held");
     let alpha = held.root().join("workspaces").join("alpha");
@@ -1013,14 +1014,15 @@ fn the_person_s_answer_during_a_background_turn_clears_the_wait_at_once() {
 fn a_chat_on_the_board_telling() -> (Plane, Planes, Arc<Held>, u32, Told) {
     let plane = a_plane_with_personas();
     let told: Told = Arc::default();
-    let planes = Planes::telling(
-        Arc::new({
-            let told = Arc::clone(&told);
-            move |moved| told.lock().expect("the moves told").push(moved)
-        }),
-        crate::Shipped::default(),
-        None,
-    );
+    let planes =
+        crate::sandboxing::taking_events_where_claude_is_wrapped_for_tests(Planes::telling(
+            Arc::new({
+                let told = Arc::clone(&told);
+                move |moved| told.lock().expect("the moves told").push(moved)
+            }),
+            crate::Shipped::default(),
+            None,
+        ));
     let id = planes.open(&plane.root);
     let held = planes.held(&id).expect("held");
     let chat = 41;

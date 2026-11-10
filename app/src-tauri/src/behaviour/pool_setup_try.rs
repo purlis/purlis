@@ -121,6 +121,10 @@ fn in_a_docker_pool() {
         )
         .expect("approved");
     }
+    // Try it readies its chat on this machine before the pool runs it, and where purlis wraps a
+    // Claude Code chat a sandboxed one starts only on a sandbox-only profile (ADR 0067 as
+    // amended 2026-11-10): this test is about the pool, so this machine's own level is off.
+    crate::sandboxing::no_claude_sandbox_here_for_tests(&root);
     purlis_core::runners::set_pool_profiles(&machine.config, &pool, Some(vec![PROFILE.to_owned()]))
         .expect("the pool keeps the profile");
 

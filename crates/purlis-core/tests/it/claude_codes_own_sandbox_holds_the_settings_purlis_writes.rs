@@ -95,17 +95,17 @@ const PROJECT_SETTINGS: &str = r#"{
     "env": {"PROBE": "1"}
 }"#;
 
-/// A sample project at `root` with `manifest`: a vault, a folder of what macOS starts at login
-/// and one beside it, a file nothing holds, Claude Code settings of its own, and two clones and
-/// a linked worktree, there as the chat starts.
 /// **Whether a sandboxed Claude Code chat here runs on Claude Code's own sandbox**: on macOS.
 /// On Linux purlis wraps every sandboxed Claude Code chat whole (ADR 0067 as amended
-/// 2026-11-10), with Claude Code's own sandbox off, which `a_wrapped_chat_holds_on_linux.rs`
-/// tests, so there is nothing of its own here to probe.
+/// 2026-11-10), with Claude Code's own sandbox off, so there is nothing of its own here to
+/// probe.
 fn its_own_sandbox_runs_here() -> bool {
     !Machine::this().purlis_wraps(Harness::ClaudeCode)
 }
 
+/// A sample project at `root` with `manifest`: a vault, a folder of what macOS starts at login
+/// and one beside it, a file nothing holds, Claude Code settings of its own, and two clones and
+/// a linked worktree, there as the chat starts.
 fn lay_out(root: &Path, manifest: &str) {
     fs::create_dir_all(root.join(".claude")).expect("the project's .claude");
     fs::write(root.join(".claude/settings.json"), PROJECT_SETTINGS).expect("project settings");
@@ -564,10 +564,10 @@ fn started(
 
 #[test]
 fn claude_codes_own_sandbox_holds_the_settings_purlis_writes() {
+    purlis_core::unsteered!();
     if !its_own_sandbox_runs_here() {
         return;
     }
-    purlis_core::unsteered!();
     let program = std::env::var_os("PURLIS_CLAUDE_CODE").map(PathBuf::from);
     let scratch = tempfile::tempdir().expect("a folder");
     let out = scratch.path().canonicalize().expect("a real folder");
@@ -693,10 +693,10 @@ fn claude_codes_own_sandbox_holds_the_settings_purlis_writes() {
 /// a sandbox put there to hold a path stays once the chat ends.
 #[test]
 fn a_chat_at_the_floor_makes_its_tools_folders_in_a_bare_home() {
+    purlis_core::unsteered!();
     if !its_own_sandbox_runs_here() {
         return;
     }
-    purlis_core::unsteered!();
     let Some(program) = std::env::var_os("PURLIS_CLAUDE_CODE").map(PathBuf::from) else {
         return;
     };
@@ -767,10 +767,10 @@ fn a_chat_at_the_floor_makes_its_tools_folders_in_a_bare_home() {
 /// chats are given that host and its package caches, so the hold is what takes them away.
 #[test]
 fn an_outcome_evals_shell_writes_only_its_own_folders_and_reaches_no_host() {
+    purlis_core::unsteered!();
     if !its_own_sandbox_runs_here() {
         return;
     }
-    purlis_core::unsteered!();
     use purlis_core::sandbox::egress;
     use purlis_core::skills::verbs::drafts;
     let program = std::env::var_os("PURLIS_CLAUDE_CODE").map(PathBuf::from);
@@ -1003,10 +1003,10 @@ fn an_outcome_evals_shell_writes_only_its_own_folders_and_reaches_no_host() {
 /// Code, as CI sets it.
 #[test]
 fn two_claude_code_chats_each_write_a_temporary_folder_of_their_own_and_not_the_others() {
+    purlis_core::unsteered!();
     if !its_own_sandbox_runs_here() {
         return;
     }
-    purlis_core::unsteered!();
     use std::os::unix::fs::{DirBuilderExt, MetadataExt};
     let Some(program) = std::env::var_os("PURLIS_CLAUDE_CODE").map(PathBuf::from) else {
         return;
@@ -1185,10 +1185,10 @@ fn write_function() -> String {
 /// too, with the chat's writes made by the test.
 #[test]
 fn a_workspace_made_after_a_claude_code_chat_starts_hands_no_chat_its_skills() {
+    purlis_core::unsteered!();
     if !its_own_sandbox_runs_here() {
         return;
     }
-    purlis_core::unsteered!();
     use purlis_core::skills::{self, PlaneSkills, levels};
     let program = std::env::var_os("PURLIS_CLAUDE_CODE").map(PathBuf::from);
     let scratch = tempfile::tempdir().expect("a folder");

@@ -4370,6 +4370,11 @@ impl Chats {
         #[cfg(test)]
         let decided = match &self.deciding {
             Some(deciding) => deciding(chat, &grants, opt_out),
+            None if opt_out.is_none()
+                && tests::claude_left_unsandboxed_here(&self.project, chat) =>
+            {
+                Ok((None, None, None))
+            }
             None => self.sandbox_off_profile(chat, &grants, opt_out, &made_of(chat, why)),
         };
         #[cfg(not(test))]

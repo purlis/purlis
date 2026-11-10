@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { browser, expect, $, $$ } from "@wdio/globals";
-import { READY } from "../harness.js";
+import { READY, wrapsClaudeCode } from "../harness.js";
 import { harnessRowsDrawn, pickAndStart, openThePicker } from "../opening.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 import { closesTheTabsItOpens } from "../reach.js";
@@ -147,7 +147,10 @@ describe("starting a chat", () => {
     await expect(dialog()).toHaveText(expect.stringContaining("claude-stand-in"));
     await expect($("button=Approve and start")).toBeDisplayed();
 
-    await pickAndStart();
+    // On Linux every sandboxed Claude Code chat runs inside purlis's wrap, on a sandbox-only
+    // profile (ADR 0067 as amended 2026-11-10), which a profile a project declares is not: there
+    // the approved chat starts without the sandbox, this one chat, as the picker offers.
+    await pickAndStart(20_000, wrapsClaudeCode());
     const pane = await $('[data-testid="pane"]');
     await pane.waitForDisplayed({ timeout: 30_000 });
     await browser.waitUntil(async () => (await pane.getText()).includes(READY), {

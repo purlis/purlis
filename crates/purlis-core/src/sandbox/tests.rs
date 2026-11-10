@@ -2756,22 +2756,28 @@ fn a_chat_in_a_plane_that_says_nothing_starts_at_the_floor_or_as_before_where_it
     );
 }
 
+/// In Claude Code's own sandbox on macOS, and inside purlis's wrap on Linux, with its own
+/// sandbox off (ADR 0067 as amended 2026-11-10).
 #[test]
 fn a_claude_code_chat_in_a_sandboxed_plane_starts_sandboxed_for_claude_code() {
     let plane = plane_saying(ON);
-    let applied = for_start(
-        Harness::ClaudeCode,
-        plane.path(),
-        &machine(Os::Linux),
-        &|_| true,
-    )
-    .expect("starts")
-    .expect("sandboxed");
-    assert_eq!(applied.harness(), Harness::ClaudeCode);
-    let Form::ClaudeCode(settings) = applied.form() else {
-        panic!("compiled for Claude Code: {:?}", applied.form());
+    let started = |os| {
+        for_start(Harness::ClaudeCode, plane.path(), &machine(os), &|_| true)
+            .expect("starts")
+            .expect("sandboxed")
+    };
+    let on_macos = started(Os::MacOs);
+    assert_eq!(on_macos.harness(), Harness::ClaudeCode);
+    let Form::ClaudeCode(settings) = on_macos.form() else {
+        panic!("compiled for Claude Code: {:?}", on_macos.form());
     };
     assert_eq!(settings.sandbox["enabled"], true);
+    let on_linux = started(Os::Linux);
+    assert_eq!(on_linux.harness(), Harness::ClaudeCode);
+    let Form::ClaudeWrapped(wrap) = on_linux.form() else {
+        panic!("inside purlis's wrap: {:?}", on_linux.form());
+    };
+    assert_eq!(wrap.settings().sandbox["enabled"], false);
 }
 
 #[test]
@@ -2841,27 +2847,26 @@ fn a_sandboxed_project_with_a_keyring_vault_starts_every_harness_on_macos() {
     }
 }
 
+/// On Linux every sandboxed Claude Code chat runs inside purlis's wrap (ADR 0067 as amended
+/// 2026-11-10), which reaches no socket of the session bus the system keyring answers on, as
+/// Codex's and opencode's do (#1040): a project with a keyring vault starts it there.
 #[test]
-fn on_linux_a_keyring_vault_refusal_offers_the_opt_out_and_moving_the_vault() {
+fn on_linux_a_sandboxed_project_with_a_keyring_vault_starts_a_claude_code_chat_inside_purlis_s_wrap()
+ {
     let plane = plane_with_a_keyring_vault();
-    let refused = for_start(
+    let applied = for_start(
         Harness::ClaudeCode,
         plane.path(),
         &machine(Os::Linux),
         &|_| true,
     )
-    .expect_err("refused");
-    let said = refused.to_string();
-    assert_eq!(
-        said,
-        "this project runs every chat sandboxed, and on Linux purlis cannot keep a Claude \
-         Code chat away from the system keyring, where this project's keyring vaults keep their \
-         secrets, so nothing was started. Start this chat without the sandbox from the \
-         new-chat picker, or move those secrets to a plain-file or 1Password vault, which the \
-         sandbox can keep from a chat. For a resumed or relaunched chat, moving them is the \
-         way on."
+    .unwrap_or_else(|refused| panic!("{refused}"))
+    .expect("sandboxed");
+    assert!(
+        matches!(applied.form(), Form::ClaudeWrapped(_)),
+        "{:?}",
+        applied.form()
     );
-    assert!(!said.contains("cannot keep a chat away from the operating system's credential store"));
 }
 
 #[test]
@@ -3405,16 +3410,34 @@ fn a_claude_code_chat_is_not_started_where_a_held_git_folder_has_glob_characters
         std::fs::create_dir_all(clone.join(".git/refs")).expect("its refs");
         std::fs::write(clone.join(".git/HEAD"), "ref: refs/heads/main\n").expect("HEAD");
         std::fs::write(clone.join(".git/config"), "").expect("config");
-        for os in [Os::MacOs, Os::Linux] {
-            let refused = for_start(Harness::ClaudeCode, plane.path(), &machine(os), &|_| true)
-                .expect_err("not started");
-            let NotStarted::GitFolderUnheld(path) = &refused else {
-                panic!("{name} on {os:?}: {refused:?}");
-            };
-            assert!(path.to_string_lossy().contains(name), "{}", path.display());
-            let said = refused.to_string();
-            assert!(said.contains("Rename"), "{said}");
-        }
+        let refused = for_start(
+            Harness::ClaudeCode,
+            plane.path(),
+            &machine(Os::MacOs),
+            &|_| true,
+        )
+        .expect_err("not started");
+        let NotStarted::GitFolderUnheld(path) = &refused else {
+            panic!("{name}: {refused:?}");
+        };
+        assert!(path.to_string_lossy().contains(name), "{}", path.display());
+        let said = refused.to_string();
+        assert!(said.contains("Rename"), "{said}");
+        // On Linux the chat runs inside purlis's wrap, which holds a git folder by its own rules
+        // and reads no path as a pattern (ADR 0067 as amended 2026-11-10).
+        let on_linux = for_start(
+            Harness::ClaudeCode,
+            plane.path(),
+            &machine(Os::Linux),
+            &|_| true,
+        )
+        .unwrap_or_else(|refused| panic!("{name} on Linux: {refused}"))
+        .expect("sandboxed");
+        assert!(
+            matches!(on_linux.form(), Form::ClaudeWrapped(_)),
+            "{name}: {:?}",
+            on_linux.form()
+        );
     }
     // A plain name starts as before.
     let plane = plane_saying(ON);
@@ -4118,18 +4141,14 @@ fn the_picker_says_a_chat_will_be_sandboxed_where_it_can_be() {
 #[test]
 fn a_refusal_nothing_can_be_installed_for_offers_no_install() {
     let plane = plane_saying(ON);
-    std::fs::write(
-        plane.path().join("vaults.json"),
-        r#"{"vaults": {"dev": {"provider": "keyring"}}}"#,
-    )
-    .expect("the registry");
+    // A program the check refuses: no package on this system changes that.
     let Ahead::Refused { install, .. } = ahead(
         Harness::ClaudeCode,
         plane.path(),
         &machine(Os::Linux),
         &|_| true,
         "ID=debian\n",
-        &|_| Ok(()),
+        &|_| Err(NotStarted::ProgramRelative),
     ) else {
         panic!("refused");
     };

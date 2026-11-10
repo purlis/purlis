@@ -103,6 +103,10 @@ impl Plane {
             &purlis_core::profiletrust::fingerprint(work),
         )
         .expect("approved");
+        // On Linux a sandboxed Claude Code chat runs inside purlis's wrap, on a sandbox-only
+        // profile (ADR 0067 as amended 2026-11-10), which `work` is not: these tests are about
+        // handoffs, so there its chats start without the sandbox.
+        crate::sandboxing::no_claude_sandbox_here_for_tests(&root);
         Self { _dir: dir, root }
     }
 
@@ -612,8 +616,20 @@ fn a_handoff_to_a_persona_on_a_profile_nobody_approved_opens_nothing() {
     }));
 }
 
+/// Planes telling nobody, which record the level a chat starts at where [`Plane::new`] starts
+/// it without the sandbox.
 fn planes() -> Planes {
-    Planes::telling(Arc::new(|_| {}), crate::Shipped::default(), None)
+    crate::sandboxing::taking_events_where_claude_is_wrapped_for_tests(Planes::telling(
+        Arc::new(|_| {}),
+        crate::Shipped::default(),
+        None,
+    ))
+}
+
+/// Whether a chat on a [`Plane::new`]'s `work` runs sandboxed: everywhere but where purlis wraps
+/// a Claude Code chat, where it starts without the sandbox, at the level `Plane::new` set.
+fn sandboxed_here() -> bool {
+    !crate::sandboxing::claude_is_wrapped_here_for_tests()
 }
 
 /// [`planes`], keeping an event log at `at`: a chat a person starts without the sandbox is
@@ -4248,7 +4264,11 @@ fn a_task_inherits_none_of_the_asking_chats_own_grants_hold_or_opt_out() {
     };
     let child = held.chats().recorded_chat(chat).expect("recorded");
     assert_eq!(child.held, None);
-    assert!(!child.unsandboxed);
+    assert_eq!(
+        child.unsandboxed,
+        !sandboxed_here(),
+        "no opt-out of the asking chat's"
+    );
     assert!(child.args.is_empty(), "the profile's own words and no more");
     assert!(held.chats().chat_grants().is_empty());
 }
@@ -5197,7 +5217,11 @@ fn a_worktree_task_starts_in_a_worktree_the_app_cut_and_its_report_names_that_br
     // It is a chat of its persona started there, and carries nothing of the asking chat's.
     assert_eq!(child.persona.as_deref(), Some("steward"));
     assert_eq!(child.held, None);
-    assert!(!child.unsandboxed);
+    assert_eq!(
+        child.unsandboxed,
+        !sandboxed_here(),
+        "no opt-out of the asking chat's"
+    );
     assert!(held.chats().chat_grants().is_empty());
     assert_eq!(
         told.expect("the window is told").workspace.as_deref(),
@@ -6867,7 +6891,11 @@ fn the_persona_chat_a_dispatch_opens_takes_nothing_of_the_asking_chat_s_but_its_
         let task = held.chats().recorded_chat(task).expect("the task's record");
         assert_eq!(task.persona.as_deref(), Some(runs_as), "{to:?}");
         assert_eq!(task.held, None, "{to:?}: another persona's grants");
-        assert!(!task.unsandboxed, "{to:?}: run without the sandbox");
+        assert_eq!(
+            task.unsandboxed,
+            !sandboxed_here(),
+            "{to:?}: run without the sandbox"
+        );
         assert!(
             task.resume.is_none() || task.resume != asked.resume,
             "{to:?}: the asking chat's conversation"
@@ -7149,7 +7177,11 @@ fn from_a_steward_chat_ask_devops_starts_a_devops_chat_that_may_use_the_devops_v
     assert_eq!(child.persona.as_deref(), Some("devops"));
     assert_eq!(child.held, None);
     assert_eq!(held.chats().grants_held(devops), None);
-    assert!(!child.unsandboxed);
+    assert_eq!(
+        child.unsandboxed,
+        !sandboxed_here(),
+        "no opt-out of the asking chat's"
+    );
     assert!(held.chats().chat_grants().is_empty());
     // In the steward chat's folder, on its profile: the two things it takes from it.
     assert_eq!(child.cwd.as_deref(), Some(alpha.as_path()));
@@ -7271,7 +7303,11 @@ fn the_person_s_ask_takes_nothing_the_asking_chat_holds_or_was_allowed() {
         .expect("recorded");
     assert_eq!(child.persona.as_deref(), Some("devops"));
     assert_eq!(child.held, None);
-    assert!(!child.unsandboxed);
+    assert_eq!(
+        child.unsandboxed,
+        !sandboxed_here(),
+        "no opt-out of the asking chat's"
+    );
     assert!(child.args.is_empty(), "the profile's own words and no more");
     assert!(held.chats().chat_grants().is_empty());
 }
@@ -8919,6 +8955,8 @@ fn in_a_sandboxed_project_the_person_s_ask_from_an_unsandboxed_chat_is_sandboxed
         format!("[persona]\ndefault = \"steward\"\n{PERSONAS}"),
     )
     .unwrap();
+    // The project's own sandbox, which this test is about.
+    crate::sandboxing::the_projects_sandbox_again_for_tests(&plane.root);
     let host = Pretend::default();
     let planes = planes_on(&host);
     let id = planes.open(&plane.root);
@@ -8937,10 +8975,19 @@ fn in_a_sandboxed_project_the_person_s_ask_from_an_unsandboxed_chat_is_sandboxed
 
     let said = ask_from_the_tab(&held, &id, steward, "devops", "check prod").unwrap_err();
 
-    assert!(
-        said.contains("runs every chat sandboxed") && said.contains("not started sandboxed"),
-        "{said}"
-    );
+    if sandboxed_here() {
+        assert!(
+            said.contains("runs every chat sandboxed") && said.contains("not started sandboxed"),
+            "{said}"
+        );
+    } else {
+        // On Linux a sandboxed Claude Code chat runs only on a sandbox-only profile (ADR 0067
+        // as amended 2026-11-10), which `work` is not: sandboxed, so not started.
+        assert!(
+            said.contains("runs sandboxed") && said.contains("nothing was started"),
+            "{said}"
+        );
+    }
     assert_eq!(open_chats(&held), before, "never started without it");
     // And the slot it held is let go: the next ask is not counted against a chat that
     // never ran.

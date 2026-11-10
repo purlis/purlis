@@ -6,7 +6,7 @@ import {
   anEmptyRecord,
   built,
   copyFixturePlane,
-  declareTheStateRunsProfile,
+  declareTheRunsProfile,
   theRunsEnvironment,
   writeReportingShell,
 } from "./harness.js";
@@ -38,7 +38,7 @@ const environment = theRunsEnvironment(plane, {
   // see them, as in the base run: a skill run's chip (`specs/skill-runs.state.e2e.ts`).
   PURLIS_SKILL_STUDIO: "1",
 });
-declareTheStateRunsProfile(plane, harness, environment);
+declareTheRunsProfile(plane, harness, environment, "codex");
 
 export const config: WebdriverIO.Config = {
   ...base,

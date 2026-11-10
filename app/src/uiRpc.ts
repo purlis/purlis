@@ -3003,11 +3003,11 @@ export type AnswerPath =
  */
 { via: "sign-in"; profile: string; pool: string | null } | 
 /**
- *  Make one sends `make_sandbox_only_profile`, then opens a shell tab where the core types
- *  Codex's own sign-in for the profile it made (`type_profile_sign_in`). Dismiss sends
- *  `dismiss_sandbox_only`.
+ *  Make one sends `make_sandbox_only_profile` for `harness` (the kind's word, `codex` or
+ *  `claude`), then opens a shell tab where the core types the harness's own sign-in for the
+ *  profile it made (`type_profile_sign_in`). Dismiss sends `dismiss_sandbox_only`.
  */
-{ via: "sandbox-only" } | 
+{ via: "sandbox-only"; harness: string } | 
 /**
  *  `remove_old_harness_plugins` for Remove, which holds purlis's proposed change for each
  *  file and opens the first; `dismiss_old_harness_plugins` for Dismiss (#3467).
@@ -3220,8 +3220,9 @@ export type AskSource =
  */
 "sign-in" | 
 /**
- *  A sandboxed Codex chat refused for want of a sandbox-only profile (#2037): answered by
- *  making one and running Codex's own sign-in in it.
+ *  A sandboxed Codex chat, or on Linux a sandboxed Claude Code chat, refused for want of a
+ *  sandbox-only profile (#2037): answered by making one and running the harness's own
+ *  sign-in in it.
  */
 "sandbox-only" | 
 /**

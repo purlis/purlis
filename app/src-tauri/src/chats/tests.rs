@@ -1073,6 +1073,38 @@ pub(crate) fn no_project() -> PathBuf {
     .to_path_buf()
 }
 
+/// **Whether a Claude Code `chat` on no profile, in the project at `project`, starts as in a
+/// project that leaves the sandbox off**, in a test of something else: on Linux, where every
+/// sandboxed Claude Code chat runs inside purlis's wrap, on a sandbox-only profile (ADR 0067 as
+/// amended 2026-11-10), which a chat on no profile does not have, and only where neither the
+/// project nor your level sets a sandbox, so a test that sets one still decides it as the app
+/// does.
+pub(crate) fn claude_left_unsandboxed_here(project: &std::path::Path, chat: &Chat) -> bool {
+    use purlis_core::sandbox::{Plane, personal, policy::Locks};
+    if !crate::sandboxing::claude_is_wrapped_here_for_tests()
+        || chat.harness() != Some(Harness::ClaudeCode)
+    {
+        return false;
+    }
+    let plane = Plane::read(project);
+    !plane.missing()
+        && !plane.unreadable()
+        && plane.in_force(&Locks::of(project)).is_none()
+        && personal::in_force(project)
+            .for_persona(chat.persona.as_deref())
+            .is_none()
+}
+
+/// [`crate::sandboxing::no_claude_sandbox_here_for_tests`] for the project at `root`, whose
+/// chats on a profile `chats` start: where that starts them without the sandbox, `chats` take
+/// the record of it, as the app's event log does (ADR 0067 §7).
+fn no_claude_sandbox_for(chats: &Chats, root: &std::path::Path) {
+    crate::sandboxing::no_claude_sandbox_here_for_tests(root);
+    if crate::sandboxing::claude_is_wrapped_here_for_tests() {
+        chats.when_the_sandbox_is_decided(Box::new(|_| Ok(())));
+    }
+}
+
 fn chat(program: &str, name: &str, resume: Option<&str>) -> Chat {
     Chat {
         program: program.to_owned(),
@@ -4673,6 +4705,7 @@ fn a_waiting_chat_whose_profile_is_approved_then_starts_on_retry_and_asks_nothin
     let root = a_plane_with_work(dir.path(), "");
     let (chats, _) = recorded();
     let chats = chats.in_project(&root);
+    no_claude_sandbox_for(&chats, &root);
     chats.put_back(&one_on_work(&root), SIZE);
     let waiting = chats.would_not_start();
     let asked = waiting[0].approval.clone().expect("it asks");
@@ -8035,6 +8068,9 @@ fn argv_of_a_chat_in(
         shims: None,
         git_hooks: None,
     });
+    // On Linux a sandboxed Claude Code chat runs inside purlis's wrap, on a sandbox-only profile
+    // (ADR 0067 as amended 2026-11-10), which `work` is not: these tests are about its words.
+    no_claude_sandbox_for(&chats, &root);
     let ready = purlis_core::start::ready(
         &purlis_core::start::Start {
             profile: Some("work".to_owned()),

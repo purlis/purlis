@@ -1844,48 +1844,55 @@ fn machine_on(os: Os, home: &Path) -> Machine {
     }
 }
 
-/// On Linux, Claude Code's sandbox puts a denied path that does not exist out of reach of a read
-/// too, and git stops on a home config it cannot read. So the home's git config is made, empty,
-/// before a Claude Code chat starts at the floor there: held as an existing file is, and read
-/// as none.
+/// What `applied` makes, empty, in the home before its chat starts: Claude Code's own sandbox's
+/// settings say, and purlis's wrap makes nothing there ([`claude_wrap::Wrap::settings`]).
+fn made_empty_of(applied: &Applied) -> Vec<PathBuf> {
+    match applied.form() {
+        Form::ClaudeCode(settings) => settings.made_empty.clone(),
+        Form::ClaudeWrapped(wrap) => wrap.settings().made_empty,
+        other => panic!("not Claude Code's: {other:?}"),
+    }
+}
+
+/// On Linux every sandboxed Claude Code chat runs inside purlis's wrap, with Claude Code's own
+/// sandbox off (ADR 0067 as amended 2026-11-10), so nothing is made in the home before it starts
+/// at the floor; and macOS's sandbox reads a denied path that does not exist as none.
 #[test]
-fn on_linux_the_floor_makes_the_homes_git_config_before_a_claude_code_chat_starts() {
+fn a_claude_code_chat_at_the_floor_makes_no_git_config_in_the_home() {
     let (_dir, root) = project();
     let home = Path::new("/home/op");
-    let on_linux = settings_of(&floor_of(decided(
+    let on_linux = floor_of(decided(
         Harness::ClaudeCode,
         &root,
         &machine_on(Os::Linux, home),
-    )));
-    assert_eq!(on_linux.made_empty, vec![home.join(".gitconfig")]);
-    // Still held: made, it is denied as before.
-    assert!(
-        strings(&on_linux.sandbox["filesystem"]["denyWrite"])
-            .contains(&"/home/op/.gitconfig".to_owned()),
-        "{}",
-        on_linux.sandbox
-    );
-    // macOS's sandbox reads a denied path that does not exist as none.
-    let on_macos = settings_of(&floor_of(decided(
+    ));
+    let Form::ClaudeWrapped(wrap) = on_linux.form() else {
+        panic!("inside purlis's wrap: {:?}", on_linux.form());
+    };
+    assert!(wrap.settings().is_off(), "its own sandbox is off");
+    assert!(made_empty_of(&on_linux).is_empty());
+    let on_macos = floor_of(decided(
         Harness::ClaudeCode,
         &root,
         &machine_on(Os::MacOs, home),
-    )));
-    assert!(on_macos.made_empty.is_empty(), "{:?}", on_macos.made_empty);
+    ));
+    assert!(made_empty_of(&on_macos).is_empty());
 }
 
-/// The full sandbox writes no rule on the home's git config, so it needs none made.
+/// The full sandbox makes nothing in the home either.
 #[test]
 fn the_full_sandbox_makes_nothing_in_the_home() {
     let (_dir, root) = project();
     std::fs::write(root.join("charter.toml"), "[sandbox]\nmode = \"on\"\n").expect("charter.toml");
-    let applied = floor_of(decided(
-        Harness::ClaudeCode,
-        &root,
-        &machine_on(Os::Linux, Path::new("/home/op")),
-    ));
-    assert_eq!(applied.level(), Level::Full);
-    assert!(settings_of(&applied).made_empty.is_empty());
+    for os in [Os::MacOs, Os::Linux] {
+        let applied = floor_of(decided(
+            Harness::ClaudeCode,
+            &root,
+            &machine_on(os, Path::new("/home/op")),
+        ));
+        assert_eq!(applied.level(), Level::Full, "{os:?}");
+        assert!(made_empty_of(&applied).is_empty(), "{os:?}");
+    }
 }
 
 /// What is made is an empty file where there is nothing: a file already there keeps what it
@@ -1895,11 +1902,14 @@ fn the_homes_git_config_is_made_empty_only_where_there_is_none() {
     let (_dir, root) = project();
     let home = tempfile::tempdir().expect("a home");
     let home = home.path().canonicalize().expect("a real folder");
-    let settings = settings_of(&floor_of(decided(
+    let mut settings = settings_of(&floor_of(decided(
         Harness::ClaudeCode,
         &root,
-        &machine_on(Os::Linux, &home),
+        &machine_on(Os::MacOs, &home),
     )));
+    // The home's git config, as Claude Code's own sandbox asks for it where a denied path that
+    // does not exist is out of reach of a read too.
+    settings.made_empty = vec![home.join(".gitconfig")];
     let config = home.join(".gitconfig");
 
     settings.make_empty();

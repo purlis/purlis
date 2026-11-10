@@ -1498,18 +1498,30 @@ fn served_by_purlis(asker: &Asker, wanted: Wanted) -> Vec<Frame> {
         .collect()
 }
 
-/// On Linux a Claude Code chat hands a value to a command by file only: a run asking for
-/// `--env` is refused with what to run instead, before any value is read or anything is run,
-/// a declared tool's among them.
+/// A Claude Code chat on its own sandbox hands a value to a command by file only where purlis's
+/// wrap serves its runs: a run asking for `--env` is refused with what to run instead, before
+/// any value is read or anything is run, a declared tool's among them. On Linux every sandboxed
+/// Claude Code chat runs whole inside purlis's wrap (ADR 0067 as amended 2026-11-10), as a Codex
+/// chat does, and its `--env` is not refused for it.
 #[test]
-fn on_linux_a_claude_code_chats_env_hand_over_is_refused_with_the_file_one_to_use() {
+fn a_claude_code_chats_env_hand_over_is_refused_with_the_file_one_to_use_unless_purlis_wraps_it_whole()
+ {
     let project = project();
     let root = project.path().canonicalize().unwrap();
     let marker = root.join("work/ran");
+    // What a Claude Code chat on its own sandbox records: not whole, as on macOS.
+    let on_its_own = Machine {
+        os: Os::MacOs,
+        ..machine()
+    };
     let (asker, want) = as_tool(
-        asker(&root, Some("devops")),
+        Asker {
+            confines: Some(confines_of(Harness::ClaudeCode, &root, &on_its_own)),
+            ..asker(&root, Some("devops"))
+        },
         wanted(&root, "team", sh(&format!("touch {}", marker.display()))),
     );
+    assert!(!asker.confines.as_ref().expect("held").whole, "the premise");
     assert_eq!(want.env, ["X=TOKEN"], "handed by env");
     let frames = served_by_purlis(&asker, want);
     assert_eq!(refusal(&frames), ENV_REFUSED, "{frames:?}");
@@ -1519,6 +1531,27 @@ fn on_linux_a_claude_code_chats_env_hand_over_is_refused_with_the_file_one_to_us
     assert!(
         std::fs::read_dir(&exec_dir).map_or(true, |mut d| d.next().is_none()),
         "nothing was read for it"
+    );
+
+    // On Linux, wrapped whole: its `--env` goes past this refusal.
+    let linux = Machine {
+        os: Os::Linux,
+        ..machine()
+    };
+    let (asker, want) = as_tool(
+        Asker {
+            confines: Some(confines_of(Harness::ClaudeCode, &root, &linux)),
+            ..asker(&root, Some("devops"))
+        },
+        wanted(&root, "team", sh("true")),
+    );
+    assert!(asker.confines.as_ref().expect("held").whole, "the premise");
+    let frames = served_by_purlis(&asker, want);
+    assert!(
+        !frames
+            .iter()
+            .any(|frame| matches!(frame, Frame::Refused { why, .. } if why == ENV_REFUSED)),
+        "{frames:?}"
     );
 }
 

@@ -131,7 +131,13 @@ fn in_a_docker_pool() {
         let chat = Named {
             workspace: Some(workspace.to_owned()),
             runs_on: start,
-            ..named("carry on with the plan", false)
+            // A chat run on this machine, where purlis wraps a Claude Code chat, runs sandboxed
+            // only on a sandbox-only profile (ADR 0067 as amended 2026-11-10); this test is about
+            // where it runs, so it starts with the person's opt-out there.
+            ..named(
+                "carry on with the plan",
+                !on_its_runner && super::without_claudes_sandbox_here(),
+            )
         };
         let id = window
             .open_named(None, &chat, Hearing::default(), &|_| {})

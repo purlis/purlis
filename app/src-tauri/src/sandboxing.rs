@@ -772,6 +772,51 @@ pub(crate) fn no_sandbox_here_for_tests(root: &std::path::Path) {
     personal::set_by_you(root, None, Some(Choice::Off)).expect("your level");
 }
 
+/// **In a test of something else, where purlis wraps a Claude Code chat** (Linux; ADR 0067 as
+/// amended 2026-11-10): [`no_sandbox_here_for_tests`]. There a sandboxed Claude Code chat runs
+/// only on a sandbox-only profile, which a stand-in on a project's profile is not; elsewhere the
+/// chat starts sandboxed as it did.
+#[cfg(test)]
+pub(crate) fn no_claude_sandbox_here_for_tests(root: &std::path::Path) {
+    if claude_is_wrapped_here_for_tests() {
+        no_sandbox_here_for_tests(root);
+    }
+}
+
+/// **In a test: whether purlis wraps a Claude Code chat on this machine** (Linux; ADR 0067 as
+/// amended 2026-11-10), where a sandboxed one runs only on a sandbox-only profile.
+#[cfg(test)]
+pub(crate) fn claude_is_wrapped_here_for_tests() -> bool {
+    purlis_core::sandbox::Machine::this().purlis_wraps(purlis_core::harness::Harness::ClaudeCode)
+}
+
+/// **In a test of something else, where purlis wraps a Claude Code chat**: `planes`, taking
+/// every event it records, so the chat [`no_claude_sandbox_here_for_tests`] starts without the
+/// sandbox has its level recorded, as the app's is (ADR 0067 §7). Elsewhere `planes` as it is.
+#[cfg(test)]
+pub(crate) fn taking_events_where_claude_is_wrapped_for_tests(
+    planes: crate::planes::Planes,
+) -> crate::planes::Planes {
+    if claude_is_wrapped_here_for_tests() {
+        planes.recording_events(Some(crate::hooks::Events::in_the_host(|_| Ok(()))))
+    } else {
+        planes
+    }
+}
+
+/// **In a test whose subject is the sandbox**, in a plane [`no_claude_sandbox_here_for_tests`]
+/// started without it: the project's own level again, as before that call.
+#[cfg(test)]
+pub(crate) fn the_projects_sandbox_again_for_tests(root: &std::path::Path) {
+    use purlis_core::sandbox::personal;
+    let local = root.join(purlis_core::profiles::LOCAL_FILE);
+    let text = std::fs::read_to_string(&local).unwrap_or_default();
+    if let Some(rest) = text.strip_prefix("[sandbox]\nlevel = \"off\"\n\n") {
+        std::fs::write(&local, rest).expect("the local file");
+    }
+    personal::set_by_you(root, None, None).expect("your level");
+}
+
 /// **In a test: `planes`, keeping an event log at `at`**, so a chat started without the
 /// sandbox is started once that is recorded (ADR 0067 §7).
 #[cfg(test)]

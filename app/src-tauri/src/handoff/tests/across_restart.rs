@@ -75,11 +75,11 @@ fn reopens(
 /// Planes on `host` whose kill switch is kept in `config`, as the app's are.
 fn planes_kept_in(host: &Pretend, config: &Path) -> Planes {
     let host = host.clone();
-    Planes::telling(
+    crate::sandboxing::taking_events_where_claude_is_wrapped_for_tests(Planes::telling(
         Arc::new(|_| {}),
         crate::Shipped::default(),
         Some(config.to_path_buf()),
-    )
+    ))
     .running_sessions_on(Arc::new(move |_, _: &std::path::Path| {
         Box::new(host.clone())
     }))
@@ -1366,6 +1366,8 @@ fn a_plane_whose_harness_leaves_a_shell_then(then: &str) -> Plane {
         &purlis_core::profiletrust::fingerprint(set.get("work").expect("the profile reads")),
     )
     .expect("approved");
+    // The profile was written again whole, so its chats start as `Plane::new`'s do.
+    crate::sandboxing::no_claude_sandbox_here_for_tests(&plane.root);
     plane
 }
 

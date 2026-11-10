@@ -110,6 +110,9 @@ fn a_claude_chat_on_a_profile_made_here_runs_with_its_config_folder_at_the_profi
     fs::write(settings.join("settings.json"), "{\"theme\": \"dark\"}\n").unwrap();
     let record = made("work", "claude", "CLAUDE_CONFIG_DIR", &settings);
     let plane = project();
+    // What is asked is the folder: on Linux a sandboxed Claude Code chat runs inside purlis's
+    // wrap, on a sandbox-only profile, which `work` is not (ADR 0067 as amended 2026-11-10).
+    crate::support::no_claude_sandbox_here(plane.path());
 
     let ready = start::ready(&start_on("work", plane.path()), plane.path()).expect("it starts");
 
@@ -169,6 +172,14 @@ fn an_opencode_chat_on_a_profile_made_here_has_both_its_folders_at_the_profiles(
 #[test]
 fn a_sandboxed_claude_chat_on_a_profile_made_here_keeps_its_sign_in_file_from_its_commands() {
     purlis_core::unsteered!();
+    // Claude Code's own sandbox keeps the file from its commands. On Linux every sandboxed Claude
+    // Code chat runs inside purlis's wrap instead, on a sandbox-only profile, whose commands are
+    // held to the same wrap as the harness that reads the file (ADR 0067 as amended
+    // 2026-11-10), which the test below starts.
+    if purlis_core::sandbox::Machine::this().purlis_wraps(purlis_core::harness::Harness::ClaudeCode)
+    {
+        return;
+    }
     let Some(_data) = in_a_data_home_of_its_own(
         "a_chat_on_a_profile_made_here_runs_in_its_folder::a_sandboxed_claude_chat_on_a_profile_made_here_keeps_its_sign_in_file_from_its_commands",
     ) else {
@@ -295,9 +306,9 @@ fn on_linux_a_sandboxed_claude_code_chat_starts_inside_purlis_s_wrap_and_only_on
         matches!(applied.form(), purlis_core::sandbox::Form::ClaudeWrapped(_)),
         "wrapped by purlis"
     );
-    let refused = started("every")
-        .err()
-        .expect("refused on a profile for every chat");
+    let Err(refused) = started("every") else {
+        panic!("refused on a profile for every chat");
+    };
     assert!(
         refused.contains("Claude Code needs a sandbox-only profile here"),
         "{refused}"
