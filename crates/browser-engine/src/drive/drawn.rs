@@ -16,7 +16,9 @@
 //!
 //! On a page whose site a text was kept out on ([`Drawn::pictured`]), it also paints over every canvas,
 //! image, video and embedded object, and every element drawn with an image or a paint script:
-//! what they show cannot be read, so they are painted whatever they show.
+//! what they show cannot be read, so they are painted whatever they show. Each is widened by the
+//! `drop-shadow(…)` filters it is drawn through, and on such a page one drawn through a filter
+//! whose reach cannot be read ([`Drawn::pictured_unread`]) withholds the screenshot.
 //!
 //! A text's shadow (`text-shadow`) or a `drop-shadow(…)` filter, on what is painted or on an
 //! element around it, widens its paint by as far as the shadow reaches ([`Drawn::reach`]),
@@ -75,14 +77,19 @@ pub(crate) struct Drawn {
     /// What cannot be read (a canvas, an image…), as [`Drawn::paint`]: painted on a page whose
     /// site a text was kept out on.
     pub pictured: Vec<Vec<i64>>,
+    /// Whether an item of [`Drawn::pictured`] is drawn through a filter, its own or one of an
+    /// element around it, whose reach cannot be read (a filter of the page's own, `url(…)`, or a
+    /// shadow in other lengths): a screenshot that paints the pictured items is withheld. The
+    /// reach of each that can be read is in [`Drawn::reach`].
+    pub pictured_unread: bool,
     /// The address of the first document read: what the page shows, whatever it was told.
     pub address: Option<String>,
     /// Each frame element whose document this read does not hold, as [`Drawn::paint`]: painted
     /// unless that document is read in a session of its own.
     pub frames: Vec<Vec<i64>>,
-    /// How far past its box each item painted (the first of a [`Drawn::paint`] chain) or blanked
-    /// element draws a shadow, by the engine's id: its paint is widened by as much. An item
-    /// with no shadow is not listed.
+    /// How far past its box each item painted (the first of a [`Drawn::paint`] or
+    /// [`Drawn::pictured`] chain) or blanked element draws a shadow, by the engine's id: its paint
+    /// is widened by as much. An item with no shadow is not listed.
     pub reach: HashMap<i64, Reach>,
 }
 
@@ -306,6 +313,8 @@ fn read_document(
     // How far past its box each element draws its text's shadow (`None` where that cannot be
     // read).
     let mut shadowed: Vec<Option<Reach>> = vec![Some(Reach::default()); count];
+    // What cannot be read (a canvas, an image…), as listed in `out.pictured`.
+    let mut pictures: Vec<usize> = Vec::new();
     for (entry, node) in laid.iter().enumerate() {
         let at = node_at(*node)?;
         shown.insert(at);
@@ -354,6 +363,7 @@ fn read_document(
                 && attribute(&attributes[at], &string, "type")?.eq_ignore_ascii_case("image"));
         if pictured {
             out.pictured.push(chain(at));
+            pictures.push(at);
         }
         if FRAMES.contains(&name.as_str()) && !contents.iter().any(|(i, _)| *i == at) {
             out.frames.push(chain(at));
@@ -562,6 +572,28 @@ fn read_document(
         if widened != Reach::default() {
             let was = out.reach.entry(backends[at]).or_default();
             *was = was.or(widened);
+        }
+    }
+    // What cannot be read is widened by the shadows of the filters of it and of every element
+    // around it, one drawn through the next; one whose reach cannot be read is flagged, as it
+    // withholds only a screenshot that paints what cannot be read. A text's shadow draws its
+    // text, not what an image or a canvas shows.
+    for at in pictures {
+        let mut widened = Some(Reach::default());
+        let mut next = Some(at);
+        let mut steps = 0;
+        while let Some(up) = next {
+            widened = widened.zip(filter_reach[up]).map(|(a, b)| a.and(b));
+            steps += 1;
+            next = parent(up).filter(|_| steps <= count);
+        }
+        match widened {
+            None => out.pictured_unread = true,
+            Some(widened) if widened != Reach::default() => {
+                let was = out.reach.entry(backends[at]).or_default();
+                *was = was.or(widened);
+            }
+            Some(_) => {}
         }
     }
     Ok(())

@@ -1217,3 +1217,84 @@ fn a_painted_email_under_an_inherited_text_shadow_and_a_drop_shadow_is_widened_b
     };
     assert_eq!(reach, vec![(152, widened)]);
 }
+
+/// A canvas (node 125, drawn at (8, 8) to (9, 9)) inside a box (node 126) drawn through
+/// `filter`, on `target`'s page at `url`, beside the Secret word field (node 21).
+fn a_canvas_drawn_through(engine: &super::Engine, target: &str, url: &str, filter: &str) {
+    let mut page = Document::at(target, url);
+    let around = page.element(126, None, "DIV");
+    page.node(around).laid_out = Some((None, vec![("filter".into(), filter.into())]));
+    page.element(125, Some(around), "CANVAS");
+    page.element(21, None, "INPUT");
+    draws(
+        engine,
+        &format!("S-{target}"),
+        &page,
+        &[(125, [8.0, 8.0, 9.0, 9.0])],
+    );
+}
+
+#[test]
+fn a_canvas_drawn_through_a_drop_shadow_is_painted_over_with_its_shadow() {
+    let (browser, engine) = browser();
+    a_canvas_drawn_through(
+        &engine,
+        "PAGE-1",
+        "http://fixture.test/frames.html",
+        "drop-shadow(rgb(0, 0, 0) 0px -9px 0px)",
+    );
+    keep_out_the_secret(&browser);
+
+    let after = shot(&browser, 1);
+
+    // The canvas's box runs up to 8, and 2 more of margin; its shadow 10 more.
+    assert_eq!(pixel(&after, 9, 0), GREY, "{after:?}");
+}
+
+#[test]
+fn a_screenshot_is_withheld_when_a_canvas_is_drawn_through_a_filter_whose_reach_cannot_be_read() {
+    for filter in ["url(\"#moved\")", "drop-shadow(rgb(0, 0, 0) 0px 0px 1em)"] {
+        let (browser, engine) = browser();
+        a_canvas_drawn_through(&engine, "PAGE-1", "http://fixture.test/frames.html", filter);
+        keep_out_the_secret(&browser);
+
+        let shot = browser.call(&id(1), Call::Screenshot { page: None });
+
+        assert!(
+            matches!(shot, Err(Refusal::Withheld(_))),
+            "{filter}: {shot:?}"
+        );
+    }
+}
+
+#[test]
+fn another_sites_canvas_drawn_through_a_filter_whose_reach_cannot_be_read_is_shown() {
+    let (browser, engine) = browser();
+    keep_out_the_secret(&browser);
+    let other = a_page_opens(&engine, "PAGE-8", "https://shop.example.com/", None);
+    a_canvas_drawn_through(
+        &engine,
+        "PAGE-8",
+        "https://shop.example.com/",
+        "url(\"#moved\")",
+    );
+
+    let after = shot_of(&browser, &other, 1);
+
+    assert_eq!(pixel(&after, 9, 9), WHITE);
+}
+
+#[test]
+fn a_canvas_drawn_through_a_filter_of_the_pages_own_is_flagged_and_not_painted_for_it() {
+    let mut page = Document::new("PAGE-1");
+    let around = page.element(126, None, "DIV");
+    page.node(around).laid_out = Some((None, vec![("filter".into(), "url(\"#moved\")".into())]));
+    page.element(125, Some(around), "CANVAS");
+
+    let found =
+        crate::drive::drawn::drawn(&page.answer(), &["open sesame"], &[], &Default::default())
+            .unwrap();
+
+    assert!(found.pictured_unread);
+    assert!(found.paint.is_empty(), "{:?}", found.paint);
+}
