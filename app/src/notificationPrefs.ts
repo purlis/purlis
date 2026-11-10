@@ -31,11 +31,31 @@ export type NotificationPrefs = {
    * always notifies. The core reads it here (`asknotify.rs`, `finished_after_of_layout`).
    */
   finishedAfter: number;
+  /**
+   * **The Should-know notifications the person turned off** (#6019, ADR 0121 decision 22), by
+   * the kind of update each tells of: a failed task (`task-failed`) and a long finish while away
+   * (`task-done`). None until they turn one off. A Blocking ask is no source: it always
+   * notifies. The core reads it here (`asknotify.rs`, `Sources::of_layout`).
+   */
+  off: readonly Source[];
+  /**
+   * **A sound for an Expiring ask about to fail** (ADR 0121 decision 12): off until the person
+   * turns it on. Kept for the sound, which purlis does not play yet (#6110).
+   */
+  expiringSound: boolean;
 };
+
+/** The kinds of update whose notification can be turned off: every Should-know one that notifies. */
+export const SOURCES = ["task-failed", "task-done"] as const;
+export type Source = (typeof SOURCES)[number];
+
+const isSource = (kind: unknown): kind is Source => SOURCES.includes(kind as Source);
 
 export const DEFAULT_NOTIFICATIONS: NotificationPrefs = {
   quiet: { on: false, from: "22:00", to: "07:00" },
   finishedAfter: 5,
+  off: [],
+  expiringSound: false,
 };
 
 /** Whether `value` is a long finish as the core reads one: a whole number of minutes above none. */
@@ -83,14 +103,38 @@ export function loadNotifications(raw: unknown): { prefs: NotificationPrefs; sai
     said.push(
       `"notifications.finishedAfter" ${JSON.stringify(held.finishedAfter)} is not a whole number of minutes, so it is ${finishedAfter}`,
     );
-  return { prefs: { quiet: { on, from: time("from"), to: time("to") }, finishedAfter }, said };
+  let off: Source[] = [];
+  if (Array.isArray(held.off)) {
+    off = SOURCES.filter((kind) => (held.off as unknown[]).includes(kind));
+    const strays = held.off.filter((kind) => !isSource(kind));
+    if (strays.length > 0)
+      said.push(
+        `"notifications.off" names ${JSON.stringify(strays)}, which no notification is, so they are left out`,
+      );
+  } else if (held.off !== undefined)
+    said.push(
+      `"notifications.off" ${JSON.stringify(held.off)} is not a list of kinds, so every notification is on`,
+    );
+  let expiringSound = DEFAULT_NOTIFICATIONS.expiringSound;
+  if (typeof held.expiringSound === "boolean") expiringSound = held.expiringSound;
+  else if (held.expiringSound !== undefined)
+    said.push(
+      `"notifications.expiringSound" ${JSON.stringify(held.expiringSound)} is not true or false, so it is false`,
+    );
+  return {
+    prefs: { quiet: { on, from: time("from"), to: time("to") }, finishedAfter, off, expiringSound },
+    said,
+  };
 }
 
 const sameQuiet = (one: QuietHours, other: QuietHours) =>
   one.on === other.on && one.from === other.from && one.to === other.to;
 
 const same = (one: NotificationPrefs, other: NotificationPrefs) =>
-  sameQuiet(one.quiet, other.quiet) && one.finishedAfter === other.finishedAfter;
+  sameQuiet(one.quiet, other.quiet) &&
+  one.finishedAfter === other.finishedAfter &&
+  one.off.join() === other.off.join() &&
+  one.expiringSound === other.expiringSound;
 
 /** The store (`layoutPref.ts`), under `notifications`. */
 export const NOTIFICATIONS = layoutPref<NotificationPrefs, "notifications">({
@@ -107,9 +151,11 @@ export const NOTIFICATIONS = layoutPref<NotificationPrefs, "notifications">({
     if (!sameQuiet(prefs.quiet, DEFAULT_NOTIFICATIONS.quiet)) kept.quiet = prefs.quiet;
     if (prefs.finishedAfter !== DEFAULT_NOTIFICATIONS.finishedAfter)
       kept.finishedAfter = prefs.finishedAfter;
+    if (prefs.off.length > 0) kept.off = prefs.off;
+    if (prefs.expiringSound) kept.expiringSound = true;
     return Object.keys(kept).length === 0 ? undefined : kept;
   },
-  remedy: (where) => `fix ${where}, or change Notifications in Settings, which rewrites it`,
+  remedy: (where) => `fix ${where}, or change Attention in Settings, which rewrites it`,
   settings: "you.notifications",
 });
 
@@ -131,4 +177,16 @@ export function setFinishedAfter(minutes: number): void {
 /** {@link notificationPrefs}, for a component that redraws when they change. */
 export function useNotificationPrefs(): NotificationPrefs {
   return NOTIFICATIONS.use();
+}
+
+/** Turns the notification of `source` on or off, keeping the kinds in their one order. */
+export function setSourceOn(source: Source, on: boolean): void {
+  const was = notificationPrefs().off;
+  const off = SOURCES.filter((kind) => (kind === source ? !on : was.includes(kind)));
+  NOTIFICATIONS.set({ ...notificationPrefs(), off });
+}
+
+/** Turns the Expiring sound on or off. */
+export function setExpiringSound(on: boolean): void {
+  NOTIFICATIONS.set({ ...notificationPrefs(), expiringSound: on });
 }

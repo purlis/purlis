@@ -1530,6 +1530,13 @@ impl SessionHost for RoutedSessions {
         }
     }
 
+    fn skills_not_there_left(&self, number: u32) -> Option<crate::host::RunnersLack> {
+        match self.host_of(number) {
+            Some(host) => host.skills_not_there_left(number),
+            None => self.here.skills_not_there_left(number),
+        }
+    }
+
     fn ran_in(&self, number: u32) -> Option<purlis_session_protocol::session::RunSandbox> {
         match self.host_of(number) {
             Some(host) => host.ran_in(number),

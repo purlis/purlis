@@ -72,42 +72,69 @@ impl Plane {
         std::fs::write(root.join(purlis_core::plane::MANIFEST), "").expect("charter.toml");
         let runs = root.join("runs");
         std::fs::create_dir_all(&runs).expect("runs");
-        // Outside the project, and answering as Claude Code where it stands in for it: the floor
-        // starts no program the chat could have written, and asks the one it starts what it is
-        // (#2071).
-        let program = stand_in::claude_code(
-            dir.path(),
-            "claude-stand-in",
-            // And then stays running, as a harness does: a chat whose program has ended is
-            // one a report cannot reach, and the tests below are about one that is there.
-            &format!(
-                "#!/bin/sh\nat=$(mktemp {runs:?}/.writing.XXXXXX) || exit 1\n\
-                     for a in \"$@\"; do printf '%s\\0' \"$a\"; done > \"$at\"\n\
-                     mv \"$at\" {runs:?}/run.$$\n\
-                     sleep 10\n"
-            ),
+        // And then stays running, as a harness does: a chat whose program has ended is one a
+        // report cannot reach, and the tests below are about one that is there.
+        let script = format!(
+            "#!/bin/sh\nat=$(mktemp {runs:?}/.writing.XXXXXX) || exit 1\n\
+                 for a in \"$@\"; do printf '%s\\0' \"$a\"; done > \"$at\"\n\
+                 mv \"$at\" {runs:?}/run.$$\n\
+                 sleep 10\n"
         );
+        let plane = Self { _dir: dir, root };
+        if on_a_sandbox_only_stand_in() {
+            // The child [`ran_on_a_sandbox_only_stand_in`] started: `work` is this machine's
+            // sandbox-only profile, in the test's own homes. The project's own file offers no
+            // `work` of its own, and holds the profiles and personas a test adds.
+            // Made once in the child: a test that lays out a second plane finds it there.
+            let homes = purlis_core::profilestore::Homes::here().expect("the test's homes");
+            let made = purlis_core::profilestore::list(homes.config_root())
+                .expect("this machine's profiles")
+                .iter()
+                .any(|profile| profile.name == "work");
+            if !made {
+                purlis_core::profilestore::create_sandbox_only(&homes, "work", "claude", 1)
+                    .expect("the sandbox-only profile is made");
+            }
+            std::fs::write(plane.root.join(purlis_core::profiles::LOCAL_FILE), "")
+                .expect("the local file");
+        }
+        plane.work_runs("claude-stand-in", &script);
+        plane
+    }
+
+    /// **`work`'s Claude Code is a stand-in running `script`**, written as `name`. In the child
+    /// [`ran_on_a_sandbox_only_stand_in`] started it is the `claude` first on the child's `PATH`,
+    /// beside the build, which this machine's sandbox-only `work` finds: a sandboxed start
+    /// refuses a program in the system's temporary folders, which a chat may write. Elsewhere it
+    /// is the project's own profile `work`, approved, outside the project, and answering as
+    /// Claude Code where it stands in for it: the floor starts no program the chat could have
+    /// written, and asks the one it starts what it is (#2071).
+    fn work_runs(&self, name: &str, script: &str) {
+        if let Some(bin) = std::env::var_os(SANDBOX_ONLY_STAND_IN_BIN) {
+            stand_in::claude_code(Path::new(&bin), "claude", script);
+            return;
+        }
+        let program = stand_in::claude_code(self._dir.path(), name, script);
         std::fs::write(
-            root.join(purlis_core::profiles::LOCAL_FILE),
+            self.root.join(purlis_core::profiles::LOCAL_FILE),
             format!(
                 "[harness.work]\nkind = \"claude\"\ncommand = [{:?}]\n",
                 program.display().to_string()
             ),
         )
         .expect("the profile");
-        let set = purlis_core::profiles::current(&root);
+        let set = purlis_core::profiles::current(&self.root);
         let work = set.get("work").expect("the profile reads");
         purlis_core::profiletrust::record_launched(
-            &root,
+            &self.root,
             "work",
             &purlis_core::profiletrust::fingerprint(work),
         )
         .expect("approved");
         // On Linux a sandboxed Claude Code chat runs inside purlis's wrap, on a sandbox-only
-        // profile (ADR 0067 as amended 2026-11-10), which `work` is not: these tests are about
-        // handoffs, so there its chats start without the sandbox.
-        crate::sandboxing::no_claude_sandbox_here_for_tests(&root);
-        Self { _dir: dir, root }
+        // profile (ADR 0067 as amended 2026-11-10), which `work` is not: a test of something
+        // else there starts its chats without the sandbox.
+        crate::sandboxing::no_claude_sandbox_here_for_tests(&self.root);
     }
 
     /// The argv of every run of the stand-in that has finished writing it.
@@ -180,11 +207,16 @@ impl Plane {
     /// command switches the harness's permission prompts off.
     fn with_a_profile_that_asks_nobody(self, name: &str) -> Self {
         let local = self.root.join(purlis_core::profiles::LOCAL_FILE);
-        let work = purlis_core::profiles::current(&self.root)
-            .get("work")
-            .expect("work reads")
-            .command[0]
-            .clone();
+        // `work`'s own stand-in: on the sandbox-only `work` of the child
+        // [`ran_on_a_sandbox_only_stand_in`] started, the `claude` its `PATH` finds.
+        let work = match std::env::var_os(SANDBOX_ONLY_STAND_IN_BIN) {
+            Some(bin) => Path::new(&bin).join("claude").display().to_string(),
+            None => purlis_core::profiles::current(&self.root)
+                .get("work")
+                .expect("work reads")
+                .command[0]
+                .clone(),
+        };
         let mut text = std::fs::read_to_string(&local).expect("the local file");
         text.push_str(&format!(
                 "[harness.{name}]\nkind = \"claude\"\ncommand = [{work:?}, \"--dangerously-skip-permissions\"]\n"
@@ -627,18 +659,61 @@ fn planes() -> Planes {
 }
 
 /// Whether a chat on a [`Plane::new`]'s `work` runs sandboxed: everywhere but where purlis wraps
-/// a Claude Code chat, where it starts without the sandbox, at the level `Plane::new` set.
+/// a Claude Code chat, where it starts without the sandbox, at the level `Plane::new` set, unless
+/// `work` is the sandbox-only profile of [`ran_on_a_sandbox_only_stand_in`]'s child.
 fn sandboxed_here() -> bool {
-    !crate::sandboxing::claude_is_wrapped_here_for_tests()
+    !crate::sandboxing::claude_is_wrapped_here_for_tests() || on_a_sandbox_only_stand_in()
 }
 
-/// **Whether a test that needs this module's Claude Code stand-in sandboxed, or started for a
-/// task through the session host, has nothing to run on here**: where purlis wraps a Claude
-/// Code chat, which runs sandboxed only on a sandbox-only profile (ADR 0067 as amended
-/// 2026-11-10), and [`Plane::new`]'s `work` is a project's profile. Such a test is checked on
-/// every other system until the stand-in has a sandbox-only profile of its own here.
-pub(super) fn no_sandboxed_claude_code_stand_in_here() -> bool {
-    crate::sandboxing::claude_is_wrapped_here_for_tests()
+/// Set on the child [`ran_on_a_sandbox_only_stand_in`] started: the folder, first on its `PATH`,
+/// that [`Plane::new`] writes its stand-in `claude` into.
+const SANDBOX_ONLY_STAND_IN_BIN: &str = "PURLIS_TEST_SANDBOX_ONLY_STAND_IN_BIN";
+
+/// Whether this is the child [`ran_on_a_sandbox_only_stand_in`] started, where [`Plane::new`]'s
+/// `work` is this machine's sandbox-only profile.
+fn on_a_sandbox_only_stand_in() -> bool {
+    std::env::var_os(SANDBOX_ONLY_STAND_IN_BIN).is_some()
+}
+
+/// **For a test that needs this module's Claude Code stand-in sandboxed, or started for a task
+/// through the session host: whether it ran in a child, and the caller returns.** Where purlis
+/// wraps a Claude Code chat, a sandboxed one runs only on a sandbox-only profile (ADR 0067 as
+/// amended 2026-11-10), which a project's profile is not. There the calling test (named by its
+/// thread, as libtest names it) runs again in a child whose data and config homes are a folder
+/// of its own, where [`Plane::new`] makes `work` this machine's sandbox-only profile, with the
+/// stand-in as the `claude` its `PATH` finds. Elsewhere, and in that child, the test goes on
+/// here, on [`Plane::new`]'s project profile `work`.
+pub(super) fn ran_on_a_sandbox_only_stand_in() -> bool {
+    if !crate::sandboxing::claude_is_wrapped_here_for_tests() || on_a_sandbox_only_stand_in() {
+        return false;
+    }
+    let test = std::thread::current()
+        .name()
+        .expect("libtest names a test's thread")
+        .to_owned();
+    let homes = tempfile::tempdir().expect("a folder for the homes");
+    // Beside the build, outside the system's temporary folders: a sandboxed start refuses a
+    // program a chat could have written.
+    let beside_the_build = std::env::current_exe()
+        .expect("the test binary")
+        .parent()
+        .expect("its folder")
+        .to_path_buf();
+    let bin = tempfile::tempdir_in(beside_the_build).expect("a folder for the stand-in");
+    let path = std::env::join_paths(std::iter::once(bin.path().to_path_buf()).chain(
+        std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
+    ))
+    .expect("a PATH");
+    purlis_core::testrun::rerun_steered(
+        &[&test],
+        &[
+            (purlis_core::datahome::HOME_VAR, homes.path().as_os_str()),
+            (purlis_core::machine::HOME_VAR, homes.path().as_os_str()),
+            (SANDBOX_ONLY_STAND_IN_BIN, bin.path().as_os_str()),
+            ("PATH", path.as_os_str()),
+        ],
+    );
+    true
 }
 
 /// [`planes`], keeping an event log at `at`: a chat a person starts without the sandbox is
@@ -2229,7 +2304,7 @@ fn a_task_whose_turn_ends_is_not_counted_as_needing_you() {
 
 #[test]
 fn a_task_the_person_started_from_a_tab_is_recorded_as_asked_by_the_person() {
-    if no_sandboxed_claude_code_stand_in_here() {
+    if ran_on_a_sandbox_only_stand_in() {
         return;
     }
     let plane = a_plane_with_personas();
@@ -7088,7 +7163,7 @@ fn ask_from_the_tab(
 
 #[test]
 fn the_person_s_ask_names_where_the_new_chat_works_and_a_refusal_is_in_the_window_s_words() {
-    if no_sandboxed_claude_code_stand_in_here() {
+    if ran_on_a_sandbox_only_stand_in() {
         return;
     }
     // #1453: "Ask <persona>…" offers the same three places a chat's dispatch has, and the
@@ -7170,7 +7245,7 @@ fn may_use_prod(held: &Held, chat: u32) -> Result<(), String> {
 
 #[test]
 fn from_a_steward_chat_ask_devops_starts_a_devops_chat_that_may_use_the_devops_vault() {
-    if no_sandboxed_claude_code_stand_in_here() {
+    if ran_on_a_sandbox_only_stand_in() {
         return;
     }
     // The operator's case of 2026-10-07: a steward chat is refused the devops vault, and
@@ -7263,7 +7338,7 @@ fn from_a_steward_chat_ask_devops_starts_a_devops_chat_that_may_use_the_devops_v
 
 #[test]
 fn a_task_whose_asking_chat_has_closed_still_cannot_dispatch_back_to_its_persona() {
-    if no_sandboxed_claude_code_stand_in_here() {
+    if ran_on_a_sandbox_only_stand_in() {
         return;
     }
     // #1521: the person asks devops from a steward chat's tab, then closes the steward
@@ -7362,7 +7437,7 @@ fn the_person_s_ask_takes_nothing_the_asking_chat_holds_or_was_allowed() {
 
 #[test]
 fn the_report_on_a_task_the_person_started_reaches_the_chat_it_was_launched_from_marked_so() {
-    if no_sandboxed_claude_code_stand_in_here() {
+    if ran_on_a_sandbox_only_stand_in() {
         return;
     }
     let plane = a_plane_with_personas();
@@ -7462,7 +7537,7 @@ fn no_hook_line_starts_a_dispatch_as_the_person() {
 
 #[test]
 fn the_person_s_ask_is_held_to_the_same_checks_and_limits_and_refused_in_the_person_s_words() {
-    if no_sandboxed_claude_code_stand_in_here() {
+    if ran_on_a_sandbox_only_stand_in() {
         return;
     }
     let plane = a_plane_with_personas();
@@ -7605,7 +7680,7 @@ fn no_refusal_the_person_reads_tells_them_what_a_chat_would_do() {
 
 #[test]
 fn the_person_s_ask_runs_under_the_limits_the_project_sets() {
-    if no_sandboxed_claude_code_stand_in_here() {
+    if ran_on_a_sandbox_only_stand_in() {
         return;
     }
     // The project lets one chat have one persona chat running.
@@ -7873,7 +7948,7 @@ fn a_killed_persona_chat_gives_its_asking_chat_failed_within_a_bounded_time() {
 
 #[test]
 fn a_refusal_with_nobody_there_is_kept_with_the_workspace_its_task_would_have_worked_in() {
-    if no_sandboxed_claude_code_stand_in_here() {
+    if ran_on_a_sandbox_only_stand_in() {
         return;
     }
     // Where #1507 meets #1505: the item's Allow is a grant limited to a workspace, so the
@@ -7951,7 +8026,7 @@ fn a_refusal_with_nobody_there_is_kept_with_the_workspace_its_task_would_have_wo
 
 #[test]
 fn a_handoff_with_nobody_there_crosses_into_another_workspace_only_under_a_named_grant() {
-    if no_sandboxed_claude_code_stand_in_here() {
+    if ran_on_a_sandbox_only_stand_in() {
         return;
     }
     // The train's review, M2: "any persona" carries a handoff no further than a task. On
@@ -8032,7 +8107,7 @@ fn a_handoff_with_nobody_there_crosses_into_another_workspace_only_under_a_named
 
 #[test]
 fn a_confined_chat_nobody_is_at_is_refused_for_lack_of_a_grant_and_the_person_reads_of_it() {
-    if no_sandboxed_claude_code_stand_in_here() {
+    if ran_on_a_sandbox_only_stand_in() {
         return;
     }
     // #1507, through the dispatch's own path: the refusal is kept once a pair with a
@@ -8833,7 +8908,7 @@ fn a_persona_chat_kept_running_reports_to_the_workspace_once_its_asking_chat_is_
 
 #[test]
 fn the_report_of_a_task_the_person_started_stays_with_it_when_its_tab_chat_is_gone() {
-    if no_sandboxed_claude_code_stand_in_here() {
+    if ran_on_a_sandbox_only_stand_in() {
         return;
     }
     // D-1443-9: the person asked, from a tab that has since closed. The report is theirs:
@@ -9065,7 +9140,7 @@ fn in_a_sandboxed_project_the_person_s_ask_from_an_unsandboxed_chat_is_sandboxed
 
 #[test]
 fn a_pair_policy_locks_is_off_the_tabs_of_chats_running_as_its_first_and_starts_nothing() {
-    if no_sandboxed_claude_code_stand_in_here() {
+    if ran_on_a_sandbox_only_stand_in() {
         return;
     }
     // D-1438-9: steward to devops is locked. A steward chat's tab does not ask devops; a
@@ -9307,7 +9382,7 @@ fn not_yours(of: u32) -> Answer {
 
 #[test]
 fn a_task_the_person_started_is_listed_for_the_tab_s_chat_and_takes_no_ask_of_its() {
-    if no_sandboxed_claude_code_stand_in_here() {
+    if ran_on_a_sandbox_only_stand_in() {
         return;
     }
     // D-T59-j1. The person asked devops from the steward chat's tab. That chat holds no
@@ -9420,7 +9495,7 @@ fn a_chat_s_own_list_says_waiting_on_the_operator_for_a_task_at_a_prompt() {
 
 #[test]
 fn the_person_may_still_ask_from_the_tab_of_a_chat_being_stopped_and_that_chat_may_not() {
-    if no_sandboxed_claude_code_stand_in_here() {
+    if ran_on_a_sandbox_only_stand_in() {
         return;
     }
     // D-T59-j4. "A chat in a stop starts nothing" is about what the chat starts. The
@@ -9621,7 +9696,7 @@ fn purlis_s_word_that_a_task_named_with_purlis_s_marks_ended_without_a_report_ke
 
 #[test]
 fn the_person_s_ask_starts_no_chat_on_a_profile_that_asks_nobody() {
-    if no_sandboxed_claude_code_stand_in_here() {
+    if ran_on_a_sandbox_only_stand_in() {
         return;
     }
     // D-T59-13 on the person's road (D-T59-j13): the one decision path refuses a profile
@@ -12977,7 +13052,7 @@ fn inbox_of_a_run(held: &Held) -> Vec<crate::asking::AskSource> {
 #[cfg(unix)]
 #[test]
 fn a_run_the_gate_asks_about_is_one_ask_in_the_inbox_and_dont_allow_leaves_none() {
-    if no_sandboxed_claude_code_stand_in_here() {
+    if ran_on_a_sandbox_only_stand_in() {
         return;
     }
     use crate::asking::AskSource;
@@ -13064,7 +13139,7 @@ fn planes_told(told: &Mutex<Vec<crate::asking::Asking>>) -> Vec<PlaneId> {
 #[cfg(unix)]
 #[test]
 fn a_run_asked_about_from_a_workspace_branch_folder_is_listed_for_the_window_and_told() {
-    if no_sandboxed_claude_code_stand_in_here() {
+    if ran_on_a_sandbox_only_stand_in() {
         return;
     }
     use crate::asking::AskSource;
@@ -13202,7 +13277,7 @@ fn a_run_grant_held_on_the_window_s_plane_is_listed_there_and_the_window_is_told
 #[cfg(unix)]
 #[test]
 fn a_run_lacking_a_key_on_a_refused_vault_is_one_notice_and_allow_once_stores_it_and_runs() {
-    if no_sandboxed_claude_code_stand_in_here() {
+    if ran_on_a_sandbox_only_stand_in() {
         return;
     }
     use crate::asking::AskSource;
@@ -13268,7 +13343,7 @@ fn a_run_lacking_a_key_on_a_refused_vault_is_one_notice_and_allow_once_stores_it
 #[cfg(unix)]
 #[test]
 fn dont_allow_on_a_runs_notice_still_stores_the_values_typed() {
-    if no_sandboxed_claude_code_stand_in_here() {
+    if ran_on_a_sandbox_only_stand_in() {
         return;
     }
     let plane = Plane::new().a_persona("ops", "");
@@ -13907,7 +13982,7 @@ fn remember_on_a_runs_notice_writes_the_need_line_once_its_value_is_stored() {
 #[cfg(unix)]
 #[test]
 fn a_chat_refused_after_keep_blocked_cannot_bring_the_vaults_allow_back() {
-    if no_sandboxed_claude_code_stand_in_here() {
+    if ran_on_a_sandbox_only_stand_in() {
         return;
     }
     use crate::asking::AskSource;
@@ -13942,7 +14017,7 @@ fn a_chat_refused_after_keep_blocked_cannot_bring_the_vaults_allow_back() {
 #[cfg(unix)]
 #[test]
 fn keep_blocked_closes_a_run_grants_ask_already_open_on_that_vault() {
-    if no_sandboxed_claude_code_stand_in_here() {
+    if ran_on_a_sandbox_only_stand_in() {
         return;
     }
     let plane = Plane::new().a_persona("ops", "");
@@ -15145,7 +15220,7 @@ fn keep_blocked_audits_a_grant_given_ahead_with_its_keys() {
 #[cfg(unix)]
 #[test]
 fn always_allow_is_refused_for_a_key_a_login_came_to_hold_while_its_ask_was_up() {
-    if no_sandboxed_claude_code_stand_in_here() {
+    if ran_on_a_sandbox_only_stand_in() {
         return;
     }
     use purlis_core::harness::asks::{Admitted, Answerer};

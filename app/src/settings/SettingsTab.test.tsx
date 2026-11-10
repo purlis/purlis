@@ -64,7 +64,7 @@ describe("the Settings tab, at the You level", () => {
       "Your colours",
       "Editor",
       "Chats list",
-      "Notifications",
+      "Attention",
       "Reports",
       "This machine",
       "Browsers",

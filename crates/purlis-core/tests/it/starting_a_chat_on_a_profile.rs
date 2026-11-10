@@ -1193,6 +1193,34 @@ fn on_linux_a_sandboxed_claude_code_chat_on_a_profile_for_every_chat_is_refused_
     );
 }
 
+/// #2729: a chat a pool's runner composes (#2446), such as Pool setup's Try it, is readied as
+/// that runner judges its profile: there a sandboxed Claude Code chat runs wrapped on any
+/// profile, so a Linux desktop's rule of a sandbox-only profile refuses none, and leaves no wait.
+#[cfg(target_os = "linux")]
+#[test]
+fn on_linux_a_sandboxed_claude_code_chat_a_runner_composes_is_readied_on_a_profile_for_every_chat()
+{
+    purlis_core::unsteered!();
+    let plane = Plane::new();
+    let outside = stand_in::NoChatWrites::new();
+    let claude = stand_in::program(
+        outside.path(),
+        "claude",
+        "#!/bin/sh\necho '2.1.288 (Claude Code)'\n",
+    );
+    plane.profile("claude", &claude, "");
+
+    let ready = start::ready_for_a_runner(&plane.start("work"), plane.root())
+        .expect("readied for the runner");
+
+    assert!(ready.sandbox.is_some(), "sandboxed, as the runner runs it");
+    let waits = purlis_core::profilestore::sandbox_only::waiting(plane.root(), &[]);
+    assert!(
+        !waits.iter().any(|wait| wait.harness == Harness::ClaudeCode),
+        "{waits:?}"
+    );
+}
+
 /// A profile's command, made in a plane.
 type Command<'a> = dyn Fn(&Plane) -> Vec<String> + 'a;
 

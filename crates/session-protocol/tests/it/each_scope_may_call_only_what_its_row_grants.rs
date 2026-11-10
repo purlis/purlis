@@ -314,7 +314,7 @@ fn every_command() -> Vec<Command> {
         Command::NoteStrays {
             program: CHAT.into(),
         },
-        // A chat held still at its budget or in a loop, and let go on (1.83, #6015).
+        // A chat held still at its budget or in a loop, and let go on (1.84, #6015).
         Command::Hold {
             program: CHAT.into(),
             still: true,

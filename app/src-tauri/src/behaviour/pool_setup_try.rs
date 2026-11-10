@@ -150,18 +150,9 @@ fn in_a_docker_pool() {
         Some(WORKSPACE),
     )
     .expect("Try it answers");
-    // Try it readies its chat on this machine before the pool runs it, and where purlis wraps a
-    // Claude Code chat a sandboxed one starts only on a sandbox-only profile (ADR 0067 as
-    // amended 2026-11-10), which `work` is not: refused with the way out, and nothing kept. The
-    // window's Pool setup scenario tries it on a sandbox-only profile.
-    if crate::sandboxing::claude_is_wrapped_here_for_tests() {
-        let why = tried.failed.as_ref().map(|failed| failed.why.as_str());
-        assert!(
-            why.is_some_and(|why| why.contains("runs only on a profile for sandboxed chats only")),
-            "{tried:?}"
-        );
-        return;
-    }
+    // Readied as the runner judges it (#2446), so on a Linux desktop, where a sandboxed Claude
+    // Code chat runs only on a sandbox-only profile (ADR 0067 as amended 2026-11-10), the pool's
+    // `work` is tried as it is everywhere else.
     assert_eq!(
         tried,
         crate::poolsetuptab::PoolSetupTried {

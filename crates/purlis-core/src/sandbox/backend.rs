@@ -1,10 +1,11 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! Whether this machine can apply a sandbox at all: the operating system's mechanism, and the
-//! programs a harness's sandbox runs through. Asked before a chat starts, so a machine that
-//! cannot is told what is missing, and how to install it, rather than handed a harness that
-//! exits.
+//! Whether this machine can apply a sandbox at all: the operating system's mechanism. Asked
+//! before a chat starts, so a machine that cannot is told what is missing rather than handed a
+//! harness that exits. On Linux every sandboxed chat runs inside purlis's own wrap (#1040, and
+//! Claude Code's too since ADR 0067 as amended 2026-11-10), which needs the kernel's Landlock
+//! and no program.
 
 use std::fmt;
 
@@ -13,14 +14,15 @@ use super::Os;
 /// Where macOS keeps Seatbelt's front end. Always there on a supported macOS.
 pub const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
 
-/// The word [`missing_for`] asks [`installed`] about for purlis's own wrap on Linux: not a
+/// The word [`missing`] asks [`installed`] about for purlis's own wrap on Linux: not a
 /// program, the kernel's Landlock at [`purlis_linux_sandbox::MIN_ABI`] or later (#1040).
 pub const LANDLOCK: &str = "landlock";
 
 /// What this machine lacks for a sandbox.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Missing {
-    /// Programs the backend runs through, by name, on `os`.
+    /// Programs something purlis needs runs through, by name, on `os`: git, which a clone
+    /// needs ([`install_command`]). No sandbox runs through a program on Linux any more.
     Programs { os: Os, absent: Vec<&'static str> },
     /// No backend exists for this operating system yet (Windows: M46, #565).
     NoBackend(Os),
@@ -39,14 +41,9 @@ impl fmt::Display for Missing {
                     ("are", "them")
                 };
                 write!(f, "{} {verb} not installed", absent.join(" and "))?;
-                // SD-30's prerequisite install, named where the chat is refused. The package is
-                // `bubblewrap` for the `bwrap` program on every major distribution.
+                // The prerequisite install, named where it is refused.
                 if *os == Os::Linux {
-                    let packages: Vec<&str> = absent
-                        .iter()
-                        .map(|it| if *it == "bwrap" { "bubblewrap" } else { it })
-                        .collect();
-                    let packages = packages.join(" ");
+                    let packages = absent.join(" ");
                     write!(
                         f,
                         " — install {it} with `sudo apt install {packages}` or \
@@ -72,34 +69,23 @@ impl fmt::Display for Missing {
 }
 
 /// What is missing on `os` for a sandbox to be applied, or `None` when nothing is. `has` says
-/// whether a program is installed, by its name.
+/// whether a program is installed, by its name, and whether the kernel has [`LANDLOCK`].
 ///
 /// - **macOS**: Seatbelt, through `sandbox-exec`.
-/// - **Linux**: bubblewrap for the filesystem and `socat` for the network proxy, the two
-///   programs Claude Code's sandbox runs through.
+/// - **Linux**: purlis's own wrap, Landlock, a seccomp filter and the supervisor (#1040), which
+///   needs the kernel's Landlock and no program, for every harness: Claude Code's own sandbox,
+///   which ran through bubblewrap and `socat`, no longer runs there (ADR 0067 as amended
+///   2026-11-10).
 /// - **Windows**: no backend yet (ruling V21, 3; M46 Windows, #565).
 pub fn missing(os: Os, has: &dyn Fn(&str) -> bool) -> Option<Missing> {
-    let needs: &[&'static str] = match os {
-        Os::MacOs => &["sandbox-exec"],
-        Os::Linux => &["bwrap", "socat"],
-        Os::Windows | Os::Other => return Some(Missing::NoBackend(os)),
-    };
-    let absent: Vec<&'static str> = needs.iter().copied().filter(|it| !has(it)).collect();
-    (!absent.is_empty()).then_some(Missing::Programs { os, absent })
-}
-
-/// What is missing on `os` for a sandbox to be applied to a chat whose harness is `wrapped`
-/// whole in purlis's own wrap (Codex and opencode, and Claude Code on a runner, #4083), or `None`
-/// when nothing is.
-///
-/// On Linux purlis's own wrap is Landlock, a seccomp filter and the supervisor (#1040), which
-/// need the kernel's Landlock and no program; Claude Code's own sandbox needs what [`missing`]
-/// names. Elsewhere, as [`missing`].
-pub fn missing_for(os: Os, wrapped: bool, has: &dyn Fn(&str) -> bool) -> Option<Missing> {
-    if os == Os::Linux && wrapped {
-        return (!has(LANDLOCK)).then_some(Missing::Landlock);
+    match os {
+        Os::MacOs => (!has("sandbox-exec")).then(|| Missing::Programs {
+            os,
+            absent: vec!["sandbox-exec"],
+        }),
+        Os::Linux => (!has(LANDLOCK)).then_some(Missing::Landlock),
+        Os::Windows | Os::Other => Some(Missing::NoBackend(os)),
     }
-    missing(os, has)
 }
 
 /// What a person can do where this kernel lacks the Landlock purlis's own wrap needs
@@ -110,7 +96,8 @@ pub fn landlock_way_on(opt_out: bool) -> String {
 
 /// SD-30's install action: the command that installs what `missing` names with the package
 /// manager of the distribution `os_release` (the text of `/etc/os-release`) says this is, or
-/// `None` where there is nothing to install or charter does not know the distribution.
+/// `None` where there is nothing to install or charter does not know the distribution. No
+/// sandbox needs a program on Linux now, so it is git's ([`crate::worktree::git::presence`]).
 ///
 /// **Typed, never run** (ruling V78 c). Installing needs `sudo`, so the app types this into a
 /// shell tab at the project root and the person presses Return, unlike FR-29's installers
@@ -157,11 +144,7 @@ pub fn install_command(missing: &Missing, os_release: &str) -> Option<String> {
             })
             .map(|(_, manager)| *manager)
     })?;
-    let packages: Vec<&str> = absent
-        .iter()
-        .map(|it| if *it == "bwrap" { "bubblewrap" } else { it })
-        .collect();
-    Some(format!("{manager} {}", packages.join(" ")))
+    Some(format!("{manager} {}", absent.join(" ")))
 }
 
 /// Whether `program` is installed on this machine, as [`missing`] asks it; for [`LANDLOCK`],

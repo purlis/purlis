@@ -534,21 +534,28 @@ use crate::view::{Limits, Views};
 /// terminal is given no write of its own: the host composes the entry, of three kinds alone. A
 /// host before 1.82 refuses it `unknown_command`, and the terminal changes nothing.
 ///
-/// 1.83 has a host hold a chat's program still, and let it go on ([`Command::Hold`], #6015, ADR
+/// 1.83 has a host that composes a chat say the rest of what it started without there (#6078),
+/// as a chat on this machine is told it: another workspace's skill its persona names that is not
+/// there, a plane skill that could not be loaded or that the repo leaves out, with why, and a
+/// repo skill named like a built-in one ([`SkillsNotThere`]). And `programs` carries it too, so a
+/// window that takes the chat back says it again. A host before 1.83 says only 1.81's, and only
+/// to its start.
+///
+/// 1.84 has a host hold a chat's program still, and let it go on ([`Command::Hold`], #6015, ADR
 /// 0076 §4): its whole process group stopped as Ctrl-Z stops it, when the chat reaches its budget
 /// or is found looping and the person is asked, and continued on their answer. The window's
 /// alone. An older host refuses it `unknown_command`, so it is not asked, and such a chat is
 /// asked about with its program left running.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 83,
+    minor: 84,
 };
 
 /// The version that first holds a chat's program still ([`Command::Hold`], #6015): none is asked
 /// of a host before.
 pub const KNOWS_HOLD: Version = Version {
     major: 1,
-    minor: 83,
+    minor: 84,
 };
 
 /// The version that first notes a chat's strays ([`Command::NoteStrays`], #5806): none is
@@ -1377,7 +1384,7 @@ pub enum Command {
     /// noted; refused [`NO_SUCH_CHAT`] for a program the host does not hold. The window's
     /// alone ([`crate::grants::Power::Reattach`]).
     NoteStrays { program: String },
-    /// **Hold `program` still, or let it go on** (1.83, #6015, ADR 0076 §4): with `still`, its
+    /// **Hold `program` still, or let it go on** (1.84, #6015, ADR 0076 §4): with `still`, its
     /// whole process group is stopped, as Ctrl-Z stops it; without, it is continued. What left
     /// its group is not held. Nothing for a program that has ended. Answered [`Answer::Done`];
     /// refused [`NO_SUCH_CHAT`] for a program the host does not hold. The window's alone
@@ -2260,18 +2267,88 @@ impl ArmedSkill {
 /// its persona names that the host's machine does not have for the chat's harness (`missing`),
 /// and the built-in ones the host's purlis has none of (`no_built_in`), each as the persona's
 /// `skills:` list writes it. Names alone: it gives the chat nothing, and the window only says it.
+///
+/// 1.83 (#6078) adds the rest of what a chat on the window's machine is told it started without,
+/// each as the host read it there: another workspace's skill its persona names whose workspace
+/// the project lacks (`no_workspace`) or that lacks it (`not_in_its_workspace`), a plane skill
+/// that could not be loaded (`broken`) or that the repo leaves out (`by_a_repo`), each with its
+/// level and why, and a repo skill named like a built-in one (`beside_a_built_in`). Each new
+/// list holds at most [`MOST_SKILLS_NOT_LOADED`].
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SkillsNotThere {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub missing: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub no_built_in: Vec<String>,
+    /// Another workspace's skill its persona names, where the project has no such workspace
+    /// (1.83, SK-5b).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub no_workspace: Vec<String>,
+    /// Another workspace's skill its persona names, where that workspace has none of the name
+    /// (1.83, SK-5b).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub not_in_its_workspace: Vec<String>,
+    /// A plane skill the chat would have loaded that could not be loaded there (1.83, SK-8).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub broken: Vec<SkillNotLoaded>,
+    /// A plane skill the repo the chat works in leaves out there (1.83, SK-53).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub by_a_repo: Vec<SkillNotLoaded>,
+    /// A skill of the repo the chat works in named like a built-in one, which its harness loads
+    /// beside purlis's (1.83, SK-37).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub beside_a_built_in: Vec<String>,
+}
+
+/// The most of each kind a host says in 1.83's lists of [`SkillsNotThere`]: past it, the first.
+pub const MOST_SKILLS_NOT_LOADED: usize = 64;
+
+/// The longest why a host says of a skill that could not be loaded, in bytes: a longer one is
+/// cut at a character's edge.
+pub const MOST_SKILL_WHY: usize = 512;
+
+/// **A skill a chat would have loaded that could not be loaded there** (1.83, SK-8, #6078): its
+/// name (its folder's where it names none), its level's word as an [`ArmedSkill`]'s, whether it
+/// is a local skill, and why, in the host's one sentence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillNotLoaded {
+    pub name: String,
+    pub level: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub local: bool,
+    pub why: String,
+}
+
+impl SkillNotLoaded {
+    /// **It as a host says it and a window takes it**: `None` where its name or level does not
+    /// fit as an [`ArmedSkill`]'s does; its why without control characters, cut to
+    /// [`MOST_SKILL_WHY`].
+    fn bounded(self) -> Option<SkillNotLoaded> {
+        if !(ArmedSkill {
+            name: self.name.clone(),
+            level: self.level.clone(),
+        })
+        .fits()
+        {
+            return None;
+        }
+        let mut why: String = self.why.chars().filter(|c| !c.is_control()).collect();
+        if why.len() > MOST_SKILL_WHY {
+            let mut at = MOST_SKILL_WHY;
+            while !why.is_char_boundary(at) {
+                at -= 1;
+            }
+            why.truncate(at);
+        }
+        Some(SkillNotLoaded { why, ..self })
+    }
 }
 
 impl SkillsNotThere {
     /// **What a host says and a window takes of it**: each name that fits as an
-    /// [`ArmedSkill`]'s does, at most [`MOST_ARMED_SKILLS`] of each kind, in their order. `None`
-    /// where no name is left.
+    /// [`ArmedSkill`]'s does, at most [`MOST_ARMED_SKILLS`] of `missing` and `no_built_in` and
+    /// [`MOST_SKILLS_NOT_LOADED`] of each other kind, in their order. `None` where nothing is
+    /// left.
     #[must_use]
     pub fn bounded(self) -> Option<SkillsNotThere> {
         let fits = |name: &String| {
@@ -2279,15 +2356,23 @@ impl SkillsNotThere {
                 && name.len() <= MOST_ARMED_SKILL_NAME
                 && !name.chars().any(char::is_control)
         };
-        let names = |all: Vec<String>| -> Vec<String> {
+        let names = |all: Vec<String>, most: usize| -> Vec<String> {
+            all.into_iter().filter(fits).take(most).collect()
+        };
+        let not_loaded = |all: Vec<SkillNotLoaded>| -> Vec<SkillNotLoaded> {
             all.into_iter()
-                .filter(fits)
-                .take(MOST_ARMED_SKILLS)
+                .filter_map(SkillNotLoaded::bounded)
+                .take(MOST_SKILLS_NOT_LOADED)
                 .collect()
         };
         let bounded = SkillsNotThere {
-            missing: names(self.missing),
-            no_built_in: names(self.no_built_in),
+            missing: names(self.missing, MOST_ARMED_SKILLS),
+            no_built_in: names(self.no_built_in, MOST_ARMED_SKILLS),
+            no_workspace: names(self.no_workspace, MOST_SKILLS_NOT_LOADED),
+            not_in_its_workspace: names(self.not_in_its_workspace, MOST_SKILLS_NOT_LOADED),
+            broken: not_loaded(self.broken),
+            by_a_repo: not_loaded(self.by_a_repo),
+            beside_a_built_in: names(self.beside_a_built_in, MOST_SKILLS_NOT_LOADED),
         };
         (bounded != SkillsNotThere::default()).then_some(bounded)
     }
@@ -2575,6 +2660,11 @@ pub struct HeldProgram {
     /// #4218): what a window that takes the chat back lists. Absent from a host before 1.77.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub armed_skills: Option<Vec<ArmedSkill>>,
+    /// The skills its persona names that it started without there, where the host composed it
+    /// and some are missing (1.83, #6078): what a window that takes the chat back says on its
+    /// tab. Absent from a host before 1.83.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skills_not_there: Option<SkillsNotThere>,
 }
 
 /// The kill switch as the host holds it (1.5, ADR 0071).
@@ -4326,7 +4416,7 @@ impl Client {
         .await
     }
 
-    /// Holds `program` still, or lets it go on (1.83, #6015).
+    /// Holds `program` still, or lets it go on (1.84, #6015).
     pub async fn hold(&self, program: &str, still: bool) -> Result<(), CallError> {
         self.done(Command::Hold {
             program: program.into(),

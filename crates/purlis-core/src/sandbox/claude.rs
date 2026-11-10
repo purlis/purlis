@@ -135,9 +135,6 @@ pub struct Settings {
     pub sandbox: Value,
     /// `permissions.deny` rules for its own tools.
     pub deny: Vec<String>,
-    /// Files made, empty, where there is none, before the chat starts ([`Self::make_empty`]):
-    /// on Linux at the floor, the home's git config ([`HOME_GIT_CONFIG`]).
-    pub made_empty: Vec<PathBuf>,
     /// Folders made, empty, where there is none, before the chat starts ([`Self::make_empty`]):
     /// at the floor, each folder in the home above a name a person may lift
     /// ([`super::MAY_LIFT`]). Claude Code pins every folder above a held path, so neither a
@@ -165,12 +162,6 @@ pub(super) fn above_what_may_be_lifted(home: &Path) -> Vec<PathBuf> {
 /// macOS's terminals, by a glob. Claude Code turns it into the regex `^/dev/ttys[^/]*(/.*)?$` in
 /// its profile.
 pub const TERMINALS: &str = "/dev/ttys*";
-
-/// The home's git config, a later-code name the floor holds ([`super::PLANTED`]). On Linux,
-/// Claude Code's sandbox puts a denied path that does not exist out of reach of a read as well,
-/// and git stops on a config it cannot read, so no git command would run in the chat. Made
-/// empty first, it is held as an existing file is, and git reads it as none.
-pub const HOME_GIT_CONFIG: &str = ".gitconfig";
 
 /// `compiled`, for Claude Code — or the class it cannot hold on this machine.
 ///
@@ -523,7 +514,6 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
     Settings {
         sandbox,
         deny,
-        made_empty: Vec::new(),
         made_folders: Vec::new(),
     }
 }
@@ -571,10 +561,6 @@ fn floor(
             .chain(read_rules)
             .chain(edit_rules)
             .collect(),
-        made_empty: match &compiled.homes.home {
-            Some(home) if compiled.os == Os::Linux => vec![home.join(HOME_GIT_CONFIG)],
-            _ => Vec::new(),
-        },
         made_folders: match &compiled.homes.home {
             Some(home) if compiled.level == Level::Floor => above_what_may_be_lifted(home),
             _ => Vec::new(),
@@ -589,10 +575,9 @@ impl Settings {
         self.sandbox.get("enabled") == Some(&Value::Bool(false))
     }
 
-    /// Makes each of [`Self::made_folders`], then each of [`Self::made_empty`], outside the
-    /// sandbox, empty, where nothing is there: what is already there keeps what it holds, and a
-    /// link, even one to nothing, is neither followed nor replaced. One not made is left to the
-    /// chat, whose tool then says why.
+    /// Makes each of [`Self::made_folders`] outside the sandbox, empty, where nothing is there:
+    /// what is already there keeps what it holds, and a link, even one to nothing, is neither
+    /// followed nor replaced. One not made is left to the chat, whose tool then says why.
     pub fn make_empty(&self) {
         for folder in &self.made_folders {
             if std::fs::symlink_metadata(folder).is_ok() {
@@ -615,22 +600,6 @@ impl Settings {
                     "purlis: {} was not made for the chat ({err})",
                     folder.display()
                 );
-            }
-        }
-        for path in &self.made_empty {
-            match std::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(path)
-            {
-                Ok(_) => {}
-                Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
-                Err(err) => {
-                    tracing::warn!(
-                        "purlis: {} was not made for the chat ({err})",
-                        path.display()
-                    );
-                }
             }
         }
     }

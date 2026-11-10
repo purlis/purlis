@@ -129,6 +129,18 @@ pub struct Shown {
     /// gone says plainly that the hold ran out. The window reads the list again at that time.
     #[specta(optional)]
     pub held_until: Option<u32>,
+    /// **Until when it waits before it ends by itself** (ADR 0121 decision 5, #6006), in seconds
+    /// since 1970: an **Expiring ask**, listed first with its countdown. Present only where its
+    /// source ends it at a time purlis knows: a permission hook's deadline, a held connection's
+    /// hold, a run grant's or a Secret ask's command hold, a login's or a fill's wait, a command's
+    /// confirmation's two minutes (the table in ADR 0121's amendment of 2026-11-10).
+    #[specta(optional)]
+    pub expires: Option<u32>,
+    /// **How many open chats wait on its chat's report** (ADR 0121 decision 5, #6006), directly
+    /// or up a dispatched chain (`purlis_core::dispatchwaits`): its row says "blocks N chats".
+    /// Absent where none does.
+    #[specta(optional)]
+    pub blocks: Option<u32>,
     /// **What an edit would write** (#1146): each change, drawn before its Allow, or why it is
     /// not shown and no Allow is offered. Absent for any other ask.
     #[specta(optional)]
@@ -696,6 +708,8 @@ pub fn permission(raised: Raised) -> Option<Shown> {
         answer: AnswerPath::Hook,
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes,
         lines,
         last_message: None,
@@ -965,6 +979,8 @@ pub fn dispatch(told: &crate::dispatchgrants::DispatchPending) -> Shown {
         chain: Vec::new(),
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -1012,6 +1028,8 @@ pub fn sandbox_host(
             answer: AnswerPath::InItsPane,
             since: None,
             held_until: None,
+            expires: None,
+            blocks: None,
             writes: None,
             lines: None,
             last_message: None,
@@ -1051,6 +1069,8 @@ pub fn sandbox_host(
         },
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -1119,6 +1139,8 @@ pub fn sandbox_write(
             answer: AnswerPath::InItsPane,
             since: None,
             held_until: None,
+            expires: None,
+            blocks: None,
             writes: None,
             lines: None,
             last_message: None,
@@ -1148,6 +1170,8 @@ pub fn sandbox_write(
         },
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -1217,6 +1241,8 @@ pub fn sandbox_runner(
         },
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -1297,6 +1323,8 @@ pub fn sandbox_port(
         },
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -1374,6 +1402,8 @@ pub fn sandbox_local(
         },
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -1418,6 +1448,8 @@ pub fn terminal(
         answer: AnswerPath::InItsPane,
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message: asked,
@@ -1443,6 +1475,8 @@ pub fn question(session: u32, last_message: Option<String>, earlier: Vec<String>
         answer: AnswerPath::InItsPane,
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message,
@@ -1477,6 +1511,8 @@ pub fn task_question(
         },
         since: u32::try_from(reached.at).ok(),
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -1538,6 +1574,8 @@ pub fn workspace_removal(
         },
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -1656,6 +1694,8 @@ pub fn browser_posture(
         answer: AnswerPath::Browser,
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -1726,6 +1766,8 @@ pub fn browser_needs_you(waiting: &crate::browserneedsyou::Waiting) -> Shown {
         },
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -1799,6 +1841,8 @@ pub fn secret_fill(
         },
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -1906,6 +1950,8 @@ pub fn browser_login(
         },
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -2008,6 +2054,8 @@ pub fn pool_login(waits: &crate::chatbrowsers::PoolLoginWaits) -> Shown {
         answer: AnswerPath::PoolLogin,
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -2075,6 +2123,8 @@ pub fn pool_tool(waits: &crate::pooltools::PoolToolWaits) -> Shown {
         answer: AnswerPath::PoolTool { run: waits.run },
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -2158,6 +2208,8 @@ pub fn vault_refused(one: &crate::vaultroute::VaultRefused) -> Shown {
         },
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -2304,6 +2356,8 @@ pub fn secret_ask(open: &purlis_core::secrets::ask::Open, may_remember: bool) ->
         answer: AnswerPath::Secret { id: open.id },
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -2492,6 +2546,8 @@ pub fn run_grant(
         answer: AnswerPath::RunGrant { id: open.id },
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -2598,6 +2654,8 @@ pub fn browser_sites(
         answer: AnswerPath::BrowserSites { sites },
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -2796,6 +2854,8 @@ pub fn proposed_change(
         },
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes,
         lines: None,
         last_message: None,
@@ -2827,6 +2887,8 @@ pub fn runner_dispatch(one: &crate::runnerdispatches::HeldDispatch) -> Shown {
         answer: AnswerPath::RunnerDispatch { id: one.id },
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -2886,6 +2948,8 @@ pub fn runner_write(one: &crate::runnerwrites::HeldWrite) -> Shown {
         answer: AnswerPath::RunnerWrite { id: one.id },
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -2946,6 +3010,8 @@ pub fn sign_in(wait: &purlis_core::profilestore::sign_in::Wait) -> Shown {
         },
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -3006,6 +3072,8 @@ pub fn pool_sign_in(wait: &purlis_core::profilestore::onrunner::PoolWait) -> Sho
         },
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -3063,7 +3131,7 @@ pub fn sandbox_only(wait: &purlis_core::profilestore::sandbox_only::Wait) -> Sho
         ask: sandbox_only_key(wait.harness),
         says: said_inertly(&format!(
             "{ask}: {here}a sandboxed chat keeps its own sign-in, apart from yours. Make one, \
-             sign in in the shell it opens, then start the chat again.",
+             sign in in the shell it opens, then start a new chat on it.",
             ask = ask(wait.harness)
         )),
         options: vec![
@@ -3082,6 +3150,8 @@ pub fn sandbox_only(wait: &purlis_core::profilestore::sandbox_only::Wait) -> Sho
         },
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -3116,6 +3186,8 @@ pub fn old_harness_plugins(old: &crate::oldplugins::OldHarnessPlugins) -> Shown 
         answer: AnswerPath::OldHarnessPlugins,
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -3235,6 +3307,8 @@ pub fn signing_waiting(root: &std::path::Path, on: impl FnOnce() -> bool) -> Opt
         answer: AnswerPath::Signing,
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -3363,6 +3437,11 @@ pub struct Waiting<'a> {
     pub held: &'a HoldEnds<'a>,
     /// When an ask began to wait, by its key, where its source knows (#1700).
     pub since: &'a dyn Fn(&str) -> Option<u32>,
+    /// Until when an ask waits before its source ends it, by its key, where purlis knows
+    /// (#6006). A held connection's hold is [`Self::held`]'s.
+    pub expires: &'a dyn Fn(&str) -> Option<u32>,
+    /// How many open chats wait on chat `session`'s report, where any does (#6006).
+    pub chats_waiting: &'a dyn Fn(u32) -> Option<u32>,
     /// The name of the runner a chat runs on, where its runner left a service out of its plan
     /// (#2510).
     pub runner_of: &'a dyn Fn(u32) -> Option<String>,
@@ -3510,6 +3589,14 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
             ask.chain = chain(ask.session, waiting.name_of, waiting.asker_of);
         }
         ask.since = (waiting.since)(&ask.ask);
+        // **The facts Asks orders by** (ADR 0121 decision 5, #6006): when it ends by itself,
+        // and how many chats wait on its chat. An ask of no chat's blocks none.
+        ask.expires = ask.held_until.or_else(|| (waiting.expires)(&ask.ask));
+        ask.blocks = if ask.session == 0 {
+            None
+        } else {
+            (waiting.chats_waiting)(ask.session)
+        };
     }
     asks
 }
@@ -3576,6 +3663,24 @@ fn asker_in(chats: &crate::chats::Chats, session: u32) -> Option<u32> {
     (from.mode == purlis_core::reopen::Mode::Task).then_some(from.chat)
 }
 
+/// **Which open chat waits on which open chat's report** (#6006): each chat's own record of the
+/// chat that dispatched it, where that chat is open and its report is still due.
+fn waits_on(chats: &crate::chats::Chats) -> Vec<purlis_core::dispatchwaits::WaitsOn> {
+    let open: std::collections::HashSet<u32> =
+        chats.open_now().iter().map(|one| one.session).collect();
+    open.iter()
+        .filter_map(|&task| {
+            let from = chats.recorded_chat(task)?.from?;
+            (from.report == purlis_core::reopen::Owed::Due && open.contains(&from.chat)).then_some(
+                purlis_core::dispatchwaits::WaitsOn {
+                    task,
+                    asker: from.chat,
+                },
+            )
+        })
+        .collect()
+}
+
 /// Every ask project `held` has waiting now, as the window lists them.
 pub fn every_ask(held: &crate::planes::Held) -> Asking {
     // A backstop for the host's board (the review of #4905): told when a vault value is
@@ -3601,9 +3706,21 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     // When each ask began, by its key (#1700): a hook ask's raise, read back from how long ago
     // it was; a dispatch's hold; a block's first hearing.
     let mut since: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
+    // **When each ask ends by itself, by its key** (ADR 0121 decision 5 and its amendment of
+    // 2026-11-10, #6006): a hook ask at its deadline, below the harness's hook timeout; a run
+    // grant and a Secret ask as their command's hold runs out; a login and a fill as purlis's
+    // own wait does. A held connection's hold is said by [`Shown::held_until`].
+    let mut expires: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
     for (raised, at) in &permissions {
-        let ago = now.saturating_duration_since(*at).as_secs();
-        since.insert(raised.id.to_string(), now_secs.saturating_sub(ago));
+        let elapsed = now.saturating_duration_since(*at);
+        since.insert(
+            raised.id.to_string(),
+            now_secs.saturating_sub(elapsed.as_secs()),
+        );
+        if let Some(deadline) = raised.ask.deadline.duration() {
+            let left = deadline.saturating_sub(elapsed).as_secs();
+            expires.insert(raised.id.to_string(), now_secs.saturating_add(left));
+        }
     }
     for one in &waiting_dispatches {
         since.insert(format!("dispatch:{}", one.id), one.at);
@@ -3668,13 +3785,25 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     for one in &pool_logins {
         since.insert(pool_login_key(one.session), one.since);
     }
+    // A login's and a fill's wait, and a brokered command's hold on its chat's harness.
+    let waits_for_the_person = purlis_core::loginask::THE_PERSON_IS_WAITED_FOR.as_secs();
+    let command_holds =
+        |chat: u32| purlis_core::secrets::ask::holds_for(chats.harness(chat)).as_secs();
     let browser_logins = held.login_grants().waiting();
     for one in &browser_logins {
         since.insert(browser_login_key(one.id), one.since);
+        expires.insert(
+            browser_login_key(one.id),
+            one.since.saturating_add(waits_for_the_person),
+        );
     }
     let secret_fills = held.secret_fills().waiting();
     for one in &secret_fills {
         since.insert(secret_fill_key(one.id), one.since);
+        expires.insert(
+            secret_fill_key(one.id),
+            one.since.saturating_add(waits_for_the_person),
+        );
     }
     let pool_tools = held.pool_tools().waiting();
     for one in &pool_tools {
@@ -3683,6 +3812,10 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     let run_grants = held.secret_asks().open_runs();
     for one in &run_grants {
         since.insert(run_grant_key(one.id), one.since);
+        expires.insert(
+            run_grant_key(one.id),
+            one.since.saturating_add(command_holds(one.bound.chat)),
+        );
     }
     let secrets = held.secret_asks().open();
     let may_remember = |persona: &str| crate::proposals::need_offerable(held.root(), persona);
@@ -3698,6 +3831,12 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     };
     for one in &secrets {
         since.insert(secret_key(one.id), one.since);
+        if let Some(chat) = one.chats.first() {
+            expires.insert(
+                secret_key(one.id),
+                one.since.saturating_add(command_holds(*chat)),
+            );
+        }
     }
     let vaults: Vec<_> = held
         .vault_refusals()
@@ -3710,6 +3849,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         .collect();
     let declared = purlis_core::sandbox::services::declared(root);
     let tasks = held.tasks();
+    let chats_waiting = purlis_core::dispatchwaits::blocked_by(&waits_on(chats));
     let waiting = Waiting {
         run_grants,
         browsers,
@@ -3779,6 +3919,13 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
                 .get(ask)
                 .map(|at| u32::try_from(*at).unwrap_or(u32::MAX))
         },
+        expires: &|ask| {
+            expires
+                .get(ask)
+                .filter(|at| **at > now_secs)
+                .map(|at| u32::try_from(*at).unwrap_or(u32::MAX))
+        },
+        chats_waiting: &|session| chats_waiting.get(&session).copied(),
         runner_of: &|session| chats.runner_of(session),
     };
     let task_questions: Vec<Shown> = crate::dispatched::reached_the_person(held)

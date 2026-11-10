@@ -832,11 +832,7 @@ fn a_composed_claude_code_line_is_read_as_running_in_its_own_sandbox() {
     let args: Vec<std::ffi::OsString> = launch.args.iter().map(Into::into).collect();
     assert_eq!(
         purlis_core::sandbox::ran::applied_to(launch.program.as_ref(), &args, false, os),
-        session::RunSandbox::By(
-            os.backend_word(Some(purlis_core::harness::Harness::ClaudeCode))
-                .expect("a backend here")
-                .to_owned()
-        ),
+        session::RunSandbox::By(os.backend_word().expect("a backend here").to_owned()),
         "{:?}",
         words(&launch)
     );
@@ -934,10 +930,60 @@ fn a_composed_chat_tells_its_host_the_skills_its_persona_names_that_are_not_ther
         not_there(true),
         Some(session::SkillsNotThere {
             missing: vec!["nowhere-plugin:never-installed".into()],
-            no_built_in: Vec::new(),
+            ..Default::default()
         })
     );
     assert_eq!(not_there(false), None, "the plane's skills do not reach it");
+}
+
+/// **#6078: a composed chat tells its host every skill it starts without there, as a chat on
+/// this machine says them**: another workspace's skill its persona names that the project does
+/// not have (SK-5b), and a plane skill that could not be loaded there, with its level and why
+/// (SK-8), besides the installed ones it lacks.
+#[test]
+fn a_composed_chat_tells_its_host_the_skills_that_could_not_be_loaded_and_another_workspaces_it_lacks()
+ {
+    purlis_core::unsteered!();
+    let project = Project::on("claude");
+    fs::write(
+        project.root().join("personas/steward/persona.md"),
+        "---\nrole: Ops\nskills: workspaces/ghost:x\n---\n# steward\n",
+    )
+    .unwrap();
+    let half_made = project.root().join("skills/half-made");
+    fs::create_dir_all(&half_made).unwrap();
+    fs::write(half_made.join("SKILL.md"), "no frontmatter here\n").unwrap();
+    let host = Host::default();
+    let start = asking(|start| {
+        start.plane_skills = Some(true);
+        start.without_sandbox = true;
+        start.workspace = None;
+    });
+    hoststart::compose(
+        &Starting {
+            root: project.root(),
+            number: 3,
+            start: &start,
+            reporting: None,
+            started_by: "remote-link",
+            prompt_key: None,
+        },
+        &project.kit(),
+        &host,
+    )
+    .expect("composed, without what is not there");
+
+    let said = host.not_there.take().expect("it says what it lacks");
+    assert_eq!(said.no_workspace, ["workspaces/ghost:x"]);
+    assert!(said.not_in_its_workspace.is_empty(), "{said:?}");
+    let [broken] = said.broken.as_slice() else {
+        panic!("one skill could not be loaded: {said:?}");
+    };
+    assert_eq!(
+        (broken.name.as_str(), broken.level.as_str(), broken.local),
+        ("half-made", "project", false)
+    );
+    assert!(!broken.why.trim().is_empty(), "it says why");
 }
 
 /// The listing limit a composed Claude Code chat is handed in its `--settings`, read from the

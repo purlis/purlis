@@ -253,5 +253,7 @@
 {"reply":{"re":207,"ok":{"program_started":{"program":"01J9ZQ5000000000000000000J","number":15,"process":4247,"sandbox":"off","skills_not_there":{"missing":["deploy-tools"],"no_built_in":["purlis-secret"]}}}}}
 {"call":{"id":208,"command":"audit_skill_change","project_path":"/work/project","change":{"act":"install","level":"project","skills":["notify"],"source":"https://github.com/acme/skills","pin":"0123456789abcdef0123456789abcdef01234567"}}}
 {"reply":{"re":208,"ok":"done"}}
-{"call":{"id":209,"command":"hold","program":"01J9ZQ8000000000000000000D","still":true}}
-{"reply":{"re":209,"ok":"done"}}
+{"call":{"id":209,"command":"programs_of","project":"01J9PRJCT00000000000000000"}}
+{"reply":{"re":209,"ok":{"programs":[{"program":"01J9ZQ5000000000000000000J","kind":"harness","number":15,"process":4247,"sandbox":"off","cols":80,"rows":24,"skills_not_there":{"missing":["deploy-tools"],"no_workspace":["workspaces/ghost:x"],"not_in_its_workspace":["workspaces/ops:nope"],"broken":[{"name":"half-made","level":"project","why":"its SKILL.md opens with no frontmatter"}],"by_a_repo":[{"name":"deploy","level":"workspace","local":true,"why":"the repo has a narrower deploy of its own"}],"beside_a_built_in":["purlis-secrets"]}}]}}}
+{"call":{"id":210,"command":"hold","program":"01J9ZQ8000000000000000000D","still":true}}
+{"reply":{"re":210,"ok":"done"}}

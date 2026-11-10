@@ -26,7 +26,7 @@ acts on several skills at once, and secret fills and browser logins are held tig
 your own that runs `charter-app` needs the new name (see *Changed*).
 
 These are the highlights. What was added, deprecated and fixed for security is here in full,
-and every other change by its headline. All 457 changes, in full, are in
+and every other change by its headline. All 461 changes, in full, are in
 [Every change in 0.5.1](https://github.com/purlis/purlis/blob/v0.5.1/docs/changelog-0.5.1.md).
 
 ### Added
@@ -550,6 +550,20 @@ and every other change by its headline. All 457 changes, in full, are in
   remote. *Trust this clone* lets its saves push with your purlis sign-in and lets chats in that
   workspace use your GitHub access with it, at exactly the remote the notice showed.
 
+- **All chats.** A switch at the head of the Chats sidebar lists every chat in every open
+  project, in this window and the others: each with its state, how long it has been in it, its
+  project and workspace and its last line, those waiting on you first, then the Stuck? ones,
+  then the rest. Choose several to stop or snooze them together. A press of a row brings its
+  chat forward, and its project with it.
+
+- **The same actions on every chat row.** A row of Asks and a row of All chats offer Answer
+  (while the chat asks something), Go to chat, Snooze and Stop, in that order.
+
+- **`purlis skill install | update | rm` works at your own terminal on an org's project.** The
+  session host records each change in the event log before it is made, as yours at the
+  terminal, so a project with `[skill_policy]` no longer sends you to the Skill studio. It needs
+  purlis or `purlis serve` running (SK-11a, #6030).
+
 ### Changed
 
 - What purlis tells a chat says a chat is in a pane, not a tab.
@@ -889,6 +903,7 @@ and every other change by its headline. All 457 changes, in full, are in
 - A write to your workspace files lands in the folder purlis checked.
 - A branch folder whose pull request closed with its head on origin is removed without `--force`.
 - A select in a list's row keeps the keyboard once you choose.
+- A list row's tooltip stays in what a screen reader hears.
 
 ### Security
 

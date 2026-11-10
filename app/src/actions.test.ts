@@ -800,7 +800,7 @@ describe("the one list of actions", () => {
       "Your settings: Your colours",
       "Your settings: Editor",
       "Your settings: Chats list",
-      "Your settings: Notifications",
+      "Your settings: Attention",
       "Your settings: Reports",
       "Your settings: This machine",
       "Your settings: Browsers",
@@ -2753,7 +2753,7 @@ describe("the palette at fifty chats", () => {
     // 906 since #629: Turn screen-reader mode on (or off), one row whose title reads the mode.
     // 907 since #1814: Your settings: Accounts.
     // 908 since #2071: the project's Your level page, under Sandbox.
-    // 909 since #1989: Your settings: Notifications.
+    // 909 since #1989: Your settings: Notifications, called Attention since #6019.
     // 910 since #2034: Your settings: Profiles.
     // This window has no todos loaded, so no `todo.` rows.
     // 911 since #2326: Your settings: Density and fonts.

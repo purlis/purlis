@@ -47,7 +47,7 @@ amending the same record do not conflict (`tools/adr-amendments.mjs` holds it).
   `node tools/story-baselines-pull.mjs <pull request>` in your checkout of the head, review them,
   and push them with your next change (or put the `update-baselines` label on, whose commit
   leaves the other checks waiting for approval) (`docs/component-stories.md`).
-- **No `unsafe`, with four audited exceptions** (`unsafe_code = "deny"` workspace-wide), each
+- **No `unsafe`, with five audited exceptions** (`unsafe_code = "deny"` workspace-wide), each
   by the operator's ruling:
   1. `purlis_core::executor::inherit_nothing_else`: the `pre_exec` hook that closes every
      descriptor above 2 in an extension's program, because nothing but code run between `fork`
@@ -64,10 +64,14 @@ amending the same record do not conflict (`tools/adr-amendments.mjs` holds it).
      specimen's hidden webview on macOS, which only `unsafe` reaches (the platform webview is a
      raw pointer and the WebKit calls are `unsafe fn`s). Ruling of 2026-10-17 (#2330): a fourth
      audited block, for the specimen snapshot.
+  5. `purlis-crash-handler`'s `attach::on_crash`: the one call of `crash-handler`'s `unsafe fn`
+     `make_crash_event`, which alone attaches the native crash handler, now that purlis owns the
+     glue `minidumper-child` held. Ruling of 2026-11-10 (#5691, ADR 0083 as amended that day):
+     *"go"*, to one small, commented `unsafe` call.
 
   Each has a `// SAFETY:` comment (clippy's `undocumented_unsafe_blocks` is denied), and
-  `crates/purlis-core/tests/it/four_unsafe_blocks.rs` names all four and fails if `unsafe` or an
-  allow of the lint appears anywhere else. A fifth block is a new ruling, not an edit.
+  `crates/purlis-core/tests/it/five_unsafe_blocks.rs` names all five and fails if `unsafe` or an
+  allow of the lint appears anywhere else. A sixth block is a new ruling, not an edit.
 - **UI is built from the component families in `app/src/ui`, never hand-rolled markup** (ADR
   0104): each wraps its React Aria primitive once, and lint refuses a control drawn by hand. Before
   any UI work, follow the `purlis-building-ui` skill

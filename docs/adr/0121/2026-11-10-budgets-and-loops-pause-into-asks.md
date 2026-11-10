@@ -27,7 +27,7 @@ asks. It leaves open what a budget is, what looping is, and what paused means in
   not hear them per chat as answers.
 - **Paused means held still** (ADR 0076 §4). The chat's program and its tasks at work below it
   each have their process group stopped with `SIGSTOP`, and `SIGCONT` lets them go on. A host
-  does this through `hold`, added in session protocol 1.83. A host before 1.83 cannot hold a
+  does this through `hold`, added in session protocol 1.84. A host before 1.84 cannot hold a
   chat: the chat is still asked about, and it keeps running meanwhile. ADR 0076 §4 also says the
   guard refuses a tool call while its chat is paused, and that is not built. A paused chat's
   board state is not `paused` yet either. Its ask is what shows it, in Asks and on its own tab.

@@ -47,6 +47,11 @@ const REFUSING: Record<string, { grounds: string[]; where: string }> = {
     where:
       "RaiseLimit: a limit's new value, on its own ground, in the Start a chat dialog, under a move's line, in Add a pool, a sign-in's strip and a profile's row on a pool",
   },
+  "settings/notifications.tsx": {
+    grounds: ["surface.base"],
+    where:
+      "finishedAfter: the minutes after which a long finish notifies, on Settings › You › Attention, the window's own ground (#6019)",
+  },
   "SkillBudget.tsx": {
     grounds: ["surface.overlay"],
     where: "SkillBudgetChange: a program's two numbers, in its Change… dialog (#5353)",

@@ -45,7 +45,6 @@ import {
 import { PersonaMark } from "./PersonaMark";
 import {
   askKey,
-  byChat,
   dismissSaid,
   MOST_ANSWERED,
   noteSeen,
@@ -66,6 +65,9 @@ import { List, ListRowSection } from "./ui/list/List";
 import { chatsOf, SnoozeAll, type Snoozing } from "./AsksSnooze";
 
 import { chainSaid, NothingDone } from "./inboxRowParts";
+import { inOrder, type Standing } from "./asksOrder";
+import { withSame } from "./asksSame";
+import { SameAsk, samePlaces, sameRowKey } from "./SameAskRow";
 import { capMarks } from "./combiningMarks";
 import {
   ASKS,
@@ -144,8 +146,9 @@ export const NOTICES = "Notices";
  * **The Inbox** (#1692, spec #1688): everything in this project that waits on the person, at the
  * top of the right side's activity bar, the "for you" side (ADR 0038 as amended 2026-10-10).
  *
- * **One list, from the asks registry** (#1690): grouped by the chat that asks, the chat that has
- * waited longest first, each group under its chain (`steward 12 › #3046 drill › log watch`, I-9).
+ * **One list, from the asks registry** (#1690): grouped by the chat that asks, ordered by facts
+ * (`asksOrder.ts`, #6006: Expiring, then blocks others, then the longest wait), each group under
+ * its chain (`steward 12 › #3046 drill › log watch`, I-9).
  * An ask is gone from here the moment its source stops waiting, wherever it was answered (I-8).
  *
  * **Answered in place, through the ask's own path** (I-3): the registry names the command its
@@ -411,13 +414,14 @@ export function Inbox({
   /** What waits in other projects is listed among every project's alone. */
   const askingShown = scope === "all" ? asking : [];
   const othersShown = scope === "all" ? others : [];
-  /** This project's name, as its tab says it: said on a row only among other projects'. */
+  /** This project's name, as its tab says it: every row is tagged with it and its workspace (ADR
+   *  0121 decision 5, #6006). */
   const project = elsewhere?.waitingHere?.find((one) => one.plane === plane)?.project;
   const whereOf = (session: number): string => {
     // Session 0 is no chat's (a change purlis holds, a sign-in): it is filed nowhere (#5240).
     const filed = session === 0 ? undefined : workspaceOf?.(session);
     return [
-      scope === "all" ? project : undefined,
+      project,
       filed === undefined ? undefined : (workspaceNamed?.(filed) ?? filed),
       personaOf?.(session),
     ]
@@ -430,7 +434,9 @@ export function Inbox({
   const widen = () => {
     if (wider !== undefined) keepInboxScope(plane, wider.scope);
   };
-  const groups = byChat(listed, (ask) => ageOf(plane, ask));
+  // **Ordered by facts** (ADR 0121 decision 5, #6006): Expiring, then blocks others, then the
+  // longest wait, one chat's asks together (`asksOrder.ts`).
+  const groups = inOrder(listed, (ask) => ageOf(plane, ask), now);
   const recent = useAnswered(plane);
   // Read only while nothing waits, where the empty Inbox lists them (D-1700-7).
   const allowedLately = useAllowedLately(
@@ -445,14 +451,14 @@ export function Inbox({
   const touch = useAnsweredWhenGone(plane, asks);
   /** Each chat's rows: a chat's held dispatches are one Notice, which asks about the first
    *  and says how many wait behind it. */
-  const rows = groups.map((group) => ({
-    ...group,
-    asks: group.asks.filter(
-      (ask, at) =>
+  const rows = groups.map((group) => {
+    const placed = group.placed.filter(
+      ({ ask }, at) =>
         ask.source !== "dispatch" ||
-        group.asks.findIndex((one) => one.source === "dispatch") === at,
-    ),
-  }));
+        group.placed.findIndex((one) => one.ask.source === "dispatch") === at,
+    );
+    return { ...group, placed, asks: placed.map(({ ask }) => ask) };
+  });
   const ignore =
     onIgnore === undefined
       ? undefined
@@ -480,15 +486,32 @@ export function Inbox({
   // chat elsewhere's, an update's. A row stands under what is above it, and an Allow on it waits
   // to settle whenever that changes (`useSettledPlace`), whatever draws the rows.
   // Not read yet, this project draws no ask: what waits elsewhere is still listed (qw359).
-  const askRows = drawsAsks && asks !== undefined ? rows : [];
+  /**
+   * **Identical requests from several chats are one row** (ADR 0121 decision 6, #6009), where
+   * each is a decision answered on its row: the group stands where its most urgent member did
+   * (`asksSame.ts`).
+   */
+  const sameRows = withSame(rows, (ask) => {
+    const shape = shapes.get(askKey(ask));
+    return shape?.decision === true ? shape.offers : [];
+  });
+  const askRows = drawsAsks && asks !== undefined ? sameRows : [];
+  const askPlaces = (ask: Shown) => {
+    const shape = shapes.get(askKey(ask)) ?? shapeOfAsk(ask);
+    const key = askKey(ask);
+    return placeIds(key, shape, shape.answers ? shape.offers : [], answering.has(key));
+  };
   const places = [
-    ...askRows
-      .flatMap((group) => group.asks)
-      .flatMap((ask) => {
-        const shape = shapes.get(askKey(ask)) ?? shapeOfAsk(ask);
-        const key = askKey(ask);
-        return placeIds(key, shape, shape.answers ? shape.offers : [], answering.has(key));
-      }),
+    ...askRows.flatMap((row) =>
+      row.kind === "chat"
+        ? row.group.asks.flatMap(askPlaces)
+        : [
+            ...samePlaces(row.same),
+            ...(answering.has(sameRowKey(row.same))
+              ? row.same.placed.flatMap(({ ask }) => askPlaces(ask))
+              : []),
+          ],
+    ),
     ...(drawsAsks ? elsewherePlaces(askingShown) : []),
     ...(drawsAsks ? herePlaces(othersShown) : []),
     ...(drawsUpdates ? updatePlaces(updatesShown) : []),
@@ -542,6 +565,39 @@ export function Inbox({
       onDot?.(dot);
     },
     [onNotices, onDot],
+  );
+
+  /** **One ask's row** (#5649), under its chat or under the identical requests it joins (#6009). */
+  const askRow = (ask: Shown, why: Standing) => (
+    <Ask
+      standing={why}
+      key={askKey(ask)}
+      plane={plane}
+      ask={ask}
+      dispatches={(asks ?? []).filter(
+        (one) => one.session === ask.session && one.source === "dispatch",
+      )}
+      shape={shapes.get(askKey(ask)) ?? shapeOfAsk(ask)}
+      open={answering.has(askKey(ask))}
+      onOpen={(open) => answerOpen(askKey(ask), open)}
+      where={whereOf(ask.session)}
+      now={now}
+      onGo={() => onGo(ask.session)}
+      onAnswered={onAnswered}
+      onIgnore={ignore === undefined ? undefined : () => ignore(ask)}
+      onSnooze={
+        snoozing === undefined
+          ? undefined
+          : () =>
+              void snoozing.snooze(
+                chatsOf((asks ?? []).filter((one) => one.session === ask.session)),
+                null,
+              )
+      }
+      onStop={onStop === undefined ? undefined : () => onStop(ask.session)}
+      onTouched={(answer) => touch(ask, answer)}
+      above={places.slice(0, places.indexOf(askKey(ask))).join("\n")}
+    />
   );
 
   const drawn = (
@@ -679,55 +735,58 @@ export function Inbox({
         ) : null}
         {drawsAsks && anyAsk && (
           <List aria-label={ASKS} className="inbox-rows" disallowTypeAhead>
-            {askRows.map((group) => (
-              <ListRowSection
-                key={group.session}
-                id={`chat:${group.session}`}
-                className="inbox-chat"
-                title={
-                  <span className="inbox-chain">
-                    {(() => {
-                      const persona = personaOf?.(group.session);
-                      return persona ? <PersonaMark persona={persona} /> : null;
-                    })()}
-                    {chainSaid(group.chain)}
-                  </span>
-                }
-                named
-                data-session={group.session}
-              >
-                {group.asks.map((ask) => (
-                  <Ask
-                    key={askKey(ask)}
-                    plane={plane}
-                    ask={ask}
-                    dispatches={(asks ?? []).filter(
-                      (one) => one.session === ask.session && one.source === "dispatch",
-                    )}
-                    shape={shapes.get(askKey(ask)) ?? shapeOfAsk(ask)}
-                    open={answering.has(askKey(ask))}
-                    onOpen={(open) => answerOpen(askKey(ask), open)}
-                    where={whereOf(ask.session)}
-                    now={now}
-                    onGo={() => onGo(ask.session)}
-                    onAnswered={onAnswered}
-                    onIgnore={ignore === undefined ? undefined : () => ignore(ask)}
-                    onSnooze={
-                      snoozing === undefined
-                        ? undefined
-                        : () =>
-                            void snoozing.snooze(
-                              chatsOf((asks ?? []).filter((one) => one.session === ask.session)),
-                              null,
-                            )
+            {askRows.map((row) => {
+              if (row.kind === "same") {
+                const key = sameRowKey(row.same);
+                const open = answering.has(key);
+                return (
+                  <ListRowSection
+                    key={key}
+                    id={`chats:${key}`}
+                    className="inbox-chat inbox-same-chats"
+                    title={
+                      <span className="inbox-chain">
+                        {row.same.placed.map(({ ask }) => chainSaid(ask.chain)).join(", ")}
+                      </span>
                     }
-                    onStop={onStop === undefined ? undefined : () => onStop(ask.session)}
-                    onTouched={(answer) => touch(ask, answer)}
-                    above={places.slice(0, places.indexOf(askKey(ask))).join("\n")}
-                  />
-                ))}
-              </ListRowSection>
-            ))}
+                    named
+                    data-sessions={row.same.placed.map(({ ask }) => ask.session).join(" ")}
+                  >
+                    <SameAsk
+                      plane={plane}
+                      same={row.same}
+                      open={open}
+                      onOpen={(to) => answerOpen(key, to)}
+                      above={places.slice(0, places.indexOf(key)).join("\n")}
+                      now={now}
+                      onAnswered={onAnswered}
+                    />
+                    {open && row.same.placed.map(({ ask, why }) => askRow(ask, why))}
+                  </ListRowSection>
+                );
+              }
+              const group = row.group;
+              return (
+                <ListRowSection
+                  key={group.session}
+                  id={`chat:${group.session}`}
+                  className="inbox-chat"
+                  title={
+                    <span className="inbox-chain">
+                      {(() => {
+                        const persona = personaOf?.(group.session);
+                        return persona ? <PersonaMark persona={persona} /> : null;
+                      })()}
+                      {chainSaid(group.chain)}
+                    </span>
+                  }
+                  named
+                  data-session={group.session}
+                >
+                  {group.placed.map(({ ask, why }) => askRow(ask, why))}
+                </ListRowSection>
+              );
+            })}
             {elsewhere !== undefined &&
               askingShown.map((item) => (
                 <ElsewhereGroup key={elsewhereKey(item)} item={item} onPress={elsewhere.onPress} />

@@ -725,6 +725,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "breakpad-symbols"
+version = "0.26.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b544545512b213899840bb26f72cd13f9fb4c3de3dd5f8dc7219688f54aebe9"
+dependencies = [
+ "async-trait",
+ "cachemap2",
+ "circular",
+ "debugid",
+ "futures-util",
+ "minidump-common",
+ "nom",
+ "range-map",
+ "thiserror 2.0.21",
+ "tracing",
+]
+
+[[package]]
 name = "brotli"
 version = "9.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -791,6 +809,12 @@ checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 dependencies = [
  "serde",
 ]
+
+[[package]]
+name = "cachemap2"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68ccbd3153aa153b2f5eff557537ffce81e4dd6c50ae0eddc41dc8d0c388436f"
 
 [[package]]
 name = "cairo-rs"
@@ -980,14 +1004,14 @@ dependencies = [
 
 [[package]]
 name = "changelog"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "parse-changelog",
 ]
 
 [[package]]
 name = "check-probe"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "chrono",
  "purlis-core",
@@ -1027,6 +1051,12 @@ dependencies = [
  "crypto-common 0.2.2",
  "inout 0.2.2",
 ]
+
+[[package]]
+name = "circular"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0fc239e0f6cb375d2402d48afb92f76f5404fd1df208a41930ec81eda078bea"
 
 [[package]]
 name = "clap"
@@ -1242,9 +1272,9 @@ dependencies = [
 
 [[package]]
 name = "crash-context"
-version = "0.6.3"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "031ed29858d90cfdf27fe49fae28028a1f20466db97962fa2f4ea34809aeebf3"
+checksum = "3748e166981fa3ba9dc54ff950ad0ed5ca4aab4b73eae21d9f539659fe806e28"
 dependencies = [
  "cfg-if",
  "libc",
@@ -1253,9 +1283,9 @@ dependencies = [
 
 [[package]]
 name = "crash-handler"
-version = "0.7.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0df5c9639f4942eb7702b964b3f9adf03a55724a57558cc177407388a8b936e2"
+checksum = "b9897480a6a7009a9ca940c1813daf2755d8a3e6857e5ac4fd0ae526ff5682d1"
 dependencies = [
  "cfg-if",
  "crash-context",
@@ -1903,6 +1933,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "either"
+version = "1.19.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
+
+[[package]]
 name = "elliptic-curve"
 version = "0.13.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2075,7 +2111,7 @@ dependencies = [
 
 [[package]]
 name = "extension-probe"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "chrono",
  "purlis-core",
@@ -2091,7 +2127,7 @@ checksum = "c942e64b20ecd39933d5ff938ca4fdb6ef0d298cc3855b231179a5ef0b24948d"
 
 [[package]]
 name = "fake-harness"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "clap",
  "portable-pty",
@@ -4285,6 +4321,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
 
 [[package]]
+name = "itertools"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4663,12 +4708,9 @@ dependencies = [
 
 [[package]]
 name = "mach2"
-version = "0.4.3"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d640282b302c0bb0a2a8e0233ead9035e3bed871f0b7e81fe4a1ec829765db44"
-dependencies = [
- "libc",
-]
+checksum = "dae608c151f68243f2b000364e1f7b186d9c29845f7d2d85bd31b9ad77ad552b"
 
 [[package]]
 name = "markup5ever"
@@ -4728,6 +4770,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
 
 [[package]]
+name = "minidump"
+version = "0.26.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a902ca21d9772a66d3d1b050b3436dcadb192694be01409e0219902dcf4bc1e8"
+dependencies = [
+ "debugid",
+ "encoding_rs",
+ "memmap2",
+ "minidump-common",
+ "num-traits",
+ "procfs-core 0.17.0",
+ "prost",
+ "range-map",
+ "scroll",
+ "thiserror 2.0.21",
+ "time",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "minidump-common"
 version = "0.26.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4743,10 +4806,24 @@ dependencies = [
 ]
 
 [[package]]
-name = "minidump-writer"
-version = "0.12.0"
+name = "minidump-unwind"
+version = "0.26.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "48ef5778fc71c10d6bac1ec6b971ba0cc4b67cd8f3f0f7689dfdaab75884082f"
+checksum = "4aa8b7212f59c525f93c62457c54f9f9ac550316ee0e41f129b4b19165d5acd1"
+dependencies = [
+ "async-trait",
+ "breakpad-symbols",
+ "minidump",
+ "minidump-common",
+ "scroll",
+ "tracing",
+]
+
+[[package]]
+name = "minidump-writer"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f742d7445a9d4c63826d302dadbbcb607745560108e88b21c4014a9724d09dbe"
 dependencies = [
  "bitflags 2.13.2",
  "byteorder",
@@ -4760,8 +4837,8 @@ dependencies = [
  "mach2",
  "memmap2",
  "minidump-common",
- "nix 0.30.1",
- "procfs-core",
+ "process-backend",
+ "procfs-core 0.18.0",
  "scroll",
  "serde",
  "serde_json",
@@ -4770,9 +4847,9 @@ dependencies = [
 
 [[package]]
 name = "minidumper"
-version = "0.10.1"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d1ab45c501f311e5e4c22232ecdd7e31120174261c42e170d41c6afbd60cc41"
+checksum = "c56279c70e341c9de54c18c804950595e76799e8ee627ff8931b64f795f09741"
 dependencies = [
  "cfg-if",
  "crash-context",
@@ -4787,19 +4864,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "minidumper-child"
-version = "0.7.0"
+name = "minimal-lexical"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8d9c1eee90a552d5357f34eacf3e700372dd2760a0ba0cde68708c3972fb53d"
-dependencies = [
- "crash-context",
- "crash-handler",
- "libc",
- "mach2",
- "minidumper",
- "thiserror 2.0.21",
- "uuid",
-]
+checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "minisign"
@@ -4943,18 +5011,6 @@ dependencies = [
 
 [[package]]
 name = "nix"
-version = "0.30.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "74523f3a35e05aba87a1d978330aef40f67b0304ac79c1c00b294c9830543db6"
-dependencies = [
- "bitflags 2.13.2",
- "cfg-if",
- "cfg_aliases 0.2.2",
- "libc",
-]
-
-[[package]]
-name = "nix"
 version = "0.31.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf20d2fde8ff38632c426f1165ed7436270b44f199fc55284c38276f9db47c3d"
@@ -4971,6 +5027,16 @@ name = "nohash-hasher"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2bf50223579dc7cdcfb3bfcacf7069ff68243f8c363f62ffa99cf000a6b9c451"
+
+[[package]]
+name = "nom"
+version = "7.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d273983c5a657a70a3e8f2a01329822f3b8c8172b73826411a55751e404a0a4a"
+dependencies = [
+ "memchr",
+ "minimal-lexical",
+]
 
 [[package]]
 name = "nonempty"
@@ -5681,7 +5747,7 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
 name = "persona-statistics"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "chrono",
  "purlis-core",
@@ -6060,6 +6126,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "process-backend"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07c02e259a3522eccc4957ee6e922db4945648fb7730a41192d919518d06a530"
+dependencies = [
+ "libc",
+ "log",
+ "process-reader",
+ "serde",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "process-reader"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3024e1803f4b8c40cca8c1955243410354cb4d67f053af9210147416a7265535"
+dependencies = [
+ "libc",
+ "serde",
+]
+
+[[package]]
+name = "procfs-core"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "239df02d8349b06fc07398a3a1697b06418223b1c7725085e801e7c0fc6a12ec"
+dependencies = [
+ "bitflags 2.13.2",
+ "hex",
+]
+
+[[package]]
 name = "procfs-core"
 version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6100,6 +6199,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "prost"
+version = "0.13.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2796faa41db3ec313a31f7624d9286acf277b52de526150b7e69f3debf891ee5"
+dependencies = [
+ "bytes",
+ "prost-derive",
+]
+
+[[package]]
+name = "prost-derive"
+version = "0.13.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
+dependencies = [
+ "anyhow",
+ "itertools",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "psl"
 version = "2.1.248"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6116,7 +6238,7 @@ checksum = "33cb294fe86a74cbcf50d4445b37da762029549ebeea341421c7c70370f86cac"
 
 [[package]]
 name = "purlis-app"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "arboard",
  "base64 0.23.1",
@@ -6168,7 +6290,7 @@ dependencies = [
 
 [[package]]
 name = "purlis-browser-engine"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -6198,7 +6320,7 @@ dependencies = [
 
 [[package]]
 name = "purlis-cli"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "base64 0.23.1",
  "changelog",
@@ -6225,7 +6347,7 @@ dependencies = [
 
 [[package]]
 name = "purlis-core"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "agent-client-protocol",
  "base64 0.23.1",
@@ -6256,6 +6378,8 @@ dependencies = [
  "log",
  "memchr",
  "memory-stats",
+ "minidump",
+ "minidump-unwind",
  "minisign",
  "minisign-verify",
  "nix 0.31.3",
@@ -6278,6 +6402,7 @@ dependencies = [
  "regex-syntax",
  "ring",
  "rusqlite",
+ "rustc-hash 2.1.3",
  "rustix",
  "rustls",
  "secrecy",
@@ -6318,16 +6443,20 @@ dependencies = [
 
 [[package]]
 name = "purlis-crash-handler"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
- "minidumper-child",
+ "crash-handler",
+ "minidump",
+ "minidumper",
+ "purlis-core",
+ "serde_json",
  "tempfile",
  "uuid",
 ]
 
 [[package]]
 name = "purlis-host"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "bytes",
  "futures",
@@ -6347,7 +6476,7 @@ dependencies = [
 
 [[package]]
 name = "purlis-linux-sandbox"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "landlock",
  "libc",
@@ -6360,7 +6489,7 @@ dependencies = [
 
 [[package]]
 name = "purlis-same-user"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "nix 0.31.3",
  "tempfile",
@@ -6369,7 +6498,7 @@ dependencies = [
 
 [[package]]
 name = "purlis-session-protocol"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "base64 0.23.1",
  "bytes",
@@ -6394,7 +6523,7 @@ dependencies = [
 
 [[package]]
 name = "purlis-skills"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "purlis-unicode",
  "rustix",
@@ -6409,7 +6538,7 @@ dependencies = [
 
 [[package]]
 name = "purlis-terminal"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "alacritty_terminal",
  "futures",
@@ -6429,7 +6558,7 @@ dependencies = [
 
 [[package]]
 name = "purlis-unicode"
-version = "0.5.1"
+version = "0.5.2"
 
 [[package]]
 name = "quick-error"
@@ -6607,7 +6736,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "release-manifest"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "minisign",
  "minisign-verify",
@@ -6992,7 +7121,7 @@ dependencies = [
 
 [[package]]
 name = "scale-project"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "chrono",
  "clap",
@@ -7777,7 +7906,7 @@ checksum = "8ee5873ec9cce0195efcb7a4e9507a04cd49aec9c83d0389df45b1ef7ba2e649"
 
 [[package]]
 name = "skill-grader"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "clap",
  "purlis-core",
@@ -8019,7 +8148,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "stand-in"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "rustix",
  "tempfile",
@@ -8108,7 +8237,7 @@ dependencies = [
 
 [[package]]
 name = "studio-probe"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "purlis-core",
  "purlis-linux-sandbox",

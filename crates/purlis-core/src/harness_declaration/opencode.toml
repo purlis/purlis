@@ -61,5 +61,7 @@ reports_its_start_before_the_first_prompt = "no: opencode reports its start at t
 keeps_conversations_by_directory = "no: opencode finds a session by its id from any directory"
 reports_waiting = "yes"
 resumes_by_id = "yes"
-per_chat_plugins = "no: opencode has no switch that turns one plugin off"
+# Measured again on 1.19.5 (ADR 0050, amended 2026-11-10, #3009): every config's `plugin` list is
+# loaded, and none can take one out.
+per_chat_plugins = "no: opencode has no switch that turns one plugin off for one chat"
 mcp_servers = "yes"

@@ -307,7 +307,7 @@ pub trait Running: Send + Sync + 'static {
     /// Notes what it has started outside its process group so far, to end with it however it
     /// ends (#5806). Nothing for a program that starts nothing so.
     fn note_strays(&self) {}
-    /// Holds it still, its whole process group, or lets it go on (1.83, #6015). Nothing for a
+    /// Holds it still, its whole process group, or lets it go on (1.84, #6015). Nothing for a
     /// program that is not a terminal's.
     fn hold(&self, still: bool) {
         let _ = still;
@@ -1029,6 +1029,10 @@ struct Hosted {
     /// The skills it was armed with, by name and level, where this host composed it (1.77,
     /// #4218): kept in memory alone, for its start's answer and a window that takes it back.
     armed_skills: Option<Vec<session::ArmedSkill>>,
+    /// The skills its persona names that it started without here, where this host composed it
+    /// and some are missing (1.83, #6078): kept in memory alone, for its start's answer and a
+    /// window that takes it back, as [`Self::armed_skills`] are.
+    skills_not_there: Option<session::SkillsNotThere>,
 }
 
 /// **Who opened a hosted program** (#2050): a link of this host's own (its window), or a link
@@ -2562,6 +2566,7 @@ impl Hosting {
                     ends_with_its_window,
                     prompt_key: prompt_key.clone(),
                     armed_skills: armed.clone(),
+                    skills_not_there: not_there.clone(),
                 },
             );
             windowless
@@ -2797,6 +2802,7 @@ impl Hosting {
                 // A browser has no prompts of a chat's to digest, nor skills.
                 prompt_key: None,
                 armed_skills: None,
+                skills_not_there: None,
             },
         );
         drop(state);
@@ -3078,6 +3084,7 @@ impl Hosting {
                 },
                 prompt_key: hosted.prompt_key.clone(),
                 armed_skills: hosted.armed_skills.clone(),
+                skills_not_there: hosted.skills_not_there.clone(),
             })
             .collect();
         programs.sort_by(|a, b| (a.number, &a.program).cmp(&(b.number, &b.program)));
@@ -3203,7 +3210,7 @@ impl Hosting {
         Ok(Answer::Done)
     }
 
-    /// Holds `program` still, or lets it go on (1.83, #6015).
+    /// Holds `program` still, or lets it go on (1.84, #6015).
     fn hold_still(&self, program: &str, still: bool) -> Result<Answer, Refusal> {
         let running = {
             let state = self.state();

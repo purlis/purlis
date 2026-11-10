@@ -51,6 +51,11 @@ quick-xml = "0.42"
 # matches it, `*` and `?`, never a leading dot. The rust-lang crate, already in this workspace's
 # lockfile, so it adds no crate to the tree.
 glob = "0.3"
+# The theme engine's per-thread colour caches (`theme::tint`), hashed by Fx rather than SipHash:
+# their keys are a theme's own colours, and SipHash was a tenth of an import's walk (#3597).
+# MIT or Apache-2.0, no dependencies of its own, and already in this workspace's lockfile, so it
+# adds no crate to the tree.
+rustc-hash = "2"
 # A program in its own pseudo-terminal and the engine that keeps its screen (`session`,
 # `engine`), and the fork lock every program is started under (`forklock`): a crate of their
 # own, which a session host links without the rest of this one (#1995).
@@ -114,6 +119,13 @@ serde_json = { workspace = true, features = ["preserve_order", "arbitrary_precis
 # from unicode-rs, the authors of the unicode-* crates the tree already has.
 unicode-properties = { version = "0.1", default-features = false, features = ["general-category"] }
 sha2 = "0.11"
+# A native crash leaves the device as its crashing thread's stack alone (#5691, ruling (b) of
+# 2026-11-10): rust-minidump's reader takes that thread out of the minidump, and its own
+# unwinder walks it, with no symbols, to modules and offsets. Not `minidump-processor`, which
+# walks every thread and brings an x86 disassembler and a terminal library with it. No default
+# features: no debug-info symbolizer, no HTTP. MIT, by the rust-minidump project.
+minidump = "0.26"
+minidump-unwind = "0.26"
 # The project index (ADR 0079 §9, #5498): SQLite FTS5 with its bundled library, so FTS5,
 # `contentless_delete` (3.43 or later) and one known SQLite version hold on every platform. No
 # default features: their `cache` is a statement cache the index does not need, and the

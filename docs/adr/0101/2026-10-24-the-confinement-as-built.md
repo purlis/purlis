@@ -18,7 +18,7 @@ A confined program reads its own folder, its state folder, its own temporary fol
 ## What it does not stop
 
 - **A declared host can pass on what it is sent.** Any declared host is a path out for what the extension reads, by design.
-- **The server name is the client's to say.** A host that answers with a model provider's service under its own name, or a CDN that routes by something other than the server name, is not told apart. Neither is a name pinned to a provider's address. The proxy holds the name to the tunnel. It cannot tell what serves it. #3094 follows this up.
+- **The server name is the client's to say.** A host that answers with a model provider's service under its own name, or a CDN that routes by something other than the server name, is not told apart. Neither is a name pinned to a provider's address. The proxy holds the name to the tunnel. It cannot tell what serves it. #3094 follows this up: the amendment of [2026-11-10](2026-11-10-a-confined-proxy-never-connects-where-a-model-is-served.md) refuses the addresses a model provider's hosts resolve to, and says what is left.
 - **A program that leaves its process group** can outlive its question, inside the same sandbox. The prompt says so.
 
 **Built by #2777.**

@@ -89,7 +89,7 @@ export function youGroups(plane?: string): SettingsGroup[] {
       help: "How chats are listed and summed up, on this machine.",
       settings: [chatsGrouped, awaySummary, browsersBeside, whereYouAnswerSetting],
     },
-    notificationsGroup(),
+    notificationsGroup(plane),
     reportsGroup(plane),
     thisMachineGroup(),
     browserLimitsGroup(),

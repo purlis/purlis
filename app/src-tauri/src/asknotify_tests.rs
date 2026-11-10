@@ -27,6 +27,8 @@ fn ask(session: u32, key: &str, says: &str, source: AskSource) -> Shown {
         answer: AnswerPath::InItsPane,
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -1051,6 +1053,7 @@ fn ended(rules: &mut Rules, plane: &PlaneId, finishes: &[Finish], away: bool) ->
         away,
         looking: NOBODY_LOOKS,
         quiet: false,
+        sources: Sources::default(),
     })
 }
 
@@ -1128,6 +1131,7 @@ fn a_failure_in_the_chat_the_person_is_looking_at_is_not_told() {
             away: false,
             looking,
             quiet: false,
+            sources: Sources::default(),
         })
     };
     assert!(read(&[]).is_empty());
@@ -1144,6 +1148,7 @@ fn ended_quiet(rules: &mut Rules, plane: &PlaneId, finishes: &[Finish]) -> Vec<A
         away: true,
         looking: NOBODY_LOOKS,
         quiet: true,
+        sources: Sources::default(),
     })
 }
 
@@ -1278,4 +1283,112 @@ fn a_project_whose_snooze_runs_out_is_read_then_and_its_chat_s_asks_are_sent_aga
     );
     rules.snoozed_until(&a, None);
     assert_eq!(rules.next_due(), None);
+}
+
+/// [`ended`], with the person away, nobody looking, and `sources` on.
+fn ended_from(
+    rules: &mut Rules,
+    plane: &PlaneId,
+    finishes: &[Finish],
+    sources: Sources,
+) -> Vec<Act> {
+    rules.ended(&Ended {
+        plane,
+        finishes,
+        long: FINISHED_AFTER,
+        away: true,
+        looking: NOBODY_LOOKS,
+        quiet: false,
+        sources,
+    })
+}
+
+#[test]
+fn a_failure_turned_off_in_attention_notifies_nothing_while_a_long_finish_still_does() {
+    let mut rules = Rules::default();
+    let a = plane("/a");
+    let off = Sources {
+        failed: false,
+        finished: true,
+    };
+    assert!(ended_from(&mut rules, &a, &[], off).is_empty());
+    let told = ended_from(
+        &mut rules,
+        &a,
+        &[finish("x1", 3, true, 1), finish("f1", 4, false, 20)],
+        off,
+    );
+    assert_eq!(only_shown(&told).update.as_deref(), Some("task:f1"));
+}
+
+#[test]
+fn a_long_finish_turned_off_in_attention_notifies_nothing_while_a_failure_still_does() {
+    let mut rules = Rules::default();
+    let a = plane("/a");
+    let off = Sources {
+        failed: true,
+        finished: false,
+    };
+    assert!(ended_from(&mut rules, &a, &[], off).is_empty());
+    let told = ended_from(
+        &mut rules,
+        &a,
+        &[finish("x1", 3, true, 1), finish("f1", 4, false, 20)],
+        off,
+    );
+    assert_eq!(only_shown(&told).update.as_deref(), Some("task:x1"));
+}
+
+#[test]
+fn a_source_turned_off_is_not_held_for_after_quiet_either() {
+    let mut rules = Rules::default();
+    let a = plane("/a");
+    let off = Sources {
+        failed: false,
+        finished: false,
+    };
+    assert!(ended_from(&mut rules, &a, &[], off).is_empty());
+    assert!(quiet_at(&mut rules, true, 1_000, true).0.is_empty());
+    let held = rules.ended(&Ended {
+        plane: &a,
+        finishes: &[finish("x1", 3, true, 1), finish("f1", 4, false, 20)],
+        long: FINISHED_AFTER,
+        away: true,
+        looking: NOBODY_LOOKS,
+        quiet: true,
+        sources: off,
+    });
+    assert!(held.is_empty());
+    let (after, _) = quiet_at(&mut rules, false, 2_000, true);
+    assert!(shown(&after).is_empty());
+}
+
+#[test]
+fn both_sources_are_on_unless_the_layout_turns_one_off_by_its_kind() {
+    let of = |document: serde_json::Value| Sources::of_layout(&document);
+    let on = Sources {
+        failed: true,
+        finished: true,
+    };
+    assert_eq!(of(serde_json::json!({})), on);
+    assert_eq!(Sources::default(), on);
+    assert_eq!(
+        of(serde_json::json!({"notifications": {"off": ["task-failed"]}})),
+        Sources {
+            failed: false,
+            finished: true
+        }
+    );
+    assert_eq!(
+        of(serde_json::json!({"notifications": {"off": ["task-done", "something-else"]}})),
+        Sources {
+            failed: true,
+            finished: false
+        }
+    );
+    // Not a list of kinds: every source stays on, since a Should-know failure is worth hearing.
+    assert_eq!(
+        of(serde_json::json!({"notifications": {"off": "task-failed"}})),
+        on
+    );
 }

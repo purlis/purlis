@@ -625,9 +625,10 @@ pub trait Beside {
         let _ = skills;
     }
     /// **Told the skills its persona names that the chat being composed starts without here**
-    /// (1.81, SK-5d, #2977): [`skills_not_here`]'s missing and built-in ones, by name alone,
-    /// which the host answers its start with so its window says them on the chat's tab. Not told
-    /// where none is. A host that keeps none ignores it.
+    /// (1.81, SK-5d, #2977; 1.83, #6078): all [`skills_not_here`] says, a skill by its name, a
+    /// skill that could not be loaded with its level and why too, which the host answers its
+    /// start and a window that takes it back with, so its window says them on the chat's tab.
+    /// Not told where none is. A host that keeps none ignores it.
     fn not_there(&self, not: session::SkillsNotThere) {
         let _ = not;
     }
@@ -876,6 +877,31 @@ fn armed_skills(set: &crate::skills::ChatSkills) -> Vec<session::ArmedSkill> {
     )
 }
 
+/// **What a chat starts without here, as its host says it** (#6078): each kind of
+/// [`crate::skills::NotHere`], a skill that could not be loaded by its level's word and its why
+/// in one sentence.
+fn not_there_of(not: crate::skills::NotHere) -> session::SkillsNotThere {
+    let not_loaded = |all: Vec<crate::skills::Broken>| {
+        all.into_iter()
+            .map(|one| session::SkillNotLoaded {
+                why: one.why.to_string(),
+                level: one.origin.level().to_owned(),
+                local: one.local,
+                name: one.name,
+            })
+            .collect()
+    };
+    session::SkillsNotThere {
+        missing: not.missing,
+        no_built_in: not.no_built_in,
+        no_workspace: not.no_workspace,
+        not_in_its_workspace: not.not_in_its_workspace,
+        broken: not_loaded(not.broken),
+        by_a_repo: not_loaded(not.by_a_repo),
+        beside_a_built_in: not.beside_a_built_in,
+    }
+}
+
 /// [`compose`] from what [`crate::start::ready`] decided for it: the seam a test hands a sandbox
 /// compiled for another machine through.
 pub fn compose_ready(
@@ -977,17 +1003,11 @@ pub fn compose_ready(
             },
         )));
     }
-    // **What its persona names that this machine does not have** (SK-5d, #2977): read as the
-    // window reads a chat of its own (SK-5), by its harness's own adapter here, and told its host
-    // by name alone, so its window says it on its tab, naming this runner. Broken plane skills
-    // and the repo's are this machine's reading of the same plane files the window holds, and
-    // are not said from here.
-    if let Some(not) = skills_not_here(&skills, kit, ready.harness, &ready.env)
-        && let Some(said) = (session::SkillsNotThere {
-            missing: not.missing,
-            no_built_in: not.no_built_in,
-        })
-        .bounded()
+    // **What it starts without here** (SK-5d, #2977; #6078): read as the window reads a chat of
+    // its own (SK-5), by its harness's own adapter and this machine's copy of the plane and the
+    // repo, and told its host whole, so its window says on its tab what a chat of its own would.
+    if let Some(said) = skills_not_here(&skills, kit, ready.harness, &ready.env)
+        .and_then(|not| not_there_of(not).bounded())
     {
         beside.not_there(said);
     }

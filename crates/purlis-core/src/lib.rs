@@ -71,6 +71,7 @@ pub mod dispatchrecord;
 pub mod dispatchrestart;
 pub mod dispatchtalk;
 pub mod dispatchunattended;
+pub mod dispatchwaits;
 pub mod dispatchwants;
 pub mod dispatchwithin;
 #[cfg(unix)]

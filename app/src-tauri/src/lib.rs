@@ -2030,7 +2030,6 @@ fn start_chat_in(
     columns: u16,
     rows: u16,
 ) -> Result<Started, String> {
-    let root = held.root();
     let start = purlis_core::start::Start {
         profile: Some(profile.clone()),
         persona: persona.clone(),
@@ -2045,7 +2044,11 @@ fn start_chat_in(
         // The person's new chat, from the window's picker (#2071).
         made: purlis_core::sandbox::Made::Window,
     };
-    let ready = purlis_core::start::ready(&start, root)
+    // Readied as the machine that composes it judges it: a pool's runner, for a chat that runs
+    // there.
+    let ready = held
+        .chats()
+        .ready_where_composed(&start, runs_on.as_ref())
         .map_err(|why| crate::asking::start_refused(held, why))?;
     let chat = Chat {
         program: ready.program.clone(),

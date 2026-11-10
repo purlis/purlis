@@ -208,6 +208,48 @@ pub struct Ended<'a> {
     pub looking: &'a dyn Fn(u32) -> bool,
     /// Whether it is Quiet now.
     pub quiet: bool,
+    /// Which of the two the person lets notify ([`Sources`]).
+    pub sources: Sources,
+}
+
+/// **Which Should-know notifications are on** (#6019, ADR 0121 decision 22): a failure of a task
+/// the person asked for, and a long finish while they are away, each turned off on its own in
+/// Settings › You › Attention. A Blocking ask is no source here: it always notifies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Sources {
+    /// A task that failed notifies: the update kind `task-failed`.
+    pub failed: bool,
+    /// A long finish while away notifies: the update kind `task-done`.
+    pub finished: bool,
+}
+
+impl Default for Sources {
+    fn default() -> Self {
+        Self {
+            failed: true,
+            finished: true,
+        }
+    }
+}
+
+impl Sources {
+    /// **Which are on, as a layout document keeps it**: `notifications.off`, the update kinds the
+    /// person turned off (`app/src/notificationPrefs.ts`). A kind it does not know is no source,
+    /// and anything but a list turns none off.
+    pub fn of_layout(document: &serde_json::Value) -> Self {
+        let Some(off) = document
+            .get("notifications")
+            .and_then(|held| held.get("off"))
+            .and_then(serde_json::Value::as_array)
+        else {
+            return Self::default();
+        };
+        let turned_off = |kind: &str| off.iter().any(|one| one.as_str() == Some(kind));
+        Self {
+            failed: !turned_off("task-failed"),
+            finished: !turned_off("task-done"),
+        }
+    }
 }
 
 /// How long a task works before its finish notifies while the person is away, until they say
@@ -495,6 +537,14 @@ impl Rules {
         let mut acts = Vec::new();
         for finish in fresh {
             let long = !finish.failed && ended.away && finish.worked > ended.long;
+            let off = if finish.failed {
+                !ended.sources.failed
+            } else {
+                !ended.sources.finished
+            };
+            if off {
+                continue;
+            }
             if !finish.by_person || !(finish.failed || long) || (ended.looking)(finish.session) {
                 continue;
             }
@@ -1469,6 +1519,9 @@ fn listen(app: &tauri::AppHandle, heard: &mpsc::Receiver<Poke>) {
         let long = document
             .as_ref()
             .map_or(FINISHED_AFTER, finished_after_of_layout);
+        let sources = document
+            .as_ref()
+            .map_or_else(Sources::default, Sources::of_layout);
         scheduling = hours.is_some();
         let quiet = app.try_state::<Notifier>().is_some_and(|notifier| {
             notifier
@@ -1501,7 +1554,7 @@ fn listen(app: &tauri::AppHandle, heard: &mpsc::Receiver<Poke>) {
             }
         }
         for plane in planes {
-            read(app, &mut rules, &plane, quiet, long);
+            read(app, &mut rules, &plane, quiet, long, sources);
         }
         for act in rules.woke(Instant::now(), &is_looking) {
             send(app, act);
@@ -1560,7 +1613,14 @@ fn woken_at(
 
 /// Reads `plane`'s asks and its tasks that ended, and does what [`Rules`] says to, while it is
 /// `quiet` or not, with `long` as a long finish.
-fn read(app: &tauri::AppHandle, rules: &mut Rules, plane: &PlaneId, quiet: bool, long: Duration) {
+fn read(
+    app: &tauri::AppHandle,
+    rules: &mut Rules,
+    plane: &PlaneId,
+    quiet: bool,
+    long: Duration,
+    sources: Sources,
+) {
     let Some(held) = app
         .try_state::<Planes>()
         .and_then(|planes| planes.held(plane).ok())
@@ -1598,6 +1658,7 @@ fn read(app: &tauri::AppHandle, rules: &mut Rules, plane: &PlaneId, quiet: bool,
         away: away(app),
         looking: &is_looking,
         quiet,
+        sources,
     }));
     for act in acts {
         send(app, act);

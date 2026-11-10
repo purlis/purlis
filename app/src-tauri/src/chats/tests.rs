@@ -6620,7 +6620,7 @@ fn a_run_a_start_begins_is_what_the_start_decided_and_says_what_it_does_not_know
         ]
     };
     let backend = purlis_core::sandbox::Os::this()
-        .backend_word(Some(Harness::ClaudeCode))
+        .backend_word()
         .unwrap_or(UNKNOWN);
 
     assert_eq!(
@@ -11336,6 +11336,7 @@ fn a_runner_chat_whose_persona_names_a_skill_its_runner_lacks_says_so_naming_the
     let lacking = SkillsNotThere {
         missing: vec!["superpowers:test-driven-development".into()],
         no_built_in: vec!["purlis-secret".into()],
+        ..Default::default()
     };
     let plane = tempfile::tempdir().expect("a plane");
     std::fs::write(plane.path().join(purlis_core::plane::MANIFEST), "").expect("charter.toml");
@@ -11402,4 +11403,124 @@ fn a_runner_chat_whose_persona_names_a_skill_its_runner_lacks_says_so_naming_the
         chats.skills_missing(started).and_then(|said| said.runner),
         Some("builds".to_owned())
     );
+}
+
+/// **#6078: a runner chat's Notice says all a chat here would, and says it again once this
+/// window reattaches it**: another workspace's skill its persona names that is not there, a
+/// plane skill that could not be loaded or that the repo leaves out, each with its level and
+/// why, and a repo skill named like a built-in one, as its runner read them there (1.83). A
+/// skill at a level this window does not know costs that one skill alone. A window that comes
+/// back to a chat left running says what its host kept of its start, naming the same runner.
+#[test]
+fn a_runner_chats_notice_says_all_a_chat_here_would_and_again_once_reattached_6078() {
+    use purlis_session_protocol::session::{SkillNotLoaded, SkillsNotThere};
+    let not_loaded = |name: &str, level: &str, local: bool, why: &str| SkillNotLoaded {
+        name: name.into(),
+        level: level.into(),
+        local,
+        why: why.into(),
+    };
+    let lacking = SkillsNotThere {
+        missing: vec!["superpowers:test-driven-development".into()],
+        no_workspace: vec!["workspaces/ghost:x".into()],
+        not_in_its_workspace: vec!["workspaces/ops:nope".into()],
+        broken: vec![
+            not_loaded("half-made", "project", false, "it has no frontmatter"),
+            not_loaded(
+                "from-later",
+                "a-level-of-later",
+                false,
+                "it is of a later level",
+            ),
+        ],
+        by_a_repo: vec![not_loaded(
+            "deploy",
+            "workspace",
+            true,
+            "the repo has its own",
+        )],
+        beside_a_built_in: vec!["purlis-secrets".into()],
+        ..Default::default()
+    };
+    let shown =
+        |name: &str, origin: purlis_core::skills::Origin, local: bool, why: &str| SkillBroken {
+            name: name.into(),
+            level: origin.into(),
+            local,
+            label: purlis_core::skills::level_shown(origin, local),
+            why: why.into(),
+        };
+    let expected = SkillsMissing {
+        persona: Some("steward".to_owned()),
+        missing: lacking.missing.clone(),
+        no_built_in: Vec::new(),
+        no_workspace: lacking.no_workspace.clone(),
+        not_in_its_workspace: lacking.not_in_its_workspace.clone(),
+        broken: vec![shown(
+            "half-made",
+            purlis_core::skills::Origin::Project,
+            false,
+            "it has no frontmatter",
+        )],
+        by_a_repo: vec![shown(
+            "deploy",
+            purlis_core::skills::Origin::Workspace,
+            true,
+            "the repo has its own",
+        )],
+        beside_a_built_in: lacking.beside_a_built_in.clone(),
+        runner: Some("builds/builds-1".to_owned()),
+    };
+    let plane = tempfile::tempdir().expect("a plane");
+    std::fs::write(plane.path().join(purlis_core::plane::MANIFEST), "").expect("charter.toml");
+    let host = Pretend::default();
+    host.on_pool("builds");
+    host.says_it_lacks(Some(lacking.clone()), Some("builds/builds-1"));
+    let chats = Chats::on_host(
+        Box::new(|_| {}),
+        Box::new(host.clone()),
+        plane.path().to_path_buf(),
+    );
+    let started = chats
+        .start_ready(&on_the_profile_work(), &a_harness_ready(None), SIZE)
+        .expect("it starts on the runner, without them");
+    assert_eq!(
+        chats.skills_missing(started),
+        Some(expected.clone()),
+        "at its start"
+    );
+
+    let host = Pretend::default();
+    host.on_a_runner();
+    host.says_it_lacks(Some(lacking), Some("builds/builds-1"));
+    host.leaves_running(3, None);
+    let chats = restartable_chats_of(plane.path(), host.clone());
+    chats.put_back(
+        &left_running_in(plane.path(), a_resumable_chat_in(plane.path())),
+        SIZE,
+    );
+    assert_eq!(host.reattached(), [3]);
+    // This window's stand-in start for a chat put back sets no environment, so the persona it
+    // runs as is the project's default, which this plane has none of.
+    assert_eq!(
+        chats.skills_missing(3),
+        Some(SkillsMissing {
+            persona: None,
+            ..expected
+        }),
+        "once reattached"
+    );
+    let _ = chats.close(3);
+
+    // A host before 1.83, which keeps nothing of it for a window that comes back, shows none.
+    let host = Pretend::default();
+    host.on_a_runner();
+    host.leaves_running(3, None);
+    let chats = restartable_chats_of(plane.path(), host.clone());
+    chats.put_back(
+        &left_running_in(plane.path(), a_resumable_chat_in(plane.path())),
+        SIZE,
+    );
+    assert_eq!(chats.skills_missing(3), None, "nothing kept");
+    let _ = chats.close(3);
 }

@@ -1387,10 +1387,10 @@ fn written(imported: &Imported, token: &str) -> Value {
     document["appearances"][0]["tokens"][token].clone()
 }
 
-/// Each shipped fixture imports with no finding its own palette could avoid, and its state and
-/// icon hues stay apart from each other after tuning: one test a fixture, so each tuned import is
-/// made once and the fixtures run side by side (#3597).
-mod every_shipped_fixture_imports_with_no_avoidable_finding_and_its_hues_apart {
+/// Each shipped fixture imports with no finding its own palette could avoid, its state and icon
+/// hues stay apart from each other after tuning, and it draws faint terminal text as words: one
+/// test a fixture, so each tuned import is made once and the fixtures run side by side (#3597).
+mod every_shipped_fixture_imports_with_no_avoidable_finding_its_hues_apart_and_faint_words {
     use super::*;
 
     /// Every fixture of [`FIXTURES`], each the name of its test below.
@@ -1448,6 +1448,24 @@ mod every_shipped_fixture_imports_with_no_avoidable_finding_and_its_hues_apart {
         let theme = drawn(&imported);
         no_finding_its_own_palette_could_avoid(name, &theme);
         state_and_icon_hues_apart(*kind, name, &theme);
+        faint_terminal_text_as_words_and_fainter_than_its_own(name, &theme);
+    }
+
+    fn faint_terminal_text_as_words_and_fainter_than_its_own(name: &str, theme: &Theme) {
+        // A source names its terminal's words and ground, never its faint text (#3768): the theme
+        // drawn from it fades the words halfway to the ground, as xterm did, and back toward the
+        // words only as far as reading at 4.5:1 takes.
+        for one in &theme.appearances {
+            let ground = one.value("terminal.background");
+            let faint = check::contrast(one.value("terminal.faint"), ground);
+            let words = check::contrast(one.value("terminal.foreground"), ground);
+            assert!(faint >= 4.5, "{name} {}: faint at {faint:.2}", one.id);
+            assert!(
+                faint < words,
+                "{name} {}: faint {faint:.2}, words {words:.2}",
+                one.id
+            );
+        }
     }
 
     fn no_finding_its_own_palette_could_avoid(name: &str, theme: &Theme) {
@@ -1783,22 +1801,67 @@ fn a_terminal_colour_s_warning_names_the_palette_entry_that_holds_it() {
 }
 
 #[test]
-fn every_shipped_fixture_draws_faint_terminal_text_as_words_and_fainter_than_its_own() {
-    // A source names its terminal's words and ground, never its faint text (#3768): the theme
-    // drawn from it fades the words halfway to the ground, as xterm did, and back toward the
-    // words only as far as reading at 4.5:1 takes.
-    for (kind, name, bytes) in FIXTURES {
-        let theme = drawn(&import(*kind, name, bytes).expect("imported"));
-        for one in &theme.appearances {
-            let ground = one.value("terminal.background");
-            let faint = check::contrast(one.value("terminal.faint"), ground);
-            let words = check::contrast(one.value("terminal.foreground"), ground);
-            assert!(faint >= 4.5, "{name} {}: faint at {faint:.2}", one.id);
-            assert!(
-                faint < words,
-                "{name} {}: faint {faint:.2}, words {words:.2}",
-                one.id
-            );
-        }
+#[ignore = "a bench: `cargo test -p purlis-core --lib theme_answers_digest -- --ignored --nocapture`"]
+fn theme_answers_digest() {
+    // What the engine answers, folded to one number a line, so two builds can be told to answer
+    // the same (#3597): every shipped fixture's import (Dune read as base16 too), its check in
+    // every combination and its hold, three parts themes' holds and stylesheets, and both
+    // built-ins' checks. A change for speed alone leaves every line as it was.
+    let fold = |text: &str| {
+        text.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
+        })
+    };
+    let read_as_base16 = (SourceKind::Base16, "dune.json", DUNE);
+    for (kind, name, bytes) in FIXTURES.iter().chain([&read_as_base16]) {
+        let started = std::time::Instant::now();
+        let imported = import(*kind, name, bytes).expect("imported");
+        let files = format!("{:?}{:?}", imported.files, imported.left_out);
+        let theme = drawn(&imported);
+        let checked = format!("{:?}", check_every(&theme));
+        let held: Vec<String> = theme
+            .appearances
+            .iter()
+            .map(|one| format!("{:?}", draw(one).held))
+            .collect();
+        println!(
+            "{kind:?} {name}: files {:016x} check {:016x} held {:016x} in {:?}",
+            fold(&files),
+            fold(&checked),
+            fold(&format!("{held:?}")),
+            started.elapsed()
+        );
+    }
+    for parts in [
+        serde_json::json!({
+            "button.root.primary.hover.fill": "control.hover",
+            "button.root.primary.open.fill": "control.base",
+            "button.root.grants.open.fill": "accent.surface",
+        }),
+        serde_json::json!({ "button.root.border-colour": "accent.base" }),
+        serde_json::json!({
+            "button.root.primary.fill": "transparent",
+            "button.root.primary.border-colour": "focus.ring",
+            "button.root.primary.hover.fill": "control.hover",
+        }),
+    ] {
+        let loaded = Library::new().load(
+            None,
+            &serde_json::json!({ "name": "Shaped", "extends": "purlis-classic", "parts": parts }),
+        );
+        let theme = loaded.theme.first();
+        let said = format!(
+            "{:?}{:?}{:?}",
+            parts::fallen(theme),
+            parts::held_again(theme),
+            parts::stylesheet(theme)
+        );
+        println!("parts {parts}: {:016x}", fold(&said));
+    }
+    for (name, theme) in [("Purlis", purlis()), ("Purlis Classic", classic())] {
+        println!(
+            "{name}: {:016x}",
+            fold(&format!("{:?}", check_every(theme)))
+        );
     }
 }
