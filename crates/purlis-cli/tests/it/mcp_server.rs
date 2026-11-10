@@ -287,7 +287,13 @@ fn with_the_studio_on_a_harness_with_no_skill_format_is_told_its_skills_are_over
         .filter_map(|tool| tool["name"].as_str())
         .collect();
     assert!(
-        names.ends_with(&["skill_list", "skill_runs", "skill_find", "skill_load"]),
+        names.ends_with(&[
+            "skill_list",
+            "skill_runs",
+            "skill_find",
+            "skill_load",
+            purlis_core::artifact::proposal::TOOL,
+        ]),
         "{names:?}"
     );
 

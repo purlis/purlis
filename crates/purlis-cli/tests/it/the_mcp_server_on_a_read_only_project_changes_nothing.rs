@@ -305,6 +305,8 @@ fn arguments(tool: &str, todo: &str) -> Value {
         // The read-only artifact verbs' twins (#5978's review) read and write nothing.
         "artifact_list" | "artifact_approve_status" => json!({}),
         "artifact_check" => json!({ "folder": "board" }),
+        // The query catalogue (ADR 0122 §7): a listing, read only.
+        "queries" => json!({}),
         other => panic!("no arguments for {other}: add it to this test"),
     }
 }
@@ -335,6 +337,7 @@ fn every_tool_leaves_every_file_of_a_read_only_project_as_it_was() {
         .iter()
         .chain(purlis_core::browsertools::TOOLS.iter())
         .chain(purlis_core::themepreview::TOOLS.iter())
+        .chain(purlis_core::artifact::proposal::TOOLS.iter())
         .map(|tool| tool.name)
         .collect();
     assert_eq!(listed, every, "the server lists every tool");

@@ -17,6 +17,7 @@ use serde_json::{Map, Value, json};
 use super::approval::{self, Standing};
 use super::{Listed, check};
 use crate::chattools::Tool;
+use crate::counts::counted;
 use crate::personas::one_line;
 
 /// The twin of `purlis artifact list`.
@@ -228,11 +229,10 @@ pub fn check_lines(checked: &check::Checked) -> Vec<String> {
 pub fn check_summary(name: &str, checked: &check::Checked) -> String {
     match &checked.declared {
         Some(declared) => format!(
-            "{name} declares api {}: {} data file(s) and {} query(ies), and calls only what it \
-             declares.",
+            "{name} declares api {}: {} and {}, and calls only what it declares.",
             declared.api,
-            declared.data.len(),
-            declared.queries.len()
+            counted(declared.data.len(), "data file", "data files"),
+            counted(declared.queries.len(), "query", "queries")
         ),
         None => format!("{name} declares nothing: it reads no data and calls no query."),
     }

@@ -138,7 +138,9 @@ fn artifact_check_passes_a_page_that_calls_only_what_it_declares() {
     .unwrap();
     assert!(said.contains("  purlis.todo_list@1 · workspace"), "{said}");
     assert!(
-        said.ends_with("board declares api 1: 0 data file(s) and 1 query(ies), and calls only what it declares."),
+        said.ends_with(
+            "board declares api 1: 0 data files and 1 query, and calls only what it declares."
+        ),
         "{said}"
     );
 }

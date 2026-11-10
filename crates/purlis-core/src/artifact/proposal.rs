@@ -69,9 +69,9 @@ pub static TOOLS: [Tool; 1] = [Tool {
                 "skill": {
                     "type": "string",
                     "description": "A skill of this chat that ships the page as its \
-                                    artifacts/<folder>/: purlis first copies it, without its \
+                                    artifacts/<folder>/: it is first copied, without its \
                                     data files, into the workspace's artifacts/<folder>/, \
-                                    and leaves a copy of the same page there as it is.",
+                                    and a copy of the same page is left there as it is.",
                 },
             },
             "required": ["folder"],
