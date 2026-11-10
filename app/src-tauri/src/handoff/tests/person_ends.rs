@@ -964,7 +964,7 @@ fn only_a_task_is_ended_this_way_and_a_chat_s_own_cancel_is_refused_once_the_per
 
 #[test]
 fn a_persona_chat_the_person_asked_for_is_ended_both_ways_and_the_tab_s_chat_is_told_the_same() {
-    if super::no_sandboxed_claude_code_stand_in_here() {
+    if super::ran_on_a_sandbox_only_stand_in() {
         return;
     }
     for way in [Way::Report, Way::Now] {
