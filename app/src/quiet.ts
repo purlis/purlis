@@ -4,7 +4,7 @@
 /**
  * **Quiet** (#6017, ADR 0121 decision 13, the glossary's term): notifications held, never the
  * count. One idea from three sources: the schedule (quiet hours, Settings › You ›
- * Notifications), "Quiet now" by hand (the toggle at the top of Asks, and the palette's row),
+ * Attention), "Quiet now" by hand (the toggle at the top of Asks, and the palette's row),
  * and the person typing in a chat, until about half a minute after their last key. The core
  * holds it (`asknotify.rs`, `QuietSources`): it sees every key a pane sends, and reads the
  * schedule. While Quiet the ✋ still counts and nothing else in the window changes.
