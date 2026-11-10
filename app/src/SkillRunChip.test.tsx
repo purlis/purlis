@@ -128,7 +128,6 @@ describe("the skill run chip on a chat's pane head", () => {
   });
 
   it("names the workspace whose copy it runs where its persona named another's, and opens that copy's runs (#6083)", async () => {
-    studioOn();
     const onOpen = vi.fn();
     render(
       <SkillRunsHere.Provider
