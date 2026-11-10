@@ -341,6 +341,8 @@ describe("the asks, grouped by chat", () => {
       "Allow",
       "Deny",
       "Go to chat",
+      "Snooze",
+      "Stop",
     ]);
   });
 
@@ -379,6 +381,8 @@ describe("the asks, grouped by chat", () => {
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
       "Deny",
       "Go to chat",
+      "Snooze",
+      "Stop",
     ]);
   });
 
@@ -395,6 +399,8 @@ describe("the asks, grouped by chat", () => {
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
       "Deny",
       "Go to chat",
+      "Snooze",
+      "Stop",
     ]);
   });
 
@@ -461,6 +467,8 @@ describe("the asks, grouped by chat", () => {
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
       "Deny",
       "Go to chat",
+      "Snooze",
+      "Stop",
     ]);
   });
 
@@ -544,6 +552,8 @@ describe("the asks, grouped by chat", () => {
       "Allow",
       "Deny",
       "Go to chat",
+      "Snooze",
+      "Stop",
     ]);
   });
 
@@ -556,6 +566,8 @@ describe("the asks, grouped by chat", () => {
       "Allow",
       "Deny",
       "Go to chat",
+      "Snooze",
+      "Stop",
     ]);
   });
 
@@ -1935,15 +1947,16 @@ describe("the keyboard (I-11)", () => {
     // → walks the row's own controls in their order: a decision's answers on its row, then Go to
     // chat (#5998).
     await userEvent.keyboard("{ArrowRight}");
-    expect(document.activeElement?.textContent).toBe("Snooze");
-    await userEvent.keyboard("{ArrowRight}");
-    expect(document.activeElement?.textContent).toBe("Stop");
-    await userEvent.keyboard("{ArrowRight}");
     expect(document.activeElement?.textContent).toBe("Allow");
     await userEvent.keyboard("{ArrowRight}");
     expect(document.activeElement?.textContent).toBe("Deny");
     await userEvent.keyboard("{ArrowRight}");
     expect(document.activeElement?.textContent).toBe("Go to chat");
+    // Then the chat's own Snooze and Stop (#6013).
+    await userEvent.keyboard("{ArrowRight}");
+    expect(document.activeElement?.textContent).toBe("Snooze");
+    await userEvent.keyboard("{ArrowRight}");
+    expect(document.activeElement?.textContent).toBe("Stop");
     // From a button, ↓ goes to the row below, as from the row.
     await userEvent.keyboard("{ArrowDown}");
     expect(second.contains(document.activeElement)).toBe(true);

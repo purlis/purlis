@@ -37,9 +37,10 @@ export function ChatActions({ who, answer, onGo, onSnooze, onStop }: ChatActions
   return (
     <>
       {answer !== undefined && (
+        // **A visible button, not a text link** (#5998): what it opens is answered there.
         <Button
           size="sm"
-          variant="quiet-link"
+          variant="secondary"
           data-lead=""
           aria-label={answer.open === true ? `Cancel answering ${who}` : `Answer ${who}`}
           aria-expanded={answer.controls === undefined ? undefined : answer.open === true}

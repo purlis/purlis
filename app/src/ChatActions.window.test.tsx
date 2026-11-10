@@ -54,7 +54,19 @@ const ASKS: Shown[] = [
   },
 ];
 
-function draw(onStop?: (session: number) => void) {
+/** A chat waiting on the person's reply, which its Answer opens a box for. */
+const REPLY: Shown = {
+  session: 6,
+  ask: "question:6",
+  says: "Waiting on your reply",
+  options: [],
+  source: "question",
+  chain: ["steward 6"],
+  answer: { via: "in-its-pane" },
+  last_message: "Which branch?",
+};
+
+function draw(onStop?: (session: number) => void, asks: Shown[] = ASKS) {
   const snoozing: Snoozing = {
     snoozed: [],
     snooze: vi.fn(() => Promise.resolve(undefined)),
@@ -65,7 +77,7 @@ function draw(onStop?: (session: number) => void) {
     <Inbox
       part="asks"
       plane={PLANE}
-      asks={ASKS}
+      asks={asks}
       onGo={onGo}
       onLeave={vi.fn()}
       snoozing={snoozing}
@@ -79,13 +91,27 @@ function draw(onStop?: (session: number) => void) {
 const firstRow = () => screen.getByRole("row", { name: /Run cargo test/ });
 
 describe("a row of Asks offers the chat's actions (#6013)", () => {
-  it("in the one order: Answer, Go to chat, Snooze, Stop", () => {
+  it("in the one order: a decision's answers on its row, then Go to chat, Snooze, Stop", () => {
     draw(vi.fn());
     const named = within(firstRow())
       .getAllByRole("button")
       .map((one) => one.textContent)
-      .filter((words) => ["Answer", "Go to chat", "Snooze", "Stop"].includes(words ?? ""));
-    expect(named).toEqual(["Answer", "Go to chat", "Snooze", "Stop"]);
+      .filter((words) => words !== "");
+    // A decision is answered on its row (#5998): its answers are its Answer.
+    expect(named).toEqual(["Allow", "Deny", "Go to chat", "Snooze", "Stop"]);
+  });
+
+  it("in the one order: Answer, Go to chat, Snooze, Stop, where it is answered in a form", () => {
+    draw(vi.fn(), [REPLY]);
+    const named = within(screen.getByRole("row", { name: /Waiting on your reply/ }))
+      .getAllByRole("button")
+      .map((one) => one.textContent)
+      .filter((words) =>
+        ["Answer", "Cancel", "Go to chat", "Snooze", "Stop"].includes(words ?? ""),
+      );
+    // Its Answer reads Cancel while its form is open.
+    expect(named.slice(1)).toEqual(["Go to chat", "Snooze", "Stop"]);
+    expect(["Answer", "Cancel"]).toContain(named[0]);
   });
 
   it("snoozes the chat with every ask it holds", async () => {
