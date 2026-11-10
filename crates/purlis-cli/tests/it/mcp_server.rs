@@ -198,6 +198,8 @@ fn a_harness_lists_charter_s_tools() {
             "dispatch_note",
             "dispatch_ask",
             "ask_operator",
+            // The MCP twin of `purlis queries`, added on purpose (#5969).
+            "queries",
             // A real browser the session host runs (#2013).
             "browser_open",
             "browser_navigate",
@@ -224,6 +226,13 @@ fn a_harness_lists_charter_s_tools() {
             "browser_save_download",
             "browser_upload",
             "theme_preview",
+            // A chat proposes a pin, which only the person pins, added on purpose (#5963).
+            "artifact_propose_pin",
+            // The MCP twins of the read-only `purlis artifact` verbs, added on purpose (#5978's
+            // review of spec #5948: "each with an MCP twin where read-only").
+            "artifact_list",
+            "artifact_check",
+            "artifact_approve_status",
         ]
     );
 }
@@ -278,7 +287,16 @@ fn with_the_studio_on_a_harness_with_no_skill_format_is_told_its_skills_are_over
         .filter_map(|tool| tool["name"].as_str())
         .collect();
     assert!(
-        names.ends_with(&["skill_list", "skill_runs", "skill_find", "skill_load"]),
+        names.ends_with(&[
+            "skill_list",
+            "skill_runs",
+            "skill_find",
+            "skill_load",
+            purlis_core::artifact::proposal::TOOL,
+            purlis_core::artifact::tools::LIST,
+            purlis_core::artifact::tools::CHECK,
+            purlis_core::artifact::tools::APPROVE_STATUS,
+        ]),
         "{names:?}"
     );
 
@@ -1221,5 +1239,119 @@ fn a_grades_chat_is_listed_and_answered_the_tools_that_only_read() {
             called.get("error").is_some(),
             "{writes} answered a grade's chat: {called}"
         );
+    }
+}
+
+#[test]
+fn the_queries_tool_is_the_mcp_twin_of_purlis_queries_and_marked_read_only() {
+    let p = project();
+    let mut server = Server::start(p.path(), "alpha");
+    server.initialize(false);
+    let listed = server.request("tools/list", json!({}));
+    let tool = listed["result"]["tools"]
+        .as_array()
+        .expect("tools")
+        .iter()
+        .find(|tool| tool["name"] == "queries")
+        .expect("queries is listed")
+        .clone();
+    assert_eq!(tool["annotations"]["readOnlyHint"], true, "{tool}");
+
+    let said = server.call("queries", json!({}));
+    assert_ne!(said["isError"], true, "{said}");
+    let listing: Value = serde_json::from_str(&text(&said)).expect("JSON");
+    assert_eq!(listing, purlis_core::catalogue::listing());
+}
+
+/// A page of `alpha`'s, pinned: `artifacts/<folder>/index.html` holding `html`.
+fn a_pinned_page(root: &Path, folder: &str, name: &str, html: &str) {
+    let artifacts = root.join("workspaces").join("alpha").join("artifacts");
+    std::fs::create_dir_all(artifacts.join(folder)).expect("its folder");
+    std::fs::write(artifacts.join(folder).join("index.html"), html).expect("its page");
+    std::fs::write(
+        artifacts.join("pins.toml"),
+        format!(
+            "version = 1\npin = [\n  {{ id = \"e2e0000000a1\", folder = \"{folder}\", name = \
+             \"{name}\", icon = \"chart\", order = 1 }},\n]\n"
+        ),
+    )
+    .expect("the pins");
+}
+
+/// #5978's review: the spec's read-only artifact verbs each have an MCP twin, marked read-only,
+/// answering as the command line does.
+#[test]
+fn artifact_list_check_and_approve_status_are_the_mcp_twins_of_the_read_only_verbs() {
+    let p = project();
+    a_pinned_page(
+        p.path(),
+        "board",
+        "Board",
+        "<!doctype html><title>Board</title><p>12</p>",
+    );
+    let mut server = Server::start(p.path(), "alpha");
+    server.initialize(false);
+    let listed = server.request("tools/list", json!({}));
+    for twin in ["artifact_list", "artifact_check", "artifact_approve_status"] {
+        let tool = listed["result"]["tools"]
+            .as_array()
+            .expect("tools")
+            .iter()
+            .find(|tool| tool["name"] == twin)
+            .unwrap_or_else(|| panic!("{twin} is listed"))
+            .clone();
+        assert_eq!(tool["annotations"]["readOnlyHint"], true, "{tool}");
+    }
+
+    let said = server.call("artifact_list", json!({}));
+    assert_ne!(said["isError"], true, "{said}");
+    // The id is drawn again from the folder on read, whatever pins.toml says it is.
+    let id = purlis_core::artifact::pins::id_of("board", None, None);
+    assert_eq!(text(&said), format!("1  {id}  board  chart  Board"));
+
+    let said = server.call("artifact_approve_status", json!({}));
+    assert_ne!(said["isError"], true, "{said}");
+    assert!(
+        text(&said).starts_with("board  script-free  "),
+        "{}",
+        text(&said)
+    );
+    assert!(text(&said).ends_with("opens without asking: no script"));
+    let said = server.call("artifact_approve_status", json!({ "pin": "nope" }));
+    assert_eq!(said["isError"], true, "{said}");
+    assert!(text(&said).contains("no pin 'nope'"), "{}", text(&said));
+
+    let said = server.call("artifact_check", json!({ "folder": "board" }));
+    assert_ne!(said["isError"], true, "{said}");
+    assert_eq!(
+        text(&said),
+        "board declares nothing: it reads no data and calls no query."
+    );
+}
+
+#[test]
+fn artifact_check_over_mcp_refuses_an_undeclared_call_and_reads_only_the_chat_s_artifacts() {
+    let p = project();
+    a_pinned_page(
+        p.path(),
+        "board",
+        "Board",
+        "<!doctype html><title>Board</title><script>purlis.port.postMessage({ id: 1, query: \
+         \"purlis.todo_list@1\" });</script>",
+    );
+    let mut server = Server::start(p.path(), "alpha");
+    server.initialize(false);
+
+    let said = server.call("artifact_check", json!({ "folder": "board" }));
+    assert_eq!(said["isError"], true, "{said}");
+    assert!(
+        text(&said).contains("purlis.todo_list@1"),
+        "{}",
+        text(&said)
+    );
+
+    for outside in ["../../beta", "/etc", "board/../.."] {
+        let said = server.call("artifact_check", json!({ "folder": outside }));
+        assert_eq!(said["isError"], true, "{outside}: {said}");
     }
 }

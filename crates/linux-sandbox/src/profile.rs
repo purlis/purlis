@@ -199,8 +199,10 @@ const JUDGED: [&str; 14] = [
     "network-bind",
 ];
 
-/// Operations purlis writes rules for that this module does not judge.
-const SET_ASIDE: [&str; 17] = [
+/// Operations purlis writes rules for that this module does not judge. `file-read-xattr`, a
+/// file's extended attributes, is denied below a plane outside a Regenerate run's code (#6120);
+/// the supervisor judges no read of them, so that rule holds on macOS alone.
+const SET_ASIDE: [&str; 18] = [
     "process-fork",
     "process-info*",
     "signal",
@@ -218,6 +220,7 @@ const SET_ASIDE: [&str; 17] = [
     "iokit-open",
     "file-write-setugid",
     "network-inbound",
+    "file-read-xattr",
 ];
 
 impl Profile {

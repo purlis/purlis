@@ -3163,6 +3163,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             Ask::Secret(_) => 19,
             Ask::ProposeSkillSet(_) => 20,
             Ask::ReportDraft(_) => 21,
+            Ask::ProposePin(_) => 22,
         }
     }
     let asks = vec![
@@ -3301,10 +3302,22 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             caught: None,
             adds: None,
         })),
+        // A proposed pin (#5963): held for the person, who alone pins it.
+        Ask::ProposePin(Box::new(purlis_core::hookwire::ProposePinAsk {
+            chat,
+            pin: purlis_core::artifact::proposal::Proposed {
+                folder: "state".to_owned(),
+                name: None,
+                icon: None,
+                command: None,
+                cwd: None,
+                skill: None,
+            },
+        })),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
     kinds.dedup();
-    assert_eq!(kinds, (0..=21).collect::<Vec<_>>(), "one of every kind");
+    assert_eq!(kinds, (0..=22).collect::<Vec<_>>(), "one of every kind");
     asks
 }
 

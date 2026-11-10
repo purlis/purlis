@@ -1,0 +1,3 @@
+### Added
+
+- A pinned artifact has History… in its bar. It lists the artifact's versions, newest first: each saved change to its page, from the project's history, and each of your last 20 Regenerates, whose data purlis keeps on this machine only and never writes to the project. Show this version opens the artifact as it was then, with the page saved by then and the data kept then; it reads nothing live and offers no actions, its script runs only when it is the template you approved, and Back to now returns to today's. Compare names the page's files and the data's values that changed between two versions, or between one and now.
