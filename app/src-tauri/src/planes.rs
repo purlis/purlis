@@ -3717,6 +3717,19 @@ impl Planes {
                 })
             })
         });
+        // And whose copy each open run is of, where its persona named another workspace's
+        // (#6083): worked out as the event log's `skill.started` works it out, so the chip and
+        // the log say the same copy. Weak for the handoff's reason.
+        held.hooks.skill_runs().name_copies_by({
+            let held = Arc::downgrade(&held);
+            Arc::new(move |chat, start| {
+                let Some(held) = held.upgrade() else {
+                    return purlis_core::skilluse::CopySaid::Own;
+                };
+                let persona = held.chats().persona_of(chat).and_then(|p| p.started_as);
+                purlis_core::skilluse::copy_said(held.root(), start, persona.as_deref())
+            })
+        });
         // A connection a Claude Code chat's server dialled in (#3316): parked at the chat's
         // door. The first each door is given, and every one refused, is audited: each request
         // the door carries spends one, so a park after the first says nothing new. Weak for the
@@ -3781,7 +3794,10 @@ impl Planes {
                 let started = strong
                     .as_ref()
                     .and_then(|held| held.chats().started_as(block.line.chat));
-                let mut told = hooks::blocked_holding(&plane, &block, has_check, started);
+                let whole = strong
+                    .as_ref()
+                    .and_then(|held| held.chats().runs_whole(block.line.chat));
+                let mut told = hooks::blocked_holding(&plane, &block, has_check, started, whole);
                 if let Some(strong) = strong {
                     // A runner's service is said with that runner's name (#2510).
                     told = hooks::on_its_runner(
@@ -5869,6 +5885,11 @@ impl Showing {
     /// notification the operator needs.
     pub fn is_showing(&self, window: &str, plane: &PlaneId) -> bool {
         self.held().get(window).and_then(Holding::front) == Some(plane)
+    }
+
+    /// The project window `window` has in front, where it said one.
+    pub fn front_of(&self, window: &str) -> Option<PlaneId> {
+        self.held().get(window).and_then(Holding::front).cloned()
     }
 
     /// The window holding `plane`, in front or behind — or none, when no window has said it

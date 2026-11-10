@@ -110,7 +110,7 @@ struct World {
     /// The profiles waiting to be signed in (#2035).
     sign_ins: Vec<purlis_core::profilestore::sign_in::Wait>,
     pool_sign_ins: Vec<purlis_core::profilestore::onrunner::PoolWait>,
-    sandbox_only: Option<purlis_core::profilestore::sandbox_only::Wait>,
+    sandbox_only: Vec<purlis_core::profilestore::sandbox_only::Wait>,
     /// The chats whose first browser call asks what their browser may reach (#2013).
     browsers: Vec<crate::chatbrowsers::Waits>,
     /// The browsers whose chat asked the person to take them over (#2015).
@@ -148,7 +148,7 @@ impl World {
             since: Vec::new(),
             sign_ins: Vec::new(),
             pool_sign_ins: Vec::new(),
-            sandbox_only: None,
+            sandbox_only: Vec::new(),
             browsers: Vec::new(),
             needs_you: Vec::new(),
             browser_sites: Vec::new(),
@@ -1665,10 +1665,11 @@ fn a_sandboxed_codex_chat_without_a_sandbox_only_profile_is_one_ask_that_makes_o
     let mut world = World::new();
     world.queue = vec![3];
     world.names = vec![(3, "steward 3")];
-    world.sandbox_only = Some(purlis_core::profilestore::sandbox_only::Wait {
+    world.sandbox_only = vec![purlis_core::profilestore::sandbox_only::Wait {
         root: std::path::PathBuf::from("/p"),
+        harness: purlis_core::harness::Harness::Codex,
         since: 9,
-    });
+    }];
     world.since = vec![("sandbox-only:codex", 9)];
 
     let asks = world.asks();
@@ -1680,7 +1681,12 @@ fn a_sandboxed_codex_chat_without_a_sandbox_only_profile_is_one_ask_that_makes_o
     assert_eq!(ask.session, 0);
     assert_eq!(ask.chain, ["Codex"]);
     assert_eq!(ids(ask), ["make", "dismiss"]);
-    assert_eq!(ask.answer, AnswerPath::SandboxOnly);
+    assert_eq!(
+        ask.answer,
+        AnswerPath::SandboxOnly {
+            harness: "codex".to_owned()
+        }
+    );
     assert!(
         ask.says
             .starts_with("Codex needs a sandbox-only profile here"),
@@ -1693,6 +1699,67 @@ fn a_sandboxed_codex_chat_without_a_sandbox_only_profile_is_one_ask_that_makes_o
             .any(|one| one.session == 3 && one.chain == ["steward 3"]),
         "the chats keep their own chains"
     );
+}
+
+#[test]
+fn a_sandboxed_claude_code_chat_on_linux_without_a_sandbox_only_profile_is_its_own_ask_in_plain_words()
+ {
+    // ADR 0067 as amended 2026-11-10: a Claude Code wait is an Ask of its own beside Codex's,
+    // which says what the profile is for and the steps to one.
+    use purlis_core::harness::Harness;
+    use purlis_core::profilestore::sandbox_only::Wait;
+    let mut world = World::new();
+    world.sandbox_only = vec![
+        Wait {
+            root: std::path::PathBuf::from("/p"),
+            harness: Harness::Codex,
+            since: 9,
+        },
+        Wait {
+            root: std::path::PathBuf::from("/p"),
+            harness: Harness::ClaudeCode,
+            since: 11,
+        },
+    ];
+    world.since = vec![("sandbox-only:codex", 9), ("sandbox-only:claude", 11)];
+
+    let asks = world.asks();
+    let ours: Vec<_> = asks
+        .iter()
+        .filter(|ask| ask.source == AskSource::SandboxOnly)
+        .collect();
+    assert_eq!(ours.len(), 2);
+    let claude = ours
+        .iter()
+        .find(|ask| ask.ask == "sandbox-only:claude")
+        .expect("Claude Code's own Ask");
+    assert_eq!(claude.chain, ["Claude Code"]);
+    assert_eq!(ids(claude), ["make", "dismiss"]);
+    assert_eq!(
+        claude.answer,
+        AnswerPath::SandboxOnly {
+            harness: "claude".to_owned()
+        }
+    );
+    assert!(
+        claude
+            .says
+            .starts_with("Claude Code needs a sandbox-only profile here"),
+        "{}",
+        claude.says
+    );
+    for step in [
+        "on Linux",
+        "Make one",
+        "sign in in the shell it opens",
+        "start the chat again.",
+    ] {
+        assert!(claude.says.contains(step), "{step}: {}", claude.says);
+    }
+    for one in &ours {
+        assert!(!one.says.ends_with('…'), "said whole: {}", one.says);
+    }
+    assert_eq!(claude.since, Some(11));
 }
 
 #[test]
@@ -2909,19 +2976,25 @@ fn a_snoozed_chats_asks_are_listed_apart_until_it_asks_something_new() {
     std::fs::create_dir_all(&root).expect("a project");
     let store = purlis_core::inboxupdates::Store::in_data(&dir.path().join("data"));
     store
-        .snooze(&root, [(3, vec!["a1".to_owned()])].into_iter().collect())
+        .snooze(
+            &root,
+            [(3, vec!["a1".to_owned()])].into_iter().collect(),
+            None,
+        )
         .expect("snoozed");
     let listing = |asks: Vec<Shown>| Asking {
         plane: PlaneId::for_tests(Path::new("/p/one")),
         asks,
         with_asking_chat: Vec::new(),
         snoozed: Vec::new(),
+        snoozed_until: None,
     };
 
     let split = snoozed_apart(
         listing(vec![asked(3, "a1"), asked(5, "b1")]),
         Some(&store),
         &root,
+        NOW,
     );
     assert_eq!(keys(&split.asks), ["b1"]);
     assert_eq!(keys(&split.snoozed), ["a1"]);
@@ -2931,13 +3004,56 @@ fn a_snoozed_chats_asks_are_listed_apart_until_it_asks_something_new() {
         listing(vec![asked(3, "a1"), asked(3, "a2"), asked(5, "b1")]),
         Some(&store),
         &root,
+        NOW,
     );
     assert_eq!(keys(&split.asks), ["a1", "a2", "b1"]);
     assert!(split.snoozed.is_empty());
-    let split = snoozed_apart(listing(vec![asked(3, "a1")]), Some(&store), &root);
+    let split = snoozed_apart(listing(vec![asked(3, "a1")]), Some(&store), &root, NOW);
     assert_eq!(keys(&split.asks), ["a1"]);
 
     // No data home: nothing is snoozed.
-    let split = snoozed_apart(listing(vec![asked(3, "a1")]), None, &root);
+    let split = snoozed_apart(listing(vec![asked(3, "a1")]), None, &root, NOW);
     assert_eq!(keys(&split.asks), ["a1"]);
+}
+
+const NOW: u64 = 1_800_000_000;
+
+#[test]
+fn a_chat_snoozed_for_an_hour_says_when_it_comes_back_and_is_listed_again_then() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = dir.path().join("project");
+    std::fs::create_dir_all(&root).expect("a project");
+    let store = purlis_core::inboxupdates::Store::in_data(&dir.path().join("data"));
+    store
+        .snooze(
+            &root,
+            [(3, vec!["a1".to_owned()])].into_iter().collect(),
+            Some(NOW + 3_600),
+        )
+        .expect("snoozed");
+    let listing = || Asking {
+        plane: PlaneId::for_tests(Path::new("/p/one")),
+        asks: vec![asked(3, "a1"), asked(5, "b1")],
+        with_asking_chat: Vec::new(),
+        snoozed: Vec::new(),
+        snoozed_until: None,
+    };
+
+    let split = snoozed_apart(listing(), Some(&store), &root, NOW + 3_599);
+    assert_eq!(keys(&split.asks), ["b1"]);
+    assert_eq!(keys(&split.snoozed), ["a1"]);
+    assert_eq!(
+        split.snoozed_until,
+        Some(1_800_003_600),
+        "the window reads again then"
+    );
+
+    let split = snoozed_apart(listing(), Some(&store), &root, NOW + 3_600);
+    assert_eq!(
+        keys(&split.asks),
+        ["a1", "b1"],
+        "its time is up: counted again"
+    );
+    assert!(split.snoozed.is_empty());
+    assert_eq!(split.snoozed_until, None);
 }

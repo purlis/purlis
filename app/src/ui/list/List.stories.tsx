@@ -15,6 +15,7 @@ import { CircleDashed, Star } from "lucide-react";
 import {
   expectFocusInSight,
   keysOnTheEnginesKeyboard,
+  tabInto,
   untilFocusInSight,
   untilFocused,
 } from "../../stories.testkit";
@@ -1057,6 +1058,9 @@ function Choosing() {
  * would have gone to the row below, and ↑ opens it too, where the row would have gone to the row
  * above, each on the option it holds; the arrows choose in it, Enter takes one, and the keyboard
  * is back on the button. The picture is the button, with what was chosen.
+ *
+ * **The ↓ that opens it is never the list's** (#6091, `keepsItsArrows`), and each key waits for
+ * where it put the keyboard to settle before the next is pressed.
  */
 export const ASelectInARow: Story = {
   render: () => <Choosing />,
@@ -1064,8 +1068,10 @@ export const ASelectInARow: Story = {
     const list = canvas.getByRole("grid", { name: "Asks" });
     const token = within(list).getByRole("row", { name: "Fill NPM_TOKEN" });
     const select = () => within(token).getByRole("button", { name: /How to fill/ });
-    await userEvent.tab();
-    await userEvent.keyboard("{ArrowDown}{ArrowRight}");
+    await tabInto(() => list);
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(() => token, "A select in a row: ↓ reaches its row");
+    await userEvent.keyboard("{ArrowRight}");
     await untilFocused(select, "A select in a row: → reaches its button from its row");
     await userEvent.keyboard("{ArrowDown}");
     const options = await screen.findByRole("listbox");
@@ -1073,7 +1079,12 @@ export const ASelectInARow: Story = {
       () => within(options).getByRole("option", { name: "A new value" }),
       "A select in a row: ↓ opens it on its first option",
     );
-    await userEvent.keyboard("{ArrowDown}{Enter}");
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(
+      () => within(options).getByRole("option", { name: "An entry I have" }),
+      "A select in a row: ↓ in its list goes to the next option",
+    );
+    await userEvent.keyboard("{Enter}");
     await untilFocused(select, "A select in a row: Enter takes an option, back on its button");
     await waitFor(() => expect(select()).toHaveTextContent("An entry I have"));
     await userEvent.keyboard("{ArrowUp}");

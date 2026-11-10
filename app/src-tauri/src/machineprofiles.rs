@@ -547,22 +547,38 @@ pub fn dismiss_sign_in(
     Ok(())
 }
 
-/// **Answers project `plane`'s Ask *Codex needs a sandbox-only profile here*** (#2037, the
-/// operator's ruling of 2026-10-15): makes a sandbox-only Codex profile, with nothing imported,
-/// and puts the Ask away. The window then opens Codex's own sign-in for it in a shell tab
-/// ([`type_profile_sign_in`]). The profile's name.
+/// The harness a sandbox-only Ask names by its kind's word (`codex`, `claude`): one a sandboxed
+/// chat waits for a sandbox-only profile of ([`purlis_core::start::wants_a_sandbox_only_profile`]).
+fn sandbox_only_harness(word: &str) -> Result<purlis_core::harness::Harness, String> {
+    use purlis_core::harness::Harness;
+    match Harness::of_kind(word) {
+        Some(harness @ (Harness::Codex | Harness::ClaudeCode)) => Ok(harness),
+        _ => Err(format!(
+            "'{}' is no harness purlis makes a sandbox-only profile for, so nothing was made.",
+            purlis_core::shown::short(word)
+        )),
+    }
+}
+
+/// **Answers project `plane`'s Ask *Codex needs a sandbox-only profile here*, or *Claude Code
+/// needs …*** (#2037, the operator's ruling of 2026-10-15; Claude Code on Linux, ADR 0067 as
+/// amended 2026-11-10): makes a sandbox-only profile of `harness` (the kind's word), with
+/// nothing imported, and puts the Ask away. The window then opens the harness's own sign-in for
+/// it in a shell tab ([`type_profile_sign_in`]). The profile's name.
 #[tauri::command]
 #[specta::specta]
 pub async fn make_sandbox_only_profile(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
+    harness: String,
 ) -> Result<String, String> {
+    let harness = sandbox_only_harness(&harness)?;
     let held = planes.held(&plane)?;
     let root = held.root().to_path_buf();
     let teller = held.hooks().asks_teller();
     let made = blocking(move || {
-        let made = profilestore::sandbox_only::make(&store()?, purlis_core::halt::now())?;
-        profilestore::sandbox_only::dismiss(&root);
+        let made = profilestore::sandbox_only::make(&store()?, harness, purlis_core::halt::now())?;
+        profilestore::sandbox_only::dismiss(&root, harness);
         Ok(made)
     })
     .await?;
@@ -570,16 +586,18 @@ pub async fn make_sandbox_only_profile(
     Ok(made.record.name)
 }
 
-/// Puts away project `plane`'s Ask *Codex needs a sandbox-only profile here* (#2037): Dismiss. A
-/// sandboxed Codex chat's next start asks again while this machine has no such profile.
+/// Puts away project `plane`'s Ask for a sandbox-only profile of `harness` (#2037): Dismiss. A
+/// sandboxed chat's next start asks again while this machine has no such profile.
 #[tauri::command]
 #[specta::specta]
 pub fn dismiss_sandbox_only(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
+    harness: String,
 ) -> Result<(), String> {
+    let harness = sandbox_only_harness(&harness)?;
     let held = planes.held(&plane)?;
-    profilestore::sandbox_only::dismiss(held.root());
+    profilestore::sandbox_only::dismiss(held.root(), harness);
     held.hooks().asks_teller()();
     Ok(())
 }

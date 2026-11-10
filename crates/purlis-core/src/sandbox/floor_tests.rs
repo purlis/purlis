@@ -23,7 +23,6 @@ fn machine_with(bin: &Path) -> Machine {
         env: crate::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
         home: Some(PathBuf::from("/home/op")),
         os: Os::MacOs,
-        on_a_sandbox_only_profile: false,
     }
 }
 
@@ -188,7 +187,6 @@ fn the_floor_never_holds_the_project_or_a_folder_above_the_home() {
         )]),
         home: Some(PathBuf::from("/home/op")),
         os: Os::MacOs,
-        on_a_sandbox_only_profile: false,
     };
     let held = floor_held(&root, &machine, &[]);
     assert!(
@@ -518,7 +516,6 @@ fn no_chat_reads_or_writes_the_copies_of_dockers_settings() {
         )]),
         home: Some(PathBuf::from("/home/op")),
         os: Os::MacOs,
-        on_a_sandbox_only_profile: false,
     };
     let held = Denied::of(&root, &machine)
         .paths
@@ -544,7 +541,6 @@ fn no_chat_writes_where_a_podman_machine_or_a_rootless_engine_keeps_its_socket()
         ]),
         home: Some(PathBuf::from("/home/op")),
         os: Os::Linux,
-        on_a_sandbox_only_profile: false,
     };
     let denied: Vec<PathBuf> = Denied::of(&root, &machine)
         .paths
@@ -587,7 +583,6 @@ fn podmans_folders_are_never_written_by_a_chat() {
         ]),
         home: Some(home.clone()),
         os: Os::MacOs,
-        on_a_sandbox_only_profile: false,
     };
     for harness in [Harness::Codex, Harness::Opencode] {
         let profile = wrapped_floor(harness, &root, &machine, &[4040, 4041], None);
@@ -647,7 +642,6 @@ fn podmans_run_state_is_held_where_no_runtime_folder_is_named() {
             env: crate::secrets::Env::of(env),
             home: Some(PathBuf::from("/home/op")),
             os: Os::Linux,
-            on_a_sandbox_only_profile: false,
         };
         Denied::of(&root, &machine)
             .paths
@@ -1847,52 +1841,58 @@ fn machine_on(os: Os, home: &Path) -> Machine {
         env: crate::secrets::Env::of(&[("PATH", "/opt/none")]),
         home: Some(home.to_path_buf()),
         os,
-        on_a_sandbox_only_profile: false,
     }
 }
 
-/// On Linux, Claude Code's sandbox puts a denied path that does not exist out of reach of a read
-/// too, and git stops on a home config it cannot read. So the home's git config is made, empty,
-/// before a Claude Code chat starts at the floor there: held as an existing file is, and read
-/// as none.
+/// What `applied` makes, empty, in the home before its chat starts: Claude Code's own sandbox's
+/// settings say, and purlis's wrap makes nothing there ([`claude_wrap::Wrap::settings`]).
+fn made_empty_of(applied: &Applied) -> Vec<PathBuf> {
+    match applied.form() {
+        Form::ClaudeCode(settings) => settings.made_empty.clone(),
+        Form::ClaudeWrapped(wrap) => wrap.settings().made_empty,
+        other => panic!("not Claude Code's: {other:?}"),
+    }
+}
+
+/// On Linux every sandboxed Claude Code chat runs inside purlis's wrap, with Claude Code's own
+/// sandbox off (ADR 0067 as amended 2026-11-10), so nothing is made in the home before it starts
+/// at the floor; and macOS's sandbox reads a denied path that does not exist as none.
 #[test]
-fn on_linux_the_floor_makes_the_homes_git_config_before_a_claude_code_chat_starts() {
+fn a_claude_code_chat_at_the_floor_makes_no_git_config_in_the_home() {
     let (_dir, root) = project();
     let home = Path::new("/home/op");
-    let on_linux = settings_of(&floor_of(decided(
+    let on_linux = floor_of(decided(
         Harness::ClaudeCode,
         &root,
         &machine_on(Os::Linux, home),
-    )));
-    assert_eq!(on_linux.made_empty, vec![home.join(".gitconfig")]);
-    // Still held: made, it is denied as before.
-    assert!(
-        strings(&on_linux.sandbox["filesystem"]["denyWrite"])
-            .contains(&"/home/op/.gitconfig".to_owned()),
-        "{}",
-        on_linux.sandbox
-    );
-    // macOS's sandbox reads a denied path that does not exist as none.
-    let on_macos = settings_of(&floor_of(decided(
+    ));
+    let Form::ClaudeWrapped(wrap) = on_linux.form() else {
+        panic!("inside purlis's wrap: {:?}", on_linux.form());
+    };
+    assert!(wrap.settings().is_off(), "its own sandbox is off");
+    assert!(made_empty_of(&on_linux).is_empty());
+    let on_macos = floor_of(decided(
         Harness::ClaudeCode,
         &root,
         &machine_on(Os::MacOs, home),
-    )));
-    assert!(on_macos.made_empty.is_empty(), "{:?}", on_macos.made_empty);
+    ));
+    assert!(made_empty_of(&on_macos).is_empty());
 }
 
-/// The full sandbox writes no rule on the home's git config, so it needs none made.
+/// The full sandbox makes nothing in the home either.
 #[test]
 fn the_full_sandbox_makes_nothing_in_the_home() {
     let (_dir, root) = project();
     std::fs::write(root.join("charter.toml"), "[sandbox]\nmode = \"on\"\n").expect("charter.toml");
-    let applied = floor_of(decided(
-        Harness::ClaudeCode,
-        &root,
-        &machine_on(Os::Linux, Path::new("/home/op")),
-    ));
-    assert_eq!(applied.level(), Level::Full);
-    assert!(settings_of(&applied).made_empty.is_empty());
+    for os in [Os::MacOs, Os::Linux] {
+        let applied = floor_of(decided(
+            Harness::ClaudeCode,
+            &root,
+            &machine_on(os, Path::new("/home/op")),
+        ));
+        assert_eq!(applied.level(), Level::Full, "{os:?}");
+        assert!(made_empty_of(&applied).is_empty(), "{os:?}");
+    }
 }
 
 /// What is made is an empty file where there is nothing: a file already there keeps what it
@@ -1902,11 +1902,14 @@ fn the_homes_git_config_is_made_empty_only_where_there_is_none() {
     let (_dir, root) = project();
     let home = tempfile::tempdir().expect("a home");
     let home = home.path().canonicalize().expect("a real folder");
-    let settings = settings_of(&floor_of(decided(
+    let mut settings = settings_of(&floor_of(decided(
         Harness::ClaudeCode,
         &root,
-        &machine_on(Os::Linux, &home),
+        &machine_on(Os::MacOs, &home),
     )));
+    // The home's git config, as Claude Code's own sandbox asks for it where a denied path that
+    // does not exist is out of reach of a read too.
+    settings.made_empty = vec![home.join(".gitconfig")];
     let config = home.join(".gitconfig");
 
     settings.make_empty();
@@ -2041,7 +2044,6 @@ fn homed(home: &Path, env: &[(&str, &str)]) -> Machine {
         env: crate::secrets::Env::of(env),
         home: Some(home.to_path_buf()),
         os: Os::MacOs,
-        on_a_sandbox_only_profile: false,
     }
 }
 
@@ -2346,7 +2348,6 @@ fn a_forge_programs_folders_moved_by_a_variable_are_never_written_by_a_chat() {
         ]),
         home: Some(home.clone()),
         os: Os::MacOs,
-        on_a_sandbox_only_profile: false,
     };
     for harness in [Harness::Codex, Harness::Opencode] {
         let profile = wrapped_floor(harness, &root, &machine, &[4040, 4041], None);
@@ -2411,7 +2412,6 @@ fn a_forge_programs_folders_moved_by_a_variable_are_never_written_by_a_chat() {
         ]),
         home: Some(home.clone()),
         os: Os::Linux,
-        on_a_sandbox_only_profile: false,
     };
     assert!(
         Denied::of(&root, &relative)
@@ -2429,7 +2429,6 @@ fn a_forge_programs_folders_moved_by_a_variable_are_never_written_by_a_chat() {
         ]),
         home: Some(home.clone()),
         os: Os::Linux,
-        on_a_sandbox_only_profile: false,
     };
     let wide_held: Vec<PathBuf> = Denied::of(&root, &wide)
         .paths

@@ -13,7 +13,8 @@
 //! becomes one upstream `SandboxClaim` on the pool's `SandboxWarmPool`. Upstream's controller
 //! writes that claim's status, which is why purlis's Claim is an object of its own.
 //!
-//! It acts only on Claims admitted under its policy, however it was installed ([`admission`]).
+//! It acts only on Claims admitted under its policy, however it was installed, while that policy is
+//! the one it ships ([`admission`]).
 //!
 //! **Each person's runners run in a namespace of their own** ([`person`], #2055): the operator
 //! makes it, gives the person alone a role there and caps their runners with a quota. A Claim
@@ -32,8 +33,9 @@
 //! the runners it suspended and the Claims it saw deleted.
 //!
 //! **What it may do** is `deploy/operator.yaml`'s ClusterRole and nothing else: read Pools and
-//! Claims, write a Pool's and a Claim's status and a Claim's finalizer, read the policies'
-//! bindings, read, create, patch and delete the three upstream objects, read a runner's pod by
+//! Claims, write a Pool's and a Claim's status and a Claim's finalizer, read and watch purlis's
+//! policies and their bindings by name, read, create, patch and delete the three upstream objects,
+//! read a runner's pod by
 //! name, and make each person's runner namespace, its role binding and its quota. It holds no
 //! `exec` or `attach` right to a pod itself and none to read a Secret: its signing keys are mounted
 //! in its pod by the kubelet, and read again as a team admin rolls them (#3305). Beside that
@@ -62,12 +64,13 @@ pub mod vouch;
 
 pub use admission::{
     Admission, FORGE_POLICY, POLICY, RUNNER_NAMESPACES_POLICY, SETTLE, admission, in_force_since,
+    shipped_policy,
 };
 pub use reconcile::{
     CLUSTER_NAMESPACE, FIELD_MANAGER, LinkKeyIs, OVER_QUOTA_AGAIN, UNCOUNTED_FOR,
     claims_of_upstream, claims_woken_by, cluster_of, managed_as_applied, pool_objects_go_with,
-    pool_status_patch, retry_after_conflict, run, settled, status_of, status_of_a_deleted_pool,
-    status_of_a_missing_pool, status_of_a_stopped_claim,
+    pool_status_patch, retry_after_conflict, run, settled, spec_held_whole, status_of,
+    status_of_a_deleted_pool, status_of_a_missing_pool, status_of_a_stopped_claim,
     status_of_a_suspended_runner_of_a_deleted_pool, status_of_an_object_in_the_way, status_patch,
     status_withdrawn, suspending_again, warm_wanted,
 };

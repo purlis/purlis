@@ -166,7 +166,7 @@ fn the_operator_may_do_exactly_what_it_needs() {
                 "admissionregistration.k8s.io",
                 "validatingadmissionpolicies",
                 "purlis-claims-use-their-pool,purlis-runner-namespaces,purlis-forge",
-                "get",
+                "get,list,watch",
             ),
             (
                 "admissionregistration.k8s.io",
@@ -285,7 +285,7 @@ fn the_operator_reads_only_its_own_policys_binding() {
         strings(&rules[1]["resources"]),
         ["validatingadmissionpolicies"]
     );
-    assert_eq!(strings(&rules[1]["verbs"]), ["get"]);
+    assert_eq!(strings(&rules[1]["verbs"]), ["get", "list", "watch"]);
     assert_eq!(
         strings(&rules[1]["resourceNames"]),
         [
@@ -379,7 +379,7 @@ fn a_claim_is_admitted_only_for_someone_the_cluster_lets_use_its_pool() {
     // only when it runs a stopped claim again.
     assert_eq!(strings(&rules[0]["operations"]), ["CREATE", "UPDATE"]);
     let validations = spec["validations"].as_array().expect("validations");
-    assert_eq!(validations.len(), 8, "{spec}");
+    assert_eq!(validations.len(), 9, "{spec}");
     let expression = |at: usize| {
         validations[at]["expression"]
             .as_str()
@@ -591,6 +591,45 @@ fn a_purlis_pools_template_is_made_and_its_spec_changed_by_the_operator_alone() 
          request.userInfo.username=='{operator}'||\
          !object.metadata.name.startsWith('{ours}')||\
          request.operation=='UPDATE'&&object.spec==oldObject.spec"
+    );
+    let validation = spec["validations"]
+        .as_array()
+        .expect("validations")
+        .iter()
+        .find(|v| {
+            v["expression"]
+                .as_str()
+                .is_some_and(|e| e.split_whitespace().collect::<String>() == wanted)
+        })
+        .unwrap_or_else(|| panic!("no validation {wanted} in {spec}"));
+    assert_eq!(validation["reason"], "Forbidden");
+}
+
+/// **What is in a runner namespace of upstream's is the operator's alone**: only the operator
+/// makes an upstream claim, template or warm pool there, so what it finds there under its own
+/// names, controlled by the namespace, is what it made.
+#[test]
+fn upstreams_objects_in_a_runner_namespace_are_made_by_the_operator_alone() {
+    let documents = documents("policy.yaml");
+    let policy = policy_named(&documents, purlis_cluster_operator::POLICY);
+    let spec = &policy["spec"];
+    let upstream = spec["matchConstraints"]["resourceRules"]
+        .as_array()
+        .expect("rules")
+        .iter()
+        .find(|rule| strings(&rule["apiGroups"]) == ["extensions.agents.x-k8s.io"])
+        .expect("the rule on upstream's objects");
+    assert_eq!(
+        strings(&upstream["resources"]),
+        ["sandboxclaims", "sandboxtemplates", "sandboxwarmpools"]
+    );
+    assert!(strings(&upstream["operations"]).contains(&"CREATE".to_owned()));
+    let runners = purlis_cluster_operator::person::NAMESPACE_PREFIX;
+    let operator = "system:serviceaccount:purlis-system:purlis-cluster-operator";
+    let wanted = format!(
+        "request.resource.group!='extensions.agents.x-k8s.io'||request.operation!='CREATE'||\
+         !request.namespace.startsWith('{runners}')||\
+         request.userInfo.username=='{operator}'"
     );
     let validation = spec["validations"]
         .as_array()

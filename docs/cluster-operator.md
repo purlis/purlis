@@ -527,7 +527,10 @@ pool's templates (both named `purlis-pool-<pool>`, below), when it is made there
 moved off one by anyone but the operator's service account: such a runner would skip the checks
 above. A pool's `SandboxTemplate` is made, and its spec changed, by the operator's service account
 alone too; an update that leaves its spec as it is, such as upstream's controller labelling it,
-passes. Upstream's own objects that are not a pool's are left to upstream. This holds as far as
+passes. In a runner namespace ([below](#each-persons-namespace)), the operator's service account
+alone makes any upstream `SandboxClaim`, `SandboxTemplate` or `SandboxWarmPool`, so what the
+operator finds there under its own names is what it made. Elsewhere, upstream's own objects that
+are not a pool's are left to upstream. This holds as far as
 Kubernetes' usual boundary goes: whoever may act as the operator's service account (impersonate
 it, mint its tokens, or run a pod as it in the operator's namespace), or change the policy and its
 binding, passes it. Rights in the operator's namespace are the operator's rights.
@@ -650,7 +653,13 @@ force, it acts on no Claim, and each says `PolicyNotInForce`. The policy is take
 30 seconds after its binding was made, the time every API server takes to enforce it. A Claim
 made before then is never acted on: it says `MadeBeforePolicy`; delete it and make it again. The
 time is the later of the policy's and its binding's (#3854), so a policy made again under a binding
-that stayed counts as made again. A binding changed since it was made (its `generation` is not 1)
+that stayed counts as made again. The operator reads the policy itself too, and watches it: while
+its rules, what it matches, or its failure policy are not the ones this operator installs (what
+`operator/deploy/policy.yaml` says, for the namespace the operator runs in, with what the API
+server fills in when it is left unnamed), it is not in force, and Claims say `PolicyNotInForce`
+until it is installed again. An upgrade installs the operator and its policies together; a Claim
+met in the seconds between the two waits, and goes on when the policy changes. A binding changed
+since it was made (its `generation` is not 1)
 counts as no binding, since a cluster keeps no time for the change: Claims say `PolicyNotInForce`
 until a cluster admin makes it again, as the same rules hold for runner namespaces. So does a
 binding whose `matchResources` narrows what the policy matches (a namespace or object selector
@@ -676,6 +685,12 @@ on:
 | `RoleBinding` | `purlis-runner-owner` | the cluster role `purlis-runner-owner`, which the chart installs, for the requester alone: a `User`, or the `ServiceAccount` a `system:serviceaccount:<namespace>:<name>` requester names. The role allows `get`, `list` and `watch` on pods, `create` and `get` on `pods/exec`, and `get` on `pods/log`: what a desktop needs to pair with and link to the runner over `kubectl exec`, and to read its log. Nothing else: the requester makes, changes and deletes nothing there |
 | `ResourceQuota` | `purlis-person` | the chart's `perPerson.quota`: `claims` as `count/sandboxclaims.extensions.agents.x-k8s.io`, `cpu` as `requests.cpu`, `memory` as `requests.memory`, `memoryLimit` as `limits.memory`, `ephemeralStorage` as `requests.ephemeral-storage` and `storage` as `requests.storage`. Applied again whenever it differs from the chart's value, so a changed value reaches each person as their Claims are next looked at |
 | `NetworkPolicy` | `purlis-deny-egress` | every pod of the namespace, for egress, with no rule: NetworkPolicies add up, so a runner goes out only where upstream's policy for its template, or `purlis-forge-mint`, lets it, whichever of them stands at the moment. Made before anything else runs there |
+
+**What it writes there says what it wrote, and nothing more.** The operator applies the quota and
+its network policies server-side, which takes back the fields it owns but leaves a field another
+manager added, such as a quota's `scopes` or a label in a network policy's `podSelector`. When one
+still differs from what the operator wrote once applied, the operator writes its whole spec over
+it with a JSON patch, only at the version it applied, and says so in its log.
 
 **The policy on runner namespaces holds them at admission.** A second ValidatingAdmissionPolicy,
 `purlis-runner-namespaces`, installed beside the policy on Claims (`operator/deploy/policy.yaml`)
@@ -749,7 +764,8 @@ the upstream claim's status, which the operator reads.
 **It changes only objects it made.** Before it writes any of the three, it reads what the
 cluster holds under that name. An object it made is controlled by the runner namespace it made,
 by uid, and an upstream claim it made also names its Claim's uid; any other object under that
-name, one made by hand or by another tool, is left exactly as it is. The Claim then says
+name, one made by hand or by another tool, is left exactly as it is. In a runner namespace only
+the operator makes them at all, as the policy on Claims holds. The Claim then says
 `UpstreamObjectInTheWay`, naming the object's kind, name and namespace, and nothing is made for
 it. Remove or rename that object and the Claim goes on at once: the operator watches all three
 kinds.
@@ -888,7 +904,7 @@ it holds, but for the one Role below where the chart names a key:
 | `rbac.authorization.k8s.io` | `clusterroles`, only `purlis-runner-owner` | bind |
 | `agents.x-k8s.io` | `sandboxes` | get, patch |
 | `admissionregistration.k8s.io` | `validatingadmissionpolicybindings`, only `purlis-claims-use-their-pool`, `purlis-runner-namespaces` and `purlis-forge` | get, list, watch |
-| `admissionregistration.k8s.io` | `validatingadmissionpolicies`, only `purlis-forge` | get |
+| `admissionregistration.k8s.io` | `validatingadmissionpolicies`, only `purlis-claims-use-their-pool`, `purlis-runner-namespaces` and `purlis-forge` | get, list, watch |
 | `extensions.agents.x-k8s.io` | `sandboxclaims`, `sandboxtemplates`, `sandboxwarmpools` | create, delete, get, list, patch, watch |
 
 It holds no right to `exec`, `attach` or port-forward to a pod itself, and in that ClusterRole

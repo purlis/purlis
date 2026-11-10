@@ -38,7 +38,7 @@ import { ASKS_CHANGED, answerAsk } from "./permissionAsks";
 import { listenForChats } from "./chatEvents";
 import { askRemoveWorkspace } from "./removeWorkspaceAsk";
 import { askOpenBrowser, OPEN_VIEW, TAKE_OVER } from "./browserNeedsYou";
-import { runGrantsMoved, sandboxCommandReturned } from "./sandboxAsked";
+import { onSandboxCommand, runGrantsMoved, sandboxCommandReturned } from "./sandboxAsked";
 import { askOpenProposal } from "./proposedChangeOpen";
 import { proposeOldKeysRemoval } from "./oldHarnessPlugins";
 import { askOpenRunnerWrite } from "./runnerWriteOpen";
@@ -51,6 +51,8 @@ import {
   SIGNING_WAITING_CHANGED,
 } from "./signingAsked";
 import { refusalsAnswered } from "./vaultRefusals";
+import { asDrawn, asNamed } from "./projectExpects";
+import { POOL_SIGN_IN_CONFIRM } from "./PoolSignInConfirm";
 
 /**
  * The events after which a project's asks may read differently: its hooks' asks, a dispatch
@@ -143,7 +145,13 @@ export function useAsks(planes: readonly string[]): {
       }).catch(() => undefined),
     );
     stops.push(listenForChats("moved", (told) => reader.soon(told.plane)).catch(() => undefined));
+    // A command's confirmation came or went (#6000), or the window answered something of a
+    // sandbox's, such as what a project expects: it is no one project's word, so each list is
+    // read again.
+    stops.push(listen(POOL_SIGN_IN_CONFIRM, () => reader.soonAll()).catch(() => undefined));
+    const offSandbox = onSandboxCommand(() => reader.soonAll());
     return () => {
+      offSandbox();
       moved.delete(reader.soon);
       reader.stop();
       for (const stop of stops) void stop.then((off) => off?.()).catch(() => undefined);
@@ -183,7 +191,12 @@ function listReader(
         // An older core lists no task question with its asking chat: none is.
         const with_asking_chat = listed?.with_asking_chat ?? [];
         // An older core, or a test's mock, lists no snoozed ask (#5647): none is.
-        const next = { asks, with_asking_chat, snoozed: listed?.snoozed ?? [] };
+        const next = {
+          asks,
+          with_asking_chat,
+          snoozed: listed?.snoozed ?? [],
+          snoozed_until: listed?.snoozed_until ?? null,
+        };
         // **An answer that says what the last one said changes nothing** (#4727): every burst of
         // a busy chat's moves reads the list again, and a fresh list each time drew the whole
         // window again for asks that had not moved. The core's answer is plain data, written
@@ -194,8 +207,32 @@ function listReader(
             : { ...was, [plane]: next },
         );
         lookAtHoldsEnd(plane, asks);
+        lookAtSnoozesEnd(plane, next.snoozed_until);
       },
       () => {},
+    );
+  };
+  /** The read due when the first snoozed chat a project's list names comes back (#6018). */
+  const snoozes = new Map<string, ReturnType<typeof setTimeout>>();
+  /**
+   * **A snooze for a while runs out with no event of its own** (#6018, ADR 0121 decision 14):
+   * the list is read again when the first snoozed chat it names comes back, and the core lets
+   * that chat go, so its asks are counted and listed again then. The time is the core's
+   * record's, so it holds across a relaunch.
+   */
+  const lookAtSnoozesEnd = (plane: string, until: number | null) => {
+    clearTimeout(snoozes.get(plane));
+    snoozes.delete(plane);
+    if (until === null) return;
+    snoozes.set(
+      plane,
+      setTimeout(
+        () => {
+          snoozes.delete(plane);
+          read(plane);
+        },
+        Math.max(0, until * 1000 - Date.now()),
+      ),
     );
   };
   /**
@@ -218,6 +255,16 @@ function listReader(
       }, wait),
     );
   };
+  const soon = (plane: string) => {
+    if (timers.has(plane)) return;
+    timers.set(
+      plane,
+      setTimeout(() => {
+        timers.delete(plane);
+        read(plane);
+      }, SETTLE_MS),
+    );
+  };
   return {
     read,
     start() {
@@ -225,25 +272,21 @@ function listReader(
       live = true;
       for (const plane of watched) read(plane);
     },
-    soon(plane: string) {
-      if (timers.has(plane)) return;
-      timers.set(
-        plane,
-        setTimeout(() => {
-          timers.delete(plane);
-          read(plane);
-        }, SETTLE_MS),
-      );
+    soonAll() {
+      for (const plane of watched) soon(plane);
     },
+    soon,
     watch(planes: Set<string>) {
       watched = planes;
       setHeld((was) => Object.fromEntries(Object.entries(was).filter(([one]) => planes.has(one))));
     },
     stop() {
       live = false;
-      for (const timer of [...timers.values(), ...holds.values()]) clearTimeout(timer);
+      for (const timer of [...timers.values(), ...holds.values(), ...snoozes.values()])
+        clearTimeout(timer);
       timers.clear();
       holds.clear();
+      snoozes.clear();
     },
   };
 }
@@ -486,11 +529,12 @@ export async function answerTaken(
         break;
       }
       case "sandbox-only": {
-        // Make one makes a sandbox-only Codex profile (#2037), then the project's window opens
-        // a shell tab where the core types Codex's own sign-in for it. Dismiss puts it away.
-        if (option === "dismiss") return commands.dismissSandboxOnly(plane);
+        // Make one makes a sandbox-only profile of the Ask's harness (#2037), then the
+        // project's window opens a shell tab where the core types that harness's own sign-in
+        // for it. Dismiss puts it away.
+        if (option === "dismiss") return commands.dismissSandboxOnly(plane, path.harness);
         if (option === "make") {
-          const made = await commands.makeSandboxOnlyProfile(plane);
+          const made = await commands.makeSandboxOnlyProfile(plane, path.harness);
           if (made.status === "error") return made;
           askProfileSignIn(plane, made.data);
           opened = true;
@@ -665,6 +709,27 @@ export async function answerTaken(
             reason?.trim() || null,
           );
         break;
+      case "sandbox-expects": {
+        // What the project expects of this machine (#6000): its Notice's own two commands, sent
+        // the items as the row drew them. Either way its Notice reads again: one answer settles
+        // both.
+        const answered =
+          option === "allow"
+            ? commands.allowProjectExpects(plane, asDrawn(path.items))
+            : option === "not-now"
+              ? commands.declineProjectExpects(plane, asNamed(path.items))
+              : undefined;
+        if (answered === undefined) break;
+        const done = await answered;
+        if (done.status === "ok") sandboxCommandReturned();
+        return done.status === "ok" ? { status: "ok" } : done;
+      }
+      case "confirmation":
+        // A command's confirmation in the window (#6000): its dialog's own answer, which takes the
+        // dialog away too. The command goes on, or stops, at once.
+        if (option !== "yes" && option !== "no") break;
+        await commands.answerPoolSignIn(path.id, option === "yes");
+        return { status: "ok" };
       case "workspace-removal":
         // Keep puts the question away. Remove… removes nothing (qw356): it opens the window's
         // own Delete workspace, where what goes is read and the person's press there decides.

@@ -67,6 +67,7 @@ import {
   type PlaneId,
   type LimitRefused,
   type PoolLimitOffer,
+  type OpenRun,
   type Refused,
   type RunsOnPick,
   type Sidebar as SidebarModel,
@@ -305,6 +306,7 @@ import { ActivityCount, ActivityDot, type PanelTab } from "./ActivityBar";
 import { DOCTOR_LINE, DoctorNotices, useDoctor } from "./Doctor";
 import { useFirstOpen } from "./firstOpen";
 import { StaleCloneNotices, useStaleClones } from "./StaleCloneNotices";
+import { CloneVouchNotices } from "./CloneVouchNotice";
 import { BrowsersAtQuitNotice } from "./BrowsersAtQuitNotice";
 import { usePin } from "./Updates";
 import { projectName } from "./projectName";
@@ -10387,19 +10389,22 @@ export const PlaneView = memo(function PlaneView({
    *  run open in chat `session`'s tab (SK-3, #3682): the skill by its own name, as the core
    *  counts the run (#3385), on the chats of the place the chat is in; a persona's own skill on
    *  that persona's chats, as the core says its level (#3694), since a workspace's scope does not
-   *  list it. */
+   *  list it; and another workspace's copy its persona names on that workspace's chats, whose
+   *  runs that copy counts wherever they ran (#6083). */
   const openSkillRun = useCallback(
-    (skill: string, run: string, session: number, level: string | null) => {
+    ({ name: skill, id: run, level, copy_workspace: copy }: OpenRun, session: number) => {
       const workspace = filedIn(session);
       const persona = personaOf(session);
       const scope =
         aPersonasOwn(level) && persona !== null
           ? asPersona(persona)
-          : workspace !== undefined && workspace !== OUTSIDE
-            ? inWorkspace(workspace)
-            : persona !== null
-              ? asPersona(persona)
-              : AT_THE_ROOT;
+          : copy !== null
+            ? inWorkspace(copy)
+            : workspace !== undefined && workspace !== OUTSIDE
+              ? inWorkspace(workspace)
+              : persona !== null
+                ? asPersona(persona)
+                : AT_THE_ROOT;
       showView(skillRunsAt(scope, skill, run), SKILL_STUDIO_TITLE);
     },
     [filedIn, personaOf, showView],
@@ -11457,10 +11462,12 @@ export const PlaneView = memo(function PlaneView({
   const arrival = useAsksArrival(waiting, hand.elsewhere, inFront && asksShown);
   /**
    * **Snooze all on Asks** (#5647): the core keeps what each chat held, and lists a snoozed
-   * chat's asks apart until it asks something new; every list of this project's asks is read
+   * chat's asks apart until it asks something new, or until the time it was snoozed for runs out
+   * (#6018); every list of this project's asks is read
    * again after, so the ✋ and Asks drop them, or take them back, at once.
    */
   const snoozedAsks = questions?.snoozed;
+  const snoozedUntil = questions?.snoozed_until ?? null;
   const snoozing = useMemo<Snoozing>(() => {
     const done = (said: { status: "ok" } | { status: "error"; error: string }) => {
       asksMoved(plane);
@@ -11469,11 +11476,13 @@ export const PlaneView = memo(function PlaneView({
     const unsaid = (err: unknown) => ({ status: "error" as const, error: String(err) });
     return {
       snoozed: snoozedAsks ?? [],
-      snooze: async (chats) => done(await commands.snoozeInboxAsks(plane, chats).catch(unsaid)),
+      snoozedUntil,
+      snooze: async (chats, until) =>
+        done(await commands.snoozeInboxAsks(plane, chats, until).catch(unsaid)),
       wake: async (sessions) =>
         done(await commands.wakeInboxAsks(plane, sessions ?? null).catch(unsaid)),
     };
-  }, [plane, snoozedAsks]);
+  }, [plane, snoozedAsks, snoozedUntil]);
   const answeredOnPane = useCallback(
     (words: string, ask: Shown) => touchOnPane(ask, words),
     [touchOnPane],
@@ -11703,6 +11712,14 @@ export const PlaneView = memo(function PlaneView({
       {/* **A workspace's repo left off its default branch, or on a moved remote** (#1985): one
           Notice per repo, with the Fix that loses no work. */}
       <StaleCloneNotices clones={staleClones} />
+      {/* **A clone made outside purlis**: one Notice per workspace clone purlis did not clone
+          and the person has not trusted, naming its remote, with Trust this clone. */}
+      <CloneVouchNotices
+        plane={plane}
+        dismissed={dismissed}
+        dismiss={dismiss}
+        settle={settleNotices}
+      />
       {savedNotice && (
         <Notice
           cause="session-saved"

@@ -234,6 +234,7 @@ const RUN = {
   tool_calls: 2,
   tokens: null,
   level: null,
+  copy_workspace: null,
 };
 
 /** One browser of {@link USING}'s, as the core lists it. */

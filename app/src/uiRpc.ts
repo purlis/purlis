@@ -1582,6 +1582,8 @@ export const commands = {
 	 */
 	staleClones: (plane: PlaneId) => typedError<StaleClones, string>(__TAURI_INVOKE("stale_clones", { plane })),
 	fixStaleClone: __WINDOW_ONLY_RESULT,
+	clonesToVouch: __WINDOW_ONLY_RESULT,
+	vouchClone: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Make a workspace: `charter workspace create <name>`, with the vision when one was typed.
 	 * 
@@ -3013,11 +3015,11 @@ export type AnswerPath =
  */
 { via: "sign-in"; profile: string; pool: string | null } | 
 /**
- *  Make one sends `make_sandbox_only_profile`, then opens a shell tab where the core types
- *  Codex's own sign-in for the profile it made (`type_profile_sign_in`). Dismiss sends
- *  `dismiss_sandbox_only`.
+ *  Make one sends `make_sandbox_only_profile` for `harness` (the kind's word, `codex` or
+ *  `claude`), then opens a shell tab where the core types the harness's own sign-in for the
+ *  profile it made (`type_profile_sign_in`). Dismiss sends `dismiss_sandbox_only`.
  */
-{ via: "sandbox-only" } | 
+{ via: "sandbox-only"; harness: string } | 
 /**
  *  `remove_old_harness_plugins` for Remove, which holds purlis's proposed change for each
  *  file and opens the first; `dismiss_old_harness_plugins` for Dismiss (#3467).
@@ -3084,6 +3086,13 @@ export type AnswerPath =
  *  `keep_vault_blocked` for Keep blocked, with the person's reason.
  */
 { via: "vault"; vault: string } | 
+/**
+ *  `allow_project_expects` for Allow on this machine and `decline_project_expects` for Not
+ *  now, each sent `items` as its Notice sends them (#6000).
+ */
+{ via: "sandbox-expects"; items: ExpectedItem[] } | 
+/**  `answer_pool_sign_in` for confirmation `id`, yes or no, as its dialog answers (#6000). */
+{ via: "confirmation"; id: number } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -3230,8 +3239,9 @@ export type AskSource =
  */
 "sign-in" | 
 /**
- *  A sandboxed Codex chat refused for want of a sandbox-only profile (#2037): answered by
- *  making one and running Codex's own sign-in in it.
+ *  A sandboxed Codex chat, or on Linux a sandboxed Claude Code chat, refused for want of a
+ *  sandbox-only profile (#2037): answered by making one and running the harness's own
+ *  sign-in in it.
  */
 "sandbox-only" | 
 /**
@@ -3290,7 +3300,17 @@ export type AskSource =
  *  A vault a chat was refused because its persona is not tagged for it (#1430, #5160): an
  *  Allow lets that persona use it in this project on this machine.
  */
-"vault";
+"vault" | 
+/**
+ *  **What the project expects and this machine has not allowed** (#6000, qw354): its
+ *  sandboxed chats are refused it until the person allows it on this machine.
+ */
+"sandbox-expects" | 
+/**
+ *  **A `purlis` command's confirmation in the window** (#6000): a pool sign-in, a profile
+ *  taken off a pool, a signing check, each waiting on the person's yes.
+ */
+"confirmation";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -3309,9 +3329,16 @@ export type Asking = {
 	 *  **The asks Snooze all put away** (#5647, ADR 0119): each held by a chat that holds no
 	 *  ask it did not have when it was snoozed. Listed apart from [`Asking::asks`], so neither
 	 *  the ✋ nor Asks counts them; the Chats view, which reads the board, still says the chat
-	 *  waits. Only [`asks_waiting`] puts any here.
+	 *  waits. Only [`counted`] puts any here.
 	 */
 	snoozed?: Shown[],
+	/**
+	 *  **When the first chat of [`Asking::snoozed`] comes back by itself** (#6018, ADR 0121
+	 *  decision 14), in seconds since 1970: snoozed for 1 hour or until tomorrow. The window
+	 *  reads the asks again then, so they are counted and listed again; none where every
+	 *  snoozed chat waits only for a new ask.
+	 */
+	snoozed_until?: number | null,
 };
 
 /**  Which command's question it is. */
@@ -4575,6 +4602,20 @@ export type CloneRefused = {
 	said: string,
 	/**  The server the person needs to sign in to, where that is why (#4079). */
 	sign_in: string | null,
+};
+
+/**  A clone of the project's workspaces that purlis did not clone and the person has not trusted. */
+export type CloneToVouch = {
+	workspace: string,
+	/**  Its folder, relative to the project. */
+	folder: string,
+	/**
+	 *  The one `<host>/<owner>/<repo>` its remote names now; `null` when it names more than one,
+	 *  which is never trusted until origin has one address.
+	 */
+	place: string | null,
+	/**  Every address its remote names now, each once. */
+	places: string[],
 };
 
 /**  What [`CLOSE_HANDED`] carries: the project and the chats a link's close would end. */
@@ -8575,6 +8616,12 @@ export type OnOlderSandbox = {
 	 *  None where the project's settings moved it.
 	 */
 	policy?: string | null,
+	/**
+	 *  **Where a cluster pool added since the chat started is the only cause** (#1750): the chat's
+	 *  sandbox does not yet keep it from changing the programs that pool runs, which it holds
+	 *  once it restarts. The sentence the Notice says it in ([`POOL_ADDED`]). None otherwise.
+	 */
+	pool?: string | null,
 };
 
 /**  The welcome's three doors. */
@@ -8798,6 +8845,13 @@ export type OpenRun = {
 	 *  its start knew it: the scope its chip opens the Skill studio at (#3694).
 	 */
 	level: string | null,
+	/**
+	 *  **The workspace whose copy it is, where that is not the chat's own** (#6083): another
+	 *  workspace's skill its persona names by its workspace (`workspaces/<ws>:<name>`), as the
+	 *  core works it out at the start ([`purlis_core::skilluse::copy_said`]). Its chip names it
+	 *  after the level (`workspace ops`) and opens that copy's runs. `None` for every other run.
+	 */
+	copy_workspace: string | null,
 };
 
 /**

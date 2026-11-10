@@ -467,7 +467,6 @@ fn machine_at(root: &Path) -> Machine {
         env: crate::secrets::Env::of(&[]),
         home: Some(root.join("home")),
         os: Os::MacOs,
-        on_a_sandbox_only_profile: false,
     }
 }
 
@@ -1124,7 +1123,6 @@ fn the_machine_grants_file_is_denied_to_every_chats_writes() {
         )]),
         home: Some(root.join("home")),
         os: Os::MacOs,
-        on_a_sandbox_only_profile: false,
     };
     let denied = crate::sandbox::Denied::of(&root, &machine);
     assert!(
@@ -1233,7 +1231,6 @@ fn every_folder_a_compiled_sandbox_lets_a_chat_write_is_refused_for_a_socket() {
         env: crate::secrets::Env::of(&[]),
         home: Some(base.join("home")),
         os: Os::MacOs,
-        on_a_sandbox_only_profile: false,
     };
     let ground = SocketGround::of(&root, &machine, &[]);
     let mut missed = Vec::new();

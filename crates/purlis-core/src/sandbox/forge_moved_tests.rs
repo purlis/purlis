@@ -29,7 +29,6 @@ fn started(
         env: crate::secrets::Env::of(env),
         home: Some(real(home.path())),
         os: Os::MacOs,
-        on_a_sandbox_only_profile: false,
     };
     let applied = for_start(harness, &root, &machine, &|_| true)
         .expect("starts")

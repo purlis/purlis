@@ -76,16 +76,23 @@ pub fn answered_in(root: &Path) -> String {
 /// **What a command says as it starts to wait on the person** for at most `within`, in the
 /// project at `root` (#6008, ADR 0121 decision 16). Every such command says it in these words.
 pub fn waiting_said(root: &Path, within: Duration) -> String {
+    waiting_for(&answered_in(root), within)
+}
+
+/// [`waiting_said`], for a command that runs in no project (#6000): the window lists what it
+/// waits on under the project it has in front.
+pub fn waiting_said_in_the_window(within: Duration) -> String {
+    waiting_for("Asks (\u{270b}) in the purlis window", within)
+}
+
+fn waiting_for(place: &str, within: Duration) -> String {
     let secs = within.as_secs();
     let how_long = if secs >= 120 && secs.is_multiple_of(60) {
         format!("{} minutes", secs / 60)
     } else {
         format!("{secs} seconds")
     };
-    format!(
-        "waiting for the person: {}, for up to {how_long}",
-        answered_in(root)
-    )
+    format!("waiting for the person: {place}, for up to {how_long}")
 }
 
 /// **What a command that stopped waiting says of an ask that stays open** (#6008, ADR 0121
@@ -110,6 +117,10 @@ mod tests {
             waiting_said(root, Duration::from_secs(15 * 60)),
             "waiting for the person: Asks (\u{270b}) in the purlis window, project smart-ide, \
              for up to 15 minutes"
+        );
+        assert_eq!(
+            waiting_said_in_the_window(Duration::from_secs(120)),
+            "waiting for the person: Asks (\u{270b}) in the purlis window, for up to 2 minutes"
         );
         assert_eq!(
             still_answerable_said(root),

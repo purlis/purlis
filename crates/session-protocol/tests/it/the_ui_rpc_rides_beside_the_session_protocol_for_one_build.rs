@@ -361,6 +361,9 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
     // #1852): each settles where automatic saves push with their sign-in.
     assert!(ui::WINDOW_ONLY.contains(&"confirm_remote"));
     assert!(ui::WINDOW_ONLY.contains(&"keep_recorded_remote"));
+    // And a clone made outside purlis, listed and trusted by the person alone.
+    assert!(ui::WINDOW_ONLY.contains(&"clones_to_vouch"));
+    assert!(ui::WINDOW_ONLY.contains(&"vouch_clone"));
     // And filing a sandbox block's report, as the person with their sign-in (#806).
     assert!(ui::WINDOW_ONLY.contains(&"file_sandbox_block_report"));
     // And opening a branch's file in the person's editor, which opens a terminal editor in a

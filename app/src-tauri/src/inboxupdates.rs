@@ -324,14 +324,17 @@ pub struct SnoozedChat {
 }
 
 /// **Snooze all** (#5647, ADR 0119): puts each of `chats` away with the asks it holds, until it
-/// holds an ask it did not have. Nothing is answered, and no timer brings it back. Kept on this
-/// machine per project, never in the plane.
+/// holds an ask it did not have or, where `until` is given, until then (seconds since 1970: for
+/// 1 hour, or until tomorrow at 09:00 as the window reckons it; #6018, ADR 0121 decision 14),
+/// whichever comes first. Nothing is answered. Kept on this machine per project, never in the
+/// plane.
 #[tauri::command]
 #[specta::specta]
 pub async fn snooze_inbox_asks(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     chats: Vec<SnoozedChat>,
+    until: Option<u32>,
 ) -> Result<(), String> {
     let root = root_of(&planes, &plane)?;
     off_the_window(move || {
@@ -343,6 +346,7 @@ pub async fn snooze_inbox_asks(
                     .into_iter()
                     .map(|one| (one.session, one.asks))
                     .collect(),
+                until.map(u64::from),
             )
             .map(|_| ())
             .map_err(|err| format!("purlis could not snooze the asks: {err}"))

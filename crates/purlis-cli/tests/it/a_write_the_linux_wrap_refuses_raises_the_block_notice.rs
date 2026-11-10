@@ -133,7 +133,6 @@ fn a_codex_chat(out: &Path, home: &Path) -> (PathBuf, PathBuf, String) {
         env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
         home: Some(home.to_path_buf()),
         os: Os::Linux,
-        on_a_sandbox_only_profile: false,
     };
     let decided = sandbox::decide(Harness::Codex, &root, &machine, &|_| true, None, None)
         .expect("decided")

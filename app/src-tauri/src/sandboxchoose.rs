@@ -187,6 +187,7 @@ pub(crate) fn chosen(
         chats.harness(session),
         Some(target),
         chats.has_certificate_check(session),
+        chats.runs_whole(session),
     );
     let named = match (shown.what, told.offer) {
         (GrantWhat::Socket, BlockOffer::Socket) | (GrantWhat::Service, BlockOffer::Service) => {

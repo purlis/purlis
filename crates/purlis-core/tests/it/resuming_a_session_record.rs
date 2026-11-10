@@ -87,6 +87,10 @@ impl Plane {
             profiletrust::record_launched(self.root(), name, &profiletrust::fingerprint(p))
                 .unwrap();
         }
+        // What is asked is the resume: on Linux a sandboxed Claude Code chat runs inside
+        // purlis's wrap, on a sandbox-only profile, which these are not (ADR 0067 as amended
+        // 2026-11-10).
+        crate::support::no_claude_sandbox_here(self.root());
         self
     }
 
@@ -105,6 +109,8 @@ impl Plane {
         let set = profiles::current(self.root());
         let p = set.get("work").expect("declared");
         profiletrust::record_launched(self.root(), "work", &profiletrust::fingerprint(p)).unwrap();
+        // As in `declares_two_claude_profiles`.
+        crate::support::no_claude_sandbox_here(self.root());
         self
     }
 
@@ -254,7 +260,10 @@ fn a_codex_record_resumes_by_its_subcommand() {
     // wrapped on macOS and Linux (#1040).
     let local = plane.root().join(profiles::LOCAL_FILE);
     let text = fs::read_to_string(&local).unwrap_or_default();
-    fs::write(&local, format!("{text}\n[sandbox]\nlevel = \"off\"\n")).unwrap();
+    // Where purlis wraps Claude Code, `declares` has written the table already.
+    if !text.contains("[sandbox]") {
+        fs::write(&local, format!("{text}\n[sandbox]\nlevel = \"off\"\n")).unwrap();
+    }
     purlis_core::sandbox::personal::set_by_you(
         plane.root(),
         None,

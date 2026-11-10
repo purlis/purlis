@@ -395,6 +395,10 @@ fn a_project_made_from_each_template_starts_a_chat_in_its_repo_under_each_of_its
         a_profile(&root, bin.path());
 
         let taken = firstrun::take_in_from(&root, &repo, &Choice::Fits).expect("opened");
+        // What is asked is the template: on Linux a sandboxed Claude Code chat runs inside
+        // purlis's wrap, on a sandbox-only profile, which `work` is not (ADR 0067 as amended
+        // 2026-11-10).
+        crate::support::no_claude_sandbox_here(&root);
 
         assert_eq!(taken.template.as_deref(), Some(id), "{marker}");
         let personas = purlis_core::workspaces::Plane::open(&root)

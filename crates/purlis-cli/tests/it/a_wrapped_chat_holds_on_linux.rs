@@ -93,7 +93,6 @@ fn each_profile_a_wrapped_chat_starts_under_holds_on_linux() {
         env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
         home: Some(home.clone()),
         os: Os::Linux,
-        on_a_sandbox_only_profile: false,
     };
     for (level, name, manifest) in LEVELS {
         let root = out.join(name).join("project");
@@ -172,7 +171,6 @@ fn a_wrapped_chat_at_the_floor_makes_its_tools_folders_in_a_bare_home() {
             env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
             home: Some(home.clone()),
             os: Os::Linux,
-            on_a_sandbox_only_profile: false,
         };
         let decided = sandbox::decide(harness, &root, &machine, &|_| true, None, None)
             .expect("decided")
@@ -246,7 +244,6 @@ fn a_claude_code_chat_on_a_runner_holds_as_they_do() {
         ]),
         home: Some(home.clone()),
         os: Os::Linux,
-        on_a_sandbox_only_profile: false,
     };
     assert!(machine.is_a_runner());
     for (level, name, manifest) in LEVELS {
@@ -348,7 +345,6 @@ fn a_wrapped_chat_at_the_floor_never_writes_the_plugin_or_git_hooks_it_is_armed_
         env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
         home: Some(home.clone()),
         os: Os::Linux,
-        on_a_sandbox_only_profile: false,
     };
     let root = out.join("project");
     let tmp = out.join("tmp");

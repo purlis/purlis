@@ -380,7 +380,6 @@ fn the_persona_mcp_approvals_are_held_where_purlis_home_puts_them() {
         env: crate::secrets::Env::of(&[("PURLIS_HOME", "/srv/purlis-state")]),
         home: Some(std::path::PathBuf::from("/home/op")),
         os: Os::Linux,
-        on_a_sandbox_only_profile: false,
     };
     let denied = Denied::of(plane.path(), &machine);
     assert!(
@@ -1323,7 +1322,6 @@ fn machine_with_state(os: Os, state: Option<&str>) -> Machine {
         env: crate::secrets::Env::of(&env),
         home: Some(std::path::PathBuf::from("/home/op")),
         os,
-        on_a_sandbox_only_profile: false,
     }
 }
 
@@ -1742,6 +1740,8 @@ fn a_chat_never_reads_or_writes_the_forge_answers_the_humans_token_fetched() {
             std::path::PathBuf::from("/home/op/.config/purlis/peers.json"),
             // The runners this desktop pinned (#2525).
             std::path::PathBuf::from("/home/op/.config/purlis/runners.json"),
+            // The runners a removal left on another engine (#2587).
+            std::path::PathBuf::from("/home/op/.config/purlis/runners-left.json"),
             // When each of them ran (#3492).
             std::path::PathBuf::from("/home/op/.config/purlis/runner-hours.jsonl"),
             // Each cluster pool's own copy of its kubeconfig's context (#3292).
@@ -1751,6 +1751,7 @@ fn a_chat_never_reads_or_writes_the_forge_answers_the_humans_token_fetched() {
             std::path::PathBuf::from("/home/op/.config/charter/charterd"),
             std::path::PathBuf::from("/home/op/.config/charter/peers.json"),
             std::path::PathBuf::from("/home/op/.config/charter/runners.json"),
+            std::path::PathBuf::from("/home/op/.config/charter/runners-left.json"),
             std::path::PathBuf::from("/home/op/.config/charter/runner-hours.jsonl"),
             std::path::PathBuf::from("/home/op/.config/charter/cluster-kubeconfigs"),
             std::path::PathBuf::from("/home/op/.config/charter/forge-etags"),
@@ -2729,7 +2730,6 @@ fn machine(os: Os) -> Machine {
         env: crate::secrets::Env::of(&[]),
         home: Some(std::path::PathBuf::from("/home/op")),
         os,
-        on_a_sandbox_only_profile: false,
     }
 }
 
@@ -2759,22 +2759,28 @@ fn a_chat_in_a_plane_that_says_nothing_starts_at_the_floor_or_as_before_where_it
     );
 }
 
+/// In Claude Code's own sandbox on macOS, and inside purlis's wrap on Linux, with its own
+/// sandbox off (ADR 0067 as amended 2026-11-10).
 #[test]
 fn a_claude_code_chat_in_a_sandboxed_plane_starts_sandboxed_for_claude_code() {
     let plane = plane_saying(ON);
-    let applied = for_start(
-        Harness::ClaudeCode,
-        plane.path(),
-        &machine(Os::Linux),
-        &|_| true,
-    )
-    .expect("starts")
-    .expect("sandboxed");
-    assert_eq!(applied.harness(), Harness::ClaudeCode);
-    let Form::ClaudeCode(settings) = applied.form() else {
-        panic!("compiled for Claude Code: {:?}", applied.form());
+    let started = |os| {
+        for_start(Harness::ClaudeCode, plane.path(), &machine(os), &|_| true)
+            .expect("starts")
+            .expect("sandboxed")
+    };
+    let on_macos = started(Os::MacOs);
+    assert_eq!(on_macos.harness(), Harness::ClaudeCode);
+    let Form::ClaudeCode(settings) = on_macos.form() else {
+        panic!("compiled for Claude Code: {:?}", on_macos.form());
     };
     assert_eq!(settings.sandbox["enabled"], true);
+    let on_linux = started(Os::Linux);
+    assert_eq!(on_linux.harness(), Harness::ClaudeCode);
+    let Form::ClaudeWrapped(wrap) = on_linux.form() else {
+        panic!("inside purlis's wrap: {:?}", on_linux.form());
+    };
+    assert_eq!(wrap.settings().sandbox["enabled"], false);
 }
 
 #[test]
@@ -2793,24 +2799,6 @@ fn a_mistyped_mode_does_not_start_a_chat_unsandboxed() {
                 if applied.harness() == Harness::Opencode && applied.level() == Level::Full
         ),
         "{started:?}"
-    );
-}
-
-#[test]
-fn a_linux_machine_without_socat_is_told_which_program_and_how_to_install_it() {
-    let plane = plane_saying(ON);
-    let refused = for_start(
-        Harness::ClaudeCode,
-        plane.path(),
-        &machine(Os::Linux),
-        &|program| program == "bwrap",
-    )
-    .expect_err("refused");
-    assert_eq!(
-        refused.to_string(),
-        "this project runs every chat sandboxed, and this machine cannot apply the sandbox: socat \
-         is not installed — install it with `sudo apt install socat` or `sudo dnf install \
-         socat`. Nothing was started."
     );
 }
 
@@ -2862,27 +2850,26 @@ fn a_sandboxed_project_with_a_keyring_vault_starts_every_harness_on_macos() {
     }
 }
 
+/// On Linux every sandboxed Claude Code chat runs inside purlis's wrap (ADR 0067 as amended
+/// 2026-11-10), which reaches no socket of the session bus the system keyring answers on, as
+/// Codex's and opencode's do (#1040): a project with a keyring vault starts it there.
 #[test]
-fn on_linux_a_keyring_vault_refusal_offers_the_opt_out_and_moving_the_vault() {
+fn on_linux_a_sandboxed_project_with_a_keyring_vault_starts_a_claude_code_chat_inside_purlis_s_wrap()
+ {
     let plane = plane_with_a_keyring_vault();
-    let refused = for_start(
+    let applied = for_start(
         Harness::ClaudeCode,
         plane.path(),
         &machine(Os::Linux),
         &|_| true,
     )
-    .expect_err("refused");
-    let said = refused.to_string();
-    assert_eq!(
-        said,
-        "this project runs every chat sandboxed, and on Linux purlis cannot keep a Claude \
-         Code chat away from the system keyring, where this project's keyring vaults keep their \
-         secrets, so nothing was started. Start this chat without the sandbox from the \
-         new-chat picker, or move those secrets to a plain-file or 1Password vault, which the \
-         sandbox can keep from a chat. For a resumed or relaunched chat, moving them is the \
-         way on."
+    .unwrap_or_else(|refused| panic!("{refused}"))
+    .expect("sandboxed");
+    assert!(
+        matches!(applied.form(), Form::ClaudeWrapped(_)),
+        "{:?}",
+        applied.form()
     );
-    assert!(!said.contains("cannot keep a chat away from the operating system's credential store"));
 }
 
 #[test]
@@ -3082,7 +3069,6 @@ fn a_later_letter_s_value_in_the_project_s_cache_home_is_denied() {
         env: crate::secrets::Env::of(&[("XDG_DATA_HOME", "/srv/data")]),
         home: Some(std::path::PathBuf::from("/home/op")),
         os: Os::Linux,
-        on_a_sandbox_only_profile: false,
     };
     let plane = tempfile::tempdir().expect("a plane");
     let cache = caches::root_of(&machine, plane.path()).expect("a data home");
@@ -3427,16 +3413,34 @@ fn a_claude_code_chat_is_not_started_where_a_held_git_folder_has_glob_characters
         std::fs::create_dir_all(clone.join(".git/refs")).expect("its refs");
         std::fs::write(clone.join(".git/HEAD"), "ref: refs/heads/main\n").expect("HEAD");
         std::fs::write(clone.join(".git/config"), "").expect("config");
-        for os in [Os::MacOs, Os::Linux] {
-            let refused = for_start(Harness::ClaudeCode, plane.path(), &machine(os), &|_| true)
-                .expect_err("not started");
-            let NotStarted::GitFolderUnheld(path) = &refused else {
-                panic!("{name} on {os:?}: {refused:?}");
-            };
-            assert!(path.to_string_lossy().contains(name), "{}", path.display());
-            let said = refused.to_string();
-            assert!(said.contains("Rename"), "{said}");
-        }
+        let refused = for_start(
+            Harness::ClaudeCode,
+            plane.path(),
+            &machine(Os::MacOs),
+            &|_| true,
+        )
+        .expect_err("not started");
+        let NotStarted::GitFolderUnheld(path) = &refused else {
+            panic!("{name}: {refused:?}");
+        };
+        assert!(path.to_string_lossy().contains(name), "{}", path.display());
+        let said = refused.to_string();
+        assert!(said.contains("Rename"), "{said}");
+        // On Linux the chat runs inside purlis's wrap, which holds a git folder by its own rules
+        // and reads no path as a pattern (ADR 0067 as amended 2026-11-10).
+        let on_linux = for_start(
+            Harness::ClaudeCode,
+            plane.path(),
+            &machine(Os::Linux),
+            &|_| true,
+        )
+        .unwrap_or_else(|refused| panic!("{name} on Linux: {refused}"))
+        .expect("sandboxed");
+        assert!(
+            matches!(on_linux.form(), Form::ClaudeWrapped(_)),
+            "{name}: {:?}",
+            on_linux.form()
+        );
     }
     // A plain name starts as before.
     let plane = plane_saying(ON);
@@ -4138,37 +4142,16 @@ fn the_picker_says_a_chat_will_be_sandboxed_where_it_can_be() {
 }
 
 #[test]
-fn the_picker_shows_the_refusal_and_the_distributions_install_command_before_the_start() {
-    let plane = plane_saying(ON);
-    let Ahead::Refused { why, install } = ahead(
-        Harness::ClaudeCode,
-        plane.path(),
-        &machine(Os::Linux),
-        &|program| program == "bwrap",
-        "ID=debian\n",
-        &|_| Ok(()),
-    ) else {
-        panic!("refused");
-    };
-    assert!(why.contains("socat is not installed"), "{why}");
-    assert_eq!(install.as_deref(), Some("sudo apt install socat"));
-}
-
-#[test]
 fn a_refusal_nothing_can_be_installed_for_offers_no_install() {
     let plane = plane_saying(ON);
-    std::fs::write(
-        plane.path().join("vaults.json"),
-        r#"{"vaults": {"dev": {"provider": "keyring"}}}"#,
-    )
-    .expect("the registry");
+    // A program the check refuses: no package on this system changes that.
     let Ahead::Refused { install, .. } = ahead(
         Harness::ClaudeCode,
         plane.path(),
         &machine(Os::Linux),
         &|_| true,
         "ID=debian\n",
-        &|_| Ok(()),
+        &|_| Err(NotStarted::ProgramRelative),
     ) else {
         panic!("refused");
     };
@@ -5182,7 +5165,6 @@ fn mac_with(env: &[(&str, &str)]) -> Machine {
         env: crate::secrets::Env::of(&vars),
         home: Some(StdPathBuf::from("/Users/op")),
         os: Os::MacOs,
-        on_a_sandbox_only_profile: false,
     }
 }
 
@@ -8483,7 +8465,6 @@ fn a_chat_writes_none_of_the_programs_a_cluster_pools_kubectl_runs_nor_their_pac
         env: crate::secrets::Env::of(&[("XDG_CONFIG_HOME", &config.path().display().to_string())]),
         home: Some(std::path::PathBuf::from("/home/op")),
         os: Os::Linux,
-        on_a_sandbox_only_profile: false,
     };
     let plane = tempfile::tempdir().expect("a plane");
     let denied = Denied::of(plane.path(), &machine);
@@ -8539,7 +8520,6 @@ fn a_cluster_pools_program_whose_package_is_inside_the_project_is_held_with_its_
         env: crate::secrets::Env::of(&[("XDG_CONFIG_HOME", &config.path().display().to_string())]),
         home: None,
         os: Os::Linux,
-        on_a_sandbox_only_profile: false,
     };
     let denied = Denied::of(&project, &machine);
     let held = |path: &std::path::Path, reach: Reach| {
@@ -8589,7 +8569,6 @@ fn a_cluster_pools_program_whose_package_would_be_the_home_or_above_it_is_held_a
         env: crate::secrets::Env::of(&[("XDG_CONFIG_HOME", &config.path().display().to_string())]),
         home: Some(home.clone()),
         os: Os::Linux,
-        on_a_sandbox_only_profile: false,
     };
     let plane = tempfile::tempdir().expect("a plane");
     let denied = Denied::of(plane.path(), &machine);

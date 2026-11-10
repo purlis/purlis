@@ -3,6 +3,7 @@
 
 use super::*;
 use purlis_core::hookwire::{Conversation, Decision, Report, SkillStarted, ToolCall};
+use purlis_core::skilluse::CopySaid;
 use purlis_core::state::{Detail, Event};
 use std::sync::mpsc;
 
@@ -84,6 +85,7 @@ fn a_skill_started_puts_its_run_on_the_chats_tab_counting_its_tool_calls_until_t
             tool_calls,
             tokens: None,
             level: None,
+            copy_workspace: None,
         })
     };
     assert_eq!(
@@ -163,6 +165,7 @@ fn a_skill_use_skill_typed_is_on_the_chats_tab_from_the_prompt_it_was_typed_into
             tool_calls,
             tokens: None,
             level: None,
+            copy_workspace: None,
         })
     };
     assert_eq!(said, vec![open(0), open(1), None]);
@@ -388,4 +391,65 @@ fn a_run_seen_before_any_usage_counts_from_the_first_figure() {
         .map(|t| t.run.and_then(|run| run.tokens))
         .collect();
     assert_eq!(tokens, vec![None, Some(0), Some(600)]);
+}
+
+/// **#6083: a run of the copy its persona names by another workspace says that workspace on its
+/// chip**, as the core works it out at the start ([`purlis_core::skilluse::copy_said`]), once a
+/// run: its chip then names it ("workspace ops") and opens that copy's runs. A LOCAL
+/// workspace's copy is said as its row says it: with no level.
+#[test]
+fn an_open_run_says_whose_copy_it_is_as_its_row_does_worked_out_once_a_run() {
+    let (runs, told) = listening();
+    let asked = Arc::new(Mutex::new(Vec::new()));
+    runs.name_copies_by({
+        let asked = Arc::clone(&asked);
+        Arc::new(move |chat, start: &purlis_core::skilluse::Starting<'_>| {
+            asked.lock().unwrap().push((chat, start.skill.to_owned()));
+            match chat {
+                4 => CopySaid::Named("ops".to_owned()),
+                5 => CopySaid::Unsaid,
+                _ => CopySaid::Own,
+            }
+        })
+    });
+
+    runs.heard(&call_of(
+        4,
+        "deploy",
+        purlis_core::skills::Origin::Workspace,
+    ));
+    runs.heard(&call(4, "toolu_2", None));
+    runs.heard(&call_of(
+        5,
+        "deploy",
+        purlis_core::skills::Origin::Workspace,
+    ));
+
+    let said: Vec<_> = told
+        .try_iter()
+        .map(|t| t.run.map(|run| (run.level, run.copy_workspace)))
+        .collect();
+    let workspace = || Some("workspace".to_owned());
+    assert_eq!(
+        said,
+        vec![
+            Some((workspace(), Some("ops".to_owned()))),
+            Some((workspace(), Some("ops".to_owned()))),
+            Some((None, None)),
+        ],
+        "chat 4's run names `ops` each time it is told; chat 5's, of a LOCAL workspace's copy, \
+         says neither that workspace nor a level, as its row does not"
+    );
+    assert_eq!(
+        runs.now([4])
+            .remove(0)
+            .run
+            .and_then(|run| run.copy_workspace),
+        Some("ops".to_owned())
+    );
+    assert_eq!(
+        *asked.lock().unwrap(),
+        vec![(4, "deploy".to_owned()), (5, "deploy".to_owned())],
+        "asked once a run, never each call"
+    );
 }

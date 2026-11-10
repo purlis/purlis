@@ -23,6 +23,7 @@ import {
   THE_RUNS_HOME,
   THE_RUNS_TREE,
   theRunsStandIns,
+  wrapsClaudeCode,
 } from "../harness.js";
 import { closeProject, fromThePalette } from "../opening.js";
 import { ask } from "../switching.js";
@@ -68,6 +69,14 @@ const LESSON = `shop's checks run with make test (${LESSON_MARK})`;
 
 /** The stand-in Claude Code, first on the app's `PATH` and where no chat can write. */
 const STAND_IN = join(theRunsStandIns(), "claude");
+
+/**
+ * The profile both of the task's chats start on. Charter's built-in Claude Code, except on
+ * Linux, where every sandboxed Claude Code chat runs inside purlis's wrap, on a sandbox-only
+ * profile (ADR 0067 as amended 2026-11-10): there it is the run's own `scenario`, whose `claude`
+ * runs the stand-in while it is there (`declareASandboxOnlyProfile`).
+ */
+const PROFILE = wrapsClaudeCode() ? "scenario" : "claude";
 
 /** A repo nobody has opened in purlis: one commit, and an `origin` that names its forge. */
 const repo = (() => {
@@ -363,6 +372,7 @@ describe("the first task, from its tab", function () {
     await toTheTab("First task");
 
     // The first chat: approved by this press, on a branch of its own, the task typed unsent.
+    if (PROFILE !== "claude") await pickInTheTab("First chat", PROFILE);
     await pressInTheTab("tart the first chat");
     await aPaneShows("first task, on this chat", "the task was never typed into the first chat");
     await aPaneShows("lesson in the briefing: 0", "the first chat's harness was never briefed");
@@ -394,7 +404,7 @@ describe("the first task, from its tab", function () {
     );
     // The tab suggests another harness for the second chat, so the two differ; this run has only
     // the stand-in Claude Code, so the second is started on it too.
-    await pickInTheTab("Second chat", "claude");
+    await pickInTheTab("Second chat", PROFILE);
     await pressInTheTab("tart the second chat");
     await aPaneShows(
       "lesson in the briefing: 1",

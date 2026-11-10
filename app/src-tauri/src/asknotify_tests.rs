@@ -1237,3 +1237,45 @@ fn a_project_let_go_of_and_held_again_tells_nothing_of_what_ended_meanwhile() {
     let meanwhile = [finish("while-closed", 1, true, 1)];
     assert!(ended(&mut rules, &a, &meanwhile, true).is_empty());
 }
+
+#[test]
+fn a_project_whose_snooze_runs_out_is_read_then_and_its_chat_s_asks_are_sent_again() {
+    // ADR 0121 decision 14 (#6018): a snoozed chat's asks are left out of what the notifier
+    // hears, so they neither count nor notify; when its time is up they are heard anew.
+    let mut rules = Rules::default();
+    let a = plane("/a");
+    let now = Instant::now();
+    only_shown(&heard(
+        &mut rules,
+        &a,
+        &[permission(3, "p1", "Run ls")],
+        now,
+    ));
+
+    // Snoozed for an hour: the list the notifier hears no longer holds it, so its
+    // notification is taken away and nothing is shown.
+    let back = now + Duration::from_secs(3_600);
+    assert!(shown(&heard(&mut rules, &a, &[], now + TOGETHER)).is_empty());
+    rules.snoozed_until(&a, Some(back));
+    assert_eq!(
+        rules.next_due(),
+        Some(back),
+        "it wakes by itself when the snooze runs out"
+    );
+    assert!(rules.due(back - Duration::from_secs(1)).is_empty());
+    assert_eq!(rules.due(back), vec![a.clone()]);
+
+    let sent = only_shown(&heard(
+        &mut rules,
+        &a,
+        &[permission(3, "p1", "Run ls")],
+        back,
+    ));
+    assert_eq!(
+        sent.chats,
+        vec![(a.clone(), 3)],
+        "its ask is sent again: {sent:?}"
+    );
+    rules.snoozed_until(&a, None);
+    assert_eq!(rules.next_due(), None);
+}

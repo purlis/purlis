@@ -114,6 +114,16 @@ spec:
       messageExpression: >-
         'Only ' + object.spec.requester + ', who asked for this claim, may run it again once it is stopped.'
       reason: Forbidden
+    # In a runner namespace, upstream's claims, templates and warm pools are made by the operator
+    # alone, so what it finds there under its own names, controlled by the namespace, is its own.
+    - expression: >-
+        request.resource.group != 'extensions.agents.x-k8s.io' || request.operation != 'CREATE' ||
+        !request.namespace.startsWith('purlis-runners-') ||
+        request.userInfo.username == 'system:serviceaccount:{{ .Release.Namespace }}:purlis-cluster-operator'
+      messageExpression: >-
+        'Only the purlis cluster operator makes upstream objects in a runner namespace, and ' +
+        request.namespace + ' is one.'
+      reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding

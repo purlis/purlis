@@ -94,6 +94,16 @@ pub enum PoolCommand {
         #[arg(long)]
         json: bool,
     },
+    /// List the runners left on another Docker engine: a removal that found Docker answering as
+    /// another engine than the one that made a runner forgot it here, and left its container
+    /// and home volume there.
+    ///
+    /// With `--remove`, removes each one whose engine Docker answers as now, and forgets it.
+    LeftBehind {
+        /// Remove each one whose engine Docker answers as now.
+        #[arg(long)]
+        remove: bool,
+    },
     /// Set one of a pool's limits, or return it to the default with `--reset`.
     ///
     /// In a chat the app started, this writes nothing: the person is asked in the window, and
@@ -152,6 +162,12 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
              and not a chat's. Run it in your own terminal, or use Pool setup in the window."
                 .to_owned(),
         ),
+        PoolCommand::LeftBehind { .. } if in_a_chat => Err(
+            "The runners left on another engine are read from this machine's pools, and removed \
+             with its Docker, which a chat doesn't reach. Run purlis pool left-behind in your own \
+             terminal."
+                .to_owned(),
+        ),
         PoolCommand::Add { .. } if in_a_chat => Err(
             "Adding a pool uses this machine's Docker, which a chat doesn't reach. Run it in your \
              own terminal, or use Pool setup in the window."
@@ -207,6 +223,10 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
             if let Some(note) = note {
                 crate::voice::info(note);
             }
+            Ok(0)
+        }
+        PoolCommand::LeftBehind { remove } => {
+            left_behind(&config()?, *remove)?;
             Ok(0)
         }
         PoolCommand::Setup { name, json } => {
@@ -284,7 +304,7 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
 }
 
 /// The project whose folder this runs in, if it runs in one.
-fn project_here() -> Option<std::path::PathBuf> {
+pub(crate) fn project_here() -> Option<std::path::PathBuf> {
     std::env::current_dir()
         .ok()
         .and_then(|cwd| purlis_core::plane::find_root(&cwd).ok())
@@ -297,7 +317,61 @@ fn writes_a_pool(command: &PoolCommand) -> bool {
         | PoolCommand::AddProfile { .. }
         | PoolCommand::RemoveProfile { .. }
         | PoolCommand::Limit { .. } => true,
+        PoolCommand::LeftBehind { remove } => *remove,
         PoolCommand::Limits { .. } | PoolCommand::Setup { .. } => false,
+    }
+}
+
+/// **Says each runner left on another engine** (#2587), and with `remove`, removes each one
+/// whose engine this machine's Docker answers as now.
+fn left_behind(config: &std::path::Path, remove: bool) -> Result<(), String> {
+    use runners::left;
+    if !remove {
+        let kept = left::read(config).map_err(|why| why.to_string())?;
+        if kept.is_empty() {
+            crate::voice::info("No runner is left on another Docker engine.");
+            return Ok(());
+        }
+        for one in &kept {
+            crate::voice::info(format!(
+                "Runner {} of pool {} is on Docker engine {}: {}",
+                one.name(),
+                one.pool,
+                one.engine,
+                one.how()
+            ));
+        }
+        crate::voice::info(
+            "Run purlis pool left-behind --remove once Docker answers as that engine again, or \
+             run those commands where it does.",
+        );
+        return Ok(());
+    }
+    let docker = purlis_core::poolsetup::docker_here()
+        .ok_or_else(|| "Docker isn't on this machine, so nothing was removed.".to_owned())?;
+    let outcomes = left::remove(config, &docker).map_err(|why| why.to_string())?;
+    if outcomes.is_empty() {
+        crate::voice::info("No runner is left on another Docker engine.");
+    }
+    let mut all = true;
+    for (one, done) in outcomes {
+        match done {
+            Ok(()) => crate::voice::ok(format!(
+                "Runner {} of pool {} is removed from Docker engine {}.",
+                one.name(),
+                one.pool,
+                one.engine
+            )),
+            Err(why) => {
+                all = false;
+                crate::voice::err(why);
+            }
+        }
+    }
+    if all {
+        Ok(())
+    } else {
+        Err("Some runners are still left on another engine; purlis keeps them.".to_owned())
     }
 }
 
@@ -326,13 +400,26 @@ fn below_a_chat() -> Result<bool, String> {
 fn taken_off(config: &std::path::Path, pool: &str, name: &str) -> Result<Option<String>, String> {
     use purlis_core::windowline;
     let code = windowline::a_new_code();
-    windowline::taken_off(config, pool, name, &code, |asked| {
+    let project = project_here();
+    windowline::taken_off(config, project.as_deref(), pool, name, &code, |asked| {
         crate::voice::info(format!(
             "Confirm taking '{name}' off pool {pool} in the purlis window, if it shows the code \
              {code}…"
         ));
+        crate::voice::info(waiting_on_the_window(project.as_deref()));
         windowline::ask(asked)
     })
+}
+
+/// **Where the person answers a confirmation this command waits on** (#6000, ADR 0121 decision
+/// 16): Asks, under the project it runs in where it runs in one, for as long as the window waits.
+#[cfg(unix)]
+pub(crate) fn waiting_on_the_window(project: Option<&std::path::Path>) -> String {
+    let within = purlis_core::windowline::THE_PERSON_HAS;
+    project.map_or_else(
+        || purlis_core::askwait::waiting_said_in_the_window(within),
+        |root| purlis_core::askwait::waiting_said(root, within),
+    )
 }
 
 /// A runner is never Windows, and no window line reaches one from there.
@@ -447,4 +534,24 @@ fn limits_json(held: &runners::PoolLimitsHeld) -> serde_json::Value {
         })
         .collect();
     serde_json::json!({ "limits": rows })
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::waiting_on_the_window;
+
+    /// **#6000: a confirmation says where the person answers it**: Asks under the project the
+    /// command runs in, or Asks in the window where it runs in none, for the window's two minutes.
+    #[test]
+    fn a_confirmation_says_it_waits_in_asks_under_its_project_for_two_minutes() {
+        assert_eq!(
+            waiting_on_the_window(Some(std::path::Path::new("/home/one/smart-ide"))),
+            "waiting for the person: Asks (\u{270b}) in the purlis window, project smart-ide, for \
+             up to 2 minutes"
+        );
+        assert_eq!(
+            waiting_on_the_window(None),
+            "waiting for the person: Asks (\u{270b}) in the purlis window, for up to 2 minutes"
+        );
+    }
 }

@@ -6,8 +6,7 @@ import {
   anEmptyRecord,
   built,
   copyFixturePlane,
-  declareAProfile,
-  declareTheStateRunsProfile,
+  declareTheRunsProfile,
   theRunsEnvironment,
   writeReportingShell,
   writeShell,
@@ -29,7 +28,9 @@ import { PANIC_LOG } from "./processes.js";
  * A run of its own, since the app keeps one process and one harness for a run, and the bars are
  * about one harness at a time; and a plane of its own, since two hundred skills would reach every
  * other spec. Codex's profile is the state run's, the only way a Codex chat starts (#2037), with
- * the harness that behaves as Codex does. opencode's reports through hooks and names its conversation
+ * the harness that behaves as Codex does; Claude Code's is a sandbox-only machine profile as well
+ * on Linux, where every sandboxed Claude Code chat runs inside purlis's wrap (ADR 0067 as amended
+ * 2026-11-10). opencode's reports through hooks and names its conversation
  * the same way, so a restart has something to resume.
  */
 const { kind } = harnessUnderTest(process.env.PURLIS_OUTCOME_HARNESS);
@@ -45,8 +46,7 @@ const environment = theRunsEnvironment(plane, {
   PURLIS_NO_BACKGROUND_CHECKS: "1",
   PURLIS_SKILL_STUDIO: "1",
 });
-if (kind === "codex") declareTheStateRunsProfile(plane, program, environment);
-else declareAProfile(plane, program, kind);
+declareTheRunsProfile(plane, program, environment, kind);
 
 export const config: WebdriverIO.Config = {
   ...base,

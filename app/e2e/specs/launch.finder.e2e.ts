@@ -5,7 +5,7 @@ import { browser, expect, $, $$ } from "@wdio/globals";
 import { chmodSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import process from "node:process";
-import { A_FINDER_LAUNCHS_PATH, built, READY } from "../harness.js";
+import { A_FINDER_LAUNCHS_PATH, built, READY, wrapsClaudeCode } from "../harness.js";
 import { THEIR_STATUS_LINE } from "../wdio.finder.conf.js";
 import { harnessRowsDrawn, pickAndStart, openThePicker } from "../opening.js";
 import { projectInFront, runningIn } from "../running.js";
@@ -74,6 +74,14 @@ async function theNewestTabComesToSay(state: string, why: string): Promise<void>
 }
 
 /**
+ * Whether a chat on the built-in `claude` starts without the sandbox, this one chat, as the
+ * picker offers: on Linux, where every sandboxed Claude Code chat runs inside purlis's wrap, on a
+ * sandbox-only profile (ADR 0067 as amended 2026-11-10), which the built-in is not. What this run
+ * is about, the bare word `claude` found by a shell's search, is the same either way.
+ */
+const WITHOUT_THE_SANDBOX = wrapsClaudeCode();
+
+/**
  * Starts one more chat on the built-in `claude` and waits until the core runs it: the one
  * session `running_sessions` lists after the start and did not before (#1796), not a count of
  * tabs, which another chat's tab coming or going would move too.
@@ -84,7 +92,7 @@ async function startAChatOnTheBuiltIn(): Promise<void> {
   await openThePicker();
   await harnessRowsDrawn();
   await (await $("label*=claude")).click();
-  await pickAndStart();
+  await pickAndStart(20_000, WITHOUT_THE_SANDBOX);
   await browser.waitUntil(
     async () => (await runningIn(plane)).some((session) => !before.has(session)),
     { timeout: 30_000, interval: 250, timeoutMsg: `the core started no new chat in ${plane}` },
@@ -136,7 +144,7 @@ describe("an app opened from Finder", () => {
     await openThePicker();
     await harnessRowsDrawn();
     await (await $("label*=claude")).click();
-    await pickAndStart();
+    await pickAndStart(20_000, WITHOUT_THE_SANDBOX);
 
     await browser.waitUntil(
       async () => (await $$('[data-testid="pane"]').getElements()).length === before + 1,

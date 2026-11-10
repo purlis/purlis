@@ -4217,5 +4217,131 @@ fn a_runs_start_says_the_tree_it_ran_as_its_log_row_does() {
     );
 }
 
+/// A plane whose `steward` names `workspaces/ops:deploy`, with a `deploy` in `ops` and in
+/// `smart-ide`, and `live` the workspaces its `.gitignore` keeps (SK-5c, #6041).
+fn a_plane_naming_ops_deploy(live: &[&str]) -> tempfile::TempDir {
+    let plane = a_plane();
+    std::fs::write(
+        plane.path().join(".gitignore"),
+        crate::wscmd::live_block(plane.path(), live.iter().copied()),
+    )
+    .unwrap();
+    for ws in ["ops", "smart-ide"] {
+        let at = plane.path().join(format!("workspaces/{ws}/skills/deploy"));
+        std::fs::create_dir_all(&at).unwrap();
+        std::fs::write(
+            at.join("SKILL.md"),
+            "---\nname: deploy\ndescription: Deploys.\n---\n",
+        )
+        .unwrap();
+    }
+    let persona = plane.path().join("personas/steward");
+    std::fs::create_dir_all(&persona).unwrap();
+    std::fs::write(
+        persona.join("persona.md"),
+        "---\nskills: workspaces/ops:deploy\n---\n",
+    )
+    .unwrap();
+    plane
+}
+
+/// Chat 3 of `plane`, as `steward`, in `smart-ide`, loads `deploy` at the workspace level: the
+/// `skill.started` its run opened with.
+fn steward_loads_deploy_in_smart_ide(dir: &Path, plane: &Path) -> Event {
+    use crate::state::Event::UserPromptSubmit;
+    use std::time::Instant;
+    let mut host = recorder(dir);
+    host.begin(
+        plane,
+        3,
+        RunOf {
+            chat: CHAT,
+            run: "01K6E8ZK6V4Q9T0N3M2B1C5D70",
+        },
+        Began::Start,
+        &Attributes {
+            persona: Some("steward".to_owned()),
+            harness: Some("claude".to_owned()),
+            ..Attributes::default()
+        },
+    )
+    .unwrap();
+    host.report(plane, &report(3, UserPromptSubmit), Followed::No)
+        .unwrap();
+    let mut load = loading(3, "deploy");
+    if let Some(skill) = load.skill.as_mut() {
+        skill.workspace = Some("smart-ide".to_owned());
+    }
+    host.tool(plane, &load, Instant::now()).unwrap();
+    read(dir)
+        .unwrap()
+        .into_iter()
+        .find(|e| e.kind == "skill.started")
+        .expect("the run's start")
+}
+
+/// **#6083: a run of the copy its persona names by its workspace says that workspace at its
+/// start**, as its row in the skill log does (#6041): the level alone would read as the chat's
+/// own workspace's copy.
+#[test]
+fn a_runs_start_names_the_workspace_whose_copy_its_persona_named() {
+    let dir = tempfile::tempdir().unwrap();
+    let plane = a_plane_naming_ops_deploy(&["ops", "smart-ide"]);
+
+    let started = steward_loads_deploy_in_smart_ide(dir.path(), plane.path());
+
+    assert_eq!(started.body["skill_level"], "workspace", "{started:#?}");
+    assert_eq!(started.body["skill_copy_workspace"], "ops", "{started:#?}");
+    let runs = crate::skilluse::runs(plane.path());
+    assert_eq!(
+        runs[0]
+            .copy
+            .as_ref()
+            .and_then(|c| c.copy_workspace.as_deref()),
+        Some("ops"),
+        "its row says the same"
+    );
+}
+
+/// A LOCAL workspace's name is said nowhere a run is logged (SK-20): its start does not name it,
+/// and, as its row, says no level, so it is never read as the chat's own workspace's copy.
+#[test]
+fn a_runs_start_of_a_local_workspaces_named_copy_says_neither_that_workspace_nor_a_level() {
+    let dir = tempfile::tempdir().unwrap();
+    let plane = a_plane_naming_ops_deploy(&["smart-ide"]);
+
+    let started = steward_loads_deploy_in_smart_ide(dir.path(), plane.path());
+
+    assert_eq!(
+        started.body.get("skill_copy_workspace"),
+        None,
+        "{started:#?}"
+    );
+    assert!(!started.body.to_string().contains("ops"), "{started:#?}");
+    // Nor its level, as its row says none: `workspace` alone would read as the chat's own copy.
+    assert_eq!(started.body.get("skill_level"), None, "{started:#?}");
+}
+
+/// A run of the chat's own workspace's copy names no other workspace.
+#[test]
+fn a_runs_start_of_the_chats_own_copy_names_no_other_workspace() {
+    let dir = tempfile::tempdir().unwrap();
+    let plane = a_plane_naming_ops_deploy(&["ops", "smart-ide"]);
+    std::fs::write(
+        plane.path().join("personas/steward/persona.md"),
+        "---\nskills: deploy\n---\n",
+    )
+    .unwrap();
+
+    let started = steward_loads_deploy_in_smart_ide(dir.path(), plane.path());
+
+    assert_eq!(started.body["skill_level"], "workspace", "{started:#?}");
+    assert_eq!(
+        started.body.get("skill_copy_workspace"),
+        None,
+        "{started:#?}"
+    );
+}
+
 #[path = "tests/corrections.rs"]
 mod corrections;

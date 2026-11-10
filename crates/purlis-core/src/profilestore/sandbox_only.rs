@@ -1,95 +1,113 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **A sandboxed Codex chat waits for a sandbox-only profile** (#2037, the operator's ruling of
-//! 2026-10-15). A sandboxed Codex chat, at the floor or the full sandbox, runs only on a profile
-//! this machine keeps for sandboxed chats only, so no sandboxed chat writes a Codex home an
-//! unsandboxed run uses. A start refused for want of one leaves one wait per project
-//! ([`waits_on`]), which the window shows as one Ask, *Codex needs a sandbox-only profile here*:
-//! its button makes one ([`make`]) and opens Codex's own sign-in in it. The wait goes once this
-//! machine has a sandbox-only Codex profile, or the person dismisses it.
+//! **A sandboxed chat that runs only on a sandbox-only profile waits for one** (#2037, the
+//! operator's ruling of 2026-10-15; Claude Code on Linux, ADR 0067 as amended 2026-11-10). A
+//! sandboxed Codex chat, at the floor or the full sandbox, and on Linux a sandboxed Claude Code
+//! chat, runs only on a profile this machine keeps for sandboxed chats only
+//! ([`crate::start::profile_refusal`]), so no sandboxed chat writes a harness home an
+//! unsandboxed run uses. A start refused for want of one leaves one wait per project and
+//! harness ([`waits_on`]), which the window shows as one Ask, *Codex needs a sandbox-only
+//! profile here* or *Claude Code needs a sandbox-only profile here* ([`ask`]): its button makes
+//! one ([`make`]) and opens the harness's own sign-in in it. The wait goes once this machine has
+//! a sandbox-only profile of that harness, or the person dismisses it.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
 use super::{Homes, MachineProfile, Made};
+use crate::harness::Harness;
 
-/// The harness the wait is for.
-pub const HARNESS: &str = "codex";
+/// The name [`make`] gives the first sandbox-only profile of `harness`: `codex-sandbox` or
+/// `claude-sandbox`, and the next is `codex-sandbox-2`.
+pub fn name(harness: Harness) -> String {
+    format!("{}-sandbox", harness.name())
+}
 
-/// The name [`make`] gives the first sandbox-only Codex profile: the next is `codex-sandbox-2`.
-pub const NAME: &str = "codex-sandbox";
+/// What a person calls `harness` in a sentence.
+pub fn called(harness: Harness) -> &'static str {
+    match harness {
+        Harness::ClaudeCode => "Claude Code",
+        Harness::Codex => "Codex",
+        Harness::Opencode => "opencode",
+    }
+}
 
-/// What the window's Ask says.
-pub const ASK: &str = "Codex needs a sandbox-only profile here";
+/// What the window's Ask for `harness` says first: *Codex needs a sandbox-only profile here*.
+pub fn ask(harness: Harness) -> String {
+    format!("{} needs a sandbox-only profile here", called(harness))
+}
 
-/// **A project a sandboxed Codex chat was refused in**, for want of a sandbox-only profile.
+/// **A project a sandboxed chat of `harness` was refused in**, for want of a sandbox-only
+/// profile.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Wait {
     /// The project.
     pub root: PathBuf,
+    /// The harness the chat was.
+    pub harness: Harness,
     /// When the first start was refused, in seconds since 1970.
     pub since: u64,
 }
 
 static WAITS: Mutex<Vec<Wait>> = Mutex::new(Vec::new());
 
-/// Records that a sandboxed Codex chat in the project at `root` was refused for want of a
-/// sandbox-only profile: one wait per project, however many starts were refused.
-pub fn waits_on(root: &Path) {
+/// Records that a sandboxed chat of `harness` in the project at `root` was refused for want of
+/// a sandbox-only profile: one wait per project and harness, however many starts were refused.
+pub fn waits_on(root: &Path, harness: Harness) {
     let mut all = WAITS.lock().unwrap_or_else(PoisonError::into_inner);
-    if all.iter().any(|w| w.root == root) {
+    if all.iter().any(|w| w.root == root && w.harness == harness) {
         return;
     }
     all.push(Wait {
         root: root.to_path_buf(),
+        harness,
         since: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs()),
     });
 }
 
-/// **Whether the project at `root` waits for one**, given this machine's `profiles`: a wait
-/// goes once one of them is a sandbox-only Codex profile.
-pub fn waiting(root: &Path, profiles: &[MachineProfile]) -> Option<Wait> {
+/// **What the project at `root` waits for**, given this machine's `profiles`: a harness's wait
+/// goes once one of them is a sandbox-only profile of it.
+pub fn waiting(root: &Path, profiles: &[MachineProfile]) -> Vec<Wait> {
     let mut all = WAITS.lock().unwrap_or_else(PoisonError::into_inner);
-    if profiles
-        .iter()
-        .any(|p| p.sandbox_only && p.harness == HARNESS)
-    {
-        all.clear();
-        return None;
-    }
-    all.iter().find(|w| w.root == root).cloned()
+    all.retain(|w| {
+        !profiles
+            .iter()
+            .any(|p| p.sandbox_only && p.harness == w.harness.name())
+    });
+    all.iter().filter(|w| w.root == root).cloned().collect()
 }
 
-/// The person put the wait in the project at `root` away.
-pub fn dismiss(root: &Path) {
+/// The person put the wait for `harness` in the project at `root` away.
+pub fn dismiss(root: &Path, harness: Harness) {
     WAITS
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
-        .retain(|w| w.root != root);
+        .retain(|w| w.root != root || w.harness != harness);
 }
 
-/// **Makes a sandbox-only Codex profile** at `now`, named [`NAME`], or the first of
-/// `codex-sandbox-2`, `-3`, … no profile has: the record, ready to be signed in through Codex's
-/// own sign-in. Nothing is copied into it.
-pub fn make(homes: &Homes, now: u64) -> Result<Made, String> {
+/// **Makes a sandbox-only profile of `harness`** at `now`, named [`name`], or the first of
+/// `-2`, `-3`, … after it no profile has: the record, ready to be signed in through the
+/// harness's own sign-in. Nothing is copied into it.
+pub fn make(homes: &Homes, harness: Harness, now: u64) -> Result<Made, String> {
+    let first = name(harness);
     let taken = super::list(homes.config_root())?;
-    let name = (1..)
+    let named = (1..)
         .map(|n| {
             if n == 1 {
-                NAME.to_owned()
+                first.clone()
             } else {
-                format!("{NAME}-{n}")
+                format!("{first}-{n}")
             }
         })
         .find(|name| {
             !taken.iter().any(|p| &p.name == name)
                 && std::fs::symlink_metadata(homes.folder_of(name)).is_err()
         })
-        .unwrap_or_else(|| NAME.to_owned());
-    super::create_sandbox_only(homes, &name, HARNESS, now)
+        .unwrap_or_else(|| first.clone());
+    super::create_sandbox_only(homes, &named, harness.name(), now)
 }
 
 #[cfg(test)]

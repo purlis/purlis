@@ -77,9 +77,15 @@ pub struct Asking {
     /// **The asks Snooze all put away** (#5647, ADR 0119): each held by a chat that holds no
     /// ask it did not have when it was snoozed. Listed apart from [`Asking::asks`], so neither
     /// the ✋ nor Asks counts them; the Chats view, which reads the board, still says the chat
-    /// waits. Only [`asks_waiting`] puts any here.
+    /// waits. Only [`counted`] puts any here.
     #[serde(default)]
     pub snoozed: Vec<Shown>,
+    /// **When the first chat of [`Asking::snoozed`] comes back by itself** (#6018, ADR 0121
+    /// decision 14), in seconds since 1970: snoozed for 1 hour or until tomorrow. The window
+    /// reads the asks again then, so they are counted and listed again; none where every
+    /// snoozed chat waits only for a new ask.
+    #[serde(default)]
+    pub snoozed_until: Option<u32>,
 }
 
 /// A task question its asking chat has, as the task's row says it: `asking steward 2 · 1m`.
@@ -429,8 +435,9 @@ pub enum AskSource {
     /// A profile a chat could not start on, because its harness says it is not signed in on
     /// this device (#2035): answered by running the harness's own sign-in in a shell tab.
     SignIn,
-    /// A sandboxed Codex chat refused for want of a sandbox-only profile (#2037): answered by
-    /// making one and running Codex's own sign-in in it.
+    /// A sandboxed Codex chat, or on Linux a sandboxed Claude Code chat, refused for want of a
+    /// sandbox-only profile (#2037): answered by making one and running the harness's own
+    /// sign-in in it.
     SandboxOnly,
     /// A project that still holds the old `[harness_plugins]` keys purlis no longer reads
     /// (#3467): said once, answered by Remove, which proposes the edit, or Dismiss.
@@ -467,6 +474,12 @@ pub enum AskSource {
     /// A vault a chat was refused because its persona is not tagged for it (#1430, #5160): an
     /// Allow lets that persona use it in this project on this machine.
     Vault,
+    /// **What the project expects and this machine has not allowed** (#6000, qw354): its
+    /// sandboxed chats are refused it until the person allows it on this machine.
+    SandboxExpects,
+    /// **A `purlis` command's confirmation in the window** (#6000): a pool sign-in, a profile
+    /// taken off a pool, a signing check, each waiting on the person's yes.
+    Confirmation,
 }
 
 /// **The existing, checked path an ask is answered by** (#1690): the command the window
@@ -513,10 +526,10 @@ pub enum AnswerPath {
         profile: String,
         pool: Option<String>,
     },
-    /// Make one sends `make_sandbox_only_profile`, then opens a shell tab where the core types
-    /// Codex's own sign-in for the profile it made (`type_profile_sign_in`). Dismiss sends
-    /// `dismiss_sandbox_only`.
-    SandboxOnly,
+    /// Make one sends `make_sandbox_only_profile` for `harness` (the kind's word, `codex` or
+    /// `claude`), then opens a shell tab where the core types the harness's own sign-in for the
+    /// profile it made (`type_profile_sign_in`). Dismiss sends `dismiss_sandbox_only`.
+    SandboxOnly { harness: String },
     /// `remove_old_harness_plugins` for Remove, which holds purlis's proposed change for each
     /// file and opens the first; `dismiss_old_harness_plugins` for Dismiss (#3467).
     OldHarnessPlugins,
@@ -563,6 +576,13 @@ pub enum AnswerPath {
     /// `vault` (#5160): `allow_refused_vault` for Allow, the one grant its Notice makes, and
     /// `keep_vault_blocked` for Keep blocked, with the person's reason.
     Vault { vault: String },
+    /// `allow_project_expects` for Allow on this machine and `decline_project_expects` for Not
+    /// now, each sent `items` as its Notice sends them (#6000).
+    SandboxExpects {
+        items: Vec<crate::sandboxing::ExpectedItem>,
+    },
+    /// `answer_pool_sign_in` for confirmation `id`, yes or no, as its dialog answers (#6000).
+    Confirmation { id: u32 },
     /// Nothing the window can send: the person answers in the chat.
     InItsPane,
 }
@@ -623,6 +643,7 @@ pub fn asking(plane: &PlaneId, hooks: &HookAsks) -> Asking {
         // A hook holds no task question: `every_ask` lists those.
         with_asking_chat: Vec::new(),
         snoozed: Vec::new(),
+        snoozed_until: None,
     }
 }
 
@@ -763,35 +784,46 @@ pub async fn asks_waiting(
 /// **What the ✋ counts of project `held`** (ADR 0121 decisions 2 and 3): its Blocking asks,
 /// from every source ([`every_ask`]), with what Snooze all put away apart ([`snoozed_apart`]).
 /// The window lists it, and the system notifications (`asknotify`) are sent for it alone, so
-/// what notifies and what counts are one answer.
+/// what notifies and what counts are one answer. A snoozed chat neither counts nor notifies
+/// until it is back (ADR 0121 decision 14, #6018).
 pub fn counted(held: &crate::planes::Held) -> Asking {
     // Snooze all's record is this machine's (#5647): where the app keeps no store, as in a
     // test of its own, nothing is snoozed and no data home is looked for.
     let store = held
         .config()
         .and_then(|_| purlis_core::inboxupdates::Store::here());
-    snoozed_apart(every_ask(held), store.as_ref(), held.root())
+    snoozed_apart(
+        every_ask(held),
+        store.as_ref(),
+        held.root(),
+        crate::sandboxing::now_secs(),
+    )
 }
 
 /// **Snooze all's asks, put apart** (#5647): every snoozed chat that holds an ask it did not
-/// have when snoozed is let go of first, so it is back with all its asks; what each chat still
-/// snoozed holds moves from [`Asking::asks`] to [`Asking::snoozed`]. Where this machine keeps no
-/// data home, nothing is snoozed; where the record cannot be written, it is read as it is.
+/// have when snoozed, or whose time has come by `now` (#6018), is let go of first, so it is back
+/// with all its asks; what each chat still snoozed holds moves from [`Asking::asks`] to
+/// [`Asking::snoozed`], and the first time one comes back by itself is
+/// [`Asking::snoozed_until`]. Where this machine keeps no data home, nothing is snoozed; where
+/// the record cannot be written, it is read as it is, less any chat whose time has come.
 pub fn snoozed_apart(
     mut asking: Asking,
     store: Option<&purlis_core::inboxupdates::Store>,
     root: &std::path::Path,
+    now: u64,
 ) -> Asking {
     let Some(store) = store else {
         return asking;
     };
-    let mut held = purlis_core::inboxupdates::Snoozed::new();
+    let mut held = purlis_core::inboxupdates::Held::new();
     for ask in &asking.asks {
         held.entry(ask.session).or_default().push(ask.ask.clone());
     }
-    let away = store
-        .release(root, &held)
-        .unwrap_or_else(|_| store.snoozed(root));
+    let away = store.release(root, &held, now).unwrap_or_else(|_| {
+        let mut kept = store.snoozed(root);
+        kept.retain(|_, one| one.until.is_none_or(|until| now < until));
+        kept
+    });
     if away.is_empty() {
         return asking;
     }
@@ -801,6 +833,8 @@ pub fn snoozed_apart(
         .partition(|ask| away.contains_key(&ask.session));
     asking.asks = asks;
     asking.snoozed = snoozed;
+    asking.snoozed_until = purlis_core::inboxupdates::first_back(&away)
+        .map(|until| u32::try_from(until).unwrap_or(u32::MAX));
     asking
 }
 
@@ -2983,8 +3017,8 @@ pub fn start_refused(held: &crate::planes::Held, why: String) -> String {
     why
 }
 
-/// Every project `planes` holds is told its asks may have moved: a sandbox-only Codex profile
-/// was made outside its Ask (#2037), which clears any project's wait for one.
+/// Every project `planes` holds is told its asks may have moved: a sandbox-only profile was made
+/// outside its Ask (#2037), which clears any project's wait for one of its harness.
 pub fn every_projects_asks_may_have_moved(planes: &crate::planes::Planes) {
     for plane in planes.open_now() {
         if let Ok(held) = planes.held(&plane) {
@@ -2993,22 +3027,35 @@ pub fn every_projects_asks_may_have_moved(planes: &crate::planes::Planes) {
     }
 }
 
-/// The option id of Make one on the Ask for a sandbox-only Codex profile (#2037).
+/// The option id of Make one on the Ask for a sandbox-only profile (#2037).
 pub const MAKE_SANDBOX_ONLY: &str = "make";
 
-/// **The sandbox-only adapter** (#2037, the operator's ruling of 2026-10-15): a project where a
-/// sandboxed Codex chat was refused for want of a sandbox-only profile, as one Ask about no
-/// chat. It offers Make one, which makes the profile and opens Codex's own sign-in in it, and
-/// Dismiss.
-pub fn sandbox_only(_wait: &purlis_core::profilestore::sandbox_only::Wait) -> Shown {
-    use purlis_core::profilestore::sandbox_only::ASK;
+/// The key of the Ask for a sandbox-only profile of `harness`: `sandbox-only:codex`.
+pub fn sandbox_only_key(harness: purlis_core::harness::Harness) -> String {
+    format!("sandbox-only:{}", harness.name())
+}
+
+/// **The sandbox-only adapter** (#2037, the operator's ruling of 2026-10-15; Claude Code on
+/// Linux, ADR 0067 as amended 2026-11-10): a project where a sandboxed chat was refused for want
+/// of a sandbox-only profile of its harness, as one Ask about no chat. It says, in plain words
+/// and within a summary's width, what that profile is and the three steps to one, and offers
+/// Make one, which makes the profile and opens the harness's own sign-in in it, and Dismiss.
+pub fn sandbox_only(wait: &purlis_core::profilestore::sandbox_only::Wait) -> Shown {
+    use purlis_core::harness::Harness;
+    use purlis_core::profilestore::sandbox_only::{ask, called};
+    let called = called(wait.harness);
+    let here = if wait.harness == Harness::ClaudeCode {
+        "on Linux "
+    } else {
+        ""
+    };
     Shown {
         session: 0,
-        ask: "sandbox-only:codex".to_owned(),
+        ask: sandbox_only_key(wait.harness),
         says: said_inertly(&format!(
-            "{ASK}: a sandboxed Codex chat runs only on a profile for sandboxed chats only, so \
-             your own Codex is never written by one. Make one makes it and runs Codex's own \
-             sign-in in a shell"
+            "{ask}: {here}a sandboxed chat keeps its own sign-in, apart from yours. Make one, \
+             sign in in the shell it opens, then start the chat again.",
+            ask = ask(wait.harness)
         )),
         options: vec![
             Offered {
@@ -3020,8 +3067,10 @@ pub fn sandbox_only(_wait: &purlis_core::profilestore::sandbox_only::Wait) -> Sh
             refuses(DISMISS, "Dismiss"),
         ],
         source: AskSource::SandboxOnly,
-        chain: vec![said_inertly("Codex")],
-        answer: AnswerPath::SandboxOnly,
+        chain: vec![said_inertly(called)],
+        answer: AnswerPath::SandboxOnly {
+            harness: wait.harness.name().to_owned(),
+        },
         since: None,
         held_until: None,
         writes: None,
@@ -3254,8 +3303,8 @@ pub struct Waiting<'a> {
     /// The profiles a start on a pool was refused on because they are not signed in on its
     /// runner (#2049).
     pub pool_sign_ins: Vec<purlis_core::profilestore::onrunner::PoolWait>,
-    /// Whether a sandboxed Codex chat here waits for a sandbox-only profile (#2037).
-    pub sandbox_only: Option<purlis_core::profilestore::sandbox_only::Wait>,
+    /// The harnesses whose sandboxed chats here wait for a sandbox-only profile (#2037).
+    pub sandbox_only: Vec<purlis_core::profilestore::sandbox_only::Wait>,
     /// The chats whose first browser call asks what their browser may reach (#2013).
     pub browsers: Vec<crate::chatbrowsers::Waits>,
     /// The browsers whose chat asked the person to take them over (#2015).
@@ -3446,7 +3495,7 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
             ..signing
                 + waiting.sign_ins.len()
                 + waiting.pool_sign_ins.len()
-                + usize::from(waiting.sandbox_only.is_some());
+                + waiting.sandbox_only.len();
         // Nor is a change purlis holds, whose adapter names purlis and what is behind it.
         if !profiles.contains(&at) && ask.chain.is_empty() {
             ask.chain = chain(ask.session, waiting.name_of, waiting.asker_of);
@@ -3589,8 +3638,8 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         root,
         &purlis_core::profilestore::listed_here(),
     );
-    if let Some(one) = &sandbox_only {
-        since.insert("sandbox-only:codex".to_owned(), one.since);
+    for one in &sandbox_only {
+        since.insert(sandbox_only_key(one.harness), one.since);
     }
     let browsers = held.browsers().waiting();
     for one in &browsers {
@@ -3743,6 +3792,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         plane: plane.clone(),
         with_asking_chat,
         snoozed: Vec::new(),
+        snoozed_until: None,
         // A grade's chat is drawn nowhere, and asks nobody (SK-16): the grade ends it at its
         // first ask, with that end, and none of its asks is listed.
         asks: derive(&waiting)
@@ -3764,6 +3814,20 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
             )
             // The lanes a forge refused for unsigned commits (#5633): one Ask for them all.
             .chain(signing_waiting(root, signing_on))
+            // What the project expects and this machine has not allowed (#6000): a consent.
+            .chain(consents::sandbox_expects(
+                purlis_core::sandbox::services::awaiting(
+                    root,
+                    &purlis_core::sandbox::Machine::this(),
+                )
+                .map(Into::into)
+                .as_ref(),
+            ))
+            // A command's confirmation in the window, filed under this project (#6000).
+            .chain(
+                crate::poolsignin_confirm::waiting_in(plane)
+                    .map(|(asked, until)| consents::confirmation(&asked, until)),
+            )
             .collect(),
     }
 }
@@ -3802,6 +3866,8 @@ pub fn forget_sandbox_block(
         },
     )
 }
+
+mod consents;
 
 #[cfg(test)]
 mod tests;

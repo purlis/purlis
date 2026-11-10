@@ -300,6 +300,7 @@ fn sign_in(name: &str, pool: &str, config: &Path) -> Asked {
         pool: pool.to_owned(),
         code: "A1B2C3".to_owned(),
         config: config.to_path_buf(),
+        project: None,
     }
 }
 
@@ -392,6 +393,7 @@ fn the_person_is_asked_only_of_a_profile_and_a_pool_this_machine_has() {
             pool,
             code: "<b>\u{202e}".to_owned(),
             config: theirs,
+            project: None,
         },
         no_forget,
         no_keep,
@@ -416,13 +418,50 @@ fn the_person_is_asked_only_of_a_profile_and_a_pool_this_machine_has() {
     );
 }
 
+/// **#6000: a confirmation names the project its command runs in**, so the window lists it in
+/// that project's Asks, and a line from an older command, which names none, still reads.
+#[test]
+fn a_confirmation_names_the_project_its_command_runs_in_and_an_older_line_still_reads() {
+    let config = Path::new("/the/config");
+    let project = Path::new("/home/one/smart-ide");
+    for (sent, how) in [
+        (
+            approved(config, Some(project), "team", "work", "A1B2C3", |what| {
+                assert_eq!(what.project(), Some(project));
+                Answered::NoAnswer
+            }),
+            "a sign-in",
+        ),
+        (
+            taken_off(config, Some(project), "team", "work", "A1B2C3", |what| {
+                assert_eq!(what.project(), Some(project));
+                Answered::NoAnswer
+            })
+            .map(|_| ()),
+            "a take-off",
+        ),
+    ] {
+        assert!(sent.is_err(), "{how}");
+    }
+    let older =
+        r#"{"approve_sign_in":{"name":"work","pool":"team","code":"A1B2C3","config":"/c"}}"#;
+    let read: Asked = serde_json::from_str(older).unwrap();
+    assert_eq!(read.project(), None);
+    assert!(
+        !serde_json::to_string(&sign_in("work", "team", config))
+            .unwrap()
+            .contains("project"),
+        "a line naming no project is written as before"
+    );
+}
+
 /// **Only the window's yes goes on**: no window, no answer in time and a no each stop it, and say
 /// nothing was started.
 #[test]
 fn a_sign_in_goes_on_only_on_the_windows_yes() {
     let asked = std::cell::Cell::new(None);
     let config = Path::new("/the/config");
-    let yes = approved(config, "team", "work", "A1B2C3", |what| {
+    let yes = approved(config, None, "team", "work", "A1B2C3", |what| {
         asked.set(Some(what.clone()));
         Answered::Said(Said::Asked { note: None })
     });
@@ -439,7 +478,7 @@ fn a_sign_in_goes_on_only_on_the_windows_yes() {
             "you said no",
         ),
     ] {
-        let said = approved(config, "team", "work", "A1B2C3", |_| answered).unwrap_err();
+        let said = approved(config, None, "team", "work", "A1B2C3", |_| answered).unwrap_err();
         assert!(said.contains(says), "{said}");
         assert!(said.contains("othing was started"), "{said}");
     }
@@ -451,6 +490,7 @@ fn take_off(name: &str, pool: &str, config: &Path) -> Asked {
         pool: pool.to_owned(),
         code: "A1B2C3".to_owned(),
         config: config.to_path_buf(),
+        project: None,
     }
 }
 
@@ -527,7 +567,7 @@ fn a_profile_comes_off_a_pool_only_where_the_pool_keeps_it_and_the_command_is_th
 fn a_profile_taken_off_by_the_command_goes_on_only_on_the_windows_yes() {
     let config = Path::new("/the/config");
     let asked = std::cell::Cell::new(None);
-    let yes = taken_off(config, "team", "work", "A1B2C3", |what| {
+    let yes = taken_off(config, None, "team", "work", "A1B2C3", |what| {
         asked.set(Some(what.clone()));
         Answered::Said(Said::Asked {
             note: Some("it keeps it".to_owned()),
@@ -546,7 +586,7 @@ fn a_profile_taken_off_by_the_command_goes_on_only_on_the_windows_yes() {
             "you said no",
         ),
     ] {
-        let said = taken_off(config, "team", "work", "A1B2C3", |_| answered).unwrap_err();
+        let said = taken_off(config, None, "team", "work", "A1B2C3", |_| answered).unwrap_err();
         assert!(said.contains(says), "{said}");
     }
 }

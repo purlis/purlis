@@ -16,7 +16,7 @@ const TOOL = fileURLToPath(new URL("./symbols-upload.mjs", import.meta.url));
 
 const SECRETS = {
   SENTRY_AUTH_TOKEN: "sntrys_token",
-  SENTRY_ORG: "purlis",
+  SENTRY_ORG: "purlis-inc-ff",
   SENTRY_PROJECT: "purlis-app",
 };
 
@@ -94,7 +94,7 @@ function run(command, { root, dir }, env = {}) {
 
 test("without the intake's secrets the job uploads nothing, stays green and says which are missing", () => {
   const download = aDownload(["purlis-macos-arm64-symbols-0.6.0/purlis-app.dSYM"]);
-  const result = run("check", download, { SENTRY_ORG: "purlis" });
+  const result = run("check", download, { SENTRY_ORG: "purlis-inc-ff" });
   assert.equal(result.code, 0, result.log);
   assert.match(result.output, /^upload=false$/m);
   assert.match(result.summary, /SENTRY_SYMBOLS_TOKEN/);
@@ -152,7 +152,7 @@ test("every debug file goes to the project in Sentry's EU region, in one upload"
     "debug-files",
     "upload",
     "--org",
-    "purlis",
+    "purlis-inc-ff",
     "--project",
     "purlis-app",
     join(download.dir, "purlis-macos-arm64-symbols-0.6.0/purlis-app.dSYM"),

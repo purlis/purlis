@@ -417,8 +417,9 @@ pub fn egress_denied(namespace: &str, owners: Vec<OwnerReference>) -> NetworkPol
     }
 }
 
-/// Whether `held`'s `hard` is `wanted`'s, quantity by quantity: the cluster may write a
-/// quantity in other words (`0.5` as `500m`) than the chart did.
+/// Whether `held`'s `hard` is `wanted`'s, quantity by quantity, and it counts what `wanted` counts
+/// (its `scopes` and `scopeSelector`): the cluster may write a quantity in other words (`0.5` as
+/// `500m`) than the chart did.
 pub fn quota_says(held: &ResourceQuota, wanted: &ResourceQuota) -> bool {
     let hard = |quota: &ResourceQuota| -> Option<BTreeMap<String, Option<u128>>> {
         Some(
@@ -432,7 +433,15 @@ pub fn quota_says(held: &ResourceQuota, wanted: &ResourceQuota) -> bool {
                 .collect(),
         )
     };
+    let scoped = |quota: &ResourceQuota| {
+        quota
+            .spec
+            .as_ref()
+            .map(|spec| (spec.scopes.clone(), spec.scope_selector.clone()))
+            .unwrap_or_default()
+    };
     hard(held).unwrap_or_default() == hard(wanted).unwrap_or_default()
+        && scoped(held) == scoped(wanted)
 }
 
 /// A quantity in thousandths of its unit, as Kubernetes reads it (`250m`, `4`, `0.5`, `8Gi`,

@@ -738,3 +738,40 @@ fn the_values_never_name_the_signing_key_or_a_name_rbac_would_read_as_every_name
         assert!(said.contains("may not read"), "{said}");
     }
 }
+
+/// **The operator knows the policies it reads as the chart renders them for any namespace**: what
+/// it compares a policy with, the plain install's copy with its own namespace put in, is what
+/// `helm template` renders for a release in that namespace.
+#[test]
+fn the_policies_the_operator_reads_are_the_charts_in_any_namespace() {
+    use k8s_openapi::api::admissionregistration::v1::ValidatingAdmissionPolicy;
+    use purlis_cluster_operator::{FORGE_POLICY, POLICY, RUNNER_NAMESPACES_POLICY, shipped_policy};
+    let chart = chart();
+    let out = helm(&[
+        "template",
+        "purlis-cluster-operator",
+        chart.to_str().expect("a UTF-8 path"),
+        "--namespace",
+        "elsewhere",
+        "--kube-version",
+        KUBERNETES,
+        "--set",
+        DIGEST_VALUE,
+    ]);
+    assert!(
+        out.status.success(),
+        "helm template: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let documents = documents_of(&String::from_utf8(out.stdout).expect("UTF-8"));
+    for name in [POLICY, RUNNER_NAMESPACES_POLICY, FORGE_POLICY] {
+        let rendered = documents
+            .iter()
+            .find(|d| d["kind"] == "ValidatingAdmissionPolicy" && d["metadata"]["name"] == name)
+            .unwrap_or_else(|| panic!("the policy {name}"));
+        let rendered: ValidatingAdmissionPolicy =
+            serde_json::from_value(rendered.clone()).expect("a policy");
+        let shipped = shipped_policy(name, "elsewhere").expect("the shipped policy");
+        assert_eq!(rendered.spec, shipped.spec, "{name}");
+    }
+}

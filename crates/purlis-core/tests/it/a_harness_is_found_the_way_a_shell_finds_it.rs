@@ -125,6 +125,9 @@ fn a_chat_is_not_started_on_a_harness_charter_cannot_find_and_the_refusal_says_w
     purlis_core::unsteered!();
     let plane = Plane::new();
     plane.running(NOWHERE);
+    // What is asked is the search: on Linux a sandboxed Claude Code chat runs inside purlis's
+    // wrap, on a sandbox-only profile, which `work` is not (ADR 0067 as amended 2026-11-10).
+    crate::support::no_claude_sandbox_here(plane.root());
 
     let refusal = start::ready(&plane.start(), plane.root()).expect_err("nothing starts");
 

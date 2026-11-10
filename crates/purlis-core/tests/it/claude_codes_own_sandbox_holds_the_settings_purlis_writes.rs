@@ -28,8 +28,8 @@
 //! Without `PURLIS_CLAUDE_CODE` (the path to the `claude` program) the settings are built and
 //! checked, and no Claude Code is started. CI sets it on the macOS runner and on a Linux one to
 //! the version in `tests/fixtures/harness-versions/claude.txt`, which this test holds it to. On
-//! Linux, where Claude Code's sandbox is bubblewrap and no name is folded to another case, the
-//! command is `tools/seatbelt-case.sh --repositories-here`: the repositories' probes alone.
+//! Linux purlis wraps every sandboxed Claude Code chat whole, with Claude Code's own sandbox off
+//! (ADR 0067 as amended 2026-11-10), so nothing here runs there ([`its_own_sandbox_runs_here`]).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -94,6 +94,14 @@ const PROJECT_SETTINGS: &str = r#"{
     "sandbox": {"enabled": false},
     "env": {"PROBE": "1"}
 }"#;
+
+/// **Whether a sandboxed Claude Code chat here runs on Claude Code's own sandbox**: on macOS.
+/// On Linux purlis wraps every sandboxed Claude Code chat whole (ADR 0067 as amended
+/// 2026-11-10), with Claude Code's own sandbox off, so there is nothing of its own here to
+/// probe.
+fn its_own_sandbox_runs_here() -> bool {
+    !Machine::this().purlis_wraps(Harness::ClaudeCode)
+}
 
 /// A sample project at `root` with `manifest`: a vault, a folder of what macOS starts at login
 /// and one beside it, a file nothing holds, Claude Code settings of its own, and two clones and
@@ -557,6 +565,9 @@ fn started(
 #[test]
 fn claude_codes_own_sandbox_holds_the_settings_purlis_writes() {
     purlis_core::unsteered!();
+    if !its_own_sandbox_runs_here() {
+        return;
+    }
     let program = std::env::var_os("PURLIS_CLAUDE_CODE").map(PathBuf::from);
     let scratch = tempfile::tempdir().expect("a folder");
     let out = scratch.path().canonicalize().expect("a real folder");
@@ -575,7 +586,6 @@ fn claude_codes_own_sandbox_holds_the_settings_purlis_writes() {
         env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
         home: Some(home.clone()),
         os: Os::this(),
-        on_a_sandbox_only_profile: false,
     };
     if let Some(program) = &program {
         if !cfg!(any(target_os = "macos", target_os = "linux")) {
@@ -684,6 +694,9 @@ fn claude_codes_own_sandbox_holds_the_settings_purlis_writes() {
 #[test]
 fn a_chat_at_the_floor_makes_its_tools_folders_in_a_bare_home() {
     purlis_core::unsteered!();
+    if !its_own_sandbox_runs_here() {
+        return;
+    }
     let Some(program) = std::env::var_os("PURLIS_CLAUDE_CODE").map(PathBuf::from) else {
         return;
     };
@@ -701,7 +714,6 @@ fn a_chat_at_the_floor_makes_its_tools_folders_in_a_bare_home() {
         env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
         home: Some(home.clone()),
         os: Os::this(),
-        on_a_sandbox_only_profile: false,
     };
     let decided = sandbox::decide(Harness::ClaudeCode, &root, &machine, &|_| true, None, None)
         .expect("decided")
@@ -756,6 +768,9 @@ fn a_chat_at_the_floor_makes_its_tools_folders_in_a_bare_home() {
 #[test]
 fn an_outcome_evals_shell_writes_only_its_own_folders_and_reaches_no_host() {
     purlis_core::unsteered!();
+    if !its_own_sandbox_runs_here() {
+        return;
+    }
     use purlis_core::sandbox::egress;
     use purlis_core::skills::verbs::drafts;
     let program = std::env::var_os("PURLIS_CLAUDE_CODE").map(PathBuf::from);
@@ -777,7 +792,6 @@ fn an_outcome_evals_shell_writes_only_its_own_folders_and_reaches_no_host() {
         env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
         home: Some(home.clone()),
         os: Os::this(),
-        on_a_sandbox_only_profile: false,
     };
     // Two shell evals' chats of one grade, each with its piece and its temp folder; both go,
     // temp folders and all, however the test ends.
@@ -990,6 +1004,9 @@ fn an_outcome_evals_shell_writes_only_its_own_folders_and_reaches_no_host() {
 #[test]
 fn two_claude_code_chats_each_write_a_temporary_folder_of_their_own_and_not_the_others() {
     purlis_core::unsteered!();
+    if !its_own_sandbox_runs_here() {
+        return;
+    }
     use std::os::unix::fs::{DirBuilderExt, MetadataExt};
     let Some(program) = std::env::var_os("PURLIS_CLAUDE_CODE").map(PathBuf::from) else {
         return;
@@ -1008,7 +1025,6 @@ fn two_claude_code_chats_each_write_a_temporary_folder_of_their_own_and_not_the_
         env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
         home: Some(home.clone()),
         os: Os::this(),
-        on_a_sandbox_only_profile: false,
     };
     let decided = sandbox::decide(Harness::ClaudeCode, &root, &machine, &|_| true, None, None)
         .expect("decided")
@@ -1170,6 +1186,9 @@ fn write_function() -> String {
 #[test]
 fn a_workspace_made_after_a_claude_code_chat_starts_hands_no_chat_its_skills() {
     purlis_core::unsteered!();
+    if !its_own_sandbox_runs_here() {
+        return;
+    }
     use purlis_core::skills::{self, PlaneSkills, levels};
     let program = std::env::var_os("PURLIS_CLAUDE_CODE").map(PathBuf::from);
     let scratch = tempfile::tempdir().expect("a folder");
@@ -1198,7 +1217,6 @@ fn a_workspace_made_after_a_claude_code_chat_starts_hands_no_chat_its_skills() {
         env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
         home: Some(home.clone()),
         os: Os::this(),
-        on_a_sandbox_only_profile: false,
     };
     let (level, settings) = settings_for(&root, &machine);
     assert_eq!(level, Level::Full);

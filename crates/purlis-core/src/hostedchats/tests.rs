@@ -124,3 +124,24 @@ fn a_chat_composed_again_under_the_same_number_is_the_new_one() {
         Some("writer")
     );
 }
+
+/// A chat's run here is counted against chat ends from before the chat was found composed here,
+/// never from when the run is served: a chat that ends between the two keeps no GitHub App
+/// token minted for it (#3808).
+#[test]
+fn a_chats_run_here_counts_chat_ends_from_before_the_chat_was_found() {
+    let root = tempfile::tempdir().unwrap();
+    record(root.path(), 3, composed("devops"));
+
+    let before = crate::forge::apptoken::ends_so_far();
+    let seen = asker(root.path(), 3)
+        .expect("recorded")
+        .ends_seen
+        .expect("counted as the chat is found, not when its run is served");
+    let after = crate::forge::apptoken::ends_so_far();
+
+    assert!(
+        (before..=after).contains(&seen),
+        "the count read as the chat was found: {before} <= {seen} <= {after}"
+    );
+}

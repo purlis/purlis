@@ -10,7 +10,7 @@ import type { Bench, Plan } from "../../src/bench.ts";
 import type { Renderer } from "../../src/renderer.ts";
 import { built } from "../harness.js";
 import { endEveryChat } from "../opening.js";
-import { running } from "../processes.js";
+import { PS_MAX_BUFFER, running } from "../processes.js";
 
 /** What the benchmark measures in, and the pieces every spec shares. */
 
@@ -184,7 +184,10 @@ export function appProcess(): { pid: number; rssMb: number } {
 /** How many fake harnesses are running, and how much CPU they are using between them. */
 export function harnesses(): { running: number; cpuPercent: number } {
   const harness = built("fake-harness");
-  const ps = execFileSync("ps", ["-A", "-o", "%cpu=,command="], { encoding: "utf8" });
+  const ps = execFileSync("ps", ["-A", "-o", "%cpu=,command="], {
+    encoding: "utf8",
+    maxBuffer: PS_MAX_BUFFER,
+  });
   const lines = ps
     .split("\n")
     .map((line) => line.trim().match(/^([\d.]+)\s+(.*)$/))

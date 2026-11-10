@@ -200,7 +200,8 @@ finish() {
 # the whole file before the first prompt, so an edit mid-run can't break it.
 # ──────────────────────────────────────────────────────────────────────────
 
-# The Report intake (#5687, ADR 0118): Sentry SaaS in the EU, org `purlis`, project `purlis-app`.
+# The Report intake (#5687, ADR 0118): Sentry SaaS in the EU, project `purlis-app`, in the org whose
+# slug Sentry gave (`purlis-inc-ff` for purlis's own: Sentry may add a suffix to the slug asked for).
 # Run from the plane root, signed in to gh as a purlis/purlis admin:
 #   bash <purlis checkout>/tools/wizards/report-intake.sh
 # Nothing is written to .env: the release secrets go to the `release` environment and the
@@ -235,26 +236,37 @@ say "Reports must stay in the EU (ruling O9). The region is chosen once, when th
 say "organisation is created, and cannot be changed later."
 open_url "https://sentry.io/signup/"
 step "Sign up or sign in, then create a new organisation."
-step "Organisation slug: purlis"
+step "Organisation slug: purlis. Sentry may add a suffix to it, as it did with purlis-inc-ff."
 step "Data storage location: European Union (EU). Check this before you continue."
-confirm "Is the organisation 'purlis' created with EU data storage?" || exit 1
+step "Copy the slug Sentry gave: it is the first part of the organisation's address, <slug>.sentry.io."
+ask SENTRY_ORG_SLUG "Organisation slug (Enter for purlis-inc-ff):" || exit 1
+SENTRY_ORG_SLUG="${SENTRY_ORG_SLUG:-purlis-inc-ff}"
+if [[ ! "$SENTRY_ORG_SLUG" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+  warn "'$SENTRY_ORG_SLUG' is not a Sentry slug: lowercase letters, digits and hyphens only."
+  exit 1
+fi
+SENTRY_UI="https://$SENTRY_ORG_SLUG.sentry.io"
+if [[ "$SENTRY_ORG_SLUG" != purlis-inc-ff ]]; then
+  warn "The steward's routine reads org purlis-inc-ff: change INTAKE.org and INTAKE.ui in tools/report-intake.mjs to match."
+fi
+confirm "Is the organisation '$SENTRY_ORG_SLUG' created with EU data storage?" || exit 1
 
 stage "Create the project purlis-app"
-open_url "https://purlis.sentry.io/projects/new/"
+open_url "$SENTRY_UI/projects/new/"
 step "Platform: Rust. Alert frequency: your choice."
 step "Project name: purlis-app. Team: the default team."
 step "Skip the SDK setup page: purlis already sends events itself."
 confirm "Is the project 'purlis-app' created?" || exit 1
 
 stage "Retention and spike protection"
-open_url "https://purlis.sentry.io/settings/subscription/"
+open_url "$SENTRY_UI/settings/subscription/"
 step "Check that event retention is 90 days on this plan (ADR 0118, decision Q14)."
-open_url "https://purlis.sentry.io/settings/spike-protection/"
+open_url "$SENTRY_UI/settings/spike-protection/"
 step "Turn spike protection on for purlis-app."
 confirm "Are retention at 90 days and spike protection on confirmed?" || exit 1
 
 stage "The project's DSN, built into every release"
-open_url "https://purlis.sentry.io/settings/projects/purlis-app/keys/"
+open_url "$SENTRY_UI/settings/projects/purlis-app/keys/"
 step "Under Client Keys (DSN), copy the DSN. It starts with https:// and ends in"
 step "/<project id>, on an ingest.de.sentry.io host."
 note "A DSN is public by design: it only lets a client send events."
@@ -268,18 +280,18 @@ pause
 
 stage "Upload token for debug symbols"
 say "The release workflow's symbols job uploads debug files so crash reports are readable."
-open_url "https://purlis.sentry.io/settings/auth-tokens/"
+open_url "$SENTRY_UI/settings/auth-tokens/"
 step "Create New Token (Organization Token). Name it: purlis release symbols."
 step "Copy the token. It is shown only once."
 ask_secret SENTRY_SYMBOLS_TOKEN "Paste the organisation token:"
 set_release_secret SENTRY_SYMBOLS_TOKEN "$SENTRY_SYMBOLS_TOKEN"
-set_release_secret SENTRY_ORG "purlis"
+set_release_secret SENTRY_ORG "$SENTRY_ORG_SLUG"
 set_release_secret SENTRY_PROJECT "purlis-app"
 pause
 
 stage "The steward's read-only token"
 say "The daily steward routine (#5701) reads new reports and nothing else."
-open_url "https://purlis.sentry.io/settings/developer-settings/new-internal/"
+open_url "$SENTRY_UI/settings/developer-settings/new-internal/"
 step "Name: purlis steward (read-only)."
 step "Permissions: Project Read, Issue & Event Read. Leave everything else at No Access."
 step "Save Changes, then copy the token under Tokens."

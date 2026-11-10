@@ -63,7 +63,6 @@ impl Project {
             env: crate::secrets::Env::of(&[]),
             home: Some(self.home.clone()),
             os,
-            on_a_sandbox_only_profile: false,
         }
     }
 

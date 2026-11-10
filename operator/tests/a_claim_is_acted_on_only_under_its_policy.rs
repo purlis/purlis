@@ -3,11 +3,11 @@
 
 //! The operator acts only on Claims admitted under its policy, however it was installed: a
 //! Claim made more than `SETTLE` (30 s) after the policy's binding is acted on; one made before
-//! it, or within that time, is refused for good; and with no binding in force, no Claim is acted
-//! on at all.
+//! it, or within that time, is refused for good; and with no binding in force, or a policy that is
+//! not the one the operator ships, no Claim is acted on at all.
 
 use k8s_openapi::api::admissionregistration::v1::{
-    MatchResources, NamedRuleWithOperations, ParamRef, ValidatingAdmissionPolicy,
+    MatchCondition, MatchResources, NamedRuleWithOperations, ParamRef, ValidatingAdmissionPolicy,
     ValidatingAdmissionPolicyBinding, ValidatingAdmissionPolicyBindingSpec,
     ValidatingAdmissionPolicySpec,
 };
@@ -15,8 +15,12 @@ use k8s_openapi::apimachinery::pkg::apis::meta::v1::{LabelSelector, Time};
 use k8s_openapi::jiff::Timestamp;
 use kube::api::ObjectMeta;
 use purlis_cluster_operator::{
-    Admission, Claim, ClaimSpec, POLICY, SETTLE, admission, in_force_since,
+    Admission, Claim, ClaimSpec, FORGE_POLICY, POLICY, RUNNER_NAMESPACES_POLICY, SETTLE, admission,
+    in_force_since, shipped_policy,
 };
+
+/// The namespace the operator runs in, as the plain install names it.
+const NAMESPACE: &str = "purlis-system";
 
 fn at(time: &str) -> Time {
     Time(time.parse::<Timestamp>().expect("a timestamp"))
@@ -57,15 +61,11 @@ fn binding(time: &str, policy: &str, actions: &[&str]) -> ValidatingAdmissionPol
     }
 }
 
+/// The policy on Claims as the operator ships it, made at `time`.
 fn policy_made(time: &str) -> ValidatingAdmissionPolicy {
-    ValidatingAdmissionPolicy {
-        metadata: ObjectMeta {
-            name: Some(POLICY.into()),
-            creation_timestamp: Some(at(time)),
-            ..ObjectMeta::default()
-        },
-        ..ValidatingAdmissionPolicy::default()
-    }
+    let mut policy = shipped_policy(POLICY, NAMESPACE).expect("the shipped policy");
+    policy.metadata.creation_timestamp = Some(at(time));
+    policy
 }
 
 /// When the policy is in force from under `binding`, the policy made long before it.
@@ -74,6 +74,7 @@ fn since(binding: &ValidatingAdmissionPolicyBinding) -> Option<Timestamp> {
         Some(&policy_made("2026-01-01T00:00:00Z")),
         Some(binding),
         POLICY,
+        NAMESPACE,
     )
 }
 
@@ -212,19 +213,19 @@ fn a_policy_is_in_force_from_the_later_of_it_and_its_binding() {
     let binding = in_force("2026-10-17T10:00:00Z");
     let older = policy_made("2026-10-17T09:00:00Z");
     assert_eq!(
-        in_force_since(Some(&older), Some(&binding), POLICY),
+        in_force_since(Some(&older), Some(&binding), POLICY, NAMESPACE),
         Some(settled("2026-10-17T10:00:00Z"))
     );
     // Made again under a binding that stayed: what was made before it was not admitted under it.
     let again = policy_made("2026-10-17T11:00:00Z");
     assert_eq!(
-        in_force_since(Some(&again), Some(&binding), POLICY),
+        in_force_since(Some(&again), Some(&binding), POLICY, NAMESPACE),
         Some(settled("2026-10-17T11:00:00Z"))
     );
     assert_eq!(
         admission(
             &claim_made(Some("2026-10-17T10:30:00Z")),
-            in_force_since(Some(&again), Some(&binding), POLICY)
+            in_force_since(Some(&again), Some(&binding), POLICY, NAMESPACE)
         ),
         Admission::MadeBeforePolicy
     );
@@ -233,7 +234,10 @@ fn a_policy_is_in_force_from_the_later_of_it_and_its_binding() {
 #[test]
 fn a_binding_with_no_policy_holds_nothing() {
     let binding = in_force("2026-10-17T10:00:00Z");
-    assert_eq!(in_force_since(None, Some(&binding), POLICY), None);
+    assert_eq!(
+        in_force_since(None, Some(&binding), POLICY, NAMESPACE),
+        None
+    );
 }
 
 #[test]
@@ -243,7 +247,7 @@ fn a_binding_changed_since_it_was_made_is_not_in_force() {
         let mut changed = in_force("2026-10-17T10:00:00Z");
         changed.metadata.generation = generation;
         assert_eq!(
-            in_force_since(Some(&policy), Some(&changed), POLICY),
+            in_force_since(Some(&policy), Some(&changed), POLICY, NAMESPACE),
             None,
             "{generation:?}"
         );
@@ -334,21 +338,145 @@ fn a_binding_that_names_what_it_matches_as_everything_is_in_force() {
 #[test]
 fn a_policy_that_lets_through_what_it_cannot_check_is_not_in_force() {
     let binding = in_force("2026-10-17T10:00:00Z");
-    let with = |failure: Option<&str>| ValidatingAdmissionPolicy {
-        spec: Some(ValidatingAdmissionPolicySpec {
-            failure_policy: failure.map(str::to_owned),
-            ..ValidatingAdmissionPolicySpec::default()
-        }),
-        ..policy_made("2026-10-17T09:00:00Z")
+    let with = |failure: Option<&str>| {
+        let mut policy = policy_made("2026-10-17T09:00:00Z");
+        policy.spec.as_mut().expect("a spec").failure_policy = failure.map(str::to_owned);
+        policy
     };
     assert_eq!(
-        in_force_since(Some(&with(Some("Ignore"))), Some(&binding), POLICY),
+        in_force_since(
+            Some(&with(Some("Ignore"))),
+            Some(&binding),
+            POLICY,
+            NAMESPACE
+        ),
         None
     );
+    // `Fail` is what the API server takes when none is named.
     for failure in [Some("Fail"), None] {
         assert!(
-            in_force_since(Some(&with(failure)), Some(&binding), POLICY).is_some(),
+            in_force_since(Some(&with(failure)), Some(&binding), POLICY, NAMESPACE).is_some(),
             "{failure:?}"
         );
     }
+}
+
+/// **The operator acts only while the policy is the one it ships**: a policy whose rules say
+/// anything else, changed in place or made again, holds nothing the operator counts on.
+#[test]
+fn a_policy_that_is_not_the_one_the_operator_ships_is_not_in_force() {
+    let binding = in_force("2026-10-17T10:00:00Z");
+    let changed = |change: fn(&mut ValidatingAdmissionPolicySpec)| {
+        let mut policy = policy_made("2026-10-17T09:00:00Z");
+        change(policy.spec.as_mut().expect("a spec"));
+        policy
+    };
+    let policies = [
+        (
+            "a rule taken out",
+            changed(|spec| {
+                spec.validations.as_mut().expect("its rules").remove(0);
+            }),
+        ),
+        (
+            "a rule that admits everything",
+            changed(|spec| {
+                spec.validations.as_mut().expect("its rules")[0].expression = "true".into();
+            }),
+        ),
+        ("no rules at all", changed(|spec| spec.validations = None)),
+        (
+            "a rule that matches less",
+            changed(|spec| {
+                let rules = spec
+                    .match_constraints
+                    .as_mut()
+                    .and_then(|constraints| constraints.resource_rules.as_mut())
+                    .expect("its resource rules");
+                rules[0].operations = Some(vec!["UPDATE".into()]);
+            }),
+        ),
+        (
+            "a condition on what it matches",
+            changed(|spec| {
+                spec.match_conditions = Some(vec![MatchCondition {
+                    name: "never".into(),
+                    expression: "false".into(),
+                }]);
+            }),
+        ),
+        (
+            "an object selector",
+            changed(|spec| {
+                spec.match_constraints
+                    .as_mut()
+                    .expect("its constraints")
+                    .object_selector = Some(LabelSelector {
+                    match_labels: Some([("team".to_owned(), "a".to_owned())].into()),
+                    ..LabelSelector::default()
+                });
+            }),
+        ),
+        ("no spec", {
+            let mut policy = policy_made("2026-10-17T09:00:00Z");
+            policy.spec = None;
+            policy
+        }),
+    ];
+    for (what, policy) in policies {
+        assert_eq!(
+            in_force_since(Some(&policy), Some(&binding), POLICY, NAMESPACE),
+            None,
+            "a policy with {what} is in force"
+        );
+    }
+}
+
+/// The shipped policy names the operator's own service account, in the namespace the operator
+/// runs in: the same rules naming another namespace's are not the operator's.
+#[test]
+fn the_policy_is_the_operators_only_for_the_namespace_it_runs_in() {
+    let binding = in_force("2026-10-17T10:00:00Z");
+    let mut elsewhere = shipped_policy(POLICY, "elsewhere").expect("the shipped policy");
+    elsewhere.metadata.creation_timestamp = Some(at("2026-10-17T09:00:00Z"));
+    assert!(in_force_since(Some(&elsewhere), Some(&binding), POLICY, "elsewhere").is_some());
+    assert_eq!(
+        in_force_since(Some(&elsewhere), Some(&binding), POLICY, NAMESPACE),
+        None
+    );
+}
+
+/// The API server fills in what a policy leaves unnamed: a policy read back with those defaults
+/// is still the one the operator ships.
+#[test]
+fn the_shipped_policy_read_back_with_the_servers_defaults_is_in_force() {
+    let binding = in_force("2026-10-17T10:00:00Z");
+    let mut policy = policy_made("2026-10-17T09:00:00Z");
+    let spec = policy.spec.as_mut().expect("a spec");
+    spec.failure_policy = Some("Fail".into());
+    let constraints = spec.match_constraints.as_mut().expect("its constraints");
+    constraints.match_policy = Some("Equivalent".into());
+    constraints.namespace_selector = Some(LabelSelector::default());
+    constraints.object_selector = Some(LabelSelector::default());
+    for rule in constraints.resource_rules.iter_mut().flatten() {
+        rule.scope = Some("*".into());
+    }
+    assert!(in_force_since(Some(&policy), Some(&binding), POLICY, NAMESPACE).is_some());
+}
+
+#[test]
+fn the_operator_ships_each_policy_it_reads() {
+    for name in [POLICY, RUNNER_NAMESPACES_POLICY, FORGE_POLICY] {
+        let policy = shipped_policy(name, NAMESPACE).unwrap_or_else(|| panic!("{name}"));
+        assert_eq!(policy.metadata.name.as_deref(), Some(name));
+        assert!(
+            policy
+                .spec
+                .as_ref()
+                .and_then(|spec| spec.validations.as_ref())
+                .is_some_and(|rules| !rules.is_empty()),
+            "{name}"
+        );
+    }
+    assert!(shipped_policy("no-such-policy", NAMESPACE).is_none());
 }

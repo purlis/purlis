@@ -118,6 +118,7 @@ mod purlis_skill_revert_asks_before_a_version_that_widens;
 mod purlis_skill_runs_lists_runs_with_their_signals;
 mod repo_commands;
 mod report;
+mod runners_left_behind_at_the_command_line;
 mod save_pull;
 mod secrets;
 mod session;

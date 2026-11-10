@@ -33,7 +33,6 @@ fn machine(base: &Path) -> Machine {
         ]),
         home: Some(home.to_path_buf()),
         os: Os::this(),
-        on_a_sandbox_only_profile: false,
     }
 }
 
