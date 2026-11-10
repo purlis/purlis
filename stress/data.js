@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794326459721,
+  "lastUpdate": 1794332903179,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -18986,6 +18986,42 @@ window.BENCHMARK_DATA = {
             "value": 1101.4,
             "unit": "MB",
             "extra": "median of 6 samples: 1052.3, 1086.7, 1116.1, 1148.6, 1148.9, 773.3 MB; window 713.6 MB, session host 393 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "b598c5ecdb2da2af4a62817149dd5f7d57311b56",
+          "message": "Bring 0.5.1 back to main, and move main to 0.5.2 (#6145)\n\nThe v0.5.1 tag is 8e2b109b on release/v0.5.1-fold: #6117's merge commit\nplus a fold of the three fragments that merged ahead of it. This brings\nthat fold to main (the four entries in the 0.5.1 section and\ndocs/changelog-0.5.1.md, the three fragments removed), then moves main\nto 0.5.2: Cargo.toml, tauri.conf.json, Cargo.lock's workspace crates,\nand the built-in themes' $schema (Purlis Classic through\nPURLIS_THEME_SCHEMA_WRITE=1 ... the_published_schema). The fragments\nmerged since the tag stay in changes/ for 0.5.2, and parts since NEXT\nstay NEXT.\n\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M6W0QJ3N3KDM4T3EJ2XKR07A\nPurlis-Persona: steward\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T15:23:40Z",
+          "tree_id": "dfa79d380e20c033a4a8364730650e473205c81d",
+          "url": "https://github.com/purlis/purlis/commit/b598c5ecdb2da2af4a62817149dd5f7d57311b56"
+        },
+        "date": 1794332897139,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 2683,
+            "unit": "MB",
+            "extra": "median of 3 samples: 2416.4, 2683, 2818.6 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 1234.2,
+            "unit": "MB",
+            "extra": "median of 6 samples: 1192.3, 1215.7, 1253.2, 1252.8, 1253.7, 777.6 MB; window 846.3 MB, session host 395.4 MB"
           }
         ]
       }
