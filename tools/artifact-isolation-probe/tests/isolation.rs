@@ -157,4 +157,6 @@ mod shape {
     fn d_child_incognito() { shape("child-incognito"); }
     #[test]
     fn e_child_incognito_app() { shape("child-incognito-app"); }
+    #[test]
+    fn f_child_plain_app() { shape("child-plain-app"); }
 }

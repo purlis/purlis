@@ -174,8 +174,19 @@ fn read_pinned(folder: &Path, prefix: &str, files: &mut HashMap<String, Vec<u8>>
 
 /// The CSP on every response (ADR 0122 §3): its own origin only, no network, no frames, no
 /// forms, no `<base>`.
+/// [DEBUG-5948] Set by a `shape-*-app` run: serve the app's CSP (`purlis_core::artifact::serve::csp`, script approved).
+static APP_CSP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 fn csp(id: &str) -> String {
     let own = origin(id);
+    if APP_CSP.load(std::sync::atomic::Ordering::Relaxed) {
+        return format!(
+            "default-src 'none'; script-src {own} 'unsafe-inline'; style-src {own} 'unsafe-inline'; \
+             img-src {own}; font-src {own}; media-src {own}; connect-src 'none'; \
+             form-action 'none'; base-uri 'none'; frame-src 'none'; child-src 'none'; \
+             worker-src 'none'; object-src 'none'; manifest-src 'none'; frame-ancestors 'none'"
+        );
+    }
     format!(
         "default-src {own}; script-src {own} 'unsafe-inline'; style-src {own} 'unsafe-inline'; \
          img-src {own}; font-src {own}; media-src {own}; connect-src 'none'; form-action 'none'; \
@@ -585,6 +596,7 @@ fn shape_of(app: &AppHandle, shape: &str, seen: &Shared) -> Result<String, Strin
     let child = shape.contains("-child");
     let incognito = shape.contains("-incognito");
     let flags = shape.ends_with("-app");
+    APP_CSP.store(flags, std::sync::atomic::Ordering::Relaxed);
     let url: tauri::Url = format!("{}/index.html", origin("walk")).parse().map_err(|e| format!("{e}"))?;
     let label = "artifact-walk-1";
     let init = r#"(() => { new Image().src = "/.purlis/say?m=" + encodeURIComponent(JSON.stringify("init:" + document.readyState)); })();"#;
