@@ -190,6 +190,30 @@ fn a_modules_folder_never_leaves() {
 }
 
 #[test]
+fn a_crash_reasons_address_code_or_number_never_leaves() {
+    purlis_core::unsteered!();
+    let home = tempfile::tempdir().unwrap();
+    let recorded = recorded(200);
+    let mut stack = a_stack();
+    stack.reason = Some(
+        "EXC_GUARD / GUARD_TYPE_VIRT_MEMORY / flavor: 0x0002 / offset: 0x00007ff7bfeff000".into(),
+    );
+
+    reports(&recorded, home.path(), Some(true)).take(
+        Evidence::NativeCrash(NativeCrash { at: None, stack }),
+        &Caller::trigger(),
+    );
+
+    let event = &lines(&recorded.received()[0])[2];
+    assert_eq!(
+        event["exception"]["values"][0]["value"],
+        "EXC_GUARD / GUARD_TYPE_VIRT_MEMORY"
+    );
+    let sent = String::from_utf8(recorded.received()[0].clone()).unwrap();
+    assert!(!sent.contains("7ff7bfeff000"), "{sent}");
+}
+
+#[test]
 fn the_same_native_crash_again_in_the_same_version_is_counted_not_sent() {
     purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
@@ -440,6 +464,23 @@ fn a_minidump_still_being_written_is_left_alone() {
     assert_eq!(said, []);
     assert!(recorded.received().is_empty());
     assert!(part.exists());
+}
+
+#[test]
+fn a_minidump_the_handler_never_finished_is_removed_unread() {
+    purlis_core::unsteered!();
+    let home = tempfile::tempdir().unwrap();
+    let crashes = native::crashes_dir(home.path());
+    std::fs::create_dir_all(&crashes).unwrap();
+    let unfinished = crashes.join(format!("{}-0f3c9a.part", now() - 2 * 60 * 60));
+    std::fs::write(&unfinished, MINIDUMP).unwrap();
+    let recorded = recorded(200);
+
+    let said = native::report_waiting(&reports(&recorded, home.path(), Some(true)), &crashes);
+
+    assert_eq!(said, []);
+    assert!(recorded.received().is_empty());
+    assert!(!unfinished.exists(), "what it wrote of the process goes");
 }
 
 #[test]

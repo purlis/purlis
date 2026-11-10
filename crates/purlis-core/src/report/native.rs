@@ -84,6 +84,9 @@ const FRAMES_AT_MOST: usize = 64;
 /// or not.
 pub const KEPT_FOR_SECS: u64 = 14 * 24 * 60 * 60;
 
+/// How old a `.part` the companion left is before it is taken for one it will never finish.
+const UNFINISHED_AFTER_SECS: u64 = 60 * 60;
+
 /// The folder the crash handler keeps minidumps in: `crashes/` in this machine's config home.
 pub fn crashes_dir(config_root: &Path) -> PathBuf {
     crate::machine::dir(config_root).join("crashes")
@@ -219,12 +222,21 @@ fn trust(trust: FrameTrust) -> &'static str {
 /// outcome. Each is reported once, whatever the outcome (a report the intake gave no answer for
 /// waits in the sent list, #5693): it is then kept here as `.kept`, never sent, until it is older
 /// than [`KEPT_FOR_SECS`], when it is removed, as one never reported is. A file still being
-/// written (not `.dmp`, or in a folder) is left alone.
+/// written (a `.part` of the last hour, or one in a folder) is left alone; an older `.part` is
+/// removed unread.
 pub fn report_waiting(reports: &Reports, crashes: &Path) -> Vec<Outcome> {
     let now = chrono::Utc::now().timestamp().unsigned_abs();
     let stale = |at: Option<u64>| at.is_none_or(|at| now.saturating_sub(at) > KEPT_FOR_SECS);
     for (path, at) in in_folder(crashes, "kept") {
         if stale(at) {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+    // A dump the companion did not finish (it was killed, or the machine went down) is no
+    // crash to report, but holds what it wrote of the process: it goes once nothing can be
+    // writing it.
+    for (path, at) in in_folder(crashes, "part") {
+        if at.is_none_or(|at| now.saturating_sub(at) > UNFINISHED_AFTER_SECS) {
             let _ = std::fs::remove_file(&path);
         }
     }

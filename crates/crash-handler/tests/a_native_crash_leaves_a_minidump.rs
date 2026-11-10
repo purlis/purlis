@@ -124,6 +124,23 @@ fn a_real_crashs_report_carries_its_crashing_threads_stack_and_no_memory() {
     let left = minidumps(&crashes);
     assert_eq!(left.len(), 1, "{left:?}");
     let minidump = std::fs::read(&left[0]).unwrap();
+    assert!(
+        minidump
+            .windows(MARKER.len())
+            .any(|bytes| bytes == MARKER.as_bytes()),
+        "the minidump holds the probe's environment (the main thread's stack does): the check \
+         below that none of it leaves would otherwise prove nothing"
+    );
+    let unfinished: Vec<_> = std::fs::read_dir(&crashes)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "part"))
+        .collect();
+    assert_eq!(
+        unfinished,
+        Vec::<PathBuf>::new(),
+        "nothing half written is left"
+    );
 
     // Its crashing thread's stack, taken out on the device.
     let stack = native::stack_of(&minidump).expect("the stack of a real crash");

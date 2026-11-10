@@ -27,9 +27,11 @@ pub(crate) fn serve(socket: &Path, crashes: &Path) -> Result<(), minidumper::Err
     let handler = Keeper {
         crashes: crashes.to_path_buf(),
         panicked_at: Mutex::new(None),
+        writing: Mutex::new(None),
     };
     let never = AtomicBool::new(false);
-    let served = server.run(Box::new(handler), &never, Some(crate::STALE_AFTER));
+    // No stale timeout: the app sends nothing while it runs, and its end closes the socket.
+    let served = server.run(Box::new(handler), &never, None);
     let _ = std::fs::remove_file(socket);
     served
 }
@@ -39,6 +41,8 @@ struct Keeper {
     crashes: PathBuf,
     /// When the app said it panicked, if it did.
     panicked_at: Mutex<Option<Instant>>,
+    /// The `.part` being written, so a dump that fails leaves nothing of it.
+    writing: Mutex<Option<PathBuf>>,
 }
 
 impl Keeper {
@@ -60,18 +64,36 @@ impl ServerHandler for Keeper {
         let part = self
             .crashes
             .join(format!("{at}-{}.part", uuid::Uuid::new_v4().simple()));
-        Ok((create_private(&part)?, part))
+        let file = create_private(&part)?;
+        if let Ok(mut writing) = self.writing.lock() {
+            *writing = Some(part.clone());
+        }
+        Ok((file, part))
     }
 
     fn on_minidump_created(&self, result: Result<MinidumpBinary, minidumper::Error>) -> LoopAction {
-        if let Ok(written) = result {
-            let MinidumpBinary { file, path, .. } = written;
-            let whole = file.sync_all();
-            drop(file);
-            if whole.is_ok() && !self.a_panic_already_told() {
-                let _ = std::fs::rename(&path, path.with_extension("dmp"));
-            } else {
-                let _ = std::fs::remove_file(&path);
+        let started = self
+            .writing
+            .lock()
+            .ok()
+            .and_then(|mut writing| writing.take());
+        match result {
+            Ok(written) => {
+                let MinidumpBinary { file, path, .. } = written;
+                let whole = file.sync_all();
+                drop(file);
+                let kept = whole.is_ok()
+                    && !self.a_panic_already_told()
+                    && std::fs::rename(&path, path.with_extension("dmp")).is_ok();
+                if !kept {
+                    let _ = std::fs::remove_file(&path);
+                }
+            }
+            // A dump that failed part way leaves none of what it wrote.
+            Err(_) => {
+                if let Some(part) = started {
+                    let _ = std::fs::remove_file(part);
+                }
             }
         }
         // One crash, one dump: the app is gone.

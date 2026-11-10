@@ -48,17 +48,8 @@ pub(crate) fn attach(
             });
         }
     };
-    let pinging = Arc::clone(&client);
-    let _ = std::thread::Builder::new()
-        .name("crash-handler-ping".into())
-        .spawn(move || {
-            loop {
-                std::thread::sleep(crate::STALE_AFTER / 2);
-                if pinging.ping().is_err() {
-                    break;
-                }
-            }
-        });
+    // No keep-alive pings: the socket is the app's alone, so the companion hears the app end when
+    // it closes, and the crash handler's own ping below is the only one, so its answer is its own.
     let handler = match CrashHandler::attach(on_crash(Arc::clone(&client))) {
         Ok(handler) => handler,
         Err(why) => {
@@ -104,14 +95,18 @@ fn on_crash(client: Arc<Client>) -> Box<dyn CrashEvent> {
     // SAFETY: `make_crash_event` is `unsafe` because its closure runs in a crashed process: on
     // macOS on the handler's own thread with every other thread suspended, on Linux in a signal
     // handler. So it must not take a lock another thread may hold, allocate, or unwind. This one
-    // makes two calls on a client connected before the crash: a ping and `request_dump`, each a
-    // write to and a read from an open socket (a Mach message on macOS), neither taking a lock or
-    // allocating, as minidumper documents for `request_dump`. It never panics: both errors are
+    // makes two calls on a client connected before the crash. Audited in minidumper 0.11 and
+    // crash-context 0.8.0, neither takes a lock or allocates: `ping` is `send_message_impl` (one
+    // `writev` of a stack header) and one `recv` into a stack buffer. On macOS, `request_dump` is
+    // crash-context's `send_crash_context` (`mach_port_allocate` for the ack port and
+    // `mach_msg`, no heap) and `AckReceiver`'s `mach_msg` into a stack message. On Linux it is
+    // `as_bytes` of the context, one `writev` and one `recv`. It never panics: both errors are
     // values, and `Handled(false)` passes the crash on to the system's own handler.
     unsafe {
         crash_handler::make_crash_event(move |crash: &CrashContext| {
-            // The companion answers a ping only once it has handled every message before it, so
-            // a `panicked` sent just before the crash is heard before the dump is written.
+            // The companion answers a ping only once it has read every message sent before it on
+            // this socket, and nothing else pings on it, so a `panicked` sent just before the
+            // crash is heard before the dump is asked for.
             let _ = client.ping();
             CrashEventResult::Handled(client.request_dump(crash).is_ok())
         })

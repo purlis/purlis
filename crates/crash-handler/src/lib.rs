@@ -41,10 +41,6 @@ pub const PANIC_COVERS: Duration = Duration::from_secs(30);
 /// The message that says the process panicked and its panic is reported.
 const PANICKED: u32 = 1;
 
-/// How long the companion serves without hearing from the app before it takes the app for gone
-/// and exits. The app pings it twice as often.
-const STALE_AFTER: Duration = Duration::from_secs(5);
-
 /// A process the crash handler watches. Dropping it stops the watch, so the app holds it for as
 /// long as it runs.
 pub struct Watching {

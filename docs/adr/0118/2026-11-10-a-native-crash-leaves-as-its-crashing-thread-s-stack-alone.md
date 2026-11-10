@@ -16,7 +16,9 @@ How it is carried out (#5691):
   rust-minidump's `minidump` crate and walks the crashing thread alone with its `minidump-unwind`,
   without symbols (frame pointers, then the stack scanned). Not `minidump-processor`: it walks
   every thread and brings an x86 disassembler and a terminal library with it, for nothing a
-  Report keeps. What is kept is the crash's kind as the system named it, and up to 64 frames,
+  Report keeps. What is kept is the crash's kind as the system named it (its first two named
+  parts, `EXC_BAD_ACCESS / KERN_INVALID_ADDRESS`, never the address, code or number some kinds go
+  on with), and up to 64 frames,
   each a module and an offset into it; and each module by its file name (never its folder) and
   its debug and code ids.
 - **On the wire** it is a Crash report like a panic's: one Sentry event, no attachment. The
@@ -31,7 +33,8 @@ How it is carried out (#5691):
   gave no answer for waits in the sent list as text, like any other), it is renamed `.kept` in
   the crashes folder and removed once it is older than 14 days, the age a waiting report is
   dropped at. A minidump the person said no to is kept and aged out the same way, and never
-  sent.
+  sent. A dump the companion never finished (`.part`) goes unread once it is an hour old, and
+  one that failed is removed by the companion itself.
 - **The handler stays switched off** until the operator approves switching it on:
   `nativecrash::STARTED` in `app/src-tauri/src/nativecrash.rs`, flipped in one change with the
   release profile's debug symbols (#5692).

@@ -146,9 +146,7 @@ impl CrashReport {
         let reason = stack
             .reason
             .take()
-            // minidump's own words for the crash (`EXC_BAD_ACCESS / KERN_INVALID_ADDRESS`): no path
-            // is in them, and the paths' scrub would take their ` / `.
-            .map(|reason| known.scrub(&reason).0)
+            .map(|reason| named_kinds(&reason))
             .unwrap_or_default();
         let kind = reason
             .split(" / ")
@@ -193,6 +191,25 @@ impl CrashReport {
         }
         .envelope(at, dsn)
     }
+}
+
+/// minidump's words for a crash (`EXC_BAD_ACCESS / KERN_INVALID_ADDRESS`), kept to its first
+/// two parts and to those that are names alone: some of its kinds go on with an address, a code,
+/// a pid or a descriptor (`EXC_GUARD / GUARD_TYPE_VIRT_MEMORY / … offset: 0x…`), and none of
+/// those leave.
+fn named_kinds(reason: &str) -> String {
+    reason
+        .split(" / ")
+        .take(2)
+        .take_while(|part| {
+            !part.is_empty()
+                && part
+                    .chars()
+                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+                && part.starts_with(|c: char| c.is_ascii_uppercase())
+        })
+        .collect::<Vec<_>>()
+        .join(" / ")
 }
 
 /// Where `frame` is: its module's name and its offset there (`purlis+0x1a2b3c`).
