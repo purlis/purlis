@@ -104,13 +104,17 @@ notify = "8.2"
 purlis-crash-handler.workspace = true
 objc2 = "0.6.4"
 block2 = "0.6"
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSData", "NSDictionary", "NSError", "NSString", "NSValue"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSArray", "NSBundle", "NSData", "NSDictionary", "NSError", "NSString", "NSValue"] }
 # The system's Increase contrast, read as a window is created (#2582, `syscontrast.rs`): two more
 # features of the same crate, no crate new to the tree (operator, 2026-10-18).
 # The window's colour, read back for the scenario tests (#2760), takes more of its features: the
 # `e2e` feature turns those on (#2836), since only that build reads it.
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSAccessibility", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSWorkspace"] }
 objc2-web-kit = { version = "0.3.2", default-features = false, features = ["std", "block2", "objc2-app-kit", "WKWebView", "WKSnapshotConfiguration"] }
+# A chat's notification replaced and taken away in place (#6059, `asknotify_macos.rs`): the
+# system's own notification center, which the plugin's notify-rust cannot reach. The version
+# already in Cargo.lock (through objc2-ui-kit), so nothing new is in the tree.
+objc2-user-notifications = { version = "0.3.2", default-features = false, features = ["std", "block2", "UNUserNotificationCenter", "UNNotificationContent", "UNNotificationRequest", "UNNotificationTrigger"] }
 
 # The desktop portal, asked on the session bus before GTK asks it (charter-app#24,
 # `portal.rs`). The version `tauri-plugin-single-instance` already brings in on Linux, so
