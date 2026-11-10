@@ -116,19 +116,13 @@ const PORT: &str = r#"(() => {
   const channel = new MessageChannel();
   const own = channel.port1;
   const send = (path) => { new Image().src = "/.purlis/port/" + load + "/" + path; };
-  const probe = (stage, what) => { new Image().src = "/.purlis/debug-art5948/" + stage + "/" + encodeURIComponent(String(what)).slice(0, 300); };
-  addEventListener("error", (e) => probe("error", e.message + " @ " + e.filename + ":" + e.lineno), true);
-  addEventListener("unhandledrejection", (e) => probe("rejection", e.reason));
-  document.addEventListener("securitypolicyviolation", (e) => probe("csp", e.violatedDirective + " " + e.blockedURI + " " + e.sourceFile));
-  addEventListener("DOMContentLoaded", () => probe("dom", typeof window.purlis + " " + document.scripts.length));
   let open = false;
   const waiting = [];
   const opening = new Image();
-  opening.onload = opening.onerror = (e) => { probe("opened", e.type + " " + waiting.length); open = true; waiting.splice(0).forEach(send); };
+  opening.onload = opening.onerror = () => { open = true; waiting.splice(0).forEach(send); };
   opening.src = "/.purlis/port/" + load + "/open";
   own.onmessage = (event) => {
     const asked = event.data;
-    probe("got", open + " " + JSON.stringify(asked));
     const id = asked !== null && typeof asked === "object" ? asked.id : undefined;
     const refuse = () => own.postMessage({ id: Number.isSafeInteger(id) ? id : null, error: { kind: "refused" }, at: new Date().toISOString().replace(/\.\d+Z$/, "Z") });
     if (!Number.isSafeInteger(id) || id < 0 || (typeof asked.read !== "string" && typeof asked.query !== "string" && !Array.isArray(asked.offers) && typeof asked.subscribe !== "string" && asked.unsubscribe !== true)) {
@@ -250,18 +244,10 @@ impl Served {
             return None;
         }
         if said == "open" {
-            tracing::info!(
-                "[DEBUG-art5948] artifact {label}: port open {load}, was {:?}",
-                self.load
-            );
             self.load = Some(load.to_owned());
             return None;
         }
         if self.load.as_deref() != Some(load) {
-            tracing::info!(
-                "[DEBUG-art5948] artifact {label}: port {load} said {said:?}, dropped: the open load is {:?}",
-                self.load
-            );
             return None;
         }
         if let Some(ask) = live::said(label, load, said, query) {
@@ -349,17 +335,6 @@ impl Artifacts {
                 }
             }
         };
-        tracing::info!(
-            "[DEBUG-art5948] artifact {label}: {host}{path} -> {} ({}, runs {runs})",
-            status.as_u16(),
-            if matched {
-                "matched"
-            } else if served.contains_key(label) {
-                "another host than it is served"
-            } else {
-                "no artifact by that label"
-            }
-        );
         let response = Response::builder()
             .status(status)
             .header("Content-Type", kind)
@@ -381,10 +356,6 @@ impl Artifacts {
     /// nothing it asked is answered and no answer for it is delivered.
     pub(crate) fn reloaded(&self, label: &str) {
         if let Some(one) = self.served().get_mut(label) {
-            tracing::info!(
-                "[DEBUG-art5948] artifact {label}: page load started, port {:?} revoked",
-                one.load
-            );
             one.load = None;
         }
         self.unsubscribe_label(label);
@@ -1396,7 +1367,6 @@ fn lay(
             .devtools(false)
             .disable_drag_drop_handler();
     let (position, size) = place.physical();
-    tracing::info!("[DEBUG-art5948] artifact {label}: made at {own}/");
     if let Err(why) = window.add_child(builder, position, size) {
         artifacts.served().remove(&label);
         return Err(format!("purlis could not draw the artifact: {why}"));
@@ -1541,7 +1511,6 @@ pub async fn artifact_reload(
             let url: tauri::Url = format!("{}/", origin(&host))
                 .parse()
                 .map_err(|e| format!("purlis could not name the artifact's page: {e}"))?;
-            tracing::info!("[DEBUG-art5948] artifact {label}: reload navigates to {url}");
             webview.navigate(url).map_err(page_unreached)?;
         }
         None => webview.reload().map_err(page_unreached)?,

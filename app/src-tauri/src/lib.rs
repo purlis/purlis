@@ -3991,14 +3991,6 @@ pub fn run() {
         // A page that reloads begins again with nothing: a vault set-up its last load began
         // lets go of its token, since that page will never send the cancel (#1527).
         .on_page_load(|webview, payload| {
-            if artifacts::is_artifact(webview.label()) {
-                tracing::info!(
-                    "[DEBUG-art5948] artifact {}: page load {:?} {}",
-                    webview.label(),
-                    payload.event(),
-                    payload.url()
-                );
-            }
             if payload.event() == tauri::webview::PageLoadEvent::Started {
                 vaults::window_gone(webview, webview.label());
                 // Nor does it keep the artifacts its last load laid over its tabs (#5952).

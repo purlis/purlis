@@ -66,6 +66,20 @@ async function attempt(name, fn) {
 }
 const IPC = JSON.stringify({ cmd: "vault_list", callback: 1, error: 2, payload: {}, options: {} });
 const headers = { "Content-Type": "application/json", "Tauri-Callback": "1", "Tauri-Error": "2" };
+// A post returns nothing whether a command ran or not: Tauri answers one by calling its
+// callback back (\`runCallback\`), so only that callback, called with success, is an answer.
+function posted(post) {
+  return new Promise((yes, no) => {
+    const internals = window.__TAURI_INTERNALS__;
+    if (internals === undefined || typeof internals.transformCallback !== "function") {
+      post(IPC);
+      return;
+    }
+    const callback = internals.transformCallback(yes, true);
+    const error = internals.transformCallback(no, true);
+    post(JSON.stringify({ cmd: "vault_list", callback, error, payload: {}, options: {} }));
+  });
+}
 (async () => {
   await attempt("own-internals", () => window.__TAURI_INTERNALS__.invoke("vault_list"));
   await attempt("own-internals-planes", () => window.__TAURI_INTERNALS__.invoke("open_planes"));
@@ -73,8 +87,8 @@ const headers = { "Content-Type": "application/json", "Tauri-Callback": "1", "Ta
   await attempt("top-internals", () => top.__TAURI_INTERNALS__.invoke("vault_list"));
   await attempt("ipc-scheme", () => fetch("ipc://localhost/open_planes", { method: "POST", body: "{}", headers }).then((r) => { if (!r.ok) throw r.status; }));
   await attempt("ipc-localhost", () => fetch("http://ipc.localhost/open_planes", { method: "POST", body: "{}", headers }).then((r) => { if (!r.ok) throw r.status; }));
-  await attempt("webkit-handler", () => window.webkit.messageHandlers.ipc.postMessage(IPC));
-  await attempt("window-ipc", () => window.ipc.postMessage(IPC));
+  await attempt("webkit-handler", () => posted((body) => window.webkit.messageHandlers.ipc.postMessage(body)));
+  await attempt("window-ipc", () => posted((body) => window.ipc.postMessage(body)));
   await attempt("event-emit", () => window.__TAURI_INTERNALS__.invoke("plugin:event|emit", { event: "x", payload: 1 }));
   say(answered.length === 0 ? "reach-none" : "reach-answered-" + answered.join("-"));
 })();`;
