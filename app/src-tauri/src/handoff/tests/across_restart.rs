@@ -1653,6 +1653,19 @@ fn a_shell_left_by_a_harness_hung_up_on_from_outside_ends_with_it() {
     )
     .expect("kill runs");
     assert!(sent.success(), "the hangup is sent");
+    // TEMPORARY (#2786 diagnosis): what is left 3s after the hangup.
+    std::thread::sleep(std::time::Duration::from_secs(3));
+    diag.push_str("AFTER HUP:\n");
+    if let Ok(ps) = purlis_core::forklock::output(
+        std::process::Command::new("ps").args(["-eo", "pid,ppid,pgid,sid,stat,args"]),
+    ) {
+        for line in String::from_utf8_lossy(&ps.stdout).lines() {
+            if line.contains("sleep 600") || line.contains("claude-with") {
+                diag.push_str(line);
+                diag.push('\n');
+            }
+        }
+    }
 
     assert!(
         goes(shell),
