@@ -119,6 +119,10 @@ describe("Use skill…", () => {
     expect(screen.getByRole("option", { name: "release" })).toHaveAccessibleDescription(
       /manual only/,
     );
+    // Its one-line description, drawn under its name, is heard after its level (#6075).
+    expect(screen.getByRole("option", { name: "deploy" })).toHaveAccessibleDescription(
+      /Does deploy\.$/,
+    );
     // Its budget, routing and pins are the Skills view's now: none is said here.
     expect(screen.queryByTestId("use-skill-budget")).toBeNull();
     expect(screen.queryByRole("status")).toBeNull();
@@ -548,6 +552,8 @@ describe("the Skills chip on a chat's pane", () => {
       persona: "reviewer",
       missing: ["lint"],
       no_built_in: [],
+      no_workspace: [],
+      not_in_its_workspace: [],
       broken: [],
       by_a_repo: [],
       beside_a_built_in: [],
@@ -602,6 +608,8 @@ describe("the Skills chip on a chat's pane", () => {
       persona: null,
       missing: ["lint"],
       no_built_in: [],
+      no_workspace: [],
+      not_in_its_workspace: [],
       broken: [],
       by_a_repo: [],
       beside_a_built_in: [],

@@ -23,11 +23,24 @@ export type QuietHours = {
   to: string;
 };
 
-export type NotificationPrefs = { quiet: QuietHours };
+export type NotificationPrefs = {
+  quiet: QuietHours;
+  /**
+   * **How long a task works, in whole minutes, before its finish notifies** while the person is
+   * away from the window (#6005, ADR 0121 decision 3): five until they change it. A failure
+   * always notifies. The core reads it here (`asknotify.rs`, `finished_after_of_layout`).
+   */
+  finishedAfter: number;
+};
 
 export const DEFAULT_NOTIFICATIONS: NotificationPrefs = {
   quiet: { on: false, from: "22:00", to: "07:00" },
+  finishedAfter: 5,
 };
+
+/** Whether `value` is a long finish as the core reads one: a whole number of minutes above none. */
+export const isMinutes = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value > 0;
 
 /** Whether `text` is a time of day as the core reads one: `HH:MM`, 00:00 to 23:59. */
 export const isTimeOfDay = (text: unknown): text is string =>
@@ -41,8 +54,8 @@ export function loadNotifications(raw: unknown): { prefs: NotificationPrefs; sai
   const said: string[] = [];
   const held = isObject(raw) ? raw.notifications : undefined;
   if (held === undefined) return { prefs: DEFAULT_NOTIFICATIONS, said };
-  const quiet = isObject(held) ? held.quiet : held;
-  if (!isObject(quiet)) {
+  const quiet = isObject(held) ? (held.quiet ?? {}) : held;
+  if (!isObject(held) || !isObject(quiet)) {
     said.push(
       `"notifications" ${JSON.stringify(held)} is not when notifications keep quiet, so they never do`,
     );
@@ -64,11 +77,20 @@ export function loadNotifications(raw: unknown): { prefs: NotificationPrefs; sai
       );
     return fallback[key];
   };
-  return { prefs: { quiet: { on, from: time("from"), to: time("to") } }, said };
+  let finishedAfter = DEFAULT_NOTIFICATIONS.finishedAfter;
+  if (isMinutes(held.finishedAfter)) finishedAfter = held.finishedAfter;
+  else if (held.finishedAfter !== undefined)
+    said.push(
+      `"notifications.finishedAfter" ${JSON.stringify(held.finishedAfter)} is not a whole number of minutes, so it is ${finishedAfter}`,
+    );
+  return { prefs: { quiet: { on, from: time("from"), to: time("to") }, finishedAfter }, said };
 }
 
 const sameQuiet = (one: QuietHours, other: QuietHours) =>
   one.on === other.on && one.from === other.from && one.to === other.to;
+
+const same = (one: NotificationPrefs, other: NotificationPrefs) =>
+  sameQuiet(one.quiet, other.quiet) && one.finishedAfter === other.finishedAfter;
 
 /** The store (`layoutPref.ts`), under `notifications`. */
 export const NOTIFICATIONS = layoutPref<NotificationPrefs, "notifications">({
@@ -78,8 +100,15 @@ export const NOTIFICATIONS = layoutPref<NotificationPrefs, "notifications">({
     const { prefs, said } = loadNotifications(raw);
     return { value: prefs, said };
   },
-  same: (one, other) => sameQuiet(one.quiet, other.quiet),
-  written: (prefs) => (sameQuiet(prefs.quiet, DEFAULT_NOTIFICATIONS.quiet) ? undefined : prefs),
+  same,
+  // Each field only where it is not the default, and nothing at all where none is.
+  written: (prefs) => {
+    const kept: Partial<NotificationPrefs> = {};
+    if (!sameQuiet(prefs.quiet, DEFAULT_NOTIFICATIONS.quiet)) kept.quiet = prefs.quiet;
+    if (prefs.finishedAfter !== DEFAULT_NOTIFICATIONS.finishedAfter)
+      kept.finishedAfter = prefs.finishedAfter;
+    return Object.keys(kept).length === 0 ? undefined : kept;
+  },
   remedy: (where) => `fix ${where}, or change Notifications in Settings, which rewrites it`,
   settings: "you.notifications",
 });
@@ -91,7 +120,12 @@ export function notificationPrefs(): NotificationPrefs {
 
 /** Changes the quiet hours; tells every listener, which writes the file, when they changed. */
 export function setQuietHours(to: Partial<QuietHours>): void {
-  NOTIFICATIONS.set({ quiet: { ...notificationPrefs().quiet, ...to } });
+  NOTIFICATIONS.set({ ...notificationPrefs(), quiet: { ...notificationPrefs().quiet, ...to } });
+}
+
+/** Changes how long a task works before its finish notifies, in whole minutes. */
+export function setFinishedAfter(minutes: number): void {
+  NOTIFICATIONS.set({ ...notificationPrefs(), finishedAfter: minutes });
 }
 
 /** {@link notificationPrefs}, for a component that redraws when they change. */

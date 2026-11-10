@@ -56,6 +56,7 @@ fn notice(id: i32, replaces: bool, news: bool, body: &str) -> Notice {
         chats: vec![(PlaneId::for_tests(Path::new("/a")), 3)],
         title: "steward 12 › chat 3".to_owned(),
         body: body.to_owned(),
+        update: None,
     }
 }
 

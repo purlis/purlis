@@ -173,3 +173,56 @@ fn a_failure_is_a_row_of_its_own_and_a_task_with_no_conversation_is_not_reopened
         ("closed by you", How::ClosedByPerson, false)
     );
 }
+
+#[test]
+fn a_task_that_ended_is_read_for_its_notification_as_who_asked_how_long_it_worked_and_if_it_failed()
+{
+    let mut record = a_task(Outcome::Failed, "cargo test failed\nmore lines");
+    record.asker.by_person = true;
+    record.worked = 7 * 60;
+    let finish = finish_of(&record, 12).expect("a task that ended");
+    assert_eq!(
+        finish,
+        crate::asknotify::Finish {
+            id: "01K6DISPATCH00000000000000".to_owned(),
+            session: 12,
+            name: "check prod".to_owned(),
+            failed: true,
+            by_person: true,
+            worked: std::time::Duration::from_secs(7 * 60),
+            report: "cargo test failed\nmore lines".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn a_task_never_said_to_have_worked_is_read_as_working_from_its_start_to_its_end() {
+    // Started 12:00:00, ended 12:04:30.
+    let record = a_task(Outcome::Done, "done");
+    let finish = finish_of(&record, 3).expect("a task that ended");
+    assert_eq!(finish.worked, std::time::Duration::from_secs(270));
+    assert!(!finish.failed);
+    assert!(!finish.by_person);
+}
+
+#[test]
+fn a_task_comes_to_nothing_when_it_failed_was_blocked_ended_unreported_or_did_not_start() {
+    for (outcome, failed) in [
+        (Outcome::Done, false),
+        (Outcome::Cancelled, false),
+        (Outcome::Blocked, true),
+        (Outcome::Failed, true),
+    ] {
+        let record = a_task(outcome, "x");
+        assert_eq!(finish_of(&record, 3).map(|one| one.failed), Some(failed));
+    }
+    let mut unstarted = a_task(Outcome::Failed, "x");
+    unstarted.did_not_start = true;
+    assert_eq!(finish_of(&unstarted, 3).map(|one| one.failed), Some(true));
+    let mut stopped = a_task(Outcome::Done, "x");
+    stopped.ended_by = Some(dispatchrecord::EndedBy::Person);
+    assert_eq!(finish_of(&stopped, 3).map(|one| one.failed), Some(false));
+    let mut unreported = a_task(Outcome::Done, "x");
+    unreported.ended_by = Some(dispatchrecord::EndedBy::Unreported);
+    assert_eq!(finish_of(&unreported, 3).map(|one| one.failed), Some(true));
+}

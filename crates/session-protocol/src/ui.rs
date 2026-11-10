@@ -460,6 +460,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     "start_the_session_host_again",
     // Dismiss on a task's Notice that it has gone quiet (#1981): the person's answer.
     "put_away_task_quiet",
+    // It's fine on a chat that reads Stuck? (#6014): the person's answer.
+    "stuck_fine",
     // The Inbox's updates (#1693): what happened to the person's chats, and what they put away.
     "inbox_updates",
     "note_inbox_updates",
@@ -1345,6 +1347,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "chat_work_item",
     "chat_work_link",
     "chat_work_unlink",
+    // What the core noticed of each chat (#6014): Stuck? and work left behind, in memory.
+    "chats_noticed",
     "chats_on_older_sandbox",
     "chats_plane_updated",
     // Which chats are reconnecting to their runner (#2496): what their panes start from.

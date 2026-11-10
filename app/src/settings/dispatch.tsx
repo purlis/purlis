@@ -133,6 +133,10 @@ const SHORT: Readonly<Record<string, string>> = {
   // When purlis notes a quiet task (#1981): a note, never a limit on dispatch.
   "quiet-note-minutes": "Quiet",
   "one-command-note-minutes": "Command",
+  // When a working chat reads Stuck? (#6014): a question, never a limit on dispatch.
+  "stuck-silent-minutes": "Silent",
+  "stuck-failing-times": "Failing",
+  "stuck-long-minutes": "Turn",
 };
 
 /** One limit's box: empty where the row does not set it, showing what is in force beneath. */

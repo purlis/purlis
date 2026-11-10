@@ -624,6 +624,11 @@ pub struct SkillsMissing {
     pub missing: Vec<String>,
     /// Built-in skills purlis has none of: a typo, or a name from another version of purlis.
     pub no_built_in: Vec<String>,
+    /// Other workspaces' skills its persona names (`workspaces/<ws>:<name>`), where the project
+    /// has no workspace of that name (SK-5b, #6040).
+    pub no_workspace: Vec<String>,
+    /// Other workspaces' skills its persona names, where that workspace has no skill of the name.
+    pub not_in_its_workspace: Vec<String>,
     /// Skills the chat would have loaded that could not be loaded, each with why.
     pub broken: Vec<SkillBroken>,
     /// The project's skills the repo the chat works in leaves out, each with why (SK-53).
@@ -5115,6 +5120,8 @@ impl Chats {
                     persona: runs_as.clone(),
                     missing: not.missing,
                     no_built_in: not.no_built_in,
+                    no_workspace: not.no_workspace,
+                    not_in_its_workspace: not.not_in_its_workspace,
                     broken: not.broken.into_iter().map(SkillBroken::from).collect(),
                     by_a_repo: not.by_a_repo.into_iter().map(SkillBroken::from).collect(),
                     beside_a_built_in: not.beside_a_built_in,
@@ -5627,6 +5634,11 @@ impl Chats {
                         persona: runs_as.clone(),
                         missing: not.missing,
                         no_built_in: not.no_built_in,
+                        // Protocol 1.81's `SkillsNotThere` carries only these two (D-2977-2),
+                        // so another workspace's skill its runner could not find is not said
+                        // here yet (#6078).
+                        no_workspace: Vec::new(),
+                        not_in_its_workspace: Vec::new(),
                         broken: Vec::new(),
                         by_a_repo: Vec::new(),
                         beside_a_built_in: Vec::new(),

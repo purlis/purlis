@@ -62,6 +62,9 @@ const table: readonly [string, Partial<Facts>, ChatState][] = [
     "waiting",
   ],
   ["its turn ended and nothing is owed", {}, "idle"],
+  // Idle is finished with work left behind (#6014): a clean folder is Done.
+  ["its turn ended with work left in its folder", { leftWork: true }, "idle"],
+  ["its turn ended with nothing left in its folder", { leftWork: false }, "ended"],
   ["its program ended", { board: "done" }, "ended"],
   ["it is a task that reported", { board: undefined, task: report({}) }, "ended"],
   ["it is a task the person stopped", { task: report({ outcome: "stopped_by_person" }) }, "ended"],
@@ -131,6 +134,11 @@ describe("a chat's one state, first true wins (#5340, #6012)", () => {
 
   it("asks whether a stuck chat is stuck, in words", () => {
     expect(shownState(chat({ board: "running", stuck: true })).word).toBe("stuck?");
+  });
+
+  it("says a finished chat with nothing left in its folder is done (#6014)", () => {
+    expect(shownState(chat({ leftWork: false })).word).toBe("done");
+    expect(shownState(chat({ leftWork: true })).word).toBe("idle");
   });
 
   it("says how many tasks failed, in the word its mark stands for", () => {

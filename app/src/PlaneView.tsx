@@ -231,6 +231,8 @@ import { ReadOnlyLine, ReadOnlyMendable, ReadOnlySaid, useReadOnly } from "./Rea
 import { LivesHere } from "./LivesHere";
 import { InboxAlerts, type WindowAlerts } from "./InboxAlerts";
 import { handCount, handSaid, type Elsewhere } from "./InboxElsewhere";
+import type { AllChatsFilter } from "./InboxAsks";
+import { useAsksArrival } from "./asksArrival";
 import { sayAboutThisMachine, useAboutThisMachine } from "./windowprefs";
 import { drawWhatIsInForce } from "./Extensions";
 import { useScreenReaderMode } from "./screenReader";
@@ -274,6 +276,7 @@ import {
   sandboxUpdates,
   smartCloseKey,
   smartCloseUpdates,
+  stuckUpdates,
   taskUpdates,
   useInboxUpdates,
   unreadMine,
@@ -972,6 +975,7 @@ export const PlaneView = memo(function PlaneView({
   questions,
   inboxAsked,
   inboxGroup,
+  inboxUpdate,
   elsewhere,
   windowLines,
   profileNames,
@@ -1069,6 +1073,9 @@ export const PlaneView = memo(function PlaneView({
   /** The chat whose group that Inbox opens at, where one was asked for: the one a clicked
    *  notification was about (#1694, I-7). */
   inboxGroup?: number;
+  /** The task's line in Updates that Inbox opens at instead, read in place, where a clicked
+   *  notification was about a task that ended (#6005). */
+  inboxUpdate?: string;
   /** What its Inbox lists that its asks registry cannot see (#1695): chats waiting in other
    *  windows, and chats that cannot say they wait. */
   elsewhere?: Elsewhere;
@@ -1153,6 +1160,8 @@ export const PlaneView = memo(function PlaneView({
   const needs = useChatsSelect(chats, (states) => states.needs);
   const stoppedBelow = useChatsSelect(chats, (states) => states.stoppedBelow);
   const failedTasks = useChatsSelect(chats, (states) => states.failedTasks);
+  /** What the core noticed of each chat (#6014): why it reads Stuck?, and work left behind. */
+  const noticedChats = useChatsSelect(chats, (states) => states.noticed);
   /** The finished row the Chats list is asked to bring into view: a task that failed, when the
    *  person goes to its needs-you item (#1491). */
   const [revealed, setRevealed] = useState<Reveal>();
@@ -1841,6 +1850,12 @@ export const PlaneView = memo(function PlaneView({
       requestAnimationFrame(() => giveViewTheKeyboard(view));
     },
     [searchHere, showSide],
+  );
+  /** Where a part of the empty Asks leads (ADR 0121 decision 23). SEAM (#6013): the filter is
+   *  All chats' mode once it is built; until then the Chats sidebar opens as it is. */
+  const openAllChats: (filter: AllChatsFilter) => void = useCallback(
+    () => showSideView("chats"),
+    [showSideView],
   );
   /** **Show in Explorer's ask** (#3266, #3308, the Skills view): the folder, in the project's own
    *  files or a clone's, with a count that moves on each ask, so asking for the same folder
@@ -5367,15 +5382,28 @@ export const PlaneView = memo(function PlaneView({
   const inboxHandled = useRef(inboxAsked);
   /** `goToAsking`, which is declared further down. */
   const goingToAsking = useRef<(session: number) => void>(undefined);
+  /** The line a clicked notification opens in Updates, and the ask it came with (#6005). */
+  const openedUpdate = useMemo(
+    () =>
+      inboxUpdate === undefined || inboxAsked === undefined
+        ? undefined
+        : { key: inboxUpdate, at: inboxAsked },
+    [inboxUpdate, inboxAsked],
+  );
   useEffect(() => {
     if (inboxAsked === undefined || inboxHandled.current === inboxAsked) return;
     inboxHandled.current = inboxAsked;
+    // A notification about a task that ended opens its line in Updates, read in place.
+    if (inboxUpdate !== undefined) {
+      showSideView("updates");
+      return;
+    }
     if (inboxGroup !== undefined) goingToAsking.current?.(inboxGroup);
     showSideView("asks");
     // After the view has given its first stop the keyboard: the group's first ask takes it.
     // Through a scope that leaves its chat out, which widens for it (qw359).
     if (inboxGroup !== undefined) requestAnimationFrame(() => landOnGroupIn(plane, inboxGroup));
-  }, [inboxAsked, inboxGroup, plane, showSideView]);
+  }, [inboxAsked, inboxGroup, inboxUpdate, plane, showSideView]);
   /** Whether this project's Asks is open on screen, told to the core: no notification is sent
    *  about what the person is reading (#1694, I-7; #5644). */
   const asksShown = arrangement.some(
@@ -11149,6 +11177,8 @@ export const PlaneView = memo(function PlaneView({
       ...reasonUpdates(foundFor, refusals, nameOf, at),
       ...browserAskUpdates(browserAsksEnded, nameOf),
       ...reportSentUpdates(sentDrafts),
+      // A chat that reads Stuck? (#6014): a Should-know line while it does.
+      ...stuckUpdates(noticedChats, nameOf, at),
       // A chat another chat started, announced and not looked at yet (#4759).
       ...arrivedUpdates(
         sidebar === undefined
@@ -11162,6 +11192,7 @@ export const PlaneView = memo(function PlaneView({
     sidebar,
     browserAsksEnded,
     sentDrafts,
+    noticedChats,
     finishedTasks,
     nameOf,
     reopened,
@@ -11300,6 +11331,25 @@ export const PlaneView = memo(function PlaneView({
             },
           ],
         };
+      if (update.kind === "stuck" && update.session !== null) {
+        // "It's fine" (#6014): the core clears it until the chat changes state, and the line
+        // goes as its source stops listing it.
+        const stuckChat = update.session;
+        return {
+          update,
+          go,
+          read,
+          dismiss: put,
+          answers: [
+            {
+              label: "It's fine",
+              name: `It's fine: ${update.chain[0] ?? "this chat"}`,
+              title: "It isn't stuck. Asked again only once the chat changes state.",
+              press: () => void commands.stuckFine(plane, stuckChat).then(read),
+            },
+          ],
+        };
+      }
       if (update.kind === "smart-close" && update.session !== null) {
         const stoppedChat = update.session;
         return { update, go, dismiss: () => (stoppedFor(stoppedChat, undefined), put()) };
@@ -11331,6 +11381,7 @@ export const PlaneView = memo(function PlaneView({
     });
     return {
       rows,
+      opened: openedUpdate,
       // The lines of the list shown (#5646): Mine's or Project's, never the other's.
       onMarkAllRead: (keys: readonly string[]) => settleUpdates(keys, "read"),
       onDismissAll: (keys: readonly string[]) => {
@@ -11374,6 +11425,7 @@ export const PlaneView = memo(function PlaneView({
     press,
     asksOfChat,
     ignoreForUpdate,
+    openedUpdate,
   ]);
   /** Asks, shown (#5644): where a vault's request and a profile's sign-in wait. */
   const showInbox = useCallback(() => showSideView("asks"), [showSideView]);
@@ -11401,6 +11453,9 @@ export const PlaneView = memo(function PlaneView({
   const touchOnPane = useAnsweredWhenGone(plane, waiting);
   /** The ✋'s count: every open project's asks, and how many are outside this one (#5999). */
   const hand = handCount(plane, waiting?.length ?? 0, elsewhere);
+  /** **A Blocking ask arriving** (ADR 0121 decisions 24 and 25, #6020): said once, politely,
+   *  and the first one on this machine that arrives while Asks is closed pulses the ✋. */
+  const arrival = useAsksArrival(waiting, hand.elsewhere, inFront && asksShown);
   /**
    * **Snooze all on Asks** (#5647): the core keeps what each chat held, and lists a snoozed
    * chat's asks apart until it asks something new; every list of this project's asks is read
@@ -11892,6 +11947,11 @@ export const PlaneView = memo(function PlaneView({
               <p role="status" className="sr-only" data-testid="pane-said">
                 <span key={paneSaid.count}>{paneSaid.said}</span>
               </p>
+              {/* **A new Blocking ask, said once and politely** (ADR 0121 decision 25): a line
+          that changes only as an ask arrives, so drawing the window again says nothing. */}
+              <p role="status" className="sr-only" data-testid="ask-arrived">
+                <span key={arrival.said.count}>{arrival.said.said}</span>
+              </p>
 
               {/* **The regions** (ADR 0038): by default the navigation region on the left, the
           panes in the middle, and what is asking for you on the right. What the repos are
@@ -12107,6 +12167,10 @@ export const PlaneView = memo(function PlaneView({
                           onShowUpdates={showUpdates}
                         />
                       }
+                      // **The empty Asks' parts** (ADR 0121 decision 23): All chats filtered.
+                      // SEAM (#6013): All chats is not built, so each part opens the Chats
+                      // sidebar as it is; #6013 makes the filter pick its mode.
+                      onAllChats={openAllChats}
                     />
                   ),
                   // **Updates** (#5644): the project's updates, as the Inbox listed them.
@@ -12195,6 +12259,8 @@ export const PlaneView = memo(function PlaneView({
                 // The Lower icons' are drawn the same way, so they are there while their half of the
                 // Panel is away (P-9, #1739): Changes' count, and Repos' only once a clone is behind.
                 // **What is New in each view** (#6002): a pip beside its badge, until seen.
+                pulse={arrival.pulse ? "asks" : undefined}
+                onPulsed={arrival.pulsed}
                 fresh={{
                   asks: newAsks(waiting, seen),
                   updates: newUpdates(

@@ -66,6 +66,8 @@ pub enum ChatEvent {
     Touching(ChatTouching),
     /// The chat's open skill run changed (`chat-skill-run` before, SK-3).
     SkillRun(ChatSkillRun),
+    /// The chat's Stuck? or work left behind changed (#6014).
+    Noticed(crate::stuck::ChatNoticed),
 }
 
 impl ChatEvent {
@@ -76,6 +78,7 @@ impl ChatEvent {
             Self::Doing(told) => &told.plane,
             Self::Touching(told) => &told.plane,
             Self::SkillRun(told) => &told.plane,
+            Self::Noticed(told) => &told.plane,
         }
     }
 }

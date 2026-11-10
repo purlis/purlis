@@ -353,6 +353,65 @@ export const LinesUnderTheWords: Story = {
   },
 };
 
+/** Options as Use a skill and Search draw them: a line under the words, and a number heard. */
+function OptionsWithLines() {
+  return (
+    <div style={{ inlineSize: "20rem", display: "grid", gap: "var(--space-3)" }}>
+      <ListBox aria-label="Skills to use" selectionMode="single" defaultSelectedKeys={["review"]}>
+        <ListOption id="review" textValue="review">
+          <RowLabel>review</RowLabel>
+          <RowDescription>Built in</RowDescription>
+          <RowBelow clamp={1}>Reads a pull request and says what it would change</RowBelow>
+        </ListOption>
+        <ListOption id="deploy" textValue="deploy">
+          <RowLabel>deploy</RowLabel>
+          <RowBelow clamp={1}>Ships the app to staging</RowBelow>
+        </ListOption>
+      </ListBox>
+      <ListBox aria-label="Matching lines" selectionMode="single" defaultSelectedKeys={[42]}>
+        <ListOption id={42} textValue="42 let needle = 1;">
+          <RowLead said="Line 42">42</RowLead>
+          <RowLabel>
+            let <mark>needle</mark> = 1;
+          </RowLabel>
+        </ListOption>
+      </ListBox>
+    </div>
+  );
+}
+
+/**
+ * **Every line an option draws about it is heard** (#6075): its one line, then its line under
+ * its words (read whole, whatever its clamp cuts), then a mark given words to say, each once, as
+ * its description; its name stays its words alone, which axe's `label-content-name-mismatch`
+ * holds. The picture is the two lists, the first option under the keyboard.
+ */
+export const AnOptionsLinesAreHeard: Story = {
+  render: () => <OptionsWithLines />,
+  play: async ({ canvas, userEvent }) => {
+    const skills = canvas.getByRole("listbox", { name: "Skills to use" });
+    const review = within(skills).getByRole("option", { name: "review" });
+    await expect(review).toHaveAccessibleDescription(
+      "Built in Reads a pull request and says what it would change",
+    );
+    await expect(
+      within(skills).getByRole("option", { name: "deploy" }),
+    ).toHaveAccessibleDescription("Ships the app to staging");
+    const hit = canvas.getByRole("option", { name: "let needle = 1;" });
+    await expect(hit).toHaveAccessibleDescription("Line 42");
+    await userEvent.tab();
+    await untilFocused(() => review, "Lines heard: Tab lands on the chosen option");
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(
+      () => within(skills).getByRole("option", { name: "deploy" }),
+      "Lines heard: Down moves to the next option",
+    );
+    await userEvent.tab();
+    await untilFocused(() => hit, "Lines heard: Tab moves to the next list's chosen option");
+    expectFocusInSight();
+  },
+};
+
 /** A reason the Library's line cuts short, as #4711 found it, and one that fits. */
 const CUT_REASON =
   "Left out: a name starting with purlis- is purlis's own, so this one is never handed to a chat here";
@@ -495,6 +554,64 @@ export const AGridOfCards: Story = {
     await untilFocused(() => team, "A grid of cards: Right moves to the card beside");
     await userEvent.keyboard(" ");
     await waitFor(() => expect(team).toHaveAttribute("aria-selected", "true"));
+    expectFocusInSight();
+  },
+};
+
+/** Two theme cards as the gallery draws them, one refused: why, then where it comes from. */
+function ARefusedCard() {
+  return (
+    <ListBox
+      aria-label="Themes"
+      layout="grid"
+      selectionMode="single"
+      selectionBehavior="toggle"
+      disallowEmptySelection
+      defaultSelectedKeys={["purlis"]}
+      style={{ gridTemplateColumns: "repeat(2, 16rem)" }}
+    >
+      <ListOption id="purlis" textValue="purlis">
+        <RowLabel>purlis</RowLabel>
+        <RowDescription>Built in</RowDescription>
+      </ListOption>
+      <ListOption id="broken" textValue="broken" unavailable>
+        {/* Why first, in its pictures' place over its name, as the gallery draws it. */}
+        <RowDescription>surface.base is not a colour</RowDescription>
+        <RowLabel>broken</RowLabel>
+        <RowBelow data-testid="refused-from">Yours, on this machine · Refused</RowBelow>
+      </ListOption>
+    </ListBox>
+  );
+}
+
+/**
+ * **A refused card says why, and where it comes from** (#6075): why it is refused, in its
+ * pictures' place, then the line under its name, both heard after its name. The line under its
+ * name is one more line of the card's column, never stretched to fill it. The picture is the two
+ * cards, the refused one under the keyboard.
+ */
+export const ARefusedCardSaysWhereItComesFrom: Story = {
+  render: () => <ARefusedCard />,
+  play: async ({ canvas, userEvent }) => {
+    const list = canvas.getByRole("listbox", { name: "Themes" });
+    const broken = within(list).getByRole("option", { name: "broken" });
+    await expect(broken).toHaveAccessibleDescription(
+      "surface.base is not a colour Yours, on this machine · Refused",
+    );
+    const from = canvas.getByTestId("refused-from");
+    // Its own words' height, never the card's: a line or two is under four of its ems.
+    const em = parseFloat(getComputedStyle(from).fontSize);
+    await expect(from.getBoundingClientRect().height).toBeLessThan(em * 4);
+    await userEvent.tab();
+    await untilFocused(
+      () => within(list).getByRole("option", { name: "purlis" }),
+      "A refused card: Tab lands on the chosen card",
+    );
+    await userEvent.keyboard("{ArrowRight}");
+    await untilFocused(
+      () => broken,
+      "A refused card: Right moves to it, though it cannot be chosen",
+    );
     expectFocusInSight();
   },
 };

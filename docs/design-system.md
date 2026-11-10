@@ -1252,9 +1252,11 @@ has it; nothing reads the key after that.
   **`to`**, the times they start and end, `HH:MM` on a 24-hour clock and this machine's own
   time. A `to` before the `from` runs across midnight; the same time for both is no quiet hours.
   In them no notification is shown and an ask waits in the Inbox; when they end, one
-  notification names the chats still waiting on you.
-  Leave any out for its default, `false`, `22:00` and `07:00`; purlis leaves the whole of
-  `notifications` out while all are the defaults. A value that is not one is the default, and
+  notification names the chats still waiting on you. **`finishedAfter`** is how many whole
+  minutes a task you asked for works before its finish notifies you while you are away from
+  the window (#6005); a failure always notifies.
+  Leave any out for its default, `false`, `22:00`, `07:00` and `5`; purlis leaves each out
+  at its default, and the whole of `notifications` while all are. A value that is not one is the default, and
   the Inbox says so. Settings writes it (`app/src/notificationPrefs.ts`), and the app reads it
   each time it would show a notification (`app/src-tauri/src/asknotify.rs`).
 - **`explorer`** is Explorer's folded sections, on this machine (#1677): **`closed`** lists
@@ -1426,6 +1428,7 @@ one labelled section at the end of `App.css`.
 | a chat's state mark                        | colour, shape and ring morph, `settle`                   | the state changing, rather than blinking                                                                |
 | a chat that starts waiting on you          | its ring knocks twice, `settle`                          | the one signal this app exists for, arriving                                                            |
 | the same, on a row of a list               | its hand knocks twice, `settle`                          | a row's mark is the hand and has no ring; only on the change, as the ring                               |
+| the ✋ on the right bar, once per machine  | its mark takes one breath, `breathe`                     | the first Blocking ask to arrive while Asks is closed, in place of a tour (ADR 0121 decision 24); the count says it still under reduced motion |
 | a pane a drag makes room with              | glides and resizes to where the drop would leave it, `enter`, while the drag lasts | the result, seen before the drop (ADR 0113) |
 | a pane about to be, in a drag              | fades in at its box, `enter`                             | what the drop would make     |
 | a row of the Chats list that was asked for | the hovered row's band for a moment, faded in once, `settle` | where a press elsewhere went; the band is there, still, under reduced motion                            |

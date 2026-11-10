@@ -769,7 +769,7 @@ describe("choosing nothing, and a refused card (#2331 review)", () => {
     expect(asked("theme_choose_machine")).toEqual([]);
   });
 
-  it("chooses nothing on a refused card, and says why it is refused", async () => {
+  it("chooses nothing on a refused card, and says why it is refused and where it comes from", async () => {
     const BROKEN = card({
       id: "broken",
       name: "Broken",
@@ -785,7 +785,10 @@ describe("choosing nothing, and a refused card (#2331 review)", () => {
     expect(broken).toHaveAttribute("aria-disabled", "true");
     act(() => broken.focus());
     expect(broken).toHaveFocus();
-    expect(broken).toHaveAccessibleDescription("surface.base is not a colour");
+    // Why first, then where it comes from and its marks, as they are drawn under its name (#6075).
+    expect(broken).toHaveAccessibleDescription(
+      "surface.base is not a colour Yours, on this machine · Refused",
+    );
     fireEvent.click(broken);
     fireEvent.keyDown(broken, { key: "Enter" });
     await new Promise((done) => setTimeout(done, 5));
@@ -820,7 +823,7 @@ describe("a card's name (WCAG 2.5.3 Label in Name, #6043)", () => {
     }
     expect(screen.getByRole("option", { name: "Many" })).toHaveTextContent("+1");
     expect(screen.getByRole("option", { name: "Broken" })).toHaveAccessibleDescription(
-      "surface.base is not a colour",
+      "surface.base is not a colour Yours, on this machine · Refused",
     );
   });
 });

@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { type InboxUpdate } from "./bindings";
 import { KindIcon, kindOfUpdate } from "./InboxRow";
@@ -64,6 +64,9 @@ export type UpdateAnswer = {
 export type Updates = {
   /** Newest first; nothing before they were read. */
   rows: readonly UpdateRow[] | undefined;
+  /** The line a clicked notification opens, read in place, and the ask it came with: a task
+   *  that ended (#6005). Each ask opens it once. */
+  opened?: { key: string; at: number };
   /** Every update listed, marked read: none is put away. `keys` are the lines the list shows
    *  (#5646): Mine's or Project's, in the scope picked. */
   onMarkAllRead: (keys: readonly string[]) => void;
@@ -188,6 +191,7 @@ export function UpdateList({
                 <UpdateItem
                   key={row.update.key}
                   row={row}
+                  opened={updates.opened?.key === row.update.key ? updates.opened.at : undefined}
                   above={places.slice(0, places.indexOf(`update:${row.update.key}`)).join("\n")}
                 />
               ))}
@@ -200,7 +204,16 @@ export function UpdateList({
   );
 }
 
-function UpdateItem({ row, above }: { row: UpdateRow; above: string }) {
+function UpdateItem({
+  row,
+  above,
+  opened,
+}: {
+  row: UpdateRow;
+  above: string;
+  /** The ask of a clicked notification that opens this line in place, where one did (#6005). */
+  opened?: number;
+}) {
   const { update, go, more, report, read, answers = [], dismiss, dismissSays } = row;
   const id = useId();
   const [said, setSaid] = useState<string>();
@@ -211,6 +224,14 @@ function UpdateItem({ row, above }: { row: UpdateRow; above: string }) {
     if (!open && !update.read) read?.();
     setOpen(!open);
   };
+  /** **A clicked notification opens it** (#6005): as Read does, once for each click. */
+  const openedFor = useRef<number>(undefined);
+  useEffect(() => {
+    if (opened === undefined || openedFor.current === opened || report === undefined) return;
+    openedFor.current = opened;
+    if (!update.read) read?.();
+    setOpen(true);
+  }, [opened, report, read, update.read]);
   /**
    * **When this update was last drawn where it stands**: at its first drawing, and whenever
    * what stands above it changes, which moves it. Set in the very render that draws it, as a

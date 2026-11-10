@@ -218,7 +218,7 @@ const listed = () =>
 const inbox = async () => {
   const tab = within(await screen.findByRole("tablist", { name: "Panel, right half" })).getByRole(
     "tab",
-    { name: "Notices" },
+    { name: /^Notices\b/ },
   );
   if (tab.getAttribute("aria-selected") !== "true") await userEvent.click(tab);
   return screen.findByRole("tabpanel", { name: "Notices" });

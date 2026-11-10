@@ -6,6 +6,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { ActivityBar, ActivityCount, VIEW_MARKS, type Tabbed } from "./ActivityBar";
 import type { ViewId } from "./regions";
+import { viewTab } from "./test-strips";
 
 /**
  * **An activity bar's keyboard, focus and names** (#3134): what a person on the keyboard or a
@@ -55,7 +56,7 @@ function Bar({
 }
 
 const bar = () => screen.getByRole("tablist", { name: "Navigation" });
-const tab = (name: string) => screen.getByRole("tab", { name });
+const tab = (name: string) => screen.getByRole("tab", { name: viewTab(name) });
 
 describe("an activity bar's keyboard (#3134)", () => {
   it("is one tablist named for its region, its tabs the views in order", () => {
@@ -76,7 +77,7 @@ describe("an activity bar's keyboard (#3134)", () => {
     expect(tab("Explorer")).toHaveAttribute("id", "tab-explorer");
     expect(tab("Explorer")).toHaveAttribute("aria-expanded", "true");
     expect(tab("Chats")).not.toHaveAttribute("aria-expanded");
-    expect(tab("Search")).toHaveAccessibleDescription("3 results");
+    expect(tab("Search")).toHaveAccessibleName("Search 3 results");
   });
 
   it("is one Tab stop, on the open view's tab", async () => {

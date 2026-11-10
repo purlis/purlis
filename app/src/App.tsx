@@ -422,7 +422,13 @@ function App() {
   const [yourSettingsAsk, setYourSettingsAsk] = useState<{ plane: PlaneId; at: number }>();
   /** The Inbox the title bar's ✋ asked for (#1692, I-2): the project it opens on, and a count;
    *  and the chat whose group it opens at, for a clicked notification (#1694). */
-  const [inboxAsk, setInboxAsk] = useState<{ plane: PlaneId; at: number; session?: number }>();
+  const [inboxAsk, setInboxAsk] = useState<{
+    plane: PlaneId;
+    at: number;
+    session?: number;
+    /** A task's line in Updates a clicked notification opens (#6005). */
+    update?: string;
+  }>();
   /**
    * The last link into a Settings group the window followed (SE-22): the project in front, the
    * link, and a count. Its own ask and not `settingsTabAsk`, because a link names its level and
@@ -2477,6 +2483,13 @@ function App() {
     (to: Landing) => {
       const { plane } = to;
       if (!planesNow.current.includes(plane)) return;
+      // One about a task that ended opens its line in Updates (#6005), whatever waits.
+      if (to.update !== undefined) {
+        const { update } = to;
+        setShowing({ at: "plane", plane });
+        setInboxAsk((was) => ({ plane, at: (was?.at ?? 0) + 1, update }));
+        return;
+      }
       const asks = registry.held[plane] ?? [];
       const session = landsOn(to, (chat) => asks.some((ask) => ask.session === chat));
       if (session === undefined) return;
@@ -3164,6 +3177,7 @@ function App() {
                 questions={registry.questions[plane]}
                 inboxAsked={inboxAsk?.plane === plane ? inboxAsk.at : undefined}
                 inboxGroup={inboxAsk?.plane === plane ? inboxAsk.session : undefined}
+                inboxUpdate={inboxAsk?.plane === plane ? inboxAsk.update : undefined}
                 elsewhere={elsewhere}
                 windowLines={plane === inFront ? windowLines : undefined}
                 profileNames={profileNames.of[plane]}

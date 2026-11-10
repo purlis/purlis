@@ -29,6 +29,7 @@ import {
   resumeUpdates,
   sandboxUpdates,
   smartCloseUpdates,
+  stuckUpdates,
   taskUpdates,
   unreadMine,
   useInboxUpdates,
@@ -484,3 +485,34 @@ describe("noting, keeping and settling (#1693)", () => {
 });
 
 const DERIVED = [noted("task:a", 10)];
+
+describe("a chat that reads Stuck? (#6014, ADR 0121 decision 19)", () => {
+  it("is a Should-know update From your chats, drawn while it reads so", () => {
+    const said = stuckUpdates(
+      {
+        3: { stuck: "no new command or output for 15 minutes", leftWork: null },
+        4: { stuck: null, leftWork: true },
+      },
+      nameOf,
+      NOW,
+    );
+    expect(said).toEqual([
+      {
+        key: "stuck:3:no new command or output for 15 minutes",
+        kind: "stuck",
+        at: Math.floor(NOW / 1000),
+        session: 3,
+        chain: ["steward 3"],
+        says: "Stuck? no new command or output for 15 minutes",
+      },
+    ]);
+    expect(fromOf("stuck")).toBe("mine");
+    expect(LIVE.has("stuck")).toBe(true);
+    expect(KIND_SAID.stuck).toBe("Stuck?");
+  });
+
+  it("says nothing of a chat that is not stuck, or of none noticed", () => {
+    expect(stuckUpdates({}, nameOf, NOW)).toEqual([]);
+    expect(stuckUpdates(undefined, nameOf, NOW)).toEqual([]);
+  });
+});
