@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794322478904,
+  "lastUpdate": 1794325022346,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -46074,6 +46074,48 @@ window.BENCHMARK_DATA = {
             "value": 101.551636,
             "unit": "ms",
             "extra": "median of 5 runs: 101.171, 101.263, 101.552, 101.778, 102.442 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ffe82ab92f0a5cc8830f3a238095b743137dde38",
+          "message": "Own the crash handler's glue, and send a native crash as its crashing thread's stack alone (#5691) (#6126)\n\n* crash-probe takes its crashes folder from the environment, which reaches the companion; the abort, overflow and child tests wait for crash-handler 0.8 (#5691)\n\nAs #6122, on which this branch builds while it is queued.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M72CJJA6WHNAQXGBHK3QJMKP\nPurlis-Persona: steward\n\n* Own the crash handler's glue, and send a native crash as its crashing thread's stack alone (#5691)\n\nThe operator's ruling of 2026-11-10: drop minidumper-child and own its glue in\ncrates/crash-handler, over crash-handler 0.8 and minidumper 0.11 directly, so\ncrash-context 0.8 is shared and a crashing child process dies of its crash.\n\n- The companion (this binary again, PURLIS_CRASH_HANDLER set to its socket) runs\n  a minidumper Server that writes <secs>-<id>.part, 0600, renamed .dmp once\n  whole, honouring PANICKED within PANIC_COVERS. The app connects a Client and\n  attaches crash_handler::CrashHandler. Public API unchanged.\n- make_crash_event is the workspace's fifth audited unsafe block, on\n  attach::on_crash alone; four_unsafe_blocks.rs becomes five_unsafe_blocks.rs.\n  ADR 0083 amended.\n- Ruling (b): Reports takes the crashing thread's stack out of the minidump on\n  the device (rust-minidump's minidump and minidump-unwind, no symbols) and sends\n  it as an ordinary Crash report: frames as module and offset, modules by file\n  name and debug id, no attachment, scrubbed and fingerprinted. The minidump\n  stays local as .kept and ages out at 14 days. ADR 0118 amended.\n- The abort, overflow and child tests run again; a real crash's report is tested\n  to carry its stack and no memory, thread or environment.\n- nativecrash::STARTED stays off.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M72CJJA6WHNAQXGBHK3QJMKP\nPurlis-Persona: steward\n\n* Crash handler review: no keep-alive pings, nothing half written left, no number in a crash's kind (#5691)\n\nFrom the adversarial review of #6126:\n- No ping thread and no stale timeout: the crash handler's own ping is then the\n  only one on the socket, so PANICKED is always heard before the dump, and a\n  paused app no longer loses its watch. The app's end closes the socket.\n- A dump that fails removes its .part; a .part an hour old is removed unread at\n  the next launch.\n- A crash's kind leaves as its first two named parts only: no address, code,\n  pid or descriptor (EXC_GUARD's offset, MacGeneral's flags).\n- The SAFETY comment says what was audited, in minidumper 0.11 and\n  crash-context 0.8.0.\n- The real-crash test first proves the minidump holds the environment it then\n  shows never leaves, and that nothing half written is left.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M72CJJA6WHNAQXGBHK3QJMKP\nPurlis-Persona: steward\n\n* The real crash's test shows no memory the minidump holds is in the report (#5691)\n\nIn place of a size ratio, which a 36 KB minidump failed: every 32-byte window\nof every memory region the minidump holds is looked for in the bytes sent, and\nnone may be there. Seen to catch it: a report carrying 256 bytes of a region\nwas found in 232 windows, and a clean stack report in none.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M72CJJA6WHNAQXGBHK3QJMKP\nPurlis-Persona: steward\n\n* The not-a-minidump test sheds the shell's steering first, as every core test does (#5691)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M72CJJA6WHNAQXGBHK3QJMKP\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T14:29:18Z",
+          "tree_id": "f47ad1e2459b2f35e9b1b9182b4ea90d970138a5",
+          "url": "https://github.com/purlis/purlis/commit/ffe82ab92f0a5cc8830f3a238095b743137dde38"
+        },
+        "date": 1794325016916,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.682785,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.675, 0.676, 0.683, 0.688, 0.713 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.64441,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.351, 16.539, 16.644, 16.822, 16.847 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.67914099999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.041, 101.669, 101.679, 102.176, 102.466 ms"
           }
         ]
       }
