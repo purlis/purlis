@@ -48,7 +48,7 @@ import {
   type UpdateNoted,
   type UpdateSettled,
 } from "./bindings";
-import { ROOT_UPDATE_REFUSED_SAID } from "./chatState";
+import { ROOT_UPDATE_REFUSED_SAID, type Noticed } from "./chatState";
 import { qualifierOf, shownOf } from "./finished";
 import { finishedBucketOf } from "./taskBuckets";
 import type { SentDraft } from "./ReportDraftNotices";
@@ -69,6 +69,8 @@ export const LIVE: ReadonlySet<UpdateKind> = new Set([
   "report-undelivered",
   "commit-refused",
   "root-update-refused",
+  // Drawn while its chat reads Stuck? (#6014): "It's fine" is answered there.
+  "stuck",
 ]);
 
 /** What a row says of what kind of thing happened. */
@@ -88,6 +90,7 @@ export const KIND_SAID: Record<UpdateKind, string> = {
   "question-failed": "Question not routed",
   arrived: "Arrived",
   "report-sent": "Report sent",
+  stuck: "Stuck?",
 };
 
 /**
@@ -119,6 +122,7 @@ const FROM: Record<UpdateKind, UpdateFrom> = {
   "question-failed": "mine",
   arrived: "mine",
   "report-sent": "mine",
+  stuck: "mine",
 };
 
 /** The list an update of `kind` is listed in. */
@@ -510,4 +514,31 @@ export function useInboxUpdates(plane: PlaneId, derived: readonly UpdateNoted[])
   }, [kept, live, trouble, derived, settled]);
 
   return { updates, trouble, settle, setAside };
+}
+
+/**
+ * **A chat that reads Stuck?** (#6014, ADR 0121 decision 19): a Should-know update, one per
+ * chat and reason, drawn while the core says it reads so ({@link LIVE}). Nothing is sent beyond
+ * the line: whether it notifies is #6005's. Its row offers "It's fine", which clears it until the
+ * chat changes state.
+ */
+export function stuckUpdates(
+  noticed: Readonly<Record<number, Noticed>> | undefined,
+  nameOf: (session: number) => string,
+  now: number,
+): UpdateNoted[] {
+  return Object.entries(noticed ?? {}).flatMap(([key, one]) => {
+    if (one.stuck === null) return [];
+    const session = Number(key);
+    return [
+      {
+        key: `stuck:${session}:${one.stuck}`,
+        kind: "stuck" as const,
+        at: secondsOf(now),
+        session,
+        chain: [nameOf(session)],
+        says: `Stuck? ${one.stuck}`,
+      },
+    ];
+  });
 }

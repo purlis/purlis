@@ -222,9 +222,14 @@ export type Facts = {
   failuresUnseen?: number;
   /** It is such a task itself, and has not been seen (#5340, `chatState.failedUnseen`). */
   failedUnseen?: boolean;
-  /** Its turn runs and may not be getting anywhere (ADR 0121 decision 19). Nothing says so
-   *  yet: #6014 detects it, and "It's fine" clears it. */
+  /** Its turn runs and may not be getting anywhere (ADR 0121 decision 19): the core's word
+   *  (`purlis_core::stuck`, #6014), which "It's fine" clears until the chat changes state. None
+   *  where a surface does not say. */
   stuck?: boolean;
+  /** Whether its folder holds uncommitted work (#6014, `purlis_core::leftwork`), asked as it
+   *  changed state. A finished chat with work left is Idle; with none it is Done. None where it
+   *  is not known (not a repository, or a surface that does not say), which reads Idle. */
+  leftWork?: boolean;
 };
 
 const WORKING: Said = { kind: "working", word: "working", shape: "ring", token: "state.running" };
@@ -447,6 +452,7 @@ function saidOf({
   ownWork,
   failuresUnseen = 0,
   stuck = false,
+  leftWork,
 }: Facts): Said {
   if (needsYou) return NEEDS_YOU;
   // Stuck? is asked of a turn that runs, before anything else the person could look at.
@@ -483,7 +489,8 @@ function saidOf({
   // A task's turn ended owing its report: it waits on the chat that asked (#6036).
   if (board === "waiting" && task !== null && task.report === "owed") return TURN_ENDED_FOR_ASKER;
   // Its turn has ended and it is not asking for the person: the hand is not raised for it.
-  if (board === "waiting") return IDLE;
+  // Idle is finished with work left behind (#6014): with none left in its folder, it is done.
+  if (board === "waiting") return leftWork === false ? DONE : IDLE;
   if (board === "running") return WORKING;
   if (board === undefined) return SHELL;
   return {
