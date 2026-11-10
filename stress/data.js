@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794304426373,
+  "lastUpdate": 1794312526390,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -18808,6 +18808,42 @@ window.BENCHMARK_DATA = {
             "value": 1010.6,
             "unit": "MB",
             "extra": "median of 6 samples: 977, 993.1, 1006.8, 1014.3, 1014.9, 1084.6 MB; window 696.3 MB, session host 313.7 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "3be8bcf313a14c992c2703bc8b308f80cc803d00",
+          "message": "Consents and command confirmations are Blocking asks (#6000) (#6116)\n\n* Consents and command confirmations are Blocking asks (#6000)\n\n#6092 merged with main. Its two window tests find the Asks tab by\n/^Asks/, since #6020 put each activity icon's count in its name.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M723SESE4ZM1KME84AAZBHQ6\nPurlis-Persona: steward\n\n* Consents and command confirmations are Blocking asks (#6000): new files\n\nThe new modules, tests, ADR amendment, changelog fragment, and the\nstory baselines #6092's stories run drew.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M723SESE4ZM1KME84AAZBHQ6\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T09:05:08Z",
+          "tree_id": "d743cdcb602283ee9a64922c6eab8a3b10eb76c7",
+          "url": "https://github.com/purlis/purlis/commit/3be8bcf313a14c992c2703bc8b308f80cc803d00"
+        },
+        "date": 1794312521976,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 2627.6,
+            "unit": "MB",
+            "extra": "median of 3 samples: 2386.4, 2627.6, 2866 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 1104.3,
+            "unit": "MB",
+            "extra": "median of 6 samples: 1050.8, 1092.9, 1115.7, 1151.1, 1150.3, 718 MB; window 726.4 MB, session host 380.2 MB"
           }
         ]
       }
