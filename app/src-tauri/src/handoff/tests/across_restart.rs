@@ -1631,6 +1631,22 @@ fn a_shell_left_by_a_harness_hung_up_on_from_outside_ends_with_it() {
         .sessions()
         .process_id(chat)
         .expect("its harness runs");
+    // TEMPORARY (#2786 diagnosis): the process tree as the shell is noted.
+    let mut diag = format!("harness={harness} shell={shell}\n");
+    if let Ok(ps) = purlis_core::forklock::output(
+        std::process::Command::new("ps").args(["-eo", "pid,ppid,pgid,sid,stat,args"]),
+    ) {
+        diag.push_str(&String::from_utf8_lossy(&ps.stdout));
+    }
+    for name in ["cmdline", "status"] {
+        let read = std::fs::read(format!("/proc/{harness}/{name}")).unwrap_or_default();
+        let read = String::from_utf8_lossy(&read).replace('\0', " ");
+        diag.push_str("harness ");
+        diag.push_str(name);
+        diag.push_str(": ");
+        diag.push_str(&read);
+        diag.push('\n');
+    }
 
     let sent = purlis_core::forklock::status(
         std::process::Command::new("/bin/kill").args(["-HUP", &harness.to_string()]),
@@ -1640,7 +1656,7 @@ fn a_shell_left_by_a_harness_hung_up_on_from_outside_ends_with_it() {
 
     assert!(
         goes(shell),
-        "the shell {shell} of a harness hung up on from outside still runs {GONE_WITHIN:?} after"
+        "the shell {shell} of a harness hung up on from outside still runs {GONE_WITHIN:?} after\nDIAG {diag}"
     );
     planes.close(&id).expect("it closes");
 }
