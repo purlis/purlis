@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794295541009,
+  "lastUpdate": 1794304426373,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -18772,6 +18772,42 @@ window.BENCHMARK_DATA = {
             "value": 994.1,
             "unit": "MB",
             "extra": "median of 6 samples: 964.2, 975, 990.2, 997.9, 998.8, 1067.9 MB; window 672.4 MB, session host 322.1 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "219a430900ef0dc8ee283f8b54378f8d3200e462",
+          "message": "A select in a row keeps the keyboard (#6091); dialog family: theRadiosStop test, one focus scope for the palette (#6093) (#6103)\n\n* Dialog family: a test proves a radio group is one Tab stop; the palette keeps one focus scope (#6093)\n\ntheRadiosStop decides only while a group has nothing chosen: React Aria\nthen leaves every radio at tabindex 0. The new test walks such a group\nwith pressTab and fails with theRadiosStop broken (Shift+Tab lands on\nthe group's last radio).\n\nNotModal's own FocusScope contain duplicated the one React Aria's\nOverlay draws, which contains because useDialog asks it to. Removed; the\npalette's Tab test now presses with pressTab by the focus scope, round\nfrom either end, and counts one scope. It fails with the Overlay's\nfocus management off. ADR 0104 gets an amendment saying so.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71XNPV74VRRCW7P36V80ZYM\nPurlis-Persona: steward\n\n* A select in a row keeps the keyboard: the ↓ that opens it is never the list's (#6091)\n\nReact Aria's select opens on ↓ or ↑ and lets the key bubble on. #5993's\nbypass let those keys past the row's capture, and nothing stopped them\non the way back up, so the grid's collection moved its focused row a row\ndown with the same key. As the select's list closed, the grid took the\nrestore and that row took the keyboard from the button: in WebKit when a\nframe came late, in jsdom every time.\n\nThe row now stops a ↑/↓ that keepsItsArrows on its way back up. Two\nRowKeys tests (↓ then Enter, ↑ then Esc) fail without it, with the row\nholding the keyboard. The story's play tabs in with tabInto and presses\none key at a time, each waiting for the focus it settles on. No redraw.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71XNPV74VRRCW7P36V80ZYM\nPurlis-Persona: steward\n\n* Review of #6093: the chosen-radio branch of theRadiosStop has a test too; one said() for the keyboard tests\n\nA group of native radios, one checked, is the only one that reaches\ntheRadiosStop's checked branch (React Aria takes its unchosen radios\nout of the order itself). The test fails with that branch planted to\ngroup[0]. said() moves into a11y.testkit, shared by Modals.keyboard and\nDialog tests. A paragraph of ui-primitives.md wrapped back to width.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71XNPV74VRRCW7P36V80ZYM\nPurlis-Persona: steward\n\n* Review of #6091: the reason is told once, at keepsItsArrows; the tests wait a frame with aFramePassed\n\nkeepsItsArrows now says why the select's arrows bubble (useSelect's own\n← → handler, chained after the trigger's, lets every other key go on);\nList.tsx, the story and the tests point at it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71XNPV74VRRCW7P36V80ZYM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T06:49:45Z",
+          "tree_id": "267c022611005544551bf5f25a470d3fb465eea4",
+          "url": "https://github.com/purlis/purlis/commit/219a430900ef0dc8ee283f8b54378f8d3200e462"
+        },
+        "date": 1794304420803,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 2596,
+            "unit": "MB",
+            "extra": "median of 3 samples: 2241.2, 2596, 2885.6 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 1010.6,
+            "unit": "MB",
+            "extra": "median of 6 samples: 977, 993.1, 1006.8, 1014.3, 1014.9, 1084.6 MB; window 696.3 MB, session host 313.7 MB"
           }
         ]
       }
