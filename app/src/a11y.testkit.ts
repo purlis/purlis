@@ -79,6 +79,12 @@ export const CONTROL_ROLES = [
   "separator",
 ] as const satisfies readonly ByRoleMatcher[];
 
+/** How a control reads to whoever is looking for it: its role, and the words it goes by, as
+ *  `button "Start"`. */
+export function said(element: Element): string {
+  return `${roleOf(element)} "${wordsOf(element).trim()}"`;
+}
+
 /** How a nameless control is written in a failure and in a debt list: its role, its element
  *  and the classes it is drawn with, which are what a person finds it by in the source. */
 export function described(role: string, element: Element): string {

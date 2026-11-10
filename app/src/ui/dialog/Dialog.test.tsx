@@ -22,15 +22,10 @@ import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from 
 import { Select } from "../select/Select";
 import { selectNamed } from "../select/select.testkit";
 import { Radio, RadioGroup } from "../choice/Radio";
-import { roleOf, wordsOf } from "../../a11y.testkit";
+import { said } from "../../a11y.testkit";
 import { pressTab } from "./dialog.testkit";
 
 afterEach(cleanup);
-
-/** What has the keyboard, as its role and its words. */
-function said(element: Element | null): string {
-  return element === null ? "nothing" : `${roleOf(element)} ${wordsOf(element).trim()}`;
-}
 
 /**
  * **React Aria's dialog's half-second wait, and every frame, held** (#3603): the dialog puts the
@@ -587,15 +582,60 @@ describe("a dialog", () => {
     const walked: string[] = [];
     for (let press = 0; press < 4; press += 1) {
       pressTab();
-      walked.push(said(document.activeElement));
+      walked.push(said(document.activeElement as Element));
     }
-    expect(walked).toEqual(["radio claude", "button Cancel", "button Start", "input Title"]);
+    expect(walked).toEqual([
+      'radio "claude"',
+      'button "Cancel"',
+      'button "Start"',
+      'input "Title"',
+    ]);
     const back: string[] = [];
     for (let press = 0; press < 3; press += 1) {
       pressTab(true);
-      back.push(said(document.activeElement));
+      back.push(said(document.activeElement as Element));
     }
-    expect(back).toEqual(["button Start", "button Cancel", "radio claude"]);
+    expect(back).toEqual(['button "Start"', 'button "Cancel"', 'radio "claude"']);
+  });
+
+  // **A native group with one chosen stops on that one** (#6093, `theRadiosStop`): React Aria's
+  // radios never reach this, as they take the others out of the order themselves, so a group of
+  // plain radios, which the engine alone would walk one by one, says what the family does.
+  it("stops once on a group of native radios, on the one chosen, by Tab and by Shift+Tab", async () => {
+    render(
+      <Dialog onClose={() => {}} title="Start a chat" main={{ children: "Start" }}>
+        <label>
+          Title
+          <input />
+        </label>
+        <fieldset>
+          <legend>Harness</legend>
+          <label>
+            <input type="radio" name="harness" value="claude" />
+            claude
+          </label>
+          <label>
+            <input type="radio" name="harness" value="codex" defaultChecked />
+            codex
+          </label>
+          <label>
+            <input type="radio" name="harness" value="gemini" />
+            gemini
+          </label>
+        </fieldset>
+      </Dialog>,
+    );
+    const title = screen.getByRole("textbox", { name: "Title" });
+    await waitFor(() => expect(title).toHaveFocus());
+    const codex = screen.getByRole("radio", { name: "codex" });
+    pressTab();
+    expect(codex).toHaveFocus();
+    pressTab();
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+    pressTab(true);
+    expect(codex).toHaveFocus();
+    pressTab(true);
+    expect(title).toHaveFocus();
   });
 
   it("is drawn only while its project is in front", () => {

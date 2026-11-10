@@ -22,7 +22,7 @@ import { QuitWarning } from "./QuitWarning";
 import { RelaunchAsk } from "./RelaunchAsk";
 import { StartChat } from "./StartChat";
 import { PinItem, UpdateItem } from "./Updates";
-import { roleOf, wordsOf } from "./a11y.testkit";
+import { said } from "./a11y.testkit";
 import { pressTab, type TabTakenBy } from "./ui/dialog/dialog.testkit";
 
 /**
@@ -119,13 +119,6 @@ type Walk = { shift?: boolean; by?: TabTakenBy };
 async function tab({ shift = false, by = FAMILY }: Walk = {}) {
   pressTab(shift, by);
   await act(async () => {});
-}
-
-/** How a control reads to whoever is looking for it: its role, and the words it goes by. */
-function said(el: Element): string {
-  const role = roleOf(el);
-  const named = wordsOf(el);
-  return `${role} "${named.trim()}"`;
 }
 
 /**

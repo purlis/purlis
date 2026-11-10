@@ -1491,8 +1491,8 @@ by hand (#3198).
 the keyboard in itself (the one `FocusScope` React Aria's `Overlay` draws round it, which
 contains because the dialog in it asks it to:
 [the amendment of 2026-11-10](adr/0104/2026-11-10-the-palette-keeps-one-focus-scope.md)) and
-closes on Esc and on a press outside it, but the window behind it is never made inert or hidden. Every other dialog stays modal, and a click
-outside one answers nothing.
+closes on Esc and on a press outside it, but the window behind it is never made inert or hidden.
+Every other dialog stays modal, and a click outside one answers nothing.
 
 **The dialog rules** (#2798, #2789, the operator's ruling in #2910), each held by the family:
 
