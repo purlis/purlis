@@ -143,6 +143,7 @@ pub mod inventory;
 pub mod layer;
 pub mod leakguard;
 pub mod leftovers;
+pub mod leftwork;
 pub(crate) mod lfsupload;
 #[cfg(test)]
 mod lineartime;
@@ -274,6 +275,7 @@ pub mod standings;
 pub mod start;
 pub mod state;
 pub(crate) mod steer;
+pub mod stuck;
 pub mod taskchanges;
 pub mod template;
 // Public, and not `cfg(test)`: the integration tests of every crate copy the fixture planes
