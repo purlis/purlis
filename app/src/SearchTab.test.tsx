@@ -164,10 +164,20 @@ describe("the Search view", () => {
     expect(groups[0]).toHaveTextContent("alpha");
     expect(groups[0]).toHaveTextContent("fix-login · web");
     const lines = within(groups[0]).getAllByRole("option");
-    expect(lines.map((one) => one.textContent)).toEqual(["3let needle = 1;", "9let needle = 1;"]);
-    // A hit is named by its line, not by its number run into it (#2911).
-    // A hit is named by its line, not by its number run into it (#2911).
+    expect(lines.map((one) => one.querySelector('[data-part="label"]')?.textContent)).toEqual([
+      "let needle = 1;",
+      "let needle = 1;",
+    ]);
+    // A hit is named by its line, not by its number run into it (#2911), and its number is
+    // heard after it, as its description (#6075).
     expect(within(groups[0]).getAllByRole("option", { name: "let needle = 1;" })).toHaveLength(2);
+    // Its own words first, then React Aria's hint for dragging it.
+    // Its number is drawn before its line.
+    expect(
+      lines.map((one) => one.querySelector('[data-part="lead"]')?.firstChild?.textContent),
+    ).toEqual(["3", "9"]);
+    expect(lines[0]).toHaveAccessibleDescription(/^Line 3 Press .* to start dragging\.$/);
+    expect(lines[1]).toHaveAccessibleDescription(/^Line 9 /);
     expect(within(lines[0]).getByText("needle").tagName).toBe("MARK");
     expect(status()).toHaveTextContent("3 matching lines in 2 files");
     expect(screen.queryByRole("button", { name: "Show more" })).toBeNull();

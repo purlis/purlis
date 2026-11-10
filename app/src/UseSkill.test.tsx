@@ -119,6 +119,10 @@ describe("Use skill…", () => {
     expect(screen.getByRole("option", { name: "release" })).toHaveAccessibleDescription(
       /manual only/,
     );
+    // Its one-line description, drawn under its name, is heard after its level (#6075).
+    expect(screen.getByRole("option", { name: "deploy" })).toHaveAccessibleDescription(
+      /Does deploy\.$/,
+    );
     // Its budget, routing and pins are the Skills view's now: none is said here.
     expect(screen.queryByTestId("use-skill-budget")).toBeNull();
     expect(screen.queryByRole("status")).toBeNull();

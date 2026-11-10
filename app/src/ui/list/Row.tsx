@@ -20,7 +20,6 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { Text as AriaText } from "react-aria-components";
 
 /** The families a row belongs to. */
 export type RowFamily = "list" | "tree" | "table";
@@ -29,21 +28,58 @@ export type RowFamily = "list" | "tree" | "table";
 export const RowScope = createContext<RowFamily>("list");
 
 /**
+ * **What an option's lines are heard by** (#6075): each part that says something about it (its
+ * one line, a line under its words, a mark with words to say) hands its id here, and is read as
+ * its description in `HEARD_ORDER`'s order. React Aria's `useOption` describes an option by its
+ * `description` slot alone and takes no other id, so the list family describes it by these, and
+ * then by what React Aria adds (its hint for dragging it).
+ */
+export interface OptionHeard {
+  /** The ids its parts are drawn with: `${base}-${kind}`, one part of each kind to an option. */
+  base: string;
+  /** Hears the part `id` as `kind`; what it hands back stops hearing it. */
+  add(kind: HeardKind, id: string): () => void;
+}
+
+/** The parts of an option heard after its one line, in the order a reader hears them. */
+export const HEARD_ORDER = ["description", "below", "lead"] as const;
+export type HeardKind = (typeof HEARD_ORDER)[number];
+
+/**
  * **Inside an option** (`ListOption`): its words are its name and its one line about it its
- * description, to a reader too, rather than the whole row's content run together.
+ * description, to a reader too, rather than the whole row's content run together. `null` in any
+ * other row.
  *
  * **An option is named by its content, and its content is its words alone** (#6043): every
  * other part of it (its mark, its one line, its end, a line under it) is kept from a reader
- * (`aria-hidden`), and its one line is handed to it as its description (React Aria's
- * `description` slot), so it is heard once, after the name. Named by `aria-labelledby` instead,
+ * (`aria-hidden`), and its one line is handed to it as its description, so it is heard once,
+ * after the name. Named by `aria-labelledby` instead,
  * its visible words would be more than its name, which WCAG 2.5.3 refuses: axe's
  * `label-content-name-mismatch` counts every visible word, `aria-hidden` or not, as its label.
+ *
+ * **What else it draws that says something is heard too** (#6075): its line under its words
+ * (`RowBelow`) and a mark given words to say (`RowLead`'s `said`) join its description after its
+ * one line (`OptionHeard`). Kept from a reader as content, each is still read where the option's
+ * `aria-describedby` points at it, so each is heard once.
  */
-export const InOption = createContext(false);
+export const InOption = createContext<OptionHeard | null>(null);
 
 /** What a part that is not an option's name carries inside an option: kept from a reader. */
 function keptInOption(option: boolean): { "aria-hidden"?: true } {
   return option ? { "aria-hidden": true } : {};
+}
+
+/** **Heard in its option's description** (#6075): the id to give the part, `when` it says
+ *  something, in an option; else none, and nothing is heard. */
+function useHeardInOption(kind: HeardKind, when: boolean, given?: string): string | undefined {
+  const option = useContext(InOption);
+  const hears = option !== null && when;
+  const id = hears ? (given ?? `${option.base}-${kind}`) : undefined;
+  useLayoutEffect(
+    () => (option !== null && id !== undefined ? option.add(kind, id) : undefined),
+    [option, kind, id],
+  );
+  return id;
 }
 
 /** The sizes a row is drawn at: 24, 28 and 32 px at the default text size and density. */
@@ -64,24 +100,13 @@ interface Slot {
 function slot(part: string, named?: "label" | "description") {
   function RowSlot({ children, ...rest }: Slot) {
     const scope = useContext(RowScope);
-    const option = useContext(InOption);
-    if (option && named === "description")
-      return (
-        <AriaText
-          {...rest}
-          slot="description"
-          elementType="span"
-          aria-hidden="true"
-          data-scope={scope}
-          data-part={part}
-        >
-          {children}
-        </AriaText>
-      );
+    const option = useContext(InOption) !== null;
+    const heard = useHeardInOption("description", named === "description", rest.id);
     return (
       <span
         {...rest}
         {...keptInOption(option && named !== "label")}
+        id={heard ?? rest.id}
         data-scope={scope}
         data-part={part}
       >
@@ -93,8 +118,29 @@ function slot(part: string, named?: "label" | "description") {
   return RowSlot;
 }
 
-/** **Its marks**, before its words: a state, an icon, a persona's tile. */
-export const RowLead = slot("lead");
+const RowLeadDrawn = slot("lead");
+
+/**
+ * **Its marks**, before its words: a state, an icon, a persona's tile. Inside an option a mark
+ * is kept from a reader; one that says something its words do not (a hit's line number) is
+ * given that in words (`said`), which the option hears after the rest of its description
+ * (#6075).
+ */
+export function RowLead({ said, children, ...rest }: Slot & { said?: string }) {
+  const heard = useHeardInOption("lead", said !== undefined);
+  return (
+    <RowLeadDrawn {...rest}>
+      {children}
+      {heard !== undefined && (
+        // Drawn nowhere: read only where the option's description points at it.
+        <span id={heard} hidden>
+          {said}
+        </span>
+      )}
+    </RowLeadDrawn>
+  );
+}
+RowLead.displayName = "Row.lead";
 
 /** **Its words**: one line that takes the room and gives way to an ellipsis, never wraps. */
 export const RowLabel = slot("label", "label");
@@ -129,6 +175,10 @@ export const RowCutWords = createContext<((line: HTMLElement | null) => void) | 
  * (`RowTip.tsx`) and its description, under the pointer and while the keyboard is on the row;
  * while they fit, there is none. The row stays as it is drawn. One to a row, and a list's row's
  * alone (`ListRow`, `ListOption`).
+ *
+ * **In an option it is heard after the option's one line** (#6075): kept from a reader as
+ * content, and read whole (its clamp is only how it is drawn) as part of the option's
+ * description.
  */
 export function RowBelow({
   clamp,
@@ -137,7 +187,8 @@ export function RowBelow({
   ...rest
 }: Slot & { clamp?: 1 | 2; tipWhenCut?: boolean }) {
   const scope = useContext(RowScope);
-  const option = useContext(InOption);
+  const option = useContext(InOption) !== null;
+  const heard = useHeardInOption("below", true, rest.id);
   const say = useContext(RowCutWords);
   const line = useRef<HTMLSpanElement>(null);
   const asks = tipWhenCut && clamp !== undefined ? say : null;
@@ -164,6 +215,7 @@ export function RowBelow({
     <span
       {...rest}
       {...keptInOption(option)}
+      id={heard ?? rest.id}
       ref={line}
       data-scope={scope}
       data-part="below"

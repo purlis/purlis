@@ -241,6 +241,10 @@ describe("a long archive (#1191)", () => {
     const snippet = screen.getByTestId("row-snippet-note-13");
     expect(snippet).toHaveTextContent("The Friday FREEZE holds until the release.");
     expect(snippet.querySelector("mark")).toHaveTextContent("Friday FREEZE");
+    // And a reader hears it, after the row's stamp (#6075).
+    expect(within(list).getByRole("option", { name: /Note 13/ })).toHaveAccessibleDescription(
+      /The Friday FREEZE holds until the release\.$/,
+    );
   });
 
   it("finds by title and by stamp, and shows every match past a page", async () => {
