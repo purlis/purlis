@@ -273,6 +273,8 @@ async function pressOnRow(row: string, label: string): Promise<void> {
 async function keepBlocked(row: string): Promise<void> {
   // Looked for afresh at each press: the first redraws the row.
   await pressGrant($(row).$("button=Keep blocked"));
+  // Where the first press sent the refusal already, the row has gone with it.
+  if (!(await $(row).isExisting())) return;
   const again = $(row).$("button=Keep blocked");
   if (await again.isExisting()) await pressGrant(again);
 }
