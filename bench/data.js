@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794328126526,
+  "lastUpdate": 1794330626374,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -46158,6 +46158,48 @@ window.BENCHMARK_DATA = {
             "value": 102.71805499999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.340, 102.531, 102.718, 102.890, 102.954 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "13a59932a80319f5b22e06f13503354998f47571",
+          "message": "A tree row's tooltip is heard through its row's registry (#6123); grounds.test.ts reads what a list row holds (#6125) (#6151)\n\n* A tree row's tooltip is heard through its row's registry (#6123)\n\nReact Aria's TreeItem takes no render prop and filters aria-describedby\nout of its props, so a tree row's tooltip wrote the attribute by hand\nfrom RowTip. TreeRow now provides RowHeard too: its root writes the ids\nits parts hand it on its element, in HEARD_ORDER (heardIds, shared with\nthe list), keeping any id it did not write. RowTip has one path.\n\ndescribedBy.guard.test.ts fails on any other hand write under ui/.\n\nCloses #6123.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7301XDRHM86GDM83T795M5S\nPurlis-Persona: steward\n\n* grounds.test.ts reads what a list row holds; STANDS_ON gains its pairs (#6125)\n\nThe window's read of which family stands on which never followed a\nListRow's children: they are handed on by a render function,\n{(state) => hold(rowHolds(children, ...)(state))}, and placed() stopped\nat the arrow. What a render function returns is now placed where it is\n(seen red on a ListRow-shaped fixture first). heardIn(), which kept the\nread blind, is gone: the row's registry is plain JSX again.\n\nSTANDS_ON's list row gains button, chat-mark, checkbox and popover, and\nevery built-in theme holds its floors on them in one look.\n\nlist -> badge stays out, by name and exactly, in NOT_STANDING: the only\nlist fill a shipped theme sets is Classic's card's, where no badge is\ndrawn, and measuring the waiting badge's wash there builds Classic\nDark's parts in 44 tints at launch (#4410). Variant-scoped STANDS_ON\nis #6149.\n\nCloses #6125.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7301XDRHM86GDM83T795M5S\nPurlis-Persona: steward\n\n* A tree row's registry takes back what it wrote when its ref is handed again (#6123)\n\nFrom review: a change to a ref around the row (useSaid's, for its\naria-description) hands the registry null and then the element again;\nit forgot what it had written, so the tooltip's id was written twice\nand heard twice. It now takes its ids back from the element it leaves.\nThe tree's tip test asserts the exact description, which was red on\nthe duplicate before the fix.\n\nAlso: heardIds returns the ids, and the list and the tree share\nwithPart/withoutPart; the guard catches toggleAttribute and\nariaDescribedByElements too, with its paths read the same on every\nplatform; RowTip says beside Shown why a tree row's root may write\nthe attribute.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7301XDRHM86GDM83T795M5S\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T16:32:58Z",
+          "tree_id": "0e8699d977f9f6c32745d19e189deb4941ab8917",
+          "url": "https://github.com/purlis/purlis/commit/13a59932a80319f5b22e06f13503354998f47571"
+        },
+        "date": 1794330620285,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.684144,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.672, 0.676, 0.684, 0.684, 0.689 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6372655,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.530, 16.567, 16.637, 16.669, 16.675 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.81332950000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.664, 100.918, 101.813, 101.858, 102.388 ms"
           }
         ]
       }
