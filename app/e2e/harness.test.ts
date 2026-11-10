@@ -259,6 +259,32 @@ describe("the run's profile", () => {
     });
   });
 
+  it("writes down what a chat on it saw in its config folder, where the plane's names lead", () => {
+    on("linux", (scratch) => {
+      const { plane, environment } = declared(scratch, "claude");
+      const folder = join(environment.CHARTER_DATA_HOME, "profiles", "scenario", "config");
+      // Made by purlis before the wrap; the one place there this writes.
+      mkdirSync(join(folder, "debug"));
+      const said = execFileSync("claude", ["--session-id", "the-session"], {
+        encoding: "utf8",
+        env: {
+          PATH: environment.PATH,
+          CHARTER_ROOT: plane,
+          CHARTER_CHAT: "7",
+          CHARTER_FOOTER: "kept",
+          CLAUDE_CONFIG_DIR: folder,
+        },
+      }).trim();
+      expect(said).toBe("the run's harness");
+      const read = (name: string) => readFileSync(join(plane, ".charter", name), "utf8");
+      expect(read("scenario/footer-7")).toBe("kept");
+      expect(read("scenario-harness/session-7")).toBe("the-session");
+      expect(readFileSync(join(folder, "debug", "scenario-harness", "session-7"), "utf8")).toBe(
+        "the-session",
+      );
+    });
+  });
+
   it("runs the run's stand-in Claude Code instead while a spec has put one there", () => {
     on("linux", (scratch) => {
       const { environment } = declared(scratch, "claude");

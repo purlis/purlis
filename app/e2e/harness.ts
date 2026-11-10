@@ -11,13 +11,15 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  readlinkSync,
   renameSync,
   rmSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, dirname, join } from "node:path";
+import { basename, delimiter, dirname, join } from "node:path";
 import process from "node:process";
 import { LOGS } from "./processes.js";
 
@@ -309,9 +311,32 @@ export const A_TURN = "/scenario-turn";
  */
 export function aTurnIsWanted(plane: string, chat: string): void {
   const where = join(plane, ".charter", "scenario-harness");
-  mkdirSync(where, { recursive: true });
+  // Where a link sends it, made if it is not there yet (`THE_CHATS_MARKS`).
+  let linked: string | undefined;
+  try {
+    linked = readlinkSync(where);
+  } catch {
+    linked = undefined;
+  }
+  mkdirSync(linked ?? where, { recursive: true });
   writeFileSync(join(where, `turn-${chat}`), "");
 }
+
+/**
+ * **Where a profile's program writes down what it saw**, as a line of `sh` that sets `MARKS`:
+ * the plane's `.charter`, which a spec reads as `<plane>/.charter/scenario` and
+ * `<plane>/.charter/scenario-harness`. On Linux, where every sandboxed Claude Code chat runs
+ * inside purlis's wrap, on a sandbox-only profile (ADR 0067 as amended 2026-11-10), a chat on it
+ * writes its profile's config folder only where a turn writes, never the plane's `.charter`: it
+ * writes them under that folder's `debug`, where the plane's two names are links to them
+ * (`declareASandboxOnlyProfile`). Empty where neither is known.
+ */
+const THE_CHATS_MARKS = [
+  'MARKS=""',
+  '[ -n "${CHARTER_ROOT:-}" ] && MARKS="$CHARTER_ROOT/.charter"',
+  // Only where the plane links its names there, so a config folder of anyone else's is not written.
+  '[ -L "$MARKS/scenario-harness" ] && [ -n "${CLAUDE_CONFIG_DIR:-}" ] && [ -d "$CLAUDE_CONFIG_DIR/debug" ] && MARKS="$CLAUDE_CONFIG_DIR/debug"',
+].join("; ");
 
 export function writeShell(fakeHarness: string): string {
   const where = join(THE_RUNS_TREE, "shells");
@@ -322,8 +347,10 @@ export function writeShell(fakeHarness: string): string {
   // outside. Run by the fake harness after each play, it does nothing unless the spec asked
   // for a turn in this chat (`aTurnIsWanted`); the payload and `CLAUDE_PID` are a Claude Code's,
   // as `writeAPluginHookingShell`'s are, and its stdout is the harness's, never the pane's.
+  // Read where the profile's program writes down what it saw (`THE_CHATS_MARKS`).
   const theTurn = [
-    '[ ! -f "$CHARTER_ROOT/.charter/scenario-harness/turn-$CHARTER_CHAT" ] ||',
+    `${THE_CHATS_MARKS};`,
+    '[ ! -f "$MARKS/scenario-harness/turn-$CHARTER_CHAT" ] ||',
     `{ printf '{"session_id":"%s","hook_event_name":"UserPromptSubmit","prompt":"a turn"}'`,
     '"$CLAUDE_CODE_SESSION_ID"',
     `| CLAUDE_PID=$PPID ${singleQuoted(built("charter"))} hook userpromptsubmit >/dev/null; }`,
@@ -880,7 +907,7 @@ export function declareASandboxOnlyProfile(
   mkdirSync(dirname(wrapper), { recursive: true });
   writeFileSync(wrapper, theProfilesProgram(program));
   chmodSync(wrapper, 0o755);
-  const bin = join(`${plane}.programs`, "bin");
+  const bin = theSandboxOnlyProgramsOf(plane, harness);
   mkdirSync(bin, { recursive: true });
   const shim = join(bin, harness);
   const standIn = harness === "claude" ? join(theRunsStandIns(), "claude") : undefined;
@@ -900,6 +927,7 @@ export function declareASandboxOnlyProfile(
   chmodSync(shim, 0o755);
   const folder = join(dataHome, "profiles", "scenario", "config");
   mkdirSync(folder, { recursive: true, mode: 0o700 });
+  if (harness === "claude") theChatsMarksIn(plane, folder);
   const store = join(configHome, "charter");
   mkdirSync(store, { recursive: true, mode: 0o700 });
   writeFileSync(
@@ -919,6 +947,39 @@ export function declareASandboxOnlyProfile(
     { mode: 0o600 },
   );
   return bin;
+}
+
+/**
+ * The folder of programs a sandboxed chat of `harness` on the run's sandbox-only profile finds
+ * first on the app's `PATH`. Codex's is beside the plane. Claude Code's is beside the built
+ * binaries, one per run: a project that runs its chats in the full sandbox, the local project
+ * `first-task.e2e.ts` opens among them, starts no program in a folder a chat may write, and the
+ * run's tree is in the temporary folder every sandboxed chat may write (#1670,
+ * `theRunsStandIns`).
+ */
+function theSandboxOnlyProgramsOf(plane: string, harness: SandboxOnly): string {
+  if (harness === "codex") return join(`${plane}.programs`, "bin");
+  return join(built("e2e-sandbox-only"), basename(THE_RUNS_TREE), "bin");
+}
+
+/**
+ * Makes `<plane>/.charter/scenario` and `<plane>/.charter/scenario-harness`, where specs read
+ * what a profile's program saw, links to where a chat on the sandbox-only Claude Code profile
+ * whose config folder is `folder` writes them (`THE_CHATS_MARKS`). A name already there is kept.
+ */
+function theChatsMarksIn(plane: string, folder: string): void {
+  const state = join(plane, ".charter");
+  mkdirSync(state, { recursive: true });
+  for (const name of ["scenario", "scenario-harness"]) {
+    const at = join(state, name);
+    let there = true;
+    try {
+      lstatSync(at);
+    } catch {
+      there = false;
+    }
+    if (!there) symlinkSync(join(folder, "debug", name), at);
+  }
 }
 
 /**
@@ -953,10 +1014,12 @@ function theProfilesProgram(program: string): string {
     "# command and inherits this environment; the fake harness runs no such command, so this",
     "# file is how a scenario sees what a real one would have been started with. The chat's",
     "# own number keys it, so two chats in one run never write over each other.",
-    `if [ -n "\${CHARTER_ROOT:-}" ] && [ -n "\${CHARTER_CHAT:-}" ]; then`,
-    '  mkdir -p "$CHARTER_ROOT/.charter/scenario"',
+    "# Written where `THE_CHATS_MARKS` says.",
+    THE_CHATS_MARKS,
+    `if [ -n "$MARKS" ] && [ -n "\${CHARTER_CHAT:-}" ]; then`,
+    '  mkdir -p "$MARKS/scenario"',
     "  printf '%s' \"${CHARTER_FOOTER:-}\" \\",
-    '    > "$CHARTER_ROOT/.charter/scenario/footer-$CHARTER_CHAT"',
+    '    > "$MARKS/scenario/footer-$CHARTER_CHAT"',
     "fi",
     "# Charter starts a Claude Code chat under an id it chose (`--session-id <uuid>`),",
     "# and a report counts as that chat's harness speaking only if it names the SAME",
@@ -969,8 +1032,8 @@ function theProfilesProgram(program: string): string {
     "# `statusLine` those settings name, and the fake harness runs nothing, so the scenario",
     "# runs it itself — the command charter armed, with the environment this chat has.",
     `SEEN=""`,
-    `if [ -n "\${CHARTER_ROOT:-}" ] && [ -n "\${CHARTER_CHAT:-}" ]; then`,
-    '  SEEN="$CHARTER_ROOT/.charter/scenario-harness"',
+    `if [ -n "$MARKS" ] && [ -n "\${CHARTER_CHAT:-}" ]; then`,
+    '  SEEN="$MARKS/scenario-harness"',
     '  mkdir -p "$SEEN"',
     `  printf '%s' "\${CHARTER_HOOK_SOCKET:-}" > "$SEEN/socket-$CHARTER_CHAT"`,
     "  # The binary the bundled plugin's hooks run (`purlis_core::plugin::BINARY_ENV`).",
