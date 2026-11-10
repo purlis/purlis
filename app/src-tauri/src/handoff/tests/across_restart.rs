@@ -1468,7 +1468,41 @@ fn a_chat_with_a_shell_of_its_own(plane: &Plane) -> (Planes, PlaneId, Arc<Held>,
     let chat = a_chat_on_work(&held, &plane.root);
     let shell = waits_for_shells(plane, 1)[0];
     assert!(runs(shell), "precondition: its shell runs");
+    assert!(
+        leads_its_own_group(shell),
+        "precondition: its shell {shell} left the harness's group within {GONE_WITHIN:?}"
+    );
     (planes, id, held, chat, shell)
+}
+
+/// Whether `pid` has come to lead a process group of its own within [`GONE_WITHIN`]. The
+/// stand-in writes its shell's id as it forks it, before `setsid` has run in it: a stray noted
+/// in between is still in the harness's group, and is no stray (seen red on #5164).
+#[cfg(unix)]
+fn leads_its_own_group(pid: u32) -> bool {
+    let group = || {
+        purlis_core::forklock::output(std::process::Command::new("ps").args([
+            "-o",
+            "pgid=",
+            "-p",
+            &pid.to_string(),
+        ]))
+        .ok()
+        .and_then(|listed| {
+            String::from_utf8_lossy(&listed.stdout)
+                .trim()
+                .parse::<u32>()
+                .ok()
+        })
+    };
+    let until = std::time::Instant::now() + GONE_WITHIN;
+    while std::time::Instant::now() < until {
+        if group() == Some(pid) {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    false
 }
 
 #[cfg(unix)]
@@ -1626,53 +1660,21 @@ fn a_shell_left_by_a_harness_hung_up_on_from_outside_ends_with_it() {
     let _cleanup = LeavesNoShell(&plane);
     let (planes, id, held, chat, shell) = a_chat_with_a_shell_of_its_own(&plane);
     its_tool_says_it_started_its_shell(&held, chat);
-    // TEMPORARY (#2786 diagnosis): noted straight on its sessions, past the hook's route.
-    held.chats().sessions().note_strays(chat);
-    std::thread::sleep(NOTED_WITHIN);
     let harness = held
         .chats()
         .sessions()
         .process_id(chat)
         .expect("its harness runs");
-    // TEMPORARY (#2786 diagnosis): the process tree as the shell is noted.
-    let mut diag = format!("harness={harness} shell={shell}\n");
-    if let Ok(ps) = purlis_core::forklock::output(
-        std::process::Command::new("ps").args(["-eo", "pid,ppid,pgid,sid,stat,args"]),
-    ) {
-        diag.push_str(&String::from_utf8_lossy(&ps.stdout));
-    }
-    for name in ["cmdline", "status"] {
-        let read = std::fs::read(format!("/proc/{harness}/{name}")).unwrap_or_default();
-        let read = String::from_utf8_lossy(&read).replace('\0', " ");
-        diag.push_str("harness ");
-        diag.push_str(name);
-        diag.push_str(": ");
-        diag.push_str(&read);
-        diag.push('\n');
-    }
 
     let sent = purlis_core::forklock::status(
         std::process::Command::new("/bin/kill").args(["-HUP", &harness.to_string()]),
     )
     .expect("kill runs");
     assert!(sent.success(), "the hangup is sent");
-    // TEMPORARY (#2786 diagnosis): what is left 3s after the hangup.
-    std::thread::sleep(std::time::Duration::from_secs(3));
-    diag.push_str("AFTER HUP:\n");
-    if let Ok(ps) = purlis_core::forklock::output(
-        std::process::Command::new("ps").args(["-eo", "pid,ppid,pgid,sid,stat,args"]),
-    ) {
-        for line in String::from_utf8_lossy(&ps.stdout).lines() {
-            if line.contains("sleep 600") || line.contains("claude-with") {
-                diag.push_str(line);
-                diag.push('\n');
-            }
-        }
-    }
 
     assert!(
         goes(shell),
-        "the shell {shell} of a harness hung up on from outside still runs {GONE_WITHIN:?} after\nDIAG {diag}"
+        "the shell {shell} of a harness hung up on from outside still runs {GONE_WITHIN:?} after"
     );
     planes.close(&id).expect("it closes");
 }
