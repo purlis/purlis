@@ -538,12 +538,6 @@ pub const KNOWS_NOTE_STRAYS: Version = Version {
     minor: 80,
 };
 
-/// The version that first says the skills a chat it composed started without (#2977).
-pub const KNOWS_SKILLS_NOT_THERE: Version = Version {
-    major: 1,
-    minor: 81,
-};
-
 /// The version that first signs a profile in over the desktop's link to its runner
 /// ([`Command::StartSignIn`]): none is asked of a host before.
 pub const KNOWS_SIGN_IN_OVER_THE_LINK: Version = Version {
@@ -2334,7 +2328,7 @@ pub enum Answer {
         armed_skills: Option<Box<Vec<ArmedSkill>>>,
         /// The skills its persona names that it started without there, where the host composed
         /// it and some are missing (1.81, #2977): absent where none is, for a launch the window
-        /// composed, and from a host before 1.80.
+        /// composed, and from a host before 1.81.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         skills_not_there: Option<Box<SkillsNotThere>>,
     },

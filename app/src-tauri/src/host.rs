@@ -192,7 +192,7 @@ pub struct Composed {
     /// The skills the host armed it with, by name and level (1.77, #4218): `None` from a host
     /// before 1.77, which does not say them.
     pub armed_skills: Option<Vec<purlis_session_protocol::session::ArmedSkill>>,
-    /// The skills its persona names that it started without on the host's machine (1.80,
+    /// The skills its persona names that it started without on the host's machine (1.81,
     /// #2977): `None` where none is, and from a host before 1.81, which does not say them.
     pub skills_not_there: Option<purlis_session_protocol::session::SkillsNotThere>,
     /// The runner it started on, as `<pool>/<runner>` where its link names the runner, or its

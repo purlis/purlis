@@ -75,8 +75,8 @@ describe("a chat's missing skills", () => {
     const there = { ...MISSING, runner: "builds/builds-1" };
     expect(missingSays("This chat", there)).toBe(
       "This chat started without 2 skills ops names, not installed on runner builds/builds-1: " +
-        "superpowers:tdd, langfuse. ops names 1 built-in skill purlis on runner " +
-        "builds/builds-1 does not have: purlis:gone.",
+        "superpowers:tdd, langfuse. ops names 1 built-in skill purlis does not have on " +
+        "runner builds/builds-1: purlis:gone.",
     );
     expect(missingSays("This chat", { ...MISSING, no_built_in: [], runner: "" })).toBe(
       "This chat started without 2 skills ops names, not installed on its runner: " +

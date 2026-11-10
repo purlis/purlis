@@ -8,7 +8,7 @@ its set "through the same adapter, built from the same plane files". This note s
 session protocol carries the runner's check. The amendments above are left as accepted, and this
 note adds to them. The choices in items 2 and 3 are *decided in implementation, to be confirmed*.
 
-1. **Session protocol 1.81, a minor** (`KNOWS_SKILLS_NOT_THERE`). `program_started` may carry
+1. **Session protocol 1.81, a minor**, adding a field to an answer, so no `KNOWS_*` gate. `program_started` may carry
    `skills_not_there: {missing?, no_built_in?}`: the harness skills the chat's persona names that
    its harness does not have on the host's machine, and the built-in skills the host's purlis has
    none of, each as the persona's `skills:` list writes it. Names alone, each list at most
