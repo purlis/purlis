@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794290915733,
+  "lastUpdate": 1794294045618,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -45654,6 +45654,48 @@ window.BENCHMARK_DATA = {
             "value": 102.40789850000002,
             "unit": "ms",
             "extra": "median of 5 runs: 99.816, 101.002, 102.408, 102.861, 103.469 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "32dca4ea10f9885dbda59a5ad6162670cbe235bf",
+          "message": "Should know: a failure, or a long finish while away, notifies (#6005) (#6099)\n\n* Should know: a task of the person's that fails, or finishes long after while they are away, notifies (#6005)\n\nADR 0121 decision 3. asknotify's Rules::ended reads each project's ended\ntasks off their dispatch records (finished::finishes) on every pass the\nnotifier already makes, baselines what had ended at a project's first read,\nand tells:\n\n- a failure of a task the person asked for, naming it, its project and the\n  first line of its report;\n- a finish after more than notifications.finishedAfter minutes of work (5 by\n  default, in the layout file) while no purlis window is in front.\n\nA task a chat dispatched reports to that chat (#6036) and notifies nobody.\nNothing else in Updates notifies. While Quiet these are held and counted in\nthe one notification afterwards. A click carries the task's Update key on\nthe landing, and the window opens Updates with that line read in place\n(#5651).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71Q7N9A3K3X7MET87Z40WX9\nPurlis-Persona: steward\n\n* Changelog fragment: Should know notifications (#6005)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71Q7N9A3K3X7MET87Z40WX9\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T06:09:26Z",
+          "tree_id": "2ecfeffd598fea82290343d2380223e81e9249cf",
+          "url": "https://github.com/purlis/purlis/commit/32dca4ea10f9885dbda59a5ad6162670cbe235bf"
+        },
+        "date": 1794294037602,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5453885,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.541, 0.543, 0.545, 0.554, 0.555 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2969455,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.234, 16.277, 16.297, 16.355, 16.817 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.1450735,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.141, 100.630, 101.145, 101.424, 102.081 ms"
           }
         ]
       }
