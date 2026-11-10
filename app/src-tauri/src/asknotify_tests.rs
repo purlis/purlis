@@ -101,6 +101,7 @@ fn a_new_ask_is_one_notification_naming_who_asks_its_project_and_what_kind() {
             chats: vec![(ide, 3)],
             title: "steward 12 › chat 3".to_owned(),
             body: "smart-ide: Asks your permission".to_owned(),
+            update: None,
         })]
     );
 }
@@ -213,6 +214,7 @@ fn three_chats_asking_together_are_one_notification_naming_them_that_lands_on_th
             chats: vec![(a.clone(), 3), (a.clone(), 4), (a, 5)],
             title: "3 chats need you".to_owned(),
             body: "a: steward 3, devops 4 and builder 5".to_owned(),
+            update: None,
         })]
     );
 }
@@ -786,6 +788,7 @@ fn a_click_lands_in_each_project_a_notification_counts_on_its_first_chat_there()
         chats: vec![(b.clone(), 4), (a.clone(), 3), (b.clone(), 2)],
         title: String::new(),
         body: String::new(),
+        update: None,
     };
     let landed: Vec<(PlaneId, u32, Vec<u32>)> = landings(&notice)
         .into_iter()
@@ -1020,4 +1023,217 @@ fn a_reopen_whose_notified_project_no_window_holds_brings_back_the_main_window()
         brought_back(latest.plane().as_ref(), |_| None),
         crate::windows::MAIN
     );
+}
+
+// **Should know** (#6005, ADR 0121 decision 3): a task of the person's own that fails notifies,
+// and so does one that finishes after a long while with the person away; nothing else does.
+
+/// A task that ended: dispatch `id`, asked for from chat `session`, which worked `minutes`.
+fn finish(id: &str, session: u32, failed: bool, minutes: u64) -> Finish {
+    Finish {
+        id: id.to_owned(),
+        session,
+        name: format!("task {id}"),
+        failed,
+        by_person: true,
+        worked: Duration::from_secs(minutes * 60),
+        report: "cargo test failed: 3 tests\nthread 'main' panicked at src/lib.rs".to_owned(),
+    }
+}
+
+/// What `rules` does for the tasks of `plane` that stand ended now, nobody looking, with the
+/// person `away` or not and five minutes as a long finish.
+fn ended(rules: &mut Rules, plane: &PlaneId, finishes: &[Finish], away: bool) -> Vec<Act> {
+    rules.ended(&Ended {
+        plane,
+        finishes,
+        long: Duration::from_secs(5 * 60),
+        away,
+        looking: NOBODY_LOOKS,
+        quiet: false,
+    })
+}
+
+#[test]
+fn a_task_of_the_person_s_that_fails_notifies_naming_it_its_project_and_its_first_line() {
+    let mut rules = Rules::default();
+    let ide = plane("/work/smart-ide");
+    assert!(ended(&mut rules, &ide, &[], false).is_empty());
+    let failed = finish("01F", 3, true, 1);
+    let notice = only_shown(&ended(&mut rules, &ide, &[failed], false));
+    assert_eq!(notice.title, "task 01F");
+    assert_eq!(notice.body, "smart-ide: Failed: cargo test failed: 3 tests");
+    assert_eq!(notice.chats, vec![(ide, 3)]);
+    assert_eq!(notice.update.as_deref(), Some("task:01F"));
+}
+
+#[test]
+fn a_task_that_finishes_after_more_than_five_minutes_while_the_person_is_away_notifies() {
+    let mut rules = Rules::default();
+    let ide = plane("/work/smart-ide");
+    assert!(ended(&mut rules, &ide, &[], true).is_empty());
+    let long = finish("01L", 4, false, 12);
+    let notice = only_shown(&ended(&mut rules, &ide, std::slice::from_ref(&long), true));
+    assert_eq!(notice.title, "task 01L");
+    assert_eq!(notice.body, "smart-ide: Finished after 12 minutes");
+    assert_eq!(notice.chats, vec![(ide.clone(), 4)]);
+    assert_eq!(notice.update.as_deref(), Some("task:01L"));
+    // Read again, it is not told again.
+    assert!(ended(&mut rules, &ide, &[long], true).is_empty());
+}
+
+#[test]
+fn a_finish_within_five_minutes_or_with_the_window_in_front_is_silent() {
+    let mut rules = Rules::default();
+    let ide = plane("/a");
+    assert!(ended(&mut rules, &ide, &[], true).is_empty());
+    assert!(ended(&mut rules, &ide, &[finish("short", 1, false, 5)], true).is_empty());
+    assert!(ended(&mut rules, &ide, &[finish("seen", 1, false, 30)], false).is_empty());
+}
+
+#[test]
+fn a_task_a_chat_dispatched_reports_to_that_chat_and_notifies_nobody_even_when_it_fails() {
+    let mut rules = Rules::default();
+    let ide = plane("/a");
+    assert!(ended(&mut rules, &ide, &[], true).is_empty());
+    let mut failed = finish("chat-asked", 2, true, 30);
+    failed.by_person = false;
+    let mut long = finish("chat-asked-long", 2, false, 30);
+    long.by_person = false;
+    assert!(ended(&mut rules, &ide, &[failed, long], true).is_empty());
+}
+
+#[test]
+fn what_had_ended_before_a_project_was_first_read_is_never_told() {
+    let mut rules = Rules::default();
+    let ide = plane("/a");
+    let before = [
+        finish("old-fail", 1, true, 1),
+        finish("old-long", 1, false, 40),
+    ];
+    assert!(ended(&mut rules, &ide, &before, true).is_empty());
+    assert!(ended(&mut rules, &ide, &before, true).is_empty());
+}
+
+#[test]
+fn a_failure_in_the_chat_the_person_is_looking_at_is_not_told() {
+    let mut rules = Rules::default();
+    let ide = plane("/a");
+    let looking: &dyn Fn(u32) -> bool = &|session| session == 3;
+    let mut read = |finishes: &[Finish]| {
+        rules.ended(&Ended {
+            plane: &ide,
+            finishes,
+            long: FINISHED_AFTER,
+            away: false,
+            looking,
+            quiet: false,
+        })
+    };
+    assert!(read(&[]).is_empty());
+    assert!(read(&[finish("here", 3, true, 1)]).is_empty());
+    assert_eq!(shown(&read(&[finish("there", 4, true, 1)])).len(), 1);
+}
+
+/// [`ended`], while Quiet.
+fn ended_quiet(rules: &mut Rules, plane: &PlaneId, finishes: &[Finish]) -> Vec<Act> {
+    rules.ended(&Ended {
+        plane,
+        finishes,
+        long: FINISHED_AFTER,
+        away: true,
+        looking: NOBODY_LOOKS,
+        quiet: true,
+    })
+}
+
+#[test]
+fn while_quiet_finishes_and_failures_are_held_and_counted_in_the_one_notification_after() {
+    let mut rules = Rules::default();
+    let a = plane("/a");
+    assert!(ended(&mut rules, &a, &[], true).is_empty());
+    assert!(quiet_at(&mut rules, true, 1_000, true).0.is_empty());
+    let three = [
+        finish("f1", 3, false, 20),
+        finish("f2", 4, false, 9),
+        finish("x1", 5, true, 1),
+    ];
+    assert!(ended_quiet(&mut rules, &a, &three).is_empty());
+    let (acts, _) = quiet_at(&mut rules, false, 1_120, true);
+    let after = only_shown(&acts);
+    assert_eq!(after.title, "While you were quiet: 2 finished, 1 failed");
+    assert_eq!(after.body, "a: task f1, task f2 and task x1");
+    assert_eq!(after.update.as_deref(), Some("task:f1"));
+    // Told once.
+    assert!(quiet_at(&mut rules, false, 1_180, true).0.is_empty());
+    assert!(ended(&mut rules, &a, &three, true).is_empty());
+}
+
+#[test]
+fn quiet_ending_with_asks_and_finishes_held_is_still_one_notification_counting_both() {
+    let mut rules = Rules::default();
+    let a = plane("/a");
+    let start = Instant::now();
+    assert!(ended(&mut rules, &a, &[], true).is_empty());
+    assert!(quiet_at(&mut rules, true, 1_000, true).0.is_empty());
+    assert!(heard_quiet(&mut rules, &a, &[named(3, "p1", "steward 3")], start, true).is_empty());
+    assert!(ended_quiet(&mut rules, &a, &[finish("x1", 5, true, 1)]).is_empty());
+    let (acts, _) = quiet_at(&mut rules, false, 1_120, true);
+    let after = only_shown(&acts);
+    assert_eq!(
+        after.title,
+        "While you were quiet: 1 chat needs you, 1 failed"
+    );
+}
+
+#[test]
+fn quiet_ending_with_the_person_at_the_window_tells_no_finish_and_leaves_them_to_the_summary() {
+    let mut rules = Rules::default();
+    let a = plane("/a");
+    assert!(ended(&mut rules, &a, &[], true).is_empty());
+    assert!(quiet_at(&mut rules, true, 1_000, true).0.is_empty());
+    assert!(ended_quiet(&mut rules, &a, &[finish("x1", 5, true, 1)]).is_empty());
+    assert!(quiet_at(&mut rules, false, 1_120, false).0.is_empty());
+}
+
+#[test]
+fn a_long_finish_is_five_minutes_unless_the_layout_says_another_whole_number_of_them() {
+    let of = |document: serde_json::Value| finished_after_of_layout(&document);
+    assert_eq!(of(serde_json::json!({})), FINISHED_AFTER);
+    assert_eq!(FINISHED_AFTER, Duration::from_secs(300));
+    assert_eq!(
+        of(serde_json::json!({"notifications": {"finishedAfter": 12}})),
+        Duration::from_secs(12 * 60)
+    );
+    for not_one in [
+        serde_json::json!({"notifications": {"finishedAfter": 0}}),
+        serde_json::json!({"notifications": {"finishedAfter": -3}}),
+        serde_json::json!({"notifications": {"finishedAfter": 2.5}}),
+        serde_json::json!({"notifications": {"finishedAfter": "10"}}),
+    ] {
+        assert_eq!(of(not_one), FINISHED_AFTER);
+    }
+}
+
+#[test]
+fn a_click_on_a_finish_s_notification_lands_on_its_line_in_updates() {
+    let mut rules = Rules::default();
+    let a = plane("/a");
+    assert!(ended(&mut rules, &a, &[], false).is_empty());
+    let notice = only_shown(&ended(&mut rules, &a, &[finish("01F", 3, true, 1)], false));
+    let landed: Vec<(PlaneId, u32, Option<String>)> = landings(&notice)
+        .into_iter()
+        .map(|landing| (landing.plane, landing.session, landing.update))
+        .collect();
+    assert_eq!(landed, vec![(a, 3, Some("task:01F".to_owned()))]);
+}
+
+#[test]
+fn a_project_let_go_of_and_held_again_tells_nothing_of_what_ended_meanwhile() {
+    let mut rules = Rules::default();
+    let a = plane("/a");
+    assert!(ended(&mut rules, &a, &[], true).is_empty());
+    let _ = rules.forget(&a);
+    let meanwhile = [finish("while-closed", 1, true, 1)];
+    assert!(ended(&mut rules, &a, &meanwhile, true).is_empty());
 }

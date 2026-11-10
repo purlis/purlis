@@ -974,6 +974,7 @@ export const PlaneView = memo(function PlaneView({
   questions,
   inboxAsked,
   inboxGroup,
+  inboxUpdate,
   elsewhere,
   windowLines,
   profileNames,
@@ -1071,6 +1072,9 @@ export const PlaneView = memo(function PlaneView({
   /** The chat whose group that Inbox opens at, where one was asked for: the one a clicked
    *  notification was about (#1694, I-7). */
   inboxGroup?: number;
+  /** The task's line in Updates that Inbox opens at instead, read in place, where a clicked
+   *  notification was about a task that ended (#6005). */
+  inboxUpdate?: string;
   /** What its Inbox lists that its asks registry cannot see (#1695): chats waiting in other
    *  windows, and chats that cannot say they wait. */
   elsewhere?: Elsewhere;
@@ -5377,15 +5381,28 @@ export const PlaneView = memo(function PlaneView({
   const inboxHandled = useRef(inboxAsked);
   /** `goToAsking`, which is declared further down. */
   const goingToAsking = useRef<(session: number) => void>(undefined);
+  /** The line a clicked notification opens in Updates, and the ask it came with (#6005). */
+  const openedUpdate = useMemo(
+    () =>
+      inboxUpdate === undefined || inboxAsked === undefined
+        ? undefined
+        : { key: inboxUpdate, at: inboxAsked },
+    [inboxUpdate, inboxAsked],
+  );
   useEffect(() => {
     if (inboxAsked === undefined || inboxHandled.current === inboxAsked) return;
     inboxHandled.current = inboxAsked;
+    // A notification about a task that ended opens its line in Updates, read in place.
+    if (inboxUpdate !== undefined) {
+      showSideView("updates");
+      return;
+    }
     if (inboxGroup !== undefined) goingToAsking.current?.(inboxGroup);
     showSideView("asks");
     // After the view has given its first stop the keyboard: the group's first ask takes it.
     // Through a scope that leaves its chat out, which widens for it (qw359).
     if (inboxGroup !== undefined) requestAnimationFrame(() => landOnGroupIn(plane, inboxGroup));
-  }, [inboxAsked, inboxGroup, plane, showSideView]);
+  }, [inboxAsked, inboxGroup, inboxUpdate, plane, showSideView]);
   /** Whether this project's Asks is open on screen, told to the core: no notification is sent
    *  about what the person is reading (#1694, I-7; #5644). */
   const asksShown = arrangement.some(
@@ -11363,6 +11380,7 @@ export const PlaneView = memo(function PlaneView({
     });
     return {
       rows,
+      opened: openedUpdate,
       // The lines of the list shown (#5646): Mine's or Project's, never the other's.
       onMarkAllRead: (keys: readonly string[]) => settleUpdates(keys, "read"),
       onDismissAll: (keys: readonly string[]) => {
@@ -11406,6 +11424,7 @@ export const PlaneView = memo(function PlaneView({
     press,
     asksOfChat,
     ignoreForUpdate,
+    openedUpdate,
   ]);
   /** Asks, shown (#5644): where a vault's request and a profile's sign-in wait. */
   const showInbox = useCallback(() => showSideView("asks"), [showSideView]);

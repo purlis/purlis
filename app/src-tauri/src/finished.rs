@@ -230,6 +230,66 @@ pub(crate) fn listed(held: &Held) -> Vec<FinishedTask> {
         .collect()
 }
 
+/// **A task that ended, as Should know reads it for a notification** (#6005), asked for from
+/// chat `session`: who asked, how long it worked, and whether it came to nothing (as
+/// `taskBuckets.ts` counts a failure). How long it worked is the app's clock (`worked`,
+/// #1512), or from its start to its end where that never said. None for one that has not
+/// ended, or is no task.
+pub(crate) fn finish_of(record: &Record, session: u32) -> Option<crate::asknotify::Finish> {
+    let how = Finished::of(record)?;
+    let failed = record.did_not_start
+        || matches!(
+            how,
+            Finished::Failed
+                | Finished::Blocked
+                | Finished::EndedWithoutAReport
+                | Finished::FromItsLastMessage
+        );
+    let worked = if record.worked > 0 {
+        record.worked
+    } else {
+        let at = |stamp: &str| chrono::DateTime::parse_from_rfc3339(stamp).ok();
+        record
+            .ended
+            .as_deref()
+            .and_then(at)
+            .zip(at(&record.started))
+            .and_then(|(ended, started)| u64::try_from((ended - started).num_seconds()).ok())
+            .unwrap_or(0)
+    };
+    Some(crate::asknotify::Finish {
+        id: record.id.clone(),
+        session,
+        name: name_of(record),
+        failed,
+        by_person: record.asker.by_person,
+        worked: std::time::Duration::from_secs(worked),
+        // Masked (#1872): a secret in a report is not shown back, here either.
+        report: record
+            .report
+            .as_ref()
+            .map(|report| dispatchrecord::masked(&report.text))
+            .unwrap_or_default(),
+    })
+}
+
+/// **Every task of the project that stands ended**, as Should know reads them (#6005): each by
+/// the chat that asked for it, where that chat is open, and by the number its record has of it
+/// otherwise.
+pub(crate) fn finishes(held: &Held) -> Vec<crate::asknotify::Finish> {
+    let open = crate::dispatches::open_chats(held);
+    dispatchrecord::finished(held.root(), |_| false)
+        .iter()
+        .filter_map(|record| {
+            let session = open
+                .iter()
+                .find(|one| is_open(&record.asker.chat, one))
+                .map_or(record.asker.chat.chat, |one| one.session);
+            finish_of(record, session)
+        })
+        .collect()
+}
+
 /// The number `record`'s task chat had when it ended, where it ended in this launch under the
 /// chat now numbered `asker`: the ledger's own memory of the tasks that closed in this launch
 /// says whether that number is still this task's.

@@ -4,10 +4,11 @@
 /**
  * **The window's half of the asks' system notifications** (#1694, spec #1688, I-7; #1989).
  *
- * The core decides what is sent (`asknotify.rs`): only a Blocking ask raises a notification,
- * never an update; a chat has one, updated in place; a burst of chats shares one; and nothing
- * is sent while the person is looking, at the chat itself or at Asks in the window in front. Two things only the
- * window knows, and it says them here:
+ * The core decides what is sent (`asknotify.rs`): a Blocking ask raises a notification, and of
+ * the updates only a task of the person's that failed, or finished after a long while with them
+ * away (#6005), whose click opens its line in Updates; a chat has one, updated in place; a burst
+ * of chats shares one; and nothing is sent while the person is looking, at the chat itself or at
+ * Asks in the window in front. Two things only the window knows, and it says them here:
  *
  * - **whether a project's Inbox is open** ({@link useInboxOpenTold}), which the core reads with
  *   whether that window is focused and has the project in front;
@@ -28,14 +29,17 @@ import { listen } from "./here";
 export const ASKS_NOTIFIED = "asks-notified";
 
 /** Where a notification lands: a project's Inbox, at the group of `session`, the first chat
- *  it counted, or of the first of `sessions` (every chat it counted, in order) still waiting. */
-export type Landing = { plane: string; session: number; sessions?: number[] };
+ *  it counted, or of the first of `sessions` (every chat it counted, in order) still waiting.
+ *  One about a task that ended (#6005) names its line in Updates, `update`, which opens there
+ *  read in place (#5651). */
+export type Landing = { plane: string; session: number; sessions?: number[]; update?: string };
 
 const isLanding = (said: unknown): said is Landing => {
   if (typeof said !== "object" || said === null) return false;
-  const { plane, session, sessions } = said as Record<string, unknown>;
+  const { plane, session, sessions, update } = said as Record<string, unknown>;
   return (
     typeof plane === "string" &&
+    (update === undefined || typeof update === "string") &&
     Number.isInteger(session) &&
     (sessions === undefined ||
       (Array.isArray(sessions) && sessions.every((one) => Number.isInteger(one))))
