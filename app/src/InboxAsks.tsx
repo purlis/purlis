@@ -82,6 +82,7 @@ export const ALLOW_OR_KEEP: ReadonlySet<Shown["source"]> = new Set<Shown["source
   "run-grant",
   "secret-fill",
   "vault",
+  "sandbox-expects",
 ]);
 
 /** What one ask's row offers, decided once for its stops and its drawing. */
@@ -221,6 +222,9 @@ export const DECISIONS: ReadonlySet<Shown["source"]> = new Set<Shown["source"]>(
   "sandbox-local",
   "browser",
   "browser-site",
+  // What the project expects of this machine, and a command's confirmation (#6000).
+  "sandbox-expects",
+  "confirmation",
 ]);
 
 /** What a decision of each kind asks, as its row's title: a question. */
@@ -232,6 +236,8 @@ const QUESTION: Partial<Record<Shown["source"], string>> = {
   "sandbox-local": "Allow reaching this service?",
   browser: "Let its browser reach this?",
   "browser-site": "Let its browser reach this site?",
+  "sandbox-expects": "Allow what this project expects?",
+  confirmation: "Confirm what this command asks?",
 };
 
 /** **The question a decision asks** (#5998), named as the person reads it: a run grant names
@@ -437,6 +443,8 @@ export const SOURCE_SAID: Record<Shown["source"], string> = {
   terminal: "In its terminal",
   question: "Waiting on your reply",
   "task-question": "Asks you, through its asking chat",
+  "sandbox-expects": "Asks you to allow what this project expects",
+  confirmation: "A command waits on your confirmation",
 };
 
 /** Why a task's question reached the person, as its row says it. */

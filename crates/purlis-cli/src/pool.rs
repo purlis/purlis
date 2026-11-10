@@ -284,7 +284,7 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
 }
 
 /// The project whose folder this runs in, if it runs in one.
-fn project_here() -> Option<std::path::PathBuf> {
+pub(crate) fn project_here() -> Option<std::path::PathBuf> {
     std::env::current_dir()
         .ok()
         .and_then(|cwd| purlis_core::plane::find_root(&cwd).ok())
@@ -326,13 +326,26 @@ fn below_a_chat() -> Result<bool, String> {
 fn taken_off(config: &std::path::Path, pool: &str, name: &str) -> Result<Option<String>, String> {
     use purlis_core::windowline;
     let code = windowline::a_new_code();
-    windowline::taken_off(config, pool, name, &code, |asked| {
+    let project = project_here();
+    windowline::taken_off(config, project.as_deref(), pool, name, &code, |asked| {
         crate::voice::info(format!(
             "Confirm taking '{name}' off pool {pool} in the purlis window, if it shows the code \
              {code}…"
         ));
+        crate::voice::info(waiting_on_the_window(project.as_deref()));
         windowline::ask(asked)
     })
+}
+
+/// **Where the person answers a confirmation this command waits on** (#6000, ADR 0121 decision
+/// 16): Asks, under the project it runs in where it runs in one, for as long as the window waits.
+#[cfg(unix)]
+pub(crate) fn waiting_on_the_window(project: Option<&std::path::Path>) -> String {
+    let within = purlis_core::windowline::THE_PERSON_HAS;
+    project.map_or_else(
+        || purlis_core::askwait::waiting_said_in_the_window(within),
+        |root| purlis_core::askwait::waiting_said(root, within),
+    )
 }
 
 /// A runner is never Windows, and no window line reaches one from there.
