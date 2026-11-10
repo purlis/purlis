@@ -1355,6 +1355,11 @@ fn a_plane_whose_harness_leaves_a_shell() -> Plane {
 
 /// [`a_plane_whose_harness_leaves_a_shell`], whose stand-in does `then` once its shell runs,
 /// in place of staying. `@RUNS@` in `then` is the plane's `runs` folder, quoted.
+///
+/// Asked `auth status`, the stand-in starts no shell and answers as [`Plane::new`]'s does. On a
+/// sandbox-only profile ([`super::ran_on_a_sandbox_only_stand_in`]) purlis asks the profile's
+/// harness that before a chat starts, outside any chat: a shell started then is no chat's, and
+/// a test that took it for the chat's would wait for it to end with a chat it never belonged to.
 #[cfg(unix)]
 fn a_plane_whose_harness_leaves_a_shell_then(then: &str) -> Plane {
     let plane = Plane::new();
@@ -1364,6 +1369,7 @@ fn a_plane_whose_harness_leaves_a_shell_then(then: &str) -> Plane {
         "claude-with-a-shell",
         &format!(
             "#!/bin/sh\n\
+             [ \"$1\" = auth ] && exec sleep 10\n\
              perl -e 'use POSIX (); POSIX::setsid() or die; my ($at, $to) = splice @ARGV, 0, 2; \
              open my $id, q(>), $at or die; print $id $$; close $id or die; \
              rename $at, $to or die; exec @ARGV or die' \
@@ -1461,7 +1467,6 @@ fn a_chat_with_a_shell_of_its_own(plane: &Plane) -> (Planes, PlaneId, Arc<Held>,
     let held = planes.held(&id).expect("held");
     let chat = a_chat_on_work(&held, &plane.root);
     let shell = waits_for_shells(plane, 1)[0];
-    diag(plane, &held, chat, "shell started");
     assert!(runs(shell), "precondition: its shell runs");
     (planes, id, held, chat, shell)
 }
@@ -1544,19 +1549,6 @@ fn a_shell_a_chat_started_in_a_session_of_its_own_ends_when_the_next_host_settle
     planes.close(&id).expect("it closes");
 }
 
-/// **Whether a #5806 test of a chat's leftover shell has nothing proven to run on here**: where
-/// purlis wraps a Claude Code chat (Linux), whose sandboxed chat runs inside the wrap on a
-/// sandbox-only profile (ADR 0067 as amended 2026-11-10). Run there on such a profile
-/// ([`super::ran_on_a_sandbox_only_stand_in`]) the shell outlived its harness, and in the
-/// hang-up test no harness was running by the time the test sent the signal: in CI on #6137,
-/// in each of the three tests that call this, retries included. Whether that is the wrap or
-/// the stray listing is not yet known, so these are checked on every other system until it is.
-#[cfg(unix)]
-#[allow(dead_code)]
-fn a_wrapped_chat_s_leftover_shell_is_not_proven_here() -> bool {
-    crate::sandboxing::claude_is_wrapped_here_for_tests()
-}
-
 /// A stand-in's end: it waits for its plane's `runs/go`, then exits on its own.
 #[cfg(unix)]
 const LETS_GO_THEN_EXITS: &str = "while [ ! -e @RUNS@/go ]; do sleep 0.05; done; exit 0";
@@ -1590,6 +1582,8 @@ fn its_tool_says_it_started_its_shell(held: &Held, chat: u32) {
 #[cfg(unix)]
 #[test]
 fn a_shell_left_by_a_harness_that_exits_on_its_own_ends_with_it_and_stays_gone_across_the_quit() {
+    // Where purlis wraps a Claude Code chat, inside that wrap, on a sandbox-only profile, as a
+    // sandboxed chat runs there (ADR 0067 as amended 2026-11-10).
     if super::ran_on_a_sandbox_only_stand_in() {
         return;
     }
@@ -1599,11 +1593,8 @@ fn a_shell_left_by_a_harness_that_exits_on_its_own_ends_with_it_and_stays_gone_a
     let _cleanup = LeavesNoShell(&plane);
     let (planes, id, held, chat, shell) = a_chat_with_a_shell_of_its_own(&plane);
     its_tool_says_it_started_its_shell(&held, chat);
-    diag(&plane, &held, chat, "noted");
 
     std::fs::write(plane.root.join("runs").join("go"), "").expect("the harness is let go");
-    std::thread::sleep(std::time::Duration::from_secs(1));
-    diag(&plane, &held, chat, "let go");
 
     assert!(
         goes(shell),
@@ -1626,6 +1617,8 @@ fn a_shell_left_by_a_harness_that_exits_on_its_own_ends_with_it_and_stays_gone_a
 #[cfg(unix)]
 #[test]
 fn a_shell_left_by_a_harness_hung_up_on_from_outside_ends_with_it() {
+    // Where purlis wraps a Claude Code chat, inside that wrap, on a sandbox-only profile, as a
+    // sandboxed chat runs there (ADR 0067 as amended 2026-11-10).
     if super::ran_on_a_sandbox_only_stand_in() {
         return;
     }
@@ -1633,7 +1626,6 @@ fn a_shell_left_by_a_harness_hung_up_on_from_outside_ends_with_it() {
     let _cleanup = LeavesNoShell(&plane);
     let (planes, id, held, chat, shell) = a_chat_with_a_shell_of_its_own(&plane);
     its_tool_says_it_started_its_shell(&held, chat);
-    diag(&plane, &held, chat, "noted");
     let harness = held
         .chats()
         .sessions()
@@ -1659,6 +1651,8 @@ fn a_shell_left_by_a_harness_hung_up_on_from_outside_ends_with_it() {
 #[cfg(unix)]
 #[test]
 fn noting_a_chat_s_strays_ends_nothing_that_is_not_its_harness_s() {
+    // Where purlis wraps a Claude Code chat, inside that wrap, on a sandbox-only profile, as a
+    // sandboxed chat runs there (ADR 0067 as amended 2026-11-10).
     if super::ran_on_a_sandbox_only_stand_in() {
         return;
     }
@@ -1670,11 +1664,8 @@ fn noting_a_chat_s_strays_ends_nothing_that_is_not_its_harness_s() {
     );
     let (planes, id, held, chat, shell) = a_chat_with_a_shell_of_its_own(&plane);
     its_tool_says_it_started_its_shell(&held, chat);
-    diag(&plane, &held, chat, "noted");
 
     std::fs::write(plane.root.join("runs").join("go"), "").expect("the harness is let go");
-    std::thread::sleep(std::time::Duration::from_secs(1));
-    diag(&plane, &held, chat, "let go");
 
     assert!(goes(shell), "precondition: the harness's own shell goes");
     assert!(
@@ -2355,78 +2346,4 @@ fn after_the_lapse_a_move_goes_ahead_and_the_moved_chat_is_told_its_shell_ended(
         .expect("the new run takes its place");
 
     told_its_shell_ended(&host, steward, again);
-}
-
-/// DIAGNOSTIC (to be removed): what runs now that a test of a chat's leftover shell cares
-/// about, and what the chat's screen shows, printed to the test's error stream.
-#[cfg(unix)]
-fn diag(plane: &Plane, held: &Held, chat: u32, at: &str) {
-    let harness = held.chats().sessions().process_id(chat);
-    let mut out = format!("=== DIAG {at}: harness {harness:?}\n");
-    let _ = plane;
-    #[cfg(target_os = "linux")]
-    if let Ok(entries) = std::fs::read_dir("/proc") {
-        let root = plane.root.display().to_string();
-        let mut rows = Vec::new();
-        for entry in entries.flatten() {
-            let Some(pid) = entry
-                .file_name()
-                .to_str()
-                .and_then(|s| s.parse::<u32>().ok())
-            else {
-                continue;
-            };
-            let Ok(stat) = std::fs::read_to_string(entry.path().join("stat")) else {
-                continue;
-            };
-            let cmd = std::fs::read(entry.path().join("cmdline"))
-                .map(|bytes| String::from_utf8_lossy(&bytes).replace('\0', " "))
-                .unwrap_or_default();
-            let wanted = cmd.contains(&root)
-                || cmd.contains("sleep 600")
-                || cmd.contains("_sandbox")
-                || cmd.contains("claude")
-                || harness == Some(pid);
-            if !wanted {
-                continue;
-            }
-            let rest = stat
-                .rsplit_once(')')
-                .map(|(_, rest)| rest.trim())
-                .unwrap_or("");
-            let fields: Vec<&str> = rest.split_whitespace().collect();
-            let short: String = cmd.chars().take(160).collect();
-            rows.push(format!(
-                "  pid {pid} state {} ppid {} pgid {} sid {} tty {} :: {short}\n",
-                fields.first().unwrap_or(&"?"),
-                fields.get(1).unwrap_or(&"?"),
-                fields.get(2).unwrap_or(&"?"),
-                fields.get(3).unwrap_or(&"?"),
-                fields.get(4).unwrap_or(&"?"),
-            ));
-        }
-        rows.sort();
-        out.extend(rows);
-    }
-    let (send, pieces) = std::sync::mpsc::channel::<Vec<u8>>();
-    if let Ok(view) = held.chats().sessions().watch(
-        chat,
-        Box::new(move |bytes: Vec<u8>| {
-            let _ = send.send(bytes);
-        }),
-    ) {
-        let mut shown = Vec::new();
-        while let Ok(bytes) = pieces.recv_timeout(std::time::Duration::from_millis(400)) {
-            shown.extend(bytes);
-        }
-        let _ = held.chats().sessions().unwatch(chat, view.view);
-        let text = String::from_utf8_lossy(&shown);
-        out.push_str(&format!(
-            "  screen: {:?}\n",
-            text.chars().take(2000).collect::<String>()
-        ));
-    } else {
-        out.push_str("  screen: no view\n");
-    }
-    let _ = std::io::Write::write_all(&mut std::io::stderr(), out.as_bytes());
 }
