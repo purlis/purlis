@@ -236,14 +236,6 @@ tbody:first-of-type
   background-color: var(--list-selected);
 }
 
-/* An ok badge on a chosen row (Your hosts' "Confirmed", #2919): the success hue does not clear
-   the words' floor on every theme's chosen wash (Classic light), so it takes the row's primary
-   words there. Its words still say what it is. */
-[data-scope="table"][data-part="root"]:is([data-selected], [data-current])
-  [data-scope="badge"][data-part="root"][data-variant="ok"] {
-  color: var(--text-primary);
-}
-
 /* **The keyboard's place is a ring inside the row or the cell** (ADR 0104, 2026-10-22), so a
    frame that scrolls never clips it. */
 [data-scope="table"]:is([data-part="root"], [data-part="cell"])[data-focus-visible] {

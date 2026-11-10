@@ -3,7 +3,7 @@
 
 import { useMemo, useState, type ReactNode, type Ref } from "react";
 import { Button } from "../ui/button/Button";
-import { HostStatus } from "../ui/badge/Badge";
+import { Badge, HostStatus } from "../ui/badge/Badge";
 import { ListFilter, noMatchSaid, useListFilter } from "../ui/list/ListFilter";
 import {
   Table,
@@ -85,7 +85,8 @@ export function HostsTable({
     [shown],
   );
   // What is chosen and still on screen: a host the filter or a write took away is not acted on.
-  const picked = rows.filter((one) => chosen === "all" || chosen.has(hostOf(one)));
+  const isChosen = (host: string) => chosen === "all" || chosen.has(host);
+  const picked = rows.filter((one) => isChosen(hostOf(one)));
   const waiting = entries.filter((one) => one.status === "waiting");
   const done = (then: () => void) => {
     setChosen(new Set());
@@ -172,7 +173,13 @@ export function HostsTable({
                   </code>
                 </TableCell>
                 <TableCell>
-                  <HostStatus waiting={one.status === "waiting"} />
+                  {one.status !== "waiting" && isChosen(written) ? (
+                    // On a chosen row's wash the ok words do not clear the floor on every theme
+                    // (Classic light): the neutral badge, on its own fill, says it there.
+                    <Badge variant="neutral">Confirmed</Badge>
+                  ) : (
+                    <HostStatus waiting={one.status === "waiting"} />
+                  )}
                 </TableCell>
                 <TableCell align="end">
                   {one.status === "waiting" && (

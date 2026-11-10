@@ -110,7 +110,11 @@ async function menuRows() {
  *  comes after its words. */
 async function folds() {
   return browser.execute(() =>
-    [...document.querySelectorAll<HTMLElement>(".ui-setting-fold [aria-expanded]")].map((one) => {
+    [
+      ...document.querySelectorAll<HTMLElement>(
+        '.ui-setting-fold > [data-scope="disclosure"][data-part="trigger"] [aria-expanded]',
+      ),
+    ].map((one) => {
       const twist = one.querySelector('[data-part="twist"]');
       const words = one.textContent?.trim() ?? "";
       return {
@@ -129,13 +133,31 @@ async function folds() {
 async function unfold(title: string): Promise<void> {
   await browser.execute((wanted: string) => {
     const fold = [
-      ...document.querySelectorAll<HTMLElement>(".ui-setting-fold [aria-expanded]"),
+      ...document.querySelectorAll<HTMLElement>(
+        '.ui-setting-fold > [data-scope="disclosure"][data-part="trigger"] [aria-expanded]',
+      ),
     ].find((one) => one.textContent?.trim().startsWith(`${wanted} · `));
     if (fold?.getAttribute("aria-expanded") === "false") fold.click();
   }, title);
   await browser.waitUntil(
     async () => (await folds()).some((one) => one.words.startsWith(`${title} · `) && one.open),
     { timeout: 10_000, timeoutMsg: `${title} never opened` },
+  );
+}
+
+/** Opens the ⋯ menu of the button `id`: pressed in the page, the keyboard on it, again until its
+ *  menu is up (a press that lands while the page redraws opens none, as `studio.ts` says). */
+async function openMore(id: string): Promise<void> {
+  await browser.waitUntil(
+    async () =>
+      browser.execute((more: string) => {
+        if (document.querySelector('[role="menu"]') !== null) return true;
+        const one = document.getElementById(more);
+        one?.focus();
+        one?.click();
+        return false;
+      }, id),
+    { timeout: 20_000, interval: 500, timeoutMsg: "the ⋯ menu never opened" },
   );
 }
 
@@ -200,8 +222,7 @@ describe("a Settings page, the aligned form, in the real WebView", () => {
     expect(set.setHere).toBe(true);
     expect(set.deprecated).toBe(true);
 
-    await $(`#${set.more}`).click();
-    await browser.waitUntil(menuOpen, { timeout: 10_000, timeoutMsg: "the ⋯ menu never opened" });
+    await openMore(set.more);
     const rows = await menuRows();
     expect(rows[0]).toEqual({ said: "Reset", off: false });
     expect(rows.at(-1)).toEqual({ said: "Copy key memory.share", off: false });
@@ -219,8 +240,7 @@ describe("a Settings page, the aligned form, in the real WebView", () => {
     const unset = await rowOf(UNSET);
     expect(unset.setHere).toBe(false);
 
-    await $(`#${unset.more}`).click();
-    await browser.waitUntil(menuOpen, { timeout: 10_000, timeoutMsg: "the ⋯ menu never opened" });
+    await openMore(unset.more);
     expect((await menuRows())[0]).toEqual({ said: "Reset", off: true });
     await browser.keys(["Escape"]);
     await browser.waitUntil(async () => !(await menuOpen()), {
@@ -261,14 +281,18 @@ describe("a Settings page, the aligned form, in the real WebView", () => {
     expect(before.expanded).toBe("true");
     expect(before.pages).toBeGreaterThan(0);
 
-    await $('nav[aria-label="Groups"] [data-part="toggle"]').click();
+    await browser.execute(() =>
+      document.querySelector<HTMLElement>('nav[aria-label="Groups"] [data-part="toggle"]')?.click(),
+    );
     await browser.waitUntil(async () => (await toggle())?.expanded === "false", {
       timeout: 10_000,
       timeoutMsg: "the group never folded",
     });
     expect((await toggle())?.pages).toBe(0);
 
-    await $('nav[aria-label="Groups"] [data-part="toggle"]').click();
+    await browser.execute(() =>
+      document.querySelector<HTMLElement>('nav[aria-label="Groups"] [data-part="toggle"]')?.click(),
+    );
     await browser.waitUntil(async () => (await toggle())?.expanded === "true", {
       timeout: 10_000,
       timeoutMsg: "the group never opened again",
