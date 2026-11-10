@@ -61,5 +61,5 @@ reports_its_start_before_the_first_prompt = "no: opencode reports its start at t
 keeps_conversations_by_directory = "no: opencode finds a session by its id from any directory"
 reports_waiting = "yes"
 resumes_by_id = "yes"
-per_chat_plugins = "no: opencode has no switch that turns one plugin off"
+per_chat_plugins = "no: opencode has no switch that turns one plugin off for one chat (measured on 1.19.5)"
 mcp_servers = "yes"
