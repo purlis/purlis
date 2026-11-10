@@ -132,11 +132,14 @@ fn entries(config_root: &Path) -> serde_json::Map<String, Value> {
     approved
 }
 
-/// The pin and the template an entry approved, when it names both.
+/// The pin and the template an entry approved, when it names both. A pin of twelve digits was
+/// recorded before ids were 128 bits: it is kept, so it reads as a pin that changed
+/// ([`Standing::PinChanged`]) and asks again, never as approved.
 fn approval_of(entry: &Value) -> Option<Approved> {
     let pin = entry.get("pin")?.as_str()?;
     let fingerprint = entry.get("fingerprint")?.as_str()?;
-    (is_pin_id(pin) && is_fingerprint(fingerprint)).then(|| Approved {
+    let recorded = is_pin_id(pin) || (pin.len() == OLD_ID_DIGITS && is_hex(pin));
+    (recorded && is_fingerprint(fingerprint)).then(|| Approved {
         pin: pin.to_owned(),
         fingerprint: fingerprint.to_owned(),
     })
@@ -165,7 +168,7 @@ pub fn standing(
         .and_then(approval_of)
     {
         None => Standing::New,
-        Some(approved) if approved.pin != pin_id => Standing::PinChanged,
+        Some(approved) if approved.pin != pin_id || !is_pin_id(pin_id) => Standing::PinChanged,
         Some(approved) if approved.fingerprint != snapshot.fingerprint() => Standing::Changed,
         Some(_) => Standing::Approved,
     }
@@ -333,11 +336,17 @@ fn is_fingerprint(text: &str) -> bool {
     text.len() == 64 && text.chars().all(|c| c.is_ascii_hexdigit())
 }
 
-fn is_pin_id(text: &str) -> bool {
-    text.len() == 12
-        && text
-            .chars()
-            .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
+/// How many digits a pin's id had before it was 128 bits (2026-11-10).
+const OLD_ID_DIGITS: usize = 12;
+
+/// Whether `text` is a pin's id: 32 lowercase hex digits ([`super::pins::id_of`]).
+pub(super) fn is_pin_id(text: &str) -> bool {
+    text.len() == 2 * super::pins::ID_BYTES && is_hex(text)
+}
+
+fn is_hex(text: &str) -> bool {
+    text.chars()
+        .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
 }
 
 #[cfg(all(test, unix))]
@@ -390,7 +399,7 @@ mod tests {
         }
     }
 
-    const PIN: &str = "0123456789ab";
+    const PIN: &str = "0123456789abcdef0123456789abcdef";
 
     #[test]
     fn a_page_without_script_opens_without_asking() {
@@ -467,10 +476,30 @@ mod tests {
     fn a_pin_whose_folder_or_command_changed_is_untrusted_until_confirmed() {
         let here = Here::new();
         here.approve(PIN);
-        assert_eq!(here.standing("ba9876543210"), Standing::PinChanged);
-        here.approve("ba9876543210");
-        assert_eq!(here.standing("ba9876543210"), Standing::Approved);
+        assert_eq!(here.standing("ba9876543210fedcba9876543210fedc"), Standing::PinChanged);
+        here.approve("ba9876543210fedcba9876543210fedc");
+        assert_eq!(here.standing("ba9876543210fedcba9876543210fedc"), Standing::Approved);
         assert_eq!(here.standing(PIN), Standing::PinChanged);
+    }
+
+    /// An approval recorded before ids were 128 bits names the pin by twelve digits: it reads
+    /// as a pin that changed, asking again, and never as approved.
+    #[test]
+    fn an_approval_under_an_old_short_id_asks_again_as_a_changed_pin() {
+        let here = Here::new();
+        let shown = here.snapshot().fingerprint().to_owned();
+        crate::machine::private_dir(&here.config).unwrap();
+        let entry = json!({ "version": 1, "approved": {
+            key(&here.workspace, "board"): {
+                "workspace": here.workspace.canonicalize().unwrap().to_string_lossy(),
+                "folder": "board", "pin": &PIN[..12], "fingerprint": shown,
+            }
+        }});
+        std::fs::write(path(&here.config), entry.to_string()).unwrap();
+        assert_eq!(here.standing(PIN), Standing::PinChanged);
+        assert_eq!(here.standing(&PIN[..12]), Standing::PinChanged);
+        let why = approve(&here.config, &here.workspace, "board", &PIN[..12], &shown).unwrap_err();
+        assert!(why.contains("not a pin's id"), "{why}");
     }
 
     #[test]

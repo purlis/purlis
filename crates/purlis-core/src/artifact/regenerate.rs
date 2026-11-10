@@ -408,7 +408,10 @@ pub fn standing(
     };
     let text = |key: &str| entry.get(key).and_then(Value::as_str);
     match (text("pin"), text("fingerprint")) {
-        (Some(pin), _) if pin != pin_id => Standing::PinChanged,
+        // An id that is not 128 bits (one recorded before ids were) never stands approved.
+        (Some(pin), _) if pin != pin_id || !super::approval::is_pin_id(pin_id) => {
+            Standing::PinChanged
+        }
         (Some(_), Some(print)) if print == resolved.fingerprint => Standing::Approved,
         (Some(_), Some(_)) => Standing::Changed,
         _ => Standing::New,

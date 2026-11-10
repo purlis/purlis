@@ -450,3 +450,25 @@ fn a_run_writes_its_out_folder_and_never_the_artifacts() {
     let log = std::fs::read_to_string(&scratch.log).unwrap();
     assert!(log.contains("refused"), "{log}");
 }
+
+/// An approval recorded before ids were 128 bits names the pin by twelve digits: under the
+/// pin's id now, or handed that short id itself, it asks again and never runs.
+#[test]
+fn an_approval_under_an_old_short_id_asks_again_as_a_changed_pin() {
+    let here = Here::new();
+    let pin = here.pin(COMMAND);
+    let resolved = here.resolve(COMMAND).unwrap();
+    let short = &pin.id[..12];
+    approve(&here.config, &here.workspace, "board", short, &resolved).unwrap();
+    let standing_of = |id: &str| {
+        standing(
+            Some(&here.config),
+            &here.workspace,
+            "board",
+            id,
+            &resolved,
+        )
+    };
+    assert_eq!(standing_of(&pin.id), Standing::PinChanged);
+    assert_eq!(standing_of(short), Standing::PinChanged);
+}

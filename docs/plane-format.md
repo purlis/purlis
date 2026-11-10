@@ -3104,16 +3104,19 @@ them (#5427, ADR 0078 §7, session protocol 1.78), which the file diff reads as 
   - `pin`: an array of inline tables, **one pin per line**, each line ending with a comma.
     That shape is what the `union` merge driver needs: two people who each pin an artifact
     add one line each, and git keeps both lines in a valid array.
-  - Each pin: `id` (twelve lowercase hex digits), `folder`, `name` (one line, at most 60
+  - Each pin: `id` (32 lowercase hex digits; twelve before 2026-11-10), `folder`, `name` (one line, at most 60
     characters; suggested from the template's `<title>`, else the folder), `icon` (one of the
     icon names a persona may take, `personamark::ICONS`, never an image of the page's), `order`
     (a positive integer), and optionally `command` (the command that writes its data, one line)
     and `cwd` (its working folder, workspace-relative, plain components, no `..`).
   - **The id is the pin's identity, drawn from its folder, command and working folder**: the
-    first twelve hex digits of the SHA-256 of `folder`, `command` and `cwd` joined by NUL. So a
-    change to any of the three is a **new pin** (ADR 0122 §1): pinning a folder again with
-    another command replaces its pin with one under a new id, and two people who pinned the same
-    folder with the same command hold one pin.
+    first 32 hex digits (128 bits) of the SHA-256 of `folder`, `command` and `cwd` joined by NUL,
+    drawn again whenever the file is read. So a change to any of the three is a **new pin** (ADR
+    0122 §1): pinning a folder again with another command replaces its pin with one under a new
+    id, and two people who pinned the same folder with the same command hold one pin. A file
+    written with twelve-digit ids reads as it is and is put right by its next write; an approval
+    recorded under a twelve-digit id reads as `pin-changed` and asks again (ADR 0122, amended
+    2026-11-10).
   - Keys purlis does not know, on the file or on a pin, are kept as they are on every write.
   - Read sorted by `order`, then `id`. Two lines with one id (a union of two edits of one pin)
     are one pin, the later line's. Written sorted; a new pin takes the next order after the

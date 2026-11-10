@@ -21,6 +21,9 @@ use toml_edit::{Array, DocumentMut, InlineTable, Item, Value};
 /// The pins file version this purlis reads and writes.
 pub const VERSION: i64 = 1;
 
+/// The bytes of the SHA-256 a pin's id keeps: 128 bits, as 32 hex digits.
+pub const ID_BYTES: usize = 16;
+
 /// The keys of a pin that purlis reads; every other key is kept as it is.
 const KNOWN: [&str; 7] = ["id", "folder", "name", "icon", "order", "command", "cwd"];
 
@@ -97,8 +100,10 @@ impl Pin {
     }
 }
 
-/// A pin's identity: the first twelve hex digits of the SHA-256 of its folder, command and
-/// working folder joined by NUL. A change to any of the three is a new pin (ADR 0122 §1).
+/// A pin's identity: the first 32 hex digits (128 bits) of the SHA-256 of its folder, command
+/// and working folder joined by NUL. A change to any of the three is a new pin (ADR 0122 §1).
+/// It stands for the command in both approvals, so it is long enough that no second command
+/// with the same id can be searched for (ADR 0122, amended 2026-11-10).
 pub fn id_of(folder: &str, command: Option<&str>, cwd: Option<&str>) -> String {
     let mut hash = Sha256::new();
     hash.update(folder.as_bytes());
@@ -108,7 +113,7 @@ pub fn id_of(folder: &str, command: Option<&str>, cwd: Option<&str>) -> String {
     hash.update(cwd.unwrap_or_default().as_bytes());
     hash.finalize()
         .iter()
-        .take(6)
+        .take(ID_BYTES)
         .map(|byte| format!("{byte:02x}"))
         .collect()
 }
@@ -402,10 +407,19 @@ mod tests {
         assert!(!pins.render().contains(&approved), "{}", pins.render());
     }
 
+    /// The exploit of the second review of #5978: an id of 48 bits has a second preimage a GPU
+    /// finds, a command of the attacker's whose id is the approved one's.
+    #[test]
+    fn an_id_is_128_bits_of_the_sha256_so_no_other_command_is_found_with_it() {
+        let id = id_of("board", Some("node scripts/gen.mjs"), Some("."));
+        assert_eq!(id.len(), 32, "{id}");
+        assert!(id.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+    }
+
     #[test]
     fn the_id_changes_with_the_folder_the_command_or_the_working_folder() {
         let base = id_of("a", Some("x"), Some("."));
-        assert_eq!(base.len(), 12);
+        assert_eq!(base.len(), 32);
         assert_eq!(base, id_of("a", Some("x"), Some(".")));
         assert_ne!(base, id_of("b", Some("x"), Some(".")));
         assert_ne!(base, id_of("a", Some("y"), Some(".")));
