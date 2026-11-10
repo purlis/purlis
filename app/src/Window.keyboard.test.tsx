@@ -450,8 +450,9 @@ describe("the window's tab order", () => {
       "separator Resize the right sidebar",
       // The right panel's × (R125), on its header.
       "button Close Asks",
-      // Attention, on the right, opens on Asks (#1738, #5644), which holds nothing here: no
-      // stop. The needs-you queue is the title bar's (charter-app#249), and the Vaults view,
+      "button Quiet now",
+      // Attention, on the right, opens on Asks (#1738, #5644), which holds no ask here: its one
+      // stop is the "Quiet now" toggle at its top (#6017). The needs-you queue is the title bar's (charter-app#249), and the Vaults view,
       // with its `+`, is hidden while Asks is open.
       // The Panel under them (#1737): the handle that resizes it against the editor, then each
       // half, ONE stop (P-13, #1741): its view's. The chevron on its line is the pointer's.

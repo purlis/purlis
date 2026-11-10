@@ -217,6 +217,7 @@ export function Inbox({
   workspaceNamed,
   snoozing,
   hold,
+  quietTop,
 }: {
   /**
    * **Which view of the right bar this draws** (ADR 0119, #5644, #5645): `asks`, the asks
@@ -301,6 +302,9 @@ export function Inbox({
    *  Notices taken away at once, each one's own Dismiss carried out when the Undo goes. Without
    *  it, a Dismiss is carried out at once and no Undo stands. */
   hold?: DismissHold;
+  /** **Quiet, at the top of Asks** (#6017): the "Quiet now" switch and, once a Quiet ended,
+   *  its summary (`QuietSummary`). Drawn only in Asks. */
+  quietTop?: ReactNode;
 }) {
   const drawsAsks = part === undefined || part === "asks";
   const drawsUpdates = part === undefined || part === "updates";
@@ -525,6 +529,8 @@ export function Inbox({
       data-view={part ?? "inbox"}
       aria-label={part === undefined ? "Inbox" : undefined}
     >
+      {/* Quiet first (#6017): its switch, and the summary of the Quiet that ended. */}
+      {drawsAsks && quietTop}
       {/* Drawn while any scope lists something, as the Chats view's is: nothing to narrow
           otherwise, and an empty Inbox is its one sentence. */}
       {drawsAsks &&

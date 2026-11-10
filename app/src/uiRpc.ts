@@ -669,6 +669,10 @@ export const commands = {
 	 *  is focused with the project in front, no notification is sent about that project's asks.
 	 */
 	inboxShown: (plane: PlaneId, open: boolean) => __TAURI_INVOKE<void>("inbox_shown", { plane, open }),
+	/**  Whether it is Quiet now, and what the latest Quiet that ended held (#6017). */
+	quietNow: () => __TAURI_INVOKE<QuietNow>("quiet_now"),
+	setQuietNow: __WINDOW_ONLY,
+	quietTyped: __WINDOW_ONLY,
 	sendInput: __WINDOW_ONLY_RESULT,
 	sendInputBytes: __WINDOW_ONLY_RESULT,
 	/**
@@ -5542,6 +5546,12 @@ export type DraftScore = {
 	evals: boolean,
 	arms: GradeArms,
 	delta: number | null,
+};
+
+/**  One ask a Quiet's summary counts: its project, and its key in the registry. */
+export type EndedAsk = {
+	plane: PlaneId,
+	key: string,
 };
 
 /**  One download, as its Notice shows it. */
@@ -10848,6 +10858,33 @@ export type QuestionStep = {
 	by: string | null,
 	/**  On `failed`: what failed, `not_read_back` or `not_redirected`. */
 	what: string | null,
+};
+
+/**
+ *  **What Quiet held, told when it ends** (ADR 0121 decision 13): when it was, and the asks
+ *  that came in it that still wait. The window counts with them the updates of the same span
+ *  ("While you were quiet: 3 asks, 2 finished, 1 failed"), and drops the row once all of it is
+ *  seen (#6002).
+ */
+export type QuietEnded = {
+	/**  When it began, in seconds since 1970. */
+	from: number,
+	/**  When it ended, in seconds since 1970. */
+	to: number,
+	/**  The asks that came in it that the person was not looking at, still waiting as it ended. */
+	asks: EndedAsk[],
+};
+
+/**
+ *  **Whether it is Quiet now, and what Quiet ended last**, as a window asks for it and is sent
+ *  it ([`QUIET_CHANGED`]).
+ */
+export type QuietNow = {
+	quiet: boolean,
+	/**  Whether "Quiet now" is on: the toggle's state, whatever else makes it Quiet. */
+	by_hand: boolean,
+	/**  The summary of the latest Quiet that ended in this run of the app, if one did. */
+	ended: QuietEnded | null,
 };
 
 /**  One repo the picker offers: what the operator reads to choose it. */
