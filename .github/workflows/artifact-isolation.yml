@@ -11,7 +11,9 @@ name: artifact isolation
 # **Evidence, not a gate**, like `ci.yml`'s `windows` job: each platform reports, and a platform
 # whose chosen rendering is red there is one where scripted artifacts are refused (ADR 0122 §10),
 # not a red `main`. The real rendering (#5952) carries these tests into the app's own checks; on
-# that day this workflow and the probe are deleted.
+# that day this workflow and the probe are deleted. Four are carried so far: reach, loop, speak and
+# walk, in `app/e2e/specs/artifact-isolation.e2e.ts`; escape needs a witness outside the app, and
+# until it has one this stays.
 
 on:
   pull_request:
