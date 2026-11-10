@@ -12,7 +12,7 @@ import { userEvent } from "@testing-library/user-event";
 import { useState } from "react";
 import { Button } from "../button/Button";
 import { TextArea, TextField } from "../field/Field";
-import { List, ListRow } from "./List";
+import { List, ListRow, ListRowDrawn } from "./List";
 import { ListFoldSection } from "./Fold";
 import { Segment, SegmentedControl } from "../choice/Radio";
 import { Select } from "../select/Select";
@@ -408,5 +408,108 @@ describe("a box of lines that wrap, in a row (#5993)", () => {
     await typedAndAt(13);
     await userEvent.keyboard("{ArrowDown}");
     expect(row("Last")).toHaveFocus();
+  });
+});
+
+describe("Shift+Tab back into a list (#6033)", () => {
+  /** Two rows, the last holding a box and a button, the list's last controls; a button after. */
+  function Below({ drawn = false }: { drawn?: boolean }) {
+    const [reason, setReason] = useState("");
+    const held = (
+      <>
+        <TextField aria-label="Reason" value={reason} onChange={setReason} />
+        <Button size="sm">Send</Button>
+      </>
+    );
+    return (
+      <>
+        <List aria-label="Asks" disallowTypeAhead>
+          <ListRow id="first" textValue="First">
+            <RowLabel>First</RowLabel>
+          </ListRow>
+          {drawn ? (
+            <ListRowDrawn id="held" textValue="Held" aria-labelledby="held-name">
+              <span id="held-name">Held</span>
+              {held}
+            </ListRowDrawn>
+          ) : (
+            <ListRow id="held" textValue="Held">
+              <RowLabel>Held</RowLabel>
+              {held}
+            </ListRow>
+          )}
+        </List>
+        <button type="button">After</button>
+      </>
+    );
+  }
+
+  const after = () => screen.getByRole("button", { name: "After" });
+  const send = () => screen.getByRole("button", { name: "Send" });
+
+  /** Tab on until the keyboard has left the list for the button after it. */
+  async function tabOut() {
+    for (let press = 0; press < 4 && after() !== document.activeElement; press += 1)
+      await userEvent.tab();
+    expect(after()).toHaveFocus();
+  }
+
+  it.each([
+    ["a row of the family's", false],
+    ["a row another family draws", true],
+  ])("lands on the row the keyboard left, not on its last control, in %s", async (_, drawn) => {
+    render(<Below drawn={drawn} />);
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowDown}");
+    expect(row("Held")).toHaveFocus();
+    await tabOut();
+    await userEvent.tab({ shift: true });
+    expect(row("Held")).toHaveFocus();
+  });
+
+  it("lands on the row when the keyboard left from one of the row's controls", async () => {
+    render(<Below />);
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowDown}{ArrowRight}");
+    expect(reason()).toHaveFocus();
+    await tabOut();
+    await userEvent.tab({ shift: true });
+    expect(row("Held")).toHaveFocus();
+  });
+
+  it("lands on the last row of a list the keyboard has not been in", async () => {
+    render(<Below />);
+    await userEvent.click(after());
+    await userEvent.tab({ shift: true });
+    expect(row("Held")).toHaveFocus();
+  });
+
+  it("reaches the row's first control again with →", async () => {
+    render(<Below />);
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowDown}");
+    await tabOut();
+    await userEvent.tab({ shift: true });
+    await userEvent.keyboard("{ArrowRight}");
+    expect(reason()).toHaveFocus();
+  });
+
+  it("leaves a control the pointer presses in that row where it is", async () => {
+    render(<Below />);
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowDown}");
+    await tabOut();
+    await userEvent.click(send());
+    expect(send()).toHaveFocus();
+  });
+
+  it("leaves a control a script focuses in that row where it is", async () => {
+    render(<Below />);
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowDown}");
+    await tabOut();
+    act(() => send().focus());
+    await act(() => new Promise((done) => requestAnimationFrame(() => done(undefined))));
+    expect(send()).toHaveFocus();
   });
 });
