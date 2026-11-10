@@ -60,6 +60,8 @@ const PLACES = {
   "run-grant": { at: "pane" },
   "sandbox-expects": { at: "no-chat" },
   confirmation: { at: "no-chat" },
+  budget: { at: "pane" },
+  looping: { at: "pane" },
 } as const satisfies Record<AskSource, Place>;
 
 /** Each kind's place, as any place: a kind may move to or from Asks alone. */

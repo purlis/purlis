@@ -462,6 +462,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "put_away_task_quiet",
     // It's fine on a chat that reads Stuck? (#6014): the person's answer.
     "stuck_fine",
+    // Continue, It's fine or Stop on a chat paused at its budget or as looping (#6015): the
+    // person's answer.
+    "answer_pause",
     // The Inbox's updates (#1693): what happened to the person's chats, and what they put away.
     "inbox_updates",
     "note_inbox_updates",

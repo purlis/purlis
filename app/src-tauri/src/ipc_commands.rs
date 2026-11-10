@@ -178,6 +178,7 @@ macro_rules! app_commands {
                 silence::put_away_task_quiet,
                 stuck::chats_noticed,
                 stuck::stuck_fine,
+                pausing::answer_pause,
                 dispatchlimits::dispatch_limits,
                 yoursandbox::plain_file_vaults,
                 yoursandbox::move_vault_to_keychain,

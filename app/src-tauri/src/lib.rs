@@ -143,6 +143,7 @@ mod overlimit;
 mod panels;
 mod panics;
 mod pasteread;
+mod pausing;
 mod personas;
 mod piecefiles;
 mod pin;

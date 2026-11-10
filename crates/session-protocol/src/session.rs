@@ -533,9 +533,22 @@ use crate::view::{Limits, Views};
 /// in the event log it holds, saying the terminal made it, answering only once it is durable. The
 /// terminal is given no write of its own: the host composes the entry, of three kinds alone. A
 /// host before 1.82 refuses it `unknown_command`, and the terminal changes nothing.
+///
+/// 1.83 has a host hold a chat's program still, and let it go on ([`Command::Hold`], #6015, ADR
+/// 0076 §4): its whole process group stopped as Ctrl-Z stops it, when the chat reaches its budget
+/// or is found looping and the person is asked, and continued on their answer. The window's
+/// alone. An older host refuses it `unknown_command`, so it is not asked, and such a chat is
+/// asked about with its program left running.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 82,
+    minor: 83,
+};
+
+/// The version that first holds a chat's program still ([`Command::Hold`], #6015): none is asked
+/// of a host before.
+pub const KNOWS_HOLD: Version = Version {
+    major: 1,
+    minor: 83,
 };
 
 /// The version that first notes a chat's strays ([`Command::NoteStrays`], #5806): none is
@@ -1364,6 +1377,12 @@ pub enum Command {
     /// noted; refused [`NO_SUCH_CHAT`] for a program the host does not hold. The window's
     /// alone ([`crate::grants::Power::Reattach`]).
     NoteStrays { program: String },
+    /// **Hold `program` still, or let it go on** (1.83, #6015, ADR 0076 §4): with `still`, its
+    /// whole process group is stopped, as Ctrl-Z stops it; without, it is continued. What left
+    /// its group is not held. Nothing for a program that has ended. Answered [`Answer::Done`];
+    /// refused [`NO_SUCH_CHAT`] for a program the host does not hold. The window's alone
+    /// ([`crate::grants::Power::Reattach`]).
+    Hold { program: String, still: bool },
     /// **Where the host's own event log ends now** (1.41, #3393): its device and the `seq` of
     /// its last line, 0 for none, answered [`Answer::LogEnd`]: the cursor a client that holds
     /// none of it subscribes from, so it is pushed what is written from now on. Refused
@@ -3030,6 +3049,7 @@ wire_words!(Command {
     CancelEngineDownload => "cancel_engine_download",
     NoteProgram => "note_program",
     NoteStrays => "note_strays",
+    Hold => "hold",
     LogEnd => "log_end",
     AskGrade => "ask_grade",
     AnswerGrade => "answer_grade",
@@ -3079,7 +3099,9 @@ impl Command {
             Command::LogIn { .. } | Command::FillSecret { .. } => Power::LogIn,
             Command::Inspect { .. } | Command::InspectorInput { .. } => Power::Inspect,
             Command::ProgramsOf { .. } => Power::ProgramsOf,
-            Command::NoteProgram { .. } | Command::NoteStrays { .. } => Power::Reattach,
+            Command::NoteProgram { .. } | Command::NoteStrays { .. } | Command::Hold { .. } => {
+                Power::Reattach
+            }
             Command::Quit => Power::Quit,
             Command::TakeBack { .. } => Power::TakeBack,
             Command::NameWindow { .. } => Power::NameWindow,
@@ -3662,7 +3684,9 @@ impl Lane {
             | Command::Readiness { program }
             // A note follows what the window did to the program before it.
             | Command::NoteProgram { program, .. }
-            | Command::NoteStrays { program } => Some(Lane::Program(program.clone())),
+            | Command::NoteStrays { program }
+            // A hold keeps its order with the stop that may follow it.
+            | Command::Hold { program, .. } => Some(Lane::Program(program.clone())),
             // A confinement's own commands keep their order: an Allow, then what it holds.
             Command::Confine(confine) => Some(Lane::Confinement(confine.confinement.clone())),
             Command::LetGoOfConfinement { confinement }
@@ -4298,6 +4322,15 @@ impl Client {
     pub async fn note_strays(&self, program: &str) -> Result<(), CallError> {
         self.done(Command::NoteStrays {
             program: program.into(),
+        })
+        .await
+    }
+
+    /// Holds `program` still, or lets it go on (1.83, #6015).
+    pub async fn hold(&self, program: &str, still: bool) -> Result<(), CallError> {
+        self.done(Command::Hold {
+            program: program.into(),
+            still,
         })
         .await
     }

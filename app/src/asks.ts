@@ -43,7 +43,7 @@ import { askOpenProposal } from "./proposedChangeOpen";
 import { proposeOldKeysRemoval } from "./oldHarnessPlugins";
 import { askOpenRunnerWrite } from "./runnerWriteOpen";
 import { askOpenRunnerDispatch } from "./runnerDispatchOpen";
-import { askProfileSignIn } from "./settings/links";
+import { askProfileSignIn, askSettingsLink } from "./settings/links";
 import {
   askSigningSetUp,
   setUpForgeOf,
@@ -300,6 +300,10 @@ const isLevel = (option: string): option is GrantLevel =>
  * workspace (qw356): the core's `asking::REMOVE`.
  */
 export const OPENS_DELETE_WORKSPACE = "remove";
+
+/** **Raise the budget** on a chat paused at its budget (#6015): the window's own answer, which
+ *  opens Settings › Project › Dispatch at its limits and sends nothing. */
+export const RAISE_THE_BUDGET = "raise";
 
 /** What is said when an ask names no path the window can send. */
 export const IN_ITS_CHAT = "This is answered in its chat: go to it.";
@@ -724,6 +728,16 @@ export async function answerTaken(
         if (done.status === "ok") sandboxCommandReturned();
         return done.status === "ok" ? { status: "ok" } : done;
       }
+      case "paused":
+        // A chat paused at its budget or as looping (#6015): Raise the budget opens Settings where
+        // the limit is, and the chat goes on once a look finds it within the new limit. Every
+        // other answer is the core's: Continue and It's fine let it go on, Stop stops it.
+        if (option === RAISE_THE_BUDGET) {
+          askSettingsLink(plane, { group: "project.dispatch", setting: "project.dispatch.limits" });
+          opened = true;
+          return { status: "ok" };
+        }
+        return commands.answerPause(plane, ask.session, option);
       case "confirmation":
         // A command's confirmation in the window (#6000): its dialog's own answer, which takes the
         // dialog away too. The command goes on, or stops, at once.

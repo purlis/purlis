@@ -968,6 +968,8 @@ fn kind_said(ask: &Shown) -> &'static str {
         AskSource::Vault => "Refused a vault its persona isn't tagged for",
         AskSource::SandboxExpects => "Asks you to allow what this project expects",
         AskSource::Confirmation => "A command waits on your confirmation",
+        AskSource::Budget => "Paused at its budget",
+        AskSource::Looping => "Paused, as it may be looping",
     }
 }
 

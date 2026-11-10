@@ -607,6 +607,11 @@ pub trait SessionHost: Send + Sync {
     /// note them, or the program's start did not ask its strays to end with it.
     fn note_strays(&self, _id: u32) {}
 
+    /// **Holds session `id`'s program still, its whole process group, or lets it go on** (ADR
+    /// 0076 §4, #6015): what a chat paused at its budget or in a loop is, until the person
+    /// answers. Nothing where the host cannot hold it: the chat is asked about all the same.
+    fn hold(&self, _id: u32, _still: bool) {}
+
     /// Calls `tell` as each session's program ends, with the id and how it ended.
     ///
     /// No hook reports a program dying, and none can — the process is gone. This is the
@@ -1658,6 +1663,10 @@ pub(crate) mod pretend {
         }
         fn note_strays(&self, id: u32) {
             lock(&self.seen.terminal).push(format!("noted strays {id}"));
+        }
+        fn hold(&self, id: u32, still: bool) {
+            let said = if still { "held" } else { "let go" };
+            lock(&self.seen.terminal).push(format!("{said} {id}"));
         }
         fn stopped_by(&mut self, switch: Arc<crate::killswitch::KillSwitch>) {
             *lock(&self.seen.switch) = Some(switch);

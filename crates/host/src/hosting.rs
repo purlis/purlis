@@ -307,6 +307,11 @@ pub trait Running: Send + Sync + 'static {
     /// Notes what it has started outside its process group so far, to end with it however it
     /// ends (#5806). Nothing for a program that starts nothing so.
     fn note_strays(&self) {}
+    /// Holds it still, its whole process group, or lets it go on (1.82, #6015). Nothing for a
+    /// program that is not a terminal's.
+    fn hold(&self, still: bool) {
+        let _ = still;
+    }
     /// Its process, while it runs.
     fn process(&self) -> Option<u32>;
     /// When its process started, as the kernel says it, where it says: what the host record
@@ -524,6 +529,10 @@ impl Running for Terminal {
 
     fn note_strays(&self) {
         self.0.program().note_strays();
+    }
+
+    fn hold(&self, still: bool) {
+        self.0.program().hold(still);
     }
 
     fn process(&self) -> Option<u32> {
@@ -3194,6 +3203,20 @@ impl Hosting {
         Ok(Answer::Done)
     }
 
+    /// Holds `program` still, or lets it go on (1.82, #6015).
+    fn hold_still(&self, program: &str, still: bool) -> Result<Answer, Refusal> {
+        let running = {
+            let state = self.state();
+            let hosted = state
+                .programs
+                .get(program)
+                .ok_or_else(|| no_such_program(program))?;
+            Arc::clone(&hosted.running)
+        };
+        running.hold(still);
+        Ok(Answer::Done)
+    }
+
     async fn stop(&self, program: &str) -> Result<Answer, Refusal> {
         let running = {
             let state = self.state();
@@ -4268,6 +4291,7 @@ impl session::Host for Hosting {
             Command::NoteProgram { program, note } => self.note_program(&program, note, peer),
             // Only the window's link reaches this: the grants refuse every other.
             Command::NoteStrays { program } => self.note_strays(&program).await,
+            Command::Hold { program, still } => self.hold_still(&program, still),
             // Only the window's link reaches this: the grants refuse every other.
             Command::Quit => Ok(self.quit().await),
             // The person's own (#2014): each may wait on the engine (a take-over on an act's

@@ -30,6 +30,7 @@ import { BrowserLoginNotice } from "./BrowserLoginNotice";
 import { PoolAskNotice } from "./PoolAskNotice";
 import { SecretAskPaneNotice } from "./SecretAskPaneNotice";
 import { WorkspaceRemovalNotice } from "./WorkspaceRemovalNotice";
+import { PausedNotice } from "./PausedNotice";
 import { ProposedChangeNotice } from "./ProposedChangeNotice";
 import { asksOf, isAnAsk, noticeKey } from "./sandboxBlocks";
 import { TaskPromptNotice } from "./TaskPromptNotice";
@@ -401,6 +402,8 @@ export function ChatNotices({
       {/* A key this chat's run missed, or a program it runs that its persona does not declare
           (plane #2697): the command waits on your answer. */}
       <SecretAskPaneNotice plane={plane} session={session} asks={drawn} onWay={onAnswer} />
+      {/* This chat paused at its budget or as looping (#6015): held still until you answer. */}
+      <PausedNotice plane={plane} session={session} asks={drawn} onWay={onAnswer} />
       {/* A login or a tool's run this chat asks for on a pool's runner (plane #2697). */}
       <PoolAskNotice plane={plane} session={session} asks={drawn} onWay={onAnswer} />
       {/* A skill this chat drafted (#2772): ready in the Skill studio, which alone asks for it. */}

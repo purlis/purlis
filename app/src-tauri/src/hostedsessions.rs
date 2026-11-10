@@ -5087,6 +5087,17 @@ impl SessionHost for HostedSessions {
         }
     }
 
+    /// Asked of a host of 1.82 or later only: one before refuses `hold`, and its chat is asked
+    /// about with its program left running.
+    fn hold(&self, id: u32, still: bool) {
+        let Ok((link, program)) = self.program(id) else {
+            return;
+        };
+        if link.version() >= session::KNOWS_HOLD {
+            link.send(Command::Hold { program, still });
+        }
+    }
+
     fn when_one_ends(&self, tell: Ends) {
         *lock(&self.ended) = Some(tell);
     }
