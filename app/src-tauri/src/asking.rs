@@ -3183,6 +3183,8 @@ pub fn proposed_change(
             expires: None,
             blocks: None,
             timed_out: None,
+            risk: None,
+            rule: None,
         };
     }
     let path = &one.path;
