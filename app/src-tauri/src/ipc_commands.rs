@@ -100,7 +100,6 @@ macro_rules! app_commands {
                 sandboxing::answer_team_sandbox_off,
                 sandboxing::persona_grants_held,
                 sandboxing::allow_persona_grants,
-                sandboxing::type_sandbox_install,
                 sandboxing::sandbox_block_report,
                 sandboxing::file_sandbox_block_report,
                 sandboxing::allow_sandbox_block,

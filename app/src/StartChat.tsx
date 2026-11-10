@@ -232,8 +232,8 @@ const HOLDS_A_TURNED_START_MS = 800;
  *
  * **"Start without the sandbox" is asked here, for this one chat** (ADR 0067 §7, ruling V78 a).
  * Shown only where the project turned the sandbox on, beside what the sandbox does for the
- * picked profile: on, or the reason it cannot be applied here — a missing program, with the
- * distribution's install command (SD-30), or a system with no backend. Where it cannot be
+ * picked profile: on, or the reason it cannot be applied here — a kernel without the Landlock
+ * purlis's own wrap needs, or a system with no backend. Where it cannot be
  * applied, the one way on is to start without it, said on the button itself. Not remembered
  * between chats, for the footer box's reason, and never offered by anything but this picker:
  * no CLI word, file or chat makes one, and charter records who turned it off and why. Where an
@@ -266,7 +266,6 @@ export function StartChat({
   onRaiseLimit,
   onStart,
   onApprove,
-  onInstall,
   fixing = false,
   onFix,
   onOpenSettings,
@@ -337,9 +336,6 @@ export function StartChat({
     withoutSandbox: WithoutSandbox | null,
     runsOn?: RunsOnPick | null,
   ) => void;
-  /** SD-30's install action: the window opens a shell tab at the project root with the
-   *  install command typed and not run (ruling V78 c). Absent, the command is only shown. */
-  onInstall?: () => void;
   /** Whether a fix pressed here is running: its button says so and cannot be pressed again. */
   fixing?: boolean;
   /** Applies a doctor fix by its id — the `local-ignore` the refusal offers (NO-8) — and reads
@@ -465,8 +461,8 @@ export function StartChat({
     options.ignore_fix !== null || options.declares_none,
   );
   // Whether it was left with nothing started — Escape or Cancel. Only then does the keyboard go
-  // back to what had it: a start hands it to the new chat, and Settings or the install shell
-  // take it where they open.
+  // back to what had it: a start hands it to the new chat, and Settings takes it where it
+  // opens.
   // A start that takes a moment says what it waits for, for as long as it waits (#4264).
   const [hostSlow, setHostSlow] = useState(false);
   useEffect(() => {
@@ -1238,18 +1234,9 @@ export function StartChat({
               )}
               {sandbox.state === "unsandboxed" && <p className="honest">{sandbox.said}</p>}
               {refused && (
-                <>
-                  <p className="honest mid-turn" role="alert">
-                    {sandbox.said}
-                  </p>
-                  {sandbox.install !== null && (
-                    <p className="honest">
-                      Install it with <code>{sandbox.install}</code>. It needs sudo, so purlis types
-                      it in a shell and leaves running it to you.{" "}
-                      {onInstall && <Button onPress={onInstall}>Type it in a shell</Button>}
-                    </p>
-                  )}
-                </>
+                <p className="honest mid-turn" role="alert">
+                  {sandbox.said}
+                </p>
               )}
               {locked !== null && <p className="honest">{locked}</p>}
               {withoutSandbox !== null && (

@@ -810,31 +810,20 @@ function loginName(line: string): string {
   return line.trim().split(/\s+/).slice(0, LOGIN_WORDS).join(" ");
 }
 
-/** What a new shell has typed into it: a line spelled out (FR-4's `gh auth login`), a
- *  harness whose compiled-in installer the core types itself (FR-29, V65), or the sandbox's
- *  install command, which the core types and leaves for the person to run (SD-30, V78 c).
- *  `held` is a line typed and left for the person to run: the repo picker's forge login,
+/** What a new shell has typed into it: a line spelled out (FR-4's `gh auth login`), or a
+ *  harness whose compiled-in installer the core types itself (FR-29, V65). `held` is a line typed and left for the person to run: the repo picker's forge login,
  *  whose host is the project's, read before Return (NO-8). */
 type Typed =
   | {
       line: string;
       held?: boolean;
       installer?: undefined;
-      sandboxInstall?: undefined;
       signIn?: undefined;
       signOut?: undefined;
     }
   | {
       installer: string;
       line?: undefined;
-      sandboxInstall?: undefined;
-      signIn?: undefined;
-      signOut?: undefined;
-    }
-  | {
-      sandboxInstall: true;
-      line?: undefined;
-      installer?: undefined;
       signIn?: undefined;
       signOut?: undefined;
     }
@@ -845,7 +834,6 @@ type Typed =
       signIn?: undefined;
       line?: undefined;
       installer?: undefined;
-      sandboxInstall?: undefined;
     }
   | {
       signIn: string;
@@ -857,7 +845,6 @@ type Typed =
       signOut?: undefined;
       line?: undefined;
       installer?: undefined;
-      sandboxInstall?: undefined;
     };
 
 /**
@@ -4077,14 +4064,6 @@ export const PlaneView = memo(function PlaneView({
               })
               .catch((err: unknown) => refusedBy("shell", String(err)));
           }
-          // Typed and not run: installing needs sudo, so the person presses Return (V78 c).
-          else if (typed?.sandboxInstall)
-            void commands
-              .typeSandboxInstall(plane, session)
-              .then((said) => {
-                if (said.status === "error") refusedBy("shell", said.error);
-              })
-              .catch((err: unknown) => refusedBy("shell", String(err)));
         })
         .catch((err: unknown) => refusedBy("shell", String(err)));
     },
@@ -13233,22 +13212,10 @@ export const PlaneView = memo(function PlaneView({
                         .catch(() => undefined)
                         .then(() => showView(POOL_SETUP_VIEW, POOL_SETUP_TITLE));
                     }}
-                    // SD-30's install action: a shell tab at the project root with the command typed and
-                    // not run. The picker closes, since the chat it was for starts after the install.
-                    onInstall={
-                      root === undefined
-                        ? undefined
-                        : () => {
-                            setPicking(undefined);
-                            setPickerTrouble(undefined);
-                            openShell(root, OUTSIDE, { sandboxInstall: true });
-                          }
-                    }
                     fixing={pickerFixing}
                     onFix={(id) => void fixInPicker(id)}
                     // A refused profile is mended on its page in Settings, its command focused (NO-8,
-                    // #1296): the picker closes, as it does for the install, since the chat it was for
-                    // starts after the mend.
+                    // #1296): the picker closes, since the chat it was for starts after the mend.
                     onOpenSettings={(group, setting) => {
                       setPicking(undefined);
                       setPickerTrouble(undefined);

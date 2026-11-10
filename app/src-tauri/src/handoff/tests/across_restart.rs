@@ -1355,6 +1355,11 @@ fn a_plane_whose_harness_leaves_a_shell() -> Plane {
 
 /// [`a_plane_whose_harness_leaves_a_shell`], whose stand-in does `then` once its shell runs,
 /// in place of staying. `@RUNS@` in `then` is the plane's `runs` folder, quoted.
+///
+/// Asked `auth status`, the stand-in starts no shell and answers as [`Plane::new`]'s does. On a
+/// sandbox-only profile ([`super::ran_on_a_sandbox_only_stand_in`]) purlis asks the profile's
+/// harness that before a chat starts, outside any chat: a shell started then is no chat's, and
+/// a test that took it for the chat's would wait for it to end with a chat it never belonged to.
 #[cfg(unix)]
 fn a_plane_whose_harness_leaves_a_shell_then(then: &str) -> Plane {
     let plane = Plane::new();
@@ -1364,6 +1369,7 @@ fn a_plane_whose_harness_leaves_a_shell_then(then: &str) -> Plane {
         "claude-with-a-shell",
         &format!(
             "#!/bin/sh\n\
+             [ \"$1\" = auth ] && exec sleep 10\n\
              perl -e 'use POSIX (); POSIX::setsid() or die; my ($at, $to) = splice @ARGV, 0, 2; \
              open my $id, q(>), $at or die; print $id $$; close $id or die; \
              rename $at, $to or die; exec @ARGV or die' \
@@ -1543,18 +1549,6 @@ fn a_shell_a_chat_started_in_a_session_of_its_own_ends_when_the_next_host_settle
     planes.close(&id).expect("it closes");
 }
 
-/// **Whether a #5806 test of a chat's leftover shell has nothing proven to run on here**: where
-/// purlis wraps a Claude Code chat (Linux), whose sandboxed chat runs inside the wrap on a
-/// sandbox-only profile (ADR 0067 as amended 2026-11-10). Run there on such a profile
-/// ([`super::ran_on_a_sandbox_only_stand_in`]) the shell outlived its harness, and in the
-/// hang-up test no harness was running by the time the test sent the signal: in CI on #6137,
-/// in each of the three tests that call this, retries included. Whether that is the wrap or
-/// the stray listing is not yet known, so these are checked on every other system until it is.
-#[cfg(unix)]
-fn a_wrapped_chat_s_leftover_shell_is_not_proven_here() -> bool {
-    crate::sandboxing::claude_is_wrapped_here_for_tests()
-}
-
 /// A stand-in's end: it waits for its plane's `runs/go`, then exits on its own.
 #[cfg(unix)]
 const LETS_GO_THEN_EXITS: &str = "while [ ! -e @RUNS@/go ]; do sleep 0.05; done; exit 0";
@@ -1588,7 +1582,9 @@ fn its_tool_says_it_started_its_shell(held: &Held, chat: u32) {
 #[cfg(unix)]
 #[test]
 fn a_shell_left_by_a_harness_that_exits_on_its_own_ends_with_it_and_stays_gone_across_the_quit() {
-    if a_wrapped_chat_s_leftover_shell_is_not_proven_here() {
+    // Where purlis wraps a Claude Code chat, inside that wrap, on a sandbox-only profile, as a
+    // sandboxed chat runs there (ADR 0067 as amended 2026-11-10).
+    if super::ran_on_a_sandbox_only_stand_in() {
         return;
     }
     // The stand-in waits for its plane's `runs/go`, which the test writes once the shell is
@@ -1621,7 +1617,9 @@ fn a_shell_left_by_a_harness_that_exits_on_its_own_ends_with_it_and_stays_gone_a
 #[cfg(unix)]
 #[test]
 fn a_shell_left_by_a_harness_hung_up_on_from_outside_ends_with_it() {
-    if a_wrapped_chat_s_leftover_shell_is_not_proven_here() {
+    // Where purlis wraps a Claude Code chat, inside that wrap, on a sandbox-only profile, as a
+    // sandboxed chat runs there (ADR 0067 as amended 2026-11-10).
+    if super::ran_on_a_sandbox_only_stand_in() {
         return;
     }
     let plane = a_plane_whose_harness_leaves_a_shell();
@@ -1653,7 +1651,9 @@ fn a_shell_left_by_a_harness_hung_up_on_from_outside_ends_with_it() {
 #[cfg(unix)]
 #[test]
 fn noting_a_chat_s_strays_ends_nothing_that_is_not_its_harness_s() {
-    if a_wrapped_chat_s_leftover_shell_is_not_proven_here() {
+    // Where purlis wraps a Claude Code chat, inside that wrap, on a sandbox-only profile, as a
+    // sandboxed chat runs there (ADR 0067 as amended 2026-11-10).
+    if super::ran_on_a_sandbox_only_stand_in() {
         return;
     }
     let plane = a_plane_whose_harness_leaves_a_shell_then(LETS_GO_THEN_EXITS);
