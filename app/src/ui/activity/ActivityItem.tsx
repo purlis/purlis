@@ -250,8 +250,11 @@ export function ActivityGroup({
 
 /**
  * **A group of a bar's items that open tabs, not views** (#5952): a toolbar of buttons,
- * React Aria's (`useToolbar`). The arrows walk it along `orientation` and Tab leaves it, so it
- * is one Tab stop, and coming back puts the keyboard on the item it left.
+ * React Aria's (`useToolbar`). The arrows walk it along `orientation`, Home and End reach its
+ * first and last item, and Tab leaves it, so it is one Tab stop.
+ *
+ * **Coming back in lands on the item in front**, the one marked `aria-current`, from either
+ * side, as a tab list lands on its selected tab; with none in front, on the item it left.
  *
  * **An item being carried keeps its keys**: while an item is marked `data-dragging`, its
  * arrows are its drag's (`sortable.tsx`, `keepsTheFocus`), so the toolbar leaves them alone.
@@ -269,18 +272,49 @@ export function ActivityToolbar({
   const ref = useRef<HTMLDivElement>(null);
   const { toolbarProps } = useToolbar({ orientation, "aria-label": label }, ref);
   const walk = toolbarProps.onKeyDownCapture;
+  const restore = toolbarProps.onFocusCapture;
   const own = {
     ...toolbarProps,
     onKeyDownCapture: (event: KeyboardEvent<HTMLDivElement>) => {
       const target = event.target as HTMLElement;
       if (target.closest("[data-dragging]") !== null) return;
+      if (event.key === "Home" || event.key === "End") {
+        const all = itemsOf(event.currentTarget);
+        const to = event.key === "Home" ? all[0] : all[all.length - 1];
+        if (to === undefined) return;
+        event.preventDefault();
+        event.stopPropagation();
+        to.focus();
+        return;
+      }
       walk?.(event);
+    },
+    onFocusCapture: (event: FocusEvent<HTMLDivElement>) => {
+      const from = event.relatedTarget;
+      const entering = !(from instanceof Node && event.currentTarget.contains(from));
+      const inFront = itemsOf(event.currentTarget).find((item) =>
+        item.hasAttribute("aria-current"),
+      );
+      if (!entering || inFront === undefined) {
+        restore?.(event);
+        return;
+      }
+      if (inFront !== event.target) inFront.focus();
     },
   };
   return (
     <div {...mergeProps(rest, own)} ref={ref} data-scope="activity-bar" data-part="group">
       {children}
     </div>
+  );
+}
+
+/** The items of a toolbar that take the keyboard, in the document's order. */
+function itemsOf(toolbar: HTMLElement): HTMLElement[] {
+  return Array.from(
+    toolbar.querySelectorAll<HTMLElement>(
+      '[data-scope="activity"][data-part="item"]:not(:disabled)',
+    ),
   );
 }
 

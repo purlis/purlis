@@ -11,7 +11,7 @@ import { expect, userEvent, within } from "storybook/test";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type { ArtifactCompared, ArtifactHistory as History } from "./bindings";
 import { ArtifactHistory, AsOfStanding } from "./ArtifactHistory";
-import { expectFocusInSight } from "./stories.testkit";
+import { expectFocusInSight, untilSettled } from "./stories.testkit";
 
 const HISTORY: History = {
   kept_most: 20,
@@ -116,7 +116,12 @@ export const NoneYet: Story = {
     const bar = within(canvasElement);
     await userEvent.click(await bar.findByRole("button", { name: "History…" }));
     const page = within(canvasElement.ownerDocument.body);
-    await expect(await page.findByText(/No versions yet/)).toBeVisible();
+    const said = await page.findByText(/No versions yet/);
+    // The dialog fades in as it opens: whether it is seen is read once it has arrived.
+    await untilSettled(said.closest('[data-scope="dialog"][data-part="scrim"]') ?? said);
+    await expect(said).toBeVisible();
+    await expect(page.queryByRole("button", { name: "Show this version" })).toBeNull();
+    await expect(page.queryByRole("button", { name: "Compare" })).toBeNull();
   },
 };
 

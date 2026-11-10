@@ -88,6 +88,42 @@ describe("the activity bar's artifacts", () => {
     expect(second).toHaveFocus();
   });
 
+  it("takes the keyboard in on the artifact in front, from either side", async () => {
+    const three = [...PINS, pin("oncall", "On call", "zap")];
+    render(
+      <>
+        <button type="button">Before</button>
+        <ArtifactGroup
+          plane="p"
+          workspace="alpha"
+          pins={three}
+          current="release"
+          onOpen={() => {}}
+        />
+        <button type="button">After</button>
+      </>,
+    );
+    const release = screen.getByRole("button", { name: "Release" });
+    await userEvent.tab();
+    await userEvent.tab();
+    expect(release).toHaveFocus();
+    await userEvent.keyboard("{ArrowDown}");
+    await userEvent.tab();
+    expect(screen.getByRole("button", { name: "After" })).toHaveFocus();
+    await userEvent.tab({ shift: true });
+    expect(release).toHaveFocus();
+  });
+
+  it("reaches its first and last icon with Home and End", async () => {
+    const three = [...PINS, pin("oncall", "On call", "zap")];
+    render(<ArtifactGroup plane="p" workspace="alpha" pins={three} onOpen={() => {}} />);
+    await userEvent.tab();
+    await userEvent.keyboard("{End}");
+    expect(screen.getByRole("button", { name: "On call" })).toHaveFocus();
+    await userEvent.keyboard("{Home}");
+    expect(screen.getByRole("button", { name: "Backlog state" })).toHaveFocus();
+  });
+
   it("greys a pin that is missing or too large, and its tip says why", () => {
     const over = "'release' is 9.0 MB, over the 8.0 MB an artifact may be, so none of it is shown";
     const gone = "there is no folder 'backlog-state' in artifacts/";

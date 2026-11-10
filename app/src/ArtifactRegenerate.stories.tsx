@@ -7,7 +7,7 @@
  * The core is faked at its command boundary.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, userEvent, within } from "storybook/test";
+import { expect, userEvent, waitFor, within } from "storybook/test";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type { ArtifactRegenerate as About, ArtifactRegenerated } from "./bindings";
 import { ArtifactRegenerate } from "./ArtifactRegenerate";
@@ -76,17 +76,25 @@ export const AsksAgain: Story = {
     await expect(page.getByRole("button", { name: "Cancel" })).toHaveFocus();
     expectFocusInSight();
     await userEvent.keyboard("{Escape}");
-    await expect(page.queryByRole("alertdialog")).toBeNull();
+    // Esc can come while the ask still fades in, and React Aria lets that finish before it goes.
+    await waitFor(() => expect(page.queryByRole("alertdialog")).toBeNull());
+    await expect(page.queryByTestId("artifact-regenerate-failed")).toBeNull();
   },
 };
 
-/** A run that failed: the reason, the date the data shown was last good, and its output. */
+/** A run that failed: a Notice with the reason, the date the data shown was last good, its
+ *  output, and Regenerate again. */
 export const Failed: Story = {
   beforeEach: () => answers(READY),
   play: async ({ canvasElement }) => {
     const bar = within(canvasElement);
     await userEvent.click(await bar.findByRole("button", { name: "Regenerate" }));
-    await expect(await bar.findByRole("alert")).toHaveTextContent("last good: 2026-11-08");
+    const failed = await bar.findByRole("status", { name: "Backlog state was not regenerated" });
+    await expect(failed).toHaveTextContent("last good: 2026-11-08");
+    await expect(bar.getByTestId("artifact-regenerate-output")).toHaveTextContent(
+      "TypeError: rows is undefined",
+    );
+    await expect(within(failed).getByRole("button", { name: "Regenerate again" })).toBeEnabled();
   },
 };
 

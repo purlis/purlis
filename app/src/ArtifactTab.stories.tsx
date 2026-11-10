@@ -80,7 +80,10 @@ export const Open: Story = {
     const frame = await page.findByTestId("artifact-frame");
     await expect(frame).toHaveAccessibleName("Backlog state");
     await expect(page.getByTestId("artifact-bar")).toHaveTextContent("Pinned by Ada Lovelace");
-    // The bar's Discuss first (#5957), then the page.
+    // The bar's History… (#5966) and Discuss (#5957) first, then the page.
+    await userEvent.tab();
+    await expect(page.getByRole("button", { name: "History…" })).toHaveFocus();
+    expectFocusInSight();
     await userEvent.tab();
     await expect(page.getByRole("button", { name: "Discuss" })).toHaveFocus();
     expectFocusInSight();
@@ -147,9 +150,13 @@ export const Waits: Story = {
     const page = within(canvasElement);
     const open = await page.findByRole("button", { name: "Open Backlog state" });
     await expect(page.queryByTestId("artifact-frame")).toBeNull();
-    // The bar's Discuss first (#5957), then Open.
+    // The bar's History… (#5966) and Discuss (#5957) first, then Open.
+    await userEvent.tab();
+    await expect(page.getByRole("button", { name: "History…" })).toHaveFocus();
+    expectFocusInSight();
     await userEvent.tab();
     await expect(page.getByRole("button", { name: "Discuss" })).toHaveFocus();
+    expectFocusInSight();
     await userEvent.tab();
     await expect(open).toHaveFocus();
     expectFocusInSight();
@@ -196,8 +203,15 @@ export const TooLarge: Story = {
     const said = await page.findByTestId("artifact-too-large");
     await expect(said).toHaveTextContent("9.0 MB, over the 8.0 MB an artifact may be");
     await expect(page.queryByTestId("artifact-frame")).toBeNull();
+    // Its History… stays in the bar (an earlier version may fit), then Repin and Unpin.
+    await userEvent.tab();
+    await expect(page.getByRole("button", { name: "History…" })).toHaveFocus();
+    expectFocusInSight();
     await userEvent.tab();
     await expect(page.getByRole("button", { name: "Repin" })).toHaveFocus();
+    expectFocusInSight();
+    await userEvent.tab();
+    await expect(page.getByRole("button", { name: "Unpin" })).toHaveFocus();
     expectFocusInSight();
   },
 };
