@@ -307,7 +307,7 @@ pub trait Running: Send + Sync + 'static {
     /// Notes what it has started outside its process group so far, to end with it however it
     /// ends (#5806). Nothing for a program that starts nothing so.
     fn note_strays(&self) {}
-    /// Holds it still, its whole process group, or lets it go on (1.82, #6015). Nothing for a
+    /// Holds it still, its whole process group, or lets it go on (1.83, #6015). Nothing for a
     /// program that is not a terminal's.
     fn hold(&self, still: bool) {
         let _ = still;
@@ -3203,7 +3203,7 @@ impl Hosting {
         Ok(Answer::Done)
     }
 
-    /// Holds `program` still, or lets it go on (1.82, #6015).
+    /// Holds `program` still, or lets it go on (1.83, #6015).
     fn hold_still(&self, program: &str, still: bool) -> Result<Answer, Refusal> {
         let running = {
             let state = self.state();

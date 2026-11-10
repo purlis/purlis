@@ -40,7 +40,7 @@
 //! | `programs_of` (1.13), a project's browsers among them | yes | | | | | relayed (1.67), its own window's alone; refused `programs_not_known` for a runner before 1.67 (1.68) |
 //! | `note_program` and a start's `note` (1.39) | yes | | | | | |
 //! | `note_strays` (1.80) | yes | | | | | |
-//! | `hold` (1.82) | yes | | | | | |
+//! | `hold` (1.83) | yes | | | | | |
 //! | `quit` (1.13) | yes | | | | | |
 //! | `take_back`, a relaying host naming the window a link is for, named again the confinements of the chats that window started (1.22) | | | | | | yes |
 //! | `take_over`, `hand_back`, `browser_input`, `size_browser`: the person driving a browser (1.14) | yes | | | | | relayed (1.38) |
@@ -343,7 +343,7 @@ pub enum Power {
     ProgramsOf,
     /// The window's note of each program, kept in the host by `note_program` and a start's
     /// `note` (1.39, #2025); and that a link's chats come back to it, so its ports stay (#2625);
-    /// and a program held still and let go on (`hold`, 1.82, #6015).
+    /// and a program held still and let go on (`hold`, 1.83, #6015).
     Reattach,
     /// `quit` (1.13): the host ends every program and stops.
     Quit,

@@ -5087,7 +5087,7 @@ impl SessionHost for HostedSessions {
         }
     }
 
-    /// Asked of a host of 1.82 or later only: one before refuses `hold`, and its chat is asked
+    /// Asked of a host of 1.83 or later only: one before refuses `hold`, and its chat is asked
     /// about with its program left running.
     fn hold(&self, id: u32, still: bool) {
         let Ok((link, program)) = self.program(id) else {

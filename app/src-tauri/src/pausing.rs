@@ -6,7 +6,7 @@
 //!
 //! - **Paused means held still** (ADR 0076 §4): the chat's program, and its tasks at work below
 //!   it, each have their whole process group stopped by their host ([`Chats::hold`]) until the
-//!   person answers. A host before protocol 1.82 cannot hold one: its chat is asked about all
+//!   person answers. A host before protocol 1.83 cannot hold one: its chat is asked about all
 //!   the same, and goes on running meanwhile.
 //! - **A budget** is a dispatch limit the person set and a task reached (`crate::overlimit`):
 //!   `minutes-per-task`, or its session's `tokens-per-session`. Asked: Continue, which lets it
