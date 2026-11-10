@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794336281629,
+  "lastUpdate": 1794338619621,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -46284,6 +46284,48 @@ window.BENCHMARK_DATA = {
             "value": 101.295227,
             "unit": "ms",
             "extra": "median of 5 runs: 99.614, 100.055, 101.295, 101.798, 102.046 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "c23028f2b5ac71c4763060b561d1c7f9c9082665",
+          "message": "A chat's card is heard through its row's registry (#6147); STANDS_ON may name one look, and a badge stands on a list's row (#6149) (#6157)\n\n* A chat's card is heard through its row's registry, and the describedBy guard reads the whole window (#6147)\n\nChatsSection wrote its row's aria-describedby by hand and, on cleanup,\nremoved the whole attribute. TreeRow now takes describedBy, the id of\nwhat its owner draws that describes it, and hands it to the row's\nRowHeard registry as a new heard kind, card, after the tooltip. The row\nwrites it with the rest and takes back only it.\n\ndescribedBy.guard.test.ts reads all of app/src, not only ui/; it was\nred on ChatsSection.tsx: 2 before the move.\n\nCloses #6147.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7382QQJPD9QQKHM1T2XSKZ4\nPurlis-Persona: steward\n\n* STANDS_ON may name one look of a surface, and a badge stands on a list's plain row (#6149)\n\nA STANDS_ON key is a surface alone (list), for every look of it, or\none look (list.row), for that look alone. drawn_on takes the look, so a\nfamily named on list.row is never measured on Classic's list card fill,\nthe one list fill a shipped theme sets. list.row -> badge is added and\nNOT_STANDING is empty. Every shipped appearance is still measured in one\nlook: shipped_parts_tests and surface_tints_tests are green.\n\ngrounds.test.ts reads which look a root draws: its data-variant as\nwritten, or the look the placing component is handed (written out,\npassed on, or its default when handed none). A use that spreads props\nand names no look counts as the whole surface. Planting list.card for\nlist.row makes the window check name DevicesView's and\nSkillLibraryGrade's badges.\n\nADR 0103 amendment of 2026-11-10. surfaces_set's at-rest-only read of\nstate fills (list.selected) is filed as #6156.\n\nCloses #6149.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7382QQJPD9QQKHM1T2XSKZ4\nPurlis-Persona: steward\n\n* Review fixes for #6147 and #6149\n\n- The row's heard kind for an owner's describing element is owner, not\n  card: a family's word, not a screen's.\n- grounds.test.ts: a spread after the look a use names may hand any\n  look, so the root is the surface's of no look (seen red on the old\n  read: tooltip: list.row); saysPair names the pair test.\n- parts.rs: one surface_and_look reads a STANDS_ON key, for the engine\n  and its table test.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7382QQJPD9QQKHM1T2XSKZ4\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T18:49:32Z",
+          "tree_id": "2274c8971881208ec0cf227f3f8b6f1c5f8b0f0c",
+          "url": "https://github.com/purlis/purlis/commit/c23028f2b5ac71c4763060b561d1c7f9c9082665"
+        },
+        "date": 1794338613606,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5526175,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.543, 0.546, 0.553, 0.553, 0.557 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.228794,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.098, 16.127, 16.229, 16.287, 16.306 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.1395235,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.255, 100.935, 101.140, 101.211, 101.832 ms"
           }
         ]
       }
