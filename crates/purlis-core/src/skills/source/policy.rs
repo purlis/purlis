@@ -457,8 +457,8 @@ pub const NOT_AUDITED_HERE: &str = "this project audits every skill install, upd
                                     terminal";
 
 /// What the session host refuses a terminal's skill change with on a project without controls.
-pub const NO_CONTROLS: &str = "this project's charter.toml holds no [skill_policy], so it audits \
-                               no skill change";
+pub const NO_CONTROLS: &str = "this project's shared settings hold no [skill_policy], so it \
+                               audits no skill change";
 
 /// **The audit of `act` on the skill `name` at `level`**, by the pin its lockfile keeps:
 /// `None` for one made here, which is no part of the skill supply. A lockfile that cannot be
