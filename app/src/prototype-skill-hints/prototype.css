@@ -29,3 +29,9 @@ body { background: var(--surface-base); color: var(--text-primary); }
   .proto-body { grid-template-columns: minmax(0, 1fr); }
   .proto-nav { border-inline-end: 0; border-block-end: 1px solid var(--border-subtle); flex-direction: row; flex-wrap: wrap; }
 }
+.proto-sub { display: block; font-size: var(--font-size-xs); }
+.proto-title { font-size: var(--font-size-md); margin: 0; }
+.proto-grow { flex: 1 1 auto; }
+.proto-groups { display: flex; flex-direction: column; gap: var(--space-2); }
+.proto-skill { display: flex; flex-direction: column; gap: var(--space-1); padding-block: var(--space-2); border-block-end: 1px solid var(--border-subtle); }
+.proto-skill h3 { font-size: var(--font-size-sm); margin: 0; }
