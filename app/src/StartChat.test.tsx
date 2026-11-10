@@ -343,7 +343,7 @@ describe("a chat that starts in a repo (GL-1)", () => {
     const asking = { ...ONE.profiles[0], name: "asks", shown: "claude --x", approval: "new" };
     const sandboxed = {
       ...ONE.profiles[0],
-      sandbox: { state: "sandboxed", said: "", install: null, locked: null },
+      sandbox: { state: "sandboxed", said: "", locked: null },
     } as const;
     show({ profiles: [sandboxed, { ...asking, is_default: false }] });
     const plain = roomOf(screen.getByRole("button", { name: "Start chat" }));
@@ -623,7 +623,6 @@ describe("the picker a chat starts from", () => {
           sandbox: {
             state: "refused",
             said: "bwrap is not installed.",
-            install: null,
             locked: null,
           },
         },
@@ -642,7 +641,7 @@ describe("the picker a chat starts from", () => {
       profiles: [
         {
           ...ONE.profiles[0],
-          sandbox: { state: "sandboxed", said: "", install: null, locked: null },
+          sandbox: { state: "sandboxed", said: "", locked: null },
         },
       ],
     });
@@ -1039,7 +1038,7 @@ describe("a chat in a project that runs every chat sandboxed (ADR 0067 §7, V78 
   const sandboxed = (sandbox: StartOptions["profiles"][number]["sandbox"]) =>
     options({ profiles: [{ ...ONE.profiles[0], sandbox }] });
 
-  function showWith(sandbox: StartOptions["profiles"][number]["sandbox"], onInstall?: () => void) {
+  function showWith(sandbox: StartOptions["profiles"][number]["sandbox"]) {
     const onStart = vi.fn();
     const onApprove = vi.fn();
     render(
@@ -1047,7 +1046,6 @@ describe("a chat in a project that runs every chat sandboxed (ADR 0067 §7, V78 
         options={sandboxed(sandbox)}
         onStart={onStart}
         onApprove={onApprove}
-        onInstall={onInstall}
         onCancel={vi.fn()}
       />,
     );
@@ -1065,10 +1063,9 @@ describe("a chat in a project that runs every chat sandboxed (ADR 0067 §7, V78 
       {
         state: "unsandboxed",
         said: "This system has no sandbox backend.",
-        install: null,
         locked: null,
       },
-      { state: "refused", said: "bwrap is not installed.", install: null, locked: null },
+      { state: "refused", said: "bwrap is not installed.", locked: null },
     ] as const) {
       showWith(sandbox);
       const region = screen.getByRole("region", { name: "Sandbox" });
@@ -1081,7 +1078,6 @@ describe("a chat in a project that runs every chat sandboxed (ADR 0067 §7, V78 
     const { onStart, user } = showWith({
       state: "sandboxed",
       said: "",
-      install: null,
       locked: null,
     });
 
@@ -1095,7 +1091,6 @@ describe("a chat in a project that runs every chat sandboxed (ADR 0067 §7, V78 
     const { onStart, user } = showWith({
       state: "sandboxed",
       said: "",
-      install: null,
       locked: null,
     });
 
@@ -1115,7 +1110,6 @@ describe("a chat in a project that runs every chat sandboxed (ADR 0067 §7, V78 
     const { onStart, user } = showWith({
       state: "sandboxed",
       said: "",
-      install: null,
       locked: null,
     });
 
@@ -1133,7 +1127,6 @@ describe("a chat in a project that runs every chat sandboxed (ADR 0067 §7, V78 
     const { onStart, user } = showWith({
       state: "refused",
       said: why,
-      install: null,
       locked: null,
     });
 
@@ -1146,29 +1139,23 @@ describe("a chat in a project that runs every chat sandboxed (ADR 0067 §7, V78 
     });
   });
 
-  it("shows the distribution's install command and types it in a shell only when asked", async () => {
-    const onInstall = vi.fn();
-    const { onStart, user } = showWith(
-      {
-        state: "refused",
-        said: "socat is not installed",
-        install: "sudo apt install socat",
-        locked: null,
-      },
-      onInstall,
-    );
+  // SD-30's install action is gone (ADR 0067 as amended 2026-11-10): no sandbox needs a
+  // program installed, so a refusal offers nothing to type in a shell.
+  it("offers nothing to install beside a refusal", () => {
+    showWith({
+      state: "refused",
+      said: "Landlock version 6 (Linux 6.12 or later) is needed, and this kernel does not have it",
+      locked: null,
+    });
 
-    expect(screen.getByText("sudo apt install socat").tagName).toBe("CODE");
-    await user.click(screen.getByRole("button", { name: "Type it in a shell" }));
-
-    expect(onInstall).toHaveBeenCalledTimes(1);
-    expect(onStart).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Type it in a shell" })).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Sandbox" })).not.toHaveTextContent(/sudo/);
   });
 
   it("says why a chat on a system with no backend starts without the sandbox", () => {
     const said =
       "This chat runs without the sandbox: purlis has no sandbox backend on Windows yet, so every chat here starts without it until one exists.";
-    showWith({ state: "unsandboxed", said, install: null, locked: null });
+    showWith({ state: "unsandboxed", said, locked: null });
 
     expect(screen.getByText(said)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Start chat" })).toBeInTheDocument();
@@ -1177,7 +1164,7 @@ describe("a chat in a project that runs every chat sandboxed (ADR 0067 §7, V78 
   it("offers no opt-out where policy forbids it, and says who locked it (#1343)", async () => {
     const locked =
       "Policy forbids starting a chat without the sandbox. Locked by policy, set by Platform team in /etc/purlis/policy.json.";
-    const { onStart, user } = showWith({ state: "sandboxed", said: "", install: null, locked });
+    const { onStart, user } = showWith({ state: "sandboxed", said: "", locked });
 
     expect(
       screen.queryByRole("checkbox", { name: "Start without the sandbox" }),
@@ -1193,7 +1180,6 @@ describe("a chat in a project that runs every chat sandboxed (ADR 0067 §7, V78 
     const { onStart } = showWith({
       state: "refused",
       said: "socat is not installed",
-      install: null,
       locked,
     });
 
@@ -1210,7 +1196,7 @@ describe("a chat in a project that runs every chat sandboxed (ADR 0067 §7, V78 
       "purlis has no sandbox backend on Windows yet, and policy requires the sandbox for every chat on this machine, so nothing was started.";
     const locked =
       "Policy forbids starting a chat without the sandbox. Locked by policy, set by Platform team in /etc/purlis/policy.json.";
-    const { onStart } = showWith({ state: "refused", said, install: null, locked });
+    const { onStart } = showWith({ state: "refused", said, locked });
 
     const sandbox = screen.getByRole("region", { name: "Sandbox" });
     expect(sandbox).toHaveTextContent(said);
@@ -1236,7 +1222,6 @@ describe("a chat in a project that runs every chat sandboxed (ADR 0067 §7, V78 
               sandbox: {
                 state: "refused",
                 said: "socat is not installed",
-                install: null,
                 locked: null,
               },
             },
@@ -1272,7 +1257,7 @@ describe("a harness charter cannot wrap on this system in a sandboxed project", 
               name: "codex",
               kind: "codex",
               shown: "codex",
-              sandbox: { state: "refused", said, install: null, locked: null },
+              sandbox: { state: "refused", said, locked: null },
             },
           ],
         })}
@@ -1323,7 +1308,7 @@ describe("a program the sandbox will not bind (V87g)", () => {
           profiles: [
             {
               ...ONE.profiles[0],
-              sandbox: { state: "refused", said, install: null, locked: null },
+              sandbox: { state: "refused", said, locked: null },
             },
           ],
         })}
@@ -1354,7 +1339,7 @@ describe("a profile nobody has approved, in a sandboxed project", () => {
             {
               ...ONE.profiles[0],
               approval: "new",
-              sandbox: { state: "sandboxed", said, install: null, locked: null },
+              sandbox: { state: "sandboxed", said, locked: null },
             },
           ],
         })}
@@ -1763,9 +1748,7 @@ describe("⏎ is a plain start and nothing more, from every place it starts (D-2
     [
       "the person ticked Start without the sandbox",
       {
-        profiles: [
-          { ...plain, sandbox: { state: "sandboxed", said: "", install: null, locked: null } },
-        ],
+        profiles: [{ ...plain, sandbox: { state: "sandboxed", said: "", locked: null } }],
       },
       (user) => user.click(screen.getByRole("checkbox", { name: "Start without the sandbox" })),
     ],
@@ -1778,7 +1761,6 @@ describe("⏎ is a plain start and nothing more, from every place it starts (D-2
             sandbox: {
               state: "refused",
               said: "bwrap is not installed.",
-              install: null,
               locked: null,
             },
           },
@@ -1794,7 +1776,6 @@ describe("⏎ is a plain start and nothing more, from every place it starts (D-2
             sandbox: {
               state: "refused",
               said: "bwrap is not installed.",
-              install: null,
               locked: "Your administrator requires the sandbox.",
             },
           },

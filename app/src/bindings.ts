@@ -626,13 +626,6 @@ export const commands = {
 	 */
 	allowPersonaGrants: (plane: PlaneId, session: number) => typedError<boolean, string>(__TAURI_INVOKE("allow_persona_grants", { plane, session })),
 	/**
-	 *  Types SD-30's install command into shell session `session` at the project root, and does
-	 *  not run it (ruling V78 c): installing needs `sudo`, so the person reads it and presses
-	 *  Return. The window sends no text; the line is built here, and it is typed only into a shell
-	 *  tab at the project root.
-	 */
-	typeSandboxInstall: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("type_sandbox_install", { plane, session })),
-	/**
 	 *  The draft of a Report for a sandbox block of purlis's own (#1338). Nothing is sent: this only
 	 *  drafts, here, with no network.
 	 */
@@ -15220,11 +15213,6 @@ export type SandboxAhead = {
 	 *  Empty for `sandboxed`.
 	 */
 	said: string,
-	/**
-	 *  SD-30's install command, shown before the person asks for it to be typed: where the
-	 *  refusal is a program this machine is missing and charter knows its distribution.
-	 */
-	install: string | null,
 	/**
 	 *  Where policy forbids starting a chat without the sandbox (#1343): why, naming the policy
 	 *  and who set it. The picker then offers no opt-out.

@@ -1797,8 +1797,8 @@ impl Chats {
     }
 
     /// Whether `session` is a shell tab at `root`: a chat on no profile running no harness,
-    /// in that directory. Where SD-30's install command may be typed (ruling V78 c), never an
-    /// agent's pane.
+    /// in that directory. Where a profile's sign-in purlis types for the person may go, never
+    /// an agent's pane.
     pub fn is_shell_at(&self, session: u32, root: &std::path::Path) -> bool {
         let same = |a: &std::path::Path, b: &std::path::Path| {
             a == b || matches!((a.canonicalize(), b.canonicalize()), (Ok(a), Ok(b)) if a == b)
@@ -4946,6 +4946,9 @@ impl Chats {
         let sandbox = match sandbox {
             Some(applied) => {
                 let mut held = applied.clone();
+                // A test binary cannot be the wrap, so the build's own app program is.
+                #[cfg(test)]
+                crate::sandboxing::the_app_program_wraps_for_tests(&mut held);
                 let cwd = chat.cwd.clone().unwrap_or_else(|| self.project.clone());
                 let kit = self.kit(harness);
                 match held.hold_kit(kit.armed_with(), &cwd, &env) {

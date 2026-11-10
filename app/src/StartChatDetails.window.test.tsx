@@ -168,7 +168,6 @@ describe("the new-chat dialog's two answers (#4736)", () => {
         sandbox: {
           state: "refused",
           said: "The sandbox cannot be applied here.",
-          install: null,
           locked: null,
         },
         billed_to: null,

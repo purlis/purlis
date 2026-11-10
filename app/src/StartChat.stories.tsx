@@ -327,7 +327,6 @@ const GUARDED: StartOptions = {
       sandbox: {
         state: "sandboxed",
         said: "claude reaches only the hosts this project allows.",
-        install: null,
         locked: null,
       },
     },

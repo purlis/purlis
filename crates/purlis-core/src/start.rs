@@ -966,10 +966,9 @@ pub fn sandbox_ahead(
     root: &Path,
     machine: &crate::sandbox::Machine,
     has: &dyn Fn(&str) -> bool,
-    os_release: &str,
     probe: Option<&crate::sandbox::program::Probe<'_>>,
 ) -> Option<crate::sandbox::Ahead> {
-    AheadOnce::new(root, machine, has, os_release, probe).of(profile)
+    AheadOnce::new(root, machine, has, probe).of(profile)
 }
 
 /// The words [`AheadOnce`] checks `profile`'s program with, `home` the person's: its pinned
@@ -1015,7 +1014,6 @@ pub struct AheadOnce<'a> {
     root: &'a Path,
     machine: &'a crate::sandbox::Machine,
     has: &'a dyn Fn(&str) -> bool,
-    os_release: &'a str,
     probe: Option<&'a crate::sandbox::program::Probe<'a>>,
     compiled: std::cell::RefCell<Vec<(Harness, Compiled)>>,
 }
@@ -1024,21 +1022,18 @@ pub struct AheadOnce<'a> {
 type Compiled = Result<Option<crate::sandbox::Decided>, crate::sandbox::NotStarted>;
 
 impl<'a> AheadOnce<'a> {
-    /// One picker's ask for the project at `root` on `machine`, `has` saying what is installed,
-    /// `os_release` the text of `/etc/os-release` and `probe` answering `--version` in place of
-    /// running a program (`None` runs it).
+    /// One picker's ask for the project at `root` on `machine`, `has` saying what is installed
+    /// and `probe` answering `--version` in place of running a program (`None` runs it).
     pub fn new(
         root: &'a Path,
         machine: &'a crate::sandbox::Machine,
         has: &'a dyn Fn(&str) -> bool,
-        os_release: &'a str,
         probe: Option<&'a crate::sandbox::program::Probe<'a>>,
     ) -> Self {
         Self {
             root,
             machine,
             has,
-            os_release,
             probe,
             compiled: std::cell::RefCell::default(),
         }
@@ -1082,7 +1077,6 @@ impl<'a> AheadOnce<'a> {
         Some(crate::sandbox::ahead_decided(
             self.compiled(harness),
             root,
-            self.os_release,
             &check,
         ))
     }

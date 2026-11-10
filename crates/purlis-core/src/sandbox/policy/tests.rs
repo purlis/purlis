@@ -908,17 +908,15 @@ fn the_picker_s_refusal_names_no_opt_out_policy_forbids() {
                 ..machine()
             },
             &|_| true,
-            "",
             &|_| Ok(()),
         );
         TEST_LOCKS.with(|locks| *locks.borrow_mut() = Locks::none());
         ahead
     };
     assert!(matches!(ahead(&Locks::none()), Ahead::Unsandboxed(_)));
-    let Ahead::Refused { why, install } = ahead(&locks(REQUIRED)) else {
+    let Ahead::Refused { why } = ahead(&locks(REQUIRED)) else {
         panic!("a chat that cannot be sandboxed is refused under the policy");
     };
-    assert_eq!(install, None);
     // The picker says what locks it on a line of its own, so the policy is not said twice.
     assert_eq!(
         why,
