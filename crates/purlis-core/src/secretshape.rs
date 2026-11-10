@@ -775,6 +775,7 @@ pub fn decoded_kind(form: Option<Structured>, text: &str) -> Option<&'static str
                 .iter()
                 .find_map(|read| joined_kind(read))
         })
+        .or_else(|| web_readings(text).iter().find_map(|read| secret_kind(read)))
 }
 
 /// [`secret_kind`] of a reading whose lines ending in a backslash were joined to the next: each
@@ -869,8 +870,172 @@ pub fn token_kind_as_read(text: &str) -> Option<&'static str> {
         readings(text)
             .iter()
             .chain(joined_readings(text).iter())
+            .chain(web_readings(text).iter())
             .find_map(|read| token_kind(read))
     })
+}
+
+/// **Each reading of `text` through the encodings a web page spells characters in** (#5954):
+/// its HTML character references decoded ([`entities_decoded`]), its percent-encoding decoded
+/// ([`percent_decoded`]), each of those through the other, and every one of them through its
+/// string escapes as well ([`readings`]). Nothing when `text` holds neither, so a text with no
+/// `&` and no `%` is asked nothing more. Each reading is one linear pass.
+///
+/// What every guard that reads through escapes ([`decoded_kind`], [`token_kind_as_read`]) reads
+/// through too, so an artifact's page cannot hide a token behind `&#x67;` or `%67`.
+fn web_readings(text: &str) -> Vec<String> {
+    let entities = entities_decoded(text);
+    let percent = percent_decoded(text);
+    let both = [
+        entities.as_deref().and_then(percent_decoded),
+        percent.as_deref().and_then(entities_decoded),
+    ];
+    let mut out: Vec<String> = Vec::new();
+    for read in [entities, percent].into_iter().chain(both).flatten() {
+        if out.contains(&read) {
+            continue;
+        }
+        let escaped = readings(&read);
+        out.push(read);
+        out.extend(escaped);
+    }
+    out
+}
+
+/// `text` with its percent-encoding (`%HH`) decoded, as a URL's reader decodes it; `None` when
+/// it holds none. Bytes that spell no UTF-8 read as U+FFFD.
+fn percent_decoded(text: &str) -> Option<String> {
+    if !text.contains('%') {
+        return None;
+    }
+    match percent_encoding::percent_decode_str(text).decode_utf8_lossy() {
+        std::borrow::Cow::Borrowed(_) => None,
+        std::borrow::Cow::Owned(read) => Some(read),
+    }
+}
+
+/// **The HTML named character references that spell an ASCII character**, and the character.
+/// A credential is spelled in ASCII, and no letter or digit has a named reference, so these
+/// are every name a token could hide behind; any other name stays as written. The four HTML
+/// still reads without their `;` are listed bare too. A lexical read, not a parser's: a
+/// parser refuses a page's bare `&` or unknown name, and this must read every page.
+const NAMED: &[(&str, char)] = &[
+    ("Tab;", '\t'),
+    ("NewLine;", '\n'),
+    ("excl;", '!'),
+    ("quot;", '"'),
+    ("QUOT;", '"'),
+    ("num;", '#'),
+    ("dollar;", '$'),
+    ("percnt;", '%'),
+    ("amp;", '&'),
+    ("AMP;", '&'),
+    ("apos;", '\''),
+    ("lpar;", '('),
+    ("rpar;", ')'),
+    ("ast;", '*'),
+    ("midast;", '*'),
+    ("plus;", '+'),
+    ("comma;", ','),
+    ("period;", '.'),
+    ("sol;", '/'),
+    ("colon;", ':'),
+    ("semi;", ';'),
+    ("lt;", '<'),
+    ("LT;", '<'),
+    ("equals;", '='),
+    ("gt;", '>'),
+    ("GT;", '>'),
+    ("quest;", '?'),
+    ("commat;", '@'),
+    ("lsqb;", '['),
+    ("lbrack;", '['),
+    ("bsol;", '\\'),
+    ("rsqb;", ']'),
+    ("rbrack;", ']'),
+    ("Hat;", '^'),
+    ("lowbar;", '_'),
+    ("UnderBar;", '_'),
+    ("grave;", '`'),
+    ("DiacriticalGrave;", '`'),
+    ("lcub;", '{'),
+    ("lbrace;", '{'),
+    ("verbar;", '|'),
+    ("vert;", '|'),
+    ("VerticalLine;", '|'),
+    ("rcub;", '}'),
+    ("rbrace;", '}'),
+    ("amp", '&'),
+    ("AMP", '&'),
+    ("quot", '"'),
+    ("QUOT", '"'),
+    ("lt", '<'),
+    ("LT", '<'),
+    ("gt", '>'),
+    ("GT", '>'),
+];
+
+/// The most digits a numeric character reference is read with: `&#x10FFFF;` has six hex
+/// digits and `&#1114111;` seven decimal ones. Looking no further keeps each reference a
+/// bounded look, so a text of `&#` and digits reads in one linear pass.
+const REFERENCE_DIGITS: usize = 7;
+
+/// `text` with its HTML character references decoded: numeric ones (`&#103;`, `&#x67;`, with
+/// or without the `;`) and the [`NAMED`] ones. A reference that spells no character, and any
+/// other `&`, stays as written. `None` when nothing was decoded.
+fn entities_decoded(text: &str) -> Option<String> {
+    if !text.contains('&') {
+        return None;
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut changed = false;
+    let mut rest = text;
+    while let Some(at) = rest.find('&') {
+        out.push_str(&rest[..at]);
+        let after = &rest[at + 1..];
+        match reference_at(after) {
+            Some((ch, len)) => {
+                out.push(ch);
+                changed = true;
+                rest = &after[len..];
+            }
+            None => {
+                out.push('&');
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    changed.then_some(out)
+}
+
+/// The character the reference whose body starts `s` (the text after its `&`) spells, and how
+/// many bytes of `s` it takes.
+fn reference_at(s: &str) -> Option<(char, usize)> {
+    if let Some(number) = s.strip_prefix('#') {
+        let (radix, digits_at) = match number.as_bytes().first() {
+            Some(b'x' | b'X') => (16, 2),
+            _ => (10, 1),
+        };
+        let body = &s[digits_at..];
+        let digits = body
+            .bytes()
+            .take(REFERENCE_DIGITS + 1)
+            .take_while(|b| b.is_ascii_digit() || (radix == 16 && b.is_ascii_hexdigit()))
+            .count();
+        if digits == 0 || digits > REFERENCE_DIGITS {
+            return None;
+        }
+        let ch = u32::from_str_radix(&body[..digits], radix)
+            .ok()
+            .and_then(char::from_u32)?;
+        let semi = usize::from(body.as_bytes().get(digits) == Some(&b';'));
+        return Some((ch, digits_at + digits + semi));
+    }
+    NAMED
+        .iter()
+        .find(|(name, _)| s.starts_with(name))
+        .map(|(name, ch)| (*ch, name.len()))
 }
 
 /// How many times the escapes of a text are decoded, each time from the last reading: twice
@@ -5284,6 +5449,92 @@ mod whole_and_by_line_tests {
                 "{text:?}"
             );
             assert!(with_joins(text, true).is_empty(), "{text:?}");
+        }
+    }
+}
+
+/// #5954: a credential spelled through HTML character references or percent-encoding, as an
+/// artifact's page may hold one, reads as the credential it spells.
+#[cfg(test)]
+mod web_encoded_tests {
+    use super::*;
+
+    /// A forge token, then each spelling a page may give it, none of which the scan as written
+    /// sees. Built here, so no credential-shaped literal sits in the source.
+    fn spellings() -> Vec<String> {
+        let token = escaped::token();
+        let tail = &token[1..];
+        let head = &token[..4];
+        let rest = &token[4..];
+        vec![
+            // A decimal and a hex character reference, with and without the semicolon.
+            format!("<p>&#103;{tail}</p>"),
+            format!("<p>&#x67;{tail}</p>"),
+            format!("<p>&#X67{tail}</p>"),
+            // A named reference for the underscore.
+            format!("<p>{}&lowbar;{rest}</p>", &head[..3]),
+            // Percent-encoding, as in a link.
+            format!("<a href=\"https://example.com/?t=%67{tail}\">x</a>"),
+            format!(
+                "<a href=\"https://example.com/?t={}%5F{rest}\">x</a>",
+                &head[..3]
+            ),
+            // An entity whose text is a percent escape, and a percent escape of an ampersand.
+            format!("<p>&#37;67{tail}</p>"),
+            format!("<p>%26#x67;{tail}</p>"),
+            // A JS escape inside an attribute's entity-encoded text.
+            format!("<p data-x=\"&#92;u0067{tail}\"></p>"),
+        ]
+    }
+
+    #[test]
+    fn a_token_behind_html_entities_or_percent_encoding_reads_as_the_token() {
+        for text in spellings() {
+            assert_eq!(found(&text), None, "the scan as written already saw {text}");
+            for form in [None, Structured::of("workspaces/a/artifacts/b/index.html")] {
+                assert!(decoded_kind(form, &text).is_some(), "{text}");
+                assert!(kind_as_read(form, &text).is_some(), "{text}");
+                assert_eq!(
+                    found_as_read(form, &text).map(|(line, _)| line),
+                    Some(None),
+                    "{text}"
+                );
+            }
+            assert!(token_kind_as_read(&text).is_some(), "{text}");
+        }
+    }
+
+    #[test]
+    fn each_reference_reads_as_the_character_it_spells_and_no_further() {
+        for (text, read) in [
+            ("a&#65;b", Some("aAb")),
+            ("a&#x41;b&#X42", Some("aAbB")),
+            ("&#0065;&#x00041;", Some("AA")),
+            ("&amp;lt; &lt &LT; &quot;", Some("&lt; < < \"")),
+            ("&lowbar;&UnderBar;&sol;&bsol;", Some("__/\\")),
+            ("&#12345678; &#1114112; &#xD800; &#; &#x;", None),
+            ("&nbsp; &unknown; & alone", None),
+            ("&#x10FFFF;", Some("\u{10FFFF}")),
+        ] {
+            assert_eq!(entities_decoded(text).as_deref(), read, "{text}");
+        }
+        assert_eq!(percent_decoded("a%41b%2"), Some("aAb%2".to_owned()));
+        assert_eq!(percent_decoded("100% sure"), None);
+        assert_eq!(percent_decoded("%FF"), Some("\u{FFFD}".to_owned()));
+        assert!(web_readings("plain text").is_empty());
+    }
+
+    #[test]
+    fn text_that_only_looks_encoded_reads_as_itself() {
+        // A bare ampersand, an unknown reference, a stray percent and a reference past the
+        // last character: nothing is read into a credential, and nothing panics.
+        for text in [
+            "Tom & Jerry &unknown; 100% done, 50%off &#xZZ; &#1114112; &#; &# %",
+            "&amp;&amp;&amp;%%%%2",
+            "",
+        ] {
+            assert_eq!(decoded_kind(None, text), None, "{text}");
+            assert_eq!(token_kind_as_read(text), None, "{text}");
         }
     }
 }

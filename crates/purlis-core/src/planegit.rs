@@ -2800,11 +2800,23 @@ fn memory_or_ref(path: &str) -> bool {
     path.contains("/memory/") || path.contains("/refs/")
 }
 
+/// A file of an artifact's folder, `workspaces/<ws>/artifacts/…` (ADR 0122, #5954): a page the
+/// team is shown, so it is scanned whole whatever its size or bytes, as memory is. Its size cap
+/// (`artifact::SIZE_CAP`, below [`SCAN_LIMIT`]) keeps a pinned one small; the scan does not
+/// lean on it, since a file nobody pinned yet is committed all the same.
+fn in_an_artifact(path: &str) -> bool {
+    let mut parts = path.split('/');
+    parts.next() == Some("workspaces")
+        && parts.next().is_some_and(|ws| !ws.is_empty())
+        && parts.next() == Some(crate::artifact::DIR)
+        && parts.next().is_some()
+}
+
 /// Why the secret guard commits a file without reading it, or `None` when it reads it: a file
-/// outside memory and refs that git calls binary, or that is over [`SCAN_LIMIT`]. The one rule
-/// the save and the standing both ask.
+/// outside memory, refs and artifacts that git calls binary, or that is over [`SCAN_LIMIT`].
+/// The one rule the save and the standing both ask.
 fn unscanned(path: &str, bytes: &[u8]) -> Option<&'static str> {
-    if memory_or_ref(path) {
+    if memory_or_ref(path) || in_an_artifact(path) {
         None
     } else if bytes.len() > SCAN_LIMIT {
         Some("over 10 MiB")
@@ -2822,7 +2834,9 @@ fn secret_on_disk(root: &Path, path: &str) -> bool {
     let file = root.join(path);
     if !memory_or_ref(path)
         && !std::fs::symlink_metadata(&file).is_ok_and(|meta| {
-            meta.is_file() && usize::try_from(meta.len()).is_ok_and(|len| len <= SCAN_LIMIT)
+            meta.is_file()
+                && (in_an_artifact(path)
+                    || usize::try_from(meta.len()).is_ok_and(|len| len <= SCAN_LIMIT))
         })
     {
         return false;

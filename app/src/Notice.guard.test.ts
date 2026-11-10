@@ -80,6 +80,33 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 1,
     why: READING,
   },
+  // Why a pinned artifact cannot be opened (#5952): its folder gone, or its read refused. Read
+  // once as the tab opens; closing and pressing its icon again is the retry. Since #5954 a
+  // missing, too-large or refused one carries Repin and Unpin as its way out, a refused Repin or
+  // Unpin is said in the core's sentence beside those two, which are its retry, and an unpinned
+  // one says so with nothing left to do but close the tab.
+  "ArtifactRegenerate.tsx": {
+    count: 2,
+    why:
+      "Regenerate's line in an artifact's bar: where its data stands, and a run's failure said " +
+      "beside the button that is its retry (#5962)",
+  },
+  "ArtifactHistory.tsx": {
+    count: 3,
+    why:
+      "an artifact's History (#5966): a refused read or comparison is an inline error in its " +
+      "dialog (V91n), whose Compare is the retry; what a comparison found is said once beside " +
+      "it; and the bar of a tab shown as of a version says which, beside Back to now, its way out",
+  },
+  "ArtifactTab.tsx": {
+    count: 5,
+    why: READ_ONCE,
+  },
+  // Why the browser did not open an artifact's link (#5956), in its link dialog.
+  "ArtifactLinks.tsx": {
+    count: 1,
+    why: ACTION,
+  },
   "About.tsx": {
     count: 2,
     why:
@@ -444,6 +471,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
   "PersonaProfileMissing.tsx": {
     count: 1,
     why: "Create's refusal, inside the form its Notice's fix opened: " + ACTION,
+  },
+  "PinToWorkspace.tsx": {
+    count: 2,
+    why: "Pin to workspace's and Unpin's refusals, beside the answers: " + ACTION,
   },
   "ProfileApproval.tsx": {
     count: 1,

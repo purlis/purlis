@@ -496,7 +496,7 @@ fn indexed_label(row: &crate::projectindex::Row) -> Option<String> {
         Kind::Shared => "shared".to_string(),
         Kind::Refs if row.owner == crate::contain::SHARED_PERSONA => "refs:shared".to_string(),
         Kind::Refs => format!("refs:{}", row.owner),
-        Kind::Sessions | Kind::Todos => return None,
+        Kind::Sessions | Kind::Todos | Kind::Artifacts => return None,
     })
 }
 

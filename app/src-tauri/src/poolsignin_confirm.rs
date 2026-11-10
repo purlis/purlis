@@ -235,7 +235,7 @@ pub fn ask_the_person(
     use tauri::{Emitter, Manager};
     let tell = || {
         let shown: Vec<_> = app
-            .webview_windows()
+            .windows()
             .into_values()
             .filter(|window| window.is_visible().unwrap_or(false))
             .collect();
