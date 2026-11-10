@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794340984014,
+  "lastUpdate": 1794343870351,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -46368,6 +46368,48 @@ window.BENCHMARK_DATA = {
             "value": 102.36926299999999,
             "unit": "ms",
             "extra": "median of 5 runs: 102.069, 102.090, 102.369, 102.781, 102.796 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "032a2e34467fa10db91de8761d8d79372769aa7d",
+          "message": "Ask less: rule offers with three scopes, Rules I made, and a cool-off after repeated Don't allow (#6010) (#6162)\n\n* Ask less: the answers record, rule offers and cool-offs in the core and on the ✋'s list (#6010)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M732XT9YY9Z679MXCBTHVWRK\nPurlis-Persona: steward\n\n* Asks offers a rule after the same Allow twice, lists Rules I made with Undo, and holds a chat's ask in a cool-off after Don't allow twice (#6010)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M732XT9YY9Z679MXCBTHVWRK\nPurlis-Persona: steward\n\n* The chrome test opens Rules I made, as it opens every dialog (#6010)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M732XT9YY9Z679MXCBTHVWRK\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* The rules commands answer off the window's thread, and the write table names revoke_granted (#6010)\n\nask_answered, rule_made, rules_made and end_cool_off read or write <data>/inbox/rules.json, so they are async and do their work in off_the_window, as the synchronous-commands guard asks.\n\nwriteSites.json: the network record is written by revoke_granted now (revoke_sandbox_grant only calls it), and Undo in Rules I made (undoRule) reaches revoke, revoke_browser_site and revoke_granted.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* Undo in Rules I made stays out of the sandbox's lane, with why; rules_made formatted (#6010)\n\nundoRule names a rule by its id, not by the project a lane is keyed on, so commandOrder.ts lists it in OUTSIDE_THE_LANES with its reason, as the lane guard asks of a writer of a lane's file.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T20:07:12Z",
+          "tree_id": "44f6d7a997bad596f67db2ac4b4cadc4eaae53c2",
+          "url": "https://github.com/purlis/purlis/commit/032a2e34467fa10db91de8761d8d79372769aa7d"
+        },
+        "date": 1794343861359,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.713669,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.690, 0.701, 0.714, 0.717, 0.725 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.543742,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.383, 16.406, 16.544, 16.557, 16.662 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.6417335,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.162, 101.558, 101.642, 102.395, 103.118 ms"
           }
         ]
       }
