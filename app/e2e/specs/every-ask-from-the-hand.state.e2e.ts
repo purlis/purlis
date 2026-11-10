@@ -294,10 +294,14 @@ async function keepBlocked(row: string): Promise<void> {
   // Looked for afresh at each press: the first redraws the row.
   await rowNow(row);
   await pressGrant($(row).$("button=Keep blocked"));
-  // Where the first press sent the refusal already, the row has gone with it.
+  // Where the first press sent the refusal already, the row goes with it, perhaps while the second
+  // is looked for: then there is nothing to press, and `told` says whether the chat heard it.
   if (!(await $(row).isExisting())) return;
   const again = $(row).$("button=Keep blocked");
-  if (await again.isExisting()) await pressGrant(again);
+  if (!(await again.isExisting().catch(() => false))) return;
+  await pressGrant(again).catch(async (error: unknown) => {
+    if (await $(row).isExisting()) throw error;
+  });
 }
 
 /** The command confirmation's `purlis signing check`, while it runs. */
