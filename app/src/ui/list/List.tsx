@@ -78,7 +78,14 @@ import {
   useContextMenu,
   type ContextMenuOptions,
 } from "../menu/ContextMenu";
-import { InOption, RowScope, type RowSize } from "./Row";
+import {
+  HEARD_ORDER,
+  InOption,
+  RowScope,
+  type HeardKind,
+  type OptionHeard,
+  type RowSize,
+} from "./Row";
 import { useListRowTip, type RowTipped } from "./RowTip";
 import {
   isComposing,
@@ -303,7 +310,7 @@ export function ListBox<T extends object>({
 
 export interface ListOptionProps<T extends object> extends Omit<
   AriaListBoxItemProps<T>,
-  "className" | "style"
+  "className" | "style" | "render"
 > {
   /** Its context menu: a right-click, Shift+F10 or the menu key opens it. */
   menu?: RowMenu;
@@ -337,8 +344,51 @@ function useSaysUnavailable(unavailable: boolean, given: Ref<HTMLDivElement> | u
 }
 
 /**
+ * **What an option's lines are heard by** (#6075): the ids its parts hand it (`OptionHeard`),
+ * in `HEARD_ORDER`'s order, which its element is described by before what React Aria adds.
+ */
+function useOptionHeard(): { heard: OptionHeard; describedBy: string | undefined } {
+  const [parts, setParts] = useState<readonly { kind: HeardKind; id: string }[]>([]);
+  const heard = useMemo<OptionHeard>(
+    () => ({
+      add(kind, id) {
+        setParts((was) => [...was.filter((one) => one.id !== id), { kind, id }]);
+        return () => setParts((was) => was.filter((one) => one.id !== id));
+      },
+    }),
+    [],
+  );
+  const describedBy = useMemo(() => {
+    const ids = HEARD_ORDER.flatMap((kind) =>
+      parts.filter((one) => one.kind === kind).map((one) => one.id),
+    );
+    return ids.length === 0 ? undefined : ids.join(" ");
+  }, [parts]);
+  return { heard, describedBy };
+}
+
+/** An option's element, described by its own lines and then by React Aria's (#6075): React
+ *  Aria's `useOption` sets `aria-describedby` to its description slot alone, which the family
+ *  does not fill, so what it sets is what else React Aria adds (its hint for dragging). */
+function optionElement(heard: string | undefined) {
+  return (element: Parameters<NonNullable<AriaListBoxItemProps["render"]>>[0]) => {
+    const joined = [heard, element["aria-describedby"]]
+      .filter((one) => one !== undefined && one !== "")
+      .join(" ");
+    const describedBy = joined === "" ? undefined : joined;
+    // An option with an `href` is a link, which React Aria hands as one.
+    return "href" in element ? (
+      <a {...element} aria-describedby={describedBy} />
+    ) : (
+      <div {...element} aria-describedby={describedBy} />
+    );
+  };
+}
+
+/**
  * **One option**: its `RowLabel` is its name and its `RowDescription` its description, to a
- * reader too; its `textValue` is what typing finds it by.
+ * reader too, with its `RowBelow` and a `RowLead` that says something after it (#6075); its
+ * `textValue` is what typing finds it by.
  */
 export function ListOption<T extends object>({
   className,
@@ -353,10 +403,13 @@ export function ListOption<T extends object>({
   const own = useRowMenu(menu);
   const { tipped, hold } = useListRowTip(tip);
   const element = useSaysUnavailable(unavailable, ref);
+  const { heard, describedBy } = useOptionHeard();
+  const render = useMemo(() => optionElement(describedBy), [describedBy]);
   return (
     <AriaListBoxItem
       {...mergeProps(rest, own.handlers, tipped.hover)}
       ref={element}
+      render={render}
       className={className}
       data-scope="list"
       data-part="root"
@@ -365,7 +418,7 @@ export function ListOption<T extends object>({
       data-unavailable={unavailable || undefined}
     >
       {(state) => (
-        <InOption.Provider value={true}>
+        <InOption.Provider value={heard}>
           {hold(rowHolds(children, own, tipped)(state))}
         </InOption.Provider>
       )}

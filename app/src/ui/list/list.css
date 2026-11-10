@@ -441,6 +441,13 @@
   white-space: normal;
 }
 
+/* **A card's line under its name** (a refused theme's origin, #6075) is one more of the card's
+   column, drawn as its description is: the card's own gap stands it off, and nothing wraps. */
+[data-layout="grid"] > [data-part="root"] > [data-part="below"] {
+  flex: none;
+  padding-block-end: 0;
+}
+
 /* **The key that does the same** (#2921), at the row's end in the meta role: read last, stood off
    from what is before it, informational, so in the quiet tier. */
 :where([data-scope="list"], [data-scope="tree"], [data-scope="table"])[data-part="shortcut"] {
