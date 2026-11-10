@@ -43,7 +43,7 @@ import {
 } from "../tooltip/Tooltip";
 import { drawnCut } from "../drawnCut";
 import { useWindowLeft } from "../windowLeft";
-import { RowCutWords, RowScope } from "./Row";
+import { RowCutWords, RowHeard, RowScope } from "./Row";
 
 /** What a row with a tooltip hands its element, and draws inside it. */
 export interface RowTipped {
@@ -317,12 +317,16 @@ function Shown({
   const tooltip = useRef<HTMLDivElement>(null);
   const placed = place !== null;
   const rowOf = useCallback(() => rowAround(anchor.current, scope), [scope]);
+  // A row that builds its description from its parts' ids is handed the tooltip's (#6101).
+  const heard = useContext(RowHeard);
   useEffect(() => {
     const row = rowOf();
     const shown = tooltip.current;
     if (!row || !shown) return;
     if (shown.id === "") shown.id = fallback;
     const id = shown.id;
+    if (heard !== null) return heard.add("tip", id);
+    // A tree's row, whose element React Aria draws with no `aria-describedby` of React's.
     const was = row.getAttribute("aria-describedby");
     row.setAttribute("aria-describedby", was ? `${was} ${id}` : id);
     return () => {
@@ -332,7 +336,7 @@ function Shown({
       if (now.length === 0) row.removeAttribute("aria-describedby");
       else row.setAttribute("aria-describedby", now.join(" "));
     };
-  }, [fallback, rowOf, placed]);
+  }, [fallback, rowOf, placed, heard]);
   const at = place?.at ?? null;
   return (
     <>
