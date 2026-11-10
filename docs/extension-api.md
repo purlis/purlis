@@ -70,7 +70,8 @@ same messages under `"charter": 4`, with no `chars` on a route question's skills
 - `reads-prompts` is optional and false where absent. The approval prompt says when it is true,
   and the router still reads no prompt until the person turns that on.
 - `hosts`, a top-level list of at most 16 names, is what the program may reach. A host that
-  serves a model is refused.
+  serves a model is refused, and so is any address a model provider's hosts resolve to when the
+  program connects.
 
 ## An extension with one of these words is confined
 

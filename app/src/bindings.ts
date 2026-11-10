@@ -1921,20 +1921,6 @@ export const commands = {
 	 *  on no sign-in.
 	 */
 	chatMoveSignedIn: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("chat_move_signed_in", { plane, session })),
-	/**  The question waiting for the person's answer, if one is. */
-	poolSignInAsked: () => __TAURI_INVOKE<{
-	id: number,
-	asks: Asks,
-	profile: string,
-	pool: string,
-	/**  What the terminal of the command that asks shows. */
-	code: string,
-	/**
-	 *  The forge a signing check asks, as a sentence names it (`GitHub`, `GitLab on
-	 *  gitlab.example.org`, #5793); none for the other questions.
-	 */
-	on?: string | null,
-} | null>("pool_sign_in_asked"),
 	/**
 	 *  **The person's answer to the question `id`**: only their press in the window calls this. One
 	 *  no longer waiting is left alone.
@@ -6669,18 +6655,6 @@ export type Asking = {
 	 */
 	snoozed_until?: number | null,
 };
-
-/**  Which command's question it is. */
-export type Asks = 
-/**  `purlis profile sign-in --pool`. */
-"sign-in" | 
-/**  `purlis pool remove-profile`: its runner forgets the profile, and its sign-in there. */
-"take-off" | 
-/**
- *  `purlis signing check` (#5625): the window asks GitHub how a pushed commit shows. Its
- *  `profile` is the repository (`owner/name`) and its `pool` the commit.
- */
-"signing-check";
 
 /**  What a chat's row says while it is at its task limit. */
 export type AtLimit = {
@@ -13573,21 +13547,6 @@ export type PoolSetupTried = {
 	workspace: string | null,
 };
 
-/**  What the person is asked. */
-export type PoolSignInAsk = {
-	id: number,
-	asks: Asks,
-	profile: string,
-	pool: string,
-	/**  What the terminal of the command that asks shows. */
-	code: string,
-	/**
-	 *  The forge a signing check asks, as a sentence names it (`GitHub`, `GitLab on
-	 *  gitlab.example.org`, #5793); none for the other questions.
-	 */
-	on?: string | null,
-};
-
 /**
  *  **One step of a sign-in on a pool's runner** that purlis drives with no terminal (#4042), as
  *  the window's sign-in strip shows it ([`driven::Event`]).
@@ -16631,6 +16590,20 @@ export type Shown = {
 	 *  gone says plainly that the hold ran out. The window reads the list again at that time.
 	 */
 	held_until?: number | null,
+	/**
+	 *  **Until when it waits before it ends by itself** (ADR 0121 decision 5, #6006), in seconds
+	 *  since 1970: an **Expiring ask**, listed first with its countdown. Present only where its
+	 *  source ends it at a time purlis knows: a permission hook's deadline, a held connection's
+	 *  hold, a run grant's or a Secret ask's command hold, a login's or a fill's wait, a command's
+	 *  confirmation's two minutes (the table in ADR 0121's amendment of 2026-11-10).
+	 */
+	expires?: number | null,
+	/**
+	 *  **How many open chats wait on its chat's report** (ADR 0121 decision 5, #6006), directly
+	 *  or up a dispatched chain (`purlis_core::dispatchwaits`): its row says "blocks N chats".
+	 *  Absent where none does.
+	 */
+	blocks?: number | null,
 	/**
 	 *  **What an edit would write** (#1146): each change, drawn before its Allow, or why it is
 	 *  not shown and no Allow is offered. Absent for any other ask.

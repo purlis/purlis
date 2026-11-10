@@ -11,8 +11,9 @@
 //!   state (`sandbox::services::awaiting`), so one answer settles both. Where policy locks it, or
 //!   nothing listed can be allowed here, there is nothing to decide: its Notice alone says so.
 //! - **A `purlis` command's confirmation in the window** ([`confirmation`]): a pool sign-in, a
-//!   profile taken off a pool, a signing check. Its dialog still asks, and its two minutes still
-//!   run in the core (`poolsignin_confirm`); it is listed under the one project it was filed
+//!   profile taken off a pool, a signing check. It is answered on its row alone, with the code
+//!   its command's terminal shows, and no dialog over the window (#6136); its two minutes still
+//!   run in the core (`poolsignin_confirm`). It is listed under the one project it was filed
 //!   under, so one confirmation is counted once.
 
 use super::{AnswerPath, AskSource, Offered, Shown, said_inertly};
@@ -58,6 +59,8 @@ fn of_no_chat(
         answer,
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -108,8 +111,9 @@ pub fn sandbox_expects(expects: Option<&ProjectExpects>) -> Option<Shown> {
     ))
 }
 
-/// **A command's confirmation in the window, as a Blocking ask** (#6000): its question as its
-/// dialog puts it, its yes and its no, answered as the dialog answers (`answer_pool_sign_in`).
+/// **A command's confirmation in the window, as a Blocking ask** (#6000): its question, with the
+/// code its command's terminal shows, its yes and its no, answered on its row
+/// (`answer_pool_sign_in`, #6136).
 /// `until` is when it is taken back as a no: the window reads the list again then.
 pub fn confirmation(asked: &PoolSignInAsk, until: u32) -> Shown {
     let (command, says, yes) = match asked.asks {
@@ -150,6 +154,8 @@ pub fn confirmation(asked: &PoolSignInAsk, until: u32) -> Shown {
         AnswerPath::Confirmation { id: asked.id },
     );
     shown.held_until = Some(until);
+    // It is taken back as a no at `until`: an Expiring ask (ADR 0121 decision 5, #6006).
+    shown.expires = Some(until);
     shown
 }
 
@@ -255,5 +261,19 @@ mod tests {
             assert_eq!(shown.held_until, Some(1_000));
             assert_eq!(shown.ask, "confirmation:7");
         }
+    }
+
+    /// **#6006: a confirmation is an Expiring ask**, ending when its two minutes do, while the
+    /// expects consent waits for its answer and ends at no time of its own.
+    #[test]
+    fn a_confirmation_expires_when_it_is_taken_back_and_the_expects_consent_never_does() {
+        assert_eq!(
+            confirmation(&asked(Asks::SignIn), 1_000).expires,
+            Some(1_000)
+        );
+        let consent = sandbox_expects(Some(&expects(true, None, vec![item(None)])))
+            .expect("a consent to give");
+        assert_eq!(consent.expires, None);
+        assert_eq!(consent.blocks, None);
     }
 }

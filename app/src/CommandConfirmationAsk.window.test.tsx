@@ -8,11 +8,13 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { Shown } from "./bindings";
 import { askRows, forgetInboxOpen, inboxOpenAtLaunch } from "./test-inbox";
+import { SETTLE_MS } from "./TaskBlocksNotice";
 
 /**
  * **A `purlis` command's confirmation is a Blocking ask** (#6000, ADR 0121 decision 2), on the
  * real window with the core mocked: `purlis profile sign-in --pool` waiting on the person's yes is
- * counted on the ✋ and listed in Asks, where its row answers it as its dialog does.
+ * counted on the ✋ and listed in Asks, where its row answers it. It draws no dialog over the
+ * window (#6136): the ✋ and Asks stay in reach while it waits.
  */
 
 vi.mock("./SessionPane", () => ({
@@ -102,6 +104,26 @@ describe("a command's confirmation in the window (#6000)", () => {
     await userEvent.click(within(row).getByRole("button", { name: "Cancel" }));
 
     expect(asked("answer_pool_sign_in")).toEqual([{ id: 7, yes: false }]);
+    await waitFor(() => expect(handCount()).toBeNull());
+  });
+
+  it("draws no dialog over the window, so its yes is pressed on its row with the code beside it (#6136)", async () => {
+    const { asked } = core();
+    render(<App />);
+    const row = await waitFor(() => {
+      const one = confirmationRow();
+      expect(one).toBeDefined();
+      return one as HTMLElement;
+    });
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(row).toHaveTextContent("Its terminal shows the code A1B2C3.");
+
+    // A yes waits for its row to settle (ADR 0097), as every grant in Asks does.
+    await new Promise((done) => setTimeout(done, SETTLE_MS + 50));
+    await userEvent.click(within(row).getByRole("button", { name: "Sign in" }));
+
+    expect(asked("answer_pool_sign_in")).toEqual([{ id: 7, yes: true }]);
     await waitFor(() => expect(handCount()).toBeNull());
   });
 });

@@ -669,6 +669,51 @@ impl From<purlis_core::skills::Broken> for SkillBroken {
     }
 }
 
+impl SkillBroken {
+    /// **One its runner said could not be loaded there** (1.83, #6078): `None` at a level this
+    /// window does not know, which costs that one skill alone.
+    fn said_by_its_runner(
+        one: purlis_session_protocol::session::SkillNotLoaded,
+    ) -> Option<SkillBroken> {
+        let origin = purlis_core::skills::Origin::of_level(&one.level)?;
+        Some(SkillBroken {
+            label: purlis_core::skills::level_shown(origin, one.local),
+            name: one.name,
+            level: origin.into(),
+            local: one.local,
+            why: one.why,
+        })
+    }
+}
+
+impl SkillsMissing {
+    /// **What a runner's chat started without, as its runner said it** (SK-5d, #2977; #6078),
+    /// for the chat running as `persona` on `runner`: everything a chat here is told, read on
+    /// the runner's machine.
+    fn said_by_its_runner(
+        persona: Option<String>,
+        not: purlis_session_protocol::session::SkillsNotThere,
+        runner: String,
+    ) -> SkillsMissing {
+        let shown = |all: Vec<purlis_session_protocol::session::SkillNotLoaded>| {
+            all.into_iter()
+                .filter_map(SkillBroken::said_by_its_runner)
+                .collect()
+        };
+        SkillsMissing {
+            persona,
+            missing: not.missing,
+            no_built_in: not.no_built_in,
+            no_workspace: not.no_workspace,
+            not_in_its_workspace: not.not_in_its_workspace,
+            broken: shown(not.broken),
+            by_a_repo: shown(not.by_a_repo),
+            beside_a_built_in: not.beside_a_built_in,
+            runner: Some(runner),
+        }
+    }
+}
+
 /// [`Running::started_with`].
 #[derive(Debug, Clone, Default)]
 struct StartedWith {
@@ -5116,8 +5161,31 @@ impl Chats {
         // A skill its persona names that this machine does not have (SK-5, #2768), or one it
         // would have loaded that cannot be (SK-8, #2771): the chat starts without it, and its
         // tab's Notice says which, never a silent drop. A runner's chat is checked there, by
-        // its runner, which says what it lacks in its start's answer (SK-5d, #2977).
-        let mut skills_missing = if reattaching || on_the_runner {
+        // its runner, which says what it lacks in its start's answer (SK-5d, #2977), and its
+        // host keeps that for a window that reattaches it (#6078). A chat of this window's own
+        // is not checked again at its reattach.
+        // The runner a runner's chat is on, as its host named it, or its pool where it named none
+        // (#2977, #6078).
+        let runner_or_its_pool = |runner: Option<String>| {
+            runner
+                .or_else(|| {
+                    self.sessions
+                        .pool_for(workspace.as_deref(), chat.runs_on.as_ref())
+                })
+                .unwrap_or_default()
+        };
+        let mut skills_missing = if reattaching {
+            chat.number
+                .filter(|_| armed_by_its_runner)
+                .and_then(|number| self.sessions.skills_not_there_left(number))
+                .map(|left| {
+                    SkillsMissing::said_by_its_runner(
+                        runs_as.clone(),
+                        left.skills_not_there,
+                        runner_or_its_pool(left.runner),
+                    )
+                })
+        } else if on_the_runner {
             None
         } else {
             purlis_core::hoststart::skills_not_here(&skills, &self.kit(harness), harness, &env).map(
@@ -5635,27 +5703,12 @@ impl Chats {
                     // What its persona names that its runner lacks, by that runner's own
                     // reading of its harness (#2977), named as its link reached it, or by its
                     // pool where the link names no runner.
-                    skills_missing = composed.skills_not_there.map(|not| SkillsMissing {
-                        persona: runs_as.clone(),
-                        missing: not.missing,
-                        no_built_in: not.no_built_in,
-                        // Protocol 1.81's `SkillsNotThere` carries only these two (D-2977-2),
-                        // so another workspace's skill its runner could not find is not said
-                        // here yet (#6078).
-                        no_workspace: Vec::new(),
-                        not_in_its_workspace: Vec::new(),
-                        broken: Vec::new(),
-                        by_a_repo: Vec::new(),
-                        beside_a_built_in: Vec::new(),
-                        runner: Some(
-                            composed
-                                .runner
-                                .or_else(|| {
-                                    self.sessions
-                                        .pool_for(workspace.as_deref(), chat.runs_on.as_ref())
-                                })
-                                .unwrap_or_default(),
-                        ),
+                    skills_missing = composed.skills_not_there.map(|not| {
+                        SkillsMissing::said_by_its_runner(
+                            runs_as.clone(),
+                            not,
+                            runner_or_its_pool(composed.runner),
+                        )
                     });
                     composed.number
                 })

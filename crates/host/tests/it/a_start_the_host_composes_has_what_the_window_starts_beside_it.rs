@@ -82,6 +82,14 @@ fn not_there() -> session::SkillsNotThere {
     session::SkillsNotThere {
         missing: vec!["superpowers:test-driven-development".into()],
         no_built_in: vec!["purlis-secret".into()],
+        no_workspace: vec!["workspaces/ghost:x".into()],
+        broken: vec![session::SkillNotLoaded {
+            name: "half-made".into(),
+            level: "project".into(),
+            local: false,
+            why: "its SKILL.md opens with no frontmatter".into(),
+        }],
+        ..Default::default()
     }
 }
 
@@ -541,4 +549,36 @@ async fn the_skills_a_composed_start_lacks_there_are_answered_to_its_start() {
 
     assert_eq!(lacking.skills_not_there, Some(not_there()));
     assert_eq!(plain.skills_not_there, None);
+}
+
+/// **#6078: what a composed start lacks there is answered to a window that takes the chat back
+/// too**, as its armed skills are: `programs` says it of the chat whose composition said some,
+/// and nothing of one whose said none.
+#[tokio::test]
+async fn the_skills_a_composed_start_lacks_there_are_listed_with_its_program() {
+    let linked = linked().await;
+    let lacking = linked
+        .client
+        .start_program_told(composed(Some("lacking")))
+        .await
+        .expect("started, without them");
+    let plain = linked
+        .client
+        .start_program_told(composed(None))
+        .await
+        .expect("started");
+
+    let programs = linked
+        .client
+        .programs_of(PROJECT)
+        .await
+        .expect("its programs");
+    let said = |program: &str| {
+        programs
+            .iter()
+            .find(|held| held.program == program)
+            .and_then(|held| held.skills_not_there.clone())
+    };
+    assert_eq!(said(&lacking.program), Some(not_there()));
+    assert_eq!(said(&plain.program), None);
 }

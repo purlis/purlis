@@ -14,6 +14,16 @@ export const REPORTS_ALSO: readonly string[] = [
   "privacy",
 ];
 
+/** What else a person calls You › Attention (#6019), as its builder lists them. */
+export const ATTENTION_ALSO: readonly string[] = [
+  "notifications",
+  "quiet",
+  "quiet hours",
+  "stuck",
+  "sound",
+  "do not disturb",
+];
+
 /**
  * **Every Settings group by its address and its label, without building a level** (#1201).
  *
@@ -47,7 +57,7 @@ export const SETTINGS_GROUPS: Readonly<
     { id: "you.colours", label: "Your colours" },
     { id: "you.editor", label: "Editor" },
     { id: "you.chats", label: "Chats list" },
-    { id: "you.notifications", label: "Notifications" },
+    { id: "you.notifications", label: "Attention", also: ATTENTION_ALSO },
     { id: "you.reports", label: "Reports", also: REPORTS_ALSO },
     { id: "you.machine", label: "This machine" },
     { id: "you.machine.browsers", label: "Browsers" },

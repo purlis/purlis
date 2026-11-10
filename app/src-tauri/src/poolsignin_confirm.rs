@@ -5,11 +5,13 @@
 //! taken off a pool from the command (#5174), and a commit `purlis signing check` asks GitHub
 //! about with the window's sign-in (#5625). `purlis profile sign-in --pool` and `purlis pool
 //! remove-profile` ask over the window line (`purlis_core::windowline`), and the answer is the
-//! person's press in the dialog (`PoolSignInConfirm.tsx`), through commands only the window may
-//! call (`ui::WINDOW_ONLY`).
+//! person's press on its row in Asks (#6136, ADR 0121 decision 2): it is a Blocking ask
+//! (`asking::consents::confirmation`), listed under one project ([`home_of`]), with no dialog of
+//! its own over the window. The press goes through a command only the window may call
+//! (`ui::WINDOW_ONLY`).
 //!
 //! One waits at a time. It goes when the command hangs up, and after `THE_PERSON_HAS`, which is a
-//! no. Once one has ended without a yes, the next waits a moment, so no loop keeps the dialog up.
+//! no. Once one has ended without a yes, the next waits a moment, so no loop keeps the ask up.
 //! A yes to a sign-in also lets the command keep that profile on that pool, once
 //! ([`take_the_yes`]); a yes to taking one off lets nothing else through.
 #![cfg_attr(not(unix), allow(dead_code))]
@@ -55,12 +57,14 @@ struct Question<'a> {
 
 #[cfg(test)]
 impl Question<'_> {
-    /// A question that names no forge, listed under no project.
+    /// A question that names no forge, listed under the tests' one project.
     fn of(asks: Asks) -> Self {
+        static THE_PROJECT: std::sync::LazyLock<PlaneId> =
+            std::sync::LazyLock::new(|| PlaneId::for_tests(std::path::Path::new("/p/of")));
         Question {
             asks,
             on: None,
-            home: None,
+            home: Some(&THE_PROJECT),
         }
     }
 }
@@ -153,6 +157,15 @@ fn asking(
     if typed_here {
         return Ok(None);
     }
+    // It is answered on its row in Asks alone (#6136): with no project to list it under, nothing
+    // could answer it, so it is refused rather than waited on.
+    if home.is_none() {
+        return Err(
+            "no project is open in the purlis window, so nothing can confirm it there: open one \
+             and run this again"
+                .to_owned(),
+        );
+    }
     with_slot(|slot| {
         if slot.waiting.is_some() {
             return Err(
@@ -219,7 +232,7 @@ fn asking(
 
 /// **This window just typed the line that signs `profile` in on `pool`** (Open in terminal): the
 /// person's click there is their yes to it. The command that line runs asks this window as any
-/// does, and is answered with that yes, once, within [`A_TYPED_LINE_LASTS`], with no dialog. The
+/// does, and is answered with that yes, once, within [`A_TYPED_LINE_LASTS`], with no ask. The
 /// same line run again later, from a shell's history, is asked of the person.
 pub fn the_window_typed(profile: &str, pool: &str) {
     with_slot(|slot| {
@@ -241,7 +254,7 @@ pub fn take_the_yes(profile: &str, pool: &str) -> bool {
 /// **The project a command's confirmation is listed under** (#6000): the one the command runs in,
 /// `from`, where this window holds it; else the one in front of the window the person has
 /// focused (`fronts`, focused first), else the first this window holds. None where it holds none:
-/// then only the dialog asks.
+/// then nowhere could answer it, and it is refused ([`ask_the_person`]).
 fn home_of(
     from: Option<&std::path::Path>,
     held: &[PlaneId],
@@ -351,10 +364,10 @@ pub fn waiting_in(plane: &PlaneId) -> Option<(PoolSignInAsk, u32)> {
     })
 }
 
-/// The question waiting for the person's answer, if one is.
-#[tauri::command]
-#[specta::specta]
-pub fn pool_sign_in_asked() -> Option<PoolSignInAsk> {
+/// The question waiting for the person's answer, if one is. The window reads it as its Asks row
+/// ([`waiting_in`]).
+#[cfg(test)]
+fn pool_sign_in_asked() -> Option<PoolSignInAsk> {
     with_slot(|slot| slot.waiting.as_ref().map(|waiting| waiting.ask.clone()))
 }
 
@@ -448,6 +461,27 @@ mod tests {
         assert!(ask(&soon, || false).is_err());
         assert_eq!(pool_sign_in_asked(), None);
 
+        // #6136: no project to list it under, so nowhere it could be answered: refused at once,
+        // and nobody is told.
+        let nowhere = asking(
+            Question {
+                home: None,
+                ..Question::of(Asks::SignIn)
+            },
+            "work",
+            "team",
+            "A1B2C3",
+            &waits(Duration::from_secs(30), STAYS),
+            || panic!("nobody is told"),
+            || (),
+        );
+        assert!(
+            nowhere
+                .unwrap_err()
+                .contains("no project is open in the purlis window"),
+        );
+        assert_eq!(pool_sign_in_asked(), None);
+
         // Not answered in time.
         assert!(ask(&soon, || true).unwrap_err().contains("in time"));
         assert_eq!(pool_sign_in_asked(), None);
@@ -516,7 +550,7 @@ mod tests {
         assert_eq!(
             waiting_in(&PlaneId::for_tests(std::path::Path::new("/p/a"))),
             None,
-            "a question filed under no project is listed in none"
+            "a question is listed under its own project alone"
         );
         answer_pool_sign_in(question.id, true);
         assert!(asker.join().unwrap().is_ok());
@@ -561,7 +595,7 @@ mod tests {
         with_slot(|slot| slot.ended_without_a_yes = None);
 
         // A line this window just typed is the person's yes to its own sign-in, once, with no
-        // dialog; it lets that profile be kept there once, as a yes does.
+        // ask; it lets that profile be kept there once, as a yes does.
         the_window_typed("work", "team");
         assert!(ask(&soon, || panic!("nobody is asked")).is_ok());
         assert!(take_the_yes("work", "team"));

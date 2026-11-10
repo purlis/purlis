@@ -1,23 +1,56 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { setQuietHours, useNotificationPrefs } from "../notificationPrefs";
-import { Choice } from "./components";
+import { useState } from "react";
+import type { PlaneId } from "../bindings";
+import {
+  isMinutes,
+  setExpiringSound,
+  setFinishedAfter,
+  setQuietHours,
+  setSourceOn,
+  useNotificationPrefs,
+  type Source,
+} from "../notificationPrefs";
+import { setQuietNow, useQuiet } from "../quiet";
+import { ATTENTION_ALSO } from "./catalogue";
+import { Choice, Field } from "./components";
+import { stuckSetting } from "./dispatch";
 import type { LiveSetting, SettingsGroup } from "./groups";
 
 /**
- * **You › Notifications** (#1989, Q66): the system notifications an ask raises. Only an ask
- * raises one, several chats waiting together are one, and a click opens the Inbox at the
- * first still waiting (`asknotify.rs`). Here: the quiet hours, kept in the layout file
- * (`notificationPrefs.ts`). Whether purlis may show notifications at all is the system's own
- * notification settings' to say.
+ * **Settings › You › Attention** (#6019, ADR 0121 decision 22; it took over #1989's
+ * Notifications, whose address it keeps): every control over what reaches the person and when.
+ *
+ * - **Quiet**: the schedule (quiet hours), "Quiet now", and quiet while typing, which is the
+ *   core's and has no setting (`asknotify.rs`, `TYPING_QUIET`).
+ * - **Notifications per source**, for Should know only, since a Blocking ask always notifies and
+ *   Just so you know never does: a failed task, and a long finish while away, after how many
+ *   minutes.
+ * - **The Expiring sound** (decision 12), off until turned on.
+ * - **Stuck?** (#6014): the project's thresholds, kept in its settings files, where they stay
+ *   while the operator decides whether they become this machine's. Their row says so; every other
+ *   row is this machine's, in the layout file (`notificationPrefs.ts`).
  */
-export function notificationsGroup(): SettingsGroup {
+export function notificationsGroup(plane?: PlaneId): SettingsGroup {
   return {
     id: "you.notifications",
-    label: "Notifications",
-    help: "The system notifications purlis shows when a chat asks you something, on this machine. Several chats asking together are one notification, and clicking it opens the Inbox at the first still waiting. Your system's own notification settings decide whether purlis may show them at all.",
-    settings: [quiet, time("from"), time("to")],
+    label: "Attention",
+    help: "What reaches you, and when. Asks that stop a chat always notify. Everything here is kept on this machine, except Stuck?, which is this project's.",
+    also: ATTENTION_ALSO,
+    settings: [
+      quiet,
+      time("from"),
+      time("to"),
+      quietNow,
+      typing,
+      blocking,
+      source("task-failed"),
+      source("task-done"),
+      finishedAfter,
+      expiringSound,
+      ...(plane === undefined ? [] : [stuckSetting(plane)]),
+    ],
   };
 }
 
@@ -76,3 +109,135 @@ function time(which: "from" | "to"): LiveSetting {
     },
   };
 }
+
+const quietNow: LiveSetting = {
+  id: "you.notifications.quietNow",
+  label: "Quiet now",
+  help: "Hold notifications until you turn this off, or until purlis quits. The ✋ still counts. The same switch is at the top of Asks.",
+  writes: "this machine",
+  useControl: function useQuietNow() {
+    const { by_hand } = useQuiet();
+    return {
+      control: (ids) => (
+        <Choice kind="switch" ids={ids} checked={by_hand} onCheckedChange={setQuietNow} />
+      ),
+    };
+  },
+};
+
+const typing: LiveSetting = {
+  id: "you.notifications.typing",
+  label: "Quiet while you type",
+  help: "Any key you type in a chat holds notifications until 30 seconds after the last one, so nothing interrupts you mid-sentence.",
+  writes: "nothing",
+  useControl: function useTyping() {
+    return {
+      control: (ids) => (
+        <p id={ids.id} className="ui-setting-status" aria-labelledby={ids.labelledBy}>
+          Always on
+        </p>
+      ),
+    };
+  },
+};
+
+const blocking: LiveSetting = {
+  id: "you.notifications.blocking",
+  label: "Asks that stop a chat",
+  help: "A Blocking ask always notifies, one notification per chat, and can never be turned off here, since the chat waits until you answer. Quiet holds the notification, never the ✋ count.",
+  writes: "nothing",
+  useControl: function useBlocking() {
+    return {
+      control: (ids) => (
+        <p id={ids.id} className="ui-setting-status" aria-labelledby={ids.labelledBy}>
+          Always notify
+        </p>
+      ),
+    };
+  },
+};
+
+/** What each source's switch is called and says. */
+const SOURCE_SAID: Readonly<Record<Source, { label: string; help: string }>> = {
+  "task-failed": {
+    label: "Notify when a task fails",
+    help: "A task you asked for that fails notifies you, naming it and the first line of its report. It is in Updates either way.",
+  },
+  "task-done": {
+    label: "Notify when a long task finishes",
+    help: "A task you asked for that worked longer than the minutes below notifies you as it finishes, while no purlis window is in front. It is in Updates either way.",
+  },
+};
+
+function source(kind: Source): LiveSetting {
+  return {
+    id: `you.notifications.${kind}`,
+    ...SOURCE_SAID[kind],
+    writes: "this machine",
+    useControl: function useSource() {
+      const on = !useNotificationPrefs().off.includes(kind);
+      return {
+        control: (ids) => (
+          <Choice
+            kind="switch"
+            ids={ids}
+            checked={on}
+            onCheckedChange={(to) => setSourceOn(kind, to)}
+          />
+        ),
+      };
+    },
+  };
+}
+
+const finishedAfter: LiveSetting = {
+  id: "you.notifications.finishedAfter",
+  label: "Long means more than",
+  help: "How many whole minutes a task works before its finish notifies you. Five unless you change it.",
+  writes: "this machine",
+  useControl: function useFinishedAfter() {
+    const prefs = useNotificationPrefs();
+    const set = String(prefs.finishedAfter);
+    const [typed, setTyped] = useState<string>();
+    return {
+      control: (ids) => (
+        <Field
+          kind="text"
+          ids={ids}
+          inputMode="numeric"
+          size={4}
+          value={typed ?? set}
+          disabled={prefs.off.includes("task-done")}
+          validate={(value) =>
+            isMinutes(Number(value.trim())) && /^\d+$/.test(value.trim())
+              ? undefined
+              : "Type a whole number of minutes, 1 or more."
+          }
+          onChange={setTyped}
+          onCommit={() => {
+            const minutes = Number(typed?.trim());
+            if (typed !== undefined && /^\d+$/.test(typed.trim()) && isMinutes(minutes))
+              setFinishedAfter(minutes);
+            setTyped(undefined);
+          }}
+        />
+      ),
+    };
+  },
+};
+
+// The sound itself is #6110: until it plays, the row says so.
+const expiringSound: LiveSetting = {
+  id: "you.notifications.expiringSound",
+  label: "Sound for an expiring ask",
+  help: "A sound as an ask with a countdown is about to time out. Off unless you turn it on. purlis plays no sound yet: your choice is kept for when it does.",
+  writes: "this machine",
+  useControl: function useExpiringSound() {
+    const { expiringSound: on } = useNotificationPrefs();
+    return {
+      control: (ids) => (
+        <Choice kind="switch" ids={ids} checked={on} onCheckedChange={setExpiringSound} />
+      ),
+    };
+  },
+};

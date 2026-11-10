@@ -53,7 +53,9 @@ import {
 } from "./signingAsked";
 import { refusalsAnswered } from "./vaultRefusals";
 import { asDrawn, asNamed } from "./projectExpects";
-import { POOL_SIGN_IN_CONFIRM } from "./PoolSignInConfirm";
+
+/** The event the core sends each time a command's confirmation comes or goes (`poolsignin_confirm`). */
+export const POOL_SIGN_IN_CONFIRM = "pool-sign-in-confirm";
 
 /**
  * The events after which a project's asks may read differently: its hooks' asks, a dispatch
@@ -732,8 +734,8 @@ export async function answerTaken(
         return done.status === "ok" ? { status: "ok" } : done;
       }
       case "confirmation":
-        // A command's confirmation in the window (#6000): its dialog's own answer, which takes the
-        // dialog away too. The command goes on, or stops, at once.
+        // A command's confirmation in the window (#6000), answered here alone (#6136). The
+        // command goes on, or stops, at once.
         if (option !== "yes" && option !== "no") break;
         await commands.answerPoolSignIn(path.id, option === "yes");
         return { status: "ok" };

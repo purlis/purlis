@@ -1222,6 +1222,8 @@ describe("the Project level of a read-only project (#826)", () => {
       "Network: A service on this Mac",
       "Network: Allowed for",
       "Network: Open that page",
+      // The link to where the Stuck? thresholds moved (#6019).
+      "Dispatch: Go to Attention…",
       // Where this machine runs the project's chats, kept in its own store (#4536).
       "Runs on: This machineChats run here, in this machine's sandbox.",
       "Runs on: Add a pool…",
