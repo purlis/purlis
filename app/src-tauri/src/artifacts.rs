@@ -1323,7 +1323,9 @@ fn lay(
             .initialization_script(PAGE_SCRIPT)
             .initialization_script(PORT)
             .initialization_script(crate::artifact_links::SCRIPT)
-            .incognito(true)
+            // Never incognito: on Linux wry gives an incognito webview an ephemeral WebKitGTK
+            // context that the artifact scheme never reaches, so its page is served nothing. Its
+            // storage is kept apart by its own origin ([`origin`]), as the probe proved.
             .focused(false)
             .devtools(false)
             .disable_drag_drop_handler();
@@ -1518,6 +1520,24 @@ pub async fn artifact_close(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// On Linux an incognito webview is served nothing at all by a custom scheme: WebKitGTK's
+    /// ephemeral context that wry makes for it never reaches purlis's handler, so the page never
+    /// loads and its script never reaches its port (the probe's `shape` run, CI 42769379065).
+    /// Tauri's builder cannot be read back, so this reads the source that builds it.
+    #[test]
+    fn an_artifact_webview_is_never_incognito_because_webkitgtk_serves_it_nothing() {
+        let source = include_str!("artifacts.rs");
+        let builds = source
+            .split("fn lay(")
+            .nth(1)
+            .and_then(|rest| rest.split("\n}\n").next())
+            .expect("lay builds the artifact's webview");
+        assert!(
+            builds.contains("WebviewBuilder::new") && !builds.contains(".incognito("),
+            "an artifact's webview is built incognito"
+        );
+    }
 
     fn snapshot(files: &[(&str, &str)]) -> serve::Snapshot {
         let dir = tempfile::tempdir().unwrap();
