@@ -8933,7 +8933,7 @@ nav.piece-files-head {
   max-height: 8lh;
   margin: var(--space-2) 0 0;
   overflow: auto;
-  color: var(--text-quiet);
+  /* In the Notice's own text colour: the quiet one fails contrast on a Notice's tint. */
   font-family: var(--font-mono);
   white-space: pre-wrap;
 }
