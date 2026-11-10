@@ -16,6 +16,8 @@ const MISSING = {
   persona: "ops",
   missing: ["superpowers:tdd", "langfuse"],
   no_built_in: ["purlis:gone"],
+  no_workspace: [],
+  not_in_its_workspace: [],
   broken: [],
   by_a_repo: [],
   beside_a_built_in: [],
@@ -76,6 +78,8 @@ describe("a chat's missing skills", () => {
         persona: null,
         missing: [],
         no_built_in: [],
+        no_workspace: [],
+        not_in_its_workspace: [],
         broken: [
           {
             name: "half",
@@ -99,6 +103,8 @@ describe("a chat's missing skills", () => {
         persona: null,
         missing: [],
         no_built_in: [],
+        no_workspace: [],
+        not_in_its_workspace: [],
         broken: [],
         by_a_repo: [
           {
@@ -132,6 +138,8 @@ describe("a chat's missing skills", () => {
         persona: null,
         missing: [],
         no_built_in: [],
+        no_workspace: [],
+        not_in_its_workspace: [],
         broken: [],
         by_a_repo: [],
         beside_a_built_in: names,
@@ -143,6 +151,29 @@ describe("a chat's missing skills", () => {
     expect(said(["secrets", "browser"])).toBe(
       "This chat works in a repo with its own copy of 2 built-in skills, which it gets beside " +
         "purlis's and may use instead: secrets, browser.",
+    );
+  });
+
+  it("says another workspace's skill its persona names that is not there, the workspace apart, each with its fix (SK-5b)", () => {
+    const said = (no_workspace: string[], not_in_its_workspace: string[]) =>
+      missingSays("This chat", {
+        persona: "steward",
+        missing: [],
+        no_built_in: [],
+        no_workspace,
+        not_in_its_workspace,
+        broken: [],
+        by_a_repo: [],
+        beside_a_built_in: [],
+      });
+    expect(said(["workspaces/ghost:x"], ["workspaces/ops:nope", "workspaces/ops:gone"])).toBe(
+      "steward names 1 skill of a workspace the project does not have: workspaces/ghost:x. " +
+        "Fix the workspace's name. steward names 2 skills the workspace named does not have: " +
+        "workspaces/ops:nope, workspaces/ops:gone. Make the skill there, or fix the name.",
+    );
+    expect(said([], ["workspaces/ops:nope"])).toBe(
+      "steward names 1 skill the workspace named does not have: workspaces/ops:nope. Make the " +
+        "skill there, or fix the name.",
     );
   });
 });

@@ -1586,6 +1586,12 @@ pub struct NotHere {
     pub missing: Vec<String>,
     /// A built-in skill purlis has none of: a typo, or a name from another version of purlis.
     pub no_built_in: Vec<String>,
+    /// Another workspace's skill its persona names (`workspaces/<ws>:<name>`, SK-5b, #6040),
+    /// where the project has no workspace of that name ([`Reason::NoSuchWorkspace`]).
+    pub no_workspace: Vec<String>,
+    /// Another workspace's skill its persona names, where that workspace has no skill of that
+    /// name ([`Reason::NotInItsWorkspace`]).
+    pub not_in_its_workspace: Vec<String>,
     /// A plane skill the chat would have loaded that could not be: not a whole skill, or one
     /// of two folders at its level that name it.
     pub broken: Vec<Broken>,
@@ -1722,6 +1728,8 @@ pub fn not_here_beside(
                 }
             }
             Reason::NoSuchBuiltIn => not.no_built_in.push(left.name),
+            Reason::NoSuchWorkspace => not.no_workspace.push(left.name),
+            Reason::NotInItsWorkspace => not.not_in_its_workspace.push(left.name),
             Reason::NotASkill(_) | Reason::Twin { .. } if reaches(&left) => {
                 not.broken.push(Broken {
                     name: left.name,

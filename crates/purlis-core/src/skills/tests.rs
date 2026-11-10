@@ -3605,3 +3605,57 @@ fn the_studio_as_the_persona_lists_another_workspaces_skill_it_names_with_its_le
         ]
     );
 }
+
+/// A plane where `ops` has the skill `deploy`, `smart-ide` is a workspace with none, and the
+/// persona `steward` names `skills` (SK-5a, #2933).
+fn a_persona_naming_other_workspaces(skills: &str) -> (tempfile::TempDir, PathBuf) {
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    let deploy = plane.join("workspaces/ops/skills/deploy");
+    std::fs::create_dir_all(&deploy).unwrap();
+    std::fs::write(
+        deploy.join("SKILL.md"),
+        "---\nname: deploy\ndescription: Deploys.\n---\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(plane.join("workspaces/smart-ide")).unwrap();
+    std::fs::write(plane.join("charter.toml"), "[plane]\n").unwrap();
+    let at = plane.join("personas/steward");
+    std::fs::create_dir_all(&at).unwrap();
+    std::fs::write(
+        at.join("persona.md"),
+        format!("---\nskills: {skills}\n---\n"),
+    )
+    .unwrap();
+    (tmp, plane)
+}
+
+#[test]
+fn a_chats_tab_names_another_workspaces_skill_its_persona_names_that_is_not_there() {
+    // SK-5b, #6040: decision 41, never a silent drop. Each said as the persona's list writes it,
+    // the workspace that is not there apart from the skill its workspace does not hold.
+    let (tmp, plane) = a_persona_naming_other_workspaces(
+        "workspaces/ops:deploy, workspaces/ops:nope, workspaces/ghost:x",
+    );
+    let env = crate::harness_plugin::Env {
+        chat: &[],
+        home: Some(tmp.path().join("home")),
+        process: false,
+    };
+
+    let not = not_here(
+        &plane,
+        Some("smart-ide"),
+        Some("steward"),
+        None,
+        crate::harness::Harness::ClaudeCode,
+        &env,
+        None,
+    )
+    .expect("the chat starts without two of its skills");
+
+    assert_eq!(not.no_workspace, ["workspaces/ghost:x"]);
+    assert_eq!(not.not_in_its_workspace, ["workspaces/ops:nope"]);
+    assert_eq!(not.missing, Vec::<String>::new(), "none is a harness's");
+    assert_eq!(not.broken, []);
+}

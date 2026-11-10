@@ -95,6 +95,34 @@ describe("a chat's needs as a whole", () => {
     ]);
   });
 
+  it("count another workspace's skills its persona names that are not there, fixed in its studio (SK-5b)", () => {
+    const [need] = chatNeedsOf(
+      {
+        ...NOTHING,
+        budget: null,
+        missing: {
+          persona: "steward",
+          missing: [],
+          no_built_in: [],
+          no_workspace: ["workspaces/ghost:x"],
+          not_in_its_workspace: ["workspaces/ops:nope"],
+          broken: [],
+          by_a_repo: [],
+          beside_a_built_in: [],
+        },
+      },
+      inWorkspace("smart-ide"),
+    );
+    expect(need.id).toBe("missing");
+    expect(need.title).toBe("Started without 2 skills");
+    expect(need.fix).toEqual({
+      act: "studio",
+      label: "Open in Skill studio",
+      scope: asPersona("steward"),
+      page: "library",
+    });
+  });
+
   it("go budget, router, started without, then changed, each with its fix", () => {
     const needs = chatNeedsOf(
       {
@@ -104,6 +132,8 @@ describe("a chat's needs as a whole", () => {
           persona: null,
           missing: [],
           no_built_in: [],
+          no_workspace: [],
+          not_in_its_workspace: [],
           broken: [{ name: "half", level: "project", local: false, label: "project", why: "x" }],
           by_a_repo: [],
           beside_a_built_in: [],
@@ -186,6 +216,8 @@ describe("a chat's needs as a whole", () => {
           persona: "ops",
           missing: ["tdd"],
           no_built_in: [],
+          no_workspace: [],
+          not_in_its_workspace: [],
           broken: [],
           by_a_repo: [],
           beside_a_built_in: [],
@@ -234,6 +266,8 @@ describe("a chat's needs as a whole", () => {
           persona: null,
           missing: [],
           no_built_in: [],
+          no_workspace: [],
+          not_in_its_workspace: [],
           broken: [],
           by_a_repo: [],
           beside_a_built_in: ["secrets", "browser"],

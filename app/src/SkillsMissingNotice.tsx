@@ -10,7 +10,8 @@ import { SHOW_IN_SKILLS, askChatSkills, skillsMissingPutAway } from "./chatSkill
 /**
  * **The skills a chat started without, on its tab** (SK-5, #2768; SK-8, #2771; spec decision
  * 41): never a silent drop. An installed skill this machine does not have for the chat's
- * harness, and a built-in skill purlis has none of, each named as the persona's skills write it;
+ * harness, a built-in skill purlis has none of, and another workspace's skill that workspace or
+ * the project does not have (SK-5b, #6040), each named as the persona's skills write it;
  * a skill the chat would have loaded that could not be loaded, with why; and one the repo it
  * works in leaves out, with why (SK-53). And a skill of that repo with a name of purlis's own,
  * which the chat's program loads beside purlis's (SK-37). It offers
@@ -72,6 +73,15 @@ export function missingSays(chat: string, said: SkillsMissing): string {
   if (said.no_built_in.length > 0)
     lines.push(
       `${persona} names ${counted(said.no_built_in.length, "built-in skill", "built-in skills")} purlis does not have: ${said.no_built_in.join(", ")}.`,
+    );
+  // Another workspace's skill its persona names (SK-5b, #6040), each with the lint's fix.
+  if (said.no_workspace.length > 0)
+    lines.push(
+      `${persona} names ${counted(said.no_workspace.length, "skill", "skills")} of a workspace the project does not have: ${said.no_workspace.join(", ")}. Fix the workspace's name.`,
+    );
+  if (said.not_in_its_workspace.length > 0)
+    lines.push(
+      `${persona} names ${counted(said.not_in_its_workspace.length, "skill", "skills")} the workspace named does not have: ${said.not_in_its_workspace.join(", ")}. Make the skill there, or fix the name.`,
     );
   if (said.broken.length > 0)
     lines.push(
