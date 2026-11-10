@@ -2628,9 +2628,6 @@ impl Recorder {
         if let Some(parent) = &opened.parent {
             body["parent_skill_run"] = parent.as_str().into();
         }
-        if let Some(level) = opened.whose.level {
-            body["skill_level"] = level.word().into();
-        }
         // The routing its chat started under (SK-15b), and its prompt's where a router that
         // reads prompts routed the turn's prompt (SK-15c): every run it opens names them.
         if let Some(routings) = self.routings.get(span_of(under)) {
@@ -2653,7 +2650,17 @@ impl Recorder {
         // What it ran, read once off this machine's plane, as its row says it: a desktop that
         // logs a runner chat's runs from this line logs the runner's word for it (#4219).
         let starting = crate::skilluse::Starting::of_open(opened, who.harness.as_deref());
-        let ran = crate::skilluse::ran_by(plane, &starting, who.persona.as_deref());
+        // Which copy it is of, as its row says it: its level, and the workspace whose copy it is
+        // where its persona named another's (#6083), since the level alone would read as the
+        // chat's own workspace's copy.
+        let begun = crate::skilluse::begun(plane, &starting, who.persona.as_deref());
+        if let Some(level) = begun.copy.level(opened.whose.level) {
+            body["skill_level"] = level.word().into();
+        }
+        if let Some(copy) = begun.copy.workspace() {
+            body["skill_copy_workspace"] = copy.into();
+        }
+        let ran = begun.ran;
         if let Some(ran) = &ran {
             body["tree"] = ran.word().into();
         }

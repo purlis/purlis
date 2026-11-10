@@ -241,7 +241,7 @@ pub struct Starting<'a> {
     /// The harness the chat ran on, by the word the plane calls it (`claude`, `codex`), where
     /// the start knew it.
     pub harness: Option<&'a str>,
-    /// What the run ran, where whoever started it read it ([`ran_by`]): a runner's start, off
+    /// What the run ran, where whoever started it read it ([`Begun::ran`]): a runner's start, off
     /// its own checkout (#4219). `None` reads it off the plane the row is logged in.
     pub ran: Option<&'a Content>,
 }
@@ -277,21 +277,80 @@ impl<'a> Starting<'a> {
     }
 }
 
-/// **What run `run`, as `persona`, ran, read off the plane at `root`** (SK-19): the tree git
-/// holds of its copy's folder, or that the folder held changes not committed. `None` where its
-/// start knew no level, or its copy has no folder a history is kept of. What a start's row says
-/// and, on a runner, what its `skill.started` tells its desktop (#4219).
-pub fn ran_by(root: &Path, run: &Starting<'_>, persona: Option<&str>) -> Option<Content> {
-    ran_of(
-        root,
-        run,
-        persona,
-        copy_workspace(root, run, persona).as_deref(),
-    )
+/// **Which copy run `run`, as `persona`, is of, as its start says it** (#6083), read once off the
+/// plane at `root`: what its `skill.started` says beside its level.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Begun {
+    /// What it ran (SK-19): the tree git holds of its copy's folder, or that the folder held
+    /// changes not committed. What a start's row says and, on a runner, what its
+    /// `skill.started` tells its desktop (#4219).
+    pub ran: Option<Content>,
+    /// Whose copy it is ([`copy_said`]).
+    pub copy: CopySaid,
 }
 
-/// [`ran_by`], of the copy whose workspace, at the workspace level, is `copy` where that is not
-/// the chat's own ([`copy_workspace`]), worked out once by whoever asks.
+/// **[`Begun`] of run `run`, as `persona`, read off the plane at `root`**: its copy worked out
+/// once, for both what it ran and whose it is.
+pub fn begun(root: &Path, run: &Starting<'_>, persona: Option<&str>) -> Begun {
+    let named = copy_workspace(root, run, persona);
+    let copy = CopySaid::of(root, named.clone());
+    Begun {
+        // Nothing of a copy its row says nothing of.
+        ran: (copy != CopySaid::Unsaid)
+            .then(|| ran_of(root, run, persona, named.as_deref()))
+            .flatten(),
+        copy,
+    }
+}
+
+/// **Whose copy a run is of, as its start may say it** (#6083), by the rule its row is written
+/// by ([`started`]).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum CopySaid {
+    /// The copy its level names in the chat's own place: every run but the two below.
+    #[default]
+    Own,
+    /// Another workspace's copy its persona names by its workspace (`workspaces/<ws>:<name>`,
+    /// [`crate::skills::named_copy_of`]), a LIVE one, said beside its level (`workspace ops`).
+    Named(String),
+    /// A LOCAL workspace's copy its persona names: neither that workspace's name (SK-20) nor
+    /// its level is said, since the level alone would read as the chat's own workspace's copy.
+    Unsaid,
+}
+
+impl CopySaid {
+    /// What the named copy of workspace `copy` of the plane at `root` may be said as.
+    fn of(root: &Path, copy: Option<String>) -> Self {
+        match copy {
+            None => CopySaid::Own,
+            Some(ws) if crate::wscmd::live_workspaces(root).contains(&ws) => CopySaid::Named(ws),
+            Some(_) => CopySaid::Unsaid,
+        }
+    }
+
+    /// The level its start says, of `level` the start knew: none for [`CopySaid::Unsaid`].
+    pub fn level(&self, level: Option<Level>) -> Option<Level> {
+        level.filter(|_| *self != CopySaid::Unsaid)
+    }
+
+    /// The workspace it names beside its level, for [`CopySaid::Named`] alone.
+    pub fn workspace(&self) -> Option<&str> {
+        match self {
+            CopySaid::Named(ws) => Some(ws),
+            CopySaid::Own | CopySaid::Unsaid => None,
+        }
+    }
+}
+
+/// **Whose copy run `run`, as `persona`, is of, as its start may say it** (#6083), read off the
+/// plane at `root`: what the window's run chip says beside its level. [`begun`] also reads what
+/// it ran.
+pub fn copy_said(root: &Path, run: &Starting<'_>, persona: Option<&str>) -> CopySaid {
+    CopySaid::of(root, copy_workspace(root, run, persona))
+}
+
+/// [`Begun::ran`], of the copy whose workspace, at the workspace level, is `copy` where that is
+/// not the chat's own ([`copy_workspace`]), worked out once by whoever asks.
 fn ran_of(
     root: &Path,
     run: &Starting<'_>,

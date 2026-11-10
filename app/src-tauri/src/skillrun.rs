@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use purlis_core::skills::runs::Ended;
 use purlis_core::skillspan::Tracker;
+use purlis_core::skilluse::CopySaid;
 
 use crate::planes::PlaneId;
 
@@ -37,6 +38,11 @@ pub struct OpenRun {
     /// The level of the copy it is of, as a person reads it (`persona`, `local workspace`), where
     /// its start knew it: the scope its chip opens the Skill studio at (#3694).
     pub level: Option<String>,
+    /// **The workspace whose copy it is, where that is not the chat's own** (#6083): another
+    /// workspace's skill its persona names by its workspace (`workspaces/<ws>:<name>`), as the
+    /// core works it out at the start ([`purlis_core::skilluse::copy_said`]). Its chip names it
+    /// after the level (`workspace ops`) and opens that copy's runs. `None` for every other run.
+    pub copy_workspace: Option<String>,
 }
 
 /// What a `chat-events` batch carries of a chat's skill run, and what `chat_skill_runs` answers
@@ -56,6 +62,12 @@ pub type Teller = Arc<dyn Fn(ChatSkillRun) + Send + Sync + 'static>;
 /// ([`purlis_core::usage::spent`]), or `None` where it said none: what a run's tokens are counted
 /// from. Handed in, so a test reads no machine's files.
 pub type Tokens = Arc<dyn Fn(u32) -> Option<u64> + Send + Sync + 'static>;
+
+/// **Whose copy chat `chat`'s run, started as `start` says, is of**
+/// ([`purlis_core::skilluse::copy_said`], #6083). Handed in, as it reads the chat's persona and
+/// the plane: a test reads no machine's files.
+pub type Copies =
+    Arc<dyn Fn(u32, &purlis_core::skilluse::Starting<'_>) -> CopySaid + Send + Sync + 'static>;
 
 /// **What a watched chat did** (SK-16): what a grade waits for of the chat it asked purlis for.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -98,6 +110,11 @@ pub struct SkillRuns {
     /// by chat and run id: what its tokens so far are counted from. A chat's go once it has no
     /// run open.
     started_at: Mutex<std::collections::HashMap<(u32, String), u64>>,
+    /// How a run's copy is worked out ([`Self::name_copies_by`]): none until it is told.
+    copies: Mutex<Option<Copies>>,
+    /// Whose copy each open run is of, by chat and run id, worked out once a run: a chat's go
+    /// once it has no run open.
+    copied: Mutex<std::collections::HashMap<(u32, String), CopySaid>>,
     /// The chats a grade watches, by number, each told what it did ([`Self::watch`]).
     watched: Mutex<std::collections::HashMap<u32, std::sync::mpsc::Sender<Watched>>>,
 }
@@ -111,6 +128,8 @@ impl SkillRuns {
             teller: Mutex::new(None),
             tokens: Mutex::new(None),
             started_at: Mutex::new(std::collections::HashMap::new()),
+            copies: Mutex::new(None),
+            copied: Mutex::new(std::collections::HashMap::new()),
             watched: Mutex::new(std::collections::HashMap::new()),
         })
     }
@@ -163,7 +182,43 @@ impl SkillRuns {
         *self.tokens.lock().unwrap_or_else(PoisonError::into_inner) = Some(tokens);
     }
 
-    /// **Run `run` of chat `chat` with its tokens so far** (SK-26): what the chat has spent since
+    /// **How each run's copy is worked out from now on**, for the copy its chip names (#6083).
+    pub fn name_copies_by(&self, copies: Copies) {
+        *lock(&self.copies) = Some(copies);
+    }
+
+    /// **Whose copy run `id` of chat `chat` is of** ([`Copies`]), worked out the first time the
+    /// run is told and held while it is open: a hook of the chat never reads the plane again.
+    /// Read outside the runs' lock, as its tokens are.
+    fn copy_of(&self, chat: u32, id: &str) -> CopySaid {
+        let key = (chat, id.to_owned());
+        if let Some(copy) = lock(&self.copied).get(&key) {
+            return copy.clone();
+        }
+        let Some(copies) = lock(&self.copies).clone() else {
+            return CopySaid::Own;
+        };
+        let Some(open) = self
+            .runs()
+            .inside(&chat.to_string())
+            .filter(|open| open.id == id)
+            .cloned()
+        else {
+            return CopySaid::Own;
+        };
+        let copy = copies(chat, &purlis_core::skilluse::Starting::of_open(&open, None));
+        lock(&self.copied).insert(key, copy.clone());
+        copy
+    }
+
+    /// Forgets what was held of chat `chat`'s runs, once it has none open.
+    fn forget(&self, chat: u32) {
+        lock(&self.started_at).retain(|(of, _), _| *of != chat);
+        lock(&self.copied).retain(|(of, _), _| *of != chat);
+    }
+
+    /// **Run `run` of chat `chat` as its chip tells it**: whose copy it is ([`Self::copy_of`],
+    /// #6083), and its tokens so far (SK-26): what the chat has spent since
     /// the run was first seen open with a figure. Read here, outside every lock this holds, and
     /// only for a run that is open: a chat with none reads nothing. A run first seen before its
     /// harness said any usage is counted from the first figure it says.
@@ -171,15 +226,15 @@ impl SkillRuns {
     /// The read takes a moment, in which another hook of the chat may have moved its run on: the
     /// run as it is once the figure is read is what is told, so a run the turn's end closed
     /// meanwhile is never told open again.
-    fn with_tokens(&self, chat: u32, run: Option<OpenRun>) -> Option<OpenRun> {
+    fn filled(&self, chat: u32, run: Option<OpenRun>) -> Option<OpenRun> {
         if run.is_none() {
-            lock(&self.started_at).retain(|(of, _), _| *of != chat);
+            self.forget(chat);
             return None;
         }
         let reader = lock(&self.tokens).clone();
         let now = reader.and_then(|tokens| tokens(chat));
         let Some(mut run) = open_of(&self.runs(), &chat.to_string()) else {
-            lock(&self.started_at).retain(|(of, _), _| *of != chat);
+            self.forget(chat);
             return None;
         };
         let mut started = lock(&self.started_at);
@@ -190,6 +245,12 @@ impl SkillRuns {
         run.tokens = now
             .zip(start)
             .map(|(now, then)| u32::try_from(now.saturating_sub(then)).unwrap_or(u32::MAX));
+        drop(started);
+        let copy = self.copy_of(chat, &run.id);
+        if copy == CopySaid::Unsaid {
+            run.level = None;
+        }
+        run.copy_workspace = copy.workspace().map(str::to_owned);
         Some(run)
     }
 
@@ -230,7 +291,7 @@ impl SkillRuns {
         if let Some(skill) = opened {
             self.tell_watching(call.chat, Watched::Started(skill));
         }
-        let told = self.with_tokens(call.chat, told);
+        let told = self.filled(call.chat, told);
         self.tell(call.chat, told);
     }
 
@@ -280,7 +341,7 @@ impl SkillRuns {
             }
             open_of(&runs, &key)
         };
-        let told = self.with_tokens(report.chat, told);
+        let told = self.filled(report.chat, told);
         self.tell(report.chat, told);
     }
 
@@ -303,7 +364,7 @@ impl SkillRuns {
             .runs()
             .close(&chat.to_string(), Ended::Session, now_ms());
         if !closed.is_empty() {
-            let told = self.with_tokens(chat, None);
+            let told = self.filled(chat, None);
             self.tell(chat, told);
         }
     }
@@ -322,7 +383,7 @@ impl SkillRuns {
             .map(|(chat, run)| ChatSkillRun {
                 plane: self.plane.clone(),
                 session: chat,
-                run: self.with_tokens(chat, Some(run)),
+                run: self.filled(chat, Some(run)),
             })
             .collect()
     }
@@ -364,9 +425,11 @@ fn open_of(runs: &Tracker, key: &str) -> Option<OpenRun> {
         name: purlis_core::skilluse::own_name(&open.skill, open.whose.level).into_owned(),
         id: open.id.clone(),
         tool_calls: open.signals.tool_calls,
-        // Counted by the caller, outside the runs' lock ([`SkillRuns::with_tokens`]).
+        // Counted by the caller, outside the runs' lock ([`SkillRuns::filled`]).
         tokens: None,
         level: open.whose.level.map(|level| level.word()),
+        // Worked out by the caller, outside the runs' lock ([`SkillRuns::copy_of`]).
+        copy_workspace: None,
     })
 }
 

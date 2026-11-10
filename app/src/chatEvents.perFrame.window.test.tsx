@@ -182,6 +182,7 @@ function running(session: number, calls = 1): ChatSkillRun {
       tool_calls: calls,
       tokens: null,
       level: null,
+      copy_workspace: null,
     },
   };
 }

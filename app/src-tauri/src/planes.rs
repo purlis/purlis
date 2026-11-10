@@ -3717,6 +3717,19 @@ impl Planes {
                 })
             })
         });
+        // And whose copy each open run is of, where its persona named another workspace's
+        // (#6083): worked out as the event log's `skill.started` works it out, so the chip and
+        // the log say the same copy. Weak for the handoff's reason.
+        held.hooks.skill_runs().name_copies_by({
+            let held = Arc::downgrade(&held);
+            Arc::new(move |chat, start| {
+                let Some(held) = held.upgrade() else {
+                    return purlis_core::skilluse::CopySaid::Own;
+                };
+                let persona = held.chats().persona_of(chat).and_then(|p| p.started_as);
+                purlis_core::skilluse::copy_said(held.root(), start, persona.as_deref())
+            })
+        });
         // A connection a Claude Code chat's server dialled in (#3316): parked at the chat's
         // door. The first each door is given, and every one refused, is audited: each request
         // the door carries spends one, so a park after the first says nothing new. Weak for the

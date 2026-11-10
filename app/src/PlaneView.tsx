@@ -67,6 +67,7 @@ import {
   type PlaneId,
   type LimitRefused,
   type PoolLimitOffer,
+  type OpenRun,
   type Refused,
   type RunsOnPick,
   type Sidebar as SidebarModel,
@@ -10362,19 +10363,22 @@ export const PlaneView = memo(function PlaneView({
    *  run open in chat `session`'s tab (SK-3, #3682): the skill by its own name, as the core
    *  counts the run (#3385), on the chats of the place the chat is in; a persona's own skill on
    *  that persona's chats, as the core says its level (#3694), since a workspace's scope does not
-   *  list it. */
+   *  list it; and another workspace's copy its persona names on that workspace's chats, whose
+   *  runs that copy counts wherever they ran (#6083). */
   const openSkillRun = useCallback(
-    (skill: string, run: string, session: number, level: string | null) => {
+    ({ name: skill, id: run, level, copy_workspace: copy }: OpenRun, session: number) => {
       const workspace = filedIn(session);
       const persona = personaOf(session);
       const scope =
         aPersonasOwn(level) && persona !== null
           ? asPersona(persona)
-          : workspace !== undefined && workspace !== OUTSIDE
-            ? inWorkspace(workspace)
-            : persona !== null
-              ? asPersona(persona)
-              : AT_THE_ROOT;
+          : copy !== null
+            ? inWorkspace(copy)
+            : workspace !== undefined && workspace !== OUTSIDE
+              ? inWorkspace(workspace)
+              : persona !== null
+                ? asPersona(persona)
+                : AT_THE_ROOT;
       showView(skillRunsAt(scope, skill, run), SKILL_STUDIO_TITLE);
     },
     [filedIn, personaOf, showView],

@@ -30,6 +30,7 @@ const OPEN: OpenRun = {
   tool_calls: 1,
   tokens: null,
   level: null,
+  copy_workspace: null,
 };
 
 function studioOn() {
@@ -58,7 +59,7 @@ describe("the skill run chip on a chat's pane head", () => {
     expect(chip).toHaveAccessibleName("Using the skill deploy, 3 tool calls so far. Open its runs");
     expect(screen.getAllByTestId("pane-skill-run")).toHaveLength(1);
     fireEvent.click(chip);
-    expect(onOpen).toHaveBeenCalledWith("deploy", RUN, 4, null);
+    expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ name: "deploy", id: RUN }), 4);
     // A skill's own tab an older launch kept comes back as its page in the studio (#3682).
     expect(studioOfSkillTab({ from: null, view: "skill", key: `deploy@${RUN}` })).toEqual(
       skillRuns(AT_THE_ROOT, "deploy", RUN),
@@ -88,9 +89,9 @@ describe("the skill run chip on a chat's pane head", () => {
 
     const chips = await screen.findAllByTestId("pane-skill-run");
     for (const chip of chips) fireEvent.click(chip);
-    expect(onOpen.mock.calls).toEqual([
-      ["secrets", RUN, 4, null],
-      ["purlis-notes", RUN, 5, null],
+    expect(onOpen.mock.calls.map(([run, session]) => [run.name, session])).toEqual([
+      ["secrets", 4],
+      ["purlis-notes", 5],
     ]);
     expect(chips.map((chip) => chip.querySelector(".skill-run-name")?.textContent)).toEqual([
       "secrets",
@@ -116,7 +117,7 @@ describe("the skill run chip on a chat's pane head", () => {
     expect(screen.getByTestId("pane-skill-run-tokens")).toHaveTextContent("12k tokens");
     // A persona's own skill opens on that persona's chats: the chip hands its level on.
     fireEvent.click(chip);
-    expect(onOpen).toHaveBeenCalledWith("deploy", RUN, 4, "persona");
+    expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ level: "persona" }), 4);
 
     rerender(
       <SkillRunsHere.Provider value={fixedRuns({ 4: { ...OPEN, tool_calls: 4, tokens: 13_400 } })}>
@@ -124,6 +125,28 @@ describe("the skill run chip on a chat's pane head", () => {
       </SkillRunsHere.Provider>,
     );
     expect(await screen.findByText("13k tokens")).toBeInTheDocument();
+  });
+
+  it("names the workspace whose copy it runs where its persona named another's, and opens that copy's runs (#6083)", async () => {
+    studioOn();
+    const onOpen = vi.fn();
+    render(
+      <SkillRunsHere.Provider
+        value={fixedRuns({ 4: { ...OPEN, level: "workspace", copy_workspace: "ops" } })}
+      >
+        <SkillRunChip session={4} onOpen={onOpen} />
+      </SkillRunsHere.Provider>,
+    );
+
+    const chip = await screen.findByTestId("pane-skill-run");
+    expect(chip).toHaveAccessibleName(
+      "Using the skill deploy of workspace ops, 1 tool call so far. Open its runs",
+    );
+    fireEvent.click(chip);
+    expect(onOpen).toHaveBeenCalledWith(
+      expect.objectContaining({ level: "workspace", copy_workspace: "ops" }),
+      4,
+    );
   });
 
   it("shows no tokens, never a zero, where the harness says no usage", async () => {
@@ -148,6 +171,7 @@ describe("the skill run chip on a chat's pane head", () => {
     ]);
     expect(sameRun(OPEN, { ...OPEN, tokens: 10 })).toBe(false);
     expect(sameRun(OPEN, { ...OPEN, level: "persona" })).toBe(false);
+    expect(sameRun(OPEN, { ...OPEN, copy_workspace: "ops" })).toBe(false);
     expect(sameRun(OPEN, { ...OPEN })).toBe(true);
   });
 
