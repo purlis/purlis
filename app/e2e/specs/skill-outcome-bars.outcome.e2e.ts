@@ -26,7 +26,7 @@ import {
   tabNames,
 } from "../reach.js";
 import { runningIn } from "../running.js";
-import { paneInFront, startAChat } from "../started.js";
+import { paneInFront, startAChat, theChatInFrontSays } from "../started.js";
 
 /**
  * **The Skill studio's outcome bars** (SK-23, #2786; #4343), in the built app against the real
@@ -214,7 +214,20 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
     const chat = await startAChat();
     // A running chat at its prompt, as a person has one: the reporting stand-ins hold their first
     // turn until a line is typed, and a restart waits for a turn to end.
-    if (harness.kind !== "claude") await $(".xterm-helper-textarea").addValue("\n");
+    //
+    // **At its prompt means its turn has ended, not only that a line was typed** (#6106). A Codex
+    // or opencode chat is restarted on the conversation its harness names, which purlis learns
+    // from its first hook. On a loaded runner the stand-in's program took 4 to 5 s to start, and
+    // the steps below took 4, so Restart was pressed before its first hook and was rightly
+    // refused: it had no conversation yet. Its tab says it needs you only once a hook of its
+    // harness moved it there, each of which names the conversation, and purlis follows the
+    // conversation before it tells the window (`hooks.rs`'s test of that order). Waited for before
+    // `started` below, outside the timed effort: a person's chat is at its prompt before they
+    // want a skill.
+    if (harness.kind !== "claude") {
+      await $(".xterm-helper-textarea").addValue("\n");
+      await theChatInFrontSays("needs you");
+    }
     const effort: Effort = { presses: 0, characters: 0 };
     const beforeTheStudio = await tabNames();
     const started = Date.now();
@@ -284,11 +297,17 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
 
     // The Notice goes as the restart begins. The chat is back once the pane in front is a chat the
     // core runs, and has stayed so: a pick before that types into the program being replaced.
+    //
+    // **And it is not the chat that was restarted** (#6106): a restart starts the chat under a new
+    // number and ends the old one only once the new one has started, so on a loaded runner the
+    // old chat stayed in front, running, for the whole of the steady count, and Use skill was
+    // asked of a chat about to end.
     let steady = 0;
     await browser.waitUntil(
       async () => {
         const front = await paneInFront();
-        steady = (await runningIn(chat.plane)).includes(front) ? steady + 1 : 0;
+        const back = front !== chat.session && (await runningIn(chat.plane)).includes(front);
+        steady = back ? steady + 1 : 0;
         return steady >= 3;
       },
       { timeout: 40_000, interval: 500, timeoutMsg: "the restarted chat never came back" },
