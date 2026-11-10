@@ -172,6 +172,7 @@ export function theRunsApp(rows: ProcessRow[], launcher: number, binary: string)
     const kind = appProcessKind(row.command, binary);
     if (kind !== null) found[kind].push(row.pid);
   }
+  found.windows = withoutCompanions(rows, found.windows);
   const app = new Set([...found.windows, ...found.sessionHosts]);
   for (const pid of app) {
     for (const row of descendants(rows, pid)) {
@@ -186,9 +187,30 @@ export function theRunsAppNow(binary: string): RunsApp {
   return theRunsApp(processes(), process.pid, binary);
 }
 
+/**
+ * `windows` without the crash handler's companions: on macOS the window starts its own binary
+ * again, with nothing on its command line but an environment variable, to keep a native crash's
+ * minidump (#5691, `purlis_crash_handler::watch`). Its command line is a window's, so only its
+ * parent tells it apart: a "window" whose parent is a window is that companion, not a second app.
+ */
+function withoutCompanions(rows: ProcessRow[], windows: number[]): number[] {
+  const parent = new Map(rows.map((row) => [row.pid, row.ppid]));
+  return windows.filter((pid) => !windows.includes(parent.get(pid) ?? -1));
+}
+
+/** The app's processes running `binary` in `rows`: its windows and session hosts. */
+export function appProcessesOf(rows: ProcessRow[], binary: string): AppProcesses {
+  const found: AppProcesses = { windows: [], sessionHosts: [] };
+  for (const row of rows) {
+    const kind = appProcessKind(row.command, binary);
+    if (kind !== null) found[kind].push(row.pid);
+  }
+  return { ...found, windows: withoutCompanions(rows, found.windows) };
+}
+
 /** The app's processes running `binary`, asked of the operating system. */
 export function appProcesses(binary: string): AppProcesses {
-  return appProcessesIn(ps(["-A", "-o", "pid=,command="]), binary);
+  return appProcessesOf(processes(), binary);
 }
 
 /**
