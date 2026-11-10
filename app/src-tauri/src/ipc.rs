@@ -636,7 +636,10 @@ mod tests {
         use tauri::Manager;
         let app = app();
         let main = window(&app, WINDOW);
-        assert!(app.webview_windows().contains_key(WINDOW), "before the artifact");
+        assert!(
+            app.webview_windows().contains_key(WINDOW),
+            "before the artifact"
+        );
         main.as_ref()
             .window()
             .add_child(

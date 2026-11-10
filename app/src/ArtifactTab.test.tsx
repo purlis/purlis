@@ -146,8 +146,10 @@ describe("an artifact's tab", () => {
     const onAsk = vi.fn();
     const { rerender } = render(<Tab waits onAsk={onAsk} />);
     const open = await screen.findByRole("button", { name: "Open Backlog state" });
-    // The bar still names it: purlis's, not the page's.
-    expect(screen.getByTestId("artifact-bar")).toHaveTextContent("Pinned by Ada");
+    // The bar still names it: purlis's, not the page's (once the core has said who pinned it).
+    await waitFor(() =>
+      expect(screen.getByTestId("artifact-bar")).toHaveTextContent("Pinned by Ada"),
+    );
     expect(screen.queryByTestId("artifact-frame")).toBeNull();
     expect(asked(calls, "artifact_open")).toHaveLength(0);
 

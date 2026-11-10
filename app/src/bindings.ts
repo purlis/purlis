@@ -90,10 +90,10 @@ export const commands = {
 	 */
 	artifactPreviewOpen: (plane: PlaneId, page: ArtifactPage, place: ArtifactPlace, theme: ArtifactTheme) => typedError<ArtifactOpened, string>(__TAURI_INVOKE("artifact_preview_open", { plane, page, place, theme })),
 	/**
-	 *  **Repin**: pins artifact folder `folder` again as it is pinned, its name, icon, command and
-	 *  working folder kept, so the folder is checked anew (there, inside `artifacts/`, within the
-	 *  size cap, nothing shaped like a secret). The way out of a missing or too-large artifact once
-	 *  its folder is back or smaller; the refusal's sentence when it is not.
+	 *  **Repin** ([`artifact::repin`]): pins artifact folder `folder` again as it is pinned, its name,
+	 *  icon, command and working folder kept, so the folder is checked anew. The way out of a missing
+	 *  or too-large artifact once its folder is back or smaller; the refusal's sentence when it is
+	 *  not. Every window hears that the pins moved, as it does of an unpin.
 	 */
 	artifactRepin: (plane: PlaneId, workspace: string, folder: string) => typedError<null, string>(__TAURI_INVOKE("artifact_repin", { plane, workspace, folder })),
 	/**

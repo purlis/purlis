@@ -338,6 +338,7 @@ fn every_tool_leaves_every_file_of_a_read_only_project_as_it_was() {
         .chain(purlis_core::browsertools::TOOLS.iter())
         .chain(purlis_core::themepreview::TOOLS.iter())
         .chain(purlis_core::artifact::proposal::TOOLS.iter())
+        .chain(purlis_core::artifact::tools::TOOLS.iter())
         .map(|tool| tool.name)
         .collect();
     assert_eq!(listed, every, "the server lists every tool");

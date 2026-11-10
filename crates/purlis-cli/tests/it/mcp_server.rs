@@ -293,6 +293,9 @@ fn with_the_studio_on_a_harness_with_no_skill_format_is_told_its_skills_are_over
             "skill_find",
             "skill_load",
             purlis_core::artifact::proposal::TOOL,
+            purlis_core::artifact::tools::LIST,
+            purlis_core::artifact::tools::CHECK,
+            purlis_core::artifact::tools::APPROVE_STATUS,
         ]),
         "{names:?}"
     );
@@ -1302,7 +1305,9 @@ fn artifact_list_check_and_approve_status_are_the_mcp_twins_of_the_read_only_ver
 
     let said = server.call("artifact_list", json!({}));
     assert_ne!(said["isError"], true, "{said}");
-    assert_eq!(text(&said), "1  e2e0000000a1  board  chart  Board");
+    // The id is drawn again from the folder on read, whatever pins.toml says it is.
+    let id = purlis_core::artifact::pins::id_of("board", None, None);
+    assert_eq!(text(&said), format!("1  {id}  board  chart  Board"));
 
     let said = server.call("artifact_approve_status", json!({}));
     assert_ne!(said["isError"], true, "{said}");
