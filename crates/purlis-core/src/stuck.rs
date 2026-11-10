@@ -84,6 +84,31 @@ fn minutes_said(minutes: u32) -> String {
     }
 }
 
+/// **The same command failing again and again** (#6014): how many times in a row the command
+/// that failed last has failed. Another command, or a success, starts again. A command is the
+/// same where it reads the same once trimmed. The rule Stuck? reads, and looping too
+/// (`crate::looping`, #6015), each with its own threshold.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Failing(Option<(String, u32)>);
+
+impl Failing {
+    /// `command` ran, and `failed` or not: answers how many times in a row it has failed now.
+    pub fn ran(&mut self, command: &str, failed: bool) -> u32 {
+        let command = command.trim();
+        self.0 = match self.0.take() {
+            _ if !failed => None,
+            Some((same, times)) if same == command => Some((same, times.saturating_add(1))),
+            _ => Some((command.to_owned(), 1)),
+        };
+        self.times()
+    }
+
+    /// How many times in a row the command that failed last has failed: 0 after a success.
+    pub fn times(&self) -> u32 {
+        self.0.as_ref().map_or(0, |(_, times)| *times)
+    }
+}
+
 /// What has been heard of one chat in its current state.
 #[derive(Debug, Clone, Default)]
 struct Heard {
@@ -92,7 +117,7 @@ struct Heard {
     /// When a new command or output was last heard.
     last: i64,
     /// The command that failed last, and how many times in a row.
-    failing: Option<(String, u32)>,
+    failing: Failing,
     /// The person said "It's fine" in this state.
     fine: bool,
 }
@@ -116,7 +141,7 @@ impl Watch {
         *heard = Heard {
             working_since: working.then_some(now),
             last: now,
-            failing: None,
+            failing: Failing::default(),
             fine: false,
         };
         true
@@ -141,12 +166,7 @@ impl Watch {
         let Some(heard) = self.chats.get_mut(&chat) else {
             return;
         };
-        let command = command.trim();
-        heard.failing = match heard.failing.take() {
-            _ if !failed => None,
-            Some((same, times)) if same == command => Some((same, times.saturating_add(1))),
-            _ => Some((command.to_owned(), 1)),
-        };
+        heard.failing.ran(command, failed);
     }
 
     /// **"It's fine"**: chat `chat` is not stuck until it changes state.
@@ -168,9 +188,7 @@ impl Watch {
         if heard.fine {
             return None;
         }
-        if let Some((_, times)) = &heard.failing
-            && *times >= limits.failing_times
-        {
+        if heard.failing.times() >= limits.failing_times {
             return Some(Why::Failing {
                 times: limits.failing_times,
             });

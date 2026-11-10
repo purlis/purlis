@@ -276,6 +276,9 @@ export const DECISIONS: ReadonlySet<Shown["source"]> = new Set<Shown["source"]>(
   // What the project expects of this machine, and a command's confirmation (#6000).
   "sandbox-expects",
   "confirmation",
+  // A chat paused at its budget or as looping (#6015).
+  "budget",
+  "looping",
 ]);
 
 /** What a decision of each kind asks, as its row's title: a question. */
@@ -289,6 +292,8 @@ const QUESTION: Partial<Record<Shown["source"], string>> = {
   "browser-site": "Let its browser reach this site?",
   "sandbox-expects": "Allow what this project expects?",
   confirmation: "Confirm what this command asks?",
+  budget: "Let it go on past its budget?",
+  looping: "Let it go on?",
 };
 
 /** **The question a decision asks** (#5998), named as the person reads it: a run grant names
@@ -496,6 +501,8 @@ export const SOURCE_SAID: Record<Shown["source"], string> = {
   "task-question": "Asks you, through its asking chat",
   "sandbox-expects": "Asks you to allow what this project expects",
   confirmation: "A command waits on your confirmation",
+  budget: "Paused at its budget",
+  looping: "Paused, as it may be looping",
 };
 
 /** Why a task's question reached the person, as its row says it. */

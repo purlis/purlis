@@ -107,6 +107,9 @@ const ON_A_PANE: ReadonlySet<Shown["source"]> = new Set([
   "pool-tool",
   "secret",
   "run-grant",
+  // A chat paused at its budget or as looping (#6015).
+  "budget",
+  "looping",
 ]);
 
 /**

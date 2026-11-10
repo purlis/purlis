@@ -1222,8 +1222,8 @@ fn started_in(lineage: &[(u32, Option<u32>)], chat: u32) -> Option<u32> {
 }
 
 /// **The person pressed Stop on chat `session`**, alone or with everything `below` it. The
-/// only way a stop begins. Private to this file, so the two window commands ([`stop_chat`],
-/// [`end_task`]) are its only callers.
+/// only way a stop begins. Private to this file, so the window's commands ([`stop_chat`],
+/// [`end_task`], and Stop on a paused chat's ask, [`stop_as_asked`]) are its only callers.
 ///
 /// **The lineage is read and the stop recorded in one hold**, the one [`refuses_a_start`] and
 /// [`sweeps`] take: a chat that opens is either read here, and stopped with the rest, or opens
@@ -1235,6 +1235,12 @@ fn started_in(lineage: &[(u32, Option<u32>)], chat: u32) -> Option<u32> {
 /// ([`refuses_a_start`], asked again as it starts).
 fn press(held: &Arc<Held>, session: u32, below: bool, way: Way) -> Result<(), String> {
     press_where(held, session, below, way, false)
+}
+
+/// **Stop on a paused chat's ask** (#6015): the window's Stop, the chat and every chat below
+/// it, as [`stop_chat`] stops them. Only `crate::pausing` calls it, as the person answers.
+pub(crate) fn stop_as_asked(held: &Arc<Held>, session: u32) -> Result<(), String> {
+    press(held, session, true, Way::Report)
 }
 
 /// What ending a chat that is not a task, by the task's own command, is refused with.

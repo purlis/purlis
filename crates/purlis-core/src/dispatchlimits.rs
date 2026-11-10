@@ -230,13 +230,13 @@ impl Limit {
             Self::TokensPerSession => {
                 "The tokens one session may use, its own chat and all its tasks, as their \
                  harnesses report them. At the limit no new task starts, and the tasks at work \
-                 are asked for their report. A harness that reports no tokens is not counted. \
-                 Off until set."
+                 are paused until you answer: Continue, Raise the budget or Stop. A harness that \
+                 reports no tokens is not counted. Off until set."
             }
             Self::MinutesPerTask => {
                 "How long one task may work: its working time, not time waiting on you or on its \
-                 own tasks, nor time purlis was closed. A task past it is asked for its report \
-                 and ended, and its own tasks with it. Off until set."
+                 own tasks, nor time purlis was closed. A task past it is paused, with its own \
+                 tasks, until you answer: Continue, Raise the budget or Stop. Off until set."
             }
             Self::QuietNoteMinutes => {
                 "Minutes a task at work may go without a word from its harness before purlis \

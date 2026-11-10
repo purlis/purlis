@@ -55,6 +55,31 @@ fn its_turn_has_stopped(held: &Held, chat: u32) {
     });
 }
 
+/// Task `task` is paused at a budget, asked about in Asks, and held still on its host.
+fn is_paused_and_asked(held: &Held, host: &Pretend, task: u32, source: crate::asking::AskSource) {
+    assert!(held.pauses().holds(task), "paused");
+    assert!(
+        host.terminal().contains(&format!("held {task}")),
+        "{:?}",
+        host.terminal()
+    );
+    let asks = crate::asking::counted(held).asks;
+    assert!(
+        asks.iter()
+            .any(|ask| ask.session == task && ask.source == source),
+        "listed and counted: {asks:?}"
+    );
+}
+
+/// The person answers task `task`'s pause with `option`, in Asks.
+fn answers_its_pause(held: &Held, task: u32, option: &str) {
+    let held = kept(held);
+    let option = option.to_owned();
+    bounded("the answer to a pause", move || {
+        crate::pausing::answer(&held, task, &option).expect("answered");
+    });
+}
+
 /// The moment of the first look.
 fn now() -> chrono::DateTime<chrono::Utc> {
     chrono::Utc::now()
@@ -86,7 +111,8 @@ fn with_neither_limit_set_nothing_is_stopped_however_long_and_however_much() {
 }
 
 #[test]
-fn a_task_past_its_working_time_is_asked_for_its_report_and_its_asker_is_told_why() {
+fn a_task_past_its_working_time_is_paused_and_on_stop_asked_for_its_report_and_its_asker_told_why()
+{
     let (_plane, host, _planes, id, held, steward) = a_steward_under("minutes-per-task = 30");
     let task = a_task_of(&held, &id, steward, "check prod");
     rests(&held, steward);
@@ -98,9 +124,17 @@ fn a_task_past_its_working_time_is_asked_for_its_report_and_its_asker_is_told_wh
     the_clock_looks_at(&held, at);
     assert!(!held.stopping().is_stopping(task));
 
-    // Forty working seconds later it is past its time: its turn is ended, then it is asked
-    // for its report in purlis's words.
+    // Forty working seconds later it is past its time: it is paused, and the person asked
+    // (#6015). Nothing is typed into it.
     the_clock_looks_at(&held, at + secs(40));
+    is_paused_and_asked(&held, &host, task, crate::asking::AskSource::Budget);
+    assert!(!held.stopping().is_stopping(task));
+    assert!(host.typed(task).is_empty(), "{:?}", host.typed(task));
+
+    // Stop: it goes on, its turn is ended, then it is asked for its report in purlis's words.
+    answers_its_pause(&held, task, crate::asking::pauses::STOP);
+    assert!(host.terminal().contains(&format!("let go {task}")));
+    assert!(!held.pauses().holds(task));
     assert!(held.stopping().is_stopping(task));
     assert_eq!(host.typed(task), vec![ESCAPE.to_vec()]);
     its_turn_has_stopped(&held, task);
@@ -209,6 +243,8 @@ fn a_task_past_its_time_takes_its_own_tasks_with_it_deepest_first_and_names_them
 
     the_clock_looks_at(&held, at);
     the_clock_looks_at(&held, at + secs(30));
+    is_paused_and_asked(&held, &host, task, crate::asking::AskSource::Budget);
+    answers_its_pause(&held, task, crate::asking::pauses::STOP);
 
     // Both are being stopped; the one below is asked at once, as stopped with the task above.
     assert!(held.stopping().is_stopping(task));
@@ -288,6 +324,12 @@ fn at_the_token_limit_a_task_is_refused_with_the_figure_and_the_tasks_at_work_re
     assert!(why.contains("Settings › Project › Dispatch"), "{why}");
 
     the_clock_looks_at(&held, now());
+
+    // The topmost task at work is paused, the one below held with it, and the person asked
+    // (#6015). The session itself is never paused.
+    is_paused_and_asked(&held, &host, task, crate::asking::AskSource::Budget);
+    assert!(!held.pauses().holds(steward));
+    answers_its_pause(&held, task, crate::asking::pauses::STOP);
 
     // Every task at work is asked for its report, each told it was its session's tokens.
     let reached = Reached::Tokens {
@@ -463,4 +505,85 @@ fn a_session_past_its_token_limit_says_so_as_soon_as_its_chats_are_put_back() {
 
     let said = row_of(&held, steward).at_limit.expect("shown at once");
     assert_eq!(said.row, "at its token limit (150k of 100k)");
+}
+
+#[test]
+fn continue_at_a_budget_lets_the_task_go_on_past_it_and_asks_no_more() {
+    let (_plane, host, _planes, id, held, steward) = a_steward_under("minutes-per-task = 30");
+    let task = a_task_of(&held, &id, steward, "check prod");
+    rests(&held, steward);
+    works(&held, task);
+    has_worked(&held, task, 31 * 60);
+    let at = now();
+    the_clock_looks_at(&held, at);
+    is_paused_and_asked(&held, &host, task, crate::asking::AskSource::Budget);
+
+    answers_its_pause(&held, task, crate::asking::pauses::CONTINUE);
+
+    assert!(host.terminal().contains(&format!("let go {task}")));
+    assert!(!held.pauses().holds(task));
+    // Still past the same limit at the next looks: it works on, and nobody is asked again.
+    the_clock_looks_at(&held, at + secs(30));
+    the_clock_looks_at(&held, at + secs(60));
+    assert!(!held.pauses().holds(task));
+    assert!(!held.stopping().is_stopping(task));
+    assert!(host.typed(task).is_empty(), "{:?}", host.typed(task));
+    assert!(
+        crate::asking::counted(&held)
+            .asks
+            .iter()
+            .all(|ask| ask.session != task),
+        "no ask is left"
+    );
+}
+
+#[test]
+fn a_paused_tasks_time_does_not_count_and_raising_its_budget_lets_it_go_on() {
+    let (plane, host, _planes, id, held, steward) = a_steward_under("minutes-per-task = 30");
+    let task = a_task_of(&held, &id, steward, "check prod");
+    rests(&held, steward);
+    works(&held, task);
+    has_worked(&held, task, 31 * 60);
+    let at = now();
+    the_clock_looks_at(&held, at);
+    is_paused_and_asked(&held, &host, task, crate::asking::AskSource::Budget);
+    let worked = record_of(&held, task).worked;
+
+    // Held still: the minutes that pass are not its working time.
+    the_clock_looks_at(&held, at + secs(60));
+    the_clock_looks_at(&held, at + secs(120));
+    assert_eq!(record_of(&held, task).worked, worked);
+    assert!(held.pauses().holds(task));
+
+    // Raise the budget: the person sets an hour, and the next look lets it go on.
+    std::fs::write(
+        plane.root.join(purlis_core::plane::MANIFEST),
+        "[persona]\ndefault = \"steward\"\n[dispatch]\nminutes-per-task = 60\n",
+    )
+    .expect("the manifest");
+    the_clock_looks_at(&held, at + secs(150));
+    assert!(!held.pauses().holds(task));
+    assert!(host.terminal().contains(&format!("let go {task}")));
+    assert!(!held.stopping().is_stopping(task));
+}
+
+#[test]
+fn a_chat_whose_same_command_fails_again_and_again_is_paused_until_its_fine() {
+    // #6015: Stuck? at 3 failures in a row by default, so a loop at 6.
+    let (_plane, host, _planes, _id, held, steward) = a_steward_under("");
+    works(&held, steward);
+    for _ in 0..5 {
+        crate::stuck::ran(&held, steward, "cargo test", true);
+    }
+    assert!(!held.pauses().holds(steward));
+
+    crate::stuck::ran(&held, steward, "cargo test", true);
+
+    is_paused_and_asked(&held, &host, steward, crate::asking::AskSource::Looping);
+    answers_its_pause(&held, steward, crate::asking::pauses::FINE);
+    assert!(!held.pauses().holds(steward));
+    assert!(host.terminal().contains(&format!("let go {steward}")));
+    // Its counts start again: one more failure is no loop.
+    crate::stuck::ran(&held, steward, "cargo test", true);
+    assert!(!held.pauses().holds(steward));
 }

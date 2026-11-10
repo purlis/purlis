@@ -387,6 +387,12 @@ impl SessionHost for Sessions {
             .spawn(move || program.note_strays());
     }
 
+    fn hold(&self, id: u32, still: bool) {
+        if let Ok(program) = self.with(id, |running| Ok(running.session.program())) {
+            program.hold(still);
+        }
+    }
+
     fn running(&self) -> Vec<u32> {
         let mut ids: Vec<u32> = lock(&self.running).keys().copied().collect();
         ids.sort_unstable();

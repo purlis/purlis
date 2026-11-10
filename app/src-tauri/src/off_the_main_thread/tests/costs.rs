@@ -545,6 +545,8 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             "cancel_smart_close",
             "close_session",
             "stop_chat",
+            // A paused chat let go on or stopped (#6015): in order with what is typed to it.
+            "answer_pause",
             "ask_chat_restart",
             "keep_sandbox_block",
         ],

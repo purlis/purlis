@@ -100,7 +100,49 @@ const PUSH: Shown = {
   },
 };
 
-const ASKS = { RUN_GRANT, RUN_NEEDS_A_VALUE, HOST, CONSENT, CONFIRMATION, PUSH } as const;
+/** A task paused at its time limit (#6015): Continue, Raise the budget or Stop. */
+const BUDGET: Shown = {
+  session: 7,
+  ask: "paused:7",
+  says:
+    "Budget reached: It had worked 30 minutes and a task may work 30 minutes here (minutes " +
+    "per task: working time only, not time waiting on the person or on its own tasks). The " +
+    "person sets that limit in Settings › Project › Dispatch.",
+  options: [
+    { id: "continue", label: "Continue", allows: true },
+    { id: "raise", label: "Raise the budget", allows: true },
+    { id: "stop", label: "Stop", allows: false },
+  ],
+  source: "budget",
+  chain: ["steward 7"],
+  answer: { via: "paused" },
+  since: 1_000,
+};
+
+/** A chat paused as looping (#6015): It's fine, continue, or Stop. */
+const LOOPING: Shown = {
+  ...BUDGET,
+  session: 8,
+  ask: "paused:8",
+  says: "It may be looping: the same command failed 6 times in a row.",
+  options: [
+    { id: "fine", label: "It's fine, continue", allows: true },
+    { id: "stop", label: "Stop", allows: false },
+  ],
+  source: "looping",
+  chain: ["steward 8"],
+};
+
+const ASKS = {
+  RUN_GRANT,
+  RUN_NEEDS_A_VALUE,
+  HOST,
+  CONSENT,
+  CONFIRMATION,
+  PUSH,
+  BUDGET,
+  LOOPING,
+} as const;
 
 /** The Inbox as wide as the window's side of it, holding one ask. */
 function OneAsk({ ask }: { ask: keyof typeof ASKS }) {
@@ -278,5 +320,42 @@ export const AHighRiskAskOnItsRow: Story = {
     await waitFor(() =>
       expect(canvas.queryByRole("group", { name: "Allow a push to main?" })).toBeNull(),
     );
+  },
+};
+
+/** **A chat paused at its budget, on its row** (#6015): Continue, Raise the budget and Stop on the
+ *  row, then Go to chat; → walks them. */
+export const ABudgetReachedOnItsRow: Story = {
+  args: { ask: "BUDGET" },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvasElement.querySelector(".inbox-question")).toHaveTextContent(
+      "Let it go on past its budget?",
+    );
+    await userEvent.tab();
+    await untilFocused(rowIn(canvasElement), "Tab lands on the row");
+    for (const name of ["Continue", "Raise the budget", "Stop", "Go to chat steward 7"]) {
+      await userEvent.keyboard("{ArrowRight}");
+      await untilFocused(() => canvas.getByRole("button", { name }), `→ reaches ${name}`);
+      expectFocusInSight();
+    }
+  },
+};
+
+/** **A chat paused as looping, on its row** (#6015): It's fine, continue and Stop on the row;
+ *  → walks them. */
+export const ALoopOnItsRow: Story = {
+  args: { ask: "LOOPING" },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvasElement.querySelector(".inbox-question")).toHaveTextContent("Let it go on?");
+    await expect(canvas.getByText(/failed 6 times in a row/)).toBeVisible();
+    await userEvent.tab();
+    await untilFocused(rowIn(canvasElement), "Tab lands on the row");
+    for (const name of ["It's fine, continue", "Stop"]) {
+      await userEvent.keyboard("{ArrowRight}");
+      await untilFocused(() => canvas.getByRole("button", { name }), `→ reaches ${name}`);
+      expectFocusInSight();
+    }
   },
 };

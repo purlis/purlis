@@ -201,6 +201,15 @@ impl Noticed {
         held_lock(&self.said).remove(&chat);
     }
 
+    /// The thresholds chat `chat` is held to now: those read as its turn began, or each
+    /// limit's default where it is not working.
+    pub fn limits_now(&self, chat: u32) -> Limits {
+        held_lock(&self.limits)
+            .get(&chat)
+            .copied()
+            .unwrap_or_else(unset)
+    }
+
     /// What every chat of the project last told, for a window that opens.
     pub fn all(&self) -> Vec<ChatNoticed> {
         held_lock(&self.said)
@@ -221,12 +230,16 @@ impl Noticed {
     /// Asks the watch whether chat `chat` reads Stuck? now, and tells the window if that
     /// changed.
     fn look(&self, chat: u32) {
-        let limits = held_lock(&self.limits)
-            .get(&chat)
-            .copied()
-            .unwrap_or_else(unset);
+        let limits = self.limits_now(chat);
+        // A chat paused into an ask is held still, and asked about already (#6015).
+        let paused = self
+            .held
+            .get()
+            .and_then(Weak::upgrade)
+            .is_some_and(|held| held.pauses().holds(chat));
         let stuck = held_lock(&self.watch)
             .stuck(chat, now(), &limits)
+            .filter(|_| !paused)
             .map(|why| why.said());
         self.tell_if_changed(chat, |said| said.stuck = stuck);
     }
@@ -247,7 +260,7 @@ impl Noticed {
 
 /// The thresholds in force for chat `chat`: the project's, its workspace's or its persona's
 /// (`purlis_core::dispatchlimits`).
-fn limits_of(held: &Held, chat: u32) -> Limits {
+pub(crate) fn limits_of(held: &Held, chat: u32) -> Limits {
     let open = held.chats().open_now();
     let open = open.iter().find(|open| open.session == chat);
     Limits::of(&purlis_core::dispatchlimits::of(
@@ -266,6 +279,8 @@ pub fn heard(held: &Held, chat: u32) {
 /// Chat `chat` ran `command`, which `failed` or not.
 pub fn ran(held: &Held, chat: u32, command: &str, failed: bool) {
     held.noticed().ran(chat, command, failed);
+    // And toward a loop, which pauses it (#6015).
+    crate::pausing::ran(held, chat, command, failed);
 }
 
 /// What each chat of a project last told: Stuck? and work left behind.
