@@ -52,15 +52,19 @@ export function pressTab(shift = false, by: TabTakenBy = "the dialog family"): v
     from.closest('[role="dialog"], [role="alertdialog"]') === null
   )
     throw new Error("Tab was pressed with the keyboard outside a dialog");
-  const what = from.getAttribute("aria-label") ?? from.textContent?.trim() ?? from.localName;
+  const named = from.getAttribute("aria-label") ?? from.textContent?.trim() ?? from.localName;
   let reached = false;
   const heard = () => {
     reached = true;
   };
   from.addEventListener("keydown", heard);
-  const unprevented = fireEvent.keyDown(from, { key: "Tab", shiftKey: shift });
-  from.removeEventListener("keydown", heard);
-  if (unprevented) throw new Error(`Tab from "${what}" was left to the engine: nothing took it`);
+  let unprevented: boolean;
+  try {
+    unprevented = fireEvent.keyDown(from, { key: "Tab", shiftKey: shift });
+  } finally {
+    from.removeEventListener("keydown", heard);
+  }
+  if (unprevented) throw new Error(`Tab from "${named}" was left to the engine: nothing took it`);
   if (reached !== (by === "the focus scope"))
-    throw new Error(`Tab from "${what}" was taken, but not by ${by}`);
+    throw new Error(`Tab from "${named}" was taken, but not by ${by}`);
 }

@@ -94,8 +94,8 @@ describe("starting a chat", () => {
     // `HTMLFormControlElement::isKeyboardFocusable` hands over to
     // `Element::isKeyboardFocusable` the moment `tabIndexSetExplicitly()`, and never consults
     // the gate. Inside a dialog the family now moves Tab itself (`useTabbing`, #2910), which
-    // `Modals.keyboard.test.tsx` walks for every modal; this attribute is what still holds
-    // where the engine's own sequence decides.
+    // `Modals.keyboard.test.tsx` walks for every modal. In a dialog this attribute is the
+    // fallback, should the family's Tab ever stand back; outside one it is what decides.
     //
     // **What jsdom cannot tell you is whether the attribute survives the build.** A jsdom
     // test renders the components; an operator gets a Vite bundle inside a WKWebView, and an

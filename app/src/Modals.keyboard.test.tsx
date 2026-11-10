@@ -74,8 +74,9 @@ import { pressTab, type TabTakenBy } from "./ui/dialog/dialog.testkit";
  * nothing else** (#6069): each press must be taken by the surface, and one that is left to the
  * engine fails the walk. Until #6069 a press left over went to a model of WebKit's sequence
  * (`inWebKitsTabSequence`, `tabSequence.ts`); no walk had reached it since the family took Tab,
- * so it was dropped here. The rule still has a reader where the engine's sequence is what moves
- * the keyboard: a terminal's Ctrl+Tab (`SessionPane.leavesTheChat`, `Window.keyboard.test.tsx`).
+ * so it was dropped here. The rule still has readers where the engine's sequence is what moves
+ * the keyboard outside a dialog: leaving a terminal and the window's regions (`moveAlong`), and
+ * their tests (`Window.keyboard.test.tsx`, `PanelHalves.window.test.tsx`).
  *
  * **Why this is measured here and not in a scenario — which was tried, in a real window, and
  * cannot be done.** The obvious objection to this whole file is that jsdom is not WebKit, so a
@@ -100,6 +101,12 @@ afterEach(() => {
   clearMocks();
 });
 
+/** Who takes Tab in every surface here but the palette. */
+const FAMILY: TabTakenBy = "the dialog family";
+
+/** Which way a walk goes, and who must take each of its presses. */
+type Walk = { shift?: boolean; by?: TabTakenBy };
+
 /**
  * One Tab press, as the surface hears it, failing unless `by` took it (`pressTab`, #6069).
  *
@@ -109,7 +116,7 @@ afterEach(() => {
  * Aria's dialog wraps round a scope of its own too: a walk that only watched the focus would
  * pass with the family's Tab gone.
  */
-async function tab({ shift = false, by = "the dialog family" as TabTakenBy } = {}) {
+async function tab({ shift = false, by = FAMILY }: Walk = {}) {
   pressTab(shift, by);
   await act(async () => {});
 }
@@ -128,10 +135,7 @@ function said(el: Element): string {
  * does to find out what is there. A control the keyboard cannot get to is simply missing from
  * the answer, and the assertion says which.
  */
-async function reachableByKeyboard({
-  shift = false,
-  by = "the dialog family" as TabTakenBy,
-} = {}): Promise<string[]> {
+async function reachableByKeyboard({ shift = false, by = FAMILY }: Walk = {}): Promise<string[]> {
   const at = document.activeElement as HTMLElement;
   // **The elements, and the words only at the end** (charter-app#197). This used to remember
   // where it had been by what each control is CALLED, and that is a false positive waiting for
@@ -866,8 +870,10 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
 
   it("keeps Tab on the palette's box, its one stop, by React Aria's focus scope", async () => {
     // The palette has an anatomy of its own, so the dialog family's Tab stands back from it
-    // (`own` in `useTabbing`) and React Aria's `FocusScope` (`contain`, the family's `NotModal`)
-    // takes the key instead: round its one stop, the box, and never out to the window behind.
+    // (`own` in `useTabbing`): the key reaches the box, and a focus scope of React Aria's takes
+    // it there and keeps the keyboard on the box rather than letting it out to the window. Two
+    // scopes contain here, `NotModal`'s and the one React Aria's `useDialog` asks its `Overlay`
+    // for, and this does not tell them apart: either keeps it green.
     // It was once the control case for WebKit's own sequence — a text `<input>` is in it
     // whatever full keyboard access says — and the walk no longer consults the engine (#6069).
     render(<Palette offers={[]} onRun={() => ({ ok: true }) as const} />);
