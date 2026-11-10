@@ -3211,6 +3211,10 @@ fn a_chat_whose_permission_ask_timed_out_is_listed_at_its_pane_prompt_beside_it(
             (2, AskSource::Permission, Some(1_700_000_000)),
             (3, AskSource::Permission, None),
             (2, AskSource::Terminal, None),
+        ]
+    );
+}
+
 // Risk (ADR 0121 decision 8, #6011).
 
 #[test]

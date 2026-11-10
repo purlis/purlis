@@ -13300,6 +13300,13 @@ export type Shown = {
 	 */
 	timed_out?: number | null,
 	/**
+	 *  **What a yes to it risks** (ADR 0121 decision 8, #6011): a push to a protected branch,
+	 *  a host that looks like production, a write outside the project, read from the project's
+	 *  own facts (`purlis_core::askrisk`). Its row says it, it is never grouped and never
+	 *  offered as a rule, and its Allow asks once more. Absent where it risks none of these.
+	 */
+	risk?: RiskShown | null,
+	/**
 	 *  **What an edit would write** (#1146): each change, drawn before its Allow, or why it is
 	 *  not shown and no Allow is offered. Absent for any other ask.
 	 */
