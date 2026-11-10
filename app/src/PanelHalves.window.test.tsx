@@ -220,7 +220,7 @@ describe("F6 (P-13)", () => {
     await launched();
     // From outside every region (the left bar's open view), to the first.
     within(screen.getByRole("tablist", { name: "Navigation" }))
-      .getByRole("tab", { name: "Chats" })
+      .getByRole("tab", { name: /^Chats\b/ })
       .focus();
 
     const visited: string[] = [];
@@ -242,7 +242,7 @@ describe("F6 (P-13)", () => {
   it("goes back with Shift", async () => {
     await launched();
     within(screen.getByRole("tablist", { name: "Navigation" }))
-      .getByRole("tab", { name: "Chats" })
+      .getByRole("tab", { name: /^Chats\b/ })
       .focus();
     f6();
 
@@ -257,7 +257,7 @@ describe("F6 (P-13)", () => {
 
   it("lands in a half on its view's Tab stop, and in the editor on the focused pane's controls", async () => {
     await launched();
-    screen.getByRole("tab", { name: "Chats" }).focus();
+    screen.getByRole("tab", { name: /^Chats\b/ }).focus();
 
     f6();
     f6();
@@ -278,7 +278,7 @@ describe("F6 (P-13)", () => {
     async () => {
       await launched();
       // In the left sidebar, as one F6 from the bar leaves it.
-      screen.getByRole("tab", { name: "Chats" }).focus();
+      screen.getByRole("tab", { name: /^Chats\b/ }).focus();
       f6();
       expect(where()).toBe("left sidebar");
 
@@ -301,7 +301,7 @@ describe("F6 (P-13)", () => {
   it("skips a region that is away", async () => {
     await launched();
     await userEvent.click(lowerTab("left", "Repos"));
-    screen.getByRole("tab", { name: "Chats" }).focus();
+    screen.getByRole("tab", { name: /^Chats\b/ }).focus();
 
     const visited: string[] = [];
     for (let press = 0; press < 4; press++) {
@@ -409,7 +409,7 @@ describe("a narrow window (P-7)", () => {
   it("leaves the half it does not draw out of F6", async () => {
     sized(800);
     await launched();
-    screen.getByRole("tab", { name: "Chats" }).focus();
+    screen.getByRole("tab", { name: /^Chats\b/ }).focus();
 
     f6(true);
 

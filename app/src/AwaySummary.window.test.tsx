@@ -740,7 +740,7 @@ describe("the Inbox's updates (#1693)", () => {
     if (screen.queryByRole("tabpanel", { name: "Updates" }) === null)
       await userEvent.click(
         within(screen.getByRole("tablist", { name: "Attention" })).getByRole("tab", {
-          name: "Updates",
+          name: /^Updates\b/,
         }),
       );
     return screen.findByRole("tabpanel", { name: "Updates" });

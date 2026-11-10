@@ -8,6 +8,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { DoctorRow, InboxBaseline, InboxUpdate } from "./bindings";
 import { forgetInboxOpen, inboxOpenAtLaunch } from "./test-inbox";
+import { viewTab } from "./test-strips";
 
 /**
  * **The first-open baseline** (#5648, ADR 0119), against the whole window: the first time a
@@ -131,13 +132,15 @@ function core({
 }
 
 const tab = (name: string) =>
-  within(screen.getByRole("tablist", { name: "Attention" })).getByRole("tab", { name });
+  within(screen.getByRole("tablist", { name: "Attention" })).getByRole("tab", {
+    name: viewTab(name),
+  });
 
 /** The Notices view (#5645), in the Panel's right half, which the window opens on. */
 const notices = async () => screen.findByRole("tabpanel", { name: "Notices" });
 const noticesTab = () =>
   within(screen.getByRole("tablist", { name: "Panel, right half" })).getByRole("tab", {
-    name: "Notices",
+    name: /^Notices\b/,
   });
 
 /** Updates, shown as a person presses its icon. */
@@ -213,7 +216,7 @@ describe("the first-open baseline (#5648)", () => {
       ],
     });
     render(<App />);
-    await waitFor(() => expect(tab("Asks")).toHaveAccessibleDescription("1 thing waits on you"));
+    await waitFor(() => expect(tab("Asks")).toHaveAccessibleName("Asks 1 thing waits on you"));
   });
 
   it("lists a line baselined at the first open under Project, read, never under Mine", async () => {
@@ -292,7 +295,7 @@ describe("the first-open baseline (#5648)", () => {
     });
     render(<App />);
     await waitFor(() =>
-      expect(tab("Updates")).toHaveAccessibleDescription("1 unread update from your chats"),
+      expect(tab("Updates")).toHaveAccessibleName("Updates 1 unread update from your chats"),
     );
     expect(await within(await notices()).findByText("Doctor: 1 finding")).toBeInTheDocument();
     expect(asked.map((one) => one.cmd)).not.toContain("set_aside_inbox_findings");

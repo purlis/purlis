@@ -67,7 +67,16 @@ import { SnoozeAll, type Snoozing } from "./AsksSnooze";
 
 import { chainSaid, NothingDone } from "./inboxRowParts";
 import { capMarks } from "./combiningMarks";
-import { ASKS, Ask, Empty, EmptyScope, placeIds, SCOPE_LABEL, shapeOf } from "./InboxAsks";
+import {
+  ASKS,
+  Ask,
+  Empty,
+  EmptyScope,
+  placeIds,
+  SCOPE_LABEL,
+  shapeOf,
+  type AllChatsFilter,
+} from "./InboxAsks";
 import { heldBy, UpdateList, type UpdateRow, type Updates, updatePlaces } from "./InboxUpdatesList";
 import { SeenRowsOf, type SeenRows } from "./seenRows";
 export { chainSaid } from "./inboxRowParts";
@@ -91,6 +100,8 @@ export {
   SCOPE_LABEL,
   NO_MESSAGE,
   NOTHING_WAITS,
+  workingSaid,
+  type AllChatsFilter,
 } from "./InboxAsks";
 export {
   heldUpdate,
@@ -169,8 +180,9 @@ export const NOTICES = "Notices";
  * is (project · workspace · persona), quieter; its kind and how long it has waited, smallest
  * and last. Its kind is a mark and words together, never a colour alone.
  *
- * **Empty, it says so** (I-12) — "Nothing is waiting on you" — and lists what was answered here
- * lately, read-only: when, which chat, what it asked and the answer.
+ * **Empty, it says so** (I-12; ADR 0121 decision 23) — "Nothing waits on you · 2 chats working",
+ * each part a way to the chats (`onAllChats`) — and lists what was answered here lately,
+ * read-only: when, which chat, what it asked and the answer.
  *
  * **The project's Notices follow the asks** (#1695, I-4): what stood under the tab strip and what
  * the Alerts drawer listed, each a Notice with its ways out (`notices`), the most important
@@ -214,6 +226,7 @@ export function Inbox({
   workspaceNamed,
   snoozing,
   hold,
+  onAllChats,
 }: {
   /**
    * **Which view of the right bar this draws** (ADR 0119, #5644, #5645): `asks`, the asks
@@ -298,6 +311,11 @@ export function Inbox({
    *  Notices taken away at once, each one's own Dismiss carried out when the Undo goes. Without
    *  it, a Dismiss is carried out at once and no Undo stands. */
   hold?: DismissHold;
+  /**
+   * **Where the empty Asks' parts lead** (ADR 0121 decision 23): the chats, `all` or those
+   * `working`. Without it, the empty sentence is words alone.
+   */
+  onAllChats?: (filter: AllChatsFilter) => void;
 }) {
   const drawsAsks = part === undefined || part === "asks";
   const drawsUpdates = part === undefined || part === "updates";
@@ -636,6 +654,7 @@ export function Inbox({
               recent={recent.slice(0, MOST_ANSWERED)}
               allowed={allowedLately}
               quiet={quiet.length > 0 ? quietSaid(quiet) : undefined}
+              onAllChats={onAllChats}
             />
           ) : (
             <EmptyScope

@@ -40,6 +40,7 @@ import { shownState } from "./shownState";
 
 import { chainSaid, timeSaid, useSettledPlace } from "./inboxRowParts";
 import { askSeenKey, useSeenRow } from "./seenRows";
+import { useChatsHere, useChatsSelect } from "./chatState";
 
 // **The Asks view's rows** (#1692, #5644; moved from `Inbox.tsx`): what one ask offers, and how it
 // is drawn and answered in place.
@@ -60,7 +61,51 @@ export const NO_MESSAGE = "No message to show. Go to chat to see what it said.";
 export const ASKS = "Asks";
 
 /** What an empty Inbox says (I-12). */
-export const NOTHING_WAITS = "Nothing is waiting on you";
+export const NOTHING_WAITS = "Nothing waits on you";
+
+/** How the empty Asks says the chats at work (ADR 0121 decision 23). */
+export const workingSaid = (count: number) =>
+  count === 1 ? "1 chat working" : `${count} chats working`;
+
+/**
+ * **Which chats a part of the empty Asks opens** (ADR 0121 decision 23): every chat, or those
+ * working. All chats, a mode of the Chats sidebar, is #6013's; until it is built each opens the
+ * Chats sidebar as it is, and the filter is the seam it fills. Stuck? (#6014) joins as `stuck`
+ * once a chat can be marked so: until then the empty Asks says no "N stuck?".
+ */
+export type AllChatsFilter = "all" | "working";
+
+/** How many of this project's chats are working now: read off the chats' store, so only the
+ *  empty sentence is drawn again as a chat starts or stops. */
+function useWorkingChats(): number {
+  return useChatsSelect(
+    useChatsHere(),
+    (states) => Object.values(states.bySession).filter((state) => state === "running").length,
+  );
+}
+
+/** The empty Asks' sentence: each part a way to the chats where `onAllChats` is given. */
+function NothingWaits({ onAllChats }: { onAllChats?: (filter: AllChatsFilter) => void }) {
+  const working = useWorkingChats();
+  const parts: { said: string; filter: AllChatsFilter }[] = [
+    { said: NOTHING_WAITS, filter: "all" },
+    ...(working > 0 ? [{ said: workingSaid(working), filter: "working" as const }] : []),
+  ];
+  if (onAllChats === undefined)
+    return <p className="inbox-none">{parts.map((part) => part.said).join(" · ")}</p>;
+  return (
+    <p className="inbox-none inbox-none-parts">
+      {parts.map((part, at) => (
+        <Fragment key={part.filter}>
+          {at > 0 && <span aria-hidden="true">{" · "}</span>}
+          <Button variant="link" size="sm" onPress={() => onAllChats(part.filter)}>
+            {part.said}
+          </Button>
+        </Fragment>
+      ))}
+    </p>
+  );
+}
 
 /**
  * **The asks whose answers are Allow and Keep blocked** (ADR 0097 §6): a permission prompt, a
@@ -981,17 +1026,24 @@ export function Empty({
   recent,
   allowed,
   quiet,
+  onAllChats,
 }: {
   recent: readonly Answered[];
   /** What was allowed on this machine in the last day, from the grants (D-1700-7). */
   allowed: readonly AllowedLately[];
   quiet?: string;
+  /** Where each part of "Nothing waits on you · N chats working" leads (ADR 0121 decision 23). */
+  onAllChats?: (filter: AllChatsFilter) => void;
 }) {
   return (
     <>
       {/* Never "nothing" over a chat that cannot say it waits (charter-app#52): the faint
           hand's sentence, and the chats are the Notices below. */}
-      <p className="inbox-none">{quiet ?? NOTHING_WAITS}</p>
+      {quiet === undefined ? (
+        <NothingWaits onAllChats={onAllChats} />
+      ) : (
+        <p className="inbox-none">{quiet}</p>
+      )}
       {recent.length > 0 && (
         <section className="inbox-recent" aria-label="Recently answered">
           <PanelSectionTitle level={3} className="inbox-chain">

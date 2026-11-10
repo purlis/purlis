@@ -2667,12 +2667,21 @@ component library gets added on.
     `AsStripTab`). The arrows, Home and End move along it, wrapping at its ends; Enter, Space or a
     click presses. Activation is manual,
     so walking the bar opens nothing. **The tab list owns tabs and nothing else** (#1204): a
-    view's badge is inside its own tab, and the tab is described by it.
+    view's badge is inside its own tab, and **its count is in the tab's name** (ADR 0121
+    decision 25): `aria-labelledby` names the tab itself and then its badge, so a reader hears
+    "Asks 2 things wait on you", while `aria-label` stays the view's alone, which is what names
+    its panel and what a scenario finds it by.
   - **`aria-selected` is right here, as it is not in the explorer**: the bar is a tab list,
     and its tabs select what the side shows. The explorer keeps `aria-current`.
   - **Icon-only, with the words on `aria-label` and the press in its tooltip**: the tab is named for the view (`Chats`, `Explorer`) and its tooltip says what
     pressing does, with the key (_"Show the Explorer view (⌘⇧E)"_, or _"Put the Navigation
-    region away"_ on the open one). Its mark is what the view is, never which edge it is on.
+    region away"_ on the open one). **An attention view's tooltip asks its question instead**,
+    open or not (ADR 0121 decisions 1 and 24, `VIEW_QUESTIONS`): Asks _"Do I need to answer
+    something?"_, Updates _"Did my work finish?"_, Notices _"Is something about my setup wrong
+    or worth knowing?"_. Its mark is what the view is, never which edge it is on.
+  - **The ✋ pulses once** (ADR 0121 decision 24): the first time on this machine a Blocking ask
+    arrives while Asks is closed, its item is marked `data-pulse` for one `breathe`
+    (`asksArrival.ts`, kept in web storage as `purlis.asks-pulsed`).
   - **A press of the open view puts the side away**; any other opens. The bar is outside the
     resizable group, so a side put away keeps its bar and its badges, and nothing is added to
     or taken from the group (the throw above).

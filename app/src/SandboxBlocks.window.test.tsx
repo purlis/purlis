@@ -1108,7 +1108,7 @@ describe("a refused host answered in the Inbox (#1692)", () => {
     await userEvent.click(within(notice).getByRole("button", { name: "Keep blocked" }));
 
     await waitFor(() =>
-      expect(within(inbox).getByText("Nothing is waiting on you")).toBeInTheDocument(),
+      expect(within(inbox).getByText("Nothing waits on you")).toBeInTheDocument(),
     );
   });
 

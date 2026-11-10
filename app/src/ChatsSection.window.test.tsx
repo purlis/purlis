@@ -39,7 +39,7 @@ import { CHAT_STATE_SAID } from "./shownState";
 async function showUpdates() {
   await userEvent.click(
     within(screen.getByRole("tablist", { name: "Attention" })).getByRole("tab", {
-      name: "Updates",
+      name: /^Updates\b/,
     }),
   );
   return screen.findByRole("tabpanel", { name: "Updates" });

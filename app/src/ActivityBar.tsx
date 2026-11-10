@@ -56,8 +56,9 @@ export type PanelTab = Tabbed & { view: PanelViewId };
  * This draws and says; it decides nothing.
  *
  * **Icons, and the words are still there** (`docs/design-system.md` §Icons): each tab is its
- * view's mark, the view's name is its `aria-label`, and the tooltip says what pressing does,
- * with the key. The mark is what the view IS, never which edge it is on, so it is right on the
+ * view's mark, the view's name is its `aria-label`, its count follows in its accessible name,
+ * and the tooltip says what pressing does, with the key, or for an attention view the question it
+ * answers (`VIEW_QUESTIONS`). The mark is what the view IS, never which edge it is on, so it is right on the
  * other side too. **A theme may redraw a view's mark** with its icon set (#2337,
  * `theme/railIcons.ts`); a view it does not draw keeps its own.
  *
@@ -76,6 +77,8 @@ export function ActivityBar({
   current,
   keys,
   badges,
+  pulse,
+  onPulsed,
   panelOf,
   tabOf,
   onPick,
@@ -105,6 +108,13 @@ export function ActivityBar({
   keys?: Partial<Record<ViewId, string>>;
   /** A count or a mark beside a view's icon, drawn whether or not the side is out. */
   badges?: Partial<Record<ViewId, ReactNode>>;
+  /**
+   * **The view whose icon pulses, once** (ADR 0121 decision 24): its item is marked
+   * `data-pulse` and the stylesheet plays {@link FIRST_PULSE} on its mark, a duration token's
+   * length, so reduced motion plays it at once. `onPulsed` is told as it ends.
+   */
+  pulse?: ViewId;
+  onPulsed?: () => void;
   /** The id of each view's tab panel, which its tab controls. */
   panelOf: (view: ViewId) => string;
   /** The id of each view's tab, which names its panel. */
@@ -132,7 +142,10 @@ export function ActivityBar({
         const key = keys?.[view];
         const badge = badges?.[view];
         const described = `${tabOf(view)}-badge`;
-        const said = selected ? (away ?? `Put the ${name} region away`) : `Show the ${called} view`;
+        // A view that answers a question says it, open or not (ADR 0121 decisions 1 and 24).
+        const said =
+          VIEW_QUESTIONS[view as OwnViewId] ??
+          (selected ? (away ?? `Put the ${name} region away`) : `Show the ${called} view`);
         const tab = (
           <AsStripTab
             strip={strip}
@@ -151,13 +164,24 @@ export function ActivityBar({
                 id={tabOf(view)}
                 aria-expanded={view === current ? open !== undefined : undefined}
                 aria-controls={panelOf(view)}
+                data-pulse={view === pulse || undefined}
+                onAnimationEnd={
+                  view === pulse
+                    ? (event) => {
+                        if (event.animationName === FIRST_PULSE) onPulsed?.();
+                      }
+                    : undefined
+                }
                 aria-label={called}
-                aria-describedby={badge === undefined ? undefined : described}
+                // **Its count is in its name** (ADR 0121 decision 25): the view's name, then the
+                // badge's sentence. The tab's own `aria-label` stays the view's alone, so the
+                // panel it names and a scenario that finds it read "Asks" still (a name taken
+                // through `aria-labelledby` never follows a second one).
+                aria-labelledby={badge === undefined ? undefined : `${tabOf(view)} ${described}`}
                 icon={icon ? <RailIcon view={view} paths={icon.paths} /> : <Mark />}
                 count={
                   badge === undefined ? undefined : (
-                    // Hidden from the item's name, which is its view's (axe's label-content-name
-                    // match); read as its description through `aria-describedby`.
+                    // Hidden as drawn, and read in the item's name through `aria-labelledby`.
                     <span id={described} className="activity-badge" aria-hidden="true">
                       {badge}
                     </span>
@@ -172,6 +196,20 @@ export function ActivityBar({
     </ActivityGroup>
   );
 }
+
+/** The animation the first pulse plays (`App.css`), told apart from any other on the item. */
+export const FIRST_PULSE = "purlis-first-pulse";
+
+/**
+ * **The question each attention view answers** (ADR 0121 decision 1), its icon's tooltip in
+ * place of what a press does: there is no tour, and the tooltips carry the questions (decision
+ * 24). The wording is the ADR's.
+ */
+export const VIEW_QUESTIONS: Partial<Record<OwnViewId, string>> = {
+  asks: "Do I need to answer something?",
+  updates: "Did my work finish?",
+  notices: "Is something about my setup wrong or worth knowing?",
+};
 
 /** A count on a view's tab (B-8, R119, R120): the activity family's own (`ui/activity`). */
 export { ActivityCount, ActivityDot };

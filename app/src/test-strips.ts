@@ -150,7 +150,7 @@ export async function openTheInbox() {
  */
 export async function showUpdates() {
   const tab = within(await screen.findByRole("tablist", { name: "Attention" })).getByRole("tab", {
-    name: "Updates",
+    name: /^Updates\b/,
   });
   // A press of the open view puts the side away, so it is pressed only when it is not open.
   if (tab.getAttribute("aria-selected") !== "true") await userEvent.click(tab);
@@ -165,7 +165,7 @@ export async function showUpdates() {
 export async function showNotices() {
   const tab = within(await screen.findByRole("tablist", { name: "Panel, right half" })).getByRole(
     "tab",
-    { name: "Notices" },
+    { name: /^Notices\b/ },
   );
   // A press of the open view puts the half away, so it is pressed only when it is not open.
   if (tab.getAttribute("aria-selected") !== "true") await userEvent.click(tab);
@@ -187,7 +187,7 @@ export async function showTheExplorer() {
 /** Shows the Changes view (#1676): the repos' state, which the bottom region drew until then, in
  *  the Panel's left half since #1739. Returns the view's content. */
 export async function showTheChanges() {
-  const tab = await screen.findByRole("tab", { name: "Changes" });
+  const tab = await screen.findByRole("tab", { name: /^Changes\b/ });
   if (tab.getAttribute("aria-selected") !== "true") await userEvent.click(tab);
   return screen.findByTestId("changes-view");
 }
@@ -195,9 +195,18 @@ export async function showTheChanges() {
 /** Shows the Repos view (#1737), which shares the Panel's left half with Changes (#1739).
  *  Returns the view's content. */
 export async function showTheRepos() {
-  const tab = await screen.findByRole("tab", { name: "Repos" });
+  const tab = await screen.findByRole("tab", { name: /^Repos\b/ });
   if (tab.getAttribute("aria-selected") !== "true") await userEvent.click(tab);
   return screen.findByTestId("repos-view");
+}
+
+/**
+ * **A view's icon, by its view's name** (ADR 0121 decision 25): its accessible name is the
+ * view's, then its count and "new" pip where it has them ("Todos 3 open todos"). A view's name
+ * is plain words.
+ */
+export function viewTab(view: string): RegExp {
+  return new RegExp(`^${view}(?: |$)`);
 }
 
 /**
@@ -213,9 +222,9 @@ export async function showTheRepos() {
  */
 export async function showThePanel(view: string, testid = `panel-${view.toLowerCase()}`) {
   const lower = await screen.findByRole("tablist", { name: "Panel, right half" });
-  const inHalf = within(lower).queryByRole("tab", { name: view }) !== null;
+  const inHalf = within(lower).queryByRole("tab", { name: viewTab(view) }) !== null;
   const bar = inHalf ? lower : await screen.findByRole("tablist", { name: "Attention" });
-  const tab = await within(bar).findByRole("tab", { name: view });
+  const tab = await within(bar).findByRole("tab", { name: viewTab(view) });
   // A press of the open view puts the side away, so it is pressed only when it is not open.
   if (tab.getAttribute("aria-selected") !== "true") fireEvent.click(tab);
   const shown = await screen.findByRole("tabpanel", { name: view });
