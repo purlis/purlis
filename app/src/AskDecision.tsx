@@ -19,6 +19,10 @@ import { MessageForm, MessageLinks } from "./ui/message/Message";
  * An ask that offers a reason with its refusal (a sandbox's Keep blocked) opens its box only once
  * Keep blocked is pressed, and the keyboard stays on Keep blocked: a second press sends the
  * refusal with what was typed, or with nothing.
+ *
+ * **A high-risk ask needs a deliberate press** (ADR 0121 decision 8, #6011): its grants ask once
+ * more under the line ("Allow a push to main?"), and only the Allow there answers, held by the
+ * settle guard as every grant is, since what it stands in was just drawn. Cancel takes it back.
  */
 
 /** What the disclosure of the wider grants says, on a pane's band and a row in Asks alike. */
@@ -69,6 +73,7 @@ export function AskDecision({
   busy,
   reason,
   mayAct,
+  confirm,
   onOpen,
   onAnswer,
   children,
@@ -90,6 +95,9 @@ export function AskDecision({
   reason: boolean;
   /** **The settle guard** (ADR 0097, #1695): whether a press of a grant on `way` may act now. */
   mayAct: (way: Element) => boolean;
+  /** **What a grant asks once more before it acts**, on a high-risk ask (#6011): "Allow a push
+   *  to main?". Absent on every other ask, whose grants act on their press. */
+  confirm?: string;
   /** Something opened under its line, or closed: what stands below it moved, and settles. */
   onOpen: (open: boolean) => void;
   onAnswer: (option: Offered, reason?: string) => void;
@@ -99,10 +107,17 @@ export function AskDecision({
   const { main, wider, rest } = waysOf(offers);
   const [scopesOpen, setScopesOpen] = useState(false);
   const [why, setWhy] = useState<string>();
+  /** The grant pressed on a high-risk ask, asking once more under the line (#6011). */
+  const [asking, setAsking] = useState<Offered>();
   /** Opens or closes what stands under its line, and says whether anything does now. */
-  const underIs = (scopes: boolean, reasoning: boolean) => {
+  const underIs = (scopes: boolean, reasoning: boolean, confirming = asking !== undefined) => {
     setScopesOpen(scopes);
-    onOpen(scopes || reasoning);
+    onOpen(scopes || reasoning || confirming);
+  };
+  /** Asks once more for `option`, or takes the question back. */
+  const askAgain = (option: Offered | undefined) => {
+    setAsking(option);
+    underIs(scopesOpen, why !== undefined, option !== undefined);
   };
   const keepsWithReason = (option: Offered) => reason && option.id === "keep";
   /** Its look: an Allow of a grant's (ADR 0097 §6), the answer its source suggests (#2241), or
@@ -115,6 +130,10 @@ export function AskDecision({
     primary: option.preselected === true,
     busy,
     onPress: () => {
+      if (confirm !== undefined && option.allows) {
+        askAgain(asking === option ? undefined : option);
+        return;
+      }
       if (keepsWithReason(option) && why === undefined) {
         setWhy("");
         underIs(scopesOpen, true);
@@ -122,7 +141,12 @@ export function AskDecision({
       }
       onAnswer(option, keepsWithReason(option) ? why : undefined);
     },
-    opens: keepsWithReason(option) ? { id, open: why !== undefined } : undefined,
+    opens:
+      confirm !== undefined && option.allows
+        ? { id, open: asking === option }
+        : keepsWithReason(option)
+          ? { id, open: why !== undefined }
+          : undefined,
   });
   const ways: NoticeAction[] = [
     ...(main === undefined ? [] : [way(main)]),
@@ -137,7 +161,7 @@ export function AskDecision({
       : []),
     ...rest.map(way),
   ];
-  const under = scopesOpen || why !== undefined;
+  const under = scopesOpen || why !== undefined || asking !== undefined;
   return (
     <>
       <MessageLinks>
@@ -162,6 +186,25 @@ export function AskDecision({
               {wider.map((one) => (
                 <FixWay key={one.id} fix={way(one)} mayAct={mayAct} variant={variantOf(way(one))} />
               ))}
+            </ButtonRow>
+          )}
+          {confirm !== undefined && asking !== undefined && (
+            <ButtonRow size="sm" role="group" aria-label={confirm}>
+              <span className="ask-confirm ui-text-strong">{confirm}</span>
+              <FixWay
+                fix={{
+                  label: asking.label,
+                  allows: true,
+                  busy,
+                  onPress: () => onAnswer(asking),
+                }}
+                mayAct={mayAct}
+                variant={variantOf({ label: asking.label, allows: true, onPress: always })}
+              />
+              <FixWay
+                fix={{ label: "Cancel", onPress: () => askAgain(undefined) }}
+                mayAct={always}
+              />
             </ButtonRow>
           )}
           {why !== undefined && (

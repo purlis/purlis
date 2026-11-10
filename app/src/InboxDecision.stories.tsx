@@ -15,6 +15,7 @@ import type { Shown } from "./bindings";
 import { Inbox } from "./Inbox";
 import { runAsk } from "./secretAsk.testkit";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
+import { SETTLE_MS } from "./noticeSettle";
 
 /** A run of `curl` whose vault holds every key it is handed: nothing to type, only to decide. */
 const RUN_GRANT: Shown = { ...runAsk({ fills: [] }), session: 2, chain: ["devops 2"] };
@@ -79,6 +80,26 @@ const CONFIRMATION: Shown = {
   answer: { via: "confirmation", id: 7 },
 };
 
+/** A permission that pushes to main, a protected branch (#6011): high risk, asked once more. */
+const PUSH: Shown = {
+  session: 1,
+  ask: "ask-1",
+  says: "Run git push origin main",
+  options: [
+    { id: "allow", label: "Allow once", allows: true },
+    { id: "always", label: "Allow always", allows: true },
+    { id: "deny", label: "Deny", allows: false },
+  ],
+  source: "permission",
+  chain: ["steward 1"],
+  answer: { via: "hook" },
+  risk: {
+    class: "protected-push",
+    why: "Pushes to main, a protected branch",
+    confirm: "Allow a push to main?",
+  },
+};
+
 /** A task paused at its time limit (#6015): Continue, Raise the budget or Stop. */
 const BUDGET: Shown = {
   session: 7,
@@ -118,6 +139,7 @@ const ASKS = {
   HOST,
   CONSENT,
   CONFIRMATION,
+  PUSH,
   BUDGET,
   LOOPING,
 } as const;
@@ -266,6 +288,38 @@ export const ACommandsConfirmationOnItsRow: Story = {
       await untilFocused(() => canvas.getByRole("button", { name }), `→ reaches ${name}`);
       expectFocusInSight();
     }
+  },
+};
+
+/** **A high-risk ask's row** (ADR 0121 decision 8, #6011): its risk said first, and its Allow
+ *  asks once more under the line once the row has settled, keeping the keyboard where it was,
+ *  and Cancel takes the question back. */
+export const AHighRiskAskOnItsRow: Story = {
+  args: { ask: "PUSH" },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const row = rowIn(canvasElement);
+    await expect(canvasElement.querySelector(".inbox-risk")).toHaveTextContent(
+      "Pushes to main, a protected branch",
+    );
+    await userEvent.tab();
+    await untilFocused(row, "Tab lands on the row");
+    await userEvent.keyboard("{ArrowRight}");
+    const allow = canvas.getByRole("button", { name: "Allow once" });
+    await untilFocused(() => allow, "→ reaches Allow once");
+    expectFocusInSight();
+    // The person reads the row first: a grant pressed as it is drawn is held (ADR 0097).
+    await new Promise((done) => setTimeout(done, SETTLE_MS + 50));
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(allow).toHaveAttribute("aria-expanded", "true"));
+    const again = canvas.getByRole("group", { name: "Allow a push to main?" });
+    await expect(again).toBeVisible();
+    await untilFocused(() => allow, "the keyboard stays on Allow once");
+    expectFocusInSight();
+    await userEvent.click(within(again).getByRole("button", { name: "Cancel" }));
+    await waitFor(() =>
+      expect(canvas.queryByRole("group", { name: "Allow a push to main?" })).toBeNull(),
+    );
   },
 };
 

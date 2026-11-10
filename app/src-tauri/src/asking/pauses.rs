@@ -87,6 +87,9 @@ pub fn paused(session: u32, paused: &Paused, chain: Vec<String>, blocks: Option<
         // are for hosts, reviewed programs and permission rules, and each pause waits on the
         // person's own answer.
         rule: None,
+        // Nor does it carry a risk (ADR 0121 decision 8, #6011): going on is not a push, a
+        // host or a write outside the project.
+        risk: None,
     }
 }
 
@@ -164,5 +167,22 @@ mod tests {
         assert_eq!(waited_on.blocks, Some(2));
         let alone = paused(7, &at, vec!["#7 drill".into()], None);
         assert_eq!(alone.blocks, None);
+    }
+
+    /// **#6011: a pause carries no risk and is offered no rule**: going on past a budget or a
+    /// loop is not a push, a host or a write outside the project, so its row never asks twice.
+    #[test]
+    fn a_pause_carries_no_risk_and_is_offered_no_rule() {
+        let at = Paused {
+            why: Why::Budget(Reached::Time {
+                limit: 30,
+                worked: 30,
+            }),
+            since: 1_000,
+            held: vec![7],
+        };
+        let shown = paused(7, &at, vec!["#7 drill".into()], None);
+        assert!(shown.risk.is_none());
+        assert!(shown.rule.is_none());
     }
 }

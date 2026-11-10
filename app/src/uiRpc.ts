@@ -11748,10 +11748,25 @@ export type ReviewedSkill = {
 	digest: string,
 };
 
+/**  Which risk an ask carries ([`RiskShown`]). */
+export type RiskClass = "protected-push" | "production-host" | "outside-project";
+
 /**  A risk, and the core's words for it. */
 export type RiskMark = {
 	kind: ReviewRisk,
 	said: string,
+};
+
+/**
+ *  **An ask's risk, as its row says it** (#6011): a mirror of `purlis_core::askrisk::Risk`,
+ *  which the core has no window types for.
+ */
+export type RiskShown = {
+	class: RiskClass,
+	/**  What the row says of it: "Pushes to main, a protected branch". */
+	why: string,
+	/**  What its Allow asks before it acts: "Allow a push to main?". */
+	confirm: string,
 };
 
 /**
@@ -13385,6 +13400,13 @@ export type Shown = {
 	 *  [`Self::expires`].
 	 */
 	timed_out?: number | null,
+	/**
+	 *  **What a yes to it risks** (ADR 0121 decision 8, #6011): a push to a protected branch,
+	 *  a host that looks like production, a write outside the project, read from the project's
+	 *  own facts (`purlis_core::askrisk`). Its row says it, it is never grouped and never
+	 *  offered as a rule, and its Allow asks once more. Absent where it risks none of these.
+	 */
+	risk?: RiskShown | null,
 	/**
 	 *  **What an edit would write** (#1146): each change, drawn before its Allow, or why it is
 	 *  not shown and no Allow is offered. Absent for any other ask.

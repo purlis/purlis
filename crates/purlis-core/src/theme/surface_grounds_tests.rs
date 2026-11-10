@@ -8,7 +8,7 @@
 use serde_json::{Value, json};
 
 use super::super::{ResolvedTheme, load};
-use super::{Consented, consent_broken, fallen, family, surface_ground};
+use super::{Consented, State, consent_broken, fallen, family, surface_ground};
 
 /// A dark theme over Purlis Classic that sets `tokens` and `parts`, as read.
 fn shaped(tokens: Value, parts: Value) -> ResolvedTheme {
@@ -98,11 +98,88 @@ fn a_badge_is_read_on_a_list_s_plain_row_fill_and_never_on_its_card_s() {
     // (Classic's `list.root.card.fill`, #6149).
     let list = family("list").expect("the list family");
     let badge_on = |variant| {
-        super::drawn_on(list, variant, "transparent", "surface.sunken")
+        super::drawn_on(list, variant, &[], "transparent", "surface.sunken")
             .any(|one| one.name == "badge")
     };
     assert!(badge_on("row"), "a badge on a list's row");
     assert!(!badge_on("card"), "a badge on a list's card");
+}
+
+#[test]
+fn what_a_row_opens_over_the_window_is_never_read_on_its_chosen_fill() {
+    // A popover or a tooltip a list's row holds is portaled to the window's body: at rest it is
+    // read where the row is filled, as the window's nesting finds it, but a chosen row's fill is
+    // under the row's own marks and controls alone (#6156).
+    let list = family("list").expect("the list family");
+    let on = |states: &[State]| -> Vec<&str> {
+        super::drawn_on(list, "row", states, "list.selected", "surface.sunken")
+            .map(|one| one.name)
+            .collect()
+    };
+    let chosen = on(&[State::Selected]);
+    assert!(
+        chosen.contains(&"badge") && chosen.contains(&"chat-mark"),
+        "{chosen:?}"
+    );
+    assert!(
+        !chosen.contains(&"popover") && !chosen.contains(&"tooltip"),
+        "{chosen:?}"
+    );
+    let rest = on(&[]);
+    assert!(
+        rest.contains(&"popover") && rest.contains(&"tooltip"),
+        "{rest:?}"
+    );
+}
+
+#[test]
+fn a_chosen_row_filled_where_a_badge_in_it_vanishes_brings_the_chosen_fill_back() {
+    // Before #6156 a surface's fill was read at rest alone: a list's chosen row could be given
+    // a fill its badges' words vanish on, and the theme passed its check.
+    let theme = shaped(
+        json!({ "surface.sunken": "#303030" }),
+        json!({ "list.root.row.selected.fill": "surface.sunken" }),
+    );
+    let fell = fell_in(&theme);
+    let chosen: Vec<_> = fell
+        .iter()
+        .filter(|one| one.starts_with("list.root.row.selected"))
+        .collect();
+    assert!(
+        chosen
+            .iter()
+            .any(|one| one.contains("what a badge draws on it")),
+        "{fell:?}"
+    );
+    // The row at rest is drawn as written: only its chosen fill falls.
+    assert!(
+        fell.iter()
+            .all(|one| !one.starts_with("list.root.row:") && !one.starts_with("list.root:")),
+        "{fell:?}"
+    );
+}
+
+#[test]
+fn a_chosen_row_is_read_on_its_own_fill_after_its_rest_falls() {
+    // A fall at rest keeps what the theme writes for a chosen row itself, so that fill is read
+    // once the hold is asked again (#6156's review).
+    let theme = shaped(
+        json!({ "surface.sunken": "#303030", "accent.surface": "#303030" }),
+        json!({
+            "list.root.row.fill": "surface.sunken",
+            "list.root.row.selected.fill": "accent.surface",
+        }),
+    );
+    let fell = fell_in(&theme);
+    assert!(
+        fell.iter().any(|one| one.starts_with("list.root.row:")),
+        "{fell:?}"
+    );
+    assert!(
+        fell.iter()
+            .any(|one| one.starts_with("list.root.row.selected")),
+        "{fell:?}"
+    );
 }
 
 #[test]
@@ -258,6 +335,7 @@ fn a_list_s_row_in_a_dialog_is_read_on_the_dialog_s_fill() {
         super::drawn_on(
             dialog,
             dialog.looks()[0],
+            &[],
             "surface.overlay",
             "surface.hover"
         )
@@ -342,9 +420,18 @@ fn a_surface_with_no_fill_stands_on_its_parent_s_grounds_until_a_theme_fills_it(
     let on: Vec<_> = super::surfaces_set(&filled)
         .into_iter()
         .filter(|(surface, ..)| surface.name == "tree")
-        .map(|(_, _, default, set)| (default, set))
+        .map(|(_, _, states, default, set)| (states, default, set))
         .collect();
-    assert_eq!(on, [("transparent", "accent.surface")]);
+    // A fill at rest is drawn chosen and under the pointer too, in place of the defaults there
+    // (#6156).
+    assert_eq!(
+        on,
+        [
+            (&[][..], "transparent", "accent.surface"),
+            (&[State::Selected][..], "list.selected", "accent.surface"),
+            (&[State::Hover][..], "surface.hover", "accent.surface"),
+        ]
+    );
     let tree = family("tree").expect("the tree family");
     assert_eq!(
         super::defaults_under(tree, &"transparent"),
@@ -363,8 +450,14 @@ fn a_field_s_error_is_read_on_a_table_s_fill_and_its_help_never_is() {
     let table = family("table").expect("the table family");
     let field = family("field").expect("the field family");
     assert!(
-        super::drawn_on(table, table.looks()[0], "transparent", "surface.sunken")
-            .any(|one| one.name == "field"),
+        super::drawn_on(
+            table,
+            table.looks()[0],
+            &[],
+            "transparent",
+            "surface.sunken"
+        )
+        .any(|one| one.name == "field"),
         "a field is drawn on a table's fill"
     );
     let theme = filled_grey("table", "surface.sunken", "#4a4a46");

@@ -278,7 +278,7 @@ fn a_shipped_theme_builds_no_tints_for_what_stands_on_its_surfaces() {
                 "{base} {}",
                 appearance.id
             );
-            for (surface, _, _, set) in surfaces_set(&rules) {
+            for (surface, _, _, _, set) in surfaces_set(&rules) {
                 // What is drawn on a shipped surface's fill is read as written alone: neither the
                 // fill nor a look on it lets a tint through (#3268 measures more families there).
                 assert!(
@@ -498,14 +498,14 @@ fn a_card_or_a_notice_takes_no_fill_a_button_is_not_read_on() {
         let rules = rules(&theme.parts);
         let set: Vec<_> = surfaces_set(&rules)
             .into_iter()
-            .filter(|(one, _, _, _)| one.name == surface)
+            .filter(|(one, ..)| one.name == surface)
             .collect();
         assert!(!set.is_empty(), "{surface}");
-        for (one, variant, default, fill) in set {
+        for (one, variant, states, default, fill) in set {
             assert!(shows_a_tint(&theme, fill), "{surface}");
             // Other families on it are read on it (#3268); a button, never.
             assert!(
-                !drawn_on(one, variant, default, fill).any(|on| on.name == "button"),
+                !drawn_on(one, variant, states, default, fill).any(|on| on.name == "button"),
                 "{surface}"
             );
         }
@@ -515,9 +515,9 @@ fn a_card_or_a_notice_takes_no_fill_a_button_is_not_read_on() {
     let rules = rules(&theme.parts);
     let on_it: Vec<_> = surfaces_set(&rules)
         .into_iter()
-        .filter(|(one, _, _, _)| one.name == "popover")
-        .flat_map(|(one, variant, default, fill)| {
-            drawn_on(one, variant, default, fill).map(|on| on.name)
+        .filter(|(one, ..)| one.name == "popover")
+        .flat_map(|(one, variant, states, default, fill)| {
+            drawn_on(one, variant, states, default, fill).map(|on| on.name)
         })
         .collect();
     assert!(

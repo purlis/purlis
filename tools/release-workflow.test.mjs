@@ -14,7 +14,10 @@
 // later edit that words them differently still passes and one that changes what they answer
 // does not.
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { lstatSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import { publishedBuild } from "./dev-build-order.mjs";
@@ -478,6 +481,27 @@ test("the macOS build saves its debug symbols as an artifact of their own, never
   for (const name of ["sbom", "manifest", "provenance", "publish"]) {
     assert.ok(!job(name).some((line) => line.trim().startsWith("pattern:")), name);
   }
+});
+
+test("the macOS build collects each dSYM cargo left behind its symlink, whole (#5692)", () => {
+  // Cargo leaves `target/<profile>/<bin>.dSYM` as a relative symlink into `deps/`: a copy of the
+  // link alone dangles, upload-artifact leaves it out, and the intake gets no symbols.
+  const lines = step(job("build"), "Collect the debug symbols (macOS)");
+  const script = lines.slice(lines.indexOf("run: |") + 1).join("\n");
+  const dir = mkdtempSync(join(tmpdir(), "symbols-"));
+  const dwarf = join(dir, "target/release/deps/purlis-0123.dSYM/Contents/Resources/DWARF");
+  mkdirSync(dwarf, { recursive: true });
+  writeFileSync(join(dwarf, "purlis-0123"), "dwarf");
+  symlinkSync("deps/purlis-0123.dSYM", join(dir, "target/release/purlis.dSYM"));
+
+  execFileSync("bash", ["-c", script], { cwd: dir, env: { ...process.env, PROFILE: "release" } });
+
+  const kept = join(dir, "symbols/purlis.dSYM");
+  assert.ok(lstatSync(kept).isDirectory(), "the dSYM itself, not its link");
+  assert.equal(
+    readFileSync(join(kept, "Contents/Resources/DWARF/purlis-0123"), "utf8"),
+    "dwarf",
+  );
 });
 
 /** The lines of the step `name` in `body` (a job's lines), up to the next step. */

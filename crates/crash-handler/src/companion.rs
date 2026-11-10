@@ -11,12 +11,13 @@
 //! crashes folder as `<seconds since 1970>-<id>.part`, `0600`, and renames it to `.dmp` once it
 //! is whole, so the app's next launch never reads half a file. A crash within
 //! [`crate::PANIC_COVERS`] of a panic the app told it of leaves nothing: the panic's own report
-//! has it.
+//! has it. An app that never connects, because it died first, leaves a companion that ends
+//! on its own after [`crate::SERVED_WITHIN`] (#6152).
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use minidumper::{LoopAction, MinidumpBinary, Server, ServerHandler, SocketName};
@@ -24,14 +25,28 @@ use minidumper::{LoopAction, MinidumpBinary, Server, ServerHandler, SocketName};
 /// Serves the app at `socket` until it crashes or ends, keeping a crash's minidump in `crashes`.
 pub(crate) fn serve(socket: &Path, crashes: &Path) -> Result<(), minidumper::Error> {
     let mut server = Server::with_name(SocketName::Path(socket))?;
+    let connected = Arc::new(AtomicBool::new(false));
     let handler = Keeper {
         crashes: crashes.to_path_buf(),
         panicked_at: Mutex::new(None),
         writing: Mutex::new(None),
+        connected: Arc::clone(&connected),
     };
-    let never = AtomicBool::new(false);
-    // No stale timeout: the app sends nothing while it runs, and its end closes the socket.
-    let served = server.run(Box::new(handler), &never, None);
+    // No stale timeout: the app sends nothing while it runs, and its end closes the socket. But
+    // an app that died before it connected never closes one, so a companion no app reached
+    // within [`crate::SERVED_WITHIN`] stops (#6152). The server reads this every 10 ms.
+    let stop = Arc::new(AtomicBool::new(false));
+    let unreached = Arc::clone(&stop);
+    std::thread::Builder::new()
+        .name("companion-unreached".into())
+        .spawn(move || {
+            std::thread::sleep(crate::SERVED_WITHIN);
+            if !connected.load(Ordering::SeqCst) {
+                unreached.store(true, Ordering::SeqCst);
+            }
+        })
+        .map_err(minidumper::Error::Io)?;
+    let served = server.run(Box::new(handler), &stop, None);
     let _ = std::fs::remove_file(socket);
     served
 }
@@ -43,6 +58,8 @@ struct Keeper {
     panicked_at: Mutex<Option<Instant>>,
     /// The `.part` being written, so a dump that fails leaves nothing of it.
     writing: Mutex<Option<PathBuf>>,
+    /// Whether the app has connected.
+    connected: Arc<AtomicBool>,
 }
 
 impl Keeper {
@@ -106,6 +123,11 @@ impl ServerHandler for Keeper {
         {
             *told = Some(Instant::now());
         }
+    }
+
+    fn on_client_connected(&self, _num_clients: usize) -> LoopAction {
+        self.connected.store(true, Ordering::SeqCst);
+        LoopAction::Continue
     }
 
     fn on_client_disconnected(&self, _num_clients: usize) -> LoopAction {

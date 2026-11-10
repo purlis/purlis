@@ -40,7 +40,8 @@ import { Tooltip } from "./ui/tooltip/Tooltip";
 import { ChatMark } from "./ui/chat-mark/ChatMark";
 import { ChatActions } from "./ChatActions";
 import { shownState } from "./shownState";
-import { highRisk } from "./asksTriage";
+import { highRisk } from "./asksSame";
+import { Badge } from "./ui/badge/Badge";
 
 import { chainSaid, timeSaid, useSettledPlace } from "./inboxRowParts";
 import { askSeenKey, useSeenRow } from "./seenRows";
@@ -776,12 +777,12 @@ export function Ask({
       isNew={isNew}
       className="inbox-ask"
       data-source={ask.source}
-      // **A high-risk ask is never advanced onto** (ADR 0121 decision 8, #6011's seam).
+      // **Keyboard triage never lands here** (ADR 0121 decision 8, #6011, `asksTriage`).
       data-risk={highRisk(ask) ? "" : undefined}
       aria-labelledby={shape.message ? `${id}-whose` : `${id}-says`}
       aria-describedby={`${
         shape.message ? `${id}-says` : `${id}-whose${shape.said === undefined ? "" : ` ${id}-said`}`
-      }${standing === undefined ? "" : ` ${id}-standing`}`}
+      }${standing === undefined ? "" : ` ${id}-standing`}${ask.risk == null ? "" : ` ${id}-risk`}`}
       dismiss={
         shape.ignore && onIgnore !== undefined ? (
           <IconButton
@@ -825,6 +826,13 @@ export function Ask({
       </MessageMeta>
       {standing !== undefined && <AskStanding id={`${id}-standing`} why={standing} now={now} />}
       <MessageBody>
+        {/* **Its risk, said first and spoken with the row** (ADR 0121 decision 8, #6011, #6020):
+              in the waiting tone with its words, never a colour alone. */}
+        {ask.risk != null && (
+          <p id={`${id}-risk`} className="inbox-risk ui-text-secondary">
+            {HIGH_RISK} {ask.risk.why}
+          </p>
+        )}
         {/* The ask's words are the source's, drawn as text and never as a control. What an
               Allow here would let run is never cut (#1146): it is read whole first. **A chat's
               own words** (its message, a task's question) are markdown under the safe subset
@@ -947,6 +955,7 @@ export function Ask({
             busy={busy}
             reason={shape.reason}
             mayAct={mayAct}
+            confirm={ask.risk?.confirm}
             onOpen={onOpen}
             onAnswer={(option, why) => answer(option, undefined, why ?? "")}
           >
@@ -999,6 +1008,9 @@ export function Ask({
     </MessageRow>
   );
 }
+
+/** **The mark of a high-risk ask** (#6011): in the waiting tone, beside the words of its risk. */
+const HIGH_RISK = <Badge variant="waiting">High risk</Badge>;
 
 /** **The most lines an ask's own words show before "Show all · N lines"** (#5649, ADR 0119
  *  decision 7): a long one never pushes the others away. */

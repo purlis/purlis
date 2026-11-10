@@ -2238,6 +2238,147 @@ describe("where each family is drawn on a surface a theme fills (#3268)", () => 
   });
 });
 
+// --- What is drawn over the window, apart from what holds it (#6156) -------------------------
+
+/** **The engine's `PORTALED`** (in `parts.rs`): the families never read on a fill a surface
+ *  that holds them draws in a state. */
+function enginePortaled(): string[] {
+  const parts = readFileSync(join(THEME, "parts.rs"), "utf8");
+  const list = /\nconst PORTALED: &\[&str\] = &\[([^\]]*)\];/.exec(parts)?.[1] ?? "";
+  return [...list.matchAll(/"([\w-]+)"/g)].map(([, family]) => family).sort();
+}
+
+/** React Aria's overlays, each drawing what it holds in a layer portaled to the window's body,
+ *  and the arrow it draws only inside a popover or a tooltip. */
+const OVERLAYS = new Set(["Modal", "ModalOverlay", "OverlayArrow", "Popover", "Tooltip"]);
+
+/**
+ * **The families whose every root the window draws in React Aria's overlay** (#6156): a root
+ * (its `data-scope`, and the part its manifest names first, or none) that is one of React Aria's overlays, or inside
+ * one in the file that draws it, by the name the file imports it under. Portaled to the window's
+ * body, it is drawn over the window, never on a fill a surface that holds it draws in a state. A
+ * family with one root drawn anywhere else is not one, and neither is a root placed in an overlay
+ * by another component (a dialog's), or a root spread from a helper, which this read does not
+ * follow: `PORTALED` names only what it reads.
+ */
+function portaledFamilies(files: { name: string; text: string }[]): string[] {
+  const over = new Set<string>();
+  const inPlace = new Set<string>();
+  for (const file of files) {
+    const source = ts.createSourceFile(
+      file.name,
+      file.text,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
+    const overlays = new Set(
+      [...originsIn(source)]
+        .filter(
+          ([, from]) => from.path === "package:react-aria-components" && OVERLAYS.has(from.name),
+        )
+        .map(([local]) => local),
+    );
+    /** An attribute's value as written: `null` where it is written and not a string. */
+    const said = (attributes: ts.JsxAttributes, name: string) => {
+      for (const one of attributes.properties)
+        if (ts.isJsxAttribute(one) && one.name.getText(source) === name)
+          return one.initializer !== undefined && ts.isStringLiteral(one.initializer)
+            ? one.initializer.text
+            : null;
+      return undefined;
+    };
+    const visit = (node: ts.Node, inside: boolean): void => {
+      const opening = ts.isJsxElement(node)
+        ? node.openingElement
+        : ts.isJsxSelfClosingElement(node)
+          ? node
+          : undefined;
+      if (opening === undefined) {
+        ts.forEachChild(node, (child) => visit(child, inside));
+        return;
+      }
+      const here = inside || overlays.has(opening.tagName.getText(source));
+      const scope = said(opening.attributes, "data-scope");
+      const part = said(opening.attributes, "data-part");
+      if (typeof scope === "string" && part !== null && isRootPart(scope, part))
+        (here ? over : inPlace).add(scope);
+      ts.forEachChild(node, (child) => visit(child, here));
+    };
+    visit(source, false);
+  }
+  return [...over].filter((family) => !inPlace.has(family)).sort();
+}
+
+describe("what the window draws over itself, apart from what holds it (#6156)", () => {
+  const file = (name: string, text: string) => ({ name, text });
+
+  it("is a family whose root is, or is in, one of React Aria's overlays", () => {
+    const found = portaledFamilies([
+      file(
+        "ui/popover/Popover.tsx",
+        `import { Popover as AriaPopover } from "react-aria-components";
+         export function Popover({ children }) {
+           return <AriaPopover data-scope="popover" data-part="root">{children}</AriaPopover>;
+         }`,
+      ),
+      file(
+        "ui/dialog/Dialog.tsx",
+        `import { ModalOverlay } from "react-aria-components";
+         export function Dialog({ children }) {
+           return <ModalOverlay><section data-scope="dialog" data-part="root">{children}</section></ModalOverlay>;
+         }`,
+      ),
+      file(
+        "ui/badge/Badge.tsx",
+        `export function Badge() { return <span data-scope="badge" data-part="root" />; }`,
+      ),
+    ]);
+    expect(found).toEqual(["dialog", "popover"]);
+  });
+
+  it("is never a family with one root drawn in place, nor an overlay of another library", () => {
+    const found = portaledFamilies([
+      file(
+        "ui/tooltip/Tooltip.tsx",
+        `import { Tooltip as AriaTooltip } from "react-aria-components";
+         export function Tooltip() { return <AriaTooltip data-scope="tooltip" data-part="root" />; }`,
+      ),
+      file(
+        "ui/tooltip/Inline.tsx",
+        `export function InlineTip() { return <span data-scope="tooltip" data-part="root" />; }`,
+      ),
+      file(
+        "ui/card/Card.tsx",
+        `import { Popover } from "./elsewhere";
+         export function Card() { return <Popover data-scope="card" data-part="root" />; }`,
+      ),
+    ]);
+    expect(found).toEqual([]);
+  });
+
+  it("reads a part written as an expression as no root, so it never says a root is drawn in place", () => {
+    const found = portaledFamilies([
+      file(
+        "ui/popover/Popover.tsx",
+        `import { Popover as AriaPopover } from "react-aria-components";
+         export function Popover() { return <AriaPopover data-scope="popover" data-part="root" />; }`,
+      ),
+      file(
+        "ui/menu/Menu.tsx",
+        `export function Menu({ inList }) {
+           return <div data-scope="popover" data-part={inList ? undefined : "list"} />;
+         }`,
+      ),
+    ]);
+    expect(found).toEqual(["popover"]);
+  });
+
+  it("is, in the window, exactly what PORTALED says", () => {
+    expect(portaledFamilies(sources(SRC))).toEqual(enginePortaled());
+  });
+});
+
 // --- Where each see-through ground is laid (#4796) ------------------------------------------
 
 /**

@@ -17,26 +17,24 @@
 //! **macOS only, for now.** Linux and Windows are follow-ups of #5691: the handler's crates
 //! cover both, but neither has been proved here.
 //!
-//! **Not started yet: [`STARTED`] is off**, until the operator approves switching it on: what
-//! it needed is in place (purlis's own glue over `crash-handler` 0.8, which lets a crashing child
-//! process die, and the stack-only ruling (b) carried out in `purlis_core::report::native`).
-//! Switching it on is one change: [`STARTED`] set to `true`, with ruling (b) and the operator's
-//! approval cited beside it, and, **in the same change, the release profile starts writing debug
-//! symbols** (ruling of 2026-11-08, #5692): `debug = "line-tables-only"` and
-//! `split-debuginfo = "packed"` on `[profile.release]` in the workspace's `Cargo.toml`, keeping
-//! `strip = true`, so a dSYM lands beside each binary for `release.yml`'s `symbols` job to send to
-//! the Report intake, which symbolicates the stack's frames with it. Until then the job finds
-//! none. That profile change is a ruling under ADR 0092 (an amendment, and the profile test in
-//! `crates/release-manifest` moves with it), and its cost to the macOS build is measured on that
-//! change's own release run; `tools/crash-relaunch.mjs` is the end-to-end check to run on it.
-//! Everything else (the companion's role, the minidumps waiting on the next launch, the panic's
-//! hand-off) is in place and runs; with nothing watching, nothing waits.
+//! **Started** (#5691, the operator's approval of 2026-11-10: *"go ahead end to end - to be all
+//! enabled and working all without issues"*), on ruling (b) above and purlis's own glue over
+//! `crash-handler` 0.8, which lets a crashing child process die. In the same change the release
+//! profile began writing debug symbols (ADR 0092, amended 2026-11-10, #5692):
+//! `debug = "line-tables-only"` and `split-debuginfo = "packed"`, keeping `strip = true`, so a
+//! dSYM lands beside each binary for `release.yml`'s `symbols` job to send to the Report intake,
+//! which symbolicates the stack's frames with it. `tools/crash-relaunch.mjs` is the end-to-end
+//! check.
+//!
+//! **macOS's "quit unexpectedly" dialog still appears** on a native crash, and that is expected:
+//! the handler passes the crash on to the system once the minidump is written, and does not
+//! `_exit` to hide it as `minidumper-child` did (ADR 0083, amended 2026-11-10).
 
 use std::sync::OnceLock;
 
-/// Whether the app starts its crash handler. Off until the operator approves switching it on
-/// (the module's doc says what else that change carries).
-pub const STARTED: bool = false;
+/// Whether the app starts its crash handler: on since the operator's approval of 2026-11-10
+/// (#5691; the module's doc says what came with it). Off again is one change, here.
+pub const STARTED: bool = true;
 
 /// What became of the watch, for the log once there is one: it is set before the log is.
 static STATE: OnceLock<String> = OnceLock::new();
@@ -65,7 +63,7 @@ pub fn serve_if_asked() {
 /// handler that could not start, and says why in its log.
 pub fn watch() {
     let said = if !STARTED {
-        "off until the operator switches it on (#5691)".to_owned()
+        "switched off in this build (#5691)".to_owned()
     } else {
         start()
     };

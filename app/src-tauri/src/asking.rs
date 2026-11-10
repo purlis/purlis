@@ -160,6 +160,12 @@ pub struct Shown {
     /// [`Self::expires`].
     #[specta(optional)]
     pub timed_out: Option<u32>,
+    /// **What a yes to it risks** (ADR 0121 decision 8, #6011): a push to a protected branch,
+    /// a host that looks like production, a write outside the project, read from the project's
+    /// own facts (`purlis_core::askrisk`). Its row says it, it is never grouped and never
+    /// offered as a rule, and its Allow asks once more. Absent where it risks none of these.
+    #[specta(optional)]
+    pub risk: Option<RiskShown>,
     /// **What an edit would write** (#1146): each change, drawn before its Allow, or why it is
     /// not shown and no Allow is offered. Absent for any other ask.
     #[specta(optional)]
@@ -222,6 +228,52 @@ pub struct RuleOffered {
     /// The option ids of the grants a rule may be made of, the suggested one first: the
     /// narrowest that would have prevented every ask, else the widest there is.
     pub options: Vec<String>,
+}
+
+/// **An ask's risk, as its row says it** (#6011): a mirror of `purlis_core::askrisk::Risk`,
+/// which the core has no window types for.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct RiskShown {
+    pub class: RiskClass,
+    /// What the row says of it: "Pushes to main, a protected branch".
+    pub why: String,
+    /// What its Allow asks before it acts: "Allow a push to main?".
+    pub confirm: String,
+}
+
+/// Which risk an ask carries ([`RiskShown`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum RiskClass {
+    ProtectedPush,
+    ProductionHost,
+    OutsideProject,
+}
+
+impl From<purlis_core::askrisk::Risk> for RiskShown {
+    fn from(risk: purlis_core::askrisk::Risk) -> Self {
+        use purlis_core::askrisk::Class;
+        Self {
+            class: match risk.class {
+                Class::ProtectedPush => RiskClass::ProtectedPush,
+                Class::ProductionHost => RiskClass::ProductionHost,
+                Class::OutsideProject => RiskClass::OutsideProject,
+            },
+            why: risk.why,
+            confirm: risk.confirm,
+        }
+    }
+}
+
+/// **What a yes to the action `ask` asks for risks** (#6011), against the project's `facts`.
+pub fn risk_of_action(action: &Action, facts: &purlis_core::askrisk::Facts) -> Option<RiskShown> {
+    match action {
+        Action::Command { line } => facts.of_command(line),
+        Action::Edit { path } => facts.of_write(path),
+        Action::Tool { input, .. } => facts.of_tool(input),
+        Action::Unsaid | Action::Elicit { .. } | Action::Question { .. } => None,
+    }
+    .map(RiskShown::from)
 }
 
 /// **An ask to allow a program, as its row draws it** (ADR 0112, #5239). Every field is the app's
@@ -807,6 +859,7 @@ pub fn permission(raised: Raised) -> Option<Shown> {
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes,
         lines,
         last_message: None,
@@ -1222,6 +1275,7 @@ pub fn dispatch(told: &crate::dispatchgrants::DispatchPending) -> Shown {
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -1273,6 +1327,7 @@ pub fn sandbox_host(
             expires: None,
             blocks: None,
             timed_out: None,
+            risk: None,
             writes: None,
             lines: None,
             last_message: None,
@@ -1316,6 +1371,7 @@ pub fn sandbox_host(
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -1388,6 +1444,7 @@ pub fn sandbox_write(
             expires: None,
             blocks: None,
             timed_out: None,
+            risk: None,
             writes: None,
             lines: None,
             last_message: None,
@@ -1421,6 +1478,7 @@ pub fn sandbox_write(
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -1494,6 +1552,7 @@ pub fn sandbox_runner(
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -1578,6 +1637,7 @@ pub fn sandbox_port(
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -1659,6 +1719,7 @@ pub fn sandbox_local(
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -1707,6 +1768,7 @@ pub fn terminal(
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message: asked,
@@ -1736,6 +1798,7 @@ pub fn question(session: u32, last_message: Option<String>, earlier: Vec<String>
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message,
@@ -1774,6 +1837,7 @@ pub fn task_question(
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -1840,6 +1904,7 @@ pub fn workspace_removal(
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -1964,6 +2029,7 @@ pub fn browser_posture(
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -2040,6 +2106,7 @@ pub fn browser_needs_you(waiting: &crate::browserneedsyou::Waiting) -> Shown {
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -2118,6 +2185,7 @@ pub fn secret_fill(
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -2230,6 +2298,7 @@ pub fn browser_login(
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -2337,6 +2406,7 @@ pub fn pool_login(waits: &crate::chatbrowsers::PoolLoginWaits) -> Shown {
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -2409,6 +2479,7 @@ pub fn pool_tool(waits: &crate::pooltools::PoolToolWaits) -> Shown {
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -2497,6 +2568,7 @@ pub fn vault_refused(one: &crate::vaultroute::VaultRefused) -> Shown {
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -2648,6 +2720,7 @@ pub fn secret_ask(open: &purlis_core::secrets::ask::Open, may_remember: bool) ->
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -2842,6 +2915,7 @@ pub fn run_grant(
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -2956,6 +3030,7 @@ pub fn browser_sites(
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -3160,6 +3235,7 @@ pub fn proposed_change(
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes,
         lines: None,
         last_message: None,
@@ -3195,6 +3271,7 @@ pub fn runner_dispatch(one: &crate::runnerdispatches::HeldDispatch) -> Shown {
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -3259,6 +3336,7 @@ pub fn runner_write(one: &crate::runnerwrites::HeldWrite) -> Shown {
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -3325,6 +3403,7 @@ pub fn sign_in(wait: &purlis_core::profilestore::sign_in::Wait) -> Shown {
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -3391,6 +3470,7 @@ pub fn pool_sign_in(wait: &purlis_core::profilestore::onrunner::PoolWait) -> Sho
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -3472,6 +3552,7 @@ pub fn sandbox_only(wait: &purlis_core::profilestore::sandbox_only::Wait) -> Sho
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -3510,6 +3591,7 @@ pub fn old_harness_plugins(old: &crate::oldplugins::OldHarnessPlugins) -> Shown 
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -3633,6 +3715,7 @@ pub fn signing_waiting(root: &std::path::Path, on: impl FnOnce() -> bool) -> Opt
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -3776,6 +3859,8 @@ pub struct Waiting<'a> {
     /// The name of the runner a chat runs on, where its runner left a service out of its plan
     /// (#2510).
     pub runner_of: &'a dyn Fn(u32) -> Option<String>,
+    /// **What the project knows that an ask's risk is read against** (#6011).
+    pub risk: &'a purlis_core::askrisk::Facts,
 }
 
 /// **The asks of one project, one per thing that waits** (#1690): each source's adapter, then
@@ -3789,7 +3874,10 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
         .permissions
         .iter()
         .cloned()
-        .filter_map(permission)
+        .filter_map(|raised| {
+            let risk = risk_of_action(&raised.ask.action, waiting.risk);
+            permission(raised).map(|shown| Shown { risk, ..shown })
+        })
         .collect();
     asks.extend(waiting.dispatches.iter().map(dispatch));
     // Before the queue is read: a chat that asked the person to remove a workspace waits on
@@ -3895,6 +3983,13 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
         let mut ask = sandbox_runner(*session, block, (waiting.runner_of)(*session).as_deref())
             .or_else(|| sandbox_block(*session, block, waiting.locks, waiting.declared))?;
         let since = (waiting.since)(&ask.ask);
+        // **A host that looks like production, a folder outside the project** (#6011).
+        ask.risk = match block.what {
+            crate::sandboxing::GrantWhat::Host => waiting.risk.of_host(&block.target),
+            crate::sandboxing::GrantWhat::Write => waiting.risk.of_write(&block.target),
+            _ => None,
+        }
+        .map(RiskShown::from);
         // A live ask (#1709): the same ask, under the same key, saying its connection waits,
         // and until when.
         if block.what == crate::sandboxing::GrantWhat::Host
@@ -4217,6 +4312,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     let declared = purlis_core::sandbox::services::declared(root);
     let tasks = held.tasks();
     let chats_waiting = purlis_core::dispatchwaits::blocked_by(&waits_on(chats));
+    let risk = purlis_core::askrisk::Facts::read(root);
     let waiting = Waiting {
         run_grants,
         browsers,
@@ -4300,6 +4396,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         },
         held_open: crate::asknotify::holds_asks_open(),
         runner_of: &|session| chats.runner_of(session),
+        risk: &risk,
     };
     let task_questions: Vec<Shown> = crate::dispatched::reached_the_person(held)
         .into_iter()
