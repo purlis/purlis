@@ -321,7 +321,7 @@ describe("the Answer link on an ask (#5651)", () => {
     );
   });
 
-  it("shows Go to chat alone on a terminal's prompt and a browser's sign-in", async () => {
+  it("shows no Answer on a terminal's prompt and a browser's sign-in, only the chat's own actions (#6013)", async () => {
     const { view } = await opened([TERMINAL, BROWSER]);
 
     for (const who of ["steward 3", "steward 4"]) {
@@ -331,7 +331,7 @@ describe("the Answer link on an ask (#5651)", () => {
           .getAllByRole("button")
           .map((one) => one.textContent)
           .filter((said) => said !== ""),
-      ).toEqual(["Go to chat"]);
+      ).toEqual(["Go to chat", "Snooze", "Stop"]);
     }
   });
 

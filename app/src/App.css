@@ -8829,3 +8829,37 @@ nav.piece-files-head {
   border-inline-start: 2px solid;
   font-size: var(--font-size-sm);
 }
+
+/* **All chats** (#6013): the Chats sidebar's mode. Its list draws only the rows in sight
+   (`drawnInPart`), so it is its own scroll: the view fills its region and the list the room
+   under the top. */
+.all-chats {
+  block-size: 100%;
+}
+
+.all-chats .all-chats-list {
+  flex: 1 1 0;
+  min-block-size: 0;
+}
+
+/* The filter's line and the chosen chats' line: words, then their buttons, wrapping. */
+.all-chats .all-chats-filter,
+.all-chats .all-chats-bulk {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.all-chats .all-chats-filter > p,
+.all-chats .all-chats-bulk > p {
+  flex: 1 1 auto;
+  margin: 0;
+}
+
+/* A row's mark stands beside its box. */
+.all-chats [data-part="lead"] {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}

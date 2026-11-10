@@ -180,7 +180,8 @@ pub struct Ctx<'a> {
     pub by: By,
     pub say: Sink<'a>,
     /// **Where an org's project audits its skill supply** (SK-11, [`super::source::policy`]):
-    /// the window's event log. `None` where nothing writes it, and then such a project's
+    /// the event log, through the window's `record`, or through the session host on a
+    /// terminal's ask (SK-11a, #6030). `None` where nothing writes it, and then such a project's
     /// installs, updates and removals are refused.
     pub audit: Option<Audit<'a>>,
 }

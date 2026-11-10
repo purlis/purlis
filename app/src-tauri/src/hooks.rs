@@ -3298,7 +3298,7 @@ impl Hooks {
                 plane: root.to_path_buf(),
                 number: None,
                 kind: audited.kind().to_owned(),
-                body: audited.body(),
+                body: audited.body(purlis_core::skills::source::policy::MadeAt::Window),
             })
             .map_err(|why| format!("the event log refused it: {why}"))
     }

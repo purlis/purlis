@@ -239,3 +239,14 @@ fn only_a_terminal_asks_for_a_grade_and_only_the_window_runs_one() {
         );
     }
 }
+
+#[test]
+fn only_a_terminal_asks_for_its_skill_change_to_be_audited() {
+    for scope in Scope::ALL {
+        assert_eq!(
+            scope.may(Power::AuditSkillChange),
+            scope == Scope::Terminal,
+            "{scope}"
+        );
+    }
+}

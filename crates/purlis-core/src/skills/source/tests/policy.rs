@@ -324,23 +324,30 @@ fn install_update_and_removal_are_each_audited_on_an_org_project() {
     .0
     .unwrap();
 
-    let said: Vec<(&str, serde_json::Value)> =
-        audited.iter().map(|one| (one.kind(), one.body())).collect();
+    let said: Vec<(&str, serde_json::Value)> = audited
+        .iter()
+        .map(|one| {
+            (
+                one.kind(),
+                one.body(crate::skills::source::policy::MadeAt::Window),
+            )
+        })
+        .collect();
     let local = format!("local:{}", Origin::Git(source.remote.clone()).label());
     assert_eq!(
         said,
         [
             (
                 "skill.install",
-                serde_json::json!({"level": "project", "skills": ["notify"], "source": local, "pin": first})
+                serde_json::json!({"actor_kind": "human", "actor": "operator", "scope": "local-ui", "level": "project", "skills": ["notify"], "source": local, "pin": first})
             ),
             (
                 "skill.update",
-                serde_json::json!({"level": "project", "skills": ["notify"], "source": local, "pin": second})
+                serde_json::json!({"actor_kind": "human", "actor": "operator", "scope": "local-ui", "level": "project", "skills": ["notify"], "source": local, "pin": second})
             ),
             (
                 "skill.remove",
-                serde_json::json!({"level": "project", "skills": ["notify"], "source": local, "pin": second})
+                serde_json::json!({"actor_kind": "human", "actor": "operator", "scope": "local-ui", "level": "project", "skills": ["notify"], "source": local, "pin": second})
             ),
         ]
     );
@@ -359,7 +366,7 @@ fn where_nothing_writes_the_audit_an_org_project_changes_no_installed_skill() {
     .0
     .unwrap_err();
     assert!(
-        refused.contains("only the purlis window writes the audit's log")
+        refused.contains("nothing here can write the audit's log")
             && refused.contains("nothing was installed"),
         "{refused}"
     );

@@ -10,6 +10,7 @@ import { commands } from "./bindings";
 import type { Offer } from "./actions";
 import type { Needing, Quiet } from "./NeedsYou";
 import type { Ending } from "./QuitWarning";
+import type { FleetChat } from "./everyChat";
 
 /**
  * charter's windows, as the page sees them (ADR 0033, amended 2026-09-26; charter#126).
@@ -25,6 +26,8 @@ import type { Ending } from "./QuitWarning";
  * - **Needs you.** The title bar's ✋ lists every chat, in every project, asking for the
  *   operator (ADR 0054). A split window's chats are in its own reports, so each window tells
  *   the others what it has asking, and a row for a chat in another window is carried out there.
+ * - **All chats** (#6013): every chat in every open project, so each window tells the others
+ *   its own, and a row for a chat in another window is carried out there.
  * - **Quit.** The main window is asked, and its warning lists what a quit would end in every
  *   window, and waits until every window has said what it has open.
  */
@@ -38,6 +41,9 @@ export type WindowSaid = {
   needing: Needing[];
   quiet: Quiet[];
   ending: Ending[];
+  /** **Every chat in it, as All chats lists them** (#6013). Absent from a window of an older
+   *  build, which then lists none. */
+  fleet?: FleetChat[];
   /** Whether every project in it has said what it has open. Until then, "nothing" is "not yet". */
   settled: boolean;
 };
@@ -92,6 +98,7 @@ export function useOtherWindows(mine: Omit<WindowSaid, "label">): {
   needing: Needing[];
   quiet: Quiet[];
   ending: Ending[];
+  fleet: FleetChat[];
   settled: boolean;
 } {
   const own = useMemo(() => thisWindow(), []);
@@ -138,6 +145,7 @@ export function useOtherWindows(mine: Omit<WindowSaid, "label">): {
       needing: from.flatMap((said) => said.needing),
       quiet: from.flatMap((said) => said.quiet),
       ending: from.flatMap((said) => said.ending),
+      fleet: from.flatMap((said) => said.fleet ?? []),
       settled: others.every((label) => heard[label]?.settled === true),
     };
   }, [heard, labels, own]);

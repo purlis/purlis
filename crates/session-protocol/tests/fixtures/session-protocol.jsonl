@@ -251,3 +251,5 @@
 {"reply":{"re":206,"ok":"done"}}
 {"call":{"id":207,"command":"start_program","project":"01J9PRJCT00000000000000000","kind":"harness","number":15,"persona":"steward"}}
 {"reply":{"re":207,"ok":{"program_started":{"program":"01J9ZQ5000000000000000000J","number":15,"process":4247,"sandbox":"off","skills_not_there":{"missing":["deploy-tools"],"no_built_in":["purlis-secret"]}}}}}
+{"call":{"id":208,"command":"audit_skill_change","project_path":"/work/project","change":{"act":"install","level":"project","skills":["notify"],"source":"https://github.com/acme/skills","pin":"0123456789abcdef0123456789abcdef01234567"}}}
+{"reply":{"re":208,"ok":"done"}}

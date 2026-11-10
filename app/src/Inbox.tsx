@@ -62,7 +62,7 @@ import { PanelSectionTitle } from "./ui/panel/Panel";
 import { RESULTS } from "./ActionResultNotice";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { List, ListRowSection } from "./ui/list/List";
-import { SnoozeAll, type Snoozing } from "./AsksSnooze";
+import { chatsOf, SnoozeAll, type Snoozing } from "./AsksSnooze";
 
 import { chainSaid, NothingDone } from "./inboxRowParts";
 import { inOrder } from "./asksOrder";
@@ -229,6 +229,7 @@ export function Inbox({
   workspaceOf,
   workspaceNamed,
   snoozing,
+  onStop,
   hold,
   quietTop,
   onAllChats,
@@ -312,6 +313,9 @@ export function Inbox({
   /** **Snooze all** (#5647): the asks it put away, and how to snooze and bring them back.
    *  Without it, Asks offers no Snooze all. */
   snoozing?: Snoozing;
+  /** **Stop on an ask's row** (ADR 0121 decision 21, #6013): its chat stopped, as its row in the
+   *  Chats list stops it. Without it, the row's Stop is off. */
+  onStop?: (session: number) => void;
   /** **Dismiss and Dismiss all wait for their Undo here** (#5650): Updates' lines and the
    *  Notices taken away at once, each one's own Dismiss carried out when the Undo goes. Without
    *  it, a Dismiss is carried out at once and no Undo stands. */
@@ -713,6 +717,16 @@ export function Inbox({
                     onGo={() => onGo(ask.session)}
                     onAnswered={onAnswered}
                     onIgnore={ignore === undefined ? undefined : () => ignore(ask)}
+                    onSnooze={
+                      snoozing === undefined
+                        ? undefined
+                        : () =>
+                            void snoozing.snooze(
+                              chatsOf((asks ?? []).filter((one) => one.session === ask.session)),
+                              null,
+                            )
+                    }
+                    onStop={onStop === undefined ? undefined : () => onStop(ask.session)}
                     onTouched={(answer) => touch(ask, answer)}
                     above={places.slice(0, places.indexOf(askKey(ask))).join("\n")}
                   />
