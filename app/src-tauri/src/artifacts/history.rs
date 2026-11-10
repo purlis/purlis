@@ -183,16 +183,25 @@ pub async fn artifact_open_as_of(
     let config = purlis_core::machine::config_root();
     let dir = at.clone();
     let read_folder = folder.clone();
-    let (then, pin, standing) = blocking(move || {
+    let (then, pin, standing, host) = blocking(move || {
         let then = history::as_of(config.as_deref(), &at, &read_folder, &real, &version)?;
         let (pin, _) = read_pinned(&at, &read_folder)?;
         let standing =
             approval::standing(config.as_deref(), &at, &read_folder, &pin, &then.snapshot);
-        Ok((then, pin, standing))
+        // History's own origin, and the approval's when that version's script runs here, so no
+        // two approvals share its storage (ADR 0122, amended 2026-11-10).
+        let host = approval::page_host(
+            config.as_deref(),
+            &at,
+            &read_folder,
+            &pin,
+            &then.snapshot,
+            "as-of",
+        );
+        Ok((then, pin, standing, host))
     })
     .await?;
     let shown = shown_standing(standing);
-    let host = serve::origin_host(&dir, &format!("as-of\u{0}{folder}"));
     let declared = declared_by(&then.snapshot);
     let generated = then.data.is_some()
         || declared

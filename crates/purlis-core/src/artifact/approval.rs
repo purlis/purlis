@@ -26,6 +26,7 @@ use std::io::Read as _;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
+use sha2::{Digest as _, Sha256};
 
 use super::serve::{self, Snapshot};
 
@@ -99,6 +100,78 @@ pub fn key(workspace: &Path, folder: &str) -> String {
         .canonicalize()
         .unwrap_or_else(|_| workspace.to_path_buf());
     serve::origin_host(&real, folder)
+}
+
+/// **The host artifact folder `folder`'s page is served from** in view `view` ("" for now,
+/// "as-of" for History), served as `snapshot`: its origin, and so its web storage (ADR 0122,
+/// amended 2026-11-10).
+///
+/// A page whose script does not run here touches no storage, and is served from its folder's
+/// own host ([`serve::origin_host`]). **A page approved here is served from an origin drawn
+/// from its approval**: the random `storage` drawn when it was approved, its pin and its
+/// template's fingerprint. So a changed template, a changed pin, or an approval forgotten
+/// (an unpin here) and given again is a new, empty origin, and never reads what an earlier
+/// approval's page kept; while the same approval keeps its origin on every load, and across a
+/// rename of its workspace, which carries the approval. An approval recorded before the
+/// `storage` was drawn is served from its pin and fingerprint alone.
+pub fn page_host(
+    config_root: Option<&Path>,
+    workspace: &Path,
+    folder: &str,
+    pin_id: &str,
+    snapshot: &Snapshot,
+    view: &str,
+) -> String {
+    let real = workspace
+        .canonicalize()
+        .unwrap_or_else(|_| workspace.to_path_buf());
+    let own = if view.is_empty() {
+        folder.to_owned()
+    } else {
+        format!("{view}\u{0}{folder}")
+    };
+    if standing(config_root, workspace, folder, pin_id, snapshot) != Standing::Approved {
+        return serve::origin_host(&real, &own);
+    }
+    let storage = config_root
+        .and_then(|config| {
+            entries(config)
+                .get(&key(workspace, folder))
+                .and_then(|entry| entry.get("storage"))
+                .and_then(Value::as_str)
+                .filter(|drawn| is_storage(drawn))
+                .map(str::to_owned)
+        })
+        .unwrap_or_default();
+    let mut hash = Sha256::new();
+    let mut frame = |name: &str, body: &[u8]| {
+        hash.update((name.len() as u64).to_be_bytes());
+        hash.update(name.as_bytes());
+        hash.update((body.len() as u64).to_be_bytes());
+        hash.update(body);
+    };
+    frame("purlis-artifact-origin", b"1");
+    frame("view", view.as_bytes());
+    frame("storage", storage.as_bytes());
+    frame("pin", pin_id.as_bytes());
+    frame("fingerprint", snapshot.fingerprint().as_bytes());
+    hash.finalize()
+        .iter()
+        .take(16)
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// A new `storage` for an approval: 128 random bits, as 32 hex digits.
+fn drawn_storage() -> Result<String, String> {
+    let mut bytes = [0u8; 16];
+    getrandom::fill(&mut bytes)
+        .map_err(|why| format!("purlis could not draw the page's storage ({why})"))?;
+    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+fn is_storage(text: &str) -> bool {
+    text.len() == 32 && is_hex(text)
 }
 
 /// One folder's approval: the pin and the template approved.
@@ -203,6 +276,8 @@ pub fn approve(
     let real = workspace
         .canonicalize()
         .unwrap_or_else(|_| workspace.to_path_buf());
+    // Drawn afresh on every approval: the page's origin, so its storage, is this approval's.
+    let storage = drawn_storage()?;
     change(config_root, |entries| {
         entries.insert(
             key(workspace, folder),
@@ -211,6 +286,7 @@ pub fn approve(
                 "folder": folder,
                 "pin": pin_id,
                 "fingerprint": fingerprint,
+                "storage": storage,
             }),
         );
     })
@@ -476,9 +552,15 @@ mod tests {
     fn a_pin_whose_folder_or_command_changed_is_untrusted_until_confirmed() {
         let here = Here::new();
         here.approve(PIN);
-        assert_eq!(here.standing("ba9876543210fedcba9876543210fedc"), Standing::PinChanged);
+        assert_eq!(
+            here.standing("ba9876543210fedcba9876543210fedc"),
+            Standing::PinChanged
+        );
         here.approve("ba9876543210fedcba9876543210fedc");
-        assert_eq!(here.standing("ba9876543210fedcba9876543210fedc"), Standing::Approved);
+        assert_eq!(
+            here.standing("ba9876543210fedcba9876543210fedc"),
+            Standing::Approved
+        );
         assert_eq!(here.standing(PIN), Standing::PinChanged);
     }
 
@@ -539,6 +621,64 @@ mod tests {
         std::fs::write(&record, "not json").unwrap();
         here.approve(PIN);
         assert_eq!(here.standing(PIN), Standing::Approved);
+    }
+
+    /// The exploit of the second review of #5978: v1, approved, keeps what its queries answered
+    /// in its storage; v2, approved for other reads, finds it there. An artifact's storage is its
+    /// origin's, so each approval is served from an origin of its own: a changed template, a
+    /// changed pin or an approval forgotten and given again never reaches the storage before it.
+    #[test]
+    fn each_approval_is_served_from_an_origin_of_its_own() {
+        let here = Here::new();
+        let host = |pin: &str, view: &str| {
+            page_host(
+                Some(&here.config),
+                &here.workspace,
+                "board",
+                pin,
+                &here.snapshot(),
+                view,
+            )
+        };
+        let unapproved = host(PIN, "");
+        here.approve(PIN);
+        let v1 = host(PIN, "");
+        assert_eq!(v1, host(PIN, ""), "the same approval keeps its origin");
+        assert_ne!(v1, unapproved, "approving is a new origin");
+        assert_ne!(
+            host(PIN, "as-of"),
+            v1,
+            "History's view is an origin of its own"
+        );
+
+        here.write("app.js", "draw(2)");
+        assert_ne!(host(PIN, ""), v1, "a changed template, unapproved");
+        here.approve(PIN);
+        let v2 = host(PIN, "");
+        assert_ne!(v2, v1, "a changed template, approved again");
+
+        here.approve("ba9876543210fedcba9876543210fedc");
+        assert_ne!(
+            host("ba9876543210fedcba9876543210fedc", ""),
+            v2,
+            "another pin"
+        );
+
+        here.approve(PIN);
+        let again = host(PIN, "");
+        assert!(forget(&here.config, &here.workspace, "board").unwrap());
+        here.approve(PIN);
+        assert_ne!(
+            host(PIN, ""),
+            again,
+            "an approval forgotten and given again"
+        );
+        for one in [&v1, &v2, &again] {
+            assert!(
+                one.len() == 32 && one.chars().all(|c| c.is_ascii_hexdigit()),
+                "{one}"
+            );
+        }
     }
 
     #[test]

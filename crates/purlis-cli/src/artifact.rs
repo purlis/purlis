@@ -298,13 +298,17 @@ pub fn run(here: &Here, command: ArtifactCommand) -> Result<Code, String> {
         }
         ArtifactCommand::Unpin { pin, workspace } => {
             let ws = here.workspace(workspace.as_deref())?;
-            match artifact::unpin(root, ws.dir(), &pin) {
-                Ok(pin) => {
+            let config = purlis_core::machine::config_root();
+            match artifact::unpin_here(root, ws.dir(), &pin, config.as_deref()) {
+                Ok((pin, kept)) => {
                     voice::ok(format!(
                         "Unpinned {} from '{}'; its folder stays in artifacts/.",
                         said(&pin),
                         ws.name()
                     ));
+                    if let Some(why) = kept {
+                        voice::warn(format!("Unpinned, but {why}."));
+                    }
                     Ok(0)
                 }
                 Err(why) => refused(&why),

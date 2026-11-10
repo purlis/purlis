@@ -435,11 +435,15 @@ impl Artifacts {
         let declared = declared_by(&snapshot);
         let generated =
             data::generated(&artifact::resolve(&of.dir, &of.folder)?, declared.as_ref());
+        // An approval given or gone since is an origin of its own ([`approval::page_host`]):
+        // the page's next load is from there, and the origin before it is served nothing.
+        let host = approval::page_host(config, &of.dir, &of.folder, &pin, &snapshot, "");
         if let Some(one) = self.served().get_mut(label) {
             one.snapshot = snapshot;
             one.declared = declared;
             one.of.pin = pin;
             one.of.standing = standing;
+            one.host = host;
         }
         Ok((standing, generated))
     }
@@ -910,7 +914,16 @@ pub async fn artifact_unpin(
 ) -> Result<(), String> {
     let root = planes.held(&plane)?.root().to_path_buf();
     let at = workspace_of(&planes, &plane, &workspace)?;
-    blocking(move || artifact::unpin(&root, &at, &folder).map(|_| ())).await?;
+    let config = purlis_core::machine::config_root();
+    // Unpinned here, its approval on this machine goes with it, and so does the origin its
+    // storage was kept in (ADR 0122, amended 2026-11-10).
+    let kept = blocking(move || {
+        artifact::unpin_here(&root, &at, &folder, config.as_deref()).map(|(_, kept)| kept)
+    })
+    .await?;
+    if let Some(why) = kept {
+        tracing::warn!("purlis: unpinned an artifact, but {why}");
+    }
     moved(&app, plane, workspace);
     Ok(())
 }
@@ -979,8 +992,12 @@ pub async fn artifact_open(
             let generated = data::generated(&real, declared.as_ref());
             let plane_granted =
                 approval::plane_granted(config.as_deref(), &at, &read_folder, &pin, &snapshot);
+            // The approval's own origin when its script runs here, so its storage is that
+            // approval's alone (ADR 0122, amended 2026-11-10).
+            let host =
+                approval::page_host(config.as_deref(), &at, &read_folder, &pin, &snapshot, "");
             Ok((
-                serve::origin_host(&at, &read_folder),
+                host,
                 snapshot,
                 pin,
                 standing,
@@ -1315,10 +1332,16 @@ fn lay(
     let url: tauri::Url = format!("{own}/")
         .parse()
         .map_err(|e| format!("purlis could not name the artifact's page: {e}"))?;
-    let leave = format!("{own}/");
+    // Its origin moves when an approval is given or goes ([`artifact_reload`]), so where it may
+    // go is asked of what it is served now, never fixed here.
+    let app = window.app_handle().clone();
+    let going = label.clone();
     let builder =
         tauri::webview::WebviewBuilder::new(&label, tauri::WebviewUrl::CustomProtocol(url))
-            .on_navigation(move |to| to.as_str().starts_with(&leave))
+            .on_navigation(move |to| {
+                app.try_state::<Artifacts>()
+                    .is_some_and(|artifacts| artifacts.may_navigate(&going, to))
+            })
             .on_new_window(crate::navguard::no_new_window)
             .initialization_script(PAGE_SCRIPT)
             .initialization_script(PORT)
@@ -1446,20 +1469,38 @@ pub async fn artifact_reload(
     let app = window.app_handle().clone();
     let read_label = label.clone();
     let config = purlis_core::machine::config_root();
-    let (standing, changed_by, generated, (queries, plane_granted)) = blocking(move || {
+    let (standing, changed_by, generated, (queries, plane_granted), moved) = blocking(move || {
         let artifacts = app
             .try_state::<Artifacts>()
             .ok_or_else(|| "no artifact is open".to_owned())?;
+        let host = |artifacts: &Artifacts| {
+            artifacts
+                .served()
+                .get(&read_label)
+                .map(|one| one.host.clone())
+        };
+        let before = host(&artifacts);
         let (standing, generated) = artifacts.read_again(&read_label, &owner, config.as_deref())?;
+        let now = host(&artifacts);
+        let moved = now.filter(|now| before.as_ref() != Some(now));
         let changed_by = (standing == Standing::PinChanged)
             .then(|| artifacts.served_to(&read_label, &owner))
             .flatten()
             .and_then(|(of, _)| artifact::pinned_by(&of.dir, &of.pin));
         let queries = artifacts.queries_of(&read_label, config.as_deref());
-        Ok((standing, changed_by, generated, queries))
+        Ok((standing, changed_by, generated, queries, moved))
     })
     .await?;
-    webview.reload().map_err(page_unreached)?;
+    match moved {
+        // A new origin is a new page, loaded there: a reload would ask the old one again.
+        Some(host) => {
+            let url: tauri::Url = format!("{}/", origin(&host))
+                .parse()
+                .map_err(|e| format!("purlis could not name the artifact's page: {e}"))?;
+            webview.navigate(url).map_err(page_unreached)?;
+        }
+        None => webview.reload().map_err(page_unreached)?,
+    }
     Ok(ArtifactOpened {
         label,
         standing: standing.as_str().to_owned(),
@@ -1675,9 +1716,10 @@ mod tests {
     #[test]
     fn a_page_runs_script_only_when_its_person_approved_it_here() {
         let artifacts = served(&[("artifact-1", "main", "aaa")]);
+        let host = host_now(&artifacts);
         let csp = |artifacts: &Artifacts| {
             artifacts
-                .answer("artifact-1", &get(&at("aaa", "/")))
+                .answer("artifact-1", &get(&at(&host, "/")))
                 .response
                 .headers()["Content-Security-Policy"]
                 .to_str()
@@ -1699,7 +1741,7 @@ mod tests {
             );
         }
         standing_of(&artifacts, "artifact-1", Standing::Approved);
-        assert_eq!(csp(&artifacts), serve::csp(&origin("aaa"), true));
+        assert_eq!(csp(&artifacts), serve::csp(&origin(&host), true));
         // Another webview asking for the approved one's origin is still answered nothing.
         let crossed = artifacts.answer("artifact-2", &get(&at("aaa", "/")));
         assert_eq!(crossed.response.status(), StatusCode::NOT_FOUND);
@@ -2075,11 +2117,13 @@ mod tests {
     fn opened(workspace: &Path) -> Artifacts {
         let artifacts = Artifacts::default();
         let (pin, snapshot) = read_pinned(workspace, "page").unwrap();
+        // The host it is served from unapproved, as `artifact_open` draws it.
+        let host = approval::page_host(None, workspace, "page", &pin, &snapshot, "");
         artifacts.served().insert(
             "artifact-1".to_owned(),
             Served {
                 window: "main".to_owned(),
-                host: "aaa".to_owned(),
+                host,
                 snapshot,
                 of: Of {
                     dir: workspace.to_path_buf(),
@@ -2095,9 +2139,14 @@ mod tests {
         artifacts
     }
 
+    /// The host webview `artifact-1` is served from now.
+    fn host_now(artifacts: &Artifacts) -> String {
+        artifacts.served()["artifact-1"].host.clone()
+    }
+
     fn served_page(artifacts: &Artifacts) -> Vec<u8> {
         artifacts
-            .answer("artifact-1", &get(&at("aaa", "/")))
+            .answer("artifact-1", &get(&at(&host_now(artifacts), "/")))
             .response
             .into_body()
     }
@@ -2122,10 +2171,11 @@ mod tests {
         artifacts.read_again("artifact-1", "main", None).unwrap();
 
         assert_eq!(served_page(&artifacts), b"<h1>9 open</h1>");
-        let style = artifacts.answer("artifact-1", &get(&at("aaa", "/style.css")));
+        let host = host_now(&artifacts);
+        let style = artifacts.answer("artifact-1", &get(&at(&host, "/style.css")));
         assert_eq!(style.response.status(), StatusCode::OK);
         // Its data is read on its port, never served as a file of the folder.
-        let data = artifacts.answer("artifact-1", &get(&at("aaa", "/data.json")));
+        let data = artifacts.answer("artifact-1", &get(&at(&host, "/data.json")));
         assert_eq!(data.response.status(), StatusCode::NOT_FOUND);
     }
 
@@ -2159,16 +2209,17 @@ mod tests {
         let dir = workspace("<h1>12 open</h1><script>draw()</script>");
         let artifacts = opened(dir.path());
         standing_of(&artifacts, "artifact-1", Standing::Approved);
+        let host = host_now(&artifacts);
         let csp = |artifacts: &Artifacts| {
             artifacts
-                .answer("artifact-1", &get(&at("aaa", "/")))
+                .answer("artifact-1", &get(&at(&host, "/")))
                 .response
                 .headers()["Content-Security-Policy"]
                 .to_str()
                 .unwrap()
                 .to_owned()
         };
-        assert_eq!(csp(&artifacts), serve::csp(&origin("aaa"), true));
+        assert_eq!(csp(&artifacts), serve::csp(&origin(&host), true));
 
         // Its data and its template both moved in one burst: the template is no longer the
         // one approved, so the reload serves it with no script.
@@ -2181,7 +2232,50 @@ mod tests {
         let (standing, _) = artifacts.read_again("artifact-1", "main", None).unwrap();
 
         assert!(!standing.runs(), "{standing:?}");
-        assert_eq!(csp(&artifacts), serve::csp(&origin("aaa"), false));
+        assert_eq!(
+            host_now(&artifacts),
+            host,
+            "not approved, it keeps its folder's origin"
+        );
+        assert_eq!(csp(&artifacts), serve::csp(&origin(&host), false));
+    }
+
+    /// Finding 1 of the second review of #5978: storage is the origin's, so an approval is
+    /// served from an origin of its own. A reload after the person approved the page moves it
+    /// there, and the origin it was served from before is served nothing.
+    #[test]
+    fn a_reload_after_an_approval_serves_the_page_from_the_approval_s_own_origin() {
+        let dir = workspace("<h1>12 open</h1><script>draw()</script>");
+        let config = tempfile::tempdir().unwrap();
+        let artifacts = opened(dir.path());
+        let host = |artifacts: &Artifacts| artifacts.served()["artifact-1"].host.clone();
+        let before = host(&artifacts);
+        let (pin, snapshot) = read_pinned(dir.path(), "page").unwrap();
+        approval::approve(
+            config.path(),
+            dir.path(),
+            "page",
+            &pin,
+            snapshot.fingerprint(),
+        )
+        .unwrap();
+
+        let (standing, _) = artifacts
+            .read_again("artifact-1", "main", Some(config.path()))
+            .unwrap();
+
+        assert_eq!(standing, Standing::Approved);
+        let approved =
+            approval::page_host(Some(config.path()), dir.path(), "page", &pin, &snapshot, "");
+        assert_eq!(host(&artifacts), approved);
+        assert_ne!(approved, before);
+        let old = artifacts.answer("artifact-1", &get(&at(&before, "/")));
+        assert_eq!(old.response.status(), StatusCode::NOT_FOUND);
+        let new = artifacts.answer("artifact-1", &get(&at(&approved, "/")));
+        assert_eq!(new.response.status(), StatusCode::OK);
+        let url = |text: &str| tauri::Url::parse(text).unwrap();
+        assert!(artifacts.may_navigate("artifact-1", &url(&at(&approved, "/"))));
+        assert!(!artifacts.may_navigate("artifact-1", &url(&at(&before, "/"))));
     }
 
     #[test]

@@ -414,6 +414,27 @@ pub fn unpin(root: &Path, workspace: &Path, key: &str) -> Result<Pin, String> {
     Ok(gone.expect("the change ran"))
 }
 
+/// **Unpin the pin named by `key` on this machine**: [`unpin`], and this person's approval of
+/// its folder (in `config_root`, when there is one) is forgotten with it (ADR 0122, amended
+/// 2026-11-10). Pinned again, even with the same command and so the same id, it asks again,
+/// and its next approval is served from a new origin ([`approval::page_host`]), so nothing its
+/// page kept before is read. A record that cannot be written leaves the approval as it was:
+/// the pin is gone all the same, and that is said.
+pub fn unpin_here(
+    root: &Path,
+    workspace: &Path,
+    key: &str,
+    config_root: Option<&Path>,
+) -> Result<(Pin, Option<String>), String> {
+    let gone = unpin(root, workspace, key)?;
+    let kept = config_root.and_then(|config| {
+        approval::forget(config, workspace, &gone.folder)
+            .err()
+            .map(|why| format!("its approval on this machine stays: {why}"))
+    });
+    Ok((gone, kept))
+}
+
 /// Put the pins named by `keys` (ids or folders) first, in that order, numbered from 1, and
 /// every other pin after them in the order it had. The pins as they are now.
 pub fn reorder(root: &Path, workspace: &Path, keys: &[String]) -> Result<Vec<Pin>, String> {
@@ -649,6 +670,48 @@ fn title_in(text: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Finding 1 of the second review of #5978: an unpin and a pin again of the same folder and
+    /// command is the same pin's id, so the approval, and the origin whose storage it keeps,
+    /// came back with it. Unpinned here, its approval goes: pinned again, it asks again, and
+    /// its next approval is served from a new origin.
+    #[test]
+    fn an_unpin_here_forgets_the_approval_so_a_pin_again_asks_and_keeps_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        std::fs::write(root.join(crate::plane::MANIFEST), "schema = 2\n").unwrap();
+        let ws = root.join("workspaces/alpha");
+        std::fs::create_dir_all(ws.join(DIR).join("board")).unwrap();
+        std::fs::write(
+            ws.join(DIR).join("board").join(PAGE),
+            "<script>x()</script>",
+        )
+        .unwrap();
+        let config = root.join("config");
+        let request = Request {
+            folder: "board".into(),
+            name: None,
+            icon: None,
+            command: None,
+            cwd: None,
+        };
+        pin(&root, &ws, &request).unwrap();
+        let id = pinned(&ws, "board").unwrap().id;
+        let snapshot = serve::Snapshot::read(&ws.join(DIR).join("board"), "board").unwrap();
+        approval::approve(&config, &ws, "board", &id, snapshot.fingerprint()).unwrap();
+        let host = || approval::page_host(Some(&config), &ws, "board", &id, &snapshot, "");
+        let before = host();
+
+        unpin_here(&root, &ws, "board", Some(&config)).unwrap();
+        pin(&root, &ws, &request).unwrap();
+        assert_eq!(pinned(&ws, "board").unwrap().id, id, "the same pin's id");
+        assert_eq!(
+            approval::standing(Some(&config), &ws, "board", &id, &snapshot),
+            approval::Standing::New
+        );
+        approval::approve(&config, &ws, "board", &id, snapshot.fingerprint()).unwrap();
+        assert_ne!(host(), before);
+    }
 
     #[test]
     fn a_title_becomes_the_name_folded_and_cut() {
