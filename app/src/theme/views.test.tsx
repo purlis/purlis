@@ -1365,7 +1365,14 @@ const STATES: State[] = [
     view: { from: null, view: "artifact", key: "alpha/backlog-state" },
     answers: {
       artifact_about: { name: "Backlog state", pinned_by: "Ada", missing: null },
-      artifact_open: "artifact-1",
+      artifact_open: {
+        label: "artifact-1",
+        standing: "script-free",
+        changed_by: null,
+        generated: true,
+        queries: [],
+        plane_granted: false,
+      },
     },
     drawn: /Pinned by Ada/,
   },
