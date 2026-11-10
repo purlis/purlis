@@ -449,7 +449,8 @@ fn failures_of(drawn: &ResolvedTheme, tinted: bool) -> Vec<Failure> {
     found
 }
 
-/// How many themes' [`tinted_failures`] a thread keeps.
+/// How many themes' [`tinted_failures`] a thread keeps: a walk's point, the theme a recipe loaded
+/// and each round of their holds, so more than [`KNOWN_MOST`]'s few recipes.
 const KNOWN_FAILED: usize = 16;
 
 thread_local! {
@@ -486,7 +487,9 @@ fn tinted_failures(theme: &ResolvedTheme, chromas: &mut Chromas) -> Vec<Failure>
     found
 }
 
-/// [`tinted_failures`], measured.
+/// [`tinted_failures`], measured. It reads `theme` and nothing else ([`Chromas`] only keeps what
+/// it found): [`FAILED`] matches by the theme alone, so anything else this comes to read, a
+/// thread's flag among them, has to join what it matches by.
 fn tinted_failures_measured(theme: &ResolvedTheme, chromas: &mut Chromas) -> Vec<Failure> {
     let mut found = Vec::new();
     for one in &theme.tint.hues {

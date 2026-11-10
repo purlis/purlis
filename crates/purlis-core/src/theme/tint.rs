@@ -151,7 +151,9 @@ fn turned_oklab(hex: &str, hue: f64, most: f64) -> Option<Vec3> {
 /// What [`turned_oklab`] answered on this thread, as [`Turned`] keeps [`tint_hex_within`]'s.
 #[derive(Default)]
 struct TurnedOklab {
+    /// How many answers it holds.
     kept: usize,
+    /// Each answer by hue and most chroma (their bits), then by the value turned.
     at: rustc_hash::FxHashMap<(u64, u64), rustc_hash::FxHashMap<String, Option<Vec3>>>,
 }
 

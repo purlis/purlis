@@ -3177,12 +3177,15 @@ fn nearer_across(
 /// The looks [`nearer_across`] measures, as the rules and the defaults draw them: no theme's, so
 /// drawn once for every tint a variant is held in (#3597).
 struct Across {
+    /// Whether danger's words are held apart from the primary's too.
     words: bool,
     /// The variant's default looks in each set of states it shows, each drawn alike once.
     defaults: Vec<Drawn>,
     /// The primary's default looks in each set of states it shows, each drawn alike once.
     default_primaries: Vec<Drawn>,
+    /// The variant in the states measured, as the rules draw it.
     look: Drawn,
+    /// The variant in the states measured, as the defaults draw it.
     default_look: Drawn,
     /// Each set of states the primary is drawn in beside the variant, but the variant's own,
     /// with its look by the theme and by the defaults: a pair drawn alike before, left out.
@@ -3300,21 +3303,28 @@ fn consent_broken(
 /// The looks [`consent_broken`] reads a consent variant by, as `rules` draw them and as the
 /// family's defaults do: no theme's, so worked out once for every tint a variant is held in.
 struct ConsentLooks {
+    /// The variant, as the rules draw it.
     look: Drawn,
+    /// The primary, as the rules draw it.
     primary: Drawn,
+    /// The variant, as the family's defaults draw it.
     default_look: Drawn,
+    /// The primary, as the family's defaults draw it.
     default_primary: Drawn,
-    /// Keep blocked's, the family's first variant, for an answer that grants.
-    keep_blocked: Option<(Drawn, Drawn)>,
+    /// Keep blocked, the family's first variant, for an answer that grants: its name, its look
+    /// as the rules draw it and as the defaults do.
+    keep_blocked: Option<(&'static str, Drawn, Drawn)>,
     /// What [`nearer_across`] measures, drawn the first time it is asked.
     across: std::cell::OnceCell<Option<Across>>,
 }
 
 impl ConsentLooks {
+    /// The looks of `variant` and what it is held apart from while `states` hold.
     fn of(rules: &[Rule], family: &Family, variant: &Variant, states: &[State]) -> Self {
         let keep_blocked = (variant.consent == Some(Consent::Grants)).then(|| {
             let name = family.variants[0].name;
             (
+                name,
                 drawn(rules, family, name, states),
                 drawn(&[], family, name, states),
             )
@@ -3385,9 +3395,9 @@ fn consent_broken_as(
                     ratio,
                 ));
             }
-            let keep_blocked_name = family.variants[0].name;
-            let (keep_blocked, default_keep_blocked) =
+            let (keep_blocked_name, keep_blocked, default_keep_blocked) =
                 blocked.as_ref().expect("drawn for an answer that grants");
+            let keep_blocked_name = *keep_blocked_name;
             let default_allow = default_look;
             if !alike(
                 theme,
@@ -4927,7 +4937,8 @@ impl Held<'_> {
             .filter(|one| one.consent.is_some() && family.draws(one.name, states))
         {
             // The looks are no tint's: drawn once, and again only after a fallback changes the
-            // rules they are drawn from (#3597).
+            // rules they are drawn from (#3597). Only `fall` changes `self.rules` in this loop,
+            // and each call of it is followed by forgetting them.
             let mut looks: Option<ConsentLooks> = None;
             for one in drawn_in {
                 let drawn_now = looks

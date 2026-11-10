@@ -1799,3 +1799,69 @@ fn a_terminal_colour_s_warning_names_the_palette_entry_that_holds_it() {
         "{said:?}"
     );
 }
+
+#[test]
+#[ignore = "a bench: `cargo test -p purlis-core --lib theme_answers_digest -- --ignored --nocapture`"]
+fn theme_answers_digest() {
+    // What the engine answers, folded to one number a line, so two builds can be told to answer
+    // the same (#3597): every shipped fixture's import (Dune read as base16 too), its check in
+    // every combination and its hold, three parts themes' holds and stylesheets, and both
+    // built-ins' checks. A change for speed alone leaves every line as it was.
+    let fold = |text: &str| {
+        text.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
+        })
+    };
+    let read_as_base16 = (SourceKind::Base16, "dune.json", DUNE);
+    for (kind, name, bytes) in FIXTURES.iter().chain([&read_as_base16]) {
+        let started = std::time::Instant::now();
+        let imported = import(*kind, name, bytes).expect("imported");
+        let files = format!("{:?}{:?}", imported.files, imported.left_out);
+        let theme = drawn(&imported);
+        let checked = format!("{:?}", check_every(&theme));
+        let held: Vec<String> = theme
+            .appearances
+            .iter()
+            .map(|one| format!("{:?}", draw(one).held))
+            .collect();
+        println!(
+            "{kind:?} {name}: files {:016x} check {:016x} held {:016x} in {:?}",
+            fold(&files),
+            fold(&checked),
+            fold(&format!("{held:?}")),
+            started.elapsed()
+        );
+    }
+    for parts in [
+        serde_json::json!({
+            "button.root.primary.hover.fill": "control.hover",
+            "button.root.primary.open.fill": "control.base",
+            "button.root.grants.open.fill": "accent.surface",
+        }),
+        serde_json::json!({ "button.root.border-colour": "accent.base" }),
+        serde_json::json!({
+            "button.root.primary.fill": "transparent",
+            "button.root.primary.border-colour": "focus.ring",
+            "button.root.primary.hover.fill": "control.hover",
+        }),
+    ] {
+        let loaded = Library::new().load(
+            None,
+            &serde_json::json!({ "name": "Shaped", "extends": "purlis-classic", "parts": parts }),
+        );
+        let theme = loaded.theme.first();
+        let said = format!(
+            "{:?}{:?}{:?}",
+            parts::fallen(theme),
+            parts::held_again(theme),
+            parts::stylesheet(theme)
+        );
+        println!("parts {parts}: {:016x}", fold(&said));
+    }
+    for (name, theme) in [("Purlis", purlis()), ("Purlis Classic", classic())] {
+        println!(
+            "{name}: {:016x}",
+            fold(&format!("{:?}", check_every(theme)))
+        );
+    }
+}
