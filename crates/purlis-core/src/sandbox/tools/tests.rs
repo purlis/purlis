@@ -1652,6 +1652,13 @@ fn the_forms_a_run_grant_refuses_by_name_leave_curl_and_the_usual_tools_offered(
         "mysqlbinlog",
         "mariadb-binlog",
         "mysql-8.0",
+        // and the client-side kin left offered beside mydumper, Percona Toolkit and Galera's
+        // helpers (#5994); `pt-` takes away only names with the hyphen
+        "mysql_config_editor",
+        "mysql_tzinfo_to_sql",
+        "mariadb-tzinfo-to-sql",
+        "ptx",
+        "gptx",
     ] {
         assert!(!super::not_for_a_run_grant(name), "{name}");
     }
