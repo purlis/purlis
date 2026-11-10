@@ -175,7 +175,7 @@ describe("a menu opened by its trigger", () => {
     );
     const rename = screen.getByRole("menuitem", { name: /Rename/ });
     expect(rename).toHaveAttribute("data-variant", "default");
-    expect(rename.querySelector('[data-part="shortcut"]')).toHaveTextContent("F2");
+    expect(rename.querySelector('[data-part="shortcut"]')).toHaveAttribute("data-key", "F2");
     const surface = screen.getByRole("menu").closest('[data-part="root"][data-scope="popover"]');
     expect(surface).toHaveAttribute("data-variant", "menu");
     expect(screen.getByRole("separator")).toHaveAttribute("data-part", "rule");
@@ -344,7 +344,9 @@ describe("a row that turns unavailable under the keyboard (#4659)", () => {
 describe("a row's shortcut", () => {
   it("is the key registry's for its act, where the registry has one", async () => {
     render(
-      <MenuShortcuts.Provider value={(act) => (act === "tab.rename" ? "⌘R" : undefined)}>
+      <MenuShortcuts.Provider
+        value={(act) => (act === "tab.rename" ? { said: "⌘R", aria: "Meta+R" } : undefined)}
+      >
         <MenuTrigger>
           <Button>Things</Button>
           <Menu aria-label="Things">
@@ -362,13 +364,67 @@ describe("a row's shortcut", () => {
       </MenuShortcuts.Provider>,
     );
     await userEvent.click(screen.getByRole("button", { name: "Things" }));
-    const keyOf = (name: RegExp) =>
-      screen.getByRole("menuitem", { name }).querySelector('[data-part="shortcut"]')?.textContent ??
-      null;
-    expect(keyOf(/Rename/)).toBe("⌘R");
+    const keyOf = (name: string) =>
+      screen
+        .getByRole("menuitem", { name })
+        .querySelector('[data-part="shortcut"]')
+        ?.getAttribute("data-key") ?? null;
+    expect(keyOf("Rename…")).toBe("⌘R");
     // Not in the registry: the key its caller knows.
-    expect(keyOf(/Pin/)).toBe("P");
-    expect(keyOf(/Close/)).toBeNull();
+    expect(keyOf("Pin")).toBe("P");
+    expect(keyOf("Close")).toBeNull();
+  });
+});
+
+describe("a row's name (WCAG 2.5.3 Label in Name, #6043)", () => {
+  function Rows() {
+    return (
+      <MenuShortcuts.Provider
+        value={(act) => (act === "tab.rename" ? { said: "Ctrl+R", aria: "Control+R" } : undefined)}
+      >
+        <MenuTrigger>
+          <Button>Things</Button>
+          <Menu aria-label="Things">
+            <MenuItem id="rename" textValue="Rename…" shortcut="tab.rename">
+              <MenuWords said="Rename…" />
+            </MenuItem>
+            <MenuItem id="pin" textValue="Pin" keys="Ctrl+P" aria-keyshortcuts="Control+P">
+              <MenuWords said="Pin" />
+            </MenuItem>
+            <MenuItem id="close" textValue="Close" aria-label="Close" keys="Ctrl+W">
+              <MenuWords said="Close" />
+            </MenuItem>
+            <MenuItem id="end" textValue="End" variant="danger" keys="Ctrl+Backspace">
+              <MenuWords said="End" under="Ends the program it runs. There is no undo." />
+            </MenuItem>
+          </Menu>
+        </MenuTrigger>
+      </MenuShortcuts.Provider>
+    );
+  }
+
+  it("is its words alone, its key said by aria-keyshortcuts and drawn outside its words", async () => {
+    render(<Rows />);
+    await userEvent.click(screen.getByRole("button", { name: "Things" }));
+    const rename = screen.getByRole("menuitem", { name: "Rename…" });
+    expect(rename).toHaveAttribute("aria-keyshortcuts", "Control+R");
+    const key = rename.querySelector('[data-part="shortcut"]');
+    expect(key).toHaveAttribute("aria-hidden", "true");
+    // Drawn by the stylesheet from its attribute: no words of the row's own.
+    expect(key).toHaveTextContent(/^$/);
+    expect(key).toHaveAttribute("data-key", "Ctrl+R");
+    // The caller's key keeps the caller's `aria-keyshortcuts`.
+    expect(screen.getByRole("menuitem", { name: "Pin" })).toHaveAttribute(
+      "aria-keyshortcuts",
+      "Control+P",
+    );
+  });
+
+  it("is its words alone, and what stands under them is its description, heard once", async () => {
+    render(<Rows />);
+    await userEvent.click(screen.getByRole("button", { name: "Things" }));
+    const end = screen.getByRole("menuitem", { name: "End" });
+    expect(end).toHaveAccessibleDescription("Ends the program it runs. There is no undo.");
   });
 });
 

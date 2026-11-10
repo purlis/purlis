@@ -40,6 +40,7 @@ import { findResult } from "./actionResult.testkit";
 import { heard } from "./frame.testkit";
 import { onTheWire } from "./chatEvents.testkit";
 import { findRow, findTree, rowsOf } from "./ui/tree/tree.testkit";
+import { rowName } from "./menus.testkit";
 
 /**
  * **A task opens in the pane it returns to** (#1486), against the whole window: pressing a task
@@ -1714,7 +1715,7 @@ describe("a handoff is a session of its own (#1492, V100-69)", () => {
     expect(
       within(menu)
         .getAllByRole("menuitem")
-        .map((item) => item.getAttribute("aria-label"))
+        .map(rowName)
         .filter((said) => said?.startsWith("Go to ")),
     ).toEqual(["Go to release notes", "Go to drop commons"]);
     await userEvent.click(within(menu).getByRole("menuitem", { name: "Go to drop commons" }));

@@ -61,7 +61,16 @@ async function measured() {
         const note = row.querySelector<HTMLElement>('[data-part="description"]');
         const keys = row.querySelector<HTMLElement>('[data-part="shortcut"]');
         return {
-          name: row.getAttribute("aria-label") ?? "",
+          name: ((row: Element) => {
+            // A row's name as a reader hears it (#6043): its words, without what is kept from
+            // a reader (the line under them, its key).
+            const own = row.getAttribute("aria-label");
+            if (own !== null) return own;
+            const heard = row.cloneNode(true) as Element;
+            for (const kept of heard.querySelectorAll('[aria-hidden="true"], [hidden]'))
+              kept.remove();
+            return (heard.textContent ?? "").trim();
+          })(row),
           top: at.top,
           bottom: at.bottom,
           height: at.height,

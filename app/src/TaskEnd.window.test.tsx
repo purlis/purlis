@@ -23,6 +23,7 @@ import { stripNamed } from "./test-strips";
 import { aTabForEachChat } from "./laidOut.testkit";
 import { findTree, rowAround, rowsOf } from "./ui/tree/tree.testkit";
 import { paneMore } from "./menus.testkit";
+import { rowName } from "./menus.testkit";
 
 /**
  * **The person ends a task with Stop and get its report or Close now** (#1488, V100-5,
@@ -297,7 +298,7 @@ async function drawn(
 async function menuOf(tree: HTMLElement, name: string) {
   fireEvent.contextMenu(row(tree, name));
   await screen.findAllByRole("menuitem");
-  return screen.getAllByRole("menuitem").map((item) => item.getAttribute("aria-label"));
+  return screen.getAllByRole("menuitem").map(rowName);
 }
 
 beforeEach(() => {
