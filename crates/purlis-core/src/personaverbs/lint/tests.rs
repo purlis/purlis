@@ -738,7 +738,7 @@ fn a_skills_entry_naming_a_workspace_or_a_workspace_skill_that_is_not_there_is_a
     let p = naming(
         "workspaces/ws:triage, workspaces/gone:triage, workspaces/ws:nope, workspaces/a/b:x",
     );
-    let l = linter(&p).with_built_in(None).with_studio(true);
+    let l = linter(&p).with_built_in(None);
     assert_eq!(
         messages(&l.definition("s")),
         vec![
