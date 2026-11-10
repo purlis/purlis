@@ -443,7 +443,8 @@ fn a_confirmation_names_the_project_its_command_runs_in_and_an_older_line_still_
     ] {
         assert!(sent.is_err(), "{how}");
     }
-    let older = r#"{"approve_sign_in":{"name":"work","pool":"team","code":"A1B2C3","config":"/c"}}"#;
+    let older =
+        r#"{"approve_sign_in":{"name":"work","pool":"team","code":"A1B2C3","config":"/c"}}"#;
     let read: Asked = serde_json::from_str(older).unwrap();
     assert_eq!(read.project(), None);
     assert!(

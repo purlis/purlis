@@ -2,12 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useRef, useState } from "react";
-import {
-  commands,
-  type ExpectedItem,
-  type PlaneId,
-  type ProjectExpects,
-} from "./bindings";
+import { commands, type ExpectedItem, type PlaneId, type ProjectExpects } from "./bindings";
 import { Notice } from "./Notice";
 import { inTheWindow } from "./personaHostsAllow";
 import { SETTINGS, usePlaneChanged } from "./planeChanged";

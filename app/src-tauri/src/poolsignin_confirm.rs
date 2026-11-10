@@ -546,11 +546,18 @@ mod tests {
         let (listed, until) = waiting_in(&a).expect("listed under its project");
         assert_eq!(listed, question);
         let now = u32::try_from(crate::sandboxing::now_secs()).unwrap();
-        assert!((now + 110..=now + 121).contains(&until), "{until} against {now}");
+        assert!(
+            (now + 110..=now + 121).contains(&until),
+            "{until} against {now}"
+        );
         assert_eq!(waiting_in(&b), None, "and under no other");
         answer_pool_sign_in(question.id, false);
         assert!(asker.join().unwrap().is_err());
-        assert_eq!(waiting_in(&a), None, "an answered question is listed nowhere");
+        assert_eq!(
+            waiting_in(&a),
+            None,
+            "an answered question is listed nowhere"
+        );
         with_slot(|slot| slot.ended_without_a_yes = None);
 
         // A line this window just typed is the person's yes to its own sign-in, once, with no

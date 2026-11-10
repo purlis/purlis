@@ -104,8 +104,7 @@ const consentNotice = () =>
 /** The consent's row in Asks. */
 const consentRow = () =>
   askRows().find((one) => one.textContent?.includes("com.example.helper")) as
-    | HTMLElement
-    | undefined;
+    HTMLElement | undefined;
 
 beforeEach(() => inboxOpenAtLaunch());
 
