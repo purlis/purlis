@@ -282,11 +282,20 @@ describe("the asks, grouped by chat", () => {
   it("puts a new ask in its place by its facts and keeps an Answer open where it was (#6006)", () => {
     core();
     const now = Math.floor(Date.now() / 1000);
-    const older: Shown = { ...permission(3, "a", ["steward 3"], "Run ls"), since: now - 600 };
-    const { again } = draw([older]);
+    // A reply's strip stands behind its Answer link (#5651); a decision is answered on its row.
+    const older: Shown = { ...QUESTION, session: 3, ask: "question:3", chain: ["steward 3"] };
+    const drawn = draw([older], {}, { closed: true });
+    // Opened from the keyboard, which stays in its form while the new ask arrives.
+    act(() => {
+      const answer = screen.getByRole("button", { name: "Answer steward 3" });
+      answer.focus();
+      answer.click();
+    });
     expect(screen.getByRole("button", { name: "Cancel answering steward 3" })).toBeTruthy();
-    const newer: Shown = { ...permission(5, "b", ["steward 5"], "Run npm test"), since: now };
-    again([newer, older]);
+    const newer: Shown = { ...permission(5, "b", ["steward 5"], "Run npm test"), since: now + 600 };
+    act(() => vi.advanceTimersByTime(600_000));
+    drawn.rerender(<Inbox {...drawn.props} asks={[newer, older]} />);
+    read();
     // Never at the top for being new, and the open Answer stays open.
     expect(chats()).toEqual(["steward 3", "steward 5"]);
     expect(screen.getByRole("button", { name: "Cancel answering steward 3" })).toBeTruthy();
