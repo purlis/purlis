@@ -1514,7 +1514,7 @@ export const commands = {
 	/**  Whether it is Quiet now, and what the latest Quiet that ended held (#6017). */
 	quietNow: () => __TAURI_INVOKE<QuietNow>("quiet_now"),
 	/**
-	 *  **"Quiet now"** turned on or off by the person (#6017): from the Asks view's switch or the
+	 *  **"Quiet now"** turned on or off by the person (#6017): from the Asks view's toggle or the
 	 *  palette. It holds until they turn it off, or the app ends.
 	 */
 	setQuietNow: (on: boolean) => __TAURI_INVOKE<void>("set_quiet_now", { on }),
@@ -13817,7 +13817,7 @@ export type QuietEnded = {
  */
 export type QuietNow = {
 	quiet: boolean,
-	/**  Whether "Quiet now" is on: the switch's state, whatever else makes it Quiet. */
+	/**  Whether "Quiet now" is on: the toggle's state, whatever else makes it Quiet. */
 	by_hand: boolean,
 	/**  The summary of the latest Quiet that ended in this run of the app, if one did. */
 	ended: QuietEnded | null,

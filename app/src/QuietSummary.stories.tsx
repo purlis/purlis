@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **Quiet at the top of Asks** (#6017): the "Quiet now" switch, and the summary of a Quiet that
+ * **Quiet at the top of Asks** (#6017): the "Quiet now" toggle, and the summary of a Quiet that
  * ended, "While you were quiet: 2 asks, 1 finished, 1 failed", each part a link, with Dismiss.
  * Drawn in every cell of the theme matrix. The core is faked at its command boundary.
  */
@@ -74,17 +74,20 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** **After a Quiet**: the switch off, the summary's parts each a link, then Dismiss. */
+/** **After a Quiet**: Quiet now not pressed, the summary's parts each a link, then Dismiss. */
 export const AfterQuiet: Story = {
   play: async ({ canvas, userEvent }) => {
     await canvas.findByText(/While you were quiet/);
     await userEvent.tab();
     await untilFocused(
-      () => canvas.getByRole("switch", { name: "Quiet now" }),
-      "Tab reaches the switch",
+      () => canvas.getByRole("button", { name: "Quiet now" }),
+      "Tab reaches Quiet now",
     );
     expectFocusInSight();
-    await expect(canvas.getByRole("switch", { name: "Quiet now" })).not.toBeChecked();
+    await expect(canvas.getByRole("button", { name: "Quiet now" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
     await userEvent.tab();
     await untilFocused(
       () => canvas.getByRole("button", { name: "2 asks: go to them" }),
@@ -117,13 +120,13 @@ export const QuietNowOn: Story = {
   play: async ({ canvas, userEvent }) => {
     await canvas.findByText(/While you were quiet/);
     await userEvent.tab();
-    const turn = canvas.getByRole("switch", { name: "Quiet now" });
-    await untilFocused(() => turn, "Tab reaches the switch");
+    const turn = canvas.getByRole("button", { name: "Quiet now" });
+    await untilFocused(() => turn, "Tab reaches Quiet now");
     await userEvent.keyboard(" ");
-    await expect(turn).toBeChecked();
+    await expect(turn).toHaveAttribute("aria-pressed", "true");
     expectFocusInSight();
     // Off again: the window holds one Quiet, and the next story starts with it off.
     await userEvent.keyboard(" ");
-    await expect(turn).not.toBeChecked();
+    await expect(turn).toHaveAttribute("aria-pressed", "false");
   },
 };

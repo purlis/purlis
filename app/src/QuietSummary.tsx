@@ -14,11 +14,10 @@ import {
   useQuiet,
   type QuietSummaryOf,
 } from "./quiet";
-import { Button } from "./ui/button/Button";
-import { Switch } from "./ui/choice/Switch";
+import { Button, ToggleButton } from "./ui/button/Button";
 
 /**
- * **Quiet at the top of Asks** (#6017): the "Quiet now" switch, on while the person turned it on,
+ * **Quiet at the top of Asks** (#6017): the "Quiet now" toggle, pressed while the person turned it on,
  * and the summary of the latest Quiet that ended ({@link QuietSummary}).
  */
 export function AsksQuiet(
@@ -31,9 +30,17 @@ export function AsksQuiet(
   const quiet = useQuiet();
   return (
     <div className="inbox-quiet">
-      <Switch isSelected={quiet.by_hand} onChange={onQuietNow} tooltip={QUIET_NOW_TIP}>
+      {/* A toggle, pressed while on: a button of its own, which the keyboard lands on and rings
+          where it is drawn. */}
+      <ToggleButton
+        size="sm"
+        variant="ghost"
+        isSelected={quiet.by_hand}
+        onChange={onQuietNow}
+        tooltip={QUIET_NOW_TIP}
+      >
         {QUIET_NOW}
-      </Switch>
+      </ToggleButton>
       <QuietSummary ended={quiet.ended} {...summary} />
     </div>
   );

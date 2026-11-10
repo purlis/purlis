@@ -4,7 +4,7 @@ Decision 13 is built (#6017) in the notifier (`app/src-tauri/src/asknotify.rs`),
 particulars.
 
 - **Three sources, one Quiet.** The schedule (today's quiet hours, read from the layout file),
-  "Quiet now" (a switch at the top of Asks and a palette row, held in memory until turned off or
+  "Quiet now" (a toggle at the top of Asks and a palette row, held in memory until turned off or
   the app ends), and the person typing: any key a chat's pane sends, except the terminal answering
   its program by itself, holds Quiet until `TYPING_QUIET` (30 s) after the last one. Nothing new is
   stored, so no tier is named (ADR 0069).

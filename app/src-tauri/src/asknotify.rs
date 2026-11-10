@@ -838,7 +838,7 @@ pub struct EndedAsk {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct QuietNow {
     pub quiet: bool,
-    /// Whether "Quiet now" is on: the switch's state, whatever else makes it Quiet.
+    /// Whether "Quiet now" is on: the toggle's state, whatever else makes it Quiet.
     pub by_hand: bool,
     /// The summary of the latest Quiet that ended in this run of the app, if one did.
     pub ended: Option<QuietEnded>,
@@ -1078,7 +1078,7 @@ pub fn quiet_now(notifier: tauri::State<'_, Notifier>) -> QuietNow {
     notifier.told().clone()
 }
 
-/// **"Quiet now"** turned on or off by the person (#6017): from the Asks view's switch or the
+/// **"Quiet now"** turned on or off by the person (#6017): from the Asks view's toggle or the
 /// palette. It holds until they turn it off, or the app ends.
 #[tauri::command]
 #[specta::specta]

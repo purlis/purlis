@@ -4,7 +4,7 @@
 /**
  * **Quiet** (#6017, ADR 0121 decision 13, the glossary's term): notifications held, never the
  * count. One idea from three sources: the schedule (quiet hours, Settings › You ›
- * Notifications), "Quiet now" by hand (the switch at the top of Asks, and the palette's row),
+ * Notifications), "Quiet now" by hand (the toggle at the top of Asks, and the palette's row),
  * and the person typing in a chat, until about half a minute after their last key. The core
  * holds it (`asknotify.rs`, `QuietSources`): it sees every key a pane sends, and reads the
  * schedule. While Quiet the ✋ still counts and nothing else in the window changes.
@@ -30,10 +30,10 @@ import { askSeenKey, updateSeenKey } from "./seenRows";
 /** The event the core sends every window when Quiet starts or ends (`QUIET_CHANGED`). */
 export const QUIET_CHANGED = "quiet-changed";
 
-/** What the switch and the palette's row are called. */
+/** What the toggle and the palette's row are called. */
 export const QUIET_NOW = "Quiet now";
 
-/** What the switch's hint says it does. */
+/** What the toggle's hint says it does. */
 export const QUIET_NOW_TIP = "Hold notifications until you turn this off. The ✋ still counts.";
 
 const NOT_QUIET: QuietNow = { quiet: false, by_hand: false, ended: null };
