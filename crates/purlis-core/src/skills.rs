@@ -2141,12 +2141,13 @@ fn whose_with(
 
 /// **The workspace whose copy a run of `skill` at `level` is of, where that is not the chat's
 /// own** (SK-5c, #6041): a chat in the plane at `plane`, at its root or in `workspace`, as
-/// `persona`, whose `skills:` list names `workspaces/<ws>:<skill>`, at the workspace level, gets
-/// `<ws>`'s copy where `<ws>` holds one at that level (shared or local), since the copy the persona
-/// named by its workspace wins over the chat's own workspace's (ADR 0099 as amended 2026-11-10).
-/// `None` for every other run: its copy, at the workspace level, is the chat's own workspace's.
-/// What a run's row records and reads its content from, so it is never the chat's own copy of the
-/// same name.
+/// `persona`, whose `skills:` list names `workspaces/<ws>:<skill>`, holds `<ws>`'s copy where its
+/// set does, since the copy the persona named by its workspace wins over the chat's own
+/// workspace's (ADR 0099 as amended 2026-11-10). Read off the chat's set as [`whose`] reads the
+/// level, so a named copy the set leaves out (a local copy git does not keep, a folder made while
+/// a chat ran) is never said: the run is then of the copy the set holds. `None` for every other
+/// run, whose copy, at the workspace level, is the chat's own workspace's. What a run's row
+/// records and reads its content from.
 pub fn named_copy_of(
     plane: &Path,
     workspace: Option<&str>,
@@ -2157,26 +2158,19 @@ pub fn named_copy_of(
     if level.origin != Origin::Workspace {
         return None;
     }
-    names_of(plane, persona?)
-        .into_iter()
-        .find_map(|reference| match reference {
-            Reference::Workspace {
-                workspace: named,
-                name,
-            } if name == skill
-                && workspace != Some(named.as_str())
-                && purlis_skills::named_at(
-                    plane,
-                    &purlis_skills::Whose::Workspace(named.clone()),
-                    level.local,
-                    &name,
-                )
-                .is_some() =>
-            {
-                Some(named)
-            }
-            _ => None,
-        })
+    // Only a skill the persona names by another workspace can be one: no set is read for the rest.
+    let named = names_of(plane, persona?).into_iter().any(|reference| {
+        matches!(&reference, Reference::Workspace { workspace: ws, name }
+            if name == skill && workspace != Some(ws.as_str()))
+    });
+    if !named {
+        return None;
+    }
+    let set = of_a_chat(None, plane, workspace, persona, Route::Plugin);
+    let held = purlis_skills::by_name(&set, skill)?;
+    (held.origin == level.origin && held.local == level.local)
+        .then(|| copy_workspace_of(plane, workspace, held))
+        .flatten()
 }
 
 /// **The workspace whose copy `effective`, of the set of a chat in the plane at `plane`, at its

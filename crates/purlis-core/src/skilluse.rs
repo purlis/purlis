@@ -100,7 +100,9 @@ pub fn started(
     let content = if copy_local {
         None
     } else {
-        run.ran.cloned().or_else(|| ran_by(root, run, persona))
+        run.ran
+            .cloned()
+            .or_else(|| ran_of(root, run, persona, copy.as_deref()))
     };
     if let Some(content) = content {
         row["tree"] = content.word().into();
@@ -280,19 +282,38 @@ impl<'a> Starting<'a> {
 /// start knew no level, or its copy has no folder a history is kept of. What a start's row says
 /// and, on a runner, what its `skill.started` tells its desktop (#4219).
 pub fn ran_by(root: &Path, run: &Starting<'_>, persona: Option<&str>) -> Option<Content> {
+    ran_of(
+        root,
+        run,
+        persona,
+        copy_workspace(root, run, persona).as_deref(),
+    )
+}
+
+/// [`ran_by`], of the copy whose workspace, at the workspace level, is `copy` where that is not
+/// the chat's own ([`copy_workspace`]), worked out once by whoever asks.
+fn ran_of(
+    root: &Path,
+    run: &Starting<'_>,
+    persona: Option<&str>,
+    copy: Option<&str>,
+) -> Option<Content> {
     let level = run.level?;
     let skill = crate::memstore::py_strip(run.skill);
-    let persona = persona
-        .map(crate::memstore::py_strip)
-        .filter(|p| !p.is_empty());
-    let copy = copy_workspace(root, run, persona);
     content_of(
         root,
         &own_name(skill, Some(level)),
         level,
-        copy.as_deref().or(run.workspace),
-        persona,
+        copy.or(run.workspace),
+        stripped(persona),
     )
+}
+
+/// A persona's name as a row writes it, or `None` for none or a blank one.
+fn stripped(persona: Option<&str>) -> Option<&str> {
+    persona
+        .map(crate::memstore::py_strip)
+        .filter(|p| !p.is_empty())
 }
 
 /// **The workspace whose copy run `run`, as `persona`, ran, where that is not the chat's own**
@@ -301,13 +322,10 @@ pub fn ran_by(root: &Path, run: &Starting<'_>, persona: Option<&str>) -> Option<
 fn copy_workspace(root: &Path, run: &Starting<'_>, persona: Option<&str>) -> Option<String> {
     let level = run.level?;
     let skill = crate::memstore::py_strip(run.skill);
-    let persona = persona
-        .map(crate::memstore::py_strip)
-        .filter(|p| !p.is_empty());
     crate::skills::named_copy_of(
         root,
         run.workspace,
-        persona,
+        stripped(persona),
         level,
         &own_name(skill, Some(level)),
     )
