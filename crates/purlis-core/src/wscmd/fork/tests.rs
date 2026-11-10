@@ -340,3 +340,73 @@ fn the_pieces_a_fork_could_not_read_are_listed_the_way_charter_lists_them() {
         "workspace.md, memory and todos"
     );
 }
+
+/// ADR 0122 §4 (#5960): a fork carries the parent's artifacts and their pins, and asks again
+/// on this machine for every approval the parent has here.
+#[test]
+fn a_fork_carries_its_pinned_artifacts_and_asks_again_for_each_approval() {
+    use crate::artifact::approval::{self, Standing};
+    let dir = plane();
+    let root = dir.path().canonicalize().unwrap();
+    let config = root.join("config");
+    a_parent(&root, "alpha");
+    let alpha = root.join("workspaces/alpha");
+    let board = alpha.join("artifacts/board");
+    std::fs::create_dir_all(&board).unwrap();
+    std::fs::write(
+        board.join("index.html"),
+        "<h1>Board</h1><script>draw()</script>",
+    )
+    .unwrap();
+    let pinned = crate::artifact::pin(
+        &root,
+        &alpha,
+        &crate::artifact::Request {
+            folder: "board".into(),
+            icon: Some("compass".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let crate::artifact::Pinned::New(pin) = pinned else {
+        panic!("{pinned:?}")
+    };
+    let shown = crate::artifact::serve::Snapshot::read(&board, "board").unwrap();
+    approval::approve(&config, &alpha, "board", &pin.id, shown.fingerprint()).unwrap();
+
+    let (code, lines) = run(&root, "alpha", "gamma", false);
+    assert_eq!(code, 0, "{lines:?}");
+
+    let gamma = root.join("workspaces/gamma");
+    let carried = crate::artifact::read(&gamma).unwrap().pins;
+    assert_eq!(carried.len(), 1);
+    assert_eq!(carried[0].id, pin.id);
+    assert_eq!(carried[0].icon, "compass");
+    let forked =
+        crate::artifact::serve::Snapshot::read(&gamma.join("artifacts/board"), "board").unwrap();
+    assert_eq!(forked.fingerprint(), shown.fingerprint());
+    assert_eq!(
+        approval::standing(Some(&config), &gamma, "board", &pin.id, &forked),
+        Standing::New
+    );
+    assert_eq!(
+        approval::standing(Some(&config), &alpha, "board", &pin.id, &shown),
+        Standing::Approved
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.contains("1 pinned artifact") && l.contains("asks again")),
+        "{lines:?}"
+    );
+}
+
+#[test]
+fn a_fork_of_a_workspace_with_no_artifacts_says_nothing_of_them() {
+    let dir = plane();
+    a_parent(dir.path(), "alpha");
+    let (code, lines) = run(dir.path(), "alpha", "gamma", false);
+    assert_eq!(code, 0, "{lines:?}");
+    assert!(!dir.path().join("workspaces/gamma/artifacts").exists());
+    assert!(!lines.iter().any(|l| l.contains("artifact")), "{lines:?}");
+}

@@ -5594,7 +5594,7 @@ impl Planes {
 /// about which one went.
 fn no_such(plane: &PlaneId, doing: &str) -> String {
     format!(
-        "purlis has no plane open at {}, so there is nothing to {doing}",
+        "purlis has no project open at {}, so there is nothing to {doing}",
         purlis_core::shown::short(plane.as_str())
     )
 }

@@ -6,6 +6,10 @@
 import type { FamilyTheme } from "../../theme/families.testkit";
 
 export default {
+  // A dimmed item's icon (#5955): a mark, not words.
+  faint: [
+    '[data-scope="activity"][data-part="item"][data-dimmed]:not([data-selected]) [data-part="icon"]',
+  ],
   forced: {
     marked: [
       '[data-scope="activity"][data-part="count"][data-tone="needs-you"]',

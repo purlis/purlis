@@ -404,7 +404,7 @@ static WATCH: OnceLock<ThemeWatch> = OnceLock::new();
 
 /// **The window draws its theme from `target` now**: watch its theme folders, and tell it
 /// [`CHANGED`] when one changes.
-pub(crate) fn follow(window: &tauri::WebviewWindow, target: Target) {
+pub(crate) fn follow(window: &tauri::Webview, target: Target) {
     use tauri::{Emitter as _, Manager as _};
     let app = window.app_handle().clone();
     let watch = WATCH.get_or_init(|| {
