@@ -248,11 +248,37 @@ fn every_host_that_serves_a_model_is_refused_with_its_name() {
 }
 
 #[test]
+fn the_names_looked_up_for_a_providers_addresses_are_its_api_hosts_each_once() {
+    let names = provider_names();
+    for name in [
+        "api.anthropic.com",
+        "api.openai.com",
+        "openrouter.ai",
+        "api.mistral.ai",
+    ] {
+        assert!(
+            names.iter().any(|one| one == name),
+            "{name} is not looked up"
+        );
+    }
+    assert!(
+        names.iter().all(|name| model_host(&host(name))),
+        "a name that serves no model"
+    );
+    let mut unique = names.clone();
+    unique.sort();
+    unique.dedup();
+    assert_eq!(unique.len(), names.len(), "a name looked up twice");
+}
+
+#[test]
 fn a_model_host_is_the_domain_or_a_name_under_it_and_no_look_alike() {
     assert!(model_host(&host("api.anthropic.com")));
     assert!(model_host(&host("API.Anthropic.com.")));
     assert!(model_host(&host("x.openai.azure.com")));
     assert!(model_host(&host("bedrock-runtime.eu-west-1.amazonaws.com")));
+    assert!(model_host(&host("europe-west4-aiplatform.googleapis.com")));
+    assert!(!model_host(&host("storage.googleapis.com")));
     assert!(!model_host(&host("s3.eu-west-1.amazonaws.com")));
     assert!(!model_host(&host("notanthropic.com")));
     assert!(!model_host(&host("anthropic.com.example.org")));
@@ -1244,6 +1270,133 @@ fn a_name_that_resolves_to_a_private_network_is_not_connected_to() {
             "{private} was connected to"
         );
     }
+}
+
+/// A resolver answering each name with the addresses `answers` pair it with, and nothing else.
+fn resolver(
+    answers: Vec<(&'static str, &'static str)>,
+) -> crate::sandbox::egress::providers::Resolve {
+    std::sync::Arc::new(move |name: &str, port: u16| {
+        answers
+            .iter()
+            .filter(|(named, _)| *named == name)
+            .map(|(_, ip)| std::net::SocketAddr::new(ip.parse().expect("an address"), port))
+            .collect()
+    })
+}
+
+/// The provider addresses a resolver that answers `api.provider.example` with `at` gives.
+fn providers_at(at: &[&'static str]) -> crate::sandbox::egress::ProviderAddresses {
+    crate::sandbox::egress::ProviderAddresses::resolving(
+        vec!["api.provider.example".to_owned()],
+        resolver(at.iter().map(|ip| ("api.provider.example", *ip)).collect()),
+    )
+}
+
+/// Where a confined proxy would connect for `host`, resolved by `answers`.
+fn confined_at(
+    host: &str,
+    answers: &[(&'static str, &'static str)],
+    providers: &crate::sandbox::egress::ProviderAddresses,
+) -> Result<Vec<std::net::SocketAddr>, crate::sandbox::egress::Connected> {
+    use crate::sandbox::egress::{carried_when_confined, confined_addresses};
+    let reach = crate::sandbox::reach::Reach::open(
+        answers.iter().map(|(name, _)| (*name).to_owned()).collect(),
+    );
+    let resolve = resolver(answers.to_vec());
+    confined_addresses(
+        host,
+        443,
+        &reach,
+        &[],
+        &carried_when_confined,
+        providers,
+        &*resolve,
+    )
+}
+
+#[test]
+fn a_confined_proxy_refuses_a_tunnel_to_a_declared_name_pinned_to_a_model_providers_address() {
+    use std::io::{Read, Write};
+    let providers = crate::sandbox::egress::ProviderAddresses::resolving(
+        vec!["api.provider.example".to_owned()],
+        resolver(vec![
+            ("api.provider.example", "104.18.32.47"),
+            ("registry.example.com", "104.18.32.47"),
+        ]),
+    );
+    let proxy = std::sync::Arc::new(
+        crate::sandbox::egress::Proxy::serving(crate::sandbox::egress::Serving::confined(
+            vec!["registry.example.com".to_owned()],
+            std::sync::Arc::new(providers),
+        ))
+        .expect("a proxy"),
+    );
+    let _asking = Asking::of(std::sync::Arc::clone(&proxy));
+    let mut stream = std::net::TcpStream::connect(("127.0.0.1", proxy.port())).expect("connect");
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+        .expect("timeout");
+    stream
+        .write_all(
+            b"CONNECT registry.example.com:443 HTTP/1.1\r\nHost: registry.example.com:443\r\n\r\n",
+        )
+        .expect("ask");
+    let mut heard = String::new();
+    let _ = stream.read_to_string(&mut heard);
+    assert!(heard.starts_with("HTTP/1.1 403"), "{heard:?}");
+    assert!(heard.contains("model provider"), "{heard:?}");
+}
+
+#[test]
+fn a_declared_name_that_resolves_to_a_model_providers_address_is_not_connected_to() {
+    use crate::sandbox::egress::Connected;
+    let providers = providers_at(&["104.18.32.47", "2606:4700::6812:202f"]);
+    for at in [
+        "104.18.32.47",
+        "2606:4700::6812:202f",
+        "::ffff:104.18.32.47",
+    ] {
+        assert!(
+            matches!(
+                confined_at(
+                    "registry.example.com",
+                    &[("registry.example.com", at)],
+                    &providers
+                ),
+                Err(Connected::AtAModel)
+            ),
+            "{at}, a model provider's address, was connected to"
+        );
+    }
+}
+
+#[test]
+fn an_ordinary_declared_host_is_still_connected_to_at_its_other_addresses() {
+    let providers = providers_at(&["104.18.32.47"]);
+    let ordinary: std::net::SocketAddr = "151.101.1.1:443".parse().expect("an address");
+    assert_eq!(
+        confined_at(
+            "registry.example.com",
+            &[("registry.example.com", "151.101.1.1")],
+            &providers
+        )
+        .ok(),
+        Some(vec![ordinary])
+    );
+    // One of its addresses shared with a provider: the others are still reached.
+    assert_eq!(
+        confined_at(
+            "registry.example.com",
+            &[
+                ("registry.example.com", "104.18.32.47"),
+                ("registry.example.com", "151.101.1.1")
+            ],
+            &providers
+        )
+        .ok(),
+        Some(vec![ordinary])
+    );
 }
 
 /// A tunnel through a confined proxy to `host`, its ClientHello sent and the start of the
