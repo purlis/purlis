@@ -80,7 +80,6 @@ import { NewWorkspace } from "../NewWorkspace";
 import { Palette } from "../Palette";
 import { PanelList } from "../PanelList";
 import { PersonaProfile } from "../PersonaProfile";
-import { PoolSignInConfirm } from "../PoolSignInConfirm";
 import { MidTurn, QuitWarning, type Ending } from "../QuitWarning";
 import { RelaunchAsk } from "../RelaunchAsk";
 import { RemoveFromWorkspace } from "../RemoveFromWorkspace";
@@ -474,8 +473,6 @@ function dialogCore() {
             },
           ],
         };
-      case "pool_sign_in_asked":
-        return { id: 1, asks: "sign-in", profile: "work", pool: "team", code: "A1B2C3" };
       case "installed_extensions":
         return {
           extensions: [
@@ -1397,11 +1394,6 @@ const DIALOGS: Opened[] = [
           onCancel={nothing}
         />,
       ),
-  },
-  {
-    name: "a pool sign-in to confirm",
-    file: "PoolSignInConfirm.tsx",
-    open: async () => render(<PoolSignInConfirm />),
   },
   {
     name: "the quit warning",

@@ -311,23 +311,6 @@ async function signingCheck(): Promise<void> {
   signing = running;
 }
 
-/** Presses `label` on `row` from the page: the confirmation's own dialog is up over the window,
- *  as it is for the person, so nothing under it takes the driver's click. */
-async function pressFromThePage(row: string, label: string): Promise<void> {
-  const pressed = await browser.execute(
-    (at: string, words: string) => {
-      const button = [...document.querySelectorAll<HTMLElement>(`${at} button`)].find(
-        (one) => one.textContent?.trim() === words,
-      );
-      button?.click();
-      return button !== undefined;
-    },
-    row,
-    label,
-  );
-  expect(pressed).toBe(true);
-}
-
 const KINDS: Kind[] = [
   {
     name: "sandbox consent",
@@ -450,9 +433,11 @@ const KINDS: Kind[] = [
             `command confirmation: signing check never asked; it said: ${signing?.said}`,
           );
         });
+      // **No dialog in the way** (#6136): it is answered on its row alone, and the ✋ stays in reach.
+      expect(await $('[role="alertdialog"], [role="dialog"]').isExisting()).toBe(false);
       await toFront(front);
     },
-    answer: (row) => pressFromThePage(row, "Cancel"),
+    answer: (row) => pressOnRow(row, "Cancel"),
     told: async () => {
       const ended = await signing?.ended;
       expect(ended).toBe(1);
@@ -512,7 +497,7 @@ describe("every Blocking ask, found from the ✋ alone (#6001)", function () {
     for (const trigger of TRIGGERS) rmSync(trigger, { force: true });
     signing?.child.kill();
     signing = null;
-    // A dialog a failed test left up (a picker, a confirmation) is put away first, so the next
+    // A dialog a failed test left up (a picker) is put away first, so the next
     // kind still runs: a hook that fails here skips every test after it.
     for (let up = 0; up < 3 && (await $('[role="dialog"]').isExisting()); up++)
       await browser.keys(["Escape"]);

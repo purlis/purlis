@@ -1784,20 +1784,6 @@ export const commands = {
 	 *  on no sign-in.
 	 */
 	chatMoveSignedIn: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("chat_move_signed_in", { plane, session })),
-	/**  The question waiting for the person's answer, if one is. */
-	poolSignInAsked: () => __TAURI_INVOKE<{
-	id: number,
-	asks: Asks,
-	profile: string,
-	pool: string,
-	/**  What the terminal of the command that asks shows. */
-	code: string,
-	/**
-	 *  The forge a signing check asks, as a sentence names it (`GitHub`, `GitLab on
-	 *  gitlab.example.org`, #5793); none for the other questions.
-	 */
-	on?: string | null,
-} | null>("pool_sign_in_asked"),
 	/**
 	 *  **The person's answer to the question `id`**: only their press in the window calls this. One
 	 *  no longer waiting is left alone.
@@ -6290,18 +6276,6 @@ export type Asking = {
 	 */
 	snoozed_until?: number | null,
 };
-
-/**  Which command's question it is. */
-export type Asks = 
-/**  `purlis profile sign-in --pool`. */
-"sign-in" | 
-/**  `purlis pool remove-profile`: its runner forgets the profile, and its sign-in there. */
-"take-off" | 
-/**
- *  `purlis signing check` (#5625): the window asks GitHub how a pushed commit shows. Its
- *  `profile` is the repository (`owner/name`) and its `pool` the commit.
- */
-"signing-check";
 
 /**  What a chat's row says while it is at its task limit. */
 export type AtLimit = {
@@ -13192,21 +13166,6 @@ export type PoolSetupTried = {
 	identity: PoolSetupCheck | null,
 	/**  The workspace its chat started in, where it got that far: where Open a chat opens. */
 	workspace: string | null,
-};
-
-/**  What the person is asked. */
-export type PoolSignInAsk = {
-	id: number,
-	asks: Asks,
-	profile: string,
-	pool: string,
-	/**  What the terminal of the command that asks shows. */
-	code: string,
-	/**
-	 *  The forge a signing check asks, as a sentence names it (`GitHub`, `GitLab on
-	 *  gitlab.example.org`, #5793); none for the other questions.
-	 */
-	on?: string | null,
 };
 
 /**

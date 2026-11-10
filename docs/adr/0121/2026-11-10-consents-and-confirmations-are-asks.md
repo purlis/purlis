@@ -16,5 +16,18 @@ as Blocking asks. Two choices that decision leaves open:
   the window has it open. Otherwise it goes under the project in front of the focused window,
   and failing that, the first project the window holds. The command says the same project in its
   line ("waiting for the person: Asks (✋) in the purlis window, project smart-ide, for up to 2
-  minutes"), or names none when it runs in no project. Its dialog still asks, its two minutes still
-  run, and an answer in either place ends both.
+  minutes"), or names none when it runs in no project.
+- **Where a command's confirmation is answered: on its row in Asks, and nowhere else** (#6136).
+  It had a modal dialog of its own as well, which covered the ✋ and the rest of the window, so
+  the row it was counted on could not be reached while it was up. The dialog is gone, as
+  decision 1 asks (nothing is listed in full in two places): the row shows the code the
+  command's terminal shows, and its yes and its no (AskDecision) answer it. Its two
+  minutes, taken back as a no, and its one question at a time are unchanged. A non-modal dialog
+  was weighed and not taken. What the dialog guarded is held on the row already: a dialog
+  arrives under the person's keyboard, so it started on Cancel and armed its yes only once
+  nothing had been typed for a moment (ADR 0095, amended 2026-11-01).
+  A row in Asks takes no focus when it arrives, so no typing lands on it, and its yes waits for
+  the row to settle (ADR 0097), so no press meant for another row lands on it. The code is read
+  on the row as it was in the dialog, against the terminal, and is a check on which command
+  asks, not a secret. With no project open in the window there is no row to answer it, so the
+  command is refused at once, and told to open one, rather than kept waiting two minutes.
