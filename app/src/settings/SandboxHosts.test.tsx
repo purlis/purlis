@@ -302,7 +302,7 @@ describe("Settings › Sandbox's hosts", () => {
   it("adds your own host to this machine's file alone, on its own page", async () => {
     const { asked, hosts } = core();
     await at("Your hosts");
-    expect(screen.getByText(/on this machine only/)).toBeInTheDocument();
+    expect(screen.getAllByText(/on this machine only/)[0]).toBeInTheDocument();
 
     await userEvent.click(await screen.findByRole("button", { name: "Add host" }));
     const form = screen.getByRole("form", { name: "New host" });

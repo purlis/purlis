@@ -4,7 +4,13 @@
 import { useSkillStudioOn } from "../skillStudio";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { LoaderCircle } from "lucide-react";
-import { commands, type PlaneId, type SettingsEdit, type SettingsWhich } from "../bindings";
+import {
+  commands,
+  type PlaneId,
+  type SettingsEdit,
+  type SettingsStep,
+  type SettingsWhich,
+} from "../bindings";
 import { NewPersona } from "../NewPersona";
 import { NewWorkspace } from "../NewWorkspace";
 import { settled } from "../PlaneEdits";
@@ -60,7 +66,7 @@ import {
 import { LivesHere } from "../LivesHere";
 import { ColorWell } from "../ui/choice/ColorWell";
 import { Button } from "../ui/button/Button";
-import { Menu, MenuItem, MenuSection, MenuTrigger, MenuWords } from "../ui/menu/Menu";
+import { MenuItem, MenuSection, MenuWords } from "../ui/menu/Menu";
 import { MenuTip, useRested } from "../ui/menu/MenuTip";
 
 /**
@@ -139,6 +145,7 @@ function YouLevel({ plane, levels, onLevelChange }: Switcher & { plane?: PlaneId
       levels={levels}
       onLevelChange={onLevelChange}
       about={`This machine only, in every project. Kept in ${where}.`}
+      kept={{ says: `Kept in ${where}.`, file: where }}
       groups={groups}
     />
   );
@@ -375,6 +382,7 @@ function Shown({
   levels,
   onLevelChange,
   about,
+  kept,
   groups: declared,
   waiting,
   standing = [],
@@ -390,6 +398,8 @@ function Shown({
   /** Where the group shown is remembered (`links.settingsPlace`). */
   place: string;
   about: ReactNode;
+  /** Where the level keeps what no file of its own holds, and the file that is (R49). */
+  kept?: { says: string; file: string };
   groups: readonly SettingsGroup[];
   waiting?: ReactNode;
   /** What charter refuses in the level's files as they stand, each with the setting it is about
@@ -580,6 +590,9 @@ function Shown({
                 key={group.id}
                 level={level}
                 group={group}
+                kept={kept}
+                raw={raw}
+                onEdit={setEditing}
                 driver={driver}
                 onNew={create}
                 adding={asking?.group === group.id ? asking.asked : undefined}
@@ -684,6 +697,9 @@ function narrowed(groups: readonly SettingsGroup[], filter: string): readonly Se
 function ShownGroup({
   level,
   group,
+  kept,
+  raw = [],
+  onEdit,
   driver,
   onNew,
   onGo,
@@ -695,6 +711,13 @@ function ShownGroup({
    *  a read-only project ({@link stillWritten}). */
   level: Level;
   group: SettingsGroup;
+  /** Where the level keeps what no file of its own holds, and the file that is (R49): the You
+   *  level's layout file. */
+  kept?: { says: string; file: string };
+  /** The level's files as their whole text: the page's own is opened from its header. */
+  raw?: readonly RawFile[];
+  /** Opens one of {@link raw}, by its id. */
+  onEdit?: (id: string) => void;
   driver?: Driven<unknown>;
   onNew?: OnNew;
   /** The Add form a picker's New… opened in this group's collection (ST-4). */
@@ -708,6 +731,9 @@ function ShownGroup({
 }) {
   // Where the group keeps its values: said once in its header, and a row kept elsewhere badged.
   const home = homeOf(group.settings);
+  /** The file the page is kept in, as its whole text, which its header's Edit as TOML opens. */
+  const homeId = home?.file ?? (group.collection && collectionFile(group.collection.name));
+  const homeFile = homeId === undefined ? undefined : raw.find((one) => one.id === homeId);
   // Each row by the file it writes (#1759). A row that may move between the files writes where
   // its value is held: one held in the local file stays on, and only its move, which writes the
   // committed file too, is off (`FileRow`); one held nowhere writes the committed file when it
@@ -744,7 +770,14 @@ function ShownGroup({
       </ShownWhile>
     );
   return (
-    <SettingGroup label={group.label} help={group.help} kept={home?.kept ?? group.kept}>
+    <SettingGroup
+      label={group.label}
+      help={group.help}
+      kept={home?.kept ?? group.kept ?? homeFile?.kept ?? kept?.says}
+      file={homeFile?.file.file ?? kept?.file}
+      onEdit={homeFile !== undefined && onEdit ? () => onEdit(homeFile.id) : undefined}
+      editAs={homeFile?.as}
+    >
       {group.notes?.map((why, at) => (
         <p key={at} className="ui-setting-help">
           {why}
@@ -940,6 +973,7 @@ function FileRow({
   onAction?: (action: string) => void;
 }) {
   const from = heldIn(setting, project.files);
+  const readOnly = useReadOnlySaid();
   const [pick, setPick] = useState<SettingsWhich>();
   /** The file a new value goes to: where it is, else where it was picked to go. */
   const into: SettingsFileId = from ?? pick ?? setting.file;
@@ -977,36 +1011,40 @@ function FileRow({
       origin={originOf(setting, project.files, from)}
       badge={badgeOf(setting, project.files, from, into, home)}
       modified={from !== undefined}
+      deprecated={setting.deprecated}
+      // **Reset is always the ⋯ menu's first row** (R57), held out of reach while no file at
+      // this level holds the value (R58), and never on a value the level holds fast (the
+      // sandbox, D-SE17g), which has no way back here.
       reset={
-        mayTakeOut
-          ? {
+        from !== undefined && setting.oneWay
+          ? undefined
+          : {
               label: setting.resets ?? "Reset",
-              disabled: writing,
+              disabled: writing || !mayTakeOut,
               onReset: () => project.reset(setting),
             }
-          : undefined
       }
-      place={
+      moves={
         setting.movable && (
-          // A move writes the committed file whichever way it goes: off on a read-only project,
-          // where the value itself may still be on (#1759).
-          <OffWhenReadOnly>
-            <MoveTo
-              names={namesIn(project.files)}
-              held={from === "shared" || from === "local" ? from : undefined}
-              pick={pick ?? (from === "shared" || from === "local" ? from : "shared")}
-              onPick={setPick}
-              mayMove={mayTakeOut}
-              replacing={overridden}
-              disabled={writing}
-              onMove={(to) => {
-                setPick(undefined);
-                project.move(setting, to);
-              }}
-            />
-          </OffWhenReadOnly>
+          <MoveTo
+            names={namesIn(project.files)}
+            held={from === "shared" || from === "local" ? from : undefined}
+            pick={pick ?? (from === "shared" || from === "local" ? from : "shared")}
+            onPick={setPick}
+            mayMove={mayTakeOut}
+            replacing={overridden}
+            disabled={writing}
+            // A move writes the committed file whichever way it goes: off on a read-only
+            // project, where the value itself may still be on (#1759), with why under it.
+            offBecause={readOnly}
+            onMove={(to) => {
+              setPick(undefined);
+              project.move(setting, to);
+            }}
+          />
         )
       }
+      copyKey={keyPath(setting.key)}
       control={(ids) =>
         setting.kind === "status" ? (
           <Status ids={ids} setting={setting} value={value} writing={writing} onWrite={write} />
@@ -1047,7 +1085,7 @@ function FileRow({
               setting.names === "persona" &&
               value !== "" &&
               (setting.choices ?? []).includes(value) && (
-                <Button size="sm" onPress={() => onAction(showPersona(value))}>
+                <Button variant="ghost" size="sm" onPress={() => onAction(showPersona(value))}>
                   {`Show ${value}`}
                 </Button>
               )}
@@ -1105,6 +1143,15 @@ function FileRow({
   );
 }
 
+/** A key's steps as its file names it, for Copy key (R57): `plane.mode`, `forge[0].url`. */
+function keyPath(steps: readonly SettingsStep[]): string {
+  return steps
+    .map((step, at) =>
+      step.index !== undefined ? `[${step.index}]` : `${at === 0 ? "" : "."}${step.key}`,
+    )
+    .join("");
+}
+
 /**
  * **A setting shown as a status line** (#1340): what the value means, in a sentence, and at most
  * one button, offered while no file sets the value — the Sandbox's Turn the sandbox on, which has
@@ -1144,11 +1191,10 @@ function Status({
 }
 
 /**
- * **"Move to…"** (SE-18, V89d; a menu since DS-8, #1840, in place of the "Where it is kept"
- * radio): where a file holds the value, a row per file it may move to, and choosing one moves it
- * — both files, no Undo, so only a row chosen moves anything, never an arrow passing over one.
- * Where none holds it, the menu picks where the next value goes, and writes nothing. Closed, the
- * focus goes back to its button, which stays.
+ * **"Move to…"** (SE-18, V89d; rows of the row's ⋯ menu since #2919, R57): where a file holds
+ * the value, a row per file it may move to, "Move to ‹file›", and choosing one moves it — both
+ * files, no Undo, so only a row chosen moves anything, never an arrow passing over one. Where
+ * none holds it, a section picks where the next value goes, and writes nothing.
  */
 function MoveTo({
   names,
@@ -1158,6 +1204,7 @@ function MoveTo({
   mayMove,
   replacing,
   disabled,
+  offBecause,
   onMove,
 }: {
   /** The project's two files, as it names them. */
@@ -1170,6 +1217,8 @@ function MoveTo({
   /** What a move to charter.toml writes over: the team's value, which no Undo puts back. */
   replacing: string | undefined;
   disabled: boolean;
+  /** Why every move is out of reach, said under each: a read-only project's sentence. */
+  offBecause?: string;
   onMove: (to: SettingsWhich) => void;
 }) {
   // A value the level holds fast (the sandbox) is moved nowhere.
@@ -1179,59 +1228,62 @@ function MoveTo({
     { value: "local", label: LEVEL_OF.local, says: `${names.local}, on this machine only` },
   ] as const;
   return (
-    // **Under its button, lined up with its end** (R59): the button stands at the row's end.
-    <MenuTrigger>
-      <Button variant="ghost" isDisabled={disabled} className="ui-setting-reset">
-        Move to…
-      </Button>
-      <Menu className="ui-setting-move" align="end">
-        {held !== undefined ? (
-          places
-            .filter((one) => one.value !== held)
-            .map((one) => {
-              // What the move writes over, which no Undo puts back: the one line that stays
-              // under the row, because it changes the decision (the menus' rule 2).
-              const over =
-                one.value === "shared" && replacing !== undefined ? replacing : undefined;
-              return (
-                <Place
-                  key={one.value}
-                  label={one.label}
-                  says={one.says}
-                  under={over === undefined ? undefined : `Replaces ${over} there.`}
-                >
-                  {(row) => (
-                    <MenuItem id={one.value} onAction={() => onMove(one.value)} {...row.props}>
-                      {row.inside}
-                    </MenuItem>
-                  )}
-                </Place>
-              );
-            })
-        ) : (
-          <MenuSection
-            title="Where the next value is kept"
-            selectionMode="single"
-            disallowEmptySelection
-            selectedKeys={[pick]}
-            onSelectionChange={(keys) => {
-              const [to] = keys === "all" ? [] : [...keys];
-              if (to !== undefined) onPick(to as SettingsWhich);
-            }}
-          >
-            {places.map((one) => (
-              <Place key={one.value} label={one.label} says={one.says}>
+    // Rows of the row's ⋯ menu (R57), between its Reset and Copy key.
+    held !== undefined ? (
+      <>
+        {places
+          .filter((one) => one.value !== held)
+          .map((one) => {
+            // What the move writes over, which no Undo puts back: the one line that stays
+            // under the row, because it changes the decision (the menus' rule 2).
+            const over = one.value === "shared" && replacing !== undefined ? replacing : undefined;
+            return (
+              <Place
+                key={one.value}
+                label={`Move to ${names[one.value]}`}
+                says={one.says}
+                under={offBecause ?? (over === undefined ? undefined : `Replaces ${over} there.`)}
+              >
                 {(row) => (
-                  <MenuItem id={one.value} {...row.props}>
+                  <MenuItem
+                    id={`move-${one.value}`}
+                    isDisabled={disabled || offBecause !== undefined}
+                    onAction={() => onMove(one.value)}
+                    {...row.props}
+                  >
                     {row.inside}
                   </MenuItem>
                 )}
               </Place>
-            ))}
-          </MenuSection>
-        )}
-      </Menu>
-    </MenuTrigger>
+            );
+          })}
+      </>
+    ) : (
+      <MenuSection
+        title="Where the next value is kept"
+        selectionMode="single"
+        disallowEmptySelection
+        selectedKeys={[pick]}
+        onSelectionChange={(keys) => {
+          const [to] = keys === "all" ? [] : [...keys];
+          if (to !== undefined) onPick(to as SettingsWhich);
+        }}
+      >
+        {places.map((one) => (
+          <Place key={one.value} label={one.label} says={one.says} under={offBecause}>
+            {(row) => (
+              <MenuItem
+                id={one.value}
+                isDisabled={disabled || offBecause !== undefined}
+                {...row.props}
+              >
+                {row.inside}
+              </MenuItem>
+            )}
+          </Place>
+        ))}
+      </MenuSection>
+    )
   );
 }
 

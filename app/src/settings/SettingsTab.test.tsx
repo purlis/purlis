@@ -12,6 +12,7 @@ import { GLOBAL } from "../windowprefs";
 import { yourEditor } from "../yourEditor";
 import { chatsListPrefs } from "../chatsListPrefs";
 import { forgetGroups, linkToGroup } from "./links";
+import { chooseInRow, offeredInRow } from "./rowMenu.testkit";
 
 /**
  * **The Settings tab at the You level** (SE-16, #1166; the spec on #558, rulings V89a–i): a
@@ -136,14 +137,14 @@ describe("text size, in Settings", () => {
 
   it("resets one size to its default, and cannot reset one that is already there", async () => {
     render(<SettingsTab />);
-    const reset = () => screen.getByRole("button", { name: `Reset to ${DEFAULT_TEXT.terminal}px` });
-    expect(reset()).toBeDisabled();
+    const reset = `Reset to ${DEFAULT_TEXT.terminal}px`;
+    expect(await offeredInRow("Terminal text size")).toContain(`${reset} (off)`);
 
     act(() => setTextSize("terminal", 20));
-    await userEvent.click(reset());
+    await chooseInRow("Terminal text size", reset);
 
     expect(textSizes().terminal).toBe(DEFAULT_TEXT.terminal);
-    expect(reset()).toBeDisabled();
+    expect(await offeredInRow("Terminal text size")).toContain(`${reset} (off)`);
   });
 
   it("says under each size where its keys work", () => {

@@ -7105,39 +7105,55 @@ nav.piece-files-head {
 /* **The house settings set** (SE-16, DS-3's expand step; `settings/components.tsx`): the two
    columns, a group, a row, a field and a choice. `ui-*` and not `settings-*`, so the screens
    still on the old hand-built classes and the ones moved onto this set can be told apart until
-   the last ticket deletes the old ones. Every colour is a token (`docs/design-system.md`). */
-.ui-settings {
-  display: grid;
-  grid-template-columns: minmax(9rem, 12rem) minmax(0, 48rem);
-  grid-template-areas:
-    "top top"
-    "nav body";
-  gap: var(--space-5) var(--space-7);
+   the last ticket deletes the old ones. Every colour is a token (`docs/design-system.md`).
+
+   **The two columns are prototype A's** (#2919, `prototype/settings-page`, R37): a 236 px side
+   column on the window's own ground, a hairline beside it, and the page scrolling on its own
+   beside it, at most 860 px wide. The tab takes the whole view, as the Skill studio does. */
+.view-body:has(> .ui-settings) {
+  display: flex;
+  padding: 0;
+  overflow: hidden;
 }
 
-.ui-settings-top {
-  grid-area: top;
+.ui-settings {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-columns: 236px minmax(0, 1fr);
+  min-block-size: 0;
+  min-inline-size: 0;
+}
+
+/* The side column (R38): the title, the level switcher, whose settings these are, the filter
+   and the pages, 16 by 12 inside its edge. */
+.ui-settings-side {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-3) var(--space-5);
-  padding-bottom: var(--space-4);
-  border-bottom: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
+  flex-direction: column;
+  gap: var(--space-5);
+  min-inline-size: 0;
+  min-block-size: 0;
+  overflow-y: auto;
+  padding: var(--space-6) var(--space-5);
+  border-inline-end: 1px solid var(--border-subtle);
+  background-color: var(--surface-base);
+}
+
+/* "Settings", 15/600 in Purlis (R38). */
+.ui-settings-title {
+  margin: 0 var(--space-2);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-strong);
+  color: var(--text-primary);
+}
+
+.ui-settings-side > [data-scope="segmented-control"] {
+  align-self: flex-start;
 }
 
 .ui-settings-about {
-  margin: 0;
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
-}
-
-/* The left column: the filter box (SE-21), then the nav. */
-.ui-settings-side {
-  grid-area: nav;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  min-width: 0;
+  margin: 0 var(--space-2);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
 }
 
 .ui-settings-none {
@@ -7186,9 +7202,54 @@ nav.piece-files-head {
   margin-block: var(--space-5);
 }
 
+/* The page (R37): it scrolls on its own, 22/28/40 inside its edge in Purlis, and its groups are
+   20 apart. */
 .ui-settings-body {
-  grid-area: body;
-  min-width: 0;
+  min-inline-size: 0;
+  min-block-size: 0;
+  overflow-y: auto;
+  padding: var(--space-7) var(--space-8) calc(var(--space-8) + var(--space-5));
+}
+
+.ui-settings-page {
+  display: grid;
+  gap: var(--space-7);
+  max-inline-size: 860px;
+}
+
+/* **A page's header** (R48): its title at 18/600, its blurb in the muted words at most 64
+   characters wide, and the line that says where it is kept, the file as code, then Edit as
+   TOML. */
+.ui-setting-head h2 {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-strong);
+  text-wrap: balance;
+}
+
+.ui-setting-blurb {
+  margin: var(--space-2) 0 0;
+  max-inline-size: 64ch;
+  color: var(--text-muted);
+}
+
+.ui-setting-where {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-4) 0 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-quiet);
+}
+
+.ui-setting-where code {
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+.ui-setting-head {
+  margin-block-end: var(--space-7);
 }
 
 .ui-setting-reset:focus-visible {
@@ -7474,20 +7535,6 @@ nav.piece-files-head {
   overflow-wrap: anywhere;
 }
 
-/* A row's hint, behind an info mark beside its label (D3): quieter than the label. */
-.ui-setting-hint {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  color: var(--text-muted);
-  cursor: default;
-}
-
-.ui-setting-hint:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: var(--focus-ring-offset);
-}
-
 /* A value set at this level: the one Reset takes out. */
 .ui-setting-modified {
   flex: none;
@@ -7497,9 +7544,15 @@ nav.piece-files-head {
   background-color: var(--accent-base);
 }
 
-/* "Move to…"'s menu: as wide as the longest file name it offers. */
-.ui-setting-move {
-  --menu-min: calc(var(--space-8) * 7);
+/* **A row's ⋯ menu** (R59): under its button, lined up with its end, at least 200 px wide. Copy
+   key names the key as code. */
+.ui-setting-menu {
+  --menu-min: 200px;
+}
+
+.ui-setting-key {
+  font-family: var(--font-mono);
+  color: var(--text-quiet);
 }
 
 .ui-setting-control {
@@ -7529,6 +7582,89 @@ nav.piece-files-head {
    line of its own rather than the room beside the label. */
 .ui-setting-control:has(> .ui-setting-list) {
   flex-basis: 100%;
+}
+
+/* **A row of the aligned form** (#2919, prototype A, R50–R52, R54): on a settings page the label
+   column is at least 180 px and at most 38% of the row, then the control column, then the 64 px
+   column of the row's actions, 6 apart down and 20 across, with 12 above and below. Every
+   control starts at the same x, whatever its label says. A hairline parts two rows; the first
+   of a group has none (R51: a rule between rows, never a control's edge). */
+.ui-settings-page .ui-setting-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 38%) minmax(0, 1fr) 64px;
+  align-items: start;
+  gap: var(--space-3) var(--space-7);
+  padding-block: var(--space-5);
+  border-block-end: 0;
+  border-block-start: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
+}
+
+.ui-settings-page :not(.ui-setting-row) + .ui-setting-row,
+.ui-settings-page .ui-setting-row:first-child {
+  border-block-start: 0;
+}
+
+.ui-settings-page .ui-setting-line {
+  display: contents;
+}
+
+/* The label column: the name, 500 weight, with its marks, and its help under it in the quiet
+   words at 12 (R52). */
+.ui-settings-page .ui-setting-name {
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  min-block-size: 0;
+  max-inline-size: none;
+  padding-block-start: calc((var(--size-control) - 1lh) / 2);
+}
+
+.ui-setting-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  min-inline-size: 0;
+}
+
+.ui-settings-page .ui-setting-name > .ui-setting-help {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-quiet);
+}
+
+.ui-settings-page .ui-setting-control {
+  min-inline-size: 0;
+  min-block-size: var(--size-control);
+}
+
+/* A box or a select is at most 320 px wide (R54). */
+.ui-settings-page .ui-setting-control > .ui-setting-box:not(.ui-setting-list),
+.ui-settings-page .ui-setting-control > [data-scope="select"] {
+  flex: 1 1 auto;
+  max-inline-size: 320px;
+}
+
+/* A list field, one entry a line, takes its column's width, starting where every control
+   does (R54). */
+.ui-settings-page .ui-setting-control:has(> .ui-setting-list) {
+  flex-basis: auto;
+}
+
+.ui-settings-page .ui-setting-control > .ui-setting-list {
+  flex: 1 1 100%;
+}
+
+.ui-setting-act {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  min-block-size: var(--size-control);
+}
+
+/* What the core refused, under the control's column. */
+.ui-settings-page .ui-setting-row > .ui-setting-error {
+  grid-column: 2 / -1;
 }
 
 /* You › This machine (ST-2): one line per thing the machine store holds, with its action at

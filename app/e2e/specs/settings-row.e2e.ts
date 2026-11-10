@@ -7,60 +7,101 @@ import { SETTINGS_GROUPS, openProjectSettings } from "../settingsTab.js";
 import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
 
 /**
- * **A settings row is one line at one height, in the real WebView** (DS-8, #1840; spec #1832's
- * seam 3): a select and its Reset come out the same height, side by side, with the row's label
- * on that line; and the group says once where its values are kept, with no line under any row —
- * not even a field's own hint, which is its label's tooltip (D3, D-1840-2).
+ * **A Settings page is the aligned form, in the real WebView** (#2919, prototype A of
+ * `prototype/settings-page`, the audit's R37–R62): a walk through Project › Saving as the
+ * operator makes it.
  *
- * What jsdom cannot say: how tall WebKit draws the select's trigger and a `<button>` once the
- * primitives' classes reach them. Ranges, never exact pixels: the control height is 28px at the
- * default text size, and a text size step or a font's rounding moves it a little.
- * `SettingRow.test.tsx` holds what the cascade gives each one.
+ * - The side column, titled Settings, beside the page, which scrolls on its own (R37, R38).
+ * - The page's header names its file as code, with Edit as TOML after it (R48, R49).
+ * - Every control starts at one x and every row's ⋯ stands at one x; each row's help is a line
+ *   under its label, in the label's column (R50, R52, R54, R56).
+ * - `[memory] share`, which the fixture project's `charter.toml` sets, carries the set-here mark
+ *   and the amber deprecated badge (R53, R62); its ⋯ offers Reset in reach and Copy key, and
+ *   Escape closes it on its button (R57, R59). A row not set here offers Reset out of reach
+ *   (R58).
+ * - Edit as TOML in the header opens the file's text (SE-19).
  *
- * The row is Saving's `[memory] share (deprecated)`: the fixture project's `charter.toml` sets
- * it, so it has a Reset. **Nothing is written**: the spec only measures, and closes the Settings
- * tab it opened.
+ * What jsdom cannot say: where WebKit lays these out. Ranges, never exact pixels.
+ * `SettingsPage.test.tsx` holds the behaviour. **Nothing is written**: the spec opens, measures
+ * and closes, and closes the Settings tab it opened.
  */
 
-const LABEL = "[memory] share (deprecated)";
+const SET = "[memory] share";
+const UNSET = "Target branch";
 
-type Box = { top: number; bottom: number; left: number; right: number; height: number };
+type Box = { top: number; bottom: number; left: number; right: number; width: number };
 
-/** The row's label, its select and its Reset, measured; and what its group says. */
-async function measured() {
-  return browser.execute((label: string) => {
+/** The page as it is laid out: the side column, the header and every row's columns. */
+async function laidOut() {
+  return browser.execute(() => {
     const box = (el: Element | null | undefined): Box | null => {
       if (!el) return null;
-      const { top, bottom, left, right, height } = el.getBoundingClientRect();
-      return { top, bottom, left, right, height };
+      const { top, bottom, left, right, width } = el.getBoundingClientRect();
+      return { top, bottom, left, right, width };
     };
-    const name = [...document.querySelectorAll<HTMLLabelElement>("label.ui-setting-label")].find(
-      (one) => one.textContent?.trim() === label,
-    );
-    const row = name?.closest(".ui-setting-row");
-    const select = name ? document.getElementById(name.htmlFor) : null;
-    const reset = [...(row?.querySelectorAll("button") ?? [])].find(
-      (one) => one.textContent?.trim() === "Reset",
-    );
-    const group = row?.closest("section");
+    const side = document.querySelector(".ui-settings-side");
+    const page = document.querySelector(".ui-settings-page section");
+    const rows = [...(page?.querySelectorAll<HTMLElement>(".ui-setting-row") ?? [])];
     return {
-      label: box(name),
-      select: box(select),
-      selectTag: select?.tagName ?? "",
-      reset: box(reset),
-      kept: (group?.textContent?.match(/Kept in/g) ?? []).length,
-      lines: [...(group?.querySelectorAll(".ui-setting-row p:not(.sr-only)") ?? [])]
-        .map((one) => one.textContent ?? "")
-        .filter((text) => /^From |Kept in|Not set at this level/.test(text)),
-      // Every paragraph drawn under a row: none, since a field's hint is its label's tooltip.
-      rowHelp: [...(group?.querySelectorAll(".ui-setting-row p:not(.sr-only)") ?? [])]
-        .filter((one) => !one.closest('[role="alert"]'))
-        .map((one) => one.textContent ?? ""),
+      side: box(side),
+      title: side?.querySelector(".ui-settings-title")?.textContent ?? "",
+      heading: page?.querySelector("h2")?.textContent ?? "",
+      file: page?.querySelector(".ui-setting-where code")?.textContent ?? "",
+      edit:
+        [...(page?.querySelectorAll(".ui-setting-where button") ?? [])].map(
+          (one) => one.textContent ?? "",
+        )[0] ?? "",
+      controls: rows.map((row) => box(row.querySelector(".ui-setting-control"))?.left ?? -1),
+      more: rows
+        .map((row) => box(row.querySelector(".ui-setting-act button")))
+        .filter((one): one is Box => one !== null)
+        .map((one) => one.right),
+      helps: rows.flatMap((row) => {
+        const label = box(row.querySelector(".ui-setting-label"));
+        const help = box(row.querySelector(".ui-setting-name > .ui-setting-help"));
+        const control = box(row.querySelector(".ui-setting-control"));
+        return label && help && control ? [{ label, help, control }] : [];
+      }),
     };
-  }, LABEL);
+  });
 }
 
-describe("a settings row, in the real WebView", () => {
+/** The row named `label`: its marks, and its ⋯ button's id, given one for the walk. */
+async function rowOf(label: string) {
+  return browser.execute((wanted: string) => {
+    const name = [...document.querySelectorAll<HTMLElement>(".ui-setting-label")].find(
+      (one) => one.textContent?.trim() === wanted,
+    );
+    const row = name?.closest(".ui-setting-row");
+    const more = row?.querySelector<HTMLElement>(".ui-setting-act button");
+    if (more) more.id ||= `more-${wanted.replace(/\W+/g, "-")}`;
+    return {
+      drawn: row !== undefined && row !== null,
+      setHere: row?.querySelector('[role="img"][aria-label="Set at this level"]') != null,
+      deprecated:
+        [...(row?.querySelectorAll('.ui-setting-title [data-scope="badge"]') ?? [])].some(
+          (one) => one.textContent === "deprecated",
+        ) ?? false,
+      more: more?.id ?? "",
+    };
+  }, label);
+}
+
+/** The open menu's rows, each its words and whether it is out of reach. */
+async function menuRows() {
+  return browser.execute(() =>
+    [...document.querySelectorAll('[role="menu"] [role^="menuitem"]')].map((one) => ({
+      said: (one.querySelector('[data-part="label"]') ?? one).textContent?.trim() ?? "",
+      off: one.getAttribute("aria-disabled") === "true",
+    })),
+  );
+}
+
+async function menuOpen(): Promise<boolean> {
+  return browser.execute(() => document.querySelector('[role="menu"]') !== null);
+}
+
+describe("a Settings page, the aligned form, in the real WebView", () => {
   // At 1280×800, both sidebars open, where the project rail hides itself to leave the work its
   // room (`rail.ts`, #3077): measured with the rail as the window draws it.
   before(() => windowAt(WINDOW_1280));
@@ -68,37 +109,77 @@ describe("a settings row, in the real WebView", () => {
 
   closesTheTabsItOpens();
 
-  it("draws a select and its Reset one height, side by side, on the label's line", async () => {
+  it("draws the side column, and the page's header naming its file", async () => {
     await openProjectSettings();
     await $(SETTINGS_GROUPS).$("button=Saving").click();
-    await browser.waitUntil(async () => (await measured()).reset !== null, {
+    await browser.waitUntil(async () => (await rowOf(SET)).drawn, {
       timeout: 20_000,
-      timeoutMsg: `Saving never drew ${LABEL} with its Reset`,
+      timeoutMsg: `Saving never drew ${SET}`,
     });
-    const { label, select, selectTag, reset } = await measured();
-    if (!label || !select || !reset) throw new Error("the row was not drawn whole");
+    const { side, title, heading, file, edit } = await laidOut();
+    if (!side) throw new Error("the side column was not drawn");
 
-    // The window's one select, the select family's on React Aria's `Select` (#1860, #2906): a
-    // button that says what it holds.
-    expect(selectTag).toBe("BUTTON");
-    // One height: the control height, give or take a pixel of rounding.
-    expect(Math.abs(select.height - reset.height)).toBeLessThanOrEqual(1);
-    expect(select.height).toBeGreaterThanOrEqual(24);
-    expect(select.height).toBeLessThanOrEqual(34);
-    // Side by side on one line: the same top and bottom, Reset after the select.
-    expect(Math.abs(select.top - reset.top)).toBeLessThanOrEqual(1);
-    expect(reset.left).toBeGreaterThanOrEqual(select.right);
-    // The label's middle is within the controls' line.
-    const middle = (label.top + label.bottom) / 2;
-    expect(middle).toBeGreaterThanOrEqual(select.top);
-    expect(middle).toBeLessThanOrEqual(select.bottom);
+    expect(title).toBe("Settings");
+    // 236 px at the default text size, a pixel either way for rounding (R37).
+    expect(Math.abs(side.width - 236)).toBeLessThanOrEqual(1);
+    expect(heading).toBe("Saving");
+    expect(file).toBe("charter.toml");
+    expect(edit).toBe("Edit as TOML");
   });
 
-  it("says once, in the group, where its values are kept, and draws no help under any row", async () => {
-    const { kept, lines, rowHelp } = await measured();
+  it("starts every control at one x, ends every row at one ⋯, and puts help under its label", async () => {
+    const { controls, more, helps } = await laidOut();
 
-    expect(kept).toBe(1);
-    expect(lines).toEqual([]);
-    expect(rowHelp).toEqual([]);
+    expect(controls.length).toBeGreaterThan(2);
+    expect(Math.max(...controls) - Math.min(...controls)).toBeLessThanOrEqual(1);
+    expect(more.length).toBeGreaterThan(2);
+    expect(Math.max(...more) - Math.min(...more)).toBeLessThanOrEqual(1);
+    expect(helps.length).toBeGreaterThan(2);
+    for (const { label, help, control } of helps) {
+      expect(help.top).toBeGreaterThanOrEqual(label.bottom - 1);
+      expect(Math.abs(help.left - label.left)).toBeLessThanOrEqual(8);
+      expect(help.right).toBeLessThanOrEqual(control.left);
+    }
+  });
+
+  it("marks a value set here and a deprecated key, and offers its Reset and Copy key", async () => {
+    const set = await rowOf(SET);
+    expect(set.setHere).toBe(true);
+    expect(set.deprecated).toBe(true);
+
+    await $(`#${set.more}`).click();
+    await browser.waitUntil(menuOpen, { timeout: 10_000, timeoutMsg: "the ⋯ menu never opened" });
+    const rows = await menuRows();
+    expect(rows[0]).toEqual({ said: "Reset", off: false });
+    expect(rows.at(-1)).toEqual({ said: "Copy key memory.share", off: false });
+
+    await browser.keys(["Escape"]);
+    await browser.waitUntil(async () => !(await menuOpen()), {
+      timeout: 10_000,
+      timeoutMsg: "Escape never closed the ⋯ menu",
+    });
+    expect(await browser.execute(() => document.activeElement?.id ?? "")).toBe(set.more);
+  });
+
+  it("offers Reset out of reach on a value not set here", async () => {
+    const unset = await rowOf(UNSET);
+    expect(unset.setHere).toBe(false);
+
+    await $(`#${unset.more}`).click();
+    await browser.waitUntil(menuOpen, { timeout: 10_000, timeoutMsg: "the ⋯ menu never opened" });
+    expect((await menuRows())[0]).toEqual({ said: "Reset", off: true });
+    await browser.keys(["Escape"]);
+    await browser.waitUntil(async () => !(await menuOpen()), {
+      timeout: 10_000,
+      timeoutMsg: "Escape never closed the ⋯ menu",
+    });
+  });
+
+  it("opens the file's text from the header's Edit as TOML", async () => {
+    await $(".ui-setting-where").$("button=Edit as TOML").click();
+
+    await $('[role="textbox"][aria-label="charter.toml, as TOML"]').waitForDisplayed({
+      timeout: 20_000,
+    });
   });
 });

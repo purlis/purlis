@@ -81,13 +81,17 @@ operator amended it there on 2026-10-04 (V89f; the spec on #558):
 
 What keeps it from becoming the library this file forbids:
 
-- **Six pieces, named here, and no more.** `SettingsLayout` (the level switcher, the nav of
-  groups with its filter box above it, and the chosen group, in two columns), `SettingGroup`
-  (a group's heading, its one help line ending on where its values are kept, and rows),
-  `SettingRow` (label, control and reset on one line at the control height, help under them, and
-  since SE-17 a refused write's reason and the last change's Undo; since SE-18 the value's
-  origin, drawn quietly since DS-8: a badge only where the value is kept elsewhere than its
-  group's, a mark on a value set at this level, and "Move to…" at the end of the line), `Field` (`text`, `list` and `range`), `Choice` (`radio`, since #2907 `cards`,
+- **Six pieces, named here, and no more.** `SettingsLayout` (since #2919 prototype A of
+  `prototype/settings-page`: a side column titled Settings with the level switcher, the filter
+  box and the nav of groups, and the chosen page scrolling beside it), `SettingGroup` (on a
+  settings page the page's header — its title, its blurb and "Kept in ‹file› · Edit as TOML" —
+  and its rows; in a dialog a heading and one help line), `SettingRow` (on a settings page a row
+  of the aligned form: the label with its help line under it, then the control, then one ⋯ menu
+  holding Reset, the moves between files and Copy key, every control at one x; in a dialog the
+  label and control on one line with the help under them; since SE-17 a refused write's reason
+  and the last change's Undo; since SE-18 the value's origin, drawn quietly since DS-8: a badge
+  only where the value is kept elsewhere than its page's, a mark on a value set at this level
+  with the tooltip "Set at this level", and since #2919 an amber "deprecated" badge), `Field` (`text`, `list` and `range`), `Choice` (`radio`, since #2907 `cards`,
   `select`, `toggle`, since #1860 `switch`, since DS-3e `checks`: any of a few, each ticked on its own, and since #626
   `chips`: any of a few too, drawn small and side by side over the list they narrow, the Chats
   list's state chips) and `SettingActions` (a form's row of buttons, V89j). A seventh piece is
@@ -1749,7 +1753,7 @@ a file's, with its `said`, `danger`, `warns`, `checked` and `keys`. It draws the
 `Menus.tsx`'s exported `Groups`, inside its own `Menu` named by `aria-label`, so its rows,
 tooltips, submenus and keyboard are every other menu's. A dropdown, which is not a context
 menu, puts `MenuWords` and `MenuTip` inside its own `MenuItem`s, as a secret's menu and a
-setting's *Move to…* do. **The show-more and the away menus are the exception to the width**:
+settings row's ⋯ do. **The show-more and the away menus are the exception to the width**:
 their rows are tabs and sentences with no part that gives way, so `.more-menu` hands
 `--menu-max: none`.
 
@@ -2197,8 +2201,8 @@ keeps the pick in the screen's own state and acts only on an explicit button: Sa
 this_ (DS-3b), Updates' _Use this channel_ (DS-3d), and First task's profile, which starts a chat only
 on _Start the first chat_ (DS-3e). A radio whose write can be undone, as
 Settings' controls can (V89e), writes on its pick. Settings' move between files, which writes
-both and has no Undo (SE-18), is no radio since DS-8: it is the row's _Move to…_ menu, and only
-a row chosen in it moves the value. Each held pick is guarded by a test that
+both and has no Undo (SE-18), is no radio since DS-8: it is rows of the row's ⋯ menu ("Move to
+‹file›", #2919), and only a row chosen in it moves the value. Each held pick is guarded by a test that
 holds an arrow down for about 80 ms and finds nothing written.
 
 **The arrow-key defect is the radio group's, not every primitive's — measured, not assumed.**

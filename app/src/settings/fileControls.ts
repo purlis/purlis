@@ -65,6 +65,8 @@ export type Control = {
   names?: Entry;
   /** What the row's reset is called, where "Reset" alone would hide what it does (#1197). */
   resets?: string;
+  /** A key kept only until every machine has moved off it: badged "deprecated" (R62). */
+  deprecated?: true;
   /**
    * **An on/off key's value in force** (#1865): what its switch shows while no file at the row's
    * level holds the key — the value beneath, from another file or the default. With it the key
@@ -649,11 +651,14 @@ export function planeGroup(section: Section): Group {
         }),
         ...(section !== "local"
           ? [
-              textAt(key("memory", "share"), "[memory] share (deprecated)", {
-                kind: "choice",
-                choices: ["local", "commit", "push"],
-                hint: [SHARE_HINT, shareMarker(file, saving)].filter(Boolean).join(" "),
-              }),
+              {
+                ...textAt(key("memory", "share"), "[memory] share", {
+                  kind: "choice",
+                  choices: ["local", "commit", "push"],
+                  hint: [SHARE_HINT, shareMarker(file, saving)].filter(Boolean).join(" "),
+                }),
+                deprecated: true as const,
+              },
             ]
           : []),
       ];

@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **The quiet settings row** (DS-8, #1840; D3 on #1832): the label, the control and its Reset on
- * one line at one height; where the group keeps its values said once, in its header; a badge only
- * on a row whose value is kept elsewhere, the whole sentence in its tooltip; a mark on a value set
- * at this level. The Project level's "Move to…" menu is held in `ProjectLevel.test.tsx`, where
+ * **The settings row** (DS-8, #1840; the aligned form since #2919, R50–R53): on a settings page
+ * the label with its help under it, the control and its Reset each in its column, at one height;
+ * where the page keeps its values said once, in its header; a badge only on a row whose value is
+ * kept elsewhere, the whole sentence in its tooltip; a mark on a value set at this level. The Project level's "Move to…" menu is held in `ProjectLevel.test.tsx`, where
  * the files it moves between are.
  *
  * Heights are read through the window's cascade (`cascade.testkit.ts`): jsdom lays nothing out,
@@ -79,13 +79,14 @@ function Page() {
 const rowOf = (label: string) =>
   screen.getByLabelText(label).closest(".ui-setting-row") as HTMLElement;
 
-describe("the group header", () => {
-  it("says where the group's values are kept once, in its one help line", () => {
+describe("the page's header", () => {
+  it("says where the page's values are kept once, on the line under its blurb", () => {
     render(<Page />);
     const group = screen.getByRole("region", { name: "Saving" });
 
     expect(within(group).getAllByText(/Kept in/)).toHaveLength(1);
-    expect(within(group).getByText(`How far a save goes. ${KEPT}`)).toBeVisible();
+    expect(within(group).getByText("How far a save goes.")).toBeVisible();
+    expect(within(group).getByText(KEPT)).toBeVisible();
   });
 
   it("draws no line of where a value comes from under any row", () => {
@@ -135,8 +136,8 @@ describe("the badge", () => {
       selector: "[data-scope=badge]",
     });
 
-    // The row's info mark comes first, then the badge.
-    within(rowOf("Mode")).getByRole("img", { name: "About Mode" }).focus();
+    // From the nav, the first stop on the page is the first row's badge, beside its name.
+    screen.getByRole("button", { name: "Saving" }).focus();
     await user.tab();
     expect(badge).toHaveFocus();
     expect(await screen.findByRole("tooltip")).toHaveTextContent(SAYS);
@@ -160,45 +161,40 @@ describe("the badge", () => {
   });
 });
 
-describe("a field's own hint (D3, D-1840-2)", () => {
-  it("draws no help line under any row: the group's is the only one", () => {
+describe("a row's help (R52)", () => {
+  it("is a line under each row's label, after the page's blurb and where it is kept", () => {
     render(<Page />);
     const group = screen.getByRole("region", { name: "Saving" });
 
     const shown = [...group.querySelectorAll("p")].filter(
       (one) => !one.classList.contains("sr-only"),
     );
-    expect(shown.map((one) => one.textContent)).toEqual([`How far a save goes. ${KEPT}`]);
+    expect(shown.map((one) => one.textContent)).toEqual([
+      "How far a save goes.",
+      KEPT,
+      "How far a save of the project goes.",
+      "The branch a save is meant to end up on.",
+    ]);
   });
 
-  it("shows the hint in the label's info tooltip, and keeps it the control's description", async () => {
-    const user = userEvent.setup();
+  it("stays the control's description", () => {
     render(<Page />);
-    const mark = within(rowOf("Branch")).getByRole("img", { name: "About Branch" });
 
-    await user.hover(mark);
-
-    expect(await screen.findByRole("tooltip")).toHaveTextContent(
-      "The branch a save is meant to end up on.",
-    );
     expect(screen.getByLabelText("Branch")).toHaveAccessibleDescription(
       /^The branch a save is meant to end up on\./,
     );
   });
 
-  it("is reached by the keyboard, and Escape hides it", async () => {
+  it("is no stop of the keyboard: from the badge, the next is the control", async () => {
     const user = userEvent.setup();
     render(<Page />);
 
-    // From the nav, the next stop is the first row's info mark.
     screen.getByRole("button", { name: "Saving" }).focus();
     await user.tab();
-    expect(within(rowOf("Mode")).getByRole("img", { name: "About Mode" })).toHaveFocus();
-    expect(await screen.findByRole("tooltip")).toHaveTextContent(
-      "How far a save of the project goes.",
-    );
-    await user.keyboard("{Escape}");
-    await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull());
+    await user.tab();
+
+    expect(selectNamed("Mode")).toHaveFocus();
+    expect(screen.queryByRole("img", { name: /^About / })).toBeNull();
   });
 });
 
@@ -223,26 +219,29 @@ describe("the modified mark", () => {
 });
 
 describe("one line at one height", () => {
-  it("draws the select, the field and Reset each one control tall, from the tokens", () => {
+  it("draws the select, the field and the row's ⋯ each one control tall, from the tokens", () => {
     render(<Page />);
 
     expect(drawnWith(screen.getByLabelText("Mode"), "block-size")).toBe("var(--size-control)");
     // The box is the field family's: its box is a control tall (#2905).
     const branch = screen.getByLabelText("Branch").parentElement as Element;
     expect(drawnWith(branch, "block-size")).toBe("var(--size-control)");
-    expect(drawnWith(screen.getByRole("button", { name: "Reset" }), "block-size")).toBe(
+    expect(drawnWith(screen.getByRole("button", { name: "More for Mode" }), "block-size")).toBe(
       "var(--size-control)",
     );
   });
 
-  it("puts the label, the control and Reset on the row's one line", () => {
+  it("puts the label, the control and the ⋯ in the row's columns, every control at one x", () => {
     render(<Page />);
-    const line = rowOf("Mode").querySelector(".ui-setting-line") as HTMLElement;
+    const row = rowOf("Mode");
 
-    expect(within(line).getByText("Mode")).toBeInTheDocument();
-    expect(selectNamed("Mode", line)).toBeInTheDocument();
-    expect(within(line).getByRole("button", { name: "Reset" })).toBeInTheDocument();
-    expect(drawnWith(line, "display")).toBe("flex");
-    expect(drawnWith(line, "align-items")).toBe("center");
+    const name = row.querySelector(".ui-setting-name") as HTMLElement;
+    expect(within(name).getByText("Mode")).toBeInTheDocument();
+    const control = row.querySelector(".ui-setting-control") as HTMLElement;
+    expect(selectNamed("Mode", control)).toBeInTheDocument();
+    const act = row.querySelector(".ui-setting-act") as HTMLElement;
+    expect(within(act).getByRole("button", { name: "More for Mode" })).toBeInTheDocument();
+    expect(drawnWith(row, "display")).toBe("grid");
+    expect(drawnWith(row, "grid-template-columns")).toBe("minmax(180px, 38%) minmax(0, 1fr) 64px");
   });
 });

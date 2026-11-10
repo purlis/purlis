@@ -216,6 +216,8 @@ export type FileSetting = Named & {
   standing?: string;
   /** What the row's reset is called, where "Reset" alone would hide what it does (#1197). */
   resets?: string;
+  /** A key kept only until every machine has moved off it: badged "deprecated" (R62). */
+  deprecated?: true;
   /** An on/off key's value in force while no file at the row's level holds it: the row is a
    *  switch, and Reset takes the key back to not set (#1865; `fileControls.ts`'s `Control`). */
   inForce?: boolean;

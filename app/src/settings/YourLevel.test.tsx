@@ -165,7 +165,7 @@ describe("Settings › Sandbox › Your level", () => {
   it("offers the three levels for the project and for each persona, none set", async () => {
     core();
     await atYourLevel();
-    expect(screen.getByText(/on this machine only/)).toBeInTheDocument();
+    expect(screen.getAllByText(/on this machine only/)[0]).toBeInTheDocument();
     // Each level starts as chosen, and a lower one written another way waits for Confirm.
     expect(screen.getByText(/Floor starts the floor even where the project/)).toBeInTheDocument();
     await waitFor(() => expect(picker("As scribe")).toBeInTheDocument());

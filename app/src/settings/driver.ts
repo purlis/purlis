@@ -623,6 +623,7 @@ export function fileSetting(
     edits: control.edits,
     names: control.names,
     resets: control.resets,
+    ...(control.deprecated ? { deprecated: control.deprecated } : {}),
     ...(control.inForce === undefined ? {} : { inForce: control.inForce }),
     ...(control.reading ? { reading: control.reading } : {}),
   };

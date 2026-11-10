@@ -10,10 +10,11 @@ import {
   type ReactNode,
   type Ref,
 } from "react";
-import { Info, ListFilter } from "lucide-react";
+import { Ellipsis, ListFilter } from "lucide-react";
 import { Select } from "../ui/select/Select";
 import { ViewNav } from "../ui/panel/ViewNav";
-import { Button } from "../ui/button/Button";
+import { Button, IconButton } from "../ui/button/Button";
+import { Menu, MenuItem, MenuSeparator, MenuTrigger } from "../ui/menu/Menu";
 import { Checkbox, CheckboxGroup, RovingCheckbox } from "../ui/choice/Checkbox";
 import {
   OptionCard,
@@ -49,12 +50,13 @@ import { Badge } from "../ui/badge/Badge";
  */
 
 /**
- * **Whether a row's hint is a tooltip** (D3, D-1840-2): on a settings page, drawn by
- * {@link SettingsLayout}, a group says one help line and each row's hint sits behind an info mark
- * beside its label. A form elsewhere — a dialog's rows — keeps its hints as lines under its
- * fields, where a person filling it in reads them as they go.
+ * **Whether a row is drawn on a settings page** (#2919, prototype A, R50–R52): drawn by
+ * {@link SettingsLayout}, a row is the aligned form's, its label and the help line under it in
+ * one column, its control in the next and its actions in the last, so every control starts at
+ * the same x. A form elsewhere — a dialog's rows — keeps its label and control on one line and
+ * its help under them, where a person filling it in reads it as they go.
  */
-const QuietHints = createContext(false);
+const OnPage = createContext(false);
 
 /** The elements a `<label for>` focuses on its own. */
 const LABELABLE = new Set(["INPUT", "SELECT", "TEXTAREA", "BUTTON", "METER", "OUTPUT", "PROGRESS"]);
@@ -141,7 +143,10 @@ export function SettingsLayout({
       : (none ?? `${found} ${found === 1 ? "setting matches" : "settings match"}`);
   return (
     <div className="ui-settings" ref={holder}>
-      <div className="ui-settings-top">
+      {/* **The side column** (R37, R38): the title, the level switcher, whose settings these
+          are, the filter and the pages, on the window's own ground beside the page. */}
+      <div className="ui-settings-side">
+        <p className="ui-settings-title">Settings</p>
         <SegmentedControl
           ref={switcher}
           aria-label="Level"
@@ -166,8 +171,6 @@ export function SettingsLayout({
           ))}
         </SegmentedControl>
         {about !== undefined && <p className="ui-settings-about">{about}</p>}
-      </div>
-      <div className="ui-settings-side">
         <TextField
           className="ui-settings-filter"
           type="search"
@@ -194,9 +197,12 @@ export function SettingsLayout({
         </div>
         {foot}
       </div>
+      {/* **The page** (R37): it scrolls on its own beside the side column, at most 860 px wide. */}
       <div className="ui-settings-body">
-        {none && <p className="ui-settings-none">{none}</p>}
-        <QuietHints.Provider value={true}>{children}</QuietHints.Provider>
+        <div className="ui-settings-page">
+          {none && <p className="ui-settings-none">{none}</p>}
+          <OnPage.Provider value={true}>{children}</OnPage.Provider>
+        </div>
       </div>
     </div>
   );
@@ -206,12 +212,20 @@ export function SettingsLayout({
  *  by its heading, so a screen reader can say where it is.
  *
  *  **Where its values are kept is said here, once** (`kept`, DS-8 #1840): the file and who sees
- *  it, at the end of the group's one help line, never under each row. A row whose value is kept
- *  anywhere else says so with its badge ({@link SettingRow}). */
+ *  it, never under each row. A row whose value is kept anywhere else says so with its badge
+ *  ({@link SettingRow}).
+ *
+ *  **On a settings page it is the page's header** (#2919, R48, R49): the title, the blurb (its
+ *  `help`), and the line that says where the page is kept, the file named as code (`file`), then
+ *  Edit as TOML (`onEdit`), which opens that file's text. In a dialog its help and where it is
+ *  kept are one line under its heading. */
 export function SettingGroup({
   label,
   help,
   kept,
+  file,
+  onEdit,
+  editAs = "TOML",
   level = 2,
   children,
 }: {
@@ -223,9 +237,40 @@ export function SettingGroup({
   /** Where the group's values are kept, and who sees them: "Kept in purlis.toml, which your
    *  team sees." */
   kept?: string;
+  /** The file `kept` names, which the page's header sets as code (R48). */
+  file?: string;
+  /** Opens the file's whole text (SE-19): the header's Edit as TOML, after where it is kept.
+   *  None for a file that has no text to edit here. */
+  onEdit?: () => void;
+  /** What the file's text is written in: a project's files are TOML, a workspace's JSON. */
+  editAs?: "TOML" | "JSON";
   children: ReactNode;
 }) {
   const heading = useId();
+  const onPage = useContext(OnPage);
+  if (onPage && level === 2)
+    return (
+      <section className="ui-setting-group ui-setting-page" aria-labelledby={heading}>
+        <div className="ui-setting-head">
+          <h2 id={heading}>{label}</h2>
+          {help && <p className="ui-setting-blurb">{help}</p>}
+          {kept && (
+            <p className="ui-setting-where">
+              <span>{withFile(kept, file)}</span>
+              {onEdit && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <Button variant="ghost" size="sm" onPress={onEdit}>
+                    {`Edit as ${editAs}`}
+                  </Button>
+                </>
+              )}
+            </p>
+          )}
+        </div>
+        {children}
+      </section>
+    );
   const Heading = level === 2 ? "h2" : "h3";
   const said = [help, kept].filter(Boolean).join(" ");
   return (
@@ -234,6 +279,22 @@ export function SettingGroup({
       {said && <p className="ui-setting-help">{said}</p>}
       {children}
     </section>
+  );
+}
+
+/** `kept`, with the first place it names `file` set as code — by its path, else by its name
+ *  alone; as it is when it names neither. */
+function withFile(kept: string, file: string | undefined): ReactNode {
+  if (file === undefined || file === "") return kept;
+  const shown = [file, file.split("/").pop() ?? file].find((one) => kept.includes(one));
+  if (shown === undefined) return kept;
+  const at = kept.indexOf(shown);
+  return (
+    <>
+      {kept.slice(0, at)}
+      <code>{shown}</code>
+      {kept.slice(at + shown.length)}
+    </>
   );
 }
 
@@ -278,11 +339,13 @@ export type Reset = {
 export type Badge = { label: string; says: string };
 
 /**
- * **One setting**, on one line: its label, its control and its reset, at one height — the
- * control height every button, field and select is (ADR 0094). On a settings page its line of
- * help is not drawn under it (D3): an info mark beside the label shows it in a tooltip, and the
- * control is described by it. In a dialog's form the help is a line under the field. The control is drawn by `control`, handed the ids that tie it to the label and the help
- * — a {@link Field} or a {@link Choice}.
+ * **One setting**: its label, its control and its reset, at one height — the control height
+ * every button, field and select is (ADR 0094). On a settings page it is a row of the aligned
+ * form (#2919, R50–R52): the label with its help line under it in the first column, the control
+ * in the second, the row's actions in the third. In a dialog's form the label and the control
+ * share a line and the help is a line under the field. Either way the control is described by
+ * the help. The control is drawn by `control`, handed the ids that tie it to the label and the
+ * help — a {@link Field} or a {@link Choice}.
  *
  * A `grouped` row's control is a group of controls (a radio group), which a `<label for>` cannot
  * name: its name is drawn as plain text, and the group is named by `aria-labelledby` instead.
@@ -299,7 +362,8 @@ export type Badge = { label: string; says: string };
  * machine, Workspace — and its tooltip holds the whole sentence. `origin`, that same sentence for
  * every row, is never drawn: it is the control's description, so a screen reader still hears
  * where each value comes from. `modified` marks a value set at this level, the one Reset takes
- * out. `place` is the row's "Move to…", at the end of the control's line.
+ * out. On a settings page the row's Reset, its "Move to…" (`moves`) and Copy key are one ⋯ menu
+ * at the row's end, in the same place on every row (R56–R59).
  */
 export function SettingRow({
   label,
@@ -311,7 +375,9 @@ export function SettingRow({
   origin,
   badge,
   modified = false,
-  place,
+  deprecated = false,
+  moves,
+  copyKey,
   control,
   setting,
 }: {
@@ -332,8 +398,14 @@ export function SettingRow({
   badge?: Badge;
   /** The value is set at this level: what Reset would take out. */
   modified?: boolean;
-  /** The row's "Move to…" between the files a value may be kept in (SE-18). */
-  place?: ReactNode;
+  /** The key is kept only until every machine has moved off it: an amber badge after the label
+   *  says so (R62). */
+  deprecated?: boolean;
+  /** The row's "Move to…" between the files a value may be kept in (SE-18): rows of the menu
+   *  family, drawn in the row's ⋯ menu between its Reset and Copy key (R57). */
+  moves?: ReactNode;
+  /** The value's key in its file, which the ⋯ menu's Copy key copies (R57): `plane.mode`. */
+  copyKey?: string;
   control: (ids: RowIds) => ReactNode;
   /** The setting's id, which a link into Settings names to focus its control (NO-7). */
   setting?: string;
@@ -344,7 +416,7 @@ export function SettingRow({
   const from = useId();
   const refused = useId();
   const failed = error !== undefined && error.length > 0;
-  const quiet = useContext(QuietHints);
+  const onPage = useContext(OnPage);
   const summary = useFormSummary();
   // Off on a read-only project: why, with the rest of what describes it (#2908).
   const readOnly = useReadOnlyReasonId();
@@ -357,78 +429,114 @@ export function SettingRow({
     ]
       .filter(Boolean)
       .join(" ") || undefined;
+  const name = grouped ? (
+    <span className="ui-setting-label" id={labelledBy}>
+      {label}
+    </span>
+  ) : (
+    <label
+      className="ui-setting-label"
+      id={labelledBy}
+      htmlFor={id}
+      onClick={(event) => {
+        // A control a `<label for>` cannot reach (a slider's root, which hands the
+        // focus to its thumb) is given the focus the press would have given it.
+        const control = document.getElementById(id);
+        if (control !== null && !LABELABLE.has(control.tagName)) {
+          event.preventDefault();
+          control.focus();
+        }
+      }}
+    >
+      {label}
+    </label>
+  );
+  // **Set here** (R53): a 6 px dot in the accent before the label, which says so under the
+  // pointer. Its hint is its own name, so the keyboard passes it by: the control is described as
+  // set here by its origin.
+  const mark = modified && (
+    <Tooltip tip="Set at this level">
+      <span className="ui-setting-modified" role="img" aria-label="Set at this level" />
+    </Tooltip>
+  );
+  const controls = (
+    <div className="ui-setting-control">
+      {control({ id, labelledBy, describedBy, name: label })}
+      {reset && !onPage && (
+        <Button
+          isDisabled={reset.disabled}
+          aria-label={reset.name}
+          onPress={() => {
+            reset.onReset();
+            // The button goes once the value is gone; the focus goes back to the control.
+            document.getElementById(id)?.focus();
+          }}
+          className="ui-setting-reset"
+        >
+          {reset.label}
+        </Button>
+      )}
+      {undo && (
+        <Button
+          onPress={() => {
+            undo();
+            // The button goes once it is pressed; the focus goes back to what it undid.
+            document.getElementById(id)?.focus();
+          }}
+          className="ui-setting-reset"
+        >
+          Undo
+        </Button>
+      )}
+    </div>
+  );
+  const helpLine = help && (
+    <p className="ui-setting-help" id={described}>
+      {help}
+    </p>
+  );
   return (
     <div
       className={grouped ? "ui-setting-row ui-setting-row-grouped" : "ui-setting-row"}
       data-setting={setting}
     >
-      <div className="ui-setting-line">
-        <div className="ui-setting-name">
-          {modified && (
-            <span className="ui-setting-modified" role="img" aria-label="Set at this level" />
-          )}
-          {grouped ? (
-            <span className="ui-setting-label" id={labelledBy}>
-              {label}
+      {onPage ? (
+        // **The aligned form** (R50, R52): the label with its help under it, then the control,
+        // then the row's actions, each in its column.
+        <div className="ui-setting-line">
+          <div className="ui-setting-name">
+            <span className="ui-setting-title">
+              {mark}
+              {name}
+              {deprecated && <Badge variant="waiting">deprecated</Badge>}
+              {badge && <OriginBadge badge={badge} />}
             </span>
-          ) : (
-            <label
-              className="ui-setting-label"
-              id={labelledBy}
-              htmlFor={id}
-              onClick={(event) => {
-                // A control a `<label for>` cannot reach (a slider's root, which hands the
-                // focus to its thumb) is given the focus the press would have given it.
-                const control = document.getElementById(id);
-                if (control !== null && !LABELABLE.has(control.tagName)) {
-                  event.preventDefault();
-                  control.focus();
-                }
-              }}
-            >
-              {label}
-            </label>
-          )}
-          {help && quiet && <HintMark label={label} help={help} />}
-          {badge && <OriginBadge badge={badge} />}
+            {helpLine}
+          </div>
+          {controls}
+          <div className="ui-setting-act">
+            <RowMenu
+              label={label}
+              reset={reset}
+              moves={moves}
+              copyKey={copyKey}
+              onReset={() => document.getElementById(id)?.focus()}
+            />
+          </div>
         </div>
-        <div className="ui-setting-control">
-          {control({ id, labelledBy, describedBy, name: label })}
-          {reset && (
-            <Button
-              isDisabled={reset.disabled}
-              aria-label={reset.name}
-              onPress={() => {
-                reset.onReset();
-                // The button goes once the value is gone; the focus goes back to the control.
-                document.getElementById(id)?.focus();
-              }}
-              className="ui-setting-reset"
-            >
-              {reset.label}
-            </Button>
-          )}
-          {undo && (
-            <Button
-              onPress={() => {
-                undo();
-                // The button goes once it is pressed; the focus goes back to what it undid.
-                document.getElementById(id)?.focus();
-              }}
-              className="ui-setting-reset"
-            >
-              Undo
-            </Button>
-          )}
-          {place}
-        </div>
-      </div>
-      {help && (
-        // On a settings page never drawn (D3: one help line per group, not per field): the info
-        // mark's tooltip shows it, and it stays the control's description for a screen reader.
-        <p className={quiet ? "sr-only" : "ui-setting-help"} id={described}>
-          {help}
-        </p>
+      ) : (
+        <>
+          <div className="ui-setting-line">
+            <div className="ui-setting-name">
+              {mark}
+              {name}
+              {deprecated && <Badge variant="waiting">deprecated</Badge>}
+              {badge && <OriginBadge badge={badge} />}
+            </div>
+            {controls}
+          </div>
+          {helpLine}
+        </>
       )}
       {origin && (
         <p className="sr-only" id={from}>
@@ -459,18 +567,78 @@ export function SettingRow({
 }
 
 /**
- * **A row's hint** (DS-8, #1840; D3, D-1840-2): what the value does, behind an info mark beside
- * the label, in a tooltip — so a group draws one help line, its own, and no row draws another.
- * The mark takes the keyboard so the tooltip can be read without a pointer, and is named "About
- * <label>"; a screen reader also hears the hint as the control's own description.
+ * **A row's ⋯ menu** (#2919, R56–R59): one quiet icon button at the row's end, the same place on
+ * every row, whose menu holds the row's Reset (held out of reach while the value is not set at
+ * this level, R58), then its moves between files, then Copy key, with a rule between each part.
+ * The menu opens under its button, lined up with its end, and closes on a row chosen, Escape or
+ * a press outside it. A Reset puts the keyboard back on the control it reset; anything else
+ * leaves it on the button. A row with none of the three draws no button, and its column stays.
  */
-function HintMark({ label, help }: { label: string; help: ReactNode }) {
+function RowMenu({
+  label,
+  reset,
+  moves,
+  copyKey,
+  onReset,
+}: {
+  label: string;
+  reset?: Reset;
+  moves?: ReactNode;
+  copyKey?: string;
+  /** After a Reset, once the menu has closed. */
+  onReset: () => void;
+}) {
+  const resetting = useRef(false);
+  if (reset === undefined && !moves && copyKey === undefined) return null;
+  const parts = [
+    reset && (
+      <MenuItem
+        key="reset"
+        id="reset"
+        isDisabled={reset.disabled}
+        onAction={() => {
+          resetting.current = true;
+          reset.onReset();
+        }}
+      >
+        {reset.label}
+      </MenuItem>
+    ),
+    moves,
+    copyKey !== undefined && (
+      <MenuItem
+        key="copy"
+        id="copy"
+        textValue={`Copy key ${copyKey}`}
+        onAction={() => void navigator.clipboard?.writeText(copyKey)}
+      >
+        Copy key <code className="ui-setting-key">{copyKey}</code>
+      </MenuItem>
+    ),
+  ].filter(Boolean);
   return (
-    <Tooltip tip={help}>
-      <span className="ui-setting-hint" role="img" aria-label={`About ${label}`}>
-        <Info className="node-icon" aria-hidden />
-      </span>
-    </Tooltip>
+    <MenuTrigger
+      onClosed={
+        // Back on the control a Reset took the value of; the trigger keeps it otherwise.
+        () => {
+          if (!resetting.current) return;
+          resetting.current = false;
+          onReset();
+        }
+      }
+    >
+      <IconButton
+        variant="quiet"
+        aria-label={`More for ${label}`}
+        tooltip="Reset, move to another file"
+        icon={<Ellipsis aria-hidden="true" />}
+      />
+      <Menu aria-label={`More for ${label}`} align="end" className="ui-setting-menu">
+        {parts.flatMap((part, at) =>
+          at === 0 ? [part] : [<MenuSeparator key={`rule-${at}`} />, part],
+        )}
+      </Menu>
+    </MenuTrigger>
   );
 }
 
