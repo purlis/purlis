@@ -2803,6 +2803,8 @@ pub fn proposed_change(
             earlier_messages: None,
             secret: None,
             run: None,
+            expires: None,
+            blocks: None,
         };
     }
     let path = &one.path;
