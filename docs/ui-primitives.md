@@ -1238,8 +1238,8 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
   one before; from its last control Tab leaves the list, and from its first Shift+Tab leaves it
   the other way, never landing on a row. So Tab and Shift+Tab are one rule turned round. React
   Aria's collection moves a Tab out of the list from wherever it is in it (its one Tab stop), so
-  the family's row lets a Tab with a control of its own to go to by, and the browser moves there
-  (`movesWithinItsRow` in `rowKeys.ts`, heard in `List.tsx`'s `rowElement`), for a text box as
+  when the row has a control of its own to go to, the family's row keeps the Tab from the
+  collection, and the browser moves there (`movesWithinItsRow` in `rowKeys.ts`, heard in `List.tsx`'s `rowElement`), for a text box as
   for a button. Seen in `List › One Tab Stop Coming Back` and
   `List › Tab Walks A Rows Controls Then Leaves`.
   **Shift+Tab back into a list lands on the row the keyboard left, and → re-enters its controls**
@@ -1259,7 +1259,8 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
   the lines it draws (a line its words wrap on to as much as one after a line break, measured
   unseen in a copy of the box laid out as it is, #5993; a caret at a soft wrap, which the box may
   draw at the end of one line or the start of the next and never says which, is taken to be on
-  the line its key moves from, #6045), and go to the row above or below from its first or last
+  the line its key moves from, so it never leaves from a line between, at the cost of one more
+  press from a wrap drawn on the first or last line, #6045), and go to the row above or below from its first or last
   line or from a box of one line; Tab moves on to the row's next control while it
   has one, as from any control in a row (#6071, above); Esc gives the keyboard back to its row,
   keeping what was typed, and Esc on the row is the list's (`onEscape`). **While it composes**

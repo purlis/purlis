@@ -131,8 +131,10 @@ const WRAPPING = [
  * the start of the second as the box chooses (its affinity), which a box of lines never tells.
  * So the caret is taken to be on the line its key moves from: for ↑ the line the words after it
  * start on, for ↓ the line the words before it end on. Either way it has a line that way, and
- * the key moves the caret within the box, off the wrap; it leaves the row only from the first or
- * last line. Mid-line both are the caret's own line. It has a line above while that is below the
+ * the key moves the caret within the box, off the wrap, so it never leaves the row from a line
+ * between. The cost is one press: a caret at the wrap drawn on the first line (or the last) takes
+ * an ↑ (or a ↓) to move off the wrap before the next leaves. Mid-line both are the caret's own
+ * line. It has a line above while that is below the
  * first run's first line, and one below while the words after it go on to a line further down.
  */
 function wrapsBeyond(box: HTMLTextAreaElement, at: number, up: boolean): boolean {
@@ -175,14 +177,11 @@ function wrapsBeyond(box: HTMLTextAreaElement, at: number, up: boolean): boolean
       const rects = span.getClientRects();
       return rects[rects.length - 1]?.top;
     };
-    // At a soft wrap, the caret's line is the one the key moves away from.
-    const caret = up
-      ? after === ""
-        ? last(ahead)
-        : first(behind)
-      : before === ""
-        ? first(behind)
-        : last(ahead);
+    // At a soft wrap, the caret's line is the one the key moves away from: for ↑ the line the
+    // words after it start on, for ↓ the line the words before it end on.
+    const startOfWhatFollows = after === "" ? last(ahead) : first(behind);
+    const endOfWhatPrecedes = before === "" ? first(behind) : last(ahead);
+    const caret = up ? startOfWhatFollows : endOfWhatPrecedes;
     const edge = up ? first(ahead) : last(behind);
     if (caret === undefined || edge === undefined) return false;
     return up ? edge < caret - 1 : edge > caret + 1;
@@ -223,21 +222,34 @@ export function isEscapeInABox(event: KeyboardEvent<HTMLElement>): boolean {
 /** The keys a list moves between its rows with that a box moves its caret with, chorded or not. */
 const CARET = new Set(["Home", "End", "PageUp", "PageDown"]);
 
-/** The controls the keyboard reaches by Tab inside `row`, in their order. */
+/**
+ * The controls the keyboard reaches by Tab inside `row`, in their order: drawn (a control shown
+ * only on hover is not reached), and the row's own, never a control of a list inside it.
+ */
 function tabbable(row: HTMLElement): HTMLElement[] {
   return [
     ...row.querySelectorAll<HTMLElement>(
       'button, input, textarea, select, a[href], [tabindex], [contenteditable="true"]',
     ),
-  ].filter((one) => one.tabIndex >= 0 && !one.hasAttribute("disabled") && !one.inert);
+  ].filter(
+    (one) =>
+      one.tabIndex >= 0 &&
+      !one.hasAttribute("disabled") &&
+      !one.inert &&
+      // A document that lays nothing out (a unit test's) cannot tell, and draws them all.
+      (typeof one.checkVisibility !== "function" ||
+        one.checkVisibility({ visibilityProperty: true })) &&
+      rowOf(one) === row,
+  );
 }
 
 /**
  * **Whether Tab from a control in a row moves on within that row** (#6071, the WAI-ARIA APG
  * grid): Tab from a control in a row goes on to the row's next control, and Shift+Tab back to the
  * one before; from its last, or its first, and from the row itself, Tab and Shift+Tab leave the
- * list, as React Aria's collection makes them (its one Tab stop). So the row lets a Tab with a
- * control of its own to go to by (`List.tsx`'s `rowElement`), and the browser moves to it.
+ * list, as React Aria's collection makes them (its one Tab stop). So when the row has a control
+ * of its own to go to, the row keeps the Tab from the collection (`List.tsx`'s `rowElement`), and
+ * the browser moves to that control.
  */
 export function movesWithinItsRow(event: KeyboardEvent<HTMLElement>): boolean {
   if (event.key !== "Tab" || event.ctrlKey || event.metaKey || event.altKey) return false;

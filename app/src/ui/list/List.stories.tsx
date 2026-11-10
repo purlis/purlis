@@ -834,6 +834,15 @@ function keyOfTheInputMethod(box: Element, key: string, composing: boolean) {
 }
 
 /**
+ * **Tab on the engine's own keyboard** (Shift+Tab with `shift`), so the browser makes the move;
+ * on Storybook's page, which has no engine's keyboard, Testing Library's Tab.
+ */
+async function tabOnTheEngine(keys: ReturnType<typeof UserEvent.setup>, shift = false) {
+  if (!(await keysOnTheEnginesKeyboard(shift ? "{Shift>}{Tab}{/Shift}" : "{Tab}")))
+    await keys.tab({ shift });
+}
+
+/**
  * **One Tab leaves the list from `row` for the button after it, and Shift+Tab comes back to the
  * row**: the list is one Tab stop, whatever its rows hold (#6071), and a row whose controls are the
  * list's last is still where Shift+Tab lands, never its last control (#6033).
@@ -844,7 +853,7 @@ async function tabsOutAndBack(
   step: string,
 ) {
   const after = within(document.body).getByRole("button", { name: "After" });
-  await keys.tab();
+  await tabOnTheEngine(keys);
   await untilFocused(() => after, `${step}: one Tab leaves the list`);
   await keys.tab({ shift: true });
   await untilFocused(() => row, `${step}: Shift+Tab comes back to the row`);
@@ -890,7 +899,7 @@ export const ComposingInARowsBox: Story = {
     await tabsOutAndBack(host, userEvent, "Composing");
     await userEvent.keyboard("{ArrowRight}");
     await untilFocused(box, "Composing: the box holds the keyboard for the picture");
-    // End leaves the caret after its words, wherever → put it, as #6025's picture has it.
+    // → into a box may select its words; End puts the caret after them, the picture #6025 drew.
     await userEvent.keyboard("{End}");
     await untilFocused(box, "Composing: End keeps the keyboard in the box");
     expectFocusInSight();
@@ -1108,7 +1117,7 @@ export const OneTabStopComingBack: Story = {
     await untilFocused(() => beta, "One Tab stop: ↓ moves to the next row");
     // Tab from a row leaves the list at once, past the row's own controls (#6071).
     const after = canvas.getByRole("button", { name: "After" });
-    await userEvent.tab();
+    await tabOnTheEngine(userEvent);
     await untilFocused(() => after, "One Tab stop: one Tab leaves the list");
     await userEvent.tab({ shift: true });
     await untilFocused(() => beta, "One Tab stop: Shift+Tab comes back to the row it left");
@@ -1170,25 +1179,25 @@ export const TabWalksARowsControlsThenLeaves: Story = {
     await userEvent.tab();
     await userEvent.keyboard("{ArrowDown}{ArrowRight}");
     await untilFocused(open, "Walks a row: → reaches its first control");
-    await userEvent.tab();
+    await tabOnTheEngine(userEvent);
     await untilFocused(stop, "Walks a row: Tab goes on to its next control");
-    await userEvent.tab();
+    await tabOnTheEngine(userEvent);
     await untilFocused(
       () => canvas.getByRole("button", { name: "After" }),
       "Walks a row: Tab from its last control leaves the list",
     );
-    await userEvent.tab({ shift: true });
+    await tabOnTheEngine(userEvent, true);
     await untilFocused(() => beta, "Walks a row: Shift+Tab comes back to the row");
     await userEvent.keyboard("{ArrowRight}{ArrowRight}");
     await untilFocused(stop, "Walks a row: → reaches its last control");
-    await userEvent.tab({ shift: true });
+    await tabOnTheEngine(userEvent, true);
     await untilFocused(open, "Walks a row: Shift+Tab goes back to the control before");
-    await userEvent.tab({ shift: true });
+    await tabOnTheEngine(userEvent, true);
     await untilFocused(
       () => canvas.getByRole("button", { name: "Before" }),
       "Walks a row: Shift+Tab from its first control leaves the list the other way",
     );
-    await userEvent.tab();
+    await tabOnTheEngine(userEvent);
     await untilFocused(() => beta, "Walks a row: Tab comes back to the row");
     await userEvent.keyboard("{ArrowRight}{ArrowRight}");
     await untilFocused(stop, "Walks a row: its last control holds the keyboard for the picture");
@@ -1213,7 +1222,7 @@ export const ACaretAtASoftWrap: Story = {
       within(publish).getByRole("textbox", { name: "Reply" }) as HTMLTextAreaElement;
     const caret = () => box().selectionStart;
     const end = ONE_LONG_WORD.length;
-    await userEvent.tab();
+    await tabOnTheEngine(userEvent);
     await userEvent.keyboard("{ArrowDown}{ArrowRight}");
     await untilFocused(box, "At a soft wrap: → reaches the box from its row");
     box().setSelectionRange(0, 0);

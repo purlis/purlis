@@ -413,8 +413,10 @@ describe("a box of lines that wrap, in a row (#5993)", () => {
   /** One word too long for a line, broken in it where nothing hangs: "aaaaaaaaaa" and "bbbbbbbbb". */
   const ONE_WORD = "aaaaaaaaaabbbbbbbbb";
 
-  /** The caret at a soft wrap (#6045): drawn at the end of the first line or the start of the
-   *  second, as the box chooses, and the box says not which. */
+  /**
+   * The caret at a soft wrap (#6045): drawn at the end of the first line or the start of the
+   * second, as the box chooses, and the box never says which.
+   */
   async function wordAtTheWrap() {
     vi.spyOn(HTMLSpanElement.prototype, "getClientRects").mockImplementation(wrapped);
     render(<Asks />);
@@ -600,6 +602,27 @@ describe("Tab in a list (#6071)", () => {
     expect(button("Open beta")).toHaveFocus();
     await userEvent.tab({ shift: true });
     expect(button("Before")).toHaveFocus();
+  });
+
+  it("leaves the list with Tab from a row's control when its next control is not drawn", async () => {
+    // The test's document lays nothing out, nor says what is drawn: here a control is drawn
+    // while it is not `hidden`.
+    Object.defineProperty(HTMLElement.prototype, "checkVisibility", {
+      configurable: true,
+      value(this: HTMLElement) {
+        return !this.hidden;
+      },
+    });
+    try {
+      await onBeta();
+      button("Stop beta").hidden = true;
+      await userEvent.keyboard("{ArrowRight}");
+      expect(button("Open beta")).toHaveFocus();
+      await userEvent.tab();
+      expect(button("After")).toHaveFocus();
+    } finally {
+      delete (HTMLElement.prototype as Partial<HTMLElement>).checkVisibility;
+    }
   });
 
   it("comes back to the row the keyboard left with Shift+Tab, after a Tab out from its last control", async () => {
