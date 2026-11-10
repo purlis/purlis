@@ -1523,8 +1523,12 @@ impl session::Host for Relay {
                     .into(),
             });
         }
-        // A grade a terminal asks for runs in the window on this machine: no link carries it.
-        if matches!(command.power(), Power::AskGrade | Power::RunGrade) {
+        // A grade a terminal asks for runs in the window on this machine, and a terminal's skill
+        // change is audited in this machine's log (1.82): no link carries either.
+        if matches!(
+            command.power(),
+            Power::AskGrade | Power::RunGrade | Power::AuditSkillChange
+        ) {
             return Err(Refusal {
                 code: session::NOT_ALLOWED.into(),
                 why: format!(

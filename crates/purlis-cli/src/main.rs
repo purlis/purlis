@@ -61,6 +61,7 @@ mod session;
 mod shellguard;
 mod signing;
 mod skill;
+mod skillaudit;
 mod statusline;
 mod theme;
 mod themepreview;

@@ -1180,12 +1180,14 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, CliError> {
         && let Some(change) = set_change(root, &command)
     {
         let mut said = |line: purlis_core::repocmd::Say| crate::speak(line);
+        // An org's project audits the change through the session host (SK-11a, #6030).
+        let mut audit = crate::skillaudit::hook(root);
         let mut cx = verbs::Ctx {
             plane: root,
             built_in: built_in.as_deref(),
             by: By::Command,
             say: &mut said,
-            audit: None,
+            audit: Some(&mut audit),
         };
         // An export changes no skill, so it finishes and expires nothing either.
         if writes {
@@ -1213,12 +1215,14 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, CliError> {
         };
     }
     let mut said = |line: purlis_core::repocmd::Say| crate::speak(line);
+    // An org's project audits the change through the session host (SK-11a, #6030).
+    let mut audit = crate::skillaudit::hook(root);
     let mut cx = verbs::Ctx {
         plane: root,
         built_in: built_in.as_deref(),
         by: By::Command,
         say: &mut said,
-        audit: None,
+        audit: Some(&mut audit),
     };
     // A delete a crash or a quit cut short is finished or undone before any change (SK-35).
     // And the skills this machine kept deleted past their time are removed (SK-33), but before a

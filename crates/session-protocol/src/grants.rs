@@ -59,6 +59,7 @@
 //! | `inspect`, `inspector_input`, `attach_view` of kind `inspector`: the person's DevTools of a browser they drive (1.45) | yes | | | | | |
 //! | `ask_grade`, a grade of a skill asked for from a terminal, and the pushed `grade_step` of it (1.63) | | yes | | | | |
 //! | `answer_grade`, `grade_step`, and the pushed `grade_asked` and `stop_grade`: running a grade a terminal asked for (1.63) | yes | | | | | |
+//! | `audit_skill_change`, a skill change at a terminal on an org's project, which the host writes in the event log (1.82) | | yes | | | | |
 //! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
 //!
 //! **Why each row is what it is.**
@@ -262,6 +263,14 @@
 //!   ask, and the window runs it through the one check every press takes, the plan's consent
 //!   digest, with the same caps. Only `local-ui` runs it, on its own host: a relaying host refuses
 //!   all of it.
+//! - **A skill change at a terminal on an org's project is audited by the host, for the
+//!   terminal alone** (1.82, SK-11a, #6030; ADR 0100 as amended 2026-11-10). It is not `record`:
+//!   the terminal hands the host the change, never an entry, and the host composes one of three
+//!   kinds and says the terminal made it. Only `terminal` asks, whose credential a chat's sandbox
+//!   denies and whose socket refuses a peer inside a chat, so nothing a chat does writes such an
+//!   entry. The window audits its own changes through `record`, so it is not granted it; no
+//!   agent's scope makes a person's skill change; and no link carries it: the change is made on
+//!   this machine, and audited in its log.
 
 use crate::auth::Scope;
 
@@ -375,6 +384,10 @@ pub enum Power {
     /// `answer_grade` and `grade_step` (1.63, SK-61): the window running a grade a terminal asked
     /// for, and hearing `grade_asked` and `stop_grade`.
     RunGrade,
+    /// `audit_skill_change` (1.82, SK-11a): a skill change the person makes at their terminal on
+    /// an org's project, written in the event log by the host. The person's, at their terminal,
+    /// and no other scope's.
+    AuditSkillChange,
 }
 
 impl Scope {
@@ -385,7 +398,12 @@ impl Scope {
         match self {
             S::LocalUi => !matches!(
                 power,
-                P::TakeBack | P::Unpair | P::KeepProfile | P::SignInRedirect | P::AskGrade
+                P::TakeBack
+                    | P::Unpair
+                    | P::KeepProfile
+                    | P::SignInRedirect
+                    | P::AskGrade
+                    | P::AuditSkillChange
             ),
             S::Terminal => matches!(
                 power,
@@ -397,6 +415,7 @@ impl Scope {
                     | P::Start
                     | P::Subscribe
                     | P::AskGrade
+                    | P::AuditSkillChange
             ),
             // Only the window names itself: every other scope is refused it below, as none of
             // their rows lists it.

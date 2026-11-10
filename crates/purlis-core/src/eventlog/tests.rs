@@ -4219,3 +4219,34 @@ fn a_runs_start_says_the_tree_it_ran_as_its_log_row_does() {
 
 #[path = "tests/corrections.rs"]
 mod corrections;
+
+#[test]
+fn an_audited_skill_change_the_window_sends_is_written_and_no_other_kind_of_its_name_is() {
+    // SK-11 (#2774): the window audits an org's project's skill changes as `skill.install`,
+    // `skill.update` and `skill.remove`, beside the `trust.` kinds; SK-11a (#6030).
+    let dir = tempfile::tempdir().unwrap();
+    let plane = Path::new("/planes/one");
+    let mut host = recorder(dir.path());
+    let audited = |kind: &str| Entry::Audited {
+        plane: plane.to_path_buf(),
+        number: None,
+        kind: kind.to_owned(),
+        body: serde_json::json!({"skills": ["notify"]}),
+    };
+
+    for kind in ["skill.install", "skill.update", "skill.remove"] {
+        let written = host.apply(audited(kind)).expect(kind);
+        assert_eq!(written.len(), 1, "{kind}");
+        assert_eq!(written[0].kind, kind);
+    }
+    for kind in ["skill.loaded", "skill.", "hook.stop", "run.ended"] {
+        let refused = host.apply(audited(kind)).expect_err(kind);
+        assert_eq!(refused.kind(), std::io::ErrorKind::InvalidInput, "{kind}");
+    }
+    let kinds: Vec<String> = read(dir.path())
+        .unwrap()
+        .into_iter()
+        .map(|event| event.kind)
+        .collect();
+    assert_eq!(kinds, ["skill.install", "skill.update", "skill.remove"]);
+}

@@ -526,9 +526,16 @@ use crate::view::{Limits, Views};
 /// the built-in skills the host's purlis has none of, by name alone, each list at most
 /// [`MOST_ARMED_SKILLS`]. The window says them on the chat's tab, naming its runner, as it says a
 /// chat's on this machine. A host before 1.81 says none, and its chat is shown none.
+///
+/// 1.82 has a host audit a skill change made at the person's terminal on an org's project
+/// (SK-11a, #6030, ADR 0100 as amended 2026-11-10): [`Command::AuditSkillChange`], `terminal`'s
+/// alone, carries one install, update or removal ([`SkillChangeAudit`]), and the host writes it
+/// in the event log it holds, saying the terminal made it, answering only once it is durable. The
+/// terminal is given no write of its own: the host composes the entry, of three kinds alone. A
+/// host before 1.82 refuses it `unknown_command`, and the terminal changes nothing.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 81,
+    minor: 82,
 };
 
 /// The version that first notes a chat's strays ([`Command::NoteStrays`], #5806): none is
@@ -1380,6 +1387,43 @@ pub enum Command {
     /// more, and the window stops the grade on that: the floor under [`Pushed::StopGrade`], which
     /// a full queue can lose.
     GradeStep { question: u64, step: GradeStepTold },
+    /// **Audit a skill change the person makes at their terminal** (1.82, SK-11a, #6030): one
+    /// install, update or removal of skills installed from a source, in the project at
+    /// `project_path`, an org's project (`[skill_policy]` in its `charter.toml`). `terminal`'s
+    /// alone ([`crate::grants::Power::AuditSkillChange`]). The host writes it in the event log it
+    /// holds, as the terminal's, and answers [`Answer::Done`] once it is durable, before the
+    /// terminal changes anything; refused [`NOT_RECORDED`] in the binary's words where it is not
+    /// written, the folder is not there or the project has no controls.
+    AuditSkillChange {
+        project_path: String,
+        change: SkillChangeAudit,
+    },
+}
+
+/// **A skill change made at a terminal, as the host audits it** (1.82, SK-11a): metadata only
+/// (ADR 0075 §4). Who made it is not on the wire: the host says it, from the scope it admitted.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillChangeAudit {
+    pub act: SkillAct,
+    /// The level, as a sentence names it (`project`, `workspace ops`).
+    pub level: String,
+    /// The skills' names.
+    pub skills: Vec<String>,
+    /// The source as an audit names it: an `https://` URL without query or fragment,
+    /// `extension:<id>`, or `local:<label>`.
+    pub source: String,
+    /// The commit or revision installed or updated to, or, for a removal, the one it was pinned
+    /// to.
+    pub pin: String,
+}
+
+/// The three skill changes an org's project audits (1.82).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillAct {
+    Install,
+    Update,
+    Remove,
 }
 
 /// **What a client gives one send of code** (1.65, spec #4275): a pool's limits as they stand,
@@ -2990,6 +3034,7 @@ wire_words!(Command {
     AskGrade => "ask_grade",
     AnswerGrade => "answer_grade",
     GradeStep => "grade_step",
+    AuditSkillChange => "audit_skill_change",
 });
 
 impl Command {
@@ -3060,6 +3105,7 @@ impl Command {
             Command::LogEnd => Power::EventLog,
             Command::AskGrade { .. } => Power::AskGrade,
             Command::AnswerGrade { .. } | Command::GradeStep { .. } => Power::RunGrade,
+            Command::AuditSkillChange { .. } => Power::AuditSkillChange,
         }
     }
 }
@@ -3600,6 +3646,8 @@ impl Lane {
             | Command::UndoTurn { .. }
             // Waits on the window, which may be asked more meanwhile.
             | Command::AskGrade { .. }
+            // A durable write, which holds up nothing else.
+            | Command::AuditSkillChange { .. }
             // Never behind the start it cancels, which waits on the download.
             | Command::CancelEngineDownload { .. } => None,
             Command::Attach { chat: program }
@@ -4714,6 +4762,25 @@ impl Client {
         {
             Answer::GradeAnswered(answer) => Ok(answer),
             other => Err(CallError::Unexpected(other.word().to_owned())),
+        }
+    }
+
+    /// **Asks the host to audit a skill change made at this terminal** (1.82, SK-11a): answered
+    /// once the host has made it durable, or refused in its words.
+    pub async fn audit_skill_change(
+        &self,
+        project_path: &str,
+        change: SkillChangeAudit,
+    ) -> Result<(), CallError> {
+        match self
+            .call(Command::AuditSkillChange {
+                project_path: project_path.to_owned(),
+                change,
+            })
+            .await?
+        {
+            Answer::Done => Ok(()),
+            other => Err(unexpected(&other)),
         }
     }
 
