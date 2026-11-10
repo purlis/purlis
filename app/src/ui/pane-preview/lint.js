@@ -23,6 +23,3 @@ const panePreviewFamily = moved({
 export const rules = {
   "pane-preview-family": panePreviewFamily,
 };
-
-/** The files a rule is still off in, until their lanes move them. */
-export const off = {};

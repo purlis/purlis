@@ -236,8 +236,9 @@ describe("the first task", () => {
     await waitFor(() => expect(claude).toBeChecked());
     claude.focus();
 
-    // A quick press, down and up: Radix alone moved the focus and picked nothing (the defect
-    // Choice repairs); only a held key picked.
+    // A quick press, down and up, moves the focus and picks, as React Aria's radio group does
+    // (`useRadioGroup` picks the radio it moves to). Under Radix it moved the focus and picked
+    // nothing (the defect Choice repaired), and only a held key picked.
     await userEvent.keyboard("{ArrowDown}");
     await new Promise((done) => setTimeout(done, 80));
 

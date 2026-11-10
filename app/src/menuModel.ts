@@ -576,7 +576,7 @@ export function menuIsEmpty(what: MenuOn, offers: Catalogued): boolean {
  *
  * **Made only for a menu that is open.** The Ask, Curate and Move to rows are scans of the
  * catalogue, which a strip of fifty tabs must not pay per render: `Menus.tsx` calls this from
- * inside the menu's content, which Radix mounts only while the menu is up.
+ * inside the menu family's `menu`, which the family draws only while the menu is up.
  */
 export function menuOf(what: MenuOn, offers: Catalogued): MenuDrawn {
   const { above, below } = menuRows(what, offers);

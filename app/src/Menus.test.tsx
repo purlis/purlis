@@ -1019,11 +1019,12 @@ describe("the browser's own menu", () => {
  * `useNoBrowserMenu` mounted — which is the only thing charter has that could prevent it.
  *
  * What this stands guard over is the ordering `Menus.tsx` documents. React 19 attaches its
- * delegated listeners to the root container, BELOW `window`, so Radix's composed
- * `onContextMenu` runs before the window-level suppressor and opens the menu. A capturing
- * suppressor would reverse that: `composeEventHandlers` skips Radix's own handler once the
- * event is `defaultPrevented`, so every context menu in the app would stop opening —
- * silently, because nothing throws and the browser menu would still be gone.
+ * delegated listeners to the root container, BELOW `window`, so the menu family's
+ * `onContextMenu` (`ui/menu/ContextMenu.tsx`) runs before the window-level suppressor and opens
+ * the menu. A capturing suppressor would reverse that: the family's handler stands back from an
+ * event that is already `defaultPrevented` (which is how a menu inside another, or a program's
+ * own click, keeps it), so every context menu in the app would stop opening — silently,
+ * because nothing throws and the browser menu would still be gone.
  */
 describe("a real contextmenu event, with the suppressor live", () => {
   const PLANE = "/home/dev/plane";

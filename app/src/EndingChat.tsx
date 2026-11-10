@@ -27,19 +27,20 @@ const STOP = "stop";
  * the palette's `End chat 3 steward` asks exactly as the tab's `×` does. A confirmation on one
  * surface and not another is the second answer this app's catalogue exists to not have.
  *
- * **Radix's `AlertDialog` and not its `Dialog`**, which is not a style choice: an alert dialog
- * is `role="alertdialog"`, it is announced as an interruption rather than as a surface, and
- * the primitive requires a `Cancel` that the focus goes to. The four dialogs in
+ * **The dialog family's `AlertDialog` and not its `Dialog`** (`ui/dialog/Dialog.tsx`), which is
+ * not a style choice: an alert dialog is `role="alertdialog"`, it is announced as an interruption
+ * rather than as a surface, and it starts on its safe answer, Cancel (#2980), unless told
+ * another (`initialFocus`). The four dialogs in
  * `docs/ui-primitives.md` are questions the operator went looking for; this one arrives
  * *because of* something they did, which is the distinction the role exists for.
  *
- * The two house rules for a modal here are the four dialogs' (`docs/ui-primitives.md`), and
- * this primitive keeps both without being told:
+ * The two house rules for a modal here are every dialog's, and the family keeps both without
+ * being told:
  *
- * - **A click outside answers nothing.** The four `Dialog`s prevent `onInteractOutside` by
- *   hand; `AlertDialogContent` does not take the prop at all, because it refuses outside
- *   interaction itself.
- * - **Escape answers, with the non-destructive answer** — the primitive's own `Cancel`.
+ * - **A click outside answers nothing.** React Aria's modal overlay is not dismissable
+ *   (`isDismissable={false}`), for a dialog and an alert dialog alike.
+ * - **Escape answers, with the non-destructive answer**: the family's Esc calls `onClose`, which
+ *   is Cancel here (`onCancel`).
  *
  * And one that is this dialog's alone: **Cancel is first, and the focus starts on the answer the
  * operator ruled the default** (ADR 0064). Since Smart close there are three answers — Cancel,
@@ -48,20 +49,19 @@ const STOP = "stop";
  * charter cannot say (`firstAnswer`). Before Smart close, Cancel was always focused; a stray
  * Return on a chat charter knows nothing about still cancels.
  *
- * **Every answer carries `tabIndex={0}`.** Radix's `FocusScope`
- * intercepts Tab only at the EDGES of the scope: on the first tabbable it acts on Shift+Tab and
- * moves the focus to the last itself, on the last it acts on Tab and moves to the first, and in
- * between it does nothing and the engine decides. **The engine here is WebKit on both platforms
- * charter ships to, and WebKit leaves a `<button>` out of the tab sequence** unless "tab to all
- * controls" is on — **or the button's `tabindex` is written down**, which is the whole of the
- * fix and is the engine's own rule rather than a workaround
- * (`HTMLFormControlElement::isKeyboardFocusable`; `docs/ui-primitives.md` cites the change).
+ * **Tab reaches every answer, and wraps.** The dialog family moves Tab itself, from each stop to
+ * the next and from the last round to the first (`useTabbing`, `tabOrder.ts`), so where it goes
+ * is the dialog's and not the engine's. **The engine here is WebKit on both platforms charter
+ * ships to, and WebKit leaves a `<button>` out of the tab sequence** unless "tab to all controls"
+ * is on, **or the button's `tabindex` is written down**, which the button family does for every
+ * button (#190; `HTMLFormControlElement::isKeyboardFocusable`).
  *
  * Until charter-app#186 this dialog was whole for a narrower reason: it had two tabbables and
- * the confirm was the second, so Cancel WAS the first edge and the confirm the last, and
- * Shift+Tab from Cancel was Radix's own `focus()` call rather than the engine's tab sequence.
- * That was a property of the *number of buttons*, and the third one Smart close added is why it
- * had to stop being one. `App.test.tsx` and `SmartClose.test.tsx` pin the order and the focus.
+ * the confirm was the second, so Cancel was the first edge of the focus scope it was drawn in
+ * then and the confirm the last, and Shift+Tab from Cancel was that scope's own `focus()` call
+ * rather than the engine's tab sequence. That was a property of the *number of buttons*, and the
+ * third one Smart close added is why it had to stop being one. `App.test.tsx` and
+ * `SmartClose.test.tsx` pin the order and the focus.
  *
  * **What the above is NOT is the reason a scenario cannot press these buttons**, and an earlier
  * version of this comment said it was. Measured in charter-app#176 with a keydown trace in the

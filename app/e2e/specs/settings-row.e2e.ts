@@ -78,7 +78,8 @@ describe("a settings row, in the real WebView", () => {
     const { label, select, selectTag, reset } = await measured();
     if (!label || !select || !reset) throw new Error("the row was not drawn whole");
 
-    // The window's one select, Radix's (#1860): a button that says what it holds.
+    // The window's one select, the select family's on React Aria's `Select` (#1860, #2906): a
+    // button that says what it holds.
     expect(selectTag).toBe("BUTTON");
     // One height: the control height, give or take a pixel of rounding.
     expect(Math.abs(select.height - reset.height)).toBeLessThanOrEqual(1);

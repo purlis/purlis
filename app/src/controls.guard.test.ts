@@ -19,7 +19,6 @@ import {
   tagStyleKeys,
   windowFiles,
   withoutComments,
-  RADIX_FROM,
 } from "./guards.testkit";
 
 /**
@@ -33,15 +32,15 @@ import {
  *
  * | Drawn as                                                         | Wears                     |
  * | ---------------------------------------------------------------- | ------------------------- |
- * | `<button>`, or a Radix trigger or close without `asChild`        | nothing: a button is the button family's `Button` (#2904), a segment the choice family's, a menu's row the menu family's, a list's or a tree's row the list or tree family's (#2930) |
+ * | `<button>`                                                       | nothing: a button is the button family's `Button` (#2904), a segment the choice family's, a menu's row the menu family's, a list's or a tree's row the list or tree family's (#2930) |
  * | `<input>`, `<textarea>`                                          | nothing: a box is the field family's `TextField` or `TextArea` (#2905), a checkbox or a radio the choice family's (#2907) |
- * | `<select>`, Radix Select's `Trigger`                             | nothing: the select family's `Select` (#2906) |
+ * | `<select>`                                                       | nothing: the select family's `Select` (#2906) |
  * | `<table>`                                                        | nothing: the table family's `Table` or `ControlTable` (#2911) |
- * | a Radix menu's or Select's `Content`, `SubContent`, `Item`, `SubTrigger`, checkbox or radio item | nothing: the menu and popover families' (#2909) |
  *
- * A Radix part is found by the name its file imports the package under (`import * as Menu from
- * "@radix-ui/react-dropdown-menu"`), so an alias is no way round. A hidden input draws nothing
- * and needs no class.
+ * A menu and its rows are the menu and popover families' (#2909), drawn by React Aria inside
+ * `ui/`, which this guard does not read; no window file can draw one otherwise, since nothing
+ * imports a primitives library outside `ui/` (`eslint.config.js`) and Radix is gone
+ * (`radixGone.guard.test.ts`, #6029). A hidden input draws nothing and needs no class.
  *
  * **Today's offenders are allowed, one per line, and the list can only shrink**
  * (`controls.guard.allowance.ts`), the same ratchet as the geometry guard: an entry names the
@@ -66,33 +65,10 @@ const WEARS: Record<string, string[]> = {
   select: [],
   // A table is the table family's (#2911).
   table: [],
-  // A menu and its rows are the menu and popover families' (#2909).
-  menu: [],
-  "menu-item": [],
 };
 
-/** Radix packages whose parts are controls, and what each part is. */
-const RADIX_MENUS = new Set(["dropdown-menu", "context-menu", "menubar"]);
-const MENU_CONTENT = new Set(["Content", "SubContent"]);
-const MENU_ITEM = new Set(["Item", "SubTrigger", "CheckboxItem", "RadioItem"]);
-const BUTTON_PARTS = new Set(["Trigger", "Close", "Cancel", "Action"]);
-
-/** Each Radix namespace a file imports, by the name it uses: `{ Menu: "dropdown-menu" }`. */
-function radixNames(text: string): Map<string, string> {
-  return new Map(
-    [
-      ...text.matchAll(
-        new RegExp(
-          String.raw`import\s+\*\s+as\s+(\w+)\s+from\s+["']${RADIX_FROM}([\w-]+)["']`,
-          "g",
-        ),
-      ),
-    ].map(([, name, pkg]) => [name, pkg]),
-  );
-}
-
 /** What kind of control a tag draws, by `WEARS`' keys, or `undefined` when it is none. */
-function kindOf(name: string, tag: string, radix: ReadonlyMap<string, string>): string | undefined {
+function kindOf(name: string, tag: string): string | undefined {
   if (name === "input") {
     const type = /\stype=(?:"([^"]*)"|'([^']*)'|(\{))/.exec(tag);
     if (!type) return "input";
@@ -103,25 +79,15 @@ function kindOf(name: string, tag: string, radix: ReadonlyMap<string, string>): 
     return "input";
   }
   if (["button", "textarea", "select", "table"].includes(name)) return name;
-  const [space, part] = name.split(".");
-  const pkg = part ? radix.get(space) : undefined;
-  if (!pkg) return undefined;
-  if (RADIX_MENUS.has(pkg) || pkg === "select") {
-    if (MENU_CONTENT.has(part)) return "menu";
-    if (MENU_ITEM.has(part)) return "menu-item";
-  }
-  if (pkg === "select" && part === "Trigger") return "select";
-  if (BUTTON_PARTS.has(part) && !/\sasChild\b/.test(tag)) return "button";
   return undefined;
 }
 
 /** Each control a component draws without its class, as its allowance entry: the tag's name,
  *  an input's type, and its `className` as written. */
 export function unclassedControls(source: string): string[] {
-  const radix = radixNames(withoutComments(source, "ts"));
-  return openingTags(source, /^(?:button|input|textarea|select|table|\w+\.\w+)$/).flatMap(
+  return openingTags(source, /^(?:button|input|textarea|select|table)$/).flatMap(
     ({ name, text }) => {
-      const kind = kindOf(name, text, radix);
+      const kind = kindOf(name, text);
       if (!kind) return [];
       const className = classNameOf(text);
       const words = classWords(className);
@@ -288,7 +254,7 @@ export function offTheList(
 }
 
 describe("the control guard (#1837)", () => {
-  it("finds every button, field, select, table and menu in the window wearing its class, or allowed", () => {
+  it("finds every button, field, select and table in the window wearing its class, or allowed", () => {
     expect(offTheList(unclassedByFile(), CONTROLS_ALLOWANCE)).toEqual([]);
   });
 
@@ -311,9 +277,6 @@ describe("the control guard (#1837)", () => {
 
   it("reads each kind of control, and passes it in its class", () => {
     const tsx = `
-      import * as Menu from "@radix-ui/react-dropdown-menu";
-      import * as Pick from "@radix-ui/react-select";
-      import * as Pop from "@radix-ui/react-popover";
       <button className="tab-close" onClick={() => a > b}>×</button>
       <button className={cn("go", on && "go-on")} />
       <input value={v} />
@@ -325,12 +288,6 @@ describe("the control guard (#1837)", () => {
       <select className="wide" />
       <table className="vault-secrets">
       <table className="ui-table ui-table-fixed">
-      <Menu.Content className="more-menu" />
-      <Menu.Item onSelect={go} />
-      <Pick.Trigger className="field" />
-      <Pop.Trigger asChild><span /></Pop.Trigger>
-      <Pop.Trigger>Open</Pop.Trigger>
-      <Pop.Content className="row-card" />
     `;
     expect(unclassedControls(tsx)).toEqual([
       '<button className="tab-close">',
@@ -343,10 +300,6 @@ describe("the control guard (#1837)", () => {
       '<select className="wide">',
       '<table className="vault-secrets">',
       '<table className="ui-table ui-table-fixed">',
-      '<Menu.Content className="more-menu">',
-      "<Menu.Item>",
-      '<Pick.Trigger className="field">',
-      "<Pop.Trigger>",
     ]);
   });
 
@@ -422,7 +375,7 @@ describe("the control guard (#1837)", () => {
  */
 
 /** The kinds of control whose classes are held to the control height. */
-const HELD_KINDS = new Set(["button", "input", "input:dynamic", "textarea", "select", "menu-item"]);
+const HELD_KINDS = new Set(["button", "input", "input:dynamic", "textarea", "select"]);
 
 /** The button family's members (`ui/button/Button.tsx`, #2904): a class one is given places a
  *  control, so a view's height on it is a control's. */
@@ -442,15 +395,14 @@ function withoutIcon(tag: string): string {
 
 /** Each class a component gives a control it draws (`HELD_KINDS`), rows aside. */
 export function controlClasses(source: string): string[] {
-  const radix = radixNames(withoutComments(source, "ts"));
   return openingTags(
     source,
-    /^(?:button|input|textarea|select|Button|IconButton|ToggleButton|\w+\.\w+)$/,
+    /^(?:button|input|textarea|select|Button|IconButton|ToggleButton)$/,
   ).flatMap((tag) => {
     const { name } = tag;
     // A family member's `icon` is an element of its own, whose class is the icon's.
     const text = BUTTON_FAMILY.test(name) ? withoutIcon(tag.text) : tag.text;
-    const kind = BUTTON_FAMILY.test(name) ? "button" : kindOf(name, text, radix);
+    const kind = BUTTON_FAMILY.test(name) ? "button" : kindOf(name, text);
     if (!kind || !HELD_KINDS.has(kind)) return [];
     const className = classNameOf(text) ?? "";
     const strings = /\sclassName=\{/.test(text)
@@ -737,10 +689,9 @@ const HEIGHT_KEY = /^(?:height|minHeight|blockSize|minBlockSize)$/;
  *  variable, a member of a local object, a branch of a ternary, a local function's return, an
  *  import). The tokens are the primitives' classes; a component writes none of its own. */
 export function componentHeights(source: string, from: StyleSource = {}): string[] {
-  const radix = radixNames(withoutComments(source, "ts"));
-  return openingTags(source, /^(?:button|input|textarea|select|\w+\.\w+)$/).flatMap((tag) => {
+  return openingTags(source, /^(?:button|input|textarea|select)$/).flatMap((tag) => {
     const { name, text } = tag;
-    const kind = kindOf(name, text, radix);
+    const kind = kindOf(name, text);
     if (!kind || !HELD_KINDS.has(kind)) return [];
     const found: string[] = [];
     for (const word of classWords(classNameOf(text))) {

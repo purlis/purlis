@@ -23,6 +23,3 @@ const codeFamily = moved({
 export const rules = {
   "code-family": codeFamily,
 };
-
-/** The files a rule is still off in, until their lanes move them. */
-export const off = {};

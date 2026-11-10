@@ -202,14 +202,8 @@ const FILES = Object.entries(
   >,
 ).filter(([path]) => !path.includes(".test.") && !path.includes(".stories."));
 
-/** The Radix overlay parts, which the popover, tooltip and dialog families replaced (#2908,
- *  #2909, #2910): none is left, and the classes they wore are retired (#3365). */
-const PARTS: RegExp[] = [
-  /^(Popover|HoverCard|Tooltip)\.(Content|Arrow)$/,
-  /^(Dialog|AlertDialog)\.\w+$/,
-];
-
-/** The popover and menu families' overlays (#2909), which draw their own surface. */
+/** The popover and menu families' overlays (#2909), which draw their own surface. The tooltip
+ *  and dialog families draw theirs too (#2908, #2910), and are held by their own tests. */
 const FAMILY = /^(AnchoredPopover|HeldPopover|PopoverDialog|Menu|InlineMenu)$/;
 
 /** A native control inside an overlay, and the class it must wear. A button of the button family
@@ -252,9 +246,8 @@ function classesOf(attributes: ts.JsxAttributes, source: ts.SourceFile): string[
   return said.length === 0 ? [[]] : said;
 }
 
-/** Each Radix overlay part and each native control inside an overlay's content, by file. */
-function overlaysIn(): { parts: Found[]; controls: Found[]; families: Found[] } {
-  const parts: Found[] = [];
+/** Each family overlay and each native control inside one, by file. */
+function overlaysIn(): { controls: Found[]; families: Found[] } {
   const controls: Found[] = [];
   const families: Found[] = [];
   for (const [path, text] of FILES) {
@@ -268,8 +261,6 @@ function overlaysIn(): { parts: Found[]; controls: Found[]; families: Found[] } 
         const tag = open.tagName.getText(source);
         const where = `${path.replace(/^\.\.\//, "")}:${source.getLineAndCharacterOfPosition(open.getStart(source)).line + 1}`;
         const classes = classesOf(open.attributes, source);
-        if (PARTS.some((part) => part.test(tag))) parts.push({ where, tag, classes });
-        if (/\.Content$/.test(tag) && PARTS.some((part) => part.test(tag))) within = true;
         if (FAMILY.test(tag)) {
           families.push({ where, tag, classes });
           within = true;
@@ -281,24 +272,16 @@ function overlaysIn(): { parts: Found[]; controls: Found[]; families: Found[] } 
     };
     visit(source, false);
   }
-  return { parts, controls, families };
+  return { controls, families };
 }
 
 describe("every overlay in the window", () => {
-  const { parts, controls, families } = overlaysIn();
+  const { controls, families } = overlaysIn();
 
   it("is found: the cards, the lists and the controls inside them", () => {
-    // The dialogs are the dialog family's, whose answers it draws itself (`ui/dialog/Dialog.tsx`),
-    // and are held by its own tests: no Radix dialog is left.
-    expect(parts.filter(({ tag }) => /^(Dialog|AlertDialog)\./.test(tag))).toEqual([]);
     // The cards are the popover family's: a chat row's and a list row's; and the title bar's two
     // switchers (#2916). A refused tab name's went with the box on the strip (#5343).
     expect(families.filter(({ tag }) => /Popover/.test(tag)).length).toBe(4);
-    expect(parts.filter(({ tag }) => tag === "Popover.Content").length).toBe(0);
-  });
-
-  it("has no Radix overlay part left: each is its family's (#3365)", () => {
-    expect(parts.map(({ where, tag }) => `${where} ${tag}`)).toEqual([]);
   });
 
   it("draws every button and field inside one with the shared control", () => {
@@ -380,7 +363,7 @@ describe("App.css", () => {
 });
 
 /**
- * **The classes the families retired** (#3365): the old Radix-era overlay and menu classes, and
+ * **The classes the families retired** (#3365): the old overlay and menu classes, and
  * the button's and the field's old classes, are worn by nothing (each family's lint refuses
  * them), so nothing draws them and no story wears them. A menu is the menu family, a popover the
  * popover family, a box the field family and a button the button family.

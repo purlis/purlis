@@ -134,9 +134,10 @@ export function keptOf(
 }
 
 /**
- * What is drawn over the whole window, wherever it was opened from: a dialog, an alert dialog,
- * a menu and a select's list, each by the role Radix gives it. A tooltip is not one: it asks
- * nothing. `projectShown.guard.test.ts` holds this to every kind of overlay the window uses.
+ * What is drawn over the whole window, wherever it was opened from: a dialog, an alert dialog, a
+ * menu and a select's list, each by the role its family gives it on React Aria. A tooltip is not
+ * one: it asks nothing. `projectShown.guard.test.ts` holds this to every kind of overlay the window
+ * uses.
  */
 const OVER_THE_WINDOW = [
   ...["dialog", "alertdialog", "menu", "listbox"].map((role) => `[role="${role}"]`),

@@ -683,7 +683,7 @@ describe("the explorer is drawn as a tree", () => {
  * The usual way to stop a tree's vertical line at its last row is a rectangle in the background
  * colour laid over the line's tail. That works exactly as long as the tree is on that
  * background — and the explorer can be moved to a slot on another surface, where the mask would
- * be a visible block. The shared tree row (`primitives/collections.css`, #1672, DS-12) draws
+ * be a visible block. The tree family's row (`ui/tree/tree.css`, #1672, DS-12, #3198) draws
  * straight guides that need no mask: a background of the guide's colour and transparent, one
  * column per level above the row. This holds the rule a well-meaning simplification would break.
  */

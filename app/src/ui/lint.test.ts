@@ -5,14 +5,16 @@
 /**
  * **Every family's lint is found, and on** (`eslint.ui-rules.js`, #3387): each family's rules are
  * in its own folder (`src/ui/<family>/lint.js`), tested beside it (`lint.test.ts`), and the
- * window's lint (`eslint.config.js`) turns each on as an error on a screen, and off only in the
- * files the family says it is still off in.
+ * window's lint (`eslint.config.js`) turns each on as an error in every file. A family once said
+ * which files its rule was still off in while its lane moved them (`off`); every family has moved
+ * (#2930), so a family's lint names none (#6029).
  */
 import { ESLint } from "eslint";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
-import { LINTED_FAMILIES, purlisUi, stillOff } from "../../eslint.ui-rules.js";
+import { LINTED_FAMILIES, purlisUi } from "../../eslint.ui-rules.js";
 
 const UI = join(process.cwd(), "src", "ui");
 const eslint = new ESLint({ cwd: process.cwd() });
@@ -33,12 +35,12 @@ describe("the families' lint", () => {
     }
   });
 
-  it("turns a family's rule off in each file the family names", async () => {
-    for (const { files, rules } of stillOff)
-      for (const file of [files ?? []].flat(2) as string[]) {
-        const config = await eslint.calculateConfigForFile(file);
-        for (const name of Object.keys(rules ?? {}))
-          expect([0, "off"], `${name} in ${file}`).toContain([config.rules?.[name]].flat()[0]);
-      }
+  it("turns no family's rule off in any file: a family's lint exports no `off` (#6029)", async () => {
+    for (const family of LINTED_FAMILIES) {
+      const lint: Record<string, unknown> = await import(
+        /* @vite-ignore */ pathToFileURL(join(UI, family, "lint.js")).href
+      );
+      expect(Object.keys(lint), family).not.toContain("off");
+    }
   });
 });

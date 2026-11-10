@@ -27,10 +27,10 @@ export type VaultHolds = { provider: string; secrets: readonly string[] };
  * only (`vaults.rs`), and a name is the one thing the operator needs to recognise what is about
  * to go.
  *
- * Radix's `AlertDialog`, for `DeleteWorkspace`'s reason: it is the primitive for a question whose
- * answer destroys something, its content is `role="alertdialog"`, and Escape is Cancel. The
- * keyboard lands in the name box, because typing is the answer this dialog asks for, and a stray
- * Return there deletes nothing until the name is right.
+ * The dialog family's `AlertDialog`, for `DeleteWorkspace`'s reason: it is the member for a
+ * question whose answer destroys something, its content is `role="alertdialog"`, and Escape is
+ * Cancel. The keyboard lands in the name box, because typing is the answer this dialog asks for,
+ * and a stray Return there deletes nothing until the name is right.
  *
  * **It is a question, so it ends in the answer bar** (D-1210-8). Its one field is the typed name
  * of what it ends: that confirms an answer, it makes or changes nothing, so the dialog ends as

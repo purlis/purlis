@@ -359,10 +359,11 @@ function useHintThatComes(has: boolean, focusOpens: boolean, target: RefObject<E
  * (`aria-hidden`), one inside a control (a row's mark, a tab's), a label and a mark whose hint
  * is its own name take none: the control takes the keyboard, and what the mark means is said.
  *
- * **What a parent hands the tooltip reaches the element** (`handed`, `ref`): a Radix trigger
- * drawn `asChild` around a tooltip (a context menu's, a popover's) hands its handlers and its
- * ref to its child, which is this, and they are the element's, as they were before the hint was
- * a tooltip.
+ * **What a parent hands the tooltip reaches the element** (`handed`, `ref`): a parent that clones
+ * its child with its own props (React Aria's `Pressable` making a menu's or a popover's trigger of
+ * it, `ui/trigger.tsx`, its press handlers and its ref; the family's `ContextMenu`, its
+ * `onContextMenu` and `onKeyDown`) hands them to this, and they are the element's, as they would be
+ * if it had no hint.
  *
  * **A disabled `<button>` with a hint keeps the focus** and does nothing (`ui/unavailable.ts`),
  * what its parents handed it included; its reason is its description for good.
@@ -413,7 +414,7 @@ function Target({
     children.type === "label" ||
     String(props["aria-hidden"]) === "true";
   // Only words are made a Tab stop: a control takes the keyboard already, and a component (a
-  // Radix radio, a menu's row) keeps the place in the Tab order its own focus gives it.
+  // choice family's radio, a menu's row) keeps the place in the Tab order its own focus gives it.
   const words =
     typeof children.type === "string"
       ? !NATIVELY_FOCUSED.has(children.type)
@@ -452,10 +453,9 @@ function Target({
 }
 
 /**
- * What a parent hands the element, merged as a Radix `Slot` merges it, which is how the element
- * was handed it before it had a tooltip: its own handler for an event runs first and the
- * parent's after it (a strip's tab keeps the focus it is dragged with before the roving focus
- * moves it), and its own value of anything else wins; class names and styles join.
+ * What a parent hands the element, merged as a slot merges it: its own handler for an event runs
+ * first and the parent's after it (a strip's tab keeps the focus it is dragged with before the
+ * roving focus moves it), and its own value of anything else wins; class names and styles join.
  */
 function asSlot(handed: Record<string, unknown>, own: Record<string, unknown>) {
   const merged: Record<string, unknown> = { ...handed, ...own };
@@ -506,7 +506,7 @@ const showsWords = (children: unknown): boolean =>
  * **A hint on any element but a family button** (which takes `tooltip`): `tip` shown beside
  * `children`, which must be one element that hands its props and its ref to the DOM. Any other
  * prop, and a ref, go on to that element, so a tooltip can stand where its element stood as a
- * Radix trigger's child.
+ * trigger's child (`ui/trigger.tsx`, `ui/menu/ContextMenu.tsx`).
  *
  * **An icon-only `<button>` is its name first** (its `aria-label`), as an `IconButton` is, with
  * the hint as a second line under it, so what the tooltip shows and what a screen reader hears

@@ -38,10 +38,10 @@ import { Badge } from "../ui/badge/Badge";
  * `docs/ui-primitives.md` forbids a house component library and allows exactly this set, for the
  * reasons written there: charter had two hand-built form styles that had already drifted
  * (`settings-*` and the dialogs' `choices`), and one small set is how a new setting stays a few
- * lines. Each piece is a thin layer over a native element or a Radix primitive already in the
- * window — the choice families (`ui/choice`, #2907), the field family, roving focus — and **says
- * which at its call site**: the props are the primitive's words (`value`, `onValueChange`,
- * `checked`), not new ones.
+ * lines. Each piece is a thin layer over a native element or a family already in the window — the
+ * choice families (`ui/choice`, #2907), the field family, the select family — and **says which at
+ * its call site**: the props are the primitive's words (`value`, `onValueChange`, `checked`), not
+ * new ones.
  *
  * Drawn in `App.css` under `ui-*` classes, every colour a design-system token. The old
  * hand-built `settings-*`, `asks`, `choices`, `choice`, `who` and `picking` classes were deleted

@@ -25,7 +25,8 @@ import { tipOf } from "./ui/tooltip/tooltip.testkit";
  * **A right-click on a terminal offers the terminal's own rows** (the operator, 2026-10-13: "in
  * terminal we don't have right click -> copy/paste").
  *
- * The real xterm and the real Radix menu, with the IPC mocked: what is asserted is the menu a
+ * The real xterm and the real menu family's context menu (`ui/menu/ContextMenu.tsx`, on React
+ * Aria's menu), with the IPC mocked: what is asserted is the menu a
  * `contextmenu` event opens, what a row puts on a clipboard that records it, and every byte
  * the core is asked to write to the session's pty — which, for every row here, is none.
  */

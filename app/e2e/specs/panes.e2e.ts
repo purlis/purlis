@@ -407,10 +407,11 @@ describe("the window", function () {
     expect(squeezed).toEqual([]);
 
     await more.click();
-    // **Waited for, not read once.** The menu is a Radix portal: it is mounted on the open,
-    // in a later frame than the click, so a `$$` taken straight after the click finds an
-    // empty document and reports it as "the menu listed nothing". Measured on this spec's
-    // first CI run, which is how this comment came to exist.
+    // **Waited for, not read once.** The menu is the menu family's React Aria popover, drawn
+    // in a portal only once it is open: it is mounted by a render after the click, so a `$$`
+    // taken straight after the click finds an empty document and reports it as "the menu
+    // listed nothing". Measured on this spec's first CI run, when the menu was a Radix portal
+    // that mounted the same way, which is how this comment came to exist.
     const rowsNow = async () => [...(await $$('[role="menuitem"]').getElements())];
     let found = 0;
     try {

@@ -27,9 +27,9 @@ import { Tooltip } from "./ui/tooltip/Tooltip";
  * changes re-ask and which are only reported is `machine::Consent`'s decision and is taken
  * before this is drawn: a dialog that is up is a dialog that has to be answered.
  *
- * A Radix dialog (`docs/ui-primitives.md`). "Has to be answered" was a claim about how it was
- * drawn; with the primitive it is a property of the surface — the window behind it is inert,
- * and the keyboard cannot reach past it to open the project some other way.
+ * The dialog family's `Dialog` (`ui/dialog/Dialog.tsx`). "Has to be answered" was a claim about how
+ * it was drawn; on React Aria's modal it is a property of the surface — the window behind it is
+ * inert, and the keyboard cannot reach past it to open the project some other way.
  *
  * **Escape answers it now, and did not before.** A modal with no way out on the keyboard is
  * the one thing a modal must not be, and the answer Escape gives is the same as Cancel's:
