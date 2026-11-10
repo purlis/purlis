@@ -267,7 +267,16 @@ fn a_command_run_inside_a_chat_audits_nothing_and_installs_nothing() {
             &[(mark, "1")],
         );
 
+        // Refused before any change is built: a chat leaves drafts, and never reaches the audit.
+        // The audit's own refusal inside a chat is `skillaudit`'s unit test; that a chat can
+        // never be admitted as `terminal` is the session protocol's
+        // (`a_client_started_inside_a_chat_is_refused_every_human_scope`).
         assert!(!refused.status.success(), "{mark}: {}", text(&refused));
+        assert!(
+            text(&refused).contains("A chat does not change skills itself"),
+            "{mark}: {}",
+            text(&refused)
+        );
         assert!(!place.root().join("skills/notify").exists(), "{mark}");
     }
     assert!(place.audited().is_empty(), "{:?}", place.audited());

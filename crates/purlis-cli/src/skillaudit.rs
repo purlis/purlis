@@ -30,7 +30,17 @@ pub(crate) fn hook(root: &Path) -> impl FnMut(&Audited) -> Result<(), String> + 
 
 /// Asks the session host to audit `audited`, and waits until it is durable.
 fn audit(root: &Path, audited: &Audited) -> Result<(), String> {
-    if crate::gradelink::in_a_chat(&purlis_core::envvar::var) {
+    audit_in(&purlis_core::envvar::var, root, audited)
+}
+
+/// [`audit`], with the environment read through `env`: refused inside a chat before the host is
+/// looked for.
+fn audit_in(
+    env: &dyn Fn(&str) -> Option<String>,
+    root: &Path,
+    audited: &Audited,
+) -> Result<(), String> {
+    if crate::gradelink::in_a_chat(env) {
         return Err(IN_A_CHAT.to_owned());
     }
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -47,8 +57,15 @@ async fn asking(_root: &Path, _audited: &Audited) -> Result<(), String> {
 
 #[cfg(unix)]
 async fn asking(root: &Path, audited: &Audited) -> Result<(), String> {
+    use crate::gradelink::NotLinked;
     use purlis_session_protocol::session::{Client, UNKNOWN_COMMAND};
-    let link = crate::gradelink::linked_as_terminal(NO_HOST).await?;
+    // Said inside the core's sentence, which names what was not done: lowercase, no stop.
+    let link = crate::gradelink::linked_as_terminal()
+        .await
+        .map_err(|not| match not {
+            NotLinked::NoHost => NO_HOST.to_owned(),
+            NotLinked::Refused(why) => format!("the session host refused this terminal ({why})"),
+        })?;
     let (client, _views, _events) = Client::new(link);
     let path = root.display().to_string();
     client
@@ -67,5 +84,8 @@ async fn asking(root: &Path, audited: &Audited) -> Result<(), String> {
 
 /// What a terminal is told with no session host to ask.
 #[cfg(unix)]
-const NO_HOST: &str = "No purlis session host is running to write the audit. Open purlis, or \
-     start a host with `purlis serve`, then run this again";
+const NO_HOST: &str = "no purlis session host is running to write it: open purlis, or start \
+     a host with `purlis serve`, then run this again";
+
+#[cfg(test)]
+mod tests;

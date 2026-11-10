@@ -828,7 +828,7 @@ fn an_org_project_refuses_an_unlisted_source_a_young_commit_and_an_install_no_ho
     assert_eq!(unaudited.status.code(), Some(1), "{}", text(&unaudited));
     assert!(
         // No session host runs here to audit it (SK-11a, #6030).
-        text(&unaudited).contains("No purlis session host is running")
+        text(&unaudited).contains("no purlis session host is running to write it")
             && text(&unaudited).contains("purlis serve"),
         "{}",
         text(&unaudited)

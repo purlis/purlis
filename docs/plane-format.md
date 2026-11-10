@@ -1730,10 +1730,12 @@ of that name at that level replaces it.
   installs and updates are held to it at the review (so the review says why), and again at the
   install or update itself; and every install, update and removal of a skill installed from a
   source is recorded in this machine's event log as `skill.install`, `skill.update` or
-  `skill.remove` (level, skills, source, commit; never a folder of this machine or a URL's
-  query) before it is made. Only the window writes that log, so on such a project
-  `purlis skill install | update | rm` of an installed skill is refused and names the Skill
-  studio.
+  `skill.remove` (who made it, as `actor_kind`, `actor` and the `scope` it was made on,
+  `local-ui` or `terminal`; then level, skills, source, commit; never a folder of this machine
+  or a URL's query) before it is made. The window writes it through the session host's log;
+  `purlis skill install | update | rm` at the person's terminal asks the session host to write
+  it (session protocol 1.82, `audit_skill_change`, ADR 0100 as amended 2026-11-10), and with no
+  host running it changes nothing and says to open purlis or start `purlis serve`.
 - **Git:** as `charter.toml`.
 
 | Key | Type | Required / default | Meaning | Status | Source |

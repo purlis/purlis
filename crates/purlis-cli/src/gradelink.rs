@@ -109,36 +109,38 @@ async fn asking(_root: &Path, _asked: &Asked) -> Code {
 /// the one that answers refused this terminal.
 #[cfg(unix)]
 async fn linked() -> Result<purlis_session_protocol::link::Link, String> {
-    linked_as_terminal(NO_HOST)
-        .await
-        .map_err(|why| match why.strip_prefix(REFUSED) {
-            Some(rest) => format!("The session host refused this terminal{rest} Nothing was run."),
-            None => why,
-        })
+    linked_as_terminal().await.map_err(|not| match not {
+        NotLinked::NoHost => NO_HOST.to_owned(),
+        NotLinked::Refused(why) => {
+            format!("The session host refused this terminal ({why}). Nothing was run.")
+        }
+    })
 }
 
-/// What a refusal of this terminal by the host starts with.
+/// Why a terminal has no link to the session host.
 #[cfg(unix)]
-const REFUSED: &str = "The session host refused this terminal";
+pub(crate) enum NotLinked {
+    /// No host answers: none runs, or this user's credential for it is not there.
+    NoHost,
+    /// The host that answers refused this terminal, for this reason.
+    Refused(String),
+}
 
-/// [`linked`], `no_host` said where no host answers: what every ask of the host from a terminal
+/// A link to this user's session host, as `terminal`: what every ask of the host from a terminal
 /// links by.
 #[cfg(unix)]
-pub(crate) async fn linked_as_terminal(
-    no_host: &str,
-) -> Result<purlis_session_protocol::link::Link, String> {
+pub(crate) async fn linked_as_terminal() -> Result<purlis_session_protocol::link::Link, NotLinked> {
     use purlis_session_protocol::auth::{Credential, Scope};
     use purlis_session_protocol::{link, session};
-    let no_host = || no_host.to_owned();
-    let config = purlis_core::machine::config_root().ok_or_else(no_host)?;
+    let config = purlis_core::machine::config_root().ok_or(NotLinked::NoHost)?;
     let credential = Credential::read(&purlis_core::machine::charterd(&config), Scope::Terminal)
-        .map_err(|_| no_host())?;
+        .map_err(|_| NotLinked::NoHost)?;
     let stream = tokio::net::UnixStream::connect(purlis_core::hostsocket::here())
         .await
-        .map_err(|_| no_host())?;
+        .map_err(|_| NotLinked::NoHost)?;
     link::connect(stream, session::speaks(), Scope::Terminal, &credential)
         .await
-        .map_err(|why| format!("{REFUSED} ({why})."))
+        .map_err(|why| NotLinked::Refused(why.to_string()))
 }
 
 #[cfg(unix)]
