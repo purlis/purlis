@@ -85,6 +85,9 @@ use super::internal::Internal;
 use super::localport;
 use super::reach::{Decision, Reach, Refused};
 
+pub(crate) mod providers;
+pub use providers::ProviderAddresses;
+
 /// The port a tunnel is carried to: HTTPS's.
 pub const TUNNEL_PORTS: [u16; 1] = [443];
 
@@ -599,6 +602,10 @@ pub struct Serving {
     /// proxy carries nothing while it is none, so a program left running between questions
     /// reaches no host ([`Self::confined`]).
     pub asking: Option<Arc<AtomicUsize>>,
+    /// For a confined extension's proxy (#3094): the addresses a model is served at, never
+    /// connected to whatever name resolved to one, and the resolver it looks every name up by
+    /// ([`ProviderAddresses`], [`confined_addresses`]).
+    pub providers: Option<Arc<ProviderAddresses>>,
 }
 
 impl Serving {
@@ -618,15 +625,18 @@ impl Serving {
             left_out: Vec::new(),
             confined: false,
             asking: None,
+            providers: None,
         }
     }
 
     /// **A confined extension's proxy for `hosts`** ([`Self::confined`]), refusing anything they
-    /// do not name and asking nobody.
-    pub fn confined(hosts: Vec<String>) -> Self {
+    /// do not name, and every address a model is served at as `providers` answer, and asking
+    /// nobody.
+    pub fn confined(hosts: Vec<String>, providers: Arc<ProviderAddresses>) -> Self {
         Self {
             confined: true,
             asking: Some(Arc::new(AtomicUsize::new(0))),
+            providers: Some(providers),
             ..Self::of(Reach::open(hosts))
         }
     }
@@ -756,6 +766,7 @@ impl Proxy {
             left_out: serving.left_out,
             confined: serving.confined,
             asking: serving.asking.clone(),
+            providers: serving.providers,
             live: Live::default(),
             tally: Mutex::new(Tally::default()),
             teller: Teller::default(),
@@ -1027,6 +1038,7 @@ struct Allowed {
     left_out: Vec<u16>,
     confined: bool,
     asking: Option<Arc<AtomicUsize>>,
+    providers: Option<Arc<ProviderAddresses>>,
     /// What it carries now, for a confined extension's proxy, ended when its question is.
     live: Live,
     tally: Mutex<Tally>,
@@ -1142,7 +1154,8 @@ impl Allowed {
     }
 
     /// Connects for `host` on `port`, carried by `decision`: at its pinned loopback address for
-    /// a service left out of this chat's plan ([`Self::pinned`]), otherwise as
+    /// a service left out of this chat's plan ([`Self::pinned`]); for a confined extension, never
+    /// at an address a model is served at ([`confined_addresses`]); otherwise as
     /// [`connect_held`].
     fn connect(
         &self,
@@ -1151,6 +1164,27 @@ impl Allowed {
         own: &[std::net::IpAddr],
         read: Option<&[super::hosts::Network]>,
     ) -> Connected {
+        if self.confined
+            && let Some(providers) = &self.providers
+        {
+            let carries = |at| self.carries(host, at, read);
+            let resolve = |name: &str, port: u16| providers.resolve(name, port);
+            return match confined_addresses(
+                host,
+                port,
+                &self.reach,
+                own,
+                &carries,
+                providers,
+                &resolve,
+            ) {
+                Ok(reached) => reached
+                    .into_iter()
+                    .find_map(|addr| TcpStream::connect_timeout(&addr, PATIENCE).ok())
+                    .map_or(Connected::Not, Connected::To),
+                Err(refused) => refused,
+            };
+        }
         match self.pinned(host, port) {
             Some(at) => {
                 TcpStream::connect_timeout(&at, PATIENCE).map_or(Connected::Not, Connected::To)
@@ -1308,6 +1342,14 @@ fn refusal_said(host: &str, port: u16, decision: &Decision) -> String {
     }
 }
 
+/// The refusal of a name that resolved only to addresses a model is served at, for the record
+/// ([`Connected::AtAModel`]).
+fn at_a_model(host: &str) -> Decision {
+    Decision::Refused(Refused::NeverAHost(format!(
+        "{host} resolved only to addresses a model provider is served at"
+    )))
+}
+
 /// One client connection: its request is read, judged, and either carried or refused.
 fn serve(mut client: TcpStream, allowed: &Arc<Allowed>) {
     let _ = client.set_write_timeout(Some(allowed.idle.min(PATIENCE)));
@@ -1374,6 +1416,20 @@ fn serve(mut client: TcpStream, allowed: &Arc<Allowed>) {
     let _ = client.set_write_timeout(Some(allowed.idle));
     let mut upstream = match allowed.connect(&request.host, request.port, &own, read.as_deref()) {
         Connected::To(upstream) => upstream,
+        Connected::AtAModel => {
+            allowed.refused(&request.host, request.port, &at_a_model(&request.host));
+            answer(
+                &mut client,
+                "403 Forbidden",
+                &format!(
+                    "purlis's sandbox does not allow {}:{}: it resolves only to addresses a \
+                     model provider is served at, which an extension that declares a studio \
+                     capability never reaches",
+                    request.host, request.port
+                ),
+            );
+            return;
+        }
         Connected::OnlyLocal => {
             let local = Decision::Refused(Refused::LocalAddress);
             allowed.refused(&request.host, request.port, &local);
@@ -1516,6 +1572,11 @@ fn serve_socks(mut client: TcpStream, allowed: &Arc<Allowed>) {
         Connected::To(upstream) => upstream,
         Connected::OnlyLocal => {
             allowed.refused(&host, port, &Decision::Refused(Refused::LocalAddress));
+            return socks_reply(&mut client, reply::NOT_ALLOWED);
+        }
+        // A confined extension's proxy carries no SOCKS request, so this is never one of its.
+        Connected::AtAModel => {
+            allowed.refused(&host, port, &at_a_model(&host));
             return socks_reply(&mut client, reply::NOT_ALLOWED);
         }
         Connected::Not => return socks_reply(&mut client, reply::HOST_UNREACHABLE),
@@ -1791,6 +1852,9 @@ pub(crate) enum Connected {
     OnlyLocal,
     /// It did not resolve, or nothing answered.
     Not,
+    /// For a confined extension's proxy: the name resolved, and only to addresses a model is
+    /// served at ([`ProviderAddresses`], #3094). Refused, as a Block.
+    AtAModel,
 }
 
 /// Connects to `host` on `port`, only at the addresses it resolves to now that a chat may reach
@@ -1824,6 +1888,41 @@ pub(crate) fn connect_held(
 /// special-use range ([`super::hosts::special_use`]).
 pub(crate) fn carried_when_confined(at: SocketAddr) -> bool {
     !super::hosts::special_use(at.ip())
+}
+
+/// **Where a confined extension's connection to `host` on `port` is made** (ADR 0101 §3,
+/// #3094): the addresses `host` resolves to now by `resolve` that a chat may reach and `carries`
+/// keeps, less every one a model is served at as `providers` answer. The refusal says which held
+/// it back: [`Connected::AtAModel`] where an address was left only for serving a model.
+pub(crate) fn confined_addresses(
+    host: &str,
+    port: u16,
+    reach: &Reach,
+    own: &[std::net::IpAddr],
+    carries: &dyn Fn(SocketAddr) -> bool,
+    providers: &ProviderAddresses,
+    resolve: &dyn Fn(&str, u16) -> Vec<SocketAddr>,
+) -> Result<Vec<SocketAddr>, Connected> {
+    let answered = std::cell::Cell::new(true);
+    let once = |host: &str, port: u16| {
+        let found: Vec<SocketAddr> = resolve(host, port);
+        answered.set(!found.is_empty());
+        found
+    };
+    let mut reached = addresses(host, port, reach, own, &once);
+    reached.retain(|at| carries(*at));
+    if reached.is_empty() {
+        return Err(if answered.get() {
+            Connected::OnlyLocal
+        } else {
+            Connected::Not
+        });
+    }
+    reached.retain(|at| !providers.serves(at.ip()));
+    if reached.is_empty() {
+        return Err(Connected::AtAModel);
+    }
+    Ok(reached)
 }
 
 /// [`connect_held`], looking `host` up by `resolve`.

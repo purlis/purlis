@@ -776,7 +776,7 @@ fn carry(client: TcpStream, carrying: &Carrying) {
     let target = egress::host_and_port(&carrying.host, carrying.port);
     let upstream = match egress::connect(&carrying.host, carrying.port, &carrying.reach, &own) {
         egress::Connected::To(upstream) => upstream,
-        egress::Connected::OnlyLocal => {
+        egress::Connected::OnlyLocal | egress::Connected::AtAModel => {
             carrying.tell(|tally| tally.heard(&target, "refused", Instant::now()));
             let _ = client.shutdown(std::net::Shutdown::Both);
             return;

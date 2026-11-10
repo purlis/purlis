@@ -485,6 +485,51 @@ pub fn model_host(host: &Host) -> bool {
         || (under("amazonaws.com") && host.split('.').any(|label| label.starts_with("bedrock")))
 }
 
+/// The regions whose Amazon Bedrock runtime is looked up by name for [`provider_names`]: Bedrock
+/// has one host per region, so only these are spelled out.
+const BEDROCK_REGIONS: [&str; 5] = [
+    "us-east-1",
+    "us-west-2",
+    "eu-west-1",
+    "eu-central-1",
+    "ap-northeast-1",
+];
+
+/// **The names a model provider is reached by, looked up for the addresses a confined proxy
+/// never connects to** (#3094): each of [`MODEL_DOMAINS`] and its `api.` host, each host the
+/// model-providers preset lists, and Bedrock's runtime in [`BEDROCK_REGIONS`]. Each once. A
+/// domain of three labels or more is a service's own name already, so it has no `api.` host.
+pub fn provider_names() -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    let domains = MODEL_DOMAINS
+        .iter()
+        .chain(crate::sandbox::Preset::ModelProviders.own_hosts())
+        .map(|domain| domain.trim_start_matches("*."));
+    for domain in domains {
+        names.push(domain.to_owned());
+        if domain.split('.').count() == 2 {
+            names.push(format!("api.{domain}"));
+        }
+    }
+    names.extend(
+        BEDROCK_REGIONS
+            .iter()
+            .map(|region| format!("bedrock-runtime.{region}.amazonaws.com")),
+    );
+    let mut seen = std::collections::HashSet::new();
+    names.retain(|name| seen.insert(name.clone()));
+    names
+}
+
+/// The addresses [`provider_names`] resolve to, one set for every confined proxy of the run, so
+/// they are looked up once however many extensions ask.
+static PROVIDERS: std::sync::LazyLock<std::sync::Arc<crate::sandbox::egress::ProviderAddresses>> =
+    std::sync::LazyLock::new(|| {
+        std::sync::Arc::new(crate::sandbox::egress::ProviderAddresses::of(
+            provider_names(),
+        ))
+    });
+
 /// **The hosts a confined program's proxy carries**: `declared`, less every host that serves a
 /// model, whatever the manifest said ([`model_host`]). The manifest's own read refuses such a
 /// host, so this leaves one out only where [`MODEL_DOMAINS`] grew after the extension was approved.
@@ -514,8 +559,8 @@ pub(super) fn confined_said(hosts: &[Host]) -> String {
          capability. It reads only its own folder, the system's programs and what purlis hands \
          it with each question, never your projects or your home folder. It writes only its own \
          state folder. {reach}, through a proxy that carries a connection only when its \
-         encryption names that host, and never to a host that serves a model or to an address \
-         of a private network. A host it names can still pass on what it is sent. The list above \
+         encryption names that host, and never to a host that serves a model, an address one is \
+         served at, or an address of a private network. A host it names can still pass on what it is sent. The list above \
          is what it can do, not only what it says it does."
     )
 }
@@ -683,7 +728,7 @@ fn proxy_for(
         return Ok(std::sync::Arc::clone(proxy));
     }
     let proxy = std::sync::Arc::new(crate::sandbox::egress::Proxy::serving(
-        crate::sandbox::egress::Serving::confined(hosts.clone()),
+        crate::sandbox::egress::Serving::confined(hosts.clone(), std::sync::Arc::clone(&PROVIDERS)),
     )?);
     held.insert(id.to_owned(), (hosts, std::sync::Arc::clone(&proxy)));
     Ok(proxy)
