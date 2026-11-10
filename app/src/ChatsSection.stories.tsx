@@ -15,7 +15,7 @@ import { CARD_LEAVE_MS, ChatsSection, ON_MEMORY_SAID } from "./ChatsSection";
 import { ChatsHere, fixedChats, moved, nothingKnown } from "./chatState";
 import { chatsTree, type ListedChat } from "./chatsTree";
 import type { ChatBrowser, FinishedTask } from "./bindings";
-import { expectFocusInSight, untilFocused, untilFocusWithin } from "./stories.testkit";
+import { expectFocusInSight, tabInto, untilFocused, untilFocusWithin } from "./stories.testkit";
 import { panelRoot } from "./ui/panel/Panel";
 
 /** A chat as the core lists it, open in a tab. */
@@ -174,8 +174,7 @@ export const RolledUpHand: Story = {
     // The keyboard's way: Tab to the list's one stop, the row, and → onto its hand.
     const row = button.closest<HTMLElement>('[role="row"]');
     await expect(row).not.toBeNull();
-    for (let step = 0; step < 12 && document.activeElement !== row; step += 1)
-      await userEvent.tab();
+    await tabInto(() => row);
     await untilFocused(() => row, "the row with the hand");
     await userEvent.keyboard("{ArrowRight}");
     await untilFocused(() => button, "the hand");
@@ -184,8 +183,15 @@ export const RolledUpHand: Story = {
     await userEvent.keyboard("{ArrowLeft}");
     await untilFocused(() => row, "the row again");
     expectFocusInSight();
-    // At rest for the picture: the keyboard off the rows, so no ring is mid-draw.
+    // At rest for the picture: the keyboard off the rows, so no ring is mid-draw, and no card.
+    // The keyboard rested on the row, so its card may have come up on a slow runner just
+    // before the keyboard left; leaving takes it down, and the picture waits until it has gone
+    // (#6073).
     (document.activeElement as HTMLElement | null)?.blur();
+    await waitFor(() => {
+      expect(aCardIsUp(), "no card is up once the keyboard has left").toBe(false);
+      expect(canvasElement.ownerDocument.querySelector(".chat-card")).toBeNull();
+    });
   },
 };
 
