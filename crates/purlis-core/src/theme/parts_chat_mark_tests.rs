@@ -20,7 +20,7 @@ fn the_chat_mark_is_in_the_manifest_with_its_states_in_the_order_that_wins() {
         .iter()
         .find(|one| one["name"] == "chat-mark")
         .expect("the chat mark is in the manifest");
-    assert_eq!(family["since"], parts::NEXT);
+    assert_eq!(family["since"], 14);
     let names = |key: &str| -> Vec<String> {
         family[key]
             .as_array()

@@ -25,7 +25,7 @@ fn the_grip_is_in_the_manifest_drawn_in_marks_on_its_own_states() {
         .find(|one| one["name"] == "grip")
         .expect("the grip is in the manifest")
         .clone();
-    assert_eq!(family["since"], parts::NEXT);
+    assert_eq!(family["since"], 14);
     let names: Vec<&str> = family["parts"]
         .as_array()
         .unwrap()
