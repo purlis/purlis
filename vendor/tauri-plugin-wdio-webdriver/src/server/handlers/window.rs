@@ -5,7 +5,7 @@ use axum::extract::{Path, State};
 use axum::Json;
 use serde::Deserialize;
 use serde_json::json;
-use tauri::{Manager, Runtime};
+use tauri::Runtime;
 
 use crate::platform::{apply_window_change, WindowRect};
 use crate::server::response::{WebDriverErrorResponse, WebDriverResponse, WebDriverResult};
@@ -62,7 +62,10 @@ pub async fn get_window_handles<R: Runtime>(
     drop(sessions);
 
     // Return all window labels as handles
-    let handles: Vec<String> = state.app.webview_windows().keys().cloned().collect();
+    let handles: Vec<String> = crate::target::webview_windows(&state.app)
+        .keys()
+        .cloned()
+        .collect();
 
     Ok(WebDriverResponse::success(handles))
 }
@@ -77,7 +80,7 @@ pub async fn close_window<R: Runtime>(
     let current_window = session.current_window.clone();
     drop(sessions);
 
-    let Some(window) = state.app.webview_windows().get(&current_window).cloned() else {
+    let Some(window) = crate::target::get_webview_window(&state.app, &current_window) else {
         return Err(WebDriverErrorResponse::no_such_window());
     };
 
@@ -88,11 +91,13 @@ pub async fn close_window<R: Runtime>(
         "close the window",
         CLOSE_WINDOW_TIMEOUT,
         || window.close(),
-        || state.app.get_webview_window(&current_window).is_none(),
+        || crate::target::get_webview_window(&state.app, &current_window).is_none(),
     )
     .await?;
 
-    let handles = state.app.webview_windows().into_keys().collect();
+    let handles = crate::target::webview_windows(&state.app)
+        .into_keys()
+        .collect();
     Ok(WebDriverResponse::success(kept_window_first(
         handles,
         &current_window,
@@ -118,7 +123,7 @@ pub async fn switch_to_window<R: Runtime>(
     let session = sessions.get_mut(&session_id)?;
 
     // Verify the window exists
-    if !state.app.webview_windows().contains_key(&request.handle) {
+    if !crate::target::webview_windows(&state.app).contains_key(&request.handle) {
         return Err(WebDriverErrorResponse::no_such_window());
     }
 

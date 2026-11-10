@@ -4,8 +4,9 @@ use serde_json::Value;
 use tauri::webview::Cookie as TauriCookie;
 use tauri::{
     Listener, LogicalPosition, LogicalSize, Manager, PhysicalPosition, PhysicalSize, Runtime,
-    WebviewWindow,
 };
+// purlis patch: the stand-in that finds a window holding child webviews (PURLIS.md).
+use crate::target::WebviewWindow;
 
 use crate::platform::alert_state::{AlertStateManager, AlertType};
 use crate::platform::pointer_input::{pointer_event_script, PointerInputState};

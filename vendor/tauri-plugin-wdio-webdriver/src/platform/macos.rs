@@ -18,7 +18,9 @@ use objc2_web_kit::{
     WKSnapshotConfiguration, WKUIDelegate, WKUserContentController, WKWebView,
 };
 use serde_json::Value;
-use tauri::{Manager, Runtime, WebviewWindow};
+use tauri::{Manager, Runtime};
+// purlis patch: the stand-in that finds a window holding child webviews (PURLIS.md).
+use crate::target::WebviewWindow;
 use tokio::sync::oneshot;
 
 use crate::eval_channel::EvalResultRegistry;

@@ -66,6 +66,10 @@ const EXCLUDED: &[(&str, &str)] = &[
     ("operator/vendor/",
      "upstream agent-sandbox's release manifests, vendored verbatim under their own licence \
       (Apache-2.0); a test reads them as upstream published them"),
+    ("vendor/",
+     "third-party crates patched in through `[patch.crates-io]`, under their own licences (the \
+      scenario tests' WebDriver server is MIT); each keeps its upstream files and says what \
+      purlis changed in its PURLIS.md"),
 ];
 
 fn repository() -> PathBuf {

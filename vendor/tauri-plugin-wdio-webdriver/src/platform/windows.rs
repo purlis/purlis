@@ -6,7 +6,9 @@ use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine as _;
 use serde_json::Value;
 use tauri::webview::PlatformWebview;
-use tauri::{Manager, Runtime, WebviewWindow};
+use tauri::{Manager, Runtime};
+// purlis patch: the stand-in that finds a window holding child webviews (PURLIS.md).
+use crate::target::WebviewWindow;
 use tokio::sync::oneshot;
 use webview2_com::Microsoft::Web::WebView2::Win32::{
     ICoreWebView2, ICoreWebView2CapturePreviewCompletedHandler, ICoreWebView2Controller,

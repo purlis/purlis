@@ -61,6 +61,8 @@ version = "1"
 
 [dependencies.tauri]
 version = "2.10.0"
+# purlis patch: `Manager::get_webview` and `Manager::webviews` (PURLIS.md).
+features = ["unstable"]
 
 [dependencies.tempfile]
 version = "3"

@@ -624,4 +624,34 @@ mod tests {
             "the CSP allows eval"
         );
     }
+
+    /// Why the scenario tests' WebDriver server is patched
+    /// (`vendor/tauri-plugin-wdio-webdriver/PURLIS.md`): once an artifact's webview is laid in
+    /// the main window, tauri no longer counts that window among its webview windows, so upstream
+    /// 1.5.1, which finds every window that way, answers "No window could be found". The window's
+    /// own webview, the one with its label, is still there, and that is what the patch finds it
+    /// by. When this goes red after a tauri upgrade, the patch may no longer be needed.
+    #[test]
+    fn a_window_holding_an_artifact_is_no_webview_window_to_tauri_but_its_own_webview_is_found() {
+        use tauri::Manager;
+        let app = app();
+        let main = window(&app, WINDOW);
+        assert!(app.webview_windows().contains_key(WINDOW), "before the artifact");
+        main.as_ref()
+            .window()
+            .add_child(
+                tauri::webview::WebviewBuilder::new(
+                    crate::artifacts::label(1),
+                    tauri::WebviewUrl::default(),
+                ),
+                tauri::LogicalPosition::new(0, 0),
+                tauri::LogicalSize::new(10, 10),
+            )
+            .expect("an artifact's webview");
+
+        assert!(!app.webview_windows().contains_key(WINDOW));
+        assert!(app.get_webview_window(WINDOW).is_none());
+        let own = app.get_webview(WINDOW).expect("the window's own webview");
+        assert_eq!(own.window().label(), own.label());
+    }
 }

@@ -23,7 +23,9 @@ mod windows;
 mod linux;
 
 use std::sync::Arc;
-use tauri::{Runtime, WebviewWindow};
+use tauri::Runtime;
+// purlis patch: the stand-in that finds a window holding child webviews (PURLIS.md).
+use crate::target::WebviewWindow;
 
 use crate::webdriver::Timeouts;
 

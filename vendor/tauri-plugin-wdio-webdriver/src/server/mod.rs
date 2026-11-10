@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Runtime};
 use tokio::runtime::Runtime as TokioRuntime;
 use tokio::sync::RwLock;
 
@@ -34,22 +34,22 @@ impl<R: Runtime + 'static> AppState<R> {
         timeouts: Timeouts,
         frame_context: Vec<FrameId>,
     ) -> Result<Arc<dyn PlatformExecutor<R>>, WebDriverErrorResponse> {
-        self.app
-            .webview_windows()
-            .get(window_label)
-            .cloned()
+        crate::target::get_webview_window(&self.app, window_label)
             .map(|window| create_executor(window, timeouts, frame_context))
             .ok_or_else(WebDriverErrorResponse::no_such_window)
     }
 
     /// Whether a window with this label is still registered
     pub fn has_window_label(&self, window_label: &str) -> bool {
-        self.app.webview_windows().contains_key(window_label)
+        crate::target::webview_windows(&self.app).contains_key(window_label)
     }
 
     /// Get all window labels
     pub fn get_window_labels(&self) -> Vec<String> {
-        self.app.webview_windows().keys().cloned().collect()
+        crate::target::webview_windows(&self.app)
+            .keys()
+            .cloned()
+            .collect()
     }
 }
 

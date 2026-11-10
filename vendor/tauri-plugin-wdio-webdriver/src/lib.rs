@@ -10,6 +10,9 @@ mod eval_channel;
 mod platform;
 #[cfg(desktop)]
 mod server;
+// purlis patch: a window found by its label whatever child webviews it holds (PURLIS.md).
+#[cfg(desktop)]
+mod target;
 #[cfg(desktop)]
 mod webdriver;
 

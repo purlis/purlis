@@ -6,7 +6,9 @@ use base64::Engine as _;
 use glib::MainContext;
 use javascriptcore::ValueExt;
 use serde_json::Value;
-use tauri::{Manager, Runtime, WebviewWindow};
+use tauri::{Manager, Runtime};
+// purlis patch: the stand-in that finds a window holding child webviews (PURLIS.md).
+use crate::target::WebviewWindow;
 use tokio::sync::oneshot;
 use webkit2gtk::{
     PrintOperationExt, ScriptDialogType, SnapshotOptions, SnapshotRegion, WebViewExt,
