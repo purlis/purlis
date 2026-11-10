@@ -295,6 +295,8 @@ export function keptOnTheWayUp(event: KeyboardEvent<HTMLElement>): void {
  * way down and takes them from whatever is in it (a menu's button, so the arrows go on to the row
  * above or below), where a select's button and a combobox open their list with them. So the row
  * lets them by (`List.tsx`'s `rowElement`), and the control's own handler hears them and opens.
+ * On their way back up the row stops them (#6091): React Aria's select opens on them and lets
+ * them go on, and the list would move its row with them.
  */
 export function keepsItsArrows(event: KeyboardEvent<HTMLElement>): boolean {
   if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return false;
