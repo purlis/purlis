@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794282762781,
+  "lastUpdate": 1794285899708,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -45570,6 +45570,48 @@ window.BENCHMARK_DATA = {
             "value": 100.1574265,
             "unit": "ms",
             "extra": "median of 5 runs: 99.215, 99.573, 100.157, 100.572, 103.365 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "5ea1be01860f21474602a82964ef2f17e0f82065",
+          "message": "Stuck? detection, with settings; Idle means work left behind (#6014) (#6089)\n\n* Stuck? detection, with settings; Idle means work left behind (#6014)\n\nA working chat reads Stuck? when nothing new has come from it for\nstuck-silent-minutes (15), the same command failed stuck-failing-times\ntimes in a row (3), or one turn ran stuck-long-minutes (60): ADR 0121\ndecision 19, ADR 0076 N8.\n\n- purlis_core::stuck: a clockless watch per chat, fed the chat's state\n  (working or not), activity and each command run with whether it failed.\n  \"It's fine\" holds until the next state change. Time is passed in, so\n  its tests fake it.\n- purlis_core::leftwork: one git status --porcelain of a chat's folder,\n  with no optional locks.\n- The three thresholds are [dispatch] note limits, defaulted, at the\n  usual levels, until the Attention page (#6019) moves them.\n- The app hears every board move through a wrapper on the plane's Moved\n  teller. Into working, a timer for that turn sleeps until the next rule\n  of time can come true. Out of working, the folder is asked once, off\n  every lock, and kept until the next change. Tool lines and a turn's\n  output (Ran with its status) are the activity. It tells the window a\n  noticed chat-events kind. Nothing is notified.\n- The window keeps it in ChatStates.noticed. shownState reads stuck and\n  leftWork: a finished chat with a clean folder is Done, and one with\n  work left, or not known, stays Idle. A Stuck? chat is a live\n  Should-know update, From your chats, whose row offers \"It's fine\".\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71EDBNRB1ZXPJ0M8THB7GMS\nPurlis-Persona: steward\n\n* List #6014's commands in the guards, and its limits in the app's dispatch page test\n\nchats_noticed is served on a link and stuck_fine is the window's alone\n(session-protocol's ui.rs), both answered off nothing slow (in memory,\ncosts.rs), and the dispatch page test counts the three Stuck? limits.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71EDBNRB1ZXPJ0M8THB7GMS\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T04:07:24Z",
+          "tree_id": "98f02be6325ac7cc24bf865e1924b0afbf7286e2",
+          "url": "https://github.com/purlis/purlis/commit/5ea1be01860f21474602a82964ef2f17e0f82065"
+        },
+        "date": 1794285891705,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5496585,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.542, 0.543, 0.550, 0.553, 0.562 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.571172,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.468, 16.559, 16.571, 16.596, 16.688 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.57631549999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.603, 102.462, 102.576, 103.074, 103.344 ms"
           }
         ]
       }
