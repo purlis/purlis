@@ -45,6 +45,7 @@ import { fileKeyOf, fileKeySaid, opensIt } from "./paletteKeys";
 import { opensFind, opensFindInAFile } from "./findKeys";
 import { viewHistoryKeyOf } from "./viewKeys";
 import { focusKeySaid, opensTheShortcuts, shortcutsKeySaid, togglesFocus } from "./ownKeys";
+import { TRIAGE_LETTER, triageKeyOf, triageKeySaid, type TriageKey } from "../asksTriage";
 import {
   aModalIsUp,
   inADialog,
@@ -198,6 +199,13 @@ const sideSaid = (which: keyof ReturnType<typeof sideKeysSaid>) => (mac: boolean
 const USE_SKILL = { mac: cmd("S", { shift: true }), other: ctl("S", { shift: true }) };
 /** No modifier held. */
 const plain = (e: KeyboardEvent) => !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey;
+/** Asks' triage keys (`asksTriage.ts`), each with what the cheat sheet says it does. */
+const TRIAGE_ACTS: readonly (readonly [TriageKey, string])[] = [
+  ["later", "Put the ask off for later: on to the next"],
+  ["go", "Go to the ask's chat"],
+  ["snooze", "Snooze the ask's chat"],
+  ["stop", "Stop the ask's chat"],
+];
 
 // --- The declarations ------------------------------------------------------------------------
 
@@ -825,6 +833,25 @@ export const SHORTCUTS: readonly Shortcut[] = [
     alsoSaid: () => ["Home", "End"],
     yields: [],
   },
+  // **Keyboard triage in Asks** (ADR 0121 decision 9, #6016): on an ask's row, each presses the
+  // row's own button, so the settle guard decides it as it decides a click. Never a letter
+  // alone (I-11), and never from a reply box, whose letters are typed.
+  ...TRIAGE_ACTS.map(([key, does]): Shortcut => ({
+    id: `asks.${key}`,
+    does,
+    group: "Tabs and chats",
+    where: "row",
+    kind: "key",
+    chords: {
+      mac: [cmd(TRIAGE_LETTER[key].toLowerCase(), { alt: true, code: `Key${TRIAGE_LETTER[key]}` })],
+      other: [
+        bare(TRIAGE_LETTER[key], { alt: true, shift: true, code: `Key${TRIAGE_LETTER[key]}` }),
+      ],
+    },
+    said: (mac) => triageKeySaid(key, mac),
+    yields: ["modal", "dialog", "menu", "typing"],
+    matches: (e, mac) => triageKeyOf(e, mac) === key,
+  })),
   {
     id: "tab.move",
     does: "Move along the tabs, to the first and the last",
@@ -1003,6 +1030,9 @@ export const SIDE_KEY_IDS: readonly string[] = [
   "view.chats",
   "view.asks",
 ];
+
+/** Asks' triage keys (#6016): one handler, on the list, carries them out. */
+export const TRIAGE_KEY_IDS: readonly string[] = TRIAGE_ACTS.map(([key]) => `asks.${key}`);
 
 // --- Reading it ------------------------------------------------------------------------------
 
