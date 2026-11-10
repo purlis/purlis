@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794272430357,
+  "lastUpdate": 1794279860114,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -18592,6 +18592,42 @@ window.BENCHMARK_DATA = {
             "value": 970.9,
             "unit": "MB",
             "extra": "median of 6 samples: 933.3, 953.3, 966, 975.8, 976.6, 1044.4 MB; window 642.7 MB, session host 328.1 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "1957bb7629574c60738c5d242fe0d548e6920143",
+          "message": "Contract: the prose and guards that still described Radix (#6029) (#6070)\n\n* Contract: the prose and guards that still described Radix (#6029)\n\nEvery family is on React Aria and Radix is gone (#2930, #6024). What still\nread or described Radix now says what holds the behaviour today:\n\n- The family lint's empty off machinery (stillOff, each lint.js's off) is\n  removed, and src/ui/lint.test.ts fails if a family's lint exports off again.\n- controls.guard, primitives/overlays.test, projectShown.guard and the choice\n  and menu lints no longer read Radix parts or imports; RADIX_FROM is gone.\n  radixGone.guard now covers test files too, since none names a Radix import.\n- AGENTS.md, docs/ui-primitives.md and docs/design-system.md: the rule is one\n  wrapper per primitive; Why Radix and the Radix-era sections are marked history.\n- Comments in source, tests and e2e specs name the family or React Aria part\n  that does the job now.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7196FM7A46Q35BB1V3S6BNZ\nPurlis-Persona: steward\n\n* Review fixes for #6029: the menu lint's dead overlays rule, the rest of the Radix prose\n\n- The menu lint's refusal of imports from overlays/… goes: that folder left in\n  #2906, so the rule guarded nothing.\n- controls.guard drops its last Menu.Item fixture line, which nothing reads.\n- palette.e2e's watchKeys says a Tab the dialog family moves never reaches it.\n- docs/ui-primitives.md: \"Where Tab goes in the rest of the window\" says what\n  draws each part now; an old \"still does the wrapping\" is past tense; lines\n  rewrapped.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7196FM7A46Q35BB1V3S6BNZ\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T00:26:13Z",
+          "tree_id": "203d87c426a7497ceb930d37b6191e6ee5da878c",
+          "url": "https://github.com/purlis/purlis/commit/1957bb7629574c60738c5d242fe0d548e6920143"
+        },
+        "date": 1794279853930,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 2657,
+            "unit": "MB",
+            "extra": "median of 3 samples: 2429.7, 2657, 2888.9 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 1021.6,
+            "unit": "MB",
+            "extra": "median of 6 samples: 985.6, 1000.4, 1015.1, 1028.3, 1028.1, 1089.4 MB; window 707.2 MB, session host 314.6 MB"
           }
         ]
       }
