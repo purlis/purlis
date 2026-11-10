@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794304824069,
+  "lastUpdate": 1794307593432,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -45864,6 +45864,48 @@ window.BENCHMARK_DATA = {
             "value": 102.199389,
             "unit": "ms",
             "extra": "median of 5 runs: 101.952, 102.182, 102.199, 102.211, 102.785 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "36dc1504111bd34619cbb8a7f303eb58e6180a58",
+          "message": "A list row's tooltip is heard through its row's registry (#6101); ProposedChangeTab's fold test reads folds from the views (#6102) (#6124)\n\n* A list row's tooltip is heard through its row's description registry (#6101)\n\nRowTip added its id to the row's aria-describedby by hand, so the next\nrender of a ListOption (a part mounting while the tip was up) wrote\naria-describedby from the OptionHeard registry alone and dropped it.\nThe tooltip now hands its id to RowHeard, which ListOption and ListRow\nprovide, as kind \"tip\" after the option's other lines. A tree's row,\nwhose React Aria item takes no render prop, keeps the old path.\n\nCloses #6101\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M72AZHYYBP9DBGJ6BJ5WHQMW\nPurlis-Persona: steward\n\n* ProposedChangeTab's fold test reads the folds from the views, not the DOM (#6102)\n\nThe test counted .cm-collapsedLines after a click on a fold and waited\nfor 2. CodeMirror draws only its viewport: once its measure runs after\nthe click (a frame later, sooner or later depending on the machine's\nload), it draws only the lines near the top, so the fold below the\nchange leaves the DOM and the count is 0 for good. The waitFor then ran\nuntil the test's 5 s timeout. Locally under load this failed 4 runs of\n6; CI happened to click before the measure.\n\nThe test now reads each side's line blocks (EditorView.findFromDOM and\nlineBlockAt, CodeMirror's public API): line 2 folded before the click\nand open after it on both sides, line 1500 still folded. That is state,\nnot drawing, so no viewport or frame decides it. 8 runs in a row pass\nwith --pool=threads --maxWorkers=3 at a load of about 17.\n\nCloses #6102\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M72AZHYYBP9DBGJ6BJ5WHQMW\nPurlis-Persona: steward\n\n* Review of #6101: the row registry's type is PartsHeard, rowElement takes named ids\n\nOptionHeard now serves a list's rows too, so it is named PartsHeard and\nHEARD_ORDER's comment speaks of rows. rowElement takes { labelledBy,\ndescribedBy, heard } in place of three positional strings, and says that\na given describedBy replaces what the parts hand it.\n\nRefs #6101\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M72AZHYYBP9DBGJ6BJ5WHQMW\nPurlis-Persona: steward\n\n* A list row's registry is provided through a call, as hold is (#6101)\n\nWrapping a ListRow's children in <RowHeard.Provider> JSX let the\nwindow's static read of what stands on what (theme/grounds.test.ts)\nsee a list row's buttons, badges, checkboxes and popovers for the\nfirst time, pairs parts.rs's STANDS_ON does not list. heardIn() keeps\nthat read as it was; the blind spot is its own issue.\n\nRefs #6101\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M72AZHYYBP9DBGJ6BJ5WHQMW\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T10:09:03Z",
+          "tree_id": "e0e13ae797141ad453bb3dbfe3c745d0afae2e2a",
+          "url": "https://github.com/purlis/purlis/commit/36dc1504111bd34619cbb8a7f303eb58e6180a58"
+        },
+        "date": 1794307588571,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3462685,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.332, 0.342, 0.346, 0.353, 0.357 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.682523,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.135, 16.639, 16.683, 16.765, 16.795 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.2347845,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.868, 101.142, 101.235, 102.068, 102.771 ms"
           }
         ]
       }
