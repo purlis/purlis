@@ -27,6 +27,8 @@ fn ask(session: u32, key: &str, says: &str, source: AskSource) -> Shown {
         answer: AnswerPath::InItsPane,
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message: None,
