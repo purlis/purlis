@@ -31,6 +31,7 @@ pub mod regenerate;
 pub mod script;
 pub mod search;
 pub mod serve;
+pub mod template;
 
 use std::io;
 use std::path::{Path, PathBuf};
