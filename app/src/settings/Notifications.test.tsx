@@ -12,7 +12,7 @@ import { notificationsGroup } from "./notifications";
 import { selectNamed } from "../ui/select/select.testkit";
 
 /**
- * **Settings › You › Notifications** (#1989): the quiet hours, off until turned on, each time
+ * **Settings › You › Attention** (#1989, #6019): the quiet hours, off until turned on, each time
  * chosen while they are on.
  */
 

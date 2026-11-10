@@ -528,13 +528,13 @@ function useDispatchTable(
         )}
         {!stuck && (
           <p className="granted-note">
-          {/* Where the limits are kept is the group's to say, once (DS-10, after DS-8); the
+            {/* Where the limits are kept is the group's to say, once (DS-10, after DS-8); the
               persona view has no group, so it says it here. */}
-          {held
-            ? scope.kind === "persona"
-              ? `Kept in ${page.file}, which your team sees, and never in the persona's own file. An empty box takes the value shown in it, from the workspace or the project.`
-              : "An empty box takes the project's value, shown in it."
-            : "The most specific row wins: a persona's over a workspace's over the project's. An empty box takes the value shown in it. A 0 switches dispatch off for that row, and a more specific row may set it back; 0 messages per minute stops messages only."}
+            {held
+              ? scope.kind === "persona"
+                ? `Kept in ${page.file}, which your team sees, and never in the persona's own file. An empty box takes the value shown in it, from the workspace or the project.`
+                : "An empty box takes the project's value, shown in it."
+              : "The most specific row wins: a persona's over a workspace's over the project's. An empty box takes the value shown in it. A 0 switches dispatch off for that row, and a more specific row may set it back; 0 messages per minute stops messages only."}
           </p>
         )}
         {!held && !stuck && (

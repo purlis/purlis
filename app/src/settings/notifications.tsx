@@ -54,7 +54,6 @@ export function notificationsGroup(plane?: PlaneId): SettingsGroup {
   };
 }
 
-
 const quiet: LiveSetting = {
   id: "you.notifications.quiet",
   label: "Quiet hours",
