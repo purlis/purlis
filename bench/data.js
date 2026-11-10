@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794278146188,
+  "lastUpdate": 1794280801670,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -45486,6 +45486,48 @@ window.BENCHMARK_DATA = {
             "value": 102.49390400000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.683, 102.004, 102.494, 102.554, 102.586 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ae853f40479ad8865fdfd77064766dd6775e606b",
+          "message": "Quiet: on a schedule, Quiet now, and while typing, with one summary afterwards (#6017) (#6077)\n\n* Quiet: on a schedule, Quiet now, and while typing, with one summary afterwards (#6017)\n\nQuiet holds notifications and never the count. It has three sources:\n- today's quiet hours;\n- \"Quiet now\", a switch at the top of Asks and a palette row;\n- the person typing in a chat's pane, until TYPING_QUIET (30 s) after the last key.\n\nWhen Quiet ends, the core tells every window what it held. Asks then\nshows one row at the top: \"While you were quiet: 3 asks, 2 finished,\n1 failed\". Each part is a link, and the row goes once every part has\nbeen seen. If the person is away from every window, one notification\nnames the chats still waiting.\n\nExpiring asks are not held open yet; that is left to #6007. The ADR 0121\namendment records what ends each one.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71ACTDW6V7DD3WQAD0SR2C7\nPurlis-Persona: steward\n\n* ADR 0121 links to its amendments folder (#6017)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71ACTDW6V7DD3WQAD0SR2C7\nPurlis-Persona: steward\n\n* Quiet now is a toggle button; its commands named for links (#6017)\n\n- CI's keyboard journey lands F6 on the first stop of Asks. A switch's\n  focus is its hidden input, which the journey reads as covered and\n  nameless. A toggle button is focused and ringed where it is drawn.\n- Every command is either served on a link or the window's alone.\n  quiet_now reads, so it is served on a link. set_quiet_now and\n  quiet_typed are the window's alone: a link that could turn Quiet on\n  could hold back every notification of what waits on the person.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71ACTDW6V7DD3WQAD0SR2C7\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-10T02:41:59Z",
+          "tree_id": "470ffc97cddcc286d4d13b196740b1b8e1e31d2a",
+          "url": "https://github.com/purlis/purlis/commit/ae853f40479ad8865fdfd77064766dd6775e606b"
+        },
+        "date": 1794280793906,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6687130000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.660, 0.668, 0.669, 0.688, 0.689 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.715767,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.540, 16.637, 16.716, 16.789, 16.897 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.8585595,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.596, 102.507, 102.859, 103.046, 103.711 ms"
           }
         ]
       }
