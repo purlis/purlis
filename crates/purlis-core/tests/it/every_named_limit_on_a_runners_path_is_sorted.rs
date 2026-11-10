@@ -763,6 +763,18 @@ const SORTED: &[(&str, &str, Group, &str)] = &[
     ),
     (
         "crates/session-protocol/src/session.rs",
+        "MOST_SKILLS_NOT_LOADED",
+        Security,
+        "bounds what a runner says a chat started without there, which a window holds (#6078)",
+    ),
+    (
+        "crates/session-protocol/src/session.rs",
+        "MOST_SKILL_WHY",
+        Security,
+        "bounds what a runner says a chat started without there, which a window holds (#6078)",
+    ),
+    (
+        "crates/session-protocol/src/session.rs",
         "MOST_ARMED_SKILL_NAME",
         Security,
         "bounds what a runner says it armed a chat with, which a window holds (#4218)",
