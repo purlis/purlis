@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794275419290,
+  "lastUpdate": 1794278146188,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -45444,6 +45444,48 @@ window.BENCHMARK_DATA = {
             "value": 101.81458,
             "unit": "ms",
             "extra": "median of 5 runs: 100.962, 101.696, 101.815, 102.279, 103.293 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4c362c31c04ab5799fbb685b0bb6390f559960d8",
+          "message": "No pop-up cards; a 'new' pip on chips and Notices; no repeated status counts; the Notices dot red or amber (#6004) (#6081)\n\n* No pop-up cards; a 'new' pip on chips and Notices; no repeated status counts; the Notices dot red or amber (#6004)\n\n#6058's four commits (f8b3f139e..77bdb731f) brought onto main past #6012, #6036\nand #6003. The one conflict, App.tsx's window markup (main made the window a div\nwith <main className=\"window-work\"> inside), keeps main's structure and adds\n#6004's SeenRowsOf provider, the chips' fresh notices, SaidAloud and onSeen.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71EARFE0AF9HH3CHDMG49YK\nPurlis-Persona: steward\n\n* HungPopover's row says a card comes only on its dot's press (#6004)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71EARFE0AF9HH3CHDMG49YK\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T02:00:42Z",
+          "tree_id": "6ca86acbaca08f9e6b0cc60980c0ca8ccaed5edb",
+          "url": "https://github.com/purlis/purlis/commit/4c362c31c04ab5799fbb685b0bb6390f559960d8"
+        },
+        "date": 1794278139519,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.707557,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.699, 0.706, 0.708, 0.719, 0.722 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.619326,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.281, 16.444, 16.619, 16.641, 16.732 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.49390400000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.683, 102.004, 102.494, 102.554, 102.586 ms"
           }
         ]
       }
