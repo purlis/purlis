@@ -341,13 +341,26 @@ async function pictures(name: string, parts: Record<string, string>): Promise<vo
     await (await $(css)).saveScreenshot(join(WHERE_SHOTS_GO, `${name}-${part}.png`));
 }
 
-/** Nothing of the repo anywhere in the workspace, finished or hidden. */
+/** What `dir` holds, and nothing where there is no `dir`: one read, never a look and then a
+ *  read, since the core takes away a `repos/` its clone run made and left empty (#5534, #6140). */
+function entriesOf(dir: string): string[] {
+  try {
+    return readdirSync(dir);
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw err;
+  }
+}
+
+/**
+ * Nothing of the repo anywhere in the workspace, finished or hidden. Asked only once the window
+ * has said the clone answered: until then the core may still be taking away what it made.
+ */
 function nothingOf(plane: string, workspace: string, repo: string): void {
   const { landed, hidden } = foldersOf(plane, workspace, repo);
   const ws = join(plane, "workspaces", workspace);
-  const repos = join(ws, "repos");
-  const there = [...readdirSync(ws), ...(existsSync(repos) ? readdirSync(repos) : [])].filter(
-    (one) => one.includes(repo),
+  const there = [...readdirSync(ws), ...entriesOf(join(ws, "repos"))].filter((one) =>
+    one.includes(repo),
   );
   expect({ landed: existsSync(landed), hidden: existsSync(hidden), there }).toEqual({
     landed: false,
@@ -621,6 +634,8 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
       timeout: 30_000,
       timeoutMsg: "the hidden folder outlived the Cancel",
     });
+    // The row's meter goes only once the clone has answered stopped, after the core took away
+    // what it made (#6140): the disk is read after that, not before.
     await browser.waitUntil(async () => (await percentOf(meterOf(repo))) === null, {
       timeout: 30_000,
       timeoutMsg: "the row still shows a clone running",
@@ -649,6 +664,20 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
       timeout: 30_000,
       timeoutMsg: "the hidden folder outlived the Cancel",
     });
+    // The hidden folder goes first and the empty `repos/` after it, both before the clone answers
+    // (#6140): the card says Stopped only once it has, so the disk is read after that.
+    await browser.waitUntil(
+      async () => {
+        if (!(await $(cardOf("stopped-card")).isExisting()))
+          await theChipsCardIsBack("stopped-card");
+        return ((await textOf(cardOf("stopped-card"))) ?? "").includes(`Stopped cloning ${repo}`);
+      },
+      {
+        timeout: 30_000,
+        interval: 500,
+        timeoutMsg: "the stopped clone's card never said it had stopped",
+      },
+    );
     nothingOf(plane, "stopped-card", repo);
   });
 
