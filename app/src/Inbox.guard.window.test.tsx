@@ -189,7 +189,10 @@ describe.each(BOTH)("the press-settle guard, pressed by the %s (#3123)", (by) =>
     vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(() =>
       DOMRect.fromRect({ x: 0, y: lower, width: 100, height: 30 }),
     );
-    draw([permission(3, "01J0A", ["steward 3"]), permission(4, "01J0B", ["steward 4"])]);
+    draw([
+      permission(3, "01J0A", ["steward 3"]),
+      permission(4, "01J0B", ["steward 4"], "Run cargo build"),
+    ]);
     // Something above grew without drawing this row again: only where its Allow is says so.
     lower = 48;
     await press(allowOf("steward 4"), by);
@@ -223,8 +226,11 @@ describe.each(BOTH)("the press-settle guard, pressed by the %s (#3123)", (by) =>
 
   it("never holds a Deny", async () => {
     const calls = core();
-    const { again } = draw([permission(4, "01J0B", ["steward 4"])]);
-    again([permission(3, "01J0A", ["steward 3"]), permission(4, "01J0B", ["steward 4"])]);
+    const { again } = draw([permission(4, "01J0B", ["steward 4"], "Run cargo build")]);
+    again([
+      permission(3, "01J0A", ["steward 3"]),
+      permission(4, "01J0B", ["steward 4"], "Run cargo build"),
+    ]);
     await press(allowOf("steward 4", "Deny"), by);
     expect(answered(calls)).toBe(true);
   });
