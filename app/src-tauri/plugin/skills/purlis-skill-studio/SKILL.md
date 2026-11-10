@@ -51,6 +51,26 @@ nothing about that, ask the person with `ask_operator` before writing anything.
    The description decides when a chat starts the skill: say what it does and the requests it
    is for, in the words a person would use.
 
+## Ship an artifact with the skill
+
+When the prompt asks for a page the skill keeps for the workspace (a dashboard, a state report),
+the skill ships it as an **artifact template**.
+
+1. Write the page as `<the skill's folder>/artifacts/<name>/index.html`, with what it loads
+   beside it. `<name>` is letters, digits, `.`, `-` and `_`. Never put `data.json` or a `data/`
+   folder there: data is each person's own, and purlis does not copy it.
+2. Check it: `purlis artifact check <the skill's folder>/artifacts/<name>`. A page that reads
+   data declares it; `purlis artifact types` prints the types it calls with.
+3. End the skill's steps with asking for the pin, then writing the data:
+
+   ```markdown
+   Run `purlis artifact pin <name> --skill <skill> --command "<the command that writes the data>"`,
+   then write the data to `artifacts/<name>/data.json` in the workspace.
+   ```
+
+   purlis copies the page into the workspace's `artifacts/<name>/` first, and the person pins
+   it. A copy of the same page is left as it is on the skill's next run, its data with it.
+
 ## Trigger tests
 
 Trigger tests check that a chat starts the skill when it should and leaves it alone when it

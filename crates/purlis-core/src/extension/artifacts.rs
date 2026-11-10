@@ -28,7 +28,7 @@
 //! and workspace offers a template ([`offered`]). **On a platform where purlis starts no
 //! extension's program** (Windows, ADR 0031) none does, and a pin from one is refused.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde_json::Value;
 
@@ -285,10 +285,10 @@ fn pin_where(
         .iter()
         .find(|it| it.name == name)
         .ok_or_else(|| format!("'{extension}' offers no artifact template '{name}'"))?;
-    let source = template_folder(&found.path, &template.folder, &shown)?;
+    let source = artifact::template::inside(&found.path, &template.folder, &shown, "extension")?;
     let snapshot = artifact::serve::Snapshot::read(&source, wanted.id)?;
     artifact::scanned(&source, wanted.id)?;
-    copy_in(root, workspace, wanted.id, &snapshot)?;
+    artifact::template::copy_in(root, workspace, wanted.id, &snapshot)?;
     let request = Request {
         folder: wanted.id.to_owned(),
         name: Some(
@@ -311,85 +311,6 @@ fn pin_where(
             Err(why)
         }
     }
-}
-
-/// Where the template's folder is, every link followed, or why it is not one inside the
-/// extension.
-fn template_folder(extension: &Path, folder: &str, shown: &str) -> Result<PathBuf, String> {
-    let home = extension
-        .canonicalize()
-        .map_err(|_| format!("the extension of '{shown}' cannot be read"))?;
-    let real = extension
-        .join(folder)
-        .canonicalize()
-        .map_err(|_| format!("the extension has no folder {folder} for '{shown}'"))?;
-    if !real.starts_with(&home) || real == home || !real.is_dir() {
-        return Err(format!(
-            "the folder of '{shown}' is not a folder inside its extension, so it is not pinned"
-        ));
-    }
-    Ok(real)
-}
-
-/// Write the template's files, not its data, into a new `artifacts/<folder>/` of the workspace.
-/// Never over a folder that is there; a failure part way removes what it wrote.
-fn copy_in(
-    root: &Path,
-    workspace: &Path,
-    folder: &str,
-    snapshot: &artifact::serve::Snapshot,
-) -> Result<(), String> {
-    let dir = workspace.join(artifact::DIR);
-    std::fs::create_dir_all(&dir).map_err(|e| {
-        format!(
-            "purlis could not make {}/ in the workspace ({})",
-            artifact::DIR,
-            crate::rewrite::os_words(&e)
-        )
-    })?;
-    let at = dir.join(folder);
-    match std::fs::create_dir(&at) {
-        Ok(()) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-            return Err(format!(
-                "there is already a folder '{folder}' in {}/, so the template is not copied \
-                 over it. Unpin it and remove the folder to take the extension's template again",
-                artifact::DIR
-            ));
-        }
-        Err(e) => {
-            return Err(format!(
-                "purlis could not make '{folder}' in {}/ ({})",
-                artifact::DIR,
-                crate::rewrite::os_words(&e)
-            ));
-        }
-    }
-    let written = (|| {
-        for path in snapshot
-            .paths()
-            .filter(|path| !artifact::serve::is_data(path))
-        {
-            let target = at.join(path);
-            if let Some(parent) = target.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            crate::rewrite::replace(
-                root,
-                &target,
-                snapshot.get(path).unwrap_or_default(),
-                crate::rewrite::Mode::Kept,
-            )?;
-        }
-        Ok::<(), std::io::Error>(())
-    })();
-    written.map_err(|e| {
-        let _ = std::fs::remove_dir_all(&at);
-        format!(
-            "purlis could not copy the template into '{folder}' ({})",
-            crate::rewrite::os_words(&e)
-        )
-    })
 }
 
 #[cfg(test)]

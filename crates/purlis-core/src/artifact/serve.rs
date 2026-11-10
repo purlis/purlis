@@ -143,6 +143,17 @@ impl Snapshot {
         self.files.get(key).map(Vec::as_slice)
     }
 
+    /// **The bytes the artifact scheme serves for `key`**: the template's only, never a data
+    /// file's ([`is_data`]). Data is outside the approval (ADR 0122 §4), so a page planted
+    /// there would run as the approved template if it loaded as a document. A page reads its
+    /// data on its port ([`super::data::read`]) and nothing else reads it.
+    pub fn served(&self, key: &str) -> Option<&[u8]> {
+        if is_data(key) {
+            return None;
+        }
+        self.get(key)
+    }
+
     /// The template's fingerprint: every path and byte but the data files' ([`is_data`]), so
     /// a page regenerated with new data keeps it (ADR 0122 §4).
     pub fn fingerprint(&self) -> &str {
@@ -510,6 +521,24 @@ mod tests {
 
         std::fs::write(folder.join("chart.svg"), "<svg onload='x()'/>").unwrap();
         assert!(Snapshot::read(folder, "board").unwrap().holds_script());
+    }
+
+    #[test]
+    fn a_data_file_is_read_but_never_served_as_a_file_of_the_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path();
+        std::fs::create_dir(folder.join("data")).unwrap();
+        std::fs::write(folder.join("index.html"), "<script>1</script>").unwrap();
+        std::fs::write(folder.join("data/details.html"), "<script>x()</script>").unwrap();
+        std::fs::write(folder.join("data.json"), "{}").unwrap();
+        std::fs::write(folder.join("database.html"), "page").unwrap();
+        let read = Snapshot::read(folder, "board").unwrap();
+        assert!(read.get("data/details.html").is_some());
+        for data in ["data/details.html", "data.json"] {
+            assert_eq!(read.served(data), None, "{data}");
+        }
+        assert!(read.served("index.html").is_some());
+        assert!(read.served("database.html").is_some());
     }
 
     #[test]

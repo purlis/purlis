@@ -14,6 +14,9 @@
 //! something shaped like a secret, over the size cap) is refused when it is proposed, so the
 //! person is never asked about a pin that cannot be made. The workspace is never the chat's to
 //! name: it is the one the app recorded for the chat.
+//!
+//! **A skill that ships the page names itself** (#5974): the app then places the skill's
+//! template in the workspace ([`super::template`]) before the proposal is judged.
 
 use std::path::Path;
 
@@ -34,7 +37,8 @@ pub static TOOLS: [Tool; 1] = [Tool {
                   activity bar. Nothing is pinned by this: the person is shown it in purlis's \
                   window, which says who will see it, and only their press pins it. You are told \
                   on your next turn whether they pinned or dismissed it. `purlis artifact pin \
-                  <folder>` run in this chat proposes the same way.",
+                  <folder>` run in this chat proposes the same way. A skill that ships the page \
+                  names itself as `skill`, and purlis places the page first.",
     schema: || {
         json!({
             "type": "object",
@@ -62,6 +66,13 @@ pub static TOOLS: [Tool; 1] = [Tool {
                     "type": "string",
                     "description": "That command's working folder, relative to the workspace.",
                 },
+                "skill": {
+                    "type": "string",
+                    "description": "A skill of this chat that ships the page as its \
+                                    artifacts/<folder>/: purlis first copies it, without its \
+                                    data files, into the workspace's artifacts/<folder>/, \
+                                    and leaves a copy of the same page there as it is.",
+                },
             },
             "required": ["folder"],
             "additionalProperties": false,
@@ -82,6 +93,10 @@ pub struct Proposed {
     pub command: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
+    /// **The skill of the chat that ships the page** (#5974), as its `artifacts/<folder>/`:
+    /// placed in the workspace ([`super::template::place_from_skill`]) before it is judged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skill: Option<String>,
 }
 
 impl Proposed {
@@ -92,10 +107,9 @@ impl Proposed {
             Some(Value::String(text)) => Ok(Some(text.clone())),
             Some(_) => Err(format!("{key} is text")),
         };
-        if let Some(key) = args
-            .keys()
-            .find(|key| !["folder", "name", "icon", "command", "cwd"].contains(&key.as_str()))
-        {
+        if let Some(key) = args.keys().find(|key| {
+            !["folder", "name", "icon", "command", "cwd", "skill"].contains(&key.as_str())
+        }) {
             return Err(format!(
                 "{} is not something {TOOL} takes",
                 crate::personas::one_line(key)
@@ -110,6 +124,7 @@ impl Proposed {
             icon: text("icon")?,
             command: text("command")?,
             cwd: text("cwd")?,
+            skill: text("skill")?,
         })
     }
 
@@ -215,6 +230,7 @@ mod tests {
             icon: None,
             command: Some("purlis skill run backlog-sync".into()),
             cwd: None,
+            skill: None,
         }
     }
 
@@ -294,6 +310,10 @@ mod tests {
         let one = Proposed::from_args(&args(json!({"folder": "state", "icon": "chart"}))).unwrap();
         assert_eq!(one.folder, "state");
         assert_eq!(one.icon.as_deref(), Some("chart"));
+        let shipped =
+            Proposed::from_args(&args(json!({"folder": "state", "skill": "backlog-sync"})))
+                .unwrap();
+        assert_eq!(shipped.skill.as_deref(), Some("backlog-sync"));
         assert!(Proposed::from_args(&args(json!({}))).is_err());
         assert!(Proposed::from_args(&args(json!({"folder": "s", "workspace": "x"}))).is_err());
         assert!(Proposed::from_args(&args(json!({"folder": 3}))).is_err());

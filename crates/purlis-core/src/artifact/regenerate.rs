@@ -3,16 +3,19 @@
 
 //! **Regenerate: the pin's command writes this person's data files** (ADR 0122 §6, #5962).
 //!
-//! - **What is approved is the code the command resolves to, never its text** ([`resolve`]).
+//! - **What is approved is the code the command resolves to** ([`resolve`]), not only its text.
 //!   The command is one program and its words, with no shell between: the first word that
-//!   names a file inside the plane, from the pin's working folder, is its script, and the script's code is its
-//!   skill's folder (the nearest folder above it, inside the plane, holding a `SKILL.md`), or
-//!   else the script's own folder. Every path and byte of that folder is fingerprinted
+//!   names a file inside the plane, from the pin's working folder, is its script, and the
+//!   script's code is its skill's folder (the nearest folder above it, inside the plane,
+//!   holding a `SKILL.md`), or else the script's own folder. Every path and byte of that folder is fingerprinted
 //!   ([`fingerprint`]), so an edit to the script, or to anything beside it that it could load,
 //!   asks again even when the command reads the same ([`Standing::Changed`]). A command naming
-//!   no script is refused: a program found on `PATH` alone would be approved by its name. The
-//!   program word itself (`node`, `python3`) is part of the command, so of the pin's id: a new
-//!   one is a new pin ([`Standing::PinChanged`]).
+//!   no script is refused: a program found on `PATH` alone would be approved by its name.
+//! - **And every word of the command** ([`of_run`]): the program (`node`, `python3`) and each
+//!   word after it, those passed over to find the script (`-e '<code>'`) among them, go into
+//!   what is approved with the code's fingerprint. The command is also part of the pin's id, so
+//!   a new one is a new pin ([`Standing::PinChanged`]); covering the words as well means a
+//!   command changed under an approved id still asks again ([`Standing::Changed`]).
 //! - **Each person's, on their own machine** ([`RECORD`], Machine tier), keyed as the page's
 //!   approval is ([`super::approval::key`]): a fork of the workspace, or the plane cloned
 //!   elsewhere, asks again. Re-read at the press ([`standing`]), never carried from an earlier
@@ -86,7 +89,8 @@ pub struct Resolved {
     pub script: PathBuf,
     /// The folder approved: the script's skill's, or its own.
     pub code: PathBuf,
-    /// The fingerprint of that folder ([`fingerprint`]).
+    /// What is approved: every word of the command and the fingerprint of that folder
+    /// ([`of_run`], [`fingerprint`]).
     pub fingerprint: String,
 }
 
@@ -133,7 +137,7 @@ pub fn resolve(root: &Path, workspace: &Path, pin: &Pin) -> Result<Resolved, Str
             )
         })?;
     let code = code_folder(&root, &script);
-    let fingerprint = fingerprint(&code)?;
+    let fingerprint = of_run(&words, &fingerprint(&code)?);
     Ok(Resolved {
         program: program.clone(),
         args: args.to_vec(),
@@ -142,6 +146,29 @@ pub fn resolve(root: &Path, workspace: &Path, pin: &Pin) -> Result<Resolved, Str
         code,
         fingerprint,
     })
+}
+
+/// **What a person approves of a run**: SHA-256 over every word of the command, the program
+/// first, each framed by its length, and then the fingerprint of the code it runs. A word
+/// [`resolve`] passes over to find the script (`-e '<code>'`, `--require=<file>`) is still
+/// covered, so a command that gained one asks again even under an approved pin's id.
+fn of_run(words: &[String], code: &str) -> String {
+    let mut hash = Sha256::new();
+    let mut frame = |name: &str, body: &[u8]| {
+        hash.update((name.len() as u64).to_be_bytes());
+        hash.update(name.as_bytes());
+        hash.update((body.len() as u64).to_be_bytes());
+        hash.update(body);
+    };
+    frame("purlis-regenerate-run", b"1");
+    for word in words {
+        frame("word", word.as_bytes());
+    }
+    frame("code", code.as_bytes());
+    hash.finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 /// The pin's working folder, inside the workspace once every link is followed.

@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! `purlis artifact templates` and `purlis artifact pin --template`: an extension's artifact
-//! templates (ADR 0122 §9, #5973), the command line of [`purlis_core::extension::artifacts`].
+//! templates (ADR 0122 §9, #5973), the command line of [`purlis_core::extension::artifacts`];
+//! and `purlis artifact pin --skill`'s placing of a page a skill ships (#5974).
 
 use purlis_core::artifact::Pinned;
 use purlis_core::extension::{BuiltIn, artifacts, project::Choices};
@@ -86,4 +87,34 @@ pub fn pin(
         ws.name()
     ));
     0
+}
+
+/// **Place page `folder` that skill `skill` ships in the workspace** (#5974), at the person's
+/// terminal: the skill found among the skills a chat in the workspace would have.
+pub fn place_from_skill(
+    here: &Here,
+    ws: &Workspace,
+    skill: &str,
+    folder: Option<&str>,
+) -> Result<purlis_core::artifact::template::Placed, String> {
+    let root = here.plane.root();
+    let set = purlis_core::skills::of_a_chat(
+        purlis_core::skills::built_in_here().as_deref(),
+        root,
+        Some(ws.name()),
+        None,
+        purlis_core::skills::Route::Mcp,
+    );
+    purlis_core::artifact::template::place_from_skill(
+        root,
+        ws.dir(),
+        &set,
+        skill,
+        folder.unwrap_or_default(),
+    )
+}
+
+/// Remove a copy [`place_from_skill`] made, once its pin was refused.
+pub fn remove_placed(ws: &Workspace, folder: &str) {
+    let _ = std::fs::remove_dir_all(ws.dir().join(purlis_core::artifact::DIR).join(folder));
 }

@@ -219,20 +219,27 @@ pub fn parse(text: &str) -> Result<Pins, String> {
             .collect(),
         Some(_) => return Err("the pins file's `pin` is not a list of pins".into()),
     };
-    let mut pins: Vec<Pin> = Vec::new();
+    let mut pins: Vec<(String, Pin)> = Vec::new();
     for (at, table) in tables.iter().enumerate() {
-        let pin = pin_of(table).map_err(|why| format!("pin {} in the pins file {why}", at + 1))?;
+        let (written, pin) =
+            pin_of(table).map_err(|why| format!("pin {} in the pins file {why}", at + 1))?;
         // Two lines with one id are a union of two edits of one pin: the later line is it.
-        pins.retain(|kept| kept.id != pin.id);
-        pins.push(pin);
+        pins.retain(|(kept, _)| *kept != written);
+        pins.push((written, pin));
     }
+    let pins = pins.into_iter().map(|(_, pin)| pin).collect();
     let mut read = Pins { version, pins, doc };
     read.sort();
     Ok(read)
 }
 
-/// One pin from its table, or what it lacks.
-fn pin_of(table: &InlineTable) -> Result<Pin, String> {
+/// One pin from its table, or what it lacks, with the id its line was written with.
+///
+/// **Its id is drawn again from its folder, command and working folder**, never taken as
+/// written (ADR 0122 §1): a line whose command changed under its old id is a new pin, so no
+/// approval given under that id carries over to it. The written id only names the line, so
+/// two edits of one line unioned are still one pin.
+fn pin_of(table: &InlineTable) -> Result<(String, Pin), String> {
     let text = |key: &str| -> Result<String, String> {
         table
             .get(key)
@@ -260,16 +267,23 @@ fn pin_of(table: &InlineTable) -> Result<Pin, String> {
             extra.insert(key, value.clone());
         }
     }
-    Ok(Pin {
-        id: text("id")?,
-        folder: text("folder")?,
-        name: text("name")?,
-        icon: text("icon")?,
+    let written = text("id")?;
+    let folder = text("folder")?;
+    let name = text("name")?;
+    let icon = text("icon")?;
+    let command = optional("command")?;
+    let cwd = optional("cwd")?;
+    let pin = Pin {
+        id: id_of(&folder, command.as_deref(), cwd.as_deref()),
+        folder,
+        name,
+        icon,
         order,
-        command: optional("command")?,
-        cwd: optional("cwd")?,
+        command,
+        cwd,
         extra,
-    })
+    };
+    Ok((written, pin))
 }
 
 #[cfg(test)]
@@ -325,13 +339,12 @@ mod tests {
         let text = "version = 1\npin = [\n  { id = \"bbb\", folder = \"b\", name = \"b\", icon = \"chart\", order = 1 },\n  \
              { id = \"aaa\", folder = \"a\", name = \"a\", icon = \"chart\", order = 1 },\n  \
              { id = \"000\", folder = \"z\", name = \"z\", icon = \"chart\", order = 0 },\n]\n";
-        let ids: Vec<String> = parse(text)
-            .unwrap()
-            .pins
-            .into_iter()
-            .map(|p| p.id)
-            .collect();
-        assert_eq!(ids, ["000", "aaa", "bbb"]);
+        let pins = parse(text).unwrap().pins;
+        let read: Vec<(u32, &str)> = pins.iter().map(|p| (p.order, p.id.as_str())).collect();
+        let mut sorted = read.clone();
+        sorted.sort_unstable();
+        assert_eq!(read, sorted);
+        assert_eq!(pins[0].folder, "z");
     }
 
     #[test]
@@ -366,6 +379,27 @@ mod tests {
         let why = parse("pin = [ { id = \"a\", folder = \"a\", icon = \"chart\", order = 1 } ]")
             .unwrap_err();
         assert_eq!(why, "pin 1 in the pins file has no `name`");
+    }
+
+    /// The exploit of the review of #5978: a teammate changes a pin's command and keeps its
+    /// old id, so the page's and Regenerate's approvals, both keyed by that id, would carry over.
+    #[test]
+    fn a_pin_whose_command_changed_under_its_old_id_is_read_as_a_new_pin() {
+        let approved = id_of("board", Some("node scripts/gen.mjs"), Some("."));
+        let text = format!(
+            "version = 1\npin = [\n  {{ id = \"{approved}\", folder = \"board\", name = \"b\", \
+             icon = \"chart\", order = 1, command = \"node -e 'evil()' scripts/gen.mjs\", \
+             cwd = \".\" }},\n]\n"
+        );
+        let pin = parse(&text).unwrap().pins.remove(0);
+        assert_ne!(pin.id, approved);
+        assert_eq!(
+            pin.id,
+            id_of("board", Some("node -e 'evil()' scripts/gen.mjs"), Some("."))
+        );
+        // A line whose id is not its own is put right by the next write.
+        let pins = parse(&text).unwrap();
+        assert!(!pins.render().contains(&approved), "{}", pins.render());
     }
 
     #[test]

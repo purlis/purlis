@@ -3283,6 +3283,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
                 icon: None,
                 command: None,
                 cwd: None,
+                skill: None,
             },
         })),
     ];
