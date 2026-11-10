@@ -192,7 +192,7 @@ pub(super) const NOTICE: Family = Family {
         },
         Part {
             name: "sub",
-            since: super::NEXT,
+            since: 14,
             description: "The line under what it says: a Notices centre card's state and age \
                           under its title (#5217), and a band row's sub-line (#5215).",
             properties: &[Prop::Text, Prop::FontSize],

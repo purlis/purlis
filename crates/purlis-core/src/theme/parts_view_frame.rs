@@ -64,7 +64,7 @@ pub(super) const VIEW_FRAME: Family = Family {
         },
         Part {
             name: "heading",
-            since: super::NEXT,
+            since: 14,
             description: "The line of a page's heading and the one action beside it (#5332): \
                           the Library's Select.",
             properties: &[Prop::Gap],

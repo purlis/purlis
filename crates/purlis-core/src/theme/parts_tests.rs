@@ -1611,6 +1611,10 @@ const MANIFEST_DIGESTS: &[(u32, &str)] = &[
         13,
         "04cd51ebb36da223d32c932cdae6f7168302dace29432f7281caf1047ab4b219",
     ),
+    (
+        14,
+        "51ecb9dabd113886b7a1c2fc686394aed6ffbe7204ef137e98a738698f5fd556",
+    ),
 ];
 
 /// The prose of the manifest, which a theme is never written against: every `description`, and

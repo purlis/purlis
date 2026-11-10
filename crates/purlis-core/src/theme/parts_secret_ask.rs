@@ -22,17 +22,17 @@ pub(super) const SECRET_ASK: Family = Family {
     description: "The Secret ask's body: the app's facts in their own panel, the chat's words \
                   quoted apart, the value fields, the Allow and what it does, Remember, and the \
                   action bar.",
-    since: super::NEXT,
+    since: 14,
     parts: &[
         Part {
             name: "root",
-            since: super::NEXT,
+            since: 14,
             description: "The body: the room between what it holds.",
             properties: &[Prop::Gap],
         },
         Part {
             name: "facts",
-            since: super::NEXT,
+            since: 14,
             description: "The app's own facts, in a panel nothing of the chat's reaches: its \
                           ground, its edge and its room.",
             properties: &[
@@ -46,51 +46,51 @@ pub(super) const SECRET_ASK: Family = Family {
         },
         Part {
             name: "facts-head",
-            since: super::NEXT,
+            since: 14,
             description: "The panel's heading, From purlis.",
             properties: &[Prop::Text, Prop::FontSize],
         },
         Part {
             name: "who",
-            since: super::NEXT,
+            since: 14,
             description: "What a line is, at its start: Program, Vault, or which chat says it.",
             properties: &[Prop::Text, Prop::FontSize],
         },
         Part {
             name: "chat",
-            since: super::NEXT,
+            since: 14,
             description: "The chat's own words, set apart by the rule at their start.",
             properties: &[Prop::BorderColour, Prop::Padding, Prop::Text],
         },
         Part {
             name: "command",
-            since: super::NEXT,
+            since: 14,
             description: "The chat's command: plain, monospace and wrapped, on one flow.",
             properties: &[Prop::Text, Prop::FontSize],
         },
         Part {
             name: "control",
-            since: super::NEXT,
+            since: 14,
             description: "A control or invisible character in the chat's words, drawn as a \
                           token: ESC, LF, U+202E.",
             properties: &[Prop::Fill, Prop::Text, Prop::CornerRadius],
         },
         Part {
             name: "value",
-            since: super::NEXT,
+            since: 14,
             description: "Around a box a value or an entry is given in: the edge the box takes, \
                           visible on the card the ask is drawn on.",
             properties: &[Prop::BorderColour],
         },
         Part {
             name: "scope-said",
-            since: super::NEXT,
+            since: 14,
             description: "What the Allow chosen does, under it.",
             properties: &[Prop::Text, Prop::FontSize],
         },
         Part {
             name: "tool-line",
-            since: super::NEXT,
+            since: 14,
             description: "The line Always allow writes, shown before it is pressed.",
             properties: &[
                 Prop::Fill,
@@ -102,7 +102,7 @@ pub(super) const SECRET_ASK: Family = Family {
         },
         Part {
             name: "foot",
-            since: super::NEXT,
+            since: 14,
             description: "The action bar, held in view at the body's foot as it scrolls: its \
                           ground and its room. Its edge is the window's, never a theme's.",
             properties: &[Prop::Fill, Prop::Padding, Prop::Gap],

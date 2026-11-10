@@ -55,7 +55,7 @@ pub(super) const POPOVER: Family = Family {
         },
         Part {
             name: "none",
-            since: super::NEXT,
+            since: 14,
             description: "What a filtered list says when nothing matches what was typed.",
             properties: &[Prop::Text, Prop::FontSize],
         },
