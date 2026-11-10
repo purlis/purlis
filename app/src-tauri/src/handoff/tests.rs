@@ -85,9 +85,16 @@ impl Plane {
             // The child [`ran_on_a_sandbox_only_stand_in`] started: `work` is this machine's
             // sandbox-only profile, in the test's own homes. The project's own file offers no
             // `work` of its own, and holds the profiles and personas a test adds.
+            // Made once in the child: a test that lays out a second plane finds it there.
             let homes = purlis_core::profilestore::Homes::here().expect("the test's homes");
-            purlis_core::profilestore::create_sandbox_only(&homes, "work", "claude", 1)
-                .expect("the sandbox-only profile is made");
+            let made = purlis_core::profilestore::list(homes.config_root())
+                .expect("this machine's profiles")
+                .iter()
+                .any(|profile| profile.name == "work");
+            if !made {
+                purlis_core::profilestore::create_sandbox_only(&homes, "work", "claude", 1)
+                    .expect("the sandbox-only profile is made");
+            }
             std::fs::write(plane.root.join(purlis_core::profiles::LOCAL_FILE), "")
                 .expect("the local file");
         }
