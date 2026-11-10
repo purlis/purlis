@@ -19,6 +19,8 @@ import { closeTabOf, iconFor, iconOf } from "../artifactTabs.js";
 
 const NAME = "Offering board";
 const OFFERS = `[role="group"][aria-label="Offered by ${NAME}"]`;
+/** The todos it adds, an open one and a done one. */
+const TITLES = ["Offered fix", "Offered old one"];
 const PAGE = `<!doctype html><title>${NAME}</title><p>Offers</p><script src=app.js></script>`;
 
 /** What the app answered a command with, insisting it answered at all. */
@@ -62,17 +64,45 @@ function slugOf(dir: string, title: string): string {
   return file.slice(0, -".md".length);
 }
 
+/** The slugs of the todos in `dir` whose file holds `title`, none when there is no `dir`. */
+function slugsOf(dir: string, title: string): string[] {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter(
+      (one) =>
+        one.endsWith(".md") &&
+        one !== "MEMORY.md" &&
+        readFileSync(join(dir, one), "utf8").includes(title),
+    )
+    .map((one) => one.slice(0, -".md".length));
+}
+
+/** Forgets every todo of `alpha`'s titled one of `titles`, open or done: what an earlier
+ *  attempt at this spec left, so it starts from none and leaves none. */
+async function forgetTodos(plane: string, todos: string, titles: string[]): Promise<void> {
+  for (const title of titles) {
+    for (const slug of slugsOf(todos, title)) {
+      await ask("todo_forget", { plane, workspace: "alpha", slug });
+    }
+    for (const slug of slugsOf(join(todos, "archive"), title)) {
+      await ask("todo_forget_done", { plane, workspace: "alpha", slug });
+    }
+  }
+}
+
 describe("a pinned artifact whose page offers actions", function () {
   this.timeout(180_000);
 
+  let plane = "";
   let at = "";
   let todos = "";
   let open = "";
   let done = "";
 
   before(async () => {
-    const plane = (await ask<string[]>("open_planes"))[0];
+    plane = (await ask<string[]>("open_planes"))[0];
     todos = join(plane, "workspaces", "alpha", "todos");
+    await forgetTodos(plane, todos, TITLES);
     await ask("todo_add", { plane, workspace: "alpha", text: "Offered fix" });
     await ask("todo_add", { plane, workspace: "alpha", text: "Offered old one" });
     open = slugOf(todos, "Offered fix");
@@ -106,6 +136,7 @@ pin = [
   after(async () => {
     await closeTabOf(NAME);
     rmSync(at, { recursive: true, force: true });
+    await forgetTodos(plane, todos, TITLES);
   });
 
   it("offers nothing while its script is not approved", async () => {

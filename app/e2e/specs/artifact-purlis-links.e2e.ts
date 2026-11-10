@@ -106,15 +106,27 @@ function chatLinkedTo(dir: string, item: string): string | undefined {
   return undefined;
 }
 
-/** Brings the artifact's tab to the front, by its tab on the strip. */
-async function artifactInFront(): Promise<void> {
-  await focusWorkspace("alpha");
-  if ((await inFront()) === NAME) return;
-  await $(iconOf(NAME)).click();
-  await browser.waitUntil(async () => (await inFront()) === NAME, {
+/** The label of the one artifact webview open now, once there is exactly one. */
+async function theArtifactWebview(): Promise<string> {
+  await browser.waitUntil(async () => (await artifactWebviews()).length === 1, {
     timeout: 20_000,
-    timeoutMsg: "the artifact's tab did not come to the front",
+    timeoutMsg: "the artifact's page is not open in one webview",
   });
+  return (await artifactWebviews())[0];
+}
+
+/** Brings the artifact's tab to the front, by its tab on the strip: the label of its webview
+ *  now, since a tab that comes back from another workspace draws its page in a new one. */
+async function artifactInFront(): Promise<string> {
+  await focusWorkspace("alpha");
+  if ((await inFront()) !== NAME) {
+    await $(iconOf(NAME)).click();
+    await browser.waitUntil(async () => (await inFront()) === NAME, {
+      timeout: 20_000,
+      timeoutMsg: "the artifact's tab did not come to the front",
+    });
+  }
+  return theArtifactWebview();
 }
 
 /** The dialog that says `title`, once it is up. */
@@ -135,7 +147,6 @@ describe("a purlis:// link in an artifact's page", function () {
   let slug = "";
   let chat: Started | undefined;
   let chatId = "";
-  let label = "";
 
   before(async () => {
     plane = (await ask<string[]>("open_planes"))[0];
@@ -172,11 +183,7 @@ pin = [
     );
     const icon = await iconFor(NAME);
     await icon.click();
-    await browser.waitUntil(async () => (await artifactWebviews()).length === 1, {
-      timeout: 20_000,
-      timeoutMsg: "the artifact's page did not open",
-    });
-    label = (await artifactWebviews())[0];
+    await theArtifactWebview();
   });
 
   after(async () => {
@@ -193,7 +200,7 @@ pin = [
   });
 
   it("focuses the workspace a workspace link names, without asking", async () => {
-    await artifactInFront();
+    const label = await artifactInFront();
     await ask("artifact_link_follow", { label, href: "purlis://workspace/beta" });
     await browser.waitUntil(async () => (await focused()) === "beta", {
       timeout: 20_000,
@@ -203,7 +210,7 @@ pin = [
   });
 
   it("opens the todo a todo link names, in its view", async () => {
-    await artifactInFront();
+    const label = await artifactInFront();
     await ask("artifact_link_follow", { label, href: `purlis://todo/alpha/${slug}` });
     await browser.waitUntil(async () => (await inFront()) === TODO, {
       timeout: 20_000,
@@ -214,7 +221,7 @@ pin = [
 
   it("shows the chat a chat link names", async () => {
     const session = chat?.session ?? -1;
-    await artifactInFront();
+    const label = await artifactInFront();
     expect(await paneShown(session)).toBe(false);
     await ask("artifact_link_follow", { label, href: `purlis://chat/${chatId}` });
     await browser.waitUntil(async () => paneShown(session), {
@@ -225,7 +232,7 @@ pin = [
 
   it("shows the chat that works on the issue an issue link names", async () => {
     const session = chat?.session ?? -1;
-    await artifactInFront();
+    const label = await artifactInFront();
     expect(await paneShown(session)).toBe(false);
     await ask("artifact_link_follow", {
       label,
@@ -243,7 +250,7 @@ pin = [
     ["purlis://workspace/nowhere", "This project has no workspace nowhere"],
   ] as const) {
     it(`refuses ${href.replace("SLUG", "<todo>")} with a sentence, and goes nowhere`, async () => {
-      await artifactInFront();
+      const label = await artifactInFront();
       await ask("artifact_link_follow", { label, href: href.replace("SLUG", slug) });
       const dialog = await dialogSaying("Link not opened");
       expect(await dialog.getText()).toContain(said);
