@@ -7126,7 +7126,7 @@ nav.piece-files-head {
 }
 
 /* The side column (R38): the level switcher, whose settings these are, the filter and the
-   pages, 16 by 12 inside its edge. */
+   pages, 12 above, 16 below and 12 at the sides. */
 .ui-settings-side {
   display: flex;
   flex-direction: column;
@@ -7134,7 +7134,9 @@ nav.piece-files-head {
   min-inline-size: 0;
   min-block-size: 0;
   overflow-y: auto;
-  padding: var(--space-6) var(--space-5);
+  /* 12 at its top, not the prototype's 16: the level switch shares the pane actions' row
+     (#3147, ViewTabs.stories.tsx). */
+  padding: var(--space-5) var(--space-5) var(--space-6);
   border-inline-end: 1px solid var(--border-subtle);
   background-color: var(--surface-base);
 }
