@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794333608750,
+  "lastUpdate": 1794336281629,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -46242,6 +46242,48 @@ window.BENCHMARK_DATA = {
             "value": 99.631223,
             "unit": "ms",
             "extra": "median of 5 runs: 99.137, 99.488, 99.631, 100.980, 104.055 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "1efdbe1fc90d8fe41c25a126443de55d87bc47c4",
+          "message": "Keyboard triage across projects: ⌘⇧I, answer and move on, later, go, snooze, stop (#6016) (#6153)\n\n* Keyboard triage across projects: ⌘⇧I, answer and move on, later, go, snooze, stop (#6016)\n\n#6143 (head 2991609a0) merged with main after #6009. A group of identical\nrequests is one triage stop: it leads with Answer each, Allow for all is one\narrow away, and once opened triage walks each chat inside it. Other scopes...\nis never a lead. asksSame and asksTriage share one highRisk seam for #6011.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M733NXZ0Z8K8ZJNZ6NTW353S\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-10T17:55:58Z",
+          "tree_id": "41fe2ad3de193fd79f2e04568bca46dd2b514fd3",
+          "url": "https://github.com/purlis/purlis/commit/1efdbe1fc90d8fe41c25a126443de55d87bc47c4"
+        },
+        "date": 1794336276420,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.549133,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.547, 0.548, 0.549, 0.555, 0.568 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.224517,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.180, 16.190, 16.225, 16.271, 16.367 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.295227,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.614, 100.055, 101.295, 101.798, 102.046 ms"
           }
         ]
       }
