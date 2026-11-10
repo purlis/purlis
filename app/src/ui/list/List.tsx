@@ -85,6 +85,7 @@ import {
   isEscapeInABox,
   keepsItsArrows,
   keptOnTheWayDown,
+  movesWithinItsRow,
   movedInARadioGroup,
 } from "./rowKeys";
 import type { Tip } from "../tooltip/Tooltip";
@@ -630,6 +631,12 @@ function rowElement(labelledBy?: string, describedBy?: string) {
       // A select or a combobox in it hears its own ↑ and ↓, and opens (#5993, `rowKeys.ts`).
       onKeyDownCapture={(event) => {
         if (!keepsItsArrows(event)) element.onKeyDownCapture?.(event);
+      }}
+      // Tab from a control in it goes on to its next control, which the list would skip to
+      // leave itself (#6071, `rowKeys.ts`).
+      onKeyDown={(event) => {
+        if (movesWithinItsRow(event)) event.stopPropagation();
+        element.onKeyDown?.(event);
       }}
     />
   );
