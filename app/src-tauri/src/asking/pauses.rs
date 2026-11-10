@@ -70,6 +70,8 @@ pub fn paused(session: u32, paused: &Paused, chain: Vec<String>, blocks: Option<
         since: Some(paused.since),
         held_until: None,
         expires: None,
+        // Nor does it time out (#6007): it waits for the person's answer.
+        timed_out: None,
         blocks,
         writes: None,
         lines: None,
