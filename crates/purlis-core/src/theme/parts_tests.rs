@@ -1988,7 +1988,9 @@ fn a_parts_theme_is_measured_once_for_its_stylesheet_and_what_fell() {
 
 #[test]
 fn a_gallery_of_parts_themes_is_measured_once_per_theme_however_often_it_is_drawn() {
-    let themes: Vec<ResolvedTheme> = (60..68).map(costed).collect();
+    // Three themes drawn three times each: as many as a gallery needs to show a pass per theme
+    // and none per draw. Each is a whole measure in every tint, so more only cost time (#3597).
+    let themes: Vec<ResolvedTheme> = (60..63).map(costed).collect();
     let before = parts::passes();
     for _ in 0..3 {
         for theme in &themes {
@@ -2542,12 +2544,15 @@ fn states_whose_mix_is_the_familys_own_look_are_not_held_back() {
     assert!(fallen.is_empty(), "{fallen:?}");
 }
 
-#[test]
-fn the_floors_are_held_until_holding_them_again_writes_no_fallback() {
-    // A fallback changes how a state draws, so the hold runs again until a round writes none:
-    // holding the result once more finds nothing that falls.
-    let themes = [
-        with_tokens_and_parts(
+/// A fallback changes how a state draws, so the hold runs again until a round writes none:
+/// holding the result once more finds nothing that falls. One test a theme, so the holds run
+/// side by side (#3597).
+mod the_floors_are_held_until_holding_them_again_writes_no_fallback {
+    use super::*;
+
+    #[test]
+    fn a_focused_primary_over_a_lighter_hover() {
+        holds_again_to_nothing(&with_tokens_and_parts(
             json!({ "control.hover": "#9a9a90" }),
             json!({
                 "button.root.secondary.focused.fill": "accent.surface",
@@ -2557,20 +2562,32 @@ fn the_floors_are_held_until_holding_them_again_writes_no_fallback() {
                 "button.root.primary.hover.fill": "control.hover",
                 "button.root.primary.hover.text": "surface.base",
             }),
-        ),
-        with_parts(json!({
+        ));
+    }
+
+    #[test]
+    fn an_open_primary() {
+        holds_again_to_nothing(&with_parts(json!({
             "button.root.primary.hover.fill": "control.hover",
             "button.root.primary.hover.border-colour": "text.secondary",
             "button.root.primary.open.border-colour": "accent.base",
             "button.root.secondary.open.fill": "accent.surface",
             "button.root.grants.open.fill": "accent.surface",
             "button.root.primary.open.fill": "control.base",
-        })),
-        with_tokens_and_parts(
+        })));
+    }
+
+    #[test]
+    fn keep_blockeds_words_over_a_lighter_tab() {
+        holds_again_to_nothing(&with_tokens_and_parts(
             json!({ "tab.active": "#a3a29a" }),
             json!({ "button.root.secondary.text": "text.secondary" }),
-        ),
-        with_tokens_and_parts(
+        ));
+    }
+
+    #[test]
+    fn a_focused_primary_over_a_lighter_tab() {
+        holds_again_to_nothing(&with_tokens_and_parts(
             json!({ "tab.active": "#a3a29a" }),
             json!({
                 "button.root.primary.hover.fill": "tab.active",
@@ -2580,9 +2597,10 @@ fn the_floors_are_held_until_holding_them_again_writes_no_fallback() {
                 "button.root.secondary.focused.fill": "accent.surface",
                 "button.root.grants.focused.fill": "accent.surface",
             }),
-        ),
-    ];
-    for document in &themes {
+        ));
+    }
+
+    fn holds_again_to_nothing(document: &Value) {
         let loaded = load(document);
         assert!(!loaded.refused, "{:?}", said(&loaded));
         let theme = loaded.theme.first();

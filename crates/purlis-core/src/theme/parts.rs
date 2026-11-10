@@ -1279,13 +1279,15 @@ fn look_apart(theme: &ResolvedTheme, on: &[String], a: &Drawn, b: &Drawn, words:
         (Some(_), Some(_)) => apart(theme, x, y).unwrap_or(1.0),
         _ => 1.0,
     };
-    let shown = |fill: &str, ground: &str| {
-        hex(theme, fill).map_or_else(|| ground.to_owned(), |fill| onto(fill, ground))
+    // Each fill is read once, not once a ground.
+    let (a_fill, b_fill) = (hex(theme, a.fill), hex(theme, b.fill));
+    let shown = |fill: Option<&str>, ground: &str| {
+        fill.map_or_else(|| ground.to_owned(), |fill| onto(fill, ground))
     };
     let fills = on
         .iter()
         .filter_map(|ground| {
-            let (x, y) = (shown(a.fill, ground), shown(b.fill, ground));
+            let (x, y) = (shown(a_fill, ground), shown(b_fill, ground));
             Some(tint::distance(tint::oklab_of(&x)?, tint::oklab_of(&y)?))
         })
         .reduce(f64::min)
@@ -3155,7 +3157,9 @@ enum Consented {
 /// is nearer than the family's defaults draw the two in any pair of their looks: the nearest the
 /// family itself brings them is what it holds as apart, so a pair the defaults happen to draw far
 /// apart asks no more of a theme than that. Danger's words are held apart from the primary's in
-/// each pair as in one state. The primary's states, if any.
+/// each pair as in one state. The primary's states, if any. A hold asks it through
+/// [`ConsentLooks::nearer_across`], which draws the looks once for every tint.
+#[cfg(test)]
 fn nearer_across(
     theme: &ResolvedTheme,
     on: &[String],
@@ -3164,45 +3168,102 @@ fn nearer_across(
     variant: &str,
     states: &[State],
 ) -> Option<Vec<State>> {
-    #[cfg(test)]
     if ALIKE_ONLY.with(std::cell::Cell::get) {
         return None;
     }
-    // Where no rule colours the root of either, both draw their defaults in every look, and no
-    // pair of defaults is nearer than the nearest of them: nothing to measure, at no cost.
-    let colours = |name: &str| {
-        rules.iter().any(|rule| {
-            std::ptr::eq(rule.family, family)
-                && rule.part == 0
-                && rule.variant.is_none_or(|one| one == name)
-                && [Prop::Fill, Prop::Text, Prop::BorderColour]
-                    .iter()
-                    .any(|property| rule.values.contains_key(property))
+    nearer_across_as(theme, on, &Across::of(rules, family, variant, states)?)
+}
+
+/// The looks [`nearer_across`] measures, as the rules and the defaults draw them: no theme's, so
+/// drawn once for every tint a variant is held in (#3597).
+struct Across {
+    words: bool,
+    /// The variant's default looks in each set of states it shows, each drawn alike once.
+    defaults: Vec<Drawn>,
+    /// The primary's default looks in each set of states it shows, each drawn alike once.
+    default_primaries: Vec<Drawn>,
+    look: Drawn,
+    default_look: Drawn,
+    /// Each set of states the primary is drawn in beside the variant, but the variant's own,
+    /// with its look by the theme and by the defaults: a pair drawn alike before, left out.
+    besides: Vec<(Vec<State>, Drawn, Drawn)>,
+}
+
+impl Across {
+    /// `None` where no rule colours the root of either: both draw their defaults in every look,
+    /// and no pair of defaults is nearer than the nearest of them, so there is nothing to measure.
+    fn of(rules: &[Rule], family: &Family, variant: &str, states: &[State]) -> Option<Self> {
+        let colours = |name: &str| {
+            rules.iter().any(|rule| {
+                std::ptr::eq(rule.family, family)
+                    && rule.part == 0
+                    && rule.variant.is_none_or(|one| one == name)
+                    && [Prop::Fill, Prop::Text, Prop::BorderColour]
+                        .iter()
+                        .any(|property| rule.values.contains_key(property))
+            })
+        };
+        if !colours(variant) && !colours(PRIMARY) {
+            return None;
+        }
+        let words = family
+            .variants
+            .iter()
+            .any(|one| one.name == variant && one.consent == Some(Consent::Danger));
+        let primary_in = shown_sets(family, PRIMARY);
+        let mut defaults: Vec<Drawn> = Vec::new();
+        for one in shown_sets(family, variant) {
+            let look = drawn(&[], family, variant, &one);
+            if !defaults.contains(&look) {
+                defaults.push(look);
+            }
+        }
+        let mut default_primaries: Vec<Drawn> = Vec::new();
+        for one in &primary_in {
+            let look = drawn(&[], family, PRIMARY, one);
+            if !default_primaries.contains(&look) {
+                default_primaries.push(look);
+            }
+        }
+        // Two looks of the primary drawn alike, by the theme and by the defaults, are measured once.
+        let mut besides: Vec<(Vec<State>, Drawn, Drawn)> = Vec::new();
+        for beside in primary_in {
+            if beside.as_slice() == states {
+                continue;
+            }
+            let primary = drawn(rules, family, PRIMARY, &beside);
+            let default_primary = drawn(&[], family, PRIMARY, &beside);
+            if besides
+                .iter()
+                .any(|(_, one, other)| *one == primary && *other == default_primary)
+            {
+                continue;
+            }
+            besides.push((beside, primary, default_primary));
+        }
+        Some(Self {
+            words,
+            defaults,
+            default_primaries,
+            look: drawn(rules, family, variant, states),
+            default_look: drawn(&[], family, variant, states),
+            besides,
         })
-    };
-    if !colours(variant) && !colours(PRIMARY) {
-        return None;
     }
-    let words = family
-        .variants
-        .iter()
-        .any(|one| one.name == variant && one.consent == Some(Consent::Danger));
-    let primary_in = shown_sets(family, PRIMARY);
+}
+
+/// [`nearer_across`], with its looks already drawn.
+fn nearer_across_as(theme: &ResolvedTheme, on: &[String], across: &Across) -> Option<Vec<State>> {
+    let Across {
+        words,
+        defaults,
+        default_primaries,
+        look,
+        default_look,
+        besides,
+    } = across;
+    let words = *words;
     // The nearest the defaults bring the two, over their looks drawn alike once each.
-    let mut defaults: Vec<Drawn> = Vec::new();
-    for one in shown_sets(family, variant) {
-        let look = drawn(&[], family, variant, &one);
-        if !defaults.contains(&look) {
-            defaults.push(look);
-        }
-    }
-    let mut default_primaries: Vec<Drawn> = Vec::new();
-    for one in &primary_in {
-        let look = drawn(&[], family, PRIMARY, one);
-        if !default_primaries.contains(&look) {
-            default_primaries.push(look);
-        }
-    }
     let least = defaults
         .iter()
         .flat_map(|look| {
@@ -3211,30 +3272,15 @@ fn nearer_across(
                 .map(move |primary| look_apart(theme, on, look, primary, words))
         })
         .fold(f64::INFINITY, f64::min);
-    let look = drawn(rules, family, variant, states);
-    let default_look = drawn(&[], family, variant, states);
-    // Two looks of the primary drawn alike, by the theme and by the defaults, are measured once.
-    let mut seen: Vec<(Drawn, Drawn)> = Vec::new();
-    for beside in primary_in {
-        if beside.as_slice() == states {
-            continue;
-        }
-        let primary = drawn(rules, family, PRIMARY, &beside);
-        let default_primary = drawn(&[], family, PRIMARY, &beside);
-        let pair = (primary, default_primary);
-        if seen.contains(&pair) {
-            continue;
-        }
-        let (primary, default_primary) = &pair;
+    for (beside, primary, default_primary) in besides {
         let words_near = words
             && apart(theme, default_look.words[0], default_primary.words[0])
                 .is_none_or(|distance| distance >= super::DANGER_APART)
             && apart(theme, look.words[0], primary.words[0])
                 .is_some_and(|distance| distance < super::DANGER_APART);
-        if words_near || look_apart(theme, on, &look, primary, words) < least - NO_NEARER {
-            return Some(beside);
+        if words_near || look_apart(theme, on, look, primary, words) < least - NO_NEARER {
+            return Some(beside.clone());
         }
-        seen.push(pair);
     }
     None
 }
@@ -3247,19 +3293,91 @@ fn consent_broken(
     variant: &Variant,
     states: &[State],
 ) -> Option<Consented> {
-    let look = drawn(rules, family, variant.name, states);
-    let primary = drawn(rules, family, PRIMARY, states);
-    let default_look = drawn(&[], family, variant.name, states);
-    let default_primary = drawn(&[], family, PRIMARY, states);
+    let looks = ConsentLooks::of(rules, family, variant, states);
+    consent_broken_as(theme, on, rules, family, variant, states, &looks)
+}
+
+/// The looks [`consent_broken`] reads a consent variant by, as `rules` draw them and as the
+/// family's defaults do: no theme's, so worked out once for every tint a variant is held in.
+struct ConsentLooks {
+    look: Drawn,
+    primary: Drawn,
+    default_look: Drawn,
+    default_primary: Drawn,
+    /// Keep blocked's, the family's first variant, for an answer that grants.
+    keep_blocked: Option<(Drawn, Drawn)>,
+    /// What [`nearer_across`] measures, drawn the first time it is asked.
+    across: std::cell::OnceCell<Option<Across>>,
+}
+
+impl ConsentLooks {
+    fn of(rules: &[Rule], family: &Family, variant: &Variant, states: &[State]) -> Self {
+        let keep_blocked = (variant.consent == Some(Consent::Grants)).then(|| {
+            let name = family.variants[0].name;
+            (
+                drawn(rules, family, name, states),
+                drawn(&[], family, name, states),
+            )
+        });
+        Self {
+            look: drawn(rules, family, variant.name, states),
+            primary: drawn(rules, family, PRIMARY, states),
+            default_look: drawn(&[], family, variant.name, states),
+            default_primary: drawn(&[], family, PRIMARY, states),
+            keep_blocked,
+            across: std::cell::OnceCell::new(),
+        }
+    }
+
+    /// [`nearer_across`] in `theme`, from these looks' rules.
+    fn nearer_across(
+        &self,
+        theme: &ResolvedTheme,
+        on: &[String],
+        rules: &[Rule],
+        family: &Family,
+        variant: &str,
+        states: &[State],
+    ) -> Option<Vec<State>> {
+        #[cfg(test)]
+        if ALIKE_ONLY.with(std::cell::Cell::get) {
+            return None;
+        }
+        let across = self
+            .across
+            .get_or_init(|| Across::of(rules, family, variant, states));
+        nearer_across_as(theme, on, across.as_ref()?)
+    }
+}
+
+/// [`consent_broken`], with its looks already drawn from `rules`.
+#[allow(clippy::too_many_arguments)]
+fn consent_broken_as(
+    theme: &ResolvedTheme,
+    on: &[String],
+    rules: &[Rule],
+    family: &Family,
+    variant: &Variant,
+    states: &[State],
+    looks: &ConsentLooks,
+) -> Option<Consented> {
+    let ConsentLooks {
+        look,
+        primary,
+        default_look,
+        default_primary,
+        keep_blocked: blocked,
+        across: _,
+    } = looks;
     // Parts never bring a consent variant nearer the primary than the family's defaults are, in
     // this same drawn theme: the farthest of its fill, its edge and (for danger) its words.
     let words = variant.consent == Some(Consent::Danger);
-    let nearer = look_apart(theme, on, &look, &primary, words)
-        < look_apart(theme, on, &default_look, &default_primary, words) - NO_NEARER;
+    let nearer = look_apart(theme, on, look, primary, words)
+        < look_apart(theme, on, default_look, default_primary, words) - NO_NEARER;
     let states_owned = states.to_vec();
     match variant.consent? {
         Consent::Grants => {
-            let own = edge(rules, family, variant.name, &look);
+            let own = edge(rules, family, variant.name, look);
             let ratio = own.and_then(|border| lowest(theme, on, look.fill, border));
             if ratio.is_none_or(|ratio| ratio < 3.0) {
                 return Some(Consented::Own(
@@ -3268,16 +3386,16 @@ fn consent_broken(
                 ));
             }
             let keep_blocked_name = family.variants[0].name;
-            let keep_blocked = drawn(rules, family, keep_blocked_name, states);
-            let default_keep_blocked = drawn(&[], family, keep_blocked_name, states);
-            let default_allow = drawn(&[], family, variant.name, states);
+            let (keep_blocked, default_keep_blocked) =
+                blocked.as_ref().expect("drawn for an answer that grants");
+            let default_allow = default_look;
             if !alike(
                 theme,
                 default_allow.border,
                 default_keep_blocked.border,
                 super::ALLOW_APART,
             ) && let (Some(own), Some(theirs)) =
-                (own, edge(rules, family, keep_blocked_name, &keep_blocked))
+                (own, edge(rules, family, keep_blocked_name, keep_blocked))
                 && alike(theme, own, theirs, super::ALLOW_APART)
             {
                 return Some(Consented::Both(
@@ -3303,7 +3421,9 @@ fn consent_broken(
                     states_owned,
                 ));
             }
-            if let Some(beside) = nearer_across(theme, on, rules, family, variant.name, states) {
+            if let Some(beside) =
+                looks.nearer_across(theme, on, rules, family, variant.name, states)
+            {
                 return Some(Consented::Both(
                     format!(
                         "Allow never takes the primary look: Allow {} beside the primary {}",
@@ -3316,7 +3436,7 @@ fn consent_broken(
             }
         }
         Consent::Asks => {
-            let own = edge(rules, family, variant.name, &look);
+            let own = edge(rules, family, variant.name, look);
             let ratio = own.and_then(|border| lowest(theme, on, look.fill, border));
             if ratio.is_none_or(|ratio| ratio < 3.0) {
                 return Some(Consented::Own(
@@ -3327,7 +3447,7 @@ fn consent_broken(
             // It reads as waiting, never as the accent the primary is drawn in: never nearer the
             // accent than the family's own edge is, once near it.
             let from_accent = |border: &str| apart(theme, border, "accent.base");
-            let theirs = edge(&[], family, variant.name, &default_look).and_then(from_accent);
+            let theirs = edge(&[], family, variant.name, default_look).and_then(from_accent);
             if let Some(distance) = own.and_then(from_accent)
                 && distance < super::DANGER_APART
                 && theirs.is_none_or(|theirs| distance < theirs - NO_NEARER)
@@ -3352,7 +3472,7 @@ fn consent_broken(
                 apart(theme, a.words[0], b.words[0])
                     .is_none_or(|distance| distance >= super::DANGER_APART)
             };
-            if words_apart(&default_look, &default_primary) && !words_apart(&look, &primary) {
+            if words_apart(default_look, default_primary) && !words_apart(look, primary) {
                 return Some(Consented::Both(
                     "danger is distinguishable from primary: its words are apart from the \
                      primary's"
@@ -3368,7 +3488,9 @@ fn consent_broken(
                     states_owned,
                 ));
             }
-            if let Some(beside) = nearer_across(theme, on, rules, family, variant.name, states) {
+            if let Some(beside) =
+                looks.nearer_across(theme, on, rules, family, variant.name, states)
+            {
                 return Some(Consented::Both(
                     format!(
                         "danger is distinguishable from primary: danger {} beside the primary {}",
@@ -4804,25 +4926,32 @@ impl Held<'_> {
             .iter()
             .filter(|one| one.consent.is_some() && family.draws(one.name, states))
         {
+            // The looks are no tint's: drawn once, and again only after a fallback changes the
+            // rules they are drawn from (#3597).
+            let mut looks: Option<ConsentLooks> = None;
             for one in drawn_in {
+                let drawn_now = looks
+                    .get_or_insert_with(|| ConsentLooks::of(self.rules, family, variant, states));
                 // A variant already drawn as its default is held by the token floors; a
                 // fallback would change nothing, so what it is held apart from falls back.
-                let own_default = drawn(self.rules, family, variant.name, states)
-                    == drawn(&[], family, variant.name, states);
+                let own_default = drawn_now.look == drawn_now.default_look;
                 let on = grounds(one, family);
-                match consent_broken(one, &on, self.rules, family, variant, states) {
+                match consent_broken_as(one, &on, self.rules, family, variant, states, drawn_now) {
                     None => {}
                     Some(Consented::Own(floor, ratio)) => {
                         if !own_default {
                             self.fall(variant.name, states, floor, ratio);
+                            looks = None;
                         }
                     }
                     Some(Consented::Both(floor, other, other_in)) => {
                         if !own_default {
                             self.fall(variant.name, states, floor.clone(), None);
+                            looks = None;
                         }
                         if consent_broken(one, &on, self.rules, family, variant, states).is_some() {
                             self.fall(other, &other_in, floor, None);
+                            looks = None;
                         }
                     }
                 }

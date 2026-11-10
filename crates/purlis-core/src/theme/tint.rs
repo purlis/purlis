@@ -117,7 +117,45 @@ pub fn tint_hex_within(hex: &str, hue: f64, most: f64) -> String {
     found
 }
 
-/// How many answers each of [`TURNED`] and [`OKLAB`] keeps on a thread.
+/// **[`tint_hex_within`]'s answer in OKLab** ([`oklab_of`]), kept on this thread as [`TURNED`]
+/// keeps the answer itself: a tint's search reads every rule's sides at each chroma step.
+fn turned_oklab(hex: &str, hue: f64, most: f64) -> Option<Vec3> {
+    let asked = (hue.to_bits(), most.to_bits());
+    let kept = TURNED_OKLAB.with(|turned| {
+        turned
+            .borrow()
+            .at
+            .get(&asked)
+            .and_then(|at| at.get(hex))
+            .copied()
+    });
+    if let Some(found) = kept {
+        return found;
+    }
+    let found = oklab_of(&tint_hex_within(hex, hue, most));
+    TURNED_OKLAB.with(|turned| {
+        let mut turned = turned.borrow_mut();
+        if turned.kept >= KEPT {
+            *turned = TurnedOklab::default();
+        }
+        turned.kept += 1;
+        turned
+            .at
+            .entry(asked)
+            .or_default()
+            .insert(hex.to_owned(), found);
+    });
+    found
+}
+
+/// What [`turned_oklab`] answered on this thread, as [`Turned`] keeps [`tint_hex_within`]'s.
+#[derive(Default)]
+struct TurnedOklab {
+    kept: usize,
+    at: rustc_hash::FxHashMap<(u64, u64), rustc_hash::FxHashMap<String, Option<Vec3>>>,
+}
+
+/// How many answers each of [`TURNED`], [`TURNED_OKLAB`] and [`OKLAB`] keeps on a thread.
 const KEPT: usize = 1 << 16;
 
 /// **What [`tint_hex_within`] answered on this thread** (#5056), by hue and most chroma, then by
@@ -127,14 +165,17 @@ const KEPT: usize = 1 << 16;
 #[derive(Default)]
 struct Turned {
     kept: usize,
-    at: std::collections::HashMap<(u64, u64), std::collections::HashMap<String, String>>,
+    at: rustc_hash::FxHashMap<(u64, u64), rustc_hash::FxHashMap<String, String>>,
 }
 
 thread_local! {
     static TURNED: std::cell::RefCell<Turned> = std::cell::RefCell::new(Turned::default());
+    /// [`turned_oklab`]'s answers on this thread.
+    static TURNED_OKLAB: std::cell::RefCell<TurnedOklab> =
+        std::cell::RefCell::new(TurnedOklab::default());
     /// [`oklab_of`]'s answers on this thread, as [`TURNED`] keeps [`tint_hex_within`]'s.
-    static OKLAB: std::cell::RefCell<std::collections::HashMap<String, Option<Vec3>>> =
-        std::cell::RefCell::new(std::collections::HashMap::new());
+    static OKLAB: std::cell::RefCell<rustc_hash::FxHashMap<String, Option<Vec3>>> =
+        std::cell::RefCell::new(rustc_hash::FxHashMap::default());
 }
 
 /// [`tint_hex_within`], worked out.
@@ -495,33 +536,61 @@ pub const NO_NEARER: NoNearer = NoNearer {
 /// ground is to either. `value` gives the signal washes and the grounds as they are drawn. A value
 /// that is not a colour has nothing to be near. `tint.ts`' `noNearer` is the same.
 pub fn no_nearer(turned: &str, written: &str, value: impl Fn(&'static str) -> String) -> bool {
-    if !is_colour(turned) || !is_colour(written) {
-        return true;
-    }
-    nearest_signal(turned, &value) >= nearest_signal(written, &value)
+    Signals::drawn(value).no_nearer(turned, written)
 }
 
-/// The nearest `ground` comes to a signal's wash of [`NO_NEARER`], both laid on each of its
-/// grounds as the screen draws them; infinity where nothing is a colour.
-fn nearest_signal(ground: &str, value: &impl Fn(&'static str) -> String) -> f64 {
-    let mut nearest = f64::INFINITY;
-    for under in NO_NEARER.over {
-        let under = value(under);
-        if !is_colour(&under) {
-            continue;
-        }
-        for from in NO_NEARER.from {
-            let from = value(from);
-            if !is_colour(&from) {
+/// The signal washes of [`NO_NEARER`] as drawn, each with the ground under it: what
+/// [`no_nearer`] measures a ground against, worked out once for every ground a tint turns.
+struct Signals {
+    /// Each ground of [`NO_NEARER`]'s `over` that is a colour, and each wash that is a colour laid
+    /// on it, in OKLab where it is one: in the order [`no_nearer`] measures them.
+    laid: Vec<(String, Vec<Option<Vec3>>)>,
+}
+
+impl Signals {
+    /// The washes and their grounds as `value` draws them.
+    fn drawn(value: impl Fn(&'static str) -> String) -> Self {
+        let mut laid = Vec::new();
+        for under in NO_NEARER.over {
+            let under = value(under);
+            if !is_colour(&under) {
                 continue;
             }
-            let drawn = |top: &str| oklab_of(&super::check::onto(top, &under));
-            if let (Some(ground), Some(from)) = (drawn(ground), drawn(&from)) {
-                nearest = nearest.min(distance(ground, from));
+            let washes = NO_NEARER
+                .from
+                .iter()
+                .map(|from| value(from))
+                .filter(|from| is_colour(from))
+                .map(|from| oklab_of(&super::check::onto(&from, &under)))
+                .collect();
+            laid.push((under, washes));
+        }
+        Self { laid }
+    }
+
+    /// [`no_nearer`] against these washes.
+    fn no_nearer(&self, turned: &str, written: &str) -> bool {
+        if !is_colour(turned) || !is_colour(written) {
+            return true;
+        }
+        self.nearest(turned) >= self.nearest(written)
+    }
+
+    /// The nearest `ground` comes to a signal's wash, both laid on each of its grounds as the
+    /// screen draws them; infinity where nothing is a colour.
+    fn nearest(&self, ground: &str) -> f64 {
+        let mut nearest = f64::INFINITY;
+        for (under, washes) in &self.laid {
+            for from in washes {
+                if let (Some(ground), Some(from)) =
+                    (oklab_of(&super::check::onto(ground, under)), *from)
+                {
+                    nearest = nearest.min(distance(ground, from));
+                }
             }
         }
+        nearest
     }
-    nearest
 }
 
 /// What the window is handed: the two lists, the hues, the rules a tint holds, the washes that
@@ -837,12 +906,18 @@ fn kept_at(theme: &ResolvedTheme, hue: f64, most: Most) -> u64 {
             None => value.to_owned(),
         }
     };
+    // The washes are drawn once, and only for a tint that turns a ground at all.
+    let signals = std::cell::OnceCell::new();
     let kept: Vec<&str> = NO_NEARER
         .tokens
         .iter()
         .filter_map(|ground| {
             let (turned, written) = (drawn(ground), theme.value(ground));
-            (turned != written && !no_nearer(&turned, written, drawn)).then_some(written)
+            (turned != written
+                && !signals
+                    .get_or_init(|| Signals::drawn(drawn))
+                    .no_nearer(&turned, written))
+            .then_some(written)
         })
         .collect();
     TINTABLE
@@ -994,23 +1069,18 @@ pub struct Rule<'a> {
 }
 
 impl Rule<'_> {
-    /// Each side as a tint at `hue` draws it, each at the chroma given for it: turned when the
-    /// recipe turns it and a chroma is given, and as written otherwise.
-    fn sides(&self, hue: f64, token: Option<f64>, from: Option<f64>) -> [String; 2] {
-        let side = |value: &str, tinted: bool, most: Option<f64>| match most {
-            Some(most) if tinted => tint_hex_within(value, hue, most),
-            _ => value.to_owned(),
-        };
-        [
-            side(self.token, self.token_tinted, token),
-            side(self.from, self.from_tinted, from),
-        ]
-    }
-
-    /// Whether the two sides, drawn at those chromas, are as far apart as the rule asks.
+    /// Whether the two sides, drawn at those chromas, are as far apart as the rule asks. Each
+    /// side as a tint at `hue` draws it, at the chroma given for it: turned when the recipe turns
+    /// it and a chroma is given, and as written otherwise; read in OKLab without writing the
+    /// turned colour out (#3597).
     fn holds(&self, hue: f64, token: Option<f64>, from: Option<f64>) -> bool {
-        let [token, from] = self.sides(hue, token, from);
-        match (oklab_of(&token), oklab_of(&from)) {
+        let side = |value: &str, tinted: bool, most: Option<f64>| match most {
+            Some(most) if tinted => turned_oklab(value, hue, most),
+            _ => oklab_of(value),
+        };
+        let token = side(self.token, self.token_tinted, token);
+        let from = side(self.from, self.from_tinted, from);
+        match (token, from) {
             (Some(token), Some(from)) => distance(token, from) >= self.distance,
             // A value that is not a colour has nothing to be near.
             _ => true,
