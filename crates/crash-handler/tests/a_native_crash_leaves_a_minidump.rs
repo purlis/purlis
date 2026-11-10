@@ -56,6 +56,20 @@ fn a_process_that_aborts_leaves_one_minidump() {
 }
 
 #[test]
+fn a_process_that_crashes_after_the_companions_connect_deadline_still_leaves_one_minidump() {
+    // The companion ends on its own only when no app connected in time (#6152): one that did is
+    // watched for as long as it runs.
+    let crashes = tempfile::tempdir().unwrap();
+
+    let ended = crash("late-abort", crashes.path());
+
+    assert!(!ended.success(), "the probe crashed: {ended:?}");
+    let left = minidumps(crashes.path());
+    assert_eq!(left.len(), 1, "{left:?}");
+    assert!(is_a_minidump(&left[0]));
+}
+
+#[test]
 fn a_process_that_overflows_its_stack_leaves_one_minidump() {
     let crashes = tempfile::tempdir().unwrap();
 

@@ -66,8 +66,8 @@ fn release_links_as_dev_release_does_and_dev_release_changes_nothing_else() {
             "strip = true",
         ]
     );
-    // `opt-level`, `panic`, `strip` and the debug symbols are inherited. A third setting here is a second way the
-    // channels differ, which is the operator's to decide (ADR 0092).
+    // `opt-level`, `panic`, `strip` and the debug symbols are inherited. A third setting here is
+    // a second way the channels differ, which is the operator's to decide (ADR 0092).
     assert_eq!(
         profile("dev-release"),
         [

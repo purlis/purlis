@@ -43,8 +43,8 @@ pub const PANIC_COVERS: Duration = Duration::from_secs(30);
 const CONNECT_FOR: Duration = Duration::from_secs(3);
 
 /// How long the companion waits for the app to connect before it ends: [`CONNECT_FOR`], and a
-/// margin for an app slow to start trying (#6152).
-const SERVED_WITHIN: Duration = Duration::from_secs(CONNECT_FOR.as_secs() + 5);
+/// margin for an app slow to start trying (#6152). An app that connected is watched past it.
+pub const SERVED_WITHIN: Duration = Duration::from_secs(CONNECT_FOR.as_secs() + 5);
 
 /// The message that says the process panicked and its panic is reported.
 const PANICKED: u32 = 1;

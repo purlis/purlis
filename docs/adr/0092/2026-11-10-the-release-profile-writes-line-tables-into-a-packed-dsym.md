@@ -11,8 +11,10 @@ lines only with each build's debug symbols, matched by debug id. A stripped bina
 info had none to give.
 
 **What it does.** On macOS, rustc writes the line tables, runs `dsymutil` to pack them into a
-`<binary>.dSYM` beside the binary in `target/<profile>/`, and then strips the binary, so what
-ships carries no more symbols than before. The two share one UUID. `release.yml`'s build copies
+`<binary>.dSYM` in `target/<profile>/deps/`, which cargo links to from beside the binary in
+`target/<profile>/`, and then strips the binary, so what ships carries no more symbols than
+before. The two share one UUID. The build copies what each link points at (`cp -RL`): a copy
+of the link alone dangles, and the artifact would leave it out. `release.yml`'s build copies
 the dSYMs into an artifact of their own, which the `symbols` job alone downloads and uploads to
 the intake (#5692); the bundles take the binary and never its dSYM. `line-tables-only` is the
 least debug info that still gives file and line: no types and no variables.

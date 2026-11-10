@@ -1039,7 +1039,10 @@ jobs:
       # `release` writes line tables into a packed dSYM beside each binary and still strips the
       # binary (`strip = true`), since the native crash handler was switched on (ADR 0092 amended
       # 2026-11-10, #5692). The dSYMs are copied here alone: the bundles take the binary, never
-      # its dSYM. An empty folder saves no artifact, and the `symbols` job says it found none.
+      # its dSYM. Cargo leaves each as a symlink into `deps/`, so `-L` copies what it points at:
+      # a copied link dangles and upload-artifact leaves it out. A dSYM with no DWARF in it is a
+      # warning, not a failure: symbols never hold a release back. An empty folder saves no
+      # artifact, and the `symbols` job says it found none.
       #
       # macOS alone, where the crash handler is (#5691). Linux and Windows follow their own.
       - name: Collect the debug symbols (macOS)
@@ -1048,7 +1051,12 @@ jobs:
           set -euo pipefail
           mkdir -p symbols
           for dsym in "target/$PROFILE"/*.dSYM; do
-            if [ -e "$dsym" ]; then cp -R "$dsym" symbols/; fi
+            if [ -e "$dsym" ]; then cp -RL "$dsym" symbols/; fi
+          done
+          for dsym in symbols/*.dSYM; do
+            if [ -e "$dsym" ] && ! ls "$dsym"/Contents/Resources/DWARF/* >/dev/null 2>&1; then
+              echo "::warning::$dsym holds no DWARF: its crashes will not be symbolicated"
+            fi
           done
           ls -la symbols
 
