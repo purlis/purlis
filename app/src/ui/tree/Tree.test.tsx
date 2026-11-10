@@ -577,7 +577,8 @@ describe("a tree row's tooltip, as its description (#6123)", () => {
     await waitFor(() => expect(row()).toHaveAccessibleDescription("Written 2026-10-10"));
     rerender(<Tipped words="a.txt (changed)" said="Changed" />);
     await waitFor(() => expect(row()).toHaveTextContent("a.txt (changed)"));
-    expect(row()).toHaveAccessibleDescription(/Written 2026-10-10/);
+    // Once, though the row's ref was handed again for its new `aria-description`.
+    expect(row()).toHaveAccessibleDescription("Written 2026-10-10");
     await userEvent.keyboard("{Escape}");
     expect(row()).not.toHaveAttribute("aria-describedby");
   });

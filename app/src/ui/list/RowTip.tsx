@@ -318,7 +318,11 @@ function Shown({
   const placed = place !== null;
   const rowOf = useCallback(() => rowAround(anchor.current, scope), [scope]);
   // **Its row builds its description from its parts' ids**, the tooltip's among them (#6101,
-  // #6123): every row with a tooltip, a list's and a tree's, hands its own (`RowHeard`).
+  // #6123): every row with a tooltip, a list's and a tree's, hands its own (`RowHeard`). The
+  // tooltip never writes the row's `aria-describedby`. A list's row draws it through React
+  // Aria's `render`; a tree's row writes it on its element from its root (`useTreeRowHeard`),
+  // the one hand write under `ui/` (`describedBy.guard.test.ts`), because React Aria's
+  // `TreeItem` takes no `render` and drops an `aria-describedby` it is handed.
   const heard = useContext(RowHeard);
   useEffect(() => {
     const shown = tooltip.current;

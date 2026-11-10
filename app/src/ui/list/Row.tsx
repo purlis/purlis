@@ -53,13 +53,22 @@ export interface PartHeard {
   id: string;
 }
 
-/** **The ids a row is described by**, from what its parts handed it, in `HEARD_ORDER`'s order;
- *  none where it was handed none. The list's rows and the tree's join them the same way. */
-export function heardIds(parts: readonly PartHeard[]): string | undefined {
-  const ids = HEARD_ORDER.flatMap((kind) =>
+/** **The ids a row is described by**, from what its parts handed it, in `HEARD_ORDER`'s order.
+ *  The list's rows and the tree's order them the same way. */
+export function heardIds(parts: readonly PartHeard[]): string[] {
+  return HEARD_ORDER.flatMap((kind) =>
     parts.filter((one) => one.kind === kind).map((one) => one.id),
   );
-  return ids.length === 0 ? undefined : ids.join(" ");
+}
+
+/** A row's parts with `part` heard, in place of any part of the same id. */
+export function withPart(parts: readonly PartHeard[], part: PartHeard): PartHeard[] {
+  return [...withoutPart(parts, part.id), part];
+}
+
+/** A row's parts with the part `id` no longer heard. */
+export function withoutPart(parts: readonly PartHeard[], id: string): PartHeard[] {
+  return parts.filter((one) => one.id !== id);
 }
 
 /**

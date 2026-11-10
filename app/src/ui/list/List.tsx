@@ -83,6 +83,8 @@ import {
 } from "../menu/ContextMenu";
 import {
   heardIds,
+  withoutPart,
+  withPart,
   InOption,
   RowHeard,
   RowScope,
@@ -359,13 +361,13 @@ function useRowHeard(): { heard: PartsHeard; describedBy: string | undefined } {
     () => ({
       base,
       add(kind, id) {
-        setParts((was) => [...was.filter((one) => one.id !== id), { kind, id }]);
-        return () => setParts((was) => was.filter((one) => one.id !== id));
+        setParts((was) => withPart(was, { kind, id }));
+        return () => setParts((was) => withoutPart(was, id));
       },
     }),
     [base],
   );
-  const describedBy = useMemo(() => heardIds(parts), [parts]);
+  const describedBy = useMemo(() => idsOf(...heardIds(parts)), [parts]);
   return { heard, describedBy };
 }
 

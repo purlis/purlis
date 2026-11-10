@@ -81,6 +81,8 @@ import {
   type HearsParts,
   type PartHeard,
   type RowSize,
+  withoutPart,
+  withPart,
 } from "../list/Row";
 import { useRowTip } from "../list/RowTip";
 import type { Carried } from "../list/drag";
@@ -345,41 +347,51 @@ export function useRowDescription<E extends HTMLElement>(
 function useTreeRowHeard<E extends HTMLElement>(
   given: Ref<E> | undefined,
 ): { heard: HearsParts; ref: Ref<E> } {
-  const [{ heard, keep }] = useState(() => treeRowHeard<E>());
-  const ref = useMemo(() => mergeRefs<E>(keep, given ?? null), [keep, given]);
+  const [{ heard, attach }] = useState(() => treeRowHeard<E>());
+  const ref = useMemo(() => mergeRefs<E>(attach, given ?? null), [attach, given]);
   return { heard, ref };
 }
 
 /** A tree row's registry and the ref that hands it the row's element, built once a row. */
-function treeRowHeard<E extends HTMLElement>(): { heard: HearsParts; keep: RefCallback<E> } {
+function treeRowHeard<E extends HTMLElement>(): { heard: HearsParts; attach: RefCallback<E> } {
   let row: E | null = null;
   let parts: readonly PartHeard[] = [];
   let wrote: readonly string[] = [];
-  const write = () => {
-    if (row === null) return;
-    const ours = heardIds(parts)?.split(" ") ?? [];
-    const others = (row.getAttribute("aria-describedby") ?? "")
+  /** The ids on `element` now, but for those this row wrote there. */
+  const othersOn = (element: E) =>
+    (element.getAttribute("aria-describedby") ?? "")
       .split(/\s+/)
       .filter((id) => id !== "" && !wrote.includes(id));
+  const say = (element: E, ids: readonly string[]) => {
+    if (ids.length === 0) element.removeAttribute("aria-describedby");
+    else element.setAttribute("aria-describedby", ids.join(" "));
+  };
+  const write = () => {
+    if (row === null) return;
+    const ours = heardIds(parts);
+    const others = othersOn(row);
     wrote = ours;
-    const ids = [...others, ...ours];
-    if (ids.length === 0) row.removeAttribute("aria-describedby");
-    else row.setAttribute("aria-describedby", ids.join(" "));
+    say(row, [...others, ...ours]);
   };
   return {
     heard: {
       add(kind, id) {
-        parts = [...parts.filter((one) => one.id !== id), { kind, id }];
+        parts = withPart(parts, { kind, id });
         write();
         return () => {
-          parts = parts.filter((one) => one.id !== id);
+          parts = withoutPart(parts, id);
           write();
         };
       },
     },
-    keep(element) {
+    // Handed the element again whenever a ref around it changes (`useSaid`'s), after `null`: what
+    // it wrote is taken back from the element it leaves, and written afresh on the one it gets.
+    attach(element) {
+      if (element === null) {
+        if (row !== null) say(row, othersOn(row));
+        wrote = [];
+      }
       row = element;
-      wrote = [];
       write();
     },
   };

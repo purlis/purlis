@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { readFileSync, readdirSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -25,7 +25,9 @@ const ROOT_WRITERS: Record<string, number> = {
 };
 
 const UI = join(__dirname);
-const WRITE = /\.(?:set|remove)Attribute\(\s*["']aria-describedby["']/g;
+/** A write of the attribute by hand: set, taken back or toggled by its name, or its elements set. */
+const WRITE =
+  /\.(?:set|remove|toggle)Attribute(?:NS)?\([^)]*["']aria-describedby["']|\.ariaDescribedByElements\s*=/g;
 
 function sources(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -42,7 +44,7 @@ describe("a family's row description, written by hand (#6123)", () => {
     const written: Record<string, number> = {};
     for (const file of sources(UI)) {
       const count = readFileSync(file, "utf8").match(WRITE)?.length ?? 0;
-      if (count > 0) written[relative(UI, file)] = count;
+      if (count > 0) written[relative(UI, file).split(sep).join("/")] = count;
     }
     expect(written).toEqual(ROOT_WRITERS);
   });
