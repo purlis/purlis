@@ -524,6 +524,20 @@ The complete list of what [0.5.1](../CHANGELOG.md) brought, from v0.5.0. The cha
   remote. *Trust this clone* lets its saves push with your purlis sign-in and lets chats in that
   workspace use your GitHub access with it, at exactly the remote the notice showed.
 
+- **All chats.** A switch at the head of the Chats sidebar lists every chat in every open
+  project, in this window and the others: each with its state, how long it has been in it, its
+  project and workspace and its last line, those waiting on you first, then the Stuck? ones,
+  then the rest. Choose several to stop or snooze them together. A press of a row brings its
+  chat forward, and its project with it.
+
+- **The same actions on every chat row.** A row of Asks and a row of All chats offer Answer
+  (while the chat asks something), Go to chat, Snooze and Stop, in that order.
+
+- **`purlis skill install | update | rm` works at your own terminal on an org's project.** The
+  session host records each change in the event log before it is made, as yours at the
+  terminal, so a project with `[skill_policy]` no longer sends you to the Skill studio. It needs
+  purlis or `purlis serve` running (SK-11a, #6030).
+
 ## Changed
 
 - **What purlis tells a chat says a chat is in a pane, not a tab.** The session record tool, the
@@ -2129,6 +2143,10 @@ The complete list of what [0.5.1](../CHANGELOG.md) brought, from v0.5.0. The cha
   such as how an Inbox ask fills a secret, opened its list and also moved the list to the row
   below or above, so choosing an option or pressing Esc could leave the keyboard on that other
   row instead of on the select.
+
+- **A list row's tooltip stays in what a screen reader hears.** A line that came under an
+  option's words while its tooltip was up dropped the tooltip from the option's description, so
+  a reader missed it (#6101).
 
 ## Security
 
