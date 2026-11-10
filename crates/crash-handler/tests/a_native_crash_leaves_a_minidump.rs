@@ -263,3 +263,33 @@ fn memory_in(minidump: &[u8], sent: &[u8]) -> Vec<u64> {
     assert!(held > 0, "the minidump holds memory to look for");
     found
 }
+
+#[test]
+fn a_companion_whose_app_died_before_connecting_exits() {
+    // The app starts its companion and dies before it connects (#6152): the companion is this
+    // probe started with the socket to serve and nothing ever connecting to it.
+    let dir = tempfile::tempdir().unwrap();
+    let socket = dir.path().join("crash.sock");
+    let mut companion = Command::new(env!("CARGO_BIN_EXE_crash-probe"))
+        .env(purlis_crash_handler::ENV, &socket)
+        .env("CRASH_PROBE_CRASHES", dir.path().join("crashes"))
+        .spawn()
+        .expect("the companion started");
+
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    let ended = loop {
+        if let Some(status) = companion.try_wait().unwrap() {
+            break Some(status);
+        }
+        if std::time::Instant::now() >= until {
+            let _ = companion.kill();
+            let _ = companion.wait();
+            break None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    };
+
+    let ended = ended.expect("the companion exited, with no app to serve, within 20 seconds");
+    assert!(ended.success(), "it exited well: {ended:?}");
+    assert!(!socket.exists(), "its socket is gone");
+}
