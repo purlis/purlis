@@ -62,8 +62,10 @@ type Story = StoryObj<typeof meta>;
  */
 export const ANamedWorkspacesCopy: Story = {
   play: async ({ args, canvas, userEvent }) => {
+    // A browser spaces the name's unseen pieces as it likes (PaneHeadNarrow's stories match it
+    // the same way); the whole sentence is held in SkillRunChip.test.tsx.
     const chip = await canvas.findByRole("button", {
-      name: "Using the skill deploy of workspace ops, 2 tool calls so far. Open its runs",
+      name: /^Using the skill deploy of workspace ops\b/,
     });
     await userEvent.tab();
     await untilFocused(() => chip, "Tab onto the skill run");
