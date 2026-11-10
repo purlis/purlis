@@ -146,10 +146,11 @@ gh secret set PURLIS_REPORT_INTAKE_DSN --repo purlis/purlis --env release
 
 Until all three upload secrets are set, the `symbols` job skips with a note on the run and stays green. A failed upload
 leaves the release published and the run green with a warning. Rerun the `symbols` job to try
-again: the build keeps its symbols artifact for 90 days. Today the release profile strips every
-binary, so the job finds no debug files and says so. A dSYM is made beside each macOS binary
-from the change that switches the native crash handler on (#5691). Linux and Windows follow
-their own crash handlers.
+again: the build keeps its symbols artifact for 90 days. The release profile writes line tables
+into a packed dSYM beside each macOS binary and still strips the binary itself (ADR 0092,
+amended 2026-11-10, #5692), since the native crash handler is on (#5691): the build saves the
+dSYMs as the symbols artifact, and no bundle carries them. Linux and Windows follow their own
+crash handlers.
 
 **No required reviewer, on purpose.** The environment covers both channels, so a reviewer would
 also hold the dev build after every merge to `main`, and it asks once per job: `plan`, each

@@ -41,7 +41,6 @@ fn is_a_minidump(path: &Path) -> bool {
 }
 
 #[test]
-#[ignore = "red on minidumper-child 0.7: through its companion an abort or a stack overflow leaves no minidump (crash-handler 0.7 alone dumps both). Green with crash-handler 0.8 (verify.sh P3): on once a release depends on it (#5691)"]
 fn a_process_that_aborts_leaves_one_minidump() {
     let crashes = tempfile::tempdir().unwrap();
 
@@ -57,7 +56,6 @@ fn a_process_that_aborts_leaves_one_minidump() {
 }
 
 #[test]
-#[ignore = "red on minidumper-child 0.7: through its companion an abort or a stack overflow leaves no minidump (crash-handler 0.7 alone dumps both). Green with crash-handler 0.8 (verify.sh P3): on once a release depends on it (#5691)"]
 fn a_process_that_overflows_its_stack_leaves_one_minidump() {
     let crashes = tempfile::tempdir().unwrap();
 

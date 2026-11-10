@@ -111,11 +111,17 @@ debug = "none"
 # one fat pass over one unit no longer fit the hosted runners (the macOS job past its 90 minutes,
 # the Linux runner shut down mid-link), every night from 2026-11-02 (#4833, ADR 0092 amended
 # 2026-11-06).
+#
+# Line tables in a packed dSYM beside each binary, and the binary itself still stripped: what the
+# Report intake symbolicates a native crash's stack with, sent by `release.yml`'s `symbols` job
+# and never shipped in a bundle (#5692, ADR 0092 amended 2026-11-10).
 [profile.release]
 codegen-units = 16
+debug = "line-tables-only"
 lto = "thin"
 opt-level = 3
 panic = "unwind"
+split-debuginfo = "packed"
 strip = true
 
 # The app crate is optimised at level 1, everything else at `release`'s 3 (ADR 0092 amended

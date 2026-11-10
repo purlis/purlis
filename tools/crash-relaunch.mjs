@@ -68,11 +68,10 @@ const NATIVE = [
   "timestamp",
 ];
 /**
- * What the app says, with `CHARTER_LAUNCH_LOG`, when its crash handler is not started: the switch
- * `nativecrash::STARTED` is off until the operator switches it on (#5691).
- * The native half is then skipped, and says so; the panic half runs either way.
+ * What the app says, with `CHARTER_LAUNCH_LOG`, once its crash handler watches it: the switch
+ * `nativecrash::STARTED` is on (#5691), so a launch that does not say it is a failure.
  */
-const HANDLER_OFF = "the crash handler: off until";
+const HANDLER_ON = "the crash handler: watching";
 /** What the app says, with `CHARTER_LAUNCH_LOG`, once it has sent the crashes that waited. */
 const WAITING_SENT = "the native crashes that waited are reported";
 
@@ -228,12 +227,11 @@ async function aNativeCrash() {
   try {
     const crashing = launch(home, intake, { PURLIS_E2E_CRASH: "abort" });
     await until(crashing.ended);
-    if (crashing.output.includes(HANDLER_OFF)) {
-      console.log(
-        "SKIP the native half: the app's crash handler is switched off (#5691)",
-      );
-      return;
-    }
+    check(
+      "the app was watched by its crash handler",
+      crashing.output.includes(HANDLER_ON),
+      crashing.output,
+    );
     check(
       "the app crashed natively",
       crashing.app.signalCode === "SIGABRT",

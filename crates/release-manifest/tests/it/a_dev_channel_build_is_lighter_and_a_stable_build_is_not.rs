@@ -51,18 +51,22 @@ fn profile(name: &str) -> Vec<String> {
 #[test]
 fn release_links_as_dev_release_does_and_dev_release_changes_nothing_else() {
     // The stable build's profile: thin LTO across sixteen units since one fat pass over one unit
-    // stopped fitting the hosted runners (ADR 0092 amended 2026-11-06, #4833).
+    // stopped fitting the hosted runners (ADR 0092 amended 2026-11-06, #4833), and line tables in
+    // a packed dSYM beside a still stripped binary, for the Report intake to symbolicate a native
+    // crash with (ADR 0092 amended 2026-11-10, #5692).
     assert_eq!(
         profile("release"),
         [
             "codegen-units = 16",
+            r#"debug = "line-tables-only""#,
             r#"lto = "thin""#,
             "opt-level = 3",
             r#"panic = "unwind""#,
+            r#"split-debuginfo = "packed""#,
             "strip = true",
         ]
     );
-    // `opt-level`, `panic` and `strip` are inherited. A third setting here is a second way the
+    // `opt-level`, `panic`, `strip` and the debug symbols are inherited. A third setting here is a second way the
     // channels differ, which is the operator's to decide (ADR 0092).
     assert_eq!(
         profile("dev-release"),

@@ -1036,10 +1036,10 @@ jobs:
       # nothing on Sentry and a failed upload can be rerun without it. Nothing that publishes
       # downloads this artifact.
       #
-      # There are none yet: the release profile strips every binary (`strip = true`), and stays so
-      # until the native crash handler is switched on, in the same change that makes `release`
-      # write a dSYM beside each binary (ruling of 2026-11-08; `nativecrash.rs` says so). An empty
-      # folder saves no artifact, and the `symbols` job says it found none.
+      # `release` writes line tables into a packed dSYM beside each binary and still strips the
+      # binary (`strip = true`), since the native crash handler was switched on (ADR 0092 amended
+      # 2026-11-10, #5692). The dSYMs are copied here alone: the bundles take the binary, never
+      # its dSYM. An empty folder saves no artifact, and the `symbols` job says it found none.
       #
       # macOS alone, where the crash handler is (#5691). Linux and Windows follow their own.
       - name: Collect the debug symbols (macOS)
