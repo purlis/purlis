@@ -2691,11 +2691,6 @@ impl Hooks {
                         tell_repeats(&throttle, &repeated, |t| t.repeats_of(report.chat));
                     }
                     let applied = apply(&board, &plane, &report, waits_at(&waits, &report));
-                    tracing::info!(
-                        "e2e-6106: heard chat {} {:?} conversation {:?} agent {:?} moved {} followed {:?} was {:?}",
-                        report.chat, report.event, report.conversation, report.agent,
-                        applied.moved.is_some(), applied.followed, applied.was
-                    );
                     // A wait on its own work with a limit ends then, on the app's clock, whether
                     // or not the chat wakes (#3878).
                     if report.agent.is_none() && report.event == purlis_core::state::Event::Stop {
@@ -2749,7 +2744,6 @@ impl Hooks {
                             .lock()
                             .unwrap_or_else(PoisonError::into_inner)
                             .clone();
-                        tracing::info!("e2e-6106: following chat {} onto {id}: listener {}", report.chat, listener.is_some());
                         if let Some(listener) = listener {
                             listener(report.chat, &id, begun.as_deref());
                         }

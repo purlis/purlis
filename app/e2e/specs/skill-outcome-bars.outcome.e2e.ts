@@ -26,7 +26,7 @@ import {
   tabNames,
 } from "../reach.js";
 import { runningIn } from "../running.js";
-import { paneInFront, startAChat } from "../started.js";
+import { paneInFront, SELECTED_TAB, startAChat } from "../started.js";
 
 /**
  * **The Skill studio's outcome bars** (SK-23, #2786; #4343), in the built app against the real
@@ -118,6 +118,30 @@ async function typeInto(label: string, text: string, effort: Effort): Promise<vo
   await box.addValue(text);
   effort.characters += text.length;
   effort.presses += 1;
+}
+
+/**
+ * Waits until the selected tab says its chat is `doing`, by its state mark's accessible name, and
+ * says what it said instead if it never does. Read in one `execute`, as `acting.ts` asks.
+ */
+async function theChatInFrontSays(doing: string): Promise<void> {
+  let said = "";
+  await browser
+    .waitUntil(
+      async () => {
+        said = await browser.execute(
+          (mark: string) => document.querySelector(mark)?.getAttribute("aria-label") ?? "",
+          `${SELECTED_TAB} .tab-said`,
+        );
+        return said === doing;
+      },
+      { timeout: 30_000, interval: 200 },
+    )
+    .catch(() => {
+      throw new Error(
+        `the chat never said ${JSON.stringify(doing)}; it said ${JSON.stringify(said)}`,
+      );
+    });
 }
 
 /** The chat in front's Skills view, its Left out unfolded. */
@@ -214,7 +238,18 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
     const chat = await startAChat();
     // A running chat at its prompt, as a person has one: the reporting stand-ins hold their first
     // turn until a line is typed, and a restart waits for a turn to end.
-    if (harness.kind !== "claude") await $(".xterm-helper-textarea").addValue("\n");
+    //
+    // **At its prompt means its turn has ended, not only that a line was typed** (#6106). A Codex
+    // or opencode chat is restarted on the conversation its harness names, which purlis learns
+    // from its first hook. On a loaded runner the stand-in's program took 4 to 5 s to start, and
+    // the steps below took 4, so Restart was pressed before its first hook and was rightly
+    // refused: it had no conversation yet. Once its tab says it needs you, its `Stop` was heard,
+    // and the conversation was followed before the window was told. Before the clock: a person's
+    // chat is at its prompt before they want a skill.
+    if (harness.kind !== "claude") {
+      await $(".xterm-helper-textarea").addValue("\n");
+      await theChatInFrontSays("needs you");
+    }
     const effort: Effort = { presses: 0, characters: 0 };
     const beforeTheStudio = await tabNames();
     const started = Date.now();

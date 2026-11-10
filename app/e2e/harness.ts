@@ -506,16 +506,9 @@ export function writeReportingShell(
   // first: a Codex chat runs sandboxed at the floor, where a line the app does not take within
   // its wait is lost, not spooled, and the app learns the conversation from whichever report
   // names it first. A stand-in that named it once lost it with that one line.
-  // e2e-6106 (temporary): every hook's exit and stderr, with the time, in the run's logs.
-  const traced = join(LOGS, "e2e-6106-standin-hooks.log");
-  const told = (hook: string, command: string) =>
-    `{ mkdir -p ${singleQuoted(LOGS)} 2>/dev/null; printf '%s %s chat=%s begins\\n' "$(date +%T)" ${hook} "$PURLIS_CHAT" >>${singleQuoted(traced)}; ${command} 2>>${singleQuoted(traced)}; rc=$?; printf '%s %s chat=%s rc=%s\\n' "$(date +%T)" ${hook} "$PURLIS_CHAT" "$rc" >>${singleQuoted(traced)}; }`;
   const hookCommand = (hook: string, event: string, more: Record<string, string> = {}) =>
     namesItsConversation
-      ? told(
-          hook,
-          `printf '%s' ${singleQuoted(JSON.stringify({ session_id: SCENARIO_CONVERSATION, hook_event_name: event, ...more }))} | ${singleQuoted(charter)} hook ${hook}`,
-        )
+      ? `printf '%s' ${singleQuoted(JSON.stringify({ session_id: SCENARIO_CONVERSATION, hook_event_name: event, ...more }))} | ${singleQuoted(charter)} hook ${hook}`
       : `${singleQuoted(charter)} hook ${hook} </dev/null`;
   const where = join(THE_RUNS_TREE, "shells");
   mkdirSync(where, { recursive: true });
