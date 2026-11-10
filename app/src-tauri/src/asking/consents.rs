@@ -63,6 +63,7 @@ fn of_no_chat(
         expires: None,
         blocks: None,
         timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message: None,
