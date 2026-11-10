@@ -147,7 +147,6 @@ impl Place {
             .args(args)
             .current_dir(&root)
             .env("CHARTER_ROOT", &root)
-            .env("PURLIS_SKILL_STUDIO", "1")
             .env("NO_COLOR", "1")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
