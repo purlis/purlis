@@ -485,6 +485,7 @@ fn a_minidump_the_handler_never_finished_is_removed_unread() {
 
 #[test]
 fn something_that_is_not_a_minidump_has_no_stack() {
+    purlis_core::unsteered!();
     assert!(native::stack_of(MINIDUMP).is_err());
     assert!(native::stack_of(b"").is_err());
 }
