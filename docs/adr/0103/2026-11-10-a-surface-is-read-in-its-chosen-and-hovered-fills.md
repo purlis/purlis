@@ -12,7 +12,8 @@ its check.
   family default's, what `STANDS_ON` says stands on the surface is read at rest on it, as it is on
   a rest fill. A state that breaks draws its family default there, and the rest stays as written.
   A fill at rest that reaches a state (Purlis Classic's `list.root.card.fill`, drawn chosen too) is
-  read there as well.
+  read there as well. Where the rest falls, its states are read in the next pass, on what the
+  fall keeps: a state's own fill the theme writes.
 - **What the window draws in React Aria's overlay is never read on a state fill** (`PORTALED`:
   the popover and the tooltip). A popover a row opens is portaled to the window's body: it is
   drawn over the window, never on the row's chosen fill. At rest it is still read where the window
@@ -31,5 +32,6 @@ Every shipped appearance is still measured in one look (#4410).
 
 What it leaves: a theme that changes the `list.selected` token itself, with no part rule, is
 held by the token floors alone, which hold `state.success` on it at 3:1, not a badge's words at
-4.5:1. A popover or a tooltip is still read on a rest fill where the window nests it, though it is
-portaled there too.
+4.5:1 (#6163). A popover or a tooltip is still read on a rest fill where the window nests it, though it is
+portaled there too (#6164). A row chosen and under the pointer at once is not read: each state is read
+alone.

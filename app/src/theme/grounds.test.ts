@@ -2254,15 +2254,16 @@ const OVERLAYS = new Set(["Modal", "ModalOverlay", "OverlayArrow", "Popover", "T
 
 /**
  * **The families whose every root the window draws in React Aria's overlay** (#6156): a root
- * (its `data-scope`, and a `root` part or none) that is one of React Aria's overlays, or inside
+ * (its `data-scope`, and the part its manifest names first, or none) that is one of React Aria's overlays, or inside
  * one in the file that draws it, by the name the file imports it under. Portaled to the window's
  * body, it is drawn over the window, never on a fill a surface that holds it draws in a state. A
  * family with one root drawn anywhere else is not one, and neither is a root placed in an overlay
- * by another component (a dialog's): `PORTALED` names only what this reads.
+ * by another component (a dialog's), or a root spread from a helper, which this read does not
+ * follow: `PORTALED` names only what it reads.
  */
 function portaledFamilies(files: { name: string; text: string }[]): string[] {
   const over = new Set<string>();
-  const inline = new Set<string>();
+  const inPlace = new Set<string>();
   for (const file of files) {
     const source = ts.createSourceFile(
       file.name,
@@ -2271,19 +2272,13 @@ function portaledFamilies(files: { name: string; text: string }[]): string[] {
       true,
       ts.ScriptKind.TSX,
     );
-    const overlays = new Set<string>();
-    for (const statement of source.statements) {
-      if (
-        !ts.isImportDeclaration(statement) ||
-        !ts.isStringLiteral(statement.moduleSpecifier) ||
-        statement.moduleSpecifier.text !== "react-aria-components"
-      )
-        continue;
-      const named = statement.importClause?.namedBindings;
-      if (named === undefined || !ts.isNamedImports(named)) continue;
-      for (const one of named.elements)
-        if (OVERLAYS.has((one.propertyName ?? one.name).text)) overlays.add(one.name.text);
-    }
+    const overlays = new Set(
+      [...originsIn(source)]
+        .filter(
+          ([, from]) => from.path === "package:react-aria-components" && OVERLAYS.has(from.name),
+        )
+        .map(([local]) => local),
+    );
     /** An attribute's value as written: `null` where it is written and not a string. */
     const said = (attributes: ts.JsxAttributes, name: string) => {
       for (const one of attributes.properties)
@@ -2306,13 +2301,13 @@ function portaledFamilies(files: { name: string; text: string }[]): string[] {
       const here = inside || overlays.has(opening.tagName.getText(source));
       const scope = said(opening.attributes, "data-scope");
       const part = said(opening.attributes, "data-part");
-      if (typeof scope === "string" && (part === undefined || part === "root"))
-        (here ? over : inline).add(scope);
+      if (typeof scope === "string" && part !== null && isRootPart(scope, part))
+        (here ? over : inPlace).add(scope);
       ts.forEachChild(node, (child) => visit(child, here));
     };
     visit(source, false);
   }
-  return [...over].filter((family) => !inline.has(family)).sort();
+  return [...over].filter((family) => !inPlace.has(family)).sort();
 }
 
 describe("what the window draws over itself, apart from what holds it (#6156)", () => {

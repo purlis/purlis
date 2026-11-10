@@ -160,6 +160,29 @@ fn a_chosen_row_filled_where_a_badge_in_it_vanishes_brings_the_chosen_fill_back(
 }
 
 #[test]
+fn a_chosen_row_is_read_on_its_own_fill_after_its_rest_falls() {
+    // A fall at rest keeps what the theme writes for a chosen row itself, so that fill is read
+    // once the hold is asked again (#6156's review).
+    let theme = shaped(
+        json!({ "surface.sunken": "#303030", "accent.surface": "#303030" }),
+        json!({
+            "list.root.row.fill": "surface.sunken",
+            "list.root.row.selected.fill": "accent.surface",
+        }),
+    );
+    let fell = fell_in(&theme);
+    assert!(
+        fell.iter().any(|one| one.starts_with("list.root.row:")),
+        "{fell:?}"
+    );
+    assert!(
+        fell.iter()
+            .any(|one| one.starts_with("list.root.row.selected")),
+        "{fell:?}"
+    );
+}
+
+#[test]
 fn a_surface_fill_every_family_on_it_reads_on_is_drawn_as_written() {
     // A raised panel, as Purlis draws its own: every family drawn on the window reads on it.
     let theme = shaped(json!({}), json!({ "panel.root.fill": "surface.raised" }));
