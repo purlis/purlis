@@ -34,7 +34,7 @@ Fetch every page of the intake's events for the last four weeks with curl, at mo
 plan from the saved pages:
 
 ```bash
-dir=.intake-run
+dir="$(git rev-parse --show-toplevel)/.intake-run"
 rm -rf "$dir" && mkdir "$dir"
 url=$(node tools/report-intake.mjs url) && ok=1 n=1
 while [ -n "$url" ] && [ "$n" -le 20 ]; do
@@ -71,6 +71,8 @@ the token. Where the sandbox refuses `de.sentry.io`, ask for that host the same 
 **If it ends with `ok: 0`**, or the plan fails, nothing was planned. If `next` says the token was
 refused (HTTP 401 or 403, naming the wizard's token step, #5687), post that message as the summary
 and stop. For any other error, post what it says and stop, and do not plan from a part of the pages.
+Either way, delete the run's folder before you stop, as step 5 does: it may hold pages already
+fetched.
 
 `steps` holds one entry for each distinct group of new reports, and `summary` holds the day's
 Markdown. An event that a `reported` issue or comment already names is never planned again, so
@@ -113,7 +115,7 @@ milestone, as `docs/agents/issue-tracker.md` asks.
 Post the plan's `summary`, followed by one line per step naming the issue it filed or added to,
 or why it was left out, as a comment on the issue titled `Report intake: the daily summary`
 (labelled `bot-maintained`; create it the first time). It carries counts and issue numbers only,
-never a report's words. Then delete the run's folder (`rm -rf .intake-run`), since its pages hold
+never a report's words. Then delete the run's folder (`rm -rf "$(git rev-parse --show-toplevel)/.intake-run"`), since its pages hold
 the reports' words, and write the session record.
 
 **Done:** today's comment is posted and the session record names it.
