@@ -1,7 +1,15 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { Choice, Field, SettingActions, SettingRow } from "./components";
 import type { PlaneId } from "../bindings";
 import type { Driven, EntryReferrer, EntryRefused, EntryRefusal } from "./driver";
@@ -9,6 +17,7 @@ import { askSettingsLink, referrerElsewhere } from "./links";
 import { OutLink } from "./OutLink";
 import type { Collection, CollectionEntry, EntryField, Setting } from "./groups";
 import { HostStatus } from "../ui/badge/Badge";
+import { HostsTable } from "./HostsTable";
 import { Button } from "../ui/button/Button";
 import { Form, type RefusedAnswer } from "../ui/field/Field";
 
@@ -36,6 +45,7 @@ import { Form, type RefusedAnswer } from "../ui/field/Field";
  */
 export function CollectionView({
   id,
+  label = "",
   collection,
   settings,
   driver,
@@ -46,6 +56,8 @@ export function CollectionView({
 }: {
   /** The group's id: what the driver keeps the collection's Undo and refusals by. */
   id: string;
+  /** The group's name: what a table of the collection is called (R65). */
+  label?: string;
   collection: Collection;
   /** The group's settings the filter left. */
   settings: readonly Setting[];
@@ -86,6 +98,81 @@ export function CollectionView({
   const ofEntry = (entry: CollectionEntry) =>
     settings.filter((one) => entry.settings.includes(one.id));
   const mine = new Set(collection.entries.flatMap((entry) => entry.settings));
+
+  // **A table of hosts' acts** (#2919, R70, R72): each says what it did on the line under the
+  // table. Several are sent one after another, each against the file as it stands by then, the
+  // host found again by its words: a remove changes the others' identities.
+  const latest = useRef(collection);
+  useLayoutEffect(() => {
+    latest.current = collection;
+  });
+  const [said, setSaid] = useState<{ words: string; undo: boolean }>();
+  const [busy, setBusy] = useState(false);
+  const [asked, setAsked] = useState<Asked | undefined>(adding);
+  if (adding !== undefined && adding.ask !== asked?.ask) setAsked(adding);
+  /** The entry `host` is now, once the file a write left is the one drawn. */
+  const now = async (host: string, after: string | null | undefined) => {
+    for (
+      let tries = 0;
+      after !== undefined && latest.current.base === after && tries < 100;
+      tries++
+    )
+      await new Promise((settled) => setTimeout(settled, 10));
+    return latest.current.entries.find((one) => (one.host ?? one.label) === host);
+  };
+  const confirmHosts = async (hosts: readonly string[], all: boolean) => {
+    setBusy(true);
+    setSaid(undefined);
+    let done = 0;
+    for (const host of hosts) {
+      const entry = await now(host, undefined);
+      if (entry === undefined) continue;
+      const refusal = await driver.entry(key, {
+        collection: collection.name,
+        base: latest.current.base,
+        confirm: entry.id,
+      });
+      if (refusal) break;
+      done += 1;
+    }
+    setBusy(false);
+    if (done > 0)
+      setSaid({
+        words: all
+          ? "Confirmed every waiting host."
+          : done === 1
+            ? `Confirmed ${hosts[0] ?? ""}.`
+            : `Confirmed ${done} hosts.`,
+        undo: false,
+      });
+  };
+  const removeHosts = async (hosts: readonly string[]) => {
+    setBusy(true);
+    setSaid(undefined);
+    let done = 0;
+    let sent: string | null | undefined;
+    for (const host of hosts) {
+      const entry = await now(host, sent);
+      if (entry === undefined) continue;
+      sent = latest.current.base;
+      const refusal = await driver.entry(key, {
+        collection: collection.name,
+        base: sent,
+        remove: entry.id,
+      });
+      if (refusal) break;
+      done += 1;
+    }
+    setBusy(false);
+    // One host's remove has its Undo; several have none, as one Undo would put back only the last.
+    if (done > 0)
+      setSaid(
+        done === 1
+          ? { words: `Removed ${hosts[0] ?? ""}.`, undo: true }
+          : { words: `Removed ${done} hosts.`, undo: false },
+      );
+    settle();
+  };
 
   /** Confirms the entry (#1341): your own sandbox host, which reaches nothing until it is. */
   const confirm = async (entry: CollectionEntry) => {
@@ -135,6 +222,62 @@ export function CollectionView({
     // The focus goes to Add, which is always there.
     else settle();
   };
+
+  if (collection.table === "hosts")
+    return (
+      <div className="ui-collection" ref={whole} tabIndex={-1}>
+        {settings.filter((one) => !mine.has(one.id)).map(row)}
+        <HostsTable
+          label={label}
+          entries={collection.entries}
+          busy={busy}
+          onConfirm={(entry) => void confirmHosts([entry.host ?? entry.label], false)}
+          onRemove={(entry) => void removeHosts([entry.host ?? entry.label])}
+          onConfirmAll={(hosts) => void confirmHosts(hosts, true)}
+          onRemoveAll={(hosts) => void removeHosts(hosts)}
+          onAdd={() => {
+            setSaid(undefined);
+            setAsked((was) => ({ ask: (was?.ask ?? 0) + 1, then: () => {} }));
+          }}
+          addRef={addButton}
+        />
+        {(said !== undefined || undoSaid !== undefined || refused !== undefined) && (
+          <div className="ui-collection-done" role="status">
+            {(said?.words ?? undoSaid) !== undefined && <span>{said?.words ?? undoSaid}</span>}
+            {driver.undoable === key && (said === undefined || said.undo) && (
+              <Button
+                size="sm"
+                onPress={() => {
+                  setSaid(undefined);
+                  driver.undo();
+                  settle();
+                }}
+              >
+                Undo
+              </Button>
+            )}
+            {refused && (
+              <Refused
+                noun={noun}
+                refused={refused}
+                onGo={onGo}
+                reachable={reachable}
+                plane={driver.plane}
+              />
+            )}
+          </div>
+        )}
+        <AddForm
+          id={key}
+          collection={collection}
+          driver={driver}
+          adding={addButton}
+          whole={whole}
+          asked={asked}
+          bare
+        />
+      </div>
+    );
 
   return (
     <div className="ui-collection" ref={whole} tabIndex={-1}>
@@ -450,6 +593,7 @@ function AddForm({
   adding,
   whole,
   asked,
+  bare = false,
 }: {
   id: string;
   collection: Collection;
@@ -457,6 +601,8 @@ function AddForm({
   adding: RefObject<HTMLButtonElement | null>;
   whole: RefObject<HTMLDivElement | null>;
   asked?: Asked;
+  /** Its Add button is drawn elsewhere (a table's bar, which opens it by `asked`): none here. */
+  bare?: boolean;
 }) {
   const { noun, fields } = collection;
   const [values, setValues] = useState<Record<string, string> | undefined>(() =>
@@ -496,6 +642,7 @@ function AddForm({
     setChecked({});
     asking.current = {};
   };
+  if (values === undefined && bare) return null;
   if (values === undefined)
     return (
       <div className="ui-collection-add">

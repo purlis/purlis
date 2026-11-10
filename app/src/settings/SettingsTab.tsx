@@ -807,6 +807,7 @@ function ShownGroup({
         <OffUnless on={stillWritten(level, collectionFile(group.collection.name))}>
           <CollectionView
             id={group.id}
+            label={group.label}
             collection={group.collection}
             settings={group.settings}
             driver={driver}

@@ -283,6 +283,8 @@ function hostsCollection(file: SettingsFile, name: "hosts" | "myHosts"): Collect
     name,
     noun: "host",
     base: file.exists ? file.text : null,
+    // Yours are many and each waits for you or not: a table (R65).
+    ...(name === "myHosts" ? { table: "hosts" as const } : {}),
     entries: (file.entries ?? [])
       .filter((one) => one.collection === name)
       .map((one) => {
@@ -292,6 +294,7 @@ function hostsCollection(file: SettingsFile, name: "hosts" | "myHosts"): Collect
         return {
           id: one.id,
           label: one.label,
+          host: one.values.find((value) => value.field === "host")?.value,
           settings: [],
           confirm: waits,
           // Your own hosts say whether each waits for your Confirm (R66); the project's are the

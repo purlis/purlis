@@ -105,6 +105,9 @@ export type Collection = {
    *  Remove is pressed: the window's own record, so a chat that is not open is not counted. A
    *  count that cannot be read is none. */
   running?: (entry: CollectionEntry) => Promise<number>;
+  /** **Drawn as a table of hosts** (#2919, R65–R74): Your hosts, many rows each with its status,
+   *  under a bar with its filter, Confirm all and Add host. */
+  table?: "hosts";
 };
 
 /** One entry of a collection. */
@@ -129,6 +132,9 @@ export type CollectionEntry = {
   /** A sentence that describes the entry, under its heading: why a profile's icon is its monogram
    *  (#3137). */
   says?: string;
+  /** A host's own words, as the file writes it, without what its label adds ("not yet
+   *  confirmed"): what a hosts table shows and finds it by (R65). */
+  host?: string;
 };
 
 /** One field of a collection's Add form, written to the entry's key `field`. */

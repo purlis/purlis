@@ -7448,6 +7448,26 @@ nav.piece-files-head {
   color: var(--text-muted);
 }
 
+/* **Your hosts, as a table** (#2919, R65, R69): the host in mono with its port in the quiet words;
+   the filter at most 280 px wide at the bar's start. */
+.ui-hosts {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.ui-hosts .list-filter {
+  max-inline-size: 280px;
+}
+
+.ui-hosts-host {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+
+.ui-hosts-port {
+  color: var(--text-quiet);
+}
+
 /* A collection (ST-3): each entry a heading with its Remove over its rows, then Add, whose form
    is setting rows with SettingActions' Add and Cancel under them. */
 .ui-collection-entry {
