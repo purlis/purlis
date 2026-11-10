@@ -72,7 +72,7 @@ function core() {
 
 const handCount = () =>
   within(screen.getByRole("tablist", { name: "Attention" }))
-    .getByRole("tab", { name: "Asks" })
+    .getByRole("tab", { name: /^Asks/ })
     .querySelector('[data-part="count"]');
 const confirmationRow = () =>
   askRows().find((one) => one.textContent?.includes("A1B2C3")) as HTMLElement | undefined;
