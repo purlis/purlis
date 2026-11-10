@@ -472,7 +472,22 @@ type Frame = {
   painted: Painting;
   /** The family whose root this element is (#3268), if it is one. */
   scope?: string;
+  /** The look of it the root draws (#6149): its `data-variant` as written, or the name of the
+   *  component's parameter that gives it, which the place the component is used in names. */
+  variant?: string | { parameter: string };
 };
+
+/** **The surface a root is, as `STANDS_ON` names it** (#6149): its family and, where the look
+ *  it draws is known, that look (`list.row`). */
+function surfaceOf(frame: Frame): string | undefined {
+  if (frame.scope === undefined) return undefined;
+  return typeof frame.variant === "string" ? `${frame.scope}.${frame.variant}` : frame.scope;
+}
+
+/** The family a surface `STANDS_ON` names is of: `list` for `list.row`. */
+function familyOf(surface: string): string {
+  return surface.split(".")[0];
+}
 
 /** What one element is painted, read whole (#4876): each background a rule that reaches it may
  *  paint, and whether one it carries all of, as written and at rest, covers what is under it. */
@@ -487,6 +502,9 @@ type Unit = {
   loose: boolean;
   childrenAt: Frame[][];
   uses: { name: string; frames: Frame[]; from?: Origin }[];
+  /** The props it gives a value of its own when it is handed none (`variant = "row"`), as
+   *  written (#6149). */
+  defaults: Map<string, string>;
   /** Each family whose root it draws, with the families' roots around it in the unit (#3268). */
   stands: Map<string, Set<string>>;
   /** Each family whose root it draws with nothing around it in the unit that covers what is
@@ -546,7 +564,8 @@ function rootsAround(frames: Frame[]): { scopes: string[]; covered: boolean } {
   const scopes: string[] = [];
   for (let at = frames.length - 1; at >= 0; at -= 1) {
     const one = frames[at];
-    if (one.scope !== undefined) scopes.push(one.scope);
+    const surface = surfaceOf(one);
+    if (surface !== undefined) scopes.push(surface);
     if (one.covers || one.painted.covers) return { scopes, covered: true };
   }
   return { scopes, covered: false };
@@ -656,6 +675,67 @@ function rootIn(expression: ts.Expression, helpers: Helpers): string | undefined
   for (const argument of expression.arguments)
     if (ts.isObjectLiteralExpression(argument)) return isRoot(scopedBy(argument));
   return undefined;
+}
+
+/** **The look an element's `data-variant` says** (#6149): written out (`"row"`), or the name of
+ *  the parameter that gives it (`{variant}`). Anything else may be any look. */
+function variantOf(attribute: ts.JsxAttribute | undefined): Frame["variant"] {
+  let value: ts.Node | undefined = attribute?.initializer;
+  if (value !== undefined && ts.isJsxExpression(value)) value = value.expression;
+  if (value === undefined) return undefined;
+  if (ts.isStringLiteral(value) || ts.isNoSubstitutionTemplateLiteral(value)) return value.text;
+  if (ts.isIdentifier(value)) return { parameter: value.text };
+  return undefined;
+}
+
+/** The props a component gives a value of its own, written out, when it is handed none: its
+ *  first parameter's `{ variant = "row" }` (#6149). */
+function defaultsOf(node: ts.Node | undefined): Map<string, string> {
+  const found = new Map<string, string>();
+  const fn = node !== undefined && ts.isFunctionLike(node) ? node : undefined;
+  const props = fn?.parameters[0]?.name;
+  if (props === undefined || !ts.isObjectBindingPattern(props)) return found;
+  for (const one of props.elements) {
+    const name = one.propertyName ?? one.name;
+    if (
+      ts.isIdentifier(name) &&
+      one.initializer !== undefined &&
+      ts.isStringLiteral(one.initializer)
+    )
+      found.set(name.text, one.initializer.text);
+  }
+  return found;
+}
+
+/**
+ * **The frames a component places what it is given in, with the look each root among them
+ * draws** (#6149): a root whose look `unit` takes as a prop draws the look this use hands it,
+ * written out or passed on from a parameter of its own, or `unit`'s default when it is handed
+ * none. A use that spreads props and names none may hand it any look, and so may anything not
+ * written out: the root is then the surface's, of no look.
+ */
+function lookGiven(
+  frames: Frame[],
+  unit: Unit,
+  attributes: readonly ts.JsxAttributeLike[],
+  source: ts.SourceFile,
+): Frame[] {
+  return frames.map((frame) => {
+    if (typeof frame.variant !== "object") return frame;
+    const { parameter } = frame.variant;
+    const written = attributes.find(
+      (one): one is ts.JsxAttribute =>
+        ts.isJsxAttribute(one) && one.name.getText(source) === parameter,
+    );
+    const spread = attributes.some(ts.isJsxSpreadAttribute);
+    const variant =
+      written !== undefined
+        ? variantOf(written)
+        : spread
+          ? undefined
+          : unit.defaults.get(parameter);
+    return { ...frame, variant };
+  });
 }
 
 const CONDITIONAL = (node: ts.Node) =>
@@ -793,6 +873,7 @@ class Reader {
           loose: false,
           childrenAt: [],
           uses: [],
+          defaults: defaultsOf(ts.isVariableDeclaration(node) ? node.initializer : node),
           stands: new Map(),
           standsLoose: new Set(),
         };
@@ -925,6 +1006,7 @@ class Reader {
           classes: new Set(carried.map((one) => one.name)),
           painted: { tokens: new Set(), covers: false },
           scope: root,
+          variant: root === undefined ? undefined : variantOf(attribute("data-variant")),
         };
         // A see-through ground a rule read whole may paint on this element is drawn over what
         // is under it: in this component, where one of its grounds covers what is under it,
@@ -1025,7 +1107,9 @@ class Reader {
       const places: Frame[][] =
         use === undefined
           ? []
-          : this.rendered(use, source.fileName).flatMap((one) => one.childrenAt);
+          : this.rendered(use, source.fileName).flatMap((one) =>
+              one.childrenAt.map((at) => lookGiven(at, one, attributes, source)),
+            );
       const given = places.length === 0 ? [inside] : places.map((at) => [...inside, ...at]);
       for (const one of attributes) for (const at of given) again(one, at);
       if (ts.isJsxElement(node))
@@ -1125,7 +1209,7 @@ class Reader {
   private standsAt(unit: Unit, family: string, frames: Frame[]): void {
     const around = rootsAround(frames);
     const on = unit.stands.get(family) ?? new Set<string>();
-    around.scopes.filter((one) => one !== family).forEach((one) => on.add(one));
+    around.scopes.filter((one) => familyOf(one) !== family).forEach((one) => on.add(one));
     unit.stands.set(family, on);
     if (!around.covered) unit.standsLoose.add(family);
   }
@@ -1169,7 +1253,7 @@ class Reader {
         for (const one of this.rendered(use, unit.file))
           for (const family of loose.get(key(one)) ?? [])
             around
-              .filter((surface) => surface !== family)
+              .filter((surface) => familyOf(surface) !== family)
               .forEach((surface) => add(family, surface, `${where} > ${one.file}: ${one.name}`));
       }
     }
@@ -1881,12 +1965,13 @@ describe("the grounds a button is drawn on", () => {
 // --- Where each family stands (#3268) ---------------------------------------------------------
 
 /** **The engine's `STANDS_ON`** (in `parts.rs`): by surface, the families measured on a fill a
- *  theme sets on it. */
+ *  theme sets on it. A surface is named alone (`list`), for every look of it, or with a look
+ *  (`list.row`, #6149). */
 function engineStandsOn(): Map<string, string[]> {
   const parts = readFileSync(join(THEME, "parts.rs"), "utf8");
   const table = /\nconst STANDS_ON: &\[\(&str, &\[&str\]\)\] = &\[([\s\S]*?)\n\];/.exec(parts);
   const found = new Map<string, string[]>();
-  for (const [, surface, list] of (table?.[1] ?? "").matchAll(/\(\s*"([\w-]+)",\s*&\[([^\]]*)\]/g))
+  for (const [, surface, list] of (table?.[1] ?? "").matchAll(/\(\s*"([\w.-]+)",\s*&\[([^\]]*)\]/g))
     found.set(
       surface,
       [...list.matchAll(/"([\w-]+)"/g)].map(([, family]) => family),
@@ -1917,15 +2002,23 @@ function fillable(): Set<string> {
 }
 
 /** Each `surface family` pair of `on` (by surface, the families on it), of the families the
- *  manifest has, on a surface whose root takes a fill. */
+ *  manifest has, on a surface whose root takes a fill (a look of one, `list.row`, too). */
 function pairsOf(on: ReadonlyMap<string, Iterable<string>>): string[] {
   const families = new Set(engineGrounds().keys());
   const surfaces = fillable();
   const pairs: string[] = [];
   for (const [surface, standing] of on)
     for (const family of standing)
-      if (families.has(family) && surfaces.has(surface)) pairs.push(`${surface} ${family}`);
+      if (families.has(family) && surfaces.has(familyOf(surface)))
+        pairs.push(`${surface} ${family}`);
   return [...new Set(pairs)].sort();
+}
+
+/** **Whether `said` names `found`** (#6149): the pair as found, or its family on every look of
+ *  the surface (`list badge` names `list.row badge`). */
+function names(said: string, found: string): boolean {
+  const [surface, family] = found.split(" ");
+  return said === found || said === `${familyOf(surface)} ${family}`;
 }
 
 /** `stands` (by family, the surfaces around it) turned round: by surface, the families on it. */
@@ -2077,19 +2170,40 @@ describe("where each family is drawn on a surface a theme fills (#3268)", () => 
     expect(found).toEqual(["badge: list"]);
   });
 
+  it("tells a list's plain row from its card, by the variant each draws (#6149)", () => {
+    const found = standing([
+      file(
+        "ui/list/List.tsx",
+        `export function ListRow({ variant = "row", children, ...rest }) {
+           return <AriaGridListItem data-scope="list" data-part="root" data-variant={variant}>{children}</AriaGridListItem>;
+         }`,
+      ),
+      file(
+        "ui/list/CardRow.tsx",
+        `import { ListRow } from "./List";
+         export function ListCardRow({ children, ...rest }) { return <ListRow {...rest} variant="card">{children}</ListRow>; }`,
+      ),
+      file(
+        "Devices.tsx",
+        `import { ListRow } from "./ui/list/List";
+         import { ListCardRow } from "./ui/list/CardRow";
+         export function Devices() {
+           return <><ListRow><span data-scope="badge" data-part="root" /></ListRow>
+             <ListCardRow><span data-scope="button" data-part="root" /></ListCardRow>
+             <ListRow {...given}><span data-scope="meter" data-part="root" /></ListRow></>;
+         }`,
+      ),
+    ]);
+    // A row handed its variant by a spread may be either, so it is the list's, of no look.
+    expect(found).toEqual(["badge: list.row", "button: list.card", "meter: list"]);
+  });
+
   /**
    * **Pairs the window draws that `STANDS_ON` leaves out, each with why**, exactly: one found and
    * not listed here, or listed and not found, fails as any other pair does.
    */
-  const NOT_STANDING: ReadonlyMap<string, string> = new Map([
-    [
-      "list badge",
-      // #6125: STANDS_ON names a surface and not its variant, and the one fill a shipped theme
-      // gives a list is Classic's card's (`surface.sunken`), where no badge is drawn (the badges
-      // are on a list's plain rows). Measured there, the waiting badge's wash would build Classic
-      // Dark's parts in every tint at launch (#4410). Variant-scoped STANDS_ON is #6149.
-      "drawn on a list's plain rows only, where no shipped theme sets a fill (#6149)",
-    ],
+  const NOT_STANDING: ReadonlyMap<string, string> = new Map<string, string>([
+    // None: `list badge` is `STANDS_ON`'s `list.row badge` (#6149).
   ]);
 
   it("is, in the window, exactly what STANDS_ON says", () => {
@@ -2100,20 +2214,20 @@ describe("where each family is drawn on a surface a theme fills (#3268)", () => 
     const said = [...pairsOf(listed), ...NOT_STANDING.keys()];
     // A pair the table does not say is named with the components it is drawn in.
     const unsaid = found
-      .filter((pair) => !said.includes(pair))
+      .filter((pair) => !said.some((one) => names(one, pair)))
       .map((pair) => {
         const [surface, family] = pair.split(" ");
         return `${pair}: ${(read.stands.get(family)?.get(surface) ?? []).slice(0, 2).join("; ")}`;
       });
     expect(unsaid).toEqual([]);
-    expect(said.filter((pair) => !found.includes(pair))).toEqual([]);
+    expect(said.filter((pair) => !found.some((one) => names(pair, one)))).toEqual([]);
   });
 
   it("names only surfaces a theme can fill and families the manifest has", () => {
     const families = new Set(engineGrounds().keys());
     const surfaces = fillable();
     for (const [surface, on] of engineStandsOn()) {
-      expect(surfaces, surface).toContain(surface);
+      expect(surfaces, surface).toContain(familyOf(surface));
       for (const family of on) expect(families, `${family} on a ${surface}`).toContain(family);
     }
   });

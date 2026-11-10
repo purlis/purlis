@@ -61,19 +61,50 @@ fn every_surface_a_family_stands_on_takes_a_fill_and_is_named_once() {
     // Who stands where is found from the components (`app/src/theme/grounds.test.ts`); here, that
     // the table names surfaces a theme can fill and families the manifest has.
     let mut seen = Vec::new();
-    for (surface, families) in super::STANDS_ON {
-        assert!(!seen.contains(surface), "{surface} is named twice");
-        seen.push(surface);
+    for (key, families) in super::STANDS_ON {
+        assert!(!seen.contains(key), "{key} is named twice");
+        seen.push(key);
+        // A surface alone, or one look of it (`list.row`, #6149).
+        let (surface, look) = key
+            .split_once('.')
+            .map_or((*key, None), |(a, b)| (a, Some(b)));
         let one = family(surface).expect("a surface");
         assert!(
             one.parts[0].properties.contains(&super::Prop::Fill),
-            "{surface}"
+            "{key}"
         );
+        if let Some(look) = look {
+            assert!(
+                one.looks().contains(&look),
+                "{key}: a look of the {surface}"
+            );
+        }
         for name in *families {
-            assert!(family(name).is_some(), "{name} on a {surface}");
-            assert_ne!(name, surface, "a {surface} on itself");
+            assert!(family(name).is_some(), "{name} on a {key}");
+            assert_ne!(*name, surface, "a {surface} on itself");
+            // Named once for a look: on the surface alone, it is on every look already.
+            if look.is_some() {
+                let everywhere = super::STANDS_ON
+                    .iter()
+                    .any(|(other, on)| *other == surface && on.contains(name));
+                assert!(!everywhere, "{name} on a {key} and on every {surface}");
+            }
         }
     }
+}
+
+#[test]
+fn a_badge_is_read_on_a_list_s_plain_row_fill_and_never_on_its_card_s() {
+    // The window draws a list's badges on its plain rows (`DevicesView.tsx`,
+    // `SkillLibraryGrade.tsx`) and none on a card row, the one list fill a shipped theme sets
+    // (Classic's `list.root.card.fill`, #6149).
+    let list = family("list").expect("the list family");
+    let badge_on = |variant| {
+        super::drawn_on(list, variant, "transparent", "surface.sunken")
+            .any(|one| one.name == "badge")
+    };
+    assert!(badge_on("row"), "a badge on a list's row");
+    assert!(!badge_on("card"), "a badge on a list's card");
 }
 
 #[test]
@@ -226,7 +257,13 @@ fn a_list_s_row_in_a_dialog_is_read_on_the_dialog_s_fill() {
     // a ground the list's own grounds do not name.
     let dialog = family("dialog").expect("the dialog family");
     assert!(
-        super::drawn_on(dialog, "surface.overlay", "surface.hover").any(|one| one.name == "list"),
+        super::drawn_on(
+            dialog,
+            dialog.looks()[0],
+            "surface.overlay",
+            "surface.hover"
+        )
+        .any(|one| one.name == "list"),
         "a list is drawn on a dialog"
     );
     let theme = filled_grey("dialog", "surface.hover", "#4a4a46");
@@ -328,7 +365,8 @@ fn a_field_s_error_is_read_on_a_table_s_fill_and_its_help_never_is() {
     let table = family("table").expect("the table family");
     let field = family("field").expect("the field family");
     assert!(
-        super::drawn_on(table, "transparent", "surface.sunken").any(|one| one.name == "field"),
+        super::drawn_on(table, table.looks()[0], "transparent", "surface.sunken")
+            .any(|one| one.name == "field"),
         "a field is drawn on a table's fill"
     );
     let theme = filled_grey("table", "surface.sunken", "#4a4a46");
