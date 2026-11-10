@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794295447199,
+  "lastUpdate": 1794295541009,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -18736,6 +18736,42 @@ window.BENCHMARK_DATA = {
             "value": 1008.5,
             "unit": "MB",
             "extra": "median of 6 samples: 974.4, 988.2, 1000.1, 1016.8, 1016.8, 1077.5 MB; window 679.7 MB, session host 329.6 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "5ea1be01860f21474602a82964ef2f17e0f82065",
+          "message": "Stuck? detection, with settings; Idle means work left behind (#6014) (#6089)\n\n* Stuck? detection, with settings; Idle means work left behind (#6014)\n\nA working chat reads Stuck? when nothing new has come from it for\nstuck-silent-minutes (15), the same command failed stuck-failing-times\ntimes in a row (3), or one turn ran stuck-long-minutes (60): ADR 0121\ndecision 19, ADR 0076 N8.\n\n- purlis_core::stuck: a clockless watch per chat, fed the chat's state\n  (working or not), activity and each command run with whether it failed.\n  \"It's fine\" holds until the next state change. Time is passed in, so\n  its tests fake it.\n- purlis_core::leftwork: one git status --porcelain of a chat's folder,\n  with no optional locks.\n- The three thresholds are [dispatch] note limits, defaulted, at the\n  usual levels, until the Attention page (#6019) moves them.\n- The app hears every board move through a wrapper on the plane's Moved\n  teller. Into working, a timer for that turn sleeps until the next rule\n  of time can come true. Out of working, the folder is asked once, off\n  every lock, and kept until the next change. Tool lines and a turn's\n  output (Ran with its status) are the activity. It tells the window a\n  noticed chat-events kind. Nothing is notified.\n- The window keeps it in ChatStates.noticed. shownState reads stuck and\n  leftWork: a finished chat with a clean folder is Done, and one with\n  work left, or not known, stays Idle. A Stuck? chat is a live\n  Should-know update, From your chats, whose row offers \"It's fine\".\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71EDBNRB1ZXPJ0M8THB7GMS\nPurlis-Persona: steward\n\n* List #6014's commands in the guards, and its limits in the app's dispatch page test\n\nchats_noticed is served on a link and stuck_fine is the window's alone\n(session-protocol's ui.rs), both answered off nothing slow (in memory,\ncosts.rs), and the dispatch page test counts the three Stuck? limits.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71EDBNRB1ZXPJ0M8THB7GMS\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T04:07:24Z",
+          "tree_id": "98f02be6325ac7cc24bf865e1924b0afbf7286e2",
+          "url": "https://github.com/purlis/purlis/commit/5ea1be01860f21474602a82964ef2f17e0f82065"
+        },
+        "date": 1794295535091,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 2570,
+            "unit": "MB",
+            "extra": "median of 3 samples: 2259.9, 2570, 2834.2 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 994.1,
+            "unit": "MB",
+            "extra": "median of 6 samples: 964.2, 975, 990.2, 997.9, 998.8, 1067.9 MB; window 672.4 MB, session host 322.1 MB"
           }
         ]
       }
