@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794341529486,
+  "lastUpdate": 1794349658726,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -19058,6 +19058,42 @@ window.BENCHMARK_DATA = {
             "value": 1210.5,
             "unit": "MB",
             "extra": "median of 6 samples: 1158.6, 1199.7, 1221.3, 1249.1, 1248.9, 734 MB; window 821.4 MB, session host 389.1 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "b9e74d5810bf09a2cbe8da49bae67a784a2dafbc",
+          "message": "Linux wrap leftovers: the leftover-shell tests run inside the wrap, the sandbox install action is removed (#6159)\n\n* DIAGNOSTIC, not for merge: leftover-shell tests on the wrap print the process tree and screen\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M730RW0N750CNW4P2V8C8R65\nPurlis-Persona: steward\n\n* DIAGNOSTIC round 2, not for merge: tests wrap with the app program; SD-30 install UI removed\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M730RW0N750CNW4P2V8C8R65\nPurlis-Persona: steward\n\n* DIAGNOSTIC round 3, not for merge: compile and format fixes\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M730RW0N750CNW4P2V8C8R65\nPurlis-Persona: steward\n\n* DIAGNOSTIC round 4, not for merge: diagnostics out, the stand-in starts no shell for auth status\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M730RW0N750CNW4P2V8C8R65\nPurlis-Persona: steward\n\n* DIAGNOSTIC branch: ADR 0067 amendment and changelog fragment for the install UI's removal\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M730RW0N750CNW4P2V8C8R65\nPurlis-Persona: steward",
+          "timestamp": "2026-11-10T19:28:17Z",
+          "tree_id": "6ef2efb3dfeeb5e49bbbb0c918ff9cdc3f718647",
+          "url": "https://github.com/purlis/purlis/commit/b9e74d5810bf09a2cbe8da49bae67a784a2dafbc"
+        },
+        "date": 1794349653052,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 2647.5,
+            "unit": "MB",
+            "extra": "median of 3 samples: 2406.2, 2647.5, 2960.6 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 1215.1,
+            "unit": "MB",
+            "extra": "median of 6 samples: 1150, 1199.6, 1230.6, 1233.8, 1233.7, 657.9 MB; window 848.8 MB, session host 365.7 MB"
           }
         ]
       }
