@@ -460,15 +460,8 @@ fn an_approval_under_an_old_short_id_asks_again_as_a_changed_pin() {
     let resolved = here.resolve(COMMAND).unwrap();
     let short = &pin.id[..12];
     approve(&here.config, &here.workspace, "board", short, &resolved).unwrap();
-    let standing_of = |id: &str| {
-        standing(
-            Some(&here.config),
-            &here.workspace,
-            "board",
-            id,
-            &resolved,
-        )
-    };
+    let standing_of =
+        |id: &str| standing(Some(&here.config), &here.workspace, "board", id, &resolved);
     assert_eq!(standing_of(&pin.id), Standing::PinChanged);
     assert_eq!(standing_of(short), Standing::PinChanged);
 }

@@ -413,7 +413,10 @@ mod tests {
     fn an_id_is_128_bits_of_the_sha256_so_no_other_command_is_found_with_it() {
         let id = id_of("board", Some("node scripts/gen.mjs"), Some("."));
         assert_eq!(id.len(), 32, "{id}");
-        assert!(id.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        assert!(
+            id.chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+        );
     }
 
     #[test]

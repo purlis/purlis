@@ -668,15 +668,9 @@ fn launch_on(
             .map_err(|why| format!("purlis could not write the run's sandbox ({why})"))?,
         ..crate::sandbox::seatbelt::Own::default()
     };
-    let profile = crate::sandbox::seatbelt::profile(
-        &denied.paths,
-        &own,
-        &writes,
-        &scratch.tmp,
-        &[],
-        None,
-    )
-    .map_err(|why| format!("purlis could not write the run's sandbox ({why})"))?;
+    let profile =
+        crate::sandbox::seatbelt::profile(&denied.paths, &own, &writes, &scratch.tmp, &[], None)
+            .map_err(|why| format!("purlis could not write the run's sandbox ({why})"))?;
     let rest = [
         vec![
             "-c".to_owned(),

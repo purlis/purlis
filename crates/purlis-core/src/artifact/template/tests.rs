@@ -149,7 +149,11 @@ fn a_committed_artifacts_link_out_of_the_workspace_is_never_written_through() {
     std::thread::sleep(std::time::Duration::from_millis(20));
     let why = placed(&root, "backlog-sync", "backlog-state").unwrap_err();
     assert!(why.contains("is a link"), "{why}");
-    assert_eq!(touched(), before, "no folder was made and removed through the link");
+    assert_eq!(
+        touched(),
+        before,
+        "no folder was made and removed through the link"
+    );
     assert!(
         std::fs::read_dir(&outside).unwrap().next().is_none(),
         "nothing is made through the link"
