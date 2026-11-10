@@ -251,6 +251,8 @@ pub fn content_type(key: &str) -> &'static str {
     match extension.as_deref() {
         Some("html" | "htm") => "text/html; charset=utf-8",
         Some("css") => "text/css; charset=utf-8",
+        // A script's own type: under nosniff nothing else runs (ADR 0122 §4).
+        Some("js" | "mjs") => "text/javascript; charset=utf-8",
         Some("json") => "application/json",
         Some("txt") => "text/plain; charset=utf-8",
         Some("svg") => "image/svg+xml",
@@ -685,5 +687,20 @@ mod tests {
         assert_eq!(content_type("A.PNG"), "image/png");
         assert_eq!(content_type("run.sh"), "application/octet-stream");
         assert_eq!(content_type("noext"), "application/octet-stream");
+    }
+
+    /// Every response carries `X-Content-Type-Options: nosniff`, under which a browser runs a
+    /// script only when its type is a JavaScript one: served as bytes, an approved page's
+    /// `app.js` was fetched and never ran, so nothing ever reached its port (#6129, CI run
+    /// 42887769183).
+    #[test]
+    fn a_script_file_is_served_as_javascript_so_it_runs_under_nosniff() {
+        for script in ["app.js", "lib/ask.mjs", "APP.JS"] {
+            assert_eq!(
+                content_type(script),
+                "text/javascript; charset=utf-8",
+                "{script}"
+            );
+        }
     }
 }
