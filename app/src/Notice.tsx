@@ -1132,6 +1132,17 @@ export const FROM_THE_DOCTOR: ReadonlySet<string> = new Set(["doctor-finding"]);
  */
 export const FROM_THE_HAND: ReadonlySet<string> = new Set(["chat-quiet"]);
 
+/**
+ * **The Notices icon's dot** (#5645; ADR 0121 decision 3, #6004): `trouble`, red, while a Notice
+ * listed says something is broken; else `attention`, amber, while one asks a decision that stops
+ * no chat; else none. News alone draws no dot: it is New, and its pip says so.
+ */
+export type NoticesDot = "trouble" | "attention" | undefined;
+
+/** The dot the Notices of `tones` draw on the Notices icon ({@link NoticesDot}). */
+export const dotOf = (tones: readonly NoticeTone[]): NoticesDot =>
+  tones.includes("trouble") ? "trouble" : tones.includes("attention") ? "attention" : undefined;
+
 /** Whether a Notice with this cause is counted by the status line's Notices button. */
 export const countsInStatusBar = (cause: string): boolean =>
   !FROM_THE_DOCTOR.has(familyOf(cause)) && !FROM_THE_HAND.has(familyOf(cause));
@@ -1204,7 +1215,7 @@ const heldKey = (id: string, cause: string) => `notice:${id}:${cause}`;
  * moves**, so a button the person is on keeps the focus as another Notice arrives (F2).
  *
  * `onCount` hears how many it lists that the status line counts ({@link countsInStatusBar}),
- * how many it lists in all, and how many of those say something needs fixing (`trouble`);
+ * how many it lists in all, and the Notices icon's dot ({@link NoticesDot});
  * `onAnswer` hears that a Notice of an {@link ANSWERS} family arrived;
  * `into` is where the list is drawn, when that is not where it is written: the window's own
  * lines are written once, and drawn at the top of the page a window with no project shows
@@ -1222,7 +1233,7 @@ export function NoticeList({
   onCauses,
 }: {
   children: ReactNode;
-  onCount?: (counted: number, listed: number, trouble: number) => void;
+  onCount?: (counted: number, listed: number, dot: NoticesDot) => void;
   /** Hears the causes of the Notices it lists, whenever they change: what is New of them
    *  (#6002) is counted where its view's icon is drawn. */
   onCauses?: (causes: readonly string[]) => void;
@@ -1342,12 +1353,8 @@ export function NoticeList({
   }, [ordered, listAt]);
 
   const counted = ordered.filter((one) => countsInStatusBar(one.cause)).length;
-  // What says something needs fixing (#5645): the Notices icon's dot.
-  const trouble = ordered.filter((one) => one.tone === "trouble").length;
-  useEffect(
-    () => onCount?.(counted, ordered.length, trouble),
-    [onCount, counted, ordered.length, trouble],
-  );
+  const dot = dotOf(ordered.map((one) => one.tone));
+  useEffect(() => onCount?.(counted, ordered.length, dot), [onCount, counted, ordered.length, dot]);
   const causes = ordered.map((one) => one.cause).join("\n");
   useEffect(() => onCauses?.(causes === "" ? [] : causes.split("\n")), [onCauses, causes]);
 

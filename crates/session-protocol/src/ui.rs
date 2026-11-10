@@ -607,6 +607,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     "reference_into_chat",
     "send_input",
     "send_input_bytes",
+    // Quiet by hand, and a pane typed in (#6017): the person's own say over their notifications.
+    // A link that could turn Quiet on could hold back every notification of what waits on them.
+    "set_quiet_now",
+    "quiet_typed",
     // Starts the person's editor on this machine's extension record (#1296).
     "open_extension_record",
     // Allow on Settings' Blocked lately (#1662): widens what every chat here reaches.
@@ -1380,6 +1384,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "ignore_needs_you",
     "import_instructions",
     "inbox_shown",
+    // Whether it is Quiet, and what the last Quiet held (#6017): read only.
+    "quiet_now",
     "installed_extensions",
     "locate_project",
     "mcp_failures",

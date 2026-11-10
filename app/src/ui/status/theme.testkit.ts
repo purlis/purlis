@@ -22,5 +22,9 @@ export default {
   forced: {
     marked: ['[data-scope="status-item"][data-variant="waiting"] > [data-part="count"]'],
     dangerous: ['[data-scope="status-item"][data-part="root"][data-tone="danger"]'],
+    drawn: {
+      // Something New on the Notices item (#6004): the pip in the system's highlight.
+      '[data-part="pip"][data-scope="status-item"]': { "background-color": "Highlight" },
+    },
   },
 } satisfies FamilyTheme;

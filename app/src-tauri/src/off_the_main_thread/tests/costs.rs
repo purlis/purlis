@@ -570,6 +570,10 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             "forget_chat_that_did_not_start",
             "window_holds_planes",
             "inbox_shown",
+            // Quiet (#6017): read, "Quiet now" turned on or off, or a pane typed in: in memory.
+            "quiet_now",
+            "set_quiet_now",
+            "quiet_typed",
             "workspace_focused",
         ],
     ),

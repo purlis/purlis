@@ -56,7 +56,10 @@ function TheWindow({
   dormant = false,
   stack = "ready",
   asking,
+  fresh = false,
 }: {
+  /** Something on `hasNotice`'s chip the person has not seen: its "new" pip (#6004). */
+  fresh?: boolean;
   /** A workspace chat 7 asks the person to remove (#3652): a ✋ on its chip. */
   asking?: string;
   pins: string[];
@@ -202,6 +205,7 @@ function TheWindow({
   const notices: ChipNotices = {
     on: new Map(standing.length === 0 ? [] : [[hasNotice, standing]]),
     open: standing.length === 0 ? undefined : open,
+    fresh: fresh ? new Set([hasNotice]) : undefined,
     show: setOpen,
     hide: () => setOpen(undefined),
     dismiss: (id) => setKept((was) => was.filter((one) => one.id !== id)),
@@ -689,5 +693,27 @@ export const NeedsYouAtRest: Story = {
     await expect(centre(d)).toBeLessThan(c.left + 8);
     await expect(d.right).toBeLessThan(k.left);
     await expect(cardOf()).toBeNull();
+  },
+};
+
+/** **The "new" pip** (ADR 0121 decision 10, #6004): a notice on the chip the person has not seen,
+ *  where a card came by itself before. The accent pip on the chip's lower leading corner, apart
+ *  from the dot above it and the count at its end, said in the chip's description. */
+export const NewPipOnTheChip: Story = {
+  args: { startOpen: false, fresh: true },
+  play: async ({ canvas }) => {
+    const chip = chipOf("3rd-try");
+    const slot = chip.closest('[data-part="slot"]') as HTMLElement;
+    const pip = slot.querySelector('[data-scope="titlebar"][data-part="pip"]') as HTMLElement;
+    await expect(pip).not.toBeNull();
+    await expect(cardOf()).toBeNull();
+    const dot = canvas.getByRole("button", {
+      name: "Show the notice on 3rd-try, something new",
+    });
+    const [p, d, c] = [pip, dot, chip].map((one) => one.getBoundingClientRect());
+    // Under the dot, on the chip's leading half: the two never overlap.
+    await expect(p.top).toBeGreaterThanOrEqual(d.bottom);
+    await expect(centre(p)).toBeLessThan(centre(c));
+    await expect(chip).toHaveAccessibleDescription("2 waiting, 1 notice, something new");
   },
 };

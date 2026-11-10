@@ -45,10 +45,14 @@
 //! **No notification has an Allow or Deny of its own**: it is shown with no action type, since
 //! answering from it would bypass the settle guard (ADR 0121 decision 12).
 //!
-//! **Nothing is sent in the person's quiet hours** ([`QuietHours`], Settings › You ›
-//! Notifications, kept in the layout file): an ask asked in them waits in Asks, and when they
-//! end what still waits unseen is told as one burst, as the system's own focus modes sum up
-//! what they held. Whether purlis may show notifications at all is the system's own
+//! **Nothing is sent while it is Quiet** (#6017, ADR 0121 decision 13): in the person's quiet
+//! hours ([`QuietHours`], Settings › You › Notifications, kept in the layout file), while
+//! "Quiet now" is on, and while they type in a chat, until [`TYPING_QUIET`] after their last key
+//! ([`QuietSources`]). An ask asked then waits in Asks, and the ✋ still counts it. When Quiet
+//! ends, every window is told what it held ([`QuietEnded`], [`QUIET_CHANGED`]) for the summary at
+//! the top of Asks, and one notification names what still waits unseen if the person is away
+//! from every window ([`Rules::quiet`]). macOS's own Focus holds purlis's notifications as it
+//! holds every app's; whether purlis may show notifications at all is the system's own
 //! notification settings' to say.
 //!
 //! **Nothing is sent while the person is looking** ([`Looking`], decision 11): the window
@@ -165,8 +169,14 @@ pub struct Rules {
     many: Option<Many>,
     /// The burst open now ([`TOGETHER`]).
     burst: Option<Burst>,
-    /// The chats that came to wait in quiet hours: when they end, what still waits is told.
+    /// The chats that came to wait while Quiet: when it ends, what still waits is told, if the
+    /// person is away ([`Self::quiet`]).
     held: Vec<Chat>,
+    /// When Quiet began, in seconds since 1970, while it holds.
+    quiet_since: Option<u32>,
+    /// Every ask that came in while Quiet that the person was not looking at, in the order
+    /// they came: what its summary counts, where they still wait when it ends.
+    quiet_asks: Vec<EndedAsk>,
     /// The id the next notification takes.
     last_id: i32,
 }
@@ -183,6 +193,8 @@ struct Waits {
 struct Many {
     id: i32,
     chats: Vec<Chat>,
+    /// Whether it tells what waits after Quiet ([`Rules::quiet`]), which its title says.
+    quiet: bool,
 }
 
 /// **A burst of chats coming to wait**: the first is told at once; each chat that follows
@@ -205,7 +217,8 @@ impl Rules {
     /// - A chat newly waiting, that the person is not looking at, is told at once if no burst
     ///   is open, and joins the burst otherwise ([`Self::woke`] tells it). [`MANY`] or more
     ///   newly waiting in one read are told together at once.
-    /// - In quiet hours nothing new is told: the chat is held until they end.
+    /// - While Quiet nothing new is told: the chat is held until it ends, and each ask the
+    ///   person is not looking at is kept for its summary.
     pub fn heard(&mut self, heard: &Heard<'_>) -> Vec<Act> {
         let plane = heard.plane;
         let known = self.known.entry(plane.clone()).or_default();
@@ -259,6 +272,19 @@ impl Rules {
                 renewed.push(*session);
             }
         }
+        // Asked only when something came in: reading the schedule is a file read.
+        let quiet = !fresh.is_empty() && (heard.quiet)();
+        if quiet {
+            self.quiet_asks.extend(
+                fresh
+                    .iter()
+                    .filter(|ask| !(heard.looking)(ask.session))
+                    .map(|ask| EndedAsk {
+                        plane: plane.clone(),
+                        key: ask.ask.clone(),
+                    }),
+            );
+        }
         let mut acts = self.let_go_of_answered();
         // A chat's own notification standing, updated in place.
         for session in &renewed {
@@ -278,7 +304,7 @@ impl Rules {
         if new.is_empty() {
             return acts;
         }
-        if (heard.quiet)() {
+        if quiet {
             self.held.extend(new);
             return acts;
         }
@@ -300,9 +326,9 @@ impl Rules {
 
     /// **What the notifier does when it wakes by itself** ([`Self::next_due`]): a burst that
     /// closed with chats waiting in it tells them, one notification for all of it when it
-    /// counts [`MANY`] or more; and once quiet hours are over, what they held is told the
-    /// same way. A chat the person is looking at by then, or that no longer waits, is not.
-    pub fn woke(&mut self, now: Instant, looking: &dyn Fn(&Chat) -> bool, quiet: bool) -> Vec<Act> {
+    /// counts [`MANY`] or more. A chat the person is looking at by then, or that no longer
+    /// waits, is not.
+    pub fn woke(&mut self, now: Instant, looking: &dyn Fn(&Chat) -> bool) -> Vec<Act> {
         let mut acts = Vec::new();
         let closed = self
             .burst
@@ -319,15 +345,52 @@ impl Rules {
                 acts.extend(self.tell(waiting));
             }
         }
-        if !quiet && !self.held.is_empty() {
-            let held: Vec<Chat> = std::mem::take(&mut self.held)
-                .into_iter()
-                .filter(|chat| self.waits.contains_key(chat) && !looking(chat))
-                .filter(|chat| !self.told(chat))
-                .collect();
-            acts.extend(self.tell(held));
-        }
         acts
+    }
+
+    /// **Quiet is `quiet` at `at`**, in seconds since 1970 (ADR 0121 decision 13), as the
+    /// notifier finds it before each read. As it begins, it starts a summary of its own. As it
+    /// ends, what it held is let go: **one notification**, naming every chat still waiting
+    /// unseen, if the person is `away` from every window, and none if they are at one, where
+    /// the summary heads Asks ([`QuietEnded`]). The summary is answered either way.
+    pub fn quiet(
+        &mut self,
+        quiet: bool,
+        at: u32,
+        away: bool,
+        looking: &dyn Fn(&Chat) -> bool,
+    ) -> (Vec<Act>, Option<QuietEnded>) {
+        match (quiet, self.quiet_since) {
+            (true, None) => {
+                self.quiet_since = Some(at);
+                self.quiet_asks.clear();
+                (Vec::new(), None)
+            }
+            (false, Some(from)) => {
+                self.quiet_since = None;
+                let known = &self.known;
+                let asks: Vec<EndedAsk> = std::mem::take(&mut self.quiet_asks)
+                    .into_iter()
+                    .filter(|one| {
+                        known
+                            .get(&one.plane)
+                            .is_some_and(|asks| asks.contains_key(&one.key))
+                    })
+                    .collect();
+                let held: Vec<Chat> = std::mem::take(&mut self.held)
+                    .into_iter()
+                    .filter(|chat| self.waits.contains_key(chat) && !looking(chat))
+                    .filter(|chat| !self.told(chat))
+                    .collect();
+                let acts = if away && !held.is_empty() {
+                    self.tell_after_quiet(held)
+                } else {
+                    Vec::new()
+                };
+                (acts, Some(QuietEnded { from, to: at, asks }))
+            }
+            _ => (Vec::new(), None),
+        }
     }
 
     /// **When the notifier should wake by itself next** for a burst: when the one open closes
@@ -461,8 +524,26 @@ impl Rules {
         self.many = Some(Many {
             id,
             chats: all.clone(),
+            quiet: false,
         });
         acts.push(Act::Show(self.many_notice(id, all, replaces, true)));
+        acts
+    }
+
+    /// **Tells `chats`, held while Quiet, as one notification** however many they are, saying
+    /// it was quiet; it takes over from a burst's notification still standing.
+    fn tell_after_quiet(&mut self, chats: Vec<Chat>) -> Vec<Act> {
+        let mut acts = Vec::new();
+        if let Some(many) = self.many.take() {
+            acts.push(Act::Remove(many.id));
+        }
+        let id = self.next_id();
+        self.many = Some(Many {
+            id,
+            chats: chats.clone(),
+            quiet: true,
+        });
+        acts.push(Act::Show(self.many_notice(id, chats, false, true)));
         acts
     }
 
@@ -502,9 +583,17 @@ impl Rules {
                 projects.push(plane);
             }
         }
-        let title = match projects.as_slice() {
-            [_] => format!("{} chats need you", chats.len()),
-            many => format!("{} chats in {} projects need you", chats.len(), many.len()),
+        let after_quiet = self
+            .many
+            .as_ref()
+            .is_some_and(|many| many.id == id && many.quiet);
+        let title = match (after_quiet, projects.as_slice()) {
+            (true, _) => match chats.len() {
+                1 => "While you were quiet: 1 chat needs you".to_owned(),
+                count => format!("While you were quiet: {count} chats need you"),
+            },
+            (false, [_]) => format!("{} chats need you", chats.len()),
+            (false, many) => format!("{} chats in {} projects need you", chats.len(), many.len()),
         };
         let names: Vec<String> = chats
             .iter()
@@ -669,6 +758,92 @@ fn capped(text: &str, most: usize) -> String {
     cut
 }
 
+/// The event every window is sent when Quiet starts or ends: [`QuietNow`].
+pub const QUIET_CHANGED: &str = "quiet-changed";
+
+/// **How long Quiet holds after the last key typed into a chat's pane** (ADR 0121 decision 13):
+/// the person typing is the person busy, and a pause this long is them done.
+pub const TYPING_QUIET: Duration = Duration::from_secs(30);
+
+/// **What makes it Quiet, besides the schedule** (#6017): "Quiet now", by hand, until it is
+/// turned off, and the person typing in a chat, until [`TYPING_QUIET`] after their last key.
+/// Neither is kept past the app's run: a relaunch starts with neither.
+#[derive(Debug, Default)]
+pub struct QuietSources {
+    now: bool,
+    typed_at: Option<Instant>,
+}
+
+impl QuietSources {
+    /// "Quiet now" turned on or off.
+    pub fn set_now(&mut self, on: bool) {
+        self.now = on;
+    }
+
+    /// Whether "Quiet now" is on.
+    pub fn now_on(&self) -> bool {
+        self.now
+    }
+
+    /// The person typed into a chat's pane `at`: whether that started Quiet by typing, which
+    /// the notifier is woken for.
+    pub fn typed(&mut self, at: Instant) -> bool {
+        let started = self.typing_ends(at).is_none();
+        self.typed_at = Some(at);
+        started
+    }
+
+    /// When Quiet by typing ends, while the person is typing `at`.
+    pub fn typing_ends(&self, at: Instant) -> Option<Instant> {
+        self.typed_at
+            .map(|typed| typed + TYPING_QUIET)
+            .filter(|ends| *ends > at)
+    }
+
+    /// Whether it is Quiet `at`, where the schedule says `scheduled`.
+    pub fn is_quiet(&self, scheduled: bool, at: Instant) -> bool {
+        scheduled || self.now || self.typing_ends(at).is_some()
+    }
+}
+
+/// Whether `bytes` sent from a chat's pane are the person typing: anything but the terminal
+/// answering its program by itself (`curation::only_the_terminal_answering`).
+pub fn is_typing(bytes: &[u8]) -> bool {
+    !crate::curation::only_the_terminal_answering(bytes)
+}
+
+/// **What Quiet held, told when it ends** (ADR 0121 decision 13): when it was, and the asks
+/// that came in it that still wait. The window counts with them the updates of the same span
+/// ("While you were quiet: 3 asks, 2 finished, 1 failed"), and drops the row once all of it is
+/// seen (#6002).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct QuietEnded {
+    /// When it began, in seconds since 1970.
+    pub from: u32,
+    /// When it ended, in seconds since 1970.
+    pub to: u32,
+    /// The asks that came in it that the person was not looking at, still waiting as it ended.
+    pub asks: Vec<EndedAsk>,
+}
+
+/// One ask a Quiet's summary counts: its project, and its key in the registry.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct EndedAsk {
+    pub plane: PlaneId,
+    pub key: String,
+}
+
+/// **Whether it is Quiet now, and what Quiet ended last**, as a window asks for it and is sent
+/// it ([`QUIET_CHANGED`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct QuietNow {
+    pub quiet: bool,
+    /// Whether "Quiet now" is on: the toggle's state, whatever else makes it Quiet.
+    pub by_hand: bool,
+    /// The summary of the latest Quiet that ended in this run of the app, if one did.
+    pub ended: Option<QuietEnded>,
+}
+
 /// **The person's quiet hours** (#1989): from a time of day until another, in minutes since
 /// midnight, local time. A span that ends before it starts runs across midnight; one that ends
 /// where it starts covers nothing.
@@ -716,22 +891,25 @@ pub fn minute_of(text: &str) -> Option<u16> {
     (hours < 24 && minutes < 60).then_some(hours * 60 + minutes)
 }
 
-/// Whether it is the person's quiet hours on this machine now, as the layout file says. A file
+/// The person's quiet hours on this machine, as the layout file says, while they are on. A file
 /// that cannot be read says none.
-fn quiet_now() -> bool {
+fn scheduled() -> Option<QuietHours> {
+    let root = purlis_core::machine::config_root()?;
+    let document = purlis_core::windowprefs::read_layout(&root).document?;
+    QuietHours::of_layout(&document)
+}
+
+/// Whether `hours` cover this minute, on this machine's clock.
+fn covers_now(hours: QuietHours) -> bool {
     use chrono::Timelike;
-    let Some(root) = purlis_core::machine::config_root() else {
-        return false;
-    };
-    let Some(document) = purlis_core::windowprefs::read_layout(&root).document else {
-        return false;
-    };
-    let Some(hours) = QuietHours::of_layout(&document) else {
-        return false;
-    };
     let now = chrono::Local::now();
     let minute = u16::try_from(now.hour() * 60 + now.minute()).unwrap_or_default();
     hours.covers(minute)
+}
+
+/// Seconds since 1970, now.
+fn wall_now() -> u32 {
+    u32::try_from(crate::sandboxing::now_secs()).unwrap_or(u32::MAX)
 }
 
 /// **Whether the person is looking at a chat's asks**: all of the window's questions, each
@@ -827,6 +1005,10 @@ pub struct Notifier {
     poked: Mutex<mpsc::Sender<Poke>>,
     inbox: InboxOpen,
     latest: LatestSent,
+    /// "Quiet now" and the person typing ([`QuietSources`]).
+    quiet: Mutex<QuietSources>,
+    /// What a window is told of Quiet: as it was found last, and what it ended last.
+    told: Mutex<QuietNow>,
 }
 
 impl Notifier {
@@ -841,17 +1023,68 @@ impl Notifier {
             poked: Mutex::new(poked),
             inbox: InboxOpen::default(),
             latest: LatestSent::default(),
+            quiet: Mutex::new(QuietSources::default()),
+            told: Mutex::new(QuietNow {
+                quiet: false,
+                by_hand: false,
+                ended: None,
+            }),
         }
+    }
+
+    fn sources(&self) -> MutexGuard<'_, QuietSources> {
+        self.quiet.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn told(&self) -> MutexGuard<'_, QuietNow> {
+        self.told.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 
 /// What the notifier is told: a project whose asks may have moved, and the chat that waits on
-/// the person anew, where the board said one does.
-type Poke = (PlaneId, Option<u32>);
+/// the person anew, where the board said one does; or, with no project, that Quiet may have
+/// moved.
+type Poke = Option<(PlaneId, Option<u32>)>;
 
 /// `plane`'s asks may have moved: they are read again once the burst settles.
 pub fn poke(app: &tauri::AppHandle, plane: &PlaneId) {
-    tell(app, (plane.clone(), None));
+    tell(app, Some((plane.clone(), None)));
+}
+
+/// **The person typed `text` into a chat's pane** (#6017), as the pane says, at most every few
+/// seconds: Quiet holds until [`TYPING_QUIET`] after their last key. The terminal answering by
+/// itself is not them ([`is_typing`]). Answers whether it counted, so the pane says the next
+/// key that does.
+#[tauri::command]
+#[specta::specta]
+pub fn quiet_typed(
+    app: tauri::AppHandle,
+    notifier: tauri::State<'_, Notifier>,
+    text: String,
+) -> bool {
+    if !is_typing(text.as_bytes()) {
+        return false;
+    }
+    if notifier.sources().typed(Instant::now()) {
+        tell(&app, None);
+    }
+    true
+}
+
+/// Whether it is Quiet now, and what the latest Quiet that ended held (#6017).
+#[tauri::command]
+#[specta::specta]
+pub fn quiet_now(notifier: tauri::State<'_, Notifier>) -> QuietNow {
+    notifier.told().clone()
+}
+
+/// **"Quiet now"** turned on or off by the person (#6017): from the Asks view's toggle or the
+/// palette. It holds until they turn it off, or the app ends.
+#[tauri::command]
+#[specta::specta]
+pub fn set_quiet_now(app: tauri::AppHandle, notifier: tauri::State<'_, Notifier>, on: bool) {
+    notifier.sources().set_now(on);
+    tell(&app, None);
 }
 
 /// Chat `moved` moved: its project's asks are read again, and a chat that came to wait on the
@@ -859,10 +1092,10 @@ pub fn poke(app: &tauri::AppHandle, plane: &PlaneId) {
 pub fn moved(app: &tauri::AppHandle, moved: &crate::hooks::Moved) {
     tell(
         app,
-        (
+        Some((
             moved.plane.clone(),
             moved.interrupts().then_some(moved.session),
-        ),
+        )),
     );
 }
 
@@ -918,10 +1151,12 @@ pub fn inbox_shown(
 /// The notifier's thread: each poke, then whatever follows it while it settles, read once.
 fn listen(app: &tauri::AppHandle, heard: &mpsc::Receiver<Poke>) {
     let mut rules = Rules::default();
+    // Whether quiet hours are on, as last read: they are looked at every so often while on.
+    let mut scheduling = scheduled().is_some();
     loop {
         // Woken by a poke, or by itself: when a burst closes with chats in it not told yet,
-        // and every so often while quiet hours hold chats back.
-        let wake = woken_at(&rules, Instant::now());
+        // when typing stops being Quiet, and every so often while Quiet or quiet hours are on.
+        let wake = woken_at(&rules, app, scheduling, Instant::now());
         let first = match wake {
             None => match heard.recv() {
                 Ok(poke) => Some(poke),
@@ -948,8 +1183,27 @@ fn listen(app: &tauri::AppHandle, heard: &mpsc::Receiver<Poke>) {
                 }
             }
         }
+        // **Quiet, found once for the whole pass**, so what is held and what its summary
+        // counts agree.
+        let hours = scheduled();
+        scheduling = hours.is_some();
+        let quiet = app.try_state::<Notifier>().is_some_and(|notifier| {
+            notifier
+                .sources()
+                .is_quiet(hours.is_some_and(covers_now), Instant::now())
+        });
+        let is_looking = |(plane, session): &Chat| {
+            app.try_state::<Planes>()
+                .and_then(|planes| planes.held(plane).ok())
+                .is_some_and(|held| looking(app, plane, *session, &held).is_looking())
+        };
+        let (acts, ended) = rules.quiet(quiet, wall_now(), away(app), &is_looking);
+        for act in acts {
+            send(app, act);
+        }
+        tell_windows(app, quiet, ended);
         let mut planes: Vec<PlaneId> = Vec::new();
-        for (plane, anew) in pokes {
+        for (plane, anew) in pokes.into_iter().flatten() {
             if let Some(session) = anew {
                 rules.renew(&plane, session);
             }
@@ -958,38 +1212,65 @@ fn listen(app: &tauri::AppHandle, heard: &mpsc::Receiver<Poke>) {
             }
         }
         for plane in planes {
-            read(app, &mut rules, &plane);
+            read(app, &mut rules, &plane, quiet);
         }
-        let quiet = rules.holds_in_quiet_hours() && quiet_now();
-        let acts = rules.woke(
-            Instant::now(),
-            &|(plane, session): &Chat| {
-                app.try_state::<Planes>()
-                    .and_then(|planes| planes.held(plane).ok())
-                    .is_some_and(|held| looking(app, plane, *session, &held).is_looking())
-            },
-            quiet,
-        );
-        for act in acts {
+        for act in rules.woke(Instant::now(), &is_looking) {
             send(app, act);
         }
     }
 }
 
-/// How often the notifier looks whether quiet hours have ended, while they hold chats back.
-const QUIET_LOOK: Duration = Duration::from_secs(60);
-
-/// When the notifier wakes by itself next, if it does.
-fn woken_at(rules: &Rules, now: Instant) -> Option<Instant> {
-    let quiet = rules.holds_in_quiet_hours().then(|| now + QUIET_LOOK);
-    match (rules.next_due(), quiet) {
-        (Some(one), Some(other)) => Some(one.min(other)),
-        (one, other) => one.or(other),
-    }
+/// Whether the person is away from every window of the app: none has the keyboard.
+fn away(app: &tauri::AppHandle) -> bool {
+    !app.webview_windows()
+        .values()
+        .any(|window| window.is_focused().unwrap_or(false))
 }
 
-/// Reads `plane`'s asks and does what [`Rules`] says to.
-fn read(app: &tauri::AppHandle, rules: &mut Rules, plane: &PlaneId) {
+/// Tells every window whether it is Quiet, and the summary of a Quiet that just `ended`, when
+/// either moved.
+fn tell_windows(app: &tauri::AppHandle, quiet: bool, ended: Option<QuietEnded>) {
+    use tauri::Emitter;
+    let Some(notifier) = app.try_state::<Notifier>() else {
+        return;
+    };
+    let by_hand = notifier.sources().now_on();
+    let now = {
+        let mut told = notifier.told();
+        if told.quiet == quiet && told.by_hand == by_hand && ended.is_none() {
+            return;
+        }
+        told.quiet = quiet;
+        told.by_hand = by_hand;
+        if ended.is_some() {
+            told.ended = ended;
+        }
+        told.clone()
+    };
+    let _ = app.emit(QUIET_CHANGED, now);
+}
+
+/// How often the notifier looks whether Quiet began or ended by the clock.
+const QUIET_LOOK: Duration = Duration::from_secs(60);
+
+/// When the notifier wakes by itself next, if it does: when a burst closes, when typing stops
+/// being Quiet, and every [`QUIET_LOOK`] while quiet hours are on or hold chats back. "Quiet
+/// now" moving pokes it.
+fn woken_at(
+    rules: &Rules,
+    app: &tauri::AppHandle,
+    scheduling: bool,
+    now: Instant,
+) -> Option<Instant> {
+    let typing = app
+        .try_state::<Notifier>()
+        .and_then(|notifier| notifier.sources().typing_ends(now));
+    let look = (scheduling || rules.holds_in_quiet_hours()).then(|| now + QUIET_LOOK);
+    [rules.next_due(), typing, look].into_iter().flatten().min()
+}
+
+/// Reads `plane`'s asks and does what [`Rules`] says to, while it is `quiet` or not.
+fn read(app: &tauri::AppHandle, rules: &mut Rules, plane: &PlaneId, quiet: bool) {
     let Some(held) = app
         .try_state::<Planes>()
         .and_then(|planes| planes.held(plane).ok())
@@ -1007,7 +1288,7 @@ fn read(app: &tauri::AppHandle, rules: &mut Rules, plane: &PlaneId) {
         plane,
         asks: &asking.asks,
         looking: &|session| looking(app, plane, session, &held).is_looking(),
-        quiet: &quiet_now,
+        quiet: &|| quiet,
         now: Instant::now(),
     });
     for act in acts {
