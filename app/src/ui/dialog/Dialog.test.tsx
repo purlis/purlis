@@ -21,6 +21,9 @@ import { RowLabel } from "../list/Row";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "../table/Table";
 import { Select } from "../select/Select";
 import { selectNamed } from "../select/select.testkit";
+import { Radio, RadioGroup } from "../choice/Radio";
+import { said } from "../../a11y.testkit";
+import { pressTab } from "./dialog.testkit";
 
 afterEach(cleanup);
 
@@ -556,6 +559,85 @@ describe("a dialog", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Close" })).toHaveFocus());
   });
 
+  // **A radio group is one Tab stop** (#6093, `theRadiosStop` in `tabOrder.ts`). React Aria
+  // takes a radio it does not hold out of the order (`tabindex="-1"`) once one is chosen, but
+  // while none is it leaves every one at 0: the family's own rule is then all that makes the
+  // group one stop, its first radio, from before it and from after it.
+  it("stops once on a radio group with nothing chosen, on its first radio, by Tab and by Shift+Tab", async () => {
+    render(
+      <Dialog onClose={() => {}} title="Start a chat" main={{ children: "Start" }}>
+        <label>
+          Title
+          <input />
+        </label>
+        <RadioGroup aria-label="Harness">
+          <Radio value="claude">claude</Radio>
+          <Radio value="codex">codex</Radio>
+          <Radio value="gemini">gemini</Radio>
+        </RadioGroup>
+      </Dialog>,
+    );
+    const title = screen.getByRole("textbox", { name: "Title" });
+    await waitFor(() => expect(title).toHaveFocus());
+    const walked: string[] = [];
+    for (let press = 0; press < 4; press += 1) {
+      pressTab();
+      walked.push(said(document.activeElement as Element));
+    }
+    expect(walked).toEqual([
+      'radio "claude"',
+      'button "Cancel"',
+      'button "Start"',
+      'input "Title"',
+    ]);
+    const back: string[] = [];
+    for (let press = 0; press < 3; press += 1) {
+      pressTab(true);
+      back.push(said(document.activeElement as Element));
+    }
+    expect(back).toEqual(['button "Start"', 'button "Cancel"', 'radio "claude"']);
+  });
+
+  // **A native group with one chosen stops on that one** (#6093, `theRadiosStop`): React Aria's
+  // radios never reach this, as they take the others out of the order themselves, so a group of
+  // plain radios, which the engine alone would walk one by one, says what the family does.
+  it("stops once on a group of native radios, on the one chosen, by Tab and by Shift+Tab", async () => {
+    render(
+      <Dialog onClose={() => {}} title="Start a chat" main={{ children: "Start" }}>
+        <label>
+          Title
+          <input />
+        </label>
+        <fieldset>
+          <legend>Harness</legend>
+          <label>
+            <input type="radio" name="harness" value="claude" />
+            claude
+          </label>
+          <label>
+            <input type="radio" name="harness" value="codex" defaultChecked />
+            codex
+          </label>
+          <label>
+            <input type="radio" name="harness" value="gemini" />
+            gemini
+          </label>
+        </fieldset>
+      </Dialog>,
+    );
+    const title = screen.getByRole("textbox", { name: "Title" });
+    await waitFor(() => expect(title).toHaveFocus());
+    const codex = screen.getByRole("radio", { name: "codex" });
+    pressTab();
+    expect(codex).toHaveFocus();
+    pressTab();
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+    pressTab(true);
+    expect(codex).toHaveFocus();
+    pressTab(true);
+    expect(title).toHaveFocus();
+  });
+
   it("is drawn only while its project is in front", () => {
     render(
       <ProjectShownProvider value={false}>
@@ -668,7 +750,10 @@ describe("a dialog's surface", () => {
     expect(screen.getByRole("dialog")).not.toHaveAttribute("aria-modal", "true");
   });
 
-  it("keeps the keyboard in itself on Tab", async () => {
+  // **One focus scope holds it** (#6093): the one React Aria's `Overlay` draws, which contains
+  // because the dialog in it asks it to (`useDialog`). Each press must be taken by a scope, round
+  // from either end, and never left to the engine, which would go on to Behind.
+  it("keeps the keyboard in itself on Tab and Shift+Tab, round from either end", async () => {
     render(
       <>
         <button type="button">Behind</button>
@@ -678,11 +763,18 @@ describe("a dialog's surface", () => {
         </DialogSurface>
       </>,
     );
-    await waitFor(() => expect(screen.getByRole("textbox")).toHaveFocus());
-    await userEvent.tab();
-    expect(screen.getByRole("button", { name: "Inside" })).toHaveFocus();
-    await userEvent.tab();
-    expect(screen.getByRole("textbox")).toHaveFocus();
+    const box = screen.getByRole("textbox");
+    const inside = screen.getByRole("button", { name: "Inside" });
+    await waitFor(() => expect(box).toHaveFocus());
+    pressTab(false, "the focus scope");
+    expect(inside).toHaveFocus();
+    pressTab(false, "the focus scope");
+    expect(box).toHaveFocus();
+    pressTab(true, "the focus scope");
+    expect(inside).toHaveFocus();
+    pressTab(true, "the focus scope");
+    expect(box).toHaveFocus();
+    expect(document.querySelectorAll("[data-focus-scope-start]")).toHaveLength(1);
   });
 
   it("fades in as it opens, as the family's modals do", async () => {

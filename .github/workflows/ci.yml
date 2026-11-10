@@ -1928,6 +1928,9 @@ jobs:
       # again. apt asks each of its own files again too (`Acquire::Retries`).
       - name: The runner image of this build, for Pool setup's run, by digest
         if: matrix.pool
+        # It takes 1-17 min. A stalled pull or build held the queue head for the job's whole 60 min
+        # (2026-11-10, #6094), so it fails here and frees the queue sooner.
+        timeout-minutes: 20
         env:
           # runner-image/fetch-forge-programs.sh fetches gh's package through the API with it.
           GH_TOKEN: ${{ github.token }}
