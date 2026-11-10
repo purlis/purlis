@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * PROTOTYPE, throwaway (#5874): builds the skill hints prototype into one self-contained HTML file.
- * From app/: npx vite build --config src/prototype-skill-hints/vite.standalone.config.ts
+ * PROTOTYPE, throwaway (#6031): builds the skill policy prototype into one self-contained HTML file.
+ * From app/: npx vite build --config src/prototype-skill-policy/vite.standalone.config.ts
  */
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,7 +12,7 @@ import base from "../../vite.config";
 import { handedThemes } from "../../.storybook/handed.plugin";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const out = process.env.SP_OUT ?? resolve(here, "../../../../skill-hints-dist");
+const out = process.env.SP_OUT ?? resolve(here, "../../../../skill-policy-dist");
 
 /** Puts the script and the stylesheet into the page. */
 function oneFile(): Plugin {

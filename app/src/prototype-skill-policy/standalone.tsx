@@ -1,14 +1,14 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-/** PROTOTYPE, throwaway (#5874): the one-page build, drawn in the real built-in themes. */
+/** PROTOTYPE, throwaway (#6031): the one-page build, drawn in the real built-in themes. */
 import "../../.storybook/handed";
 import "../styles.css";
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { defaultCell, themes } from "virtual:purlis-handed";
 import { drawIn, fetchFacesWith, type Theme } from "../theme/theme";
-import { PrototypeHints } from "./PrototypeHints";
+import { PrototypePolicy } from "./PrototypePolicy";
 import type { Look } from "./ProtoBar";
 
 fetchFacesWith(async (asset) => {
@@ -37,7 +37,7 @@ function Page() {
     return first;
   });
   useEffect(() => draw(look), [look]);
-  return <PrototypeHints look={look} onLook={setLook} />;
+  return <PrototypePolicy look={look} onLook={setLook} />;
 }
 
 const root = document.getElementById("root");
