@@ -11744,6 +11744,13 @@ export type OpenRun = {
 	 *  its start knew it: the scope its chip opens the Skill studio at (#3694).
 	 */
 	level: string | null,
+	/**
+	 *  **The workspace whose copy it is, where that is not the chat's own** (#6083): another
+	 *  workspace's skill its persona names by its workspace (`workspaces/<ws>:<name>`), as the
+	 *  core works it out at the start ([`purlis_core::skilluse::copy_said`]). Its chip names it
+	 *  after the level (`workspace ops`) and opens that copy's runs. `None` for every other run.
+	 */
+	copy_workspace: string | null,
 };
 
 /**

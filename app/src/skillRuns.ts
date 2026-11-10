@@ -44,7 +44,8 @@ export function sameRun(one: OpenRun | undefined, other: OpenRun | undefined): b
       one.name === other.name &&
       one.tool_calls === other.tool_calls &&
       one.tokens === other.tokens &&
-      one.level === other.level)
+      one.level === other.level &&
+      one.copy_workspace === other.copy_workspace)
   );
 }
 
