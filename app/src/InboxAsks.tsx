@@ -22,6 +22,7 @@ import { AskWrites } from "./AskWrites";
 import { LoginSite, useTypedSite } from "./LoginSite";
 import { RunFacts, SecretAskNotice, type SecretAskGiven } from "./SecretAskNotice";
 import { AskDecision, REASON_TYPED_MOST, waysOf } from "./AskDecision";
+import { RuleOffer, ruleMadeOf } from "./AskRules";
 import { SecretFillSite } from "./SecretFillNotice";
 import { Button, ButtonRow, IconButton } from "./ui/button/Button";
 import {
@@ -576,6 +577,8 @@ export function Ask({
     above,
     shape.line,
     ...shape.offers.map((one) => one.label),
+    // A rule offered under its answers (#6010) is a way drawn anew too.
+    ask.rule?.offer?.options.join(",") ?? "",
     changeDrawn ? "drawn" : "",
     // **An Answer just opened is a form just drawn** (#5651): the keyboard lands on its first
     // answer, so an Allow there waits to settle as one drawn anew does, and a second Enter on
@@ -611,7 +614,13 @@ export function Ask({
   /** Whether `option` is an Allow on an ask of Allow and Keep blocked (ADR 0097 §6). */
   const grants = (option: Offered) => option.allows && ALLOW_OR_KEEP.has(ask.source);
   /** A press of `option`; on a secret's one notice (#5080), with what it gave, read once. */
-  const answer = (option: Offered, given?: () => SecretAskGiven, kept = reason) => {
+  const answer = (
+    option: Offered,
+    given?: () => SecretAskGiven,
+    kept = reason,
+    /** Pressed on the rule its row offers (#6010): kept in Rules I made once it went through. */
+    asRule = false,
+  ) => {
     if (busy) return;
     // **An Allow waits for the row to settle** (#1695), as an update's does: with the hand's
     // list retired, the Inbox is where a permission or a host is allowed from outside its
@@ -652,6 +661,7 @@ export function Ask({
           ...(answeredSaid === undefined ? {} : { said: answeredSaid }),
           ...(allowedList === true ? { allowedList } : {}),
         });
+        if (asRule) void commands.ruleMade(plane, ruleMadeOf(ask, option)).catch(() => undefined);
         onAnswered?.(ask, option, live);
       })
       .finally(() => {
@@ -935,6 +945,14 @@ export function Ask({
           >
             {shape.go && <ChatActions who={who} onGo={onGo} onSnooze={onSnooze} onStop={onStop} />}
           </AskDecision>
+          {/* **The rule it offers** (#6010), after the same Allow twice: its wider grants. */}
+          <RuleOffer
+            ask={ask}
+            who={who}
+            busy={busy}
+            mayAct={mayAct}
+            onMake={(option) => answer(option, undefined, "", true)}
+          />
         </>
       ) : (
         (shape.form || shape.go) && (

@@ -810,7 +810,9 @@ describe("answering in place", () => {
       const { props, again } = draw([removal]);
       await userEvent.click(screen.getByRole("button", { name: "Remove…" }));
       await waitFor(() => expect(opened).toEqual([{ plane: PLANE, workspace: "alpha" }]));
-      expect(calls.filter((one) => one.cmd !== "asks_waiting")).toEqual([]);
+      expect(calls.filter((one) => one.cmd !== "asks_waiting" && one.cmd !== "rules_made")).toEqual(
+        [],
+      );
       expect(props.onAnswered).not.toHaveBeenCalled();
       // The person closed the dialog, and the question was answered elsewhere: nothing says
       // they answered Remove… here.
@@ -2097,7 +2099,10 @@ describe("the keyboard (I-11)", () => {
     }
     act(() => screen.getAllByRole("button", { name: "Allow" })[0].focus());
     await userEvent.keyboard("ydn");
-    expect(calls.filter((one) => one.cmd !== "dispatch_grants_needed")).toEqual([]);
+    // Reads alone: which dispatches wait, and the rules made (#6010).
+    expect(
+      calls.filter((one) => one.cmd !== "dispatch_grants_needed" && one.cmd !== "rules_made"),
+    ).toEqual([]);
   });
 });
 

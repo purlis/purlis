@@ -81,6 +81,7 @@ pub mod doctor;
 pub mod doing;
 /// The terminal engine, from the crate that holds it without the rest of the core (#1995).
 pub use purlis_terminal::engine;
+pub mod askrules;
 pub mod browserfiles;
 pub mod browserlimits;
 #[cfg(unix)]

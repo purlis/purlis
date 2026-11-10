@@ -86,6 +86,16 @@ pub struct Asking {
     /// snoozed chat waits only for a new ask.
     #[serde(default)]
     pub snoozed_until: Option<u32>,
+    /// **The asks a cool-off holds quietly** (ADR 0121 decision 7, #6010): each the same request
+    /// its chat heard Don't allow to twice in a row lately. Listed apart, as snoozed asks are, so
+    /// neither the ✋ nor a notification counts them, until the cool-off ends or the person
+    /// ends it. Only [`counted`] puts any here.
+    #[serde(default)]
+    pub cooling: Vec<Shown>,
+    /// When the first cool-off ends by itself, in seconds since 1970: the window reads the asks
+    /// again then.
+    #[serde(default)]
+    pub cooling_until: Option<u32>,
 }
 
 /// A task question its asking chat has, as the task's row says it: `asking steward 2 · 1m`.
@@ -184,6 +194,34 @@ pub struct Shown {
     /// large. Absent for any other ask.
     #[specta(optional)]
     pub fill: Option<FillShown>,
+    /// **What its request is called, and the rule it offers** (ADR 0121 decision 7, #6010):
+    /// present where its request can be named, so its answer is noted against it. Absent on an
+    /// ask that is never offered a rule nor cooled off.
+    #[specta(optional)]
+    pub rule: Option<RuleShown>,
+}
+
+/// **An ask's request, and the rule it offers** (#6010).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct RuleShown {
+    /// The request's name: two asks with the same are the same request.
+    pub request: String,
+    /// The rule offered, where the same Allow was given it twice in a week.
+    #[specta(optional)]
+    pub offer: Option<RuleOffered>,
+}
+
+/// **A rule an ask offers** (#6010): the Allow given each time, how often, and its wider grants
+/// that a rule may be made of, the one suggested first.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct RuleOffered {
+    /// The id of the Allow given each time.
+    pub answered: String,
+    /// How many times, in the last week.
+    pub times: u32,
+    /// The option ids of the grants a rule may be made of, the suggested one first: the
+    /// narrowest that would have prevented every ask, else the widest there is.
+    pub options: Vec<String>,
 }
 
 /// **An ask to allow a program, as its row draws it** (ADR 0112, #5239). Every field is the app's
@@ -421,7 +459,7 @@ pub struct LinesShown {
 }
 
 /// Which source an ask waits on.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum AskSource {
     /// A permission prompt a chat or a task holds on its hook (HP-6).
@@ -643,6 +681,52 @@ pub struct Offered {
     /// answers. Absent (rather than `false`) wherever nothing is marked.
     #[specta(optional)]
     pub preselected: Option<bool>,
+    /// **Who a grant is for, where a rule may be made of it** (ADR 0121 decision 7, #6010):
+    /// this chat, this project or this machine. Absent on an answer that is no grant, and on
+    /// one whose rule Rules I made could not undo (a harness's saved rule, a persona's Always).
+    #[specta(optional)]
+    pub scope: Option<RuleScope>,
+}
+
+/// **Who a rule is for** (ADR 0121 decision 7, #6010), narrowest first.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    serde::Deserialize,
+    specta::Type,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum RuleScope {
+    Chat,
+    Project,
+    Machine,
+}
+
+impl From<RuleScope> for purlis_core::askrules::Scope {
+    fn from(scope: RuleScope) -> Self {
+        match scope {
+            RuleScope::Chat => Self::Chat,
+            RuleScope::Project => Self::Project,
+            RuleScope::Machine => Self::Machine,
+        }
+    }
+}
+
+impl From<purlis_core::askrules::Scope> for RuleScope {
+    fn from(scope: purlis_core::askrules::Scope) -> Self {
+        use purlis_core::askrules::Scope;
+        match scope {
+            Scope::Chat => Self::Chat,
+            Scope::Project => Self::Project,
+            Scope::Machine => Self::Machine,
+        }
+    }
 }
 
 /// Told a project's asks each time they change.
@@ -665,6 +749,8 @@ pub fn asking(plane: &PlaneId, hooks: &HookAsks) -> Asking {
         with_asking_chat: Vec::new(),
         snoozed: Vec::new(),
         snoozed_until: None,
+        cooling: Vec::new(),
+        cooling_until: None,
     }
 }
 
@@ -699,6 +785,7 @@ pub fn permission(raised: Raised) -> Option<Shown> {
             .map(|option| Offered {
                 allows: option.kind == ChoiceKind::Allow,
                 preselected: None,
+                scope: None,
                 id: option.id,
                 label: option.label,
             })
@@ -717,6 +804,7 @@ pub fn permission(raised: Raised) -> Option<Shown> {
         login: None,
         fill: None,
         earlier_messages: None,
+        rule: None,
         secret: None,
         run: None,
     })
@@ -816,12 +904,21 @@ pub fn counted(held: &crate::planes::Held) -> Asking {
     let store = held
         .config()
         .and_then(|_| purlis_core::inboxupdates::Store::here());
-    snoozed_apart(
-        every_ask(held),
-        store.as_ref(),
-        held.root(),
-        crate::sandboxing::now_secs(),
-    )
+    let now = crate::sandboxing::now_secs();
+    let asking = snoozed_apart(every_ask(held), store.as_ref(), held.root(), now);
+    // The answers and rules are this machine's too (#6010): none where it keeps no store.
+    match held
+        .config()
+        .and_then(|_| purlis_core::askrules::Store::here())
+    {
+        Some(rules) => with_rules(
+            asking,
+            &rules.read(),
+            &purlis_core::askrules::project_of(held.root()),
+            now,
+        ),
+        None => asking,
+    }
 }
 
 /// **Snooze all's asks, put apart** (#5647): every snoozed chat that holds an ask it did not
@@ -918,6 +1015,136 @@ pub fn level_id(level: crate::sandboxing::GrantLevel) -> &'static str {
     }
 }
 
+/// **Who a sandbox grant at `level` is for, as a rule** (#6010): this chat, this project (on
+/// this machine, or committed for everyone), or every project here. Once is no rule.
+fn level_scope(level: crate::sandboxing::GrantLevel) -> Option<RuleScope> {
+    use crate::sandboxing::GrantLevel;
+    match level {
+        GrantLevel::Once => None,
+        GrantLevel::Chat => Some(RuleScope::Chat),
+        GrantLevel::You | GrantLevel::Project => Some(RuleScope::Project),
+        GrantLevel::Machine => Some(RuleScope::Machine),
+    }
+}
+
+/// **Whether `ask` is high-risk** (ADR 0121 decision 8, #6011): one is never offered a rule.
+/// No ask is classed yet; #6011 fills this seam, as it fills `asksSame.ts`'s `highRisk`.
+pub fn high_risk(_ask: &Shown) -> bool {
+    false
+}
+
+/// **What `ask`'s request is called** (#6010), where it can be named: two asks with the same name
+/// are the same request, as identical requests are one row of Asks (`asksSame.ts`, #6009). A
+/// sandbox's host, folder or service by its target; a permission by its line (an edit's change
+/// and a command over several lines are never named); a run of a program by its program, vault,
+/// persona, folder and command, which ADR 0112 binds a grant to.
+pub fn request_of(ask: &Shown) -> Option<String> {
+    let asked = match (&ask.source, &ask.answer) {
+        (
+            AskSource::SandboxHost | AskSource::SandboxWrite | AskSource::SandboxLocal,
+            AnswerPath::SandboxBlock { shown },
+        ) => shown.target.clone(),
+        (AskSource::Permission, AnswerPath::Hook)
+            if ask.writes.is_none() && ask.lines.is_none() =>
+        {
+            ask.says.clone()
+        }
+        (AskSource::RunGrant, _) => {
+            let run = ask
+                .run
+                .as_ref()
+                .filter(|run| run.offer == "program" && run.fills.is_empty())?;
+            serde_json::to_string(&[
+                &run.program,
+                &run.vault,
+                &run.persona,
+                &run.cwd,
+                &run.command,
+            ])
+            .ok()?
+        }
+        _ => return None,
+    };
+    serde_json::to_string(&[serde_json::to_value(ask.source).ok()?, asked.into()]).ok()
+}
+
+/// **The rule `ask` offers** under `offer` (#6010): its grants wider than the Allow given each
+/// time that a rule may be made of, the suggested one first: the narrowest that would have
+/// prevented every ask, else the widest there is. None where it has no such grant, or is
+/// high-risk.
+fn offered(ask: &Shown, offer: purlis_core::askrules::Offer) -> Option<RuleOffered> {
+    if high_risk(ask) {
+        return None;
+    }
+    let given = ask
+        .options
+        .iter()
+        .find(|one| one.id == offer.answered)?
+        .scope;
+    let wider: Vec<(&Offered, RuleScope)> = ask
+        .options
+        .iter()
+        .filter(|one| one.allows)
+        .filter_map(|one| Some((one, one.scope?)))
+        .filter(|(_, scope)| given.is_none_or(|given| *scope > given))
+        .collect();
+    let needs = RuleScope::from(offer.needs);
+    let suggested = wider
+        .iter()
+        .filter(|(_, scope)| *scope >= needs)
+        .min_by_key(|(_, scope)| *scope)
+        .or_else(|| wider.iter().max_by_key(|(_, scope)| *scope))?
+        .0;
+    Some(RuleOffered {
+        answered: offer.answered,
+        times: offer.times,
+        options: std::iter::once(suggested)
+            .chain(
+                wider
+                    .iter()
+                    .map(|(one, _)| *one)
+                    .filter(|one| one.id != suggested.id),
+            )
+            .map(|one| one.id.clone())
+            .collect(),
+    })
+}
+
+/// **Asks less** (#6010): each ask of `asking` named by its request, with the rule it offers
+/// under `record` at `now`; and the asks a cool-off holds put apart, in [`Asking::cooling`].
+pub fn with_rules(
+    mut asking: Asking,
+    record: &purlis_core::askrules::Record,
+    project: &str,
+    now: u64,
+) -> Asking {
+    use purlis_core::askrules::{self, Asked};
+    let mut kept = Vec::new();
+    for mut ask in std::mem::take(&mut asking.asks) {
+        let Some(request) = request_of(&ask) else {
+            kept.push(ask);
+            continue;
+        };
+        let asked = Asked {
+            project: project.to_owned(),
+            session: ask.session,
+            request: request.clone(),
+        };
+        let offer = askrules::offer(record, &asked, now).and_then(|offer| offered(&ask, offer));
+        ask.rule = Some(RuleShown { request, offer });
+        match askrules::cooling(record, &asked, now) {
+            Some(until) => {
+                let until = u32::try_from(until).unwrap_or(u32::MAX);
+                asking.cooling_until = Some(asking.cooling_until.map_or(until, |at| at.min(until)));
+                asking.cooling.push(ask);
+            }
+            None => kept.push(ask),
+        }
+    }
+    asking.asks = kept;
+    asking
+}
+
 /// The option id of Keep blocked, for a dispatch and a sandbox host alike.
 pub const KEEP: &str = "keep";
 /// The option id of a dispatch's Never for this pair (#1503).
@@ -932,6 +1159,8 @@ fn allows(
         label: allow_said(*level, sandbox).to_owned(),
         allows: true,
         preselected: None,
+        // A sandbox's grant is on Settings' Granted list, where Rules I made undoes it.
+        scope: if sandbox { level_scope(*level) } else { None },
     })
 }
 
@@ -941,6 +1170,7 @@ fn refuses(id: &str, label: &str) -> Offered {
         label: label.to_owned(),
         allows: false,
         preselected: None,
+        scope: None,
     }
 }
 
@@ -989,6 +1219,7 @@ pub fn dispatch(told: &crate::dispatchgrants::DispatchPending) -> Shown {
         login: None,
         fill: None,
         earlier_messages: None,
+        rule: None,
         secret: None,
         run: None,
     }
@@ -1039,6 +1270,7 @@ pub fn sandbox_host(
             login: None,
             fill: None,
             earlier_messages: None,
+            rule: None,
             secret: None,
             run: None,
         });
@@ -1081,6 +1313,7 @@ pub fn sandbox_host(
         login: None,
         fill: None,
         earlier_messages: None,
+        rule: None,
         secret: None,
         run: None,
     })
@@ -1152,6 +1385,7 @@ pub fn sandbox_write(
             login: None,
             fill: None,
             earlier_messages: None,
+            rule: None,
             secret: None,
             run: None,
         });
@@ -1184,6 +1418,7 @@ pub fn sandbox_write(
         login: None,
         fill: None,
         earlier_messages: None,
+        rule: None,
         secret: None,
         run: None,
     })
@@ -1256,6 +1491,7 @@ pub fn sandbox_runner(
         login: None,
         fill: None,
         earlier_messages: None,
+        rule: None,
         secret: None,
         run: None,
     })
@@ -1339,6 +1575,7 @@ pub fn sandbox_port(
         login: None,
         fill: None,
         earlier_messages: None,
+        rule: None,
         secret: None,
         run: None,
     })
@@ -1419,6 +1656,7 @@ pub fn sandbox_local(
         login: None,
         fill: None,
         earlier_messages: None,
+        rule: None,
         secret: None,
         run: None,
     })
@@ -1466,6 +1704,7 @@ pub fn terminal(
         login: None,
         fill: None,
         earlier_messages: None,
+        rule: None,
         secret: None,
         run: None,
     }
@@ -1494,6 +1733,7 @@ pub fn question(session: u32, last_message: Option<String>, earlier: Vec<String>
         login: None,
         fill: None,
         earlier_messages: (!earlier.is_empty()).then_some(earlier),
+        rule: None,
         secret: None,
         run: None,
     }
@@ -1531,6 +1771,7 @@ pub fn task_question(
         login: None,
         fill: None,
         earlier_messages: None,
+        rule: None,
         secret: None,
         run: None,
     }
@@ -1574,6 +1815,7 @@ pub fn workspace_removal(
                 label: REMOVE_SAID.to_owned(),
                 allows: true,
                 preselected: None,
+                scope: None,
             },
             refuses(KEEP, KEEP_IT_SAID),
         ],
@@ -1595,6 +1837,7 @@ pub fn workspace_removal(
         login: None,
         fill: None,
         earlier_messages: None,
+        rule: None,
         secret: None,
         run: None,
     }
@@ -1661,11 +1904,13 @@ pub fn browser_posture(
         label,
         allows: true,
         preselected: None,
+        scope: None,
     };
     // The declared reach's answer for this chat alone is marked, in place.
     let marked = |reach: Browser, said: &str| match (persona, declared) {
         (Some(persona), Some(declared)) if declared == reach => Offered {
             preselected: Some(true),
+            scope: None,
             ..offer(
                 match reach {
                     Browser::Project => BROWSER_PROJECT,
@@ -1716,6 +1961,7 @@ pub fn browser_posture(
         login: None,
         fill: None,
         earlier_messages: None,
+        rule: None,
         secret: None,
         run: None,
     }
@@ -1752,6 +1998,7 @@ pub fn browser_needs_you(waiting: &crate::browserneedsyou::Waiting) -> Shown {
                 label: "Open its view".to_owned(),
                 allows: false,
                 preselected: None,
+                scope: None,
             },
         )
     } else {
@@ -1765,6 +2012,7 @@ pub fn browser_needs_you(waiting: &crate::browserneedsyou::Waiting) -> Shown {
                 label: "Take over".to_owned(),
                 allows: true,
                 preselected: None,
+                scope: None,
             },
         )
     };
@@ -1789,6 +2037,7 @@ pub fn browser_needs_you(waiting: &crate::browserneedsyou::Waiting) -> Shown {
         login: None,
         fill: None,
         earlier_messages: None,
+        rule: None,
         secret: None,
         run: None,
     }
@@ -1814,6 +2063,7 @@ pub fn secret_fill(
         label: label.to_owned(),
         allows: true,
         preselected: None,
+        scope: None,
     };
     let mut options = Vec::new();
     if locks.scope_removed(Level::Once).is_none() {
@@ -1864,6 +2114,7 @@ pub fn secret_fill(
         last_message: None,
         login: None,
         earlier_messages: None,
+        rule: None,
         secret: None,
         run: None,
         fill: Some(FillShown {
@@ -1910,6 +2161,7 @@ pub fn browser_login(
         label: label.to_owned(),
         allows: true,
         preselected: None,
+        scope: None,
     };
     let mut options = Vec::new();
     if locks.scope_removed(Level::Once).is_none() {
@@ -2006,6 +2258,7 @@ pub fn browser_login(
             }),
         }),
         earlier_messages: None,
+        rule: None,
         secret: None,
         run: None,
     }
@@ -2063,6 +2316,7 @@ pub fn pool_login(waits: &crate::chatbrowsers::PoolLoginWaits) -> Shown {
                 label: format!("Allow on pool {pool}"),
                 allows: true,
                 preselected: None,
+                scope: None,
             },
             refuses(KEEP, "Keep off"),
         ],
@@ -2080,6 +2334,7 @@ pub fn pool_login(waits: &crate::chatbrowsers::PoolLoginWaits) -> Shown {
         login: None,
         fill: None,
         earlier_messages: None,
+        rule: None,
         secret: None,
         run: None,
     }
@@ -2133,6 +2388,7 @@ pub fn pool_tool(waits: &crate::pooltools::PoolToolWaits) -> Shown {
                 label: "Allow this run".to_owned(),
                 allows: true,
                 preselected: None,
+                scope: None,
             },
             refuses(KEEP, "Keep off"),
         ],
@@ -2150,6 +2406,7 @@ pub fn pool_tool(waits: &crate::pooltools::PoolToolWaits) -> Shown {
         login: None,
         fill: None,
         earlier_messages: None,
+        rule: None,
         secret: None,
         run: None,
     }
@@ -2211,6 +2468,7 @@ pub fn vault_refused(one: &crate::vaultroute::VaultRefused) -> Shown {
         label: format!("Allow {} to use this vault", said_inertly(persona)),
         allows: true,
         preselected: None,
+        scope: None,
     });
     Shown {
         session: one.session,
@@ -2235,6 +2493,7 @@ pub fn vault_refused(one: &crate::vaultroute::VaultRefused) -> Shown {
         last_message: None,
         login: None,
         earlier_messages: None,
+        rule: None,
         secret: None,
         fill: None,
         run: None,
@@ -2368,6 +2627,7 @@ pub fn secret_ask(open: &purlis_core::secrets::ask::Open, may_remember: bool) ->
                 label: "Fill".to_owned(),
                 allows: true,
                 preselected: None,
+                scope: None,
             },
             refuses(KEEP, "Not now"),
         ],
@@ -2384,6 +2644,7 @@ pub fn secret_ask(open: &purlis_core::secrets::ask::Open, may_remember: bool) ->
         last_message: None,
         login: None,
         earlier_messages: None,
+        rule: None,
         fill: None,
         secret: Some(SecretShown {
             persona: persona.clone(),
@@ -2525,6 +2786,7 @@ pub fn run_grant(
                 label: format!("Allow {} to use this vault", said_inertly(&open.persona)),
                 allows: true,
                 preselected: None,
+                scope: None,
             })
             .into_iter()
             .chain([refuses(KEEP, KEEP_SAID)])
@@ -2535,6 +2797,7 @@ pub fn run_grant(
                 label: "Fill".to_owned(),
                 allows: true,
                 preselected: None,
+                scope: None,
             },
             refuses(KEEP, "Not now"),
         ],
@@ -2575,6 +2838,7 @@ pub fn run_grant(
         last_message: None,
         login: None,
         earlier_messages: None,
+        rule: None,
         fill: None,
         secret: None,
         run: Some(RunShown {
@@ -2637,6 +2901,10 @@ fn program_options(
         label: label.to_owned(),
         allows: true,
         preselected: None,
+        // Allow for this chat is a Run grant on Settings' Granted list, which Rules I made
+        // undoes. Always declares the program a tool of the persona's: no rule is made of it
+        // until Rules I made can take that line out again.
+        scope: (id == RUN_ALLOW_CHAT).then_some(RuleScope::Chat),
     })
     .chain(std::iter::once(refuses(KEEP, "Don't allow")))
     .collect()
@@ -2685,6 +2953,7 @@ pub fn browser_sites(
         login: None,
         fill: None,
         earlier_messages: None,
+        rule: None,
         secret: None,
         run: None,
     }
@@ -2708,6 +2977,7 @@ pub fn browser_site_answers(
         label: label.to_owned(),
         allows: true,
         preselected: None,
+        scope: None,
     };
     let (sites, says) = match sites_named(all) {
         Some(named) => {
@@ -2841,6 +3111,7 @@ pub fn proposed_change(
             label: "Apply".to_owned(),
             allows: true,
             preselected: None,
+            scope: None,
         });
     }
     if opens {
@@ -2886,6 +3157,7 @@ pub fn proposed_change(
         login: None,
         fill: None,
         earlier_messages: None,
+        rule: None,
         secret: None,
         run: None,
     }
@@ -2920,6 +3192,7 @@ pub fn runner_dispatch(one: &crate::runnerdispatches::HeldDispatch) -> Shown {
         login: None,
         fill: None,
         earlier_messages: None,
+        rule: None,
         secret: None,
         run: None,
     }
@@ -2958,6 +3231,7 @@ pub fn runner_write(one: &crate::runnerwrites::HeldWrite) -> Shown {
             label: "Apply".to_owned(),
             allows: true,
             preselected: None,
+            scope: None,
         });
     } else {
         options.push(refuses(OPEN, "Open"));
@@ -2982,6 +3256,7 @@ pub fn runner_write(one: &crate::runnerwrites::HeldWrite) -> Shown {
         login: None,
         fill: None,
         earlier_messages: None,
+        rule: None,
         secret: None,
         run: None,
     }
@@ -3005,6 +3280,7 @@ pub fn sign_in(wait: &purlis_core::profilestore::sign_in::Wait) -> Shown {
             label: "Sign in".to_owned(),
             allows: true,
             preselected: None,
+            scope: None,
         }]
     } else {
         plans
@@ -3014,6 +3290,7 @@ pub fn sign_in(wait: &purlis_core::profilestore::sign_in::Wait) -> Shown {
                 label: format!("Sign in to {}", plan.title),
                 allows: true,
                 preselected: None,
+                scope: None,
             })
             .collect()
     };
@@ -3045,6 +3322,7 @@ pub fn sign_in(wait: &purlis_core::profilestore::sign_in::Wait) -> Shown {
         login: None,
         fill: None,
         earlier_messages: None,
+        rule: None,
         secret: None,
         run: None,
     }
@@ -3069,6 +3347,7 @@ pub fn pool_sign_in(wait: &purlis_core::profilestore::onrunner::PoolWait) -> Sho
             label: format!("Sign in on pool {pool}"),
             allows: true,
             preselected: None,
+            scope: None,
         }]
     } else {
         plans
@@ -3078,6 +3357,7 @@ pub fn pool_sign_in(wait: &purlis_core::profilestore::onrunner::PoolWait) -> Sho
                 label: format!("Sign in to {} on pool {pool}", plan.title),
                 allows: true,
                 preselected: None,
+                scope: None,
             })
             .collect()
     };
@@ -3108,6 +3388,7 @@ pub fn pool_sign_in(wait: &purlis_core::profilestore::onrunner::PoolWait) -> Sho
         login: None,
         fill: None,
         earlier_messages: None,
+        rule: None,
         secret: None,
         run: None,
     }
@@ -3168,6 +3449,7 @@ pub fn sandbox_only(wait: &purlis_core::profilestore::sandbox_only::Wait) -> Sho
                 label: "Make one".to_owned(),
                 allows: true,
                 preselected: None,
+                scope: None,
             },
             refuses(DISMISS, "Dismiss"),
         ],
@@ -3187,6 +3469,7 @@ pub fn sandbox_only(wait: &purlis_core::profilestore::sandbox_only::Wait) -> Sho
         login: None,
         fill: None,
         earlier_messages: None,
+        rule: None,
         secret: None,
         run: None,
     }
@@ -3224,6 +3507,7 @@ pub fn old_harness_plugins(old: &crate::oldplugins::OldHarnessPlugins) -> Shown 
         login: None,
         fill: None,
         earlier_messages: None,
+        rule: None,
         secret: None,
         run: None,
     }
@@ -3346,6 +3630,7 @@ pub fn signing_waiting(root: &std::path::Path, on: impl FnOnce() -> bool) -> Opt
         login: None,
         fill: None,
         earlier_messages: None,
+        rule: None,
         secret: None,
         run: None,
     })
@@ -4028,6 +4313,8 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         with_asking_chat,
         snoozed: Vec::new(),
         snoozed_until: None,
+        cooling: Vec::new(),
+        cooling_until: None,
         // A grade's chat is drawn nowhere, and asks nobody (SK-16): the grade ends it at its
         // first ask, with that end, and none of its asks is listed.
         asks: derive(&waiting)
@@ -4115,3 +4402,6 @@ fn signing_on() -> bool {
     let keyring = purlis_core::commitsign::this_builds_keyring(&config);
     purlis_core::signingsetup::key_is_there(&config, keyring.as_ref()).unwrap_or(false)
 }
+
+#[cfg(test)]
+mod rules_tests;

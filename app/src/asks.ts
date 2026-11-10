@@ -110,9 +110,16 @@ export function notSnoozed<Row extends { plane: string; session: number }>(
     const list = held[plane];
     if (list === undefined) return true;
     const ofIt = (one: Shown) => one.session === session;
-    return list.asks.some(ofIt) || !(list.snoozed ?? []).some(ofIt);
+    // Nor one whose every ask a cool-off holds (#6010).
+    return (
+      list.asks.some(ofIt) || !((list.snoozed ?? []).some(ofIt) || (list.cooling ?? []).some(ofIt))
+    );
   });
 }
+
+/** The earlier of two times, either of which may be missing. */
+const firstOf = (one: number | null, two: number | null): number | null =>
+  one === null ? two : two === null ? one : Math.min(one, two);
 
 /** Each project's asks, by its id: the last whole list the core derived for it. */
 export function useAsks(planes: readonly string[]): {
@@ -198,6 +205,9 @@ function listReader(
           with_asking_chat,
           snoozed: listed?.snoozed ?? [],
           snoozed_until: listed?.snoozed_until ?? null,
+          // And none a cool-off holds (#6010).
+          cooling: listed?.cooling ?? [],
+          cooling_until: listed?.cooling_until ?? null,
         };
         // **An answer that says what the last one said changes nothing** (#4727): every burst of
         // a busy chat's moves reads the list again, and a fresh list each time drew the whole
@@ -209,7 +219,8 @@ function listReader(
             : { ...was, [plane]: next },
         );
         lookAtHoldsEnd(plane, asks);
-        lookAtSnoozesEnd(plane, next.snoozed_until);
+        // A cool-off ends with no event of its own either (#6010): read again at the first end.
+        lookAtSnoozesEnd(plane, firstOf(next.snoozed_until, next.cooling_until));
       },
       () => {},
     );
@@ -317,6 +328,18 @@ export async function answerThrough(
   option: string,
 ): Promise<string | undefined> {
   return (await answerTaken(plane, ask, option)).refused;
+}
+
+/**
+ * **An answer noted against its request** (ADR 0121 decision 7, #6010): what offers a rule after
+ * the same Allow twice, and starts a cool-off after Don't allow twice. Only an ask the core
+ * names by its request is noted; a note that fails loses an offer, never an answer.
+ */
+function notedAgainst(plane: string, ask: Shown, option: string): void {
+  const request = ask.rule?.request;
+  if (request == null) return;
+  const allows = ask.options.some((one) => one.id === option && one.allows);
+  void commands.askAnswered(plane, ask.session, request, option, allows).catch(() => undefined);
 }
 
 /** The press a run's notice's option sends (ADR 0112, #5242), by the option's id. */
@@ -751,6 +774,7 @@ export async function answerTaken(
     status: "error" as const,
     error: String(err),
   }));
+  if (answer.status === "ok" && !opened) notedAgainst(plane, ask, option);
   return answer.status === "ok"
     ? {
         refused: undefined,
