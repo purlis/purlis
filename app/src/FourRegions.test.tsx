@@ -1904,7 +1904,7 @@ describe("the right side's activity bar", () => {
     await screen.findByRole("tabpanel", { name: "Asks" });
     await screen.findByRole("tabpanel", { name: "Memory" });
 
-    await userEvent.click(await screen.findByRole("button", { name: /^Notices: / }));
+    await userEvent.click(await screen.findByTestId("status-alerts"));
 
     expect(await screen.findByRole("tabpanel", { name: "Notices" })).toBeInTheDocument();
     expect(lowerTab("Notices")).toHaveAttribute("aria-selected", "true");
@@ -2517,7 +2517,11 @@ describe("the status line", () => {
     const { asked } = core();
     render(<App />);
 
-    const button = await screen.findByRole("button", { name: "Notices: 1" });
+    // No count on the status line: the Notices icon on the right bar shows it (#6004).
+    const button = await screen.findByTestId("status-alerts");
+    await waitFor(() => expect(button).toHaveAttribute("data-count", "1"));
+    expect(button).toHaveAccessibleName("Notices");
+    expect(button).not.toHaveTextContent(/\d/);
     await userEvent.click(button);
 
     const view = await screen.findByRole("tabpanel", { name: "Notices" });
@@ -2543,7 +2547,9 @@ describe("the status line", () => {
   it("draws no alerts section in the right-hand region any more", async () => {
     core();
     render(<App />);
-    await screen.findByRole("button", { name: "Notices: none" });
+    await waitFor(() =>
+      expect(screen.getByTestId("status-alerts")).toHaveAttribute("data-count", "0"),
+    );
 
     expect(screen.queryByTestId("panel-alerts")).toBeNull();
   });

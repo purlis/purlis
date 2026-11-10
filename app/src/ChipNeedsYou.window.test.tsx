@@ -217,12 +217,8 @@ describe("a chat asking to remove a workspace (#3652)", () => {
     opened();
     await waitFor(() => expect(within(bar()).getByRole("button", { name: "alpha" })).toBeTruthy());
     await make("gamma");
-    await screen.findByRole("region", { name: "Notices for gamma" });
-    // Hidden by a press elsewhere: gamma's ready notice waits behind the ✋, the most urgent.
-    await userEvent.click(document.body);
-    await waitFor(() =>
-      expect(screen.queryByRole("region", { name: "Notices for gamma" })).toBeNull(),
-    );
+    // No card comes by itself (#6004): gamma's ready notice waits behind the ✋, the most urgent.
+    expect(screen.queryByRole("region", { name: "Notices for gamma" })).toBeNull();
     const hand = await waitFor(() => {
       const found = within(bar()).queryByRole("button", {
         name: "Show the chat asking to remove gamma, and its notice",

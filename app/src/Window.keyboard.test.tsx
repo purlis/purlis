@@ -472,7 +472,7 @@ describe("the window's tab order", () => {
       // bar is its way away and back.
       "button Project plane",
       "button Doctor",
-      "button Notices: none",
+      "button Notices",
     ]);
   });
 

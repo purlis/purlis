@@ -158,3 +158,23 @@ export async function pinsSaid(plane: string | null): Promise<string> {
     .catch((e: unknown) => `not asked: ${String(e)}`);
   return said;
 }
+
+/**
+ * **Opens the status bar's card, as a person does** (#6004): no card pops by itself, so a project's
+ * or the app's result waits behind the dot on the Notices item until it is pressed. Waits for the
+ * dot, or for the card up already, and presses the dot once.
+ */
+export async function openTheStatusCard(): Promise<void> {
+  await browser.waitUntil(
+    async () =>
+      browser.execute(() => {
+        if (document.querySelector('[data-chip="status/bar/notices"]') !== null) return true;
+        const dot = document.querySelector<HTMLElement>(
+          '[data-scope="status-item"][data-part^="dot"]',
+        );
+        dot?.click();
+        return false;
+      }),
+    { timeout: 30_000, interval: 250, timeoutMsg: "no dot on the Notices item brought its card" },
+  );
+}

@@ -14,8 +14,10 @@
     background-color: SelectedItemText;
   }
 
-  /* A Notice needs fixing (#5645): a dot in the system's mark colour, as a hot count is. */
-  [data-scope="activity"][data-part="count"][data-tone="danger"] {
+  /* A Notice needs fixing (#5645) or a decision (#6004): a dot in the system's mark colour, as a
+     hot count is. Its sentence, the item's description, says which. */
+  [data-scope="activity"][data-part="count"][data-tone="danger"],
+  [data-scope="activity"][data-part="count"][data-tone="warning"] {
     forced-color-adjust: none;
     color: MarkText;
     background-color: Mark;

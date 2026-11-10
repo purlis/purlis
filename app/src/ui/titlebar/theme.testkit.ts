@@ -20,4 +20,10 @@ export default {
     '[data-part="pin"][data-scope="titlebar"]',
     '[data-part="row"][data-scope="titlebar"][data-unavailable]',
   ],
+  forced: {
+    drawn: {
+      // Something New on a chip (#6004): the pip in the system's highlight.
+      '[data-part="pip"][data-scope="titlebar"]': { "background-color": "Highlight" },
+    },
+  },
 } satisfies FamilyTheme;
