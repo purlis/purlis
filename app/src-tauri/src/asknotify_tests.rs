@@ -133,7 +133,7 @@ fn an_ask_already_told_is_not_told_again_however_often_the_list_is_read() {
     assert!(heard(&mut rules, &a, &asks, start + TOGETHER * 3).is_empty());
     assert!(
         rules
-            .woke(start + TOGETHER * 4, NOBODY_LOOKS_AT_ANY, false)
+            .woke(start + TOGETHER * 4, NOBODY_LOOKS_AT_ANY)
             .is_empty()
     );
 }
@@ -267,11 +267,10 @@ fn a_burst_across_projects_tells_its_first_chat_at_once_and_all_of_it_as_one_whe
             .woke(
                 later + TOGETHER - Duration::from_millis(1),
                 NOBODY_LOOKS_AT_ANY,
-                false
             )
             .is_empty()
     );
-    let acts = rules.woke(later + TOGETHER, NOBODY_LOOKS_AT_ANY, false);
+    let acts = rules.woke(later + TOGETHER, NOBODY_LOOKS_AT_ANY);
     assert_eq!(acts[0], Act::Remove(first.id));
     let all = only_shown(&acts[1..]);
     assert_eq!(all.title, "3 chats in 2 projects need you");
@@ -294,7 +293,7 @@ fn a_second_chat_in_a_burst_is_told_with_its_own_when_it_closes() {
     let both = [first[0].clone(), named(4, "p2", "devops 4")];
     let soon = start + Duration::from_secs(2);
     assert!(heard(&mut rules, &a, &both, soon).is_empty());
-    let told = only_shown(&rules.woke(soon + TOGETHER, NOBODY_LOOKS_AT_ANY, false));
+    let told = only_shown(&rules.woke(soon + TOGETHER, NOBODY_LOOKS_AT_ANY));
     assert_eq!(told.title, "devops 4");
     assert_eq!(told.chats, vec![(a, 4)]);
 }
@@ -317,11 +316,7 @@ fn a_chat_answered_or_looked_at_before_its_burst_closed_is_not_told() {
     let left = [first[0].clone(), named(5, "p3", "builder 5")];
     assert!(heard(&mut rules, &a, &left, soon + Duration::from_secs(1)).is_empty());
     let five_on_screen: &dyn Fn(&Chat) -> bool = &|chat| chat.1 == 5;
-    assert!(
-        rules
-            .woke(soon + TOGETHER * 2, five_on_screen, false)
-            .is_empty()
-    );
+    assert!(rules.woke(soon + TOGETHER * 2, five_on_screen).is_empty());
 }
 
 #[test]
@@ -380,49 +375,204 @@ fn heard_quiet(
     })
 }
 
+/// Quiet moving to `quiet` at `at` seconds since 1970, nobody looking, the person `away` or at
+/// the window: what it does to the notifications, and the summary when it ends.
+fn quiet_at(rules: &mut Rules, quiet: bool, at: u32, away: bool) -> (Vec<Act>, Option<QuietEnded>) {
+    rules.quiet(quiet, at, away, NOBODY_LOOKS_AT_ANY)
+}
+
 #[test]
-fn nothing_is_told_in_quiet_hours_and_what_still_waits_is_told_when_they_end() {
+fn nothing_is_told_while_quiet_and_one_notification_names_what_still_waits_if_the_person_is_away() {
     let mut rules = Rules::default();
     let (a, b) = (plane("/a"), plane("/b"));
     let start = Instant::now();
+    assert!(quiet_at(&mut rules, true, 1_000, true).0.is_empty());
     let two = [named(3, "p1", "steward 3"), named(4, "p2", "devops 4")];
     assert!(heard_quiet(&mut rules, &a, &two[..1], start, true).is_empty());
     assert!(heard_quiet(&mut rules, &a, &two, start + TOGETHER * 2, true).is_empty());
     let other = [named(1, "p1", "builder 1")];
     assert!(heard_quiet(&mut rules, &b, &other, start + TOGETHER * 3, true).is_empty());
     assert!(rules.holds_in_quiet_hours());
-    // Still quiet: still nothing.
+    // Still quiet: still nothing, however often it is looked at.
+    assert!(quiet_at(&mut rules, true, 1_060, true).0.is_empty());
     assert!(
         rules
-            .woke(start + TOGETHER * 4, NOBODY_LOOKS_AT_ANY, true)
+            .woke(start + TOGETHER * 4, NOBODY_LOOKS_AT_ANY)
             .is_empty()
     );
-    // Quiet hours over: one notification for what still waits, and only one.
-    let all = only_shown(&rules.woke(start + TOGETHER * 5, NOBODY_LOOKS_AT_ANY, false));
-    assert_eq!(all.title, "3 chats in 2 projects need you");
+    // Quiet over, the person away: one notification for what still waits, and only one.
+    let (acts, _) = quiet_at(&mut rules, false, 1_120, true);
+    let all = only_shown(&acts);
+    assert_eq!(all.title, "While you were quiet: 3 chats need you");
+    assert_eq!(all.body, "steward 3 (a), devops 4 (a) and builder 1 (b)");
     assert!(!rules.holds_in_quiet_hours());
-    assert!(
-        rules
-            .woke(start + TOGETHER * 6, NOBODY_LOOKS_AT_ANY, false)
-            .is_empty()
-    );
+    assert!(quiet_at(&mut rules, false, 1_180, true).0.is_empty());
     assert!(heard_quiet(&mut rules, &a, &two, start + TOGETHER * 7, false).is_empty());
 }
 
 #[test]
-fn what_was_answered_in_quiet_hours_is_not_told_when_they_end() {
+fn quiet_ending_with_one_chat_waiting_is_still_one_notification_saying_it_was_quiet() {
+    let mut rules = Rules::default();
+    let a = plane("/smart-ide");
+    quiet_at(&mut rules, true, 1_000, true);
+    heard_quiet(
+        &mut rules,
+        &a,
+        &[named(3, "p1", "steward 3")],
+        Instant::now(),
+        true,
+    );
+    let (acts, _) = quiet_at(&mut rules, false, 1_100, true);
+    let one = only_shown(&acts);
+    assert_eq!(one.title, "While you were quiet: 1 chat needs you");
+    assert_eq!(one.body, "smart-ide: steward 3");
+    assert_eq!(one.chats, vec![(a, 3)]);
+}
+
+#[test]
+fn quiet_ending_with_the_person_at_the_window_notifies_nothing_and_leaves_the_summary_to_asks() {
+    let mut rules = Rules::default();
+    let a = plane("/a");
+    quiet_at(&mut rules, true, 1_000, false);
+    heard_quiet(
+        &mut rules,
+        &a,
+        &[named(3, "p1", "steward 3")],
+        Instant::now(),
+        true,
+    );
+    let (acts, ended) = quiet_at(&mut rules, false, 1_100, false);
+    assert!(acts.is_empty());
+    assert!(!rules.holds_in_quiet_hours());
+    let ended = ended.expect("a summary");
+    assert_eq!(ended.asks.len(), 1);
+}
+
+#[test]
+fn what_was_answered_while_quiet_is_neither_told_nor_summed_up_when_it_ends() {
     let mut rules = Rules::default();
     let a = plane("/a");
     let start = Instant::now();
+    quiet_at(&mut rules, true, 1_000, true);
     let asks = [named(3, "p1", "steward 3")];
     assert!(heard_quiet(&mut rules, &a, &asks, start, true).is_empty());
     assert!(heard_quiet(&mut rules, &a, &[], start + TOGETHER * 2, true).is_empty());
-    assert!(
-        rules
-            .woke(start + TOGETHER * 3, NOBODY_LOOKS_AT_ANY, false)
-            .is_empty()
-    );
+    let (acts, ended) = quiet_at(&mut rules, false, 1_100, true);
+    assert!(acts.is_empty());
     assert!(!rules.holds_in_quiet_hours());
+    assert_eq!(ended.expect("a summary").asks, Vec::<EndedAsk>::new());
+}
+
+#[test]
+fn quiet_ending_says_when_it_was_and_every_ask_that_came_in_it_still_waiting() {
+    let mut rules = Rules::default();
+    let (a, b) = (plane("/a"), plane("/b"));
+    let start = Instant::now();
+    // Asked before Quiet: not the summary's.
+    heard(&mut rules, &a, &[permission(2, "before", "Run ls")], start);
+    assert_eq!(quiet_at(&mut rules, true, 1_000, false).1, None);
+    let in_quiet = [
+        permission(2, "before", "Run ls"),
+        permission(3, "p1", "Run ls"),
+        permission(3, "p2", "Run cat"),
+    ];
+    heard_quiet(&mut rules, &a, &in_quiet, start + TOGETHER, true);
+    heard_quiet(
+        &mut rules,
+        &b,
+        &[permission(1, "p9", "Run ls")],
+        start + TOGETHER,
+        true,
+    );
+    let (_, ended) = quiet_at(&mut rules, false, 1_200, false);
+    assert_eq!(
+        ended,
+        Some(QuietEnded {
+            from: 1_000,
+            to: 1_200,
+            asks: vec![
+                EndedAsk {
+                    plane: a.clone(),
+                    key: "p1".to_owned()
+                },
+                EndedAsk {
+                    plane: a.clone(),
+                    key: "p2".to_owned()
+                },
+                EndedAsk {
+                    plane: b,
+                    key: "p9".to_owned()
+                },
+            ],
+        })
+    );
+    // The next Quiet starts with nothing of this one.
+    quiet_at(&mut rules, true, 2_000, false);
+    let (_, next) = quiet_at(&mut rules, false, 2_100, false);
+    assert_eq!(next.expect("a summary").asks, Vec::<EndedAsk>::new());
+}
+
+#[test]
+fn an_ask_the_person_was_looking_at_while_quiet_is_not_in_its_summary() {
+    let mut rules = Rules::default();
+    let a = plane("/a");
+    quiet_at(&mut rules, true, 1_000, false);
+    rules.heard(&Heard {
+        plane: &a,
+        asks: &[named(3, "p1", "steward 3"), named(4, "p2", "devops 4")],
+        looking: &|session| session == 3,
+        quiet: &|| true,
+        now: Instant::now(),
+    });
+    let (_, ended) = quiet_at(&mut rules, false, 1_100, false);
+    let keys: Vec<String> = ended
+        .expect("a summary")
+        .asks
+        .into_iter()
+        .map(|one| one.key)
+        .collect();
+    assert_eq!(keys, vec!["p2".to_owned()]);
+}
+
+#[test]
+fn quiet_holds_on_its_schedule_by_quiet_now_and_until_a_while_after_the_last_key() {
+    let start = Instant::now();
+    let mut sources = QuietSources::default();
+    assert!(!sources.is_quiet(false, start));
+    assert!(sources.is_quiet(true, start), "the schedule alone");
+    sources.set_now(true);
+    assert!(sources.is_quiet(false, start), "Quiet now alone");
+    sources.set_now(false);
+    assert!(sources.typed(start), "the first key starts it");
+    assert!(
+        !sources.typed(start + TYPING_QUIET / 2),
+        "a key while typing does not"
+    );
+    assert!(sources.is_quiet(false, start + TYPING_QUIET));
+    assert_eq!(
+        sources.typing_ends(start),
+        Some(start + TYPING_QUIET * 3 / 2)
+    );
+    assert!(!sources.is_quiet(false, start + TYPING_QUIET * 3 / 2));
+    assert_eq!(sources.typing_ends(start + TYPING_QUIET * 2), None);
+    assert!(
+        sources.typed(start + TYPING_QUIET * 2),
+        "a key after it ended starts it again"
+    );
+}
+
+#[test]
+fn typing_quiet_lasts_about_thirty_seconds() {
+    assert_eq!(TYPING_QUIET, Duration::from_secs(30));
+}
+
+#[test]
+fn the_terminal_answering_by_itself_is_not_the_person_typing() {
+    assert!(is_typing(b"l"));
+    assert!(is_typing(b"\r"));
+    // A cursor position report and a focus report are the terminal's own.
+    assert!(!is_typing(b"\x1b[12;5R"));
+    assert!(!is_typing(b"\x1b[I"));
 }
 
 #[test]
@@ -433,7 +583,7 @@ fn the_same_chat_number_in_two_projects_is_two_chats() {
     let a = only_shown(&heard(&mut rules, &plane("/a"), &asks, now));
     // The second is a burst's, told when it closes.
     assert!(heard(&mut rules, &plane("/b"), &asks, now).is_empty());
-    let b = only_shown(&rules.woke(now + TOGETHER, NOBODY_LOOKS_AT_ANY, false));
+    let b = only_shown(&rules.woke(now + TOGETHER, NOBODY_LOOKS_AT_ANY));
     assert_ne!(a.id, b.id);
     assert_eq!(b.chats, vec![(plane("/b"), 3)]);
 }
@@ -620,7 +770,7 @@ fn a_burst_s_notification_growing_to_new_chats_is_shown_where_it_cannot_be_repla
     ];
     let soon = start + Duration::from_secs(1);
     assert!(heard(&mut rules, &b, &more, soon).is_empty());
-    let grown = only_shown(&rules.woke(soon + TOGETHER, NOBODY_LOOKS_AT_ANY, false));
+    let grown = only_shown(&rules.woke(soon + TOGETHER, NOBODY_LOOKS_AT_ANY));
     assert_eq!((grown.id, grown.replaces, grown.news), (all.id, true, true));
     assert_eq!(grown.title, "6 chats in 2 projects need you");
     assert!(shown_here(&grown, false));

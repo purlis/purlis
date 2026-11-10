@@ -19,6 +19,7 @@ const MISSING = {
   broken: [],
   by_a_repo: [],
   beside_a_built_in: [],
+  runner: null,
 };
 
 describe("a chat's missing skills", () => {
@@ -70,6 +71,19 @@ describe("a chat's missing skills", () => {
     );
   });
 
+  it("names the runner a chat there lacks them on (#2977)", () => {
+    const there = { ...MISSING, runner: "builds/builds-1" };
+    expect(missingSays("This chat", there)).toBe(
+      "This chat started without 2 skills ops names, not installed on runner builds/builds-1: " +
+        "superpowers:tdd, langfuse. ops names 1 built-in skill purlis does not have on " +
+        "runner builds/builds-1: purlis:gone.",
+    );
+    expect(missingSays("This chat", { ...MISSING, no_built_in: [], runner: "" })).toBe(
+      "This chat started without 2 skills ops names, not installed on its runner: " +
+        "superpowers:tdd, langfuse.",
+    );
+  });
+
   it("says a skill that could not be loaded, with its level and why (SK-8)", () => {
     expect(
       missingSays("This chat", {
@@ -87,6 +101,7 @@ describe("a chat's missing skills", () => {
         ],
         by_a_repo: [],
         beside_a_built_in: [],
+        runner: null,
       }),
     ).toBe(
       "This chat started without 1 skill that could not be loaded: half (project), not a skill: its SKILL.md names no `description`.",
@@ -117,6 +132,7 @@ describe("a chat's missing skills", () => {
           },
         ],
         beside_a_built_in: [],
+        runner: null,
       }),
     ).toBe(
       "This chat started without 2 skills because of the repo it works in: " +
@@ -135,6 +151,7 @@ describe("a chat's missing skills", () => {
         broken: [],
         by_a_repo: [],
         beside_a_built_in: names,
+        runner: null,
       });
     expect(said(["secrets"])).toBe(
       "This chat works in a repo with its own copy of 1 built-in skill, which it gets beside " +

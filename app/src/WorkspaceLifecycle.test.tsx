@@ -25,7 +25,7 @@ import {
   workspaceChips,
   workspaceInFront,
 } from "./test-strips";
-import { findOnCard, findResult } from "./actionResult.testkit";
+import { findOnCard, findResult, openChipCard } from "./actionResult.testkit";
 import { keepUnsaved, unsavedNow, type UnsavedWork } from "./unsavedWork";
 
 /**
@@ -769,8 +769,9 @@ describe("a plane with no workspace yet", () => {
   });
 });
 
-/** The card the new workspace's ready notice hangs from its chip on (#3648). */
-const readyCard = () => screen.findByRole("region", { name: "Notices for gamma" });
+/** The card the new workspace's ready notice hangs from its chip on (#3648), opened by its dot's
+ *  press: no card comes by itself (#6004). */
+const readyCard = () => openChipCard("gamma");
 
 describe("picking a new workspace's repos (ADR 0055)", () => {
   async function createWithRepos(repos: string[]) {
@@ -814,7 +815,6 @@ describe("picking a new workspace's repos (ADR 0055)", () => {
     await createWithRepos([]);
 
     const notice = await readyCard();
-    expect(notice.querySelector('[role="status"]')).not.toBeNull();
     expect(notice).toHaveTextContent("Workspace gamma is ready");
     expect(notice).toHaveTextContent(
       "It has no vision yet. Add one so its chats know what it is for.",
@@ -835,19 +835,25 @@ describe("picking a new workspace's repos (ADR 0055)", () => {
     expect(document.querySelector(".window-work > .action-result")).toBeNull();
   });
 
-  it("says a result in one live region, though Results lists it too (#3344)", async () => {
+  it("says a result in one live region, with no card up, though Results and its card list it too (#3344, #6004)", async () => {
     core();
     render(<App />);
     await settled();
 
     await createWithRepos([]);
-    const card = await readyCard();
+    const saying = () =>
+      [...document.querySelectorAll('[role="status"]')].filter((one) =>
+        one.textContent?.includes("Workspace gamma is ready"),
+      );
+    // No card comes by itself: the window's own line says it, unseen.
+    await waitFor(() => expect(saying()).toHaveLength(1));
+    expect(saying()[0]).toHaveAttribute("data-testid", "said-aloud");
+    expect(screen.queryByRole("region", { name: "Notices for gamma" })).toBeNull();
+    // Its card, opened by the dot's press, and Results say nothing again.
+    await readyCard();
+    await showNotices();
     await screen.findByRole("region", { name: "Results" });
-    const saying = [...document.querySelectorAll('[role="status"]')].filter((one) =>
-      one.textContent?.includes("Workspace gamma is ready"),
-    );
-    expect(saying).toHaveLength(1);
-    expect(card.contains(saying[0])).toBe(true);
+    expect(saying()).toHaveLength(1);
   });
 
   it("adds a vision from the notice, through the core, and says it was recorded (#3344)", async () => {

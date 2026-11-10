@@ -192,6 +192,12 @@ pub struct Composed {
     /// The skills the host armed it with, by name and level (1.77, #4218): `None` from a host
     /// before 1.77, which does not say them.
     pub armed_skills: Option<Vec<purlis_session_protocol::session::ArmedSkill>>,
+    /// The skills its persona names that it started without on the host's machine (1.81,
+    /// #2977): `None` where none is, and from a host before 1.81, which does not say them.
+    pub skills_not_there: Option<purlis_session_protocol::session::SkillsNotThere>,
+    /// The runner it started on, as `<pool>/<runner>` where its link names the runner, or its
+    /// pool alone: `None` where the link reaches no pool's runner.
+    pub runner: Option<String>,
 }
 
 /// **A chat that moves between this machine and a runner** (#2048): where it works, the profile
@@ -1072,6 +1078,12 @@ pub(crate) mod pretend {
         /// The skills it says it armed each chat it composes, or one left running, with
         /// ([`Pretend::says_it_armed`], #4218): none said otherwise, as a host before 1.77.
         composed_armed: Mutex<Option<Vec<purlis_session_protocol::session::ArmedSkill>>>,
+        /// What it says each chat it composes starts without, and the runner it names
+        /// ([`Pretend::says_it_lacks`], #2977): nothing otherwise, as a host before 1.81.
+        composed_lacking: Mutex<(
+            Option<purlis_session_protocol::session::SkillsNotThere>,
+            Option<String>,
+        )>,
         /// The chats it says run on a pool's runner, and the pool ([`Pretend::runs_on_pool`]).
         pools: Mutex<Vec<(u32, String)>>,
         /// The chats whose runner records their turns (#5427).
@@ -1194,6 +1206,16 @@ pub(crate) mod pretend {
             skills: Option<Vec<purlis_session_protocol::session::ArmedSkill>>,
         ) {
             *lock(&self.seen.composed_armed) = skills;
+        }
+
+        /// Says each chat it composes from now on starts without `lacking` there, on the runner
+        /// `runner` (#2977).
+        pub fn says_it_lacks(
+            &self,
+            lacking: Option<purlis_session_protocol::session::SkillsNotThere>,
+            runner: Option<&str>,
+        ) {
+            *lock(&self.seen.composed_lacking) = (lacking, runner.map(str::to_owned));
         }
 
         /// Each chat started by its names, in order: its number, what it was named, and whether
@@ -1487,6 +1509,8 @@ pub(crate) mod pretend {
             announce(id);
             lock(&self.seen.named).push((id, named.clone(), hearing.asks.is_some()));
             lock(&self.seen.running).push(id);
+            // Taken once: a second lock in the same expression would wait on the first.
+            let (skills_not_there, runner) = lock(&self.seen.composed_lacking).clone();
             Ok(super::Composed {
                 number: id,
                 confinement: None,
@@ -1498,6 +1522,8 @@ pub(crate) mod pretend {
                 // The runner mints its own (#3369).
                 prompt_key: purlis_core::skillspan::PromptSalt::of_key(&format!("composed-{id}")),
                 armed_skills: lock(&self.seen.composed_armed).clone(),
+                skills_not_there,
+                runner,
             })
         }
         fn move_ahead(&self, pool: &str, workspace: &str) -> Result<(), String> {

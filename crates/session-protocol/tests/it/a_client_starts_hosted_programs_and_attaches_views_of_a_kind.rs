@@ -68,6 +68,7 @@ impl Host for OneProgram {
                 sandbox: None,
                 prompt_key: None,
                 armed_skills: None,
+                skills_not_there: None,
             }),
             Command::AttachView {
                 program,

@@ -47,6 +47,10 @@ impl Compose for ComposesItself {
         if starting.start.first_message.as_deref() == Some("armed") {
             starting.beside.armed(vec![armed_skill()]);
         }
+        // Without a skill its persona names, as the core's composition says (#2977).
+        if starting.start.first_message.as_deref() == Some("lacking") {
+            starting.beside.not_there(not_there());
+        }
         let mut spec = Spec::new("/bin/echo", starting.size);
         spec.env
             .push(("CONFINED".into(), confined.confinement.into()));
@@ -71,6 +75,13 @@ fn armed_skill() -> session::ArmedSkill {
     session::ArmedSkill {
         name: "deploy".into(),
         level: "project".into(),
+    }
+}
+
+fn not_there() -> session::SkillsNotThere {
+    session::SkillsNotThere {
+        missing: vec!["superpowers:test-driven-development".into()],
+        no_built_in: vec!["purlis-secret".into()],
     }
 }
 
@@ -509,4 +520,25 @@ async fn the_skills_a_composed_start_was_armed_with_are_answered_to_its_start_an
     };
     assert_eq!(said(&armed.program), Some(vec![armed_skill()]));
     assert_eq!(said(&plain.program), None);
+}
+
+/// **SK-5d, #2977: the skills a start the host composed starts without there are answered to
+/// its start**, by name; a start whose composition said none answers none.
+#[tokio::test]
+async fn the_skills_a_composed_start_lacks_there_are_answered_to_its_start() {
+    let linked = linked().await;
+
+    let lacking = linked
+        .client
+        .start_program_told(composed(Some("lacking")))
+        .await
+        .expect("started, without them");
+    let plain = linked
+        .client
+        .start_program_told(composed(None))
+        .await
+        .expect("started");
+
+    assert_eq!(lacking.skills_not_there, Some(not_there()));
+    assert_eq!(plain.skills_not_there, None);
 }

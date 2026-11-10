@@ -226,7 +226,7 @@ import { BROWSER_ASK_ENDED, useOpenBrowserAsked } from "./browserNeedsYou";
 import { usePlaneUpdated } from "./PlaneUpdated";
 import { useHarnessCards } from "./harnessCards";
 import { useEditorTabs, type EditorTabOpened } from "./editorTab";
-import { Notice, NoticeInCentre, NoticeOf } from "./Notice";
+import { Notice, NoticeInCentre, NoticeOf, type NoticesDot } from "./Notice";
 import { ReadOnlyLine, ReadOnlyMendable, ReadOnlySaid, useReadOnly } from "./ReadOnlyLine";
 import { LivesHere } from "./LivesHere";
 import { InboxAlerts, type WindowAlerts } from "./InboxAlerts";
@@ -253,6 +253,7 @@ import {
   heldUpdate,
   Inbox,
   landOnGroupIn,
+  NEEDS_A_DECISION_DOT,
   NEEDS_FIXING,
   type UpdateRow,
   type WindowLines,
@@ -298,7 +299,7 @@ import { SIDE_KEYS_SAID, sideKeyOf } from "./sideKeys";
 import { RegionFrame, stepRegions } from "./RegionFrame";
 import { putAway } from "./regionsAway";
 import { ActivityCount, ActivityDot, type PanelTab } from "./ActivityBar";
-import { DoctorNotices, useDoctor } from "./Doctor";
+import { DOCTOR_LINE, DoctorNotices, useDoctor } from "./Doctor";
 import { useFirstOpen } from "./firstOpen";
 import { StaleCloneNotices, useStaleClones } from "./StaleCloneNotices";
 import { CloneVouchNotices } from "./CloneVouchNotice";
@@ -489,6 +490,7 @@ import { AnswerOpener, AnswerPanel, type AnswerAsk, type OpenAnswer } from "./An
 import { activityTitle, activityView } from "./activity";
 import { type ChipToExplain } from "./ChipExplained";
 import { AwaySummary, useAwaySummary } from "./AwaySummary";
+import { AsksQuiet } from "./QuietSummary";
 import {
   asksInAModal,
   inPlace,
@@ -732,7 +734,15 @@ import { ChatPersonaState } from "./ChatPersonaState";
 import { carryPaneBand, forgetPaneBand, forgetPaneBands, paneBand } from "./noticeSettle";
 import { useWorkedHere } from "./workedHere";
 import { newTabRows } from "./newTabList";
-import { newAsks, newNotices, newUpdates, useChatOnScreenSeen, useSeen } from "./seen";
+import {
+  newAsks,
+  newNotices,
+  newUpdates,
+  useChatOnScreenSeen,
+  useSeen,
+  type SeenRows,
+} from "./seen";
+import { SeenRowsOf } from "./seenRows";
 
 /** Whether two lists of the right side's extension panels draw the same tabs. */
 const samePanels = (a: readonly PanelTab[], b: readonly PanelTab[]) =>
@@ -965,6 +975,7 @@ export const PlaneView = memo(function PlaneView({
   elsewhere,
   windowLines,
   profileNames,
+  onSeen,
 }: {
   plane: PlaneId;
   /** Whether this is the project the operator is looking at. */
@@ -1069,6 +1080,9 @@ export const PlaneView = memo(function PlaneView({
    *  read by the window as the palette opens over this project, and the same list while the
    *  names are (#4351). None while none was read, or the project has none. */
   profileNames?: readonly string[];
+  /** **Hears this project's seen record while it is in front** (#6004): the window's chips, its
+   *  status item and the Results it lists read what is New from it, as this project's rows do. */
+  onSeen?: (plane: PlaneId, rows: SeenRows) => void;
   /** The first chat a repository opened into this project asks for (FR-4): started in that
    *  repository's clone, on the workspace named after it. `at` counts the asks, so each is
    *  answered once. */
@@ -11174,6 +11188,9 @@ export const PlaneView = memo(function PlaneView({
   const { seen, see, rows: seenRows } = useSeen(plane, waiting);
   useChatOnScreenSeen(see, chatOnScreen, inFront, waiting, keptUpdates);
   const [noticeCauses, setNoticeCauses] = useState<readonly string[]>([]);
+  useEffect(() => {
+    if (inFront) onSeen?.(plane, seenRows);
+  }, [inFront, onSeen, plane, seenRows]);
 
   /**
    * **The chats in no pane** (#4759, spec #4750): listed, and in no tab of any window of the
@@ -11415,8 +11432,9 @@ export const PlaneView = memo(function PlaneView({
   const aboutThisMachine = useAboutThisMachine();
   /** How many Notices this project's Inbox lists, for the status line's button. */
   const [noticesListed, setNoticesListed] = useState(0);
-  /** How many of them say something needs fixing (#5645): the Notices icon's dot. */
-  const [noticesTrouble, setNoticesTrouble] = useState(0);
+  /** The Notices icon's dot (#5645; ADR 0121 decision 3, #6004): red for something broken,
+   *  amber for a decision that stops no chat, none otherwise. */
+  const [noticesDot, setNoticesDot] = useState<NoticesDot>();
   /**
    * **The status line's Notices button** (#1695): what the Inbox lists that is no ask, opened by
    * a press. No number where purlis cannot stand behind one (`StatusLine`): until this
@@ -12078,6 +12096,17 @@ export const PlaneView = memo(function PlaneView({
                         if (ignore?.available) press(ignore);
                       }}
                       snoozing={snoozing}
+                      // **Quiet** (#6017): "Quiet now", and what the Quiet that ended held.
+                      quietTop={
+                        <AsksQuiet
+                          plane={plane}
+                          asks={waiting}
+                          updates={keptUpdates}
+                          isNew={seenRows.isNew}
+                          onGoToAsk={goToAsking}
+                          onShowUpdates={showUpdates}
+                        />
+                      }
                     />
                   ),
                   // **Updates** (#5644): the project's updates, as the Inbox listed them.
@@ -12111,7 +12140,7 @@ export const PlaneView = memo(function PlaneView({
                       notices={standing}
                       reading={inboxReading}
                       onNotices={setNoticesListed}
-                      onTrouble={setNoticesTrouble}
+                      onDot={setNoticesDot}
                       onNoticeAnswer={inboxOnScreen}
                       windowLines={windowLines}
                       onLeave={leaveInbox}
@@ -12223,8 +12252,14 @@ export const PlaneView = memo(function PlaneView({
                       }
                     />
                   ),
-                  // A Notice needs fixing (#5645): a dot, never a number, and nothing otherwise.
-                  notices: noticesTrouble > 0 && <ActivityDot said={NEEDS_FIXING} />,
+                  // A dot, never a number (#5645): red while a Notice needs fixing, amber while one
+                  // asks a decision that stops no chat (#6004), and nothing otherwise.
+                  notices: noticesDot !== undefined && (
+                    <ActivityDot
+                      tone={noticesDot === "trouble" ? "danger" : "warning"}
+                      said={noticesDot === "trouble" ? NEEDS_FIXING : NEEDS_A_DECISION_DOT}
+                    />
+                  ),
                   // The focused workspace's open todos (B-8), the status line's own count: plain, since
                   // a todo is yours to do and not a chat asking for you.
                   todos: (
@@ -12454,6 +12489,9 @@ export const PlaneView = memo(function PlaneView({
                 workspacePanels={workspacePanels}
                 workspace={ofWorkspace}
                 doctor={doctor}
+                // Notices lists the doctor's findings: its icon shows them, so the Doctor item
+                // draws no count of its own (ADR 0121 decision 1, #6004).
+                doctorListed={noticeCauses.includes(DOCTOR_LINE)}
                 onOpenSettings={(group) => openSettingsAt({ group })}
                 pin={pin}
                 alerts={noticesButton}
@@ -13088,7 +13126,11 @@ export const PlaneView = memo(function PlaneView({
   return createPortal(
     <ProjectShownProvider value={inFront}>
       <InTheWindow host={host} slot={slot} shown={inFront} onLeftCovered={leftCovered} />
-      <AsLastShown>{view}</AsLastShown>
+      {/* What is New (#6002, #6004): the status bar's card and every Notice this project draws
+      read its seen record, as the Inbox's rows do. */}
+      <SeenRowsOf.Provider value={seenRows}>
+        <AsLastShown>{view}</AsLastShown>
+      </SeenRowsOf.Provider>
     </ProjectShownProvider>,
     host,
   );

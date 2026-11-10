@@ -26,6 +26,7 @@ import {
   workspaceChips,
   workspaceInFront,
 } from "./test-strips";
+import { rowName } from "./menus.testkit";
 
 /**
  * **What a clone leaves on the window once it has ended**: the row in the Repos view and the
@@ -306,11 +307,7 @@ describe("a new workspace's repo whose clone failed", () => {
 
     fireEvent.contextMenu(within(await screen.findByTestId("absent-api")).getByText("api"));
     const menu = await screen.findByRole("menu");
-    expect(
-      within(menu)
-        .getAllByRole("menuitem")
-        .map((item) => item.getAttribute("aria-label")),
-    ).toEqual(["Clone", "Dismiss"]);
+    expect(within(menu).getAllByRole("menuitem").map(rowName)).toEqual(["Clone", "Dismiss"]);
   });
 
   it("does not come back in a workspace made again under the same name", async () => {

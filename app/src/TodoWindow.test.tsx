@@ -17,6 +17,7 @@ import App from "./App";
 import type { PanelRow, TodoView } from "./bindings";
 import { chipName, showThePanel, stripNamed, workspaceChips } from "./test-strips";
 import { aTabForEachChat } from "./laidOut.testkit";
+import { rowName } from "./menus.testkit";
 
 /**
  * **A todo's tab, against the whole window** (#1214): a todo row opens the todo as a view tab on
@@ -292,11 +293,11 @@ describe("a todo row", () => {
     fireEvent.contextMenu(await todoRowFor("Review the rollout plan"));
 
     const menu = await screen.findByRole("menu");
-    expect(
-      within(menu)
-        .getAllByRole("menuitem")
-        .map((item) => item.getAttribute("aria-label")),
-    ).toEqual(["Open", "Mark done", "Forget"]);
+    expect(within(menu).getAllByRole("menuitem").map(rowName)).toEqual([
+      "Open",
+      "Mark done",
+      "Forget",
+    ]);
   });
 });
 

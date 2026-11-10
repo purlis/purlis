@@ -33,7 +33,7 @@ import {
   type ScopeCounts,
 } from "./inboxScope";
 import { quietSaid } from "./NeedsYou";
-import { Notice, NoticeList, type NoticesClear } from "./Notice";
+import { Notice, NoticeList, type NoticesClear, type NoticesDot } from "./Notice";
 import {
   DISMISS_ALL,
   DISMISS_ALL_TIP,
@@ -123,6 +123,9 @@ export const NOTHING_STANDS = "No Notices";
 /** What the Notices icon's dot says (#5645): a Notice listed says something needs fixing. */
 export const NEEDS_FIXING = "A Notice needs fixing";
 
+/** What the Notices icon's amber dot says (#6004): a Notice listed asks a decision. */
+export const NEEDS_A_DECISION_DOT = "A Notice needs a decision";
+
 /** What the Notices' section is called (#1695). */
 export const NOTICES = "Notices";
 
@@ -204,7 +207,7 @@ export function Inbox({
   reading,
   windowLines,
   onNotices,
-  onTrouble,
+  onDot,
   onNoticeCauses,
   seen,
   onNoticeAnswer,
@@ -214,6 +217,7 @@ export function Inbox({
   workspaceNamed,
   snoozing,
   hold,
+  quietTop,
 }: {
   /**
    * **Which view of the right bar this draws** (ADR 0119, #5644, #5645): `asks`, the asks
@@ -265,8 +269,8 @@ export function Inbox({
   reading?: readonly string[];
   /** How many Notices the list holds that the status line counts (`countsInStatusBar`). */
   onNotices?: (count: number) => void;
-  /** How many Notices the list holds that say something needs fixing (#5645). */
-  onTrouble?: (count: number) => void;
+  /** The Notices icon's dot (#5645, #6004): red for something broken, amber for a decision. */
+  onDot?: (dot: NoticesDot) => void;
   /** Hears the causes of the Notices it lists (#6002): what of them is New. */
   onNoticeCauses?: (causes: readonly string[]) => void;
   /** The project's seen record (`seen.ts`), which its rows read to draw what is New (#6002). */
@@ -298,6 +302,9 @@ export function Inbox({
    *  Notices taken away at once, each one's own Dismiss carried out when the Undo goes. Without
    *  it, a Dismiss is carried out at once and no Undo stands. */
   hold?: DismissHold;
+  /** **Quiet, at the top of Asks** (#6017): the "Quiet now" switch and, once a Quiet ended,
+   *  its summary (`QuietSummary`). Drawn only in Asks. */
+  quietTop?: ReactNode;
 }) {
   const drawsAsks = part === undefined || part === "asks";
   const drawsUpdates = part === undefined || part === "updates";
@@ -505,14 +512,14 @@ export function Inbox({
     said: noticesSaid,
   } = useNoticeSettle<HTMLElement>("moves");
   const counted = useCallback(
-    (count: number, listed: number, trouble: number) => {
+    (count: number, listed: number, dot: NoticesDot) => {
       // The section is drawn while it lists anything, counted or not: a doctor finding alone
       // is still a Notice to read here.
       setNoticed(listed);
       onNotices?.(count);
-      onTrouble?.(trouble);
+      onDot?.(dot);
     },
-    [onNotices, onTrouble],
+    [onNotices, onDot],
   );
 
   const drawn = (
@@ -522,6 +529,8 @@ export function Inbox({
       data-view={part ?? "inbox"}
       aria-label={part === undefined ? "Inbox" : undefined}
     >
+      {/* Quiet first (#6017): its switch, and the summary of the Quiet that ended. */}
+      {drawsAsks && quietTop}
       {/* Drawn while any scope lists something, as the Chats view's is: nothing to narrow
           otherwise, and an empty Inbox is its one sentence. */}
       {drawsAsks &&

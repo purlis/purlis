@@ -806,7 +806,9 @@ describe("one form for Shared and Local (SE-18)", () => {
     await open("Saving");
 
     const team = within(await moveMenu("Mode")).getByRole("menuitem", { name: "Team" });
-    expect(team).toHaveAccessibleDescription("charter.toml, which your team sees, replacing push");
+    expect(team).toHaveAccessibleDescription(
+      "charter.toml, which your team sees Replaces push there.",
+    );
     // No Undo puts the team's value back, so that much stays under the row's words.
     expect(team.querySelector('[data-part="description"]')).toHaveTextContent(
       "Replaces push there.",

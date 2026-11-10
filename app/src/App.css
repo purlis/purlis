@@ -2481,6 +2481,15 @@ body {
 .inbox-scope-empty > .inbox-none {
   margin: 0;
 }
+/* **Quiet** (#6017): the "Quiet now" switch at the top of Asks, and under it the summary of the
+   Quiet that ended. */
+.inbox-quiet {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
 /* **Snooze all** (#5647): its press, its question and its Undo, each a line inside Asks, under
    the scope switch; and how many are snoozed, with Show them now. */
 .inbox-snooze {
@@ -3882,6 +3891,9 @@ body {
    (`RESERVES`), since a px dot is placed against a bell the text size places. */
 .status-notices {
   padding-inline-start: max(0px, calc(20px - var(--space-3) - 0.2em));
+  /* **The "new" pip's room** (#6004), kept after the item with the pip or without, so nothing
+     moves: the 8px pip (`status.css`) and its ring, clear of the item's word. */
+  padding-inline-end: var(--space-5);
 }
 
 .chip-card [data-f6-card]:focus-visible {

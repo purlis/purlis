@@ -30,10 +30,21 @@ export const RowScope = createContext<RowFamily>("list");
 
 /**
  * **Inside an option** (`ListOption`): its words are its name and its one line about it its
- * description, to a reader too (React Aria's `label` and `description` slots), rather than the
- * whole row's content run together.
+ * description, to a reader too, rather than the whole row's content run together.
+ *
+ * **An option is named by its content, and its content is its words alone** (#6043): every
+ * other part of it (its mark, its one line, its end, a line under it) is kept from a reader
+ * (`aria-hidden`), and its one line is handed to it as its description (React Aria's
+ * `description` slot), so it is heard once, after the name. Named by `aria-labelledby` instead,
+ * its visible words would be more than its name, which WCAG 2.5.3 refuses: axe's
+ * `label-content-name-mismatch` counts every visible word, `aria-hidden` or not, as its label.
  */
 export const InOption = createContext(false);
+
+/** What a part that is not an option's name carries inside an option: kept from a reader. */
+function keptInOption(option: boolean): { "aria-hidden"?: true } {
+  return option ? { "aria-hidden": true } : {};
+}
 
 /** The sizes a row is drawn at: 24, 28 and 32 px at the default text size and density. */
 export const ROW_SIZES = ["sm", "md", "lg"] as const;
@@ -54,14 +65,26 @@ function slot(part: string, named?: "label" | "description") {
   function RowSlot({ children, ...rest }: Slot) {
     const scope = useContext(RowScope);
     const option = useContext(InOption);
-    if (option && named !== undefined)
+    if (option && named === "description")
       return (
-        <AriaText {...rest} slot={named} elementType="span" data-scope={scope} data-part={part}>
+        <AriaText
+          {...rest}
+          slot="description"
+          elementType="span"
+          aria-hidden="true"
+          data-scope={scope}
+          data-part={part}
+        >
           {children}
         </AriaText>
       );
     return (
-      <span {...rest} data-scope={scope} data-part={part}>
+      <span
+        {...rest}
+        {...keptInOption(option && named !== "label")}
+        data-scope={scope}
+        data-part={part}
+      >
         {children}
       </span>
     );
@@ -114,6 +137,7 @@ export function RowBelow({
   ...rest
 }: Slot & { clamp?: 1 | 2; tipWhenCut?: boolean }) {
   const scope = useContext(RowScope);
+  const option = useContext(InOption);
   const say = useContext(RowCutWords);
   const line = useRef<HTMLSpanElement>(null);
   const asks = tipWhenCut && clamp !== undefined ? say : null;
@@ -137,7 +161,14 @@ export function RowBelow({
     }
   });
   return (
-    <span {...rest} ref={line} data-scope={scope} data-part="below" data-clamp={clamp}>
+    <span
+      {...rest}
+      {...keptInOption(option)}
+      ref={line}
+      data-scope={scope}
+      data-part="below"
+      data-clamp={clamp}
+    >
       {children}
     </span>
   );

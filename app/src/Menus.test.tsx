@@ -25,6 +25,7 @@ import {
   type Now,
 } from "./actions";
 import { Menued, useNoBrowserMenu } from "./Menus";
+import { rowName } from "./menus.testkit";
 import { TIP_AFTER_MS } from "./ui/menu/MenuTip";
 import { noTabs, openTab, openView, selectTab, splitFocusedPane } from "./tabs";
 import { TOOLTIP_CLOSE_DELAY } from "./ui/tooltip/Tooltip";
@@ -349,7 +350,7 @@ describe("a menu on screen", () => {
 
     // **The chat is named once, by the menu**, and by no row of it.
     expect(menu).toHaveAccessibleName(`Chat ${NAME}`);
-    expect(rowsIn(menu).map((row) => row.getAttribute("aria-label"))).toEqual([
+    expect(rowsIn(menu).map(rowName)).toEqual([
       "Rename chat…",
       "Ask",
       // Where it is drawn, by the keys (#4764).
@@ -375,9 +376,7 @@ describe("a menu on screen", () => {
     expect(ask).toHaveAttribute("aria-haspopup", "menu");
 
     const sub = await openSub("Ask");
-    expect(rowsIn(sub).map((row) => row.getAttribute("aria-label"))).toEqual(
-      TWELVE.map((persona) => `${persona}…`),
-    );
+    expect(rowsIn(sub).map(rowName)).toEqual(TWELVE.map((persona) => `${persona}…`));
     // What asking does is said once, by the row that opened them, and under no persona.
     expect(sub.querySelector('[data-part="description"]')).toBeNull();
     expect(ask).toHaveAccessibleDescription(/^A task starts as the persona you pick/);
@@ -388,7 +387,7 @@ describe("a menu on screen", () => {
     const menu = await open();
 
     const noted = rowsIn(menu).filter((row) => row.querySelector('[data-part="description"]'));
-    expect(noted.map((row) => row.getAttribute("aria-label"))).toEqual(["Start fresh", "End…"]);
+    expect(noted.map(rowName)).toEqual(["Start fresh", "End…"]);
     // Start fresh cannot run until the instructions change, and says why under its words.
     expect(noted[0].querySelector('[data-part="description"]')).toHaveTextContent(FRESH_UNCHANGED);
     expect(noted[1].querySelector('[data-part="description"]')).toHaveTextContent(
@@ -400,7 +399,7 @@ describe("a menu on screen", () => {
     const sub = await openSub("Stop");
     expect(
       rowsIn(sub).map((row) => [
-        row.getAttribute("aria-label"),
+        rowName(row),
         row.querySelector('[data-part="description"]')?.textContent,
       ]),
     ).toEqual([
@@ -420,7 +419,7 @@ describe("a menu on screen", () => {
     const menu = await open();
 
     const row = (name: string) => {
-      const found = rowsIn(menu).find((one) => one.getAttribute("aria-label") === name);
+      const found = rowsIn(menu).find((one) => rowName(one) === name);
       if (found === undefined) throw new Error(`no row ${name}`);
       return found;
     };
@@ -564,7 +563,7 @@ describe("a menu on screen", () => {
     expect(
       rowsIn(menu)
         .filter((row) => row.getAttribute("data-variant") === "danger")
-        .map((row) => row.getAttribute("aria-label")),
+        .map(rowName),
     ).toEqual(["Start fresh", "End…"]);
     const ends = within(menu).getByRole("menuitem", { name: "End…" });
     expect(ends).toHaveClass("ends-it");
@@ -583,7 +582,12 @@ describe("a menu on screen", () => {
     const menu = await open();
     const keys = (name: string) =>
       within(menu).getByRole("menuitem", { name }).querySelector('[data-part="shortcut"]');
-    expect(keys("Rename chat…")).toHaveTextContent("F2");
+    expect(keys("Rename chat…")).toHaveAttribute("data-key", "F2");
+    // And a reader hears it as the row's shortcut, the key being drawn and hidden (#6043).
+    expect(within(menu).getByRole("menuitem", { name: "Rename chat…" })).toHaveAttribute(
+      "aria-keyshortcuts",
+      "F2",
+    );
     expect(keys("Restart")).toBeNull();
     fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
@@ -595,8 +599,9 @@ describe("a menu on screen", () => {
     expect(
       within(tabMenu)
         .getByRole("menuitem", { name: "Close" })
-        .querySelector('[data-part="shortcut"]'),
-    ).toHaveTextContent(/^(⌫|Delete)$/);
+        .querySelector('[data-part="shortcut"]')
+        ?.getAttribute("data-key"),
+    ).toMatch(/^(⌫|Delete)$/);
     expect(within(tabMenu).getByRole("menuitemcheckbox", { name: "Pinned" })).toHaveAttribute(
       "aria-checked",
       "false",
@@ -737,7 +742,7 @@ describe("the Curate ▸ submenu (ADR 0061)", () => {
         sub.querySelectorAll('[role=menuitem], [data-part="header"], [data-part="rule"]'),
       ).map((el) =>
         el.getAttribute("role") === "menuitem"
-          ? el.getAttribute("aria-label")
+          ? rowName(el)
           : el.getAttribute("data-part") === "header"
             ? `[${el.textContent}]`
             : "---",
@@ -1072,9 +1077,7 @@ describe("a real contextmenu event, with the suppressor live", () => {
     // The focused workspace's own chip: no Focus row, which could only say it is focused.
     expect(menu).toHaveAccessibleName("Workspace alpha");
     expect(
-      Array.from(menu.querySelectorAll('[role^="menuitem"]')).map((row) =>
-        row.getAttribute("aria-label"),
-      ),
+      Array.from(menu.querySelectorAll('[role^="menuitem"]')).map((row) => rowName(row)),
     ).toEqual([
       "Pinned",
       "Settings…",

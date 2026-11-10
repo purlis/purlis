@@ -20,6 +20,7 @@ import {
   MenuItem,
   MenuSection,
   MenuSeparator,
+  MenuShortcuts,
   MenuTrigger,
   MenuWords,
   Submenu,
@@ -557,5 +558,67 @@ export const AFilter: Story = {
     const design = within(openMenu()).getByRole("menuitem", { name: "design" });
     await waitFor(() => expect(filter).toHaveAttribute("aria-activedescendant", design.id));
     expectFocusInSight();
+  },
+};
+
+/** A project's menu as the rail draws it: a registry's key, a caller's, words under a row. */
+function ProjectMenu() {
+  return (
+    <MenuShortcuts.Provider
+      value={(act) => (act === "project.close" ? { said: "Ctrl+W", aria: "Control+W" } : undefined)}
+    >
+      <MenuTrigger>
+        <Button>Project purlis</Button>
+        <Menu aria-label="Project purlis">
+          <MenuItem id="settings" textValue="Settings…" keys="Ctrl+," aria-keyshortcuts="Control+,">
+            <MenuWords said="Settings…" />
+          </MenuItem>
+          <MenuItem id="rename" textValue="Rename…" aria-label="Rename…" keys="F2">
+            <MenuWords said="Rename…" />
+          </MenuItem>
+          <MenuItem id="close" textValue="Close" shortcut="project.close" variant="danger">
+            <MenuWords said="Close" under="Ends every chat it has open. There is no undo." />
+          </MenuItem>
+        </Menu>
+      </MenuTrigger>
+    </MenuShortcuts.Provider>
+  );
+}
+
+/**
+ * **A row is named by its words alone** (WCAG 2.5.3 Label in Name, #6043): its key is drawn by
+ * the stylesheet and said by its `aria-keyshortcuts`, and what stands under its words is its
+ * description, heard once. axe counts every visible word of a row named by `aria-label`, hidden
+ * or not, so its label-in-name rule is run on the open menu here, in each browser; the baseline
+ * shows the menu open with its keys.
+ */
+export const NamedByItsWords: Story = {
+  render: () => <ProjectMenu />,
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "Project purlis" }));
+    const menu = await screen.findByRole("menu", { name: "Project purlis" });
+    const settings = within(menu).getByRole("menuitem", { name: "Settings…" });
+    await expect(settings).toHaveAttribute("aria-keyshortcuts", "Control+,");
+    // Named by its `aria-label`, so a case for axe's rule, with its key drawn in it.
+    const rename = within(menu).getByRole("menuitem", { name: "Rename…" });
+    await expect(rename.querySelector('[data-part="shortcut"]')).toHaveAttribute("data-key", "F2");
+    const close = within(menu).getByRole("menuitem", { name: "Close" });
+    await expect(close).toHaveAttribute("aria-keyshortcuts", "Control+W");
+    await expect(close).toHaveAccessibleDescription(
+      "Ends every chat it has open. There is no undo.",
+    );
+    // The key is seen: drawn from its attribute, at the row's end.
+    const key = close.querySelector('[data-part="shortcut"]');
+    await expect(key).not.toBeNull();
+    await expect(getComputedStyle(key as Element, "::before").content).toBe('"Ctrl+W"');
+    // A menu fading in is not on screen to axe yet, and no row would be a case for its rule.
+    await waitFor(() => expect(rename).toBeVisible(), { timeout: 3_000 });
+    const { default: axe } = await import("axe-core");
+    const found = await axe.run(menu, {
+      runOnly: { type: "rule", values: ["label-content-name-mismatch"] },
+    });
+    await expect(found.violations).toEqual([]);
+    // And it ran: each row was a case for the rule, not passed over.
+    await expect(found.passes.flatMap((one) => one.nodes).length).toBeGreaterThan(0);
   },
 };
