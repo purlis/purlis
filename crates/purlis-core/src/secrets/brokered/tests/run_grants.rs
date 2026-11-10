@@ -2779,3 +2779,81 @@ fn the_server_its_helper_the_router_and_the_keyring_migration_run_what_they_are_
         refused_as_running_others(name);
     }
 }
+
+// #5994, from #5990's reviews: the MySQL-adjacent tools no row read. Each is refused whole, as
+// #5931's were, and the clients stay offered
+// (`the_forms_a_run_grant_refuses_by_name_leave_curl_and_the_usual_tools_offered`).
+
+/// mydumper runs a command on each file it writes (`--exec`, `--exec-per-thread`), and myloader
+/// one on each file it reads (`--exec-per-thread`). Either may be named in a defaults file the
+/// command line never shows.
+#[test]
+fn mydumper_and_myloader_run_the_command_their_flags_or_files_name_so_they_are_offered_no_run_grant()
+ {
+    for name in ["mydumper", "myloader", "MYDUMPER"] {
+        refused_as_running_others(name);
+    }
+}
+
+/// Percona Toolkit's tools, by their prefix: many run code their flags name
+/// (`pt-online-schema-change --plugin` loads a Perl file, `pt-stalk --plugin` sources a shell
+/// file, `pt-kill --execute-command` runs a command, `pt-query-digest --filter` evaluates Perl),
+/// and any flag may come from a configuration file the command line never shows. Releases add
+/// more.
+#[test]
+fn a_percona_toolkit_tool_by_its_prefix_is_offered_no_run_grant() {
+    for name in [
+        "pt-online-schema-change",
+        "pt-archiver",
+        "pt-stalk",
+        "pt-table-checksum",
+        "pt-table-sync",
+        "pt-query-digest",
+        "pt-kill",
+        "pt-heartbeat",
+        "pt-config-diff",
+        "pt-pmp",
+        "PT-ARCHIVER",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// Galera's helpers: `galera_recovery` has a shell evaluate its arguments into the server's
+/// command line, `galera_new_cluster` has the service manager restart whatever unit it names,
+/// Percona XtraDB Cluster's `garbd` runs the scripts its `--recv-script` and `--post-recv-script`
+/// name, and `garb-systemd` runs `garbd`.
+#[test]
+fn galeras_helpers_run_the_server_or_a_script_they_name_so_they_are_offered_no_run_grant() {
+    for name in [
+        "galera_recovery",
+        "galera_new_cluster",
+        "garbd",
+        "garb-systemd",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The client built with the server inside it: what `--server-arg` hands the embedded server
+/// (`--plugin-load`, `--plugin-dir`) loads code from a file it names.
+#[test]
+fn the_client_with_the_server_embedded_loads_what_it_is_told_so_it_is_offered_no_run_grant() {
+    for name in [
+        "mysql_embedded",
+        "mariadb-embedded",
+        // the client test built the same way, which takes `--server-arg` as well (round 1 of the
+        // review)
+        "mysql_client_test_embedded",
+        "mariadb-client-test-embedded",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// gh-ost, the online schema change used with a key as Percona's is: `--hooks-path` names a
+/// folder whose `gh-ost-on-*` programs it runs (round 1 of the review).
+#[test]
+fn gh_ost_runs_the_hooks_of_a_folder_it_names_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("gh-ost");
+}
