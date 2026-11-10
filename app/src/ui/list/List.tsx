@@ -634,8 +634,7 @@ function rowElement(labelledBy?: string, describedBy?: string) {
       }}
       // Tab from a control in it goes on to its next control, which the list would skip to
       // leave itself (#6071, `rowKeys.ts`). And the ↑ or ↓ a select or a combobox opened with
-      // goes no further (#6091): React Aria's select lets it go on up, where the list moved its
-      // own row with it and gave that row the keyboard as the select's list went.
+      // goes no further (#6091, `keepsItsArrows`).
       onKeyDown={(event) => {
         if (movesWithinItsRow(event) || keepsItsArrows(event)) event.stopPropagation();
         element.onKeyDown?.(event);

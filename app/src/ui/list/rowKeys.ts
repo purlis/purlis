@@ -296,7 +296,9 @@ export function keptOnTheWayUp(event: KeyboardEvent<HTMLElement>): void {
  * above or below), where a select's button and a combobox open their list with them. So the row
  * lets them by (`List.tsx`'s `rowElement`), and the control's own handler hears them and opens.
  * On their way back up the row stops them (#6091): React Aria's select opens on them and lets
- * them go on, and the list would move its row with them.
+ * them go on (`useSelect` chains a handler of its own for ← and → after the trigger's, which
+ * lets every other key go on up), and the list moved its own row a row along with them, which
+ * then took the keyboard from the select as its list went.
  */
 export function keepsItsArrows(event: KeyboardEvent<HTMLElement>): boolean {
   if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return false;

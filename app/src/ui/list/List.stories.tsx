@@ -942,10 +942,8 @@ function Choosing() {
  * above, each on the option it holds; the arrows choose in it, Enter takes one, and the keyboard
  * is back on the button. The picture is the button, with what was chosen.
  *
- * **The ↓ that opens it is never the list's** (#6091): React Aria's select lets it go on up, and
- * the list moved its own row a row down with it, which took the keyboard from the button as the
- * select's list went, as late as WebKit drew that frame. Each key waits for where it put the
- * keyboard to settle before the next is pressed.
+ * **The ↓ that opens it is never the list's** (#6091, `keepsItsArrows`), and each key waits for
+ * where it put the keyboard to settle before the next is pressed.
  */
 export const ASelectInARow: Story = {
   render: () => <Choosing />,

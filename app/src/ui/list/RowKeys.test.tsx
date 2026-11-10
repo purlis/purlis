@@ -18,6 +18,7 @@ import { Segment, SegmentedControl } from "../choice/Radio";
 import { Select } from "../select/Select";
 import { ComboBox } from "../select/ComboBox";
 import { RowLabel } from "./Row";
+import { aFramePassed } from "../../frame.testkit";
 
 afterEach(cleanup);
 
@@ -343,9 +344,7 @@ describe("a select or a combobox in a row (#5993)", () => {
     expect(screen.getByRole("row", { name: "First", hidden: true })).not.toHaveFocus();
   });
 
-  // **The ↓ that opens it is its own, and never the list's** (#6091): React Aria's select opens
-  // on it and lets it go on up, where the list moved its own row a row down, and gave the
-  // keyboard to that row, not the button, as the select's list went.
+  // **The ↓ that opens it is its own, and never the list's** (#6091, `keepsItsArrows`).
   it("gives the keyboard back to its button once ↓ opened it and Enter took an option, and the list's row stays", async () => {
     render(<Picks />);
     await onTheSelect();
@@ -356,7 +355,7 @@ describe("a select or a combobox in a row (#5993)", () => {
     );
     await userEvent.keyboard("{ArrowDown}{Enter}");
     await waitFor(() => expect(trigger()).toHaveTextContent("An entry I have"));
-    await act(() => new Promise((done) => requestAnimationFrame(() => done(undefined))));
+    await aFramePassed();
     expect(trigger()).toHaveFocus();
     await userEvent.keyboard("{ArrowLeft}{ArrowDown}");
     expect(screen.getByRole("row", { name: "Last" })).toHaveFocus();
@@ -370,7 +369,7 @@ describe("a select or a combobox in a row (#5993)", () => {
     await waitFor(() => expect(list).toContainElement(document.activeElement as HTMLElement));
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
-    await act(() => new Promise((done) => requestAnimationFrame(() => done(undefined))));
+    await aFramePassed();
     expect(trigger()).toHaveFocus();
     await userEvent.keyboard("{ArrowLeft}{ArrowUp}");
     expect(screen.getByRole("row", { name: "First" })).toHaveFocus();
