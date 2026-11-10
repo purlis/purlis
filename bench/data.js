@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794280801670,
+  "lastUpdate": 1794282762781,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -45528,6 +45528,48 @@ window.BENCHMARK_DATA = {
             "value": 102.8585595,
             "unit": "ms",
             "extra": "median of 5 runs: 101.596, 102.507, 102.859, 103.046, 103.711 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "bddb1be4eaf456915e7df115f5c6df95dc87ca02",
+          "message": "Label in Name: a menu row and a list's option are named by their words alone (#6043) (#6074)\n\n* A menu row and a list's option are named by their words alone (#6043)\n\naxe's label-content-name-mismatch (ACT 2ee8b8) applies to a row named by\naria-label or aria-labelledby, and counts every visible word in it as its\nlabel, aria-hidden or not (axe 4.14's visibleVirtual asks isVisibleOnScreen).\nSo aria-hidden on a drawn <kbd> cannot pass it.\n\n- Menu: a row's key is drawn by menu.css from data-key (as a button's is,\n  R33), hidden, and said by the row's aria-keyshortcuts: the registry's\n  (menuRowKey) or the caller's. MenuWords' line under the words is\n  aria-hidden and the row's description (React Aria's description slot).\n  Catalogue rows and Move to's rows are named by their content, not aria-label.\n- List: an option is named by its content; in an option every part but the\n  label is aria-hidden, the description handed over by its slot. The theme\n  gallery's pictures and a refused card's marks are kept from a reader too.\n- Stories hold the rule in Chromium and WebKit: the list's and the browsers\n  grid's opt-outs go, and Menu's 'Named by its words' runs the rule on an\n  open menu.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71BN2GRNS54582HF72CYXST\nPurlis-Persona: steward\n\n* Changelog fragment for #6043\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71BN2GRNS54582HF72CYXST\nPurlis-Persona: steward\n\n* The rail's menu and the theme gallery pass axe with no known finding (#6043)\n\n#6037 held both states' label-content-name-mismatch findings against #6043;\nfixed, their lines go.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71BN2GRNS54582HF72CYXST\nPurlis-Persona: steward\n\n* A row's key is heard where only its caller knows it; review fixes (#6043)\n\n- ariaKeysOfSaid names a drawn key (a Mac's symbols or another keyboard's\n  words) for aria-keyshortcuts, so a catalogue row whose key no registry\n  entry answers for (Move to, Delete, a terminal's Copy) still says its key\n  to a reader, now that the drawn key is hidden.\n- ui-primitives: the context menu's 'named by aria-label' line agrees with\n  the rule now.\n- One rowName test helper for menu rows and options; menuNames is string[].\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71BN2GRNS54582HF72CYXST\nPurlis-Persona: steward\n\n* Stories: a menu row's key is read from data-key; Named by its words waits for the menu to arrive (#6043)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71BN2GRNS54582HF72CYXST\nPurlis-Persona: steward\n\n* Story baselines: Named by its words, and Tabs' Split Pictures as #6055 redrew it (#6043)\n\nTaken with tools/story-baselines-pull.mjs from run 42734250078 and reviewed.\nThe two Split Pictures cells carry main's redraw from #6055 (chat states):\nan idle tab's badge in accent.base, a waiting one's hourglass in\nstate.waiting.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71BN2GRNS54582HF72CYXST\nPurlis-Persona: steward\n\n* Scenarios read a menu row's and an option's name as a reader hears it (#6043)\n\nA row named by its content has no aria-label, and its text also holds the\nline under its words and its note: pressMenuPath, menuNames, press and the\ntab, terminal and harness-card specs read its words alone, its parts kept\nfrom a reader left out, and a description of more than one id whole.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71BN2GRNS54582HF72CYXST\nPurlis-Persona: steward\n\n* Leave Tabs' Split Pictures to main's own fix (#6043)\n\nAnother pull request owns the two cells #6055 left behind; this one takes\nmain's pictures back so the two do not fight over them.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71BN2GRNS54582HF72CYXST\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T03:14:54Z",
+          "tree_id": "b5d4570f561ff06615f8fe1f30c868651c74f10e",
+          "url": "https://github.com/purlis/purlis/commit/bddb1be4eaf456915e7df115f5c6df95dc87ca02"
+        },
+        "date": 1794282754760,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5555935000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.540, 0.542, 0.556, 0.561, 0.563 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.149673,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.031, 16.100, 16.150, 16.259, 16.291 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.1574265,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.215, 99.573, 100.157, 100.572, 103.365 ms"
           }
         ]
       }
