@@ -472,3 +472,109 @@ fn an_approval_under_an_old_short_id_asks_again_as_a_changed_pin() {
     assert_eq!(standing_of(&pin.id), Standing::PinChanged);
     assert_eq!(standing_of(short), Standing::PinChanged);
 }
+
+/// The profile a run's line hands its sandbox, read by the reader Linux's supervisor judges
+/// every open by: the one text both platforms' sandboxes hold a run to.
+fn run_profile(here: &Here, command: &str) -> purlis_linux_sandbox::profile::Profile {
+    let resolved = here.resolve(command).unwrap();
+    let scratch = scratch_of(here);
+    let machine = crate::sandbox::Machine::this();
+    let launch = launch_on(
+        &here.root,
+        &resolved,
+        &scratch,
+        Some(Path::new("/opt/purlis/bin/purlis")),
+        &machine,
+    )
+    .unwrap();
+    let text = launch
+        .args
+        .iter()
+        .find(|word| word.starts_with("(version"))
+        .expect("a profile in the line");
+    purlis_linux_sandbox::profile::Profile::parse(text).unwrap()
+}
+
+fn reads(path: &Path) -> purlis_linux_sandbox::profile::Op<'_> {
+    purlis_linux_sandbox::profile::Op::File {
+        what: purlis_linux_sandbox::profile::FileOp::ReadData,
+        path,
+        kind: purlis_linux_sandbox::profile::Kind::Regular,
+    }
+}
+
+/// The exploit of the second review of #5978: the approved script imports `../lib/q.mjs`, a
+/// file outside the code its approval fingerprints, and a teammate edits it. A run reads in the
+/// plane only the approved code and the artifact's own folder, so no code it was not approved
+/// for loads, nor any other file of the plane is copied into the data.
+#[test]
+fn a_run_reads_in_the_plane_only_its_approved_code_and_its_artifact() {
+    let here = Here::new();
+    std::fs::create_dir_all(here.workspace.join("lib")).unwrap();
+    std::fs::write(here.workspace.join("lib/q.mjs"), "steal()").unwrap();
+    std::fs::create_dir_all(here.root.join("node_modules/x")).unwrap();
+    std::fs::write(here.root.join("node_modules/x/index.js"), "steal()").unwrap();
+    std::fs::write(here.folder().join("data.json"), "{}").unwrap();
+    let profile = run_profile(&here, COMMAND);
+
+    for unread in [
+        here.workspace.join("lib/q.mjs"),
+        here.root.join("node_modules/x/index.js"),
+        here.root.join("workspaces/alpha/workspace.md"),
+        here.root.join("skills/other/SKILL.md"),
+    ] {
+        assert!(!profile.allows(&reads(&unread)), "{}", unread.display());
+    }
+    for read in [
+        here.root.join("skills/report/scripts/run.mjs"),
+        here.root.join("skills/report/lib.mjs"),
+        here.folder().join("data.json"),
+        PathBuf::from("/usr/lib/node/x.js"),
+    ] {
+        assert!(profile.allows(&reads(&read)), "{}", read.display());
+    }
+}
+
+/// The same, run for real on macOS: the approved script reads its own folder and the
+/// artifact's, and a read of a plane file beside them is refused by the sandbox. A test process
+/// already inside a sandbox cannot apply another, so it says so and stops.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_run_is_refused_a_plane_file_outside_its_code_and_its_artifact() {
+    let here = Here::new();
+    std::fs::create_dir_all(here.workspace.join("tools")).unwrap();
+    std::fs::create_dir_all(here.workspace.join("lib")).unwrap();
+    std::fs::write(here.workspace.join("lib/q.mjs"), "secret").unwrap();
+    std::fs::write(here.workspace.join("tools/own.txt"), "own").unwrap();
+    std::fs::write(here.folder().join("data.json"), "{}").unwrap();
+    std::fs::write(
+        here.workspace.join("tools/make.sh"),
+        "cat tools/own.txt artifacts/board/data.json > \"$PURLIS_ARTIFACT_OUT/seen\"\n\
+         cat lib/q.mjs >> \"$PURLIS_ARTIFACT_OUT/seen\" || echo refused >&2\n",
+    )
+    .unwrap();
+    let resolved = here.resolve("/bin/sh tools/make.sh").unwrap();
+    let scratch = scratch_of(&here);
+    let launch = launch(&here.root, &resolved, &scratch).unwrap();
+    let ran = crate::forklock::output(
+        std::process::Command::new(&launch.program)
+            .args(&launch.args)
+            .current_dir(&launch.cwd)
+            .envs(launch.set.iter().cloned()),
+    )
+    .unwrap();
+    let said = String::from_utf8_lossy(&ran.stderr);
+    if said.contains("sandbox_apply") {
+        use std::io::Write as _;
+        let _ = writeln!(
+            std::io::stderr(),
+            "skipped: this test already runs in a sandbox ({said})"
+        );
+        return;
+    }
+    assert!(ran.status.success(), "{said}");
+    let seen = std::fs::read_to_string(scratch.out.join("seen")).unwrap();
+    assert_eq!(seen, "own{}", "only its code and its artifact were read");
+    let log = std::fs::read_to_string(&scratch.log).unwrap();
+    assert!(log.contains("refused"), "{log}");
+}

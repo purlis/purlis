@@ -89,6 +89,8 @@ pub struct Resolved {
     pub script: PathBuf,
     /// The folder approved: the script's skill's, or its own.
     pub code: PathBuf,
+    /// The artifact's own folder: with `code`, all a run reads of the plane ([`launch`]).
+    pub artifact: PathBuf,
     /// What is approved: every word of the command and the fingerprint of that folder
     /// ([`of_run`], [`fingerprint`]).
     pub fingerprint: String,
@@ -138,12 +140,15 @@ pub fn resolve(root: &Path, workspace: &Path, pin: &Pin) -> Result<Resolved, Str
         })?;
     let code = code_folder(&root, &script);
     let fingerprint = of_run(&words, &fingerprint(&code)?);
+    let artifact = workspace.join(super::DIR).join(&pin.folder);
+    let artifact = artifact.canonicalize().unwrap_or(artifact);
     Ok(Resolved {
         program: program.clone(),
         args: args.to_vec(),
         cwd,
         script,
         code,
+        artifact,
         fingerprint,
     })
 }
@@ -610,8 +615,9 @@ const RUNS: &str = "exec \"$@\" >\"$PURLIS_ARTIFACT_LOG\" 2>&1";
 /// **The run of `resolved`, wrapped in its sandbox** (ADR 0122 §6, amended 2026-11-09): the
 /// profile a chat's commands run in (Seatbelt on macOS, purlis's own wrap on Linux, from
 /// [`crate::sandbox::seatbelt::profile`]) with this plane's denials, **no network** (no proxy
-/// port and no socket is named in it), and **writes to `scratch` alone**: its out folder, its
-/// temporary folder and its log. On Linux the wrap is purlis's own program, checked as a chat's
+/// port and no socket is named in it), **writes to `scratch` alone**: its out folder, its
+/// temporary folder and its log, and **reads in the plane only its approved code and its
+/// artifact's folder** ([`plane_reads`], amended 2026-11-10). On Linux the wrap is purlis's own program, checked as a chat's
 /// is ([`crate::sandbox::program::checked_wrap`]).
 pub fn launch(root: &Path, resolved: &Resolved, scratch: &Scratch) -> Result<Launch, String> {
     let machine = crate::sandbox::Machine::this();
@@ -657,9 +663,14 @@ fn launch_on(
         .parent()
         .ok_or("the run's folder has no place")?
         .to_path_buf();
+    let own = crate::sandbox::seatbelt::Own {
+        deny: plane_reads(root, resolved)
+            .map_err(|why| format!("purlis could not write the run's sandbox ({why})"))?,
+        ..crate::sandbox::seatbelt::Own::default()
+    };
     let profile = crate::sandbox::seatbelt::profile(
         &denied.paths,
-        &crate::sandbox::seatbelt::Own::default(),
+        &own,
         &writes,
         &scratch.tmp,
         &[],
@@ -690,6 +701,34 @@ fn launch_on(
             ("TMPDIR".to_owned(), path(&scratch.tmp)),
         ],
     })
+}
+
+/// **A run reads nothing of the plane but its approved code and its artifact's folder** (ADR
+/// 0122, amended 2026-11-10): one rule per name of the plane's root denying a file's contents,
+/// and a folder's entries, everywhere below it but [`Resolved::code`] and
+/// [`Resolved::artifact`]. So a script that imports `../lib/x.mjs`, a `node_modules` above its
+/// folder, or a second file its command names elsewhere in the plane, loads none of them: only
+/// code the approval fingerprinted runs, and no other file of the plane is copied into the data.
+/// What a file is (its metadata) stays readable, so resolving a path through the plane's
+/// folders works; the working folder's own entries are listed, never its files read. Nothing
+/// is given back: a denial class inside the code still holds, as it is never named here.
+/// Linux's supervisor judges every open by this same rule ([`purlis_linux_sandbox::profile`]).
+fn plane_reads(root: &Path, resolved: &Resolved) -> Result<Vec<String>, &'static str> {
+    use crate::sandbox::seatbelt::kernel_strings;
+    let mut but = Vec::new();
+    for open in [&resolved.code, &resolved.artifact] {
+        for name in kernel_strings(open)? {
+            but.push(format!("(require-not (subpath {name}))"));
+        }
+    }
+    for name in kernel_strings(&resolved.cwd)? {
+        but.push(format!("(require-not (literal {name}))"));
+    }
+    let but = but.join(" ");
+    Ok(kernel_strings(root)?
+        .into_iter()
+        .map(|name| format!("(deny file-read-data (require-all (subpath {name}) {but}))"))
+        .collect())
 }
 
 /// Where data file `name` is inside `folder`.
