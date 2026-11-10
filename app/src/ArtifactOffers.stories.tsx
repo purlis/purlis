@@ -92,6 +92,11 @@ export const DeleteAsks: StoryObj<typeof OffersDrawn> = {
     await expectFocusInSight();
     await userEvent.keyboard("{Escape}");
     expect(args.onPress).not.toHaveBeenCalled();
+    // The picture is of the page, so it waits for the ask to have faded out, not mid-fade.
+    await waitFor(() => {
+      expect(page.queryByRole("alertdialog")).toBeNull();
+      expect(page.queryByRole("dialog")).toBeNull();
+    });
     // The pointer goes, so the picture is of the delete at rest (#4098). The click left the
     // story's pointer on it, and whether it was still drawn as under the pointer once the dialog
     // had come and gone hung on what pointer events the engine itself sent meanwhile: in WebKit
