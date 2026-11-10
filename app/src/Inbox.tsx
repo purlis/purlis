@@ -69,6 +69,20 @@ import { chainSaid, NothingDone } from "./inboxRowParts";
 import { inOrder, type Standing } from "./asksOrder";
 import { withSame } from "./asksSame";
 import { SameAsk, samePlaces, sameRowKey } from "./SameAskRow";
+import {
+  ASKS_LIST,
+  buttonFor,
+  endTriage,
+  leadOf,
+  nextRow,
+  returnFromTriage,
+  rowOf,
+  triageKeyOf,
+  triageRows,
+  triaging,
+} from "./asksTriage";
+import { pressed, TRIAGE_KEY_IDS } from "./keys/registry";
+import { onAMac } from "./mac";
 import { capMarks } from "./combiningMarks";
 import {
   ASKS,
@@ -168,10 +182,14 @@ export const NOTICES = "Notices";
  *
  * Every ask has **Go to chat**, which for a task opens it in the pane it returns to (`onGo`).
  *
- * **The keyboard** (I-11): ↑ and ↓ move between the asks and their buttons, Enter presses the
- * focused button, as it does anywhere, and Escape leaves for the chat in front. **No key of a
- * single letter does anything**, so a stray keystroke never answers an ask. The keyboard comes
- * in on the first ask itself, never on a button.
+ * **The keyboard** (I-11; #3123's grid rows): ↑ and ↓ move between the asks, ← and → through
+ * an ask's buttons, Enter presses the focused button, as it does anywhere, and Escape leaves for
+ * the chat in front. **No key of a single letter does anything**, so a stray keystroke never
+ * answers an ask. The keyboard comes in on the first ask itself, never on a button, except in
+ * **keyboard triage** (⌘⇧I, ADR 0121 decision 9, `asksTriage.ts`): there it lands on each ask's
+ * lead (its Answer, or an answer that grants nothing), goes on to the next as each is answered,
+ * has ⌘⌥L, ⌘⌥G, ⌘⌥S and ⌘⌥X for later, go to chat, snooze and stop, and Escape goes back where
+ * the keyboard was before ⌘⇧I.
  *
  * **What an ask says is data** (I-1, #1690): a chain a chat named, a command line, a host are
  * drawn as text, and the only controls are the fixed words of the answers it offers.
@@ -528,10 +546,41 @@ export function Inbox({
     (elsewhere?.onOpen !== undefined && othersShown.length > 0);
 
   const leave = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (drawsAsks && triageKey(event)) return;
     if (event.key !== "Escape") return;
     event.preventDefault();
     event.stopPropagation();
+    // **Leaving triage goes back where the keyboard was before ⌘⇧I** (#6016); else, or where
+    // that has gone, to the chat in front.
+    if (drawsAsks && triaging() && returnFromTriage()) return;
     onLeave();
+  };
+
+  /**
+   * **Triage's keys on an ask's row** (ADR 0121 decision 9, #6016; `asksTriage.ts`): later moves
+   * the keyboard to the next ask's lead; go to chat, snooze and stop press the row's own button,
+   * so a key is refused where a click would be. Answers whether the key was one of them.
+   */
+  const triageKey = (event: KeyboardEvent<HTMLDivElement>): boolean => {
+    const hit = pressed(event.nativeEvent, TRIAGE_KEY_IDS, { runnable: false });
+    const key = hit === undefined ? undefined : triageKeyOf(event.nativeEvent, onAMac());
+    const row = rowOf(event.target as Element);
+    const list = listAt.current;
+    if (key === undefined || row === null || list === null) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.repeat) return true;
+    if (key === "later") {
+      const next = nextRow(list, row);
+      if (next !== undefined) leadOf(next).focus();
+      return true;
+    }
+    const button = buttonFor(row, key);
+    if (button === null || button.hasAttribute("disabled")) return true;
+    // Go to chat leaves Asks for the chat; Go to project takes triage into that project's Asks.
+    if (key === "go" && row.dataset.source !== "here") endTriage();
+    button.click();
+    return true;
   };
 
   /**
@@ -544,13 +593,36 @@ export function Inbox({
    */
   const listAt = useRef<HTMLDivElement>(null);
   const lastOn = useRef<Element | null>(null);
+  /** Where among the rows triage can land on the keyboard last was (#6016). */
+  const lastRow = useRef(-1);
+  /** **In triage, on to the next ask's lead** (ADR 0121 decision 9, #6016): the row that stood
+   *  after the one answered stands where it stood, and past the last, the first comes round.
+   *  Asks empty, the keyboard goes back where it was before ⌘⇧I. */
+  const onToNext = (list: HTMLElement) => {
+    const rows = triageRows(list);
+    if (rows.length === 0) {
+      if (!returnFromTriage()) onLeave();
+      return;
+    }
+    const at = lastRow.current >= 0 && lastRow.current < rows.length ? lastRow.current : 0;
+    leadOf(rows[at]).focus();
+  };
   useLayoutEffect(() => {
     const was = lastOn.current;
     if (was === null || was.isConnected) return;
     lastOn.current = null;
+    const list = listAt.current;
+    if (list === null) return;
     const on = document.activeElement;
-    if (on !== null && on !== document.body) return;
-    listAt.current?.querySelector<HTMLElement>('[role="row"][data-key]')?.focus();
+    // The list family may have put the keyboard on a row of its own choosing: in triage, a row
+    // is no lead, so it goes on as from the page.
+    const onARow = on !== null && list.contains(on) && rowOf(on) === on;
+    if (on !== null && on !== document.body && !(drawsAsks && triaging() && onARow)) return;
+    if (drawsAsks && triaging()) {
+      onToNext(list);
+      return;
+    }
+    list.querySelector<HTMLElement>('[role="row"][data-key]')?.focus();
   });
 
   const [noticed, setNoticed] = useState(0);
@@ -686,12 +758,38 @@ export function Inbox({
         ref={listAt}
         onKeyDown={leave}
         onFocus={(event) => {
+          // The list family gives a row the keyboard a commit after the row it was in went:
+          // in triage, it goes on from there to the next ask's lead (#6016).
+          const was = lastOn.current;
+          if (
+            drawsAsks &&
+            triaging() &&
+            was !== null &&
+            !was.isConnected &&
+            rowOf(event.target) === event.target &&
+            listAt.current !== null
+          ) {
+            lastOn.current = null;
+            onToNext(listAt.current);
+            return;
+          }
           lastOn.current = event.target;
+          const row = rowOf(event.target);
+          if (row !== null && listAt.current !== null)
+            lastRow.current = triageRows(listAt.current).indexOf(row);
         }}
         onBlur={(event) => {
           // Leaving for somewhere else lets go; an element taken away is still remembered.
           if (event.relatedTarget !== null && !listAt.current?.contains(event.relatedTarget))
             lastOn.current = null;
+          // Leaving Asks for anywhere but another project's Asks ends triage (#6016): the
+          // person went somewhere of their own.
+          if (
+            drawsAsks &&
+            event.relatedTarget instanceof Element &&
+            event.relatedTarget.closest(ASKS_LIST) === null
+          )
+            endTriage();
         }}
       >
         {/* **What an answer said that the person must read** (#5890): Keep blocked on a vault

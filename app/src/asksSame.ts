@@ -27,6 +27,7 @@
 import type { Offered, Shown } from "./bindings";
 import { waysOf } from "./AskDecision";
 import type { Placed, PlacedGroup } from "./asksOrder";
+import { highRisk } from "./asksTriage";
 
 /** One request several chats make alike: their asks, most urgent first, and its one grant. */
 export type Same = {
@@ -40,12 +41,6 @@ export type Same = {
 
 /** A row of Asks: one chat's asks, or one request several chats make alike. */
 export type AskRow = { kind: "chat"; group: PlacedGroup } | { kind: "same"; same: Same };
-
-/**
- * **Whether `ask` is high-risk** (ADR 0121 decision 8, #6011): one is never grouped, so it is
- * answered alone with its risk in sight. No ask is classed yet; #6011 fills this seam.
- */
-export const highRisk: (ask: Shown) => boolean = () => false;
 
 /** **What `ask` asks, as identical requests share it**, or nothing where it is never grouped. */
 function askedOf(ask: Shown): string | undefined {
