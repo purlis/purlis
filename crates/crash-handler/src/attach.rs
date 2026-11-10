@@ -16,9 +16,6 @@ use std::time::Duration;
 use crash_handler::{CrashContext, CrashEvent, CrashEventResult, CrashHandler};
 use minidumper::{Client, SocketName};
 
-/// How long the app waits for the companion to bind its socket.
-const CONNECT_FOR: Duration = Duration::from_secs(3);
-
 /// The watch, held by [`crate::Watching`]. Dropping it detaches the handler, and the companion,
 /// no longer pinged, exits.
 pub(crate) struct Attached {
@@ -68,9 +65,9 @@ pub(crate) fn attach(
     })
 }
 
-/// A client of the companion at `socket`, once it has bound it, within [`CONNECT_FOR`].
+/// A client of the companion at `socket`, once it has bound it, within [`crate::CONNECT_FOR`].
 fn connect(socket: &Path) -> Result<Client, minidumper::Error> {
-    let until = std::time::Instant::now() + CONNECT_FOR;
+    let until = std::time::Instant::now() + crate::CONNECT_FOR;
     loop {
         match Client::with_name(SocketName::Path(socket)) {
             Ok(client) => return Ok(client),

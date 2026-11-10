@@ -38,6 +38,14 @@ pub const ENV: &str = "PURLIS_CRASH_HANDLER";
 /// How long after a panic was told a crash is that panic's own end, and leaves no minidump.
 pub const PANIC_COVERS: Duration = Duration::from_secs(30);
 
+/// How long the app waits for the companion to bind its socket. An app that has not connected
+/// by then never will: it gave up, or it died first.
+const CONNECT_FOR: Duration = Duration::from_secs(3);
+
+/// How long the companion waits for the app to connect before it ends: [`CONNECT_FOR`], and a
+/// margin for an app slow to start trying (#6152). An app that connected is watched past it.
+pub const SERVED_WITHIN: Duration = Duration::from_secs(CONNECT_FOR.as_secs() + 5);
+
 /// The message that says the process panicked and its panic is reported.
 const PANICKED: u32 = 1;
 

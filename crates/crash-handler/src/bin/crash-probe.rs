@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! Test-only: `crash-probe <abort|overflow|panic|exit>` watches itself with the crash handler, as
+//! Test-only: `crash-probe <abort|late-abort|overflow|panic|exit>` watches itself with the crash handler, as
 //! the app does, keeping minidumps in the folder [`CRASHES`] names, and then ends the way it is
 //! told. `child` starts this program
 //! again, unwatched, to overflow its stack, and says how that child ended: exit 0 when it died of
@@ -27,6 +27,13 @@ fn main() {
     };
     match how.as_str() {
         "abort" => std::process::abort(),
+        "late-abort" => {
+            // Past the deadline the companion gives an app that never connects (#6152).
+            std::thread::sleep(
+                purlis_crash_handler::SERVED_WITHIN + std::time::Duration::from_secs(2),
+            );
+            std::process::abort()
+        }
         "overflow" => {
             // Every frame is kept, so the stack runs out: a fault on its guard page.
             deeper(std::hint::black_box(0));
