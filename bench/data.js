@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794320628626,
+  "lastUpdate": 1794322478904,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -46032,6 +46032,48 @@ window.BENCHMARK_DATA = {
             "value": 102.14606649999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.696, 102.109, 102.146, 102.159, 102.181 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "1df1f07988c938f5fdc55f77eea1ef494d3ee718",
+          "message": "A command's confirmation is answered from Asks; its modal no longer covers the ✋ (#6136) (#6141)\n\n* A command's confirmation is answered from Asks; its modal no longer covers the ✋ (#6136)\n\nThe confirmation of purlis profile sign-in --pool, purlis pool remove-profile and\npurlis signing check is answered on its row in Asks alone, which shows the code\nits terminal shows. The dialog (PoolSignInConfirm) and the pool_sign_in_asked\ncommand it read are gone. The 120 s wait, the one-at-a-time slot and the code are\nunchanged. With no project open in the window there is no row to answer it, so\nthe command is refused at once instead of waiting. Recorded in ADR 0121's\namendment of 2026-11-10.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M72R71VQBBSQ49KHV3R0MWR4\nPurlis-Persona: steward\n\n* Changelog fragment: a command's confirmation is answered from Asks (#6136)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M72R71VQBBSQ49KHV3R0MWR4\nPurlis-Persona: steward\n\n* every-ask-from-the-hand: the command confirmation is answered on its row, with no dialog in the way (#6136)\n\nThe spec presses Cancel on the confirmation's row in Asks as it does every other\nkind's, and checks no dialog is up while the confirmation waits. The press from\nthe page, which reached under the confirmation's modal, is gone.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M72R71VQBBSQ49KHV3R0MWR4\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T14:21:42Z",
+          "tree_id": "501c9fd759b80ea784fd934e460ed7dab0335f5f",
+          "url": "https://github.com/purlis/purlis/commit/1df1f07988c938f5fdc55f77eea1ef494d3ee718"
+        },
+        "date": 1794322472339,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.355749,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.329, 0.339, 0.356, 0.356, 0.361 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.228892000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.078, 16.171, 16.229, 16.700, 16.717 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.551636,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.171, 101.263, 101.552, 101.778, 102.442 ms"
           }
         ]
       }
