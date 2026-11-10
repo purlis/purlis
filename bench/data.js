@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794294045618,
+  "lastUpdate": 1794296295072,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -45696,6 +45696,48 @@ window.BENCHMARK_DATA = {
             "value": 101.1450735,
             "unit": "ms",
             "extra": "median of 5 runs: 100.141, 100.630, 101.145, 101.424, 102.081 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "1cbdf229ab61bb91db70b1c8827648f459898654",
+          "message": "The stray-noting test's stand-in announces its shell once it has left the group (#6097) (#6100)\n\n* The stray-noting test's stand-in announces its shell once it has left the group; a red run kills its stranger (#6097)\n\nThe stand-in wrote its shell's pid as it forked, before perl's setsid, so the\nhook's stray listing could run while the shell was still in the harness's group:\nno stray was noted and nothing ended the shell when the harness exited. The\nshell now writes its own pid after setsid, as Claude Code's hook comes after its\nshell has left. The test's /bin/sleep is killed on drop, so a red run leaves no\norphan for CI's guard.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71WMXZXRGKF6A18FXS7HYAE\nPurlis-Persona: steward\n\n* TEMP #6097: run the stray-noting test 50 times and with its race widened\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71WMXZXRGKF6A18FXS7HYAE\nPurlis-Persona: steward\n\n* Drop the temporary #6097 CI step\n\nIt ran on ed90d88aa: the test green 50 of 50 with --retries 0 and no orphan; with\nsetsid delayed 0.5 s, the fixed stand-in green 10 of 10 and main's red on the\nprecondition with a leak, as in the flake.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71WMXZXRGKF6A18FXS7HYAE\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T06:59:19Z",
+          "tree_id": "5bc0baa77fd4b8676c69db4dffa501c209b4e862",
+          "url": "https://github.com/purlis/purlis/commit/1cbdf229ab61bb91db70b1c8827648f459898654"
+        },
+        "date": 1794296289408,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6981475000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.691, 0.697, 0.698, 0.721, 0.731 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.575314499999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.289, 16.565, 16.575, 16.740, 16.791 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.6250995,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.908, 102.595, 102.625, 102.680, 102.709 ms"
           }
         ]
       }
