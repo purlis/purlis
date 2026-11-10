@@ -1514,16 +1514,19 @@ fn a_claude_code_chats_env_hand_over_is_refused_with_the_file_one_to_use_unless_
         os: Os::MacOs,
         ..machine()
     };
-    let (asker, want) = as_tool(
+    let (not_whole, want) = as_tool(
         Asker {
             confines: Some(confines_of(Harness::ClaudeCode, &root, &on_its_own)),
             ..asker(&root, Some("devops"))
         },
         wanted(&root, "team", sh(&format!("touch {}", marker.display()))),
     );
-    assert!(!asker.confines.as_ref().expect("held").whole, "the premise");
+    assert!(
+        !not_whole.confines.as_ref().expect("held").whole,
+        "the premise"
+    );
     assert_eq!(want.env, ["X=TOKEN"], "handed by env");
-    let frames = served_by_purlis(&asker, want);
+    let frames = served_by_purlis(&not_whole, want);
     assert_eq!(refusal(&frames), ENV_REFUSED, "{frames:?}");
     assert!(ENV_REFUSED.contains("--file NAME=key"));
     assert!(!marker.exists(), "nothing ran");
@@ -1538,15 +1541,15 @@ fn a_claude_code_chats_env_hand_over_is_refused_with_the_file_one_to_use_unless_
         os: Os::Linux,
         ..machine()
     };
-    let (asker, want) = as_tool(
+    let (whole, want) = as_tool(
         Asker {
             confines: Some(confines_of(Harness::ClaudeCode, &root, &linux)),
             ..asker(&root, Some("devops"))
         },
         wanted(&root, "team", sh("true")),
     );
-    assert!(asker.confines.as_ref().expect("held").whole, "the premise");
-    let frames = served_by_purlis(&asker, want);
+    assert!(whole.confines.as_ref().expect("held").whole, "the premise");
+    let frames = served_by_purlis(&whole, want);
     assert!(
         !frames
             .iter()
