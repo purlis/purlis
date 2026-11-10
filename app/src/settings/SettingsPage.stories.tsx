@@ -1,0 +1,280 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+/**
+ * **A settings page, the aligned form** (#2919, prototype A of `prototype/settings-page`, the
+ * audit's R37–R62): the side column titled Settings with the level switcher, the filter and the
+ * pages; the page's header naming its file with Edit as TOML; rows whose label and help are one
+ * column, whose controls all start at one x, and whose ⋯ menu stands in the same place on every
+ * row; the set-here mark, a badge for a value kept elsewhere, a deprecated key and an inline
+ * secondary action. Each story is drawn, held to axe, walked by the keyboard and pictured in
+ * every pictured theme cell (`docs/component-stories.md`).
+ */
+import { useState } from "react";
+import type { Meta, StoryObj } from "@storybook/react-vite";
+import { expect, fn, userEvent, waitFor, within } from "storybook/test";
+import { expectFocusInSight, untilFocused } from "../stories.testkit";
+import { Button } from "../ui/button/Button";
+import { MenuItem } from "../ui/menu/Menu";
+import { Choice, Field, SettingGroup, SettingRow, SettingsLayout } from "./components";
+
+const PAGES = [
+  { id: "general", label: "General" },
+  { id: "saving", label: "Saving" },
+  { id: "harness", label: "Harness & profiles" },
+  { id: "sandbox", label: "Sandbox" },
+  { id: "hosts", label: "Your hosts", sub: true },
+  { id: "dispatch", label: "Dispatch" },
+];
+
+const KEPT = "Kept in charter.toml, which your team sees.";
+
+/** The General page of the Project level, as the prototype draws it. */
+function Page({ onEdit, onReset }: { onEdit: () => void; onReset: () => void }) {
+  const [level, setLevel] = useState("project");
+  const [page, setPage] = useState("general");
+  const [filter, setFilter] = useState("");
+  const [workspace, setWorkspace] = useState("smart-ide");
+  const [persona, setPersona] = useState("steward");
+  const [channel, setChannel] = useState("dev");
+  const [lock, setLock] = useState("");
+  const [autoSave, setAutoSave] = useState(true);
+  const [share, setShare] = useState("local");
+  return (
+    // The view's body, as a Settings tab is drawn in it: the side column takes its height.
+    <div className="view-body" style={{ blockSize: 680 }}>
+      <SettingsLayout
+        levels={[
+          { id: "you", label: "You" },
+          { id: "project", label: "Project" },
+          { id: "workspace", label: "Workspace" },
+        ]}
+        level={level}
+        onLevelChange={setLevel}
+        groups={PAGES}
+        group={page}
+        onGroupChange={setPage}
+        filter={filter}
+        onFilterChange={setFilter}
+      >
+        <SettingGroup
+          label="General"
+          help="What a chat starts on when nothing else names it, the update channel and the version lock."
+          kept={KEPT}
+          file="charter.toml"
+          onEdit={onEdit}
+        >
+          <SettingRow
+            label="Default workspace"
+            help="A chat that names no workspace opens here."
+            modified
+            reset={{ label: "Reset", disabled: false, onReset }}
+            copyKey="default.workspace"
+            control={(ids) => (
+              <Choice
+                kind="select"
+                ids={ids}
+                options={["smart-ide", "charter", "issues"].map((one) => ({
+                  value: one,
+                  label: one,
+                }))}
+                value={workspace}
+                onValueChange={setWorkspace}
+              />
+            )}
+          />
+          <SettingRow
+            label="Default persona"
+            help="Who a new chat is, unless it names someone."
+            modified
+            reset={{ label: "Reset", disabled: false, onReset }}
+            copyKey="default.persona"
+            control={(ids) => (
+              <>
+                <Choice
+                  kind="select"
+                  ids={ids}
+                  options={["steward", "devops", "nestjs-developer"].map((one) => ({
+                    value: one,
+                    label: one,
+                  }))}
+                  value={persona}
+                  onValueChange={setPersona}
+                />
+                <Button variant="ghost" size="sm">
+                  {`Show ${persona}`}
+                </Button>
+              </>
+            )}
+          />
+          <SettingRow
+            label="Update channel"
+            help="Dev gets every build that passes; stable gets releases."
+            modified
+            badge={{
+              label: "This machine",
+              says: "From charter.local.toml, at the Project level: this machine only.",
+            }}
+            origin="From charter.local.toml, at the Project level: this machine only."
+            reset={{ label: "Reset", disabled: false, onReset }}
+            moves={
+              <MenuItem id="move-shared" onAction={() => {}}>
+                Move to charter.toml
+              </MenuItem>
+            }
+            copyKey="update.channel"
+            control={(ids) => (
+              <Choice
+                kind="select"
+                ids={ids}
+                options={["stable", "dev"].map((one) => ({ value: one, label: one }))}
+                value={channel}
+                onValueChange={setChannel}
+              />
+            )}
+          />
+          <SettingRow
+            label="Version lock"
+            help="Hold everyone on this project to one purlis version."
+            reset={{ label: "Reset", disabled: true, onReset }}
+            copyKey="version.lock"
+            control={(ids) => (
+              <Field
+                kind="text"
+                ids={ids}
+                value={lock}
+                placeholder="Not locked"
+                onChange={setLock}
+              />
+            )}
+          />
+          <SettingRow
+            label="Auto-save"
+            help="Save on its own after a quiet spell."
+            modified
+            reset={{ label: "Reset", disabled: false, onReset }}
+            copyKey="plane.auto-save"
+            control={(ids) => (
+              <Choice kind="switch" ids={ids} checked={autoSave} onCheckedChange={setAutoSave} />
+            )}
+          />
+          <SettingRow
+            label="[memory] share"
+            help="Replaced by memory scopes; kept until every machine has moved."
+            deprecated
+            modified
+            reset={{ label: "Reset", disabled: false, onReset }}
+            copyKey="memory.share"
+            control={(ids) => (
+              <Choice
+                kind="select"
+                ids={ids}
+                options={["local", "commit", "push"].map((one) => ({ value: one, label: one }))}
+                value={share}
+                onValueChange={setShare}
+              />
+            )}
+          />
+        </SettingGroup>
+      </SettingsLayout>
+    </div>
+  );
+}
+
+const meta = {
+  component: Page,
+  args: { onEdit: fn(), onReset: fn() },
+} satisfies Meta<typeof Page>;
+
+export default meta;
+type Story = StoryObj<typeof meta>;
+
+/**
+ * **The page**: the header names its file, then the rows. The keyboard goes from the pages to
+ * Edit as TOML, then through each row's controls and its ⋯, never stopping on a help line or a
+ * set-here mark.
+ */
+export const AlignedForm: Story = {
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByRole("heading", { level: 2, name: "General" })).toBeVisible();
+    await expect(canvas.getByText("charter.toml", { selector: "code" })).toBeVisible();
+    await expect(canvas.getByText("deprecated", { selector: "[data-scope=badge]" })).toBeVisible();
+
+    canvas.getByRole("button", { name: "General" }).focus();
+    await userEvent.tab();
+    const edit = canvas.getByRole("button", { name: "Edit as TOML" });
+    await expect(edit).toHaveFocus();
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await expect(args.onEdit).toHaveBeenCalledTimes(1);
+
+    await userEvent.tab();
+    await expect(canvas.getByRole("button", { name: /Default workspace$/ })).toHaveFocus();
+    await userEvent.tab();
+    await expect(canvas.getByRole("button", { name: "More for Default workspace" })).toHaveFocus();
+    expectFocusInSight();
+
+    // Every control starts at one x, whatever its label says (R54).
+    const starts = [...canvasElement.querySelectorAll<HTMLElement>(".ui-setting-control")].map(
+      (one) => Math.round(one.getBoundingClientRect().left),
+    );
+    await expect(new Set(starts).size).toBe(1);
+    // And every ⋯ stands in one place (R56).
+    const ends = [...canvasElement.querySelectorAll<HTMLElement>(".ui-setting-act button")].map(
+      (one) => Math.round(one.getBoundingClientRect().right),
+    );
+    await expect(new Set(ends).size).toBe(1);
+  },
+};
+
+/**
+ * **A row's ⋯ menu**, opened from the keyboard: Reset, a move, Copy key, with a rule between
+ * each; Escape closes it on its button, and Reset puts the keyboard back on the control.
+ */
+export const RowMenu: Story = {
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
+    const more = canvas.getByRole("button", { name: "More for Update channel" });
+    more.focus();
+    await userEvent.keyboard("{Enter}");
+    const menu = await waitFor(() =>
+      within(document.body).getByRole("menu", { name: "More for Update channel" }),
+    );
+    await expect(
+      within(menu)
+        .getAllByRole("menuitem")
+        .map((one) => one.textContent),
+    ).toEqual(["Reset", "Move to charter.toml", "Copy key update.channel"]);
+    expectFocusInSight();
+    await userEvent.keyboard("{Escape}");
+    await untilFocused(() => more, "back on the row's ⋯ after Escape");
+
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => within(document.body).getByRole("menu"));
+    await userEvent.keyboard("{Enter}");
+    await expect(args.onReset).toHaveBeenCalledTimes(1);
+    await untilFocused(
+      () => canvas.getByRole("button", { name: /Update channel$/ }),
+      "on the control its Reset reset",
+    );
+    expectFocusInSight();
+  },
+};
+
+/** **Reset out of reach**: the value is not set at this level (R58), drawn in the faint tier. */
+export const ResetOutOfReach: Story = {
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
+    canvas.getByRole("button", { name: "More for Version lock" }).focus();
+    await userEvent.keyboard("{Enter}");
+    const menu = await waitFor(() => within(document.body).getByRole("menu"));
+    await expect(within(menu).getByRole("menuitem", { name: "Reset" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await userEvent.keyboard("{Enter}");
+    await expect(args.onReset).not.toHaveBeenCalled();
+    expectFocusInSight();
+  },
+};
