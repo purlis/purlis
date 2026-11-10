@@ -79,7 +79,27 @@ const CONFIRMATION: Shown = {
   answer: { via: "confirmation", id: 7 },
 };
 
-const ASKS = { RUN_GRANT, RUN_NEEDS_A_VALUE, HOST, CONSENT, CONFIRMATION } as const;
+/** A permission that pushes to main, a protected branch (#6011): high risk, asked once more. */
+const PUSH: Shown = {
+  session: 1,
+  ask: "ask-1",
+  says: "Run git push origin main",
+  options: [
+    { id: "allow", label: "Allow once", allows: true },
+    { id: "always", label: "Allow always", allows: true },
+    { id: "deny", label: "Deny", allows: false },
+  ],
+  source: "permission",
+  chain: ["steward 1"],
+  answer: { via: "hook" },
+  risk: {
+    class: "protected-push",
+    why: "Pushes to main, a protected branch",
+    confirm: "Allow a push to main?",
+  },
+};
+
+const ASKS = { RUN_GRANT, RUN_NEEDS_A_VALUE, HOST, CONSENT, CONFIRMATION, PUSH } as const;
 
 /** The Inbox as wide as the window's side of it, holding one ask. */
 function OneAsk({ ask }: { ask: keyof typeof ASKS }) {
@@ -225,5 +245,35 @@ export const ACommandsConfirmationOnItsRow: Story = {
       await untilFocused(() => canvas.getByRole("button", { name }), `→ reaches ${name}`);
       expectFocusInSight();
     }
+  },
+};
+
+/** **A high-risk ask's row** (ADR 0121 decision 8, #6011): its risk said first, and its Allow
+ *  asks once more under the line, keeping the keyboard where it was; → reaches the Allow there
+ *  and Cancel, and Cancel takes the question back. */
+export const AHighRiskAskOnItsRow: Story = {
+  args: { ask: "PUSH" },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const row = rowIn(canvasElement);
+    await expect(canvasElement.querySelector(".inbox-risk")).toHaveTextContent(
+      "Pushes to main, a protected branch",
+    );
+    await userEvent.tab();
+    await untilFocused(row, "Tab lands on the row");
+    await userEvent.keyboard("{ArrowRight}");
+    const allow = canvas.getByRole("button", { name: "Allow once" });
+    await untilFocused(() => allow, "→ reaches Allow once");
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(allow).toHaveAttribute("aria-expanded", "true"));
+    const again = canvas.getByRole("group", { name: "Allow a push to main?" });
+    await expect(again).toBeVisible();
+    await untilFocused(() => allow, "the keyboard stays on Allow once");
+    expectFocusInSight();
+    await userEvent.click(within(again).getByRole("button", { name: "Cancel" }));
+    await waitFor(() =>
+      expect(canvas.queryByRole("group", { name: "Allow a push to main?" })).toBeNull(),
+    );
   },
 };

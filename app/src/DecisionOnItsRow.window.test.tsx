@@ -335,3 +335,81 @@ describe("a decision on its row in Asks (#5998)", () => {
     expect(within(row).queryByRole("button", { name: "Don't allow" })).toBeNull();
   });
 });
+
+/** A permission that pushes to main, which the core reads as a push to a protected branch. */
+const PUSH: Shown = {
+  ...PERMISSION,
+  says: "Run git push origin main",
+  risk: {
+    class: "protected-push",
+    why: "Pushes to main, a protected branch",
+    confirm: "Allow a push to main?",
+  },
+};
+
+describe("a high-risk ask on its row (ADR 0121 decision 8, #6011)", () => {
+  it("says its risk, which is spoken with the row, and is marked for keyboard triage to pass by", async () => {
+    const { view } = await opened([PUSH, { ...HOST }]);
+    const row = rowOf(view, "steward 1");
+
+    expect(row.querySelector(".inbox-risk")).toHaveTextContent(
+      "High risk Pushes to main, a protected branch",
+    );
+    expect(row).toHaveAccessibleDescription(/Pushes to main, a protected branch/);
+    expect(row).toHaveAttribute("data-risk");
+    expect(rowOf(view, "steward 4")).not.toHaveAttribute("data-risk");
+  });
+
+  it("asks once more before its Allow acts, and Cancel takes the question back", async () => {
+    const { view, asked } = await opened([PUSH]);
+    const row = rowOf(view, "steward 1");
+    await read();
+
+    const allow = within(row).getByRole("button", { name: "Allow once" });
+    await press.click(allow);
+
+    expect(asked("answer_ask")).toEqual([]);
+    expect(allow).toHaveAttribute("aria-expanded", "true");
+    const again = within(row).getByRole("group", { name: "Allow a push to main?" });
+    await press.click(within(again).getByRole("button", { name: "Cancel" }));
+    expect(within(row).queryByRole("group", { name: "Allow a push to main?" })).toBeNull();
+    expect(asked("answer_ask")).toEqual([]);
+
+    await read();
+    await press.click(allow);
+    await read();
+    await press.click(
+      within(within(row).getByRole("group", { name: "Allow a push to main?" })).getByRole(
+        "button",
+        { name: "Allow once" },
+      ),
+    );
+    await waitFor(() =>
+      expect(asked("answer_ask")).toEqual([expect.objectContaining({ option: "allow" })]),
+    );
+  });
+
+  it("holds the Allow it asks again with to the settle guard", async () => {
+    const { view, asked } = await opened([PUSH]);
+    const row = rowOf(view, "steward 1");
+    await read();
+
+    await press.click(within(row).getByRole("button", { name: "Allow once" }));
+    const again = within(row).getByRole("group", { name: "Allow a push to main?" });
+    await press.click(within(again).getByRole("button", { name: "Allow once" }));
+
+    expect(within(row).getByRole("status")).toHaveTextContent(MOVED_JUST_NOW);
+    expect(asked("answer_ask")).toEqual([]);
+  });
+
+  it("refuses with no question asked: Deny acts on its press", async () => {
+    const { view, asked } = await opened([PUSH]);
+    const row = rowOf(view, "steward 1");
+    await read();
+
+    await press.click(within(row).getByRole("button", { name: "Deny" }));
+    await waitFor(() =>
+      expect(asked("answer_ask")).toEqual([expect.objectContaining({ option: "deny" })]),
+    );
+  });
+});

@@ -14647,10 +14647,25 @@ export type ReviewedSkill = {
 	digest: string,
 };
 
+/**  Which risk an ask carries ([`RiskShown`]). */
+export type RiskClass = "protected-push" | "production-host" | "outside-project";
+
 /**  A risk, and the core's words for it. */
 export type RiskMark = {
 	kind: ReviewRisk,
 	said: string,
+};
+
+/**
+ *  **An ask's risk, as its row says it** (#6011): a mirror of `purlis_core::askrisk::Risk`,
+ *  which the core has no window types for.
+ */
+export type RiskShown = {
+	class: RiskClass,
+	/**  What the row says of it: "Pushes to main, a protected branch". */
+	why: string,
+	/**  What its Allow asks before it acts: "Allow a push to main?". */
+	confirm: string,
 };
 
 /**

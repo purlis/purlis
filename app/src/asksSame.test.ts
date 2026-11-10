@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import type { Offered, Shown } from "./bindings";
 import { inOrder } from "./asksOrder";
-import { sameSaid, withSame, type AskRow } from "./asksSame";
+import { highRisk, sameSaid, withSame, type AskRow } from "./asksSame";
 
 /**
  * **Identical requests are one row** (ADR 0121 decision 6, #6009): the same kind and the same
@@ -198,8 +198,18 @@ describe("identical requests from several chats", () => {
   });
 
   it("never groups a high-risk ask", () => {
-    const asks = [host(1, "a.example"), host(2, "a.example")];
-    const rows = withSame(inOrder(asks, age, NOW), undefined, () => true);
+    const risk = {
+      class: "production-host",
+      why: "Reaches api.prod.example, a host that looks like production",
+      confirm: "Allow reaching api.prod.example?",
+    } as const;
+    const asks = [
+      { ...host(1, "api.prod.example"), risk },
+      { ...host(2, "api.prod.example"), risk },
+    ];
+    expect(highRisk(asks[0])).toBe(true);
+    expect(highRisk(host(1, "a.example"))).toBe(false);
+    const rows = withSame(inOrder(asks, age, NOW));
     expect(rows.map((row) => row.kind)).toEqual(["chat", "chat"]);
   });
 });
