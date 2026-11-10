@@ -2513,6 +2513,60 @@ fn the_run_a_clear_begins_is_told_with_the_conversation_it_moved_to() {
 }
 
 #[test]
+fn a_codex_chat_is_followed_onto_the_conversation_it_names_before_the_window_is_told_it_moved() {
+    // #6106: a window that sees a Codex chat move has a conversation to restart it on. The
+    // outcome bar waits for the move it sees before it restarts the chat; told the other way
+    // round, its Restart could still find nothing to resume.
+    let dir = tempfile::tempdir().expect("a directory");
+    let at = Where {
+        within: dir.path().to_path_buf(),
+        socket: dir.path().join("app").join("hooks.sock"),
+    };
+    let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
+    let followed: Arc<Mutex<Option<String>>> = Arc::default();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let tx = Mutex::new(tx);
+    let known = Arc::clone(&followed);
+    let hooks = Hooks::listening_on(
+        plane,
+        &at,
+        Arc::new(move |_| {
+            let _ = tx.lock().unwrap().send(known.lock().unwrap().clone());
+        }),
+        Arc::new(|_| {}),
+    )
+    .expect("listening");
+    let into = Arc::clone(&followed);
+    hooks.when_it_follows(Arc::new(move |_, id, _| {
+        *into.lock().unwrap() = Some(id.to_owned());
+    }));
+    hooks.board().opened(7, Some(Harness::Codex), None);
+
+    purlis_core::hookwire::send(
+        hooks.socket().expect("a socket"),
+        Some(&hooks.token_for(7)),
+        &Report {
+            chat: 7,
+            event: purlis_core::state::Event::UserPromptSubmit,
+            conversation: named("scenario"),
+            pid: None,
+            agent: None,
+            detail: Default::default(),
+        },
+    )
+    .expect("sent");
+
+    let as_the_window_is_told = rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("the window is told the chat moved");
+    assert_eq!(
+        as_the_window_is_told.as_deref(),
+        Some("scenario"),
+        "the conversation is followed before the window hears the move"
+    );
+}
+
+#[test]
 fn a_clear_begins_a_run_the_record_is_told_even_with_no_event_log() {
     // #856 review F5: the run is the host's, so `reopen.json` moves with it either way.
     let dir = tempfile::tempdir().expect("a directory");
