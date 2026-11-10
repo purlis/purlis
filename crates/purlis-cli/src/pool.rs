@@ -461,3 +461,23 @@ fn limits_json(held: &runners::PoolLimitsHeld) -> serde_json::Value {
         .collect();
     serde_json::json!({ "limits": rows })
 }
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::waiting_on_the_window;
+
+    /// **#6000: a confirmation says where the person answers it**: Asks under the project the
+    /// command runs in, or Asks in the window where it runs in none, for the window's two minutes.
+    #[test]
+    fn a_confirmation_says_it_waits_in_asks_under_its_project_for_two_minutes() {
+        assert_eq!(
+            waiting_on_the_window(Some(std::path::Path::new("/home/one/smart-ide"))),
+            "waiting for the person: Asks (\u{270b}) in the purlis window, project smart-ide, for \
+             up to 2 minutes"
+        );
+        assert_eq!(
+            waiting_on_the_window(None),
+            "waiting for the person: Asks (\u{270b}) in the purlis window, for up to 2 minutes"
+        );
+    }
+}
