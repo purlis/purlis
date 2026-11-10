@@ -9,7 +9,9 @@
 //! - A program Seatbelt wraps ([`super::backend::SANDBOX_EXEC`]) runs in `seatbelt`.
 //! - One purlis's own Linux wrap runs (`purlis _sandbox`) runs in `landlock`.
 //! - Claude Code with its own sandbox on in the settings it is started with runs in that
-//!   sandbox: `seatbelt` on macOS, `bubblewrap` on Linux.
+//!   sandbox: `seatbelt` on macOS, and `bubblewrap` on Linux, for a run started before every
+//!   sandboxed Claude Code chat there ran in purlis's own wrap (ADR 0067 as amended
+//!   2026-11-10).
 //! - Any other a confinement holds runs in `proxy`: it is never read as off.
 //! - One with none of these is off.
 //!
@@ -32,10 +34,12 @@ pub fn applied_to(program: &OsStr, args: &[OsString], confined: bool, os: Os) ->
     if args.first().map(OsString::as_os_str) == Some(OsStr::new(purlis_linux_sandbox::COMMAND)) {
         return by("landlock");
     }
-    if claude_codes_own_is_on(args)
-        && let Some(word) = os.backend_word(Some(crate::harness::Harness::ClaudeCode))
-    {
-        return by(word);
+    if claude_codes_own_is_on(args) {
+        match os {
+            Os::MacOs => return by("seatbelt"),
+            Os::Linux => return by("bubblewrap"),
+            Os::Windows | Os::Other => {}
+        }
     }
     if confined {
         by("proxy")

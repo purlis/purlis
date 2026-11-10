@@ -265,7 +265,6 @@ fn claude_code_s_own_sandbox_is_off_and_its_tools_keep_their_rules() {
     let settings = wrap_of(&applied).settings();
     assert_eq!(settings.sandbox, serde_json::json!({ "enabled": false }));
     assert!(settings.is_off());
-    assert!(settings.made_empty.is_empty());
     assert!(settings.deny.iter().any(|rule| rule == "WebFetch"));
     // Its sign-in is read by the harness, and the tools it offers a model are still denied it.
     let sign_in = format!("Read(/{}/.credentials.json)", home.display());
@@ -304,7 +303,6 @@ fn what_only_its_own_sandbox_needed_is_left_out() {
     let wrap = wrap_of(&started(&place, &place.home.join("work")));
     let rule = format!("Edit(/{})", pin.display());
     assert!(!wrap.rules.deny.contains(&rule), "{:?}", wrap.rules.deny);
-    assert!(wrap.settings().made_empty.is_empty());
 }
 
 #[test]

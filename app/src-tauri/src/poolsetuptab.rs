@@ -975,7 +975,10 @@ fn try_on(
         // The person's press on Try it, in the window.
         made: purlis_core::sandbox::Made::Window,
     };
-    let ready = match purlis_core::start::ready(&start, &root) {
+    // Readied as the pool's runner judges it, since the runner composes it (#2446): on a Linux
+    // desktop a sandboxed Claude Code chat runs only on a sandbox-only profile, which no pool
+    // keeps, and on the runner it runs wrapped on the profile the Sign-ins step kept.
+    let ready = match purlis_core::start::ready_for_a_runner(&start, &root) {
         Ok(ready) => ready,
         Err(why) => return Ok(failed(crate::asking::start_refused(held, why), None)),
     };
