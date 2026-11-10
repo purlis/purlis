@@ -15,7 +15,7 @@ fn the_message_row_is_in_the_manifest_since_next() {
         .iter()
         .find(|one| one["name"] == "message")
         .expect("the message family is in the manifest");
-    assert_eq!(message["since"], parts::NEXT);
+    assert_eq!(message["since"], 14);
     let names = |key: &str| -> Vec<String> {
         message[key]
             .as_array()

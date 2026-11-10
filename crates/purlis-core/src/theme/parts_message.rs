@@ -21,81 +21,81 @@ pub(super) const MESSAGE: Family = Family {
     name: "message",
     description: "A message of the Inbox's views as a row of its view: its state's mark, its \
                   title and time, what it is, what it says, its links and what answers it.",
-    since: super::NEXT,
+    since: 14,
     parts: &[
         Part {
             name: "root",
-            since: super::NEXT,
+            since: 14,
             description: "The row: its fill under the pointer or the keyboard, its words, its \
                           corners and the room around what it holds.",
             properties: &[Prop::Fill, Prop::Text, Prop::CornerRadius, Prop::Padding],
         },
         Part {
             name: "mark",
-            since: super::NEXT,
+            since: 14,
             description: "Its state's round icon: its colour, and its tint, by default its \
                           colour at a seventh, by the row's variant.",
             properties: &[Prop::Fill, Prop::Text],
         },
         Part {
             name: "main",
-            since: super::NEXT,
+            since: 14,
             description: "Its column of lines, past the mark: the room between them.",
             properties: &[Prop::Gap],
         },
         Part {
             name: "top",
-            since: super::NEXT,
+            since: 14,
             description: "Its first line: its title, and its time at the right.",
             properties: &[Prop::Gap],
         },
         Part {
             name: "title",
-            since: super::NEXT,
+            since: 14,
             description: "The chat or the thing it is about.",
             properties: WORDS,
         },
         Part {
             name: "time",
-            since: super::NEXT,
+            since: 14,
             description: "When it happened, or how long it has waited, which the × takes the \
                           place of under the pointer.",
             properties: &[Prop::Text, Prop::FontSize],
         },
         Part {
             name: "meta",
-            since: super::NEXT,
+            since: 14,
             description: "What it is and where, quiet under its title.",
             properties: &[Prop::Text, Prop::FontSize],
         },
         Part {
             name: "state",
-            since: super::NEXT,
+            since: 14,
             description: "What it waits on, in words, at the head of its meta: in the waiting \
                           colour on a row that waits.",
             properties: &[Prop::Text],
         },
         Part {
             name: "body",
-            since: super::NEXT,
+            since: 14,
             description: "What it says.",
             properties: &[Prop::Text, Prop::FontSize],
         },
         Part {
             name: "links",
-            since: super::NEXT,
+            since: 14,
             description: "Its ways out as text links: the room between them.",
             properties: &[Prop::Gap],
         },
         Part {
             name: "form",
-            since: super::NEXT,
+            since: 14,
             description: "What answers it in the row: a reply box, an ask's answers.",
             properties: &[Prop::Gap],
         },
         Part {
             name: "dismiss",
-            since: super::NEXT,
+            since: 14,
             description: "Its ×, at the top right, over its time.",
             properties: &[],
         },
@@ -103,31 +103,31 @@ pub(super) const MESSAGE: Family = Family {
     variants: &[
         Variant {
             name: "waiting",
-            since: super::NEXT,
+            since: 14,
             description: "It waits on the person: an ask, a Notice that needs a decision.",
             consent: None,
         },
         Variant {
             name: "done",
-            since: super::NEXT,
+            since: 14,
             description: "Something finished.",
             consent: None,
         },
         Variant {
             name: "failed",
-            since: super::NEXT,
+            since: 14,
             description: "Something failed, or needs a fix.",
             consent: None,
         },
         Variant {
             name: "report",
-            since: super::NEXT,
+            since: 14,
             description: "Something came back: a report, a chat that returned.",
             consent: None,
         },
         Variant {
             name: "plain",
-            since: super::NEXT,
+            since: 14,
             description: "A note, or a teammate's change.",
             consent: None,
         },

@@ -15,7 +15,7 @@ fn the_pane_preview_is_in_the_manifest_since_next() {
         .iter()
         .find(|one| one["name"] == "pane-preview")
         .expect("the pane preview is in the manifest");
-    assert_eq!(family["since"], parts::NEXT);
+    assert_eq!(family["since"], 14);
     let names: Vec<&str> = family["parts"]
         .as_array()
         .unwrap()

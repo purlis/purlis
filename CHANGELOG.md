@@ -11,6 +11,1147 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-10
+
+0.5.1 is the first release after 0.5.0. You can steer a chat from its diff: see what one turn
+changed, step back through earlier turns, discard a hunk, undo a turn, and see check results on
+the diff. A chat can run a program with a vault's keys once you allow it, and the commits a chat
+makes can be signed, on GitHub and GitLab. When purlis itself fails, it drafts a report for you
+to file from your Inbox, and asks once whether it may send reports. New clones go to a
+workspace's `repos/` folder, Explorer shows and writes the workspace's own files, and you can
+drop files there from Finder. Large projects open, save and search much faster. The Skill studio
+acts on several skills at once, and secret fills and browser logins are held tighter.
+
+**After updating on Linux:** the app's program is now `purlis-app`, so a script or shortcut of
+your own that runs `charter-app` needs the new name (see *Changed*).
+
+These are the highlights. What was added, deprecated and fixed for security is here in full,
+and every other change by its headline. All 446 changes, in full, are in
+[Every change in 0.5.1](https://github.com/purlis/purlis/blob/v0.5.1/docs/changelog-0.5.1.md).
+
+### Added
+
+- **A built-in skill, `purlis-remember`, for "remember this", "add a todo" and "what did we
+  decide".** It holds the one rule for where a fact goes: a lasting decision or a coined term
+  into the workspace's `workspace.md`, what the workspace's work taught into its memory, how a
+  persona's role is done into that persona's memory, and what every persona needs into shared
+  memory, never a secret. It recalls across every memory at once, closes todos, and asks you
+  before a todo is opened as an issue on a forge. Smart close, tidy-memory, the persona and
+  safe-remove skills and a chat's briefing now point to it instead of each saying the rule their
+  own way.
+
+- **A Check reporter turns a tool's output into SARIF.** An extension that declares the
+  `check-reporter` capability, once you approve it, is handed a check's output and exit status by
+  `purlis check report <branch> <output> --reporter <extension> --status <n>`, and the SARIF it
+  answers is drawn on the branch's diff like any other check result. If what it answers is not
+  SARIF, the review says so in a Notice naming the extension, and the results before stay. Extension
+  protocol 6 carries the new request (#5410).
+
+- **purlis notes when a built-in skill should have started and did not.** When you start a
+  built-in skill yourself, with Use skill… or a slash command, right after a turn that did not
+  start it, purlis records a miss in the project's skill log: the skill, the harness and its
+  version, and the persona, never your prompt. A built-in skill's page in the Skill studio shows
+  its misses beside its runs, by what it ran on. Nothing is uploaded (#5738).
+
+- **The same crash is reported once per version, and a report made offline waits.** A panic
+  already sent from this machine in the same purlis version is counted, not sent again, and the
+  count goes with the next report that leaves. A report made while purlis's report service cannot
+  be reached waits on this machine (at most 50, for 14 days) and goes, oldest first, once it can;
+  Settings › You › Reports lists it as "Waiting to send" (#5693).
+
+- A file's diff can show what the latest turn changed, beside what the branch changed against its base. purlis records the branch's state before and after each turn of a chat, uncommitted work included, and removes that record when the chat is removed. A chat whose program does not report its turns says so instead.
+
+- A file's diff can step back through a chat's earlier turns: One turn opens on the latest, and a picker beside it lists every turn of that chat, newest first. A turn that changed no file says so.
+
+- **A browser login a chat suggests says when its vault has nothing under a key it names.** The
+  notice reads "Vault qa has nothing under password yet", so a misspelt key is seen before you
+  allow it, and an Always line doesn't write it unseen. Allowed anyway, purlis asks you for the
+  value when it fills the login. Vaults kept by 1Password aren't listed for this, since listing one can
+  ask you to unlock it.
+
+- **A panic is sent as a Crash report, and you can see exactly what left.** With Crash reports
+  allowed, a panic in the app goes to purlis's private report service (Sentry, in the EU) with
+  only where it panicked, its message, purlis's version and channel, and your operating system;
+  paths and the names of your projects, workspaces and repos are taken out first. Settings › You
+  › Reports lists every report sent from this machine for 90 days, and each opens the exact bytes
+  that were sent. The report service is listed in the network log (#5689).
+
+- **A persona can bring another workspace's skill.** Write `workspaces/<ws>:<name>` on its
+  `skills:` line: its chats in every workspace get that workspace's skill. The persona's own copy
+  still wins. The named copy beats one of the same name in the chat's own workspace. With the
+  Skill studio flag on, the studio as the persona lists it as `workspace <ws>`. `persona lint`
+  warns of a workspace or skill that is not there (SK-5a, #2933).
+
+- **A skill router is told what each skill costs.** Extension protocol 5's route question gives
+  each skill `chars`, what its whole line costs of the budget on the chat's harness, and
+  `index`, what the index skill costs when the router hides any. A router on Claude Code no
+  longer under-counts and falls back to the built-in router. A router of protocol 4 is asked as
+  before (#4680).
+
+- **A chat on a pool's runner lists the skills its runner armed it with.** Use skill… and the
+  chat's Skills show the skills the runner handed the chat, by name and level, when it starts
+  and after the window reattaches it. A runner that runs a purlis older than this one doesn't say
+  them, and the chat says so instead of listing none. Behind the Skill studio's flag (#4218).
+
+- **A chat on a pool's runner says the skills its persona names that the runner doesn't have.**
+  A local runner, a Docker pool or a k8s pool checks the persona's skills against what the chat's
+  harness has there, and the chat's tab shows the same Notice a chat on this machine does,
+  naming the runner. A runner that runs a purlis older than this one doesn't check. Behind the
+  Skill studio's flag (#2977).
+
+- **A chat on a pool's runner has its turns too.** The runner records each turn of its chats where
+  they work, and the desktop fetches them with the runner's code, so One turn shows what a runner
+  chat's turn changed, as it ended there. Undo a turn on such a chat asks the runner, which puts
+  the files back while the chat is idle, with the same refusals as here. Its turns go with the
+  chat on both machines. A runner on an older purlis records none, and One turn says so (#5427).
+
+- **purlis now notices when a skill names another skill bare, as in `Use the Skill tool with
+  "grilling"`.** `purlis skill uses` lists it as a hint, the skill lint suggests writing
+  `skills:grilling`, and installing the skill brings `grilling` along from the same source. A
+  name counts only when it is quoted or in backticks, its line says "skill", and a skill of that
+  name exists (#4510).
+
+- **A skill source carries a skill's grade, and the install review shows it as the publisher's.**
+  Publishing a skill also writes its grades to a file beside the skill's folder. Installing or
+  updating from that source shows the grade under **Grade**. It says whose grade it is and that
+  purlis hasn't checked it, before any figure, then whether it was measured on the version you
+  are installing. A grade file purlis can't read is left out, and the review says why (#4346).
+
+- **An error the window did not catch is sent as a Crash report, as a panic is.** With Crash
+  reports allowed, an uncaught error or unhandled rejection in purlis's window goes to purlis's
+  private report service with only its name, its message, the file and line it was thrown at,
+  purlis's version and channel, and your operating system; paths and the names of your projects,
+  workspaces and repos are taken out first. It is listed in Settings › You › Reports with the
+  exact bytes sent. Without Crash reports allowed, nothing is sent (#5690).
+
+- **A chat drafts the purlis bugs it meets.** The new built-in skill `purlis-report`, on Claude
+  Code, Codex and opencode, tells a chat when something is purlis's to fix (a purlis command
+  that fails, the window showing something false, you saying purlis is broken or slow, a chat
+  working around purlis, a purlis skill that did not start) and what is not (your project, the
+  harness itself), and has it draft through `purlis report` into your Inbox, where you read and
+  file it. While you allow Agent drafts (Settings › You › Reports), each chat is told about it
+  at its start.
+
+- **Always send: report drafts can go without you reading them, only to purlis's private report
+  service.** Press Always send on a Report draft in the Inbox. The first time, purlis asks, says
+  where drafts will go and where to see and stop them. After that, a chat's draft skips the
+  Inbox. It shows as "Sent a report" with Undo for a few seconds, then goes to purlis's report
+  service, never to GitHub. Undo keeps it in the Inbox unsent. At most five go a day; after that,
+  drafts wait in the Inbox for you again. Turn it off under Always send drafts in Settings › You ›
+  Reports, a row shown while Agent drafts is allowed (#5695).
+
+- **The right bar's icons say what they are for.** Hover or focus Asks, Updates or Notices and
+  its tooltip asks its question: "Do I need to answer something?", "Did my work finish?", "Is
+  something about my setup wrong or worth knowing?". The ✋ pulses once, the first time on this
+  machine an ask arrives while Asks is closed, and stays still under reduced motion. When nothing
+  waits, Asks says "Nothing waits on you · 2 chats working", and each part opens the Chats
+  sidebar. A screen reader hears a new ask once, politely, and each icon's count is part of its
+  name (ADR 0121).
+
+- **Bring back a deleted skill whose name purlis holds now, under a new name.** On Deleted, one
+  skill or a group brought back together offers each such skill a new name, filled in as an
+  install fills one when a name is taken (`<source>-<name>`), and brings it back once you
+  confirm it; in a group the rest come back as named, in the same change (#5457).
+
+- **Bring back, move, export and delete now several skills from the command line** (#5492).
+  `purlis skill restore` and `mv` take several names, `mv` and `export` take `--source <url>`,
+  and `purlis skill delete-now` takes skills off the Deleted list now. Each makes its change as
+  one step after printing its review and asking you at your terminal. Delete now asks even for
+  one skill, since it can't be undone. A chat or a script with no terminal can't make these
+  changes: the command writes nothing and puts the change in front of you as a proposed change.
+  For a proposed export, you pick where it goes when you apply it.
+
+- **Change several skills at once from the command line** (#5357). `purlis skill rm`, `off`,
+  `on`, `pin` and `archive` take several names, or `--source <url>` for every skill installed from
+  a source, and make the change as one commit after printing its review and asking you at your
+  terminal. A chat can't make such a change, and neither can a script with no terminal: the
+  command writes nothing and puts the change in front of you as a proposed change, which you
+  apply or dismiss in the window.
+
+- **A branch's check results on its diff.** `purlis check report <branch> <file.sarif>` hands purlis
+  a tool's results in SARIF 2.1.0, from a script, an agent's hook or CI. "What changed" in a file then
+  marks them in the gutter on the changed lines and lists each with its tool, severity and message,
+  those outside the changed lines and in other files too. Each opens at its line, in your editor as
+  well, and they are marked out of date once the branch's head moves (#5407).
+
+- **purlis asks again once, after a crash, if you chose Not now.** The next crash purlis catches
+  raises one Notice in the Inbox: *Turn on crash reports* turns them on, *Open Reports settings*
+  opens Settings › You › Reports at Crash reports, and Dismiss means purlis does not ask again.
+  It never appears a second time (#5700).
+
+- A source's page has **Delete all…** and **Turn all off…** or **Turn all on…**: tick the skills, read one review, and it is one commit you can undo. **Deleted** groups them, with **Bring all back**, and each skill can still come back on its own.
+
+- **Remove source…** can also delete the skills installed from it, through the same review.
+
+- The Library has a **Source** filter, and a tag on each installed skill's row sets it.
+
+- **Discard one hunk of an agent's change.** Each change in a file's *Show what changed* has a
+  *Discard*, which puts it back as the branch's base has it and takes it out of the diff at once;
+  a binary file's change goes whole. It warns when a chat is working in the folder, offers Reload
+  or Overwrite when the file changed on disk, and is recorded in the chat's history as a Human edit
+  of its file and lines, never its contents (#5406).
+
+- **Dismiss all, with Undo, on Mine, Project and Notices.** Each list's Dismiss all does each
+  line's own Dismiss to every line it lists: an update goes for its day, a Notice until its cause
+  changes and comes back when it does, and a teammate's change to the project is recorded as
+  seen until they change it again. The lines go at once and an Undo stands for a few seconds,
+  after a single Dismiss too; only when it goes is anything kept. What you dismiss is kept on
+  this machine through a relaunch and never written into the plane (ADR 0119, #5650).
+
+- **`purlis doctor` lists the repos still at a workspace's root, and moves them into `repos/`
+  when you ask.** Repos cloned before new clones went to `repos/` live beside `workspace.md` and keep working there with
+  nothing done. The doctor's *repos outside repos/* row names them, and its fix, *Move into
+  repos/* (`purlis doctor --fix move-into-repos`, or the row's Fix button), moves them one
+  workspace at a time. It is all or nothing for each workspace: a workspace with a chat open in
+  it is left as it is, and so is one with a submodule checked out in a branch folder,
+  which a move would break. A failure partway puts everything back. Every branch folder cut from
+  a moved repo is repaired, so it keeps working. Before it moves anything, the window names the
+  chats started in a repo itself, which their harness can no longer resume; their session
+  records still open. The doctor also warns about a folder beside the repo of its name in
+  `repos/` (the one in `repos/` is the repo), and about an old repo named `repos`, which holds
+  new repos back until you rename it.
+
+- **Drop files from Finder onto a workspace's files to import them.** With the workspace picked,
+  files dragged from your file manager onto a folder of your own in Explorer are copied into it,
+  and onto no row into the workspace's top, as Import files… copies them: a name already taken
+  gets a ` (2)` suffix. A drop on what purlis keeps, a repo or `repos/` says why it imports
+  nothing (#5378).
+
+- **An extension's lint speaks in the install review.** With the Skill studio on, each extension
+  that lints skills is asked about every skill a source's install or update review shows, in the
+  window and at `purlis skill install` and `update`, and what it finds is a lint line under its
+  name, beside purlis's own (#3090).
+
+- **Install from an extension's skill source on the command line, and update its skills together**
+  (#5760, behind the `skill-studio` flag). `purlis skill install --extension <id>` lists, reviews
+  and installs from the source an extension adds. It asks at your own terminal each time and has
+  no `--yes`. A chat is refused, as for a git source. Review updates now takes an extension's
+  skills beside git ones, each copied from what its own review read, in one commit with one Undo.
+  An update that adds a script or other new capability still starts unticked. An extension's
+  source page marks what each skill's files do, as a git source's does.
+
+- **Sources lists each extension that offers skills beside your git sources** (#3092, behind the
+  `skill-studio` flag). You browse it, review an install and install from it on the same pages,
+  at the revision the extension names. An update to one of its skills is reviewed and accepted
+  from that skill's row.
+
+- **A fresh clone opens quiet.** The first time a project opens on a machine that has never seen
+  it, what is already there counts as seen: a teammate's past change to the project's hosts or
+  Internet access presets is not told as new, an update from before that open is listed under
+  Updates' Project, read, and the doctor's findings already there are put away until they
+  change, so the Notices view's dot stays quiet. A finding that appears later is new. The open
+  asks the person may answer stay in Asks, and so do a teammate's dispatch grants and browser
+  sites, which only the person's answer puts in force. A project this machine has opened
+  before is never baselined, so updating purlis keeps every unread line. The record is kept on
+  this machine and never written into the plane (ADR 0119, #5648).
+
+- **Grade several skills at once.** In the Library's Select mode, Grade shows what the grades
+  should spend from each skill's last grade, says which have nothing to go on and which have no
+  tests, and runs three at a time under a spending limit you set. Reaching it stops them cleanly,
+  keeping every grade that ended (#5356).
+
+- **An agent hears what you changed at its next turn.** When you discard a hunk of a chat's
+  change, that chat's next turn starts with one line of context naming the files you changed
+  since its last turn, paths only and never their contents, so it reads them again before it
+  builds on code that is gone. Changes from several sittings come in that one line, it is never
+  sent as a prompt for you, and it is not repeated at the turn after (#5409).
+
+- **The review says when a chat isn't told of your change.** When you discard a hunk or undo a
+  turn, a chat working in that folder on a harness purlis has no prompt hook into, such as one
+  your project declares, is named under the diff: its agent is not told at its next turn, so you
+  can tell it in its chat. Claude Code, Codex and opencode chats are still told (#5477).
+
+- **Ignoring a chat's ask in Asks has an Undo.** The ask goes at once and an Undo stands for a
+  few seconds, as it does after Dismiss; the chat is ignored until it asks again only when the
+  Undo goes (ADR 0119, #5638).
+
+- **A skill from an extension's skill source installs and updates like one from git** (#3089,
+  behind the `skill-studio` flag). The install copies the files you reviewed, never asking the
+  extension again, and pins the copy to the extension's revision in `skills.lock`. A file that
+  holds such a pin is version 2, which an older purlis refuses whole. `purlis skill update`
+  lists and updates these skills too. An answer naming two paths that differ only by case is
+  refused before the review.
+
+- **Select several skills in the Library and act on them at once.** The Skill studio's Library has
+  **Select**: tick rows (Shift-click or Shift+↑ ↓ for a range, ⌘A for every skill the search and
+  filters match), and the page beside the list holds the count, every action with how many it
+  reaches, and the names, including those the list does not show. Turn off or on, pin or unpin,
+  archive or unarchive, move to another level, export or delete them, each through one review
+  and one commit with one Undo. Built-in skills can be selected and every action leaves them as
+  they are, and says so. The Deleted page has Select too, with **Bring back** and **Delete now**,
+  which asks first as it cannot be undone (#5332).
+
+- **A LIVE workspace's files say where they are kept.** With the workspace picked, each file and
+  folder in Explorer is marked *This machine only*, or *Saved with the project* when the
+  workspace's LIVE allowlist holds it. **Save with the project**, in the menu of one of your own
+  files or folders at the top of the workspace's folder, adds exactly that entry to the
+  allowlist, so your next save shares it. Nothing is added any other way, since a script may hold
+  a token, and a workspace that isn't LIVE shows no marks.
+
+- **Make room when a chat is over its skill budget.** The Skill studio's **Routing** page, and the
+  **Install all…** review when an install would go over, offer **Make room…**: the Library's
+  Select, with the skills least used in the last 30 days first, each saying its runs, and nothing
+  ticked. Turn off or archive what goes, or pin what stays (#5355).
+
+- **A chat can list and reopen done todos.** Its `todo_list` tool takes `done: true` to list the
+  workspace's done todos, as `purlis ws todo --done` does, and the new `todo_reopen` tool opens
+  one again by its slug, as `purlis ws todo reopen` does, writing nothing to memory (#3416).
+
+- **New marks what you have not seen.** An ask, a Notice or an update you have not seen yet has
+  an accent bar at its start, and the Asks, Updates or Notices icon a small "new" pip. It is seen
+  once its row has been in sight for about a second, or once its chat is on screen in a focused
+  window, so an ask from the chat you are looking at is never New, though it is still counted.
+  What you have seen is kept on this machine and survives a relaunch (ADR 0121).
+
+- **An older runner kept for work purlis can't bring back can be let go in Devices.** Its row
+  offers Let it go…, which names in plain words what is lost and asks first; only that runner is
+  removed, and its pool and the pool's runner now stay as they are.
+
+- **One notice for every lane refused for unsigned commits.** However many lanes a forge
+  refused, the Inbox lists them in one notice ("3 lanes can't merge: <repo> only accepts signed
+  commits"), and the needs-you hand in the title bar counts it once. **Set up signing** opens the
+  same dialog, which ends in **Sign and retry all 3**; with signing on, the notice offers that at
+  once. A lane refused again stays listed with its reason; once all went, the notice says "3
+  lanes signed and sent ✓" (#5633).
+
+- **A pool's row names the project its older runner waits on.** After an update, the old runner stays until each project its chats ran for brings their work back, which only an open project does. The row now names each such project, says when a closed one was last opened, and says that opening it, or removing the pool, lets the runner go.
+
+- `purlis recall` answers from a project search index the session host keeps, so it stays fast on a large project. It finds the same memories as before, now ranked by relevance, and says `refreshing` when the index may be behind the files. Deleting the index is safe: recall reads the files until the host has built it again. A secret-shaped span in a memory never reaches the index.
+
+- **A project that fell short at launch says so on its row, with one Retry.** A project that
+  failed to open shows its error on its row in the projects sidebar; one still loading after 15 s
+  and one with "N of M chats back" offer Retry too. Retry reopens that project alone and brings
+  its missing chats back, and it is the same action as a waiting task's row in the sidebar, which
+  now starts every chat its project is short of (#5324).
+
+- **A project can keep its report drafts from going unread.** Settings › Project › General gains
+  "Members may let agents send reports without asking", on by default and kept in the project's
+  settings, which your team sees. Turned off, no draft written in that project goes to purlis's
+  report service unread, whatever a member's own Always send says: it waits in the Inbox, and
+  members can still read and file it. Settings › You › Reports shows Always send read-only there,
+  badged Project, with "Your project turns this off" (#5696).
+
+- Publishing a skill to a source you cannot push to now goes through your own fork on GitHub or GitLab. The review names the fork, says who can read it and whether it will be made. The fork is made only when you press the button, and it stays afterwards. A fork you already have is used again.
+
+- **A built-in skill for one change across several repos.** When you ask a purlis chat to keep
+  work that spans several repos together, such as an API bump and the repos that use it, the new
+  `purlis-change` skill guides it through `purlis change`: create the change, add each repo and
+  what must land before it, push every branch with linked pull requests, land them one at a time
+  in order, and roll the whole change back. It says that landing merges code and is yours to ask
+  for, and that a pull request merged in the browser holds back the repos waiting on it.
+
+- **purlis drafts a report of its own failures in a chat.** With Agent drafts allowed, a
+  `purlis` command that fails inside purlis (it now exits 70 for an internal failure, never for
+  a refusal or a usage error), a purlis tool that failed inside purlis, and a sandbox block of
+  purlis's own operation each become a Report draft in the Inbox, with the call, its exit and
+  its scrubbed error. The chat is told once, on its next turn, and asked to add what it was
+  doing with `purlis report bug --adds <draft>` (#5697).
+
+- **A built-in skill for permissions: `purlis-permissions`.** Say "stop asking me about this
+  command", "why was this blocked" or "allow this host", and your chat now explains what stopped
+  the command: a harness prompt, purlis's sandbox or a purlis guard. It then points you to where
+  purlis reads the change: a `purlis guard ask` or `allow` rule, the sandbox Notice, or your
+  sandbox settings. It never sends you to edit your harness's own settings file or to lower the
+  sandbox, because purlis's settings outrank those. Requests about your harness's own settings,
+  such as an environment variable, a theme or the model, stay with your harness. The skill has
+  trigger tests at the strict bar.
+
+- **A built-in skill for a workspace's life.** Ask a chat to make, fork, restore, rename, pick or
+  share a workspace, or to save and push the plane, and it follows `purlis-workspace`: the right
+  `purlis workspace` command, and the rule that goes with it. It asks before making a workspace
+  live or running `purlis save`, because both publish, and it says up front that a fork does not
+  copy your repos, that a rename waits until no chat runs in the workspace, and what to run in
+  your own terminal when a sandboxed chat is refused.
+
+- **Quiet.** Notifications wait while it is Quiet, and the ✋ still counts. It is Quiet in your
+  quiet hours, while "Quiet now" is on (a button at the top of Asks, or the palette), and while you
+  type in a chat, until about half a minute after your last key. When Quiet ends, one row at the
+  top of Asks sums up what came in, "While you were quiet: 3 asks, 2 finished, 1 failed", each
+  part a link, and it goes once you have seen all of it. If you are away from the window, one
+  notification names the chats still waiting (#6017).
+
+- **purlis asks once whether it may send reports.** On the first launch, and once on the first
+  launch after this update, a dialog asks about Crash reports (Send or Don't send) and Agent
+  drafts (Allow or Don't allow), with nothing chosen for you; Not now leaves both off. *See
+  exactly what's sent…* shows a sample of each before you answer. Both answers live in
+  Settings › You › Reports, which the Command palette and the Settings filter also find by
+  "crash", "telemetry" and "error reporting". Nothing is drafted or sent for a kind of report you
+  have not said yes to (#5688).
+
+- **A chat's report waits in your Inbox for you to file.** With Agent drafts allowed in
+  Settings › You › Reports, `purlis report bug` or `purlis report feature` run in a chat leaves a
+  Report draft card in the Inbox: the chat it came from, the call that failed and the versions.
+  Read shows the whole draft, marked as an agent's and unreviewed, and you can change its words.
+  File sends it to purlis/purlis as you when you are signed in to GitHub, after a check for
+  issues that may already cover it (Add to one instead, or File as new), and to purlis's report
+  service when you are not. Dismiss lets it go unsent. A filed draft leaves a "Sent a report"
+  update, and the sent list now lists reports filed on GitHub too (#5694).
+
+- When purlis reopens a chat after a quit or an update, the wake line now says what each piece
+  of the chat's own work last put out. For a background shell or a monitor, it quotes the last
+  20 lines of output and says where the full output is, or says the output is gone. For a
+  subagent, it quotes the last message, and for a workflow, the last thing it reported. A
+  wake-up that came due while purlis was down is listed as "was due at <time>, missed". Crons
+  and wake-ups that are still ahead are listed as ones Claude Code sets again itself, so the
+  chat does not set them twice.
+
+- **Resume a stopped grade instead of grading it again.** A grade that stopped at its token cap,
+  at the program's usage limit, with no network or by your Stop now says why, and its scorecard
+  offers Resume beside Grade again: only the cases it did not finish run, under a new cap you
+  confirm first, and the scorecard shows both runs together. Resume is offered only while the
+  skill, its tests, the program, the model and the grade's settings are as they were, waits for a
+  usage limit to reset, and never runs by itself; Needs you says when it can. A draft's grade
+  resumes too, and Select resumes several stopped grades under one limit (#5718).
+
+- **Review updates for several skills at once**, from the Library's **Select** mode and from a source's page (**Review updates…**). One page lists every update, those that add something new first. An update that only edits a skill's text starts ticked. One that newly adds a script, a hook, a tool, network access, a write outside the workspace, hidden characters or a file that isn't text starts unticked, and you can tick it only after opening what it changes. Accepting is one commit with one Undo, and chats keep the version they have until you accept.
+
+- **Allow one program with a vault's keys.** Where a chat's `secret exec` names a program its persona doesn't declare, a notice shows the program's full path, the keys, the hosts, the folder and the command as plain text. Allow once runs that exact command in the chat's own sandbox, with no input from the chat, and Don't allow is not asked again about that program and vault. A vault the persona can't otherwise use opens for that alone, with nothing kept. Programs that run what they're told, and `purlis` itself, stay refused (ADR 0112).
+
+- **Always allow a program.** For a program purlis has reviewed, `curl` so far, the notice shows the exact tool line for the project's file and writes exactly that, and the waiting command runs with no chat restart. Where the persona was fully allowed on this machine, the Allow moves for that line alone; where anything else is pending, the usual Notice stays up and nothing else is approved. A teammate's machine runs nothing until its own Allow, and a write that fails says why and gives no grant.
+
+- **Allow a program for a whole chat.** For a program purlis has reviewed, `curl` so far, Allow for this chat lets it run with those keys and any arguments until the chat ends, and a key added asks again. Any other program gets Allow once on the exact command. Run grants appear in the Allowed list with a Remove that applies from the next run. Each one given, taken back or not allowed is audited by program, keys, vault, scope and chat, never a value.
+
+- **A policy lock on Run grants.** `sandbox.run-grants`, allowed by default, turns them off. Under it, or under the `persona-tools` lock, no Allow is offered and the chat hears why and to declare the program as a tool, and a key the command misses can still be filled. A chat on a runner gets no Run grant and hears the same. A refusal under policy is audited.
+
+- **The Signed commits card manages your key.** Once on, it shows a row for each GitHub and
+  GitLab account, with "Verified ✓" or **Add to this account**. It lists your other devices'
+  purlis signing keys, each with **Remove**, for a lost or wiped Mac. **Replace key** makes a new
+  key and puts it in place of the old one on every account. **Remove signing** deletes the key
+  from this Mac and from every account it was added to, after one confirmation that names them;
+  commits already signed stay signed (#5632).
+
+- **Set up signing fixes a commit email the forge won't verify.** GitHub and GitLab show a
+  signed commit as Verified only when its email is one of the account's verified addresses. When
+  it isn't, the Check step says so in a sentence and offers those addresses (on GitHub, the
+  private noreply one too) to sign chat commits as, then checks again. With none verified, it
+  links to the forge's email settings (#5631).
+
+- **Signed commits on GitLab**, gitlab.com and your company's own server alike. Setup adds the
+  key to your GitLab account as a signing key only, so it can't be used to log in, with the
+  sign-in purlis already has: no extra permission to give. GitLab can't check a commit purlis
+  hasn't pushed, so "Verified on GitLab ✓" shows once a chat has pushed its first signed commit
+  there and GitLab says so. A GitLab server too old to verify signed commits says so, and isn't
+  offered setup. The card shows a row for each GitHub and GitLab account (#5629).
+
+- **Signed commits, set up from the window.** A **Signed commits** card in Settings › You ›
+  Accounts sets up the key purlis signs your chats' commits with, in one dialog of three steps:
+  - **Make your key.** purlis tells you before macOS asks for the Keychain.
+  - **Add it to GitHub.** purlis adds it through your account, asking GitHub's permission once,
+    or you add it yourself and the window carries on once GitHub has it.
+  - **Check.** GitHub itself confirms a signed test as Verified.
+
+  The card then shows "Verified on GitHub ✓" with the email your commits use. The key stays in
+  this Mac's Keychain, and no chat can reach it (#5628).
+
+- **A refusal of unsigned commits says so, where it happened.** When GitHub refuses a chat's
+  push because the repo only accepts signed commits, the lane's row in Tasks and the chat show
+  "GitHub only accepts signed commits here" with **Set up signing**. Once signing is set up,
+  **Sign and retry** signs the branch's own commits, never what's already pushed, and sends it
+  again: "Signed and sent ✓". The chat is told plainly it can't set signing up itself (#5630).
+
+- **An org's project controls where its skills come from.** A `[skill_policy]` table in
+  `charter.toml` keeps an allow and a block list of skill sources and single skills, and a
+  minimum age for a commit (7 days by default, with exact commits exempted by a reviewed
+  change). The Skill studio's review and `purlis skill install | update` say why a skill is
+  refused, and every install, update and removal is recorded in the event log the audit is
+  written from (SK-11, #2774).
+
+- **Preview a chat started in a clone in the Skill studio.** Where a workspace's clones hold repo
+  skills, the studio's Whose chats picker also chooses where the chat starts: at the workspace's
+  root or in one of those clones, whose repo skills count against the chat's skill budget too.
+  The Library's hidden marks, a skill's page, Harness skills and Routing all follow it, and a
+  skill's page lists whether it is listed or hidden in each place (#4227).
+
+- **Snooze all on Asks.** After one confirmation inside the view, it puts away every listed
+  chat's asks, answering nothing and with no timer, and the ✋ stops counting them. A chat comes
+  back, with all its asks, as soon as it asks something new; until then the Chats view still
+  says it waits, and Asks says how many are snoozed, with Show them now. An Undo stands for a
+  few seconds after. What was snoozed is kept on this machine, per project, through a relaunch,
+  and never written into the plane (ADR 0119, #5647).
+
+- **Stricter terminals**, a project's sandbox setting in Settings › Sandbox, off by default
+  (`own-terminal-only = true` under `[sandbox]`). On a Mac it keeps a sandboxed Codex or opencode
+  chat to the terminal it runs in, so it can't read or type into your other terminal tabs or
+  another chat's terminal. While it's on, a chat can't make a terminal of its own, so `script`,
+  `expect`, `tmux` and Codex commands that run in a terminal fail; the setting says so.
+
+- A working chat reads Stuck? when nothing new has come from it for 15 minutes, the same command has failed 3 times in a row, or one turn has run longer than an hour. It is listed in Updates while it does, and "It's fine" clears it until the chat changes state. Each threshold is a setting in Settings › Project › Dispatch (#6014).
+
+- **The commits a chat makes are signed, so a repository that requires signed commits takes
+  them.** `purlis signing setup` makes a key (or takes yours), keeps it in this machine's
+  keychain, adds it to your GitHub account as a signing key and checks that GitHub has it, in
+  three plain steps. From then on the app signs each commit it makes for a sandboxed chat, and
+  the commits `purlis worktree update` makes by a rebase or a merge, and GitHub shows them as
+  Verified. The chat never sees the key. With no key, the commit is still made, and the chat is
+  told it is unsigned and how to fix that. `purlis signing check <owner/repo> <commit>` asks
+  GitHub how a pushed commit shows (#5480).
+
+- **The strip's `+` has a list.** Pressing `+` still opens an empty tab. Rest the pointer on it, or
+  press Down on it, to choose what else opens in a new tab: New chat, New shell, a browser,
+  Settings and the other views, each with its key. A long list has a filter (#5292).
+
+- **Settings › Theme shows the component parts a theme sets.** Each card counts the part keys its
+  theme sets. A new Parts row names the families the chosen theme sets, each with the parts
+  manifest's description of it, and says what it draws from a theme it extends. Under Show each
+  part is every family and part purlis has, with the states each draws, the properties each part
+  takes and the version it came in. Under a part are the keys the theme draws, each with its
+  value and what sets it: the theme, a theme it extends, or one of its options. A filter finds a
+  part by its name, a description, a property, a state, a key or a value (#2947).
+
+- **A theme's options can change component parts.** A toggle or a choice in `theme.json` can
+  carry `parts` beside its `tokens`, so a theme can offer, say, round buttons as a switch in
+  Settings › Theme. The theme check holds every combination of options to the same bounds and
+  floors as the theme's own parts (#2946).
+
+- **Put your pinned workspaces in your own order.** Drag a workspace's chip along the title bar,
+  or use Move left and Move right on its menu from the keyboard. The order is kept per project
+  across launches, ⌘1–⌘9 (Ctrl+1–9 off a Mac) follow it, and no chip changes size while you drag
+  (#3128).
+
+- **See which workspace has a chat working from the title bar.** While a chat in a workspace is in
+  its turn, that workspace's chip wears the working ring a chat wears on its tab, on its lower
+  corner, and a screen reader hears "1 chat working" on the chip. The mark is a shape, never a
+  colour alone, it stays still, and it moves no chip as it comes and goes (#3127).
+
+- **Undo a turn.** On the latest turn not yet undone, a file's diff offers *Undo turn N…*, which
+  asks once, listing every file it will change, and puts each back as it was before the turn:
+  files the turn added, deleted or renamed included, and nothing committed. It is refused while a
+  chat is working in the folder, naming the chat and its state, and when a file the turn changed
+  has changed since, naming the file. After an undo the turn before it is offered. The agent's
+  next turn is told that a turn was undone, by the files' paths alone (#5411).
+
+- **Discard on a turn's diff.** *Discard* is back on one turn's diff, and puts the hunk back as it
+  was at that turn's start, not the base. A file you changed since the turn ended is drawn from the
+  turn's start to the file as it is now, so each hunk left can be discarded too (#5411).
+
+- **Your own workspace files can be written from Explorer.** With the workspace picked, a folder
+  of yours offers **New file…**, **New folder…** and **Import files…**, and any file or folder of
+  yours offers **Rename…** and **Delete…**. The view's head has New file, New folder and Import
+  files for the top of the workspace's folder. Delete sends to the system's Trash after one
+  confirmation. Where there is no Trash it is refused, and nothing is deleted for good. An import
+  copies the files you pick, and a name already taken gets a ` (2)` suffix. A rename or delete of
+  a file a chat is writing says so first. Repos, branch folders and the files purlis keeps stay
+  read-only, and no write reaches outside the workspace's folder (#5376).
+
+### Changed
+
+- What purlis tells a chat says a chat is in a pane, not a tab.
+- Dragging over a folded pane says why it takes no drop.
+- A large project opens without waiting for its watch on macOS.
+- A browser login a chat suggests marks the part of each host its owner registered, so a known name borrowed on its left, or a swapped letter, stands out.
+- A browser login a chat suggests on a page other than the site's front page says so.
+- A chat on a runner starts only once its profile's harness settings file can be read.
+- A browser login notice from a chat on a pool's runner goes after 15 minutes with no answer, as one from a chat on this machine does, and the chat is told nobody answered.
+- `purlis worktree update` standing in a workspace's clone, for a sandboxed chat, no longer rebases there in the app.
+- Sending a task back says it goes back to its row.
+- Sending a task back says it stays in the Chats list.
+- The window says "shell", not "shell tab".
+- A sign-in lets the chat act on its provider's site only in the sign-in's own window.
+- A browser holding a login takes a secret only for the login's own sites.
+- A sign-in that asks for a second secret on its provider's site finishes by itself.
+- A file a blank or embedded frame made is said to come from the site around it.
+- A skill you have twice is listed once.
+- A split tab keeps its first chat's name, shows the pane that needs you, and pictures its layout.
+- A tab's name has room.
+- The title bar's crumb and a switcher row take a control's corner.
+- A `purlis` command that waits on you says where to answer.
+- A chat's browser act lands only where its element is drawn.
+- An older runner of a pool stays while it holds work purlis can't bring back on its own.
+- An older runner purlis keeps unchecked now says so in plain words.
+- An ask is answered in its row, behind an Answer link, and a result opens in place.
+- Asks and Updates are walked as lists of rows. ↑ and ↓ now move from one ask (or update) to the next, and ← and → move through an ask's own links, answers and reply box, where ↓ used to step through every button of an ask before the next.
+- Asks heads the right sidebar, where the Inbox was.
+- A chat in a branch folder leaves the clone's git to the app.
+- A rebase stopped in a clone goes on or back by the chat's own git.
+- The app keeps its own record of an update in progress, under the project's state, not in a git directory.
+- `purlis worktree push` asks the remote what it has, and scans what the push sends against that, not against the clone's remote-tracking branches.
+- Chats' browsers run Chrome for Testing 157.0.8103.38, up from 155.0.8059.79.
+- purlis's built-in skills, a chat's briefing and purlis's tool descriptions use one vocabulary.
+- opencode chats list your plane's skills beside purlis's own. purlis's built-in skills' descriptions are shorter, together at most 5,000 characters, and opencode's default skill budget is 8,000 characters, so the built-ins no longer fill it alone (spec #5714).
+- Codex chats list your plane's skills beside purlis's own.
+- A chat starts faster on a project with many personas.
+- A new chat's briefing reads the project index the session host keeps, so a chat starts quickly on a large project.
+- A chat says one of eight states, with one icon and one colour each, the same on its row in the Chats list, its tab, its pane's head and in Asks: Working, Waiting on you, Waiting on a chat, Stuck?, Done, Failed, Idle and Can't tell.
+- The Chats list works like every other tree in the window (#3198).
+- A large project's saving status costs a fraction of the git work it did.
+- A Claude Code chat on Linux under Claude Code's own sandbox hands a vault's value to a command by file.
+- purlis runs Claude Code chats on Linux inside its own sandbox, on a profile for sandboxed chats only.
+- Claude Code keeps the descriptions of your own skills and plugins.
+- More of purlis's own failures exit 70 and are drafted as a Report.
+- A clone in a workspace's `repos/` folder is seen wherever a clone at its root is.
+- A wide workspace's Explorer no longer reads every repo's status to count its changes.
+- A decision is answered on its row in Asks.
+- Finding duplicate memories stays quick on a large store.
+- A project that has run thousands of tasks no longer reads every past dispatch to draw the sidebar's task status or each turn's list of open tasks.
+- Every chat on a runner starts inside purlis's sandbox.
+- A sign-in in a shell on a pool's runner lets a drain carry it again, as the driven sign-in does, and a sign-out ends the watch of that sign-in.
+- Every browser login starts clean on its own site.
+- With the workspace picked, Explorer shows the workspace's folder.
+- A skill from an extension's template waits in Drafts.
+- Five built-in skills say when they are for, and which skill to use instead.
+- Four built-in skills have names that say what they do.
+- Get project's clone progress is the window's progress bar.
+- Asks, Updates and Notices list their messages as rows, not boxed cards.
+- Keep blocked on a browser login or a secret fill a chat suggests now holds for every chat of that persona until purlis restarts, and after two Keep blocked its chats stop asking.
+- Keep blocked on a vault the chat's persona holds from the Allowed list links there: the Notice that says Keep blocked does not stop the chat's runs, in the Inbox and on the refused vault's own Notice, has Open the Allowed list beside Dismiss, which opens Settings › Sandbox › Network › Allowed.
+- The hold on a workspace made during a sandboxed Claude Code chat is measured on Linux.
+- A project of a thousand workspaces scrolls as smoothly as a small one.
+- `memory_search` with no query shows the newest 20 memories, not all of them.
+- A narrow pane head drops a chat's skill run and its browsers after the state's word, so a pane under 450px keeps the chat's name and mark (#5614).
+- New clones go to a workspace's `repos/` folder.
+- Nothing pops up by itself any more.
+- The status line no longer repeats counts the right bar shows.
+- The Notices dot is red or amber.
+- One turn says why it has nothing to show for a chat on an older runner.
+- The Notices centre's cards read like the Inbox's.
+- Notices is a view of its own, first of the right side's Lower icons.
+- A branch purlis already fetched from an older runner counts as brought back, though it was squashed or rebased here since, deleted, or its workspace renamed.
+- One grip to move a pane or a chat.
+- A chat's mark is now the same on its tab, its row in the list, its pane's head and a folded pane's rail.
+- A task that failed shows a cross on its chat's mark until that chat has been on screen and focused, and the mark then goes back to the chat's own state.
+- A run asks once for everything it needs.
+- A secret's notice in the Inbox is one card that says who says what.
+- One notification per chat.
+- A large project opens and idles without the file watcher's cost.
+- Open in terminal on a pool's profile now types `purlis profile sign-in <name> --pool <pool> --in-terminal`.
+- opencode's own sign-in on a runner is carried to the runner that replaces it, as Claude Code's and Codex's are, when the runner it came from kept its opencode chats out of that folder.
+- Opening a task beside names the chat it opens beside.
+- A skill that runs its own scripts can pass its outcome evals.
+- The pane foot's skills warning says what a press does in its row's words, as the foot's other parts do (`Skills of …`).
+- The theme check holds the pane foot's warning number on the terminal.
+- A pane's Split right, Split down and Close are always visible in its head, not only under the pointer.
+- A chat pane's notices are compact rows under its head: one line each, with its icon, who asks and what about, its age where known, its own buttons and a × that hides it from this pane.
+- A project's slow panels load on their own.
+- Panes make room while you drag.
+- A theme that fills a panel, a popover or a dialog is held to everything drawn on it.
+- A persona's own sandbox hosts are written one per line, sorted.
+- The project's settings file lists its allowed hosts and browser sites one per line, in order, so two machines that each add one change different lines (#5824).
+- The save badge says when the project is stale.
+- A project's search index builds about six times faster.
+- The build provenance of a dev build, of the runner image and of the cluster operator image now names the commit each was built from.
+- `purlis signing` no longer needs GitHub's `gh`.
+- Quitting and Restart to update name the work of its own a chat would lose.
+- The project rail and the activity bars wrap at their ends, as the tab strip does: Down on the last project or view goes to the first, and Up on the first to the last.
+- Rename says what it renames.
+- Rename chat… is in every chat's menu, by that name: a pane's ⋯, the list row's menu and the palette, and F2 on a chat's row in the list opens it.
+- The same failure of purlis's own is one report draft, whichever chats meet it.
+- "See exactly what's sent" shows what purlis's own report builders make of a sample crash and a sample draft, byte for byte, instead of a description of them (#5688).
+- A report draft's Always send is off where your project turns sending without asking off, and says so, instead of offering a press the project refuses (#5696).
+- Words an agent adds after Always send sent its draft are sent after it, linked to it, and listed in Settings › You › Reports, instead of being lost (#5695, #5697).
+- A report waiting offline counts against the day's five unread drafts on the day it leaves (#5693).
+- A Crash report, and a failure of purlis's own that it sent to the Report intake, carry their fingerprint as a tag too.
+- Resolve settles a save's conflict in a folder beside the project.
+- A setting both machines changed is chosen in the window.
+- Saving after the remote moved replays this machine's commits without a rebase.
+- Resting on a tab while you drag brings it forward after a moment, and Esc takes you back.
+- Placing a pane with the keys shows the same preview as dragging.
+- An update of one skill that fails part way now puts the skill's files back as they were, instead of leaving what it wrote.
+- A run's notice offers Allow for an ssh jump to a scoped link-local host written as ssh reads it in a jump, `-J u@[fe80::1%%en0]`, as the last hop.
+- A chat on a pool's runner is held to where it runs.
+- A runner's own policy decides whether a chat it runs may ask about a host.
+- A Docker pool's runner is checked against every container setting that could give it more.
+- A cluster pool's credential plugins are kept by their full path.
+- The cluster operator holds more of what it makes.
+- Saving's "Sign commits" switch is now "Sign saves with your own git setup", so it reads apart from Signed commits, which signs the commits the app makes for chats (#5626).
+- Browsers: a chat can't close a browser while the person has it taken over.
+- Settings' groups and its Edit as TOML files are one page navigation, the one the Skill studio uses: the group shown is marked by the accent and a bar at its start, and the files at its foot are one Tab stop, walked with the arrow keys.
+- Seven more built-in skills say when they are for, and which skill to use instead.
+- A task you asked for notifies you when it fails, or when it finishes after a long while with you away.
+- The palette's row for a chat's skills says what it does: Show skills of … (it said *Skills of …*), and the pane foot's skills warning says the same (#5543).
+- Signed commits says what removing another device's key does, and asks first.
+- A chat's unsigned commit gets one quiet line, "Not signed: signing isn't set up on this Mac", pointing at the Signed commits card, in place of a warning (#5630).
+- Change a chat's skill budget where you see it, for each program.
+- The skill editor asks lint extensions as an edit opens, not as you type.
+- The built-in skills and a chat's briefing say each rule one way.
+- A chat whose profile's key is missing from its vault asks for it in the Start dialog.
+- The status bar is the chrome's height, and its project copies its directory.
+- A finished chat reads Idle only while its folder holds uncommitted work; with nothing left behind it reads Done (#6014).
+- A chat the Skill studio started stays on its skill's Runs once it closes, with when it finished.
+- The app's program is now `purlis-app`, not `charter-app`.
+- The app runs git only where the repository's settings, hooks and index have one name.
+- A push the app makes for a chat is never signed, whatever `push.gpgSign` says: a chat's save of the project and its `purlis worktree push`.
+- The ✋ counts what waits on you in every open project, not only the one in front, and says how many of them are elsewhere ("3 things wait on you, +1 elsewhere").
+- ⌘T opens an empty tab and ⌘N starts a new chat (Ctrl+T and Ctrl+N off a Mac, where a chat's terminal keeps them for its shell). ⌘⇧T is still New shell.
+- An empty pane offers New shell beside New chat, and says you can drag a chat in from the sidebar.
+- The project index builds on about half the CPU.
+- A chat leaves the project root's git to the app.
+- The app runs git only in a git folder whose files are its own.
+- A chat with no workspace yet is told only the ten most recently used.
+- Settings › Theme's gallery checks only the themes that changed when it is read again.
+- Importing a theme takes a fraction of the time it did, a light one most of all.
+- Updates is two lists: Mine and Project.
+- A chat can ask for a key and its program's Allow in one notice.
+- A chat's skill run and its browsers are on its pane head, not its tab.
+- A head with no room for its state's word shows its tasks' button as a list, not a second copy of the state's glyph beside the chat's mark (#5524).
+- A split tab's picture draws a tile for each pane, so three panes no longer look like four, and past four it is a 3 × 3 grid (#5577).
+- A view beside a chat is named by its own title, such as its file's name, in its tab's hover, and the tab takes that title when the view becomes its first pane (#5577).
+- Where a chat runs is never guessed.
+
+### Deprecated
+
+- **The charter names stop working at 1.0.** Until then purlis reads its old names and writes
+  only the new ones. From 1.0 it stops reading them: the `charter` command (run `purlis`), the
+  `CHARTER_*` environment variables (set `PURLIS_*`), a project's committed files under their
+  charter names (`purlis doctor --fix rename-plane` moves them), this machine's local state under
+  its charter names, such as `.charter/`, `charter.local.toml` and the config and data homes
+  (`purlis migrate` moves them), and keychain items under `charter/` (the same migration copies
+  them to `purlis/`). The removal waits past 1.0 while `purlis doctor` still sees an old name in
+  a project you opened, so run it before you update: it names every old name it finds. A
+  migration waits until nothing named charter or purlis is running, and going back to a build
+  from before the rename on the same machine needs `purlis migrate --undo` first. A project
+  `rename-plane` moved is no project at all to a teammate on a build from before the
+  compatibility check, so update every teammate before you move a shared project. Every
+  version's notes say this until 1.0 (ADR 0091).
+
+### Fixed
+
+- A row in a pane's band keeps its room inside its edge.
+- A sandbox block's Notice shows at once.
+- A text box, a select and a combobox have a visible edge in Purlis, so an empty box can be found on the window and in a panel or dialog.
+- A browser login notice goes as soon as the chat's call is cancelled, instead of staying for 15 minutes and blocking the chat's next try.
+- A secret fill's notice goes as soon as the chat's call is cancelled, as a login's does, instead of staying until you answer it or 15 minutes pass.
+- A secret fill waiting for you to add its key stops waiting as soon as the chat's call is cancelled, and its Secret ask goes from the window unless another chat still needs that key.
+- A chat's card goes when the keyboard leaves its row.
+- A chat shown only in a tab window says its notes once.
+- A chat's pane no longer freezes half-drawn after the waiting strip comes and goes.
+- A background shell or monitor a Claude Code chat started now ends with the chat's harness when the harness exits on its own or is ended from outside purlis, not only when purlis ends it.
+- A chat's browser asks you on the chat's own pane again.
+- A chat with no row yet is called its own name, never its tab's.
+- What a sandboxed chat makes in its first moments is told.
+- From a chat, `purlis skill edit <name> --from <file>` and `purlis skill new` now leave a draft in the Skill studio's Drafts, where you review its diff and accept or decline it.
+- A chat that opens while you drag a pane no longer takes the keyboard.
+- A secret fill you take the browser over from keeps its mark.
+- A browser you watch is the size its view's menu shows from its first frame.
+- A shell or a Skill studio chat started in a tab window for another workspace opens in the project window as what it is.
+- A manual-only skill that narrows the chat now loads when you name it in a Claude Code chat.
+- A link on the launcher stays readable.
+- A browser login refused before it ran no longer spends its Allow once.
+- A view alone in its tab uses its whole first row.
+- A pool runner made again keeps where its skill runs were logged up to.
+- A workspace you make is drawn pinned at once.
+- Several chats remembering at once are no longer refused as busy for nothing.
+- A merge of a merge pushes without being taken for an allowlist change.
+- Moving a chat to a pool with git older than 2.40 says which git and what to do.
+- A persona's `workspaces/<ws>:<name>` skill that is not there is said on the chat's tab.
+- A skill the router hid now loads on Claude Code when it narrows the chat.
+- A pane's band goes in one step when its last warning does.
+- A chat's pane that froze while you typed comes back on its own (#5478).
+- A pane's trouble notice draws as trouble.
+- A save request that conflicts with its target now recovers by itself (#5338).
+- A save in `push` mode no longer stops on a memory index both machines added to.
+- A run on a vault its persona may not use no longer offers that vault's own entries, unless its notice offers the vault's own Allow.
+- A browser site you remove is asked about again.
+- A browser reopened from kept logins reaches its sign-in host from the start.
+- A bug report masks the name of a clone in a workspace's `repos/` folder, as it already did for a clone at the workspace's root.
+- A move that does not finish no longer hides a change.
+- A menu row and a list's option are named by their words alone, and say the rest once.
+- A run of another workspace's skill a persona names is that workspace's copy's.
+- A runner chat's skill runs reach the Skill studio after the window was closed.
+- A runner goes only with its work fetched.
+- A fresh runner's check no longer holds up other chats' branches coming back.
+- On a pool's runner, a persona's tool nobody allowed says the Allow is wanted too.
+- The Activity tab decides which reports are purlis's from the task's record, never from its words.
+- A task renamed with a backtick or one of purlis's marks keeps its report's heading whole.
+- A tab window keeps its strip when you press a chat from another workspace.
+- A tab window keeps its strip when a chat from another workspace starts or comes back there.
+- A theme's colours for a tab's × no longer cover its look under the pointer.
+- A task's report reaches a busy app.
+- A tab's tasks menu no longer opens under a pointer that has not moved.
+- A vault grant on this machine is no longer dropped by an unrelated write.
+- Allow stays told apart from the suggested answer whatever state either is in.
+- The Allowed list drops an Allow once as soon as it goes.
+- An agent identity's vault stays registered until the identity is removed.
+- A browser's start no longer fails on one bad answer from a server.
+- An older runner that was stopped, or whose container was removed outside purlis, is no longer removed with its home unchecked. purlis can't ask a stopped runner what it holds without starting it, so the runner stays.
+- A screen reader hears every line a list's option draws about it.
+- ↑ and ↓ at the edge of a wrapped line stay in the box (#6045).
+- The window no longer waits while purlis reads what is asked of you.
+- A pane's note that is shown nowhere else can no longer be closed by mistake.
+- A skill brought back under a new name leaves Deleted.
+- The keyboard reaches a taken name's choice.
+- Your clicks in a browser's view land where you point.
+- A card row's ⋯ opens its menu as a menu button does.
+- A chat starts faster in a project with many personas.
+- A chat starts faster in a project with many workspaces.
+- A chat that gets none of the plane's skills keeps your own skills' descriptions too.
+- A Codex chat is told its whole start briefing.
+- A Codex plugin its `config.toml` turns off is no longer listed as in the chat.
+- A Codex chat is told its skills whole.
+- A control's tooltip keeps its width at the window's edge.
+- The Curate menus no longer take seconds on a big project.
+- A deleted skill no longer counts as installed: its source's page offers it again, and it stops being offered updates.
+- Dispatch commands no longer say "the purlis app did not answer" while the app is only busy.
+- Each sandboxed Claude Code chat has a temporary folder of its own.
+- Code in a diff reads at 4.5:1 in Purlis and Purlis Classic, on a changed line and on a changed word, in every appearance.
+- Ending a chat ends the background shells it started.
+- A login follows the same value rules as a fill (#5272).
+- The save status in the title bar reads only what changed, on a big project too. git's untracked cache was never used for it, and a project purlis had not saved yet had no cache and no file monitor token, so each look read the whole tree.
+- The Personas view's In this workspace keeps who worked there after a relaunch.
+- The Inbox and the Notices update their ages with the rest of the window.
+- A chat starts faster wherever the project index is used.
+- Keep blocked holds at once.
+- Keep blocked on a vault the persona can already use says so.
+- Keep blocked on a run's notice says when it can't stop the chat.
+- A dispatched task held on an approval prompt says so.
+- A sandboxed chat's `purlis worktree add` no longer tells it to enter the new folder.
+- A LIVE workspace's files say what git will actually commit. *This machine only* and *Saved with the project* are now git's own answer, so a file git still tracks is marked saved, and a nested `.gitignore` or `info/exclude` is honoured.
+- On macOS, a chat's notification now changes in place.
+- Listing a memory store looks at each file once.
+- A branch folder whose commits merged in a pull request now counts as finished.
+- A branch whose folder is already gone is no longer left behind.
+- Move into repos/ survives a crash partway.
+- A note you put away in a tab window stays away in the others.
+- A sandboxed opencode chat on a profile purlis made keeps its data in that profile.
+- An ended task's `↳ from` goes to the chat that asked it.
+- A theme that fills a tree or a table is held to what stands in its rows.
+- A plane's root is never left part-way by a save.
+- Two machines that each remembered something or allowed a host no longer stop the plane's save.
+- A chat's pool and secret asks wait for you on the chat's own pane too.
+- `purlis worktree prune` from a chat now answers on a large workspace.
+- The push scan no longer refuses a save over numbers purlis writes itself.
+- A merge of a branch from before the scan's allowlist existed is no longer refused as an allowlist change.
+- A push from a bare repository to the remote's address leaves out what the remote already has, as a push from a clone does, instead of scanning the whole history again (#5822).
+- A chat that names its conversation as it starts can always be restarted.
+- Restart now on a chat waiting on its own background work goes ahead and tells the chat.
+- A chat that dispatched tasks is told about them after a restart.
+- `purlis dispatch wait` returns a report the app no longer holds in memory.
+- After a quit, a chat is told what its background shells last printed.
+- Every reopen tells a chat what the restart ended, not only a quit.
+- A chat that started background work in a turn that purlis's quit or update cut off is now told about that work when it is reopened.
+- Quitting or restarting to update warns about a chat in a background turn.
+- Start fresh warns about a chat waiting on its own work.
+- A chat waiting on its own background shell is told when a restart ended it.
+- A row's own controls keep their keys in the Inbox and every list of rows.
+- A row's tooltip can be hovered, and comes back after Esc.
+- Keep blocked on a refused vault holds against a run already on its way.
+- A clone a runner's chat made comes back without a second copy or a stuck move.
+- A clone a runner's chat made comes back into `repos/`.
+- A second session host no longer starts beside one whose lock file the system cleaned away.
+- A GitHub App token is never kept for a chat that ended while its run was being served on this machine.
+- Claude Code chats are held from writing a program held by its own name, as wrapped chats already were.
+- The save status is right on a very big project on a slow disk.
+- A Secret ask's record keeps its order.
+- A session host that stops answering no longer piles up secret asks' steps in memory.
+- Secret fill: what the person typed while driving a browser no longer stops a later fill in it.
+- Secret fill: a site whose name holds a login's user name stays visible to asks, and can be filled, once that value has been filled on that site.
+- A page on the site a browser signs in on is told as one even where its address holds a value kept out.
+- More spellings of a kept value are taken out of what a chat reads: letters whose capitals are spelled differently, a Latin-1 address, and a `+` read as a space.
+- Secret fill: no fill goes to a browser run by an older purlis on a runner or host.
+- A custom theme's switcher rows and plain count are read as they are drawn.
+- Shift+Tab back into a list lands on the row you left, not on a button or box in it (#6033).
+- An ended task in a tab behind the one in front is offered Go to … in the palette, while the chat that asked it is open, as one in the tab in front already was (#5543).
+- Set up signing's Check no longer tells you to add a key that's already on your account.
+- The Skill studio no longer says a skill's script calls a program because the word appears inside a quoted string or a here-document, such as `sort_by` in a jq program or `body{font:…` in CSS.
+- A skill run's chip on a pane head is named by the words it shows, so a screen reader and voice control both find it by what's on screen (#5614).
+- Smart close and the memory skill work in a sandboxed chat.
+- A chat's ssh connects on Fedora and RHEL.
+- The Start dialog's Secret ask holds every start while you answer it (#5670).
+- The Start dialog says to type a refused value again.
+- The status line answers faster on a big project.
+- One Tab leaves a list from its row, and Tab walks a row's buttons both ways (#6071).
+- Faint text in the terminal is readable in every appearance.
+- The ✋ no longer counts a chat that isn't waiting on you.
+- The Skill studio shows one copy of a skill you have two of, as your chats do.
+- `purlis theme check` says when a theme's side-view cards blend into their panel or a text box loses its edge, even when the theme sets no component parts.
+- Text boxes have a visible edge in Purlis Classic, at 3:1 or more on every ground they stand on.
+- `purlis theme check` says when a theme's colours lose a meter's bar on its track, even when the theme sets none of the meter's parts: the score, the baseline and the previous version, each at 3:1 on the track.
+- Tab leaves the title bar's pinned workspaces from the chip you arrowed to.
+- Undo a turn and Discard keep what the file was.
+- The save status in the title bar no longer reads every file twice on a big project.
+- Closing a tab behind the one in front leaves the keyboard where it was.
+- A narrow pane's head draws a chat's state once.
+- A folded pane that needs you shows one ✋.
+- In Classic, the × of a tab under the pointer stands on the tab's own hover colour, not on a lighter box (#5524).
+- A screen reader finds its way round the window by its landmarks.
+- A write to your workspace files lands in the folder purlis checked.
+- A branch folder whose pull request closed with its head on origin is removed without `--force`.
+
+### Security
+
+- **A blank window opened by a page of the site a login signs in on is kept off with it.** Until
+  the new window's own page says where it is from, the chat reads and acts on it only as it may
+  on the page that opened it.
+
+- **A download holding what you typed in the browser stays out of the chat's folder.** Saving a
+  download into a chat's folder is refused where the file holds a text of 8 or more characters
+  you typed into that browser, in any case or in the forms a chat's reads already take it out
+  in, as it is for a secret purlis filled. You can still save the file yourself.
+
+- **A fill's or a login's notice is no longer raised for a key that is a link into a vault its
+  chat may not use.** The chat is told at once which key. A link made while the notice waits is
+  caught when you press: nothing is allowed, no line is written, no vault is given to the
+  persona, and the notice says why (#5831).
+
+- **A page holding a filled secret asks before its server's redirect takes it to a site you
+  allowed for something else.** Only your answer to the ask about that page leaving counts: an
+  earlier Allow of the same site, when the browser asked to go there for another reason, no
+  longer lets the redirect go by itself. Each browser asks at least once.
+
+- **A download that holds a secret purlis filled is not brought into a chat's folder.**
+  `browser_save_download` refuses a file that holds a value purlis filled into that browser, or
+  signed in with, in any form a chat's reads already have it taken out in. A download whose name
+  Chrome may have shortened by its length in bytes is named `download`, like a name purlis
+  shortens itself.
+
+- **Allow for this chat and Always allow no longer fill a field whose form sends it in the
+  page's address.** Where the form a field is in submits by GET, by its own method or a submit
+  button's, a fill under either grant is refused and the chat is told why: the address would
+  carry the secret into the site's logs and the browser's history. Asked about, Allow once
+  still fills it. purlis checks this again as it writes the value, so a page that changes its
+  form in between is caught.
+
+- A run you allowed under a Run grant no longer takes the chat's database and cache hosts and ports, its cloud region or its certificate authorities from the environment (`PGHOST`, `MYSQL_HOST`, `REDIS_HOST`, `AWS_REGION`, `SSL_CERT_FILE`, `CURL_CA_BUNDLE` and the like). Where it connects is what the command you read says. A certificate authority set only in the chat's environment doesn't reach that run, so name it in the command. A key that any persona's browser login or secret-fill line holds is never offered to a program, whichever persona's vault it's in.
+
+- **A picked entry is linked only where every persona of the vault may use it, as it is
+  picked.** A Secret ask's or a run's picker no longer offers, and its press refuses, an entry of
+  a vault that another persona of the asked vault may not use, and the refusal names that
+  persona, since its tools would read the entry through the link (#5745).
+
+- **A link is judged each time it is read, not only when it is made.** A declared tool, a run the
+  person allowed, a runner chat's tool, a browser fill, a login (declared or granted) or a chat
+  profile's sign-in that would read through a link into a vault its persona may not use is
+  refused, and the refusal names the key. It covers links made earlier and personas allowed a
+  vault after its link was made. If purlis can't read this machine's vault grants, it reads
+  nothing through a link into another vault (#5795).
+
+- **A browser login or secret fill keeps more out.** A fill of a value, or a login with a password,
+  shorter than three characters is refused before anything is typed, saying why, since a value
+  that short cannot be kept out of what a chat reads. A login checks the field's own document is
+  on the declared origin before and after it types. On Linux, what the person pastes with a
+  middle click while they drive is kept out as a paste is. A native drop is judged by the frames
+  the page shows as it drops.
+
+- **A browser login holds its page's related windows as a secret fill does.** A login fills
+  nothing while a window on its site, or on none yet, is related to its page, and a related window
+  on another site closes once the page loads another document or closes; the chat is told it did
+  (the person's ruling of 2026-11-05).
+
+- **A chat narrowed by a handoff or a dispatch fills and logs in with only the grants it was
+  narrowed to.** Its secret fills and browser logins read the Always allows and declared logins
+  of the persona it was narrowed to, not those of the persona it was started as, and its
+  notice's Always allow writes in that persona's tools. The vaults it reads are still its own
+  persona's.
+
+- **A browser's page whose address holds a secret purlis filled is named by no site.** Its view
+  shows no site above it, and nothing purlis records of what you do in it names one. A click on
+  a page scrolled down is judged by what is drawn where it lands, so one that would land on a
+  frame of the site a browser signs in on is refused there too.
+
+- **A field the page marks for a card or payment is asked about each time.** Where a page marks
+  a field `autocomplete="cc-…"` (a card's number, its expiry, its code), filling a secret into
+  it raises the notice with Allow once and Keep blocked alone, under Allow for this chat or
+  Always allow too, whether or not its key is marked `card = true`.
+
+- **Revoking `use` on a GitHub App key now stops minting for the Pools its holder wrote.** In the
+  cluster operator, a Pool that names a key carries `runners.purlis.dev/forge-writer`, set by
+  whoever writes its forge to their own name in that write, and the operator asks before each
+  mint whether that person may still `use` the key, by name: a right held only through a group is
+  refused. **Upgrading: a Pool written before this version mints nothing until someone who may use
+  its key names themselves on it** (`kubectl annotate pool <name>
+  runners.purlis.dev/forge-writer=<their name>`) (`docs/cluster-operator.md`).
+
+- **No writer adds to a purlis pool's runner pod through its upstream claim.** The cluster
+  operator's `purlis-claims-use-their-pool` policy now refuses `env`, `lifecycle` and pod labels or
+  annotations on a SandboxClaim of a purlis pool's warm pool, from any writer, not only from the
+  operator. A claim already holding one is refused its next write; `docs/cluster-operator.md` has
+  a query that lists them before you upgrade.
+
+- **A refused Docker engine is named by its scheme alone.** When a pool's `DOCKER_HOST` points
+  at an engine purlis cannot tell is on this machine, the refusal says "a tcp:// address", never
+  the address itself, which may hold a user and a password.
+
+- **A runner whose home is older than its Pool's GitHub App key gets no token.** The cluster
+  operator marks a runner's upstream claim, as it makes it, when its Pool names a key, nobody can
+  change that mark after, and the operator mints only for a runner whose claim carries it, so a
+  kept volume from before the key is never a minting runner's home. **Upgrading: a kept runner
+  made before this version is refused tokens until its Claim is made again**, and so is a fresh
+  one still running from before, until its Claim is made again or its runner goes idle and runs
+  again (`docs/cluster-operator.md`).
+
+- **A frame sandboxed without its own origin is judged as having none, even at a web address.**
+  The chat's browser types nothing into it, and purlis fills no secret into it, whatever site
+  its address names: the sandbox gives the document no origin, so purlis can't say where what
+  goes into it ends up.
+
+- **A screenshot covers more of what a browser kept out.** A code typed across boxes is found
+  with the same dot, slash or bullet between each of its characters, and prices, dates and
+  versions are not taken for one. Two kept texts side by side across an element's edge are each
+  painted over, and so is an SVG `use` that may draw a kept text. A text shadow or drop shadow
+  on what is painted over widens the paint by as far as the shadow reaches. A screenshot is
+  withheld when the page draws a backdrop through a filter of its own, or draws a field or text
+  it keeps out through a filter of its own or a shadow whose reach cannot be read.
+
+- **A secret is filled only with an entry its persona may use.** "Use an entry I have" on a Secret
+  ask now lists only vaults the asking persona may use, and leaves out entries a browser login
+  fills or a `mint` line marks, as a run's notice already did. A pick is checked again when you
+  press, and a link is never made into a vault the persona may not use. A program you allow on a
+  run's notice is never handed a key that links into a vault the persona may not use, whenever
+  that link was made, so the notice can't hide where the value comes from (#5246).
+
+- **A 2FA seed in any mix of upper and lower case is not filled into a page.** A value that
+  looks like a seed counts as one whatever its case, so a seed with its first letter
+  capitalised, or in random case, needs the no-seed mark, as one in a single case already did.
+  A seed joined to a name before it by `_` or `-` (`secret_GEZD…`) counts too. A password of 16
+  or more characters drawn only from base32's alphabet (the letters, and the digits 2 to 7) now
+  needs that mark as well: one with a 0, 1, 8 or 9, or any other mark, still fills.
+
+- **A sign-in's download is its own page's.** While `browser_login` signs in, a download from the
+  site it signs in on, or from no site purlis can tell, is brought into the chat's folder only
+  where the page it signs in on, or a window related to it, began it; one begun on another tab is
+  kept out as that tab is kept off the site.
+
+- **A frame of the site a login signs in on takes no input inside another site's frame.** A click
+  aimed at a frame of that site, drawn inside a frame of another site that runs in a process of
+  its own, is refused as one on the frame itself is.
+
+- **A site whose name holds what you typed in the browser is not named to the chat.** Where
+  the browser held a request back to ask you about a site, and that site's name holds a text of
+  8 or more characters you typed into any of its pages, the chat is told only that a request
+  went nowhere, as it already was for what you typed while driving the browser.
+
+- **A clone whose `.git` is a symlink is no longer sent to a runner or wired as a guest tree**,
+  in a workspace's `repos/` folder or at its root. purlis wrote its exclude block through such a
+  link, which could name a repository outside the plane. The repo list already refused one.
+
+- **A runner's keep takes out the MCP servers a chat added to a project** in Claude Code's state
+  file, and a runner that cannot read who listens for a sign-in no longer passes the browser's
+  answer on: the sign-in says to sign in again.
+
+- **A keep refused for a linked settings folder names the folder** and says to make it a plain
+  folder on the runner, then keep the profile again.
+
+- A sandboxed chat no longer writes gh's or glab's settings and extensions where your environment
+  moves them (`GH_CONFIG_DIR`, `GLAB_CONFIG_DIR`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`), as it
+  already could not at `~/.config/gh`.
+
+- A runner clears opencode's `package.json` and `node_modules` in a kept profile's settings
+  folder each time it keeps it, so a chat there leaves nothing for the next one's plugins to
+  load. opencode makes them again as it starts.
+
+- **More of what runs later is kept from a chat.** No chat writes a git folder's glab settings
+  (`.git/glab-cli`) or git's older remote definitions, nor the project's `inventory/`, whose URLs
+  the window's Clone by name uses. purlis's own git turns off a config-named hook from your global
+  or system config too. A declared tool runs with a vault's value only where each program the
+  repository's git config names by a path is out of a chat's reach, and a declared git never
+  carries on a rebase, cherry-pick or revert.
+
+- **A Claude Code chat starts only where its sandbox can hold every repository.** It is not
+  started where a repository's path has `*`, `?`, `[` or `]`, or where a folder outside the
+  repositories holds more than purlis looks through; the refusal names the folder.
+
+- **No grant reaches the system's name lookup** by Linux's system message bus,
+  `com.apple.mDNSResponder`, or port 53 or 853.
+
+- One run on a vault its persona isn't tagged for raises one ask: a run you're asked to allow no longer also offers to let the whole persona use the vault. Keep blocked on a refused vault now lasts for the rest of that chat, so the chat can't bring the question back by trying again.
+
+- **The cluster operator's mint port answers a runner only from its own pod, and paces it.** A
+  token is minted only for a request coming from one of the runner pod's own addresses, at most 5
+  times a minute for a Claim, and one address may hold at most 4 of the port's connections at
+  once. A token whose answer could not be written to the runner is revoked. A network that
+  rewrites pod source addresses between pods cannot use the mint port (`docs/cluster-operator.md`).
+
+- **A cluster runner's sign-in goes to the runner purlis paired with.** The window now signs a
+  profile in on a cluster runner over its own link to it, which proves the runner by its key. A
+  runner on an older purlis, and a sign-in from the command line, still go through `kubectl
+  exec`. Those now read the pod's uid right before the sign-in starts and again once the sign-in
+  has reached it, before it shows you anything or passes anything on. If a new pod took the
+  runner's name in between, the sign-in stops and none of it counts.
+
+- **A stopped Claim or minting Pool stays stopped until someone entitled runs it again.** In the
+  cluster operator, only a Claim's requester can set its `stopped` back to `false`, and only
+  someone with `use` on a Pool's GitHub App key can do so for a Pool that mints, so revoking
+  `use` on the key takes it away from the Pool's other writers. Turning a Pool's minting on now
+  takes `use` on its key too, since it adopts the image the Pool already names. A namespace that
+  was given the operator's label by hand before its policy was installed can now finish
+  deleting, and `purlis-cluster-operator doctor` names any namespace outside
+  `purlis-runners-*` that carries that label, with the command that removes it.
+
+- **The cluster holds the operator's templates and kept volumes to what their Pool says.** A new
+  admission policy, `purlis-operator-writes-what-its-pool-says`, refuses the cluster operator's
+  service account a pool's template whose containers run another image than the Pool's, and a
+  kept claim's volume in another storage class than the Pool names, or than the one it was made
+  in. It is kept when the chart is uninstalled, as the other policies are.
+
+- **A run's notice offers no Allow for an ssh jump whose brackets hold anything but an IPv6
+  address** (`-J a,[.-_]`), or whose user holds a bracket (`-J [x]@host`), since ssh pastes a
+  jump list unquoted into the command its shell runs (#5892).
+
+- **A run's notice offers no Allow for a command whose flags name a command.** `ssh`, `scp`,
+  `sftp`, `rsync`, `kubectl`, `psql`, `mysql`, `mariadb`, `zip` and `wget` are still offered
+  Allow once on the exact command, by any name their builds go by (`kubectl.docker`, `psql-16`,
+  `wget2`), but not with a flag that names a command or a file that can: among them
+  `ssh -o ProxyCommand`, `-o XAuthLocation`, `-F` and `-I`; `scp -S`; `sftp -b`; `rsync -e`,
+  `--rsh` and `--rsync-path`; `kubectl --kubeconfig` and kustomize's plugin flags; `psql -f`, `-o`
+  and a backslash command in `-c`; `mysql --pager`, `--defaults-file` and a shell command in `-e`;
+  `zip -TT`; and `wget --use-askpass`, `-e` and `--config`. The chat is told to leave the flag
+  out. `sed`, `aria2c`, `kustomize`, `sshpass`, `autossh`, `mosh`, `lftp` and mysql's
+  server-side and shell-like tools get no Allow at all. A persona can still declare any of them
+  as a tool (#5799).
+
+- **A Run grant is offered for fewer programs that run others.** GNU builds by their `g` or
+  `gnu` name (`gm4`, `genv`, `gnumake`), git's own programs (`git-shell`), versioned and
+  cross compilers (`gcc-13`, `clang-17`, `x86_64-linux-gnu-gcc`) are refused like the programs
+  they are, with no notice raised. `curl` is still offered (#5424).
+
+- **More programs that run others get no Allow from a run's notice.** These each run a command
+  that a flag, an address, a template or their own words name, or what a file a chat wrote says:
+  `xcodebuild`, `msgexec`, `leaks`, `pyenv`, `erb`, `helm`, `socat`, `ncat`, `nc`, `netcat`,
+  `tar`, `bsdtar` and `msgfilter`; the secret injectors `op`, `aws-vault`, `doppler`,
+  `infisical`, `sops`, `chamber`, `envconsul`, `summon`, `envchain`, `dotenvx`, `dotenv`,
+  `teller`, `berglas`, `aws-sso`, `aws-okta`, `saml2aws`, `awsume`, `bws`, `phase`, `granted` and
+  `assume`; the environment managers and project runners `rbenv`, `asdf`, `mise`, `rtx`,
+  `direnv`, `pipenv`, `conda`, `mamba`, `micromamba`, `volta`, `goenv`, `jenv`, `fnm`, `nix`,
+  `nix-shell`, `devbox`, `pixi`, `hatch`, `pdm`, `rye`, `tox`, `nox`, `helmfile`, `bunx`, `tsx`,
+  `pytest`, `pre-commit`, `pulumi` and `cdk`; the programs that run what a file a chat wrote says
+  `terraform`, `tofu`, `terragrunt`, `ansible`, `ansible-playbook`, `vagrant`, `packer`, `cdktf`,
+  `sst`, `serverless`, `jest`, `vitest`, `mocha` and `rspec`; and `xctrace`, `valgrind`,
+  `hyperfine`, `watchexec` and `entr`. A chat's run of one with a vault's key is refused at once,
+  with no notice. A persona can still declare one as a tool (#5619).
+
+- **A run's notice offers no Allow for MySQL's and MariaDB's hotcopy, secure installation and
+  backup tools** (`mysqlhotcopy`, `mysql_secure_installation`, `mariabackup` and their `mariadb-`
+  names): each runs a program, a script or a plugin its flags name. A persona can still declare
+  one as a tool (#5891).
+
+- **A run's notice offers no Allow for MySQL's and MariaDB's server, router, `mysql_plugin` and
+  `mysql_upgrade`, Percona's backup tools or the server's state transfer scripts** (`mysqld`,
+  `mariadbd`, `mysqld_safe_helper`, `mariadbd-safe-helper`, `mysqlrouter`,
+  `mysqlrouter_plugin_info`, `mysqlrouter_passwd`, `mysqlrouter_keyring`, `mysql_migrate_keyring`,
+  `mariadb-plugin`, `mariadb-upgrade`, `xtrabackup`, `innobackupex`, `xbstream`, `xbcloud`,
+  `xbcloud_osenv`, `xbcrypt`, MariaDB's `mbstream` and every `wsrep_sst_` script): each runs a
+  server, a client, a plugin or a program its flags name. A persona can still declare one as a
+  tool (#5931).
+
+- **Still more programs that run others get no Allow from a run's notice.** Programs that run
+  the command after them or one they name: `consul-template`, `railway`, `aws-runas`, `vals`,
+  `gomplate`, `envdir`, `chpst`, `systemd-run`, `run0`, `telepresence`, `firejail`, `flatpak`,
+  `flatpak-spawn`, `rr`, `pkgx` and `flox`. Programs that run what a file a chat wrote says:
+  `task`, `skaffold`, `tilt`, `dagger`, `earthly`, `act`, `firebase`, `netlify`, `vercel`,
+  `wrangler`, `chezmoi`, `mage`, `invoke`, `fab` and `cdk8s`. Build tools and test runners: `sbt`,
+  `mix`, `playwright`, `cypress`, `gitlab-runner`, `circleci`, `stack`, `cabal`, `dune`, `zig`
+  and `lein`. A chat's run of one with a vault's key is refused at once, with no notice. A
+  persona can still declare one as a tool (#5833).
+
+- **A sandboxed chat keeps the folders above what it may not write in place.** A folder granted
+  to a chat, and opencode's data folder, can no longer be moved aside to write under another name
+  what the sandbox denies. Claude Code's sign-in on a runner opens only a page asking for Claude
+  Code's own client and code page. A runner clears Claude Code's `hooks` folder from a kept
+  profile, never clears a settings folder reached through a link, and clears what an earlier
+  version left behind without holding up other profiles.
+
+- A sandboxed chat can no longer write gh's or glab's folders named by a relative `GH_CONFIG_DIR` or `GLAB_CONFIG_DIR`, nor the later-code names under a moved `XDG_CONFIG_HOME` or `XDG_DATA_HOME`. At the floor, the folders above each held name in your home stay pinned, also while a name is allowed for one chat.
+
+- On a runner, a wrapped Claude Code's plugin data folder no longer lets a chat write the names the floor holds, and a start refused late leaves its config folder as it was. purlis's own tidying of a profile's folders never follows a folder swapped under it.
+
+- **What a profile sends to a runner is read in more of the ways a credential is written.** An
+  address's signing query value (`?api_key=…`) is emptied wherever it is, an address written with
+  JSON's escaped slashes loses its user information, a Codex server whose address is signed goes
+  whole, and so do permission rules, `--key`, `-p` glued to a MySQL password, and settings named
+  for a credential (`apiToken`, `GH_PAT`). Codex's provider query parameters and a profile's own
+  shell policy variables are removed, and an `.mdx` file is filtered as Markdown. A script or
+  other file sent as written that holds a value shaped like a token is refused in words, naming
+  the file, so nothing is sent until the key is moved to a vault.
+
 ## [0.5.0] - 2026-11-05
 
 0.5.0 is the first release as purlis, and the first under the Apache License 2.0. The app,
@@ -2080,7 +3221,8 @@ and every settings group that it would have changed says so.
 - No program purlis starts can hold a chat's terminal open after the chat ends.
   ([#105](https://github.com/diazoxide/charter/pull/105))
 
-[Unreleased]: https://github.com/purlis/purlis/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/purlis/purlis/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/purlis/purlis/releases/tag/v0.5.1
 [0.5.0]: https://github.com/purlis/purlis/releases/tag/v0.5.0
 [0.4.1]: https://github.com/diazoxide/charter/releases/tag/v0.4.1
 [0.4.0]: https://github.com/diazoxide/charter/releases/tag/v0.4.0
