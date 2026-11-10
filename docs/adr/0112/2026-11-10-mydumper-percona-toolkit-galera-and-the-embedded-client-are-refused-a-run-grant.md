@@ -1,7 +1,7 @@
 # Amended 2026-11-10: mydumper, Percona Toolkit, gh-ost, Galera's helpers and the embedded clients are refused a Run grant
 
 Decided under the operator's standing order to take the recommended path (D-5994-1, D-5994-2,
-#5994, from the reviews of #5990), recorded here as delegated decisions. It follows *mysql's
+D-5994-3, #5994, from the reviews of #5990), recorded here as delegated decisions. It follows *mysql's
 server-side tools and Percona's backup tools are refused a Run grant* (2026-11-09), which left
 these to #5994.
 
@@ -35,3 +35,8 @@ defaults or configuration file a tool reads, across a family that grows with eac
 client itself (`mysql`, `mariadb`), `mysqldump` and the rest of the clients stay offered, with
 only their forms that name a command refused. A persona can still declare any of the refused
 tools as a tool.
+
+Leads not yet verified are left to #6109: `innotop`, which loads Perl plugins from a folder its
+configuration names; Percona XtraDB Cluster's `mysqld_bootstrap`; and MySQL Enterprise Backup's
+`mysqlbackup`, whose `--exec-when-locked` would run a command while the tables are locked, and
+which reaches the mysql tools' row by its prefix.

@@ -2801,7 +2801,7 @@ fn mydumper_and_myloader_run_the_command_their_flags_or_files_name_so_they_are_o
 /// and any flag may come from a configuration file the command line never shows. Releases add
 /// more.
 #[test]
-fn every_percona_toolkit_tool_runs_what_it_is_told_so_it_is_offered_no_run_grant() {
+fn a_percona_toolkit_tool_by_its_prefix_is_offered_no_run_grant() {
     for name in [
         "pt-online-schema-change",
         "pt-archiver",

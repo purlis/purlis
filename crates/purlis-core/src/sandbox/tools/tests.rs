@@ -1659,6 +1659,8 @@ fn the_forms_a_run_grant_refuses_by_name_leave_curl_and_the_usual_tools_offered(
         "mariadb-tzinfo-to-sql",
         "ptx",
         "gptx",
+        "ptar",
+        "pt_online_schema_change",
     ] {
         assert!(!super::not_for_a_run_grant(name), "{name}");
     }
