@@ -711,8 +711,8 @@ function defaultsOf(node: ts.Node | undefined): Map<string, string> {
  * **The frames a component places what it is given in, with the look each root among them
  * draws** (#6149): a root whose look `unit` takes as a prop draws the look this use hands it,
  * written out or passed on from a parameter of its own, or `unit`'s default when it is handed
- * none. A use that spreads props and names none may hand it any look, and so may anything not
- * written out: the root is then the surface's, of no look.
+ * none. A use that spreads props after the look it names, or names none and spreads, may hand it
+ * any look, and so may anything not written out: the root is then the surface's, of no look.
  */
 function lookGiven(
   frames: Frame[],
@@ -720,20 +720,23 @@ function lookGiven(
   attributes: readonly ts.JsxAttributeLike[],
   source: ts.SourceFile,
 ): Frame[] {
+  const lastSpread = attributes.reduce(
+    (last, one, at) => (ts.isJsxSpreadAttribute(one) ? at : last),
+    -1,
+  );
   return frames.map((frame) => {
     if (typeof frame.variant !== "object") return frame;
     const { parameter } = frame.variant;
-    const written = attributes.find(
-      (one): one is ts.JsxAttribute =>
-        ts.isJsxAttribute(one) && one.name.getText(source) === parameter,
+    const at = attributes.findIndex(
+      (one) => ts.isJsxAttribute(one) && one.name.getText(source) === parameter,
     );
-    const spread = attributes.some(ts.isJsxSpreadAttribute);
+    const written = attributes[at];
     const variant =
-      written !== undefined
+      at > lastSpread && ts.isJsxAttribute(written)
         ? variantOf(written)
-        : spread
-          ? undefined
-          : unit.defaults.get(parameter);
+        : lastSpread === -1
+          ? unit.defaults.get(parameter)
+          : undefined;
     return { ...frame, variant };
   });
 }
@@ -2016,7 +2019,7 @@ function pairsOf(on: ReadonlyMap<string, Iterable<string>>): string[] {
 
 /** **Whether `said` names `found`** (#6149): the pair as found, or its family on every look of
  *  the surface (`list badge` names `list.row badge`). */
-function names(said: string, found: string): boolean {
+function saysPair(said: string, found: string): boolean {
   const [surface, family] = found.split(" ");
   return said === found || said === `${familyOf(surface)} ${family}`;
 }
@@ -2190,12 +2193,14 @@ describe("where each family is drawn on a surface a theme fills (#3268)", () => 
          export function Devices() {
            return <><ListRow><span data-scope="badge" data-part="root" /></ListRow>
              <ListCardRow><span data-scope="button" data-part="root" /></ListCardRow>
-             <ListRow {...given}><span data-scope="meter" data-part="root" /></ListRow></>;
+             <ListRow {...given}><span data-scope="meter" data-part="root" /></ListRow>
+             <ListRow variant="row" {...given}><span data-scope="tooltip" data-part="root" /></ListRow></>;
          }`,
       ),
     ]);
-    // A row handed its variant by a spread may be either, so it is the list's, of no look.
-    expect(found).toEqual(["badge: list.row", "button: list.card", "meter: list"]);
+    // A row a spread may hand its variant to, after the one it names or in place of one, may be
+    // either, so it is the list's, of no look.
+    expect(found).toEqual(["badge: list.row", "button: list.card", "meter: list", "tooltip: list"]);
   });
 
   /**
@@ -2214,13 +2219,13 @@ describe("where each family is drawn on a surface a theme fills (#3268)", () => 
     const said = [...pairsOf(listed), ...NOT_STANDING.keys()];
     // A pair the table does not say is named with the components it is drawn in.
     const unsaid = found
-      .filter((pair) => !said.some((one) => names(one, pair)))
+      .filter((pair) => !said.some((one) => saysPair(one, pair)))
       .map((pair) => {
         const [surface, family] = pair.split(" ");
         return `${pair}: ${(read.stands.get(family)?.get(surface) ?? []).slice(0, 2).join("; ")}`;
       });
     expect(unsaid).toEqual([]);
-    expect(said.filter((pair) => !found.some((one) => names(pair, one)))).toEqual([]);
+    expect(said.filter((pair) => !found.some((one) => saysPair(pair, one)))).toEqual([]);
   });
 
   it("names only surfaces a theme can fill and families the manifest has", () => {

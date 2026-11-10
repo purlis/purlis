@@ -680,8 +680,8 @@ export interface TreeRowProps {
    *  is on it (the shared tooltip, `ui/list/RowTip.tsx`). */
   tip?: Tip;
   /**
-   * **The id of what its owner draws that describes it**, while it is drawn: a chat's card
-   * (`ChatsSection.tsx`, #3886). Heard after its tooltip, through the row's registry, so the
+   * **The id of what its owner draws that describes it**, while it is drawn (a card it holds
+   * up beside the row). Heard after its tooltip, through the row's registry, so the
    * row writes it with the rest and takes back only it as it goes (#6147).
    */
   describedBy?: string;
@@ -722,7 +722,7 @@ export function TreeRow<T extends object>({
   const tipped = useRowTip(tip, tipToPointer);
   const { heard, ref: described } = useTreeRowHeard(ref);
   useEffect(
-    () => (describedBy === undefined ? undefined : heard.add("card", describedBy)),
+    () => (describedBy === undefined ? undefined : heard.add("owner", describedBy)),
     [heard, describedBy],
   );
   const selected = useSaid(

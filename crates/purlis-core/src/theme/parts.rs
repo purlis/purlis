@@ -4211,13 +4211,18 @@ const STANDS_ON: &[(&str, &[&str])] = &[
     ),
 ];
 
+/// A [`STANDS_ON`] key read: the surface it names and the one look of it, if it names one
+/// (`list.row`, #6149).
+fn surface_and_look(key: &str) -> (&str, Option<&str>) {
+    key.split_once('.')
+        .map_or((key, None), |(surface, look)| (surface, Some(look)))
+}
+
 /// Whether a [`STANDS_ON`] key names `surface`'s look `variant`: the surface alone, every look
 /// of it, or that look by name (`list.row`, #6149).
 fn stands_for(key: &str, surface: &str, variant: &str) -> bool {
-    match key.split_once('.') {
-        None => key == surface,
-        Some((named, look)) => named == surface && look == variant,
-    }
+    let (named, look) = surface_and_look(key);
+    named == surface && look.is_none_or(|one| one == variant)
 }
 
 /// **The families drawn on `surface`'s look `variant` that a fill `set` in place of its `default`

@@ -65,9 +65,7 @@ fn every_surface_a_family_stands_on_takes_a_fill_and_is_named_once() {
         assert!(!seen.contains(key), "{key} is named twice");
         seen.push(key);
         // A surface alone, or one look of it (`list.row`, #6149).
-        let (surface, look) = key
-            .split_once('.')
-            .map_or((*key, None), |(a, b)| (a, Some(b)));
+        let (surface, look) = super::surface_and_look(key);
         let one = family(surface).expect("a surface");
         assert!(
             one.parts[0].properties.contains(&super::Prop::Fill),
