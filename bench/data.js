@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794345792431,
+  "lastUpdate": 1794348461980,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -46452,6 +46452,48 @@ window.BENCHMARK_DATA = {
             "value": 101.190044,
             "unit": "ms",
             "extra": "median of 5 runs: 100.705, 100.764, 101.190, 102.666, 104.723 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "46309afec7d17bc834b2e3cc9a40bb65e48a943e",
+          "message": "The native crash handler is on, with debug symbols in a packed dSYM (#5691, #5692); a companion no app reached ends on its own (#6152) (#6165)\n\n* A companion whose app died before connecting exits: the test (#6152)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M73FMA5QYAE093JVXDS7CFTY\nPurlis-Persona: steward\n\n* The native crash handler is on, with debug symbols in a packed dSYM (#5691, #5692); a companion no app reached ends on its own (#6152)\n\n- companion::serve stops when no client connected within CONNECT_FOR + 5 s (#6152).\n- nativecrash::STARTED = true; crash-relaunch.mjs requires the handler to be watching.\n- [profile.release]: debug = \"line-tables-only\", split-debuginfo = \"packed\", strip = true kept\n  (ADR 0092 amended 2026-11-10); the profile test moves with it.\n- The abort and overflow minidump tests run again.\n- ADR 0118 amended: switched on; macOS's \"quit unexpectedly\" dialog is expected.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M73FMA5QYAE093JVXDS7CFTY\nPurlis-Persona: steward\n\n* Review of #6165: the dSYMs are collected through cargo's symlink; a long-lived app stays watched\n\n- release.yml copies each dSYM with cp -RL: cargo leaves target/<profile>/<bin>.dSYM as a\n  symlink into deps/, and a copied link dangles, so no symbols reached the artifact. A dSYM\n  with no DWARF is a warning. A test runs the step on a target laid out as cargo leaves it.\n- A probe that crashes past SERVED_WITHIN still leaves one minidump (#6152's other half).\n- A comment rewrapped; the ADR 0092 amendment says where the dSYM is.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M73FMA5QYAE093JVXDS7CFTY\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T21:28:00Z",
+          "tree_id": "30484dddcf466ef390e4c1f2a13a3c7fed753a34",
+          "url": "https://github.com/purlis/purlis/commit/46309afec7d17bc834b2e3cc9a40bb65e48a943e"
+        },
+        "date": 1794348456278,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.46324299999999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.439, 0.440, 0.463, 0.468, 0.469 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.403312,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.229, 16.347, 16.403, 16.505, 16.680 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.606135,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.266, 100.676, 101.606, 101.941, 102.660 ms"
           }
         ]
       }
