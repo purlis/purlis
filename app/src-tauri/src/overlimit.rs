@@ -20,19 +20,22 @@
 //!   (`dispatchrecord::worked`), so a task restored after a restart keeps the working minutes it
 //!   had.
 //! - **Past `minutes-per-task`**, held at the stricter of the dispatch's levels and the
-//!   workspace the task works in, the task and everything below it are stopped by the stop Stop
-//!   and get its report is ([`crate::stopping::stop_at_a_limit`]): one short turn for a report,
-//!   then its end, and the chat that asked is told which limit in purlis's words. **A task the
-//!   person is in the middle of is left for the next look**: one showing a prompt or a
-//!   question, or one the person has typed into since its harness last spoke, or with such a
-//!   task below it.
-//! - **At `tokens-per-session`** (#1512), the session's tasks at work are asked for their
-//!   report by the same stop, each with the session's figure, and its row says the figure
-//!   against the limit ([`tokens_shown`]); a new task of it is refused at the dispatch
-//!   (`dispatchdecision`, [`session_tokens_now`]). **A task the person is in the middle of is
-//!   left for the next look**, as for the time limit. The figure is each chat's as its harness
-//!   reported it, kept by the chat's id where no sandboxed chat can write (#1457), so a chat
-//!   can neither raise another's nor lower its own.
+//!   workspace the task works in, **the task is paused at its budget** (#6015, ADR 0121
+//!   decision 20, [`crate::pausing`]): it and everything below it held still, and the person
+//!   asked Continue, Raise the budget or Stop. Stop is the stop Stop and get its report is
+//!   ([`crate::stopping::stop_at_a_limit`]): one short turn for a report, then its end, and the
+//!   chat that asked is told which limit in purlis's words. **A task the person is in the
+//!   middle of is left for the next look**: one showing a prompt or a question, or one the
+//!   person has typed into since its harness last spoke, or with such a task below it.
+//! - **At `tokens-per-session`** (#1512), the session's topmost tasks at work are paused the
+//!   same way, each with the session's figure, and its row says the figure against the limit
+//!   ([`tokens_shown`]); a new task of it is refused at the dispatch (`dispatchdecision`,
+//!   [`session_tokens_now`]). **A task the person is in the middle of is left for the next
+//!   look**, as for the time limit. The figure is each chat's as its harness reported it, kept
+//!   by the chat's id where no sandboxed chat can write (#1457), so a chat can neither raise
+//!   another's nor lower its own.
+//! - **A paused task's time does not count**, and **a look that finds it within its limit
+//!   again lets it go on**: the person raised the limit, or took it away.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -331,6 +334,8 @@ struct Found {
     worked: Vec<(String, u64)>,
     /// Sessions past their token limit: the chat, its tokens and the limit.
     spent: Vec<(u32, u64, u32)>,
+    /// The chats paused at the token limit whose session is still past it.
+    still_spent: Vec<u32>,
 }
 
 /// **Whether a task works now**: its turn is running and it shows no prompt or question.
@@ -362,6 +367,8 @@ pub(crate) fn look_at(held: &Arc<Held>, now: chrono::DateTime<chrono::Utc>) {
     }
     if !timed && !tokens {
         kept().stores.remove(root);
+        // No budget is set: no chat is paused at one.
+        crate::pausing::let_go_of_budgets(held, |_, _| false);
         return;
     }
     let default = purlis_core::start::persona_for_a_new_chat(root);
@@ -404,8 +411,21 @@ pub(crate) fn look_at(held: &Arc<Held>, now: chrono::DateTime<chrono::Utc>) {
                     found.spent.push((*top, used, limit));
                 }
             }
+            for (chat, _) in held.pauses().at_budgets() {
+                let top = session_of(open, chat);
+                if found.spent.iter().any(|(spent, _, _)| *spent == top) {
+                    found.still_spent.push(chat);
+                }
+            }
         }
         found
+    });
+    // A chat paused at a budget it is within again goes on (#6015).
+    crate::pausing::let_go_of_budgets(held, |chat, reached| match reached {
+        Reached::Tokens { .. } => found.still_spent.contains(&chat),
+        Reached::Time { .. } | Reached::Above { .. } => {
+            found.timed.iter().any(|(task, _, _)| *task == chat)
+        }
     });
     for (id, worked) in found.worked {
         if let Err(why) = dispatchrecord::worked(root, &id, worked) {
@@ -413,7 +433,7 @@ pub(crate) fn look_at(held: &Arc<Held>, now: chrono::DateTime<chrono::Utc>) {
         }
     }
     if tokens {
-        stop_at_the_token_limit(held, &found.spent);
+        pause_at_the_token_limit(held, &found.spent, now);
         let shown = {
             let mut kept = kept();
             let before = shown_of(&kept, root);
@@ -428,7 +448,7 @@ pub(crate) fn look_at(held: &Arc<Held>, now: chrono::DateTime<chrono::Utc>) {
             held.rows_changed();
         }
     }
-    for (task, reached, id) in found.timed {
+    for (task, reached, _) in found.timed {
         // **Never under the person's hands**: left for the next look.
         let below = crate::handoff::at_work_below(held, task);
         if std::iter::once(task)
@@ -437,16 +457,27 @@ pub(crate) fn look_at(held: &Arc<Held>, now: chrono::DateTime<chrono::Utc>) {
         {
             continue;
         }
-        crate::stopping::stop_at_a_limit(held, task, reached);
-        kept().clocks.remove(&(root.to_owned(), id));
+        if held.stopping().is_stopping(task) {
+            continue;
+        }
+        crate::pausing::pause(
+            held,
+            task,
+            crate::pausing::Why::Budget(reached),
+            now.timestamp(),
+        );
     }
 }
 
-/// **Asks the tasks at work of each session in `spent` for their report** (#1512): the topmost
-/// task at work on each branch, with everything below it, by the stop the time limit uses. A
-/// branch the person is in the middle of is left for the next look; one already being stopped
-/// is left to its stop.
-fn stop_at_the_token_limit(held: &Arc<Held>, spent: &[(u32, u64, u32)]) {
+/// **Pauses the tasks at work of each session in `spent` at its budget** (#1512, #6015): the
+/// topmost task at work on each branch, with everything below it held still, as the time limit
+/// pauses one. A branch the person is in the middle of is left for the next look; one already
+/// being stopped is left to its stop.
+fn pause_at_the_token_limit(
+    held: &Arc<Held>,
+    spent: &[(u32, u64, u32)],
+    now: chrono::DateTime<chrono::Utc>,
+) {
     for (top, used, limit) in spent {
         let reached = Reached::Tokens {
             limit: *limit,
@@ -467,7 +498,15 @@ fn stop_at_the_token_limit(held: &Arc<Held>, spent: &[(u32, u64, u32)]) {
             {
                 continue;
             }
-            crate::stopping::stop_at_a_limit(held, task, reached);
+            if held.stopping().is_stopping(task) {
+                continue;
+            }
+            crate::pausing::pause(
+                held,
+                task,
+                crate::pausing::Why::Budget(reached),
+                now.timestamp(),
+            );
         }
     }
 }
@@ -543,7 +582,8 @@ fn time_each(
             worked: record.worked,
             seen: now,
         });
-        if works_now(held.board(), *task) {
+        // A task paused into an ask is held still: its time does not count (#6015).
+        if works_now(held.board(), *task) && !held.pauses().holds(*task) {
             let since = (now - clock.seen).num_seconds().clamp(0, MOST_PER_LOOK);
             let before = clock.worked;
             clock.worked = clock

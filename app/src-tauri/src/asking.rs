@@ -539,6 +539,12 @@ pub enum AskSource {
     /// **A `purlis` command's confirmation in the window** (#6000): a pool sign-in, a profile
     /// taken off a pool, a signing check, each waiting on the person's yes.
     Confirmation,
+    /// **A chat paused at its budget** (#6015, ADR 0121 decision 20): a dispatch limit the
+    /// person set, reached. Continue, Raise the budget, or Stop.
+    Budget,
+    /// **A chat paused as looping** (#6015, ADR 0121 decision 20): the same command failing
+    /// again and again, or its asks refused again and again. It's fine, continue, or Stop.
+    Looping,
 }
 
 /// **The existing, checked path an ask is answered by** (#1690): the command the window
@@ -642,6 +648,9 @@ pub enum AnswerPath {
     },
     /// `answer_pool_sign_in` for confirmation `id`, yes or no, as its dialog answers (#6000).
     Confirmation { id: u32 },
+    /// `answer_pause` for the chat it names, with the option chosen (#6015); Raise the budget is
+    /// the window's own, opening Settings where the limit is.
+    Paused,
     /// Nothing the window can send: the person answers in the chat.
     InItsPane,
 }
@@ -4350,6 +4359,18 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
                 crate::poolsignin_confirm::waiting_in(plane)
                     .map(|(asked, until)| consents::confirmation(&asked, until)),
             )
+            // A chat paused at its budget or as looping (#6015).
+            .chain(
+                held.pauses()
+                    .now()
+                    .into_iter()
+                    .filter(|(session, _)| !chats.kept_from_the_window(*session))
+                    .map(|(session, paused)| {
+                        let chain = chain(session, waiting.name_of, waiting.asker_of);
+                        let blocks = (waiting.chats_waiting)(session);
+                        pauses::paused(session, &paused, chain, blocks)
+                    }),
+            )
             .collect(),
     }
 }
@@ -4390,6 +4411,7 @@ pub fn forget_sandbox_block(
 }
 
 mod consents;
+pub mod pauses;
 
 #[cfg(test)]
 mod tests;

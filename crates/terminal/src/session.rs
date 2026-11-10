@@ -829,6 +829,28 @@ pub struct Program {
 }
 
 impl Program {
+    /// **Holds the program's whole process group still, or lets it go on** (ADR 0076 §4,
+    /// #6015): a stop, as Ctrl-Z stops it, and a continue. What left its group is not held, as
+    /// the ADR says. Nothing for a program that has ended.
+    #[cfg(unix)]
+    pub fn hold(&self, still: bool) {
+        use rustix::process::{Pid, Signal, kill_process_group};
+
+        let group = {
+            let mut child = lock(&self.child);
+            if !matches!(child.try_wait(), Ok(None)) {
+                return;
+            }
+            child.process_id().and_then(|pid| Pid::from_raw(pid as i32))
+        };
+        let Some(group) = group else { return };
+        let _ = kill_process_group(group, if still { Signal::STOP } else { Signal::CONT });
+    }
+
+    /// No process group to hold here.
+    #[cfg(not(unix))]
+    pub fn hold(&self, _still: bool) {}
+
     /// **Notes what the program has started outside its process group so far** (#5806), to
     /// end with it however it ends: on its own, or on a signal from outside, after which what
     /// it started is handed to the system's first process and no listing finds it. Nothing
@@ -922,6 +944,8 @@ fn interrupt(child: &Mutex<Held>) {
     };
     let Some(group) = group else { return };
     let _ = kill_process_group(group, Signal::INT);
+    // A program held still (`Program::hold`) hears its interrupt only once it goes on.
+    let _ = kill_process_group(group, Signal::CONT);
     let deadline = Instant::now() + INTERRUPT_GRACE;
     while Instant::now() < deadline {
         if !matches!(lock(child).try_wait(), Ok(None)) {
@@ -2346,6 +2370,47 @@ mod tests {
                 .any(|line| line.contains("hung-up-first")),
             "the hangup came first"
         );
+    }
+
+    /// A program counting on its screen, a line every 20 milliseconds.
+    const COUNTS: &str = "i=0; while :; do i=$((i+1)); echo \"n$i\"; sleep 0.02; done";
+
+    #[test]
+    fn a_held_program_writes_nothing_until_it_is_let_go() {
+        // A chat paused at its budget or in a loop is held still (ADR 0076 §4, #6015): its
+        // whole group stopped, as Ctrl-Z stops it, and going on where it was once let go.
+        let session = sh(COUNTS);
+        let _ends = stand_in::Ends::group(session.process_id().expect("a pid"));
+        screen_until(&session, shows("n3"));
+
+        session.program().hold(true);
+        // What it wrote before the stop landed is drawn by now.
+        std::thread::sleep(Duration::from_millis(200));
+        let held = session.screen().lines;
+        std::thread::sleep(Duration::from_millis(400));
+        assert_eq!(
+            session.screen().lines,
+            held,
+            "a held program went on writing"
+        );
+
+        session.program().hold(false);
+        screen_until(&session, |screen| screen.lines != held);
+    }
+
+    #[test]
+    fn a_stop_interrupts_a_held_program_too() {
+        // Stop on a paused chat's ask: the interrupt reaches it, so it may clean up as ever.
+        let session = sh(
+            "trap 'echo interrupted-first; exit 0' INT; echo ready; while :; do sleep 600 & wait; done",
+        );
+        let _ends = stand_in::Ends::group(session.process_id().expect("a pid"));
+        screen_until(&session, shows("ready"));
+        session.program().hold(true);
+
+        session.stopper().stop();
+
+        screen_until(&session, shows("interrupted-first"));
     }
 
     #[test]

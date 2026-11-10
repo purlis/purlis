@@ -1084,6 +1084,11 @@ export const commands = {
 	/**  **"It's fine"**: chat `session` is not stuck until it changes state. */
 	stuckFine: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("stuck_fine", { plane, session })),
 	/**
+	 *  **Answers chat `session`'s pause with `option`** (#6015): Continue, It's fine, continue, or
+	 *  Stop, as its ask in Asks offers them.
+	 */
+	answerPause: (plane: PlaneId, session: number, option: string) => typedError<null, string>(__TAURI_INVOKE("answer_pause", { plane, session, option })),
+	/**
 	 *  The project's dispatch limits, for Settings › Project › Dispatch, a workspace's settings
 	 *  and the persona view.
 	 * 
@@ -6045,6 +6050,11 @@ export type AnswerPath =
 { via: "sandbox-expects"; items: ExpectedItem[] } | 
 /**  `answer_pool_sign_in` for confirmation `id`, yes or no, as its dialog answers (#6000). */
 { via: "confirmation"; id: number } | 
+/**
+ *  `answer_pause` for the chat it names, with the option chosen (#6015); Raise the budget is
+ *  the window's own, opening Settings where the limit is.
+ */
+{ via: "paused" } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -6262,7 +6272,17 @@ export type AskSource =
  *  **A `purlis` command's confirmation in the window** (#6000): a pool sign-in, a profile
  *  taken off a pool, a signing check, each waiting on the person's yes.
  */
-"confirmation";
+"confirmation" | 
+/**
+ *  **A chat paused at its budget** (#6015, ADR 0121 decision 20): a dispatch limit the
+ *  person set, reached. Continue, Raise the budget, or Stop.
+ */
+"budget" | 
+/**
+ *  **A chat paused as looping** (#6015, ADR 0121 decision 20): the same command failing
+ *  again and again, or its asks refused again and again. It's fine, continue, or Stop.
+ */
+"looping";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
