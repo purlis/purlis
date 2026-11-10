@@ -584,7 +584,7 @@ describe("a tree row's tooltip, as its description (#6123)", () => {
   });
 
   it("keeps what else describes the row as its tooltip comes and goes", async () => {
-    // A chat's card says itself on its row from outside it (`ChatsSection.tsx`).
+    // An id written by something outside the family, as React Aria might write its own.
     render(
       <>
         <span id="card">Waiting on you</span>
@@ -606,5 +606,37 @@ describe("a tree row's tooltip, as its description (#6123)", () => {
     );
     await userEvent.keyboard("{Escape}");
     expect(row()).toHaveAccessibleDescription("Waiting on you");
+  });
+});
+
+describe("what a tree row's owner says describes it (#6147)", () => {
+  function Carded({ card }: { card: boolean }) {
+    return (
+      <>
+        {card && <span id="card">Waiting on you</span>}
+        <Tree aria-label="Chats">
+          <TreeRow
+            id="a"
+            textValue="steward"
+            content={<RowLabel>steward</RowLabel>}
+            describedBy={card ? "card" : undefined}
+            tip="Started 2026-11-10"
+          />
+        </Tree>
+      </>
+    );
+  }
+
+  it("is heard beside its tooltip, and taken back alone as it goes", async () => {
+    const { rerender } = render(<Carded card={false} />);
+    const row = () => screen.getByRole("row", { name: /^steward/ });
+    await userEvent.tab();
+    await waitFor(() => expect(row()).toHaveAccessibleDescription("Started 2026-11-10"));
+    rerender(<Carded card />);
+    await waitFor(() =>
+      expect(row()).toHaveAccessibleDescription("Started 2026-11-10 Waiting on you"),
+    );
+    rerender(<Carded card={false} />);
+    await waitFor(() => expect(row()).toHaveAccessibleDescription("Started 2026-11-10"));
   });
 });

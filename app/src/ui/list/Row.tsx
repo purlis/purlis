@@ -43,8 +43,8 @@ export interface PartsHeard {
 
 /** The parts of a row heard as its description, in the order a reader hears them: an option's
  *  one line, its line under its words and its mark, then any row's tooltip while it is up
- *  (#6101). */
-export const HEARD_ORDER = ["description", "below", "lead", "tip"] as const;
+ *  (#6101), then what its owner draws that describes it (a tree row's `describedBy`, #6147). */
+export const HEARD_ORDER = ["description", "below", "lead", "tip", "owner"] as const;
 export type HeardKind = (typeof HEARD_ORDER)[number];
 
 /** A part a row hears, by its kind and the id it is drawn with. */

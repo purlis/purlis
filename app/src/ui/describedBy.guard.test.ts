@@ -15,16 +15,19 @@ import { describe, expect, it } from "vitest";
  * A list's row draws its element through React Aria's `render` prop, so React writes it. A
  * tree's row cannot (React Aria's `TreeItem` takes no `render` and filters `aria-describedby`
  * out of its props), so its root writes it on its element, once, in `useTreeRowHeard`. That is
- * the one place under `ui/` it is written by hand, by exact count, so another fails.
+ * the one place in the window it is written by hand, by exact count, so another fails: a
+ * screen's own describing element (a chat's card) is handed to its row (`TreeRow`'s
+ * `describedBy`, #6147), never written on it.
  *
  * Read as text, as the window's other guards are: a rendered row shows only what its test set up.
  */
 const ROOT_WRITERS: Record<string, number> = {
   // `useTreeRowHeard`: the tree row's registry, written on its element.
-  "tree/Tree.tsx": 2,
+  "ui/tree/Tree.tsx": 2,
 };
 
-const UI = join(__dirname);
+/** The whole window (`app/src`), not only its families (#6147). */
+const SRC = join(__dirname, "..");
 /** A write of the attribute by hand: set, taken back or toggled by its name, or its elements set. */
 const WRITE =
   /\.(?:set|remove|toggle)Attribute(?:NS)?\([^)]*["']aria-describedby["']|\.ariaDescribedByElements\s*=/g;
@@ -39,12 +42,12 @@ function sources(dir: string): string[] {
   });
 }
 
-describe("a family's row description, written by hand (#6123)", () => {
-  it("is written only by a tree row's root, never by a part", () => {
+describe("a family's row description, written by hand (#6123, #6147)", () => {
+  it("is written only by a tree row's root, never by a part or a screen", () => {
     const written: Record<string, number> = {};
-    for (const file of sources(UI)) {
+    for (const file of sources(SRC)) {
       const count = readFileSync(file, "utf8").match(WRITE)?.length ?? 0;
-      if (count > 0) written[relative(UI, file).split(sep).join("/")] = count;
+      if (count > 0) written[relative(SRC, file).split(sep).join("/")] = count;
     }
     expect(written).toEqual(ROOT_WRITERS);
   });
