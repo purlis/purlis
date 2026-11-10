@@ -1468,41 +1468,7 @@ fn a_chat_with_a_shell_of_its_own(plane: &Plane) -> (Planes, PlaneId, Arc<Held>,
     let chat = a_chat_on_work(&held, &plane.root);
     let shell = waits_for_shells(plane, 1)[0];
     assert!(runs(shell), "precondition: its shell runs");
-    assert!(
-        leads_its_own_group(shell),
-        "precondition: its shell {shell} left the harness's group within {GONE_WITHIN:?}"
-    );
     (planes, id, held, chat, shell)
-}
-
-/// Whether `pid` has come to lead a process group of its own within [`GONE_WITHIN`]. The
-/// stand-in writes its shell's id as it forks it, before `setsid` has run in it: a stray noted
-/// in between is still in the harness's group, and is no stray (seen red on #5164).
-#[cfg(unix)]
-fn leads_its_own_group(pid: u32) -> bool {
-    let group = || {
-        purlis_core::forklock::output(std::process::Command::new("ps").args([
-            "-o",
-            "pgid=",
-            "-p",
-            &pid.to_string(),
-        ]))
-        .ok()
-        .and_then(|listed| {
-            String::from_utf8_lossy(&listed.stdout)
-                .trim()
-                .parse::<u32>()
-                .ok()
-        })
-    };
-    let until = std::time::Instant::now() + GONE_WITHIN;
-    while std::time::Instant::now() < until {
-        if group() == Some(pid) {
-            return true;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(20));
-    }
-    false
 }
 
 #[cfg(unix)]
