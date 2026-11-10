@@ -218,7 +218,7 @@ pub fn worktree_update_args(
 /// Named one by one, never derived from [`Tool::read_only`]: `ask_operator` is marked
 /// read-only too and still asks, and a tool added later is asked about until someone rules it
 /// in here. Writes are never in this list.
-pub const PRE_ALLOWED: [&str; 14] = [
+pub const PRE_ALLOWED: [&str; 18] = [
     "todo_list",
     "memory_search",
     "session_record_list",
@@ -233,6 +233,14 @@ pub const PRE_ALLOWED: [&str; 14] = [
     crate::skilltools::SKILL_RUNS,
     crate::skilltools::SKILL_FIND,
     crate::skilltools::SKILL_LOAD,
+    // The MCP twin of `purlis queries` (ADR 0122 §7, #5969): the binary's own catalogue, the
+    // same for every chat, reading nothing of the plane.
+    QUERIES,
+    // The read-only `purlis artifact` verbs' twins (#5978's review of spec #5948): the chat's
+    // own workspace's pins, a page check and this machine's approvals, read and never written.
+    crate::artifact::tools::LIST,
+    crate::artifact::tools::CHECK,
+    crate::artifact::tools::APPROVE_STATUS,
 ];
 
 /// The tools a Claude Code chat runs without asking that **write only the chat's own scope**
@@ -619,7 +627,7 @@ fn wait_seconds() -> Value {
 }
 
 /// Every tool, in the order a harness lists them.
-pub static TOOLS: [Tool; 30] = [
+pub static TOOLS: [Tool; 31] = [
     Tool {
         name: "todo_list",
         description: "List the open todos of the workspace this chat works in, oldest first, \
@@ -1314,7 +1322,19 @@ pub static TOOLS: [Tool; 30] = [
         },
         read_only: true,
     },
+    Tool {
+        name: QUERIES,
+        description: "List the queries of purlis's one tool catalogue as `purlis queries --json` \
+                      does: each read-only tool a page, the CLI or a chat reads through, with \
+                      its parameters, the shape of its answer, its scope and the release it \
+                      first answers in (ADR 0122). For writing an artifact's page.",
+        schema: no_arguments,
+        read_only: true,
+    },
 ];
+
+/// The MCP twin of `purlis queries` (#5969).
+pub const QUERIES: &str = "queries";
 
 /// What `tool` does with `args` for a chat whose place is `place` in the project at `root`:
 /// the text the chat is answered with, or the sentence saying why nothing was done.
@@ -1401,6 +1421,9 @@ fn run(
     now: chrono::NaiveDateTime,
 ) -> Result<String, String> {
     match tool {
+        QUERIES => {
+            serde_json::to_string_pretty(&crate::catalogue::listing()).map_err(|e| e.to_string())
+        }
         "todo_list" => {
             let ws = workspace_name(place)?;
             let done = dispatch_flag(args, "done", tool)?;
@@ -1510,22 +1533,7 @@ fn run(
             Ok(format!("Remembered in '{ws}': {}", stem(&file)))
         }
         "session_record_list" => {
-            let mut listed = Vec::new();
-            if let Some(sessions) =
-                held::Store::open(root, place, crate::sessionrecord::DIR, false)?
-            {
-                let mut names: Vec<String> = sessions
-                    .files()?
-                    .into_iter()
-                    .filter(|name| crate::sessionrecord::is_record_name(name))
-                    .collect();
-                names.sort_unstable_by(|a, b| b.cmp(a));
-                for name in names {
-                    if let Some(text) = sessions.read(&name)? {
-                        listed.push(crate::sessionrecord::listed(place, name, &text));
-                    }
-                }
-            }
+            let listed = session_records(root, place)?;
             if listed.is_empty() {
                 return Ok(format!("No session records at {}.", place.said()));
             }
@@ -1559,6 +1567,29 @@ fn run(
         }
         other => Err(format!("purlis has no tool {}", crate::shown::short(other))),
     }
+}
+
+/// The session records at `place`, newest first.
+#[cfg(unix)]
+pub(crate) fn session_records(
+    root: &Path,
+    place: &Place,
+) -> Result<Vec<crate::sessionrecord::Listed>, String> {
+    let mut listed = Vec::new();
+    if let Some(sessions) = held::Store::open(root, place, crate::sessionrecord::DIR, false)? {
+        let mut names: Vec<String> = sessions
+            .files()?
+            .into_iter()
+            .filter(|name| crate::sessionrecord::is_record_name(name))
+            .collect();
+        names.sort_unstable_by(|a, b| b.cmp(a));
+        for name in names {
+            if let Some(text) = sessions.read(&name)? {
+                listed.push(crate::sessionrecord::listed(place, name, &text));
+            }
+        }
+    }
+    Ok(listed)
 }
 
 /// The store, held, and made when it is not there yet.
@@ -1827,7 +1858,7 @@ pub fn question_state(question: &str) -> String {
 
 /// The chat's workspace, where it is one.
 #[cfg_attr(not(unix), allow(dead_code))]
-fn workspace_name(place: &Place) -> Result<&str, String> {
+pub(crate) fn workspace_name(place: &Place) -> Result<&str, String> {
     match place {
         Place::Workspace(name) => Ok(name),
         Place::PlaneRoot => Err(
@@ -1842,7 +1873,10 @@ fn string<'a>(args: &'a Map<String, Value>, key: &str) -> Result<&'a str, String
     optional_string(args, key)?.ok_or_else(|| format!("`{key}` is required"))
 }
 
-fn optional_string<'a>(args: &'a Map<String, Value>, key: &str) -> Result<Option<&'a str>, String> {
+pub(crate) fn optional_string<'a>(
+    args: &'a Map<String, Value>,
+    key: &str,
+) -> Result<Option<&'a str>, String> {
     match args.get(key) {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(s)) => Ok(Some(s)),
@@ -1880,7 +1914,7 @@ fn stored_texts(store: &held::Store) -> Result<Vec<String>, String> {
 
 /// Every entry of a memory store as `charter recall` reads it.
 #[cfg(unix)]
-fn memories(store: &held::Store) -> Result<Vec<crate::memstore::Found>, String> {
+pub(crate) fn memories(store: &held::Store) -> Result<Vec<crate::memstore::Found>, String> {
     let mut out = Vec::new();
     for name in entry_names(store)? {
         if let Some(text) = store.read(&name)? {
@@ -2017,14 +2051,35 @@ fn reopen(
     Ok(())
 }
 
+/// The open todos of a store, by name (when each was opened).
 #[cfg(unix)]
-fn todo_list(store: &held::Store, ws: &str, now: chrono::NaiveDateTime) -> Result<String, String> {
+pub(crate) fn open_todos(store: &held::Store) -> Result<Vec<crate::workspaces::Entry>, String> {
     let mut open = Vec::new();
     for name in entry_names(store)? {
         if let Some(text) = store.read(&name)? {
             open.push(crate::workspaces::parse_entry(&stem(&name), &text));
         }
     }
+    Ok(open)
+}
+
+/// The done todos of a store, by name, read from its `archive/`; makes nothing.
+#[cfg(unix)]
+pub(crate) fn done_todos(store: &held::Store) -> Result<Vec<crate::workspaces::Entry>, String> {
+    let mut done = Vec::new();
+    if let Some(archive) = store.sub(crate::memstore::ARCHIVE, false)? {
+        for name in entry_names(&archive)? {
+            if let Some(text) = archive.read(&name)? {
+                done.push(crate::workspaces::parse_entry(&stem(&name), &text));
+            }
+        }
+    }
+    Ok(done)
+}
+
+#[cfg(unix)]
+fn todo_list(store: &held::Store, ws: &str, now: chrono::NaiveDateTime) -> Result<String, String> {
+    let open = open_todos(store)?;
     if open.is_empty() {
         return Ok(format!("No open todos in '{ws}'."));
     }
@@ -2051,19 +2106,10 @@ fn todo_list(store: &held::Store, ws: &str, now: chrono::NaiveDateTime) -> Resul
 /// `purlis ws todo --done` lists them. Reads `todos/archive/` and makes nothing.
 #[cfg(unix)]
 fn done_todo_list(store: &held::Store, ws: &str) -> Result<String, String> {
-    let mut done = Vec::new();
-    if let Some(archive) = store.sub(crate::memstore::ARCHIVE, false)? {
-        for name in entry_names(&archive)? {
-            if let Some(text) = archive.read(&name)? {
-                let todo = crate::workspaces::parse_entry(&stem(&name), &text);
-                done.push(format!(
-                    "{}  {}",
-                    todo.slug,
-                    crate::personas::one_line(&todo.title)
-                ));
-            }
-        }
-    }
+    let done: Vec<String> = done_todos(store)?
+        .iter()
+        .map(|todo| format!("{}  {}", todo.slug, crate::personas::one_line(&todo.title)))
+        .collect();
     if done.is_empty() {
         return Ok(format!("No done todos in '{ws}'."));
     }
@@ -2076,10 +2122,7 @@ fn memory_search(
     found: Vec<crate::memstore::Found>,
     query: &str,
 ) -> Result<String, String> {
-    let found: Vec<crate::memstore::Found> = crate::memstore::rank(found, query, 8)
-        .into_iter()
-        .map(|(found, _)| found)
-        .collect();
+    let found = best_memories(found, query);
     if found.is_empty() {
         return Ok(format!(
             "No memories in '{ws}' match {}.",
@@ -2087,6 +2130,17 @@ fn memory_search(
         ));
     }
     Ok(shown_memories(&found))
+}
+
+/// The best 8 of `found` for `query`, best first.
+pub(crate) fn best_memories(
+    found: Vec<crate::memstore::Found>,
+    query: &str,
+) -> Vec<crate::memstore::Found> {
+    crate::memstore::rank(found, query, 8)
+        .into_iter()
+        .map(|(found, _)| found)
+        .collect()
 }
 
 /// How many memories a search with no query shows at a time.
@@ -2106,6 +2160,31 @@ fn newest_memories(
     store: Option<&held::Store>,
     cursor: Option<&str>,
 ) -> Result<String, String> {
+    let (found, next) = newest_page(store, cursor)?;
+    if found.is_empty() {
+        return Ok(match cursor {
+            Some(_) => format!("No memories in '{ws}' older than the cursor."),
+            None => format!("'{ws}' has no memories yet."),
+        });
+    }
+    let mut out = shown_memories(&found);
+    match next {
+        Some(last) => out.push_str(&format!(
+            "\n\n{MEMORY_PAGE} of the newest shown. Older ones: memory_search with cursor \"{last}\", \
+             or a query."
+        )),
+        None => out.push_str("\n\nThat is the oldest memory."),
+    }
+    Ok(out)
+}
+
+/// One page of [`newest_memories`]: the memories, and the cursor to the page after when there
+/// is one.
+#[cfg(unix)]
+pub(crate) fn newest_page(
+    store: Option<&held::Store>,
+    cursor: Option<&str>,
+) -> Result<(Vec<crate::memstore::Found>, Option<String>), String> {
     let order = |name: &str| {
         (
             std::cmp::Reverse(crate::memstore::unstamped(name) != name),
@@ -2133,21 +2212,11 @@ fn newest_memories(
             found.push(crate::memstore::Found { path, title, text });
         }
     }
-    if found.is_empty() {
-        return Ok(match cursor {
-            Some(_) => format!("No memories in '{ws}' older than the cursor."),
-            None => format!("'{ws}' has no memories yet."),
-        });
-    }
-    let mut out = shown_memories(&found);
-    match page.get(MEMORY_PAGE - 1).filter(|_| page.len() > MEMORY_PAGE) {
-        Some(last) => out.push_str(&format!(
-            "\n\n{MEMORY_PAGE} of the newest shown. Older ones: memory_search with cursor \"{last}\", \
-             or a query."
-        )),
-        None => out.push_str("\n\nThat is the oldest memory."),
-    }
-    Ok(out)
+    let next = page
+        .get(MEMORY_PAGE - 1)
+        .filter(|_| page.len() > MEMORY_PAGE)
+        .cloned();
+    Ok((found, next))
 }
 
 /// Memories as a search shows them: each title as a heading, then its text.
@@ -2160,10 +2229,13 @@ fn shown_memories(found: &[crate::memstore::Found]) -> String {
         .join("\n\n")
 }
 
-/// One line per change, as `charter change list` draws them.
+/// One change record as read: the record, or its slug and why it could not be read.
+pub(crate) type ChangeRead = Result<crate::change::Record, (String, String)>;
+
+/// Every change record of a workspace, in the store's order: each read, or its slug and why it
+/// could not be.
 #[cfg(unix)]
-fn change_list(changes: Option<&held::Store>, ws: &str) -> Result<String, String> {
-    let line = crate::shown::line;
+pub(crate) fn change_records(changes: Option<&held::Store>) -> Result<Vec<ChangeRead>, String> {
     let mut out = Vec::new();
     if let Some(changes) = changes {
         for name in changes.files()? {
@@ -2173,21 +2245,31 @@ fn change_list(changes: Option<&held::Store>, ws: &str) -> Result<String, String
             let Some(text) = changes.read(&name)? else {
                 continue;
             };
-            match crate::change::Record::parse(&text, slug) {
-                Ok(record) => out.push(format!(
-                    "{}  {} member(s)  ·  {}",
-                    line(&record.change),
-                    record.members.len(),
-                    line(&record.why)
-                )),
-                Err(why) => out.push(format!(
-                    "{}: {}",
-                    crate::shown::short(slug),
-                    line(&why.to_string())
-                )),
-            }
+            out.push(
+                crate::change::Record::parse(&text, slug)
+                    .map_err(|why| (slug.to_owned(), why.to_string())),
+            );
         }
     }
+    Ok(out)
+}
+
+/// One line per change, as `charter change list` draws them.
+#[cfg(unix)]
+fn change_list(changes: Option<&held::Store>, ws: &str) -> Result<String, String> {
+    let line = crate::shown::line;
+    let out: Vec<String> = change_records(changes)?
+        .into_iter()
+        .map(|read| match read {
+            Ok(record) => format!(
+                "{}  {} member(s)  ·  {}",
+                line(&record.change),
+                record.members.len(),
+                line(&record.why)
+            ),
+            Err((slug, why)) => format!("{}: {}", crate::shown::short(&slug), line(&why)),
+        })
+        .collect();
     if out.is_empty() {
         return Ok(format!(
             "No changes in workspace '{ws}'. Create one: purlis change create <slug> --why \"…\""

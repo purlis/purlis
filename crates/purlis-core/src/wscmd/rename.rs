@@ -375,6 +375,7 @@ enum Step {
     Links,
     Reopen,
     Pins,
+    Approvals,
 }
 
 #[cfg(test)]
@@ -751,6 +752,16 @@ fn finish(request: &Request, say: Sink) -> u8 {
         ));
     }
     if crashed(Step::Pins) {
+        return 1;
+    }
+    if let Some(config) = config_root
+        && let Err(why) = follow_in_approvals(config, root, old, new)
+    {
+        left.push(format!(
+            "this machine's approvals of the artifacts in '{old}' were not moved ({why})"
+        ));
+    }
+    if crashed(Step::Approvals) {
         return 1;
     }
 
@@ -1273,6 +1284,18 @@ fn follow_in_pins(config: &Path, root: &Path, old: &str, new: &str) -> std::io::
         }
     })
     .map(|_| ())
+}
+
+/// This machine's approvals of the workspace's artifacts (ADR 0122 §4, #5960), moved to where
+/// the workspace is now: a rename keeps them, as it keeps the artifacts' pins, which moved
+/// with its folder. Keyed by where the workspace really is, so asked of the new folder.
+fn follow_in_approvals(config: &Path, root: &Path, old: &str, new: &str) -> Result<(), String> {
+    let now = root
+        .join("workspaces")
+        .join(new)
+        .canonicalize()
+        .map_err(|e| crate::rewrite::os_words(&e))?;
+    crate::artifact::approval::moved(config, &now.with_file_name(old), &now).map(|_| ())
 }
 
 /// A sentence for each settings file whose `[workspace] default` still names `old`.

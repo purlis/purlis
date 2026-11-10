@@ -2891,6 +2891,7 @@ fn an_app_at(path: &std::path::Path, within: &std::path::Path) -> (Reading, Chat
                 | Ask::Propose(_)
                 | Ask::ProposeLimit(_)
                 | Ask::ProposeSkillSet(_)
+                | Ask::ProposePin(_)
                 | Ask::ReportDraft(_)
                 | Ask::Browse(_)
                 | Ask::ThemePreview(_)

@@ -190,6 +190,17 @@ pub fn fork(request: &Request, say: Sink) -> u8 {
                 &fresh.dir().join("todos"),
             ),
         ),
+        // Its artifacts (ADR 0122, #5960): the templates and the pins file, so the fork's bar
+        // shows what the parent's does. Approvals are not carried: they are this machine's,
+        // keyed by where a workspace is, so every one the parent has here asks again here.
+        (
+            crate::artifact::DIR,
+            carry_tree(
+                root,
+                &parent.dir().join(crate::artifact::DIR),
+                &fresh.dir().join(crate::artifact::DIR),
+            ),
+        ),
     ];
     // Then each extension's folder, after charter's own and in name order — only one the parent
     // has, so a fork of a workspace the extension never wrote in says nothing about it.
@@ -319,6 +330,17 @@ pub fn fork(request: &Request, say: Sink) -> u8 {
                 "Carried the {} extensions keep in '{src}': {}",
                 plural(folders.len(), "folder", "folders"),
                 folders.join(", ")
+            )
+            .into(),
+        ));
+    }
+    let pinned = crate::artifact::read(fresh.dir()).map_or(0, |pins| pins.pins.len());
+    if pinned > 0 {
+        say(Say::Info(
+            format!(
+                "Carried {} from '{src}'. Each with script asks again before it runs in \
+                 '{new}'.",
+                counted(pinned, "pinned artifact", "pinned artifacts")
             )
             .into(),
         ));

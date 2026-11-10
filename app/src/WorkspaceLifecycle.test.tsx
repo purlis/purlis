@@ -550,6 +550,12 @@ describe("deleting a workspace", () => {
       // choices once (#2323): it writes machine config only where there is a pick to copy, and
       // this plane picks none.
       "theme_levels_adopt",
+      // The workspace landed on draws its pinned artifacts on the left bar (#5952): a read of its
+      // pins file, and a listener for another window's change to them (#5953), which writes
+      // nothing.
+      "artifact_pins",
+      "plugin:event|listen",
+      "plugin:event|unlisten",
     ];
     // One write besides: the window tells the core its tabs whenever they change (#4751), and
     // the delete changed them, as the strip it lands on keeps one empty tab (#4758). That is

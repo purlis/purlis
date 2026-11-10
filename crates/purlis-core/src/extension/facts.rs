@@ -54,6 +54,14 @@ use super::{Capability, Extension, Standing};
 /// The facts file's name, inside the extension's state directory.
 pub const FILE: &str = "facts.json";
 
+/// The facts file's key per workspace (#5971): `{"<ws>": {"queries": {…}}}`, what an extension
+/// answers of one workspace without being asked ([`super::queries`]).
+pub const WORKSPACES: &str = "workspaces";
+
+/// The key under which a facts file holds query answers ([`super::queries`]): at the top for a
+/// plane-scoped query, inside [`WORKSPACES`]' entry for one workspace's.
+pub const QUERIES: &str = "queries";
+
 /// The most a facts file may be. It is read on the footer's hot path, every turn.
 pub const MOST_BYTES: u64 = 64 << 10;
 
@@ -75,7 +83,7 @@ const MOST_FRESH_SECONDS: u64 = 7 * 24 * 3600;
 const MOST_CELLS: usize = 256;
 
 /// How far ahead of charter's clock an extension's may be before its `at` is refused.
-const MOST_SKEW_SECONDS: i64 = 300;
+pub(super) const MOST_SKEW_SECONDS: i64 = 300;
 
 /// The most notes one extension's facts file may cost a surface.
 const MOST_NOTES: usize = 3;
@@ -214,7 +222,7 @@ pub(super) fn columns_of(value: &serde_json::Value) -> Result<Vec<DeclaredColumn
 }
 
 /// A `contributes.<word>` list's objects, bounded.
-fn entries<'v>(
+pub(super) fn entries<'v>(
     value: &'v serde_json::Value,
     word: &str,
     most: usize,
@@ -239,7 +247,7 @@ fn entries<'v>(
 }
 
 /// Refuse a key the shape does not have, for the reason `views_of` does.
-fn only(
+pub(super) fn only(
     object: &serde_json::Map<String, serde_json::Value>,
     keys: &[&str],
     what: &str,
@@ -256,7 +264,7 @@ fn only(
 }
 
 /// An entry's id: one segment of letters, digits, '-' and '_', unique in its list.
-fn id_of<'s>(
+pub(super) fn id_of<'s>(
     object: &serde_json::Map<String, serde_json::Value>,
     what: &str,
     at: usize,
@@ -278,7 +286,7 @@ fn id_of<'s>(
     Ok(id.to_owned())
 }
 
-fn id_ok(id: &str) -> bool {
+pub(crate) fn id_ok(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 64
         && id
@@ -317,7 +325,7 @@ fn words(
 }
 
 /// `fresh_seconds`: a whole number of seconds, at least one, at most a week.
-fn fresh(
+pub(super) fn fresh(
     object: &serde_json::Map<String, serde_json::Value>,
     what: &str,
     id: &str,
@@ -594,6 +602,10 @@ fn read_one(found: &Extension, now: DateTime<Utc>, reading: Reading, facts: &mut
     let badge_word = Capability::Badges.as_str();
     let column_word = Capability::RepoColumns.as_str();
     for key in doc.keys() {
+        // A query's answers are its queries' to read (#5971), never a surface's.
+        if key == WORKSPACES || key == QUERIES {
+            continue;
+        }
         if key != badge_word && key != column_word {
             facts.notes.push(format!(
                 "{name}'s facts file holds \"{}\", which is not something a facts file says — \
