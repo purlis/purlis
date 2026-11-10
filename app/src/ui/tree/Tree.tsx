@@ -337,7 +337,7 @@ export function useRowDescription<E extends HTMLElement>(
  * **What a tree row's parts are heard by** (#6123): the registry a list's row has (`RowHeard`,
  * #6101), its ids written on the row's element from here, its root, because React Aria's
  * `TreeItem` takes no `render` and filters `aria-describedby` out of its props. Its tooltip hands
- * its id here while it is up (`RowTip.tsx`), and nothing else under `ui/` writes the attribute
+ * its id here while it is up (`RowTip.tsx`), and nothing else in the window writes the attribute
  * (`describedBy.guard.test.ts`).
  *
  * Written on the element and not drawn: what a part hands it draws no row again, which would
@@ -679,6 +679,12 @@ export interface TreeRowProps {
   /** What it says that its words do not, beside it: under the pointer, and while the keyboard
    *  is on it (the shared tooltip, `ui/list/RowTip.tsx`). */
   tip?: Tip;
+  /**
+   * **The id of what its owner draws that describes it**, while it is drawn: a chat's card
+   * (`ChatsSection.tsx`, #3886). Heard after its tooltip, through the row's registry, so the
+   * row writes it with the rest and takes back only it as it goes (#6147).
+   */
+  describedBy?: string;
   /** A name for a reader where its `textValue` is not the whole of it. */
   "aria-label"?: string;
   /** A place for the row in its tree: never a look. */
@@ -704,6 +710,7 @@ export function TreeRow<T extends object>({
   current = false,
   alwaysOpen = false,
   description,
+  describedBy,
   carries,
   className,
   style,
@@ -714,6 +721,10 @@ export function TreeRow<T extends object>({
   const owned = useRowMenu(menu);
   const tipped = useRowTip(tip, tipToPointer);
   const { heard, ref: described } = useTreeRowHeard(ref);
+  useEffect(
+    () => (describedBy === undefined ? undefined : heard.add("card", describedBy)),
+    [heard, describedBy],
+  );
   const selected = useSaid(
     "aria-selected",
     chosen === undefined ? undefined : String(chosen),
