@@ -247,6 +247,51 @@ describe("the asks, grouped by chat", () => {
     expect(chats()).toEqual(["steward 3", "steward 5", "steward 7"]);
   });
 
+  it("lists an Expiring ask first with its countdown, then one that blocks other chats (#6006)", () => {
+    // The countdown's own clock beats on an interval, which this test drives too.
+    vi.useFakeTimers({ toFake: ["Date", "performance", "setInterval", "clearInterval"] });
+    core();
+    const now = Math.floor(Date.now() / 1000);
+    const older: Shown = { ...permission(3, "a", ["steward 3"], "Run ls"), since: now - 600 };
+    const blocks: Shown = {
+      ...permission(5, "b", ["steward 5"], "Run npm test"),
+      since: now - 60,
+      blocks: 2,
+    };
+    const expiring: Shown = {
+      ...permission(7, "c", ["steward 7"], "Run make"),
+      since: now - 10,
+      expires: now + 40,
+    };
+    draw([older, blocks, expiring], {}, { closed: true });
+    expect(chats()).toEqual(["steward 7", "steward 5", "steward 3"]);
+    const reason = (group: string) =>
+      within(chatGroup(group)).getByText(/^(Expires|Blocks|Waiting)/);
+    const seconds = () =>
+      Number(/^Expires in (\d+) s$/.exec(reason("steward 7").textContent ?? "")?.[1]);
+    const left = seconds();
+    expect(left).toBeGreaterThan(35);
+    expect(left).toBeLessThanOrEqual(40);
+    expect(reason("steward 5").textContent).toBe("Blocks 2 chats");
+    expect(reason("steward 3").textContent).toBe("Waiting 10 min");
+    // It counts down by the second.
+    act(() => vi.advanceTimersByTime(5_000));
+    expect(seconds()).toBe(left - 5);
+  });
+
+  it("puts a new ask in its place by its facts and keeps an Answer open where it was (#6006)", () => {
+    core();
+    const now = Math.floor(Date.now() / 1000);
+    const older: Shown = { ...permission(3, "a", ["steward 3"], "Run ls"), since: now - 600 };
+    const { again } = draw([older]);
+    expect(screen.getByRole("button", { name: "Cancel answering steward 3" })).toBeTruthy();
+    const newer: Shown = { ...permission(5, "b", ["steward 5"], "Run npm test"), since: now };
+    again([newer, older]);
+    // Never at the top for being new, and the open Answer stays open.
+    expect(chats()).toEqual(["steward 3", "steward 5"]);
+    expect(screen.getByRole("button", { name: "Cancel answering steward 3" })).toBeTruthy();
+  });
+
   it("draws a task's question in its own words, with its asking chat's note marked apart (ADR 0107)", () => {
     const question: Shown = {
       session: 9,
@@ -1196,11 +1241,12 @@ describe("answering in place", () => {
     });
     expect(screen.getByText("its report has nowhere to go")).toBeTruthy();
     expect(screen.getByText("Which branch?")).toBeTruthy();
-    // Heard on the card: a screen reader on it goes on to the box from there.
+    // Heard on the card: a screen reader on it goes on to the box from there, and hears why the
+    // row stands where it does (#6006).
     expect(
       screen.getByRole("row", {
         name: "its report has nowhere to go",
-        description: "Waiting on your reply Which branch?",
+        description: "Waiting on your reply Which branch? Waiting under a minute",
       }),
     ).toBeTruthy();
   });

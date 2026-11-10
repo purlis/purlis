@@ -3612,11 +3612,12 @@ fn waits_on(chats: &crate::chats::Chats) -> Vec<purlis_core::dispatchwaits::Wait
     open.iter()
         .filter_map(|&task| {
             let from = chats.recorded_chat(task)?.from?;
-            (from.report == purlis_core::reopen::Owed::Due && open.contains(&from.chat))
-                .then_some(purlis_core::dispatchwaits::WaitsOn {
+            (from.report == purlis_core::reopen::Owed::Due && open.contains(&from.chat)).then_some(
+                purlis_core::dispatchwaits::WaitsOn {
                     task,
                     asker: from.chat,
-                })
+                },
+            )
         })
         .collect()
 }
@@ -3653,7 +3654,10 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     let mut expires: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
     for (raised, at) in &permissions {
         let elapsed = now.saturating_duration_since(*at);
-        since.insert(raised.id.to_string(), now_secs.saturating_sub(elapsed.as_secs()));
+        since.insert(
+            raised.id.to_string(),
+            now_secs.saturating_sub(elapsed.as_secs()),
+        );
         if let Some(deadline) = raised.ask.deadline.duration() {
             let left = deadline.saturating_sub(elapsed).as_secs();
             expires.insert(raised.id.to_string(), now_secs.saturating_add(left));
@@ -3729,12 +3733,18 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     let browser_logins = held.login_grants().waiting();
     for one in &browser_logins {
         since.insert(browser_login_key(one.id), one.since);
-        expires.insert(browser_login_key(one.id), one.since.saturating_add(waits_for_the_person));
+        expires.insert(
+            browser_login_key(one.id),
+            one.since.saturating_add(waits_for_the_person),
+        );
     }
     let secret_fills = held.secret_fills().waiting();
     for one in &secret_fills {
         since.insert(secret_fill_key(one.id), one.since);
-        expires.insert(secret_fill_key(one.id), one.since.saturating_add(waits_for_the_person));
+        expires.insert(
+            secret_fill_key(one.id),
+            one.since.saturating_add(waits_for_the_person),
+        );
     }
     let pool_tools = held.pool_tools().waiting();
     for one in &pool_tools {
@@ -3743,7 +3753,10 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     let run_grants = held.secret_asks().open_runs();
     for one in &run_grants {
         since.insert(run_grant_key(one.id), one.since);
-        expires.insert(run_grant_key(one.id), one.since.saturating_add(command_holds(one.bound.chat)));
+        expires.insert(
+            run_grant_key(one.id),
+            one.since.saturating_add(command_holds(one.bound.chat)),
+        );
     }
     let secrets = held.secret_asks().open();
     let may_remember = |persona: &str| crate::proposals::need_offerable(held.root(), persona);
@@ -3760,7 +3773,10 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     for one in &secrets {
         since.insert(secret_key(one.id), one.since);
         if let Some(chat) = one.chats.first() {
-            expires.insert(secret_key(one.id), one.since.saturating_add(command_holds(*chat)));
+            expires.insert(
+                secret_key(one.id),
+                one.since.saturating_add(command_holds(*chat)),
+            );
         }
     }
     let vaults: Vec<_> = held

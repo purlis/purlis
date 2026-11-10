@@ -45,7 +45,6 @@ import {
 import { PersonaMark } from "./PersonaMark";
 import {
   askKey,
-  byChat,
   dismissSaid,
   MOST_ANSWERED,
   noteSeen,
@@ -66,6 +65,7 @@ import { List, ListRowSection } from "./ui/list/List";
 import { SnoozeAll, type Snoozing } from "./AsksSnooze";
 
 import { chainSaid, NothingDone } from "./inboxRowParts";
+import { inOrder } from "./asksOrder";
 import { capMarks } from "./combiningMarks";
 import { ASKS, Ask, Empty, EmptyScope, placeIds, SCOPE_LABEL, shapeOf } from "./InboxAsks";
 import { heldBy, UpdateList, type UpdateRow, type Updates, updatePlaces } from "./InboxUpdatesList";
@@ -133,8 +133,9 @@ export const NOTICES = "Notices";
  * **The Inbox** (#1692, spec #1688): everything in this project that waits on the person, at the
  * top of the right side's activity bar, the "for you" side (ADR 0038 as amended 2026-10-10).
  *
- * **One list, from the asks registry** (#1690): grouped by the chat that asks, the chat that has
- * waited longest first, each group under its chain (`steward 12 › #3046 drill › log watch`, I-9).
+ * **One list, from the asks registry** (#1690): grouped by the chat that asks, ordered by facts
+ * (`asksOrder.ts`, #6006: Expiring, then blocks others, then the longest wait), each group under
+ * its chain (`steward 12 › #3046 drill › log watch`, I-9).
  * An ask is gone from here the moment its source stops waiting, wherever it was answered (I-8).
  *
  * **Answered in place, through the ask's own path** (I-3): the registry names the command its
@@ -389,13 +390,14 @@ export function Inbox({
   /** What waits in other projects is listed among every project's alone. */
   const askingShown = scope === "all" ? asking : [];
   const othersShown = scope === "all" ? others : [];
-  /** This project's name, as its tab says it: said on a row only among other projects'. */
+  /** This project's name, as its tab says it: every row is tagged with it and its workspace (ADR
+   *  0121 decision 5, #6006). */
   const project = elsewhere?.waitingHere?.find((one) => one.plane === plane)?.project;
   const whereOf = (session: number): string => {
     // Session 0 is no chat's (a change purlis holds, a sign-in): it is filed nowhere (#5240).
     const filed = session === 0 ? undefined : workspaceOf?.(session);
     return [
-      scope === "all" ? project : undefined,
+      project,
       filed === undefined ? undefined : (workspaceNamed?.(filed) ?? filed),
       personaOf?.(session),
     ]
@@ -408,7 +410,9 @@ export function Inbox({
   const widen = () => {
     if (wider !== undefined) keepInboxScope(plane, wider.scope);
   };
-  const groups = byChat(listed, (ask) => ageOf(plane, ask));
+  // **Ordered by facts** (ADR 0121 decision 5, #6006): Expiring, then blocks others, then the
+  // longest wait, one chat's asks together (`asksOrder.ts`).
+  const groups = inOrder(listed, (ask) => ageOf(plane, ask), now);
   const recent = useAnswered(plane);
   // Read only while nothing waits, where the empty Inbox lists them (D-1700-7).
   const allowedLately = useAllowedLately(
@@ -423,14 +427,14 @@ export function Inbox({
   const touch = useAnsweredWhenGone(plane, asks);
   /** Each chat's rows: a chat's held dispatches are one Notice, which asks about the first
    *  and says how many wait behind it. */
-  const rows = groups.map((group) => ({
-    ...group,
-    asks: group.asks.filter(
-      (ask, at) =>
+  const rows = groups.map((group) => {
+    const placed = group.placed.filter(
+      ({ ask }, at) =>
         ask.source !== "dispatch" ||
-        group.asks.findIndex((one) => one.source === "dispatch") === at,
-    ),
-  }));
+        group.placed.findIndex((one) => one.ask.source === "dispatch") === at,
+    );
+    return { ...group, placed, asks: placed.map(({ ask }) => ask) };
+  });
   const ignore =
     onIgnore === undefined
       ? undefined
@@ -673,8 +677,9 @@ export function Inbox({
                 named
                 data-session={group.session}
               >
-                {group.asks.map((ask) => (
+                {group.placed.map(({ ask, why }) => (
                   <Ask
+                    standing={why}
                     key={askKey(ask)}
                     plane={plane}
                     ask={ask}

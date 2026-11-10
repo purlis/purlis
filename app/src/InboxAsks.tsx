@@ -41,6 +41,8 @@ import { shownState } from "./shownState";
 
 import { chainSaid, timeSaid, useSettledPlace } from "./inboxRowParts";
 import { askSeenKey, useSeenRow } from "./seenRows";
+import { AskStanding } from "./AskStanding";
+import type { Standing } from "./asksOrder";
 
 // **The Asks view's rows** (#1692, #5644; moved from `Inbox.tsx`): what one ask offers, and how it
 // is drawn and answered in place.
@@ -460,9 +462,12 @@ export function Ask({
   above,
   where,
   now,
+  standing,
 }: {
   plane: PlaneId;
   ask: Shown;
+  /** **Why it stands where it does in Asks** (#6006), said on its reason line. */
+  standing?: Standing;
   /** Where its chat is: project · workspace · persona, as much as the window says. */
   where: string;
   /** The time its age is said against. */
@@ -694,9 +699,9 @@ export function Ask({
       className="inbox-ask"
       data-source={ask.source}
       aria-labelledby={shape.message ? `${id}-whose` : `${id}-says`}
-      aria-describedby={
+      aria-describedby={`${
         shape.message ? `${id}-says` : `${id}-whose${shape.said === undefined ? "" : ` ${id}-said`}`
-      }
+      }${standing === undefined ? "" : ` ${id}-standing`}`}
       dismiss={
         shape.ignore && onIgnore !== undefined ? (
           <IconButton
@@ -738,6 +743,7 @@ export function Ask({
           </>
         )}
       </MessageMeta>
+      {standing !== undefined && <AskStanding id={`${id}-standing`} why={standing} now={now} />}
       <MessageBody>
         {/* The ask's words are the source's, drawn as text and never as a control. What an
               Allow here would let run is never cut (#1146): it is read whole first. **A chat's

@@ -57,7 +57,11 @@ mod tests {
         let blocks = blocked_by(&[on(3, 2), on(2, 1)]);
         assert_eq!(blocks.get(&3), Some(&2));
         assert_eq!(blocks.get(&2), Some(&1));
-        assert_eq!(blocks.get(&1), None, "nobody waits on the chat the person started");
+        assert_eq!(
+            blocks.get(&1),
+            None,
+            "nobody waits on the chat the person started"
+        );
     }
 
     #[test]

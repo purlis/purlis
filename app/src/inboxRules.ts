@@ -73,36 +73,12 @@ export function agoSaid(when: number, now: number): string | undefined {
 }
 
 /**
- * **The asks of one project, grouped by chat, oldest first** (I-6, #1700): each chat's group
- * stands where its oldest ask does, and inside a group the asks stand oldest first. Asks of the
- * same age keep the registry's order, which is its sources' order.
- */
-export function byChat(asks: readonly Shown[], age: (ask: Shown) => Age): ChatGroup[] {
-  const ordered = asks
-    .map((ask, at) => ({ ask, at, age: age(ask) }))
-    .sort(
-      (one, other) => one.age[0] - other.age[0] || one.age[1] - other.age[1] || one.at - other.at,
-    )
-    .map(({ ask }) => ask);
-  const groups = new Map<number, Shown[]>();
-  for (const ask of ordered) {
-    const group = groups.get(ask.session) ?? [];
-    group.push(ask);
-    groups.set(ask.session, group);
-  }
-  return [...groups.entries()].map(([session, mine]) => ({
-    session,
-    chain: chainOfGroup(session, mine),
-    asks: mine,
-  }));
-}
-
-/**
  * What a group is headed: its chat, by its first ask. Session 0 is no chat's, and its asks can
  * come from different places (a change held from one chat, a sign-in), so where they differ the
- * head says purlis alone and each row says its own (#5240).
+ * head says purlis alone and each row says its own (#5240). The groups and their order are
+ * `asksOrder.ts`'s (#6006).
  */
-function chainOfGroup(session: number, mine: readonly Shown[]): readonly string[] {
+export function chainOfGroup(session: number, mine: readonly Shown[]): readonly string[] {
   const first = mine[0].chain;
   if (first.length === 0) return [`chat ${session}`];
   const differ = mine.some((ask) => ask.chain.join() !== first.join());
