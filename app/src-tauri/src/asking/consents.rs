@@ -58,6 +58,8 @@ fn of_no_chat(
         answer,
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -150,6 +152,8 @@ pub fn confirmation(asked: &PoolSignInAsk, until: u32) -> Shown {
         AnswerPath::Confirmation { id: asked.id },
     );
     shown.held_until = Some(until);
+    // It is taken back as a no at `until`: an Expiring ask (ADR 0121 decision 5, #6006).
+    shown.expires = Some(until);
     shown
 }
 
@@ -255,5 +259,19 @@ mod tests {
             assert_eq!(shown.held_until, Some(1_000));
             assert_eq!(shown.ask, "confirmation:7");
         }
+    }
+
+    /// **#6006: a confirmation is an Expiring ask**, ending when its two minutes do, while the
+    /// expects consent waits for its answer and ends at no time of its own.
+    #[test]
+    fn a_confirmation_expires_when_it_is_taken_back_and_the_expects_consent_never_does() {
+        assert_eq!(
+            confirmation(&asked(Asks::SignIn), 1_000).expires,
+            Some(1_000)
+        );
+        let consent = sandbox_expects(Some(&expects(true, None, vec![item(None)])))
+            .expect("a consent to give");
+        assert_eq!(consent.expires, None);
+        assert_eq!(consent.blocks, None);
     }
 }
