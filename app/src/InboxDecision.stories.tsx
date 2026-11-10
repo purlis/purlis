@@ -15,6 +15,7 @@ import type { Shown } from "./bindings";
 import { Inbox } from "./Inbox";
 import { runAsk } from "./secretAsk.testkit";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
+import { SETTLE_MS } from "./noticeSettle";
 
 /** A run of `curl` whose vault holds every key it is handed: nothing to type, only to decide. */
 const RUN_GRANT: Shown = { ...runAsk({ fills: [] }), session: 2, chain: ["devops 2"] };
@@ -249,8 +250,8 @@ export const ACommandsConfirmationOnItsRow: Story = {
 };
 
 /** **A high-risk ask's row** (ADR 0121 decision 8, #6011): its risk said first, and its Allow
- *  asks once more under the line, keeping the keyboard where it was; → reaches the Allow there
- *  and Cancel, and Cancel takes the question back. */
+ *  asks once more under the line once the row has settled, keeping the keyboard where it was,
+ *  and Cancel takes the question back. */
 export const AHighRiskAskOnItsRow: Story = {
   args: { ask: "PUSH" },
   play: async ({ canvasElement }) => {
@@ -265,6 +266,8 @@ export const AHighRiskAskOnItsRow: Story = {
     const allow = canvas.getByRole("button", { name: "Allow once" });
     await untilFocused(() => allow, "→ reaches Allow once");
     expectFocusInSight();
+    // The person reads the row first: a grant pressed as it is drawn is held (ADR 0097).
+    await new Promise((done) => setTimeout(done, SETTLE_MS + 50));
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(allow).toHaveAttribute("aria-expanded", "true"));
     const again = canvas.getByRole("group", { name: "Allow a push to main?" });
