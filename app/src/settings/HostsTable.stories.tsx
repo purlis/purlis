@@ -103,6 +103,9 @@ export const RowsChosen: Story = {
     expectFocusInSight();
     await userEvent.keyboard("{Enter}");
     await expect(args.onRemoveAll).toHaveBeenCalledWith(["zed.dev", "docs.github.com"]);
+    // The pointer off the rows, as after a press of the bar: Classic light's success words miss
+    // the floor on the row under the pointer (#6180).
+    await userEvent.hover(document.body);
   },
 };
 
