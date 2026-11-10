@@ -93,9 +93,11 @@ describe("starting a chat", () => {
     // keyboard access is on **or** its `tabindex` is written down —
     // `HTMLFormControlElement::isKeyboardFocusable` hands over to
     // `Element::isKeyboardFocusable` the moment `tabIndexSetExplicitly()`, and never consults
-    // the gate. `Modals.keyboard.test.tsx` walks every modal against a model of that rule.
+    // the gate. Inside a dialog the family now moves Tab itself (`useTabbing`, #2910), which
+    // `Modals.keyboard.test.tsx` walks for every modal. In a dialog this attribute is the
+    // fallback, should the family's Tab ever stand back; outside one it is what decides.
     //
-    // **What a model cannot tell you is whether the attribute survives the build.** A jsdom
+    // **What jsdom cannot tell you is whether the attribute survives the build.** A jsdom
     // test renders the components; an operator gets a Vite bundle inside a WKWebView, and an
     // attribute that a transform dropped would leave every one of those tests green and the
     // window exactly as broken as before. This asserts the other half: the real app, the real
