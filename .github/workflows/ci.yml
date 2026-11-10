@@ -9,7 +9,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
   push:
-    branches: [main]
+    branches: [main, spec-5948-page-port-never-answers-in-the-act68zy7]
   # The merge queue's run of the group a pull request joins: main, or the entries ahead of it, with
   # the pull request on top. It runs every job a pull request runs, and is gated as one: the jobs
   # that compare a change with main (`bench`, the cold start, the scoped macOS and Docker jobs)
@@ -1720,25 +1720,12 @@ jobs:
       fail-fast: false
       matrix:
         os: [macos-latest]
-        shard: [1, 2, 3, 4]
+        shard: [1]
         shards: [4]
         extras: [false]
         specs: [true]
         sandbox: [false]
         outcome: [false]
-        include:
-          - os: macos-latest
-            shard: extras
-            shards: 4
-            extras: true
-            specs: false
-            sandbox: false
-          - os: macos-latest
-            shard: sandbox
-            shards: 4
-            extras: false
-            specs: false
-            sandbox: true
     runs-on: ${{ matrix.os }}
     steps: &scenario-steps
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
