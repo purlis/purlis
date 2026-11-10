@@ -107,6 +107,10 @@ struct World {
     held: Vec<(u32, &'static str, u32)>,
     /// When each ask began, by its key (#1700).
     since: Vec<(&'static str, u32)>,
+    /// Until when each ask waits before its source ends it, by its key (#6006).
+    expires: Vec<(&'static str, u32)>,
+    /// How many open chats wait on each chat's report (#6006).
+    chats_waiting: Vec<(u32, u32)>,
     /// The profiles waiting to be signed in (#2035).
     sign_ins: Vec<purlis_core::profilestore::sign_in::Wait>,
     pool_sign_ins: Vec<purlis_core::profilestore::onrunner::PoolWait>,
@@ -146,6 +150,8 @@ impl World {
             asking: Vec::new(),
             held: Vec::new(),
             since: Vec::new(),
+            expires: Vec::new(),
+            chats_waiting: Vec::new(),
             sign_ins: Vec::new(),
             pool_sign_ins: Vec::new(),
             sandbox_only: Vec::new(),
@@ -236,6 +242,18 @@ impl World {
                     .iter()
                     .find(|(key, _)| *key == ask)
                     .map(|(_, at)| *at)
+            },
+            expires: &|ask| {
+                self.expires
+                    .iter()
+                    .find(|(key, _)| *key == ask)
+                    .map(|(_, at)| *at)
+            },
+            chats_waiting: &|session| {
+                self.chats_waiting
+                    .iter()
+                    .find(|(one, _)| *one == session)
+                    .map(|(_, count)| *count)
             },
             runner_of: &|_| None,
         })
@@ -2954,6 +2972,8 @@ fn asked(session: u32, ask: &str) -> Shown {
         answer: AnswerPath::InItsPane,
         since: None,
         held_until: None,
+        expires: None,
+        blocks: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -3056,4 +3076,40 @@ fn a_chat_snoozed_for_an_hour_says_when_it_comes_back_and_is_listed_again_then()
     );
     assert!(split.snoozed.is_empty());
     assert_eq!(split.snoozed_until, None);
+}
+
+#[test]
+fn an_ask_carries_when_it_ends_by_itself_and_a_held_connection_ends_with_its_hold() {
+    // #6006: Asks lists an Expiring ask first, by when it ends. A held connection ends with its
+    // hold; any other ask at the time its source gave; one with none is not Expiring.
+    let mut world = World::new();
+    world.blocks = vec![
+        (5, a_host_block("api.example.com")),
+        (6, a_host_block("api.example.com")),
+    ];
+    world.held = vec![(5, "api.example.com", 1_700_000_060)];
+    world.expires = vec![("block:6:connect:host:api.example.com", 1_700_000_090)];
+
+    let asks = world.asks();
+
+    assert_eq!(asks[0].expires, Some(1_700_000_060));
+    assert_eq!(asks[1].expires, Some(1_700_000_090));
+    world.expires = Vec::new();
+    assert_eq!(world.asks()[1].expires, None);
+}
+
+#[test]
+fn an_ask_says_how_many_chats_wait_on_its_chat_and_one_of_no_chat_says_none() {
+    // #6006: "blocks N chats", from the dispatch records.
+    let mut world = World::new();
+    world.blocks = vec![
+        (5, a_host_block("api.example.com")),
+        (6, a_host_block("api.example.com")),
+    ];
+    world.chats_waiting = vec![(5, 2), (0, 9)];
+
+    let asks = world.asks();
+
+    assert_eq!(asks[0].blocks, Some(2));
+    assert_eq!(asks[1].blocks, None);
 }
