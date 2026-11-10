@@ -712,6 +712,13 @@ impl Proxy {
 
     /// **A chat's proxy**: two new ports on the loopback interface, serving `serving`.
     pub fn serving(serving: Serving) -> io::Result<Self> {
+        // A confined proxy without the addresses a model is served at would connect to them.
+        if serving.confined && serving.providers.is_none() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "a confined extension's proxy needs the addresses a model is served at",
+            ));
+        }
         // Never a port a chat's sandbox lets it reach as a service on this Mac, and each kept
         // as purlis's own while it listens, so no chat is allowed it (qw384).
         let http = super::localport::bind_loopback()?;
@@ -1178,10 +1185,7 @@ impl Allowed {
                 providers,
                 &resolve,
             ) {
-                Ok(reached) => reached
-                    .into_iter()
-                    .find_map(|addr| TcpStream::connect_timeout(&addr, PATIENCE).ok())
-                    .map_or(Connected::Not, Connected::To),
+                Ok(reached) => connect_first(reached),
                 Err(refused) => refused,
             };
         }
@@ -1903,6 +1907,27 @@ pub(crate) fn confined_addresses(
     providers: &ProviderAddresses,
     resolve: &dyn Fn(&str, u16) -> Vec<SocketAddr>,
 ) -> Result<Vec<SocketAddr>, Connected> {
+    let mut reached = held_addresses(host, port, reach, own, carries, resolve)?;
+    reached.retain(|at| !providers.serves(at.ip()));
+    if reached.is_empty() {
+        return Err(Connected::AtAModel);
+    }
+    Ok(reached)
+}
+
+/// The addresses `host` on `port` resolves to now by `resolve` that a chat may reach and
+/// `carries` keeps, or why none is: [`Connected::OnlyLocal`] where it resolved, only to
+/// addresses held back, [`Connected::Not`] where it did not resolve.
+fn held_addresses(
+    host: &str,
+    port: u16,
+    reach: &Reach,
+    own: &[std::net::IpAddr],
+    carries: &dyn Fn(SocketAddr) -> bool,
+    resolve: &dyn Fn(&str, u16) -> Vec<SocketAddr>,
+) -> Result<Vec<SocketAddr>, Connected> {
+    // Looked up once at most: what answered is remembered, so an empty answer tells apart from
+    // one with only addresses a chat never reaches.
     let answered = std::cell::Cell::new(true);
     let once = |host: &str, port: u16| {
         let found: Vec<SocketAddr> = resolve(host, port);
@@ -1918,11 +1943,15 @@ pub(crate) fn confined_addresses(
             Connected::Not
         });
     }
-    reached.retain(|at| !providers.serves(at.ip()));
-    if reached.is_empty() {
-        return Err(Connected::AtAModel);
-    }
     Ok(reached)
+}
+
+/// Connects to the first of `reached` that answers.
+fn connect_first(reached: Vec<SocketAddr>) -> Connected {
+    reached
+        .into_iter()
+        .find_map(|addr| TcpStream::connect_timeout(&addr, PATIENCE).ok())
+        .map_or(Connected::Not, Connected::To)
 }
 
 /// [`connect_held`], looking `host` up by `resolve`.
@@ -1934,27 +1963,10 @@ pub(crate) fn connect_held_resolving(
     carries: &dyn Fn(SocketAddr) -> bool,
     resolve: &dyn Fn(&str, u16) -> Vec<SocketAddr>,
 ) -> Connected {
-    // Looked up once at most: what answered is remembered, so an empty answer tells apart from
-    // one with only addresses a chat never reaches.
-    let answered = std::cell::Cell::new(true);
-    let once = |host: &str, port: u16| {
-        let found: Vec<SocketAddr> = resolve(host, port);
-        answered.set(!found.is_empty());
-        found
-    };
-    let mut reached = addresses(host, port, reach, own, &once);
-    reached.retain(|at| carries(*at));
-    if reached.is_empty() {
-        return if answered.get() {
-            Connected::OnlyLocal
-        } else {
-            Connected::Not
-        };
+    match held_addresses(host, port, reach, own, carries, resolve) {
+        Ok(reached) => connect_first(reached),
+        Err(refused) => refused,
     }
-    reached
-        .into_iter()
-        .find_map(|addr| TcpStream::connect_timeout(&addr, PATIENCE).ok())
-        .map_or(Connected::Not, Connected::To)
 }
 
 /// **The addresses a connection to `host` on `port` is made at** (#2097 review): a name of this

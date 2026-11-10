@@ -466,8 +466,8 @@ pub const MODEL_DOMAINS: [&str; 41] = [
 ];
 
 /// **Whether `host` serves a model** (ADR 0101 §3): one of [`MODEL_DOMAINS`] or a name under one,
-/// a host the model-providers preset lists or a name under it, or Amazon Bedrock's runtime in any
-/// region.
+/// a host the model-providers preset lists or a name under it, or Amazon Bedrock's runtime or
+/// Vertex AI in any region (each region a host of its own).
 pub fn model_host(host: &Host) -> bool {
     let host = host.to_string();
     let under = |domain: &str| {
@@ -483,7 +483,20 @@ pub fn model_host(host: &Host) -> bool {
             .iter()
             .any(|domain| under(domain))
         || (under("amazonaws.com") && host.split('.').any(|label| label.starts_with("bedrock")))
+        || (under("googleapis.com")
+            && host
+                .split('.')
+                .next()
+                .is_some_and(|label| label.ends_with("-aiplatform")))
 }
+
+/// Hosts a model is served from that are neither a domain of [`MODEL_DOMAINS`] nor its `api.`
+/// host, looked up for [`provider_names`].
+const PROVIDER_HOSTS: [&str; 3] = [
+    "api-inference.huggingface.co",
+    "router.huggingface.co",
+    "us-central1-aiplatform.googleapis.com",
+];
 
 /// The regions whose Amazon Bedrock runtime is looked up by name for [`provider_names`]: Bedrock
 /// has one host per region, so only these are spelled out.
@@ -497,7 +510,8 @@ const BEDROCK_REGIONS: [&str; 5] = [
 
 /// **The names a model provider is reached by, looked up for the addresses a confined proxy
 /// never connects to** (#3094): each of [`MODEL_DOMAINS`] and its `api.` host, each host the
-/// model-providers preset lists, and Bedrock's runtime in [`BEDROCK_REGIONS`]. Each once. A
+/// model-providers preset lists, each of [`PROVIDER_HOSTS`], and Bedrock's runtime in
+/// [`BEDROCK_REGIONS`]. Each once. A
 /// domain of three labels or more is a service's own name already, so it has no `api.` host.
 pub fn provider_names() -> Vec<String> {
     let mut names: Vec<String> = Vec::new();
@@ -511,6 +525,7 @@ pub fn provider_names() -> Vec<String> {
             names.push(format!("api.{domain}"));
         }
     }
+    names.extend(PROVIDER_HOSTS.iter().map(|host| (*host).to_owned()));
     names.extend(
         BEDROCK_REGIONS
             .iter()
@@ -560,8 +575,8 @@ pub(super) fn confined_said(hosts: &[Host]) -> String {
          it with each question, never your projects or your home folder. It writes only its own \
          state folder. {reach}, through a proxy that carries a connection only when its \
          encryption names that host, and never to a host that serves a model, an address one is \
-         served at, or an address of a private network. A host it names can still pass on what it is sent. The list above \
-         is what it can do, not only what it says it does."
+         served at, or an address of a private network. A host it names can still pass on what \
+         it is sent. The list above is what it can do, not only what it says it does."
     )
 }
 

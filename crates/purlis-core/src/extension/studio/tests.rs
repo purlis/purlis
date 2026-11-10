@@ -277,6 +277,8 @@ fn a_model_host_is_the_domain_or_a_name_under_it_and_no_look_alike() {
     assert!(model_host(&host("API.Anthropic.com.")));
     assert!(model_host(&host("x.openai.azure.com")));
     assert!(model_host(&host("bedrock-runtime.eu-west-1.amazonaws.com")));
+    assert!(model_host(&host("europe-west4-aiplatform.googleapis.com")));
+    assert!(!model_host(&host("storage.googleapis.com")));
     assert!(!model_host(&host("s3.eu-west-1.amazonaws.com")));
     assert!(!model_host(&host("notanthropic.com")));
     assert!(!model_host(&host("anthropic.com.example.org")));
@@ -1272,7 +1274,7 @@ fn a_name_that_resolves_to_a_private_network_is_not_connected_to() {
 
 /// A resolver answering each name with the addresses `answers` pair it with, and nothing else.
 fn resolver(
-    answers: &'static [(&'static str, &'static str)],
+    answers: Vec<(&'static str, &'static str)>,
 ) -> crate::sandbox::egress::providers::Resolve {
     std::sync::Arc::new(move |name: &str, port: u16| {
         answers
@@ -1284,12 +1286,32 @@ fn resolver(
 }
 
 /// The provider addresses a resolver that answers `api.provider.example` with `at` gives.
-fn providers_at(at: &'static [&'static str]) -> crate::sandbox::egress::ProviderAddresses {
-    let answers: Vec<(&'static str, &'static str)> =
-        at.iter().map(|ip| ("api.provider.example", *ip)).collect();
+fn providers_at(at: &[&'static str]) -> crate::sandbox::egress::ProviderAddresses {
     crate::sandbox::egress::ProviderAddresses::resolving(
         vec!["api.provider.example".to_owned()],
-        resolver(answers.leak()),
+        resolver(at.iter().map(|ip| ("api.provider.example", *ip)).collect()),
+    )
+}
+
+/// Where a confined proxy would connect for `host`, resolved by `answers`.
+fn confined_at(
+    host: &str,
+    answers: &[(&'static str, &'static str)],
+    providers: &crate::sandbox::egress::ProviderAddresses,
+) -> Result<Vec<std::net::SocketAddr>, crate::sandbox::egress::Connected> {
+    use crate::sandbox::egress::{carried_when_confined, confined_addresses};
+    let reach = crate::sandbox::reach::Reach::open(
+        answers.iter().map(|(name, _)| (*name).to_owned()).collect(),
+    );
+    let resolve = resolver(answers.to_vec());
+    confined_addresses(
+        host,
+        443,
+        &reach,
+        &[],
+        &carried_when_confined,
+        providers,
+        &*resolve,
     )
 }
 
@@ -1298,7 +1320,7 @@ fn a_confined_proxy_refuses_a_tunnel_to_a_declared_name_pinned_to_a_model_provid
     use std::io::{Read, Write};
     let providers = crate::sandbox::egress::ProviderAddresses::resolving(
         vec!["api.provider.example".to_owned()],
-        resolver(&[
+        resolver(vec![
             ("api.provider.example", "104.18.32.47"),
             ("registry.example.com", "104.18.32.47"),
         ]),
@@ -1324,34 +1346,6 @@ fn a_confined_proxy_refuses_a_tunnel_to_a_declared_name_pinned_to_a_model_provid
     let _ = stream.read_to_string(&mut heard);
     assert!(heard.starts_with("HTTP/1.1 403"), "{heard:?}");
     assert!(heard.contains("model provider"), "{heard:?}");
-}
-
-/// Where a confined proxy would connect for `host`, resolved by `answers`.
-fn confined_at(
-    host: &str,
-    answers: &[(&str, &str)],
-    providers: &crate::sandbox::egress::ProviderAddresses,
-) -> Result<Vec<std::net::SocketAddr>, crate::sandbox::egress::Connected> {
-    use crate::sandbox::egress::{carried_when_confined, confined_addresses};
-    let reach = crate::sandbox::reach::Reach::open(
-        answers.iter().map(|(name, _)| (*name).to_owned()).collect(),
-    );
-    let resolve = |name: &str, port: u16| -> Vec<std::net::SocketAddr> {
-        answers
-            .iter()
-            .filter(|(named, _)| *named == name)
-            .map(|(_, ip)| std::net::SocketAddr::new(ip.parse().expect("an address"), port))
-            .collect()
-    };
-    confined_addresses(
-        host,
-        443,
-        &reach,
-        &[],
-        &carried_when_confined,
-        providers,
-        &resolve,
-    )
 }
 
 #[test]

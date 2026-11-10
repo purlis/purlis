@@ -7,10 +7,11 @@
 //! A confined extension names its own hosts, and a name is the extension's to point anywhere
 //! (its own DNS can answer with a provider's address). So its proxy looks up the hosts that
 //! serve a model, and refuses any address one of them resolved to: looked up again at most every
-//! [`AGAIN`], and an address kept for [`KEPT`] after the last answer that held it, so a provider
+//! [`ANSWERS_STAND`], and an address kept for [`REFUSED_FOR`] after the last answer that held it, so a provider
 //! whose answers rotate is refused at each address it answered with lately. A lookup that is due
 //! is made before the connect it holds up, never after, so no connect is let through on an
-//! answer still pending.
+//! answer still pending. Where no provider name answered and none answered lately, nothing is
+//! known of where a model is served, so every address is refused until one answers.
 
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
@@ -18,17 +19,17 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 /// How long the provider hosts' answers stand before they are looked up again.
-pub const AGAIN: Duration = Duration::from_secs(30);
+pub const ANSWERS_STAND: Duration = Duration::from_secs(30);
 
 /// How long an address a provider host answered with is refused after the last answer that
 /// held it.
-pub const KEPT: Duration = Duration::from_secs(10 * 60);
+pub const REFUSED_FOR: Duration = Duration::from_secs(10 * 60);
 
 /// The port a provider host is looked up for: the one a tunnel is carried to.
 const PORT: u16 = 443;
 
 /// At most this many lookups run at once.
-const AT_ONCE: usize = 8;
+const LOOKUPS_AT_ONCE: usize = 8;
 
 /// How a name is looked up: the system's resolver, or a test's.
 pub type Resolve = Arc<dyn Fn(&str, u16) -> Vec<SocketAddr> + Send + Sync>;
@@ -83,7 +84,8 @@ impl ProviderAddresses {
         (self.resolve)(name, port)
     }
 
-    /// **Whether a model is served at `ip`**, as the provider hosts answer now.
+    /// **Whether a model is served at `ip`**, as the provider hosts answer now: also where none
+    /// of them answers, so a resolver that fails never lets a connect through.
     pub fn serves(&self, ip: IpAddr) -> bool {
         self.serves_at(ip, Instant::now())
     }
@@ -94,21 +96,26 @@ impl ProviderAddresses {
         let mut seen = self.seen.lock().unwrap_or_else(PoisonError::into_inner);
         if seen
             .looked
-            .is_none_or(|looked| now.saturating_duration_since(looked) >= AGAIN)
+            .is_none_or(|looked| now.saturating_duration_since(looked) >= ANSWERS_STAND)
         {
-            for found in self.look_up() {
-                seen.at.insert(found.ip().to_canonical(), now);
+            let found = self.look_up();
+            // Nothing answered: looked up again at the next connect, not after the answers stand.
+            if !found.is_empty() {
+                seen.looked = Some(now);
             }
-            seen.looked = Some(now);
+            for at in found {
+                seen.at.insert(at.ip().to_canonical(), now);
+            }
         }
         seen.at
-            .retain(|_, answered| now.saturating_duration_since(*answered) < KEPT);
-        seen.at.contains_key(&ip.to_canonical())
+            .retain(|_, answered| now.saturating_duration_since(*answered) < REFUSED_FOR);
+        // Nothing known of where a model is served: every address may be one.
+        seen.at.is_empty() || seen.at.contains_key(&ip.to_canonical())
     }
 
-    /// Every address the names resolve to now, [`AT_ONCE`] lookups at a time.
+    /// Every address the names resolve to now, [`LOOKUPS_AT_ONCE`] lookups at a time.
     fn look_up(&self) -> Vec<SocketAddr> {
-        let per = self.names.len().div_ceil(AT_ONCE).max(1);
+        let per = self.names.len().div_ceil(LOOKUPS_AT_ONCE).max(1);
         std::thread::scope(|scope| {
             let running: Vec<_> = self
                 .names
@@ -165,9 +172,9 @@ mod tests {
         let (providers, looked) = rotating(&["104.18.32.47", "104.18.33.47"]);
         let start = Instant::now();
         assert!(providers.serves_at(ip("104.18.32.47"), start));
-        assert!(!providers.serves_at(ip("104.18.33.47"), start + AGAIN / 2));
+        assert!(!providers.serves_at(ip("104.18.33.47"), start + ANSWERS_STAND / 2));
         assert_eq!(looked.load(Ordering::SeqCst), 1, "looked up before due");
-        assert!(providers.serves_at(ip("104.18.33.47"), start + AGAIN));
+        assert!(providers.serves_at(ip("104.18.33.47"), start + ANSWERS_STAND));
         assert_eq!(looked.load(Ordering::SeqCst), 2);
     }
 
@@ -177,9 +184,25 @@ mod tests {
         let start = Instant::now();
         assert!(providers.serves_at(ip("104.18.32.47"), start));
         // Its answer moved on, and the address it gave before is still refused for a while.
-        assert!(providers.serves_at(ip("104.18.32.47"), start + AGAIN));
-        assert!(!providers.serves_at(ip("104.18.32.47"), start + KEPT));
-        assert!(providers.serves_at(ip("104.18.33.47"), start + KEPT));
+        assert!(providers.serves_at(ip("104.18.32.47"), start + ANSWERS_STAND));
+        assert!(!providers.serves_at(ip("104.18.32.47"), start + REFUSED_FOR));
+        assert!(providers.serves_at(ip("104.18.33.47"), start + REFUSED_FOR));
+    }
+
+    #[test]
+    fn while_no_provider_name_answers_every_address_is_refused_and_looked_up_again() {
+        let looked = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&looked);
+        let resolve: Resolve = Arc::new(move |_: &str, _: u16| {
+            counted.fetch_add(1, Ordering::SeqCst);
+            Vec::new()
+        });
+        let providers =
+            ProviderAddresses::resolving(vec!["api.provider.example".to_owned()], resolve);
+        let start = Instant::now();
+        assert!(providers.serves_at(ip("151.101.1.1"), start));
+        assert!(providers.serves_at(ip("151.101.1.1"), start));
+        assert_eq!(looked.load(Ordering::SeqCst), 2, "not looked up again");
     }
 
     #[test]
