@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794317790211,
+  "lastUpdate": 1794326459721,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -18950,6 +18950,42 @@ window.BENCHMARK_DATA = {
             "value": 1109.6,
             "unit": "MB",
             "extra": "median of 6 samples: 1066.2, 1092.8, 1126.5, 1147.1, 1146.3, 846.5 MB; window 724.2 MB, session host 408.5 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "708f4bfd13afec1b25db570f4fc1c72dfb94ac7e",
+          "message": "A scenario spec finds every Blocking ask from the ✋ alone (#6001) (#6127)\n\n* A scenario spec finds every Blocking ask from the ✋ alone (#6001)\n\nEach kind is raised in another project and workspace than the one in\nfront: permission, question, secret, run grant, dispatch grant, sandbox\nhost block (the project's sandbox on), sandbox consent (its committed\nexpects) and command confirmation (a real purlis signing check). From\nthe ✋ alone each must be counted (+N elsewhere), listed under its\nproject's line, reached by Go to project with its options on its row,\nand answered with its refusal, the asker told. A browser site is\npending: it needs the browser run's engine.\n\nThe reporting harness gains a line on Deny and three trigger files:\nsecret ask, dispatch, and reaching an unlisted host.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M72DR3HZ856JYDM9WX3N97A8\nPurlis-Persona: steward\n\n* Every-ask spec: the chat kinds ask from a project at the floor\n\nStart chat was not clickable in the project whose sandbox was on, and the\nafterEach then skipped every later kind. The consent and the host block\nkeep a project of their own with the sandbox in force; the others ask from\none at the floor, as the run's own. A start that fails keeps a picture and\nsays what its dialog said, and a dialog left up is put away before the\nnext kind.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M72DR3HZ856JYDM9WX3N97A8\nPurlis-Persona: steward\n\n* Every-ask spec: Keep blocked found afresh; a sandbox host block is pending\n\nThe dispatch's Keep blocked held its button across the row's redraw, so\nits second press found a detached element: each press looks it up again.\n\nA host is asked about only where a project's sandbox is in force, and\nthere purlis starts no chat whose program lives where a chat may write;\nthe state run's harness lives in its temporary folder. So the host block\nis a pending test with that reason, as the browser site is, and the\nharness's host hook goes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M72DR3HZ856JYDM9WX3N97A8\nPurlis-Persona: steward\n\n* Every-ask spec: Keep blocked presses again only while its row stands\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M72DR3HZ856JYDM9WX3N97A8\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T12:42:55Z",
+          "tree_id": "71e8d31c62b168db608e7993b494bae0ebe743d1",
+          "url": "https://github.com/purlis/purlis/commit/708f4bfd13afec1b25db570f4fc1c72dfb94ac7e"
+        },
+        "date": 1794326455147,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 2675.4,
+            "unit": "MB",
+            "extra": "median of 3 samples: 2468.5, 2675.4, 2845.3 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 1101.4,
+            "unit": "MB",
+            "extra": "median of 6 samples: 1052.3, 1086.7, 1116.1, 1148.6, 1148.9, 773.3 MB; window 713.6 MB, session host 393 MB"
           }
         ]
       }
