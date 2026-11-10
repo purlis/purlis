@@ -41,7 +41,6 @@ fn is_a_minidump(path: &Path) -> bool {
 }
 
 #[test]
-#[ignore = "red on minidumper-child 0.7: through its companion an abort or a stack overflow leaves no minidump (crash-handler 0.7 alone dumps both). Green with crash-handler 0.8 (verify.sh P3): on once a release depends on it (#5691)"]
 fn a_process_that_aborts_leaves_one_minidump() {
     let crashes = tempfile::tempdir().unwrap();
 
@@ -57,7 +56,6 @@ fn a_process_that_aborts_leaves_one_minidump() {
 }
 
 #[test]
-#[ignore = "red on minidumper-child 0.7: through its companion an abort or a stack overflow leaves no minidump (crash-handler 0.7 alone dumps both). Green with crash-handler 0.8 (verify.sh P3): on once a release depends on it (#5691)"]
 fn a_process_that_overflows_its_stack_leaves_one_minidump() {
     let crashes = tempfile::tempdir().unwrap();
 
@@ -90,7 +88,6 @@ fn a_process_that_ends_well_leaves_nothing() {
 }
 
 #[test]
-#[ignore = "red on minidumper-child 0.7, whose crash-handler 0.7 answers a child's exception as handled: on once a release depends on crash-handler 0.8 (#5691)"]
 fn a_child_of_a_watched_process_that_crashes_dies_of_it_and_leaves_no_minidump() {
     // A child inherits its parent's exception port on macOS. A handler that answers the child's
     // exception as handled resumes its faulting thread, which faults again, for ever.
@@ -104,4 +101,118 @@ fn a_child_of_a_watched_process_that_crashes_dies_of_it_and_leaves_no_minidump()
         "the child died of its crash: {ended:?}"
     );
     assert_eq!(minidumps(crashes.path()), Vec::<PathBuf>::new());
+}
+
+/// What the probe is started with and must never leave the device: its environment.
+const MARKER: &str = "an-environment-value-that-never-leaves-0f3c9a";
+
+#[test]
+fn a_real_crashs_report_carries_its_crashing_threads_stack_and_no_memory() {
+    use purlis_core::report::intake::{Dsn, Recorded, Sentry};
+    use purlis_core::report::{Consent, Known, Outcome, Reports, native};
+
+    // A real crash, as the app's would be: the probe aborts, its companion writes the minidump.
+    let home = tempfile::tempdir().unwrap();
+    let crashes = native::crashes_dir(home.path());
+    let ended = Command::new(env!("CARGO_BIN_EXE_crash-probe"))
+        .arg("abort")
+        .env("CRASH_PROBE_CRASHES", &crashes)
+        .env("CRASH_PROBE_MARKER", MARKER)
+        .status()
+        .expect("the probe ran");
+    assert!(!ended.success(), "the probe crashed: {ended:?}");
+    let left = minidumps(&crashes);
+    assert_eq!(left.len(), 1, "{left:?}");
+    let minidump = std::fs::read(&left[0]).unwrap();
+
+    // Its crashing thread's stack, taken out on the device.
+    let stack = native::stack_of(&minidump).expect("the stack of a real crash");
+    assert!(
+        stack.frames.len() > 2,
+        "the crashing thread was walked: {stack:?}"
+    );
+    assert!(
+        stack
+            .modules
+            .iter()
+            .any(|module| module.name == "crash-probe"),
+        "its frames are in the probe: {stack:?}"
+    );
+    assert!(
+        stack
+            .modules
+            .iter()
+            .all(|module| !module.name.contains('/') && module.debug_id.is_some()),
+        "each module by its file name and debug id: {stack:?}"
+    );
+
+    // And the Report Reports sends of it.
+    let contract = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../purlis-core/tests/intake_contract/sentry/envelope.json");
+    let recorded = std::sync::Arc::new(
+        Recorded::parse(&std::fs::read_to_string(contract).unwrap()).expect("a recording"),
+    );
+    let dsn = concat!("https://f00dfeed1234", "@", "o1.ingest.de.sentry.io/4508");
+    let reports = Reports::new(Known::default())
+        .with_consent(Consent {
+            crash_reports: Some(true),
+            agent_drafts: None,
+            asked: true,
+            ..Consent::default()
+        })
+        .sending_to(
+            std::sync::Arc::new(Sentry::new(Dsn::parse(dsn).unwrap(), recorded.clone())),
+            home.path(),
+        );
+
+    let said = native::report_waiting(&reports, &crashes);
+
+    assert!(matches!(said[..], [Outcome::Sent { .. }]), "{said:?}");
+    let sent = String::from_utf8(recorded.received()[0].clone()).expect("text: no minidump");
+    let lines: Vec<serde_json::Value> = sent
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let [_, item, event] = &lines[..] else {
+        panic!("one event and no attachment: {sent}")
+    };
+    assert_eq!(item["type"], "event");
+    let frames = event["exception"]["values"][0]["stacktrace"]["frames"]
+        .as_array()
+        .expect("the stack");
+    assert_eq!(frames.len(), stack.frames.len());
+    for frame in frames {
+        let mut keys: Vec<&str> = frame
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            ["addr_mode", "instruction_addr", "package", "trust"],
+            "a module and an offset, no register and no memory: {frame}"
+        );
+    }
+    for absent in [
+        "threads",
+        "memory",
+        "registers",
+        "attachment",
+        "event.minidump",
+    ] {
+        assert!(!sent.contains(absent), "no {absent} leaves: {sent}");
+    }
+    assert!(!sent.contains(MARKER), "no environment leaves");
+    assert!(
+        sent.len() * 10 < minidump.len(),
+        "a stack, not the minidump: {} bytes sent of {}",
+        sent.len(),
+        minidump.len()
+    );
+    assert!(
+        left[0].with_extension("kept").exists(),
+        "the minidump stays here"
+    );
 }

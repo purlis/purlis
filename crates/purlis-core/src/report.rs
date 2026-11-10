@@ -828,8 +828,8 @@ pub enum Evidence {
     PurlisFailure(PurlisFailure),
     /// An agent's draft: what a chat wrote with `purlis report`, held for the person's Inbox.
     AgentDraft(AgentDraft),
-    /// A native crash the crash handler kept a minidump of, handed in on the next launch. Only
-    /// ever a Crash report: it is sent to the Report intake alone, never filed on a tracker.
+    /// A native crash the crash handler kept a minidump of, handed in on the next launch as its
+    /// crashing thread's stack alone (ruling (b), #5691). Only ever a Crash report: it is sent to the Report intake alone, never filed on a tracker.
     NativeCrash(NativeCrash),
     /// An error the window did not catch (#5690): always a Crash report, whoever hands it in.
     WindowError(WindowError),
@@ -1267,7 +1267,7 @@ impl Reports {
                 crash::CrashReport::of_window_error(error, &self.known, intake.dsn())
             }
             Evidence::NativeCrash(native) => {
-                return self.send_native(native, intake.as_ref(), root);
+                crash::CrashReport::of_native(native, &self.known, intake.dsn())
             }
             _ => {
                 return Outcome::Refused(Refusal::Unusable(
@@ -1319,47 +1319,6 @@ impl Reports {
                     ))),
                 }
             }
-            Err(intake::Failed::Refused(why)) => Outcome::Refused(Refusal::NotSent(why)),
-        }
-    }
-
-    /// A native crash's Crash report (#5691): its fixed fields and its minidump, sent to the
-    /// Report intake and listed with the minidump named in place of its bytes. It has no
-    /// fingerprint here: where it crashed is known only once the intake reads the minidump with
-    /// the build's symbols, so the intake groups it. With no answer it waits where the crash
-    /// handler left it, not in the sent list, which holds text: [`native::report_waiting`] keeps
-    /// the minidump for the next launch.
-    fn send_native(
-        &self,
-        native: &NativeCrash,
-        intake: &dyn intake::Intake,
-        root: &Path,
-    ) -> Outcome {
-        // The reports that waited go first, so the intake hears them oldest first.
-        self.send_waiting();
-        let crash = crash::NativeCrashReport::of(native, intake.dsn());
-        match intake.send(&crash.envelope, &crash.event_id) {
-            Ok(address) => {
-                // The report has left: a list that cannot be written does not unsend it.
-                let _ = SentList::add(
-                    root,
-                    Sent {
-                        at: now(),
-                        title: crash.title,
-                        to: SentTo::Intake,
-                        address: address.clone(),
-                        bytes: crash.shown,
-                        fingerprint: None,
-                        repeats: 0,
-                        repeats_sent: 0,
-                        unread_draft: false,
-                        waiting: false,
-                        draft: None,
-                    },
-                );
-                Outcome::Sent { address }
-            }
-            Err(intake::Failed::NoAnswer(_)) => Outcome::Queued,
             Err(intake::Failed::Refused(why)) => Outcome::Refused(Refusal::NotSent(why)),
         }
     }

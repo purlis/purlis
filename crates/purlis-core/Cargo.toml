@@ -114,6 +114,13 @@ serde_json = { workspace = true, features = ["preserve_order", "arbitrary_precis
 # from unicode-rs, the authors of the unicode-* crates the tree already has.
 unicode-properties = { version = "0.1", default-features = false, features = ["general-category"] }
 sha2 = "0.11"
+# A native crash leaves the device as its crashing thread's stack alone (#5691, ruling (b) of
+# 2026-11-10): rust-minidump's reader takes that thread out of the minidump, and its own
+# unwinder walks it, with no symbols, to modules and offsets. Not `minidump-processor`, which
+# walks every thread and brings an x86 disassembler and a terminal library with it. No default
+# features: no debug-info symbolizer, no HTTP. MIT, by the rust-minidump project.
+minidump = "0.26"
+minidump-unwind = "0.26"
 # The project index (ADR 0079 §9, #5498): SQLite FTS5 with its bundled library, so FTS5,
 # `contentless_delete` (3.43 or later) and one known SQLite version hold on every platform. No
 # default features: their `cache` is a statement cache the index does not need, and the
