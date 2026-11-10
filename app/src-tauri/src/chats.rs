@@ -3333,6 +3333,20 @@ impl Chats {
             .cloned()
     }
 
+    /// **Holds every open chat's live asks open, or no more** (ADR 0121 decision 13, #6007):
+    /// while the person is Quiet, a connection held past its minute waits on, in the window's
+    /// proxy and the session host's alike; as Quiet ends, one past its minute times out at once,
+    /// and its ask stays answerable, timed out. A chat started meanwhile takes it as it starts.
+    pub fn hold_asks_open(&self, open: bool) {
+        let boards: Vec<Arc<dyn purlis_core::sandbox::Board>> = lock(&self.open)
+            .values()
+            .filter_map(|running| running.confinement.as_ref()?.asks().cloned())
+            .collect();
+        for board in boards {
+            board.hold_open(open);
+        }
+    }
+
     /// Whether chat `session`'s proxy is asking the person about `target` (#1666): what the
     /// window's Notice says a connection waits on.
     pub fn asking(&self, session: u32, target: Option<&str>) -> bool {
@@ -5355,6 +5369,14 @@ impl Chats {
             None => None,
         };
         crate::starttiming::mark(crate::starttiming::Phase::Proxy);
+        // Started while the person is Quiet: its live asks are held open from the first (#6007).
+        if crate::asknotify::holds_asks_open()
+            && let Some(board) = confinement
+                .as_ref()
+                .and_then(purlis_core::sandbox::Confinement::asks)
+        {
+            board.hold_open(true);
+        }
         // The doors to the servers this chat may run (#2019), opened in this process wherever
         // its proxy runs, before its line is compiled: a socket for each, in its own folder. A
         // port it serves on none of is told, and withdrawn from its proxy where only its listen
@@ -9017,9 +9039,10 @@ fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> purlis_core::sandbox::pl
                 }
             }
             Heard::TimedOut(target) => {
-                // It waits on the person no longer: it is held, and goes as any block does.
+                // It waits on the person no longer: it is held, timed out and answerable
+                // still, and goes as any block does (#6007).
                 if let Some(block) = live_block(&target) {
-                    blocks.no_longer_waits(chat, &block);
+                    blocks.gave_up(chat, &block, crate::sandboxing::now_secs());
                 }
                 record(&target, purlis_core::sandboxblock::record::TIMED_OUT);
             }

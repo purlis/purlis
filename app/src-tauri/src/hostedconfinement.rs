@@ -315,6 +315,14 @@ impl Board for HostBoard {
         });
     }
 
+    /// Sent only to a host that knows it (1.83, #6007): an older one's connections time out at
+    /// their minute, Quiet or not.
+    fn hold_open(&self, open: bool) {
+        if self.link.version() >= purlis_session_protocol::session::KNOWS_HOLD_ASKS_OPEN {
+            self.change(ReachChange::HoldAsksOpen { open });
+        }
+    }
+
     fn allowed_live(&self) -> Vec<(String, By)> {
         self.now()
             .allowed_live

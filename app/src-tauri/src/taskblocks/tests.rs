@@ -313,6 +313,32 @@ fn a_held_ask_is_not_dropped_while_its_connection_waits() {
     );
 }
 
+/// #6007: a held connection that gave up with nobody's answer stays held, timed out and
+/// answerable, saying when, until it is answered, held again, or its chat ends.
+#[test]
+fn a_held_connection_that_gave_up_stays_timed_out_until_answered_held_again_or_ended() {
+    let blocks = Blocks::default();
+    let gave_up = held(&seen(4, "waits.example.com"));
+    blocks.heard_waiting(4, gave_up.clone());
+
+    blocks.gave_up(4, &gave_up, 1_700_000_060);
+    assert!(blocks.holds(4, &gave_up));
+    assert_eq!(blocks.gave_up_at(4, &gave_up), Some(1_700_000_060));
+    assert_eq!(blocks.gave_up_at(5, &gave_up), None, "another chat's");
+
+    blocks.heard_waiting(4, gave_up.clone());
+    assert_eq!(blocks.gave_up_at(4, &gave_up), None, "held again: Expiring");
+
+    blocks.gave_up(4, &gave_up, 1_700_000_200);
+    blocks.answered(4, &gave_up);
+    assert_eq!(blocks.gave_up_at(4, &gave_up), None, "answered");
+
+    blocks.heard_waiting(4, gave_up.clone());
+    blocks.gave_up(4, &gave_up, 1_700_000_300);
+    blocks.ended(4);
+    assert_eq!(blocks.gave_up_at(4, &gave_up), None, "its chat ended");
+}
+
 /// #1709: a burst of held asks keeps each of them, past the hosts one Notice lists, up to as
 /// many connections as one chat's proxy holds at once; past that the oldest goes first, so what
 /// is held for one chat stays bounded.

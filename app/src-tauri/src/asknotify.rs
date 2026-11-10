@@ -1567,9 +1567,33 @@ fn away(app: &tauri::AppHandle) -> bool {
         .any(|window| window.is_focused().unwrap_or(false))
 }
 
+/// **Whether the person is Quiet, as every chat's proxy holds its live asks by it** (ADR 0121
+/// decision 13, #6007): set as Quiet moves, and read by a chat as it starts. The person's, so
+/// the app's whole, as Quiet is.
+static HOLDS_ASKS_OPEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Whether a chat's proxy holds its live asks open past their minute now (#6007).
+pub fn holds_asks_open() -> bool {
+    HOLDS_ASKS_OPEN.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// **Quiet began or ended** (#6007): every open chat in every project holds its live asks open,
+/// or no more, where purlis owns the timer (`chats::Chats::hold_asks_open`).
+fn hold_asks_open(app: &tauri::AppHandle, quiet: bool) {
+    if HOLDS_ASKS_OPEN.swap(quiet, std::sync::atomic::Ordering::SeqCst) == quiet {
+        return;
+    }
+    if let Some(planes) = app.try_state::<crate::planes::Planes>() {
+        for held in planes.every_held() {
+            held.chats().hold_asks_open(quiet);
+        }
+    }
+}
+
 /// Tells every window whether it is Quiet, and the summary of a Quiet that just `ended`, when
 /// either moved.
 fn tell_windows(app: &tauri::AppHandle, quiet: bool, ended: Option<QuietEnded>) {
+    hold_asks_open(app, quiet);
     use tauri::Emitter;
     let Some(notifier) = app.try_state::<Notifier>() else {
         return;

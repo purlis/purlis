@@ -459,3 +459,57 @@ fn a_service_left_out_once_allowed_lets_only_its_port_on_and_is_no_grant() {
         "asked again"
     );
 }
+
+// #6007, ADR 0121 decision 13: while the person is Quiet, a held connection is held open past
+// its minute, and times out as Quiet ends.
+
+#[test]
+fn while_held_open_a_connection_waits_past_its_hold_and_an_allow_still_carries_it() {
+    let (asks, _) = board(Duration::from_millis(100), Duration::from_millis(10));
+    asks.hold_open(true);
+    let waiting = held(&asks, "api.example.com", 443);
+    until_holding(&asks, 1);
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(asks.holding(), 1, "still held, three holds later");
+
+    asks.allow(&host("api.example.com"), By::Chat);
+
+    assert_eq!(waiting.join().unwrap(), Answer::Allowed(By::Chat));
+}
+
+#[test]
+fn as_holding_open_ends_a_connection_past_its_hold_times_out_at_once_and_is_told() {
+    let (asks, heard) = board(Duration::from_millis(100), Duration::from_millis(10));
+    asks.hold_open(true);
+    let waiting = held(&asks, "api.example.com", 443);
+    until_holding(&asks, 1);
+    std::thread::sleep(Duration::from_millis(250));
+
+    asks.hold_open(false);
+
+    assert_eq!(waiting.join().unwrap(), Answer::TimedOut);
+    assert!(
+        heard
+            .lock()
+            .unwrap()
+            .contains(&Heard::TimedOut("api.example.com:443".to_owned()))
+    );
+}
+
+#[test]
+fn a_connection_held_open_still_gives_up_at_the_most_it_is_held_open() {
+    let (asks, _) = board(Duration::from_millis(50), Duration::from_millis(10));
+    let asks = Arc::new(
+        Arc::try_unwrap(asks)
+            .unwrap()
+            .held_open_at_most(Duration::from_millis(200)),
+    );
+    asks.hold_open(true);
+    let began = std::time::Instant::now();
+
+    assert_eq!(
+        held(&asks, "api.example.com", 443).join().unwrap(),
+        Answer::TimedOut
+    );
+    assert!(began.elapsed() >= Duration::from_millis(200));
+}

@@ -50,9 +50,9 @@
 //! 1.78's turns a runner records and undoes (#5427, ids 200 and 201), 1.79's sign-in run over
 //! the desktop's link to its runner (ids 202 to 205), 1.80's strays a chat's harness started
 //! (#5806, id 206), 1.81's skills a chat's persona names that its runner does not have
-//! (#2977, id 207), 1.82's skill change at a terminal the host audits (#6030, id 208), and
-//! 1.83's rest of what a chat started without there, as `programs` answers it too (#6078, id
-//! 209).
+//! (#2977, id 207), 1.82's skill change at a terminal the host audits (#6030, id 208), 1.83's
+//! rest of what a chat started without there, as `programs` answers it too (#6078, id 209), and
+//! 1.84's live asks held open while the person is Quiet (#6007, id 210).
 //! 1.35 adds no frame of the
 //! control lane: its origin frame is a browser view's bytes, held by
 //! `a_browser_views_bytes_are_whole_frames_however_they_are_cut.rs` (#2300). Each must read back

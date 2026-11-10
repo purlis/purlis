@@ -338,6 +338,13 @@ impl Hosted {
             self.confinement.withdraw_port(*port)?;
             return Ok(Vec::new());
         }
+        // While the person is Quiet (#6007): a proxy that asks nobody holds nothing open.
+        if let ReachChange::HoldAsksOpen { open } = change {
+            if let Some(board) = &self.board {
+                board.hold_open(*open);
+            }
+            return Ok(Vec::new());
+        }
         let Some(board) = &self.board else {
             return Err("this chat's proxy asks nobody, so it holds no ask to answer".into());
         };
@@ -365,7 +372,7 @@ impl Hosted {
                 }
                 Vec::new()
             }
-            ReachChange::WithdrawPort { .. } => Vec::new(),
+            ReachChange::WithdrawPort { .. } | ReachChange::HoldAsksOpen { .. } => Vec::new(),
         })
     }
 
