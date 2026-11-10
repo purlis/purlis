@@ -34,6 +34,11 @@ pub enum ArtifactCommand {
         /// any folder is.
         #[arg(long, conflicts_with_all = ["command", "cwd"])]
         template: Option<String>,
+        /// A skill that ships the page as its artifacts/<folder>/ (`purlis-skill-studio` says how):
+        /// copied, without its data files, into the workspace's artifacts/<folder>/ unless the
+        /// same page is there already, then pinned, or in a chat proposed, as any folder is.
+        #[arg(long, conflicts_with = "template")]
+        skill: Option<String>,
         /// The icon's name (default: the page's <title>, else the folder's name).
         #[arg(long)]
         name: Option<String>,
@@ -212,6 +217,7 @@ pub fn run(here: &Here, command: ArtifactCommand) -> Result<Code, String> {
         ArtifactCommand::Pin {
             folder,
             template,
+            skill,
             name,
             icon,
             command,
@@ -235,6 +241,7 @@ pub fn run(here: &Here, command: ArtifactCommand) -> Result<Code, String> {
                     icon,
                     command,
                     cwd,
+                    skill,
                 };
                 return match crate::brokered::propose_pin(proposed) {
                     Ok(code) => Ok(code),
@@ -245,6 +252,16 @@ pub fn run(here: &Here, command: ArtifactCommand) -> Result<Code, String> {
             if let Some(template) = template {
                 return Ok(templates::pin(here, &ws, &template, name, icon));
             }
+            // A skill's page is placed first, from the skills a chat here would have.
+            let placed = match &skill {
+                Some(skill) => {
+                    match templates::place_from_skill(here, &ws, skill, folder.as_deref()) {
+                        Ok(placed) => Some(placed),
+                        Err(why) => return refused(&why),
+                    }
+                }
+                None => None,
+            };
             let request = Request {
                 folder: folder.unwrap_or_default(),
                 name,
@@ -281,7 +298,12 @@ pub fn run(here: &Here, command: ArtifactCommand) -> Result<Code, String> {
                         old_id
                     ));
                 }
-                Err(why) => return refused(&why),
+                Err(why) => {
+                    if placed == Some(purlis_core::artifact::template::Placed::Copied) {
+                        templates::remove_placed(&ws, &request.folder);
+                    }
+                    return refused(&why);
+                }
             }
             Ok(0)
         }

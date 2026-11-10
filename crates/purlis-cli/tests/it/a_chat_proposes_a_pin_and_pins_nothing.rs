@@ -178,6 +178,7 @@ fn proposed(name: Option<&str>, command: Option<&str>) -> Ask {
             icon: None,
             command: command.map(str::to_owned),
             cwd: None,
+            skill: None,
         },
     }))
 }

@@ -19,6 +19,10 @@
 //! ([`purlis_core::artifact::proposal::pin_as_answered`]): a folder whose pin changed since it
 //! was shown is stale, and nothing is written. The chat hears pinned, dismissed or stale on its
 //! next turn. In memory only, as every proposal is.
+//!
+//! **A page a skill ships** (#5974) names its skill: the skill is found in the chat's own set, as
+//! its `skill_load` finds it, and its template placed in the workspace before the proposal is
+//! judged ([`purlis_core::artifact::template`]). A proposal refused after that leaves no copy.
 
 use std::path::Path;
 
@@ -133,11 +137,25 @@ pub fn asked(held: &Held, ask: &ProposePinAsk) -> Answer {
     if let Err(why) = held.brokered().allow(ask.chat, std::time::Instant::now()) {
         return no(why);
     }
+    // A skill that ships the page is looked up in the chat's own set, as its skill_load does.
+    let skills = ask.pin.skill.as_ref().and_then(|_| {
+        let chat = held.chats().skills_of(ask.chat)?;
+        let built_in =
+            crate::bundled_plugin_here().and_then(|plugin| purlis_core::skills::in_bundle(&plugin));
+        Some(purlis_core::skills::of_a_chat(
+            built_in.as_deref(),
+            held.root(),
+            chat.workspace.as_deref(),
+            chat.persona.as_deref(),
+            purlis_core::skills::Route::Mcp,
+        ))
+    });
     match asked_in(
         held.root(),
         held.proposals(),
         ask,
         workspace.as_deref(),
+        skills.as_ref(),
         crate::sandboxing::now_secs(),
     ) {
         Ok(()) => {
@@ -151,13 +169,15 @@ pub fn asked(held: &Held, ask: &ProposePinAsk) -> Answer {
     }
 }
 
-/// [`asked`]'s judgement of `ask` in the project at `root`, for a chat working in `workspace`,
-/// held in `proposals` at `now`.
+/// [`asked`]'s judgement of `ask` in the project at `root`, for a chat working in `workspace`
+/// with the skills `skills`, held in `proposals` at `now`. A page a skill ships is placed first
+/// (#5974), and a refusal after that removes a copy it made.
 pub fn asked_in(
     root: &Path,
     proposals: &Proposals,
     ask: &ProposePinAsk,
     workspace: Option<&str>,
+    skills: Option<&purlis_core::skills::SkillSet>,
     now: u64,
 ) -> Result<(), String> {
     // PC-14: a project where proposals are off holds none of these either.
@@ -173,7 +193,28 @@ pub fn asked_in(
     )?;
     let at = purlis_core::wscmd::workspace_dir(root, workspace)
         .ok_or_else(|| format!("'{workspace}' is not a workspace purlis knows"))?;
-    let shown = proposal::shown(&at, &ask.pin)?;
+    let placed = match &ask.pin.skill {
+        None => None,
+        Some(skill) => {
+            let set = skills.ok_or(
+                "purlis could not read this chat's skills, so no template was placed: ask the \
+                 person to pin it in the window",
+            )?;
+            Some(artifact::template::place_from_skill(
+                root,
+                &at,
+                set,
+                skill,
+                &ask.pin.folder,
+            )?)
+        }
+    };
+    let undo = || {
+        if placed == Some(artifact::template::Placed::Copied) {
+            let _ = std::fs::remove_dir_all(at.join(artifact::DIR).join(&ask.pin.folder));
+        }
+    };
+    let shown = proposal::shown(&at, &ask.pin).inspect_err(|_| undo())?;
     proposals
         .note_pin(
             ask.chat,
@@ -187,6 +228,7 @@ pub fn asked_in(
         )
         .map(|_| ())
         .ok_or_else(|| {
+            undo();
             format!(
                 "this chat has {AT_MOST_PER_CHAT} proposed changes waiting already: wait for the \
                  person's answers before proposing another"
