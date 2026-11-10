@@ -468,6 +468,9 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             // A task's quiet note, read and put away (#1981): in memory.
             "task_quiet",
             "put_away_task_quiet",
+            // What the core noticed of each chat, and It's fine (#6014): in memory.
+            "chats_noticed",
+            "stuck_fine",
             "reopened_views",
             "reopened_layout",
             "reopened_focus",

@@ -544,8 +544,7 @@ export const commands = {
 	putAwayTaskQuiet: __WINDOW_ONLY_RESULT,
 	/**  What each chat of a project last told: Stuck? and work left behind. */
 	chatsNoticed: (plane: PlaneId) => typedError<ChatNoticed[], string>(__TAURI_INVOKE("chats_noticed", { plane })),
-	/**  **"It's fine"**: chat `session` is not stuck until it changes state. */
-	stuckFine: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("stuck_fine", { plane, session })),
+	stuckFine: __WINDOW_ONLY_RESULT,
 	/**
 	 *  The project's dispatch limits, for Settings › Project › Dispatch, a workspace's settings
 	 *  and the persona view.
