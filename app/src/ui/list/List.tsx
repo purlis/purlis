@@ -63,6 +63,8 @@ import {
   ListBox as AriaListBox,
   ListBoxItem as AriaListBoxItem,
   ListBoxSection as AriaListBoxSection,
+  ListLayout,
+  Virtualizer,
   type GridListItemProps as AriaGridListItemProps,
   type GridListItemRenderProps,
   type GridListProps as AriaGridListProps,
@@ -82,9 +84,10 @@ import {
 import {
   HEARD_ORDER,
   InOption,
+  RowHeard,
   RowScope,
   type HeardKind,
-  type OptionHeard,
+  type PartsHeard,
   type RowSize,
 } from "./Row";
 import { useListRowTip, type RowTipped } from "./RowTip";
@@ -345,13 +348,14 @@ function useSaysUnavailable(unavailable: boolean, given: Ref<HTMLDivElement> | u
 }
 
 /**
- * **What an option's lines are heard by** (#6075): the ids its parts hand it (`OptionHeard`),
- * in `HEARD_ORDER`'s order, which its element is described by before what React Aria adds.
+ * **What a row's lines are heard by** (#6075, #6101): the ids its parts hand it (`PartsHeard`),
+ * its tooltip's among them while it is up, in `HEARD_ORDER`'s order, which its element is
+ * described by before what React Aria adds.
  */
-function useOptionHeard(): { heard: OptionHeard; describedBy: string | undefined } {
+function useRowHeard(): { heard: PartsHeard; describedBy: string | undefined } {
   const [parts, setParts] = useState<readonly { kind: HeardKind; id: string }[]>([]);
   const base = useId();
-  const heard = useMemo<OptionHeard>(
+  const heard = useMemo<PartsHeard>(
     () => ({
       base,
       add(kind, id) {
@@ -375,10 +379,7 @@ function useOptionHeard(): { heard: OptionHeard; describedBy: string | undefined
  *  does not fill, so what it sets is what else React Aria adds (its hint for dragging). */
 function optionElement(heard: string | undefined) {
   return (element: Parameters<NonNullable<AriaListBoxItemProps["render"]>>[0]) => {
-    const joined = [heard, element["aria-describedby"]]
-      .filter((one) => one !== undefined && one !== "")
-      .join(" ");
-    const describedBy = joined === "" ? undefined : joined;
+    const describedBy = idsOf(heard, element["aria-describedby"]);
     // An option with an `href` is a link, which React Aria hands as one.
     return "href" in element ? (
       <a {...element} aria-describedby={describedBy} />
@@ -386,6 +387,18 @@ function optionElement(heard: string | undefined) {
       <div {...element} aria-describedby={describedBy} />
     );
   };
+}
+
+/** **What a row holds, its parts heard by its registry** (#6101): a call, as `hold` is, so the
+ *  window's read of what stands on what (`theme/grounds.test.ts`) reads a row as before. */
+function heardIn(heard: PartsHeard, content: ReactNode): ReactNode {
+  return <RowHeard.Provider value={heard}>{content}</RowHeard.Provider>;
+}
+
+/** The ids given, in order, as one `aria-describedby`; none where none is given. */
+function idsOf(...given: (string | undefined)[]): string | undefined {
+  const joined = given.filter((one) => one !== undefined && one !== "").join(" ");
+  return joined === "" ? undefined : joined;
 }
 
 /**
@@ -406,7 +419,7 @@ export function ListOption<T extends object>({
   const own = useRowMenu(menu);
   const { tipped, hold } = useListRowTip(tip);
   const element = useSaysUnavailable(unavailable, ref);
-  const { heard, describedBy } = useOptionHeard();
+  const { heard, describedBy } = useRowHeard();
   const render = useMemo(() => optionElement(describedBy), [describedBy]);
   return (
     <AriaListBoxItem
@@ -422,7 +435,7 @@ export function ListOption<T extends object>({
     >
       {(state) => (
         <InOption.Provider value={heard}>
-          {hold(rowHolds(children, own, tipped)(state))}
+          {heardIn(heard, hold(rowHolds(children, own, tipped)(state)))}
         </InOption.Provider>
       )}
     </AriaListBoxItem>
@@ -472,6 +485,13 @@ export interface ListProps<T extends object>
   /** What Esc on a row does, in place of clearing what is chosen (#5332): a list in a mode of
    *  its own leaves it. */
   onEscape?: () => void;
+  /**
+   * **A long list draws only the rows in sight** (#6013), as a long tree does (#2947): React
+   * Aria's own `Virtualizer` lays the rows out one under another, each measured as it is drawn,
+   * so the keyboard still walks every row, and the list is its own scroller, so its owner's
+   * `className` gives it a height. For a list that may hold every chat of every open project.
+   */
+  drawnInPart?: boolean;
 }
 
 /**
@@ -486,9 +506,19 @@ export function List<T extends object>({
   ref,
   onAction,
   onEscape,
+  drawnInPart = false,
   ...rest
 }: ListProps<T>) {
   const own = useCollectionElement(keys, ref);
+  const [laid, setLaid] = useState<Laid>(UNLAID);
+  // A list drawn in part reads its room between rows and around them from its own CSS, as it is
+  // drawn, so the layout places rows where the stylesheet would.
+  const measure = useCallback((element: HTMLElement | null) => {
+    if (element === null) return;
+    const read = laidOf(element);
+    setLaid((was) => (was.gap === read.gap && was.padding === read.padding ? was : read));
+  }, []);
+  const measured = useMemo(() => mergeRefs<HTMLDivElement>(measure, own), [measure, own]);
   const chooses = rest.selectionMode !== undefined && rest.selectionMode !== "none";
   const [folds] = useState(() => new Map<string, ((open: boolean) => void) | undefined>());
   const foldKeys = useFoldKeys(folds, rest.disallowTypeAhead !== true);
@@ -523,30 +553,74 @@ export function List<T extends object>({
         <ListChooses.Provider value={chooses}>
           <RowScope.Provider value="list">
             <ListSize.Provider value={size}>
-              <AriaGridList
-                {...rest}
-                // A list that chooses never chooses a fold's row, and still reaches and runs it.
-                disabledBehavior={rest.disabledBehavior ?? (chooses ? "selection" : undefined)}
-                // A row that folds runs only its fold (`Fold.tsx`).
-                onAction={
-                  onAction === undefined
-                    ? undefined
-                    : (key) => {
-                        if (!folds.has(String(key))) onAction(key);
-                      }
-                }
-                ref={own}
-                className={className}
-                data-scope="list"
-                data-part="body"
-                data-size={size}
-                renderEmptyState={empty === undefined ? undefined : () => empty}
-              />
+              <InPart drawnInPart={drawnInPart} laid={laid}>
+                <AriaGridList
+                  {...rest}
+                  // A list that chooses never chooses a fold's row, and still reaches and runs it.
+                  disabledBehavior={rest.disabledBehavior ?? (chooses ? "selection" : undefined)}
+                  // A row that folds runs only its fold (`Fold.tsx`).
+                  onAction={
+                    onAction === undefined
+                      ? undefined
+                      : (key) => {
+                          if (!folds.has(String(key))) onAction(key);
+                        }
+                  }
+                  ref={drawnInPart ? measured : own}
+                  className={className}
+                  data-scope="list"
+                  data-part="body"
+                  data-size={size}
+                  renderEmptyState={empty === undefined ? undefined : () => empty}
+                />
+              </InPart>
             </ListSize.Provider>
           </RowScope.Provider>
         </ListChooses.Provider>
       </ListFolds.Provider>
     </div>
+  );
+}
+
+/** The room a list drawn in part keeps between its rows and around them, in px. */
+interface Laid {
+  gap: number;
+  padding: number;
+}
+
+/** What a list is taken to keep before it is first drawn, and in a document with no layout. */
+const UNLAID: Laid = { gap: 0, padding: 0 };
+
+/** The room `element`, a list's body, keeps as its stylesheet draws it. */
+function laidOf(element: HTMLElement): Laid {
+  const style = getComputedStyle(element);
+  const px = (value: string) => Number.parseFloat(value) || 0;
+  return { gap: px(style.rowGap), padding: px(style.paddingTop) };
+}
+
+/** A row's height before it is measured: a two-line card's. */
+const ROW_GUESS = 48;
+
+/** **The list drawn in part, or whole**: in React Aria's `Virtualizer` with its list layout,
+ *  each row measured as it is drawn, or as it is. */
+function InPart({
+  drawnInPart,
+  laid,
+  children,
+}: {
+  drawnInPart: boolean;
+  laid: Laid;
+  children: ReactNode;
+}) {
+  const options = useMemo(
+    () => ({ estimatedRowHeight: ROW_GUESS, gap: laid.gap, padding: laid.padding }),
+    [laid],
+  );
+  if (!drawnInPart) return children;
+  return (
+    <Virtualizer layout={ListLayout} layoutOptions={options}>
+      {children}
+    </Virtualizer>
   );
 }
 
@@ -586,17 +660,19 @@ export function ListRow<T extends object>({
   const size = useContext(ListSize);
   const own = useRowMenu(menu);
   const { tipped, hold } = useListRowTip(tip);
+  const { heard, describedBy } = useRowHeard();
+  const render = useMemo(() => rowElement({ heard: describedBy }), [describedBy]);
   return (
     <AriaGridListItem
       {...mergeProps(rest, own.handlers, tipped.hover)}
-      render={rowElement()}
+      render={render}
       className={className}
       data-scope="list"
       data-part="root"
       data-variant={variant}
       data-size={size}
     >
-      {(state) => hold(rowHolds(children, own, tipped)(state))}
+      {(state) => heardIn(heard, hold(rowHolds(children, own, tipped)(state)))}
     </AriaGridListItem>
   );
 }
@@ -646,7 +722,7 @@ export function ListRowDrawn<T extends object>({
       // **Named and described by its own parts**: React Aria hands a row neither, and names it
       // by its `textValue`; its element is drawn here with both, where they win over that name,
       // so a row is heard as its words say it (an ask by what it asks, then who asks).
-      render={rowElement(labelledBy, describedBy)}
+      render={rowElement({ labelledBy, describedBy })}
     >
       {children}
       {onDrawn !== undefined && <Drawn then={onDrawn} />}
@@ -664,12 +740,23 @@ export function ListRowDrawn<T extends object>({
  * focused in is told to the list first, before React Aria hears the focus. And **a Tab into the
  * list lands on a row, never on a control in it** (#6033, `backToTheRow`).
  */
-function rowElement(labelledBy?: string, describedBy?: string) {
+function rowElement({
+  labelledBy,
+  describedBy,
+  heard,
+}: {
+  labelledBy?: string;
+  /** Its description whole, in place of React Aria's (`ListRowDrawn`). */
+  describedBy?: string;
+  /** What its parts hand it (`useRowHeard`), before what React Aria adds (#6101); for a row
+   *  whose `describedBy` is not given. */
+  heard?: string;
+} = {}) {
   return (element: JSX.IntrinsicElements["div"], { id, state }: GridListItemRenderProps) => (
     <div
       {...element}
       aria-labelledby={labelledBy ?? element["aria-labelledby"]}
-      aria-describedby={describedBy ?? element["aria-describedby"]}
+      aria-describedby={describedBy ?? idsOf(heard, element["aria-describedby"])}
       onFocus={(event) => {
         const manager = state.selectionManager;
         // A move a key makes is React Aria's own, already placed: its arrows and its Tab out of

@@ -694,6 +694,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     // press it.
     "confirm_remote",
     "keep_recorded_remote",
+    // A clone made outside purlis, and the person's Trust this clone on it: trusting it lets
+    // saves push it and chats in its workspace use the person's GitHub access with it, so the
+    // list is read and the press made in the window alone.
+    "clones_to_vouch",
+    "vouch_clone",
     // Update from remote (qw348): the app brings the project's incoming commits in, which
     // moves its working tree under every chat in it. The person's own press, and no link's:
     // a chat that asks for it raises an item the person reads, and presses nothing.

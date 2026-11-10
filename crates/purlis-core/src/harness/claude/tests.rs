@@ -858,7 +858,6 @@ fn started_in(manifest: &str, project: Option<&str>) -> (Vec<String>, serde_json
         env: crate::secrets::Env::of(&[("PATH", "/opt/none")]),
         home: None,
         os: crate::sandbox::Os::MacOs,
-        on_a_sandbox_only_profile: false,
     };
     let applied =
         match crate::sandbox::decide(Harness::ClaudeCode, &root, &machine, &|_| true, None, None) {

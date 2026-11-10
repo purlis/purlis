@@ -93,7 +93,9 @@ import { passing, resultsFor, useKeptResults } from "./keptResults";
 import { useAlerts } from "./alerts";
 import { LAYOUT_FIX, LAYOUT_FIX_LABEL, type InboxAlertsDo, type WindowAlerts } from "./InboxAlerts";
 import { useAlertFix } from "./alertFix";
-import { waitingAsk, type Elsewhere } from "./InboxElsewhere";
+import { showOffer, waitingAsk, type Elsewhere } from "./InboxElsewhere";
+import { fleetStore, type EveryChat, type FleetDoes } from "./AllChats";
+import type { FleetChat } from "./everyChat";
 import { ApprovePlane } from "./ApprovePlane";
 import { drawThemeFor, Extensions } from "./Extensions";
 import { WindowLinesAt } from "./DoorPage";
@@ -139,7 +141,7 @@ import { TitleBarSwitch, type SwitchDoes, type SwitchProject } from "./TitleBarS
 import { slideTowards } from "./workspaceSlide";
 import { pinsChanged } from "./workspacePins";
 import type { Needing, Quiet } from "./NeedsYou";
-import { notSnoozed, useAsks } from "./asks";
+import { asksMoved, notSnoozed, useAsks } from "./asks";
 import { useDockBadge } from "./dockBadge";
 import { giveKeyboardTo } from "./paneKeyboard";
 import { landsOn, useNotificationLanding, type Landing } from "./askNotices";
@@ -232,6 +234,7 @@ export const TAB_WINDOW = "data-tab-window";
 const NOTHING_NEEDING: Needing[] = [];
 const NOTHING_QUIET: Quiet[] = [];
 const NOTHING_ENDING: Ending[] = [];
+const NOTHING_IN_THE_FLEET: FleetChat[] = [];
 
 /** The status item's "new" pip, alone: what the status bar's own list is handed (#6004). */
 const ONLY_STATUS: ReadonlySet<string> = new Set([AT_STATUS]);
@@ -2580,10 +2583,22 @@ function App() {
    */
   // **A tab window says nothing of its own** (#4768): its project's asks and what a quit would
   // end are its project window's to say, once.
+  /** **Every chat of this window's projects, as All chats lists them** (#6013), out of the
+   *  reports the window already holds: no command of its own. */
+  const fleet = useMemo(
+    () => planes.flatMap((plane) => [...(reports[plane]?.fleet ?? [])]),
+    [planes, reports],
+  );
   const others = useOtherWindows(
     tabWindow === null
-      ? { needing, quiet, ending, settled }
-      : { needing: NOTHING_NEEDING, quiet: NOTHING_QUIET, ending: NOTHING_ENDING, settled: true },
+      ? { needing, quiet, ending, fleet, settled }
+      : {
+          needing: NOTHING_NEEDING,
+          quiet: NOTHING_QUIET,
+          ending: NOTHING_ENDING,
+          fleet: NOTHING_IN_THE_FLEET,
+          settled: true,
+        },
   );
   const everyNeeding = useMemo(
     () => [...needing, ...others.needing.filter((one) => !planes.includes(one.plane))],
@@ -2719,6 +2734,78 @@ function App() {
       onOpen: openInboxOf,
     }),
     [elsewhereSaid, pressNeeding, openInboxOf],
+  );
+
+  /**
+   * **All chats** (#6013): every chat of this window's projects and of the other windows', and
+   * what a row of it does, for each project's Chats sidebar. A row for a chat in another window
+   * is carried out there (`pressNeeding`), as the ✋'s rows are.
+   */
+  // **By value**, as `elsewhereSaid` is: a chat that only moved tells nothing new.
+  const everyFleetSaid = JSON.stringify([
+    ...fleet,
+    ...others.fleet.filter((one) => !planes.includes(one.plane)),
+  ]);
+  const fleetDoes = useMemo<FleetDoes>(() => {
+    return {
+      go: (chat) => pressNeeding(chat.plane, showOffer(chat.session, chat.name)),
+      answer: (chat) => {
+        // Asks, at the chat's own asks, where this window holds it; else that chat in front in
+        // the window that does, whose Asks lists it.
+        if (!planesNow.current.includes(chat.plane))
+          return void runElsewhere(chat.plane, showOffer(chat.session, chat.name));
+        setShowing({ at: "plane", plane: chat.plane });
+        setInboxAsk((was) => ({
+          plane: chat.plane,
+          at: (was?.at ?? 0) + 1,
+          session: chat.session,
+        }));
+      },
+      snooze: async (chats, until) => {
+        const byPlane = new Map<string, { session: number; asks: string[] }[]>();
+        for (const chat of chats)
+          byPlane.set(chat.plane, [
+            ...(byPlane.get(chat.plane) ?? []),
+            { session: chat.session, asks: [...chat.asks] },
+          ]);
+        const failed: string[] = [];
+        for (const [plane, held] of byPlane) {
+          const said = await commands
+            .snoozeInboxAsks(plane, held, until)
+            .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+          if (said.status === "error") failed.push(said.error);
+          asksMoved(plane);
+        }
+        return failed.length === 0 ? undefined : failed.join(" ");
+      },
+      // Asked once already, in All chats: each chat's own stop, by the core, in its project. A
+      // task's lets it write what it did first, as its row's Stop does.
+      stop: async (chats) => {
+        const failed: string[] = [];
+        for (const chat of chats) {
+          const said = await (
+            chat.task
+              ? commands.endTask(chat.plane, chat.session, "report", false)
+              : commands.stopChat(chat.plane, chat.session, false)
+          ).catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+          if (said.status === "error") failed.push(`${chat.name}: ${said.error}`);
+        }
+        return failed.length === 0 ? undefined : failed.join(" ");
+      },
+    };
+  }, [pressNeeding]);
+  const [fleetHeld] = useState(fleetStore);
+  // In the same flush as the reports it is read from, so All chats is never a frame behind.
+  useLayoutEffect(() => {
+    fleetHeld.set(JSON.parse(everyFleetSaid) as FleetChat[]);
+  }, [everyFleetSaid, fleetHeld]);
+  const everyChat = useMemo<EveryChat>(
+    () => ({
+      store: fleetHeld,
+      does: fleetDoes,
+      lentOf: (plane) => reportsNow.current[plane]?.lent,
+    }),
+    [fleetHeld, fleetDoes],
   );
 
   /** Every project as the title bar's switchers list it (#2916): its name, what waits in it
@@ -3205,6 +3292,7 @@ function App() {
                 inboxGroup={inboxAsk?.plane === plane ? inboxAsk.session : undefined}
                 inboxUpdate={inboxAsk?.plane === plane ? inboxAsk.update : undefined}
                 elsewhere={elsewhere}
+                everyChat={everyChat}
                 windowLines={plane === inFront ? windowLines : undefined}
                 profileNames={profileNames.of[plane]}
                 onSeen={plane === inFront ? onSeen : undefined}

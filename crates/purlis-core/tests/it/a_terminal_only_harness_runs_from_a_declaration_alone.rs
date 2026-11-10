@@ -673,6 +673,15 @@ impl Project {
         let p = set.get(name).expect("a profile to approve");
         profiletrust::record_launched(self.root(), name, &profiletrust::fingerprint(p)).unwrap();
     }
+
+    /// [`Self::launched`] for the Claude Code profile `work` of [`claude_as_stand_in`], with no
+    /// sandbox for the project's chats where purlis wraps a Claude Code chat (Linux): what is
+    /// asked here is the replacement, and there a sandboxed Claude Code chat runs inside purlis's
+    /// wrap, on a sandbox-only profile, which `work` is not (ADR 0067 as amended 2026-11-10).
+    fn launched_claude(&self) {
+        self.launched("work");
+        crate::support::no_claude_sandbox_here(self.root());
+    }
 }
 
 #[test]
@@ -761,10 +770,10 @@ fn a_local_replacement_of_a_built_in_changes_its_facts_and_not_its_arming() {
     purlis_core::unsteered!();
     let plain = Project::new();
     plain.local(&claude_as_stand_in());
-    plain.launched("work");
+    plain.launched_claude();
     let replaced = Project::new();
     replaced.local(&format!("{}{NEWER_CLAUDE}", claude_as_stand_in()));
-    replaced.launched("work");
+    replaced.launched_claude();
 
     let was = start::ready(&plain.start("work"), plain.root()).expect("it starts");
     let now = start::ready(&replaced.start("work"), replaced.root()).expect("it starts");
@@ -816,7 +825,7 @@ fn a_local_replacement_that_would_change_arming_leaves_the_built_in_standing() {
          [harnesses.claude.levels]\nhooks = false\n",
         claude_as_stand_in()
     ));
-    project.launched("work");
+    project.launched_claude();
 
     let ready = start::ready(&project.start("work"), project.root()).expect("it starts");
 
@@ -841,7 +850,7 @@ fn a_local_replacement_in_a_file_git_would_carry_changes_nothing() {
     purlis_core::unsteered!();
     let project = Project::new();
     project.local(&format!("{}{NEWER_CLAUDE}", claude_as_stand_in()));
-    project.launched("work");
+    project.launched_claude();
     let declared = harness_declaration::read(project.root());
     // The launch's own read, with the answer git gives for a file it would carry.
     let carried = profiles::IgnoreCheck {

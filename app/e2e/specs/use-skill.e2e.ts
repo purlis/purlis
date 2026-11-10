@@ -10,6 +10,7 @@ import { projectRoot } from "../acting.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 import { focusWorkspace } from "../reach.js";
 import { startAChat } from "../started.js";
+import { wrapsClaudeCode } from "../harness.js";
 
 /**
  * **Use skill…** (SK-12, #2775), in the built app against the real core, with the `skill-studio`
@@ -63,6 +64,12 @@ let declared = "";
 /** Makes the scenario's own program, declared as `kind`, the project's default profile, as
  *  `harness-card.e2e.ts` declares opencode. */
 function onTheProfile(kind: string): void {
+  // On Linux, where every sandboxed Claude Code chat runs inside purlis's wrap, on a sandbox-only
+  // profile (ADR 0067 as amended 2026-11-10), the run's own default, `scenario`, is that profile.
+  if (kind === "claude" && wrapsClaudeCode()) {
+    writeFileSync(local, declared);
+    return;
+  }
   const command = /command = (\[.*\])/.exec(declared)?.[1];
   if (!command) throw new Error(`no command in ${local}: ${declared}`);
   writeFileSync(

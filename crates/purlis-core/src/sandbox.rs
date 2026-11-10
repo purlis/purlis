@@ -1598,11 +1598,6 @@ pub struct Machine {
     pub env: crate::secrets::Env,
     pub home: Option<PathBuf>,
     pub os: Os,
-    /// **Whether the chat this is asked for runs on a profile this machine keeps for sandboxed
-    /// chats only** (#2037): on Linux, a Claude Code chat on one runs inside purlis's own wrap
-    /// ([`Self::purlis_wraps`]). `false` for this machine as such ([`Self::this`]); a start sets
-    /// it for its own profile ([`Self::on_profile`]).
-    pub on_a_sandbox_only_profile: bool,
 }
 
 impl Machine {
@@ -1612,17 +1607,6 @@ impl Machine {
             env: crate::secrets::Env::from_process(),
             home: dirs::home_dir(),
             os: Os::this(),
-            on_a_sandbox_only_profile: false,
-        }
-    }
-
-    /// This machine, for a chat on a profile that is (`sandbox_only`) or is not one this machine
-    /// keeps for sandboxed chats only.
-    #[must_use]
-    pub fn on_profile(self, sandbox_only: bool) -> Self {
-        Self {
-            on_a_sandbox_only_profile: sandbox_only,
-            ..self
         }
     }
 
@@ -1642,16 +1626,14 @@ impl Machine {
     }
 
     /// **Whether a chat of `harness` here starts inside purlis's own Linux wrap**: a harness purlis
-    /// holds whole ([`Os::purlis_wraps`]), and a Claude Code chat too, with its own sandbox off,
-    /// on a runner (#4083), which has neither what that sandbox needs nor a place to make its
-    /// namespace, and on a profile for sandboxed chats only, whose folder no chat outside the
-    /// wrap reads or writes (#2037). On a person's own Linux machine a Claude Code chat on a
-    /// profile for every chat keeps its own.
+    /// holds whole ([`Os::purlis_wraps`]), and on Linux a Claude Code chat too, with its own
+    /// sandbox off: on a runner (#4083), which has neither what that sandbox needs nor a place to
+    /// make its namespace, and on a person's own machine, where a sandboxed Claude Code chat
+    /// starts only on a profile for sandboxed chats only, whose folder no chat outside the wrap
+    /// reads or writes (#2037, ADR 0067 as amended 2026-11-10;
+    /// [`crate::start::profile_refusal`]).
     pub fn purlis_wraps(&self, harness: Harness) -> bool {
-        self.os.purlis_wraps(harness)
-            || (harness == Harness::ClaudeCode
-                && self.os == Os::Linux
-                && (self.on_a_sandbox_only_profile || self.is_a_runner()))
+        self.os.purlis_wraps(harness) || (harness == Harness::ClaudeCode && self.os == Os::Linux)
     }
 }
 
@@ -2025,6 +2007,23 @@ impl Denied {
     }
 }
 
+/// **The programs every cluster pool on `machine` runs, as each pool's add found them**
+/// (#3292): what a chat's sandbox holds for no chat to write ([`cluster_programs_held`]), read
+/// from the pools' record in `machine`'s config home. Empty where it has none.
+///
+/// A chat's sandbox is compiled as it starts, so one started before a pool was added holds
+/// none of that pool's programs: the window compares this with what each running chat holds,
+/// and asks the person to restart the chats left behind (#1750).
+pub fn cluster_programs(machine: &Machine) -> Vec<PathBuf> {
+    crate::machine::rooted(
+        machine.env.get(crate::machine::HOME_VAR).map(Into::into),
+        machine.env.get("XDG_CONFIG_HOME").map(Into::into),
+        machine.home.clone(),
+    )
+    .map(|config_root| crate::runners::cluster_holds(&config_root))
+    .unwrap_or_default()
+}
+
 /// **The programs every cluster pool's kubectl runs, held for no chat to write** (#3292): each
 /// as named, every link on the way and its real file, each with the folder it is in, and the
 /// package its real file belongs to ([`package_root`]) with all that is in it, inside the
@@ -2032,13 +2031,10 @@ impl Denied {
 /// writes, and for one that is the home or a folder above it,
 /// which an add refuses now but one from before that refusal may have kept.
 fn cluster_programs_held(root: &Path, machine: &Machine) -> Vec<Denial> {
-    let Some(config_root) = crate::machine::rooted(
-        machine.env.get(crate::machine::HOME_VAR).map(Into::into),
-        machine.env.get("XDG_CONFIG_HOME").map(Into::into),
-        machine.home.clone(),
-    ) else {
+    let programs = cluster_programs(machine);
+    if programs.is_empty() {
         return Vec::new();
-    };
+    }
     let mut held: Vec<Denial> = Vec::new();
     let mut hold = |path: PathBuf, reach: Reach| {
         if !held.iter().any(|it| it.path == path && it.reach == reach) {
@@ -2054,7 +2050,7 @@ fn cluster_programs_held(root: &Path, machine: &Machine) -> Vec<Denial> {
     };
     let project = real(root);
     let home = machine.home.as_deref().map(real);
-    for program in crate::runners::cluster_holds(&config_root) {
+    for program in programs {
         let package = package_root(&real(&program));
         if let Some(folder) = program.parent().filter(|folder| folder.parent().is_some()) {
             hold(folder.to_path_buf(), Reach::Itself);
@@ -2489,6 +2485,12 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             deny(
                 Class::HumanPowers,
                 home.join(crate::machine::RUNNERS_FILE),
+                Access::ReadWrite,
+            );
+            // The runners a removal left on another engine (#2587): denied as they are.
+            deny(
+                Class::HumanPowers,
+                home.join(crate::runners::left::FILE),
                 Access::ReadWrite,
             );
             // When each of those runners ran (#3492): denied as they are.

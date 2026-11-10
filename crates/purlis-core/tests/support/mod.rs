@@ -156,3 +156,86 @@ impl Fixture {
         self.plane.join("workspaces").join(&self.ws)
     }
 }
+
+/// **In a test of something else: no sandbox for the project at `root`'s chats on this machine
+/// where purlis wraps a Claude Code chat** (Linux; ADR 0067 as amended 2026-11-10), as a person
+/// sets it in Settings: `[sandbox] level = "off"` in the local file, confirmed in this machine's
+/// record. There a sandboxed Claude Code chat runs only on a sandbox-only profile, which a
+/// stand-in on a project's profile is not; elsewhere the chat starts sandboxed as it did.
+pub fn no_claude_sandbox_here(root: &Path) {
+    use purlis_core::harness::Harness;
+    if !purlis_core::sandbox::Machine::this().purlis_wraps(Harness::ClaudeCode) {
+        return;
+    }
+    let local = root.join(purlis_core::profiles::LOCAL_FILE);
+    let text = std::fs::read_to_string(&local).unwrap_or_default();
+    // First in the file, so what a test later appends to its last table stays in that table.
+    if !text.contains("[sandbox]") {
+        std::fs::write(&local, format!("[sandbox]\nlevel = \"off\"\n\n{text}"))
+            .expect("the local file");
+    }
+    purlis_core::sandbox::personal::set_by_you(
+        root,
+        None,
+        Some(purlis_core::sandbox::personal::Choice::Off),
+    )
+    .expect("your level");
+}
+
+/// Set on the child [`sandboxed_claude_profile`] started: the folder its homes are.
+const SANDBOX_ONLY_HOMES: &str = "PURLIS_TEST_SANDBOX_ONLY_HOMES";
+
+/// Where a test of a sandboxed Claude Code chat starts it ([`sandboxed_claude_profile`]).
+pub enum ClaudeProfile {
+    /// On the project's own profile `work`, as it always did: purlis does not wrap a Claude Code
+    /// chat on this machine.
+    Project,
+    /// On this machine's sandbox-only profile `work`, whose config folder this is, in a child
+    /// whose homes are the test's own.
+    SandboxOnly(PathBuf),
+    /// The child ran the test, and failed this one if it failed there.
+    Ran,
+}
+
+/// **Where a test of a sandboxed Claude Code chat starts it.** On Linux every sandboxed Claude
+/// Code chat runs inside purlis's wrap, on a sandbox-only profile (ADR 0067 as amended
+/// 2026-11-10), which a project's own profile is not. There `test` (its full path, module first)
+/// runs again in a child whose data and config homes are a folder of its own, with a stand-in
+/// `claude` that answers `--version` as Claude Code does first on its `PATH`, and the child
+/// makes the sandbox-only profile `work`. Elsewhere the test runs on the project's own profile.
+pub fn sandboxed_claude_profile(test: &str) -> ClaudeProfile {
+    use purlis_core::harness::Harness;
+    if !purlis_core::sandbox::Machine::this().purlis_wraps(Harness::ClaudeCode) {
+        return ClaudeProfile::Project;
+    }
+    if std::env::var_os(SANDBOX_ONLY_HOMES).is_some() {
+        let homes = purlis_core::profilestore::Homes::here().expect("the test's homes");
+        let made = purlis_core::profilestore::create_sandbox_only(&homes, "work", "claude", 1)
+            .expect("the sandbox-only profile is made");
+        return ClaudeProfile::SandboxOnly(made.record.folders.config);
+    }
+    let homes = tempfile::tempdir().expect("a folder for the homes");
+    // Outside the system's temp folders, which a sandboxed chat may write: a sandboxed start
+    // refuses a program there.
+    let programs =
+        tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).expect("a folder for the stand-in");
+    stand_in::program(
+        programs.path(),
+        "claude",
+        "#!/bin/sh\necho '2.1.288 (Claude Code)'\n",
+    );
+    let path = std::env::join_paths(std::iter::once(programs.path().to_path_buf()).chain(
+        std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
+    ))
+    .expect("a PATH");
+    purlis_core::testrun::rerun_steered(
+        &[test],
+        &[
+            (purlis_core::datahome::HOME_VAR, homes.path().as_os_str()),
+            (purlis_core::machine::HOME_VAR, homes.path().as_os_str()),
+            (SANDBOX_ONLY_HOMES, homes.path().as_os_str()),
+            ("PATH", path.as_os_str()),
+        ],
+    );
+    ClaudeProfile::Ran
+}

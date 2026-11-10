@@ -65,6 +65,7 @@ mod session;
 mod shellguard;
 mod signing;
 mod skill;
+mod skillaudit;
 mod statusline;
 mod theme;
 mod themepreview;
@@ -4880,11 +4881,13 @@ fn pool_sign_in_in_terminal(
 #[cfg(unix)]
 fn confirmed_in_the_window(config: &std::path::Path, pool: &str, name: &str) -> Result<(), String> {
     let code = purlis_core::windowline::a_new_code();
-    purlis_core::windowline::approved(config, pool, name, &code, |asked| {
+    let project = pool::project_here();
+    purlis_core::windowline::approved(config, project.as_deref(), pool, name, &code, |asked| {
         eprintln!(
             "confirm signing '{name}' in on pool {pool} in the purlis window, if it shows the \
              code {code}…"
         );
+        eprintln!("{}", pool::waiting_on_the_window(project.as_deref()));
         purlis_core::windowline::ask(asked)
     })
 }

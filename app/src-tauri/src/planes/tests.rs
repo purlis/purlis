@@ -377,6 +377,64 @@ fn opening_a_plane_removes_an_older_charters_stale_temp() {
     assert!(!stale.exists(), "the leftover is still there");
 }
 
+/// #5849: a sandbox block a chat's hook found is told to the window, for its Notice, before it
+/// is kept in the network record, so a record that waits on its lock never holds a Notice back.
+#[test]
+fn a_sandbox_block_is_told_to_the_window_before_it_is_kept_in_the_network_record() {
+    use purlis_core::hookwire::SandboxBlocked;
+    use purlis_core::sandboxblock::{Block, Kind, Operation, record::Record};
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = a_plane(&dir.path().join("plane"));
+    let data = dir.path().join("data");
+    // Every line the record holds, of every project: the plane's own key is not this test's to
+    // spell.
+    let kept = {
+        let folder = data.join(purlis_core::sandboxblock::record::DIR);
+        move || -> usize {
+            std::fs::read_dir(&folder).map_or(0, |files| {
+                files
+                    .filter_map(Result::ok)
+                    .filter_map(|file| std::fs::read_to_string(file.path()).ok())
+                    .map(|text| text.lines().filter(|line| !line.trim().is_empty()).count())
+                    .sum()
+            })
+        }
+    };
+    let kept_as_told: Arc<Mutex<Vec<usize>>> = Arc::default();
+    let planes = planes()
+        .recording_network(Some(Record::in_data(&data)))
+        .telling_blocks({
+            let kept = kept.clone();
+            let kept_as_told = Arc::clone(&kept_as_told);
+            Arc::new(move |_| kept_as_told.lock().unwrap().push(kept()))
+        });
+    let id = planes.open(&root);
+    let held = planes.held(&id).expect("it is held");
+
+    held.hooks().heard_from_a_hook(
+        SandboxBlocked {
+            chat: 3,
+            sandbox_blocked: Block {
+                operation: Operation::Connect,
+                kind: Kind::Host,
+                ours: false,
+            },
+            harness: None,
+            target: Some("example.com".to_owned()),
+            read_back: false,
+            suggested: None,
+        }
+        .into(),
+    );
+
+    assert_eq!(
+        *kept_as_told.lock().unwrap(),
+        vec![0],
+        "told once, with nothing of it kept yet"
+    );
+    assert_eq!(kept(), 1, "kept once the window was told");
+}
+
 /// SC-7: opening a plane collects the per-session files no chat has written for
 /// `retention::KEEP_FOR` — and a plane already open, whose chats are running, is not swept.
 #[test]
@@ -3327,6 +3385,11 @@ fn a_start_whose_project_settings_stop_passing_as_it_runs_answers_the_run_that_g
     // A change caught there ends that run and starts the chat once more on the person's
     // settings; the number the start answers is that run, open and running, and nobody is
     // told of a restart.
+    // Claude Code's own sandbox, which screens the project's settings, runs on macOS: on Linux
+    // a sandboxed Claude Code chat runs inside purlis's wrap (ADR 0067 as amended 2026-11-10).
+    if crate::sandboxing::claude_is_wrapped_here_for_tests() {
+        return;
+    }
     let dir = tempfile::tempdir().expect("a directory");
     let root = a_plane(&dir.path().join("plane"));
     std::fs::create_dir_all(root.join(".claude")).expect(".claude");
@@ -5307,6 +5370,13 @@ fn a_sandboxed_chats_worktree_is_cut_by_the_app_and_a_host_outside_its_egress_is
         .start(&chat, STARTING)
         .expect("the chat starts");
     assert!(becomes(|| ready.exists()), "the stand-in never started");
+    // On Linux a sandboxed Claude Code chat runs inside purlis's wrap, on a sandbox-only profile
+    // (ADR 0067 as amended 2026-11-10), so this one on no profile started as in a project that
+    // leaves the sandbox off: it is marked as the app marks a sandboxed chat, since what is
+    // asked below is the app's.
+    if crate::sandboxing::claude_is_wrapped_here_for_tests() {
+        held.chats().recorded_as_confined(session);
+    }
 
     // The project turns the sandbox on with no host reachable: the chat is a sandboxed one.
     std::fs::write(
@@ -5337,6 +5407,11 @@ fn a_sandboxed_chats_worktree_is_cut_by_the_app_and_a_host_outside_its_egress_is
     let claimed: serde_json::Value =
         serde_json::from_str(log.lines().last().expect("a line")).expect("json");
     assert_eq!(claimed["session"], session.to_string(), "{claimed}");
+    // A chat marked so holds no egress of its own to refuse a host by: the refusal below is
+    // checked where the chat starts sandboxed.
+    if crate::sandboxing::claude_is_wrapped_here_for_tests() {
+        return;
+    }
 
     // The forge's host is outside what the chat reaches: refused, and git never runs.
     let refused = a_git_action_asked(

@@ -1819,12 +1819,21 @@ mod tests {
             if matches!(kind, "codex" | "opencode") {
                 crate::sandboxing::no_sandbox_here_for_tests(&root);
             }
+            // So does Claude Code on Linux, on a sandbox-only profile (ADR 0067 as amended
+            // 2026-11-10), which `work` is not.
+            crate::sandboxing::no_claude_sandbox_here_for_tests(&root);
             Self { _dir: dir, root }
         }
     }
 
+    /// Planes telling nobody, which record the level a chat starts at where [`Plane::new`]
+    /// starts it without the sandbox.
     fn planes() -> Planes {
-        Planes::telling(std::sync::Arc::new(|_| {}), crate::Shipped::default(), None)
+        crate::sandboxing::taking_events_where_claude_is_wrapped_for_tests(Planes::telling(
+            std::sync::Arc::new(|_| {}),
+            crate::Shipped::default(),
+            None,
+        ))
     }
 
     const SIZE: Size = Size {

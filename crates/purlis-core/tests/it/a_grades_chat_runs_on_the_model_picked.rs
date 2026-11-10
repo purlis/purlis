@@ -10,55 +10,72 @@
 use std::fs;
 use std::path::Path;
 
+use crate::support::{self, ClaudeProfile};
+
 use purlis_core::profiles;
 use purlis_core::sandbox;
 use purlis_core::skills::grades;
 use purlis_core::start::Start;
 
-/// A project whose chats run in the full sandbox, on a Claude Code profile `work`.
+/// A project whose chats run in the full sandbox, on a Claude Code profile `work`: the
+/// project's own, or, where purlis wraps a sandboxed Claude Code chat, this machine's
+/// sandbox-only one ([`support::sandboxed_claude_profile`]).
 struct Project {
     dir: tempfile::TempDir,
-    _config: tempfile::TempDir,
+    _config: Option<tempfile::TempDir>,
     _outside: stand_in::NoChatWrites,
 }
 
 impl Project {
-    fn new() -> Self {
+    /// The project for `test`, or `None` where a child ran it.
+    fn new(test: &str) -> Option<Self> {
+        let sandbox_only = match support::sandboxed_claude_profile(test) {
+            ClaudeProfile::Ran => return None,
+            ClaudeProfile::Project => None,
+            ClaudeProfile::SandboxOnly(config) => Some(config),
+        };
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         fs::write(root.join("charter.toml"), "[sandbox]\nmode = \"on\"\n").unwrap();
         let outside = stand_in::NoChatWrites::new();
-        let claude = stand_in::claude_code(outside.path(), "claude", "#!/bin/sh\nexit 0\n");
-        let config = tempfile::tempdir().unwrap();
-        fs::create_dir_all(config.path().join("plugins")).unwrap();
+        let (config, kept) = match sandbox_only {
+            Some(config) => (config, None),
+            None => {
+                let kept = tempfile::tempdir().unwrap();
+                (kept.path().to_path_buf(), Some(kept))
+            }
+        };
+        fs::create_dir_all(config.join("plugins")).unwrap();
         fs::write(
-            config.path().join("plugins/installed_plugins.json"),
+            config.join("plugins/installed_plugins.json"),
             r#"{"version": 2, "plugins": {}}"#,
         )
         .unwrap();
-        fs::write(
-            root.join(profiles::LOCAL_FILE),
-            format!(
-                "[harness.work]\nkind = \"claude\"\ncommand = [{:?}]\nenv = {{ CLAUDE_CONFIG_DIR = {:?} }}\n",
-                claude.display().to_string(),
-                config.path().display().to_string()
-            ),
-        )
-        .unwrap();
-        let project = Self {
+        if kept.is_some() {
+            let claude = stand_in::claude_code(outside.path(), "claude", "#!/bin/sh\nexit 0\n");
+            fs::write(
+                root.join(profiles::LOCAL_FILE),
+                format!(
+                    "[harness.work]\nkind = \"claude\"\ncommand = [{:?}]\nenv = {{ CLAUDE_CONFIG_DIR = {:?} }}\n",
+                    claude.display().to_string(),
+                    config.display().to_string()
+                ),
+            )
+            .unwrap();
+            let set = profiles::current(root);
+            let profile = set.get("work").expect("the profile is declared");
+            purlis_core::profiletrust::record_launched(
+                root,
+                "work",
+                &purlis_core::profiletrust::fingerprint(profile),
+            )
+            .unwrap();
+        }
+        Some(Self {
             dir,
-            _config: config,
+            _config: kept,
             _outside: outside,
-        };
-        let set = profiles::current(project.root());
-        let profile = set.get("work").expect("the profile is declared");
-        purlis_core::profiletrust::record_launched(
-            project.root(),
-            "work",
-            &purlis_core::profiletrust::fingerprint(profile),
-        )
-        .unwrap();
-        project
+        })
     }
 
     fn root(&self) -> &Path {
@@ -79,7 +96,11 @@ impl Project {
 #[test]
 fn a_grades_chat_runs_on_the_model_picked_and_is_priced_from_it() {
     purlis_core::unsteered!();
-    let project = Project::new();
+    let Some(project) = Project::new(
+        "a_grades_chat_runs_on_the_model_picked::a_grades_chat_runs_on_the_model_picked_and_is_priced_from_it",
+    ) else {
+        return;
+    };
     let root = project.root();
 
     let own = grades::ready_to_grade(&project.start(), root).expect("a grade's chat starts");
@@ -113,7 +134,11 @@ fn a_grades_chat_runs_on_the_model_picked_and_is_priced_from_it() {
 #[test]
 fn a_model_the_harness_does_not_offer_is_refused() {
     purlis_core::unsteered!();
-    let project = Project::new();
+    let Some(project) = Project::new(
+        "a_grades_chat_runs_on_the_model_picked::a_model_the_harness_does_not_offer_is_refused",
+    ) else {
+        return;
+    };
     for model in ["gpt-5", "--dangerously-skip-permissions", "opus --x"] {
         let why = grades::ready_to_grade_on(&project.start(), project.root(), Some(model))
             .expect_err("only an offered model reaches the line");

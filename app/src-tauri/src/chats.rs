@@ -1123,7 +1123,17 @@ pub struct OnOlderSandbox {
     /// None where the project's settings moved it.
     #[specta(optional)]
     pub policy: Option<String>,
+    /// **Where a cluster pool added since the chat started is the only cause** (#1750): the chat's
+    /// sandbox does not yet keep it from changing the programs that pool runs, which it holds
+    /// once it restarts. The sentence the Notice says it in ([`POOL_ADDED`]). None otherwise.
+    #[specta(optional)]
+    pub pool: Option<String>,
 }
+
+/// What the Notice after a sandbox change says where a cluster pool added while chats ran is
+/// its only cause (#1750): what changed, in the person's terms, and why it matters.
+pub const POOL_ADDED: &str = "A cluster pool was added, so purlis now keeps chats from changing \
+                              the programs it runs.";
 
 /// **What a project's settings decide of a chat's sandbox** (#1428, D-1428-10): the hosts it
 /// may reach, what the presets widen, and the folders every chat may write. The Notice after a
@@ -1150,6 +1160,10 @@ struct Settled {
     ports: Vec<u16>,
     /// The ports of this Mac a chat may listen on (#2019).
     listens: Vec<u16>,
+    /// The programs a cluster pool runs that the chat's sandbox holds for no chat to write
+    /// (#3292, #1750), of those the pools have now: a chat started before a pool was added
+    /// holds none of its programs until it restarts.
+    cluster: Vec<std::path::PathBuf>,
 }
 
 /// **What of a running chat its sandbox is compiled from now** ([`Chats::on_older_sandbox`]):
@@ -1175,7 +1189,9 @@ enum CompiledNow {
 }
 
 impl Settled {
-    fn of(confines: &purlis_core::sandbox::Confines) -> Self {
+    /// What `confines` settles to, with `cluster` the programs every cluster pool runs now
+    /// ([`purlis_core::sandbox::cluster_programs`]).
+    fn of(confines: &purlis_core::sandbox::Confines, cluster: &[std::path::PathBuf]) -> Self {
         let sorted = |mut list: Vec<std::path::PathBuf>| {
             list.sort();
             list.dedup();
@@ -1226,7 +1242,27 @@ impl Settled {
                 listens.dedup();
                 listens
             },
+            cluster: sorted(
+                confines
+                    .denied
+                    .iter()
+                    .filter(|denial| cluster.contains(&denial.path))
+                    .map(|denial| denial.path.clone())
+                    .collect(),
+            ),
         }
+    }
+
+    /// Whether `self` and `other` differ only in the cluster pools' programs they hold.
+    fn differs_only_in_cluster(&self, other: &Self) -> bool {
+        self.cluster != other.cluster
+            && Self {
+                cluster: Vec::new(),
+                ..self.clone()
+            } == Self {
+                cluster: Vec::new(),
+                ..other.clone()
+            }
     }
 
     /// What stands for `settled`, or for a start with no sandbox: a SHA-256 over one canonical
@@ -1271,6 +1307,10 @@ impl Settled {
                 // Likewise ports to listen on (#2019).
                 if !settled.listens.is_empty() {
                     list("listens", &mut settled.listens.iter().map(u16::to_string));
+                }
+                // Likewise the cluster pools' programs held (#1750).
+                if !settled.cluster.is_empty() {
+                    list("cluster programs", &mut paths(&settled.cluster).into_iter());
                 }
             }
         }
@@ -4010,6 +4050,8 @@ impl Chats {
         let restarting = lock(&self.restarting).clone();
         let locks = purlis_core::sandbox::policy::Locks::of(&self.project);
         let required = locks.forbids_opt_out();
+        // The programs the cluster pools run now, read once for every chat (#1750).
+        let cluster = purlis_core::sandbox::cluster_programs(machine);
         let running: Vec<_> = lock(&self.open)
             .iter()
             .filter(|(session, one)| {
@@ -4022,7 +4064,9 @@ impl Chats {
                     *session,
                     one.chat.clone(),
                     one.harness?,
-                    one.confines.as_ref().map(Settled::of),
+                    one.confines
+                        .as_ref()
+                        .map(|confines| Settled::of(confines, &cluster)),
                     one.started_with.clone(),
                 ))
             })
@@ -4070,7 +4114,7 @@ impl Chats {
                     &key.grants,
                 ) {
                     Ok(Some(Decided::Sandboxed(applied))) => {
-                        CompiledNow::Sandboxed(Settled::of(applied.confines()))
+                        CompiledNow::Sandboxed(Settled::of(applied.confines(), &cluster))
                     }
                     Ok(Some(Decided::Unsandboxed(_) | Decided::Floorless(_)) | None) => {
                         CompiledNow::Unconfined
@@ -4091,10 +4135,18 @@ impl Chats {
                 // sandbox: no setting of the project's could leave it without one now.
                 let policy = (required && started.is_none() && now.is_some())
                     .then(|| locks.led_by("The sandbox is now required by this machine's policy"));
+                // A cluster pool added since it started is the cause where nothing else moved.
+                let pool = match (&started, &now) {
+                    (Some(started), Some(now)) if started.differs_only_in_cluster(now) => {
+                        Some(POOL_ADDED.to_owned())
+                    }
+                    _ => None,
+                };
                 chats.push(OnOlderSandbox {
                     session,
                     change: Settled::key(now.as_ref()),
                     policy,
+                    pool,
                 });
             }
         }
@@ -4375,6 +4427,11 @@ impl Chats {
         #[cfg(test)]
         let decided = match &self.deciding {
             Some(deciding) => deciding(chat, &grants, opt_out),
+            None if opt_out.is_none()
+                && tests::claude_left_unsandboxed_here(&self.project, chat) =>
+            {
+                Ok((None, None, None))
+            }
             None => self.sandbox_off_profile(chat, &grants, opt_out, &made_of(chat, why)),
         };
         #[cfg(not(test))]
@@ -7489,6 +7546,13 @@ impl Chats {
     pub fn has_certificate_check(&self, session: u32) -> bool {
         self.confines_of(session)
             .is_some_and(|confines| confines.widened.trust)
+    }
+
+    /// **Whether chat `session`'s harness runs whole inside its sandbox**, by the app's record
+    /// of its start ([`purlis_core::sandbox::Confines::whole`]): on Linux, inside purlis's own
+    /// wrap. `None` where the chat is not open or started without a sandbox.
+    pub fn runs_whole(&self, session: u32) -> Option<bool> {
+        self.confines_of(session).map(|confines| confines.whole)
     }
 
     /// What chat `session`'s sandbox was compiled to as it started ([`Self::confines_of`]), with

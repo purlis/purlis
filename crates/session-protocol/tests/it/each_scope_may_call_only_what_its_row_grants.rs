@@ -505,6 +505,18 @@ fn every_command() -> Vec<Command> {
         },
         // Where the host's own event log ends (1.41, #3393): the window's, and relayed.
         Command::LogEnd,
+        // A skill change at the person's terminal, audited by the host (1.82, SK-11a): the
+        // terminal's alone.
+        Command::AuditSkillChange {
+            project_path: "/work/project".into(),
+            change: session::SkillChangeAudit {
+                act: session::SkillAct::Install,
+                level: "project".into(),
+                skills: vec!["notify".into()],
+                source: "https://github.com/acme/skills".into(),
+                pin: "0123456789abcdef0123456789abcdef01234567".into(),
+            },
+        },
         // A grade asked for from a terminal, and the window running it (1.63, SK-61).
         Command::AskGrade {
             project: "01J9PRJCT00000000000000000".into(),
@@ -656,6 +668,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "readiness",
             "stop_all",
             "kill_switch",
+            "audit_skill_change",
             "ask_grade",
         ],
         // The window's own commands, relayed by its host over the link between hosts (ruled

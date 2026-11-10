@@ -1073,6 +1073,38 @@ pub(crate) fn no_project() -> PathBuf {
     .to_path_buf()
 }
 
+/// **Whether a Claude Code `chat` on no profile, in the project at `project`, starts as in a
+/// project that leaves the sandbox off**, in a test of something else: on Linux, where every
+/// sandboxed Claude Code chat runs inside purlis's wrap, on a sandbox-only profile (ADR 0067 as
+/// amended 2026-11-10), which a chat on no profile does not have, and only where neither the
+/// project nor your level sets a sandbox, so a test that sets one still decides it as the app
+/// does.
+pub(crate) fn claude_left_unsandboxed_here(project: &std::path::Path, chat: &Chat) -> bool {
+    use purlis_core::sandbox::{Plane, personal, policy::Locks};
+    if !crate::sandboxing::claude_is_wrapped_here_for_tests()
+        || chat.harness() != Some(Harness::ClaudeCode)
+    {
+        return false;
+    }
+    let plane = Plane::read(project);
+    !plane.missing()
+        && !plane.unreadable()
+        && plane.in_force(&Locks::of(project)).is_none()
+        && personal::in_force(project)
+            .for_persona(chat.persona.as_deref())
+            .is_none()
+}
+
+/// [`crate::sandboxing::no_claude_sandbox_here_for_tests`] for the project at `root`, whose
+/// chats on a profile `chats` start: where that starts them without the sandbox, `chats` take
+/// the record of it, as the app's event log does (ADR 0067 §7).
+fn no_claude_sandbox_for(chats: &Chats, root: &std::path::Path) {
+    crate::sandboxing::no_claude_sandbox_here_for_tests(root);
+    if crate::sandboxing::claude_is_wrapped_here_for_tests() {
+        chats.when_the_sandbox_is_decided(Box::new(|_| Ok(())));
+    }
+}
+
 fn chat(program: &str, name: &str, resume: Option<&str>) -> Chat {
     Chat {
         program: program.to_owned(),
@@ -2041,7 +2073,6 @@ fn a_machine() -> purlis_core::sandbox::Machine {
         home: None,
         // Where every harness has a sandbox charter compiles.
         os: purlis_core::sandbox::Os::MacOs,
-        on_a_sandbox_only_profile: false,
     }
 }
 
@@ -2052,6 +2083,15 @@ fn a_machine() -> purlis_core::sandbox::Machine {
 /// the check of the real program: a stand-in harness can then start sandboxed, and start
 /// again, which is what these tests are about.
 pub(crate) fn restartable_chats_of(plane: &std::path::Path, host: Pretend) -> Chats {
+    restartable_chats_on(plane, host, a_machine())
+}
+
+/// [`restartable_chats_of`], with chats decided on `machine`.
+fn restartable_chats_on(
+    plane: &std::path::Path,
+    host: Pretend,
+    machine: purlis_core::sandbox::Machine,
+) -> Chats {
     let root = plane.to_path_buf();
     let mut chats = Chats::on_host(Box::new(|_| {}), Box::new(host), root.clone()).deciding_by(
         Box::new(move |chat, grants, opt_out| {
@@ -2063,7 +2103,7 @@ pub(crate) fn restartable_chats_of(plane: &std::path::Path, host: Pretend) -> Ch
             let decided = purlis_core::sandbox::decide_granted(
                 harness,
                 &root,
-                &a_machine(),
+                &machine,
                 &|_| true,
                 &purlis_core::sandbox::Person {
                     opt_out,
@@ -2170,6 +2210,70 @@ fn a_chat_starts_with_the_certificate_check_and_one_that_started_without_is_told
         older(&chats),
         None,
         "restarted, it is on the sandbox of now"
+    );
+    chats.close(started).expect("ends");
+}
+
+/// #1750: **a chat started before a cluster pool was added is told to restart**, and the
+/// Notice says the pool is why. Its sandbox, compiled as it started, holds none of the
+/// programs the pool runs; once it restarts it holds them, and nothing is behind.
+#[cfg(unix)]
+#[test]
+fn a_chat_started_before_a_cluster_pool_was_added_is_told_to_restart_for_it() {
+    let config = tempfile::tempdir().expect("a config home");
+    let plugin = config.path().join("kube-plugin");
+    std::fs::write(&plugin, "#!/bin/sh\n").expect("a plugin");
+    let machine = purlis_core::sandbox::Machine {
+        env: purlis_core::secrets::Env::of(&[(
+            "XDG_CONFIG_HOME",
+            &config.path().display().to_string(),
+        )]),
+        ..a_machine()
+    };
+    let plane = a_sandboxed_plane();
+    let chats = restartable_chats_on(plane.path(), Pretend::default(), machine.clone());
+    let session = chats
+        .start(&a_resumable_chat_in(plane.path()), SIZE)
+        .expect("starts");
+    let older_on = |chats: &Chats| chats.on_older_sandbox_on(&machine, &|_| true);
+    assert_eq!(older_on(&chats), None, "no pool yet");
+
+    // The pool is added while the chat runs.
+    let folder =
+        purlis_same_user::PrivateDirectory::open(&purlis_core::machine::dir(config.path()))
+            .expect("the config folder");
+    let file = serde_json::json!({ "version": 1, "runners": [], "pools": [{
+        "name": "team", "kind": "cluster", "kubeconfig": "/home/op/.kube/config",
+        "context": "team", "pool": "default", "namespace": "ada",
+        "operatorKey": format!("ed25519:{}", "ab".repeat(32)),
+        "cluster": "3e9a4b2c-7d10-4f5e-8a6b-9c0d1e2f3a4b",
+        "holds": [plugin.display().to_string()],
+    }]});
+    folder
+        .replace_file(
+            purlis_core::machine::RUNNERS_FILE,
+            file.to_string().as_bytes(),
+        )
+        .expect("the pool kept");
+    let behind = older_on(&chats).expect("told");
+    assert_eq!(
+        behind.sessions(),
+        [session],
+        "it runs without the pool's holds"
+    );
+    assert_eq!(
+        behind.chats[0].pool.as_deref(),
+        Some(POOL_ADDED),
+        "the pool is why"
+    );
+
+    chats.ask_restart(session).expect("asked");
+    let started = chats.restart(session, SIZE).expect("restarts");
+    chats.close(session).expect("the old run ends");
+    assert_eq!(
+        older_on(&chats),
+        None,
+        "restarted, it holds the pool's programs"
     );
     chats.close(started).expect("ends");
 }
@@ -3615,7 +3719,6 @@ fn a_system_with_no_backend_checks_no_folder_for_a_sandbox_it_never_applies() {
         env: purlis_core::secrets::Env::of(&[]),
         home: None,
         os,
-        on_a_sandbox_only_profile: false,
     };
     let linked = plane.path().join("workspaces");
 
@@ -4675,6 +4778,7 @@ fn a_waiting_chat_whose_profile_is_approved_then_starts_on_retry_and_asks_nothin
     let root = a_plane_with_work(dir.path(), "");
     let (chats, _) = recorded();
     let chats = chats.in_project(&root);
+    no_claude_sandbox_for(&chats, &root);
     chats.put_back(&one_on_work(&root), SIZE);
     let waiting = chats.would_not_start();
     let asked = waiting[0].approval.clone().expect("it asks");
@@ -8037,6 +8141,9 @@ fn argv_of_a_chat_in(
         shims: None,
         git_hooks: None,
     });
+    // On Linux a sandboxed Claude Code chat runs inside purlis's wrap, on a sandbox-only profile
+    // (ADR 0067 as amended 2026-11-10), which `work` is not: these tests are about its words.
+    no_claude_sandbox_for(&chats, &root);
     let ready = purlis_core::start::ready(
         &purlis_core::start::Start {
             profile: Some("work".to_owned()),
@@ -9893,7 +10000,7 @@ fn a_chat_serving_on_its_port_is_not_behind_once_its_door_listens() {
         },
         ..Confines::default()
     };
-    assert_eq!(Settled::of(&started), Settled::of(&now));
+    assert_eq!(Settled::of(&started, &[]), Settled::of(&now, &[]));
     // A grant taken back still is.
     let taken = Confines {
         widened: Widened {
@@ -9902,7 +10009,7 @@ fn a_chat_serving_on_its_port_is_not_behind_once_its_door_listens() {
         },
         ..Confines::default()
     };
-    assert_ne!(Settled::of(&started), Settled::of(&taken));
+    assert_ne!(Settled::of(&started, &[]), Settled::of(&taken, &[]));
 }
 
 /// #2019: a chat serving on a port is owed a restart once the grant to serve there is taken

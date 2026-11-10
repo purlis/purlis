@@ -38,7 +38,7 @@ import { ASKS_CHANGED, answerAsk } from "./permissionAsks";
 import { listenForChats } from "./chatEvents";
 import { askRemoveWorkspace } from "./removeWorkspaceAsk";
 import { askOpenBrowser, OPEN_VIEW, TAKE_OVER } from "./browserNeedsYou";
-import { runGrantsMoved, sandboxCommandReturned } from "./sandboxAsked";
+import { onSandboxCommand, runGrantsMoved, sandboxCommandReturned } from "./sandboxAsked";
 import { askOpenProposal } from "./proposedChangeOpen";
 import { askReviewPin } from "./proposedPinOpen";
 import { proposeOldKeysRemoval } from "./oldHarnessPlugins";
@@ -52,6 +52,8 @@ import {
   SIGNING_WAITING_CHANGED,
 } from "./signingAsked";
 import { refusalsAnswered } from "./vaultRefusals";
+import { asDrawn, asNamed } from "./projectExpects";
+import { POOL_SIGN_IN_CONFIRM } from "./PoolSignInConfirm";
 
 /**
  * The events after which a project's asks may read differently: its hooks' asks, a dispatch
@@ -144,7 +146,13 @@ export function useAsks(planes: readonly string[]): {
       }).catch(() => undefined),
     );
     stops.push(listenForChats("moved", (told) => reader.soon(told.plane)).catch(() => undefined));
+    // A command's confirmation came or went (#6000), or the window answered something of a
+    // sandbox's, such as what a project expects: it is no one project's word, so each list is
+    // read again.
+    stops.push(listen(POOL_SIGN_IN_CONFIRM, () => reader.soonAll()).catch(() => undefined));
+    const offSandbox = onSandboxCommand(() => reader.soonAll());
     return () => {
+      offSandbox();
       moved.delete(reader.soon);
       reader.stop();
       for (const stop of stops) void stop.then((off) => off?.()).catch(() => undefined);
@@ -248,6 +256,16 @@ function listReader(
       }, wait),
     );
   };
+  const soon = (plane: string) => {
+    if (timers.has(plane)) return;
+    timers.set(
+      plane,
+      setTimeout(() => {
+        timers.delete(plane);
+        read(plane);
+      }, SETTLE_MS),
+    );
+  };
   return {
     read,
     start() {
@@ -255,16 +273,10 @@ function listReader(
       live = true;
       for (const plane of watched) read(plane);
     },
-    soon(plane: string) {
-      if (timers.has(plane)) return;
-      timers.set(
-        plane,
-        setTimeout(() => {
-          timers.delete(plane);
-          read(plane);
-        }, SETTLE_MS),
-      );
+    soonAll() {
+      for (const plane of watched) soon(plane);
     },
+    soon,
     watch(planes: Set<string>) {
       watched = planes;
       setHeld((was) => Object.fromEntries(Object.entries(was).filter(([one]) => planes.has(one))));
@@ -524,11 +536,12 @@ export async function answerTaken(
         break;
       }
       case "sandbox-only": {
-        // Make one makes a sandbox-only Codex profile (#2037), then the project's window opens
-        // a shell tab where the core types Codex's own sign-in for it. Dismiss puts it away.
-        if (option === "dismiss") return commands.dismissSandboxOnly(plane);
+        // Make one makes a sandbox-only profile of the Ask's harness (#2037), then the
+        // project's window opens a shell tab where the core types that harness's own sign-in
+        // for it. Dismiss puts it away.
+        if (option === "dismiss") return commands.dismissSandboxOnly(plane, path.harness);
         if (option === "make") {
-          const made = await commands.makeSandboxOnlyProfile(plane);
+          const made = await commands.makeSandboxOnlyProfile(plane, path.harness);
           if (made.status === "error") return made;
           askProfileSignIn(plane, made.data);
           opened = true;
@@ -703,6 +716,27 @@ export async function answerTaken(
             reason?.trim() || null,
           );
         break;
+      case "sandbox-expects": {
+        // What the project expects of this machine (#6000): its Notice's own two commands, sent
+        // the items as the row drew them. Either way its Notice reads again: one answer settles
+        // both.
+        const answered =
+          option === "allow"
+            ? commands.allowProjectExpects(plane, asDrawn(path.items))
+            : option === "not-now"
+              ? commands.declineProjectExpects(plane, asNamed(path.items))
+              : undefined;
+        if (answered === undefined) break;
+        const done = await answered;
+        if (done.status === "ok") sandboxCommandReturned();
+        return done.status === "ok" ? { status: "ok" } : done;
+      }
+      case "confirmation":
+        // A command's confirmation in the window (#6000): its dialog's own answer, which takes the
+        // dialog away too. The command goes on, or stops, at once.
+        if (option !== "yes" && option !== "no") break;
+        await commands.answerPoolSignIn(path.id, option === "yes");
+        return { status: "ok" };
       case "workspace-removal":
         // Keep puts the question away. Remove… removes nothing (qw356): it opens the window's
         // own Delete workspace, where what goes is read and the person's press there decides.

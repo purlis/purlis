@@ -414,7 +414,9 @@ describe("the window's tab order", () => {
       // The left region, top to bottom, as the Chats view's top stacks it (#3342, Q1 A): the
       // new chat and More on its title's line, the filter's box (#1499), the scope switch (#1679, ONE
       // stop, the arrows between Workspace and All), then the chips, needs you and
-      // working, ONE stop with the arrows between them.
+      // working, ONE stop with the arrows between them. First on the title's line, the switch to
+      // every chat in every open project (#6013).
+      "button All chats",
       "button New chat",
       "button More",
       "input Filter chats by name, persona, workspace or state",

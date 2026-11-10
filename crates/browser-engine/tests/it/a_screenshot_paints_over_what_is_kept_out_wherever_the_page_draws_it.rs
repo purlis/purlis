@@ -4,8 +4,8 @@
 //! A text a page keeps out (what purlis filled and blanked, as for a login, and so what the
 //! person typed, which is kept out the same way), drawn by the page somewhere other than in its
 //! field, is painted over in every screenshot the agent gets (#2303): drawn into a canvas and an
-//! image made from it, shown in a copy the page hides from its tree, and drawn by the page's
-//! style.
+//! image made from it, copied by the canvas's shadow, shown in a copy the page hides from its
+//! tree, and drawn by the page's style.
 //!
 //! These need a real Chrome and the right to start it and to listen on a loopback port, which a
 //! sandboxed agent does not have. They run where `PURLIS_TEST_ENGINE` names a Chrome
@@ -43,6 +43,28 @@ fn a_kept_text_drawn_into_a_canvas_and_an_image_is_painted_over() {
         red_pixels(&screenshot(&browser)),
         0,
         "the canvas and the image are painted over"
+    );
+}
+
+/// A canvas drawn through a `drop-shadow(…)` filter shows a copy of what it draws outside its
+/// box: the copy is painted over with it.
+#[test]
+fn a_kept_text_drawn_into_a_canvas_with_a_drop_shadow_is_painted_over_with_its_shadow() {
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    let field = open_at_the_field(&browser, "echo-drawn-shadowed.html");
+    assert!(
+        red_pixels(&screenshot(&browser)) > 400,
+        "the canvas and its shadow show before"
+    );
+
+    filled_and_blanked(&browser, field, "qzwvxk");
+
+    assert_eq!(
+        red_pixels(&screenshot(&browser)),
+        0,
+        "the canvas and its shadow are painted over"
     );
 }
 

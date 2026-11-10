@@ -9,6 +9,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::support::{self, ClaudeProfile};
+
 use purlis_core::harness::Harness;
 use purlis_core::profiles;
 use purlis_core::sandbox::{self, Applied, Form, local};
@@ -23,47 +25,58 @@ const SOCKET: &str = "/purlis-test-nowhere/kept.sock";
 const PORT: u16 = 5432;
 
 /// A project whose chats run in the full sandbox, on a Claude Code profile `work` whose program
-/// is where no chat writes and whose own settings folder is empty.
+/// is where no chat writes and whose own settings folder is empty: the project's own, or, where
+/// purlis wraps a sandboxed Claude Code chat, this machine's sandbox-only one
+/// ([`support::sandboxed_claude_profile`]).
 struct Project {
     dir: tempfile::TempDir,
-    /// Claude Code's settings folder for the profile: empty, so no settings turn its prompts off.
-    _settings: tempfile::TempDir,
+    /// Claude Code's settings folder for the project's profile: empty, so no settings turn its
+    /// prompts off.
+    _settings: Option<tempfile::TempDir>,
     _outside: stand_in::NoChatWrites,
 }
 
 impl Project {
-    fn new() -> Self {
+    /// The project for `test`, or `None` where a child ran it.
+    fn new(test: &str) -> Option<Self> {
+        let declared_here = match support::sandboxed_claude_profile(test) {
+            ClaudeProfile::Ran => return None,
+            ClaudeProfile::Project => true,
+            ClaudeProfile::SandboxOnly(_) => false,
+        };
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         fs::write(root.join("charter.toml"), "[sandbox]\nmode = \"on\"\n").unwrap();
         fs::create_dir_all(root.join("personas/steward")).unwrap();
         fs::write(root.join("personas/steward/persona.md"), "# steward\n").unwrap();
         let outside = stand_in::NoChatWrites::new();
-        let claude = stand_in::claude_code(outside.path(), "claude", "#!/bin/sh\nexit 0\n");
-        let settings = tempfile::tempdir().unwrap();
-        fs::write(
-            root.join(profiles::LOCAL_FILE),
-            format!(
-                "[harness.work]\nkind = \"claude\"\ncommand = [{:?}]\nenv = {{ CLAUDE_CONFIG_DIR = {:?} }}\n",
-                claude.display().to_string(),
-                settings.path().display().to_string()
-            ),
-        )
-        .unwrap();
-        let project = Self {
+        let settings = declared_here.then(|| {
+            let claude = stand_in::claude_code(outside.path(), "claude", "#!/bin/sh\nexit 0\n");
+            let settings = tempfile::tempdir().unwrap();
+            fs::write(
+                root.join(profiles::LOCAL_FILE),
+                format!(
+                    "[harness.work]\nkind = \"claude\"\ncommand = [{:?}]\nenv = {{ CLAUDE_CONFIG_DIR = {:?} }}\n",
+                    claude.display().to_string(),
+                    settings.path().display().to_string()
+                ),
+            )
+            .unwrap();
+            let set = profiles::current(root);
+            let profile = set.get("work").expect("the profile is declared");
+            purlis_core::profiletrust::record_launched(
+                root,
+                "work",
+                &purlis_core::profiletrust::fingerprint(profile),
+            )
+            .unwrap();
+            settings
+        });
+        Some(Self {
             dir,
             _settings: settings,
             _outside: outside,
-        };
-        let set = profiles::current(project.root());
-        let profile = set.get("work").expect("the profile is declared");
-        purlis_core::profiletrust::record_launched(
-            project.root(),
-            "work",
-            &purlis_core::profiletrust::fingerprint(profile),
-        )
-        .unwrap();
-        project
+        })
     }
 
     fn root(&self) -> &Path {
@@ -97,11 +110,13 @@ impl Project {
 
 /// What a compiled sandbox holds of the three kept Allows: the socket, the folder, the port,
 /// each by every place it could reach the chat — what a run for it is held to, and the
-/// `--settings` Claude Code is handed.
+/// `--settings` Claude Code's own sandbox is handed, where it runs in it. Inside purlis's wrap
+/// (Linux, ADR 0067 as amended 2026-11-10) what the run is held to is all there is.
 fn held(applied: &Applied, folder: &Path) -> (bool, bool, bool) {
     let confines = applied.confines();
     let settings = match applied.form() {
         Form::ClaudeCode(settings) => settings.sandbox.to_string(),
+        Form::ClaudeWrapped(_) => String::new(),
         other => panic!("a grade's chat runs on Claude Code, not {other:?}"),
     };
     let socket =
@@ -119,7 +134,11 @@ fn held(applied: &Applied, folder: &Path) -> (bool, bool, bool) {
 #[test]
 fn a_grades_chat_holds_none_of_the_socket_folder_and_port_an_ordinary_chat_is_given() {
     purlis_core::unsteered!();
-    let project = Project::new();
+    let Some(project) = Project::new(
+        "a_grades_chat_holds_none_of_the_persons_kept_allows::a_grades_chat_holds_none_of_the_socket_folder_and_port_an_ordinary_chat_is_given",
+    ) else {
+        return;
+    };
     let root = project.root();
     let folder = project.folder();
     fs::create_dir_all(&folder).unwrap();

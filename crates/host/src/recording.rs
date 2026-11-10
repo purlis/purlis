@@ -8,7 +8,10 @@
 //! **The host is the event log's one writer while chats run in it** (ADR 0066, ADR 0068). What
 //! the window decides (the run a start begins, a person's grant, a kill switch line) reaches the
 //! host as `record` ([`Record::record`]) and is written there; what a held project's hooks say
-//! is recorded by the binary's hook channel ([`crate::Hear`]), on the thread that heard it.
+//! is recorded by the binary's hook channel ([`crate::Hear`]), on the thread that heard it. A
+//! skill change the person makes at their terminal on an org's project (1.82, SK-11a) is the
+//! one write a `terminal` link asks for ([`Record::audit_skill_change`]): it hands the host the
+//! change, never an entry, and the binary composes the entry.
 //!
 //! **A program's end is kept here, window or no window** ([`Record::ended`]). The host is the
 //! first to know a program ended and why: whether it ended by itself, or by the host's own
@@ -77,6 +80,20 @@ pub trait Record: Send + Sync + 'static {
         Err(NO_LOG.into())
     }
 
+    /// **Audits a skill change the person made at their terminal** (1.82, SK-11a, #6030): writes
+    /// `change`, in the project at `project_path` (the folder itself, every link resolved), in
+    /// the event log durably, saying the terminal made it, or says why not in a sentence. The
+    /// binary composes the entry, and refuses a project with no controls to audit. Called off the
+    /// host's runtime.
+    fn audit_skill_change(
+        &self,
+        project_path: &Path,
+        change: &purlis_session_protocol::session::SkillChangeAudit,
+    ) -> Result<(), String> {
+        let _ = (project_path, change);
+        Err(NO_SKILL_AUDIT.into())
+    }
+
     /// **A reader of this machine's event log from `after`** (1.41, #3393): each of its lines
     /// after that `seq`, then each as it is written, as the session protocol pushes them. Called
     /// off the host's runtime.
@@ -88,6 +105,10 @@ pub trait Record: Send + Sync + 'static {
 
 /// What a host whose binary keeps no event log says when it is asked for its log.
 const NO_LOG: &str = "this session host keeps no event log";
+
+/// What a host whose binary keeps no event log says to a terminal's skill change.
+const NO_SKILL_AUDIT: &str = "this session host keeps no event log, so the skill change was not \
+                              audited";
 
 /// **One reader of the host's own event log, from its cursor** (1.41, #3393): the binary's.
 pub trait ReadsLog: Send + 'static {

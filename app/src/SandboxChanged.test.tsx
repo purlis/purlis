@@ -9,6 +9,7 @@ import { emit } from "@tauri-apps/api/event";
 import type { OlderSandbox, PlaneId } from "./bindings";
 import { ChatsHere, fixedChats, nothingKnown } from "./chatState";
 import {
+  CLUSTER_POOL_ADDED,
   POLICY_CHANGED,
   PolicyRequiresNotice,
   SandboxChangedNotice,
@@ -129,5 +130,50 @@ describe("a chat's tab, where policy now requires the sandbox it runs without", 
 
     expect(await screen.findByRole("status", { name: "Sandbox required" })).toBeInTheDocument();
     expect(asked.length).toBe(2);
+  });
+});
+
+/**
+ * **A cluster pool added while chats ran** (#1750): a chat started before it holds none of the
+ * programs the pool runs until it restarts. The Notice says that is why, in the person's terms,
+ * and the window asks again as the pool is added, with nothing else moving.
+ */
+describe("the Notice after a cluster pool was added", () => {
+  const POOL =
+    "A cluster pool was added, so purlis now keeps chats from changing the programs it runs.";
+
+  it("leads with the pool, and says the chats keep the old sandbox until they restart", () => {
+    const notice = theNotice({
+      chats: [
+        { session: 4, change: "c1", pool: POOL },
+        { session: 5, change: "c1", pool: POOL },
+      ],
+    });
+    expect(notice).toHaveTextContent(
+      `${POOL} 2 chats keep the old sandbox until they restart. A restart keeps the conversation`,
+    );
+    expect(notice).not.toHaveTextContent("This project's sandbox changed.");
+    expect(within(notice).getByRole("button", { name: "Restart them" })).toBeInTheDocument();
+  });
+
+  it("says the project's change where the pool is not the only cause for every chat", () => {
+    const notice = theNotice({
+      chats: [
+        { session: 4, change: "c1", pool: POOL },
+        { session: 5, change: "c2" },
+      ],
+    });
+    expect(notice).toHaveTextContent("This project's sandbox changed.");
+    expect(notice).not.toHaveTextContent(POOL);
+  });
+
+  it("is asked again when a cluster pool is added", async () => {
+    const asked = answering([null]);
+    render(<Window onRestart={vi.fn()} />);
+    await waitFor(() => expect(asked.length).toBe(1));
+
+    await act(() => emit(CLUSTER_POOL_ADDED, null));
+
+    await waitFor(() => expect(asked.length).toBe(2));
   });
 });

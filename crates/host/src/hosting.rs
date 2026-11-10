@@ -1865,6 +1865,26 @@ impl Hosting {
         }
     }
 
+    /// **Audits a skill change a terminal made** (1.82, SK-11a, #6030): the binary writes it in
+    /// the event log, durably, for the project's folder itself, and only then is it answered.
+    async fn audit_skill_change(
+        &self,
+        project_path: String,
+        change: session::SkillChangeAudit,
+    ) -> Result<Answer, Refusal> {
+        let hosting = self.clone();
+        tokio::task::spawn_blocking(move || {
+            let path = std::fs::canonicalize(&project_path).map_err(|why| {
+                format!("the project at {project_path} could not be found ({why})")
+            })?;
+            hosting.record().audit_skill_change(&path, &change)
+        })
+        .await
+        .map_err(|why| not_recorded(why.to_string()))?
+        .map(|()| Answer::Done)
+        .map_err(not_recorded)
+    }
+
     /// The window's answer to a grade it was asked for, from the link that was asked. A grade
     /// that started for a terminal gone by now is stopped at once.
     fn answer_grade(
@@ -4139,6 +4159,11 @@ impl session::Host for Hosting {
             } => self.ask_grade(project, project_path, ask, peer).await,
             Command::AnswerGrade { question, answer } => self.answer_grade(question, answer, peer),
             Command::GradeStep { question, step } => self.grade_step(question, step, peer),
+            // Only a terminal's link reaches this: the grants refuse every other.
+            Command::AuditSkillChange {
+                project_path,
+                change,
+            } => self.audit_skill_change(project_path, change).await,
             Command::MidTurn { question, chats } => {
                 // An answer nobody waits for any more (it came late) is done all the same.
                 if let Some(waiting) = self.state().questions.remove(&question) {

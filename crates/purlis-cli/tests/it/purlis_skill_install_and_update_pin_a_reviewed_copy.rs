@@ -782,7 +782,7 @@ fn update_prints_the_grade_the_newer_commit_carries() {
 /// review is asked about; and what passes both is still refused here, as only the window writes
 /// the audit's log.
 #[test]
-fn an_org_project_refuses_an_unlisted_source_a_young_commit_and_an_unaudited_install() {
+fn an_org_project_refuses_an_unlisted_source_a_young_commit_and_an_install_no_host_can_audit() {
     let project = Project::new();
     let root = project.root();
     let url = project.url();
@@ -827,7 +827,9 @@ fn an_org_project_refuses_an_unlisted_source_a_young_commit_and_an_unaudited_ins
     let unaudited = project.run(&install, "");
     assert_eq!(unaudited.status.code(), Some(1), "{}", text(&unaudited));
     assert!(
-        text(&unaudited).contains("make the change in the Skill studio"),
+        // No session host runs here to audit it (SK-11a, #6030).
+        text(&unaudited).contains("no purlis session host is running to write it")
+            && text(&unaudited).contains("purlis serve"),
         "{}",
         text(&unaudited)
     );

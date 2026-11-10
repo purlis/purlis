@@ -3794,7 +3794,10 @@ impl Planes {
                 let started = strong
                     .as_ref()
                     .and_then(|held| held.chats().started_as(block.line.chat));
-                let mut told = hooks::blocked_holding(&plane, &block, has_check, started);
+                let whole = strong
+                    .as_ref()
+                    .and_then(|held| held.chats().runs_whole(block.line.chat));
+                let mut told = hooks::blocked_holding(&plane, &block, has_check, started, whole);
                 if let Some(strong) = strong {
                     // A runner's service is said with that runner's name (#2510).
                     told = hooks::on_its_runner(
@@ -5882,6 +5885,11 @@ impl Showing {
     /// notification the operator needs.
     pub fn is_showing(&self, window: &str, plane: &PlaneId) -> bool {
         self.held().get(window).and_then(Holding::front) == Some(plane)
+    }
+
+    /// The project window `window` has in front, where it said one.
+    pub fn front_of(&self, window: &str) -> Option<PlaneId> {
+        self.held().get(window).and_then(Holding::front).cloned()
     }
 
     /// The window holding `plane`, in front or behind — or none, when no window has said it

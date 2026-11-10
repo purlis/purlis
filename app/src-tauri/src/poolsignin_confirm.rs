@@ -18,6 +18,8 @@ use std::sync::Mutex;
 use std::sync::mpsc::{Sender, channel};
 use std::time::{Duration, Instant};
 
+use crate::planes::PlaneId;
+
 /// The event each window hears when the question changes.
 pub const CHANGED: &str = "pool-sign-in-confirm";
 /// How long after a question ended without a yes the next is refused.
@@ -42,18 +44,24 @@ pub enum Asks {
     SigningCheck,
 }
 
-/// Which command's question, and the forge a signing check asks (#5793).
+/// Which command's question, the forge a signing check asks (#5793), and the project its ask is
+/// listed under ([`waiting_in`]).
 #[derive(Debug, Clone, Copy)]
 struct Question<'a> {
     asks: Asks,
     on: Option<&'a str>,
+    home: Option<&'a PlaneId>,
 }
 
 #[cfg(test)]
 impl Question<'_> {
-    /// A question that names no forge.
+    /// A question that names no forge, listed under no project.
     fn of(asks: Asks) -> Self {
-        Question { asks, on: None }
+        Question {
+            asks,
+            on: None,
+            home: None,
+        }
     }
 }
 
@@ -75,6 +83,10 @@ pub struct PoolSignInAsk {
 struct Waiting {
     ask: PoolSignInAsk,
     answer: Sender<bool>,
+    /// The project whose Asks lists it, and whose ✋ counts it (#6000).
+    home: Option<PlaneId>,
+    /// When it is taken back as a no, in seconds since 1970.
+    until: u32,
 }
 
 #[derive(Default)]
@@ -116,7 +128,7 @@ struct Waits<'a> {
 /// the windows draw it, and says false where none can; `took_back` has them stop. Only a yes is
 /// `Ok`.
 fn asking(
-    Question { asks, on }: Question<'_>,
+    Question { asks, on, home }: Question<'_>,
     profile: &str,
     pool: &str,
     code: &str,
@@ -166,6 +178,11 @@ fn asking(
                 on: on.map(str::to_owned),
             },
             answer,
+            home: home.cloned(),
+            until: u32::try_from(
+                crate::sandboxing::now_secs().saturating_add(waits.within.as_secs()),
+            )
+            .unwrap_or(u32::MAX),
         });
         Ok(())
     })?;
@@ -221,18 +238,71 @@ pub fn take_the_yes(profile: &str, pool: &str) -> bool {
     })
 }
 
-/// [`asking`], in the windows of `app`.
+/// **The project a command's confirmation is listed under** (#6000): the one the command runs in,
+/// `from`, where this window holds it; else the one in front of the window the person has
+/// focused (`fronts`, focused first), else the first this window holds. None where it holds none:
+/// then only the dialog asks.
+fn home_of(
+    from: Option<&std::path::Path>,
+    held: &[PlaneId],
+    fronts: &[PlaneId],
+) -> Option<PlaneId> {
+    let same = |one: &PlaneId, root: &std::path::Path| {
+        one.root() == root
+            || matches!(
+                (std::fs::canonicalize(one.root()), std::fs::canonicalize(root)),
+                (Ok(held), Ok(theirs)) if held == theirs
+            )
+    };
+    from.and_then(|root| held.iter().find(|one| same(one, root)))
+        .or_else(|| fronts.iter().find(|one| held.contains(one)))
+        .or_else(|| held.iter().min_by(|a, b| a.as_str().cmp(b.as_str())))
+        .cloned()
+}
+
+/// [`asking`], in the windows of `app`: listed in Asks under the project [`home_of`] picks, from
+/// `from`, the project the command runs in where it said one.
 #[cfg(unix)]
+#[allow(clippy::too_many_arguments)]
 pub fn ask_the_person(
     app: &tauri::AppHandle,
     asks: Asks,
     on: Option<&str>,
+    from: Option<&std::path::Path>,
     profile: &str,
     pool: &str,
     code: &str,
     hung_up: &dyn Fn() -> bool,
 ) -> Result<Option<String>, String> {
     use tauri::{Emitter, Manager};
+    let held: Vec<PlaneId> = app
+        .try_state::<crate::planes::Planes>()
+        .map(|planes| {
+            planes
+                .every_held()
+                .iter()
+                .map(|one| one.plane_id().clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut windows: Vec<_> = app.webview_windows().into_values().collect();
+    windows.sort_by_key(|window| !window.is_focused().unwrap_or(false));
+    let fronts: Vec<PlaneId> = app
+        .try_state::<crate::planes::Showing>()
+        .map(|showing| {
+            windows
+                .iter()
+                .filter_map(|window| showing.front_of(window.label()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let home = home_of(from, &held, &fronts);
+    // Its project's ✋ counts it and its notification is sent (`asknotify`), as for every ask.
+    let poke = || {
+        if let Some(home) = &home {
+            crate::asknotify::poke(app, home);
+        }
+    };
     let tell = || {
         let shown: Vec<_> = app
             .windows()
@@ -243,13 +313,19 @@ pub fn ask_the_person(
             // It draws attention and leaves the keyboard where the person has it.
             let _ = window.request_user_attention(Some(tauri::UserAttentionType::Informational));
         }
+        poke();
         app.emit(CHANGED, ()).is_ok() && !shown.is_empty()
     };
     let took_back = || {
+        poke();
         let _ = app.emit(CHANGED, ());
     };
     asking(
-        Question { asks, on },
+        Question {
+            asks,
+            on,
+            home: home.as_ref(),
+        },
         profile,
         pool,
         code,
@@ -261,6 +337,18 @@ pub fn ask_the_person(
         tell,
         took_back,
     )
+}
+
+/// **The question waiting, where project `plane`'s Asks lists it** (#6000, ADR 0121 decision 2): a
+/// command's confirmation in the window is a Blocking ask, listed and counted under the one
+/// project it was filed under ([`home_of`]), with when it is taken back as a no.
+pub fn waiting_in(plane: &PlaneId) -> Option<(PoolSignInAsk, u32)> {
+    with_slot(|slot| {
+        slot.waiting
+            .as_ref()
+            .filter(|waiting| waiting.home.as_ref() == Some(plane))
+            .map(|waiting| (waiting.ask.clone(), waiting.until))
+    })
 }
 
 /// The question waiting for the person's answer, if one is.
@@ -295,6 +383,27 @@ mod tests {
     }
 
     const STAYS: &(dyn Fn() -> bool + Sync) = &|| false;
+
+    fn plane(root: &str) -> PlaneId {
+        PlaneId::for_tests(std::path::Path::new(root))
+    }
+
+    /// **#6000: a confirmation is filed under the project its command runs in**, where this
+    /// window holds it; else under the one in front of the focused window; else the first held.
+    #[test]
+    fn a_confirmation_is_filed_under_the_commands_project_else_the_one_in_front() {
+        let held = [plane("/p/b"), plane("/p/a"), plane("/p/c")];
+        let from = Some(std::path::Path::new("/p/c"));
+        assert_eq!(home_of(from, &held, &[plane("/p/b")]), Some(plane("/p/c")));
+        let elsewhere = Some(std::path::Path::new("/p/z"));
+        assert_eq!(
+            home_of(elsewhere, &held, &[plane("/p/z"), plane("/p/b")]),
+            Some(plane("/p/b")),
+            "a project this window does not hold is passed over"
+        );
+        assert_eq!(home_of(None, &held, &[]), Some(plane("/p/a")));
+        assert_eq!(home_of(from, &[], &[plane("/p/b")]), None);
+    }
 
     fn asked_in_a_thread() -> std::thread::JoinHandle<Result<Option<String>, String>> {
         std::thread::spawn(|| {
@@ -404,9 +513,52 @@ mod tests {
         });
         let question = the_question();
         assert_eq!(question.asks, Asks::TakeOff);
+        assert_eq!(
+            waiting_in(&PlaneId::for_tests(std::path::Path::new("/p/a"))),
+            None,
+            "a question filed under no project is listed in none"
+        );
         answer_pool_sign_in(question.id, true);
         assert!(asker.join().unwrap().is_ok());
         assert!(!take_the_yes("work", "team"), "no keep on this yes");
+
+        // #6000: a question is listed in the Asks of the project it was filed under alone, until
+        // it is taken back two minutes on.
+        let a = PlaneId::for_tests(std::path::Path::new("/p/a"));
+        let b = PlaneId::for_tests(std::path::Path::new("/p/b"));
+        let home = a.clone();
+        let asker = std::thread::spawn(move || {
+            asking(
+                Question {
+                    asks: Asks::SignIn,
+                    on: None,
+                    home: Some(&home),
+                },
+                "work",
+                "team",
+                "A1B2C3",
+                &waits(Duration::from_secs(120), STAYS),
+                || true,
+                || (),
+            )
+        });
+        let question = the_question();
+        let (listed, until) = waiting_in(&a).expect("listed under its project");
+        assert_eq!(listed, question);
+        let now = u32::try_from(crate::sandboxing::now_secs()).unwrap();
+        assert!(
+            (now + 110..=now + 121).contains(&until),
+            "{until} against {now}"
+        );
+        assert_eq!(waiting_in(&b), None, "and under no other");
+        answer_pool_sign_in(question.id, false);
+        assert!(asker.join().unwrap().is_err());
+        assert_eq!(
+            waiting_in(&a),
+            None,
+            "an answered question is listed nowhere"
+        );
+        with_slot(|slot| slot.ended_without_a_yes = None);
 
         // A line this window just typed is the person's yes to its own sign-in, once, with no
         // dialog; it lets that profile be kept there once, as a yes does.

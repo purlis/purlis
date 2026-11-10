@@ -11,7 +11,7 @@ import {
   cloneTheFixtureRepos,
   copyFixturePlane,
   cutAFixturePiece,
-  declareAProfile,
+  declareTheRunsProfile,
   launchedUnderLaunchdsLimit,
   theRunsEnvironment,
   theRunsStandIns,
@@ -62,9 +62,37 @@ const launched = process.env.STRESS === "1" ? launchedUnderLaunchdsLimit(app) : 
 
 // The plane the app is started in: a fresh copy of a fixture plane, never the committed one.
 const plane = copyFixturePlane();
-// The plane declares one harness profile, which is what the picker picks from. It is
-// deliberately NOT approved: approving it is the operator's click, and the scenario makes it.
-declareAProfile(plane, writeShell(built("fake-harness")));
+// Every session the app opens is the fake harness, because that is the shell it finds.
+const shell = writeShell(built("fake-harness"));
+/**
+ * What the app is started with. The plane, this run's own machine store and the fence come from
+ * one place (`theRunsEnvironment`), because a launcher that pins two of the three reads exactly
+ * like one that pins all three — and that is how charter-app#129 stayed invisible.
+ */
+const environment = theRunsEnvironment(plane, {
+  SHELL: shell,
+  // A panic that ends the app is written where a failed run keeps it (charter-app#16).
+  CHARTER_PANIC_LOG: PANIC_LOG,
+  // A spec's stand-in for an installed harness is found first, outside every folder a
+  // sandboxed chat may write (`theRunsStandIns`).
+  PATH: [theRunsStandIns(), process.env.PATH ?? ""].join(delimiter),
+  // No forge refresh in a scenario run: the forge cache is the one `writeForgeCache`
+  // left, and the Changes view's specs read it. A refresh starts on the first focus
+  // that draws the Changes view, runs the runner's own `gh` against the network, and
+  // overwrote that cache with "no pipeline recorded" whenever a spec before
+  // `regions.e2e.ts` drew the view (train 76's `no-blank-view`). What a refresh
+  // writes is `glrefresh`'s tests'.
+  PURLIS_NO_BACKGROUND_CHECKS: "1",
+  // The Skill studio's slices are built behind its flag (#2786), and a run checks them
+  // as the dev channel's people see them: on (`specs/skill-studio.e2e.ts`).
+  PURLIS_SKILL_STUDIO: "1",
+});
+// The plane's harness profiles, which are what the picker picks from. A declared one is
+// deliberately NOT approved: approving it is the operator's click, and the scenario makes it. On
+// Linux, where every sandboxed Claude Code chat runs inside purlis's wrap, on a sandbox-only
+// profile (ADR 0067 as amended 2026-11-10), `scenario` is the run's machine profile, and its
+// `claude` goes first on the app's `PATH` (`declareTheRunsProfile`).
+declareTheRunsProfile(plane, shell, environment);
 // The repos panel is about what git says, and the committed fixture cannot carry a `.git`
 // directory — so the copy this run works on gets real clones, and the forge cache a
 // refresher would have left. Neither is the app's doing: the app only reads them.
@@ -220,29 +248,7 @@ export const config: WebdriverIO.Config = {
         // The app's own output, for when a scenario test fails because the app did.
         captureBackendLogs: true,
         captureFrontendLogs: true,
-        // Every session the app opens is the fake harness, because that is the shell it finds.
-        // A panic that ends the app is written where a failed run keeps it (charter-app#16).
-        //
-        // The plane, this run's own machine store and the fence come from one place
-        // (`theRunsEnvironment`), because a launcher that pins two of the three reads exactly
-        // like one that pins all three — and that is how charter-app#129 stayed invisible.
-        env: theRunsEnvironment(plane, {
-          SHELL: writeShell(built("fake-harness")),
-          CHARTER_PANIC_LOG: PANIC_LOG,
-          // A spec's stand-in for an installed harness is found first, outside every folder a
-          // sandboxed chat may write (`theRunsStandIns`).
-          PATH: [theRunsStandIns(), process.env.PATH ?? ""].join(delimiter),
-          // No forge refresh in a scenario run: the forge cache is the one `writeForgeCache`
-          // left, and the Changes view's specs read it. A refresh starts on the first focus
-          // that draws the Changes view, runs the runner's own `gh` against the network, and
-          // overwrote that cache with "no pipeline recorded" whenever a spec before
-          // `regions.e2e.ts` drew the view (train 76's `no-blank-view`). What a refresh
-          // writes is `glrefresh`'s tests'.
-          PURLIS_NO_BACKGROUND_CHECKS: "1",
-          // The Skill studio's slices are built behind its flag (#2786), and a run checks them
-          // as the dev channel's people see them: on (`specs/skill-studio.e2e.ts`).
-          PURLIS_SKILL_STUDIO: "1",
-        }),
+        env: environment,
       },
     ],
   ],

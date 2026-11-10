@@ -583,6 +583,7 @@ pub fn listen_for_the_command_line() {
                         app,
                         crate::poolsignin_confirm::Asks::SigningCheck,
                         Some(&on),
+                        None,
                         repo,
                         commit,
                         code,
@@ -593,6 +594,8 @@ pub fn listen_for_the_command_line() {
                 }
                 return purlis_core::signingsetup::said_in_the_window(asked);
             }
+            // The project the command runs in, whose Asks lists its confirmation (#6000).
+            let project = asked.project().map(std::path::Path::to_path_buf);
             purlis_core::windowline::answer(
                 &config,
                 asked,
@@ -614,6 +617,7 @@ pub fn listen_for_the_command_line() {
                         app,
                         crate::poolsignin_confirm::Asks::SignIn,
                         None,
+                        project.as_deref(),
                         name,
                         pool,
                         code,
@@ -629,6 +633,7 @@ pub fn listen_for_the_command_line() {
                         app,
                         crate::poolsignin_confirm::Asks::TakeOff,
                         None,
+                        project.as_deref(),
                         name,
                         pool,
                         code,

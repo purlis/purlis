@@ -478,7 +478,17 @@ asks it rather than the forge CLI, so the window's git needs no `gh` or `glab`:
   still that one. With another remote recorded, it commits locally, does not push, and says
   that the remote changed since purlis last saved it. With none recorded yet, it pushes with
   the forge CLI's helper, as before, and records nothing: an automatic save never trusts a
-  remote on first use. Saving from the window confirms the remote it pushes to and records it.
+  remote on first use. Saving the project from the window confirms the remote it pushes to and
+  records it; saving a workspace's repo from the window does so only for a repo that has a
+  record already, so a repo made outside purlis is never trusted as a side effect of a Save.
+- **A repo made outside purlis is trusted by the person's own press.** Each workspace repo with
+  a remote on a forge the project knows and no record (one cloned in your own terminal, or
+  before the record) stands as a Notice in the project, *Clone made outside purlis*, naming its
+  folder, saying purlis did not clone it and naming the one address its remote names. *Trust
+  this clone* records it at exactly that address, and is refused with a sentence when the
+  remote changed since the Notice showed it (`forge::gitcredential::vouch`). A repo whose
+  remote names more than one address has no *Trust this clone*: it says to give origin one
+  address first. Dismiss hides it until its remote changes.
 - **A fetch is held to the same remote** (#1851). The fetches and pulls the window's git makes
   by the remote's name (auto-save's fetch, a repo sync, a restore's pull, and the fetch after
   purlis merges a save's request itself, #1864) get purlis's helper only when every address the
@@ -495,9 +505,10 @@ asks it rather than the forge CLI, so the window's git needs no `gh` or `glab`:
   the next automatic save does not ask again.
 - **A clone with no recorded remote says so** (#1848). On a machine with no forge CLI, an
   automatic save of a clone purlis has no remote recorded for (one cloned before the record)
-  commits locally and says to save it once from the window, rather than failing on a sign-in
-  that is not there. The Saving view asks the same as a Notice naming the remote, and its
-  *Save once from here* records that remote and saves. It is never recorded silently on an
+  commits locally and says to trust it in the window, rather than failing on a sign-in that is
+  not there. For the project, the Saving view asks the same as a Notice naming the remote, and
+  its *Save once from here* records that remote and saves; a workspace's repo is trusted from
+  its *Clone made outside purlis* Notice instead. It is never recorded silently on an
   automatic save, even when its host has a signed-in account: a remote a chat rewrote before
   the first save would be trusted.
 - A host with no purlis account keeps the forge CLI's helper, as before.

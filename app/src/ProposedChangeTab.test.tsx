@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { BlockType, EditorView } from "@codemirror/view";
 import { ProposedChangeTab } from "./ProposedChangeTab";
 import { askOpenProposal, OPEN_PROPOSAL_ASK, proposalView } from "./proposedChangeOpen";
 import { answerTaken } from "./asks";
@@ -94,9 +95,27 @@ describe("a proposed change's own tab", () => {
       [...side.querySelectorAll(".cm-line")].map((line) => line.textContent);
     expect(shown(a)).not.toContain("line 2");
 
-    // Every line can still be seen before Apply: a click on a fold opens it on both sides.
+    // Every line can still be seen before Apply: a click on a fold opens it on both sides, and
+    // the fold below the change stays. Read from each side's blocks, not from the folds drawn:
+    // once CodeMirror measures (a frame later, or sooner on a loaded machine, #6102) it draws only
+    // the lines near the top, and the fold below is no longer in the document at all.
+    const folded = (side: Element, line: number) => {
+      const view = EditorView.findFromDOM(side as HTMLElement);
+      if (view === null) throw new Error("no editor");
+      const at = view.state.doc.line(line).from;
+      const block = view.lineBlockAt(at);
+      // A line that holds a fold and the line it ends on is a block of blocks.
+      const blocks = Array.isArray(block.type) ? block.type : [block];
+      return blocks.some(
+        (one) => one.type === BlockType.WidgetRange && one.from <= at && at <= one.to,
+      );
+    };
+    for (const side of [a, b]) expect(folded(side, 2)).toBe(true);
     await userEvent.click(a.querySelector(".cm-collapsedLines") as HTMLElement);
-    await waitFor(() => expect(container.querySelectorAll(".cm-collapsedLines")).toHaveLength(2));
+    for (const side of [a, b]) {
+      expect(folded(side, 2)).toBe(false);
+      expect(folded(side, 1500)).toBe(true);
+    }
     expect(shown(a)).toContain("line 2");
     expect(shown(b)).toContain("line 2");
 

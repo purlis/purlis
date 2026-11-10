@@ -27,7 +27,6 @@ pub(crate) fn sandbox_compiled_for(
         env: crate::secrets::Env::of(&[(crate::datahome::HOME_VAR, data.as_str())]),
         home: None,
         os: crate::sandbox::Os::MacOs,
-        on_a_sandbox_only_profile: false,
     };
     let applied = crate::sandbox::compiled_anyway(harness, plane.path(), &machine);
     (plane, applied)

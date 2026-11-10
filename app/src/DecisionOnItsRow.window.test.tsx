@@ -202,7 +202,14 @@ describe("a decision on its row in Asks (#5998)", () => {
     const row = rowOf(view, "steward 2");
 
     expect(row.querySelector(".inbox-question")).toHaveTextContent("Allow curl to use vault team?");
-    expect(buttonsOf(row)).toEqual(["Allow once", "Other scopes…", "Don't allow", "Go to chat"]);
+    expect(buttonsOf(row)).toEqual([
+      "Allow once",
+      "Other scopes…",
+      "Don't allow",
+      "Go to chat",
+      "Snooze",
+      "Stop",
+    ]);
     expect(within(row).queryByRole("button", { name: /^Answer/ })).toBeNull();
   });
 
@@ -268,6 +275,8 @@ describe("a decision on its row in Asks (#5998)", () => {
       "Other scopes…",
       "Keep blocked",
       "Go to chat",
+      "Snooze",
+      "Stop",
     ]);
   });
 
@@ -301,7 +310,14 @@ describe("a decision on its row in Asks (#5998)", () => {
     const row = rowOf(view, "steward 1");
 
     expect(row.querySelector(".inbox-question")).toHaveTextContent("Allow this action?");
-    expect(buttonsOf(row)).toEqual(["Allow once", "Other scopes…", "Deny", "Go to chat"]);
+    expect(buttonsOf(row)).toEqual([
+      "Allow once",
+      "Other scopes…",
+      "Deny",
+      "Go to chat",
+      "Snooze",
+      "Stop",
+    ]);
     await read();
     await press.click(within(row).getByRole("button", { name: "Deny" }));
     await waitFor(() =>

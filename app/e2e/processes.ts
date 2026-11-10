@@ -50,12 +50,21 @@ export const PANIC_LOG = join(LOGS, "panics.log");
 /** When this run started, so evidence is only what this run left behind. */
 const RUN_STARTED = Date.now();
 
+/**
+ * **Room for the whole process table.** A wrapped chat's sandbox keeps its profile on its own
+ * command line (`purlis _sandbox --profile …`), up to hundreds of KiB, so a few of them pass
+ * Node's default 1 MiB and a listing cut off there read as no processes at all.
+ */
+export const PS_MAX_BUFFER = 256 * 1024 * 1024;
+
 function ps(args: string[]): string {
   try {
-    return execFileSync("ps", args, { encoding: "utf8" });
-  } catch {
+    return execFileSync("ps", args, { encoding: "utf8", maxBuffer: PS_MAX_BUFFER });
+  } catch (error) {
     // `ps -p` exits non-zero when no such process exists, which is an answer, not a failure.
-    return "";
+    // Anything else (a listing too long to hold, `ps` not run at all) is no answer.
+    if (typeof (error as { status?: unknown }).status === "number") return "";
+    throw error;
   }
 }
 

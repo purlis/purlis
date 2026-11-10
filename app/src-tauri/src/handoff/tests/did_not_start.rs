@@ -151,6 +151,9 @@ fn a_task_tried_again_and_refused_again_is_one_row_that_counts_the_tries() {
 
 #[test]
 fn a_task_the_person_asked_for_from_a_tab_is_answered_in_its_dialog_and_leaves_no_row() {
+    if super::no_sandboxed_claude_code_stand_in_here() {
+        return;
+    }
     let plane = a_plane_with_personas();
     let (host, _planes, id, held, steward) = a_steward(&plane);
     host.refuses(Some(NO_TERMINAL));

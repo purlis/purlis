@@ -230,7 +230,7 @@ impl Recorder {
                 number,
                 kind,
                 body,
-            } => one(trust_kind(&kind).and_then(|()| self.audited(&plane, number, &kind, body))),
+            } => one(audited_kind(&kind).and_then(|()| self.audited(&plane, number, &kind, body))),
             Entry::HumanEdit {
                 plane,
                 number,
@@ -315,6 +315,16 @@ fn trust_kind(kind: &str) -> io::Result<()> {
             format!("{kind:?} is not a kind of trust event, so nothing was written"),
         ))
     }
+}
+
+/// What an audited entry may be written as: a [`trust_kind`], or one of the three skill changes
+/// an org's project audits (SK-11, [`crate::skills::source::policy`]), never any other.
+fn audited_kind(kind: &str) -> io::Result<()> {
+    use crate::skills::source::policy::{INSTALL_KIND, REMOVE_KIND, UPDATE_KIND};
+    if [INSTALL_KIND, UPDATE_KIND, REMOVE_KIND].contains(&kind) {
+        return Ok(());
+    }
+    trust_kind(kind)
 }
 
 /// What a [`Entry::Begin`] may hold with its run: only the sandbox coming back on, and only

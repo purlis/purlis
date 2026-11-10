@@ -365,14 +365,73 @@ impl Audited {
         }
     }
 
-    /// Its body in the event log.
-    pub fn body(&self) -> serde_json::Value {
+    /// Its body in the event log: who made it, the person on the scope it was `made` at (ADR
+    /// 0075's actor, as the other audited acts say it), then what was changed.
+    pub fn body(&self, made: MadeAt) -> serde_json::Value {
         serde_json::json!({
+            "actor_kind": "human",
+            "actor": "operator",
+            "scope": made.scope(),
             "level": self.level,
             "skills": self.skills,
             "source": self.source,
             "pin": self.pin,
         })
+    }
+
+    /// **The audit a terminal's ask carries** (1.82, SK-11a, #6030), which the session host
+    /// writes as the terminal's: who made it is never the terminal's to say.
+    pub fn told(&self) -> purlis_session_protocol::session::SkillChangeAudit {
+        use purlis_session_protocol::session::SkillAct;
+        purlis_session_protocol::session::SkillChangeAudit {
+            act: match self.act {
+                Act::Install => SkillAct::Install,
+                Act::Update => SkillAct::Update,
+                Act::Remove => SkillAct::Remove,
+            },
+            level: self.level.clone(),
+            skills: self.skills.clone(),
+            source: self.source.clone(),
+            pin: self.pin.clone(),
+        }
+    }
+
+    /// The audit a terminal's ask `told` the session host.
+    pub fn from_told(told: &purlis_session_protocol::session::SkillChangeAudit) -> Audited {
+        use purlis_session_protocol::session::SkillAct;
+        Audited {
+            act: match told.act {
+                SkillAct::Install => Act::Install,
+                SkillAct::Update => Act::Update,
+                SkillAct::Remove => Act::Remove,
+            },
+            level: told.level.clone(),
+            skills: told.skills.clone(),
+            source: told.source.clone(),
+            pin: told.pin.clone(),
+        }
+    }
+}
+
+/// **Where an audited change was made** (ADR 0100 as amended 2026-11-10): the entry's `scope`,
+/// the client scope the person made it on. Either is a person's scope, whose credential no chat's
+/// sandbox reaches (session protocol, V16a), so either entry is `human`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MadeAt {
+    /// The Skill studio, in the window, written through the window's `record`.
+    Window,
+    /// `purlis skill` at the person's terminal, written by the session host on the ask of a link
+    /// it admitted as `terminal` (session protocol 1.82).
+    Terminal,
+}
+
+impl MadeAt {
+    /// The scope's word in an entry.
+    pub fn scope(self) -> &'static str {
+        match self {
+            MadeAt::Window => "local-ui",
+            MadeAt::Terminal => "terminal",
+        }
     }
 }
 
@@ -393,8 +452,13 @@ fn audited_source(origin: &Origin) -> String {
 
 /// What a change on an org's project made where nothing can audit it is refused with.
 pub const NOT_AUDITED_HERE: &str = "this project audits every skill install, update and removal, \
-                                    and only the purlis window writes the audit's log: make the \
-                                    change in the Skill studio";
+                                    and nothing here can write the audit's log: make the change \
+                                    in the Skill studio, or with `purlis skill` in your own \
+                                    terminal";
+
+/// What the session host refuses a terminal's skill change with on a project without controls.
+pub const NO_CONTROLS: &str = "this project's shared settings hold no [skill_policy], so it \
+                               audits no skill change";
 
 /// **The audit of `act` on the skill `name` at `level`**, by the pin its lockfile keeps:
 /// `None` for one made here, which is no part of the skill supply. A lockfile that cannot be

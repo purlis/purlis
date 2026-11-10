@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>What you typed, drawn with a shadow</title>
+<style>
+  body { margin: 0; font: 16px sans-serif; }
+  input { display: block; margin: 8px; color: black; }
+  canvas { display: block; margin: 8px; filter: drop-shadow(rgb(255, 0, 0) 0px 100px 0px); }
+</style></head>
+<body>
+  <input id="said" aria-label="Say something">
+  <canvas id="drawn" width="300" height="60" aria-hidden="true"></canvas>
+  <script>
+    // The page draws what is typed into a canvas, whose filter draws a copy of it lower down.
+    const canvas = document.getElementById('drawn');
+    const draw = (text) => {
+      const pen = canvas.getContext('2d');
+      pen.clearRect(0, 0, 300, 60);
+      pen.fillStyle = 'rgb(255, 0, 0)';
+      pen.font = 'bold 40px sans-serif';
+      pen.fillText(text, 10, 45);
+    };
+    draw('waiting');
+    document.getElementById('said').addEventListener('input', (e) => draw(e.target.value));
+  </script>
+</body></html>

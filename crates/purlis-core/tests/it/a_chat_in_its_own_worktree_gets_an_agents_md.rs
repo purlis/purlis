@@ -409,6 +409,11 @@ fn two_chats_starting_in_one_piece_at_once_leave_charters_own_file() {
 }
 
 /// Where a chat in the clone starts: the plane's own profile, so `start::ready` itself runs.
+///
+/// With no sandbox for the project's chats where purlis wraps a Claude Code chat (Linux): there
+/// a sandboxed Claude Code chat runs inside purlis's wrap, on a sandbox-only profile, which
+/// `work` is not (ADR 0067 as amended 2026-11-10). A person's level is read at a start the
+/// window made ([`starting`]); elsewhere the chat starts sandboxed as it did.
 fn with_a_profile(f: &support::Fixture) {
     // Beside the plane, answering `--version` as Claude Code does: a start asks (#2071).
     let bin = beside().join(f.plane.file_name().expect("a named plane"));
@@ -430,6 +435,31 @@ fn with_a_profile(f: &support::Fixture) {
         &purlis_core::profiletrust::fingerprint(p),
     )
     .unwrap();
+    support::no_claude_sandbox_here(&f.plane);
+}
+
+/// A start of `work` as `ops` in `cwd`, as the window makes it.
+fn starting(cwd: &Path) -> start::Start {
+    start::Start {
+        profile: Some("work".into()),
+        persona: Some("ops".into()),
+        name: "1".into(),
+        cwd: Some(cwd.to_path_buf()),
+        made: purlis_core::sandbox::Made::Window,
+        ..Default::default()
+    }
+}
+
+/// `ready`'s notices, but for the one that says the test turned the sandbox off
+/// ([`with_a_profile`]).
+fn notices_but_the_sandboxs(ready: &start::Ready) -> Vec<String> {
+    let off = ready.unsandboxed.as_ref().map(|lifted| lifted.notice());
+    ready
+        .notices
+        .iter()
+        .filter(|notice| Some(*notice) != off.as_ref())
+        .cloned()
+        .collect()
 }
 
 #[test]
@@ -437,13 +467,6 @@ fn every_chat_start_hands_the_window_a_notice_naming_a_hidden_agents_md() {
     purlis_core::unsteered!();
     let (f, piece) = hidden_in_the_clone();
     with_a_profile(&f);
-    let starting = |cwd: &Path| start::Start {
-        profile: Some("work".into()),
-        persona: Some("ops".into()),
-        name: "1".into(),
-        cwd: Some(cwd.to_path_buf()),
-        ..Default::default()
-    };
 
     for cwd in [&f.clone, &piece] {
         let ready = start::ready(&starting(cwd), &f.plane).expect("it starts");
@@ -464,19 +487,9 @@ fn a_chat_start_with_nothing_hidden_has_no_notice() {
     let f = plane();
     let piece = cut(&f, "p1");
     with_a_profile(&f);
-    let ready = start::ready(
-        &start::Start {
-            profile: Some("work".into()),
-            persona: Some("ops".into()),
-            name: "1".into(),
-            cwd: Some(piece.clone()),
-            ..Default::default()
-        },
-        &f.plane,
-    )
-    .expect("it starts");
+    let ready = start::ready(&starting(&piece), &f.plane).expect("it starts");
 
-    assert_eq!(ready.notices, Vec::<String>::new());
+    assert_eq!(notices_but_the_sandboxs(&ready), Vec::<String>::new());
     assert!(piece.join("AGENTS.md").exists());
 }
 
@@ -589,17 +602,7 @@ fn a_start_names_the_branch_whose_agents_md_charters_line_hides() {
     let (f, piece) = hidden_in_the_clone();
     with_a_profile(&f);
 
-    let ready = start::ready(
-        &start::Start {
-            profile: Some("work".into()),
-            persona: Some("ops".into()),
-            name: "1".into(),
-            cwd: Some(piece),
-            ..Default::default()
-        },
-        &f.plane,
-    )
-    .expect("it starts");
+    let ready = start::ready(&starting(&piece), &f.plane).expect("it starts");
 
     assert_eq!(
         ready.agents_md,

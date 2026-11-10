@@ -58,6 +58,8 @@ const PLACES = {
   "pool-tool": { at: "pane" },
   secret: { at: "pane" },
   "run-grant": { at: "pane" },
+  "sandbox-expects": { at: "no-chat" },
+  confirmation: { at: "no-chat" },
 } as const satisfies Record<AskSource, Place>;
 
 /** Each kind's place, as any place: a kind may move to or from Asks alone. */

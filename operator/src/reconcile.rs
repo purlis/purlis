@@ -356,7 +356,8 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
     .map_err(Error::of_finalizer)
 }
 
-/// When the policy `name` is in force from, as the cluster holds it and its binding (#3854).
+/// When the policy `name` is in force from, as the cluster holds it and its binding (#3854), for
+/// the operator in the namespace it runs in.
 async fn policy_in_force_since(
     client: &Client,
     name: &str,
@@ -367,7 +368,12 @@ async fn policy_in_force_since(
     let binding = Api::<ValidatingAdmissionPolicyBinding>::all(client.clone())
         .get_opt(name)
         .await?;
-    Ok(in_force_since(policy.as_ref(), binding.as_ref(), name))
+    Ok(in_force_since(
+        policy.as_ref(),
+        binding.as_ref(),
+        name,
+        client.default_namespace(),
+    ))
 }
 
 /// **`requester`'s runner namespace**, as the cluster holds it and as the policy on runner
@@ -439,11 +445,16 @@ async fn runner_namespace_ready(
     let held = match api.get_opt(QUOTA).await? {
         Some(held) if person::quota_says(&held, &wanted) => held,
         _ => {
-            api.patch(
-                QUOTA,
-                &PatchParams::apply(FIELD_MANAGER).force(),
-                &Patch::Apply(&wanted),
-            )
+            let applied = api
+                .patch(
+                    QUOTA,
+                    &PatchParams::apply(FIELD_MANAGER).force(),
+                    &Patch::Apply(&wanted),
+                )
+                .await?;
+            held_whole(&api, applied, &wanted, |held| {
+                person::quota_says(held, &wanted)
+            })
             .await?
         }
     };
@@ -483,14 +494,71 @@ where
             held_as_applied(api, made).await
         }
         Some(held) if says(&held) => Ok(held),
-        Some(_) => Ok(api
-            .patch(
-                &name,
-                &PatchParams::apply(FIELD_MANAGER).force(),
-                &Patch::Apply(&wanted),
-            )
-            .await?),
+        Some(_) => {
+            let applied = api
+                .patch(
+                    &name,
+                    &PatchParams::apply(FIELD_MANAGER).force(),
+                    &Patch::Apply(&wanted),
+                )
+                .await?;
+            held_whole(api, applied, &wanted, says).await
+        }
     }
+}
+
+/// **The JSON patch that holds `applied` to what the operator wrote, whole**: none when it
+/// says what it should (`says`) once applied. Otherwise a field another manager added survived the
+/// apply, which takes back only the operator's own fields, and the patch writes `wanted`'s whole
+/// spec over it, only while it is still at the version it was applied at. For an object with a
+/// `spec`.
+pub fn spec_held_whole<K>(
+    applied: &K,
+    wanted: &K,
+    says: impl Fn(&K) -> bool,
+) -> Option<serde_json::Value>
+where
+    K: Resource + Serialize,
+{
+    if says(applied) {
+        return None;
+    }
+    let spec = serde_json::to_value(wanted).ok()?.get("spec")?.clone();
+    Some(serde_json::json!([
+        { "op": "test", "path": "/metadata/resourceVersion", "value": applied.meta().resource_version },
+        { "op": "replace", "path": "/spec", "value": spec },
+    ]))
+}
+
+/// `applied`, as the operator has just applied it through `api`, held to `wanted` whole
+/// ([`spec_held_whole`]). A change made since it was applied is refused, and looked at again at
+/// the next pass.
+async fn held_whole<K>(
+    api: &Api<K>,
+    applied: K,
+    wanted: &K,
+    says: impl Fn(&K) -> bool,
+) -> Result<K, Error>
+where
+    K: Resource + Clone + DeserializeOwned + Serialize + Debug,
+{
+    let Some(patch) = spec_held_whole(&applied, wanted, says) else {
+        return Ok(applied);
+    };
+    let name = applied.name_any();
+    tracing::warn!(
+        object = %name, namespace = ?applied.namespace(),
+        "another manager's field survived the operator's apply: its whole spec is written again"
+    );
+    let patch = Patch::<()>::Json(
+        serde_json::from_value(patch)
+            .map_err(|error| Error::Kube(kube::Error::SerdeError(error)))?,
+    );
+    let params = PatchParams {
+        field_manager: Some(FIELD_MANAGER.to_owned()),
+        ..PatchParams::default()
+    };
+    Ok(api.patch(&name, &params, &patch).await?)
 }
 
 /// **A pass over a Claim the operator acts on**, under its finalizer: its runner made, or kept,
@@ -1779,6 +1847,7 @@ async fn run_claims(
     );
     let claims = controller.store();
     let every_claim = controller.store();
+    let every_claim_again = controller.store();
     let known_claims = controller.store();
     let by_upstream_claim = controller.store();
     let by_template = controller.store();
@@ -1834,6 +1903,18 @@ async fn run_claims(
             watcher::Config::default().fields(&format!("metadata.name={POLICY}")),
             move |_| {
                 every_claim
+                    .state()
+                    .into_iter()
+                    .map(|claim| ObjectRef::from_obj(&*claim))
+                    .collect::<Vec<_>>()
+            },
+        )
+        // And the policy itself, by name: when it changes, comes or goes, so is every Claim.
+        .watches(
+            Api::<ValidatingAdmissionPolicy>::all(client.clone()),
+            watcher::Config::default().fields(&format!("metadata.name={POLICY}")),
+            move |_| {
+                every_claim_again
                     .state()
                     .into_iter()
                     .map(|claim| ObjectRef::from_obj(&*claim))
