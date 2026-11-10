@@ -1201,16 +1201,38 @@ fn folder_files(folder: &Path) -> Vec<(String, Vec<u8>)> {
         .collect()
 }
 
-#[test]
-fn each_kind_of_source_imports_into_a_theme_folder_the_check_draws() {
-    let rig = Rig::new();
-    for (fixture, kind, folder) in [
-        ("ember.jsonc", "vscode", "ember"),
-        ("harbor.yaml", "base16", "harbor"),
-        ("dune.json", "base24", "dune"),
-        ("tide.itermcolors", "iterm", "tide"),
-        ("moss", "ghostty", "moss"),
-    ] {
+/// Each kind of source imports into a theme folder the check draws: one test a kind, so the
+/// debug binary's tuned imports run side by side (#3597).
+mod each_kind_of_source_imports_into_a_theme_folder_the_check_draws {
+    use super::*;
+
+    #[test]
+    fn vscode() {
+        imports("ember.jsonc", "vscode", "ember");
+    }
+
+    #[test]
+    fn base16() {
+        imports("harbor.yaml", "base16", "harbor");
+    }
+
+    #[test]
+    fn base24() {
+        imports("dune.json", "base24", "dune");
+    }
+
+    #[test]
+    fn iterm() {
+        imports("tide.itermcolors", "iterm", "tide");
+    }
+
+    #[test]
+    fn ghostty() {
+        imports("moss", "ghostty", "moss");
+    }
+
+    fn imports(fixture: &str, kind: &str, folder: &str) {
+        let rig = Rig::new();
         let source = rig.fixture(fixture);
         let themes = rig.themes();
 
