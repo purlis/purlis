@@ -474,6 +474,12 @@ pub enum AskSource {
     /// A vault a chat was refused because its persona is not tagged for it (#1430, #5160): an
     /// Allow lets that persona use it in this project on this machine.
     Vault,
+    /// **What the project expects and this machine has not allowed** (#6000, qw354): its
+    /// sandboxed chats are refused it until the person allows it on this machine.
+    SandboxExpects,
+    /// **A `purlis` command's confirmation in the window** (#6000): a pool sign-in, a profile
+    /// taken off a pool, a signing check, each waiting on the person's yes.
+    Confirmation,
 }
 
 /// **The existing, checked path an ask is answered by** (#1690): the command the window
@@ -570,6 +576,13 @@ pub enum AnswerPath {
     /// `vault` (#5160): `allow_refused_vault` for Allow, the one grant its Notice makes, and
     /// `keep_vault_blocked` for Keep blocked, with the person's reason.
     Vault { vault: String },
+    /// `allow_project_expects` for Allow on this machine and `decline_project_expects` for Not
+    /// now, each sent `items` as its Notice sends them (#6000).
+    SandboxExpects {
+        items: Vec<crate::sandboxing::ExpectedItem>,
+    },
+    /// `answer_pool_sign_in` for confirmation `id`, yes or no, as its dialog answers (#6000).
+    Confirmation { id: u32 },
     /// Nothing the window can send: the person answers in the chat.
     InItsPane,
 }
@@ -3801,6 +3814,20 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
             )
             // The lanes a forge refused for unsigned commits (#5633): one Ask for them all.
             .chain(signing_waiting(root, signing_on))
+            // What the project expects and this machine has not allowed (#6000): a consent.
+            .chain(consents::sandbox_expects(
+                purlis_core::sandbox::services::awaiting(
+                    root,
+                    &purlis_core::sandbox::Machine::this(),
+                )
+                .map(Into::into)
+                .as_ref(),
+            ))
+            // A command's confirmation in the window, filed under this project (#6000).
+            .chain(
+                crate::poolsignin_confirm::waiting_in(plane)
+                    .map(|(asked, until)| consents::confirmation(&asked, until)),
+            )
             .collect(),
     }
 }
@@ -3839,6 +3866,8 @@ pub fn forget_sandbox_block(
         },
     )
 }
+
+mod consents;
 
 #[cfg(test)]
 mod tests;
