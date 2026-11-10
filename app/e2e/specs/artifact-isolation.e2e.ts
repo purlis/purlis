@@ -1,11 +1,11 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { focusWorkspace } from "../reach.js";
-import { closeTabOf, iconFor } from "../artifactTabs.js";
+import { closeTabOf, iconFor, iconOf } from "../artifactTabs.js";
 
 /**
  * **ADR 0122 §3's isolation tests, in the built app against the real core** (#5952's promise,
@@ -23,6 +23,10 @@ import { closeTabOf, iconFor } from "../artifactTabs.js";
  * 2. **Loop**: an endless loop in a page leaves the window answering and its controls working.
  * 3. **Speak**: a frame nested in a page is never heard on the page's channel.
  * 5. **Walk**: no request walks out of the artifact's folder, however its path is spelled.
+ * 6. **Store**: what a page keeps (local storage, IndexedDB, a cookie, a cache) is its own
+ *    approval's: another artifact and the window see none of it, and nor does the same folder's
+ *    page once its template changed, or once it was unpinned and pinned again (ADR 0122,
+ *    amended 2026-11-10).
  *
  * **Not here: 4, escape** (a script-free page navigates to nothing off its folder: a link, a
  * form, a meta refresh, a stylesheet's import). A page that got away could not say so, so it
@@ -32,6 +36,7 @@ import { closeTabOf, iconFor } from "../artifactTabs.js";
 
 const NAME = { reach: "Isolation reach", speak: "Isolation speak", walk: "Isolation walk" };
 const LOOP = "Isolation loop";
+const STORES = { a: "Isolation store A", b: "Isolation store B" };
 
 /** The page's port, and its one way to be heard: offering `todo.done` for `subject`. */
 const SAY = `function say(subject) {
@@ -98,6 +103,49 @@ const loads = (path) => new Promise((done) => {
   for (const [n, path] of TRIES.entries()) if (await loads(path)) out.push(n);
   say(out.length === 0 ? "walk-none" : "walk-loaded-" + out.join("-"));
 })();`;
+
+/** The key every way of keeping something is written under, by the store pages. */
+const KEPT = "purlis-e2e-kept";
+
+/** Reads what this origin keeps under {@link KEPT}, then keeps it everywhere it can, and says
+ *  both: `store-seen-<what it found>-wrote-<what it kept>`, each `none` when empty. */
+const STORE = `${SAY}
+const KEY = ${JSON.stringify(KEPT)};
+const idb = (write) => new Promise((done) => {
+  try {
+    const open = indexedDB.open(KEY, 1);
+    open.onupgradeneeded = () => open.result.createObjectStore("s");
+    open.onerror = () => done(false);
+    open.onsuccess = () => {
+      const db = open.result;
+      const tx = db.transaction("s", write ? "readwrite" : "readonly");
+      const got = write ? tx.objectStore("s").put("kept", "k") : tx.objectStore("s").get("k");
+      tx.oncomplete = () => { db.close(); done(write || got.result === "kept"); };
+      tx.onerror = () => { db.close(); done(false); };
+    };
+  } catch { done(false); }
+});
+const tried = async (fn) => { try { return Boolean(await fn()); } catch { return false; } };
+(async () => {
+  const seen = [];
+  if (await tried(() => localStorage.getItem(KEY) === "kept")) seen.push("ls");
+  if (await idb(false)) seen.push("idb");
+  if (await tried(() => document.cookie.includes(KEY + "=kept"))) seen.push("cookie");
+  if (await tried(() => caches.has(KEY))) seen.push("cache");
+  const wrote = [];
+  if (await tried(() => { localStorage.setItem(KEY, "kept"); return localStorage.getItem(KEY) === "kept"; })) wrote.push("ls");
+  if (await idb(true)) wrote.push("idb");
+  if (await tried(() => { document.cookie = KEY + "=kept; max-age=3600"; return document.cookie.includes(KEY + "=kept"); })) wrote.push("cookie");
+  if (await tried(() => caches.open(KEY).then(() => caches.has(KEY)))) wrote.push("cache");
+  say("store-seen-" + (seen.join("-") || "none") + "-wrote-" + (wrote.join("-") || "none"));
+})();`;
+
+/** What a store page said it found, and what it kept. */
+function stored(word: string): { seen: string[]; wrote: string[] } {
+  const [, seen = "", wrote = ""] = /^store-seen-(.*)-wrote-(.*)$/.exec(word) ?? [];
+  const list = (text: string) => (text === "none" ? [] : text.split("-"));
+  return { seen: list(seen), wrote: list(wrote) };
+}
 
 /** A picture, one pixel: inside the walk's folder, and the secret outside it. */
 const PNG = Buffer.from(
@@ -174,6 +222,59 @@ async function heard(prefix: string): Promise<string> {
   return said;
 }
 
+/** The store page A's line of the pins file: written again to pin it again. */
+const STORE_A_PIN = `  { id = "e2e0000000i5", folder = "isolation-store-a", name = "${STORES.a}", icon = "shield", order = 5 },\n`;
+
+/** The pins file every test starts from. */
+const PINS = `version = 1
+pin = [
+  { id = "e2e0000000i1", folder = "isolation-reach", name = "${NAME.reach}", icon = "shield", order = 1 },
+  { id = "e2e0000000i2", folder = "isolation-speak", name = "${NAME.speak}", icon = "shield", order = 2 },
+  { id = "e2e0000000i3", folder = "isolation-walk", name = "${NAME.walk}", icon = "shield", order = 3 },
+  { id = "e2e0000000i4", folder = "isolation-loop", name = "${LOOP}", icon = "shield", order = 4 },
+${STORE_A_PIN}  { id = "e2e0000000i6", folder = "isolation-store-b", name = "${STORES.b}", icon = "shield", order = 6 },
+]
+`;
+
+/** Sends the context menu to the control `selector` names, as a right press does. */
+async function sendContextMenu(selector: string): Promise<boolean> {
+  return browser.execute((css: string) => {
+    const el = document.querySelector(css);
+    if (!(el instanceof HTMLElement)) return false;
+    const box = el.getBoundingClientRect();
+    el.dispatchEvent(
+      new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: Math.round(box.left + box.width / 2),
+        clientY: Math.round(box.top + box.height / 2),
+      }),
+    );
+    return true;
+  }, selector);
+}
+
+/** What the window's own origin keeps under {@link KEPT}, every way a page could keep it. */
+async function keptByTheWindow(): Promise<string[]> {
+  return browser.executeAsync((key: string, done: (found: string[]) => void) => {
+    void (async () => {
+      const found: string[] = [];
+      const look = async (name: string, kept: () => boolean | Promise<boolean>) => {
+        try {
+          if (await kept()) found.push(name);
+        } catch {
+          // A way of keeping the window's origin does not have keeps nothing.
+        }
+      };
+      await look("ls", () => localStorage.getItem(key) !== null);
+      await look("idb", async () => (await indexedDB.databases()).some((one) => one.name === key));
+      await look("cookie", () => document.cookie.includes(key));
+      await look("cache", () => caches.has(key));
+      done(found);
+    })();
+  }, KEPT);
+}
+
 describe("an artifact, as purlis renders it, is isolated from the window and its own folder", function () {
   this.timeout(300_000);
 
@@ -200,22 +301,15 @@ describe("an artifact, as purlis renders it, is isolated from the window and its
       "index.html": page(LOOP),
       "app.js": "addEventListener('load', () => setTimeout(() => { for (;;) {} }, 200));",
     });
-    writeFileSync(
-      join(at, "pins.toml"),
-      `version = 1
-pin = [
-  { id = "e2e0000000i1", folder = "isolation-reach", name = "${NAME.reach}", icon = "shield", order = 1 },
-  { id = "e2e0000000i2", folder = "isolation-speak", name = "${NAME.speak}", icon = "shield", order = 2 },
-  { id = "e2e0000000i3", folder = "isolation-walk", name = "${NAME.walk}", icon = "shield", order = 3 },
-  { id = "e2e0000000i4", folder = "isolation-loop", name = "${LOOP}", icon = "shield", order = 4 },
-]
-`,
-    );
+    write("isolation-store-a", { "index.html": page(STORES.a), "app.js": STORE });
+    write("isolation-store-b", { "index.html": page(STORES.b), "app.js": STORE });
+    writeFileSync(join(at, "pins.toml"), PINS);
     await focusWorkspace("alpha");
   });
 
   after(async () => {
-    for (const name of [...Object.values(NAME), LOOP]) await closeTabOf(name);
+    for (const name of [...Object.values(NAME), ...Object.values(STORES), LOOP])
+      await closeTabOf(name);
     rmSync(at, { recursive: true, force: true });
   });
 
@@ -241,6 +335,53 @@ pin = [
     await openApproved(NAME.walk);
     expect(await heard("walk-")).toBe("walk-none");
     await closeTabOf(NAME.walk);
+  });
+
+  it("6. store: what a page keeps is its approval's alone", async () => {
+    // A keeps something every way it can, and finds it again on its next load: so what the
+    // others do not find is kept apart, not lost.
+    await openApproved(STORES.a);
+    const first = stored(await heard("store-"));
+    expect(first.seen).toEqual([]);
+    expect(first.wrote).toEqual(expect.arrayContaining(["ls", "idb"]));
+    await closeTabOf(STORES.a);
+    await (await iconFor(STORES.a)).click();
+    const again = stored(await heard("store-"));
+    expect(again.seen).toEqual(first.wrote);
+    await closeTabOf(STORES.a);
+
+    // Another artifact, and the window, find none of it.
+    await openApproved(STORES.b);
+    expect(stored(await heard("store-")).seen).toEqual([]);
+    await closeTabOf(STORES.b);
+    expect(await keptByTheWindow()).toEqual([]);
+
+    // A's template changed: approved again, it is a new page that finds nothing.
+    writeFileSync(join(at, "isolation-store-a", "app.js"), `${STORE}\n// changed\n`);
+    await openApproved(STORES.a);
+    const changed = stored(await heard("store-"));
+    expect(changed.seen).toEqual([]);
+    await closeTabOf(STORES.a);
+
+    // Unpinned here and pinned again, the same folder and command: asked again, it finds
+    // nothing either.
+    expect(await sendContextMenu(iconOf(STORES.a))).toBe(true);
+    const menu = await $('[role="menu"]');
+    await menu.waitForDisplayed({ timeout: 20_000 });
+    await menu.$('[role="menuitem"]=Unpin from workspace…').click();
+    const dialog = await $('[role="alertdialog"]');
+    await dialog.waitForDisplayed({ timeout: 20_000 });
+    await dialog.$("aria/Unpin").click();
+    await browser.waitUntil(async () => !(await $(iconOf(STORES.a)).isExisting()), {
+      timeout: 20_000,
+      timeoutMsg: `${STORES.a} stayed on the bar after its unpin`,
+    });
+    const unpinned = readFileSync(join(at, "pins.toml"), "utf8");
+    writeFileSync(join(at, "pins.toml"), unpinned.replace("]\n", `${STORE_A_PIN}]\n`));
+    await openApproved(STORES.a);
+    expect(stored(await heard("store-")).seen).toEqual([]);
+    await closeTabOf(STORES.a);
+    expect(await keptByTheWindow()).toEqual([]);
   });
 
   it("2. loop: an endless loop in a page leaves the window answering", async () => {
