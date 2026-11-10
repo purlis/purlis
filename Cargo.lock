@@ -6445,6 +6445,7 @@ name = "purlis-crash-handler"
 version = "0.5.1"
 dependencies = [
  "crash-handler",
+ "minidump",
  "minidumper",
  "purlis-core",
  "serde_json",

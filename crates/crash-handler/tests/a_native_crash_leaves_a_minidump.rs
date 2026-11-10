@@ -222,14 +222,42 @@ fn a_real_crashs_report_carries_its_crashing_threads_stack_and_no_memory() {
         assert!(!sent.contains(absent), "no {absent} leaves: {sent}");
     }
     assert!(!sent.contains(MARKER), "no environment leaves");
+    let leaked = memory_in(&minidump, sent.as_bytes());
     assert!(
-        sent.len() * 10 < minidump.len(),
-        "a stack, not the minidump: {} bytes sent of {}",
-        sent.len(),
-        minidump.len()
+        leaked.is_empty(),
+        "no memory the minidump holds leaves: {} windows of it were sent, the first at {:#x}",
+        leaked.len(),
+        leaked.first().copied().unwrap_or_default()
     );
     assert!(
         left[0].with_extension("kept").exists(),
         "the minidump stays here"
     );
+}
+
+/// How many bytes a window of memory is: a run this long found in the report is memory, not chance.
+const WINDOW: usize = 32;
+
+/// The address of every [`WINDOW`]-byte window of the memory regions `minidump` holds (its
+/// threads' stacks and the memory around their registers) that is found in `sent`, leaving out a
+/// window of one repeated byte, which says nothing of where it came from. Fails unless the
+/// minidump holds some memory, so finding none is a finding.
+fn memory_in(minidump: &[u8], sent: &[u8]) -> Vec<u64> {
+    let dump = minidump::Minidump::read(minidump).expect("a minidump");
+    let memory = dump.get_memory().expect("the minidump's memory");
+    let sent: std::collections::HashSet<&[u8]> = sent.windows(WINDOW).collect();
+    let mut held = 0;
+    let mut found = Vec::new();
+    for region in memory.iter() {
+        let bytes = region.bytes();
+        let base = region.memory_range().map_or(0, |range| range.start);
+        held += bytes.len();
+        for (at, window) in bytes.windows(WINDOW).enumerate() {
+            if window.iter().any(|b| *b != window[0]) && sent.contains(window) {
+                found.push(base + at as u64);
+            }
+        }
+    }
+    assert!(held > 0, "the minidump holds memory to look for");
+    found
 }
