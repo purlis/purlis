@@ -95,8 +95,9 @@ type Held = Ceiling & { prompted: string[]; up: Set<string>; hand: number; stop:
  * in jsdom.
  *
  * **A prompt counts only when it comes unbidden**: when it appears with no action of the flow's
- * own waiting for it. A press (a pointer down, or a click with none before it) or an activating
- * key (Enter, Space, Escape, or a key with ⌘, Ctrl or Alt) is an action, and the first prompt to
+ * own waiting for it. A press (a pointer down, or a click that does not end one: a pointer down's or an
+ * Enter's or Space's on the same element) or an activating key (Enter, Space, Escape, a
+ * function key, or a key with ⌘, Ctrl or Alt) is an action, and the first prompt to
  * appear after it is what the flow asked for: the picker its New chat opened, the palette its
  * ⌘K opened, the confirm its Delete opened. Everything that prompt draws as it appears is the
  * same answer. A second prompt with no action between, such as a trust question after the picker
@@ -142,8 +143,8 @@ export function countIn(tally: string, prompts: string, hand: string, notified: 
   };
   // An action of the flow's own, not yet answered by a prompt.
   let waiting = false;
-  // When the last action began: the click a pointer or a key press ends is part of it.
-  let began = -Infinity;
+  // Where the last pointer down, Enter or Space landed: the click it ends in there is part of it.
+  let pressed: Node | null = null;
   const look = () => {
     const now = promptsUp();
     const appeared = [...now].filter(([key]) => !held.up.has(key));
@@ -160,24 +161,29 @@ export function countIn(tally: string, prompts: string, hand: string, notified: 
     if (count > held.hand) held.asks += count - held.hand;
     held.hand = count;
   };
-  const acted = () => {
+  const acted = (at: Node | null) => {
     look();
     waiting = true;
-    began = performance.now();
+    pressed = at;
   };
-  const onPointer = () => acted();
-  const onClick = () => {
-    if (performance.now() - began > 1000) acted();
+  const targetOf = (event: Event) => (event.target instanceof Node ? event.target : null);
+  const onPointer = (event: Event) => acted(targetOf(event));
+  const onClick = (event: Event) => {
+    const at = targetOf(event);
+    const ends = pressed !== null && at !== null && (pressed.contains(at) || at.contains(pressed));
+    if (ends) pressed = null;
+    else acted(null);
   };
   const onKey = (event: KeyboardEvent) => {
+    const presses = event.key === "Enter" || event.key === " ";
     const activates =
-      event.key === "Enter" ||
-      event.key === " " ||
+      presses ||
       event.key === "Escape" ||
+      /^F\d{1,2}$/.test(event.key) ||
       event.metaKey ||
       event.ctrlKey ||
       event.altKey;
-    if (activates) acted();
+    if (activates) acted(presses ? targetOf(event) : null);
   };
   doc.addEventListener("pointerdown", onPointer, true);
   doc.addEventListener("click", onClick, true);

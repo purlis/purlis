@@ -130,6 +130,30 @@ describe("what a flow's window counts (#6021)", () => {
     expect(cost).toMatchObject({ prompts: 1, prompted: ["Do you trust this project?"] });
   });
 
+  it("takes two clicks made one straight after the other for two actions", async () => {
+    const [first, second] = [button(), button()];
+    const cost = await counting(async () => {
+      document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await settle();
+      first.click();
+      show("Switch workspace");
+      await settle();
+      second.click();
+      show("Pick a harness");
+      await settle();
+    });
+    expect(cost.prompts).toBe(0);
+  });
+
+  it("does not count the palette a function key opened", async () => {
+    const cost = await counting(async () => {
+      document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "F2", bubbles: true }));
+      show("Command palette");
+      await settle();
+    });
+    expect(cost.prompts).toBe(0);
+  });
+
   it("does not take typing into a field for an action", async () => {
     const cost = await counting(async () => {
       document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
