@@ -608,7 +608,6 @@ describe("every Blocking ask, found from the ✋ alone (#6001)", function () {
       await kind.answer(row);
       // The asker is told in its own project, whose panes are drawn once it is in front.
       await toFront(kind.from.root);
-      await kind.answer(row);
       await kind.told();
     });
   }
