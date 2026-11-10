@@ -80,7 +80,7 @@ const rows = (canvas: HTMLElement) =>
   within(within(canvas).getByRole("grid", { name: "All chats" })).getAllByRole("row");
 
 /** **Every Chat state**, Waiting on you first, then Stuck?, then the rest: Tab lands on the first
- *  row, ↓ walks the rows, → reaches a row's actions in their order. */
+ *  row, ↓ walks the rows, → reaches a row's box and then its actions in their order. */
 export const EveryState: Story = {
   args: { chats: EVERY_STATE },
   play: async ({ canvasElement }) => {
@@ -101,8 +101,15 @@ export const EveryState: Story = {
     expectFocusInSight();
     await userEvent.keyboard("{ArrowRight}");
     await untilFocused(
+      () =>
+        within(rows(canvasElement)[0]).getByRole("checkbox", { name: "Choose steward 3, purlis" }),
+      "→ reaches the row's box first, where it leads the row",
+    );
+    expectFocusInSight();
+    await userEvent.keyboard("{ArrowRight}");
+    await untilFocused(
       () => within(rows(canvasElement)[0]).getByRole("button", { name: "Answer steward 3" }),
-      "→ reaches Answer, the first of its actions",
+      "→ goes on to Answer, the first of its actions",
     );
     expectFocusInSight();
     await userEvent.keyboard("{ArrowRight}");
