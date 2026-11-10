@@ -37,6 +37,7 @@ import { Form, TextArea, TextField } from "./ui/field/Field";
 import { PanelSectionTitle } from "./ui/panel/Panel";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 import { ChatMark } from "./ui/chat-mark/ChatMark";
+import { ChatActions } from "./ChatActions";
 import { shownState } from "./shownState";
 
 import { chainSaid, timeSaid, useSettledPlace } from "./inboxRowParts";
@@ -456,6 +457,8 @@ export function Ask({
   onGo,
   onAnswered,
   onIgnore,
+  onSnooze,
+  onStop,
   onTouched,
   above,
   where,
@@ -479,6 +482,10 @@ export function Ask({
   onGo: () => void;
   onAnswered?: (ask: Shown, option: Offered, live: boolean) => void;
   onIgnore?: (session: number) => void;
+  /** Snooze its chat, with every ask it holds (#6013). Nothing where Asks snoozes nothing. */
+  onSnooze?: () => void;
+  /** Stop its chat (#6013). Nothing where its chat cannot be stopped from here. */
+  onStop?: () => void;
   /** A way out of the Notice drawn in the row was pressed, with its words. */
   onTouched: (answer: string) => void;
 }) {
@@ -836,9 +843,10 @@ export function Ask({
           </>
         )}
       </MessageBody>
-      {/* **Its links** (#5649): Answer, where it is answered here, which opens its form in the
-            row and reads Cancel while it is open (#5651, ADR 0119 decision 7); and Go to chat,
-            on every ask of a chat. */}
+      {/* **Its links** (#5649): the chat's actions in the one order (ADR 0121 decision 21,
+            #6013): Answer, where it is answered here, which opens its form in the row and reads
+            Cancel while it is open (#5651, ADR 0119 decision 7); then, on every ask of a chat,
+            Go to chat, Snooze and Stop. A decision's answers are its Answer, on its row. */}
       {shape.decision && ask.source !== "dispatch" ? (
         // **A decision's answers, on its row** (#5998): as a chat pane's band draws them, with
         // Go to chat after them. An edit's change is drawn above them, and they wait for it
@@ -863,49 +871,30 @@ export function Ask({
             onOpen={onOpen}
             onAnswer={(option, why) => answer(option, undefined, why ?? "")}
           >
-            {shape.go && (
-              <Button
-                size="sm"
-                variant="quiet-link"
-                aria-label={`Go to chat ${who}`}
-                onPress={onGo}
-                className="inbox-go"
-              >
-                Go to chat
-              </Button>
-            )}
+            {shape.go && <ChatActions who={who} onGo={onGo} onSnooze={onSnooze} onStop={onStop} />}
           </AskDecision>
         </>
       ) : (
         (shape.form || shape.go) && (
           <MessageLinks>
-            {shape.form && (
-              // **A visible button, not a text link** (#5998): what it opens is typed in.
-              <Button
-                size="sm"
-                variant="secondary"
-                aria-label={open ? `Cancel answering ${who}` : `Answer ${who}`}
-                aria-expanded={open}
-                aria-controls={open ? `${id}-form` : undefined}
-                onPress={() => {
-                  focusForm.current = !open;
-                  onOpen(!open);
-                }}
-              >
-                {open ? "Cancel" : "Answer"}
-              </Button>
-            )}
-            {shape.go && (
-              <Button
-                size="sm"
-                variant="quiet-link"
-                aria-label={`Go to chat ${who}`}
-                onPress={onGo}
-                className="inbox-go"
-              >
-                Go to chat
-              </Button>
-            )}
+            <ChatActions
+              who={who}
+              answer={
+                shape.form
+                  ? {
+                      open,
+                      controls: `${id}-form`,
+                      onPress: () => {
+                        focusForm.current = !open;
+                        onOpen(!open);
+                      },
+                    }
+                  : undefined
+              }
+              onGo={shape.go ? onGo : undefined}
+              onSnooze={onSnooze}
+              onStop={onStop}
+            />
           </MessageLinks>
         )
       )}
