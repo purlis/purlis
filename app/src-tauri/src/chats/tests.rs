@@ -11496,17 +11496,20 @@ fn a_runner_chats_notice_says_all_a_chat_here_would_and_again_once_reattached_60
     host.leaves_running(3, None);
     let chats = restartable_chats_of(plane.path(), host.clone());
     chats.put_back(
-        &left_running_in(
-            plane.path(),
-            Chat {
-                persona: Some("steward".to_owned()),
-                ..a_resumable_chat_in(plane.path())
-            },
-        ),
+        &left_running_in(plane.path(), a_resumable_chat_in(plane.path())),
         SIZE,
     );
     assert_eq!(host.reattached(), [3]);
-    assert_eq!(chats.skills_missing(3), Some(expected), "once reattached");
+    // This window's stand-in start for a chat put back sets no environment, so the persona it
+    // runs as is the project's default, which this plane has none of.
+    assert_eq!(
+        chats.skills_missing(3),
+        Some(SkillsMissing {
+            persona: None,
+            ..expected
+        }),
+        "once reattached"
+    );
     let _ = chats.close(3);
 
     // A host before 1.83, which keeps nothing of it for a window that comes back, shows none.
