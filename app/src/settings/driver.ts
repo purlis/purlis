@@ -624,6 +624,7 @@ export function fileSetting(
     names: control.names,
     resets: control.resets,
     ...(control.deprecated ? { deprecated: control.deprecated } : {}),
+    ...(control.section ? { section: control.section } : {}),
     ...(control.inForce === undefined ? {} : { inForce: control.inForce }),
     ...(control.reading ? { reading: control.reading } : {}),
   };

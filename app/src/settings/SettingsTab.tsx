@@ -34,10 +34,12 @@ import {
   type FileSetting,
   type Level,
   type LiveSetting,
+  type PageSection,
   type Setting,
   type SettingsFileId,
   type SettingsGroup,
 } from "./groups";
+import { reveal } from "../ui/reveal";
 import {
   askSettingsAction,
   chooseGroup,
@@ -461,6 +463,8 @@ function Shown({
     const rows = own.current?.querySelectorAll<HTMLElement>("[data-setting]") ?? [];
     const row = [...rows].find((one) => one.dataset.setting === target);
     if (row === undefined) return;
+    // A setting in a rarely used group of its page: the group opens first (R61).
+    reveal(row);
     row.scrollIntoView?.({ block: "nearest" });
     // The control, never the label's info mark or badge, which come before it (DS-8).
     (row.querySelector(".ui-setting-control") ?? row)
@@ -590,6 +594,7 @@ function Shown({
                 key={group.id}
                 level={level}
                 group={group}
+                filtering={filter.trim() !== ""}
                 kept={kept}
                 raw={raw}
                 onEdit={setEditing}
@@ -697,6 +702,7 @@ function narrowed(groups: readonly SettingsGroup[], filter: string): readonly Se
 function ShownGroup({
   level,
   group,
+  filtering = false,
   kept,
   raw = [],
   onEdit,
@@ -711,6 +717,8 @@ function ShownGroup({
    *  a read-only project ({@link stillWritten}). */
   level: Level;
   group: SettingsGroup;
+  /** A filter holds words: its rarely used groups are drawn open. */
+  filtering?: boolean;
   /** Where the level keeps what no file of its own holds, and the file that is (R49): the You
    *  level's layout file. */
   kept?: { says: string; file: string };
@@ -809,11 +817,46 @@ function ShownGroup({
           />
         </OffUnless>
       ) : (
-        group.settings.map(row)
+        sectioned(group.settings).map((part) =>
+          part.section === undefined ? (
+            part.settings.map(row)
+          ) : (
+            <SettingGroup
+              // A filter's words open a rarely used group, so what it found is on screen: a
+              // group drawn afresh as they come and go.
+              key={`${part.section.label}${filtering ? "\u0000found" : ""}`}
+              level={3}
+              label={part.section.label}
+              help={part.section.help}
+              rarely={part.section.rarely ? part.settings.length : undefined}
+              open={filtering}
+            >
+              {part.settings.map(row)}
+            </SettingGroup>
+          ),
+        )
       )}
       {group.after?.map(row)}
     </SettingGroup>
   );
+}
+
+/**
+ * **A page's settings, by the group of the page each is drawn in** (R60, R61): those in none
+ * first, then each group in the order its first setting comes, its settings in their order.
+ */
+function sectioned(settings: readonly Setting[]): { section?: PageSection; settings: Setting[] }[] {
+  const loose: Setting[] = [];
+  const parts = new Map<string, { section: PageSection; settings: Setting[] }>();
+  for (const one of settings) {
+    if (one.section === undefined) loose.push(one);
+    else {
+      const part = parts.get(one.section.label) ?? { section: one.section, settings: [] };
+      part.settings.push(one);
+      parts.set(one.section.label, part);
+    }
+  }
+  return [...(loose.length > 0 ? [{ settings: loose }] : []), ...parts.values()];
 }
 
 /** A row drawn only while its `useShown` says so (#5695): always, without one. Keyed by its

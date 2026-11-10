@@ -64,121 +64,133 @@ function Page({ onEdit, onReset }: { onEdit: () => void; onReset: () => void }) 
           file="charter.toml"
           onEdit={onEdit}
         >
-          <SettingRow
-            label="Default workspace"
-            help="A chat that names no workspace opens here."
-            modified
-            reset={{ label: "Reset", disabled: false, onReset }}
-            copyKey="default.workspace"
-            control={(ids) => (
-              <Choice
-                kind="select"
-                ids={ids}
-                options={["smart-ide", "charter", "issues"].map((one) => ({
-                  value: one,
-                  label: one,
-                }))}
-                value={workspace}
-                onValueChange={setWorkspace}
-              />
-            )}
-          />
-          <SettingRow
-            label="Default persona"
-            help="Who a new chat is, unless it names someone."
-            modified
-            reset={{ label: "Reset", disabled: false, onReset }}
-            copyKey="default.persona"
-            control={(ids) => (
-              <>
+          <SettingGroup label="Starting chats" level={3}>
+            <SettingRow
+              label="Default workspace"
+              help="A chat that names no workspace opens here."
+              modified
+              reset={{ label: "Reset", disabled: false, onReset }}
+              copyKey="default.workspace"
+              control={(ids) => (
                 <Choice
                   kind="select"
                   ids={ids}
-                  options={["steward", "devops", "nestjs-developer"].map((one) => ({
+                  options={["smart-ide", "charter", "issues"].map((one) => ({
                     value: one,
                     label: one,
                   }))}
-                  value={persona}
-                  onValueChange={setPersona}
+                  value={workspace}
+                  onValueChange={setWorkspace}
                 />
-                <Button variant="ghost" size="sm">
-                  {`Show ${persona}`}
-                </Button>
-              </>
-            )}
-          />
-          <SettingRow
-            label="Update channel"
-            help="Dev gets every build that passes; stable gets releases."
-            modified
-            badge={{
-              label: "This machine",
-              says: "From charter.local.toml, at the Project level: this machine only.",
-            }}
-            origin="From charter.local.toml, at the Project level: this machine only."
-            reset={{ label: "Reset", disabled: false, onReset }}
-            moves={
-              <MenuItem id="move-shared" onAction={() => {}}>
-                Move to charter.toml
-              </MenuItem>
-            }
-            copyKey="update.channel"
-            control={(ids) => (
-              <Choice
-                kind="select"
-                ids={ids}
-                options={["stable", "dev"].map((one) => ({ value: one, label: one }))}
-                value={channel}
-                onValueChange={setChannel}
-              />
-            )}
-          />
-          <SettingRow
-            label="Version lock"
-            help="Hold everyone on this project to one purlis version."
-            reset={{ label: "Reset", disabled: true, onReset }}
-            copyKey="version.lock"
-            control={(ids) => (
-              <Field
-                kind="text"
-                ids={ids}
-                value={lock}
-                placeholder="Not locked"
-                onChange={setLock}
-              />
-            )}
-          />
-          <SettingRow
-            label="Auto-save"
-            help="Save on its own after a quiet spell."
-            modified
-            reset={{ label: "Reset", disabled: false, onReset }}
-            copyKey="plane.auto-save"
-            control={(ids) => (
-              <Choice kind="switch" ids={ids} checked={autoSave} onCheckedChange={setAutoSave} />
-            )}
-          />
-          <SettingRow
-            label="[memory] share"
-            help="Replaced by memory scopes; kept until every machine has moved."
-            deprecated
-            modified
-            reset={{ label: "Reset", disabled: false, onReset }}
-            copyKey="memory.share"
-            control={(ids) => (
-              <Choice
-                kind="select"
-                ids={ids}
-                options={["local", "commit", "push"].map((one) => ({ value: one, label: one }))}
-                value={share}
-                onValueChange={setShare}
-              />
-            )}
-          />
+              )}
+            />
+            <SettingRow
+              label="Default persona"
+              help="Who a new chat is, unless it names someone."
+              modified
+              reset={{ label: "Reset", disabled: false, onReset }}
+              copyKey="default.persona"
+              control={(ids) => (
+                <>
+                  <Choice
+                    kind="select"
+                    ids={ids}
+                    options={["steward", "devops", "nestjs-developer"].map((one) => ({
+                      value: one,
+                      label: one,
+                    }))}
+                    value={persona}
+                    onValueChange={setPersona}
+                  />
+                  <Button variant="ghost" size="sm">
+                    {`Show ${persona}`}
+                  </Button>
+                </>
+              )}
+            />
+          </SettingGroup>
+          <SettingGroup label="Updates" level={3}>
+            <SettingRow
+              label="Update channel"
+              help="Dev gets every build that passes; stable gets releases."
+              modified
+              badge={{
+                label: "This machine",
+                says: "From charter.local.toml, at the Project level: this machine only.",
+              }}
+              origin="From charter.local.toml, at the Project level: this machine only."
+              reset={{ label: "Reset", disabled: false, onReset }}
+              moves={
+                <MenuItem id="move-shared" onAction={() => {}}>
+                  Move to charter.toml
+                </MenuItem>
+              }
+              copyKey="update.channel"
+              control={(ids) => (
+                <Choice
+                  kind="select"
+                  ids={ids}
+                  options={["stable", "dev"].map((one) => ({ value: one, label: one }))}
+                  value={channel}
+                  onValueChange={setChannel}
+                />
+              )}
+            />
+            <SettingRow
+              label="Version lock"
+              help="Hold everyone on this project to one purlis version."
+              reset={{ label: "Reset", disabled: true, onReset }}
+              copyKey="version.lock"
+              control={(ids) => (
+                <Field
+                  kind="text"
+                  ids={ids}
+                  value={lock}
+                  placeholder="Not locked"
+                  onChange={setLock}
+                />
+              )}
+            />
+            <SettingRow
+              label="Auto-save"
+              help="Save on its own after a quiet spell."
+              modified
+              reset={{ label: "Reset", disabled: false, onReset }}
+              copyKey="plane.auto-save"
+              control={(ids) => (
+                <Choice kind="switch" ids={ids} checked={autoSave} onCheckedChange={setAutoSave} />
+              )}
+            />
+          </SettingGroup>
+          <SettingGroup label="Deprecated" level={3} rarely={1}>
+            <SettingRow
+              label="[memory] share"
+              help="Replaced by memory scopes; kept until every machine has moved."
+              deprecated
+              modified
+              reset={{ label: "Reset", disabled: false, onReset }}
+              copyKey="memory.share"
+              control={(ids) => (
+                <Choice
+                  kind="select"
+                  ids={ids}
+                  options={["local", "commit", "push"].map((one) => ({ value: one, label: one }))}
+                  value={share}
+                  onValueChange={setShare}
+                />
+              )}
+            />
+          </SettingGroup>
         </SettingGroup>
       </SettingsLayout>
     </div>
   );
+}
+
+/** The control the row named `label` draws: the one its `<label for>` names. */
+function controlOf(canvasElement: HTMLElement, label: string): HTMLElement | null {
+  const name = within(canvasElement).getByText(label, { selector: "label" });
+  return document.getElementById((name as HTMLLabelElement).htmlFor);
 }
 
 const meta = {
@@ -199,7 +211,11 @@ export const AlignedForm: Story = {
     const canvas = within(canvasElement);
     await expect(canvas.getByRole("heading", { level: 2, name: "General" })).toBeVisible();
     await expect(canvas.getByText("charter.toml", { selector: "code" })).toBeVisible();
-    await expect(canvas.getByText("deprecated", { selector: "[data-scope=badge]" })).toBeVisible();
+    await expect(canvas.getByRole("heading", { level: 3, name: "Starting chats" })).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Deprecated · 1" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
 
     canvas.getByRole("button", { name: "General" }).focus();
     await userEvent.tab();
@@ -210,19 +226,24 @@ export const AlignedForm: Story = {
     await expect(args.onEdit).toHaveBeenCalledTimes(1);
 
     await userEvent.tab();
-    await expect(canvas.getByRole("button", { name: /Default workspace$/ })).toHaveFocus();
+    await expect(controlOf(canvasElement, "Default workspace")).toHaveFocus();
     await userEvent.tab();
     await expect(canvas.getByRole("button", { name: "More for Default workspace" })).toHaveFocus();
     expectFocusInSight();
 
-    // Every control starts at one x, whatever its label says (R54).
-    const starts = [...canvasElement.querySelectorAll<HTMLElement>(".ui-setting-control")].map(
-      (one) => Math.round(one.getBoundingClientRect().left),
+    // Every control on screen starts at one x, whatever its label says (R54); a folded group's
+    // rows are drawn and hidden.
+    const onScreen = (selector: string) =>
+      [...canvasElement.querySelectorAll<HTMLElement>(selector)].filter(
+        (one) => one.getClientRects().length > 0,
+      );
+    const starts = onScreen(".ui-setting-control").map((one) =>
+      Math.round(one.getBoundingClientRect().left),
     );
     await expect(new Set(starts).size).toBe(1);
     // And every ⋯ stands in one place (R56).
-    const ends = [...canvasElement.querySelectorAll<HTMLElement>(".ui-setting-act button")].map(
-      (one) => Math.round(one.getBoundingClientRect().right),
+    const ends = onScreen(".ui-setting-act button").map((one) =>
+      Math.round(one.getBoundingClientRect().right),
     );
     await expect(new Set(ends).size).toBe(1);
   },
@@ -255,9 +276,28 @@ export const RowMenu: Story = {
     await userEvent.keyboard("{Enter}");
     await expect(args.onReset).toHaveBeenCalledTimes(1);
     await untilFocused(
-      () => canvas.getByRole("button", { name: /Update channel$/ }),
+      () => controlOf(canvasElement, "Update channel"),
       "on the control its Reset reset",
     );
+    expectFocusInSight();
+  },
+};
+
+/**
+ * **A rarely used group, folded** (R61): its title and its count, the chevron after both; the
+ * keyboard opens it, and what it holds is drawn with the rest of the form.
+ */
+export const FoldedGroup: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const fold = canvas.getByRole("button", { name: "Deprecated · 1" });
+    fold.focus();
+    await userEvent.keyboard("{Enter}");
+    await expect(fold).toHaveAttribute("aria-expanded", "true");
+    await expect(canvas.getByText("deprecated", { selector: "[data-scope=badge]" })).toBeVisible();
+    expectFocusInSight();
+    await userEvent.tab();
+    await expect(controlOf(canvasElement, "[memory] share")).toHaveFocus();
     expectFocusInSight();
   },
 };

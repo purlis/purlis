@@ -30,6 +30,7 @@ import { TextArea, TextField, useFormSummary } from "../ui/field/Field";
 import { Tooltip } from "../ui/tooltip/Tooltip";
 import { useReadOnlyReasonId } from "../readOnlyReason";
 import { Badge } from "../ui/badge/Badge";
+import { Disclosure } from "../ui/disclosure/Disclosure";
 
 /**
  * **The house settings set** (SE-16, #1166; DS-3 #626; V89f, V89j): the six pieces every
@@ -143,10 +144,11 @@ export function SettingsLayout({
       : (none ?? `${found} ${found === 1 ? "setting matches" : "settings match"}`);
   return (
     <div className="ui-settings" ref={holder}>
-      {/* **The side column** (R37, R38): the title, the level switcher, whose settings these
-          are, the filter and the pages, on the window's own ground beside the page. */}
+      {/* **The side column** (R37, R38): the level switcher, whose settings these are, the
+          filter and the pages, on the window's own ground beside the page. No title of its own:
+          the tab names the view (#3147, the operator's ruling of 2026-10-24, after the
+          prototype drew "Settings" here). */}
       <div className="ui-settings-side">
-        <p className="ui-settings-title">Settings</p>
         <SegmentedControl
           ref={switcher}
           aria-label="Level"
@@ -226,6 +228,8 @@ export function SettingGroup({
   file,
   onEdit,
   editAs = "TOML",
+  rarely,
+  open = false,
   level = 2,
   children,
 }: {
@@ -244,6 +248,11 @@ export function SettingGroup({
   onEdit?: () => void;
   /** What the file's text is written in: a project's files are TOML, a workspace's JSON. */
   editAs?: "TOML" | "JSON";
+  /** **A rarely used group of a page** (R61), as many settings as it holds: folded until it is
+   *  opened, its title then the count ("Branches · 1"), its chevron after both. */
+  rarely?: number;
+  /** A rarely used group starts open: while a filter holds words, so what it found is shown. */
+  open?: boolean;
   children: ReactNode;
 }) {
   const heading = useId();
@@ -273,8 +282,27 @@ export function SettingGroup({
     );
   const Heading = level === 2 ? "h2" : "h3";
   const said = [help, kept].filter(Boolean).join(" ");
+  // **A page's own groups** (R60, R61): a heading of 13/600, its one line, its rows; folded, a
+  // disclosure whose trigger is the heading.
+  if (onPage && level === 3 && rarely !== undefined)
+    return (
+      <Disclosure
+        className="ui-setting-section ui-setting-fold"
+        level={3}
+        twistAt="end"
+        label={`${label} · ${rarely}`}
+        defaultExpanded={open}
+        panelRole="region"
+      >
+        {said && <p className="ui-setting-help">{said}</p>}
+        {children}
+      </Disclosure>
+    );
   return (
-    <section className="ui-setting-group" aria-labelledby={heading}>
+    <section
+      className={onPage ? "ui-setting-group ui-setting-section" : "ui-setting-group"}
+      aria-labelledby={heading}
+    >
       <Heading id={heading}>{label}</Heading>
       {said && <p className="ui-setting-help">{said}</p>}
       {children}

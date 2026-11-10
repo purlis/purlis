@@ -7124,8 +7124,8 @@ nav.piece-files-head {
   min-inline-size: 0;
 }
 
-/* The side column (R38): the title, the level switcher, whose settings these are, the filter
-   and the pages, 16 by 12 inside its edge. */
+/* The side column (R38): the level switcher, whose settings these are, the filter and the
+   pages, 16 by 12 inside its edge. */
 .ui-settings-side {
   display: flex;
   flex-direction: column;
@@ -7136,14 +7136,6 @@ nav.piece-files-head {
   padding: var(--space-6) var(--space-5);
   border-inline-end: 1px solid var(--border-subtle);
   background-color: var(--surface-base);
-}
-
-/* "Settings", 15/600 in Purlis (R38). */
-.ui-settings-title {
-  margin: 0 var(--space-2);
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-strong);
-  color: var(--text-primary);
 }
 
 .ui-settings-side > [data-scope="segmented-control"] {
@@ -7582,6 +7574,31 @@ nav.piece-files-head {
    line of its own rather than the room beside the label. */
 .ui-setting-control:has(> .ui-setting-list) {
   flex-basis: 100%;
+}
+
+/* **A page's own groups** (R60, R61): a heading at 13/600 in Purlis, then its one line in the
+   quiet words at 12, then its rows; 20 apart. A rarely used group is the disclosure family's,
+   folded, its count after its title and its chevron after both (#2799 rule 1). */
+.ui-settings-page .ui-setting-section {
+  margin-block-start: var(--space-7);
+}
+
+.ui-settings-page .ui-setting-head + .ui-setting-section,
+.ui-settings-page .ui-setting-head + .ui-setting-fold {
+  margin-block-start: 0;
+}
+
+.ui-settings-page .ui-setting-section > h3 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-strong);
+}
+
+.ui-settings-page .ui-setting-section > .ui-setting-help,
+.ui-settings-page .ui-setting-fold [data-part="panel"] > .ui-setting-help {
+  margin: 0 0 var(--space-4);
+  font-size: var(--font-size-sm);
+  color: var(--text-quiet);
 }
 
 /* **A row of the aligned form** (#2919, prototype A, R50–R52, R54): on a settings page the label

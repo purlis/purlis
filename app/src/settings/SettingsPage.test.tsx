@@ -43,12 +43,14 @@ const versionLock = (
 );
 
 describe("the side column (R38)", () => {
-  it("is titled Settings above the level switcher and the pages", () => {
+  it("holds the level switcher above the pages, with no title of its own (#3147)", () => {
     page(null);
 
-    const side = screen.getByText("Settings", { selector: "p" }).parentElement as HTMLElement;
-    expect(within(side).getByRole("radiogroup", { name: "Level" })).toBeInTheDocument();
+    const side = screen.getByRole("radiogroup", { name: "Level" }).parentElement as HTMLElement;
+    expect(side).toHaveClass("ui-settings-side");
     expect(within(side).getByRole("navigation", { name: "Groups" })).toBeInTheDocument();
+    // The tab names the view: nothing in it says Settings of itself.
+    expect(screen.queryByText("Settings", { exact: true })).toBeNull();
   });
 });
 
@@ -253,5 +255,64 @@ describe("the set-here mark (R53)", () => {
     rowWithMenu({ set: false });
 
     expect(screen.queryByRole("img", { name: "Set at this level" })).toBeNull();
+  });
+});
+
+describe("a page's groups (R60, R61)", () => {
+  function sections() {
+    page(
+      <SettingGroup label="Saving" kept="Kept in charter.toml." file="charter.toml">
+        <SettingGroup label="The project" level={3}>
+          {versionLock}
+        </SettingGroup>
+        <SettingGroup
+          label="Repo · ElasticPress"
+          level={3}
+          help="This repo's own settings, beside the project's."
+        >
+          <SettingRow
+            label="ElasticPress: mode"
+            control={(ids) => <Field kind="text" ids={ids} value="" onChange={() => {}} />}
+          />
+        </SettingGroup>
+        <SettingGroup label="Branches" level={3} rarely={2}>
+          <SettingRow
+            label="Target branch"
+            control={(ids) => <Field kind="text" ids={ids} value="" onChange={() => {}} />}
+          />
+          <SettingRow
+            label="Save branch"
+            control={(ids) => <Field kind="text" ids={ids} value="" onChange={() => {}} />}
+          />
+        </SettingGroup>
+      </SettingGroup>,
+    );
+    return userEvent.setup();
+  }
+
+  it("heads each group with its title, and a group's one line under it", () => {
+    sections();
+
+    expect(screen.getByRole("heading", { level: 3, name: "The project" })).toBeVisible();
+    const repo = screen.getByRole("region", { name: "Repo · ElasticPress" });
+    expect(within(repo).getByText("This repo's own settings, beside the project's.")).toBeVisible();
+  });
+
+  it("folds a rarely used group, its count after its title and its chevron after both", async () => {
+    const user = sections();
+
+    const fold = screen.getByRole("button", { name: "Branches · 2" });
+    expect(fold).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("textbox", { name: "Target branch", hidden: true })).not.toBeVisible();
+    // Trailing (#2799 rule 1, the audit's deviation 2): the twist comes after the words.
+    const twist = fold.querySelector('[data-part="twist"]') as HTMLElement;
+    expect(twist.compareDocumentPosition(within(fold).getByText("Branches · 2"))).toBe(
+      Node.DOCUMENT_POSITION_PRECEDING,
+    );
+
+    await user.click(fold);
+
+    expect(fold).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("textbox", { name: "Target branch" })).toBeVisible();
   });
 });

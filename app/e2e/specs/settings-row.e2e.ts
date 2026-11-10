@@ -11,8 +11,11 @@ import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
  * `prototype/settings-page`, the audit's R37–R62): a walk through Project › Saving as the
  * operator makes it.
  *
- * - The side column, titled Settings, beside the page, which scrolls on its own (R37, R38).
+ * - The side column, with the level switcher and the pages and no title of its own (the tab
+ *   names the view, #3147), beside the page, which scrolls on its own (R37, R38).
  * - The page's header names its file as code, with Edit as TOML after it (R48, R49).
+ * - Its groups have headings, and the rarely used ones, Branches and Deprecated, start folded
+ *   as "‹title› · ‹count›" with the chevron after the words (R60, R61).
  * - Every control starts at one x and every row's ⋯ stands at one x; each row's help is a line
  *   under its label, in the label's column (R50, R52, R54, R56).
  * - `[memory] share`, which the fixture project's `charter.toml` sets, carries the set-here mark
@@ -41,10 +44,13 @@ async function laidOut() {
     };
     const side = document.querySelector(".ui-settings-side");
     const page = document.querySelector(".ui-settings-page section");
-    const rows = [...(page?.querySelectorAll<HTMLElement>(".ui-setting-row") ?? [])];
+    // The rows on screen: a folded group's are drawn and hidden (R61).
+    const rows = [...(page?.querySelectorAll<HTMLElement>(".ui-setting-row") ?? [])].filter(
+      (row) => row.getClientRects().length > 0,
+    );
     return {
       side: box(side),
-      title: side?.querySelector(".ui-settings-title")?.textContent ?? "",
+      switcher: side?.querySelector('[role="radiogroup"][aria-label="Level"]') != null,
       heading: page?.querySelector("h2")?.textContent ?? "",
       file: page?.querySelector(".ui-setting-where code")?.textContent ?? "",
       edit:
@@ -97,6 +103,39 @@ async function menuRows() {
   );
 }
 
+/** The page's folded groups: each trigger's words, whether it is open, and whether its chevron
+ *  comes after its words. */
+async function folds() {
+  return browser.execute(() =>
+    [...document.querySelectorAll<HTMLElement>(".ui-setting-fold [aria-expanded]")].map((one) => {
+      const twist = one.querySelector('[data-part="twist"]');
+      const words = one.textContent?.trim() ?? "";
+      return {
+        words,
+        open: one.getAttribute("aria-expanded") === "true",
+        twistAfter:
+          twist !== null &&
+          twist.getBoundingClientRect().left >
+            (one.querySelector('[data-part="label"]') ?? one).getBoundingClientRect().left,
+      };
+    }),
+  );
+}
+
+/** Opens the folded group whose trigger starts with `title`. */
+async function unfold(title: string): Promise<void> {
+  await browser.execute((wanted: string) => {
+    const fold = [
+      ...document.querySelectorAll<HTMLElement>(".ui-setting-fold [aria-expanded]"),
+    ].find((one) => one.textContent?.trim().startsWith(`${wanted} · `));
+    if (fold?.getAttribute("aria-expanded") === "false") fold.click();
+  }, title);
+  await browser.waitUntil(
+    async () => (await folds()).some((one) => one.words.startsWith(`${title} · `) && one.open),
+    { timeout: 10_000, timeoutMsg: `${title} never opened` },
+  );
+}
+
 async function menuOpen(): Promise<boolean> {
   return browser.execute(() => document.querySelector('[role="menu"]') !== null);
 }
@@ -116,10 +155,10 @@ describe("a Settings page, the aligned form, in the real WebView", () => {
       timeout: 20_000,
       timeoutMsg: `Saving never drew ${SET}`,
     });
-    const { side, title, heading, file, edit } = await laidOut();
+    const { side, switcher, heading, file, edit } = await laidOut();
     if (!side) throw new Error("the side column was not drawn");
 
-    expect(title).toBe("Settings");
+    expect(switcher).toBe(true);
     // 236 px at the default text size, a pixel either way for rounding (R37).
     expect(Math.abs(side.width - 236)).toBeLessThanOrEqual(1);
     expect(heading).toBe("Saving");
@@ -142,7 +181,18 @@ describe("a Settings page, the aligned form, in the real WebView", () => {
     }
   });
 
+  it("folds Branches and Deprecated, each with its count, the chevron after it", async () => {
+    const drawn = await folds();
+
+    expect(drawn.map(({ words, open }) => ({ words, open }))).toEqual([
+      { words: "Branches · 2", open: false },
+      { words: "Deprecated · 1", open: false },
+    ]);
+    expect(drawn.every((one) => one.twistAfter)).toBe(true);
+  });
+
   it("marks a value set here and a deprecated key, and offers its Reset and Copy key", async () => {
+    await unfold("Deprecated");
     const set = await rowOf(SET);
     expect(set.setHere).toBe(true);
     expect(set.deprecated).toBe(true);
@@ -162,6 +212,7 @@ describe("a Settings page, the aligned form, in the real WebView", () => {
   });
 
   it("offers Reset out of reach on a value not set here", async () => {
+    await unfold("Branches");
     const unset = await rowOf(UNSET);
     expect(unset.setHere).toBe(false);
 

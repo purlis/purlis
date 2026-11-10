@@ -23,7 +23,7 @@ import type {
   SettingsWhich,
 } from "../bindings";
 import { allSelects, offeredIn, offeredValuesIn, pickIn } from "../ui/select/select.testkit";
-import { chooseInRow, offeredInRow } from "./rowMenu.testkit";
+import { chooseInRow, offeredInRow, unfold } from "./rowMenu.testkit";
 
 /**
  * **What the old Project settings page held, at the Project level** (SE-19, #1169): the page
@@ -960,7 +960,9 @@ describe("the project's own save keys, in Saving (charter-app#300, ADR 0051)", (
     expect(within(saving).getByLabelText("Target branch")).not.toHaveAccessibleDescription(
       /overrides/,
     );
-    // It is still kept elsewhere than the group's values: badged, without an override.
+    // It is still kept elsewhere than the group's values: badged, without an override, in the
+    // folded Branches (R61).
+    await unfold("Branches");
     expect(
       within(rowOf("Target branch")).getByText("This machine", { selector: "[data-scope=badge]" }),
     ).toBeVisible();

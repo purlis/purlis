@@ -146,8 +146,16 @@ export type EntryField = {
   check?: (typed: string) => Promise<string | null>;
 };
 
-/** What every setting has: its stable address (`<group id>.<setting>`), label and help. */
-type Named = { id: string; label: string; help: string };
+/**
+ * **A group of a page** (#2919, R60, R61): its title, its one line, and whether it is rarely used,
+ * so folded until it is opened. A page draws its settings that have none first, then each
+ * group in the order its first setting comes.
+ */
+export type PageSection = { label: string; help?: string; rarely?: true };
+
+/** What every setting has: its stable address (`<group id>.<setting>`), label and help, and the
+ *  group of its page it is drawn in, if any. */
+type Named = { id: string; label: string; help: string; section?: PageSection };
 
 /**
  * **Which settings file a value is kept in**: the project's `charter.toml` (`shared`) or

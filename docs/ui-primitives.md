@@ -85,7 +85,9 @@ What keeps it from becoming the library this file forbids:
   `prototype/settings-page`: a side column titled Settings with the level switcher, the filter
   box and the nav of groups, and the chosen page scrolling beside it), `SettingGroup` (on a
   settings page the page's header — its title, its blurb and "Kept in ‹file› · Edit as TOML" —
-  and its rows; in a dialog a heading and one help line), `SettingRow` (on a settings page a row
+  and its rows, and at `level` 3 one of the page's own groups, a heading and its one line, a
+  rarely used one (`rarely`) folded as "‹title› · ‹count›"; in a dialog a heading and one help
+  line), `SettingRow` (on a settings page a row
   of the aligned form: the label with its help line under it, then the control, then one ⋯ menu
   holding Reset, the moves between files and Copy key, every control at one x; in a dialog the
   label and control on one line with the help under them; since SE-17 a refused write's reason
@@ -1055,6 +1057,9 @@ source's More, a file to read under its risk mark, a deleted skill's last text.
   which is a transform, and never swaps for another chevron. Folded, the panel takes no room.
 - **It starts folded unless told** (`defaultExpanded`), and the owner may hold its state
   (`isExpanded`, `onExpandedChange`).
+- **Its twist leads its words, or follows them** (`twistAt="end"`, #2919): a settings page's
+  rarely used group ("Branches · 1") draws it after its title and count, as every disclosure
+  chevron in Settings trails (#2799 rule 1).
 - **A refused field inside a fold opens it** (`ui/reveal.ts`): the field family's form sends
   `purlis:reveal` at the first field it refused before the keyboard goes there, and every fold
   around it opens at once, in a dialog's body and on a page alike. The refusal is heard once, by

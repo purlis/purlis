@@ -81,3 +81,10 @@ export async function offeredInRow(
   await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
   return offered;
 }
+
+/** Opens the page's rarely used group `label` (R61), folded until then: its trigger reads
+ *  "‹label› · ‹count›". */
+export async function unfold(label: string, user: User = userEvent): Promise<void> {
+  const fold = screen.getByRole("button", { name: new RegExp(`^${label} · \\d+$`) });
+  if (fold.getAttribute("aria-expanded") !== "true") await user.click(fold);
+}

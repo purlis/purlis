@@ -23,7 +23,7 @@ import type {
 } from "../bindings";
 import { pickIn, querySelectNamed } from "../ui/select/select.testkit";
 import { tipOf } from "../ui/tooltip/tooltip.testkit";
-import { chooseInRow, moreFor, offeredInRow, rowMenu, rowsOf } from "./rowMenu.testkit";
+import { chooseInRow, moreFor, offeredInRow, rowMenu, rowsOf, unfold } from "./rowMenu.testkit";
 
 /**
  * **The Settings tab at the Project level** (SE-17, #1167; the spec on #558, V89b, V89e, V89h):
@@ -299,7 +299,8 @@ const groups = () =>
     .getAllByRole("button")
     .map((one) => one.textContent);
 const open = (name: string) => userEvent.click(within(nav()).getByRole("button", { name }));
-const shown = () => screen.getByRole("region", { name: /./ });
+/** The page shown: the first region, which holds its own groups' (R60). */
+const shown = () => screen.getAllByRole("region", { name: /./ })[0] as HTMLElement;
 
 async function atProject() {
   render(<Tab />);
@@ -747,7 +748,8 @@ describe("one form for Shared and Local (SE-18)", () => {
     expect(screen.getByLabelText("Target branch")).toHaveAccessibleDescription(
       /Not set at this level/,
     );
-    // Not set here: Reset is there, out of reach (R58).
+    // Not set here: Reset is there, out of reach (R58), in the folded Branches (R61).
+    await unfold("Branches");
     expect(await offeredInRow("Target branch")).toContain("Reset (off)");
   });
 
@@ -944,6 +946,7 @@ describe("one form for Shared and Local (SE-18)", () => {
     await atProject();
     await open("Saving");
 
+    await unfold("Branches");
     const menu = await moveMenu("Target branch");
     // No file holds it: the menu says where the next value goes, and moves nothing; Reset is
     // out of reach and Copy key copies.
@@ -1205,6 +1208,8 @@ describe("the Project level of a read-only project (#826)", () => {
         // The page's Edit as TOML opens the file's text and writes nothing; that text's own Save
         // is held off (`OffUnless`).
         if (/^Edit as (TOML|JSON)$/.test(control.textContent ?? "")) continue;
+        // A rarely used group's fold opens and writes nothing (R61).
+        if (control.closest('[data-scope="disclosure"][data-part="trigger"]') !== null) continue;
         const name =
           control.getAttribute("aria-label") ??
           (control as HTMLInputElement).labels?.[0]?.textContent ??
