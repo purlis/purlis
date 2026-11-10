@@ -5,8 +5,9 @@
  * **You › Attention** (#6019, ADR 0121 decision 22): Quiet, the notifications per source, the
  * Expiring sound and the project's Stuck? thresholds on one page. Drawn as it opens, with long
  * finishes turned off, and in a project with its Stuck? row; held to axe, walked by the keyboard
- * and pictured in every pictured theme cell (`docs/component-stories.md`). The core is faked at
- * its command boundary.
+ * and pictured in every pictured theme cell (`docs/component-stories.md`), the high-contrast
+ * appearances among them; a pull request's `stories` run draws those pictures, never a hand
+ * (#2901). The core is faked at its command boundary.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, waitFor, within } from "storybook/test";
