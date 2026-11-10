@@ -4358,7 +4358,6 @@ fn the_picker_shows_every_refusal_of_the_program_check() {
             plane.path(),
             &machine(Os::Windows),
             &|_| true,
-            "",
             &check
         ),
         Ahead::Unsandboxed(_)

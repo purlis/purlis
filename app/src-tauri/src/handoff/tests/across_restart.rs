@@ -2428,5 +2428,5 @@ fn diag(plane: &Plane, held: &Held, chat: u32, at: &str) {
     } else {
         out.push_str("  screen: no view\n");
     }
-    eprintln!("{out}");
+    let _ = std::io::Write::write_all(&mut std::io::stderr(), out.as_bytes());
 }

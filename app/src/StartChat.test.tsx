@@ -1748,9 +1748,7 @@ describe("⏎ is a plain start and nothing more, from every place it starts (D-2
     [
       "the person ticked Start without the sandbox",
       {
-        profiles: [
-          { ...plain, sandbox: { state: "sandboxed", said: "", locked: null } },
-        ],
+        profiles: [{ ...plain, sandbox: { state: "sandboxed", said: "", locked: null } }],
       },
       (user) => user.click(screen.getByRole("checkbox", { name: "Start without the sandbox" })),
     ],
