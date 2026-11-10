@@ -3,6 +3,9 @@
 Status: proposed (2026-11-09). Amends ADR 0119 decisions 2, 3, 5 and 9 and ADR 0038's ✋. Builds
 ADR 0076 N4 and N8. Keeps ADR 0097 (the settle guard) and ADR 0112 (run grants) whole.
 
+Quiet as built, and which Expiring asks it can hold open: see [its amendments](0121/), of
+2026-11-10.
+
 ## Context
 
 The person runs many agents across projects and must unblock them quickly without losing focus
