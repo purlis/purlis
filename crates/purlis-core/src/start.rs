@@ -324,7 +324,14 @@ pub fn ready_for_a_runner_on(
 ) -> Result<Ready, String> {
     profiles::git_asked_once(|| {
         let launch = profiles::for_launch_in(root, declared);
-        ready_given_on(start, root, declared, (machine, Composed::OnARunner), has, &launch)
+        ready_given_on(
+            start,
+            root,
+            declared,
+            (machine, Composed::OnARunner),
+            has,
+            &launch,
+        )
     })
 }
 
@@ -364,7 +371,14 @@ fn ready_given(
     has: &dyn Fn(&str) -> bool,
     launch: &(profiles::ProfileSet, profiles::IgnoreCheck),
 ) -> Result<Ready, String> {
-    ready_given_on(start, root, declared, (machine, Composed::Here), has, launch)
+    ready_given_on(
+        start,
+        root,
+        declared,
+        (machine, Composed::Here),
+        has,
+        launch,
+    )
 }
 
 fn ready_given_on(

@@ -1819,7 +1819,11 @@ impl Chats {
         runs_on: Option<&purlis_core::machine::StartChoice>,
     ) -> Result<purlis_core::start::Ready, String> {
         let workspace = workspace_at_start(Some(&self.project), asked.cwd.as_deref());
-        if self.sessions.pool_for(workspace.as_deref(), runs_on).is_some() {
+        if self
+            .sessions
+            .pool_for(workspace.as_deref(), runs_on)
+            .is_some()
+        {
             purlis_core::start::ready_for_a_runner(asked, &self.project)
         } else {
             purlis_core::start::ready(asked, &self.project)
