@@ -122,6 +122,11 @@ pub(crate) fn heard<R: Runtime>(
             return;
         };
         let Some((of, snapshot, window)) = artifacts.offering(&label, &said.load) else {
+            tracing::info!(
+                "[DEBUG-art5948] artifact {label}: offers {} of load {} not heard: not its open load",
+                said.id,
+                said.load
+            );
             return;
         };
         let config = purlis_core::machine::config_root();
@@ -129,6 +134,9 @@ pub(crate) fn heard<R: Runtime>(
         let answer = match admitted(config.as_deref(), &of, &snapshot, &said.query) {
             Ok(offers) => {
                 let taken = offers.len();
+                tracing::info!(
+                    "[DEBUG-art5948] artifact {label}: {taken} offers emitted to window {window}"
+                );
                 let _ = app.emit_to(
                     tauri::EventTarget::webview(window.as_str()),
                     ARTIFACT_OFFERS,
@@ -139,7 +147,10 @@ pub(crate) fn heard<R: Runtime>(
                 );
                 Answer::data(serde_json::json!({ "offered": taken }), now)
             }
-            Err(kind) => Answer::error(kind, now),
+            Err(kind) => {
+                tracing::info!("[DEBUG-art5948] artifact {label}: offers refused {kind:?}");
+                Answer::error(kind, now)
+            }
         };
         if artifacts.offering(&label, &said.load).is_none() {
             return;
