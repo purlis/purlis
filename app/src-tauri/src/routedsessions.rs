@@ -1022,6 +1022,13 @@ impl SessionHost for RoutedSessions {
         }
     }
 
+    fn hold(&self, id: u32, still: bool) {
+        match self.host_of(id) {
+            Some(host) => host.hold(id, still),
+            None => self.here.hold(id, still),
+        }
+    }
+
     /// Told on every host; a runner chat's end also fetches its workspace's branches back.
     fn when_one_ends(&self, tell: Ends) {
         let told: Ends = {

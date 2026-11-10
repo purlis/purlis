@@ -3687,6 +3687,12 @@ impl Chats {
         self.sessions.clones_come_back(session)
     }
 
+    /// Holds chat `session`'s program still, or lets it go on (ADR 0076 §4, #6015): only
+    /// `crate::pausing` asks, as a chat is paused into an ask and as the person answers it.
+    pub fn hold(&self, session: u32, still: bool) {
+        self.sessions.hold(session, still);
+    }
+
     /// This project's asks may have moved for a reason no event of its own says (qw356: a
     /// chat asked the person to remove a workspace, or that question was answered): the window
     /// is told its asks, so it reads the registry again.
