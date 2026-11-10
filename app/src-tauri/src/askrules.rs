@@ -122,9 +122,7 @@ fn shown(rule: Rule, open: &[PlaneId]) -> RuleMadeShown {
 /// **Every rule made from an offer**, newest first: Rules I made.
 #[tauri::command]
 #[specta::specta]
-pub async fn rules_made(
-    planes: tauri::State<'_, Planes>,
-) -> Result<Vec<RuleMadeShown>, String> {
+pub async fn rules_made(planes: tauri::State<'_, Planes>) -> Result<Vec<RuleMadeShown>, String> {
     let open = planes.open_now();
     // On a blocking thread: it reads this machine's record (`<data>/inbox/rules.json`).
     crate::off_the_window("reading the rules made", move || {

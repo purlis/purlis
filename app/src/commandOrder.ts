@@ -212,6 +212,10 @@ export const OUTSIDE_THE_LANES: Partial<Record<keyof typeof commands, string>> =
     "Settings › This machine names a project by its path, not as the window holds it, waits for " +
     "the answer and reads the store again.",
   locateProject: "As forgetProject.",
+  undoRule:
+    "Rules I made names a rule by its id, not by a project the window holds, and draws the list " +
+    "its Undo answers with; it revokes as revokeSandboxGrant does, and Settings' Granted list " +
+    "reads the grants again when it is drawn.",
 };
 
 type Ask = (...args: unknown[]) => Promise<unknown>;
