@@ -523,7 +523,10 @@ impl Rules {
                 .any(|chat| !self.told(chat))
                 .then_some(burst.at + TOGETHER)
         });
-        burst.into_iter().chain(self.snoozes_end.values().copied()).min()
+        burst
+            .into_iter()
+            .chain(self.snoozes_end.values().copied())
+            .min()
     }
 
     /// **The projects whose snooze has run out by `now`** (#6018): the notifier reads them

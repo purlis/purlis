@@ -1245,7 +1245,12 @@ fn a_project_whose_snooze_runs_out_is_read_then_and_its_chat_s_asks_are_sent_aga
     let mut rules = Rules::default();
     let a = plane("/a");
     let now = Instant::now();
-    only_shown(&heard(&mut rules, &a, &[permission(3, "p1", "Run ls")], now));
+    only_shown(&heard(
+        &mut rules,
+        &a,
+        &[permission(3, "p1", "Run ls")],
+        now,
+    ));
 
     // Snoozed for an hour: the list the notifier hears no longer holds it, so its
     // notification is taken away and nothing is shown.
@@ -1260,8 +1265,17 @@ fn a_project_whose_snooze_runs_out_is_read_then_and_its_chat_s_asks_are_sent_aga
     assert!(rules.due(back - Duration::from_secs(1)).is_empty());
     assert_eq!(rules.due(back), vec![a.clone()]);
 
-    let sent = only_shown(&heard(&mut rules, &a, &[permission(3, "p1", "Run ls")], back));
-    assert_eq!(sent.chats, vec![(a.clone(), 3)], "its ask is sent again: {sent:?}");
+    let sent = only_shown(&heard(
+        &mut rules,
+        &a,
+        &[permission(3, "p1", "Run ls")],
+        back,
+    ));
+    assert_eq!(
+        sent.chats,
+        vec![(a.clone(), 3)],
+        "its ask is sent again: {sent:?}"
+    );
     rules.snoozed_until(&a, None);
     assert_eq!(rules.next_due(), None);
 }
