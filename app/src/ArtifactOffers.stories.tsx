@@ -6,7 +6,7 @@
  * catalogue's words, a delete marked and asking first, and a refused offer's sentence.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, fn, userEvent, within } from "storybook/test";
+import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import type { Offer } from "./actions";
 import { OffersDrawn } from "./ArtifactOffers";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
@@ -83,7 +83,8 @@ export const DeleteAsks: StoryObj<typeof OffersDrawn> = {
   args: { drawn: [{ key: DELETE.id, offer: DELETE, asks: "Delete" }] },
   play: async ({ canvasElement, args }) => {
     const page = within(canvasElement.ownerDocument.body);
-    await userEvent.click(within(canvasElement).getByRole("button", { name: /Delete done todo/ }));
+    const asks = within(canvasElement).getByRole("button", { name: /Delete done todo/ });
+    await userEvent.click(asks);
     const cancel = await page.findByRole("button", { name: "Cancel" });
     await untilFocused(() => cancel, "It starts on Cancel");
     await userEvent.tab();
@@ -91,5 +92,11 @@ export const DeleteAsks: StoryObj<typeof OffersDrawn> = {
     await expectFocusInSight();
     await userEvent.keyboard("{Escape}");
     expect(args.onPress).not.toHaveBeenCalled();
+    // The pointer goes, so the picture is of the delete at rest (#4098). The click left the
+    // story's pointer on it, and whether it was still drawn as under the pointer once the dialog
+    // had come and gone hung on what pointer events the engine itself sent meanwhile: in WebKit
+    // its danger ground came and went from run to run (stories run 42810312973).
+    await userEvent.unhover(asks);
+    await waitFor(() => expect(asks).not.toHaveAttribute("data-hovered"));
   },
 };

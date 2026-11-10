@@ -88,13 +88,25 @@ export const Failed: Story = {
   beforeEach: () => answers(READY),
   play: async ({ canvasElement }) => {
     const bar = within(canvasElement);
-    await userEvent.click(await bar.findByRole("button", { name: "Regenerate" }));
+    const regenerate = await bar.findByRole("button", { name: "Regenerate" });
+    await userEvent.click(regenerate);
     const failed = await bar.findByRole("status", { name: "Backlog state was not regenerated" });
     await expect(failed).toHaveTextContent("last good: 2026-11-08");
     await expect(bar.getByTestId("artifact-regenerate-output")).toHaveTextContent(
       "TypeError: rows is undefined",
     );
     await expect(within(failed).getByRole("button", { name: "Regenerate again" })).toBeEnabled();
+    // The picture is of the failure, with Regenerate at rest. The click left the story's pointer
+    // on it and the focus in it, and the press turns it off and on again while it runs: whether
+    // it was still drawn under the pointer, or with its focus ring, hung on the order the engine
+    // took those in, and in WebKit its ring came and went from run to run (stories run
+    // 42810312973).
+    await userEvent.unhover(regenerate);
+    regenerate.blur();
+    await waitFor(() => {
+      expect(regenerate).not.toHaveAttribute("data-hovered");
+      expect(regenerate).not.toHaveFocus();
+    });
   },
 };
 
