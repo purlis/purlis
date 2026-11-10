@@ -1,12 +1,18 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! Test-only: `crash-probe <abort|overflow|panic|exit> <crashes folder>` watches itself with the
-//! crash handler, as the app does, and then ends the way it is told. `child` starts this program
+//! Test-only: `crash-probe <abort|overflow|panic|exit>` watches itself with the crash handler, as
+//! the app does, keeping minidumps in the folder [`CRASHES`] names, and then ends the way it is
+//! told. `child` starts this program
 //! again, unwatched, to overflow its stack, and says how that child ended: exit 0 when it died of
 //! its crash within 20 seconds, 3 when it was still running and had to be killed.
 
 use std::path::PathBuf;
+
+/// The crashes folder, from the environment and not an argument: the handler's companion is this
+/// program started again with no arguments, and only the environment reaches it. Read from an
+/// argument, the companion's folder was empty, so it kept the minidump in its working directory.
+const CRASHES: &str = "CRASH_PROBE_CRASHES";
 
 fn main() {
     let mut args = std::env::args().skip(1);
@@ -14,7 +20,7 @@ fn main() {
     if how == "unwatched-overflow" {
         deeper(std::hint::black_box(0));
     }
-    let crashes = PathBuf::from(args.next().unwrap_or_default());
+    let crashes = PathBuf::from(std::env::var_os(CRASHES).unwrap_or_default());
     let watching = match purlis_crash_handler::watch(&crashes) {
         Ok(watching) => Some(watching),
         Err(why) => panic!("the handler did not start: {why}"),
