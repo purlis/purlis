@@ -63,6 +63,7 @@ import { RESULTS } from "./ActionResultNotice";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { List, ListRowSection } from "./ui/list/List";
 import { chatsOf, SnoozeAll, type Snoozing } from "./AsksSnooze";
+import { CoolingLine, RulesIMade } from "./AskRules";
 
 import { chainSaid, NothingDone } from "./inboxRowParts";
 import { inOrder, type Standing } from "./asksOrder";
@@ -231,6 +232,7 @@ export function Inbox({
   workspaceOf,
   workspaceNamed,
   snoozing,
+  cooling,
   onStop,
   hold,
   quietTop,
@@ -315,6 +317,9 @@ export function Inbox({
   /** **Snooze all** (#5647): the asks it put away, and how to snooze and bring them back.
    *  Without it, Asks offers no Snooze all. */
   snoozing?: Snoozing;
+  /** **The asks a cool-off holds quietly** (#6010), and when the first comes back by itself.
+   *  Without it, Asks says nothing of a cool-off. */
+  cooling?: { asks: readonly Shown[]; until: number | null };
   /** **Stop on an ask's row** (ADR 0121 decision 21, #6013): its chat stopped, as its row in the
    *  Chats list stops it. Without it, the row's Stop is off. */
   onStop?: (session: number) => void;
@@ -660,6 +665,15 @@ export function Inbox({
       )}
       {drawsAsks && snoozing !== undefined && asks !== undefined && (
         <SnoozeAll listed={listed} snoozing={snoozing} />
+      )}
+      {/* **Ask less** (#6010): Rules I made, and the asks a cool-off holds. */}
+      {drawsAsks && (
+        <div className="inbox-snooze">
+          <RulesIMade />
+          {cooling !== undefined && (
+            <CoolingLine plane={plane} cooling={cooling.asks} until={cooling.until} />
+          )}
+        </div>
       )}
       {drawsAsks && <DismissUndo hold={ignoring} cause="ask-ignored" said={ignoredSaid} />}
       {/* What was just dismissed, while its Undo stands (#5650). */}

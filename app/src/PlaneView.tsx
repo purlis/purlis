@@ -11525,6 +11525,13 @@ export const PlaneView = memo(function PlaneView({
         done(await commands.wakeInboxAsks(plane, sessions ?? null).catch(unsaid)),
     };
   }, [plane, snoozedAsks, snoozedUntil]);
+  /** **The asks a cool-off holds quietly** (#6010), as the core lists them apart. */
+  const coolingAsks = questions?.cooling;
+  const coolingUntil = questions?.cooling_until ?? null;
+  const cooling = useMemo(
+    () => ({ asks: coolingAsks ?? [], until: coolingUntil }),
+    [coolingAsks, coolingUntil],
+  );
   /**
    * **Stop on a row of Asks** (ADR 0121 decision 21, #6013): the chat's own Stop, as its row in
    * the Chats list and the palette press it: a task's lets it report first.
@@ -12244,6 +12251,7 @@ export const PlaneView = memo(function PlaneView({
                         if (ignore?.available) press(ignore);
                       }}
                       snoozing={snoozing}
+                      cooling={cooling}
                       // **Quiet** (#6017): "Quiet now", and what the Quiet that ended held.
                       quietTop={
                         <AsksQuiet

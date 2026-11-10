@@ -2511,6 +2511,30 @@ body {
 .inbox-snooze-line > .inbox-none {
   margin: 0;
 }
+/* **Rules I made** (#6010): each rule's words, what it allows and for whom, and its Undo. */
+.ask-rules {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ask-rule {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-3);
+}
+.ask-rule-says,
+.ask-rule-what {
+  grid-column: 1;
+  overflow-wrap: anywhere;
+}
+.ask-rule > button {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
 /* A group's heading. A chat's chain is data, so it is drawn as written; a section of the Inbox
    itself (Notices, Updates) is a section title of the panel family's beside it. */
 .inbox-chain {
