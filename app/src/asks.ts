@@ -183,7 +183,12 @@ function listReader(
         // An older core lists no task question with its asking chat: none is.
         const with_asking_chat = listed?.with_asking_chat ?? [];
         // An older core, or a test's mock, lists no snoozed ask (#5647): none is.
-        const next = { asks, with_asking_chat, snoozed: listed?.snoozed ?? [] };
+        const next = {
+          asks,
+          with_asking_chat,
+          snoozed: listed?.snoozed ?? [],
+          snoozed_until: listed?.snoozed_until ?? null,
+        };
         // **An answer that says what the last one said changes nothing** (#4727): every burst of
         // a busy chat's moves reads the list again, and a fresh list each time drew the whole
         // window again for asks that had not moved. The core's answer is plain data, written
@@ -194,8 +199,32 @@ function listReader(
             : { ...was, [plane]: next },
         );
         lookAtHoldsEnd(plane, asks);
+        lookAtSnoozesEnd(plane, next.snoozed_until);
       },
       () => {},
+    );
+  };
+  /** The read due when the first snoozed chat a project's list names comes back (#6018). */
+  const snoozes = new Map<string, ReturnType<typeof setTimeout>>();
+  /**
+   * **A snooze for a while runs out with no event of its own** (#6018, ADR 0121 decision 14):
+   * the list is read again when the first snoozed chat it names comes back, and the core lets
+   * that chat go, so its asks are counted and listed again then. The time is the core's
+   * record's, so it holds across a relaunch.
+   */
+  const lookAtSnoozesEnd = (plane: string, until: number | null) => {
+    clearTimeout(snoozes.get(plane));
+    snoozes.delete(plane);
+    if (until === null) return;
+    snoozes.set(
+      plane,
+      setTimeout(
+        () => {
+          snoozes.delete(plane);
+          read(plane);
+        },
+        Math.max(0, until * 1000 - Date.now()),
+      ),
     );
   };
   /**
@@ -241,9 +270,11 @@ function listReader(
     },
     stop() {
       live = false;
-      for (const timer of [...timers.values(), ...holds.values()]) clearTimeout(timer);
+      for (const timer of [...timers.values(), ...holds.values(), ...snoozes.values()])
+        clearTimeout(timer);
       timers.clear();
       holds.clear();
+      snoozes.clear();
     },
   };
 }

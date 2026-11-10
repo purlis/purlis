@@ -3309,9 +3309,16 @@ export type Asking = {
 	 *  **The asks Snooze all put away** (#5647, ADR 0119): each held by a chat that holds no
 	 *  ask it did not have when it was snoozed. Listed apart from [`Asking::asks`], so neither
 	 *  the ✋ nor Asks counts them; the Chats view, which reads the board, still says the chat
-	 *  waits. Only [`asks_waiting`] puts any here.
+	 *  waits. Only [`counted`] puts any here.
 	 */
 	snoozed?: Shown[],
+	/**
+	 *  **When the first chat of [`Asking::snoozed`] comes back by itself** (#6018, ADR 0121
+	 *  decision 14), in seconds since 1970: snoozed for 1 hour or until tomorrow. The window
+	 *  reads the asks again then, so they are counted and listed again; none where every
+	 *  snoozed chat waits only for a new ask.
+	 */
+	snoozed_until?: number | null,
 };
 
 /**  Which command's question it is. */

@@ -244,6 +244,9 @@ pub struct Rules {
     finished: HashMap<PlaneId, HashSet<String>>,
     /// The id the next notification takes.
     last_id: i32,
+    /// **When each project's first snoozed chat comes back by itself** (#6018, ADR 0121
+    /// decision 14): the notifier reads the project again then, so its asks are heard anew.
+    snoozes_end: HashMap<PlaneId, Instant>,
 }
 
 /// A chat waiting, as it was read last.
@@ -510,15 +513,39 @@ impl Rules {
         acts
     }
 
-    /// **When the notifier should wake by itself next** for a burst: when the one open closes
-    /// with chats in it not told yet.
+    /// **When the notifier should wake by itself next**: when the burst open closes with
+    /// chats in it not told yet, or when a project's snooze runs out (#6018).
     pub fn next_due(&self) -> Option<Instant> {
-        let burst = self.burst.as_ref()?;
+        let burst = self.burst.as_ref().and_then(|burst| {
+            burst
+                .chats
+                .iter()
+                .any(|chat| !self.told(chat))
+                .then_some(burst.at + TOGETHER)
+        });
         burst
-            .chats
+            .into_iter()
+            .chain(self.snoozes_end.values().copied())
+            .min()
+    }
+
+    /// **The projects whose snooze has run out by `now`** (#6018): the notifier reads them
+    /// again, so the asks of a chat back by itself are heard anew.
+    pub fn due(&self, now: Instant) -> Vec<PlaneId> {
+        self.snoozes_end
             .iter()
-            .any(|chat| !self.told(chat))
-            .then_some(burst.at + TOGETHER)
+            .filter(|(_, end)| **end <= now)
+            .map(|(plane, _)| plane.clone())
+            .collect()
+    }
+
+    /// **When `plane`'s first snoozed chat comes back by itself**, as its last read said, or
+    /// none (#6018): the notifier reads it again then ([`Self::next_due`]).
+    pub fn snoozed_until(&mut self, plane: &PlaneId, end: Option<Instant>) {
+        match end {
+            Some(end) => self.snoozes_end.insert(plane.clone(), end),
+            None => self.snoozes_end.remove(plane),
+        };
     }
 
     /// Whether quiet hours hold chats back: the notifier looks again every so often while they
@@ -547,6 +574,7 @@ impl Rules {
         self.quiet_finishes.retain(|one| &one.chat.0 != plane);
         self.waits.retain(|(of, _), _| of != plane);
         self.held.retain(|(of, _)| of != plane);
+        self.snoozes_end.remove(plane);
         if let Some(burst) = &mut self.burst {
             burst.chats.retain(|(of, _)| of != plane);
         }
@@ -1462,6 +1490,12 @@ fn listen(app: &tauri::AppHandle, heard: &mpsc::Receiver<Poke>) {
                 planes.push(plane);
             }
         }
+        // A project whose snooze ran out is read again by itself (#6018).
+        for plane in rules.due(Instant::now()) {
+            if !planes.contains(&plane) {
+                planes.push(plane);
+            }
+        }
         for plane in planes {
             read(app, &mut rules, &plane, quiet, long);
         }
@@ -1534,15 +1568,21 @@ fn read(app: &tauri::AppHandle, rules: &mut Rules, plane: &PlaneId, quiet: bool,
     };
     // What the ✋ counts (ADR 0121 decision 3): the registry's Blocking asks, its own split
     // (#1693, #1694), with what Snooze all put away left out. An update is not listed, so
-    // never notifies as an ask.
+    // never notifies as an ask. A snoozed chat's asks are heard anew when its snooze runs
+    // out, read again then (#6018, ADR 0121 decision 14).
     let asking = crate::asking::counted(&held);
+    let now = Instant::now();
+    let end = asking.snoozed_until.map(|until| {
+        now + Duration::from_secs(u64::from(until).saturating_sub(crate::sandboxing::now_secs()))
+    });
+    rules.snoozed_until(plane, end);
     let is_looking = |session| looking(app, plane, session, &held).is_looking();
     let mut acts = rules.heard(&Heard {
         plane,
         asks: &asking.asks,
         looking: &is_looking,
         quiet: &|| quiet,
-        now: Instant::now(),
+        now,
     });
     // Should know (#6005): the tasks that ended, read off their records as the window reads its
     // finished rows on every move of a chat. Only a failure or a long finish while away is told.

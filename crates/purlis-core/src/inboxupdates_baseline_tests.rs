@@ -208,7 +208,11 @@ fn another_project_s_layout_entry_leaves_a_first_open_fresh() {
 fn a_project_with_snoozed_chats_is_not_baselined() {
     let (_dir, root, store) = project("");
     store
-        .snooze(&root, [(3, vec!["ask-1".to_owned()])].into_iter().collect())
+        .snooze(
+            &root,
+            [(3, vec!["ask-1".to_owned()])].into_iter().collect(),
+            None,
+        )
         .expect("snoozed");
 
     assert!(!store.first_open(&root, NOW).expect("opened").fresh);

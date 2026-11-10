@@ -1475,10 +1475,12 @@ export const commands = {
 	settleInboxUpdates: (plane: PlaneId, keys: string[] | null, how: UpdateSettled) => typedError<InboxUpdate_Serialize[], string>(__TAURI_INVOKE("settle_inbox_updates", { plane, keys, how })),
 	/**
 	 *  **Snooze all** (#5647, ADR 0119): puts each of `chats` away with the asks it holds, until it
-	 *  holds an ask it did not have. Nothing is answered, and no timer brings it back. Kept on this
-	 *  machine per project, never in the plane.
+	 *  holds an ask it did not have or, where `until` is given, until then (seconds since 1970: for
+	 *  1 hour, or until tomorrow at 09:00 as the window reckons it; #6018, ADR 0121 decision 14),
+	 *  whichever comes first. Nothing is answered. Kept on this machine per project, never in the
+	 *  plane.
 	 */
-	snoozeInboxAsks: (plane: PlaneId, chats: SnoozedChat[]) => typedError<null, string>(__TAURI_INVOKE("snooze_inbox_asks", { plane, chats })),
+	snoozeInboxAsks: (plane: PlaneId, chats: SnoozedChat[], until: number | null) => typedError<null, string>(__TAURI_INVOKE("snooze_inbox_asks", { plane, chats, until })),
 	/**
 	 *  **Show them now, and Snooze all's Undo** (#5647): brings back the snoozed chats `sessions`,
 	 *  or every one where it is null.
@@ -6246,9 +6248,16 @@ export type Asking = {
 	 *  **The asks Snooze all put away** (#5647, ADR 0119): each held by a chat that holds no
 	 *  ask it did not have when it was snoozed. Listed apart from [`Asking::asks`], so neither
 	 *  the ✋ nor Asks counts them; the Chats view, which reads the board, still says the chat
-	 *  waits. Only [`asks_waiting`] puts any here.
+	 *  waits. Only [`counted`] puts any here.
 	 */
 	snoozed?: Shown[],
+	/**
+	 *  **When the first chat of [`Asking::snoozed`] comes back by itself** (#6018, ADR 0121
+	 *  decision 14), in seconds since 1970: snoozed for 1 hour or until tomorrow. The window
+	 *  reads the asks again then, so they are counted and listed again; none where every
+	 *  snoozed chat waits only for a new ask.
+	 */
+	snoozed_until?: number | null,
 };
 
 /**  Which command's question it is. */

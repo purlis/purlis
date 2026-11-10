@@ -326,10 +326,42 @@ fn bounded(one: Update, now: u64) -> Update {
     }
 }
 
-/// **Snooze all** (#5647, ADR 0119): each snoozed chat, by its session, with the keys of the
-/// asks it held when it was snoozed. A chat stays away until it holds an ask its record has not
-/// ([`Store::release`]); nothing brings it back on a timer.
-pub type Snoozed = std::collections::BTreeMap<u32, Vec<String>>;
+/// **Snooze all** (#5647, ADR 0119): each snoozed chat, by its session, with what its snooze
+/// keeps ([`Snooze`]). A chat stays away until it holds an ask its record has not, or its
+/// time comes ([`Store::release`]), whichever is first.
+pub type Snoozed = std::collections::BTreeMap<u32, Snooze>;
+
+/// The asks each chat holds now, by session and key: what Snooze all puts away, and what a
+/// read of the asks compares a snoozed chat's record with.
+pub type Held = std::collections::BTreeMap<u32, Vec<String>>;
+
+/// **One snoozed chat's record**: the keys of the asks it held when it was snoozed, and when it
+/// comes back by itself (#6018, ADR 0121 decision 14), in seconds since 1970; `None` where only
+/// a new ask brings it back.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Snooze {
+    pub asks: Vec<String>,
+    pub until: Option<u64>,
+}
+
+/// A record written before #6018 keeps a chat's asks alone, and reads as snoozed with no time.
+impl<'de> serde::Deserialize<'de> for Snooze {
+    fn deserialize<D: serde::Deserializer<'de>>(read: D) -> Result<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        #[serde(untagged)]
+        enum Kept {
+            Timed {
+                asks: Vec<String>,
+                until: Option<u64>,
+            },
+            Asks(Vec<String>),
+        }
+        Ok(match Kept::deserialize(read)? {
+            Kept::Timed { asks, until } => Snooze { asks, until },
+            Kept::Asks(asks) => Snooze { asks, until: None },
+        })
+    }
+}
 
 /// The most chats one project keeps snoozed; the lowest session numbers go first.
 pub const AT_MOST_SNOOZED: usize = 200;
@@ -340,12 +372,19 @@ pub const MOST_SNOOZED_ASKS: usize = 100;
 /// What the snooze record's file is called beside the updates' (`<project key>.snoozed.json`).
 const SNOOZED: &str = "snoozed";
 
-/// Whether chat `session`, holding the asks `asks` by key, is still away under `snoozed`: it has
-/// a record, and every ask it holds is in it. The prototype's rule (#5638).
-pub fn away(snoozed: &Snoozed, session: u32, asks: &[String]) -> bool {
-    snoozed
-        .get(&session)
-        .is_some_and(|had| asks.iter().all(|ask| had.contains(ask)))
+/// Whether chat `session`, holding the asks `asks` by key, is still away under `snoozed` at
+/// `now`: it has a record whose time has not come, and every ask it holds is in it. The
+/// prototype's rule (#5638), with #6018's time.
+pub fn away(snoozed: &Snoozed, session: u32, asks: &[String], now: u64) -> bool {
+    snoozed.get(&session).is_some_and(|had| {
+        had.until.is_none_or(|until| now < until) && asks.iter().all(|ask| had.asks.contains(ask))
+    })
+}
+
+/// **When the first snoozed chat of `snoozed` comes back by itself**, if any has a time: what
+/// the window reads its asks again at, so they are counted and notified then.
+pub fn first_back(snoozed: &Snoozed) -> Option<u64> {
+    snoozed.values().filter_map(|one| one.until).min()
 }
 
 impl Store {
@@ -360,9 +399,9 @@ impl Store {
         self.read_beside(root, SNOOZED)
     }
 
-    /// Snoozes each chat of `chats` with the asks it holds, in place of any record it had.
-    /// Answers [`Self::snoozed`].
-    pub fn snooze(&self, root: &Path, chats: Snoozed) -> io::Result<Snoozed> {
+    /// Snoozes each chat of `chats` with the asks it holds, until `until` at the latest where
+    /// it is given, in place of any record it had. Answers [`Self::snoozed`].
+    pub fn snooze(&self, root: &Path, chats: Held, until: Option<u64>) -> io::Result<Snoozed> {
         self.change_beside(root, SNOOZED, |kept: &mut Snoozed| {
             for (session, asks) in chats {
                 let asks = asks
@@ -370,7 +409,7 @@ impl Store {
                     .take(MOST_SNOOZED_ASKS)
                     .map(|ask| cut(ask, MOST_KEY))
                     .collect();
-                kept.insert(session, asks);
+                kept.insert(session, Snooze { asks, until });
             }
             while kept.len() > AT_MOST_SNOOZED {
                 kept.pop_first();
@@ -390,13 +429,15 @@ impl Store {
     }
 
     /// Lets go of every snoozed chat that holds, in `held`, an ask it did not have when it was
-    /// snoozed: it is back, with all its asks, and stays back. A chat `held` does not name, or
-    /// one holding only asks it had, stays away. Answers what stays away.
-    pub fn release(&self, root: &Path, held: &Snoozed) -> io::Result<Snoozed> {
+    /// snoozed, and of every one whose time has come by `now`, named in `held` or not: it is
+    /// back, with all its asks, and stays back. A chat `held` does not name, or one holding
+    /// only asks it had, stays away until its time. Answers what stays away.
+    pub fn release(&self, root: &Path, held: &Held, now: u64) -> io::Result<Snoozed> {
         let back = |kept: &Snoozed| {
-            held.iter()
-                .filter(|(session, asks)| {
-                    kept.contains_key(session) && !away(kept, **session, asks)
+            kept.iter()
+                .filter(|(session, _)| {
+                    let asks = held.get(session).map_or(&[][..], Vec::as_slice);
+                    !away(kept, **session, asks, now)
                 })
                 .map(|(session, _)| *session)
                 .collect::<Vec<_>>()

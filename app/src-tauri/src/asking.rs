@@ -77,9 +77,15 @@ pub struct Asking {
     /// **The asks Snooze all put away** (#5647, ADR 0119): each held by a chat that holds no
     /// ask it did not have when it was snoozed. Listed apart from [`Asking::asks`], so neither
     /// the ✋ nor Asks counts them; the Chats view, which reads the board, still says the chat
-    /// waits. Only [`asks_waiting`] puts any here.
+    /// waits. Only [`counted`] puts any here.
     #[serde(default)]
     pub snoozed: Vec<Shown>,
+    /// **When the first chat of [`Asking::snoozed`] comes back by itself** (#6018, ADR 0121
+    /// decision 14), in seconds since 1970: snoozed for 1 hour or until tomorrow. The window
+    /// reads the asks again then, so they are counted and listed again; none where every
+    /// snoozed chat waits only for a new ask.
+    #[serde(default)]
+    pub snoozed_until: Option<u32>,
 }
 
 /// A task question its asking chat has, as the task's row says it: `asking steward 2 · 1m`.
@@ -623,6 +629,7 @@ pub fn asking(plane: &PlaneId, hooks: &HookAsks) -> Asking {
         // A hook holds no task question: `every_ask` lists those.
         with_asking_chat: Vec::new(),
         snoozed: Vec::new(),
+        snoozed_until: None,
     }
 }
 
@@ -763,35 +770,46 @@ pub async fn asks_waiting(
 /// **What the ✋ counts of project `held`** (ADR 0121 decisions 2 and 3): its Blocking asks,
 /// from every source ([`every_ask`]), with what Snooze all put away apart ([`snoozed_apart`]).
 /// The window lists it, and the system notifications (`asknotify`) are sent for it alone, so
-/// what notifies and what counts are one answer.
+/// what notifies and what counts are one answer. A snoozed chat neither counts nor notifies
+/// until it is back (ADR 0121 decision 14, #6018).
 pub fn counted(held: &crate::planes::Held) -> Asking {
     // Snooze all's record is this machine's (#5647): where the app keeps no store, as in a
     // test of its own, nothing is snoozed and no data home is looked for.
     let store = held
         .config()
         .and_then(|_| purlis_core::inboxupdates::Store::here());
-    snoozed_apart(every_ask(held), store.as_ref(), held.root())
+    snoozed_apart(
+        every_ask(held),
+        store.as_ref(),
+        held.root(),
+        crate::sandboxing::now_secs(),
+    )
 }
 
 /// **Snooze all's asks, put apart** (#5647): every snoozed chat that holds an ask it did not
-/// have when snoozed is let go of first, so it is back with all its asks; what each chat still
-/// snoozed holds moves from [`Asking::asks`] to [`Asking::snoozed`]. Where this machine keeps no
-/// data home, nothing is snoozed; where the record cannot be written, it is read as it is.
+/// have when snoozed, or whose time has come by `now` (#6018), is let go of first, so it is back
+/// with all its asks; what each chat still snoozed holds moves from [`Asking::asks`] to
+/// [`Asking::snoozed`], and the first time one comes back by itself is
+/// [`Asking::snoozed_until`]. Where this machine keeps no data home, nothing is snoozed; where
+/// the record cannot be written, it is read as it is, less any chat whose time has come.
 pub fn snoozed_apart(
     mut asking: Asking,
     store: Option<&purlis_core::inboxupdates::Store>,
     root: &std::path::Path,
+    now: u64,
 ) -> Asking {
     let Some(store) = store else {
         return asking;
     };
-    let mut held = purlis_core::inboxupdates::Snoozed::new();
+    let mut held = purlis_core::inboxupdates::Held::new();
     for ask in &asking.asks {
         held.entry(ask.session).or_default().push(ask.ask.clone());
     }
-    let away = store
-        .release(root, &held)
-        .unwrap_or_else(|_| store.snoozed(root));
+    let away = store.release(root, &held, now).unwrap_or_else(|_| {
+        let mut kept = store.snoozed(root);
+        kept.retain(|_, one| one.until.is_none_or(|until| now < until));
+        kept
+    });
     if away.is_empty() {
         return asking;
     }
@@ -801,6 +819,8 @@ pub fn snoozed_apart(
         .partition(|ask| away.contains_key(&ask.session));
     asking.asks = asks;
     asking.snoozed = snoozed;
+    asking.snoozed_until = purlis_core::inboxupdates::first_back(&away)
+        .map(|until| u32::try_from(until).unwrap_or(u32::MAX));
     asking
 }
 
@@ -3743,6 +3763,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         plane: plane.clone(),
         with_asking_chat,
         snoozed: Vec::new(),
+        snoozed_until: None,
         // A grade's chat is drawn nowhere, and asks nobody (SK-16): the grade ends it at its
         // first ask, with that end, and none of its asks is listed.
         asks: derive(&waiting)
