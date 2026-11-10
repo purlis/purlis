@@ -1609,6 +1609,8 @@ const MEMORY_DRAFT: &str = "\\";
 /// - `piece-file`, `piece-diff`: that branch, then a file's plain relative path in it.
 /// - `session`: a session record's plane-relative path, read only as
 ///   [`crate::sessionrecord::locate`] reads it.
+/// - `artifact`: `<ws>/<folder>` (`app/src/artifacts.ts`), the folder one a pin can name
+///   ([`crate::artifact::folder_name_ok`]).
 fn own_key_ok(view: &str, key: &str) -> Option<bool> {
     let name = |word: &str| word.chars().count() <= 64 && crate::contain::workspace_name_ok(word);
     let repo = |word: &str| word.chars().count() <= 64 && crate::contain::repo_name_ok(word);
@@ -1638,6 +1640,8 @@ fn own_key_ok(view: &str, key: &str) -> Option<bool> {
             _ => false,
         },
         "session" => crate::sessionrecord::locate(key).is_ok(),
+        "artifact" => matches!(parts.as_slice(),
+            [ws, folder] if name(ws) && crate::artifact::folder_name_ok(folder)),
         _ => return None,
     };
     Some(shaped && key.chars().count() <= MOST_KEY && !key.chars().any(char::is_control))

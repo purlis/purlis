@@ -204,6 +204,11 @@ pub fn resolve(workspace: &Path, folder: &str) -> Result<PathBuf, String> {
     }
 }
 
+/// Whether `folder` is one plain name an artifact folder can have, as [`pin`] holds it.
+pub fn folder_name_ok(folder: &str) -> bool {
+    folder_refusal(folder).is_none()
+}
+
 /// Why `folder` cannot name an artifact folder at all: it must be one plain name.
 fn folder_refusal(folder: &str) -> Option<String> {
     let plain = !folder.is_empty()
