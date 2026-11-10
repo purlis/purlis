@@ -141,7 +141,8 @@ export const LongFinishesOff: Story = {
 
 /**
  * **In a project**: the Stuck? row is the project's, its table holding the three thresholds and
- * no dispatch limit; Tab reaches the project's silent minutes.
+ * no dispatch limit. Tab reaches each threshold's heading, whose tooltip holds its help, and then
+ * the project's silent minutes.
  */
 export const InAProject: Story = {
   args: { plane: "/home/dev/plane" },
@@ -152,6 +153,14 @@ export const InAProject: Story = {
     const silent = within(table).getByLabelText("Silent minutes for the project");
     await expect(silent).toHaveValue("20");
     within(group).getByRole("switch", { name: "Sound for an expiring ask" }).focus();
+    for (const heading of ["Silent", "Failing", "Turn"]) {
+      await userEvent.tab();
+      await untilFocused(
+        () => within(table).getByText(heading, { selector: "span" }),
+        `Tab reaches the ${heading} heading`,
+      );
+      expectFocusInSight();
+    }
     await userEvent.tab();
     await untilFocused(() => silent, "Tab reaches the project's silent minutes");
     expectFocusInSight();
