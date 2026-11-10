@@ -4053,7 +4053,7 @@ fn an_unsandboxed_chat_says_so_on_its_tab_and_why() {
 }
 
 // -------------------------------------------------------------------------------------
-// SD-30's install action (ruling V78 c): the distribution's own command, typed and never run
+// git's install command on Linux: the distribution's own, for the first run to show
 // -------------------------------------------------------------------------------------
 
 #[test]
@@ -4127,7 +4127,6 @@ fn the_picker_says_nothing_of_a_sandbox_a_project_has_not_turned_on() {
             plane.path(),
             &machine(Os::Linux),
             &|_| false,
-            "",
             &|_| Ok(()),
         ),
         Ahead::Off
@@ -4143,28 +4142,10 @@ fn the_picker_says_a_chat_will_be_sandboxed_where_it_can_be() {
             plane.path(),
             &machine(Os::MacOs),
             &|_| true,
-            "",
             &|_| Ok(()),
         ),
         Ahead::Sandboxed
     );
-}
-
-#[test]
-fn a_refusal_nothing_can_be_installed_for_offers_no_install() {
-    let plane = plane_saying(ON);
-    // A program the check refuses: no package on this system changes that.
-    let Ahead::Refused { install, .. } = ahead(
-        Harness::ClaudeCode,
-        plane.path(),
-        &machine(Os::Linux),
-        &|_| true,
-        "ID=debian\n",
-        &|_| Err(NotStarted::ProgramRelative),
-    ) else {
-        panic!("refused");
-    };
-    assert_eq!(install, None);
 }
 
 #[test]
@@ -4176,7 +4157,6 @@ fn on_windows_the_picker_says_the_chat_starts_without_the_sandbox_and_why() {
             plane.path(),
             &machine(Os::Windows),
             &|_| true,
-            "",
             &|_| Ok(()),
         ),
         Ahead::Unsandboxed(Lifted {
@@ -4264,7 +4244,6 @@ fn an_unreadable_charter_toml_still_refuses_rather_than_reading_as_off() {
                 plane.path(),
                 &machine(Os::MacOs),
                 &|_| true,
-                "",
                 &|_| Ok(()),
             ),
             Ahead::Refused { .. }
@@ -4301,7 +4280,6 @@ fn the_picker_shows_codex_sandboxed_where_charter_wraps_it_and_the_opt_out_elsew
                 plane.path(),
                 &machine(os),
                 &|_| true,
-                "",
                 &|_| Ok(()),
             ),
             Ahead::Sandboxed,
@@ -4309,12 +4287,11 @@ fn the_picker_shows_codex_sandboxed_where_charter_wraps_it_and_the_opt_out_elsew
         );
     }
     let no_landlock = |program: &str| program != backend::LANDLOCK;
-    let Ahead::Refused { why, install } = ahead(
+    let Ahead::Refused { why } = ahead(
         Harness::Codex,
         plane.path(),
         &machine(Os::Linux),
         &no_landlock,
-        "ID=debian\n",
         &|_| Ok(()),
     ) else {
         panic!("refused on a kernel without Landlock 6");
@@ -4324,7 +4301,6 @@ fn the_picker_shows_codex_sandboxed_where_charter_wraps_it_and_the_opt_out_elsew
         "{why}"
     );
     assert!(!why.contains('#'), "{why}");
-    assert_eq!(install, None, "nothing to install fixes it");
     assert_eq!(
         decide(
             Harness::Codex,
@@ -4366,13 +4342,9 @@ fn the_picker_shows_every_refusal_of_the_program_check() {
                 plane.path(),
                 &machine(Os::MacOs),
                 &|_| true,
-                "",
                 &check,
             ),
-            Ahead::Refused {
-                why: said,
-                install: None,
-            }
+            Ahead::Refused { why: said }
         );
     }
     let asked = std::sync::atomic::AtomicBool::new(false);

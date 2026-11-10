@@ -9084,7 +9084,7 @@ fn an_older_claude_code_s_sentence_counts_as_said_once_its_tab_takes_it() {
 }
 
 #[test]
-fn only_a_shell_tab_at_the_project_root_is_a_place_to_type_an_install_command() {
+fn only_a_shell_tab_at_the_project_root_is_a_place_to_type_a_sign_in() {
     let root = tempfile::tempdir().expect("a project");
     let elsewhere = tempfile::tempdir().expect("elsewhere");
     let chats = Chats::on_host(Box::new(|_| {}), Box::new(Pretend::default()), no_project());

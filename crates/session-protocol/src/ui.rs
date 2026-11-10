@@ -592,7 +592,6 @@ pub const WINDOW_ONLY: &[&str] = &[
     "extension_programs_run",
     "install_cli_on_path",
     "type_installer",
-    "type_sandbox_install",
     "plane_doctor_fix",
     "plane_doctor_fix_identity",
     "plane_doctor_move_into_repos",

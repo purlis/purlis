@@ -396,7 +396,6 @@ export const commands = {
 	waits_here: boolean,
 } | null, string>(__TAURI_INVOKE("persona_grants_held", { plane, session })),
 	allowPersonaGrants: __WINDOW_ONLY_RESULT,
-	typeSandboxInstall: __WINDOW_ONLY_RESULT,
 	/**
 	 *  The draft of a Report for a sandbox block of purlis's own (#1338). Nothing is sent: this only
 	 *  drafts, here, with no network.
@@ -12283,11 +12282,6 @@ export type SandboxAhead = {
 	 *  Empty for `sandboxed`.
 	 */
 	said: string,
-	/**
-	 *  SD-30's install command, shown before the person asks for it to be typed: where the
-	 *  refusal is a program this machine is missing and charter knows its distribution.
-	 */
-	install: string | null,
 	/**
 	 *  Where policy forbids starting a chat without the sandbox (#1343): why, naming the policy
 	 *  and who set it. The picker then offers no opt-out.

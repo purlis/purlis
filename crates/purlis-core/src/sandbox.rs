@@ -8132,16 +8132,14 @@ pub enum Ahead {
     Sandboxed,
     /// The chat starts without the sandbox whatever is picked (Windows), and why.
     Unsandboxed(Lifted),
-    /// The sandbox cannot be applied, so the chat starts only without it: the refusal, and
-    /// SD-30's install command where installing something would fix it (ruling V78 c).
-    Refused {
-        why: String,
-        install: Option<String>,
-    },
+    /// The sandbox cannot be applied, so the chat starts only without it: the refusal. No
+    /// sandbox needs a program installed any more, so nothing is offered to install (SD-30's
+    /// install action, ruling V78 c, is gone: ADR 0067 as amended 2026-11-10).
+    Refused { why: String },
 }
 
 /// [`Ahead`] for a chat of `harness` in the project at `root` on `machine`, with `has` saying
-/// what is installed and `os_release` the text of `/etc/os-release` (empty off Linux).
+/// what is installed.
 ///
 /// Every refusal the start would give is shown here first, beside "Start without the sandbox":
 /// a harness charter holds back (Codex, ruling V87f), and — where the chat would be sandboxed —
@@ -8154,15 +8152,9 @@ pub fn ahead(
     root: &Path,
     machine: &Machine,
     has: &dyn Fn(&str) -> bool,
-    os_release: &str,
     check: &dyn Fn(&Applied) -> Result<(), NotStarted>,
 ) -> Ahead {
-    ahead_decided(
-        decide(harness, root, machine, has, None, None),
-        root,
-        os_release,
-        check,
-    )
+    ahead_decided(decide(harness, root, machine, has, None, None), root, check)
 }
 
 /// [`ahead`], from what [`decide`] answered for the harness: the compile, asked once and shared
@@ -8171,7 +8163,6 @@ pub fn ahead(
 pub fn ahead_decided(
     decided: Result<Option<Decided>, NotStarted>,
     root: &Path,
-    os_release: &str,
     check: &dyn Fn(&Applied) -> Result<(), NotStarted>,
 ) -> Ahead {
     // Under a policy that forbids the opt-out no sentence sends the person to it (#1423); the
@@ -8179,29 +8170,6 @@ pub fn ahead_decided(
     let locks = policy::Locks::of(root);
     let refused = |refused: NotStarted| Ahead::Refused {
         why: refused.said_beside(&locks),
-        install: match &refused {
-            NotStarted::NoBackend(missing) => backend::install_command(missing, os_release),
-            NotStarted::NoCompiler(_)
-            | NotStarted::HeldBack(..)
-            | NotStarted::ProgramWritable(_)
-            | NotStarted::WrapReplaced
-            | NotStarted::KitWritable(_)
-            | NotStarted::ProgramRelative
-            | NotStarted::WordWritable(_)
-            | NotStarted::WordTooLong
-            | NotStarted::NotTheHarness(..)
-            | NotStarted::ProbeTimedOut(_)
-            | NotStarted::Uncompilable(_)
-            | NotStarted::CoversItsGround { .. }
-            | NotStarted::Unread(_)
-            | NotStarted::GitFolderUnheld(_)
-            | NotStarted::RepositoriesUnfound(_)
-            | NotStarted::KeptUntold(_)
-            | NotStarted::PlaneUnreadable
-            | NotStarted::PlaneMissing
-            | NotStarted::OptOutLocked(_)
-            | NotStarted::RequiredWithoutBackend(_) => None,
-        },
     };
     match decided {
         Ok(None) => Ahead::Off,

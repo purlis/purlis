@@ -323,7 +323,6 @@ fn on_linux_a_sandboxed_claude_code_chat_starts_inside_purlis_s_wrap_and_only_on
             plane.path(),
             &linux,
             &landlock_only,
-            "",
             None,
         )
         .expect("an answer")
