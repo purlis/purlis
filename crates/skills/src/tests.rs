@@ -2255,3 +2255,29 @@ fn a_named_workspace_skill_whose_folder_is_no_whole_skill_says_what_it_lacks() {
         "the named folder alone, and never \"no skill of this name\""
     );
 }
+
+/// **#6078: a level's word reads back as its origin**, so a window reads the level a runner says
+/// a skill is of as the runner meant it; a word of no level reads as none.
+#[test]
+fn each_origins_level_reads_back_as_that_origin() {
+    for origin in [
+        Origin::BuiltIn,
+        Origin::Project,
+        Origin::Workspace,
+        Origin::Persona,
+        Origin::Harness,
+        Origin::Repo,
+    ] {
+        // Exhaustive, so a new origin does not compile here until it is listed above.
+        match origin {
+            Origin::BuiltIn
+            | Origin::Project
+            | Origin::Workspace
+            | Origin::Persona
+            | Origin::Harness
+            | Origin::Repo => {}
+        }
+        assert_eq!(Origin::of_level(origin.level()), Some(origin));
+    }
+    assert_eq!(Origin::of_level("galaxy"), None);
+}

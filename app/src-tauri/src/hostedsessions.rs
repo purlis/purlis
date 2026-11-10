@@ -4703,15 +4703,24 @@ impl HostedSessions {
         })
     }
 
-    /// **The runner `link` reached, as a chat's tab names it** (#2977): `<pool>/<runner>` where
-    /// its host named the runner (1.48), its pool alone where it did not, and none on a link to
-    /// this machine's host.
+    /// **The runner `link` reached, as a chat's tab names it** (#2977): [`runner_shown`], none
+    /// on a link to this machine's host.
     fn runner_named(&self, link: &HostLink) -> Option<String> {
-        let pool = self.connection.pool()?;
-        Some(match link.reached_runner() {
-            Some(runner) => format!("{pool}/{runner}"),
-            None => pool.to_owned(),
-        })
+        Some(runner_shown(self.connection.pool()?, link.reached_runner()))
+    }
+}
+
+/// **A pool's runner, as a chat's tab names it** (#2977, #6078): `<pool>/<runner>` where its host
+/// named the runner (1.48), as Devices names a Docker pool's runner; the pool alone where it did
+/// not, and for a cluster pool's runner, which the window names nowhere but by its pool: its
+/// shared runner, which the cluster names after its pool, and a chat's own runner, whose name is
+/// an id made from the chat's (`fresh-…`, #3818).
+pub(crate) fn runner_shown(pool: &str, reached: Option<&str>) -> String {
+    match reached {
+        Some(runner) if runner != pool && !runner.starts_with("fresh-") => {
+            format!("{pool}/{runner}")
+        }
+        _ => pool.to_owned(),
     }
 }
 
@@ -5522,6 +5531,19 @@ impl SessionHost for HostedSessions {
             .armed_skills
             .clone()
             .map(session::ArmedSkill::bounded)
+    }
+
+    fn skills_not_there_left(&self, number: u32) -> Option<crate::host::RunnersLack> {
+        let (link, _) = self.link().ok()?;
+        let skills_not_there = lock(&self.left)
+            .get(&number)?
+            .skills_not_there
+            .clone()?
+            .bounded()?;
+        Some(crate::host::RunnersLack {
+            skills_not_there,
+            runner: self.runner_named(&link),
+        })
     }
 
     fn prompt_key_started(

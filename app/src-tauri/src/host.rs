@@ -178,6 +178,15 @@ impl AskedToRun {
     }
 }
 
+/// **What a runner's chat started without there, and the runner** (#6078): what
+/// [`SessionHost::skills_not_there_left`] answers of a chat left running.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunnersLack {
+    pub skills_not_there: purlis_session_protocol::session::SkillsNotThere,
+    /// As [`Composed::runner`] names it.
+    pub runner: Option<String>,
+}
+
 /// **A chat its host composed by its names, as the host answered its start** (#2692): its
 /// number, the confinement the host named to this window where it named one (#2407), and how
 /// the host applied the sandbox to its run, by the host's own record (1.29). `ran` is `None`
@@ -832,6 +841,16 @@ pub trait SessionHost: Send + Sync {
         None
     }
 
+    /// **What chat `number`, left running, started without there, and the runner it is on, as
+    /// its host said** (1.83, #6078): what a window that reattaches a runner's chat says on its
+    /// tab again, the runner named as [`Composed::runner`] is. `None` where its host says none:
+    /// one before 1.83, a chat the window composed, or one that lacks nothing. Read before it is
+    /// reattached.
+    fn skills_not_there_left(&self, number: u32) -> Option<RunnersLack> {
+        let _ = number;
+        None
+    }
+
     /// **How chat `number`, left running, is sandboxed, as its host applied it** (#2636): `None`
     /// where its host keeps no such record, which the window takes as sandboxed. Read before
     /// it is reattached.
@@ -1208,8 +1227,8 @@ pub(crate) mod pretend {
             *lock(&self.seen.composed_armed) = skills;
         }
 
-        /// Says each chat it composes from now on starts without `lacking` there, on the runner
-        /// `runner` (#2977).
+        /// Says each chat it composes from now on, and each it left running, starts without
+        /// `lacking` there, on the runner `runner` (#2977, #6078).
         pub fn says_it_lacks(
             &self,
             lacking: Option<purlis_session_protocol::session::SkillsNotThere>,
@@ -1712,6 +1731,17 @@ pub(crate) mod pretend {
         ) -> Option<Vec<purlis_session_protocol::session::ArmedSkill>> {
             self.left_running(number)
                 .then(|| lock(&self.seen.composed_armed).clone())
+                .flatten()
+        }
+        fn skills_not_there_left(&self, number: u32) -> Option<super::RunnersLack> {
+            let (lacking, runner) = lock(&self.seen.composed_lacking).clone();
+            self.left_running(number)
+                .then(|| {
+                    lacking.map(|skills_not_there| super::RunnersLack {
+                        skills_not_there,
+                        runner,
+                    })
+                })
                 .flatten()
         }
         fn ran_with(&self, number: u32) -> Option<purlis_core::sandbox::plan::Plan> {
