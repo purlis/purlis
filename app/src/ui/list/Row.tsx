@@ -47,14 +47,34 @@ export interface PartsHeard {
 export const HEARD_ORDER = ["description", "below", "lead", "tip"] as const;
 export type HeardKind = (typeof HEARD_ORDER)[number];
 
+/** A part a row hears, by its kind and the id it is drawn with. */
+export interface PartHeard {
+  kind: HeardKind;
+  id: string;
+}
+
+/** **The ids a row is described by**, from what its parts handed it, in `HEARD_ORDER`'s order;
+ *  none where it was handed none. The list's rows and the tree's join them the same way. */
+export function heardIds(parts: readonly PartHeard[]): string | undefined {
+  const ids = HEARD_ORDER.flatMap((kind) =>
+    parts.filter((one) => one.kind === kind).map((one) => one.id),
+  );
+  return ids.length === 0 ? undefined : ids.join(" ");
+}
+
 /**
- * **A row that builds its `aria-describedby` from what its parts hand it** (#6101): a list's
- * option and a list's row. Its tooltip hands its id here while it is up (`RowTip.tsx`), so the
- * row's description is built in one place and a part that comes or goes while the tooltip is up
- * does not drop it. `null` in a row that does not (a tree's, whose React Aria row takes no
- * `render`), where the tooltip says itself on the row's element.
+ * **A row that builds its `aria-describedby` from what its parts hand it** (#6101, #6123): every
+ * row with a tooltip, a list's option, a list's row and a tree's row. Its tooltip hands its id
+ * here while it is up (`RowTip.tsx`), so the row's description is built in one place and a part
+ * that comes or goes while the tooltip is up does not drop it. A list's row draws its element
+ * with it through React Aria's `render` prop; a tree's, whose React Aria row takes no `render`,
+ * writes it on its element from its root (`useTreeRowHeard`). `null` outside a row.
  */
-export const RowHeard = createContext<PartsHeard | null>(null);
+export const RowHeard = createContext<HearsParts | null>(null);
+
+/** What a row's registry is to its tooltip (`RowHeard`): only how to be heard. An option's
+ *  parts also draw their ids from its `base` (`InOption`). */
+export type HearsParts = Pick<PartsHeard, "add">;
 
 /**
  * **Inside an option** (`ListOption`): its words are its name and its one line about it its

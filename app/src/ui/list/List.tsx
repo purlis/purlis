@@ -82,11 +82,11 @@ import {
   type ContextMenuOptions,
 } from "../menu/ContextMenu";
 import {
-  HEARD_ORDER,
+  heardIds,
   InOption,
   RowHeard,
   RowScope,
-  type HeardKind,
+  type PartHeard,
   type PartsHeard,
   type RowSize,
 } from "./Row";
@@ -353,7 +353,7 @@ function useSaysUnavailable(unavailable: boolean, given: Ref<HTMLDivElement> | u
  * described by before what React Aria adds.
  */
 function useRowHeard(): { heard: PartsHeard; describedBy: string | undefined } {
-  const [parts, setParts] = useState<readonly { kind: HeardKind; id: string }[]>([]);
+  const [parts, setParts] = useState<readonly PartHeard[]>([]);
   const base = useId();
   const heard = useMemo<PartsHeard>(
     () => ({
@@ -365,12 +365,7 @@ function useRowHeard(): { heard: PartsHeard; describedBy: string | undefined } {
     }),
     [base],
   );
-  const describedBy = useMemo(() => {
-    const ids = HEARD_ORDER.flatMap((kind) =>
-      parts.filter((one) => one.kind === kind).map((one) => one.id),
-    );
-    return ids.length === 0 ? undefined : ids.join(" ");
-  }, [parts]);
+  const describedBy = useMemo(() => heardIds(parts), [parts]);
   return { heard, describedBy };
 }
 
