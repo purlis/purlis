@@ -464,7 +464,7 @@ export function Ask({
       got?.run,
       got?.named,
     )
-      .then(({ refused, live, opened, said: answeredSaid }) => {
+      .then(({ refused, live, opened, said: answeredSaid, allowedList }) => {
         if (refused !== undefined) {
           setSaid(refused);
           return;
@@ -478,6 +478,7 @@ export function Ask({
           says: ask.says,
           answer: option.label,
           ...(answeredSaid === undefined ? {} : { said: answeredSaid }),
+          ...(allowedList === true ? { allowedList } : {}),
         });
         onAnswered?.(ask, option, live);
       })

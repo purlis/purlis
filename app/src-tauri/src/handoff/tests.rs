@@ -13794,8 +13794,12 @@ fn keep_blocked_on_a_runs_notice_on_a_vault_its_persona_holds_says_what_the_noti
         .expect("ops holds team");
     assert_eq!(
         pressed.expect("pressed").expect("kept"),
-        Some(crate::vaultroute::VaultAnswered { said: notice.said }),
-        "the person reads what the Notice's Keep blocked says"
+        Some(crate::vaultroute::VaultAnswered {
+            said: notice.said,
+            allowed_list: true,
+        }),
+        "the person reads what the Notice's Keep blocked says, with a link to the Allowed list \
+         that holds the vault (#5939)"
     );
     let told: Vec<Outcome> = words
         .lock()
@@ -13972,6 +13976,10 @@ fn keep_blocked_on_a_held_vaults_notice_nudges_its_runs_with_the_held_line_once(
     assert!(
         said.is_some(),
         "the person reads that its runs are not stopped"
+    );
+    assert!(
+        said.is_some_and(|said| said.allowed_list),
+        "the person is sent to the Allowed list, which holds the vault (#5939)"
     );
     assert!(
         held.secret_asks().open_runs().is_empty(),

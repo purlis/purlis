@@ -455,11 +455,16 @@ function describe(element: Element): string {
   return name ? `the ${role} "${name}"` : `a ${role}`;
 }
 
-/** Tab, until the keyboard is inside `target`, at most `steps` times. */
-export async function tabInto(target: () => Element | null, steps = 30): Promise<void> {
+/**
+ * **Tab, until the keyboard is inside `target`**, at most `steps` times. Always ends in
+ * `untilFocusWithin`, landed or not, so the frame React Aria scrolls a focused row or cell into
+ * sight on (`useSelectableCollection`, a frame after the focus, late in WebKit) has run before
+ * the story reads where the focus is or its picture is taken (#4672, #6038).
+ */
+export async function tabInto(target: () => Element | null, steps = 60): Promise<void> {
   for (let step = 0; step < steps; step++) {
     const into = target();
-    if (into !== null && into.contains(document.activeElement)) return;
+    if (into !== null && into.contains(document.activeElement)) break;
     await userEvent.tab();
   }
   await untilFocusWithin(target, "the keyboard reaches it by Tab");

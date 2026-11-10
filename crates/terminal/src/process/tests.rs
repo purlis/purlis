@@ -168,3 +168,32 @@ fn a_ps_listing_and_a_proc_stat_line_read_as_rows_with_their_start() {
         "an exited one"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn strays_noted_twice_are_one_each_and_a_reused_id_is_another_process() {
+    // #5806: what was noted while the program ran is joined with what its end lists, so one
+    // still a descendant then is in both.
+    let stray = |pid: u32, started: &str| Stray {
+        pid,
+        started: started.to_owned(),
+        leads: true,
+    };
+    let mut noted = Strays(vec![stray(40, "Mon 09:00")]);
+
+    noted.join(Strays(vec![
+        stray(40, "Mon 09:00"),
+        stray(41, "Mon 09:01"),
+        // The same id, handed to another process since: not the one noted.
+        stray(40, "Mon 09:05"),
+    ]));
+
+    assert_eq!(
+        noted.0,
+        vec![
+            stray(40, "Mon 09:00"),
+            stray(41, "Mon 09:01"),
+            stray(40, "Mon 09:05")
+        ]
+    );
+}

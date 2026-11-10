@@ -594,6 +594,13 @@ pub trait SessionHost: Send + Sync {
         None
     }
 
+    /// **Notes what session `id`'s program has started outside its process group so far**
+    /// (#5806), so that ends with the program however the program ends: on its own, or on a
+    /// signal from outside, after which no listing finds it. Asked as a chat's harness says it
+    /// started a background shell or a monitor; returns at once. Nothing where the host cannot
+    /// note them, or the program's start did not ask its strays to end with it.
+    fn note_strays(&self, _id: u32) {}
+
     /// Calls `tell` as each session's program ends, with the id and how it ended.
     ///
     /// No hook reports a program dying, and none can — the process is gone. This is the
@@ -1622,6 +1629,9 @@ pub(crate) mod pretend {
         }
         fn stop_every_program(&self) -> usize {
             lock(&self.seen.running).len()
+        }
+        fn note_strays(&self, id: u32) {
+            lock(&self.seen.terminal).push(format!("noted strays {id}"));
         }
         fn stopped_by(&mut self, switch: Arc<crate::killswitch::KillSwitch>) {
             *lock(&self.seen.switch) = Some(switch);

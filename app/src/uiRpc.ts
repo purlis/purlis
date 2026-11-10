@@ -16155,6 +16155,11 @@ export type UsedTotal = {
 /**  What a press on the Notice answered: the sentence it then says. */
 export type VaultAnswered = {
 	said: string,
+	/**
+	 *  Whether [`Self::said`] sends the person to Settings › Sandbox › Network › Allowed, where a row holds
+	 *  the vault for the chat's persona: the Notice that says it then links there (#5939).
+	 */
+	allowed_list: boolean,
 };
 
 /**  One vault, opened. */

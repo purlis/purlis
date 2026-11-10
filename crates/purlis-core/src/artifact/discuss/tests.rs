@@ -208,7 +208,7 @@ fn a_folder_pinned_no_more_is_refused_and_nothing_is_written() {
     let dir = workspace_with_a_pin();
     let why = prepare(dir.path(), "other").unwrap_err();
     assert!(why.contains("not pinned"), "{why}");
-    assert!(!dir.path().join(ATTACHMENTS).exists());
+    assert!(!dir.path().join(attachments()).exists());
 }
 
 #[cfg(unix)]
@@ -217,7 +217,7 @@ fn a_link_where_the_quote_belongs_is_refused_never_followed() {
     let dir = workspace_with_a_pin();
     let elsewhere = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(dir.path().join(".charter")).unwrap();
-    std::os::unix::fs::symlink(elsewhere.path(), dir.path().join(ATTACHMENTS)).unwrap();
+    std::os::unix::fs::symlink(elsewhere.path(), dir.path().join(attachments())).unwrap();
     let why = prepare(dir.path(), "weekly").unwrap_err();
     assert!(why.contains("is a link"), "{why}");
     assert_eq!(std::fs::read_dir(elsewhere.path()).unwrap().count(), 0);

@@ -94,7 +94,9 @@ Story Format 3. `app/src/settings/Choice.stories.tsx` is the first, and the one 
   `waitFor(() => expect(element).toHaveFocus())` nor a `waitFor` around
   `document.activeElement` or `:focus-within`: storybook's 1 s gives up before an engine that
   draws late moves the focus, and the lint (`purlis-stories/focus-wait`,
-  `app/eslint.story-rules.js`) refuses it.
+  `app/eslint.story-rules.js`) refuses it. To Tab until the keyboard is inside something, use
+  the testkit's `tabInto`, never a copy of it in the story: it always ends in `untilFocusWithin`,
+  even when the keyboard is already there, so React Aria's scroll frame has run (#6038).
 - After each move, `expectFocusInSight()` from `app/src/stories.testkit.ts` checks that the focus
   is on screen and not under anything the page draws over it, such as a dialog's sticky footer
   (WCAG 2.4.11). `untilFocused` returns once the frame after the move is drawn, the frame a

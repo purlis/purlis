@@ -5374,11 +5374,15 @@ export const PlaneView = memo(function PlaneView({
   }, [settingsAsked, showView]);
 
   /** The title bar's ✋ asked for this project's Asks (#1692, #5644): shown, and given the
-   *  keyboard. */
+   *  keyboard. A clicked notification asks it at a chat (`inboxGroup`), which is brought
+   *  forward too, beside its ask's row (#6003, ADR 0121 decision 12). */
   const inboxHandled = useRef(inboxAsked);
+  /** `goToAsking`, which is declared further down. */
+  const goingToAsking = useRef<(session: number) => void>(undefined);
   useEffect(() => {
     if (inboxAsked === undefined || inboxHandled.current === inboxAsked) return;
     inboxHandled.current = inboxAsked;
+    if (inboxGroup !== undefined) goingToAsking.current?.(inboxGroup);
     showSideView("asks");
     // After the view has given its first stop the keyboard: the group's first ask takes it.
     // Through a scope that leaves its chat out, which widens for it (qw359).
@@ -10889,6 +10893,9 @@ export const PlaneView = memo(function PlaneView({
     },
     [queueRow, press, showChat],
   );
+  useEffect(() => {
+    goingToAsking.current = goToAsking;
+  }, [goToAsking]);
 
   // What this project has open, told to the window: the quit warning lists every project's
   // chats, and this project's own tab says when one of them needs you.

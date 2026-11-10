@@ -587,7 +587,7 @@ fn every_tool_named_for_mysql_or_mariadb_but_the_client_is_read_by_the_tools_row
         &[&["--plugin-dir=/tmp/x", "log"]],
     );
     refused(
-        "mysql_upgrade",
+        "mysqlcheck",
         "--defaults-file",
         &[&["--defaults-file=/tmp/x"]],
     );

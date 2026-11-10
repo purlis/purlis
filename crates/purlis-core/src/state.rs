@@ -448,6 +448,14 @@ pub struct Waits {
     /// the one who can answer, and its row reads `asking <chat>`. Only while that chat is open
     /// and its program runs: a question to a chat that has gone is nobody's to answer.
     pub its_asker: bool,
+    /// **Whether it is a task the chat that dispatched it waits on** (#6036, ADR 0107, ADR 0121
+    /// decision 2): a task reports to that chat, so the end of any turn of its, an answer to a
+    /// follow-up included, is that chat's next move and not the person's, while that chat is
+    /// open and its program runs. What it asks the person directly (a prompt mid-turn, a secret,
+    /// a sandbox block) is an ask of its own all the same. A task the person asked for from a
+    /// chat's tab is theirs, and so is one whose dispatcher has gone.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub its_dispatcher: bool,
     /// Whether a line of purlis's own is about to start a turn of it: a report or a question
     /// landed that it has not been told of and it takes a line, or the line was typed and its
     /// harness has not yet said the turn began. The end of this turn is then not the person's:
@@ -478,7 +486,7 @@ fn is_zero_i64(n: &i64) -> bool {
 impl Waits {
     /// Whether the end of its turn leaves the next move with somebody other than the person.
     pub fn on_something(self) -> bool {
-        self.tasks > 0 || self.its_asker || self.line_coming
+        self.tasks > 0 || self.its_asker || self.its_dispatcher || self.line_coming
     }
 }
 
@@ -865,8 +873,10 @@ impl Chat {
     ///   asked waits on that chat. A chat whose turn ended while a task below it, at any
     ///   depth, is still working, asking or owing its report waits on its tasks, and its row
     ///   says `waiting on n tasks`. A task paused on a question to the chat that dispatched it
-    ///   waits on that chat's answer, and its row says `asking <chat>`. None of the three is
-    ///   an item ([`Waits`], [`Chat::heard_while`]).
+    ///   waits on that chat's answer, and its row says `asking <chat>`. A task of a chat that is
+    ///   open and running waits on that chat at any turn's end (#6036, ADR 0107): it reports to
+    ///   it, and an answer to its follow-up is its move. None of the four is an item ([`Waits`],
+    ///   [`Chat::heard_while`]).
     /// - **A turn that ends while work of its own is in flight is waiting** (#1626, #3878):
     ///   helpers, monitors, a background command or a wake-up of its own wake it
     ///   ([`Turn::WaitsOnItsOwnWork`]), so nothing is raised. The turn they wake is the one
@@ -2048,6 +2058,16 @@ impl Board {
             .map_or_else(|| self.state(number), |tracked| tracked.chat.shown_state())
     }
 
+    /// **Whether chat `number`'s turn ended on the person** (#6036, ADR 0121 decision 2): it is
+    /// waiting, and not on work of its own (#3878), which ends by itself, nor held for a chat it
+    /// waits on (#1491). What tells a chat in the queue that waits on their reply from one there
+    /// only for an update.
+    pub fn turn_ended_on_the_person(&self, number: u32) -> bool {
+        self.shown_state(number) == State::Waiting
+            && self.own_work(number).is_none()
+            && !self.held(number)
+    }
+
     /// Whether a background turn runs over chat `number`'s wait on the person
     /// ([`Chat::background_turn`], #4562).
     pub fn background_turn(&self, number: u32) -> bool {
@@ -2605,6 +2625,7 @@ mod tests {
         background_turn: false,
         tasks: 0,
         its_asker: false,
+        its_dispatcher: false,
         line_coming: false,
         on_a_notice: false,
         now: NOW,
@@ -4988,6 +5009,7 @@ mod tests {
             background_turn: false,
             tasks,
             its_asker: false,
+            its_dispatcher: false,
             line_coming: false,
             on_a_notice: false,
             now: 0,
@@ -4999,6 +5021,7 @@ mod tests {
         background_turn: false,
         tasks: 0,
         its_asker: true,
+        its_dispatcher: false,
         line_coming: false,
         on_a_notice: false,
         now: 0,
@@ -5009,10 +5032,97 @@ mod tests {
         background_turn: false,
         tasks: 0,
         its_asker: false,
+        its_dispatcher: false,
         line_coming: true,
         on_a_notice: false,
         now: 0,
     };
+
+    /// A task the chat that dispatched it waits on (#6036).
+    const A_TASK: Waits = Waits {
+        background_turn: false,
+        tasks: 0,
+        its_asker: false,
+        its_dispatcher: true,
+        line_coming: false,
+        on_a_notice: false,
+        now: 0,
+    };
+
+    #[test]
+    fn a_task_s_turn_end_waits_on_the_chat_that_dispatched_it_and_is_not_in_the_queue() {
+        // #6036: a task's answer to its dispatcher's follow-up is that chat's next move.
+        let mut board = Board::new();
+        claude_chat(&mut board, 7, Some(A));
+        board.reported(&report(7, Event::UserPromptSubmit, Some(A)));
+
+        board.reported_while(&report(7, Event::Stop, Some(A)), A_TASK);
+
+        assert_eq!(board.state(7), State::Waiting);
+        assert!(board.needs_you().is_empty(), "it waits on its dispatcher");
+        assert!(board.held(7), "waiting on a chat");
+        assert!(!board.turn_ended_on_the_person(7));
+        // Nor does the harness's nudge of a task left idle raise anything.
+        board.reported_while(&report(7, Event::Notification, Some(A)), A_TASK);
+        assert!(board.needs_you().is_empty());
+    }
+
+    #[test]
+    fn a_task_that_asks_the_person_mid_turn_is_in_the_queue_whatever_its_dispatcher_waits_on() {
+        let mut board = Board::new();
+        claude_chat(&mut board, 7, Some(A));
+        board.reported(&report(7, Event::UserPromptSubmit, Some(A)));
+
+        // A prompt its harness shows: a permission, a question to the person.
+        board.reported_while(&report(7, Event::Notification, Some(A)), A_TASK);
+
+        assert_eq!(board.needs_you(), vec![7]);
+    }
+
+    #[test]
+    fn a_task_whose_dispatcher_has_gone_is_in_the_queue_at_its_turn_end() {
+        let mut board = Board::new();
+        claude_chat(&mut board, 7, Some(A));
+        board.reported(&report(7, Event::UserPromptSubmit, Some(A)));
+
+        board.reported_while(&report(7, Event::Stop, Some(A)), Waits::default());
+
+        assert_eq!(board.needs_you(), vec![7]);
+        assert!(board.turn_ended_on_the_person(7));
+    }
+
+    #[test]
+    fn a_turn_ended_on_its_own_work_has_not_ended_on_the_person_whatever_else_it_is_queued_for() {
+        // #6036: queued for an update (a report with nowhere to go, a root update left), its turn
+        // ending on a background command of its own was read as ending on the person, and the
+        // registry listed it as waiting on their reply.
+        let mut board = Board::new();
+        claude_chat(&mut board, 7, Some(A));
+        board.reported(&report(7, Event::UserPromptSubmit, Some(A)));
+        board.needs(7, Need::RootUpdateRefused);
+        let mut stop = report(7, Event::Stop, Some(A));
+        stop.detail.own_work = crate::ownwork::Said {
+            shells: 1,
+            lapses_in: Some(3_600),
+            ..crate::ownwork::Said::default()
+        };
+
+        board.reported_while(
+            &stop,
+            Waits {
+                now: 1_000,
+                ..Waits::default()
+            },
+        );
+
+        assert_eq!(board.state(7), State::Waiting);
+        assert!(board.own_work(7).is_some());
+        assert!(!board.turn_ended_on_the_person(7));
+        // The turn its shell wakes, ending on nothing of its own, is the person's.
+        board.reported(&report(7, Event::UserPromptSubmit, Some(A)));
+        board.reported(&report(7, Event::Stop, Some(A)));
+        assert!(board.turn_ended_on_the_person(7));
+    }
 
     #[test]
     fn a_session_whose_turn_ends_while_a_task_below_it_works_is_not_in_the_queue() {

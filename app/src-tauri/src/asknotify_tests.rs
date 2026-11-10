@@ -1,9 +1,10 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! When an ask raises a system notification (#1694, I-7; #1989): only asks, one for several
-//! chats asking together, none while the person is looking or in their quiet hours, and what a
-//! click lands on.
+//! When an ask raises a system notification (#1694, I-7; #1989; #6003, ADR 0121 decision 12):
+//! one per chat, updated in place and taken away when it is answered; one for a burst of three
+//! chats or more, across projects; none while the person is looking or in their quiet hours;
+//! and what a click lands on.
 
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -42,17 +43,18 @@ fn permission(session: u32, key: &str, says: &str) -> Shown {
 }
 
 const NOBODY_LOOKS: &dyn Fn(u32) -> bool = &|_| false;
+const NOBODY_LOOKS_AT_ANY: &dyn Fn(&Chat) -> bool = &|_| false;
 const NOT_QUIET: &dyn Fn() -> bool = &|| false;
 
-/** An ask of chat `session`, whose session is named `name`. */
+/// An ask of chat `session`, whose session is named `name`.
 fn named(session: u32, key: &str, name: &str) -> Shown {
     let mut one = permission(session, key, "Run ls");
     one.chain = vec![name.to_owned()];
     one
 }
 
-/// What `rules` sends for `asks` of `plane`, heard at `now`, with nobody looking.
-fn heard(rules: &mut Rules, plane: &PlaneId, asks: &[Shown], now: Instant) -> Vec<Notice> {
+/// What `rules` does for `asks` of `plane`, heard at `now`, with nobody looking.
+fn heard(rules: &mut Rules, plane: &PlaneId, asks: &[Shown], now: Instant) -> Vec<Act> {
     rules.heard(&Heard {
         plane,
         asks,
@@ -62,32 +64,49 @@ fn heard(rules: &mut Rules, plane: &PlaneId, asks: &[Shown], now: Instant) -> Ve
     })
 }
 
+/// The notifications `acts` show.
+fn shown(acts: &[Act]) -> Vec<Notice> {
+    acts.iter()
+        .filter_map(|act| match act {
+            Act::Show(notice) => Some(notice.clone()),
+            Act::Remove(_) => None,
+        })
+        .collect()
+}
+
+/// The one notification `acts` show, and nothing else.
+fn only_shown(acts: &[Act]) -> Notice {
+    match acts {
+        [Act::Show(notice)] => notice.clone(),
+        other => panic!("expected one notification shown, got {other:?}"),
+    }
+}
+
 #[test]
-fn a_new_ask_is_one_notification_titled_by_who_asks_and_saying_what_kind() {
+fn a_new_ask_is_one_notification_naming_who_asks_its_project_and_what_kind() {
     let mut rules = Rules::default();
-    let a = plane("/a");
-    let sent = heard(
+    let ide = plane("/work/smart-ide");
+    let acts = heard(
         &mut rules,
-        &a,
+        &ide,
         &[permission(3, "p1", "Run cargo test")],
         Instant::now(),
     );
     assert_eq!(
-        sent,
-        vec![Notice {
-            plane: a,
-            session: 3,
-            sessions: vec![3],
+        acts,
+        vec![Act::Show(Notice {
+            id: 1,
+            replaces: false,
+            news: true,
+            chats: vec![(ide, 3)],
             title: "steward 12 › chat 3".to_owned(),
-            body: "Asks your permission".to_owned(),
-        }]
+            body: "smart-ide: Asks your permission".to_owned(),
+        })]
     );
 }
 
 #[test]
 fn a_notification_says_a_question_s_kind_and_never_what_the_chat_said() {
-    let mut rules = Rules::default();
-    let a = plane("/a");
     let mut question = ask(
         3,
         "question:3",
@@ -95,17 +114,13 @@ fn a_notification_says_a_question_s_kind_and_never_what_the_chat_said() {
         AskSource::Question,
     );
     question.last_message = Some("Which branch should I use?".to_owned());
-    let sent = heard(&mut rules, &a, &[question], Instant::now());
-    assert_eq!(
-        sent,
-        vec![Notice {
-            plane: a,
-            session: 3,
-            sessions: vec![3],
-            title: "steward 12 › chat 3".to_owned(),
-            body: "Waiting on your reply".to_owned(),
-        }]
+    let acts = heard(
+        &mut Rules::default(),
+        &plane("/a"),
+        &[question],
+        Instant::now(),
     );
+    assert_eq!(only_shown(&acts).body, "a: Waiting on your reply");
 }
 
 #[test]
@@ -115,42 +130,70 @@ fn an_ask_already_told_is_not_told_again_however_often_the_list_is_read() {
     let start = Instant::now();
     let asks = [permission(3, "p1", "Run cargo test")];
     assert_eq!(heard(&mut rules, &a, &asks, start).len(), 1);
-    let later = start + TOGETHER * 3;
-    assert!(heard(&mut rules, &a, &asks, later).is_empty());
+    assert!(heard(&mut rules, &a, &asks, start + TOGETHER * 3).is_empty());
+    assert!(
+        rules
+            .woke(start + TOGETHER * 4, NOBODY_LOOKS_AT_ANY, false)
+            .is_empty()
+    );
 }
 
 #[test]
-fn asks_of_one_chat_a_few_seconds_apart_share_one_notification() {
+fn a_chat_s_next_ask_updates_its_one_notification_in_place() {
     let mut rules = Rules::default();
     let a = plane("/a");
     let start = Instant::now();
-    // Two in one read: one notification, which says there is more than one.
+    let one = [permission(3, "p1", "Run cargo test")];
+    let first = only_shown(&heard(&mut rules, &a, &one, start));
+    // A second ask, at once or an hour on: the same notification, said again.
     let two = [
-        permission(3, "p1", "Run cargo test"),
-        permission(3, "p2", "Change src/lib.rs"),
+        one[0].clone(),
+        ask(3, "dispatch:9", "Hand on", AskSource::Dispatch),
     ];
-    let sent = heard(&mut rules, &a, &two, start);
-    assert_eq!(sent.len(), 1);
-    assert_eq!(sent[0].body, "Asks your permission, and 1 more");
-    // A third two seconds on, and a fourth two seconds after that: each rides the first.
+    let second = only_shown(&heard(&mut rules, &a, &two, start + Duration::from_secs(1)));
+    assert_eq!(second.id, first.id);
+    assert!(second.replaces);
+    assert!(!second.news, "it tells of no chat not told already");
+    assert_eq!(second.body, "a: Asks to hand a task on, and 1 more");
     let three = [two.to_vec(), vec![permission(3, "p3", "Run ls")]].concat();
-    let soon = start + Duration::from_secs(2);
-    assert!(heard(&mut rules, &a, &three, soon).is_empty());
-    let four = [three.clone(), vec![permission(3, "p4", "Run pwd")]].concat();
-    let sooner = soon + Duration::from_secs(2);
-    assert!(heard(&mut rules, &a, &four, sooner).is_empty());
-    // Once the chat has been quiet past the window, its next ask is a notification again.
-    let five = [four.clone(), vec![permission(3, "p5", "Run make")]].concat();
-    let sent = heard(&mut rules, &a, &five, sooner + TOGETHER);
-    assert_eq!(sent.len(), 1);
-    assert_eq!(sent[0].body, "Asks your permission");
+    let third = only_shown(&heard(&mut rules, &a, &three, start + TOGETHER * 720));
+    assert_eq!(third.id, first.id);
+    assert_eq!(third.body, "a: Asks your permission, and 2 more");
 }
 
 #[test]
-fn asks_of_several_chats_together_are_one_notification_naming_them_that_lands_on_the_first() {
+fn a_chat_s_notification_counts_down_as_it_is_answered_and_goes_when_all_are() {
     let mut rules = Rules::default();
     let a = plane("/a");
-    let sent = heard(
+    let start = Instant::now();
+    let two = [
+        permission(3, "p1", "Run cargo test"),
+        permission(3, "p2", "Run ls"),
+    ];
+    let first = only_shown(&heard(&mut rules, &a, &two, start));
+    assert_eq!(first.body, "a: Asks your permission, and 1 more");
+    let fewer = only_shown(&heard(
+        &mut rules,
+        &a,
+        &two[1..],
+        start + Duration::from_secs(1),
+    ));
+    assert_eq!(
+        (fewer.id, fewer.replaces, fewer.news),
+        (first.id, true, false)
+    );
+    assert_eq!(fewer.body, "a: Asks your permission");
+    assert_eq!(
+        heard(&mut rules, &a, &[], start + Duration::from_secs(2)),
+        vec![Act::Remove(first.id)]
+    );
+}
+
+#[test]
+fn three_chats_asking_together_are_one_notification_naming_them_that_lands_on_the_first() {
+    let mut rules = Rules::default();
+    let a = plane("/a");
+    let acts = heard(
         &mut rules,
         &a,
         &[
@@ -162,15 +205,31 @@ fn asks_of_several_chats_together_are_one_notification_naming_them_that_lands_on
         Instant::now(),
     );
     assert_eq!(
-        sent,
-        vec![Notice {
-            plane: a,
-            session: 3,
-            sessions: vec![3, 4, 5],
+        acts,
+        vec![Act::Show(Notice {
+            id: 1,
+            replaces: false,
+            news: true,
+            chats: vec![(a.clone(), 3), (a.clone(), 4), (a, 5)],
             title: "3 chats need you".to_owned(),
-            body: "steward 3, devops 4 and builder 5".to_owned(),
-        }]
+            body: "a: steward 3, devops 4 and builder 5".to_owned(),
+        })]
     );
+}
+
+#[test]
+fn two_chats_asking_together_are_each_told_with_their_own() {
+    let acts = heard(
+        &mut Rules::default(),
+        &plane("/a"),
+        &[named(3, "p1", "steward 3"), named(4, "p2", "devops 4")],
+        Instant::now(),
+    );
+    let told = shown(&acts);
+    assert_eq!(told.len(), 2);
+    assert_eq!(told[0].title, "steward 3");
+    assert_eq!(told[1].title, "devops 4");
+    assert_ne!(told[0].id, told[1].id);
 }
 
 #[test]
@@ -178,61 +237,140 @@ fn a_notification_names_at_most_three_chats_and_counts_the_rest() {
     let asks: Vec<Shown> = (1..=5)
         .map(|n| named(n, &format!("p{n}"), &format!("chat {n}")))
         .collect();
-    let sent = heard(&mut Rules::default(), &plane("/a"), &asks, Instant::now());
-    assert_eq!(sent[0].title, "5 chats need you");
-    assert_eq!(sent[0].body, "chat 1, chat 2, chat 3 and 2 more");
+    let acts = heard(&mut Rules::default(), &plane("/a"), &asks, Instant::now());
+    let told = only_shown(&acts);
+    assert_eq!(told.title, "5 chats need you");
+    assert_eq!(told.body, "a: chat 1, chat 2, chat 3 and 2 more");
 }
 
 #[test]
-fn another_chat_asking_a_few_seconds_later_rides_the_notification_sent() {
+fn a_burst_across_projects_tells_its_first_chat_at_once_and_all_of_it_as_one_when_it_closes() {
+    let mut rules = Rules::default();
+    let (ide, web) = (plane("/work/smart-ide"), plane("/work/site"));
+    let start = Instant::now();
+    let first = only_shown(&heard(
+        &mut rules,
+        &ide,
+        &[named(3, "p1", "steward 3")],
+        start,
+    ));
+    // Two more chats, each within the window of the one before, in another project.
+    let soon = start + Duration::from_secs(2);
+    assert!(heard(&mut rules, &web, &[named(4, "p1", "devops 4")], soon).is_empty());
+    let later = soon + Duration::from_secs(4);
+    let both = [named(4, "p1", "devops 4"), named(5, "p2", "builder 5")];
+    assert!(heard(&mut rules, &web, &both, later).is_empty());
+    // Nothing until the burst closes, and then one for all, which takes over from the first's.
+    assert_eq!(rules.next_due(), Some(later + TOGETHER));
+    assert!(
+        rules
+            .woke(
+                later + TOGETHER - Duration::from_millis(1),
+                NOBODY_LOOKS_AT_ANY,
+                false
+            )
+            .is_empty()
+    );
+    let acts = rules.woke(later + TOGETHER, NOBODY_LOOKS_AT_ANY, false);
+    assert_eq!(acts[0], Act::Remove(first.id));
+    let all = only_shown(&acts[1..]);
+    assert_eq!(all.title, "3 chats in 2 projects need you");
+    assert_eq!(
+        all.body,
+        "steward 3 (smart-ide), devops 4 (site) and builder 5 (site)"
+    );
+    assert_eq!(all.chats, vec![(ide, 3), (web.clone(), 4), (web, 5)]);
+    assert!(all.news);
+    assert_eq!(rules.next_due(), None);
+}
+
+#[test]
+fn a_second_chat_in_a_burst_is_told_with_its_own_when_it_closes() {
     let mut rules = Rules::default();
     let a = plane("/a");
     let start = Instant::now();
     let first = [named(3, "p1", "steward 3")];
     assert_eq!(heard(&mut rules, &a, &first, start).len(), 1);
     let both = [first[0].clone(), named(4, "p2", "devops 4")];
-    assert!(heard(&mut rules, &a, &both, start + Duration::from_secs(2)).is_empty());
+    let soon = start + Duration::from_secs(2);
+    assert!(heard(&mut rules, &a, &both, soon).is_empty());
+    let told = only_shown(&rules.woke(soon + TOGETHER, NOBODY_LOOKS_AT_ANY, false));
+    assert_eq!(told.title, "devops 4");
+    assert_eq!(told.chats, vec![(a, 4)]);
 }
 
 #[test]
-fn a_chat_asking_later_while_another_still_waits_counts_both_and_lands_on_the_longest_waiting() {
+fn a_chat_answered_or_looked_at_before_its_burst_closed_is_not_told() {
     let mut rules = Rules::default();
     let a = plane("/a");
     let start = Instant::now();
     let first = [named(3, "p1", "steward 3")];
     assert_eq!(heard(&mut rules, &a, &first, start).len(), 1);
-    let both = [first[0].clone(), named(4, "p2", "devops 4")];
-    let sent = heard(&mut rules, &a, &both, start + TOGETHER * 2);
-    assert_eq!(sent.len(), 1);
-    assert_eq!(sent[0].title, "2 chats need you");
-    assert_eq!(sent[0].sessions, vec![3, 4]);
-    assert_eq!(sent[0].session, 3);
+    let soon = start + Duration::from_secs(1);
+    let three = [
+        first[0].clone(),
+        named(4, "p2", "devops 4"),
+        named(5, "p3", "builder 5"),
+    ];
+    assert!(heard(&mut rules, &a, &three, soon).is_empty());
+    // Chat 4 answered, chat 5 on screen: nothing more is told.
+    let left = [first[0].clone(), named(5, "p3", "builder 5")];
+    assert!(heard(&mut rules, &a, &left, soon + Duration::from_secs(1)).is_empty());
+    let five_on_screen: &dyn Fn(&Chat) -> bool = &|chat| chat.1 == 5;
+    assert!(
+        rules
+            .woke(soon + TOGETHER * 2, five_on_screen, false)
+            .is_empty()
+    );
 }
 
 #[test]
-fn a_chat_the_person_is_looking_at_is_not_counted() {
+fn a_burst_s_notification_counts_down_as_its_chats_are_answered_and_goes_when_all_are() {
     let mut rules = Rules::default();
     let a = plane("/a");
-    let sent = rules.heard(&Heard {
+    let start = Instant::now();
+    let three = [
+        named(3, "p1", "steward 3"),
+        named(4, "p2", "devops 4"),
+        named(5, "p3", "builder 5"),
+    ];
+    let all = only_shown(&heard(&mut rules, &a, &three, start));
+    let fewer = only_shown(&heard(&mut rules, &a, &three[1..], start + TOGETHER * 2));
+    assert_eq!(
+        (fewer.id, fewer.replaces, fewer.news),
+        (all.id, true, false)
+    );
+    assert_eq!(fewer.title, "2 chats need you");
+    assert_eq!(
+        heard(&mut rules, &a, &[], start + TOGETHER * 3),
+        vec![Act::Remove(all.id)]
+    );
+}
+
+#[test]
+fn a_chat_the_person_is_looking_at_is_not_told() {
+    let mut rules = Rules::default();
+    let a = plane("/a");
+    let acts = rules.heard(&Heard {
         plane: &a,
         asks: &[named(3, "p1", "steward 3"), named(4, "p2", "devops 4")],
         looking: &|session| session == 3,
         quiet: NOT_QUIET,
         now: Instant::now(),
     });
-    assert_eq!(sent.len(), 1);
-    assert_eq!(sent[0].sessions, vec![4]);
-    assert_eq!(sent[0].title, "devops 4");
+    let told = only_shown(&acts);
+    assert_eq!(told.chats, vec![(a, 4)]);
+    assert_eq!(told.title, "devops 4");
 }
 
-/// What `rules` sends for `asks` of `plane` at `now`, nobody looking, in quiet hours or not.
+/// What `rules` does for `asks` of `plane` at `now`, nobody looking, in quiet hours or not.
 fn heard_quiet(
     rules: &mut Rules,
     plane: &PlaneId,
     asks: &[Shown],
     now: Instant,
     quiet: bool,
-) -> Vec<Notice> {
+) -> Vec<Act> {
     rules.heard(&Heard {
         plane,
         asks,
@@ -243,81 +381,267 @@ fn heard_quiet(
 }
 
 #[test]
-fn nothing_is_sent_in_quiet_hours_and_one_names_what_still_waits_when_they_end() {
+fn nothing_is_told_in_quiet_hours_and_what_still_waits_is_told_when_they_end() {
     let mut rules = Rules::default();
-    let a = plane("/a");
+    let (a, b) = (plane("/a"), plane("/b"));
     let start = Instant::now();
     let two = [named(3, "p1", "steward 3"), named(4, "p2", "devops 4")];
     assert!(heard_quiet(&mut rules, &a, &two[..1], start, true).is_empty());
     assert!(heard_quiet(&mut rules, &a, &two, start + TOGETHER * 2, true).is_empty());
-    assert_eq!(rules.held_in_quiet_hours(), vec![a.clone()]);
-    // Still quiet, nothing new: still nothing.
-    assert!(heard_quiet(&mut rules, &a, &two, start + TOGETHER * 3, true).is_empty());
+    let other = [named(1, "p1", "builder 1")];
+    assert!(heard_quiet(&mut rules, &b, &other, start + TOGETHER * 3, true).is_empty());
+    assert!(rules.holds_in_quiet_hours());
+    // Still quiet: still nothing.
+    assert!(
+        rules
+            .woke(start + TOGETHER * 4, NOBODY_LOOKS_AT_ANY, true)
+            .is_empty()
+    );
     // Quiet hours over: one notification for what still waits, and only one.
-    let sent = heard_quiet(&mut rules, &a, &two, start + TOGETHER * 4, false);
-    assert_eq!(sent.len(), 1);
-    assert_eq!(sent[0].title, "2 chats need you");
-    assert_eq!(sent[0].body, "steward 3 and devops 4");
-    assert!(rules.held_in_quiet_hours().is_empty());
-    assert!(heard_quiet(&mut rules, &a, &two, start + TOGETHER * 6, false).is_empty());
+    let all = only_shown(&rules.woke(start + TOGETHER * 5, NOBODY_LOOKS_AT_ANY, false));
+    assert_eq!(all.title, "3 chats in 2 projects need you");
+    assert!(!rules.holds_in_quiet_hours());
+    assert!(
+        rules
+            .woke(start + TOGETHER * 6, NOBODY_LOOKS_AT_ANY, false)
+            .is_empty()
+    );
+    assert!(heard_quiet(&mut rules, &a, &two, start + TOGETHER * 7, false).is_empty());
 }
 
 #[test]
-fn what_was_answered_in_quiet_hours_is_not_sent_when_they_end() {
+fn what_was_answered_in_quiet_hours_is_not_told_when_they_end() {
     let mut rules = Rules::default();
     let a = plane("/a");
     let start = Instant::now();
     let asks = [named(3, "p1", "steward 3")];
     assert!(heard_quiet(&mut rules, &a, &asks, start, true).is_empty());
-    assert!(heard_quiet(&mut rules, &a, &[], start + TOGETHER * 2, false).is_empty());
-    assert!(rules.held_in_quiet_hours().is_empty());
+    assert!(heard_quiet(&mut rules, &a, &[], start + TOGETHER * 2, true).is_empty());
+    assert!(
+        rules
+            .woke(start + TOGETHER * 3, NOBODY_LOOKS_AT_ANY, false)
+            .is_empty()
+    );
+    assert!(!rules.holds_in_quiet_hours());
 }
 
 #[test]
-fn a_chat_that_rode_a_notification_and_still_waits_is_named_when_the_window_closes() {
+fn the_same_chat_number_in_two_projects_is_two_chats() {
     let mut rules = Rules::default();
-    let a = plane("/a");
-    let start = Instant::now();
-    let first = [named(3, "p1", "steward 3")];
-    assert_eq!(heard(&mut rules, &a, &first, start).len(), 1);
-    let both = [first[0].clone(), named(4, "p2", "devops 4")];
-    let soon = start + Duration::from_secs(2);
-    assert!(heard(&mut rules, &a, &both, soon).is_empty());
-    // The notifier comes back when the window closes.
-    assert_eq!(rules.next_due(), Some(soon + TOGETHER));
-    let sent = heard(&mut rules, &a, &both, soon + TOGETHER);
-    assert_eq!(sent.len(), 1);
-    assert_eq!(sent[0].title, "2 chats need you");
-    assert_eq!(sent[0].body, "steward 3 and devops 4");
-    assert_eq!(sent[0].sessions, vec![3, 4]);
+    let now = Instant::now();
+    let asks = [permission(3, "p1", "Run ls")];
+    let a = only_shown(&heard(&mut rules, &plane("/a"), &asks, now));
+    // The second is a burst's, told when it closes.
+    assert!(heard(&mut rules, &plane("/b"), &asks, now).is_empty());
+    let b = only_shown(&rules.woke(now + TOGETHER, NOBODY_LOOKS_AT_ANY, false));
+    assert_ne!(a.id, b.id);
+    assert_eq!(b.chats, vec![(plane("/b"), 3)]);
 }
 
 #[test]
-fn a_window_closing_with_no_other_chat_on_it_sends_nothing() {
+fn nothing_is_told_while_the_person_is_looking_and_looking_away_does_not_hold_the_next_one() {
     let mut rules = Rules::default();
     let a = plane("/a");
     let start = Instant::now();
-    let two = [
-        permission(3, "p1", "Run ls"),
-        permission(3, "p2", "Run pwd"),
+    let first = [permission(3, "p1", "Run ls")];
+    let acts = rules.heard(&Heard {
+        plane: &a,
+        asks: &first,
+        looking: &|_| true,
+        quiet: NOT_QUIET,
+        now: start,
+    });
+    assert!(acts.is_empty());
+    // Seen where it was asked: it is not told later either.
+    assert!(heard(&mut rules, &a, &first, start + Duration::from_secs(1)).is_empty());
+    // The person looked away: the chat's next ask, a second on, is told.
+    let second = [first.to_vec(), vec![permission(3, "p2", "Run pwd")]].concat();
+    let told = only_shown(&heard(
+        &mut rules,
+        &a,
+        &second,
+        start + Duration::from_secs(2),
+    ));
+    assert_eq!(told.body, "a: Asks your permission, and 1 more");
+}
+
+#[test]
+fn an_ask_answered_and_asked_again_later_is_told_again_in_a_notification_of_its_own() {
+    let mut rules = Rules::default();
+    let a = plane("/a");
+    let start = Instant::now();
+    let waiting = [ask(
+        3,
+        "question:3",
+        "Waiting on your reply",
+        AskSource::Question,
+    )];
+    let first = only_shown(&heard(&mut rules, &a, &waiting, start));
+    // Replied to: it leaves the list, and its notification goes.
+    assert_eq!(
+        heard(&mut rules, &a, &[], start + Duration::from_secs(1)),
+        vec![Act::Remove(first.id)]
+    );
+    // Its next turn ends on the person, past the window.
+    let again = only_shown(&heard(&mut rules, &a, &waiting, start + TOGETHER * 2));
+    assert_ne!(again.id, first.id);
+    assert!(!again.replaces);
+}
+
+#[test]
+fn a_project_let_go_of_is_forgotten_and_its_notifications_go() {
+    let mut rules = Rules::default();
+    let a = plane("/a");
+    let asks = [permission(3, "p1", "Run ls")];
+    let now = Instant::now();
+    let told = only_shown(&heard(&mut rules, &a, &asks, now));
+    assert_eq!(rules.forget(&a), vec![Act::Remove(told.id)]);
+    assert_eq!(heard(&mut rules, &a, &asks, now + TOGETHER).len(), 1);
+}
+
+#[test]
+fn a_chat_without_names_is_titled_by_its_number() {
+    let mut nameless = permission(7, "p1", "Run ls");
+    nameless.chain.clear();
+    let acts = heard(
+        &mut Rules::default(),
+        &plane("/a"),
+        &[nameless],
+        Instant::now(),
+    );
+    assert_eq!(only_shown(&acts).title, "chat 7");
+}
+
+#[test]
+fn a_chat_that_asks_anew_is_told_again_though_its_ask_reads_the_same() {
+    let mut rules = Rules::default();
+    let a = plane("/a");
+    let start = Instant::now();
+    let held = permission(3, "p1", "Run ls");
+    let waiting = ask(
+        3,
+        "question:3",
+        "Waiting on your reply",
+        AskSource::Question,
+    );
+    let both = [held.clone(), waiting.clone()];
+    let first = only_shown(&heard(&mut rules, &a, &both, start));
+    // Replied to and ended on the person again between two reads: the board says so.
+    rules.renew(&a, 3);
+    let later = start + TOGETHER * 2;
+    let told = only_shown(&heard(&mut rules, &a, &both, later));
+    assert_eq!(told.id, first.id, "in place");
+    assert_eq!(
+        told.body, "a: Waiting on your reply, and 1 more",
+        "the reply it waits on anew first; the held permission prompt is the same ask"
+    );
+    // Another chat's renewal says nothing about this one.
+    rules.renew(&a, 4);
+    assert!(heard(&mut rules, &a, &both, later + TOGETHER * 2).is_empty());
+}
+
+#[test]
+fn a_notification_says_what_kind_of_ask_and_never_what_it_asks() {
+    let a = plane("/a");
+    let now = Instant::now();
+    let said = |ask: Shown| only_shown(&heard(&mut Rules::default(), &a, &[ask], now)).body;
+    let host = ask(
+        4,
+        "block:4:connect:host:internal.example",
+        "The sandbox refused internal.example",
+        AskSource::SandboxHost,
+    );
+    assert_eq!(said(host), "a: Asks to reach a host");
+    // A folder's write is a sandbox ask of its own (#1700), and says so.
+    let mut folder = ask(
+        4,
+        "block:4:write:home:/Users/dev/secret-project",
+        "The sandbox refused a write in /Users/dev/secret-project",
+        AskSource::SandboxWrite,
+    );
+    folder.answer = AnswerPath::SandboxBlock {
+        shown: crate::taskblocks::BlockShown {
+            operation: "write".to_owned(),
+            kind: "home".to_owned(),
+            what: crate::sandboxing::GrantWhat::Write,
+            target: "/Users/dev/secret-project".to_owned(),
+        },
+    };
+    assert_eq!(said(folder), "a: Asks to write in a folder");
+    let dispatch = ask(
+        4,
+        "dispatch:7",
+        "Wants to hand a task to devops",
+        AskSource::Dispatch,
+    );
+    assert_eq!(said(dispatch), "a: Asks to hand a task on");
+    let terminal = ask(
+        4,
+        "terminal:4",
+        "Waiting in its terminal",
+        AskSource::Terminal,
+    );
+    assert_eq!(said(terminal), "a: Waiting in its terminal");
+    // A command line, a host, a path stay in the window, never on a lock screen.
+    let told = said(permission(3, "p1", "Run deploy --to prod.internal"));
+    assert!(!told.contains("prod.internal"));
+}
+
+#[test]
+fn where_a_notification_cannot_be_replaced_an_update_telling_of_no_new_chat_is_not_shown() {
+    let mut rules = Rules::default();
+    let a = plane("/a");
+    let start = Instant::now();
+    let one = [permission(3, "p1", "Run ls")];
+    let first = only_shown(&heard(&mut rules, &a, &one, start));
+    let two = [one[0].clone(), permission(3, "p2", "Run pwd")];
+    let update = only_shown(&heard(&mut rules, &a, &two, start + Duration::from_secs(1)));
+    // Linux replaces it; macOS and Windows keep the one shown, which still lands on the chat.
+    assert!(shown_here(&first, false) && shown_here(&first, true));
+    assert!(shown_here(&update, true));
+    assert!(!shown_here(&update, false));
+}
+
+#[test]
+fn a_burst_s_notification_growing_to_new_chats_is_shown_where_it_cannot_be_replaced() {
+    let mut rules = Rules::default();
+    let (a, b) = (plane("/a"), plane("/b"));
+    let start = Instant::now();
+    let three = [
+        named(3, "p1", "steward 3"),
+        named(4, "p2", "devops 4"),
+        named(5, "p3", "builder 5"),
     ];
-    assert_eq!(heard(&mut rules, &a, &two[..1], start).len(), 1);
-    // The same chat asking again rides, and is no reason to come back.
-    assert!(heard(&mut rules, &a, &two, start + Duration::from_secs(1)).is_empty());
-    assert_eq!(rules.next_due(), None);
-    assert!(heard(&mut rules, &a, &two, start + TOGETHER * 2).is_empty());
+    let all = only_shown(&heard(&mut rules, &a, &three, start));
+    let more = [
+        named(1, "p1", "chat 1"),
+        named(2, "p2", "chat 2"),
+        named(6, "p3", "chat 6"),
+    ];
+    let soon = start + Duration::from_secs(1);
+    assert!(heard(&mut rules, &b, &more, soon).is_empty());
+    let grown = only_shown(&rules.woke(soon + TOGETHER, NOBODY_LOOKS_AT_ANY, false));
+    assert_eq!((grown.id, grown.replaces, grown.news), (all.id, true, true));
+    assert_eq!(grown.title, "6 chats in 2 projects need you");
+    assert!(shown_here(&grown, false));
 }
 
 #[test]
-fn a_chat_that_rode_and_was_answered_before_the_window_closed_is_not_sent() {
-    let mut rules = Rules::default();
-    let a = plane("/a");
-    let start = Instant::now();
-    let first = [named(3, "p1", "steward 3")];
-    assert_eq!(heard(&mut rules, &a, &first, start).len(), 1);
-    let both = [first[0].clone(), named(4, "p2", "devops 4")];
-    assert!(heard(&mut rules, &a, &both, start + Duration::from_secs(1)).is_empty());
-    assert!(heard(&mut rules, &a, &first, start + TOGETHER * 2).is_empty());
+fn a_click_lands_in_each_project_a_notification_counts_on_its_first_chat_there() {
+    let (a, b) = (plane("/a"), plane("/b"));
+    let notice = Notice {
+        id: 1,
+        replaces: false,
+        news: true,
+        chats: vec![(b.clone(), 4), (a.clone(), 3), (b.clone(), 2)],
+        title: String::new(),
+        body: String::new(),
+    };
+    let landed: Vec<(PlaneId, u32, Vec<u32>)> = landings(&notice)
+        .into_iter()
+        .map(|landing| (landing.plane, landing.session, landing.sessions))
+        .collect();
+    assert_eq!(landed, vec![(b, 4, vec![4, 2]), (a, 3, vec![3])]);
 }
 
 /// SK-49: every bidi control is dropped from a name, as the generated table names them.
@@ -344,7 +668,7 @@ fn a_chat_s_name_is_plain_text_and_capped() {
         std::slice::from_ref(&one),
         Instant::now(),
     );
-    let title = &sent[0].title;
+    let title = &only_shown(&sent).title;
     assert!(title.starts_with("evilname x"), "{title}");
     assert!(!title.chars().any(char::is_control));
     assert!(!title.contains('\u{202e}'));
@@ -354,10 +678,11 @@ fn a_chat_s_name_is_plain_text_and_capped() {
         title.chars().count()
     );
     assert!(title.ends_with('…'));
-    let two = [one, named(4, "p2", "devops 4")];
-    let sent = heard(&mut Rules::default(), &plane("/a"), &two, Instant::now());
-    assert!(sent[0].body.chars().count() <= MOST_NAME * 3 + 20);
-    assert!(!sent[0].body.contains('\n'));
+    let three = [one, named(4, "p2", "devops 4"), named(5, "p3", "builder 5")];
+    let sent = heard(&mut Rules::default(), &plane("/a"), &three, Instant::now());
+    let body = only_shown(&sent).body;
+    assert!(body.chars().count() <= MOST_NAME * 3 + 20, "{body}");
+    assert!(!body.contains('\n'));
 }
 
 #[test]
@@ -431,94 +756,6 @@ fn quiet_hours_are_read_from_the_layout_only_when_they_are_on_and_well_formed() 
 }
 
 #[test]
-fn the_same_chat_number_in_two_projects_is_two_chats() {
-    let mut rules = Rules::default();
-    let now = Instant::now();
-    assert_eq!(
-        heard(
-            &mut rules,
-            &plane("/a"),
-            &[permission(3, "p1", "Run ls")],
-            now
-        )
-        .len(),
-        1
-    );
-    assert_eq!(
-        heard(
-            &mut rules,
-            &plane("/b"),
-            &[permission(3, "p1", "Run ls")],
-            now
-        )
-        .len(),
-        1
-    );
-}
-
-#[test]
-fn nothing_is_sent_while_the_person_is_looking_and_looking_away_does_not_hold_the_next_one() {
-    let mut rules = Rules::default();
-    let a = plane("/a");
-    let start = Instant::now();
-    let first = [permission(3, "p1", "Run ls")];
-    let sent = rules.heard(&Heard {
-        plane: &a,
-        asks: &first,
-        looking: &|_| true,
-        quiet: NOT_QUIET,
-        now: start,
-    });
-    assert!(sent.is_empty());
-    // Seen where it was asked: it is not sent later either.
-    assert!(heard(&mut rules, &a, &first, start + Duration::from_secs(1)).is_empty());
-    // The person looked away: the chat's next ask, a second on, is sent.
-    let second = [first.to_vec(), vec![permission(3, "p2", "Run pwd")]].concat();
-    let sent = heard(&mut rules, &a, &second, start + Duration::from_secs(2));
-    assert_eq!(sent.len(), 1);
-    assert_eq!(sent[0].body, "Asks your permission");
-}
-
-#[test]
-fn an_ask_answered_and_asked_again_later_is_sent_again() {
-    let mut rules = Rules::default();
-    let a = plane("/a");
-    let start = Instant::now();
-    let waiting = [ask(
-        3,
-        "question:3",
-        "Waiting on your reply",
-        AskSource::Question,
-    )];
-    assert_eq!(heard(&mut rules, &a, &waiting, start).len(), 1);
-    // Replied to: it leaves the list.
-    assert!(heard(&mut rules, &a, &[], start + Duration::from_secs(1)).is_empty());
-    // Its next turn ends on the person, past the window.
-    let again = start + Duration::from_secs(1) + TOGETHER;
-    assert_eq!(heard(&mut rules, &a, &waiting, again).len(), 1);
-}
-
-#[test]
-fn a_project_let_go_of_is_forgotten() {
-    let mut rules = Rules::default();
-    let a = plane("/a");
-    let asks = [permission(3, "p1", "Run ls")];
-    let now = Instant::now();
-    assert_eq!(heard(&mut rules, &a, &asks, now).len(), 1);
-    rules.forget(&a);
-    assert_eq!(heard(&mut rules, &a, &asks, now + TOGETHER).len(), 1);
-}
-
-#[test]
-fn a_chat_without_names_is_titled_by_its_number() {
-    let mut rules = Rules::default();
-    let mut nameless = permission(7, "p1", "Run ls");
-    nameless.chain.clear();
-    let sent = heard(&mut rules, &plane("/a"), &[nameless], Instant::now());
-    assert_eq!(sent[0].title, "chat 7");
-}
-
-#[test]
 fn the_person_is_looking_only_from_the_window_in_front_at_the_inbox_or_the_chat() {
     let in_front = Looking {
         window_in_front: true,
@@ -573,91 +810,6 @@ fn the_inbox_is_open_where_its_window_said_and_until_it_says_otherwise() {
     open.shown("main", &a, true);
     open.forget_window("main");
     assert!(!open.is_open("main", &a), "a window gone");
-}
-
-#[test]
-fn a_chat_that_asks_anew_is_sent_again_though_its_ask_reads_the_same() {
-    let mut rules = Rules::default();
-    let a = plane("/a");
-    let start = Instant::now();
-    let held = permission(3, "p1", "Run ls");
-    let waiting = ask(
-        3,
-        "question:3",
-        "Waiting on your reply",
-        AskSource::Question,
-    );
-    let both = [held.clone(), waiting.clone()];
-    assert_eq!(heard(&mut rules, &a, &both, start).len(), 1);
-    // Replied to and ended on the person again between two reads: the board says so.
-    rules.renew(&a, 3);
-    let later = start + TOGETHER * 2;
-    let sent = heard(&mut rules, &a, &both, later);
-    assert_eq!(sent.len(), 1);
-    assert_eq!(
-        sent[0].body, "Waiting on your reply",
-        "the held permission prompt is the same ask, and is not sent again"
-    );
-    // Another chat's renewal sends nothing about this one.
-    rules.renew(&a, 4);
-    assert!(heard(&mut rules, &a, &both, later + TOGETHER * 2).is_empty());
-}
-
-#[test]
-fn a_notification_says_what_kind_of_ask_and_never_what_it_asks() {
-    let mut rules = Rules::default();
-    let a = plane("/a");
-    let now = Instant::now();
-    let said = |ask: Shown| {
-        heard(&mut Rules::default(), &a, &[ask], now)[0]
-            .body
-            .clone()
-    };
-    let host = ask(
-        4,
-        "block:4:connect:host:internal.example",
-        "The sandbox refused internal.example",
-        AskSource::SandboxHost,
-    );
-    assert_eq!(said(host), "Asks to reach a host");
-    // A folder's write is a sandbox ask of its own (#1700), and says so.
-    let mut folder = ask(
-        4,
-        "block:4:write:home:/Users/dev/secret-project",
-        "The sandbox refused a write in /Users/dev/secret-project",
-        AskSource::SandboxWrite,
-    );
-    folder.answer = AnswerPath::SandboxBlock {
-        shown: crate::taskblocks::BlockShown {
-            operation: "write".to_owned(),
-            kind: "home".to_owned(),
-            what: crate::sandboxing::GrantWhat::Write,
-            target: "/Users/dev/secret-project".to_owned(),
-        },
-    };
-    assert_eq!(said(folder), "Asks to write in a folder");
-    let dispatch = ask(
-        4,
-        "dispatch:7",
-        "Wants to hand a task to devops",
-        AskSource::Dispatch,
-    );
-    assert_eq!(said(dispatch), "Asks to hand a task on");
-    let terminal = ask(
-        4,
-        "terminal:4",
-        "Waiting in its terminal",
-        AskSource::Terminal,
-    );
-    assert_eq!(said(terminal), "Waiting in its terminal");
-    // A command line, a host, a path stay in the window, never on a lock screen.
-    let sent = heard(
-        &mut rules,
-        &a,
-        &[permission(3, "p1", "Run deploy --to prod.internal")],
-        now,
-    );
-    assert!(!sent[0].body.contains("prod.internal"));
 }
 
 #[test]

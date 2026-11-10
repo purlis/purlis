@@ -247,3 +247,5 @@
 {"reply":{"re":204,"ok":"done"}}
 {"call":{"id":205,"command":"end_sign_in","sign_in":1}}
 {"reply":{"re":205,"ok":"done"}}
+{"call":{"id":206,"command":"note_strays","program":"01J9ZQ8000000000000000000D"}}
+{"reply":{"re":206,"ok":"done"}}
