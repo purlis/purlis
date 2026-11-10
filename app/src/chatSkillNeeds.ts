@@ -150,6 +150,8 @@ export function chatNeedsOf(said: ChatSkillsSaid, scope: StudioScope): ChatNeed[
     const count =
       missing.missing.length +
       missing.no_built_in.length +
+      missing.no_workspace.length +
+      missing.not_in_its_workspace.length +
       missing.broken.length +
       missing.by_a_repo.length;
     needs.push({

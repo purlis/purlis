@@ -143,11 +143,18 @@ pub enum Limit {
     QuietNoteMinutes,
     /// How many minutes one command may run before purlis notes it (#1981). A note too.
     OneCommandNoteMinutes,
+    /// How many minutes a working chat may go with no new command or output before it reads
+    /// Stuck? (#6014, ADR 0121 decision 19). A question, never a limit on dispatch.
+    StuckSilentMinutes,
+    /// How many times in a row the same command may fail before its chat reads Stuck? (#6014).
+    StuckFailingTimes,
+    /// How many minutes one turn may run before its chat reads Stuck? (#6014).
+    StuckLongMinutes,
 }
 
 impl Limit {
     /// Every limit, in the order a table draws them.
-    pub const ALL: [Limit; 10] = [
+    pub const ALL: [Limit; 13] = [
         Limit::RunningPerChat,
         Limit::LivePerLineage,
         Limit::Depth,
@@ -158,6 +165,9 @@ impl Limit {
         Limit::MinutesPerTask,
         Limit::QuietNoteMinutes,
         Limit::OneCommandNoteMinutes,
+        Limit::StuckSilentMinutes,
+        Limit::StuckFailingTimes,
+        Limit::StuckLongMinutes,
     ];
 
     /// The key a settings file and the policy file write it as.
@@ -173,6 +183,9 @@ impl Limit {
             Self::MinutesPerTask => "minutes-per-task",
             Self::QuietNoteMinutes => "quiet-note-minutes",
             Self::OneCommandNoteMinutes => "one-command-note-minutes",
+            Self::StuckSilentMinutes => "stuck-silent-minutes",
+            Self::StuckFailingTimes => "stuck-failing-times",
+            Self::StuckLongMinutes => "stuck-long-minutes",
         }
     }
 
@@ -194,6 +207,9 @@ impl Limit {
             Self::MinutesPerTask => "Minutes per task",
             Self::QuietNoteMinutes => "Quiet note after",
             Self::OneCommandNoteMinutes => "One command note after",
+            Self::StuckSilentMinutes => "Stuck? when silent for",
+            Self::StuckFailingTimes => "Stuck? when a command fails",
+            Self::StuckLongMinutes => "Stuck? when a turn runs",
         }
     }
 
@@ -232,6 +248,18 @@ impl Limit {
                  program, to the chat that asked and in a Notice on the task. It never ends the \
                  task."
             }
+            Self::StuckSilentMinutes => {
+                "Minutes a working chat may go with no new command or output before it reads \
+                 Stuck?. A question for you: it never stops the chat."
+            }
+            Self::StuckFailingTimes => {
+                "Times in a row the same command may fail before its chat reads Stuck?. A \
+                 question for you: it never stops the chat."
+            }
+            Self::StuckLongMinutes => {
+                "Minutes one turn may run before its chat reads Stuck?. A question for you: it \
+                 never stops the chat."
+            }
         }
     }
 
@@ -244,6 +272,9 @@ impl Limit {
             Self::MessagesPerMinute => Some(10),
             Self::QuietNoteMinutes => Some(15),
             Self::OneCommandNoteMinutes => Some(30),
+            Self::StuckSilentMinutes => Some(15),
+            Self::StuckFailingTimes => Some(3),
+            Self::StuckLongMinutes => Some(60),
             Self::MayDispatch
             | Self::MayRunAtOnce
             | Self::TokensPerSession
@@ -264,10 +295,18 @@ impl Limit {
         self != Self::MessagesPerMinute && !self.off_until_set() && !self.notes()
     }
 
-    /// **Whether it says when purlis notes a quiet task** (#1981): it limits no dispatch, and
-    /// its 0 would be a note every look, so the least it is is a minute.
+    /// **Whether it says when purlis notes a quiet task** (#1981), or when a working chat reads
+    /// Stuck? (#6014): it limits no dispatch, and its 0 would be a note every look, so the least
+    /// it is is 1.
     pub fn notes(self) -> bool {
-        matches!(self, Self::QuietNoteMinutes | Self::OneCommandNoteMinutes)
+        matches!(
+            self,
+            Self::QuietNoteMinutes
+                | Self::OneCommandNoteMinutes
+                | Self::StuckSilentMinutes
+                | Self::StuckFailingTimes
+                | Self::StuckLongMinutes
+        )
     }
 
     /// The least it may be set to.
@@ -301,6 +340,9 @@ impl Limit {
             Self::MinutesPerTask => 7,
             Self::QuietNoteMinutes => 8,
             Self::OneCommandNoteMinutes => 9,
+            Self::StuckSilentMinutes => 10,
+            Self::StuckFailingTimes => 11,
+            Self::StuckLongMinutes => 12,
         }
     }
 }
@@ -431,6 +473,13 @@ pub struct Limits {
     pub quiet_note_minutes: u32,
     /// After how many minutes one command of a task is noted (#1981).
     pub one_command_note_minutes: u32,
+    /// After how many minutes with no new command or output a working chat reads Stuck?
+    /// (#6014).
+    pub stuck_silent_minutes: u32,
+    /// After how many failures in a row of the same command a chat reads Stuck? (#6014).
+    pub stuck_failing_times: u32,
+    /// After how many minutes of one turn a chat reads Stuck? (#6014).
+    pub stuck_long_minutes: u32,
     /// The persona the asking chat runs as, where it runs as one.
     pub asking: Option<String>,
     /// The persona dispatched to, where it is to one.
@@ -455,6 +504,9 @@ impl Limits {
             Limit::MinutesPerTask => self.minutes_per_task,
             Limit::QuietNoteMinutes => Some(self.quiet_note_minutes),
             Limit::OneCommandNoteMinutes => Some(self.one_command_note_minutes),
+            Limit::StuckSilentMinutes => Some(self.stuck_silent_minutes),
+            Limit::StuckFailingTimes => Some(self.stuck_failing_times),
+            Limit::StuckLongMinutes => Some(self.stuck_long_minutes),
         }
     }
 
@@ -568,6 +620,9 @@ pub fn in_force(
         minutes_per_task: value(Limit::MinutesPerTask),
         quiet_note_minutes: capped(Limit::QuietNoteMinutes).max(1),
         one_command_note_minutes: capped(Limit::OneCommandNoteMinutes).max(1),
+        stuck_silent_minutes: capped(Limit::StuckSilentMinutes).max(1),
+        stuck_failing_times: capped(Limit::StuckFailingTimes).max(1),
+        stuck_long_minutes: capped(Limit::StuckLongMinutes).max(1),
         asking: asking.map(str::to_owned),
         target: target.map(str::to_owned),
         set_by: resolved.map(|(_, from)| from),
@@ -1024,9 +1079,14 @@ fn value_of(limit: Limit, value: &toml::Value, here: &str, file: &str) -> Result
     let most = limit.most();
     if limit.notes() && value.as_integer() == Some(0) {
         return Err(format!(
-            "{here} in {file} is 0, and {} is a whole number of minutes, 1 or more, so it is \
-             not read and the level beneath it is in force",
-            limit.label().to_lowercase()
+            "{here} in {file} is 0, and {} is a whole number{}, 1 or more, so it is not read \
+             and the level beneath it is in force",
+            limit.label().to_lowercase(),
+            if limit == Limit::StuckFailingTimes {
+                ""
+            } else {
+                " of minutes"
+            }
         ));
     }
     if limit.off_until_set() && value.as_integer() == Some(0) {

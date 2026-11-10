@@ -587,3 +587,52 @@ fn a_batch_answer_is_read_object_by_object() {
         [] as [Option<String>; 0]
     );
 }
+
+#[test]
+fn a_workspace_copys_versions_count_its_runs_from_a_chat_elsewhere_whose_persona_names_it() {
+    // SK-5c, #6041: a run in `smart-ide` of `ops`'s `deploy`, which its persona names by its
+    // workspace, is `ops`'s copy's; a run of `smart-ide`'s own `deploy` is not.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(
+        root.join("charter.toml"),
+        "schema = 1\n\n[plane]\nmode = \"commit\"\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("workspaces/ops/skills/deploy")).unwrap();
+    std::fs::write(root.join("workspaces/ops/skills/deploy/SKILL.md"), V1).unwrap();
+    run(root, &["init", "-q", "-b", "main", "."]);
+    run(root, &["config", "user.name", "Fixture"]);
+    run(root, &["config", "user.email", "fixture@example.invalid"]);
+    run(root, &["add", "-A"]);
+    git_at(root, T1, &["commit", "-q", "-m", "make deploy"]);
+    let tree = run(root, &["rev-parse", "HEAD:workspaces/ops/skills/deploy"])
+        .line()
+        .to_owned();
+    let dir = root.join("personas/_skills");
+    std::fs::create_dir_all(&dir).unwrap();
+    let start = |id: &str, workspace: &str, copy: Option<&str>| {
+        let mut row = serde_json::json!({
+            "run": id, "skill": "deploy", "started_by": "skill-tool", "ts": stamp(T1 + 10),
+            "level": "workspace", "workspace": workspace, "tree": tree,
+        });
+        if let Some(copy) = copy {
+            row["copy_workspace"] = copy.into();
+        }
+        format!("{row}\n")
+    };
+    std::fs::write(
+        dir.join("2026-06.box.jsonl"),
+        [
+            start("r1", "ops", None),
+            start("r2", "smart-ide", Some("ops")),
+            start("r3", "smart-ide", None),
+        ]
+        .concat(),
+    )
+    .unwrap();
+
+    let history = history(root, &Level::workspace("ops"), "deploy").unwrap();
+
+    assert_eq!(history.versions[0].runs.runs, 2, "r1 and r2, never r3");
+}

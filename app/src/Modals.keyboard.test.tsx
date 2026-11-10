@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { ENDS_IT } from "./actions";
@@ -22,8 +22,8 @@ import { QuitWarning } from "./QuitWarning";
 import { RelaunchAsk } from "./RelaunchAsk";
 import { StartChat } from "./StartChat";
 import { PinItem, UpdateItem } from "./Updates";
-import { sequenceIn } from "./tabSequence";
 import { roleOf, wordsOf } from "./a11y.testkit";
+import { pressTab, type TabTakenBy } from "./ui/dialog/dialog.testkit";
 
 /**
  * **What a keyboard can reach in each of the window's modal surfaces — one file, because the
@@ -70,8 +70,13 @@ import { roleOf, wordsOf } from "./a11y.testkit";
  * anything else does and moves the keyboard to the next stop in reading order, round from either
  * end (`useTabbing` in `ui/dialog/Dialog.tsx`, `ui/dialog/tabOrder.ts`), so every stop is reached
  * whatever the engine's sequence. The palette keeps Tab for itself, and React Aria's
- * `FocusScope` (`contain`) moves it there, round as well. The engine's sequence below moves the
- * focus only where no surface took the key.
+ * `FocusScope` (`contain`) moves it there, round as well. **So the walks below test those two and
+ * nothing else** (#6069): each press must be taken by the surface, and one that is left to the
+ * engine fails the walk. Until #6069 a press left over went to a model of WebKit's sequence
+ * (`inWebKitsTabSequence`, `tabSequence.ts`); no walk had reached it since the family took Tab,
+ * so it was dropped here. The rule still has readers where the engine's sequence is what moves
+ * the keyboard outside a dialog: leaving a terminal and the window's regions (`moveAlong`), and
+ * their tests (`Window.keyboard.test.tsx`, `PanelHalves.window.test.tsx`).
  *
  * **Why this is measured here and not in a scenario — which was tried, in a real window, and
  * cannot be done.** The obvious objection to this whole file is that jsdom is not WebKit, so a
@@ -87,10 +92,8 @@ import { roleOf, wordsOf } from "./a11y.testkit";
  *
  * So a scenario can neither confirm nor refute reachability, and the half it CAN prove is kept
  * in `picker.e2e.ts`: that the attribute the engine's rule needs survives the build and is on
- * the element in the shipped app, which is the one thing jsdom cannot see. What is left
- * unproven anywhere is the step between the two — that WebKit, handed the attribute, then tabs
- * to it. That is `inWebKitsTabSequence` (`tabSequence.ts`), it is read from the engine's source rather than
- * measured in a running one, and it is the one assumption in this file worth attacking.
+ * the element in the shipped app, which is the one thing jsdom cannot see. That attribute is
+ * now the second line of defence: the family's own Tab, walked here, is the first.
  */
 
 afterEach(() => {
@@ -98,55 +101,24 @@ afterEach(() => {
   clearMocks();
 });
 
-// `inWebKitsTabSequence` — the engine's rule written down — lives in `tabSequence.ts` since
-// charter-app#189, because a terminal's Ctrl+Tab walks the same sequence in the shipped window.
+/** Who takes Tab in every surface here but the palette. */
+const FAMILY: TabTakenBy = "the dialog family";
 
-/** The surface the keyboard is inside — the dialog, which is what the family's Tab acts on. */
-function scopeOf(el: Element): HTMLElement | null {
-  return el.closest<HTMLElement>('[role="dialog"], [role="alertdialog"]');
-}
-
-/** Everything in this surface that WebKit would stop at, in the order it would stop. */
-function engineSequence(scope: HTMLElement): HTMLElement[] {
-  return sequenceIn(scope);
-}
+/** Which way a walk goes, and who must take each of its presses. */
+type Walk = { shift?: boolean; by?: TabTakenBy };
 
 /**
- * Where the engine's sequence goes from here.
+ * One Tab press, as the surface hears it, failing unless `by` took it (`pressTab`, #6069).
  *
- * **The focus is often somewhere the engine would never have stopped**, because the dialog put
- * it there itself: every one of these surfaces focuses an answer as it opens, and an answer is
- * a `<button>`. The engine still knows where that button sits in the document and carries on
- * from there, so the step is taken over document order rather than over an index — and when
- * there is nothing further, the answer is nothing: the focus scope pulls the keyboard back to
- * where it was rather than letting it leave for the window behind.
+ * The key is dispatched for real, so what moves the keyboard is the surface's own code and not a
+ * model of it, and a press left to the engine fails the walk rather than being guessed at. Which
+ * of the dialog family and React Aria's focus scope took it is told apart there, because React
+ * Aria's dialog wraps round a scope of its own too: a walk that only watched the focus would
+ * pass with the family's Tab gone.
  */
-function nextInSequence(order: HTMLElement[], from: HTMLElement, shift: boolean) {
-  const at = order.indexOf(from);
-  if (at >= 0) return order[at + (shift ? -1 : 1)];
-  const side = shift ? Node.DOCUMENT_POSITION_PRECEDING : Node.DOCUMENT_POSITION_FOLLOWING;
-  const beyond = order.filter((el) => from.compareDocumentPosition(el) & side);
-  return shift ? beyond[beyond.length - 1] : beyond[0];
-}
-
-/**
- * One Tab press, in a window whose engine is WebKit.
- *
- * The key is dispatched for real, so the surface's own handlers decide first and the dialog
- * family's Tab (in the palette, React Aria's `FocusScope`) is exercised rather than modelled:
- * when it acts it calls `focus()` itself and prevents the default, and there is nothing left
- * for the engine to do. Only when the event
- * comes back unprevented does the engine's own sequence move the focus — and when that sequence
- * has nowhere to go, the focus stays where it is, which is what the trap leaves you with.
- */
-async function tab({ shift = false } = {}) {
-  const from = document.activeElement as HTMLElement | null;
-  if (!from) return;
-  const scope = scopeOf(from);
-  if (!scope) return;
-  if (!fireEvent.keyDown(from, { key: "Tab", shiftKey: shift })) return;
-  const next = nextInSequence(engineSequence(scope), from, shift);
-  if (next) await act(async () => next.focus());
+async function tab({ shift = false, by = FAMILY }: Walk = {}) {
+  pressTab(shift, by);
+  await act(async () => {});
 }
 
 /** How a control reads to whoever is looking for it: its role, and the words it goes by. */
@@ -163,8 +135,8 @@ function said(el: Element): string {
  * does to find out what is there. A control the keyboard cannot get to is simply missing from
  * the answer, and the assertion says which.
  */
-async function reachableByKeyboard({ shift = false } = {}): Promise<string[]> {
-  let at = document.activeElement as HTMLElement;
+async function reachableByKeyboard({ shift = false, by = FAMILY }: Walk = {}): Promise<string[]> {
+  const at = document.activeElement as HTMLElement;
   // **The elements, and the words only at the end** (charter-app#197). This used to remember
   // where it had been by what each control is CALLED, and that is a false positive waiting for
   // a dialog with two controls of the same name: `NewProject` grew a second directory picker,
@@ -173,26 +145,13 @@ async function reachableByKeyboard({ shift = false } = {}): Promise<string[]> {
   // that says a working dialog is broken is worse than no guard, because the obvious repair is
   // to weaken the expectation until it passes.
   const visited = [at];
-  let stuck = 0;
   for (let press = 0; press < 30; press += 1) {
-    await tab({ shift });
+    await tab({ shift, by });
     const now = document.activeElement as HTMLElement | null;
     if (!now || now === document.body) break;
-    if (now === at) {
-      // **A press that lands back where it started is not always the end of the line**, and
-      // reading it as one is what made an early draft of this file call `Start` unreachable
-      // when it was merely unfindable. Radix's roving `tabindex` was a render behind: stepping
-      // into a radio group landed on its ROOT, whose `onFocus` handed the focus to a row, and
-      // only the render after that took the root out of the sequence and made the row the
-      // scope's edge. So the first press off that row went nowhere and the second wrapped. The
-      // dialog family's Tab lands on a group's chosen item at once (`entryOf` in
-      // `ui/dialog/tabOrder.ts`), so no press does that now; one press with no movement is
-      // still let through, and two in a row is stuck.
-      if ((stuck += 1) === 2) break;
-      continue;
-    }
-    stuck = 0;
-    at = now;
+    // Round to a stop already seen, the one it started on included (a surface with one stop).
+    // The family's Tab lands on a group's chosen item at once (`entryOf` in
+    // `ui/dialog/tabOrder.ts`), so a press never lands short of a stop and needs a second.
     if (visited.includes(now)) break;
     visited.push(now);
   }
@@ -219,7 +178,8 @@ function picker() {
       options={{
         profiles: PROFILES,
         refused: [["broken", "declares no command"]],
-        personas: ["steward"],
+        // Two, the second picked: the list's one stop is the persona picked, not its first row.
+        personas: ["builder", "steward"],
         persona: "steward",
         persona_profiles: {},
         ignore_fix: null,
@@ -908,20 +868,21 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
     ]);
   });
 
-  it("reaches the palette's box, which was never in doubt and says why", async () => {
-    // The one modal in the window that needed nothing. Its only tabbable is a text `<input>`,
-    // and `TextFieldInputType::isKeyboardFocusable` answers for itself without ever consulting
-    // full keyboard access — which is exactly why Tab moves between text boxes in Safari and
-    // between nothing else. It was the control case for `inWebKitsTabSequence`
-    // (`tabSequence.ts`), but the palette now sits in React Aria's `FocusScope` (`contain`, the
-    // dialog family's `NotModal`), which takes Tab itself and moves round the one stop, so the
-    // key never reaches the engine's sequence here: what this pins today is that the box is
-    // the palette's one stop.
+  it("keeps Tab on the palette's box, its one stop, by React Aria's focus scope", async () => {
+    // The palette has an anatomy of its own, so the dialog family's Tab stands back from it
+    // (`own` in `useTabbing`): the key reaches the box, and a focus scope of React Aria's takes
+    // it there and keeps the keyboard on the box rather than letting it out to the window. Two
+    // scopes contain here, `NotModal`'s and the one React Aria's `useDialog` asks its `Overlay`
+    // for, and this does not tell them apart: either keeps it green.
+    // It was once the control case for WebKit's own sequence — a text `<input>` is in it
+    // whatever full keyboard access says — and the walk no longer consults the engine (#6069).
     render(<Palette offers={[]} onRun={() => ({ ok: true }) as const} />);
     await userEvent.keyboard("{F2}");
     await screen.findByRole("dialog");
 
-    expect(await reachableByKeyboard()).toEqual(['combobox "Run an action"']);
+    expect(await reachableByKeyboard({ by: "the focus scope" })).toEqual([
+      'combobox "Run an action"',
+    ]);
   });
 
   it("keeps the keyboard inside the surface when there is nowhere further to go", async () => {

@@ -9,6 +9,7 @@ import {
   failuresUnseenOf,
   markOf,
   ownWorkOf,
+  stuckOf,
   useChatsHere,
   useChatsSelect,
   type ChatStates,
@@ -312,6 +313,7 @@ function SplitMore({ face }: { face: TabFace }) {
  *  at rest tells none. */
 const AT_WORK: readonly Shown["kind"][] = [
   "needs-you",
+  "stuck",
   "task-failed",
   "asking",
   "waiting-on-tasks",
@@ -332,6 +334,7 @@ function atWorkOf(states: ChatStates, sessions: readonly number[]): Shown | unde
       task: null,
       harness: null,
       ownWork: ownWorkOf(states, session),
+      stuck: stuckOf(states, session) !== undefined,
     });
     if (one === undefined || !AT_WORK.includes(one.kind)) continue;
     if (best === undefined || AT_WORK.indexOf(one.kind) < AT_WORK.indexOf(best.kind)) best = one;

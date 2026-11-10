@@ -187,6 +187,10 @@ pub struct StudioSkill {
     /// Its level as a person reads it: `project`, `local workspace`, the words the command line
     /// shows (`purlis_core::skills::level_shown`).
     pub label: String,
+    /// The workspace a workspace's row is the copy of, where its persona names it by its
+    /// workspace (`workspaces/<ws>:<name>`, SK-5c, #6041): what its changes act on, wherever the
+    /// studio is. `None` for any other row, whose workspace is the one the studio shows.
+    pub copy_workspace: Option<String>,
     /// Whether it is a local skill, kept on this machine in its level's `skills.local/`, which
     /// Share makes shared.
     pub local: bool,
@@ -615,6 +619,7 @@ fn plane_shown(
         not_granted,
         turned_off: row.origin == purlis_core::skills::Origin::Project && off.contains(&row.name),
         label: row.level_label(),
+        copy_workspace: row.copy_workspace(),
         name: row.name,
         level: row.origin.into(),
         local: row.local,
@@ -1209,6 +1214,7 @@ fn outside_shown(row: purlis_core::skills::StudioRow) -> StudioSkill {
         name: row.name,
         level: row.origin.into(),
         label: purlis_core::skills::level_shown(row.origin, row.local),
+        copy_workspace: None,
         local: row.local,
         grant: row.grant,
         on: row.left_out.is_none(),

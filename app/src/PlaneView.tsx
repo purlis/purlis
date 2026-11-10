@@ -276,6 +276,7 @@ import {
   sandboxUpdates,
   smartCloseKey,
   smartCloseUpdates,
+  stuckUpdates,
   taskUpdates,
   useInboxUpdates,
   unreadMine,
@@ -1162,6 +1163,8 @@ export const PlaneView = memo(function PlaneView({
   const needs = useChatsSelect(chats, (states) => states.needs);
   const stoppedBelow = useChatsSelect(chats, (states) => states.stoppedBelow);
   const failedTasks = useChatsSelect(chats, (states) => states.failedTasks);
+  /** What the core noticed of each chat (#6014): why it reads Stuck?, and work left behind. */
+  const noticedChats = useChatsSelect(chats, (states) => states.noticed);
   /** The finished row the Chats list is asked to bring into view: a task that failed, when the
    *  person goes to its needs-you item (#1491). */
   const [revealed, setRevealed] = useState<Reveal>();
@@ -11196,6 +11199,8 @@ export const PlaneView = memo(function PlaneView({
       ...reasonUpdates(foundFor, refusals, nameOf, at),
       ...browserAskUpdates(browserAsksEnded, nameOf),
       ...reportSentUpdates(sentDrafts),
+      // A chat that reads Stuck? (#6014): a Should-know line while it does.
+      ...stuckUpdates(noticedChats, nameOf, at),
       // A chat another chat started, announced and not looked at yet (#4759).
       ...arrivedUpdates(
         sidebar === undefined
@@ -11209,6 +11214,7 @@ export const PlaneView = memo(function PlaneView({
     sidebar,
     browserAsksEnded,
     sentDrafts,
+    noticedChats,
     finishedTasks,
     nameOf,
     reopened,
@@ -11347,6 +11353,25 @@ export const PlaneView = memo(function PlaneView({
             },
           ],
         };
+      if (update.kind === "stuck" && update.session !== null) {
+        // "It's fine" (#6014): the core clears it until the chat changes state, and the line
+        // goes as its source stops listing it.
+        const stuckChat = update.session;
+        return {
+          update,
+          go,
+          read,
+          dismiss: put,
+          answers: [
+            {
+              label: "It's fine",
+              name: `It's fine: ${update.chain[0] ?? "this chat"}`,
+              title: "It isn't stuck. Asked again only once the chat changes state.",
+              press: () => void commands.stuckFine(plane, stuckChat).then(read),
+            },
+          ],
+        };
+      }
       if (update.kind === "smart-close" && update.session !== null) {
         const stoppedChat = update.session;
         return { update, go, dismiss: () => (stoppedFor(stoppedChat, undefined), put()) };

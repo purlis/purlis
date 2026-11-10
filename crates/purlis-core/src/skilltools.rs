@@ -364,17 +364,21 @@ fn load(
     Ok(said)
 }
 
-/// Whether `run` is a run of `effective`'s own copy, in `chat`'s own place.
+/// Whether `run` is a run of `effective`'s own copy, in `chat`'s own place: another workspace's
+/// copy its persona names by its workspace is told apart from the chat's own copy of the same
+/// name (SK-5c, #6041).
 fn of_the_copy(chat: &Asking<'_>, effective: &Effective, run: &crate::skilluse::Run) -> bool {
     let level = Level {
         origin: effective.origin,
         local: effective.local,
     };
+    let copy_workspace = crate::skills::copy_workspace_of(chat.plane, chat.workspace, effective);
     run.is_of(&effective.skill.name)
-        && run
-            .copy
-            .as_ref()
-            .is_some_and(|copy| copy.level == level && copy.workspace.as_deref() == chat.workspace)
+        && run.copy.as_ref().is_some_and(|copy| {
+            copy.level == level
+                && copy.workspace.as_deref() == chat.workspace
+                && copy.copy_workspace == copy_workspace
+        })
 }
 
 fn runs(chat: &Asking<'_>, set: &SkillSet, name: Option<&str>) -> String {
