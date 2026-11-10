@@ -37,7 +37,7 @@ fn asked(plane: &PlaneId, session: u32, request: String) -> Asked {
 /// the option `option`, which `allows` it or not. What offers a rule, and starts a cool-off.
 #[tauri::command]
 #[specta::specta]
-pub fn ask_answered(
+pub async fn ask_answered(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     session: u32,
@@ -46,14 +46,18 @@ pub fn ask_answered(
     allows: bool,
 ) -> Result<(), String> {
     planes.held(&plane)?;
-    store()?
-        .answered(
-            &asked(&plane, session, request),
-            &option,
-            allows,
-            crate::sandboxing::now_secs(),
-        )
-        .map_err(|why| format!("purlis could not note the answer: {why}"))
+    // On a blocking thread: it writes this machine's record (`<data>/inbox/rules.json`).
+    crate::off_the_window("noting an answer", move || {
+        store()?
+            .answered(
+                &asked(&plane, session, request),
+                &option,
+                allows,
+                crate::sandboxing::now_secs(),
+            )
+            .map_err(|why| format!("purlis could not note the answer: {why}"))
+    })
+    .await
 }
 
 /// **A rule an offer made**, as the window tells it once the ask's answer went through.
@@ -118,11 +122,17 @@ fn shown(rule: Rule, open: &[PlaneId]) -> RuleMadeShown {
 /// **Every rule made from an offer**, newest first: Rules I made.
 #[tauri::command]
 #[specta::specta]
-pub fn rules_made(planes: tauri::State<'_, Planes>) -> Result<Vec<RuleMadeShown>, String> {
+pub async fn rules_made(
+    planes: tauri::State<'_, Planes>,
+) -> Result<Vec<RuleMadeShown>, String> {
     let open = planes.open_now();
-    let mut rules = store()?.read().rules;
-    rules.reverse();
-    Ok(rules.into_iter().map(|rule| shown(rule, &open)).collect())
+    // On a blocking thread: it reads this machine's record (`<data>/inbox/rules.json`).
+    crate::off_the_window("reading the rules made", move || {
+        let mut rules = store()?.read().rules;
+        rules.reverse();
+        Ok(rules.into_iter().map(|rule| shown(rule, &open)).collect())
+    })
+    .await
 }
 
 /// The level a sandbox block's Allow `option` grants at, by its id.
@@ -142,19 +152,26 @@ fn level_of(option: &str) -> Option<GrantLevel> {
 /// that answer wrote, found on Settings' Granted list, which Undo takes away.
 #[tauri::command]
 #[specta::specta]
-pub fn rule_made(
+pub async fn rule_made(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     made: RuleMade,
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
+    // On a blocking thread: it reads the chat's grants and writes this machine's record
+    // (`<data>/inbox/rules.json`).
+    crate::off_the_window("keeping a rule", move || keep_rule(&held, &plane, made)).await
+}
+
+/// [`rule_made`]'s work: the grant `made`'s answer wrote, found in `held`, kept with its rule.
+fn keep_rule(held: &crate::planes::Held, plane: &PlaneId, made: RuleMade) -> Result<(), String> {
     let now = crate::sandboxing::now_secs();
     let grant = match (made.what, made.target.as_deref()) {
         (Some(what), Some(target)) => level_of(&made.option).and_then(|level| {
-            crate::sandboxing::grant_made(&held, made.session, what, target, level, now)
+            crate::sandboxing::grant_made(held, made.session, what, target, level, now)
         }),
         _ if made.option == crate::asking::RUN_ALLOW_CHAT => crate::sandboxing::grant_made(
-            &held,
+            held,
             made.session,
             GrantWhat::RunGrant,
             "",
@@ -241,17 +258,21 @@ pub async fn undo_rule(
 /// from now.
 #[tauri::command]
 #[specta::specta]
-pub fn end_cool_off(
+pub async fn end_cool_off(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     session: u32,
     request: String,
 ) -> Result<(), String> {
     planes.held(&plane)?;
-    store()?
-        .ended(
-            &asked(&plane, session, request),
-            crate::sandboxing::now_secs(),
-        )
-        .map_err(|why| format!("purlis could not end the cool-off: {why}"))
+    // On a blocking thread: it writes this machine's record (`<data>/inbox/rules.json`).
+    crate::off_the_window("ending a cool-off", move || {
+        store()?
+            .ended(
+                &asked(&plane, session, request),
+                crate::sandboxing::now_secs(),
+            )
+            .map_err(|why| format!("purlis could not end the cool-off: {why}"))
+    })
+    .await
 }
