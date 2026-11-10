@@ -12,6 +12,7 @@ import {
   runFromThePalette,
 } from "../reach.js";
 import { projectInFront, runningIn } from "../running.js";
+import { openTheStatusCard } from "../reading.js";
 
 /**
  * **Approve and start, in place, for a curation action** (#3968), in the built app against the
@@ -84,6 +85,9 @@ describe("a curation action refused for its profile's approval", function () {
     // Refused, with the approval offered beside the refusal; nothing started.
     // The chip's card, which stands in front: the Inbox's Results list the same offer, and the card
     // can cover that copy, which is then in the DOM first and never clickable.
+    // No card pops by itself (#6004): the refusal waits behind the Notices item's dot, whose
+    // press shows its card, as a person opens it.
+    await openTheStatusCard();
     const offer = await $(
       '//*[@data-chip="status/bar/notices"]//button[contains(., "Approve and start…")]',
     );

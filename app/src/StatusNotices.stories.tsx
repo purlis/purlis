@@ -25,7 +25,10 @@ function TheWindow({
   startOpen = true,
   results = 1,
   tall = 320,
+  fresh = false,
 }: {
+  /** A result on it the person has not seen: the item's "new" pip (#6004). */
+  fresh?: boolean;
   startOpen?: boolean;
   /** How many results are kept, the newest the refused pin. */
   results?: number;
@@ -50,6 +53,7 @@ function TheWindow({
   const notices: ChipNotices = {
     on: new Map(kept.length === 0 ? [] : [[AT_STATUS, kept]]),
     open: kept.length === 0 ? undefined : open,
+    fresh: fresh ? new Set([AT_STATUS]) : undefined,
     show: setOpen,
     hide: () => setOpen(undefined),
     dismiss: (id) => setKept((was) => was.filter((one) => one.id !== id)),
@@ -186,7 +190,7 @@ function discOf(dot: HTMLElement): DOMRect {
 }
 
 /** **The dot**, while the card is hidden: ● at the bell's top leading corner, the bell still
- *  read beside it (#5889), its count read beside that, whole inside the bar at its height
+ *  read beside it (#5889), and no count beside that (#6004), whole inside the bar at its height
  *  (#1922), and a 24px target (WCAG 2.5.8). */
 export const DotOnNotices: Story = {
   args: { startOpen: false },
@@ -261,5 +265,29 @@ export const FocusModeKeepsTheKeyboard: Story = {
       () => canvas.getByRole("button", { name: "The work" }),
       "the work, once focus mode took the bar",
     );
+  },
+};
+
+/** **The "new" pip** (ADR 0121 decision 10, #6004): a result on Notices the person has not seen,
+ *  where a card came by itself before. The accent pip at the item's lower trailing corner, apart
+ *  from the dot at its leading one, whole inside the bar, and said by the dot. */
+export const NewPipOnNotices: Story = {
+  args: { startOpen: false, fresh: true },
+  play: async ({ canvas }) => {
+    const dot = canvas.getByRole("button", {
+      name: "Show the notice on the status bar, most urgent: warning, something new",
+    });
+    const bar = canvas.getByTestId("status-line");
+    const item = canvas.getByTestId("status-alerts");
+    const pip = bar.querySelector('[data-scope="status-item"][data-part="pip"]') as HTMLElement;
+    await expect(pip).not.toBeNull();
+    await expect(cardOf()).toBeNull();
+    const [p, d, i, b] = [pip, dot, item, bar].map((one) => one.getBoundingClientRect());
+    await expect(p.left).toBeGreaterThanOrEqual(d.right);
+    await expect(centre(p)).toBeGreaterThan(centre(i));
+    await expect(p.top).toBeGreaterThanOrEqual(b.top);
+    await expect(p.bottom).toBeLessThanOrEqual(b.bottom);
+    // No count beside the bell: the right bar's Notices icon shows it (#6004).
+    await expect(item).not.toHaveTextContent(/\d/);
   },
 };

@@ -357,3 +357,24 @@ footer[data-scope="status-bar"] {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: calc(var(--focus-ring-width) * -1);
 }
+
+/* **The Notices item's "new" pip** (ADR 0121 decision 10, #6004): a project's or the app's result
+   the person has not seen, in place of the card that came by itself. The chip's pip
+   (`titlebar.css`): an 8px dot in the accent, ringed in the bar's own ground, in the room the
+   Notices slot keeps after the item (`.status-notices`), level with its word and over none of it.
+   The room is kept with the pip or without, so it coming and going moves nothing; a press goes
+   through it. */
+[data-part="pip"][data-scope="status-item"] {
+  position: absolute;
+  z-index: 1;
+  inset-block: 0;
+  inset-inline-end: var(--space-1);
+  margin-block: auto;
+  box-sizing: border-box;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: var(--radius-full);
+  background-color: var(--accent-base);
+  box-shadow: 0 0 0 2px var(--surface-deep);
+  pointer-events: none;
+}

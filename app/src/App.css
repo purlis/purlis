@@ -3882,6 +3882,9 @@ body {
    (`RESERVES`), since a px dot is placed against a bell the text size places. */
 .status-notices {
   padding-inline-start: max(0px, calc(20px - var(--space-3) - 0.2em));
+  /* **The "new" pip's room** (#6004), kept after the item with the pip or without, so nothing
+     moves: the 8px pip (`status.css`) and its ring, clear of the item's word. */
+  padding-inline-end: var(--space-5);
 }
 
 .chip-card [data-f6-card]:focus-visible {

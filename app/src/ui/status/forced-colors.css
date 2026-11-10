@@ -20,4 +20,11 @@
     outline: 2px dashed CanvasText;
     outline-offset: -2px;
   }
+
+  /* Something New on the Notices item (#6004): the pip in the system's highlight, as the activity
+     bar's is. */
+  [data-part="pip"][data-scope="status-item"] {
+    forced-color-adjust: none;
+    background-color: Highlight;
+  }
 }

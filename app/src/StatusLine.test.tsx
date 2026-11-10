@@ -227,24 +227,25 @@ describe("the Notices button (#1695)", () => {
     expect(open).toHaveBeenCalledTimes(1);
   });
 
-  it("draws no badge at zero, and says none to a screen reader", () => {
-    // The footer's rule: a `0` there every day is furniture, and a real `2` in that spot then
-    // draws no more attention than the zero did.
-    draw({ alerts: { count: 0, open: vi.fn() } });
-
-    const button = screen.getByRole("button", { name: "Notices: none" });
-    expect(button).toBeEnabled();
-    expect(button).not.toHaveTextContent("0");
-    expect(button).not.toHaveTextContent("—");
+  it("draws no count, at zero or above: the right bar's Notices icon shows it (#6004)", () => {
+    // ADR 0121 decision 1: the status line no longer repeats a count the right bar shows. The
+    // Notices icon's dot (red or amber) and its New pip say what the number did.
+    for (const count of [0, 3]) {
+      const { unmount } = draw({ alerts: { count, open: vi.fn() } });
+      const button = screen.getByRole("button", { name: "Notices" });
+      expect(button).toBeEnabled();
+      expect(button).not.toHaveTextContent(/\d/);
+      expect(button).not.toHaveTextContent("—");
+      expect(button).not.toHaveAttribute("data-tone");
+      unmount();
+    }
   });
 
-  it("draws the count and opens the Inbox", async () => {
+  it("opens the Inbox", async () => {
     const open = vi.fn();
     draw({ alerts: { count: 3, open } });
 
-    const button = screen.getByRole("button", { name: "Notices: 3" });
-    expect(button).toBeEnabled();
-    await userEvent.click(button);
+    await userEvent.click(screen.getByRole("button", { name: "Notices" }));
 
     expect(open).toHaveBeenCalledTimes(1);
   });
@@ -397,12 +398,22 @@ describe("the line is one status bar (qw357)", () => {
     expect(clean).toHaveAccessibleName(/nothing wrong/);
   });
 
-  it("announces the Notices count in the item's name, with the number drawn beside the bell", () => {
+  it("draws the doctor's count only while Notices does not list its findings (#6004)", () => {
+    // ADR 0121 decision 1: where the Notices view lists "Doctor: N findings", the right bar's
+    // Notices icon shows it already, so the item says "Doctor" alone; its name still says all.
+    draw({ doctor: doctor([row("git", "warn"), row("gh", "warn")]), doctorListed: true });
+
+    const item = screen.getByRole("button", { name: "Doctor: 2 warnings" });
+    expect(item.querySelector("[data-verdict]")).toBeNull();
+    expect(item).not.toHaveTextContent(/\d/);
+  });
+
+  it("draws the bell beside the word Notices, and no number", () => {
     draw({ alerts: { count: 6, open: vi.fn() } });
 
-    const notices = screen.getByRole("button", { name: "Notices: 6" });
+    const notices = screen.getByRole("button", { name: "Notices" });
     expect(notices.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
-    expect(notices).toHaveTextContent(/Notices\s*6/);
+    expect(notices).toHaveTextContent(/^Notices$/);
   });
 });
 

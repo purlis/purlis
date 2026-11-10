@@ -304,7 +304,22 @@ const queryCard = (workspace: string) =>
   screen.queryByRole("region", { name: `Notices for ${workspace}` });
 /** The dot a hidden notice leaves on `workspace`'s chip. */
 const queryDot = (workspace: string) =>
-  within(bar()).queryByRole("button", { name: new RegExp(`^Show the notice on ${workspace}`) });
+  within(bar()).queryByRole("button", {
+    name: new RegExp(`^Show the (\\d+ )?notices? on ${workspace}`),
+  });
+/** Presses the dot `workspace`'s notices leave on its chip, as a person does (no card comes by
+ *  itself, #6004), and finds the card it shows. */
+async function openCard(workspace: string) {
+  const up = queryCard(workspace);
+  if (up !== null) return up;
+  const dot = await waitFor(() => {
+    const one = queryDot(workspace);
+    if (one === null) throw new Error(`no dot on ${workspace}'s chip yet`);
+    return one;
+  });
+  await userEvent.click(dot);
+  return findCard(workspace);
+}
 /** The Notices centre's Results, where every result is listed too. */
 const results = async () => {
   // Listed in Notices since #5645, in the Panel under Asks.
@@ -312,14 +327,32 @@ const results = async () => {
   return screen.findByRole("region", { name: "Results" });
 };
 
-describe("the ready notice hangs from its chip (#3648)", () => {
-  it("as a card over the window, in no page's flow, and without Open", async () => {
+describe("the ready notice hangs from its chip (#3648, #6004)", () => {
+  it("pops no card and takes no keyboard: its chip wears a dot, and it is listed in the centre", async () => {
     core();
     opened();
     await waitFor(() => expect(chips()).toEqual(["alpha*"]));
     await make("gamma");
 
-    const card = await findCard("gamma");
+    await waitFor(() => expect(queryDot("gamma")).not.toBeNull());
+    expect(queryCard("gamma")).toBeNull();
+    expect(document.querySelector(".window-work > .action-result")).toBeNull();
+    expect(bar().contains(document.activeElement) && document.activeElement !== document.body).toBe(
+      false,
+    );
+    // The chip says what its dot shows.
+    const chip = within(bar()).getByRole("button", { name: "gamma" });
+    expect(chip).toHaveAccessibleDescription(/1 notice/);
+    expect(within(await results()).getByText("Workspace gamma is ready")).toBeInTheDocument();
+  });
+
+  it("shows a card over the window on its dot's press, in no page's flow, and without Open", async () => {
+    core();
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*"]));
+    await make("gamma");
+
+    const card = await openCard("gamma");
     expect(card).toHaveTextContent("Workspace gamma is ready");
     expect(card).toHaveTextContent(
       "It has no vision yet. Add one so its chats know what it is for.",
@@ -331,7 +364,9 @@ describe("the ready notice hangs from its chip (#3648)", () => {
     );
     expect(card).toHaveAttribute("data-chip", "gamma");
     expect(card.closest(".window-work")).toBeNull();
-    expect(document.querySelector(".window-work > .action-result")).toBeNull();
+    // Asked for, it takes the keyboard, since the dot it was on goes as it comes.
+    await waitFor(() => expect(card).toHaveFocus());
+    expect(queryDot("gamma")).toBeNull();
     // What already happened is not offered: no Open.
     expect(within(card).queryByRole("button", { name: /^Open/ })).toBeNull();
     expect(within(card).getByRole("button", { name: "Add a vision" })).toBeInTheDocument();
@@ -341,42 +376,24 @@ describe("the ready notice hangs from its chip (#3648)", () => {
     expect(document.body).not.toHaveTextContent("ask the developer");
   });
 
-  it("takes no keyboard, and is said once, politely", async () => {
+  it("is passed by F6 once the keyboard is in it, round the window's regions", async () => {
     core();
     opened();
     await waitFor(() => expect(chips()).toEqual(["alpha*"]));
     await make("gamma");
+    const card = await openCard("gamma");
+    await waitFor(() => expect(card).toHaveFocus());
 
-    const card = await findCard("gamma");
-    expect(card.contains(document.activeElement)).toBe(false);
-    const saying = [...document.querySelectorAll('[role="status"]')].filter((one) =>
-      one.textContent?.includes("Workspace gamma is ready"),
-    );
-    expect(saying).toHaveLength(1);
-    expect(card.contains(saying[0])).toBe(true);
-  });
-
-  it("is reached by F6", async () => {
-    core();
-    opened();
-    await waitFor(() => expect(chips()).toEqual(["alpha*"]));
-    await make("gamma");
-    const card = await findCard("gamma");
-
-    await userEvent.keyboard("{F6}");
-    await waitFor(() => expect(card.contains(document.activeElement)).toBe(true));
-    // And F6 goes on from it, round the window's regions.
     await userEvent.keyboard("{F6}");
     await waitFor(() => expect(card.contains(document.activeElement)).toBe(false));
   });
 
-  it("hides on a press elsewhere and leaves a dot on the chip, which brings it back", async () => {
+  it("hides on a press elsewhere and leaves its dot on the chip, which brings it back", async () => {
     core();
     opened();
     await waitFor(() => expect(chips()).toEqual(["alpha*"]));
     await make("gamma");
-    await findCard("gamma");
-    expect(queryDot("gamma")).toBeNull();
+    await openCard("gamma");
 
     await userEvent.click(document.body);
     await waitFor(() => expect(queryCard("gamma")).toBeNull());
@@ -384,11 +401,8 @@ describe("the ready notice hangs from its chip (#3648)", () => {
     expect(dot).not.toBeNull();
     // Hidden, not dismissed: still in the Notices centre.
     expect(within(await results()).getByText("Workspace gamma is ready")).toBeInTheDocument();
-    // The chip says what its dot shows.
-    const chip = within(bar()).getByRole("button", { name: "gamma" });
-    expect(chip).toHaveAccessibleDescription(/1 notice/);
 
-    await userEvent.click(dot as HTMLElement);
+    await userEvent.click(queryDot("gamma") as HTMLElement);
     expect(await findCard("gamma")).toHaveTextContent("Workspace gamma is ready");
     expect(queryDot("gamma")).toBeNull();
   });
@@ -398,8 +412,7 @@ describe("the ready notice hangs from its chip (#3648)", () => {
     opened();
     await waitFor(() => expect(chips()).toEqual(["alpha*"]));
     await make("gamma");
-    const card = await findCard("gamma");
-    expect(within(await results()).getByText("Workspace gamma is ready")).toBeInTheDocument();
+    const card = await openCard("gamma");
 
     await userEvent.click(within(card).getByRole("button", { name: "Dismiss" }));
     await waitFor(() => expect(queryCard("gamma")).toBeNull());
@@ -417,7 +430,7 @@ describe("the ready notice hangs from its chip (#3648)", () => {
     opened();
     await waitFor(() => expect(chips()).toEqual(["alpha*"]));
     await make("gamma");
-    const card = await findCard("gamma");
+    const card = await openCard("gamma");
 
     within(card).getByRole("button", { name: "Add a vision" }).focus();
     await userEvent.keyboard("{Escape}");
@@ -430,12 +443,12 @@ describe("the ready notice hangs from its chip (#3648)", () => {
     opened();
     await waitFor(() => expect(chips()).toEqual(["alpha*"]));
     await make("gamma");
-    await findCard("gamma");
+    await waitFor(() => expect(queryDot("gamma")).not.toBeNull());
 
     const kept = await results();
     await userEvent.click(within(kept).getByRole("button", { name: "Dismiss" }));
-    await waitFor(() => expect(queryCard("gamma")).toBeNull());
-    expect(queryDot("gamma")).toBeNull();
+    await waitFor(() => expect(queryDot("gamma")).toBeNull());
+    expect(queryCard("gamma")).toBeNull();
   });
 });
 
@@ -771,7 +784,7 @@ describe("a notice about the current, unpinned workspace (#3651)", () => {
 
     // The store refused the pin: the workspace is made, in front, on its dashed chip.
     await waitFor(() => expect(chips()).toEqual(["alpha", "gamma*+"]));
-    const card = await findCard("gamma");
+    const card = await openCard("gamma");
     expect(card).toHaveTextContent("Workspace gamma is ready");
     expect(card).toHaveAttribute("data-chip", "gamma");
 
@@ -790,7 +803,7 @@ describe("a notice about a workspace with no chip (#3651, D-3648-16)", () => {
     await waitFor(() => expect(chips()).toEqual(["alpha*"]));
     await make("gamma");
     await waitFor(() => expect(chips()).toEqual(["alpha", "gamma*+"]));
-    await findCard("gamma");
+    await openCard("gamma");
 
     // Back to alpha: gamma, never pinned, has no chip now.
     await userEvent.click(within(bar()).getByRole("button", { name: "alpha" }));
@@ -831,7 +844,7 @@ describe("a notice about a workspace with no chip (#3651, D-3648-16)", () => {
     opened();
     await waitFor(() => expect(chips()).toEqual(["alpha*"]));
     await make("gamma");
-    await findCard("gamma");
+    await openCard("gamma");
     expect(within(await results()).queryByRole("button", { name: "Open gamma" })).toBeNull();
   });
 });
@@ -853,7 +866,7 @@ describe("a new workspace's clone, on its chip (#3649)", () => {
     await waitFor(() => expect(chips()).toEqual(["alpha*"]));
     await make("gamma", ["api"]);
 
-    const card = await findCard("gamma");
+    const card = await openCard("gamma");
     await waitFor(() => expect(card).toHaveTextContent("Cloning 1 repo…"));
     // Stacked over the ready notice, newest first, with a line that says so.
     expect(card).toHaveTextContent("2 notices, newest first");
@@ -881,7 +894,7 @@ describe("a new workspace's clone, on its chip (#3649)", () => {
     opened();
     await waitFor(() => expect(chips()).toEqual(["alpha*"]));
     await make("gamma", ["api"]);
-    const card = await findCard("gamma");
+    const card = await openCard("gamma");
     await waitFor(() => expect(held).toHaveLength(1));
     held[0].refuse("api: clone failed — no access.");
 
@@ -912,7 +925,7 @@ describe("a new workspace's clone, on its chip (#3649)", () => {
     opened();
     await waitFor(() => expect(chips()).toEqual(["alpha*"]));
     await make("gamma", ["api"]);
-    const card = await findCard("gamma");
+    const card = await openCard("gamma");
     await waitFor(() => expect(held).toHaveLength(1));
     held[0].refuse("api: clone failed — no access.");
     await userEvent.click(await within(card).findByRole("button", { name: "Retry" }));
@@ -960,7 +973,7 @@ describe("a clone's progress on its card (#4079)", () => {
     opened();
     await waitFor(() => expect(chips()).toEqual(["alpha*"]));
     await make("gamma", ["api", "web"]);
-    const card = await findCard("gamma");
+    const card = await openCard("gamma");
     await waitFor(() => expect(held).toHaveLength(1));
 
     const running = (await within(card).findByText("Cloning 2 repos…")).closest(
@@ -985,7 +998,7 @@ describe("a clone's progress on its card (#4079)", () => {
     opened();
     await waitFor(() => expect(chips()).toEqual(["alpha*"]));
     await make("gamma", ["api"]);
-    const card = await findCard("gamma");
+    const card = await openCard("gamma");
     await waitFor(() => expect(held).toHaveLength(1));
     await userEvent.click(within(card).getByRole("button", { name: "Cancel" }));
     await waitFor(() =>
@@ -1004,7 +1017,7 @@ describe("a clone's progress on its card (#4079)", () => {
     opened();
     await waitFor(() => expect(chips()).toEqual(["alpha*"]));
     await make("gamma", ["api"]);
-    const card = await findCard("gamma");
+    const card = await openCard("gamma");
     await waitFor(() => expect(held).toHaveLength(1));
     held[0].refuse({
       said: "api: Sign in to git.corp.example to clone it.",
@@ -1022,7 +1035,7 @@ describe("a new workspace's clone, counted and retried (#3649's review)", () => 
     opened();
     await waitFor(() => expect(chips()).toEqual(["alpha*"]));
     await make("gamma", ["api", "web"]);
-    const card = await findCard("gamma");
+    const card = await openCard("gamma");
     await waitFor(() => expect(card).toHaveTextContent("Cloning 2 repos…"));
     await waitFor(() => expect(held).toHaveLength(1));
     held[0].land(["✓ api cloned"]);
@@ -1041,7 +1054,7 @@ describe("a new workspace's clone, counted and retried (#3649's review)", () => 
     opened();
     await waitFor(() => expect(chips()).toEqual(["alpha*"]));
     await make("gamma", ["api", "docs", "web"]);
-    const card = await findCard("gamma");
+    const card = await openCard("gamma");
     await waitFor(() => expect(held).toHaveLength(1));
     held[0].land(["✓ api cloned"]);
     await waitFor(() => expect(held).toHaveLength(2));
@@ -1067,7 +1080,7 @@ describe("a new workspace's clone, counted and retried (#3649's review)", () => 
     opened();
     await waitFor(() => expect(chips()).toEqual(["alpha*"]));
     await make("gamma", ["api"]);
-    const card = await findCard("gamma");
+    const card = await openCard("gamma");
     await waitFor(() => expect(held).toHaveLength(1));
     held[0].refuse("api: clone failed — no access.");
     const retry = await within(card).findByRole("button", { name: "Retry" });
@@ -1084,7 +1097,7 @@ describe("a new workspace's clone, counted and retried (#3649's review)", () => 
     opened();
     await waitFor(() => expect(chips()).toEqual(["alpha*"]));
     await make("gamma", ["api"]);
-    await findCard("gamma");
+    await openCard("gamma");
     await waitFor(() => expect(held).toHaveLength(1));
     held[0].refuse("api: clone failed — no access.");
     const kept = await results();
@@ -1118,7 +1131,7 @@ describe("a workspace's stale repo, on its chip (#3650)", () => {
     });
     expect(dot).toHaveAttribute("data-kind", "warning");
     await userEvent.click(dot);
-    const card = await findCard("alpha");
+    const card = await openCard("alpha");
     expect(card).toHaveTextContent("web in alpha is on chat-3, not main.");
     // Still listed in the Notices centre, outside the card.
     expect(linesSaying(/web in alpha is on chat-3/).some((one) => !card.contains(one))).toBe(true);
@@ -1149,7 +1162,7 @@ describe("a workspace's stale repo, on its chip (#3650)", () => {
       ).not.toBeNull(),
     );
     await userEvent.click(within(bar()).getByRole("button", { name: /^Show the notice on alpha/ }));
-    const card = await findCard("alpha");
+    const card = await openCard("alpha");
     await userEvent.click(within(card).getByRole("button", { name: "Dismiss" }));
     await waitFor(() => expect(queryCard("alpha")).toBeNull());
     await waitFor(() => expect(linesSaying(/web in alpha is on chat-3/)).toHaveLength(0));
@@ -1169,7 +1182,7 @@ describe("a workspace behind the current layout, on its chip (#3650)", () => {
     });
     expect(dot).toHaveAttribute("data-kind", "warning");
     await userEvent.click(dot);
-    const card = await findCard("alpha");
+    const card = await openCard("alpha");
     expect(card).toHaveTextContent("alpha is behind the current layout.");
     // It goes when it is mended, as the Inbox's alert does: no Dismiss of its own.
     expect(within(card).queryByRole("button", { name: "Dismiss" })).toBeNull();
@@ -1203,7 +1216,7 @@ describe("the keyboard on a card whose lines go one by one (#3930's review, WCAG
     await waitFor(() => expect(chips()).toEqual(["alpha*"]));
     (await alphaDot()).focus();
     await userEvent.keyboard("{Enter}");
-    const card = await findCard("alpha");
+    const card = await openCard("alpha");
     await waitFor(() => expect(card.contains(document.activeElement)).toBe(true));
     const web = card.querySelector<HTMLElement>('[data-cause^="stale-clone:alpha/web"]');
     expect(web).not.toBeNull();
@@ -1224,7 +1237,7 @@ describe("the keyboard on a card whose lines go one by one (#3930's review, WCAG
     await waitFor(() => expect(chips()).toEqual(["alpha*"]));
     (await alphaDot()).focus();
     await userEvent.keyboard("{Enter}");
-    const card = await findCard("alpha");
+    const card = await openCard("alpha");
     await waitFor(() => expect(card).toHaveTextContent("alpha is behind the current layout."));
     within(card).getByRole("button", { name: "Update workspace layout" }).focus();
     await userEvent.keyboard("{Enter}");
@@ -1240,7 +1253,7 @@ describe("the keyboard on a card whose lines go one by one (#3930's review, WCAG
     await waitFor(() => expect(chips()).toEqual(["alpha*"]));
     (await alphaDot()).focus();
     await userEvent.keyboard("{Enter}");
-    const card = await findCard("alpha");
+    const card = await openCard("alpha");
     await waitFor(() => expect(card).toHaveFocus());
     await userEvent.keyboard("{Escape}");
     // Hidden, not dismissed: the line goes only when the layout is updated.
@@ -1272,7 +1285,7 @@ describe("a workspace's repo on a moved remote, on its chip (#3930's review)", (
     opened();
     await waitFor(() => expect(chips()).toEqual(["alpha*"]));
     await userEvent.click(await alphaDot());
-    const card = await findCard("alpha");
+    const card = await openCard("alpha");
     expect(card).toHaveTextContent(
       "and the forge says it moved to https://github.com/purlis/web.git",
     );
@@ -1302,7 +1315,7 @@ describe("a new workspace's clone, across what else happens (#3898)", () => {
     await waitFor(() => expect(held).toHaveLength(1));
     // Another workspace made while gamma clones: its ready card comes up.
     await make("delta");
-    const delta = await findCard("delta");
+    const delta = await openCard("delta");
     expect(queryCard("gamma")).toBeNull();
     // gamma's next count lands: delta's card stays, and gamma's does not come up.
     held[0].land(["✓ api cloned"]);
@@ -1324,7 +1337,7 @@ describe("a new workspace's clone, across what else happens (#3898)", () => {
     opened();
     await waitFor(() => expect(chips()).toEqual(["alpha*"]));
     await make("gamma", ["api"]);
-    const card = await findCard("gamma");
+    const card = await openCard("gamma");
     await waitFor(() => expect(held).toHaveLength(1));
     held[0].land(["✓ api cloned"]);
     const cloned = await findOnCard("gamma", "Cloned 1 repo");
@@ -1343,7 +1356,7 @@ describe("a new workspace's clone, across what else happens (#3898)", () => {
     // gamma removed, and made again with a repo.
     remove("gamma");
     await make("gamma", ["api"]);
-    const again = await findCard("gamma");
+    const again = await openCard("gamma");
     await waitFor(() => expect(again).toHaveTextContent("Cloning 1 repo…"));
     expect(again).toHaveTextContent("Workspace gamma is ready");
   });
