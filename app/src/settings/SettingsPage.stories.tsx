@@ -27,10 +27,19 @@ const PAGES = [
   { id: "dispatch", label: "Dispatch" },
 ];
 
-const KEPT = "Kept in charter.toml, which your team sees.";
+const KEPT = "Kept in purlis.toml, which your team sees.";
 
 /** The General page of the Project level, as the prototype draws it. */
-function Page({ onEdit, onReset }: { onEdit: () => void; onReset: () => void }) {
+function Page({
+  onEdit,
+  onReset,
+  narrow = false,
+}: {
+  onEdit: () => void;
+  onReset: () => void;
+  /** Drawn in a pane narrower than 760 px (R75). */
+  narrow?: boolean;
+}) {
   const [level, setLevel] = useState("project");
   const [page, setPage] = useState("general");
   const [filter, setFilter] = useState("");
@@ -42,7 +51,7 @@ function Page({ onEdit, onReset }: { onEdit: () => void; onReset: () => void }) 
   const [share, setShare] = useState("local");
   return (
     // The view's body, as a Settings tab is drawn in it: the side column takes its height.
-    <div className="view-body" style={{ blockSize: 680 }}>
+    <div className="view-body" style={{ blockSize: 680, inlineSize: narrow ? 640 : undefined }}>
       <SettingsLayout
         levels={[
           { id: "you", label: "You" },
@@ -61,7 +70,7 @@ function Page({ onEdit, onReset }: { onEdit: () => void; onReset: () => void }) 
           label="General"
           help="What a chat starts on when nothing else names it, the update channel and the version lock."
           kept={KEPT}
-          file="charter.toml"
+          file="purlis.toml"
           onEdit={onEdit}
         >
           <SettingGroup label="Starting chats" level={3}>
@@ -116,13 +125,13 @@ function Page({ onEdit, onReset }: { onEdit: () => void; onReset: () => void }) 
               modified
               badge={{
                 label: "This machine",
-                says: "From charter.local.toml, at the Project level: this machine only.",
+                says: "From purlis.local.toml, at the Project level: this machine only.",
               }}
-              origin="From charter.local.toml, at the Project level: this machine only."
+              origin="From purlis.local.toml, at the Project level: this machine only."
               reset={{ label: "Reset", disabled: false, onReset }}
               moves={
                 <MenuItem id="move-shared" onAction={() => {}}>
-                  Move to charter.toml
+                  Move to purlis.toml
                 </MenuItem>
               }
               copyKey="update.channel"
@@ -210,7 +219,7 @@ export const AlignedForm: Story = {
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByRole("heading", { level: 2, name: "General" })).toBeVisible();
-    await expect(canvas.getByText("charter.toml", { selector: "code" })).toBeVisible();
+    await expect(canvas.getByText("purlis.toml", { selector: "code" })).toBeVisible();
     await expect(canvas.getByRole("heading", { level: 3, name: "Starting chats" })).toBeVisible();
     await expect(canvas.getByRole("button", { name: "Deprecated · 1" })).toHaveAttribute(
       "aria-expanded",
@@ -266,7 +275,7 @@ export const RowMenu: Story = {
       within(menu)
         .getAllByRole("menuitem")
         .map((one) => one.textContent),
-    ).toEqual(["Reset", "Move to charter.toml", "Copy key update.channel"]);
+    ).toEqual(["Reset", "Move to purlis.toml", "Copy key update.channel"]);
     expectFocusInSight();
     await userEvent.keyboard("{Escape}");
     await untilFocused(() => more, "back on the row's ⋯ after Escape");
@@ -315,6 +324,27 @@ export const ResetOutOfReach: Story = {
     );
     await userEvent.keyboard("{Enter}");
     await expect(args.onReset).not.toHaveBeenCalled();
+    expectFocusInSight();
+  },
+};
+
+/**
+ * **Where Settings is narrow** (R75): under 760 px the pages are one sideways row over the page,
+ * and each row's label goes over its control, its ⋯ still at the row's end.
+ */
+export const Narrow: Story = {
+  args: { narrow: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const list = canvas.getByRole("navigation", { name: "Groups" }).querySelector("ul");
+    await expect(getComputedStyle(list as Element).display).toBe("flex");
+    const name = canvas.getByText("Default workspace", { selector: "label" });
+    const control = controlOf(canvasElement, "Default workspace") as HTMLElement;
+    await expect(control.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      name.getBoundingClientRect().bottom - 1,
+    );
+    const more = canvas.getByRole("button", { name: "More for Default workspace" });
+    more.focus();
     expectFocusInSight();
   },
 };

@@ -7114,6 +7114,7 @@ nav.piece-files-head {
   display: flex;
   padding: 0;
   overflow: hidden;
+  container: settings-view / inline-size;
 }
 
 .ui-settings {
@@ -7201,6 +7202,45 @@ nav.piece-files-head {
   min-block-size: 0;
   overflow-y: auto;
   padding: var(--space-7) var(--space-8) calc(var(--space-8) + var(--space-5));
+}
+
+/* **A page's header is its column's first row** (#3147): it stays, keeping the room the pane's
+   actions take at its end (`paneFrame.css`), and the page's rows scroll under it, so nothing that
+   scrolls passes under the actions. A column holding no page (a file's text) scrolls whole. */
+.ui-settings-body:has(> .ui-settings-page > .ui-setting-page) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-block-end: 0;
+}
+
+.ui-settings-body:has(> .ui-settings-page > .ui-setting-page) > .ui-settings-page {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-block-size: 0;
+}
+
+.ui-setting-page {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-block-size: 0;
+}
+
+.ui-setting-page > .ui-setting-head {
+  flex: none;
+}
+
+.pane-frame.pane-viewed .ui-setting-page > .ui-setting-head {
+  margin-inline-end: max(var(--space-0), calc(var(--pane-actions-room) - var(--space-8)));
+}
+
+.ui-setting-rows {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow-y: auto;
+  padding-block-end: calc(var(--space-8) + var(--space-5));
 }
 
 .ui-settings-page {
@@ -7468,6 +7508,51 @@ nav.piece-files-head {
   color: var(--text-quiet);
 }
 
+/* **Where Settings is narrow** (R75): under 760 px of its pane the side column is a band over
+   the page, its pages one sideways-scrolling row, and each row's label goes over its control,
+   the ⋯ still at the row's end. */
+@container settings-view (max-width: 760px) {
+  .ui-settings {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .ui-settings-side {
+    overflow-y: visible;
+    border-inline-end: 0;
+    border-block-end: 1px solid var(--border-subtle);
+  }
+
+  .ui-settings-nav [data-scope="view-frame"][data-part="nav"] > ul {
+    display: flex;
+    overflow-x: auto;
+  }
+
+  .ui-settings-nav li {
+    flex: none;
+  }
+
+  .ui-settings-nav [data-scope="view-nav"][data-part="item"][data-sub] {
+    padding-inline-start: var(--space-5);
+  }
+
+  .ui-settings-body {
+    padding: var(--space-6) var(--space-6) var(--space-8);
+  }
+
+  .ui-settings-page .ui-setting-row {
+    grid-template-columns: minmax(0, 1fr) 40px;
+  }
+
+  .ui-settings-page .ui-setting-name {
+    grid-column: 1 / -1;
+  }
+
+  .ui-settings-page .ui-setting-row > .ui-setting-error {
+    grid-column: 1 / -1;
+  }
+}
+
 /* A collection (ST-3): each entry a heading with its Remove over its rows, then Add, whose form
    is setting rows with SettingActions' Add and Cancel under them. */
 .ui-collection-entry {
@@ -7603,8 +7688,8 @@ nav.piece-files-head {
   margin-block-start: var(--space-7);
 }
 
-.ui-settings-page .ui-setting-head + .ui-setting-section,
-.ui-settings-page .ui-setting-head + .ui-setting-fold {
+.ui-settings-page .ui-setting-rows > .ui-setting-section:first-child,
+.ui-settings-page .ui-setting-rows > .ui-setting-fold:first-child {
   margin-block-start: 0;
 }
 
@@ -7690,6 +7775,27 @@ nav.piece-files-head {
 
 .ui-settings-page .ui-setting-control > .ui-setting-list {
   flex: 1 1 100%;
+}
+
+/* A row whose control is a whole table (Dispatch's limits and its grants) draws it under its
+   name, across the label's and the control's columns, so the table keeps its columns where the
+   control column alone would stack it; its ⋯ stays in its own column. */
+.ui-settings-page
+  .ui-setting-row:has(
+    > .ui-setting-line > .ui-setting-control [data-scope="table"][data-part="frame"]
+  )
+  > .ui-setting-line
+  > .ui-setting-name {
+  grid-column: 1 / -1;
+}
+
+.ui-settings-page
+  .ui-setting-row:has(
+    > .ui-setting-line > .ui-setting-control [data-scope="table"][data-part="frame"]
+  )
+  > .ui-setting-line
+  > .ui-setting-control {
+  grid-column: 1 / 3;
 }
 
 .ui-setting-act {

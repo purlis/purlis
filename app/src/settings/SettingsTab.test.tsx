@@ -56,6 +56,7 @@ describe("the Settings tab, at the You level", () => {
     expect(
       within(nav())
         .getAllByRole("button")
+        .filter((one) => !one.hasAttribute("aria-expanded"))
         .map((one) => one.textContent),
     ).toEqual([
       "Text",

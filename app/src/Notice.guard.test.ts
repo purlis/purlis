@@ -818,10 +818,11 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "its Add profile, Import again and Remove… are the way on",
   },
   "settings/Collection.tsx": {
-    count: 2,
+    count: 3,
     why:
       "a collection's Undo answer and a refused Remove with its users (ST-3): inline, inside " +
-      "Settings, beside the entry they are about; a refused Add is its form's summary (#3291)",
+      "Settings, beside the entry they are about; a refused Add is its form's summary (#3291); " +
+      "and a hosts table's line that says what its Confirm or Remove did, under it (#2919, R72)",
   },
   "settings/RawToml.tsx": {
     count: 2,

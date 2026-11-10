@@ -81,11 +81,24 @@ fn the_view_frame_comes_in_the_next_release_s_manifest() {
     assert_eq!(frame["states"], json!([]));
 }
 
+/// A group's toggle (#2919, R42): a part the next release adds to a released family.
+#[test]
+fn a_group_s_toggle_comes_in_the_next_release() {
+    let nav = family_json("view-nav");
+    let toggle = nav["parts"]
+        .as_array()
+        .expect("its parts")
+        .iter()
+        .find(|one| one["name"] == "toggle")
+        .expect("the toggle");
+    assert_eq!(toggle["since"], parts::NEXT);
+}
+
 #[test]
 fn a_page_in_the_navigation_comes_in_the_next_release_s_manifest() {
     let nav = family_json("view-nav");
     assert_eq!(nav["since"], 13);
-    assert_eq!(names(&nav, "parts"), ["item", "label", "indicator"]);
+    assert_eq!(names(&nav, "parts"), ["item", "label", "indicator", "toggle"]);
     assert_eq!(
         nav["states"],
         json!(["hover", "pressed", "selected", "focused"])

@@ -23,10 +23,13 @@ import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
  *   Escape closes it on its button (R57, R59). A row not set here offers Reset out of reach
  *   (R58).
  * - Edit as TOML in the header opens the file's text (SE-19).
+ * - A group in the nav folds from its toggle at the row's end, apart from its page: its pages go
+ *   and it is no page chosen; it opens again the same way (R42).
  *
  * What jsdom cannot say: where WebKit lays these out. Ranges, never exact pixels.
- * `SettingsPage.test.tsx` holds the behaviour. **Nothing is written**: the spec opens, measures
- * and closes, and closes the Settings tab it opened.
+ * `SettingsPage.test.tsx` holds the behaviour. **Nothing is written** but the fold of a group,
+ * which the layout file keeps and the spec puts back as it was; it closes the Settings tab it
+ * opened.
  */
 
 const SET = "[memory] share";
@@ -232,5 +235,44 @@ describe("a Settings page, the aligned form, in the real WebView", () => {
     await $('[role="textbox"][aria-label="charter.toml, as TOML"]').waitForDisplayed({
       timeout: 20_000,
     });
+  });
+
+  it("folds a group of pages from its toggle, apart from its page, and opens it again", async () => {
+    const toggle = async () =>
+      browser.execute(() => {
+        const one = document.querySelector<HTMLElement>(
+          'nav[aria-label="Groups"] [data-part="toggle"]',
+        );
+        if (!one) return null;
+        const row = one.closest("li");
+        let pages = 0;
+        for (let next = row?.nextElementSibling; next; next = next.nextElementSibling) {
+          if (next.querySelector("[data-sub]") === null) break;
+          pages += 1;
+        }
+        return {
+          expanded: one.getAttribute("aria-expanded"),
+          label: one.getAttribute("aria-label"),
+          pages,
+        };
+      });
+    const before = await toggle();
+    if (before === null) throw new Error("no group of pages in the nav");
+    expect(before.expanded).toBe("true");
+    expect(before.pages).toBeGreaterThan(0);
+
+    await $('nav[aria-label="Groups"] [data-part="toggle"]').click();
+    await browser.waitUntil(async () => (await toggle())?.expanded === "false", {
+      timeout: 10_000,
+      timeoutMsg: "the group never folded",
+    });
+    expect((await toggle())?.pages).toBe(0);
+
+    await $('nav[aria-label="Groups"] [data-part="toggle"]').click();
+    await browser.waitUntil(async () => (await toggle())?.expanded === "true", {
+      timeout: 10_000,
+      timeoutMsg: "the group never opened again",
+    });
+    expect((await toggle())?.pages).toBe(before.pages);
   });
 });

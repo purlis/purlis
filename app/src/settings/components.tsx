@@ -3,6 +3,7 @@
 
 import {
   createContext,
+  useEffect,
   useContext,
   useId,
   useLayoutEffect,
@@ -12,7 +13,7 @@ import {
 } from "react";
 import { Ellipsis, ListFilter } from "lucide-react";
 import { Select } from "../ui/select/Select";
-import { ViewNav } from "../ui/panel/ViewNav";
+import { ViewNav, type ViewPage } from "../ui/panel/ViewNav";
 import { Button, IconButton } from "../ui/button/Button";
 import { Menu, MenuItem, MenuSeparator, MenuTrigger } from "../ui/menu/Menu";
 import { Checkbox, CheckboxGroup, RovingCheckbox } from "../ui/choice/Checkbox";
@@ -65,9 +66,52 @@ const LABELABLE = new Set(["INPUT", "SELECT", "TEXTAREA", "BUTTON", "METER", "OU
 /** One level of the switcher: You, Project, Workspace or Persona (`CONTEXT.md`, **Level**). */
 export type LevelOffer = { id: string; label: string };
 
-/** One group in the nav: its stable id, and what the nav calls it. */
-/** A group the nav offers. `sub` draws it as a page of the group before it (ST-4). */
-export type GroupOffer = { id: string; label: string; sub?: boolean };
+/** A group the nav offers. `sub` draws it as a page of the group before it (ST-4); `count` is
+ *  how many of its things wait for the person (Your hosts' waiting hosts, R46). */
+export type GroupOffer = { id: string; label: string; sub?: boolean; count?: number };
+
+/**
+ * **The nav's pages, folded by what is kept** (#2919, R44, R46, R47): a page followed by pages
+ * of its own heads a group, open or folded; a folded group's pages are not drawn, and the page
+ * that heads it carries the sum of their counts, so nothing waiting is hidden. While the filter
+ * holds words every group is drawn open, without keeping it.
+ */
+function navPages(
+  groups: readonly GroupOffer[],
+  open: (id: string) => boolean,
+  filtering: boolean,
+): ViewPage[] {
+  const pages: ViewPage[] = [];
+  groups.forEach((one, at) => {
+    if (one.sub) return;
+    const kids: GroupOffer[] = [];
+    for (const next of groups.slice(at + 1)) {
+      if (!next.sub) break;
+      kids.push(next);
+    }
+    const shown = filtering || open(one.id);
+    const waiting = kids.reduce((all, kid) => all + (kid.count ?? 0), 0);
+    pages.push({
+      id: one.id,
+      label: one.label,
+      ...(kids.length > 0 ? { expanded: shown } : {}),
+      count: (one.count ?? 0) + (kids.length > 0 && !shown ? waiting : 0) || undefined,
+      waiting: true,
+    });
+    if (shown)
+      for (const kid of kids)
+        pages.push({ id: kid.id, label: kid.label, sub: true, count: kid.count, waiting: true });
+  });
+  return pages;
+}
+
+/** The page that heads the group `id` is a page of, if it is one. */
+function headOf(groups: readonly GroupOffer[], id: string): string | undefined {
+  const at = groups.findIndex((one) => one.id === id);
+  if (at < 0 || !groups[at]?.sub) return undefined;
+  for (let back = at - 1; back >= 0; back--) if (!groups[back]?.sub) return groups[back]?.id;
+  return undefined;
+}
 
 /**
  * **The two columns** (V89b): the level switcher and what that level is above a nav of its
@@ -106,7 +150,11 @@ export function SettingsLayout({
   foot,
   children,
   holder,
+  folds,
 }: {
+  /** **Which of the nav's groups are open** (R42, R47), and the way to open or fold one: the
+   *  window's kept choice (`navGroups.ts`). Without it every group is open, with no toggle. */
+  folds?: { isOpen: (group: string) => boolean; setOpen: (group: string, open: boolean) => void };
   levels: readonly LevelOffer[];
   level: string;
   onLevelChange: (level: string) => void;
@@ -129,6 +177,17 @@ export function SettingsLayout({
   holder?: Ref<HTMLDivElement>;
 }) {
   const switcher = useRef<HTMLDivElement>(null);
+  // A group opens itself when one of its pages becomes current (R44), and stays open.
+  const head = headOf(groups, group);
+  const setOpen = folds?.setOpen;
+  useEffect(() => {
+    if (head !== undefined) setOpen?.(head, true);
+  }, [head, setOpen]);
+  const pages = navPages(
+    groups,
+    (id) => folds === undefined || folds.isOpen(id) || id === head,
+    filter.trim() !== "",
+  );
   useLayoutEffect(() => {
     if (arrowedTo !== level) return;
     arrowedTo = undefined;
@@ -195,7 +254,17 @@ export function SettingsLayout({
           {said}
         </p>
         <div className="ui-settings-nav">
-          <ViewNav label="Groups" pages={groups} page={group} onPage={onGroupChange} />
+          <ViewNav
+            label="Groups"
+            pages={pages}
+            page={group}
+            onPage={(to) => {
+              // Choosing the page that heads a group opens it too (R45).
+              if (pages.some((one) => one.id === to && one.expanded === false)) setOpen?.(to, true);
+              onGroupChange(to);
+            }}
+            onExpand={setOpen}
+          />
         </div>
         {foot}
       </div>
@@ -277,7 +346,9 @@ export function SettingGroup({
             </p>
           )}
         </div>
-        {children}
+        {/* The page's rows scroll under its header, which keeps the pane's actions' room at its
+            end (#3147), so nothing that scrolls passes under them. */}
+        <div className="ui-setting-rows">{children}</div>
       </section>
     );
   const Heading = level === 2 ? "h2" : "h3";

@@ -6,11 +6,12 @@
  * audit's R37–R62): the page's header names its file, each row's help is a line under its label,
  * and every row ends in the same action column.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { Field, SettingGroup, SettingRow, SettingsLayout } from "./components";
 import { MenuItem } from "../ui/menu/Menu";
+import { SETTINGS_GROUPS, setGroupOpen, useFolds } from "./navGroups";
 
 afterEach(cleanup);
 
@@ -314,5 +315,127 @@ describe("a page's groups (R60, R61)", () => {
 
     expect(fold).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("textbox", { name: "Target branch" })).toBeVisible();
+  });
+});
+
+describe("the nav's groups (R41–R47)", () => {
+  const NAV = [
+    { id: "project.general", label: "General" },
+    { id: "project.sandbox", label: "Sandbox" },
+    { id: "project.sandbox.mine", label: "Your hosts", sub: true, count: 18 },
+    { id: "project.sandbox.level", label: "Your level", sub: true },
+    { id: "project.harness", label: "Harness & profiles" },
+    { id: "project.harness.work", label: "work", sub: true, count: 2 },
+    { id: "project.dispatch", label: "Dispatch" },
+  ];
+
+  /** The layout with the window's kept folds, as the Settings tab hands them. */
+  function Kept(props: Omit<Parameters<typeof SettingsLayout>[0], "folds">) {
+    return <SettingsLayout {...props} folds={useFolds()} />;
+  }
+
+  function nav(group = "project.general") {
+    const onGroupChange = vi.fn();
+    const view = render(
+      <Kept
+        levels={[{ id: "project", label: "Project" }]}
+        level="project"
+        onLevelChange={() => {}}
+        groups={NAV}
+        group={group}
+        onGroupChange={onGroupChange}
+        filter=""
+        onFilterChange={() => {}}
+      >
+        {null}
+      </Kept>,
+    );
+    return { onGroupChange, view, user: userEvent.setup() };
+  }
+
+  const pages = () =>
+    within(screen.getByRole("navigation", { name: "Groups" }))
+      .getAllByRole("button")
+      .filter((one) => !one.hasAttribute("aria-expanded"))
+      .map((one) => one.textContent);
+
+  beforeEach(() => SETTINGS_GROUPS.forget());
+
+  it("opens every group at first, Sandbox among them, each with its toggle (R42, R47)", () => {
+    nav();
+
+    expect(screen.getByRole("button", { name: "Collapse Sandbox" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Collapse Harness & profiles" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(pages()).toEqual([
+      "General",
+      "Sandbox",
+      "Your hosts 18",
+      "Your level",
+      "Harness & profiles",
+      "work 2",
+      "Dispatch",
+    ]);
+  });
+
+  it("folds a group from its own toggle, apart from its page, and the count moves up (R42, R46)", async () => {
+    const { onGroupChange, user } = nav();
+
+    await user.click(screen.getByRole("button", { name: "Collapse Sandbox" }));
+
+    expect(pages()).toEqual(["General", "Sandbox 18", "Harness & profiles", "work 2", "Dispatch"]);
+    expect(onGroupChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Expand Sandbox" })).toHaveFocus();
+  });
+
+  it("remembers which groups are folded, as a new launch reads them (R47)", async () => {
+    const { user, view } = nav();
+    await user.click(screen.getByRole("button", { name: "Collapse Harness & profiles" }));
+    view.unmount();
+
+    nav();
+
+    expect(pages()).toContain("Harness & profiles 2");
+    expect(pages()).not.toContain("work 2");
+    expect(SETTINGS_GROUPS.written()).toEqual({ folded: ["project.harness"] });
+  });
+
+  it("opens a group when one of its pages becomes current (R44)", () => {
+    setGroupOpen("project.harness", false);
+    nav("project.harness.work");
+
+    expect(screen.getByRole("button", { name: "Collapse Harness & profiles" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^work/ })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("opens a group when its own page is chosen (R45)", async () => {
+    setGroupOpen("project.harness", false);
+    const { onGroupChange, user } = nav();
+
+    await user.click(screen.getByRole("button", { name: /^Harness & profiles/ }));
+
+    expect(onGroupChange).toHaveBeenCalledWith("project.harness");
+    expect(screen.getByRole("button", { name: "Collapse Harness & profiles" })).toBeInTheDocument();
+  });
+
+  it("reaches a group's toggle from its page with →, and back with ←", async () => {
+    const { user } = nav();
+
+    screen.getByRole("button", { name: "General" }).focus();
+    await user.keyboard("{ArrowDown}");
+    expect(screen.getByRole("button", { name: "Sandbox" })).toHaveFocus();
+    await user.keyboard("{ArrowRight}");
+    expect(screen.getByRole("button", { name: "Collapse Sandbox" })).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("button", { name: "Expand Sandbox" })).toHaveFocus();
+    await user.keyboard("{ArrowLeft}");
+    expect(screen.getByRole("button", { name: /^Sandbox/ })).toHaveFocus();
+    await user.keyboard("{ArrowDown}");
+    expect(screen.getByRole("button", { name: /^Harness & profiles/ })).toHaveFocus();
   });
 });

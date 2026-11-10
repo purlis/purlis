@@ -196,7 +196,10 @@ async function at(group: string) {
   render(<SettingsTab plane={PLANE} level="project" />);
   await userEvent.click(
     await within(await screen.findByRole("navigation", { name: "Groups" })).findByRole("button", {
-      name: group,
+      // A page with things waiting says how many after its name (R46).
+      name: (name) =>
+        name === group ||
+        (name.startsWith(`${group} `) && /^\d+$/.test(name.slice(group.length + 1))),
     }),
   );
 }

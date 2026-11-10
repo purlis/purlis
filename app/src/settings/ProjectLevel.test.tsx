@@ -297,6 +297,8 @@ const nav = () => screen.getByRole("navigation", { name: "Groups" });
 const groups = () =>
   within(nav())
     .getAllByRole("button")
+    // A group's toggle is no page (R42).
+    .filter((one) => !one.hasAttribute("aria-expanded"))
     .map((one) => one.textContent);
 const open = (name: string) => userEvent.click(within(nav()).getByRole("button", { name }));
 /** The page shown: the first region, which holds its own groups' (R60). */

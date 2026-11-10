@@ -40,6 +40,7 @@ import {
   type SettingsGroup,
 } from "./groups";
 import { reveal } from "../ui/reveal";
+import { useFolds } from "./navGroups";
 import {
   askSettingsAction,
   chooseGroup,
@@ -474,6 +475,8 @@ function Shown({
   }, [linked, place, target, drawn, declared]);
   /** Every way into Settings leaves the keyboard on the nav's current group (#1206). */
   useEnteringFocus(place, own);
+  /** Which of the nav's groups are open, as the window keeps it (R47). */
+  const folds = useFolds();
   /** What is typed into each file's text, kept while a group is looked at. */
   const [drafts, setDrafts] = useState<Partial<Record<string, RawDraft>>>({});
   const rawFile = raw.find((one) => one.id === editing);
@@ -516,11 +519,18 @@ function Shown({
   return (
     <SettingsLayout
       holder={own}
+      folds={folds}
       levels={levels}
       level={level}
       onLevelChange={onLevelChange}
       about={about}
-      groups={groups}
+      groups={groups.map((one) => ({
+        id: one.id,
+        label: one.label,
+        sub: one.sub,
+        // What waits for the person here (R46): Your hosts' hosts not confirmed yet.
+        count: one.collection?.entries.filter((entry) => entry.status === "waiting").length,
+      }))}
       group={rawFile ? "" : (group?.id ?? "")}
       onGroupChange={(to) => {
         setEditing(undefined);
