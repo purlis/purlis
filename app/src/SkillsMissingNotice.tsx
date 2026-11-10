@@ -9,11 +9,12 @@ import { SHOW_IN_SKILLS, askChatSkills, skillsMissingPutAway } from "./chatSkill
 
 /**
  * **The skills a chat started without, on its tab** (SK-5, #2768; SK-8, #2771; spec decision
- * 41): never a silent drop. An installed skill this machine, or the runner the chat started on
- * (SK-5d, #2977), does not have for the chat's harness, a built-in skill purlis there has none
- * of, and another workspace's skill that workspace or the project does not have (SK-5b, #6040),
- * each named as the persona's skills write it; a skill the chat would have loaded that
- * could not be loaded, with why; and one the repo it works in leaves out, with why (SK-53). And
+ * 41): never a silent drop. Read on this machine, or for a chat on a runner by that runner and
+ * said by it (SK-5d, #2977; #6078): an installed skill it does not have for the chat's harness, a
+ * built-in skill purlis there has none of, and another workspace's skill that workspace or the
+ * project does not have (SK-5b, #6040), each named as the persona's skills write it; a skill the
+ * chat would have loaded that could not be loaded, with why; and one the repo it works in leaves
+ * out, with why (SK-53). And
  * a skill of that repo with a name of purlis's own, which the chat's program loads beside
  * purlis's (SK-37). It offers
  *
@@ -94,7 +95,7 @@ export function missingSays(chat: string, said: SkillsMissing): string {
     );
   if (said.broken.length > 0)
     lines.push(
-      `${chat} started without ${counted(said.broken.length, "skill that could not be loaded", "skills that could not be loaded")}: ${said.broken
+      `${chat} started without ${counted(said.broken.length, "skill that could not be loaded", "skills that could not be loaded")}${there}: ${said.broken
         .map((one) => `${one.name} (${one.label}), ${one.why}`)
         .join("; ")}.`,
     );

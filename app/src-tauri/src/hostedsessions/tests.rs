@@ -4041,7 +4041,13 @@ impl purlis_host::Compose for ComposesLacking {
 fn lacking() -> session::SkillsNotThere {
     session::SkillsNotThere {
         missing: vec!["superpowers:test-driven-development".into()],
-        no_built_in: Vec::new(),
+        broken: vec![session::SkillNotLoaded {
+            name: "half-made".into(),
+            level: "project".into(),
+            local: false,
+            why: "it has no frontmatter".into(),
+        }],
+        ..Default::default()
     }
 }
 
@@ -4085,4 +4091,61 @@ fn a_chat_a_pools_runner_composes_says_what_its_persona_names_that_the_runner_la
         .open_named(None, &by_its_names(), Default::default(), &|_| {})
         .expect("composed on the pool's runner");
     assert_eq!(composed.skills_not_there, None, "it lacks nothing");
+}
+
+/// **#6078: a chat's tab names a pool's runner as the window does elsewhere**: a Docker pool's
+/// runner its host named as `<pool>/<runner>` (as Devices says *Runner builds-1 of pool
+/// builds*); a runner its host does not name by its pool; and a cluster pool's runner by its pool
+/// alone, whether the pool's shared runner (which its host names after the pool) or a chat's
+/// own runner (whose name is an id made from the chat's), since the window shows neither name
+/// anywhere.
+#[test]
+fn a_pools_runner_is_named_on_a_chats_tab_as_the_window_names_it_elsewhere() {
+    assert_eq!(runner_shown("builds", Some("builds-1")), "builds/builds-1");
+    assert_eq!(runner_shown("builds", None), "builds");
+    assert_eq!(runner_shown("cluster", Some("cluster")), "cluster");
+    assert_eq!(
+        runner_shown("cluster", Some("fresh-0123456789abcdef")),
+        "cluster"
+    );
+}
+
+/// **#6078: a window that comes back to a runner's chat says again what it started without
+/// there**, as the runner's host keeps it with the chat and answers it in `programs` (1.83),
+/// for a `local`, `docker` and `k8s` pool's runner alike, named as at its start; a chat whose
+/// start said none has none.
+#[test]
+fn a_window_that_comes_back_to_a_runners_chat_hears_what_it_started_without_there() {
+    for pool in ["local", "docker", "k8s"] {
+        let runtime = a_runtime();
+        let runner = Hosting::running_with(ComposesLacking, StandIns::default());
+        let connection = in_memory_with_a_runner(
+            Hosting::running_with(ComposesNothing, StandIns::default()),
+            runner.clone(),
+            &runtime,
+        );
+        let (_dir, root) = a_project();
+        let sessions = HostedSessions::on_a_runner(connection.to_a_pool(pool), &root);
+        let composed = sessions
+            .open_named(None, &by_its_names(), Default::default(), &|_| {})
+            .expect("composed on the pool's runner");
+        // The window goes, saying nothing: its chat runs on there.
+        std::mem::forget(sessions);
+
+        let connection = in_memory_with_a_runner(
+            Hosting::running_with(ComposesNothing, StandIns::default()),
+            runner,
+            &runtime,
+        );
+        let back = HostedSessions::on_a_runner(connection.to_a_pool(pool), &root);
+        assert!(back.left_running(composed.number), "{pool}");
+        assert_eq!(
+            back.skills_not_there_left(composed.number),
+            Some(crate::host::RunnersLack {
+                skills_not_there: lacking(),
+                runner: Some(pool.to_owned()),
+            }),
+            "{pool}"
+        );
+    }
 }

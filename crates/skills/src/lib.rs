@@ -168,6 +168,21 @@ impl Origin {
         }
     }
 
+    /// **The origin whose [`Self::level`] is `word`** (#6078): how a window reads the level a
+    /// runner says a skill is of. `None` for a word of no level this build knows.
+    pub fn of_level(word: &str) -> Option<Origin> {
+        [
+            Self::BuiltIn,
+            Self::Project,
+            Self::Workspace,
+            Self::Persona,
+            Self::Harness,
+            Self::Repo,
+        ]
+        .into_iter()
+        .find(|origin| origin.level() == word)
+    }
+
     /// **Whether purlis hands a skill of this origin over**, so writes the `SKILL.md` a harness
     /// reads (SK-8): a built-in skill or the plane's. A harness or repo skill is read by its
     /// harness where it lies.

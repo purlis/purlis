@@ -86,6 +86,27 @@ describe("a chat's missing skills", () => {
     );
   });
 
+  it("says where a runner chat's skill could not be loaded (#6078)", () => {
+    const broken = {
+      name: "half",
+      level: "project" as const,
+      local: false,
+      label: "project",
+      why: "not a skill: its SKILL.md names no `description`",
+    };
+    expect(
+      missingSays("This chat", {
+        ...MISSING,
+        missing: [],
+        no_built_in: [],
+        broken: [broken],
+        runner: "builds/builds-1",
+      }),
+    ).toBe(
+      "This chat started without 1 skill that could not be loaded on runner builds/builds-1: half (project), not a skill: its SKILL.md names no `description`.",
+    );
+  });
+
   it("says a skill that could not be loaded, with its level and why (SK-8)", () => {
     expect(
       missingSays("This chat", {
