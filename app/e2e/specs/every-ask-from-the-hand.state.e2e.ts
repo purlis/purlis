@@ -47,8 +47,9 @@ import { PROJECTS, ask, inFront, keepTheNotices, openFromTheStrip } from "../swi
  * so none of them checked that a request can be seen from the ✋, and asks went unseen.
  *
  * Here each kind is raised **in another project and another workspace** than the one in front:
- * a project of the spec's own, opened beside the launch's, its chats started in its `beta`
- * workspace. The launch's project is then brought to the front, and from there, with **no view
+ * projects of the spec's own, opened beside the launch's, their chats started in their `beta`
+ * workspace. One keeps its sandbox at the floor, as the run's own project does; the other has it
+ * in force (`[sandbox] mode = "on"`), which the sandbox consent and the host block need. The launch's project is then brought to the front, and from there, with **no view
  * opened by the test**, each kind must be:
  *
  * - **counted** by the ✋, as "+N elsewhere", and that N is what Asks lists for the other
@@ -88,16 +89,24 @@ const ASKS_TAB = '[role="tablist"][aria-label="Attention"] [role="tab"][aria-lab
 /** The lines for this window's other projects. */
 const OTHERS = `${INBOX} [role="rowgroup"][data-others]`;
 
-/** The spec's own project: the fixture, renamed, with no record to put back. */
-const NAME = "every-ask";
-const mine = (() => {
+/** One of the spec's own projects: its folder, which is the name Asks gives it. */
+type Project = { root: string; name: string };
+
+/** A project of the spec's own, named `name`: the fixture, renamed, with no record to put back. */
+function aProject(name: string): Project {
   const copied = copyFixturePlane();
-  const renamed = join(dirname(copied), NAME);
+  const renamed = join(dirname(copied), name);
   renameSync(copied, renamed);
   const root = realpathSync(renamed);
   anEmptyRecord(root);
-  return root;
-})();
+  return { root, name };
+}
+
+/** The project most kinds are asked from: its sandbox at the floor, as the run's own. */
+const mine = aProject("every-ask");
+/** **The project with its sandbox in force** (`[sandbox] mode = "on"`): a host it has not
+ *  allowed is asked about, and so is a service it expects that this machine has not allowed. */
+const walled = aProject("every-ask-walled");
 
 /** The service the project expects, a reverse-DNS name no machine runs. */
 const EXPECTED = "com.example.purlis-e2e.every-ask";
@@ -195,6 +204,8 @@ async function asksSaid(): Promise<string> {
 type Kind = {
   /** Its name, as a failure says it. */
   name: string;
+  /** The project it is asked from. */
+  from: Project;
   /** Its row's `data-source`. */
   source: string;
   /** What its line says, in the asking project's list and on its row. */
@@ -214,13 +225,24 @@ type Kind = {
 /** The project in front when the spec began: the launch's. */
 let front = "";
 
-/** **Starts a chat in the spec's project's `beta` workspace** with `trigger` in place, types the
- *  line its harness waits for, and brings the launch's project back to the front. */
-async function fromAChat(trigger?: string): Promise<void> {
-  await toFront(mine);
+/** **Starts a chat in `project`'s `beta` workspace** with `trigger` in place, types the line its
+ *  harness waits for, and brings the launch's project back to the front. */
+async function fromAChat(project: Project, trigger?: string): Promise<void> {
+  await toFront(project.root);
   await focusWorkspace("beta");
   if (trigger) writeFileSync(trigger, "");
-  await pressAndStart("New tab");
+  await pressAndStart("New tab").catch(async (error: unknown) => {
+    // What stood in the start's way, for the failure to say.
+    const picker = await browser.execute(
+      () =>
+        document.querySelector<HTMLElement>('[role="dialog"]')?.innerText.replace(/\s+/g, " ") ??
+        "(no dialog)",
+    );
+    const kept = await keepTheNotices(`every-ask-start-${project.name}`);
+    throw new Error(
+      `no chat started in ${project.name}: ${String(error)}; the dialog says: ${picker} (kept: ${kept})`,
+    );
+  });
   const pane = await $('[data-testid="pane"]');
   await pane.click();
   await $(".xterm-helper-textarea").addValue("\n");
@@ -309,6 +331,7 @@ async function pressFromThePage(row: string, label: string): Promise<void> {
 const KINDS: Kind[] = [
   {
     name: "sandbox consent",
+    from: walled,
     source: "sandbox-expects",
     says: new RegExp(
       `^This project expects more than this machine allows: .*${literally(EXPECTED)}`,
@@ -331,10 +354,11 @@ const KINDS: Kind[] = [
   },
   {
     name: "question",
+    from: mine,
     source: "question",
     says: /^Waiting on your reply$/,
     waits: "Waiting on your reply",
-    raise: () => fromAChat(),
+    raise: () => fromAChat(mine),
     answer: async (row) => {
       await $(row).$("button=Answer").click();
       const reply = await $(`${row} [aria-label^="Reply to "]`);
@@ -346,19 +370,21 @@ const KINDS: Kind[] = [
   },
   {
     name: "permission",
+    from: mine,
     source: "permission",
     says: /^Run a command: echo asked-in-the-inbox$/,
     decision: { title: "Allow this action?", allow: "Allow", refuse: "Deny" },
-    raise: () => fromAChat(ASKS_A_PERMISSION),
+    raise: () => fromAChat(mine, ASKS_A_PERMISSION),
     answer: (row) => pressOnRow(row, "Deny"),
     told: () => panesTell("permission", INBOX_DENIED),
   },
   {
     name: "secret",
+    from: mine,
     source: "secret",
     says: new RegExp(`\\b${ASKED_KEY}\\b`),
     waits: "Asks you for a secret its vault doesn't hold",
-    raise: () => fromAChat(ASKS_A_SECRET),
+    raise: () => fromAChat(mine, ASKS_A_SECRET),
     // A value is typed, so its form is behind Answer; Not now is its refusal.
     answer: async (row) => {
       await $(row).$("button=Answer").click();
@@ -375,6 +401,7 @@ const KINDS: Kind[] = [
   },
   {
     name: "run grant",
+    from: mine,
     source: "run-grant",
     says: /curl/,
     decision: {
@@ -382,7 +409,7 @@ const KINDS: Kind[] = [
       allow: "Allow once",
       refuse: "Don't allow",
     },
-    raise: () => fromAChat(RUNS_A_SECRET),
+    raise: () => fromAChat(mine, RUNS_A_SECRET),
     answer: (row) => pressOnRow(row, "Don't allow"),
     told: async () => {
       await panesTell("run grant", new RegExp(`${SECRET_RAN} \\d+`));
@@ -393,6 +420,7 @@ const KINDS: Kind[] = [
   },
   {
     name: "dispatch grant",
+    from: mine,
     source: "dispatch",
     says: new RegExp(`^Wants to hand a task to ${DISPATCHED_TO}$`),
     decision: {
@@ -400,12 +428,13 @@ const KINDS: Kind[] = [
       allow: "Allow for this chat",
       refuse: "Keep blocked",
     },
-    raise: () => fromAChat(DISPATCHES_A_TASK),
+    raise: () => fromAChat(mine, DISPATCHES_A_TASK),
     answer: keepBlocked,
     told: () => panesTell("dispatch grant", DISPATCH_KEPT_BLOCKED),
   },
   {
     name: "sandbox host block",
+    from: walled,
     source: "sandbox-host",
     says: new RegExp(
       `^(A connection to ${literally(REACHED_HOST)} waits on your answer|The sandbox refused ${literally(REACHED_HOST)})$`,
@@ -415,19 +444,20 @@ const KINDS: Kind[] = [
       allow: "Allow only for this chat",
       refuse: "Keep blocked",
     },
-    raise: () => fromAChat(REACHES_A_HOST),
+    raise: () => fromAChat(walled, REACHES_A_HOST),
     answer: keepBlocked,
     told: () => panesTell("sandbox host block", HOST_KEPT_BLOCKED),
   },
   {
     name: "command confirmation",
+    from: mine,
     source: "confirmation",
     says: /^Asks to check abc1234 in acme\/svc on GitHub\. Its terminal shows the code \S+\.$/,
     decision: { title: "Confirm what this command asks?", allow: "Check it", refuse: "Cancel" },
     // A signing check names no project: it is filed under the one in front as it asks, so it is
     // asked with the spec's project in front, which is then put behind.
     raise: async () => {
-      await toFront(mine);
+      await toFront(mine.root);
       await signingCheck();
       await browser
         .waitUntil(async () => /shows the code/.test(signing?.said ?? ""), { timeout: 30_000 })
@@ -455,24 +485,24 @@ describe("every Blocking ask, found from the ✋ alone (#6001)", function () {
     front = (await ask<string[]>("open_planes"))[0];
     // One app for the whole run: a chat an earlier spec left open would be counted too.
     await endEveryChat();
-    // The run's profile, as its own project has it.
-    copyFileSync(join(front, "charter.local.toml"), join(mine, "charter.local.toml"));
-    // Its sandbox in force, so a host it has not allowed is asked about, and a service it
-    // expects that this machine has not allowed.
+    // The run's profile, as its own project has it, in each project of the spec's.
+    for (const project of [mine, walled])
+      copyFileSync(join(front, "charter.local.toml"), join(project.root, "charter.local.toml"));
+    // The walled project's sandbox in force, and what it expects of this machine.
     appendFileSync(
-      join(mine, "charter.toml"),
+      join(walled.root, "charter.toml"),
       `\n[sandbox]\nmode = "on"\nexpects = [${JSON.stringify(EXPECTED)}]\n`,
     );
     // A persona the default one has no grant to dispatch to.
-    mkdirSync(join(mine, "personas", DISPATCHED_TO), { recursive: true });
+    mkdirSync(join(mine.root, "personas", DISPATCHED_TO), { recursive: true });
     writeFileSync(
-      join(mine, "personas", DISPATCHED_TO, "persona.md"),
+      join(mine.root, "personas", DISPATCHED_TO, "persona.md"),
       `---\nname: ${DISPATCHED_TO}\nrole: Reviewer\ndelegate-when: an e2e task\n---\n\nReviews.\n`,
     );
     // The persona's vault, on this machine alone, holding the run's key and not the asked one.
-    mkdirSync(join(mine, ".charter", "vaults"), { recursive: true });
+    mkdirSync(join(mine.root, ".charter", "vaults"), { recursive: true });
     writeFileSync(
-      join(mine, ".charter", "vaults.json"),
+      join(mine.root, ".charter", "vaults.json"),
       JSON.stringify({
         vaults: {
           [SECRET_VAULT]: {
@@ -485,11 +515,12 @@ describe("every Blocking ask, found from the ✋ alone (#6001)", function () {
       { mode: 0o600 },
     );
     writeFileSync(
-      join(mine, ".charter", "vaults", `${SECRET_VAULT}-e2e.json`),
+      join(mine.root, ".charter", "vaults", `${SECRET_VAULT}-e2e.json`),
       JSON.stringify({ [SECRET_KEY]: VALUE }),
       { mode: 0o600 },
     );
-    await openFromTheStrip(mine);
+    await openFromTheStrip(mine.root);
+    await openFromTheStrip(walled.root);
     await toFront(front);
   });
 
@@ -497,8 +528,14 @@ describe("every Blocking ask, found from the ✋ alone (#6001)", function () {
     for (const trigger of TRIGGERS) rmSync(trigger, { force: true });
     signing?.child.kill();
     signing = null;
-    await toFront(mine);
-    await endEveryChat();
+    // A dialog a failed test left up (a picker, a confirmation) is put away first, so the next
+    // kind still runs: a hook that fails here skips every test after it.
+    for (let up = 0; up < 3 && (await $('[role="dialog"]').isExisting()); up++)
+      await browser.keys(["Escape"]);
+    for (const project of [mine, walled]) {
+      await toFront(project.root);
+      await endEveryChat();
+    }
     await toFront(front);
   });
 
@@ -526,7 +563,7 @@ describe("every Blocking ask, found from the ✋ alone (#6001)", function () {
       // **Counted and listed**: the asking project's line says it, the line counts all it lists,
       // and the ✋ counts, elsewhere, what every other project's line counts.
       let seen = await elsewhere();
-      const ours = () => seen.lines.find((line) => line.go === `Go to project ${NAME}`);
+      const ours = () => seen.lines.find((line) => line.go === `Go to project ${kind.from.name}`);
       await browser
         .waitUntil(
           async () => {
@@ -556,9 +593,9 @@ describe("every Blocking ask, found from the ✋ alone (#6001)", function () {
             .querySelector<HTMLElement>(`${others} [aria-label="Go to project ${name}"]`)
             ?.click(),
         OTHERS,
-        NAME,
+        kind.from.name,
       );
-      await browser.waitUntil(async () => (await inFront()) === mine, {
+      await browser.waitUntil(async () => (await inFront()) === kind.from.root, {
         timeout: 20_000,
         timeoutMsg: `${kind.name}: Go to project did not bring the asking project forward`,
       });
