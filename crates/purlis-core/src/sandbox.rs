@@ -5416,6 +5416,9 @@ pub trait Board: Send + Sync + std::fmt::Debug {
     fn allow_left_out(&self, port: u16) -> Result<Vec<String>, String>;
     /// The person kept that service blocked ([`asks::Asks::keep_left_out_blocked`], #2510).
     fn keep_left_out_blocked(&self, port: u16);
+    /// Whether a connection held past its hold waits on, while the person is Quiet
+    /// ([`asks::Asks::hold_open`], #6007).
+    fn hold_open(&self, open: bool);
 }
 
 impl Board for asks::Asks {
@@ -5445,6 +5448,10 @@ impl Board for asks::Asks {
 
     fn keep_left_out_blocked(&self, port: u16) {
         asks::Asks::keep_left_out_blocked(self, port);
+    }
+
+    fn hold_open(&self, open: bool) {
+        asks::Asks::hold_open(self, open);
     }
 }
 

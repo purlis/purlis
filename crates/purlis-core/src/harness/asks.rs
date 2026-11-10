@@ -43,6 +43,14 @@ use super::model::{Action, Ask, Channel, Choice, ChoiceKind};
 #[serde(try_from = "String", into = "String")]
 pub struct AskId(ulid::Ulid);
 
+impl AskId {
+    /// A new id, for an ask held nowhere: one its chat's same request answered already
+    /// ([`super::hooked::lapsed`], #6007).
+    pub(crate) fn new() -> Self {
+        Self(ulid::Ulid::generate())
+    }
+}
+
 impl std::fmt::Display for AskId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
@@ -385,6 +393,15 @@ impl Asks {
     /// Stops holding every ask whose deadline has passed at `now`, and says which, so the
     /// caller can let each source's own prompt decide.
     pub fn expire(&self, now: Instant) -> Vec<AskId> {
+        self.expire_raised(now)
+            .into_iter()
+            .map(|(raised, _)| raised.id)
+            .collect()
+    }
+
+    /// [`Self::expire`], each ask whole with when it was raised: what a hook ask that timed
+    /// out is kept as, still answerable (#6007).
+    pub fn expire_raised(&self, now: Instant) -> Vec<(Raised, Instant)> {
         let mut held = self.held();
         let (late, kept): (Vec<Open>, Vec<Open>) = std::mem::take(&mut held.open)
             .into_iter()
@@ -392,11 +409,27 @@ impl Asks {
         held.open = kept;
         late.into_iter()
             .map(|open| {
-                let id = open.raised.id;
-                held.close(id.clone(), open.raised.chat, Refused::TimedOut);
-                id
+                held.close(
+                    open.raised.id.clone(),
+                    open.raised.chat.clone(),
+                    Refused::TimedOut,
+                );
+                (open.raised, open.at)
             })
             .collect()
+    }
+
+    /// Stops holding ask `id` as timed out, deadline passed or not: its source gave up on it
+    /// (#6007). The ask whole, with when it was raised, where it was waiting.
+    pub fn time_out_one(&self, id: &AskId) -> Option<(Raised, Instant)> {
+        let mut held = self.held();
+        let open = held.take(id)?;
+        held.close(
+            open.raised.id.clone(),
+            open.raised.chat.clone(),
+            Refused::TimedOut,
+        );
+        Some((open.raised, open.at))
     }
 
     /// The chat that raised ask `id`, while it is open, its deadline passed or not.
@@ -464,6 +497,18 @@ fn may_choose(ask: &Ask, chosen: &Choice, by: Answerer) -> bool {
     chosen.kind != ChoiceKind::Allow
         || !matches!(ask.action, Action::Edit { .. } | Action::Question { .. })
         || by.scope() == HumanScope::LocalUi
+}
+
+/// The checks an answer `chosen` from `by` to `ask` passes, as [`Asks::answer`] makes them, for
+/// an ask no longer held here: a lapsed hook ask (#6007).
+pub(super) fn may_answer_with(ask: &Ask, chosen: &Choice, by: Answerer) -> Result<(), Refused> {
+    if !may_answer(ask, by) {
+        return Err(Refused::NotYours);
+    }
+    if !may_choose(ask, chosen, by) {
+        return Err(Refused::DrawnInTheWindow);
+    }
+    Ok(())
 }
 
 #[cfg(test)]

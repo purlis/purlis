@@ -13,9 +13,9 @@ import { inOrder, standingSaid, type Standing } from "./asksOrder";
 /** The clock every case reads: 1,000 s past 1970, in ms. */
 const NOW = 1_000_000;
 
-type Fact = { expires?: number; blocks?: number; since: number };
+type Fact = { expires?: number; blocks?: number; since: number; timedOut?: number };
 
-const ask = (session: number, key: string, { expires, blocks, since }: Fact): Shown => ({
+const ask = (session: number, key: string, { expires, blocks, since, timedOut }: Fact): Shown => ({
   session,
   ask: key,
   says: key,
@@ -26,6 +26,7 @@ const ask = (session: number, key: string, { expires, blocks, since }: Fact): Sh
   since,
   expires,
   blocks,
+  timed_out: timedOut,
 });
 
 /** An ask's age, as the Inbox reads it: its `since`, in ms, and its place in the list. */
@@ -82,6 +83,32 @@ describe("the order of Asks", () => {
       listed: ["a-expires", "a-old", "b"],
     },
     {
+      name: "a timed-out ask after a live Expiring ask and before one that blocks others",
+      asks: [
+        ask(1, "blocks", { since: 100, blocks: 3 }),
+        ask(2, "timed-out", { since: 900, timedOut: 960 }),
+        ask(3, "expires", { since: 950, expires: 1_040 }),
+      ],
+      listed: ["expires", "timed-out", "blocks"],
+    },
+    {
+      name: "timed-out asks by the longest wait",
+      asks: [
+        ask(1, "newer", { since: 800, timedOut: 990 }),
+        ask(2, "older", { since: 300, timedOut: 999 }),
+      ],
+      listed: ["older", "newer"],
+    },
+    {
+      name: "one chat's timed-out ask after its Expiring one and before its others",
+      asks: [
+        ask(1, "a-old", { since: 100 }),
+        ask(1, "a-timed-out", { since: 500, timedOut: 980 }),
+        ask(1, "a-expires", { since: 900, expires: 1_030 }),
+      ],
+      listed: ["a-expires", "a-timed-out", "a-old"],
+    },
+    {
       name: "a new ask takes its place by its facts, never the top for being new",
       asks: [
         ask(1, "old", { since: 100 }),
@@ -111,13 +138,17 @@ describe("the order of Asks", () => {
         ask(1, "a-other", { since: 800 }),
         ask(2, "b", { since: 100, blocks: 2 }),
         ask(3, "c", { since: 300 }),
+        ask(4, "d", { since: 200, timedOut: 990 }),
+        ask(1, "a-timed-out", { since: 700, timedOut: 950 }),
       ],
       age,
       NOW,
     );
     expect(groups.flatMap((group) => group.placed.map(({ why }) => why))).toEqual<Standing[]>([
       { by: "expires", at: 1_040_000 },
+      { by: "timed-out", at: 950_000 },
       { by: "its-chat" },
+      { by: "timed-out", at: 990_000 },
       { by: "blocks", chats: 2 },
       { by: "wait", since: 300_000 },
     ]);
@@ -133,6 +164,10 @@ describe("what a row's reason line says", () => {
     { why: { by: "blocks", chats: 1 }, said: "Blocks 1 chat" },
     { why: { by: "blocks", chats: 3 }, said: "Blocks 3 chats" },
     { why: { by: "its-chat" }, said: "With its chat's ask that expires" },
+    {
+      why: { by: "timed-out", at: NOW - 5_000 },
+      said: "Timed out. Answer, and the chat is told to try again.",
+    },
     { why: { by: "wait", since: NOW - 30_000 }, said: "Waiting under a minute" },
     { why: { by: "wait", since: NOW - 12 * 60_000 }, said: "Waiting 12 min" },
     { why: { by: "wait", since: NOW - 3 * 3_600_000 }, said: "Waiting 3 h" },

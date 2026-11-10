@@ -9429,6 +9429,8 @@ impl purlis_core::sandbox::Board for Told {
     }
 
     fn keep_left_out_blocked(&self, _: u16) {}
+
+    fn hold_open(&self, _: bool) {}
 }
 
 /// What holds a [`Told`] board, as the session host holds a chat's proxy.

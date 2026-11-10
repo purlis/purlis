@@ -159,13 +159,10 @@ pub fn held_in(
                     Left::Closed => {
                         hooks.withdraw(&id);
                     }
-                    // Expired as every ask past its deadline is; one this clock does not yet
-                    // see as late is let go all the same, since its hook was told no option.
-                    Left::TimedOut => {
-                        if !hooks.time_out(std::time::Instant::now()).contains(&id) {
-                            hooks.withdraw(&id);
-                        }
-                    }
+                    // Expired as every ask past its deadline is, one this clock does not yet
+                    // see as late all the same, since its hook was told no option: each stays
+                    // answerable, and its answer waits for the chat's same request (#6007).
+                    Left::TimedOut => hooks.lapse(&id, std::time::Instant::now()),
                 }
                 changed();
             }),

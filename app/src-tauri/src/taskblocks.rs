@@ -157,6 +157,10 @@ pub struct Blocks {
     /// held, so the person may still answer one, and listed by no ask until they take it up
     /// ([`Self::taken_up`]) or a command of the chat is refused the same.
     quiet: Mutex<HashMap<u32, Vec<HeldBlock>>>,
+    /// The blocks of each open chat whose held connection gave up with nobody's answer, and
+    /// when, in seconds since 1970 (#6007): still answerable, and an Allow tells the chat to
+    /// retry. Until it is answered, held again, or the chat ends.
+    gave_up: Mutex<HashMap<u32, Vec<(HeldBlock, u64)>>>,
 }
 
 impl Blocks {
@@ -306,6 +310,7 @@ impl Blocks {
     /// it, until it is answered, it no longer waits ([`Self::no_longer_waits`]), or the chat
     /// ends. At most [`MOST_WAITING_PER_CHAT`] wait at once, the oldest going first.
     pub fn heard_waiting(&self, session: u32, block: HeldBlock) {
+        self.forget_gave_up(session, &block);
         {
             let mut waiting = self.waiting();
             let mine = waiting.entry(session).or_default();
@@ -330,6 +335,43 @@ impl Blocks {
         }
     }
 
+    /// `block` of chat `session` waits on the person no longer because its held connection
+    /// gave up with nobody's answer, at `at` (#6007): it stays, timed out and answerable.
+    pub fn gave_up(&self, session: u32, block: &HeldBlock, at: u64) {
+        self.no_longer_waits(session, block);
+        let mut gave_up = self.gave_ups();
+        let mine = gave_up.entry(session).or_default();
+        mine.retain(|(one, _)| one != block);
+        mine.push((block.clone(), at));
+        if mine.len() > MOST_WAITING_PER_CHAT {
+            mine.remove(0);
+        }
+    }
+
+    /// When `block` of chat `session` gave up with nobody's answer, where it did and is still
+    /// held (#6007).
+    pub fn gave_up_at(&self, session: u32, block: &HeldBlock) -> Option<u64> {
+        self.gave_ups()
+            .get(&session)?
+            .iter()
+            .find(|(one, _)| one == block)
+            .map(|(_, at)| *at)
+    }
+
+    fn gave_ups(&self) -> std::sync::MutexGuard<'_, HashMap<u32, Vec<(HeldBlock, u64)>>> {
+        self.gave_up.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn forget_gave_up(&self, session: u32, block: &HeldBlock) {
+        let mut gave_up = self.gave_ups();
+        if let Some(mine) = gave_up.get_mut(&session) {
+            mine.retain(|(one, _)| one != block);
+            if mine.is_empty() {
+                gave_up.remove(&session);
+            }
+        }
+    }
+
     /// Whether chat `session` is held on `block` now.
     pub fn holds(&self, session: u32, block: &HeldBlock) -> bool {
         self.held()
@@ -340,6 +382,7 @@ impl Blocks {
     /// `block` of chat `session` was answered: it is held no longer.
     pub fn answered(&self, session: u32, block: &HeldBlock) {
         self.no_longer_waits(session, block);
+        self.forget_gave_up(session, block);
         self.loud(session, |one| one == block);
         self.noticed().remove(&session);
         let mut held = self.held();
@@ -365,6 +408,7 @@ impl Blocks {
         self.since().remove(&session);
         self.waiting().remove(&session);
         self.quiet().remove(&session);
+        self.gave_ups().remove(&session);
     }
 
     fn noticed(&self) -> std::sync::MutexGuard<'_, HashMap<u32, u32>> {

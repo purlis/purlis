@@ -5,8 +5,10 @@
  * **The order of Asks, by facts** (ADR 0121 decision 5, #6006): never a priority someone sets.
  *
  * 1. An **Expiring ask** (`Shown.expires`, still ahead): the one that ends soonest first.
- * 2. An ask whose chat other chats wait on (`Shown.blocks`): the more it blocks, the sooner.
- * 3. The rest, the longest wait first.
+ * 2. A **timed-out ask** (`Shown.timed_out`, ADR 0121 decision 15, #6007), still answerable:
+ *    the longest wait first.
+ * 3. An ask whose chat other chats wait on (`Shown.blocks`): the more it blocks, the sooner.
+ * 4. The rest, the longest wait first.
  *
  * One chat's asks stay together, where the first of them stands, its Expiring ones first. Every
  * key is a fact with a time or a count, never when the window saw the list: so a new ask takes
@@ -23,6 +25,8 @@ import { chainOfGroup, type Age, type ChatGroup } from "./inboxRules";
 export type Standing =
   /** It ends by itself at `at`. */
   | { by: "expires"; at: number }
+  /** Its wait ended at `at` with nobody's answer, and it is answerable still (#6007). */
+  | { by: "timed-out"; at: number }
   /** It stands with its chat's ask that expires. */
   | { by: "its-chat" }
   /** `chats` open chats wait on its chat's report. */
@@ -40,6 +44,12 @@ export type PlacedGroup = ChatGroup & { placed: readonly Placed[] };
 const endsAt = (ask: Shown, now: number): number | undefined =>
   typeof ask.expires === "number" && ask.expires * 1000 > now ? ask.expires * 1000 : undefined;
 
+/** When `ask`'s wait ended unanswered, in ms, where it is answerable still and not Expiring. */
+const timedOutAt = (ask: Shown, now: number): number | undefined =>
+  endsAt(ask, now) === undefined && typeof ask.timed_out === "number"
+    ? ask.timed_out * 1000
+    : undefined;
+
 /** How many chats wait on `ask`'s chat. */
 const blocking = (ask: Shown): number => ask.blocks ?? 0;
 
@@ -55,38 +65,48 @@ export function inOrder(
   age: (ask: Shown) => Age,
   now: number,
 ): PlacedGroup[] {
-  const groups = new Map<number, { ask: Shown; age: Age; ends?: number }[]>();
+  const groups = new Map<number, { ask: Shown; age: Age; ends?: number; lapsed?: number }[]>();
   for (const ask of asks) {
     const group = groups.get(ask.session) ?? [];
-    group.push({ ask, age: age(ask), ends: endsAt(ask, now) });
+    group.push({ ask, age: age(ask), ends: endsAt(ask, now), lapsed: timedOutAt(ask, now) });
     groups.set(ask.session, group);
   }
+  /** 0 for an Expiring ask, 1 for a timed-out one, 2 for the rest. */
+  const tier = (one: { ends?: number; lapsed?: number }) =>
+    one.ends !== undefined ? 0 : one.lapsed !== undefined ? 1 : 2;
   const ranked = [...groups.entries()].map(([session, mine]) => {
-    // Inside a chat: its Expiring asks, soonest first, then the rest, oldest first.
+    // Inside a chat: its Expiring asks, soonest first, then its timed-out ones, then the rest,
+    // each oldest first.
     mine.sort(
       (one, other) =>
-        (one.ends ?? Infinity) - (other.ends ?? Infinity) || byAge(one.age, other.age),
+        tier(one) - tier(other) ||
+        (one.ends ?? Infinity) - (other.ends ?? Infinity) ||
+        byAge(one.age, other.age),
     );
     const ends = mine[0].ends;
+    const lapsed = mine.some((one) => one.lapsed !== undefined);
     const blocks = Math.max(...mine.map(({ ask }) => blocking(ask)));
     const oldest = mine.map(({ age }) => age).sort(byAge)[0];
-    const placed: Placed[] = mine.map(({ ask, ends: own }) => ({
+    const placed: Placed[] = mine.map(({ ask, ends: own, lapsed: ended }) => ({
       ask,
       why:
         own !== undefined
           ? { by: "expires", at: own }
-          : ends !== undefined
-            ? { by: "its-chat" }
-            : blocks > 0
-              ? { by: "blocks", chats: blocks }
-              : { by: "wait", since: age(ask)[0] },
+          : ended !== undefined
+            ? { by: "timed-out", at: ended }
+            : ends !== undefined
+              ? { by: "its-chat" }
+              : blocks > 0
+                ? { by: "blocks", chats: blocks }
+                : { by: "wait", since: age(ask)[0] },
     }));
-    return { session, ends, blocks, oldest, placed };
+    return { session, ends, lapsed, blocks, oldest, placed };
   });
   ranked.sort(
     (one, other) =>
       (one.ends ?? Infinity) - (other.ends ?? Infinity) ||
-      other.blocks - one.blocks ||
+      Number(other.lapsed) - Number(one.lapsed) ||
+      (one.lapsed ? 0 : other.blocks - one.blocks) ||
       byAge(one.oldest, other.oldest) ||
       one.session - other.session,
   );
@@ -100,6 +120,10 @@ export function inOrder(
 export const anyExpiring = (groups: readonly PlacedGroup[]): boolean =>
   groups.some((group) => group.placed.some(({ why }) => why.by === "expires"));
 
+/** **What a timed-out ask's row says** (ADR 0121 decision 15, #6007): it is answerable, and the
+ *  answer reaches its chat. */
+export const TIMED_OUT_SAID = "Timed out. Answer, and the chat is told to try again.";
+
 /**
  * **A row's reason line** (#6006): why it stands where it does, in a few words. An Expiring
  * ask's counts down by the second under a minute, then in whole minutes, rounded up.
@@ -112,6 +136,8 @@ export function standingSaid(why: Standing, now: number): string {
       if (seconds < 60) return `Expires in ${seconds} s`;
       return `Expires in ${Math.ceil(seconds / 60)} min`;
     }
+    case "timed-out":
+      return TIMED_OUT_SAID;
     case "its-chat":
       return "With its chat's ask that expires";
     case "blocks":
