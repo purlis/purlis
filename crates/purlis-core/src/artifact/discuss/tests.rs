@@ -130,10 +130,13 @@ fn workspace_with_a_pin() -> tempfile::TempDir {
 fn pin_in(ws: &std::path::Path) {
     std::fs::create_dir_all(ws.join(DIR).join("weekly")).unwrap();
     std::fs::write(ws.join(DIR).join("weekly").join(PAGE), INJECTED).unwrap();
+    let id = super::super::pins::id_of("weekly", None, None);
     std::fs::write(
         ws.join(DIR).join(super::super::PINS),
-        "version = 1\npin = [\n  { id = \"p1\", folder = \"weekly\", name = \"Weekly\", icon = \
-         \"chart\", order = 1 },\n]\n",
+        format!(
+            "version = 1\npin = [\n  {{ id = \"{id}\", folder = \"weekly\", name = \"Weekly\", \
+             icon = \"chart\", order = 1 }},\n]\n"
+        ),
     )
     .unwrap();
 }

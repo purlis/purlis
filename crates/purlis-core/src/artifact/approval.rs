@@ -35,9 +35,15 @@ pub const RECORD: &str = "artifact-approvals.json";
 /// The most the record may be: one short entry per approved folder.
 const MOST_BYTES: u64 = 1 << 20;
 
-/// **Whether an artifact's script may run on this platform at all** (ADR 0122 §10): only where
-/// the five isolation tests of §3 pass. Not yet on Windows (WebView2).
-pub const SCRIPT_RUNS_HERE: bool = cfg!(not(windows));
+/// The platforms, as [`std::env::consts::OS`] names them, whose recorded run of the five
+/// isolation tests of ADR 0122 §3 is all green (`tools/artifact-isolation-probe/results/`):
+/// macOS by hand, Linux in CI, both 2026-11-09. Not Windows, where test 4 failed on WebView2.
+pub const PROVEN: [&str; 2] = ["macos", "linux"];
+
+/// **Whether an artifact's script may run on this platform at all** (ADR 0122 §10): only on
+/// one of [`PROVEN`]. Any other platform, Windows and every other unix among them, renders
+/// script-free.
+pub const SCRIPT_RUNS_HERE: bool = cfg!(any(target_os = "macos", target_os = "linux"));
 
 /// Where an artifact stands on this machine: whether its script runs, and if not, why.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -610,5 +616,46 @@ mod tests {
         assert_eq!(mode & 0o077, 0, "{mode:o}");
         let text = std::fs::read_to_string(path(&here.config)).unwrap();
         assert!(text.contains("\"folder\": \"board\""), "{text}");
+    }
+}
+
+/// The gate is evidence: script runs on exactly the platforms whose recorded run of the five
+/// isolation tests is all green (ADR 0122 §3, §10).
+#[cfg(test)]
+mod gate {
+    use super::*;
+
+    /// The five tests of ADR 0122 §3, as the probe's RESULT lines name them.
+    const FIVE: [&str; 5] = ["reach", "escape", "loop", "speak", "walk"];
+
+    /// Whether a recorded run of the probe on `os` has all five green for the chosen rendering.
+    fn recorded_green(os: &str) -> bool {
+        let results = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tools/artifact-isolation-probe/results");
+        std::fs::read_dir(&results)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .starts_with(&format!("{os}-"))
+            })
+            .any(|e| {
+                let text = std::fs::read_to_string(e.path()).unwrap();
+                FIVE.iter().all(|test| {
+                    text.contains(&format!("RESULT webview {test} PASS"))
+                        && !text.contains(&format!("RESULT webview {test} FAIL"))
+                })
+            })
+    }
+
+    #[test]
+    fn script_runs_only_where_a_recorded_run_passed_all_five_isolation_tests() {
+        for os in PROVEN {
+            assert!(recorded_green(os), "{os} has no all-green recorded run");
+        }
+        assert!(!recorded_green("windows"), "record windows, then prove it");
+        assert!(!PROVEN.contains(&"windows"));
+        assert_eq!(SCRIPT_RUNS_HERE, PROVEN.contains(&std::env::consts::OS));
     }
 }

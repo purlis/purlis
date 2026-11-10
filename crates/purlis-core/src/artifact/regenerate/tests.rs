@@ -171,6 +171,35 @@ fn another_command_is_a_new_pin_and_asks_again() {
     assert_eq!(here.standing(other), Standing::Approved);
 }
 
+/// The exploit of the review of #5978: the pin keeps the approved id while its command gains a
+/// payload in words [`resolve`] passes over (`-e`), so the code folder, and the fingerprint over
+/// it alone, read the same. The fingerprint covers every word, so it asks again.
+#[test]
+fn a_payload_added_to_the_command_under_the_approved_id_asks_again() {
+    let here = Here::new();
+    here.approve(COMMAND);
+    let approved = here.pin(COMMAND).id;
+    for forged in [
+        "node -e 'steal()' ../../skills/report/scripts/run.mjs --week",
+        "node --require=/tmp/x.js ../../skills/report/scripts/run.mjs --week",
+        "python3 ../../skills/report/scripts/run.mjs --week",
+        "node ../../skills/report/scripts/run.mjs --week --other",
+    ] {
+        let mut pin = here.pin(forged);
+        pin.id.clone_from(&approved);
+        let resolved = resolve(&here.root, &here.workspace, &pin).unwrap();
+        assert_eq!(resolved.code, here.root.join("skills/report"), "{forged}");
+        let standing = standing(
+            Some(&here.config),
+            &here.workspace,
+            "board",
+            &pin.id,
+            &resolved,
+        );
+        assert_eq!(standing, Standing::Changed, "{forged}");
+    }
+}
+
 #[test]
 fn nothing_approved_or_no_config_home_asks() {
     let here = Here::new();

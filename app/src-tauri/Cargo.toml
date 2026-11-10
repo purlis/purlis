@@ -64,6 +64,8 @@ changelog.workspace = true
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 # An artifact page names the data file it asks for percent-encoded (#5961); the core's version.
 percent-encoding = "2"
+# The one-time token an artifact page's link report must carry (ADR 0122 §5); the core's version.
+getrandom = "0.4"
 serde.workspace = true
 serde_json.workspace = true
 specta = { version = "=2.0.0-rc.25", features = ["derive", "function"] }
