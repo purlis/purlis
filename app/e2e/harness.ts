@@ -473,6 +473,9 @@ export const USED_SKILL = "purlis-secrets";
 /** What the reporting harness says once the window allowed its permission ask. */
 export const INBOX_ALLOWED = "carried on: the window allowed it";
 
+/** What the reporting harness says once the window denied its permission ask (#6001). */
+export const INBOX_DENIED = "stopped: the window denied it";
+
 /** The one command the reporting harness asks permission to run. */
 export const ASKED_COMMAND = "echo asked-in-the-inbox";
 
@@ -540,6 +543,9 @@ export function writeReportingShell(
       `  --hook ${singleQuoted(permissionHook(charter))} \\`,
       `  --hook ${singleQuoted(skillHook(charter))} \\`,
       `  --hook ${singleQuoted(secretHook(charter))} \\`,
+      `  --hook ${singleQuoted(secretAskHook(charter))} \\`,
+      `  --hook ${singleQuoted(dispatchHook(charter))} \\`,
+      `  --hook ${singleQuoted(hostHook(charter))} \\`,
       `  --hook ${singleQuoted(`[ -f ${singleQuoted(USES_A_SKILL)} ] || ${hookCommand("stop", "Stop")}`)} \\`,
       "  --interactive",
       "",
@@ -584,7 +590,7 @@ function permissionHook(charter: string): string {
     });
   const asks = (command: string) => [
     `  decided=$(printf '%s' ${singleQuoted(payload(command))} | ${singleQuoted(charter)} hook permissionrequest)`,
-    `  case "$decided" in *'"allow"'*) echo ${singleQuoted(INBOX_ALLOWED)} ;; esac`,
+    `  case "$decided" in *'"allow"'*) echo ${singleQuoted(INBOX_ALLOWED)} ;; *'"deny"'*) echo ${singleQuoted(INBOX_DENIED)} ;; esac`,
   ];
   return [
     `if [ -f ${singleQuoted(ASKS_A_LONG_PERMISSION)} ]; then`,
@@ -646,6 +652,103 @@ function secretHook(charter: string): string {
     "    sleep 1",
     "  done",
     `  echo "${SECRET_RAN} $ended"`,
+    "fi",
+  ].join("\n");
+}
+
+/**
+ * **What the person's answer to a chat's ask is told back as, at its next turn** (#6001): the
+ * harness asks `charter hook userpromptsubmit` again, every second for two minutes, as a chat's
+ * next turn would, until what the app hands it holds `words`, and then says `said`. Each try
+ * starts a turn, so the chat reads as working while it waits, never as waiting on a reply.
+ */
+function toldAtItsNextTurn(charter: string, words: string, said: string): string[] {
+  return [
+    "  tries=0",
+    `  while [ "$tries" -lt 120 ]; do`,
+    `    told=$(${singleQuoted(charter)} hook userpromptsubmit </dev/null 2>/dev/null)`,
+    `    case "$told" in *${singleQuoted(words)}*) echo ${singleQuoted(said)}; break ;; esac`,
+    "    tries=$((tries + 1))",
+    "    sleep 1",
+    "  done",
+  ];
+}
+
+/**
+ * **While this file is in the run's tree, the reporting harness asks the person for a secret**
+ * (#6001): `secret ask` for {@link ASKED_KEY}, which its persona's vault lacks, run again every
+ * second for a minute while it says it waits on the person, as a chat would. Then it says
+ * {@link SECRET_ASKED} and how the command ended, after what the command printed.
+ */
+export const ASKS_A_SECRET = join(THE_RUNS_TREE, "asks-a-secret");
+
+/** The key {@link ASKS_A_SECRET} asks for. */
+export const ASKED_KEY = "e2e-6001-token";
+
+/** What the harness says once its `secret ask` has an answer, then what it ended with. */
+export const SECRET_ASKED = "the secret ask ended with";
+
+function secretAskHook(charter: string): string {
+  return [
+    `if [ -f ${singleQuoted(ASKS_A_SECRET)} ]; then`,
+    "  tries=0",
+    "  while :; do",
+    `    ${singleQuoted(charter)} secret ask ${ASKED_KEY} --purpose 'the e2e queue'`,
+    "    ended=$?",
+    `    [ "$ended" -eq ${WAITING_ON_THE_PERSON} ] && [ "$tries" -lt 60 ] || break`,
+    "    tries=$((tries + 1))",
+    "    sleep 1",
+    "  done",
+    `  echo "${SECRET_ASKED} $ended"`,
+    "fi",
+  ].join("\n");
+}
+
+/**
+ * **While this file is in the run's tree, the reporting harness dispatches a task** (#6001) to
+ * {@link DISPATCHED_TO}, a persona its own (the plane's default) has no grant for, so the person
+ * is asked. `dispatch` says it is held and ends at once; the answer comes at the chat's next
+ * turn, so the harness asks for that turn until it hears a Keep blocked and says
+ * {@link DISPATCH_KEPT_BLOCKED}.
+ */
+export const DISPATCHES_A_TASK = join(THE_RUNS_TREE, "dispatches-a-task");
+
+/** The persona {@link DISPATCHES_A_TASK} hands its task to, which a spec writes into its plane. */
+export const DISPATCHED_TO = "reviewer";
+
+/** What the harness says once it was told the person kept its dispatch blocked. */
+export const DISPATCH_KEPT_BLOCKED = "told: the person kept the dispatch blocked";
+
+function dispatchHook(charter: string): string {
+  return [
+    `if [ -f ${singleQuoted(DISPATCHES_A_TASK)} ]; then`,
+    `  echo 'check the queue' | ${singleQuoted(charter)} dispatch --to ${DISPATCHED_TO} --name 'e2e task'`,
+    ...toldAtItsNextTurn(charter, "kept your dispatch blocked", DISPATCH_KEPT_BLOCKED),
+    "fi",
+  ].join("\n");
+}
+
+/**
+ * **While this file is in the run's tree, the reporting harness reaches a host its sandbox has
+ * not allowed** (#6001): `curl` through the chat's own proxy, which holds the connection and asks
+ * the person (#1709). That needs the project's sandbox in force (`[sandbox] mode = "on"`); at the
+ * floor the network is open. The host need not exist: the proxy decides by its name. Once `curl`
+ * ends, the harness asks for its next turn until it hears a Keep blocked, and says
+ * {@link HOST_KEPT_BLOCKED}.
+ */
+export const REACHES_A_HOST = join(THE_RUNS_TREE, "reaches-a-host");
+
+/** The host {@link REACHES_A_HOST} reaches for: no project allows it, and no resolver knows it. */
+export const REACHED_HOST = "purlis-e2e-unlisted.example.com";
+
+/** What the harness says once it was told the person kept the host blocked. */
+export const HOST_KEPT_BLOCKED = "told: the person kept the host blocked";
+
+function hostHook(charter: string): string {
+  return [
+    `if [ -f ${singleQuoted(REACHES_A_HOST)} ]; then`,
+    `  curl -sS -o /dev/null --max-time 120 https://${REACHED_HOST}/ 2>/dev/null`,
+    ...toldAtItsNextTurn(charter, "Kept blocked by the person", HOST_KEPT_BLOCKED),
     "fi",
   ].join("\n");
 }
