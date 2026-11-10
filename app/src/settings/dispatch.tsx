@@ -139,6 +139,23 @@ const SHORT: Readonly<Record<string, string>> = {
   "stuck-long-minutes": "Turn",
 };
 
+/**
+ * **When a working chat reads Stuck?** (#6014): three `[dispatch]` keys, questions rather than
+ * limits on dispatch, drawn on Settings › You › Attention (#6019, ADR 0121 decision 22) and not on
+ * this page. Kept where they are, in the project's files, while the operator decides whether they
+ * become this machine's.
+ */
+export const STUCK_LIMITS: ReadonlySet<string> = new Set([
+  "stuck-silent-minutes",
+  "stuck-failing-times",
+  "stuck-long-minutes",
+]);
+
+/** Which of the core's limits a table draws: dispatch's own, or the Stuck? thresholds. */
+export type LimitsOf = "dispatch" | "stuck";
+
+const drawnOn = (of: LimitsOf, word: string) => STUCK_LIMITS.has(word) === (of === "stuck");
+
 /** One limit's box: empty where the row does not set it, showing what is in force beneath. */
 function Cell({
   limit,
@@ -280,13 +297,16 @@ function useOffers(plane: PlaneId, wanted: boolean): Offer[] {
 function useDispatchTable(
   plane: PlaneId,
   scope?: DispatchScope,
+  of: LimitsOf = "dispatch",
 ): { control: (ids?: RowIds) => ReactNode; undo?: () => void } {
   const { page, read, said, refusals, write, undo, dismiss } = useDispatchLimits(plane);
   /** Overrides added here and not written yet: a row to fill in. */
   const [drafts, setDrafts] = useState<readonly Offer[]>([]);
   const [picked, setPicked] = useState("");
   const held = scope !== undefined;
-  const offers = useOffers(plane, !held);
+  /** The Stuck? table edits the rows that hold its keys: overrides are added and removed here. */
+  const stuck = of === "stuck";
+  const offers = useOffers(plane, !held && !stuck);
   const overrideFor = useId();
   /** Why a control of the committed file is off: the project is read-only (#1795). */
   const readOnly = useReadOnlySaid();
@@ -350,11 +370,22 @@ function useDispatchTable(
           written: false,
         })
       : undefined;
-    const rows = own !== undefined ? [own] : [...committed, ...drafted, ...mine];
     // A persona's two own limits are drawn where a persona's row may be.
     const columns = page.limits
       .map((limit, at) => ({ limit, at }))
+      .filter(({ limit }) => drawnOn(of, limit.word))
       .filter(({ limit }) => !limit.persona_only || !held || scope.kind === "persona");
+    /** Whether `one` sets a limit this table draws. */
+    const setsHere = (one: Drawn) => columns.some(({ at }) => one.row?.values[at] != null);
+    const rows =
+      own !== undefined
+        ? [own]
+        : stuck
+          ? // The project's row, and every row that sets a threshold.
+            [...committed, ...mine].filter(
+              (one) => (one.which === "shared" && one.scope === "project") || setsHere(one),
+            )
+          : [...committed, ...drafted, ...mine];
     const unwritten = beneathUnwritten(page);
     const open = offers.filter(
       (one) => !has(one) && !drafted.some((row) => row.scope === one.kind && row.name === one.name),
@@ -367,15 +398,24 @@ function useDispatchTable(
     const whole = (value: number | null | undefined): SettingsValue | null =>
       value === null || value === undefined ? null : { kind: "integer", value };
     const remove = (one: Drawn) => {
+      // A row that also sets what the other table draws keeps those keys: only this table's go.
+      const keeps = page.limits.some(
+        (limit, at) => !drawnOn(of, limit.word) && one.row?.values[at] != null,
+      );
+      // Undo writes back each limit taken out: a removed table comes back with them.
+      const undoes = page.limits.flatMap((limit, at) => {
+        const value = whole(one.row?.values[at]);
+        return value === null || (keeps && !drawnOn(of, limit.word))
+          ? []
+          : [{ path: pathOf(one, limit.word), value }];
+      });
       if (one.written)
         write(
           one.which,
-          [{ path: pathOf(one), value: null }],
-          // Undo writes back each limit the row set: its table comes back with them.
-          page.limits.flatMap((limit, at) => {
-            const value = whole(one.row?.values[at]);
-            return value === null ? [] : [{ path: pathOf(one, limit.word), value }];
-          }),
+          keeps
+            ? undoes.map((edit) => ({ path: edit.path, value: null }))
+            : [{ path: pathOf(one), value: null }],
+          undoes,
         );
       setDrafts((was) => was.filter((it) => !(it.kind === one.scope && it.name === one.name)));
     };
@@ -389,7 +429,7 @@ function useDispatchTable(
         <ControlTable
           className="dispatch-limits-scroll"
           stacks
-          aria-label="Dispatch limits"
+          aria-label={stuck ? "Stuck? thresholds" : "Dispatch limits"}
           aria-describedby={ids?.describedBy}
         >
           <ControlHead>
@@ -448,6 +488,7 @@ function useDispatchTable(
                   ))}
                   <ControlCell actions>
                     {!held &&
+                      !stuck &&
                       one.scope === "persona" &&
                       offers.some(
                         (offer) => offer.kind === "persona" && offer.name === one.name,
@@ -478,7 +519,15 @@ function useDispatchTable(
             })}
           </ControlBody>
         </ControlTable>
-        <p className="granted-note">
+        {stuck && (
+          <p className="granted-note">
+            Kept in {page.file}, which your team sees; Me on this machine is kept in{" "}
+            {page.local_file}, on this machine only. The most specific row wins, and an empty box
+            takes the value shown in it.
+          </p>
+        )}
+        {!stuck && (
+          <p className="granted-note">
           {/* Where the limits are kept is the group's to say, once (DS-10, after DS-8); the
               persona view has no group, so it says it here. */}
           {held
@@ -486,8 +535,9 @@ function useDispatchTable(
               ? `Kept in ${page.file}, which your team sees, and never in the persona's own file. An empty box takes the value shown in it, from the workspace or the project.`
               : "An empty box takes the project's value, shown in it."
             : "The most specific row wins: a persona's over a workspace's over the project's. An empty box takes the value shown in it. A 0 switches dispatch off for that row, and a more specific row may set it back; 0 messages per minute stops messages only."}
-        </p>
-        {!held && (
+          </p>
+        )}
+        {!held && !stuck && (
           /* #1512: where the two limits that are off until set are written, say what binds
              them and what cannot. */
           <p className="granted-note" data-testid="dispatch-tokens-time-note">
@@ -501,13 +551,13 @@ function useDispatchTable(
             reports no tokens is not counted.
           </p>
         )}
-        {!held && (
+        {!held && !stuck && (
           <p className="granted-note">
             Me on this machine is kept in {page.local_file}, on this machine only, and can only
             lower a limit.
           </p>
         )}
-        {!held && page.local_left_out !== null && (
+        {!held && !stuck && page.local_left_out !== null && (
           <p className="granted-note">
             {page.local_left_out} Your dispatch limits in it still apply, because they can only
             lower one.
@@ -518,7 +568,7 @@ function useDispatchTable(
             {one}
           </p>
         ))}
-        {!held && (
+        {!held && !stuck && (
           <div className="ui-setting-status">
             {/* The set's select (#626), named by a label a screen reader alone reads: on
                 screen, Add an override beside it says what it is for. */}
@@ -746,6 +796,8 @@ export function dispatchGroup(
     help: "How many tasks a chat may start, how deep a chain may go, how fast chats may message each other, how long a task may work, and how many tokens a session may use.",
     // Said once for the group (DS-8's once per group), not under each table.
     kept: `Kept in ${file}, which your team sees.`,
+    // The Stuck? thresholds moved to Attention (#6019): the page says where.
+    links: [{ label: "Go to Stuck? in Attention…", action: `settings.group:${ATTENTION_GROUP}` }],
     settings: [
       {
         id: `${DISPATCH}.limits`,
@@ -793,5 +845,25 @@ export function workspaceDispatchGroup(plane: PlaneId, workspace: string): Setti
         },
       },
     ],
+  };
+}
+
+/** Where the Stuck? thresholds are set now: Settings › You › Attention (#6019). */
+export const ATTENTION_GROUP = "you.notifications";
+
+/**
+ * **The Stuck? thresholds** as a row of Settings › You › Attention (#6019): the dispatch table's
+ * rows, held to the three `stuck-*` keys. They stay the project's, in its settings files, and the
+ * row says so, on a page whose other rows are this machine's.
+ */
+export function stuckSetting(plane: PlaneId): LiveSetting {
+  return {
+    id: `${ATTENTION_GROUP}.stuck`,
+    label: "Stuck? for this project",
+    help: "A working chat reads Stuck? when nothing new has come from it for the silent minutes, when the same command failed that many times in a row, or when one turn ran the turn minutes. It is a question in Updates, never a notification. This project's: kept in its settings files, not on this machine.",
+    writes: "per control",
+    useControl: function useStuck() {
+      return { grouped: true, ...useDispatchTable(plane, undefined, "stuck") };
+    },
   };
 }

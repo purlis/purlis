@@ -236,8 +236,19 @@ impl Sources {
     /// **Which are on, as a layout document keeps it**: `notifications.off`, the update kinds the
     /// person turned off (`app/src/notificationPrefs.ts`). A kind it does not know is no source,
     /// and anything but a list turns none off.
-    pub fn of_layout(_document: &serde_json::Value) -> Self {
-        Self::default()
+    pub fn of_layout(document: &serde_json::Value) -> Self {
+        let Some(off) = document
+            .get("notifications")
+            .and_then(|held| held.get("off"))
+            .and_then(serde_json::Value::as_array)
+        else {
+            return Self::default();
+        };
+        let turned_off = |kind: &str| off.iter().any(|one| one.as_str() == Some(kind));
+        Self {
+            failed: !turned_off("task-failed"),
+            finished: !turned_off("task-done"),
+        }
     }
 }
 
@@ -523,6 +534,14 @@ impl Rules {
         let mut acts = Vec::new();
         for finish in fresh {
             let long = !finish.failed && ended.away && finish.worked > ended.long;
+            let off = if finish.failed {
+                !ended.sources.failed
+            } else {
+                !ended.sources.finished
+            };
+            if off {
+                continue;
+            }
             if !finish.by_person || !(finish.failed || long) || (ended.looking)(finish.session) {
                 continue;
             }
