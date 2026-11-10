@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794348461980,
+  "lastUpdate": 1794352232774,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -46494,6 +46494,48 @@ window.BENCHMARK_DATA = {
             "value": 101.606135,
             "unit": "ms",
             "extra": "median of 5 runs: 100.266, 100.676, 101.606, 101.941, 102.660 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "412d988d2bbb53040bb7c94778ca1597f056eb82",
+          "message": "The macOS outcome bar restarts its chat once the chat has spoken, and uses its skill in the new one (#6106) (#6160)\n\n* TEMPORARY e2e-6106: trace the stand-in's hooks and the core's follow of a chat's conversation, and repeat the macOS codex/opencode bars under load\n\nInstrumentation only, to be reverted before review (#6106).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M73BCPTY400CM2QTM160N4V5\nPurlis-Persona: steward\n\n* The outcome bar restarts a chat once its turn has ended, not before its harness has spoken (#6106)\n\nOn a loaded macOS runner a reporting stand-in's program took 4 to 5 s to\nstart, and the bar's studio steps took 4: Restart was pressed before the\nchat's first hook, so purlis rightly had no conversation to resume yet.\nNo hook line was lost. The bar now waits, before its clock, until the\nchat's tab says it needs you: its Stop was heard, and its conversation was\nfollowed before the window was told.\n\nAlso reverts the temporary core and stand-in traces; the loaded repeat of\nthe macOS bars stays for one more run.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M73BCPTY400CM2QTM160N4V5\nPurlis-Persona: steward\n\n* The outcome bar uses its skill in the restarted chat, never the one it replaced (#6106)\n\nA restart starts the chat under a new number and ends the old one only\nonce the new one has started. On a loaded runner the old chat stayed in\nfront, running, through the bar's steady count, and Use skill was asked\nof a chat about to end (\"the palette never offered chat.useskill:1\",\ncodex, run 42887466233). The restarted chat is now a chat the core runs\nthat is not the one restarted.\n\nFrom the review: the wait for a chat's state is started.ts's\ntheChatInFrontSays, its failure says what stopped it, and hooks.rs has a\ntest that a Codex chat's conversation is followed before the window is\ntold it moved, which the bar's wait for \"needs you\" relies on.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M73BCPTY400CM2QTM160N4V5\nPurlis-Persona: steward\n\n* DELIBERATELY RED (#6106): tell the window a chat moved before its conversation is followed\n\nTo see hooks.rs's new test fail for the right reason on CI, where its socket binds.\nReverted in the next commit.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M73BCPTY400CM2QTM160N4V5\nPurlis-Persona: steward\n\n* Revert the deliberate red and the temporary loaded repeat of the macOS bars (#6106)\n\nThe red commit made hooks.rs's new test fail for the right reason on CI\n(run 42894151143, rust tests part 2: left None, right Some(\"scenario\")).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M73BCPTY400CM2QTM160N4V5\nPurlis-Persona: steward\n\n* theChatInFrontSays catches as its sibling specs do (#6106)\n\nLint's preserve-caught-error refused a caught error thrown on without a\ncause, and the app's ES2020 lib types no Error options to carry one.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M73BCPTY400CM2QTM160N4V5\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T21:57:14Z",
+          "tree_id": "e8f69e6bcbc774f682313ab8f5dc1e2921a0ccb7",
+          "url": "https://github.com/purlis/purlis/commit/412d988d2bbb53040bb7c94778ca1597f056eb82"
+        },
+        "date": 1794352225955,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.442314,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.437, 0.442, 0.442, 0.458, 0.475 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.272289,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.177, 16.251, 16.272, 16.287, 16.516 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.832904,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.883, 101.798, 101.833, 102.427, 102.435 ms"
           }
         ]
       }
