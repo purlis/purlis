@@ -5349,6 +5349,11 @@ fn a_sandboxed_chats_worktree_is_cut_by_the_app_and_a_host_outside_its_egress_is
     let claimed: serde_json::Value =
         serde_json::from_str(log.lines().last().expect("a line")).expect("json");
     assert_eq!(claimed["session"], session.to_string(), "{claimed}");
+    // A chat marked so holds no egress of its own to refuse a host by: the refusal below is
+    // checked where the chat starts sandboxed.
+    if crate::sandboxing::claude_is_wrapped_here_for_tests() {
+        return;
+    }
 
     // The forge's host is outside what the chat reaches: refused, and git never runs.
     let refused = a_git_action_asked(

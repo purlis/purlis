@@ -1937,6 +1937,15 @@ fn a_chat_starts_and_its_tab_draws_what_it_wrote(target: &Target) {
 /// the project's own files with the code the window's start runs. The window's own process
 /// composes no such start, and says so.
 fn a_chat_named_alone_is_composed_by_the_host_as_its_profile_says(target: &Target) {
+    // On a runner's link a chat starts sandboxed or not at all, and a test's host B is not a
+    // runner paired with a desktop, where a Claude Code profile is wrapped (#4083): where purlis
+    // wraps a Claude Code chat, its start on profile `work` is checked on the other targets.
+    if target.saved_by.is_some()
+        && target.runner.is_none()
+        && crate::sandboxing::claude_is_wrapped_here_for_tests()
+    {
+        return;
+    }
     let bin = tempfile::tempdir().expect("a folder for the harness");
     let harness = stand_in::claude_code(
         bin.path(),
@@ -1996,6 +2005,15 @@ fn a_chat_named_alone_is_composed_by_the_host_as_its_profile_says(target: &Targe
 /// ask its hook raises is held by the window and answered from there, and stopping every
 /// program ends it and keeps its tab. The window's own process composes no such start.
 fn a_harness_chat_started_by_its_names_is_viewed_typed_into_answered_and_stopped(target: &Target) {
+    // On a runner's link a chat starts sandboxed or not at all, and a test's host B is not a
+    // runner paired with a desktop, where a Claude Code profile is wrapped (#4083): where purlis
+    // wraps a Claude Code chat, its start on profile `work` is checked on the other targets.
+    if target.saved_by.is_some()
+        && target.runner.is_none()
+        && crate::sandboxing::claude_is_wrapped_here_for_tests()
+    {
+        return;
+    }
     if target.host.is_none() {
         let refused = target
             .sessions

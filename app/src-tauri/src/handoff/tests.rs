@@ -3855,6 +3855,13 @@ fn a_chat_as(held: &Held, root: &Path, persona: Option<&str>, cwd: &Path) -> u32
         persona: persona.map(str::to_owned),
         name: "1".to_owned(),
         cwd: Some(cwd.to_path_buf()),
+        // Started as the person starts one where purlis wraps a Claude Code chat, so it reads
+        // the level [`Plane::new`] switched off there (ADR 0067 as amended 2026-11-10).
+        made: if crate::sandboxing::claude_is_wrapped_here_for_tests() {
+            purlis_core::sandbox::Made::Window
+        } else {
+            purlis_core::sandbox::Made::default()
+        },
         ..Default::default()
     };
     let ready = purlis_core::start::ready(&start, root).expect("the asking chat starts");
@@ -6811,6 +6818,11 @@ fn a_chat_on_a_profile_that_asks_nobody_passes_it_on_to_no_chat_it_dispatches() 
         persona: Some("steward".to_owned()),
         name: "1".to_owned(),
         cwd: Some(plane.root.clone()),
+        made: if crate::sandboxing::claude_is_wrapped_here_for_tests() {
+            purlis_core::sandbox::Made::Window
+        } else {
+            purlis_core::sandbox::Made::default()
+        },
         ..Default::default()
     };
     let ready = purlis_core::start::ready(&start, &plane.root).expect("the person's own");
@@ -7295,7 +7307,22 @@ fn the_person_s_ask_takes_nothing_the_asking_chat_holds_or_was_allowed() {
     };
     let asking = held.chats().start(&holding, STARTING).expect("it runs");
 
-    let arrived = ask_from_the_tab(&held, &id, asking, "devops", "check prod").expect("it starts");
+    let asked = ask_from_the_tab(&held, &id, asking, "devops", "check prod");
+    // Where purlis wraps a Claude Code chat, the task starts sandboxed or not at all, and its
+    // profile is not a sandbox-only one (ADR 0067 as amended 2026-11-10): the asking chat's own
+    // opt-out would have started it, so its refusal shows that opt-out was not taken.
+    if crate::sandboxing::claude_is_wrapped_here_for_tests() {
+        let Err(why) = asked else {
+            panic!("refused, not started on the asking chat's opt-out");
+        };
+        assert!(
+            why.contains("runs only on a profile for sandboxed chats only"),
+            "{why}"
+        );
+        assert!(held.chats().chat_grants().is_empty());
+        return;
+    }
+    let arrived = asked.expect("it starts");
 
     let child = held
         .chats()

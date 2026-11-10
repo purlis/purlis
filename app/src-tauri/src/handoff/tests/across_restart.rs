@@ -1572,6 +1572,12 @@ fn its_tool_says_it_started_its_shell(held: &Held, chat: u32) {
 #[cfg(unix)]
 #[test]
 fn a_shell_left_by_a_harness_that_exits_on_its_own_ends_with_it_and_stays_gone_across_the_quit() {
+    // Where purlis wraps a Claude Code chat its stand-in here starts without the sandbox, and
+    // a shell left by an unsandboxed chat on Linux is the follow-up to ADR 0067 as amended
+    // 2026-11-10; the shell's end is checked where the chat runs sandboxed.
+    if crate::sandboxing::claude_is_wrapped_here_for_tests() {
+        return;
+    }
     // The stand-in waits for its plane's `runs/go`, which the test writes once the shell is
     // noted, and exits.
     let plane = a_plane_whose_harness_leaves_a_shell_then(LETS_GO_THEN_EXITS);
@@ -1602,6 +1608,12 @@ fn a_shell_left_by_a_harness_that_exits_on_its_own_ends_with_it_and_stays_gone_a
 #[cfg(unix)]
 #[test]
 fn a_shell_left_by_a_harness_hung_up_on_from_outside_ends_with_it() {
+    // Where purlis wraps a Claude Code chat its stand-in here starts without the sandbox, and
+    // a shell left by an unsandboxed chat on Linux is the follow-up to ADR 0067 as amended
+    // 2026-11-10; the shell's end is checked where the chat runs sandboxed.
+    if crate::sandboxing::claude_is_wrapped_here_for_tests() {
+        return;
+    }
     let plane = a_plane_whose_harness_leaves_a_shell();
     let _cleanup = LeavesNoShell(&plane);
     let (planes, id, held, chat, shell) = a_chat_with_a_shell_of_its_own(&plane);

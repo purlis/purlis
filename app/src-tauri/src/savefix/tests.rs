@@ -715,6 +715,8 @@ fn fix_reads_the_red_request_from_the_project_and_finds_the_chat_open_for_it() {
     git(root, &["init", "-q", "-b", "main"]);
     git(root, &["add", purlis_core::plane::MANIFEST, ".gitignore"]);
     git(root, &["commit", "-q", "-m", "one"]);
+    // Its own settings again, now the project is a repository of its own.
+    crate::sandboxing::no_claude_sandbox_here_for_tests(root);
     let head = git(root, &["rev-parse", "HEAD"]);
     let page = "https://github.com/acme/plane/pull/12";
     let planes = planes();
