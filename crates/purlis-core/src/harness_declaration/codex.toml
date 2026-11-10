@@ -49,5 +49,7 @@ reports_its_start_before_the_first_prompt = "no: Codex reports its start inside 
 keeps_conversations_by_directory = "no: Codex finds a session by its id from any directory"
 reports_waiting = "no: Codex says only when it stops mid-turn for your approval, never when it waits on anything else"
 resumes_by_id = "yes"
-per_chat_plugins = "no: Codex has no switch that turns a plugin on for one session"
+# Off only: `-c 'plugins."<id>".enabled=false'`, measured on 0.163.0 (ADR 0050, amended
+# 2026-10-21). Off is all a Try it's chat and a grade ask of it.
+per_chat_plugins = "yes"
 mcp_servers = "yes"

@@ -187,8 +187,8 @@ fn a_control_off_for_a_missing_capability_says_the_cards_line_and_label() {
             .lacks("per_chat_plugins")
             .as_deref(),
         Some(
-            "Gemini CLI cannot take plugins for one chat alone, so the plugins chosen for this \
-             project are not handed to it. See What Gemini CLI can do here."
+            "Gemini CLI cannot turn a plugin off for one chat, so every chat on it has your \
+             plugins on. See What Gemini CLI can do here."
         )
     );
     // Silence never reads as yes: a declaration that does not say how it resumes.
@@ -223,8 +223,8 @@ fn the_lines_are_what_the_harness_lacks_in_the_cards_order() {
             "opencode says nothing until your first prompt, so a new chat looks idle until then.",
             "opencode finds a conversation by its id from any folder, not by the folder it was \
              started in.",
-            "opencode cannot take plugins for one chat alone, so the plugins chosen for this \
-             project are not handed to it.",
+            "opencode cannot turn a plugin off for one chat, so every chat on it has your \
+             plugins on.",
             "opencode cannot have a prompt typed in for you, because purlis cannot tell when it \
              has finished starting.",
             "opencode cannot be sandboxed by purlis yet, so a project that sandboxes its chats \
@@ -549,6 +549,24 @@ fn answered(mut card: Card, id: &str, answer: Answer) -> Card {
     let harness = Harness::of_kind(&card.name).expect("a built-in");
     card.unreported = unreported_of(&card.title, &card.abilities, harness.unsaid());
     card
+}
+
+/// The card's plugin line is what the adapter does: a Try it's chat and a grade's turn every
+/// installed plugin off only where the harness takes one off for one chat (decision 50, #3468),
+/// measured on Claude Code 2.1.304, Codex 0.163.0 and opencode 1.19.5 (ADR 0050, amended
+/// 2026-11-10, #3009).
+#[test]
+fn a_built_ins_plugin_line_says_whether_its_adapter_turns_a_plugin_off_for_one_chat() {
+    for harness in Harness::ALL {
+        assert_eq!(
+            has(&built_in_card(harness), "per_chat_plugins"),
+            harness
+                .adapter()
+                .plugins()
+                .turns_a_plugin_off_for_one_chat(),
+            "{harness:?}"
+        );
+    }
 }
 
 #[test]
