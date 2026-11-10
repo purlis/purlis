@@ -12,7 +12,7 @@ import { KindIcon, kindOfAsk, RowAge } from "./InboxRow";
 import { toneOfKind } from "./messageTone";
 import { keepInboxScope, keptInboxScope, scopeOf, type InboxScope } from "./inboxScope";
 import { NoQuestion, ReadingTheQuestion, useAnswerQuestion } from "./AnswerQuestion";
-import { askKey, noteAnswered, replyBytes, ageOf, type Answered } from "./inboxRules";
+import { askKey, heldKey, noteAnswered, replyBytes, ageOf, type Answered } from "./inboxRules";
 import { type AllowedLately } from "./allowedLately";
 import { NoticeWayGuard } from "./noticeSettle";
 import { ChatText } from "./ChatText";
@@ -569,7 +569,9 @@ export function Ask({
   const who = chainSaid(ask.chain);
   /** A secret's one notice draws its own answers (#5080). */
   const secretNotice = ask.secret != null || ask.run != null;
-  const key = askKey(ask);
+  // Another project's ask is known by its project too (#1921): two projects' asks may share
+  // a chat's number and an ask's id.
+  const key = theirs ? heldKey(ask, plane) : askKey(ask);
   /** The task a task's question is from, as its Answer form names it. */
   const task = ask.chain[ask.chain.length - 1] ?? who;
   /** Its words are drawn whole: it is a dispatch's own Notice, or an answer here allows. */

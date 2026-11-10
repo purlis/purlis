@@ -115,7 +115,7 @@ describe("the Browsers grid", () => {
       within(scopes)
         .getAllByRole("radio")
         .map((one) => one.closest("label")?.textContent),
-    ).toEqual(["All projects3", "This project2", "This workspace1"]);
+    ).toEqual(["This workspace1", "This project2", "All projects3"]);
 
     await userEvent.click(within(scopes).getByRole("radio", { name: /This workspace/ }));
     expect(tiles()).toEqual(["A1"]);

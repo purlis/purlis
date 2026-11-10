@@ -198,6 +198,16 @@ describe("another project's ask, in place in Asks (#1921)", () => {
     expect(sent(calls, "allow_sandbox_block")).toHaveLength(0);
   });
 
+  it("draws two projects' asks of the same chat number and id as two rows", () => {
+    core({});
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    draw([question(6)], webHere([question(6)]));
+    expect(document.querySelectorAll('[role="row"].inbox-ask')).toHaveLength(2);
+    expect(document.querySelector(`[data-elsewhere="${WEB}#6"]`)).not.toBeNull();
+    expect(errors).not.toHaveBeenCalledWith(expect.stringContaining("Duplicate key"));
+    errors.mockRestore();
+  });
+
   it("keeps a visible Answer on a typed ask of another project", () => {
     core({});
     draw([], webHere([question(6)]));

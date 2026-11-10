@@ -146,10 +146,6 @@ const ALLOWED: Readonly<Record<string, readonly string[]>> = {
     '.inbox-update[data-read] .ask-says on "ask-says ask-lines inbox-primary ui-text-body ui-text-strong"',
     '.inbox-update[data-read] .ask-says on "`ask-says inbox-primary ui-text-body ui-text-strong${whole ? "" : " inbox-clamped"}`"',
   ],
-  // These are asks, never an `.inbox-update`.
-  "InboxElsewhere.tsx": [
-    '.inbox-update[data-read] .ask-says on "ask-says inbox-primary ui-text-body ui-text-strong inbox-clamped"',
-  ],
   // A clone under way says so in `ui-text-secondary` on purpose (#1920). `.state-bar` is the
   // Changes view's (`ChangesView.tsx`) and `.palette` the palette's, whose lines wear no role;
   // no view's or panel's sentence is drawn inside either.
@@ -184,7 +180,6 @@ const ALLOWED: Readonly<Record<string, readonly string[]>> = {
 const CEILING: Readonly<Record<string, number>> = {
   "Explorer.tsx": 15,
   "InboxAsks.tsx": 3,
-  "InboxElsewhere.tsx": 3,
   "NotCloned.tsx": 3,
   "PanelList.tsx": 4,
   "Panels.tsx": 5,

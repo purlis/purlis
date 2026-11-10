@@ -2725,8 +2725,15 @@ function App() {
   const elsewhereSaid = JSON.stringify({
     asking: everyNeeding.filter((one) => !planes.includes(one.plane)),
     quiet: everyQuiet,
-    // Ask by ask (qw359, #1921): the Inbox's All projects lists and answers them in place.
-    waitingHere: askedHere,
+    // Ask by ask (qw359, #1921): the Inbox's All projects lists and answers them in place. Not
+    // where each chat is filed: that moves with every chat's queue, and every view is handed this
+    // (#1034); the other windows are told it (`askedHere`), whose queues this window does not hold.
+    waitingHere: askedHere.map(({ plane, project, count, asks }) => ({
+      plane,
+      project,
+      count,
+      ...(asks === undefined ? {} : { asks }),
+    })),
     there: askedThere,
   });
   /** Go to project (#1700 item 5): that project in front, with its Inbox open, as the ✋ does. */
