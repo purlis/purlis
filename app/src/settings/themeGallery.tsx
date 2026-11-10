@@ -573,7 +573,9 @@ function Cards({
               {/* Where it comes from and what it found is the card's description; a refused
                   card's is why it is refused, under its pictures' place. */}
               {card.refused ? (
-                <span className="text-sm text-text-secondary">
+                // Kept from a reader, as every part of an option but its name is (#6043): a
+                // refused card is described by why it is refused.
+                <span className="text-sm text-text-secondary" aria-hidden="true">
                   {[fromSaid(card), ...marks].join(" · ")}
                 </span>
               ) : (
@@ -635,7 +637,9 @@ function Pictures({
   // A picture is kept by what it is drawn with: the theme's stamp and the values chosen here.
   const values = isYours(card, yours) ? JSON.stringify(yours?.options ?? {}) : "";
   return (
-    <div ref={box} className="flex gap-1">
+    // The card names the theme; its pictures, and how many more there are, add nothing a reader
+    // needs, and are kept out of the card's name (#6043).
+    <div ref={box} className="flex gap-1" aria-hidden="true">
       {shown.map((one) => (
         <Picture
           key={one.id}

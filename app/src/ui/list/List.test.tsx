@@ -84,6 +84,30 @@ describe("a list to choose from", () => {
     expect(screen.getByRole("option", { name: "steward" })).toHaveAccessibleDescription("4 chats");
   });
 
+  // **Its only words a reader is not kept from are its name** (WCAG 2.5.3, #6043): axe's
+  // `label-content-name-mismatch` takes all of an option's visible words, `aria-hidden` or not,
+  // as its label once it is named by `aria-labelledby`, so an option is named by its content
+  // instead, with its mark, its line and its end kept out of it.
+  it("is named by its content, which is its label alone, its other parts kept from a reader", () => {
+    render(
+      <ListBox aria-label="Themes">
+        <ListOption id="purlis" textValue="purlis">
+          <RowLead>pu</RowLead>
+          <RowLabel>purlis</RowLabel>
+          <RowDescription>Built in</RowDescription>
+          <RowTrail>3</RowTrail>
+        </ListOption>
+      </ListBox>,
+    );
+    const option = screen.getByRole("option", { name: "purlis" });
+    expect(option).not.toHaveAttribute("aria-labelledby");
+    expect(option).not.toHaveAttribute("aria-label");
+    expect(option).toHaveAccessibleDescription("Built in");
+    const heard = option.cloneNode(true) as Element;
+    for (const kept of heard.querySelectorAll('[aria-hidden="true"]')) kept.remove();
+    expect(heard.textContent).toBe("purlis");
+  });
+
   it("keeps one Tab stop, and the arrows choose and stop at the ends", async () => {
     render(<Personas />);
     await userEvent.tab();

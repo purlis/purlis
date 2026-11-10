@@ -10,6 +10,7 @@ import {
   overlaps,
   pressed,
   rowAriaKeys,
+  menuRowKey,
   rowKey,
   SCOPES,
   SHORTCUTS,
@@ -455,6 +456,17 @@ describe("the palette's keys are the window's", () => {
     expect(rowKey("chat.rename:7", false, true)).toBeUndefined();
     expect(rowKey("shell.new", true, true)).toBe("⌘⇧T");
     expect(rowAriaKeys("tab.close:7", true, true)).toBeUndefined();
+  });
+});
+
+describe("a menu row's key (#6043)", () => {
+  it("is the key as it is drawn and as aria-keyshortcuts names it, together", () => {
+    expect(menuRowKey("shell.new", true)).toEqual({ said: "⌘⇧T", aria: "Shift+Meta+T" });
+    expect(menuRowKey("shell.new", false)).toEqual({
+      said: "Ctrl+Shift+T",
+      aria: "Control+Shift+T",
+    });
+    expect(menuRowKey("no.such.row", true)).toBeUndefined();
   });
 });
 

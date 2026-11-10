@@ -10,10 +10,23 @@ import { findTree, rowAround } from "./ui/tree/tree.testkit";
  * to them** (`docs/ui-primitives.md`, "Menus"). For the tests that drive the window through a
  * menu to get somewhere else; `Menus.test.tsx` and `menuModel.test.ts` own what a menu holds.
  *
- * A row's name is its `aria-label`, its words alone: its text also holds its description, and
+ * A row's name is its words alone (`rowName`): its text also holds its description, and
  * *Open* is how *Open beside steward 4* starts. Test-only: nothing the window bundles imports
  * this file.
  */
+
+/**
+ * **A menu row's name, as a reader hears it**: its `aria-label` where it has one, or else its
+ * content without what is kept from a reader (`aria-hidden`, `hidden`): the words under it and
+ * its key are its description and its `aria-keyshortcuts`, never its name (#6043).
+ */
+export function rowName(row: Element): string {
+  const label = row.getAttribute("aria-label");
+  if (label !== null) return label;
+  const heard = row.cloneNode(true) as Element;
+  for (const kept of heard.querySelectorAll('[aria-hidden="true"], [hidden]')) kept.remove();
+  return (heard.textContent ?? "").trim();
+}
 
 /** The innermost open menu: a submenu is drawn after the menu it opened from. */
 export function openMenu(): HTMLElement {
@@ -28,13 +41,13 @@ export function menuRowsIn(menu: HTMLElement): HTMLElement[] {
 
 /** The names of the innermost open menu's rows, in order. */
 export function menuNames(): (string | null)[] {
-  return menuRowsIn(openMenu()).map((row) => row.getAttribute("aria-label"));
+  return menuRowsIn(openMenu()).map(rowName);
 }
 
 /** The row of the innermost open menu named `name`, or matching it; `undefined` when none is. */
 export function findMenuRow(name: string | RegExp): HTMLElement | undefined {
   return menuRowsIn(openMenu()).find((row) => {
-    const said = row.getAttribute("aria-label") ?? "";
+    const said = rowName(row);
     return typeof name === "string" ? said === name : name.test(said);
   });
 }

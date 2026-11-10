@@ -1070,6 +1070,19 @@ export function rowAriaKeys(
   return chords.length === 0 ? undefined : chords.map(ariaChord).join(" ");
 }
 
+/**
+ * **The key a menu's row shows, and the same key as a reader is told it** (#6043): what the
+ * menu family's `MenuShortcuts` answers, so a row draws the one and says the other by its
+ * `aria-keyshortcuts`, and the two never come from different rows of the registry.
+ */
+export function menuRowKey(
+  row: string,
+  mac: boolean = onAMac(),
+): { said: string; aria?: string } | undefined {
+  const said = rowKey(row, mac);
+  return said === undefined ? undefined : { said, aria: rowAriaKeys(row, mac) };
+}
+
 /** How each symbol of a key's spelling is said, on a Mac and elsewhere. */
 const SYMBOL_WORDS: Readonly<Record<string, readonly [string, string]>> = {
   "⌘": ["Command", "Command"],

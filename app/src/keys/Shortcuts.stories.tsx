@@ -19,7 +19,7 @@ import { Menu, MenuItem, MenuShortcuts, MenuTrigger, MenuWords } from "../ui/men
 import { ActivityItem } from "../ui/activity/ActivityItem";
 import { Files } from "lucide-react";
 import { ShortcutsView } from "./ShortcutsView";
-import { keySaid, rowAriaKeys, rowKey } from "./registry";
+import { keySaid, menuRowKey, rowAriaKeys, rowKey } from "./registry";
 
 /** The cheat sheet in a view tab's room. */
 function Sheet({ mac }: { mac: boolean }) {
@@ -131,7 +131,7 @@ function OnRows() {
   const [aimed, setAimed] = useState(0);
   const [said, setSaid] = useState("Nothing chosen");
   return (
-    <MenuShortcuts.Provider value={(act) => rowKey(act, true)}>
+    <MenuShortcuts.Provider value={(act) => menuRowKey(act, true)}>
       <div style={{ display: "grid", gap: "var(--space-4)", inlineSize: "26rem" }}>
         <AimedList
           id="rows"

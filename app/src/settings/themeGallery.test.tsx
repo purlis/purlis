@@ -792,6 +792,40 @@ describe("choosing nothing, and a refused card (#2331 review)", () => {
   });
 });
 
+describe("a card's name (WCAG 2.5.3 Label in Name, #6043)", () => {
+  it("is its theme's name, and its only words a reader is not kept from, a refused card's too", async () => {
+    const BROKEN = card({
+      id: "broken",
+      name: "Broken",
+      refused: true,
+      said: ["surface.base is not a colour"],
+      appearances: [],
+    });
+    const MANY = card({
+      id: "many",
+      name: "Many",
+      appearances: ["light", "dark", "dim", "night"].map((id) => ({
+        id,
+        appearance: id === "light" ? "light" : "dark",
+        high_contrast: false,
+      })),
+    });
+    core(shown({ cards: [CLASSIC, MANY, BROKEN] }));
+    render(<Group at={null} />);
+    for (const option of await cards()) {
+      // Named by its content, never by `aria-labelledby`, whose visible words axe holds to it.
+      expect(option).not.toHaveAttribute("aria-labelledby");
+      const heard = option.cloneNode(true) as Element;
+      for (const kept of heard.querySelectorAll('[aria-hidden="true"]')) kept.remove();
+      expect(option).toHaveAccessibleName(heard.textContent ?? "");
+    }
+    expect(screen.getByRole("option", { name: "Many" })).toHaveTextContent("+1");
+    expect(screen.getByRole("option", { name: "Broken" })).toHaveAccessibleDescription(
+      "surface.base is not a colour",
+    );
+  });
+});
+
 describe("a card's pictures when the painter is busy (#2331 review)", () => {
   it("asks again after the wait on the app's own busy answer, and keeps no failure", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });

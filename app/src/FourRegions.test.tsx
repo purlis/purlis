@@ -26,6 +26,7 @@ import { drawnWith } from "./cascade.testkit";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
 import { selectNamed } from "./ui/select/select.testkit";
 import { SCOPE_LABEL } from "./Inbox";
+import { rowName } from "./menus.testkit";
 
 /**
  * **The window is four regions** (ADR 0038), against the whole app, because three of
@@ -2019,9 +2020,7 @@ describe("moving a view", () => {
 
     const menu = await menuOf(icon("Navigation", "Search"));
 
-    expect(menu.getAllByRole("menuitem").map((row) => row.getAttribute("aria-label"))).toEqual([
-      "Move to panel",
-    ]);
+    expect(menu.getAllByRole("menuitem").map(rowName)).toEqual(["Move to panel"]);
   });
 
   it("moves Search to the Panel's left half, open there, its icon among the Lower icons", async () => {
