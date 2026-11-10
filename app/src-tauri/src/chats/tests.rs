@@ -6620,7 +6620,7 @@ fn a_run_a_start_begins_is_what_the_start_decided_and_says_what_it_does_not_know
         ]
     };
     let backend = purlis_core::sandbox::Os::this()
-        .backend_word(Some(Harness::ClaudeCode))
+        .backend_word()
         .unwrap_or(UNKNOWN);
 
     assert_eq!(

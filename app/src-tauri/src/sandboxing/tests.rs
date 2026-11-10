@@ -1664,10 +1664,23 @@ fn on_windows_the_picker_is_told_the_chat_starts_without_it_and_why() {
 /// run, so it carries no newline.
 #[test]
 fn the_install_line_is_charters_own_command_with_no_return_at_the_end() {
-    let missing = backend::missing(sandbox::Os::Linux, &|_| false);
+    let missing = Some(backend::Missing::Programs {
+        os: sandbox::Os::Linux,
+        absent: vec!["git"],
+    });
     assert_eq!(
         install_line(missing.as_ref(), "ID=fedora\n").as_deref(),
-        Ok("sudo dnf install bubblewrap socat")
+        Ok("sudo dnf install git")
+    );
+    // A kernel without Landlock, all a Linux sandbox needs now (ADR 0067 as amended 2026-11-10),
+    // has nothing to install.
+    assert!(
+        install_line(
+            backend::missing(sandbox::Os::Linux, &|_| false).as_ref(),
+            "ID=fedora\n"
+        )
+        .is_err(),
+        "nothing to install"
     );
     assert!(
         install_line(None, "ID=fedora\n").is_err(),

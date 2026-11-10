@@ -833,7 +833,7 @@ fn a_composed_claude_code_line_is_read_as_running_in_its_own_sandbox() {
     assert_eq!(
         purlis_core::sandbox::ran::applied_to(launch.program.as_ref(), &args, false, os),
         session::RunSandbox::By(
-            os.backend_word(Some(purlis_core::harness::Harness::ClaudeCode))
+            os.backend_word()
                 .expect("a backend here")
                 .to_owned()
         ),

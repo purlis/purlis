@@ -2802,13 +2802,18 @@ fn a_mistyped_mode_does_not_start_a_chat_unsandboxed() {
     );
 }
 
+/// ADR 0067 as amended 2026-11-10: every sandboxed chat on Linux runs in purlis's own wrap,
+/// Claude Code's too, which needs the kernel's Landlock and neither bubblewrap nor socat.
 #[test]
-fn bwrap_is_installed_as_the_bubblewrap_package() {
-    let missing = backend::missing(Os::Linux, &|_| false).expect("missing");
+fn on_linux_the_sandbox_needs_the_kernel_s_landlock_and_no_program() {
     assert_eq!(
-        missing.to_string(),
-        "bwrap and socat are not installed — install them with `sudo apt install bubblewrap socat` \
-         or `sudo dnf install bubblewrap socat`"
+        backend::missing(Os::Linux, &|it| it == backend::LANDLOCK),
+        None,
+        "neither bwrap nor socat asked for"
+    );
+    assert_eq!(
+        backend::missing(Os::Linux, &|it| it != backend::LANDLOCK),
+        Some(backend::Missing::Landlock)
     );
 }
 
@@ -4053,24 +4058,21 @@ fn an_unsandboxed_chat_says_so_on_its_tab_and_why() {
 
 #[test]
 fn the_install_action_is_the_distributions_own_package_manager_command() {
-    let missing = backend::missing(Os::Linux, &|_| false).expect("missing");
+    let missing = git_missing_on_linux();
     let cases = [
-        (
-            "ID=ubuntu\nID_LIKE=debian\n",
-            "sudo apt install bubblewrap socat",
-        ),
-        ("ID=debian\n", "sudo apt install bubblewrap socat"),
-        ("ID=\"fedora\"\n", "sudo dnf install bubblewrap socat"),
+        ("ID=ubuntu\nID_LIKE=debian\n", "sudo apt install git"),
+        ("ID=debian\n", "sudo apt install git"),
+        ("ID=\"fedora\"\n", "sudo dnf install git"),
         (
             "ID=\"rocky\"\nID_LIKE=\"rhel centos fedora\"\n",
-            "sudo dnf install bubblewrap socat",
+            "sudo dnf install git",
         ),
-        ("ID=arch\n", "sudo pacman -S bubblewrap socat"),
+        ("ID=arch\n", "sudo pacman -S git"),
         (
             "ID=\"opensuse-tumbleweed\"\nID_LIKE=\"opensuse suse\"\n",
-            "sudo zypper install bubblewrap socat",
+            "sudo zypper install git",
         ),
-        ("ID=alpine\n", "sudo apk add bubblewrap socat"),
+        ("ID=alpine\n", "sudo apk add git"),
     ];
     for (os_release, command) in cases {
         assert_eq!(
@@ -4081,18 +4083,25 @@ fn the_install_action_is_the_distributions_own_package_manager_command() {
     }
 }
 
+/// What a Linux machine without git is missing, as git's presence names it: since every
+/// sandboxed chat there runs in purlis's own wrap (ADR 0067 as amended 2026-11-10), no sandbox
+/// needs a program to be installed.
+fn git_missing_on_linux() -> backend::Missing {
+    backend::Missing::Programs {
+        os: Os::Linux,
+        absent: vec!["git"],
+    }
+}
+
 #[test]
-fn only_what_is_missing_is_installed() {
-    let missing = backend::missing(Os::Linux, &|program| program == "bwrap").expect("missing");
-    assert_eq!(
-        backend::install_command(&missing, "ID=debian\n").as_deref(),
-        Some("sudo apt install socat")
-    );
+fn a_kernel_without_landlock_has_nothing_to_install() {
+    let missing = backend::missing(Os::Linux, &|_| false).expect("missing");
+    assert_eq!(backend::install_command(&missing, "ID=debian\n"), None);
 }
 
 #[test]
 fn a_distribution_charter_does_not_know_gets_no_action_rather_than_a_guess() {
-    let missing = backend::missing(Os::Linux, &|_| false).expect("missing");
+    let missing = git_missing_on_linux();
     assert_eq!(backend::install_command(&missing, "ID=nixos\n"), None);
     assert_eq!(backend::install_command(&missing, ""), None);
 }

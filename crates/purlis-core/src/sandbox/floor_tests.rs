@@ -1844,98 +1844,20 @@ fn machine_on(os: Os, home: &Path) -> Machine {
     }
 }
 
-/// What `applied` makes, empty, in the home before its chat starts: Claude Code's own sandbox's
-/// settings say, and purlis's wrap makes nothing there ([`claude_wrap::Wrap::settings`]).
-fn made_empty_of(applied: &Applied) -> Vec<PathBuf> {
-    match applied.form() {
-        Form::ClaudeCode(settings) => settings.made_empty.clone(),
-        Form::ClaudeWrapped(wrap) => wrap.settings().made_empty,
-        other => panic!("not Claude Code's: {other:?}"),
-    }
-}
-
 /// On Linux every sandboxed Claude Code chat runs inside purlis's wrap, with Claude Code's own
-/// sandbox off (ADR 0067 as amended 2026-11-10), so nothing is made in the home before it starts
-/// at the floor; and macOS's sandbox reads a denied path that does not exist as none.
+/// sandbox off (ADR 0067 as amended 2026-11-10).
 #[test]
-fn a_claude_code_chat_at_the_floor_makes_no_git_config_in_the_home() {
+fn a_claude_code_chat_at_the_floor_on_linux_runs_in_purlis_s_wrap_with_its_own_sandbox_off() {
     let (_dir, root) = project();
-    let home = Path::new("/home/op");
     let on_linux = floor_of(decided(
         Harness::ClaudeCode,
         &root,
-        &machine_on(Os::Linux, home),
+        &machine_on(Os::Linux, Path::new("/home/op")),
     ));
     let Form::ClaudeWrapped(wrap) = on_linux.form() else {
         panic!("inside purlis's wrap: {:?}", on_linux.form());
     };
     assert!(wrap.settings().is_off(), "its own sandbox is off");
-    assert!(made_empty_of(&on_linux).is_empty());
-    let on_macos = floor_of(decided(
-        Harness::ClaudeCode,
-        &root,
-        &machine_on(Os::MacOs, home),
-    ));
-    assert!(made_empty_of(&on_macos).is_empty());
-}
-
-/// The full sandbox makes nothing in the home either.
-#[test]
-fn the_full_sandbox_makes_nothing_in_the_home() {
-    let (_dir, root) = project();
-    std::fs::write(root.join("charter.toml"), "[sandbox]\nmode = \"on\"\n").expect("charter.toml");
-    for os in [Os::MacOs, Os::Linux] {
-        let applied = floor_of(decided(
-            Harness::ClaudeCode,
-            &root,
-            &machine_on(os, Path::new("/home/op")),
-        ));
-        assert_eq!(applied.level(), Level::Full, "{os:?}");
-        assert!(made_empty_of(&applied).is_empty(), "{os:?}");
-    }
-}
-
-/// What is made is an empty file where there is nothing: a file already there keeps what it
-/// holds, and a link, even to nothing, is never followed.
-#[test]
-fn the_homes_git_config_is_made_empty_only_where_there_is_none() {
-    let (_dir, root) = project();
-    let home = tempfile::tempdir().expect("a home");
-    let home = home.path().canonicalize().expect("a real folder");
-    let mut settings = settings_of(&floor_of(decided(
-        Harness::ClaudeCode,
-        &root,
-        &machine_on(Os::MacOs, &home),
-    )));
-    // The home's git config, as Claude Code's own sandbox asks for it where a denied path that
-    // does not exist is out of reach of a read too.
-    settings.made_empty = vec![home.join(".gitconfig")];
-    let config = home.join(".gitconfig");
-
-    settings.make_empty();
-    assert_eq!(std::fs::read(&config).expect("made"), b"");
-
-    std::fs::write(&config, "[user]\n\tname = op\n").expect("the person's own");
-    settings.make_empty();
-    assert_eq!(
-        std::fs::read_to_string(&config).expect("kept"),
-        "[user]\n\tname = op\n"
-    );
-
-    #[cfg(unix)]
-    {
-        std::fs::remove_file(&config).expect("removed");
-        let target = home.join("dotfiles/gitconfig");
-        std::os::unix::fs::symlink(&target, &config).expect("a link to nothing");
-        settings.make_empty();
-        assert!(!target.exists(), "the link was followed");
-        assert!(
-            std::fs::symlink_metadata(&config)
-                .expect("still there")
-                .file_type()
-                .is_symlink()
-        );
-    }
 }
 
 /// What a forge program or kubectl loads when the person runs it is a later-code name, read as
@@ -2023,19 +1945,6 @@ fn a_name_lifted_for_a_claude_code_chat_goes_whole_and_alone() {
         unreachable!();
     };
     assert!(settings.sandbox.to_string().contains(".config/gh"));
-}
-
-/// What the floor makes is a later-code name it holds, the home's among them.
-#[test]
-fn the_homes_git_config_made_is_one_the_floor_holds() {
-    assert!(
-        PLANTED
-            .iter()
-            .any(|planted| planted.path == claude::HOME_GIT_CONFIG
-                && planted.reach == Reach::AndBelow),
-        "{} is not held",
-        claude::HOME_GIT_CONFIG
-    );
 }
 
 /// A machine whose home is `home`, with `env` beside an empty `PATH`.

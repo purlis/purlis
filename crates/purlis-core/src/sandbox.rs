@@ -1557,15 +1557,14 @@ impl Os {
     }
 
     /// The word a run's `sandbox` attribute names this system's backend by (ADR 0066, #868):
-    /// Seatbelt on macOS; on Linux, Claude Code's own bubblewrap, or `landlock` for purlis's own
-    /// wrap of a harness it holds whole (Codex, opencode; #1040). `None` where purlis has none,
-    /// or does not know which. A chat that started says its own ([`Applied::backend_word`]): a
-    /// Claude Code on a runner is wrapped too (#4083).
-    pub fn backend_word(self, harness: Option<Harness>) -> Option<&'static str> {
+    /// Seatbelt on macOS, and on Linux `landlock`, purlis's own wrap, which holds every sandboxed
+    /// chat there (#1040; Claude Code's since ADR 0067 as amended 2026-11-10). `None` where
+    /// purlis has none. What a run from before that started under Claude Code's own sandbox on
+    /// Linux is read as is [`ran::applied_to`]'s.
+    pub fn backend_word(self) -> Option<&'static str> {
         match self {
             Self::MacOs => Some("seatbelt"),
-            Self::Linux if harness.is_some_and(|it| self.purlis_wraps(it)) => Some("landlock"),
-            Self::Linux => Some("bubblewrap"),
+            Self::Linux => Some("landlock"),
             Self::Windows | Self::Other => None,
         }
     }
@@ -4708,13 +4707,12 @@ impl Applied {
     }
 
     /// The word a run's `sandbox` attribute names this chat's sandbox by (ADR 0066): what
-    /// [`Os::backend_word`] says of its harness, and `landlock` for a Claude Code chat purlis
-    /// wraps (#4083).
+    /// [`Os::backend_word`] says, and `landlock` for a Claude Code chat purlis wraps (#4083).
     pub fn backend_word(&self) -> Option<&'static str> {
         if self.is_claude_wrapped() {
             return Some("landlock");
         }
-        Os::this().backend_word(Some(self.harness))
+        Os::this().backend_word()
     }
 
     /// **At the floor, the programs `words` start, never written by the chat** (#2071, the
@@ -4909,7 +4907,10 @@ impl Applied {
         arrived::Watched {
             folders: outer,
             home: machine.home.clone().filter(|_| floor),
-            contents: machine.os == Os::Linux && matches!(*self.form, Form::ClaudeCode(_)),
+            // Weighed only where a chat's sandbox let it write a name already there: Claude
+            // Code's own on Linux, which no chat started now runs in (ADR 0067 as amended
+            // 2026-11-10). A record from before keeps its own.
+            contents: false,
             lifted: self
                 .confines
                 .widened
@@ -4927,13 +4928,10 @@ impl Applied {
                 .into_iter()
                 .map(|denial| denial.path)
                 .collect(),
-            // What isn't there now gets a placeholder while each command runs.
-            placeholders: self
-                .later_code_by_path(cwd)
-                .into_iter()
-                .map(|denial| denial.path)
-                .filter(|path| std::fs::symlink_metadata(path).is_err())
-                .collect(),
+            // No sandbox makes a placeholder for a chat started now: only Claude Code's own on
+            // Linux did, which a chat started there before every sandboxed Claude Code chat ran
+            // in purlis's wrap may still have in its record (ADR 0067 as amended 2026-11-10).
+            placeholders: Vec::new(),
         }
     }
 
@@ -5081,34 +5079,8 @@ impl Applied {
         manifests_held(&self.root, cwd)
             .into_iter()
             .chain(git_the_app_writes(&self.root, cwd))
-            .chain(self.later_code_by_path(cwd))
             .chain(self.forge_folders_here(cwd))
             .filter(|denial| !self.denied.contains(denial))
-            .collect()
-    }
-
-    /// The later-code names in each folder of a chat in `cwd`, by path, where the sandbox holds a
-    /// path and not a rule for any depth: Claude Code's own on Linux. Below those folders,
-    /// [`arrived`] tells what arrives. A chat purlis wraps holds them by its own rules.
-    fn later_code_by_path(&self, cwd: Option<&Path>) -> Vec<Denial> {
-        if self.os != Os::Linux || !matches!(*self.form, Form::ClaudeCode(_)) {
-            return Vec::new();
-        }
-        let here = cwd.unwrap_or(&self.root);
-        let real_here = real(here);
-        self.folders_of_a_chat(cwd)
-            .iter()
-            .flat_map(|folder| planted::held_by_path_in(folder, &self.confines.widened.lifted))
-            // The chat's own folder, inside such a name or reached by a link there, stays its own.
-            .filter(|path| !here.starts_with(path) && !real_here.starts_with(real(path)))
-            .map(|path| Denial {
-                class: Class::LaterCode,
-                path,
-                access: Access::Write,
-                named: None,
-                reach: Reach::AndBelow,
-                any_case: false,
-            })
             .collect()
     }
 
@@ -7195,7 +7167,7 @@ fn for_start_at(
     if let Some(issue) = harness.adapter().sandbox_held_back() {
         return Err(NotStarted::HeldBack(harness, issue));
     }
-    if let Some(missing) = backend::missing_for(machine.os, machine.purlis_wraps(harness), has) {
+    if let Some(missing) = backend::missing(machine.os, has) {
         return Err(NotStarted::NoBackend(missing));
     }
     let compiled = Compiled::granted(&policy, &plane, root, machine, persona, chat);
@@ -7245,7 +7217,7 @@ fn floor_for_start(
     if let Some(issue) = harness.adapter().sandbox_held_back() {
         return Err(NotStarted::HeldBack(harness, issue));
     }
-    if let Some(missing) = backend::missing_for(machine.os, machine.purlis_wraps(harness), has) {
+    if let Some(missing) = backend::missing(machine.os, has) {
         return Err(NotStarted::NoBackend(missing));
     }
     let compiled = Compiled::floor(root, machine, chat);

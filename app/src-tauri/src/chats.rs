@@ -376,7 +376,7 @@ pub(crate) fn run_attributes(
         model: None,
         sandbox: if sandboxed {
             purlis_core::sandbox::Os::this()
-                .backend_word(harness)
+                .backend_word()
                 .map(str::to_owned)
         } else {
             none()
@@ -5246,7 +5246,7 @@ impl Chats {
             // The runner composes it, with the sandbox it compiles there: its record is the
             // runner's, which its start answers, below (#2692).
             _ if on_the_runner => None,
-            _ => Some(ran_as_started(sandbox, harness)),
+            _ => Some(ran_as_started(sandbox)),
         };
         let confines = match (reattaching, chat.number, &ran) {
             (true, Some(number), Some(purlis_session_protocol::session::RunSandbox::By(_))) => {
@@ -9111,20 +9111,13 @@ fn grants_persona_of(chat: &Chat, project: &std::path::Path) -> Option<String> {
 }
 
 /// **How a run this window starts is sandboxed, by its own record** (#2636): in the sandbox
-/// `sandbox` compiled, by this machine's backend for `harness`, or off where it starts without
-/// one.
+/// `sandbox` compiled, by the backend it names, or off where it starts without one.
 fn ran_as_started(
     sandbox: Option<&purlis_core::sandbox::Applied>,
-    harness: Option<Harness>,
 ) -> purlis_session_protocol::session::RunSandbox {
     use purlis_session_protocol::session::RunSandbox;
     match sandbox {
-        Some(_) => RunSandbox::By(
-            purlis_core::sandbox::Os::this()
-                .backend_word(harness)
-                .unwrap_or("proxy")
-                .to_owned(),
-        ),
+        Some(applied) => RunSandbox::By(applied.backend_word().unwrap_or("proxy").to_owned()),
         None => RunSandbox::Off,
     }
 }

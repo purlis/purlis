@@ -1459,7 +1459,6 @@ fn an_outcome_chat_has_no_shell() {
         let sandbox = crate::sandbox::claude::Settings {
             sandbox: serde_json::json!({"enabled": enabled}),
             deny: Vec::new(),
-            made_empty: Vec::new(),
             made_folders: Vec::new(),
         };
         let text = settings(
@@ -1617,7 +1616,6 @@ fn a_chats_settings_hand_claude_code_its_listing_limit_as_a_string_in_env() {
     let sandbox = crate::sandbox::claude::Settings {
         sandbox: serde_json::json!({"enabled": true}),
         deny: Vec::new(),
-        made_empty: Vec::new(),
         made_folders: Vec::new(),
     };
     let text = armed_settings_for_tests(&sandbox);
