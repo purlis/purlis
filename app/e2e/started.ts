@@ -29,6 +29,31 @@ const TABS = '[data-strip="Tabs"]';
 /** The tab in front on the strip: the chat's own once its pane is in front. */
 export const SELECTED_TAB = `${TABS} [role="tab"][aria-selected="true"]`;
 
+/**
+ * **Waits until the tab in front says its chat is `state`**, by the accessible name of its state
+ * mark ("working", "needs you", "idle"), and says what it said instead if it never does. Read in
+ * one `execute`, as `acting.ts` asks.
+ */
+export async function theChatInFrontSays(state: string): Promise<void> {
+  let said = "";
+  try {
+    await browser.waitUntil(
+      async () => {
+        said = await browser.execute(
+          (mark: string) => document.querySelector(mark)?.getAttribute("aria-label") ?? "",
+          `${SELECTED_TAB} .tab-said`,
+        );
+        return said === state;
+      },
+      { timeout: 30_000, interval: 200 },
+    );
+  } catch {
+    throw new Error(
+      `the chat never said ${JSON.stringify(state)}; it said ${JSON.stringify(said)}`,
+    );
+  }
+}
+
 /** **A chat's tasks button** (#5341): the popup button its pane head's state is, on the pane with
  *  the keyboard. It opens the menu a tab's chip opened; a tab wears no count. One copy here. */
 export const HEAD_TASKS = '.pane-frame[data-focused] .pane-state-mark [aria-haspopup="menu"]';
