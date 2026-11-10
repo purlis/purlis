@@ -34,7 +34,8 @@ Fetch every page of the intake's events for the last four weeks with curl, at mo
 plan from the saved pages:
 
 ```bash
-dir=$(mktemp -d "$TMPDIR/intake.XXXXXX")
+dir=.intake-run
+rm -rf "$dir" && mkdir "$dir"
 url=$(node tools/report-intake.mjs url) && ok=1 n=1
 while [ -n "$url" ] && [ "$n" -le 20 ]; do
   purlis secret exec sentry --env SENTRY_INTAKE_TOKEN=intake-read-token -- \
@@ -45,11 +46,14 @@ while [ -n "$url" ] && [ "$n" -le 20 ]; do
   url=$(node tools/report-intake.mjs next "$dir/page-$n.headers") || { ok=0; break; }
   n=$((n + 1))
 done
-[ "$ok" = 1 ] && node tools/report-intake.mjs plan --from "$dir" > "$TMPDIR/intake-plan.json"
+[ "$ok" = 1 ] && node tools/report-intake.mjs plan --from "$dir" > "$dir/plan.json"
 echo "pages: $((n - 1)), ok: $ok, more left: ${url:+yes}"
 ```
 
-Run it exactly as written. Each piece keeps the token away from anything but the intake:
+Run it exactly as written, from the clone's root. The pages go to `.intake-run/` in the clone,
+which git ignores and each run clears first: curl run under `purlis secret exec` cannot write to
+`$TMPDIR` ("curl: (23) Failed writing received data"). Delete the folder once the summary is
+posted (step 5). Each piece keeps the token away from anything but the intake:
 
 - `url` and `next` print an address on `https://de.sentry.io` alone, and refuse any other host.
 - curl does not follow redirects without `-L`, and `--proto =https` keeps it on https.
@@ -109,6 +113,7 @@ milestone, as `docs/agents/issue-tracker.md` asks.
 Post the plan's `summary`, followed by one line per step naming the issue it filed or added to,
 or why it was left out, as a comment on the issue titled `Report intake: the daily summary`
 (labelled `bot-maintained`; create it the first time). It carries counts and issue numbers only,
-never a report's words. Then write the session record.
+never a report's words. Then delete the run's folder (`rm -rf .intake-run`), since its pages hold
+the reports' words, and write the session record.
 
 **Done:** today's comment is posted and the session record names it.
