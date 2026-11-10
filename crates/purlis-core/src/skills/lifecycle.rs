@@ -193,7 +193,7 @@ pub fn unused(plane: &Path, now: u64) -> Vec<Unused> {
         let key = (
             run.skill_name().into_owned(),
             copy.level,
-            copy.workspace.clone(),
+            copy.workspace_of_copy().map(str::to_owned),
         );
         let held = last.entry(key).or_insert(at);
         *held = (*held).max(at);

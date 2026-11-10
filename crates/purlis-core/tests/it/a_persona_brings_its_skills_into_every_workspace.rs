@@ -275,6 +275,8 @@ fn a_harness_skill_the_persona_names_and_this_machine_lacks_is_said_on_the_tab()
         Some(purlis_core::skills::NotHere {
             missing: vec!["superpowers:test-driven-development".to_owned()],
             no_built_in: Vec::new(),
+            no_workspace: Vec::new(),
+            not_in_its_workspace: Vec::new(),
             broken: Vec::new(),
             by_a_repo: Vec::new(),
             beside_a_built_in: Vec::new(),

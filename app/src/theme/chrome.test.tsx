@@ -427,6 +427,7 @@ const SKILL: StudioSkill = {
   source_label: null,
   level: "project",
   label: "project",
+  copy_workspace: null,
   local: false,
   grant: "root",
   granted: { to: "root" },
