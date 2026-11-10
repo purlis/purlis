@@ -877,19 +877,36 @@ export function SkillStudioTab({
 
   /** **New skill…'s Write it yourself** (#3684, S4): made in one commit; then, while its dialog
    *  is still the change in hand, the studio goes to the Library that lists it and its page opens
-   *  with the Text tab in Edit. The core's refusal is said in the dialog. */
+   *  with the Text tab in Edit. From an extension's template the core keeps it as a draft
+   *  instead (#3091), and the studio opens it in Drafts. The core's refusal is said in the
+   *  dialog. */
   const make = (
     asked: Doing,
     level: SkillLevel,
     name: string,
     description: string,
     template: SkillTemplateId,
-  ) =>
+  ) => {
+    let drafted: string | null = null;
     change(
       "The skill was not made",
-      () => commands.skillNew(plane, level, name, description, template),
+      async () => {
+        const answer = await commands.skillNew(plane, level, name, description, template);
+        if (answer.status === "ok") drafted = answer.data.draft;
+        return answer;
+      },
       async (notes) => {
         const lands = labelOf(levels, level);
+        if (drafted !== null) {
+          const said = resultOf(
+            "Draft ready",
+            `${name} waits in Drafts. Try it, then accept it into the ${lands} skills or discard it.`,
+            notes,
+          );
+          if (inHandNow.current?.doing !== asked) return said;
+          go({ page: "drafts", scope: scopeOfNew(level, scope), item: drafted });
+          return said;
+        }
         // Closed while the core made it: the person went on, so the tab stays where it is.
         if (inHandNow.current?.doing !== asked)
           return resultOf("Skill made", `${name} is made in the ${lands} skills.`, notes);
@@ -913,6 +930,7 @@ export function SkillStudioTab({
       },
       refusedInDialog(asked, "The skill was not made"),
     );
+  };
 
   /** **Make my own copy** (#3686): the copy made, said with its built-in still loading, and its
    *  page opened; or the core's refusal, said in the dialog. */

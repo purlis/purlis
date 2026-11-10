@@ -469,7 +469,8 @@ pub(super) fn write(
 ///
 /// `templates` is purlis's own ([`purlis_skills::change::BuiltInTemplates`]) or the studio's,
 /// which adds each extension's (`crate::skills::studio::Templates`): one interface, the
-/// SkillTemplate capability's (ADR 0101).
+/// SkillTemplate capability's (ADR 0101). An extension's template is refused here: what it
+/// answers lands as a draft the person accepts ([`new_skill`], #3091).
 pub fn create(
     cx: &mut Ctx<'_>,
     level: &Level,
@@ -480,6 +481,12 @@ pub fn create(
 ) -> Result<PathBuf, String> {
     let plane = cx.plane;
     crate::settings::writable(plane)?;
+    if let TemplateId::Extension { extension, .. } = template {
+        return Err(format!(
+            "a template of the extension '{extension}' makes a draft, never a skill at once: \
+             New skill… keeps it in Drafts for you to accept"
+        ));
+    }
     let (folder, text) = new_checked(cx, level, name, description, templates, template)?;
     let folder = plane.join(folder);
     write(
@@ -497,6 +504,49 @@ pub fn create(
     ));
     cx.commit(&[rel(plane, &folder)], &format!("skill new {name}"));
     Ok(folder)
+}
+
+/// **What New skill… did** (#3091): made the skill, from one of purlis's own templates, or kept
+/// it as a draft, from an extension's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NewSkill {
+    /// Made and committed, in this folder.
+    Made(PathBuf),
+    /// Kept as this draft, for the person to try and accept ([`drafts`]).
+    Drafted(String),
+}
+
+/// **New skill… from `template`**: made at once from one of purlis's own templates ([`create`]),
+/// kept as a draft from an extension's.
+pub fn new_skill(
+    cx: &mut Ctx<'_>,
+    level: &Level,
+    name: &str,
+    description: &str,
+    templates: &dyn SkillTemplate,
+    template: &TemplateId,
+) -> Result<NewSkill, String> {
+    let TemplateId::Extension {
+        extension,
+        template: its,
+    } = template
+    else {
+        return create(cx, level, name, description, templates, template).map(NewSkill::Made);
+    };
+    crate::settings::writable(cx.plane)?;
+    let (_, text) = new_checked(cx, level, name, description, templates, template)?;
+    // As New skill… offered it: read from the manifests, so the extension is not asked again.
+    let label = templates
+        .offered()
+        .into_iter()
+        .find(|offer| offer.id == *template)
+        .map_or_else(|| format!("{extension}/{its}"), |offer| offer.label);
+    let id = drafts::keep_new(cx.plane, level, name, &text, &label)?;
+    cx.done(format!(
+        "{name} waits in Drafts, a new {level} skill from the template {label}: try it, then \
+         accept it into the {level} skills or discard it"
+    ));
+    Ok(NewSkill::Drafted(id))
 }
 
 /// **A new skill `name` at `level`, as [`create`] would make it, without making it** (#5815): its

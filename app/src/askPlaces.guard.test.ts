@@ -54,11 +54,14 @@ const PLACES = {
   "browser-login": { at: "pane" },
   "secret-fill": { at: "pane" },
   vault: { at: "pane" },
-  "pool-login": { at: "asks-only", debt: "a runner chat's browser login on its pool" },
-  "pool-tool": { at: "asks-only", debt: "a runner chat's tool's vault values on its pool" },
-  secret: { at: "asks-only", debt: "a run's missing key; the start picker draws its own" },
-  "run-grant": { at: "asks-only", debt: "a brokered run's program its persona does not declare" },
+  "pool-login": { at: "pane" },
+  "pool-tool": { at: "pane" },
+  secret: { at: "pane" },
+  "run-grant": { at: "pane" },
 } as const satisfies Record<AskSource, Place>;
+
+/** Each kind's place, as any place: a kind may move to or from Asks alone. */
+const PLACE: Readonly<Record<AskSource, Place>> = PLACES;
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -109,18 +112,23 @@ describe("every kind of ask has a drawn place", () => {
 
   it.each(Object.keys(PLACES))("lists %s in Asks with its answers, or a way to them", (source) => {
     const shape = shapeOf(askOf(source as AskSource), undefined, undefined, undefined);
+<<<<<<< main
+    // Its answers in the row, or Go to chat, whose pane draws them.
+    expect(shape.form || (shape.go && PLACE[source as AskSource].at !== "asks-only")).toBe(true);
+=======
     // Its answers on the row (a decision's, #5998), behind its Answer, or Go to chat, whose pane
     // draws them.
     expect(
       shape.decision || shape.form || (shape.go && PLACES[source as AskSource].at !== "asks-only"),
     ).toBe(true);
+>>>>>>> pr
   });
 
   it("lists the chats' asks drawn in Asks alone as debt", () => {
     expect(
-      Object.entries(PLACES)
+      Object.entries(PLACE)
         .filter(([, place]) => place.at === "asks-only")
         .map(([source]) => source),
-    ).toEqual(["pool-login", "pool-tool", "secret", "run-grant"]);
+    ).toEqual([]);
   });
 });

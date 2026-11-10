@@ -245,7 +245,7 @@ export function ProjectRail({
 
   return (
     <>
-      <RailSlot hidden={hidden} settling={settling} onSlid={slideEnded}>
+      <RailSlot label="Projects" hidden={hidden} settling={settling} onSlid={slideEnded}>
         {drawn(false)}
       </RailSlot>
       {hidden && peek.state !== "closed" && drawn(true)}

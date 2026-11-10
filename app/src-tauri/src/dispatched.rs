@@ -2916,7 +2916,8 @@ pub fn asks_its_asker(held: &Held, task: u32) -> bool {
 /// **What chat `chat` waits on that is not the person** (#1491), by this project's own
 /// records at this moment: how many tasks below it, at any depth, still owe their report
 /// ([`crate::handoff::owing_below`]); whether it is a task paused on a question to the chat
-/// that dispatched it, while that chat is open and its program runs; and whether a line of
+/// that dispatched it, while that chat is open and its program runs; whether it is a task that
+/// chat waits on at all (#6036); and whether a line of
 /// purlis's own is about to start a turn of it (`Ledger::line_coming`).
 ///
 /// Takes the chats, the board and the ledger in turn and holds none across another: never
@@ -2941,6 +2942,12 @@ pub fn waits_as(held: &Held, chat: u32, turn_ends: bool) -> purlis_core::state::
         .chats()
         .owed_task_report(chat)
         .is_some_and(|from| asks_its_asker(held, chat) && !seen(held, from.chat).ended);
+    // A task reports to the chat that dispatched it (ADR 0107), so the end of any turn of its
+    // is that chat's next move, while that chat can make one (#6036). Not a task the person
+    // asked for from a chat's tab: that one is theirs.
+    let its_dispatcher = held.chats().handed_from(chat).is_some_and(|from| {
+        from.mode == Mode::Task && !from.by_person && !seen(held, from.chat).ended
+    });
     // A chat the person is stopping, or its own chat cancelling, is typed that stop's line and
     // no other.
     let line_coming = !held.stopping().in_its_last_turn(chat)
@@ -2958,6 +2965,7 @@ pub fn waits_as(held: &Held, chat: u32, turn_ends: bool) -> purlis_core::state::
     purlis_core::state::Waits {
         tasks: u32::try_from(tasks).unwrap_or(u32::MAX),
         its_asker,
+        its_dispatcher,
         line_coming,
         on_a_notice,
         background_turn,

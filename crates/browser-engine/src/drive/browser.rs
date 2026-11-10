@@ -1089,7 +1089,8 @@ struct State {
     pages_listed: u64,
     generations: u64,
     ended: bool,
-    /// The size the person set its pages to, in CSS pixels (#2014): every page is given it.
+    /// The size the person set its pages to, in CSS pixels (#2014): every page is given it, and
+    /// [`crate::launch::PAGE_SIZE`] until they set one (plane #2658).
     size: Option<(u16, u16)>,
     /// What the person typed while driving (#2014): kept out of every answer about every page
     /// of the browser, a page opened later included; and what purlis filled ([`Self::filled`]).
@@ -7044,10 +7045,14 @@ impl Inner {
                 let _ = devtools.call("Page.enable", json!({}), on);
                 // So the engine tells of each world it makes (#2138).
                 let _ = devtools.call("Runtime.enable", json!({}), on);
+                // Every page is given its size from the start: the person's, or else the engine's
+                // own, the one a browser view's size menu shows before anyone picks one (plane
+                // #2658). Left to the headless window, a page was painted shorter than the menu
+                // said.
                 let size = {
                     let state = lock(&self.state);
                     let is_page = matches!(state.sessions.get(&session), Some(Session::Page(_)));
-                    state.size.filter(|_| is_page)
+                    is_page.then(|| state.size.unwrap_or(crate::launch::PAGE_SIZE))
                 };
                 if let Some((width, height)) = size {
                     let _ = devtools.call(

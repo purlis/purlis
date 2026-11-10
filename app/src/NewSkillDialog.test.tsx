@@ -62,7 +62,7 @@ function core(
           label: level.at,
           description: given.description as string,
         });
-        return { notes: [] };
+        return { notes: [], draft: null };
       }
       case "skill_templates":
         return [

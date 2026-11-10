@@ -36,12 +36,22 @@ import {
 import { Form, TextArea, TextField } from "./ui/field/Field";
 import { PanelSectionTitle } from "./ui/panel/Panel";
 import { Tooltip } from "./ui/tooltip/Tooltip";
+import { ChatMark } from "./ui/chat-mark/ChatMark";
+import { shownState } from "./shownState";
 
 import { chainSaid, timeSaid, useSettledPlace } from "./inboxRowParts";
 import { askSeenKey, useSeenRow } from "./seenRows";
 
 // **The Asks view's rows** (#1692, #5644; moved from `Inbox.tsx`): what one ask offers, and how it
 // is drawn and answered in place.
+
+/**
+ * **The Chat state of a chat an ask names** (ADR 0121 decisions 2 and 17, #6012): an ask is
+ * listed because it stops its chat until the person answers, so its chat is in the needs-you
+ * queue, whatever else is true of it. Read through the one function, as its row and its tab
+ * read theirs, so Asks never says something they do not.
+ */
+const ASKING = shownState({ board: "unknown", needsYou: true, task: null, harness: null }).mark;
 
 /** What the card of a chat waiting on a reply says where the app heard no message from it: its
  *  harness gave none, or the app was started since (#4550). */
@@ -701,12 +711,15 @@ export function Ask({
     >
       <MessageTop
         title={
-          // **A decision's title is its question** (#5998), and its chat's name leads its meta.
-          shape.question === undefined ? (
-            <span className="inbox-who">{who}</span>
-          ) : (
-            <span className="inbox-question">{shape.question}</span>
-          )
+          <>
+            {ask.session !== 0 && <ChatMark state={ASKING} className="inbox-chat-state" />}
+            {/* **A decision's title is its question** (#5998), and its chat's name leads its meta. */}
+            {shape.question === undefined ? (
+              <span className="inbox-who">{who}</span>
+            ) : (
+              <span className="inbox-question">{shape.question}</span>
+            )}
+          </>
         }
         time={<RowAge when={ageOf(plane, ask)[0]} now={now} since="Waiting since" />}
       />

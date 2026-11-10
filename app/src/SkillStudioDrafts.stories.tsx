@@ -17,7 +17,7 @@ import { STORY_HISTORY as HISTORY, StudioInPanel } from "./skillStudioStory.test
 import { AT_THE_ROOT } from "./skillStudio";
 import { studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
-import { expectFocusInSight, untilFocusWithin } from "./stories.testkit";
+import { expectFocusInSight, tabInto } from "./stories.testkit";
 
 const BEFORE =
   "---\nname: review-pr\ndescription: Reviews a pull request.\n---\n\n1. Read REVIEW.md.\n2. Check correctness.\n";
@@ -178,16 +178,6 @@ const meta = {
 
 export default meta;
 type Story = StoryObj<typeof meta>;
-
-/** Tab, until the keyboard is inside `target`, at most `steps` times. */
-async function tabInto(target: () => Element | null, steps = 30): Promise<void> {
-  for (let step = 0; step < steps; step++) {
-    const into = target();
-    if (into !== null && into.contains(document.activeElement)) return;
-    await userEvent.tab();
-  }
-  await untilFocusWithin(target, "the keyboard reaches it by Tab");
-}
 
 /**
  * **Wide: the list, and the draft chosen beside it.** Its files fold, the first open; Try it on

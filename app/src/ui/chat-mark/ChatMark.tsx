@@ -10,7 +10,9 @@
  *   chat's one state as its `data-variant`. `who` holds who the chat runs as, `badge` the state's
  *   glyph on its lower end corner, and `word` the state's word.
  *   `chat-mark.css` draws the defaults, and a theme's parts reach the same attributes (ADR 0103).
- * - **A shape as well as a colour** (WCAG 1.4.1): {@link MARK_GLYPHS} draws each state its own.
+ * - **The eight Chat states** (ADR 0121 decision 17, #6012): one glyph and one colour each, the
+ *   same everywhere. **A shape as well as a colour** (WCAG 1.4.1): {@link MARK_GLYPHS} draws each
+ *   state its own.
  * - **`who` is its own part so a later control can stand in it** (#5290's grip): what stands there
  *   changes, and the badge beside it does not.
  * - **It says what the place it stands sets**: `--chat-mark-size` and `--chat-mark-ground`, the
@@ -18,24 +20,21 @@
  * - **A chat that starts needing you knocks twice** (`useArrived`): on that change only, and the
  *   motion comes off when it ends, so a row put back into the document does not play it again.
  */
-import { Circle, Hand, Hourglass, Minus, Pause, X, type LucideIcon } from "lucide-react";
+import { type LucideIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useArrived } from "../../lib/arrived";
-import type { MarkState } from "../../shownState";
+import { CHAT_STATE_SAID, type ChatState } from "../../shownState";
+import { SHAPES } from "../../StateShown";
 
-/** Each state's glyph. **No two share an outline** at the size of a badge. */
-export const MARK_GLYPHS: Readonly<Record<MarkState, LucideIcon>> = {
-  needs: Hand,
-  failed: X,
-  working: Circle,
-  waiting: Hourglass,
-  idle: Pause,
-  ended: Minus,
-};
+/** Each Chat state's glyph, from its one shape (`shownState.CHAT_STATE_SAID`). **No two share an
+ *  outline** at the size of a badge. */
+export const MARK_GLYPHS = Object.fromEntries(
+  Object.entries(CHAT_STATE_SAID).map(([state, { shape }]) => [state, SHAPES[shape]]),
+) as Readonly<Record<ChatState, LucideIcon>>;
 
 export interface ChatMarkProps {
-  /** The chat's one state (`shownState`), or nothing where none is known: `who` alone. */
-  state: MarkState | null | undefined;
+  /** The chat's one Chat state (`shownState`), or nothing for `who` alone. */
+  state: ChatState | null | undefined;
   /** Who the chat runs as: a persona's mark, a shell's, a task's. Nothing for the state alone. */
   who?: ReactNode;
   /** The state's word, heard and not seen. Left out where the place says it itself, after its
@@ -52,7 +51,7 @@ export function ChatMark({ state, who, word, changed = false, className }: ChatM
   // A state this mark CHANGED to, not the one it was drawn in.
   const arrived = useArrived(state) || changed;
   /** The state whose arrival has been played: its motion is over until the next change. */
-  const [played, setPlayed] = useState<MarkState | null | undefined>();
+  const [played, setPlayed] = useState<ChatState | null | undefined>();
   // Another state since: the next time it comes to this one is a change again.
   if (played !== undefined && played !== state) setPlayed(undefined);
   const Glyph = state == null ? undefined : MARK_GLYPHS[state];

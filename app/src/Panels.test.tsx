@@ -1280,7 +1280,7 @@ describe("a view on the sidebar view frame (#3340)", () => {
       "panel-ext-acme-reviews",
     ]) {
       expect(screen.getByTestId(testid)).toHaveAttribute("data-frame");
-      expect(screen.getByTestId(testid).closest("aside")).toHaveClass("panels-view");
+      expect(screen.getByTestId(testid).closest(".panels")).toHaveClass("panels-view");
     }
   });
 

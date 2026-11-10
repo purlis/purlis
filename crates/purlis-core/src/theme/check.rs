@@ -431,6 +431,12 @@ pub const PAIRS: &[Pair] = &[
     // - A needs-you dot (#3652): the failed red, told apart from the same ground; its hand on it
     //   is `surface.base` on `state.failed`, held among the marks below.
     p("state.failed", "surface.deep", 3.0),
+    // - **A chat's state badge** (ADR 0121 decision 17, #6012): each Chat state's colour
+    //   (`shownState.CHAT_STATE_SAID`), a mark on a tab at rest, where the others above do not
+    //   already hold it. Never on the terminal's own fill, which a pair would repaint.
+    p("state.unreadable", "surface.deep", 3.0),
+    p("state.running", "surface.deep", 3.0),
+    p("state.success", "surface.deep", 3.0),
     // - The update pill's words in the accent's words on the accent's surface (#3177).
     p("accent.text", "accent.surface", TEXT),
     // - What an extension runs as you, said inside its approval dialog on the danger wash.

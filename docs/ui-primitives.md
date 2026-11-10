@@ -936,10 +936,10 @@ for a run's one notice, in the Inbox's card. Only the wrapper writes `data-scope
 
 ## The chat mark family
 
-`ChatMark` (`app/src/ui/chat-mark`, ADR 0104 amended 2026-11-05, #5340) is a chat's mark on a tab that shows it, its row in the list, its pane's head and a folded pane's rail. A screen draws it through `ChatPersonaState`, which reads the chat's one state from `shownState`; `QuitWarning`'s list hands it a state directly.
+`ChatMark` (`app/src/ui/chat-mark`, ADR 0104 amended 2026-11-05, #5340) is a chat's mark on a tab that shows it, its row in the list, its pane's head, a folded pane's rail and the row of an ask that names it. It draws the chat's **Chat state** (ADR 0121 decision 17, #6012), which one function derives: `shownState`. A screen draws it through `ChatPersonaState`, which reads that function; `QuitWarning`'s list and Asks hand it the state that function gave.
 
-- **Props:** `state` (`needs`, `failed`, `working`, `waiting`, `idle`, `ended`, or nothing where none is known), `who`, `word`, `changed`.
-- **Parts:** `root` carries the state as its `data-variant`; `who`, `badge` and `word`. A glyph tells each state as well as its colour.
+- **Props:** `state`, one of the eight Chat states in the order that wins (`CHAT_STATES`): `needs` (Waiting on you), `stuck` (Stuck?), `failed`, `working`, `waiting` (Waiting on a chat), `idle`, `ended` (Done) and `cant-tell` (Can't tell), or nothing for `who` alone; `who`, `word`, `changed`. The three keys the mark had before #6012 keep their names, since a theme format only grows.
+- **Parts:** `root` carries the state as its `data-variant`; `who`, `badge` and `word`. Each state has one glyph and one colour (`CHAT_STATE_SAID`) and no two share either, so a glyph tells each state as well as its colour.
 - **The place sets** `--chat-mark-size` and `--chat-mark-ground`, nothing else.
 - **`who` is its own part** so a control can stand in it (the grip, #5290), with the badge left beside it. `ChatPersonaState`'s `grip` puts one there.
 
@@ -1231,8 +1231,17 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
   the list never pulls the keyboard back to another row a frame later; a key's own move and a Tab
   into the list stay React Aria's. In a browser, React Aria's Tab from a row whose controls take
   the keyboard goes on through that row's own controls before it leaves the list (as React Aria's
-  own grid does, seen in `List › One Tab Stop Coming Back`); Shift+Tab back in lands on the row it
-  left.
+  own grid does, seen in `List › One Tab Stop Coming Back`).
+  **Shift+Tab back into a list lands on the row the keyboard left, and → re-enters its controls**
+  (#6033, the WAI-ARIA APG grid's one Tab stop, which gives focus back to the last focused row,
+  never to a control in it), whether or not that row holds controls. The browser's Shift+Tab
+  lands on the list's last control, and React Aria moves the keyboard to its row only when that
+  control is in another row; when it is in the row the list keeps (that row's controls are the
+  list's last), the family gives the keyboard to the row itself (`backToTheRow` in `List.tsx`). A
+  list the keyboard has not been in lands on its last row, as React Aria chooses. Only a Tab does
+  this (a Tab another component handles itself, a dialog's focus wrap, counts as one): a control
+  the pointer presses or a script focuses keeps the keyboard. Seen in
+  `List › Shift Tab Back To A Row With Controls`.
 - **A text box in a row keeps its own keys** (`rowKeys.ts`, #3123): → reaches it from its row as
   it reaches a button; in it ← and →, Home and End, PageUp and PageDown move its caret, a letter,
   Space and Enter are typed or are its own (its handler hears them, the row and the list never do,

@@ -3333,6 +3333,9 @@
         "chat-mark.badge.needs.text": {
           "$ref": "#/$defs/part-text"
         },
+        "chat-mark.badge.stuck.text": {
+          "$ref": "#/$defs/part-text"
+        },
         "chat-mark.badge.failed.text": {
           "$ref": "#/$defs/part-text"
         },
@@ -3346,6 +3349,9 @@
           "$ref": "#/$defs/part-text"
         },
         "chat-mark.badge.ended.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "chat-mark.badge.cant-tell.text": {
           "$ref": "#/$defs/part-text"
         },
         "checkbox.root.fill": {

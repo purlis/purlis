@@ -182,6 +182,20 @@ impl<'a> Studio<'a> {
             .collect()
     }
 
+    /// **The lints of each extension that declares `skill-lint`, said in a source review**
+    /// (#3090, ADR 0101 §1): of each of `skills`, landing at `level`, beside purlis's own
+    /// ([`crate::skills::source::linted`]). Each is asked as the live lint asks it, with no list's
+    /// time: a review is read once, and the person waits on it anyway.
+    pub fn lint_reviewed<'s>(
+        &self,
+        skills: impl IntoIterator<Item = &'s mut crate::skills::source::SkillReview>,
+        level: &crate::skills::verbs::Level,
+    ) {
+        let lints = self.lints();
+        let lints: Vec<&dyn SkillLint> = lints.iter().map(|lint| lint as &dyn SkillLint).collect();
+        crate::skills::source::linted(skills, level, &lints);
+    }
+
     /// **The lints of each extension that declares `skill-lint`, as a studio list asks them**
     /// (#3940): answered from what each said of the same files before, and asked only within
     /// the list's time ([`ListLints`]).
@@ -215,6 +229,23 @@ impl<'a> Studio<'a> {
         }
         out
     }
+}
+
+/// **What the studio's lints say of `skills`, said in their review's lint lines** (#3090, ADR 0101
+/// §1), for a review read without a studio in hand: each extension's that declares `skill-lint`
+/// in the project at `root`, asked of the skills landing at `level` ([`Studio::lint_reviewed`]).
+/// None where the extensions cannot be read: the review is purlis's own then, as the live lint is.
+pub fn lint_reviews<'s>(
+    executor: &Executor,
+    root: &Path,
+    level: &crate::skills::verbs::Level,
+    skills: impl IntoIterator<Item = &'s mut crate::skills::source::SkillReview>,
+) {
+    with_studio(executor, root, |studio| {
+        if let Some(studio) = studio {
+            studio.lint_reviewed(skills, level);
+        }
+    });
 }
 
 /// **purlis's own panels on `skill`'s tab**, in the project at `plane`: its Runs panel. What

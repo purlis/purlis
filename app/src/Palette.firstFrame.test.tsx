@@ -56,7 +56,7 @@ describe("the palette at launch", () => {
     root = createRoot(drawn);
     root.render(
       <>
-        <main className="window">drawn</main>
+        <div className="window">drawn</div>
         <Palette offers={OFFERS} onRun={ok} />
       </>,
     );
