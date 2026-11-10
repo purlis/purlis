@@ -85,6 +85,8 @@ function ViewNavItem({
       data-starts-group={page.startsGroup || undefined}
       data-sub={page.sub || undefined}
       data-heads-group={page.expanded !== undefined || undefined}
+      // → reaches its group's toggle (R42), said to a reader.
+      aria-keyshortcuts={page.expanded !== undefined ? "ArrowRight" : undefined}
     >
       <span data-scope="view-nav" data-part="label">
         {page.label}

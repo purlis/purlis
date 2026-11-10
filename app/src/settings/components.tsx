@@ -3,7 +3,6 @@
 
 import {
   createContext,
-  useEffect,
   useContext,
   useId,
   useLayoutEffect,
@@ -177,12 +176,10 @@ export function SettingsLayout({
   holder?: Ref<HTMLDivElement>;
 }) {
   const switcher = useRef<HTMLDivElement>(null);
-  // A group opens itself when one of its pages becomes current (R44), and stays open.
+  // A group is open while one of its pages is current (R44): drawn so, not kept, so a link that
+  // lands in a folded group leaves the person's fold as they made it.
   const head = headOf(groups, group);
   const setOpen = folds?.setOpen;
-  useEffect(() => {
-    if (head !== undefined) setOpen?.(head, true);
-  }, [head, setOpen]);
   const pages = navPages(
     groups,
     (id) => folds === undefined || folds.isOpen(id) || id === head,
@@ -709,7 +706,10 @@ function RowMenu({
         key="copy"
         id="copy"
         textValue={`Copy key ${copyKey}`}
-        onAction={() => void navigator.clipboard?.writeText(copyKey)}
+        onAction={() => {
+          // Nothing to say when the clipboard refuses: the key is still on the menu's row.
+          navigator.clipboard?.writeText(copyKey).catch(() => undefined);
+        }}
       >
         Copy key <code className="ui-setting-key">{copyKey}</code>
       </MenuItem>

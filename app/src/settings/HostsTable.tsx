@@ -31,6 +31,11 @@ export function hostAndPort(written: string): { host: string; port: string } {
   return ported ? { host: before, port: written.slice(at + 1) } : { host: written, port: "443" };
 }
 
+/** A host's own words, as its file writes them: what the table shows and finds it by. */
+export function hostOf(entry: CollectionEntry): string {
+  return entry.host ?? entry.label;
+}
+
 /**
  * **Your hosts, as a table** (#2919, prototype A of `prototype/settings-page`, R65, R67–R74): the
  * table family's, in its rounded frame, which keeps its least width and scrolls sideways. A row
@@ -61,15 +66,15 @@ export function HostsTable({
   busy: boolean;
   onConfirm: (entry: CollectionEntry) => void;
   onRemove: (entry: CollectionEntry) => void;
-  /** Confirms each of `hosts`, waiting, in turn. */
-  onConfirmAll: (hosts: readonly string[]) => void;
+  /** Confirms each of `hosts`, waiting, in turn: `every` waiting host (Confirm all), or the
+   *  rows chosen. */
+  onConfirmAll: (hosts: readonly string[], every: boolean) => void;
   /** Removes each of `hosts` in turn. */
   onRemoveAll: (hosts: readonly string[]) => void;
   onAdd: () => void;
   /** Add host, where the keyboard comes back to from the form it opens. */
   addRef: Ref<HTMLButtonElement>;
 }) {
-  const hostOf = (entry: CollectionEntry) => entry.host ?? entry.label;
   const { query, setQuery, shown, filtered } = useListFilter(entries, hostOf);
   const [chosen, setChosen] = useState<Selection>(new Set());
   const rows = useMemo(
@@ -104,7 +109,7 @@ export function HostsTable({
               isDisabled={busy || !picked.some((one) => one.status === "waiting")}
               onPress={() =>
                 done(() =>
-                  onConfirmAll(picked.filter((one) => one.status === "waiting").map(hostOf)),
+                  onConfirmAll(picked.filter((one) => one.status === "waiting").map(hostOf), false),
                 )
               }
             >
@@ -125,7 +130,7 @@ export function HostsTable({
               <Button
                 variant="primary"
                 isDisabled={busy}
-                onPress={() => onConfirmAll(waiting.map(hostOf))}
+                onPress={() => onConfirmAll(waiting.map(hostOf), true)}
               >
                 {`Confirm all ${waiting.length} waiting`}
               </Button>

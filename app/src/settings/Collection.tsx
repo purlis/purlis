@@ -12,12 +12,12 @@ import {
 } from "react";
 import { Choice, Field, SettingActions, SettingRow } from "./components";
 import type { PlaneId } from "../bindings";
-import type { Driven, EntryReferrer, EntryRefused, EntryRefusal } from "./driver";
+import type { Driven, EntryOp, EntryReferrer, EntryRefused, EntryRefusal } from "./driver";
 import { askSettingsLink, referrerElsewhere } from "./links";
 import { OutLink } from "./OutLink";
 import type { Collection, CollectionEntry, EntryField, Setting } from "./groups";
 import { HostStatus } from "../ui/badge/Badge";
-import { HostsTable } from "./HostsTable";
+import { HostsTable, hostOf } from "./HostsTable";
 import { Button } from "../ui/button/Button";
 import { Form, type RefusedAnswer } from "../ui/field/Field";
 
@@ -108,68 +108,77 @@ export function CollectionView({
   });
   const [said, setSaid] = useState<{ words: string; undo: boolean }>();
   const [busy, setBusy] = useState(false);
+  // The Add form a picker's New… asks for (`adding`), or the bar's Add host: a new ask of either
+  // opens it, each followed by what it was last.
   const [asked, setAsked] = useState<Asked | undefined>(adding);
-  if (adding !== undefined && adding.ask !== asked?.ask) setAsked(adding);
-  /** The entry `host` is now, once the file a write left is the one drawn. */
-  const now = async (host: string, after: string | null | undefined) => {
-    for (
-      let tries = 0;
-      after !== undefined && latest.current.base === after && tries < 100;
-      tries++
-    )
+  const [askedBy, setAskedBy] = useState(adding?.ask);
+  if (adding !== undefined && adding.ask !== askedBy) {
+    setAskedBy(adding.ask);
+    setAsked(adding);
+  }
+  /**
+   * Sends `op` for each of `hosts` in turn, each against the file as it is drawn after the write
+   * before it, the host found again by its words (a remove changes the others' identities).
+   * Stops at a refusal, which the collection says, or where the write before it is not drawn
+   * yet. Answers the hosts it was done to.
+   */
+  const eachHost = async (
+    hosts: readonly string[],
+    op: (entry: CollectionEntry, base: string | null) => EntryOp,
+  ): Promise<string[]> => {
+    const done: string[] = [];
+    for (const host of hosts) {
+      const entry = latest.current.entries.find((one) => hostOf(one) === host);
+      if (entry === undefined) continue;
+      const drawn = latest.current;
+      if (await driver.entry(key, op(entry, drawn.base))) break;
+      done.push(host);
+      if (!(await redrawnFrom(drawn))) break;
+    }
+    return done;
+  };
+  /** Whether the collection is drawn again since `drawn`, within a second. */
+  const redrawnFrom = async (drawn: Collection) => {
+    for (let tries = 0; latest.current === drawn && tries < 100; tries++)
       await new Promise((settled) => setTimeout(settled, 10));
-    return latest.current.entries.find((one) => (one.host ?? one.label) === host);
+    return latest.current !== drawn;
   };
   const confirmHosts = async (hosts: readonly string[], all: boolean) => {
     setBusy(true);
     setSaid(undefined);
-    let done = 0;
-    for (const host of hosts) {
-      const entry = await now(host, undefined);
-      if (entry === undefined) continue;
-      const refusal = await driver.entry(key, {
-        collection: collection.name,
-        base: latest.current.base,
-        confirm: entry.id,
-      });
-      if (refusal) break;
-      done += 1;
-    }
+    const done = await eachHost(hosts, (entry, base) => ({
+      collection: collection.name,
+      base,
+      confirm: entry.id,
+    }));
     setBusy(false);
-    if (done > 0)
+    if (done.length > 0)
       setSaid({
-        words: all
-          ? "Confirmed every waiting host."
-          : done === 1
-            ? `Confirmed ${hosts[0] ?? ""}.`
-            : `Confirmed ${done} hosts.`,
+        words:
+          all && done.length === hosts.length
+            ? "Confirmed every waiting host."
+            : done.length === 1
+              ? `Confirmed ${done[0] ?? ""}.`
+              : `Confirmed ${done.length} hosts.`,
         undo: false,
       });
+    settle();
   };
   const removeHosts = async (hosts: readonly string[]) => {
     setBusy(true);
     setSaid(undefined);
-    let done = 0;
-    let sent: string | null | undefined;
-    for (const host of hosts) {
-      const entry = await now(host, sent);
-      if (entry === undefined) continue;
-      sent = latest.current.base;
-      const refusal = await driver.entry(key, {
-        collection: collection.name,
-        base: sent,
-        remove: entry.id,
-      });
-      if (refusal) break;
-      done += 1;
-    }
+    const done = await eachHost(hosts, (entry, base) => ({
+      collection: collection.name,
+      base,
+      remove: entry.id,
+    }));
     setBusy(false);
     // One host's remove has its Undo; several have none, as one Undo would put back only the last.
-    if (done > 0)
+    if (done.length > 0)
       setSaid(
-        done === 1
-          ? { words: `Removed ${hosts[0] ?? ""}.`, undo: true }
-          : { words: `Removed ${done} hosts.`, undo: false },
+        done.length === 1
+          ? { words: `Removed ${done[0] ?? ""}.`, undo: true }
+          : { words: `Removed ${done.length} hosts.`, undo: false },
       );
     settle();
   };
@@ -231,9 +240,9 @@ export function CollectionView({
           label={label}
           entries={collection.entries}
           busy={busy}
-          onConfirm={(entry) => void confirmHosts([entry.host ?? entry.label], false)}
-          onRemove={(entry) => void removeHosts([entry.host ?? entry.label])}
-          onConfirmAll={(hosts) => void confirmHosts(hosts, true)}
+          onConfirm={(entry) => void confirmHosts([hostOf(entry)], false)}
+          onRemove={(entry) => void removeHosts([hostOf(entry)])}
+          onConfirmAll={(hosts, every) => void confirmHosts(hosts, every)}
           onRemoveAll={(hosts) => void removeHosts(hosts)}
           onAdd={() => {
             setSaid(undefined);

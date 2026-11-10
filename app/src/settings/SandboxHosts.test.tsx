@@ -443,6 +443,20 @@ describe("Settings › Your hosts, the table", () => {
     expect(asked.map((one) => one.arg)).toEqual(["host:2:zed.dev", "host:3:fork.dev"]);
   });
 
+  it("confirms the chosen hosts, and says how many rather than every waiting host", async () => {
+    const { table, asked, user } = await hostsTable();
+
+    await user.click(within(table).getByRole("checkbox", { name: "Select fork.dev:443" }));
+    await user.click(
+      within(screen.getByRole("group", { name: "Your hosts" })).getByRole("button", {
+        name: "Confirm",
+      }),
+    );
+
+    expect(await screen.findByText("Confirmed fork.dev.")).toBeVisible();
+    expect(asked.map((one) => one.arg)).toEqual(["host:3:fork.dev"]);
+  });
+
   it("removes one host, says so, and offers its Undo (R72)", async () => {
     const { table, hosts, user } = await hostsTable();
 

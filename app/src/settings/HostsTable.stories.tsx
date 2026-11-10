@@ -40,7 +40,7 @@ const HOSTS: readonly CollectionEntry[] = [
 function Hosts(props: {
   onConfirm: (entry: CollectionEntry) => void;
   onRemove: (entry: CollectionEntry) => void;
-  onConfirmAll: (hosts: readonly string[]) => void;
+  onConfirmAll: (hosts: readonly string[], every: boolean) => void;
   onRemoveAll: (hosts: readonly string[]) => void;
   onAdd: () => void;
 }) {
@@ -83,7 +83,7 @@ export const WaitingFirst: Story = {
     );
     expectFocusInSight();
     await userEvent.keyboard("{Enter}");
-    await expect(args.onConfirmAll).toHaveBeenCalledWith(["zed.dev", "fork.dev"]);
+    await expect(args.onConfirmAll).toHaveBeenCalledWith(["zed.dev", "fork.dev"], true);
     const first = canvas.getAllByRole("row")[1] as HTMLElement;
     await expect(within(first).getByRole("rowheader")).toHaveTextContent("zed.dev:443");
     await expect(within(first).getByText("Waiting for you")).toBeVisible();

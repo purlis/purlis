@@ -3,7 +3,7 @@
 
 /**
  * **A settings page, the aligned form** (#2919, prototype A of `prototype/settings-page`, the
- * audit's R37–R62): the side column titled Settings with the level switcher, the filter and the
+ * audit's R37–R62): the side column with the level switcher, the filter and the
  * pages; the page's header naming its file with Edit as TOML; rows whose label and help are one
  * column, whose controls all start at one x, and whose ⋯ menu stands in the same place on every
  * row; the set-here mark, a badge for a value kept elsewhere, a deprecated key and an inline

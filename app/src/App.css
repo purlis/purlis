@@ -7195,13 +7195,14 @@ nav.piece-files-head {
   margin-block: var(--space-5);
 }
 
-/* The page (R37): it scrolls on its own, 22/28/40 inside its edge in Purlis, and its groups are
-   20 apart. */
+/* The page (R37): 22/28/40 inside its edge and its groups 20 apart, sums of the scale's steps
+   at the default text size. */
 .ui-settings-body {
   min-inline-size: 0;
   min-block-size: 0;
   overflow-y: auto;
-  padding: var(--space-7) var(--space-8) calc(var(--space-8) + var(--space-5));
+  padding: calc(var(--space-7) - var(--space-1)) calc(var(--space-7) + var(--space-2))
+    calc(var(--space-8) + var(--space-4));
 }
 
 /* **A page's header is its column's first row** (#3147): it stays, keeping the room the pane's
@@ -7233,19 +7234,22 @@ nav.piece-files-head {
 }
 
 .pane-frame.pane-viewed .ui-setting-page > .ui-setting-head {
-  margin-inline-end: max(var(--space-0), calc(var(--pane-actions-room) - var(--space-8)));
+  margin-inline-end: max(
+    var(--space-0),
+    calc(var(--pane-actions-room) - var(--space-7) - var(--space-2))
+  );
 }
 
 .ui-setting-rows {
   flex: 1 1 auto;
   min-block-size: 0;
   overflow-y: auto;
-  padding-block-end: calc(var(--space-8) + var(--space-5));
+  padding-block-end: calc(var(--space-8) + var(--space-4));
 }
 
 .ui-settings-page {
   display: grid;
-  gap: var(--space-7);
+  gap: calc(var(--space-6) + var(--space-2));
   max-inline-size: 860px;
 }
 
@@ -7281,7 +7285,7 @@ nav.piece-files-head {
 }
 
 .ui-setting-head {
-  margin-block-end: var(--space-7);
+  margin-block-end: calc(var(--space-6) + var(--space-2));
 }
 
 .ui-setting-reset:focus-visible {
@@ -7685,7 +7689,7 @@ nav.piece-files-head {
    quiet words at 12, then its rows; 20 apart. A rarely used group is the disclosure family's,
    folded, its count after its title and its chevron after both (#2799 rule 1). */
 .ui-settings-page .ui-setting-section {
-  margin-block-start: var(--space-7);
+  margin-block-start: calc(var(--space-6) + var(--space-2));
 }
 
 .ui-settings-page .ui-setting-rows > .ui-setting-section:first-child,
@@ -7715,7 +7719,7 @@ nav.piece-files-head {
   display: grid;
   grid-template-columns: minmax(180px, 38%) minmax(0, 1fr) 64px;
   align-items: start;
-  gap: var(--space-3) var(--space-7);
+  gap: var(--space-3) calc(var(--space-6) + var(--space-2));
   padding-block: var(--space-5);
   border-block-end: 0;
   border-block-start: var(--separator-width) solid var(--separator-fill, var(--border-subtle));

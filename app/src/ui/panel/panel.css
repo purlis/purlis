@@ -506,10 +506,10 @@ li:has(> [data-scope="view-nav"][data-part="item"][data-starts-group]) {
   border-block-start: 1px solid var(--border-subtle);
 }
 
-/* A page of the one above it: set in under it, 22 px in Purlis (R41), out of no box but its
-   own; every page at one level shares one start. */
+/* A page of the one above it: set in 22 px under it at the default text size (R41), out of no
+   box but its own; every page at one level shares one start. */
 [data-scope="view-nav"][data-part="item"][data-sub] {
-  padding-inline-start: var(--space-7);
+  padding-inline-start: calc(var(--space-7) - var(--space-1));
 }
 
 /* **A group's toggle** (#2919, R42, R43): 26 px at the end of its page's row, over the room the
