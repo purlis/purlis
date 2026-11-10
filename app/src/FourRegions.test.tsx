@@ -1607,14 +1607,16 @@ describe("the right side's activity bar", () => {
     expect(within(updates).getByRole("radio", { name: "Mine, from your chats" })).toBeChecked();
   });
 
-  it("opens Asks on ⌘⇧I, with the keyboard on its first ask and not on a button", async () => {
+  it("opens Asks on ⌘⇧I with its first ask's lead focused, never a grant, and Esc goes back (#6016)", async () => {
     waitingAsks = [asking(3, "Run cargo test")];
     core();
     render(<App />);
     await screen.findByRole("tabpanel", { name: "Memory" });
     await waitFor(() => expect(tab("Asks")).toHaveAccessibleName("Asks 1 thing waits on you"));
+    const before = tab("Asks");
+    act(() => before.focus());
 
-    fireEvent.keyDown(document.body, {
+    fireEvent.keyDown(before, {
       key: "I",
       shiftKey: true,
       ...(onAMac() ? { metaKey: true } : { ctrlKey: true }),
@@ -1622,8 +1624,12 @@ describe("the right side's activity bar", () => {
 
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
     const first = inbox.querySelector<HTMLElement>('[role="row"].inbox-ask') as HTMLElement;
-    await waitFor(() => expect(first).toHaveFocus());
-    expect(within(first).getByText("Run cargo test")).toBeInTheDocument();
+    // ADR 0121 decision 9: the first ask's answer, where it grants nothing (#2980).
+    const deny = within(first).getByRole("button", { name: "Deny" });
+    await waitFor(() => expect(deny).toHaveFocus());
+
+    await userEvent.keyboard("{Escape}");
+    expect(before).toHaveFocus();
   });
 
   it("opens Asks from the title bar's hand", async () => {

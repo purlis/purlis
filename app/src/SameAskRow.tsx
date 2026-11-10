@@ -181,6 +181,9 @@ export function SameAsk({
         <Button
           size="sm"
           variant="secondary"
+          // **Keyboard triage lands here** (#6016): the group's answer that grants nothing, with
+          // Allow for all one ← away, pressed on purpose (`asksTriage.ts`'s `leadOf`).
+          data-triage-lead=""
           aria-expanded={open}
           aria-label={`${ANSWER_EACH}: ${who}`}
           onPress={() => onOpen(!open)}

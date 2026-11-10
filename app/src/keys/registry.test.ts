@@ -90,6 +90,11 @@ describe("the key registry (N24)", () => {
       "chat.find",
       "finder.copyPath",
       "finder.reveal",
+      // Asks' triage keys are the finder's kind (#6016): ⌘⌥ and a letter, Alt+Shift elsewhere.
+      "asks.later",
+      "asks.go",
+      "asks.snooze",
+      "asks.stop",
       "app.quit",
       // Ctrl+[ is Escape to a terminal and Ctrl+[ ] an editor's indent; Alt+← → are Back and
       // Forward off a Mac (`viewKeys.ts`).

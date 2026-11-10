@@ -39,6 +39,7 @@ import { Tooltip } from "./ui/tooltip/Tooltip";
 import { ChatMark } from "./ui/chat-mark/ChatMark";
 import { ChatActions } from "./ChatActions";
 import { shownState } from "./shownState";
+import { highRisk } from "./asksTriage";
 
 import { chainSaid, timeSaid, useSettledPlace } from "./inboxRowParts";
 import { askSeenKey, useSeenRow } from "./seenRows";
@@ -758,6 +759,8 @@ export function Ask({
       isNew={isNew}
       className="inbox-ask"
       data-source={ask.source}
+      // **A high-risk ask is never advanced onto** (ADR 0121 decision 8, #6011's seam).
+      data-risk={highRisk(ask) ? "" : undefined}
       aria-labelledby={shape.message ? `${id}-whose` : `${id}-says`}
       aria-describedby={`${
         shape.message ? `${id}-says` : `${id}-whose${shape.said === undefined ? "" : ` ${id}-said`}`

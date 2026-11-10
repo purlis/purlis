@@ -302,6 +302,7 @@ import { drawnOnlyPresent, previewsDrawn, type ViewPlace } from "./sideViews";
 import { SkillsView, type FrontChat, type SkillsViewProps } from "./SkillsView";
 import type { ExplorerPlace } from "./skillsListing";
 import { SIDE_KEYS_SAID, sideKeyOf } from "./sideKeys";
+import { beginTriage, firstLead, triaging } from "./asksTriage";
 import { RegionFrame, stepRegions } from "./RegionFrame";
 import { putAway } from "./regionsAway";
 import { ActivityCount, ActivityDot, type PanelTab } from "./ActivityBar";
@@ -10728,6 +10729,9 @@ export const PlaneView = memo(function PlaneView({
         here.run();
         return;
       }
+      // **⌘⇧I begins keyboard triage** (ADR 0121 decision 9, #6016): Asks with the first ask's
+      // lead focused, and where the keyboard was, to go back to.
+      if ("show" in which && which.show === "asks") beginTriage(document.activeElement);
       if ("toggle" in which) toggleRegionSeen(which.toggle);
       else showSideViewSeen(which.show);
     };
@@ -13691,7 +13695,11 @@ function giveViewTheKeyboard(view: ViewId): void {
       (document.querySelector<HTMLElement>(
         `${panel} :is([role="treegrid"][tabindex="0"], [role="treegrid"] [tabindex="0"])`,
       ) ??
-      // The Inbox's first ask, past the scope switch above its list (qw359).
+      // In triage (⌘⇧I, #6016), the first ask's lead: its Answer, or an answer that grants
+      // nothing. Else the Inbox's first ask, past the scope switch above its list (qw359).
+      (view === "asks" && triaging()
+        ? firstLead(document.querySelector(`${panel} .inbox-list`))
+        : null) ??
       document.querySelector<HTMLElement>(`${panel} .inbox-list [tabindex="0"]`) ??
       document.querySelector<HTMLElement>(`${panel} [tabindex="0"]`))
   )?.focus();
