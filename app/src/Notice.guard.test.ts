@@ -80,6 +80,31 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 1,
     why: READING,
   },
+  // Why a pinned artifact cannot be opened (#5952): its folder gone, or its read refused. Read
+  // once as the tab opens; closing and pressing its icon again is the retry. Since #5954 a
+  // missing, too-large or refused one carries Repin and Unpin as its way out, and an unpinned
+  // one says so with nothing left to do but close the tab. A refused Repin or Unpin, and a
+  // failed Regenerate, are Notices (#5978's review).
+  "ArtifactRegenerate.tsx": {
+    count: 1,
+    why: "Regenerate's line in an artifact's bar: where its data stands, a live value (#5962)",
+  },
+  "ArtifactHistory.tsx": {
+    count: 3,
+    why:
+      "an artifact's History (#5966): a refused read or comparison is an inline error in its " +
+      "dialog (V91n), whose Compare is the retry; what a comparison found is said once beside " +
+      "it; and the bar of a tab shown as of a version says which, beside Back to now, its way out",
+  },
+  "ArtifactTab.tsx": {
+    count: 4,
+    why: READ_ONCE,
+  },
+  // Why the browser did not open an artifact's link (#5956), in its link dialog.
+  "ArtifactLinks.tsx": {
+    count: 1,
+    why: ACTION,
+  },
   "About.tsx": {
     count: 2,
     why:
@@ -451,6 +476,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
   "PersonaProfileMissing.tsx": {
     count: 1,
     why: "Create's refusal, inside the form its Notice's fix opened: " + ACTION,
+  },
+  "PinToWorkspace.tsx": {
+    count: 2,
+    why: "Pin to workspace's and Unpin's refusals, beside the answers: " + ACTION,
   },
   "ProfileApproval.tsx": {
     count: 1,
@@ -1007,6 +1036,9 @@ describe("the window's standing lines", () => {
     // The reviewer's injection into SessionBusNotice.tsx: any class, a live role.
     expect(lines(`<p className="warning" role="status">The bus is gone.</p>`)).toHaveLength(1);
     expect(lines(`<p className={bad ? "trouble" : "came-back"} role={r}>x</p>`)).toHaveLength(1);
+    // The review of #5978: a refusal written as an alert paragraph, its role before its class.
+    expect(lines(`<p role="alert" className="artifact-refused">No.</p>`)).toHaveLength(1);
+    expect(lines(`<p role="alert">purlis could not repin it</p>`)).toHaveLength(1);
     expect(lines(`<span aria-live="polite">3 found</span>`)).toHaveLength(1);
     expect(
       lines(`<AlertDialog.Description role="alert">No.</AlertDialog.Description>`),

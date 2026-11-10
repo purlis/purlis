@@ -185,6 +185,7 @@ export const RUST_READERS = [
   "src/PersonaMark.test.tsx",
   "src/StripMarks.test.tsx",
   "src/allowLabels.test.ts",
+  "src/artifactPage.test.ts",
   "src/copy.rust.test.ts",
   "src/layoutProjects.test.ts",
   "src/settings/linkedGroups.test.ts",

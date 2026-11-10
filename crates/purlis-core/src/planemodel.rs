@@ -300,8 +300,9 @@ impl Model {
                     }
                 },
                 Kind::Sessions => held.sessions = sessions_of(root, name),
-                // A skill is no part of a workspace's sections (SK-29).
-                Kind::Project
+                // A skill is no part of a workspace's sections (SK-29), nor an artifact (#5955).
+                Kind::Artifacts
+                | Kind::Project
                 | Kind::Harness
                 | Kind::Persona
                 | Kind::Skills

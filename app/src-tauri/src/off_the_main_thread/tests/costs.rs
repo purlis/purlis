@@ -412,6 +412,11 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
         "IN_MEMORY",
         &[
             "about_charter",
+            // An artifact's link followed as a press would, and what the run opened in place
+            // of the browser (ADR 0122, the `e2e` build only): the served page's snapshot and
+            // the opened list, in memory; a link to a place is read off this thread.
+            "artifact_link_follow",
+            "artifact_links_opened",
             // Copy diagnostics' facts (#4774): the chats held in memory, and one uname(2).
             "diagnostics_here",
             "activity_chat",

@@ -24,6 +24,11 @@ mod activity;
 mod agentidentity;
 mod alerts;
 mod arrived;
+mod artifact_links;
+mod artifact_places;
+mod artifact_search;
+mod artifactdiscuss;
+mod artifacts;
 mod asking;
 mod asknotify;
 mod askoutcome;
@@ -90,6 +95,7 @@ mod host;
 mod inboxupdates;
 mod machineprofiles;
 mod personaskills;
+mod regenerate;
 mod routergrade;
 mod signingsetup;
 mod signinwatch;
@@ -145,6 +151,7 @@ mod pasteread;
 mod personas;
 mod piecefiles;
 mod pin;
+mod pinproposals;
 mod planes;
 mod planewatch;
 mod poolfollow;
@@ -3910,6 +3917,14 @@ pub fn run() {
         // as the system tells the window, so the window never sends a path from outside the
         // workspace.
         .manage(workspacewrites::Dropped::default())
+        // A pinned artifact's webviews, and the scheme that serves each only its own bytes
+        // (#5952, ADR 0122 §3).
+        .manage(artifacts::Artifacts::default())
+        // The links its pages followed, waiting on the person (#5956, ADR 0122 §5).
+        .manage(artifact_links::Links::default())
+        .register_uri_scheme_protocol(purlis_core::artifact::serve::SCHEME, |ctx, request| {
+            artifacts::serve(ctx.app_handle(), ctx.webview_label(), &request)
+        })
         .on_window_event(|window, event| {
             // A drop from the file manager is told to the window, not its webview (#5378).
             workspacewrites::window_event(window, event);
@@ -3948,6 +3963,8 @@ pub fn run() {
                     vaults::window_gone(window, window.label());
                     // And it has no Inbox open to hold a notification back (#1694).
                     asknotify::window_gone(window, window.label());
+                    // And its artifacts' webviews go with it (#5952).
+                    artifacts::close_window_children(window.app_handle(), window.label());
                     windows::destroyed(window);
                 }
                 // A window focused is the person coming back to it: the plane watches look at
@@ -3972,6 +3989,18 @@ pub fn run() {
         .on_page_load(|webview, payload| {
             if payload.event() == tauri::webview::PageLoadEvent::Started {
                 vaults::window_gone(webview, webview.label());
+                // Nor does it keep the artifacts its last load laid over its tabs (#5952).
+                if windows::is_charter_window(webview.label()) {
+                    artifacts::close_window_children(webview.app_handle(), webview.label());
+                }
+                // An artifact's page that loads again loses the port its last load had (#5961).
+                if artifacts::is_artifact(webview.label())
+                    && let Some(served) = webview.try_state::<artifacts::Artifacts>()
+                {
+                    served.reloaded(webview.label());
+                    // And the actions it offered (#5972).
+                    artifacts::offers::withdrawn(webview.app_handle(), webview.label());
+                }
             }
         })
         .setup(|app| {
@@ -4824,6 +4853,8 @@ pub fn run() {
                 .telling_changes({
                     let window = app.handle().clone();
                     std::sync::Arc::new(move |plane: PlaneId, changes: planewatch::What| {
+                        // And each page subscribed to what it moved is pushed anew (#5970).
+                        artifacts::live::moved(&window, &plane, changes.as_deref());
                         windows::emit_for_plane(
                             &window,
                             &plane,

@@ -17,7 +17,14 @@ import {
   type Ran,
   type Said,
 } from "./actions";
-import { commands, type FileScope, type FoundFile, type PlaneId } from "./bindings";
+import {
+  commands,
+  type ArtifactFound,
+  type FileScope,
+  type FoundFile,
+  type PlaneId,
+} from "./bindings";
+import { useArtifactFind } from "./artifactFind";
 import { hitSaid, scopeSaid, useFileFind, type Part } from "./fileFind";
 import { isKey, noteWithoutKey, pressed, rowAriaKeys, rowKey } from "./keys/registry";
 import {
@@ -108,11 +115,17 @@ import { ListComboBox } from "./ui/select/ComboBox";
  * to find, the key is the window's whenever a project is open, not only when there are two to
  * switch between, and a lone project's own row, which could only say it is already in front,
  * is not listed.
+ *
+ * **And it finds artifacts** (#5968, ADR 0122): once something is typed, the pinned artifacts of
+ * the project in front whose pages say it follow the actions, in a group of their own as the
+ * files are, and a found artifact opens its own tab. What is searched is the core's: a pinned
+ * folder's template, never anyone's data (`artifactFind.ts`).
  */
 export function Palette({
   offers,
   projects,
   files,
+  artifacts,
   said,
   onSettings,
   onRun,
@@ -133,6 +146,14 @@ export function Palette({
     ladder: readonly FileScope[];
     nameOf: (plane: PlaneId) => string;
     onOpen: (file: FoundFile) => void;
+  };
+  /**
+   * The artifacts the actions find (#5968): the project in front, whose pinned artifacts are
+   * searched, and how a found one is opened. Absent, or with no project, none are found.
+   */
+  artifacts?: {
+    plane: PlaneId | undefined;
+    onOpen: (found: ArtifactFound) => void;
   };
   /** What the last row answered, when it refused or had something to say. */
   said?: Said;
@@ -396,19 +417,32 @@ export function Palette({
   const fileScope = finding ? ladder[rungNow] : undefined;
   const found = useFileFind(finding, fileScope, query);
   const fileRows = finding ? found.files : [];
-  /** The rows the arrows move over: the projects', then the files'. */
-  const total = rows.length + fileRows.length;
+  /** The artifacts the actions find (#5968): only among the actions, never in the switcher. */
+  const artifactFound = useArtifactFind(
+    open && scope === "actions" ? artifacts?.plane : undefined,
+    query,
+  );
+  const artifactRows = open && scope === "actions" ? artifactFound : [];
+  /** Where the artifacts start among the rows the arrows move over. */
+  const artifactsFrom = rows.length + fileRows.length;
+  /** The rows the arrows move over: the projects' or the actions', then the files' or the
+   *  artifacts'. */
+  const total = artifactsFrom + artifactRows.length;
   const firstRunnable = aim(rows);
   const aimed =
     at !== undefined && at < total
       ? at
       : firstRunnable >= 0
         ? firstRunnable
-        : fileRows.length > 0
+        : total > rows.length
           ? rows.length
           : -1;
   const rowId = (index: number) =>
-    index < rows.length ? `palette-row-${rows[index]?.id}` : `palette-file-${index - rows.length}`;
+    index < rows.length
+      ? `palette-row-${rows[index]?.id}`
+      : index < artifactsFrom
+        ? `palette-file-${index - rows.length}`
+        : `palette-artifact-${index - artifactsFrom}`;
   const aimedId = aimed >= 0 && aimed < total ? rowId(aimed) : undefined;
   useEffect(() => {
     latest.current = { offers, onRun, shown: rows, aimed };
@@ -471,13 +505,22 @@ export function Palette({
       });
   };
 
-  /** Enter, or a click, on the row at `index` of either group. */
+  /** Opens a found artifact in its own tab, and leaves (#5968). */
+  const openArtifact = (found: ArtifactFound) => {
+    close();
+    artifacts?.onOpen(found);
+  };
+
+  /** Enter, or a click, on the row at `index` of any group. */
   const runRow = (index: number) => {
     if (index < 0) return;
     if (index < rows.length) runOffer(rows[index]);
-    else {
+    else if (index < artifactsFrom) {
       const file = fileRows[index - rows.length];
       if (file) openFile(file);
+    } else {
+      const found = artifactRows[index - artifactsFrom];
+      if (found) openArtifact(found);
     }
   };
 
@@ -486,7 +529,8 @@ export function Palette({
   /** The row the arrows or the query aimed at. */
   const aimedRow = aimed >= 0 && aimed < rows.length ? rows[aimed] : undefined;
   /** The file the arrows or the query aimed at, which Copy path and Reveal act on. */
-  const aimedFile = aimed >= rows.length ? fileRows[aimed - rows.length] : undefined;
+  const aimedFile =
+    aimed >= rows.length && aimed < artifactsFrom ? fileRows[aimed - rows.length] : undefined;
   const mac = onAMac();
   // The way out of the key this palette claimed, said where the person who needs it is
   // standing: they pressed `F2` meaning to send `F2`, and this is on screen the instant it
@@ -541,6 +585,7 @@ export function Palette({
         controls={[
           ...(rows.length > 0 ? ["palette-rows"] : []),
           ...(fileRows.length > 0 ? ["palette-files"] : []),
+          ...(artifactRows.length > 0 ? ["palette-artifacts"] : []),
         ]}
         aimed={aimedId}
         placeholder={
@@ -748,7 +793,9 @@ export function Palette({
               className="palette-rows"
               aria-label="Files"
               count={fileRows.length}
-              aimed={aimed >= rows.length ? aimed - rows.length : undefined}
+              aimed={
+                aimed >= rows.length && aimed < artifactsFrom ? aimed - rows.length : undefined
+              }
               option={(at) => {
                 const file = fileRows[at];
                 const index = rows.length + at;
@@ -783,6 +830,32 @@ export function Palette({
             </p>
           )}
         </section>
+      )}
+
+      {/* The artifacts the actions find (#5968): a group of their own after the actions, never
+            ranked into them, each opening its own tab. */}
+      {artifactRows.length > 0 && (
+        <AimedList
+          id="palette-artifacts"
+          className="palette-rows"
+          aria-label="Artifacts"
+          count={artifactRows.length}
+          aimed={aimed >= artifactsFrom ? aimed - artifactsFrom : undefined}
+          option={(at) => {
+            const found = artifactRows[at];
+            return (
+              <AimedOption
+                key={`${found.workspace}/${found.folder}`}
+                id={`palette-artifact-${at}`}
+                aimed={artifactsFrom + at === aimed}
+                onPress={() => openArtifact(found)}
+              >
+                <RowLabel className="palette-title">{found.name}</RowLabel>
+                <RowTrail className="palette-why">{found.workspace}</RowTrail>
+              </AimedOption>
+            );
+          }}
+        />
       )}
     </DialogSurface>
   );

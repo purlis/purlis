@@ -133,6 +133,7 @@ fn the_tools_are_the_ones_charter_names_and_each_says_what_it_does() {
             "dispatch_note",
             "dispatch_ask",
             "ask_operator",
+            "queries",
         ]
     );
     for tool in &TOOLS {
@@ -1280,6 +1281,12 @@ fn every_tool_pre_allowed_in_claude_code_is_one_that_only_reads() {
             "skill_runs",
             "skill_find",
             "skill_load",
+            // The catalogue's listing, the binary's own (ADR 0122 §7, #5969).
+            "queries",
+            // The read-only artifact verbs' twins (#5978's review of spec #5948).
+            "artifact_list",
+            "artifact_check",
+            "artifact_approve_status",
         ]
     );
     for name in PRE_ALLOWED {
@@ -1287,6 +1294,7 @@ fn every_tool_pre_allowed_in_claude_code_is_one_that_only_reads() {
             .iter()
             .chain(crate::themepreview::TOOLS.iter())
             .chain(crate::skilltools::TOOLS.iter())
+            .chain(crate::artifact::tools::TOOLS.iter())
             .find(|tool| tool.name == name)
             .unwrap_or_else(|| panic!("{name} is not a tool"));
         assert!(tool.read_only, "{name} writes");
@@ -1679,4 +1687,24 @@ fn todo_reopen_of_a_slug_that_walks_out_of_the_todos_is_refused() {
         at(9, 0),
     );
     assert!(refused.is_err(), "{refused:?}");
+}
+
+#[test]
+fn the_queries_tool_answers_what_purlis_queries_json_prints() {
+    let p = project(&["alpha"]);
+    let said = call_ok(p.path(), &in_ws("alpha"), QUERIES, json!({}));
+    let listing: serde_json::Value = serde_json::from_str(&said).unwrap();
+    assert_eq!(listing, crate::catalogue::listing());
+    let at_root = call(
+        p.path(),
+        &Place::PlaneRoot,
+        QUERIES,
+        &args(json!({})),
+        at(9, 0),
+    );
+    assert_eq!(
+        at_root.as_deref(),
+        Ok(said.as_str()),
+        "it reads no workspace"
+    );
 }

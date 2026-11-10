@@ -1318,7 +1318,7 @@ fn looking(
     let window = showing
         .as_ref()
         .and_then(|showing| showing.asked_of(plane, held.chats().window_showing(session)))
-        .and_then(|label| app.get_webview_window(&label));
+        .and_then(|label| app.get_window(&label));
     let Some(window) = window else {
         return Looking {
             window_in_front: false,

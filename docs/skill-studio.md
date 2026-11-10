@@ -250,6 +250,47 @@ it: see [Grading a draft](#grading-a-draft)), and **Delete…**. A deleted
 skill waits under **Deleted** for 30 days. **History** lists every saved version, with **Revert
 to this**.
 
+### Shipping an artifact with a skill
+
+A skill can bring a page for the workspace's activity bar: an **artifact template**. Put it in
+the skill's own folder as `artifacts/<name>/`, with its `index.html` and anything the page loads
+beside it:
+
+```text
+backlog-sync/
+  SKILL.md
+  artifacts/
+    backlog-state/
+      index.html
+      style.css
+```
+
+The skill's steps end by asking purlis for it, before writing its data:
+
+```bash
+purlis artifact pin backlog-state --skill backlog-sync --command "<what writes its data>"
+```
+
+In a chat, purlis copies the page into the workspace's `artifacts/backlog-state/` and shows you
+a proposed pin; only your **Pin** in Pin to workspace pins it. At your terminal it copies and
+pins at once. Either way:
+
+- **Data files are never copied.** `data.json` and `data/` are each person's own: the skill
+  writes them into the workspace's copy as it runs, and `--command` is what Regenerate runs to
+  write them again.
+- **A page that would not be pinned is not copied.** The page is read within the size cap and
+  checked for anything shaped like a secret first, and the skill is found by its name among the
+  chat's own skills, never by a path.
+- **A run again leaves the copy as it is**, when it holds the same page, data included. A folder
+  holding another page is never written over: to take a skill's newer page, unpin the artifact,
+  remove its folder, and run the skill again.
+- **Script asks each person.** A page with script runs only once you approve it in its bar, as
+  any artifact's does.
+
+Before you ship it, `purlis artifact check <folder>` checks the page's declaration and the
+queries it calls, and `purlis artifact types` and `purlis artifact mock` let you build it in any
+browser.
+
 ## Grading a skill
 
 A grade answers two plain questions about a skill, by running real chats. The skill's **Grades**
