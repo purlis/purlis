@@ -24,6 +24,3 @@ const paneFootFamily = moved({
 export const rules = {
   "pane-foot-family": paneFootFamily,
 };
-
-/** The files a rule is still off in, until their lanes move them. */
-export const off = {};

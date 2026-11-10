@@ -101,6 +101,7 @@ function core(
     const answer = answers[cmd];
     if (answer !== undefined) return answer(given);
     if (cmd === "skills_deleted") return [];
+    if (cmd === "skill_new") return { notes: [], draft: null };
     if (cmd === "skill_templates")
       return [
         { id: { kind: "blank" }, label: "Blank", about: "Empty." },
@@ -143,6 +144,76 @@ describe("the Skill studio's changes", () => {
     });
     // A persona made as one file keeps no skills: the project's is where a new one lands.
     expect(levelFrom(asPersona("flat"), LEVELS)).toEqual(PROJECT);
+  });
+
+  it("keeps a skill from an extension's template as a draft and opens it in Drafts (#3091)", async () => {
+    const house = { kind: "extension", extension: "house", template: "review" };
+    const draft = {
+      id: "0123456789abcdef",
+      name: "triage",
+      level: { at: "workspace", name: "ops", local: false },
+      chat: null,
+      chat_open: false,
+      new: true,
+      stale: false,
+      files: [
+        {
+          path: "SKILL.md",
+          before: null,
+          after: "---\nname: triage\ndescription: Sorts issues.\n---\n\nThe house's steps.\n",
+          hunks: [],
+          stale: false,
+        },
+      ],
+      template: "Review · House",
+    };
+    let drafted = false;
+    const asked = core([deploy], "ops", {
+      skill_templates: () => [
+        { id: { kind: "blank" }, label: "Blank", about: "Empty." },
+        { id: house, label: "Review · House", about: "The house's steps." },
+      ],
+      skill_new: () => {
+        drafted = true;
+        return { notes: [], draft: draft.id };
+      },
+      skill_drafts: () => (drafted ? [draft] : []),
+      start_options: () => ({ profiles: [] }),
+    });
+    const user = userEvent.setup();
+    renderStudio(inWorkspace("ops"));
+
+    await user.click(await screen.findByRole("button", { name: "New skill…" }));
+    await user.click(await screen.findByRole("button", { name: "Write it yourself" }));
+    await user.type(screen.getByLabelText("Name"), "triage");
+    await user.type(
+      screen.getByLabelText("What it does, and when a chat should use it"),
+      "Sorts issues.",
+    );
+    await pickIn(await screen.findByLabelText("Start from"), "Review · House", user);
+    // An extension's text is a third party's: the dialog says it waits for the person's Accept.
+    const dialog = screen.getByTestId("skill-new-write");
+    await waitFor(() =>
+      expect(dialog).toHaveTextContent(
+        "triage waits in Drafts until you accept it into the workspace ops skills.",
+      ),
+    );
+    await user.click(screen.getByRole("button", { name: "Keep it as a draft" }));
+
+    await waitFor(() =>
+      expect(asked.find((one) => one.cmd === "skill_new")?.args).toMatchObject({
+        name: "triage",
+        template: house,
+      }),
+    );
+    await screen.findByTestId("skill-studio-draft");
+    // Drafts says which template made it, where a chat's draft names its chat.
+    expect(await screen.findAllByText(/drafted by the template Review · House/)).not.toHaveLength(
+      0,
+    );
+    expect(
+      await screen.findByText(/triage waits in Drafts\. Try it, then accept it/),
+    ).toBeInTheDocument();
   });
 
   it("renames a skill in a dialog that checks the name and says what changes with it", async () => {

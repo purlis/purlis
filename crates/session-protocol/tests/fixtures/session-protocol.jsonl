@@ -249,3 +249,5 @@
 {"reply":{"re":205,"ok":"done"}}
 {"call":{"id":206,"command":"note_strays","program":"01J9ZQ8000000000000000000D"}}
 {"reply":{"re":206,"ok":"done"}}
+{"call":{"id":207,"command":"start_program","project":"01J9PRJCT00000000000000000","kind":"harness","number":15,"persona":"steward"}}
+{"reply":{"re":207,"ok":{"program_started":{"program":"01J9ZQ5000000000000000000J","number":15,"process":4247,"sandbox":"off","skills_not_there":{"missing":["deploy-tools"],"no_built_in":["purlis-secret"]}}}}}

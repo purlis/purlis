@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { emit } from "@tauri-apps/api/event";
 import App from "./App";
 import type { FinishedTask, InboxUpdate, Shown } from "./bindings";
 import { aTabForEachChat } from "./laidOut.testkit";
@@ -18,8 +19,8 @@ import { showUpdates } from "./test-strips";
 
 /**
  * **The Answer link on an ask, and a result read in place** (#5651, spec #5638, ADR 0119
- * decisions 7 and 8), on the real window with the core mocked. An ask the window can answer
- * shows Answer, which opens its form in the row with the keyboard in it and reads Cancel while
+ * decisions 7 and 8), on the real window with the core mocked. An ask the window answers by what
+ * is typed shows Answer (a decision's options stand on its row, #5998), which opens its form in the row with the keyboard in it and reads Cancel while
  * it is open; an ask only its own place can answer shows Go to chat alone. Answering clears
  * the ask through its source, and the ✋ drops with it. A line under Mine opens in place to
  * show its report or why it failed, and reading it, or going to its chat, marks it read.
@@ -141,58 +142,61 @@ const update = (key: string, says: string): InboxUpdate => ({
 type Asked = { cmd: string; args: Record<string, unknown> };
 
 /** Chats 1 to 5 in alpha, holding `asks`; Mine lists one failed task, unread. */
-function core(asks: readonly Shown[]) {
+function core(asks: readonly Shown[], events = false) {
   const chats = [1, 2, 3, 4, 5].map(chat);
   const asked: Asked[] = [];
   let held = [...asks];
   const updates = [update("task:t1", "ship the docs: failed")];
-  mockIPC((cmd, args) => {
-    const a = (args ?? {}) as Record<string, unknown>;
-    asked.push({ cmd, args: a });
-    if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
-    if (cmd === "asks_waiting") return { plane: PLANE, asks: held, with_asking_chat: [] };
-    // An answer clears its ask at its source: the next read of the asks no longer lists it.
-    if (cmd === "answer_ask") {
-      held = held.filter((one) => one.ask !== a.ask);
+  mockIPC(
+    (cmd, args) => {
+      const a = (args ?? {}) as Record<string, unknown>;
+      asked.push({ cmd, args: a });
+      if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
+      if (cmd === "asks_waiting") return { plane: PLANE, asks: held, with_asking_chat: [] };
+      // An answer clears its ask at its source: the next read of the asks no longer lists it.
+      if (cmd === "answer_ask") {
+        held = held.filter((one) => one.ask !== a.ask);
+        return null;
+      }
+      if (cmd === "send_input") {
+        held = held.filter((one) => one.session !== a.session);
+        return null;
+      }
+      if (cmd === "task_question") return { number: 4, question: "Which host?" };
+      if (cmd === "answer_task_question") {
+        held = held.filter((one) => one.session !== a.session);
+        return null;
+      }
+      if (cmd === "inbox_updates" || cmd === "note_inbox_updates") return updates;
+      if (cmd === "settle_inbox_updates") {
+        const keys = a.keys as string[] | null;
+        for (const one of updates) if (keys === null || keys.includes(one.key)) one.read = true;
+        return updates;
+      }
+      if (cmd === "finished_tasks") return [FAILED];
+      if (cmd === "opened_chats") return chats;
+      if (cmd === "reopened_layout") return aTabForEachChat(chats, () => "alpha");
+      if (cmd === "plane_pins")
+        return { project: false, workspaces: ["alpha"], missing: [], order: ["alpha"] };
+      if (cmd === "plane_sidebar")
+        return {
+          root: PLANE,
+          personas: ["steward"],
+          persona: "steward",
+          unfiled: [],
+          workspaces: [
+            { name: "alpha", path: `${PLANE}/workspaces/alpha`, vision: "", todos: [], chats },
+          ],
+        };
+      if (cmd === "chat_states") return [];
+      if (cmd === "chats_that_would_not_start") return [];
+      if (cmd === "running_sessions") return [];
+      if (cmd === "recent_planes") return { planes: [], dropped: [], forgetful: null };
+      if (cmd === "extensions_on") return [];
       return null;
-    }
-    if (cmd === "send_input") {
-      held = held.filter((one) => one.session !== a.session);
-      return null;
-    }
-    if (cmd === "task_question") return { number: 4, question: "Which host?" };
-    if (cmd === "answer_task_question") {
-      held = held.filter((one) => one.session !== a.session);
-      return null;
-    }
-    if (cmd === "inbox_updates" || cmd === "note_inbox_updates") return updates;
-    if (cmd === "settle_inbox_updates") {
-      const keys = a.keys as string[] | null;
-      for (const one of updates) if (keys === null || keys.includes(one.key)) one.read = true;
-      return updates;
-    }
-    if (cmd === "finished_tasks") return [FAILED];
-    if (cmd === "opened_chats") return chats;
-    if (cmd === "reopened_layout") return aTabForEachChat(chats, () => "alpha");
-    if (cmd === "plane_pins")
-      return { project: false, workspaces: ["alpha"], missing: [], order: ["alpha"] };
-    if (cmd === "plane_sidebar")
-      return {
-        root: PLANE,
-        personas: ["steward"],
-        persona: "steward",
-        unfiled: [],
-        workspaces: [
-          { name: "alpha", path: `${PLANE}/workspaces/alpha`, vision: "", todos: [], chats },
-        ],
-      };
-    if (cmd === "chat_states") return [];
-    if (cmd === "chats_that_would_not_start") return [];
-    if (cmd === "running_sessions") return [];
-    if (cmd === "recent_planes") return { planes: [], dropped: [], forgetful: null };
-    if (cmd === "extensions_on") return [];
-    return null;
-  });
+    },
+    { shouldMockEvents: events },
+  );
   return {
     asked: (cmd: string) => asked.filter((one) => one.cmd === cmd).map((one) => one.args),
   };
@@ -231,8 +235,8 @@ const hand = (count: number) =>
     name: count === 1 ? "1 thing waits on you" : `${count} things wait on you`,
   });
 
-async function opened(asks: readonly Shown[]) {
-  const one = core(asks);
+async function opened(asks: readonly Shown[], events = false) {
+  const one = core(asks, events);
   render(
     <StrictMode>
       <App />
@@ -246,45 +250,27 @@ async function opened(asks: readonly Shown[]) {
 }
 
 describe("the Answer link on an ask (#5651)", () => {
-  it("shows Answer, closed, on an ask the window can answer, and no form until it is pressed", async () => {
-    const { view } = await opened([PERMISSION, QUESTION]);
+  it("shows Answer, closed, on an ask answered by typing, and no form until it is pressed", async () => {
+    const { view } = await opened([QUESTION]);
 
-    for (const who of ["steward 1", "steward 2"]) {
-      const row = rowOf(view, who);
-      const answer = within(row).getByRole("button", { name: `Answer ${who}` });
-      expect(answer).toHaveTextContent("Answer");
-      expect(answer).toHaveAttribute("aria-expanded", "false");
-      expect(within(row).queryByRole("textbox")).toBeNull();
-      expect(within(row).queryByRole("button", { name: /^Allow|^Deny/ })).toBeNull();
-    }
+    const row = rowOf(view, "steward 2");
+    const answer = within(row).getByRole("button", { name: "Answer steward 2" });
+    expect(answer).toHaveTextContent("Answer");
+    expect(answer).toHaveAttribute("aria-expanded", "false");
+    expect(within(row).queryByRole("textbox")).toBeNull();
   });
 
-  it("opens a permission's options in the row with the keyboard on the first, and reads Cancel", async () => {
+  it("draws a permission's options on its row, with no Answer (#5998)", async () => {
     const { view } = await opened([PERMISSION]);
     const row = rowOf(view, "steward 1");
-
-    await press.click(within(row).getByRole("button", { name: "Answer steward 1" }));
 
     const answers = within(row).getByRole("group", { name: "Answers to steward 1" });
     expect(
       within(answers)
         .getAllByRole("button")
         .map((one) => one.textContent),
-    ).toEqual(["Allow once", "Allow always", "Deny"]);
-    await waitFor(() =>
-      expect(within(answers).getByRole("button", { name: "Allow once" })).toHaveFocus(),
-    );
-    const cancel = within(row).getByRole("button", { name: "Cancel answering steward 1" });
-    expect(cancel).toHaveTextContent("Cancel");
-    expect(cancel).toHaveAttribute("aria-expanded", "true");
-
-    await press.click(cancel);
-
-    expect(within(row).queryByRole("group", { name: "Answers to steward 1" })).toBeNull();
-    expect(within(row).getByRole("button", { name: "Answer steward 1" })).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
+    ).toEqual(["Allow once", "Other scopes…", "Deny"]);
+    expect(within(row).queryByRole("button", { name: /^Answer/ })).toBeNull();
   });
 
   it("answers a permission from its options, and the hand's count drops at once", async () => {
@@ -292,7 +278,6 @@ describe("the Answer link on an ask (#5651)", () => {
     await waitFor(() => expect(hand(2).length).toBeGreaterThan(0));
     const row = rowOf(view, "steward 1");
 
-    await press.click(within(row).getByRole("button", { name: "Answer steward 1" }));
     await read();
     await press.click(within(row).getByRole("button", { name: "Deny" }));
 
@@ -442,5 +427,32 @@ describe("a Mine line read in place (#5651)", () => {
       ]),
     );
     await waitFor(() => expect(bell()).toBe(false));
+  });
+});
+
+describe("a notification about a task, clicked (#6005)", () => {
+  it("opens Updates with the task's line read in place, and marks it read", async () => {
+    const { asked } = await opened([], true);
+    // The window is behind another app when its notification is clicked.
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    await act(async () => {
+      await emit("asks-notified", { plane: PLANE, session: 1, sessions: [1], update: "task:t1" });
+    });
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    const view = await screen.findByRole("tabpanel", { name: "Updates" });
+    const row = await within(view).findByRole("row", { name: "ship the docs: failed" });
+    await waitFor(() => expect(within(row).getByText(FAILED.report)).toBeVisible());
+    expect(within(row).getByRole("button", { name: "Hide ship the docs: failed" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    await waitFor(() =>
+      expect(asked("settle_inbox_updates")).toEqual([
+        expect.objectContaining({ keys: ["task:t1"], how: "read" }),
+      ]),
+    );
   });
 });

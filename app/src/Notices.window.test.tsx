@@ -218,7 +218,7 @@ const listed = () =>
 const inbox = async () => {
   const tab = within(await screen.findByRole("tablist", { name: "Panel, right half" })).getByRole(
     "tab",
-    { name: "Notices" },
+    { name: /^Notices\b/ },
   );
   if (tab.getAttribute("aria-selected") !== "true") await userEvent.click(tab);
   return screen.findByRole("tabpanel", { name: "Notices" });
@@ -528,7 +528,7 @@ describe("the Notices in the Inbox (#1695)", () => {
 });
 
 describe("the status bar", () => {
-  it("counts the Inbox's Notices, but none the doctor's own button counts, and opens the Inbox", async () => {
+  it("counts the Inbox's Notices, none the doctor's own button counts, draws no number, and opens the Inbox", async () => {
     // A Notice the doctor also found is counted by the doctor's button alone (V91i).
     // A chat that cannot say it waits is the faint hand's to stand for (#1695).
     expect(IMPORTANCE.filter((family) => !countsInStatusBar(family))).toEqual(["chat-quiet"]);
@@ -539,7 +539,11 @@ describe("the status bar", () => {
     });
     render(<App />);
 
-    const button = await screen.findByRole("button", { name: "Notices: 4" });
+    // Counted, and no number drawn: the Notices icon shows it (ADR 0121 decision 1, #6004).
+    const button = await screen.findByTestId("status-alerts");
+    await waitFor(() => expect(button).toHaveAttribute("data-count", "4"));
+    expect(button).toHaveAccessibleName("Notices");
+    expect(button).not.toHaveTextContent(/\d/);
     await userEvent.click(button);
 
     expect(await screen.findByRole("tabpanel", { name: "Notices" })).toBeInTheDocument();

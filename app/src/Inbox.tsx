@@ -33,7 +33,7 @@ import {
   type ScopeCounts,
 } from "./inboxScope";
 import { quietSaid } from "./NeedsYou";
-import { Notice, NoticeList, type NoticesClear } from "./Notice";
+import { Notice, NoticeList, type NoticesClear, type NoticesDot } from "./Notice";
 import {
   DISMISS_ALL,
   DISMISS_ALL_TIP,
@@ -67,7 +67,16 @@ import { SnoozeAll, type Snoozing } from "./AsksSnooze";
 
 import { chainSaid, NothingDone } from "./inboxRowParts";
 import { capMarks } from "./combiningMarks";
-import { ASKS, Ask, Empty, EmptyScope, placeIds, SCOPE_LABEL, shapeOf } from "./InboxAsks";
+import {
+  ASKS,
+  Ask,
+  Empty,
+  EmptyScope,
+  placeIds,
+  SCOPE_LABEL,
+  shapeOf,
+  type AllChatsFilter,
+} from "./InboxAsks";
 import { heldBy, UpdateList, type UpdateRow, type Updates, updatePlaces } from "./InboxUpdatesList";
 import { SeenRowsOf, type SeenRows } from "./seenRows";
 export { chainSaid } from "./inboxRowParts";
@@ -91,6 +100,8 @@ export {
   SCOPE_LABEL,
   NO_MESSAGE,
   NOTHING_WAITS,
+  workingSaid,
+  type AllChatsFilter,
 } from "./InboxAsks";
 export {
   heldUpdate,
@@ -122,6 +133,9 @@ export const NOTHING_STANDS = "No Notices";
 
 /** What the Notices icon's dot says (#5645): a Notice listed says something needs fixing. */
 export const NEEDS_FIXING = "A Notice needs fixing";
+
+/** What the Notices icon's amber dot says (#6004): a Notice listed asks a decision. */
+export const NEEDS_A_DECISION_DOT = "A Notice needs a decision";
 
 /** What the Notices' section is called (#1695). */
 export const NOTICES = "Notices";
@@ -169,8 +183,9 @@ export const NOTICES = "Notices";
  * is (project · workspace · persona), quieter; its kind and how long it has waited, smallest
  * and last. Its kind is a mark and words together, never a colour alone.
  *
- * **Empty, it says so** (I-12) — "Nothing is waiting on you" — and lists what was answered here
- * lately, read-only: when, which chat, what it asked and the answer.
+ * **Empty, it says so** (I-12; ADR 0121 decision 23) — "Nothing waits on you · 2 chats working",
+ * each part a way to the chats (`onAllChats`) — and lists what was answered here lately,
+ * read-only: when, which chat, what it asked and the answer.
  *
  * **The project's Notices follow the asks** (#1695, I-4): what stood under the tab strip and what
  * the Alerts drawer listed, each a Notice with its ways out (`notices`), the most important
@@ -204,7 +219,7 @@ export function Inbox({
   reading,
   windowLines,
   onNotices,
-  onTrouble,
+  onDot,
   onNoticeCauses,
   seen,
   onNoticeAnswer,
@@ -214,6 +229,8 @@ export function Inbox({
   workspaceNamed,
   snoozing,
   hold,
+  quietTop,
+  onAllChats,
 }: {
   /**
    * **Which view of the right bar this draws** (ADR 0119, #5644, #5645): `asks`, the asks
@@ -265,8 +282,8 @@ export function Inbox({
   reading?: readonly string[];
   /** How many Notices the list holds that the status line counts (`countsInStatusBar`). */
   onNotices?: (count: number) => void;
-  /** How many Notices the list holds that say something needs fixing (#5645). */
-  onTrouble?: (count: number) => void;
+  /** The Notices icon's dot (#5645, #6004): red for something broken, amber for a decision. */
+  onDot?: (dot: NoticesDot) => void;
   /** Hears the causes of the Notices it lists (#6002): what of them is New. */
   onNoticeCauses?: (causes: readonly string[]) => void;
   /** The project's seen record (`seen.ts`), which its rows read to draw what is New (#6002). */
@@ -298,6 +315,14 @@ export function Inbox({
    *  Notices taken away at once, each one's own Dismiss carried out when the Undo goes. Without
    *  it, a Dismiss is carried out at once and no Undo stands. */
   hold?: DismissHold;
+  /** **Quiet, at the top of Asks** (#6017): the "Quiet now" switch and, once a Quiet ended,
+   *  its summary (`QuietSummary`). Drawn only in Asks. */
+  quietTop?: ReactNode;
+  /**
+   * **Where the empty Asks' parts lead** (ADR 0121 decision 23): the chats, `all` or those
+   * `working`. Without it, the empty sentence is words alone.
+   */
+  onAllChats?: (filter: AllChatsFilter) => void;
 }) {
   const drawsAsks = part === undefined || part === "asks";
   const drawsUpdates = part === undefined || part === "updates";
@@ -505,14 +530,14 @@ export function Inbox({
     said: noticesSaid,
   } = useNoticeSettle<HTMLElement>("moves");
   const counted = useCallback(
-    (count: number, listed: number, trouble: number) => {
+    (count: number, listed: number, dot: NoticesDot) => {
       // The section is drawn while it lists anything, counted or not: a doctor finding alone
       // is still a Notice to read here.
       setNoticed(listed);
       onNotices?.(count);
-      onTrouble?.(trouble);
+      onDot?.(dot);
     },
-    [onNotices, onTrouble],
+    [onNotices, onDot],
   );
 
   const drawn = (
@@ -522,6 +547,8 @@ export function Inbox({
       data-view={part ?? "inbox"}
       aria-label={part === undefined ? "Inbox" : undefined}
     >
+      {/* Quiet first (#6017): its switch, and the summary of the Quiet that ended. */}
+      {drawsAsks && quietTop}
       {/* Drawn while any scope lists something, as the Chats view's is: nothing to narrow
           otherwise, and an empty Inbox is its one sentence. */}
       {drawsAsks &&
@@ -636,6 +663,7 @@ export function Inbox({
               recent={recent.slice(0, MOST_ANSWERED)}
               allowed={allowedLately}
               quiet={quiet.length > 0 ? quietSaid(quiet) : undefined}
+              onAllChats={onAllChats}
             />
           ) : (
             <EmptyScope

@@ -24,6 +24,3 @@ const secretAskFamily = moved({
 export const rules = {
   "secret-ask-family": secretAskFamily,
 };
-
-/** The files a rule is still off in, until their lanes move them. */
-export const off = {};

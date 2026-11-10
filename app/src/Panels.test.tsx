@@ -25,6 +25,7 @@ import type {
 } from "./bindings";
 import type { WorkspaceState } from "./workspaceState";
 import { hoverTipOf, tipOf } from "./ui/tooltip/tooltip.testkit";
+import { rowName } from "./menus.testkit";
 
 afterEach(() => {
   cleanup();
@@ -647,11 +648,7 @@ describe("a persona row's menu", () => {
     rightClick("panel-personas", "devops");
 
     const menu = await screen.findByRole("menu");
-    expect(
-      within(menu)
-        .getAllByRole("menuitem")
-        .map((one) => one.getAttribute("aria-label")),
-    ).toEqual([
+    expect(within(menu).getAllByRole("menuitem").map(rowName)).toEqual([
       // Short verbs: the menu is about devops and says so once, as its own name.
       "Open",
       "Edit persona.md",
@@ -795,11 +792,11 @@ describe("a todo row's menu", () => {
 
     rightClickRow("panel-todos", "Review the rollout plan");
     const menu = await screen.findByRole("menu");
-    expect(
-      within(menu)
-        .getAllByRole("menuitem")
-        .map((one) => one.getAttribute("aria-label")),
-    ).toEqual(["Open", "Mark done", "Forget"]);
+    expect(within(menu).getAllByRole("menuitem").map(rowName)).toEqual([
+      "Open",
+      "Mark done",
+      "Forget",
+    ]);
 
     await userEvent.click(screen.getByRole("menuitem", { name: "Mark done" }));
     expect(pressed.map((offer) => offer.does)).toEqual([
@@ -896,11 +893,7 @@ describe("a todo's box and a done todo (R131, ADR 0106)", () => {
 
     rightClickRow("panel-todos", "Ship the importer");
     const menu = await screen.findByRole("menu");
-    expect(
-      within(menu)
-        .getAllByRole("menuitem")
-        .map((one) => one.getAttribute("aria-label")),
-    ).toEqual(["Reopen", "Delete"]);
+    expect(within(menu).getAllByRole("menuitem").map(rowName)).toEqual(["Reopen", "Delete"]);
 
     await userEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
     expect(pressed.map((offer) => offer.does)).toEqual([
@@ -1013,11 +1006,11 @@ describe("a vault row's menu", () => {
 
     rightClickRow("panel-vaults", "ops");
     const menu = await screen.findByRole("menu");
-    expect(
-      within(menu)
-        .getAllByRole("menuitem")
-        .map((one) => one.getAttribute("aria-label")),
-    ).toEqual(["Open", "New vault…", "Delete…"]);
+    expect(within(menu).getAllByRole("menuitem").map(rowName)).toEqual([
+      "Open",
+      "New vault…",
+      "Delete…",
+    ]);
 
     await userEvent.click(screen.getByRole("menuitem", { name: "Delete…" }));
     expect(pressed.map((offer) => offer.does)).toEqual([{ verb: "removeVault", vault: "ops" }]);
@@ -1120,11 +1113,7 @@ describe("the workspace's Memory section", () => {
 
     rightClickRow("panel-memory", "The API returns 418");
     const menu = await screen.findByRole("menu");
-    expect(
-      within(menu)
-        .getAllByRole("menuitem")
-        .map((one) => one.getAttribute("aria-label")),
-    ).toEqual(["Open", "Edit", "Delete"]);
+    expect(within(menu).getAllByRole("menuitem").map(rowName)).toEqual(["Open", "Edit", "Delete"]);
 
     await userEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
     expect(pressed.map((offer) => offer.does.verb)).toEqual(["archiveMemory"]);
@@ -1280,7 +1269,7 @@ describe("a view on the sidebar view frame (#3340)", () => {
       "panel-ext-acme-reviews",
     ]) {
       expect(screen.getByTestId(testid)).toHaveAttribute("data-frame");
-      expect(screen.getByTestId(testid).closest("aside")).toHaveClass("panels-view");
+      expect(screen.getByTestId(testid).closest(".panels")).toHaveClass("panels-view");
     }
   });
 

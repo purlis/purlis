@@ -519,9 +519,16 @@ use crate::view::{Limits, Views};
 /// signal from outside, where before only an end the host made reached them. An older host
 /// refuses it `unknown_command`, so it is not asked, and such a chat's strays end only with an
 /// end the host makes, as before.
+///
+/// 1.81 has a host that composes a chat say the skills its persona names that the chat started
+/// without there (SK-5d, #2977): `program_started` may carry `skills_not_there`
+/// ([`SkillsNotThere`]), the harness skills its harness does not have on the host's machine and
+/// the built-in skills the host's purlis has none of, by name alone, each list at most
+/// [`MOST_ARMED_SKILLS`]. The window says them on the chat's tab, naming its runner, as it says a
+/// chat's on this machine. A host before 1.81 says none, and its chat is shown none.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 80,
+    minor: 81,
 };
 
 /// The version that first notes a chat's strays ([`Command::NoteStrays`], #5806): none is
@@ -2186,6 +2193,43 @@ impl ArmedSkill {
     }
 }
 
+/// **The skills a chat a host composed started without there** (1.81, SK-5d, #2977): the ones
+/// its persona names that the host's machine does not have for the chat's harness (`missing`),
+/// and the built-in ones the host's purlis has none of (`no_built_in`), each as the persona's
+/// `skills:` list writes it. Names alone: it gives the chat nothing, and the window only says it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillsNotThere {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub missing: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub no_built_in: Vec<String>,
+}
+
+impl SkillsNotThere {
+    /// **What a host says and a window takes of it**: each name that fits as an
+    /// [`ArmedSkill`]'s does, at most [`MOST_ARMED_SKILLS`] of each kind, in their order. `None`
+    /// where no name is left.
+    #[must_use]
+    pub fn bounded(self) -> Option<SkillsNotThere> {
+        let fits = |name: &String| {
+            !name.trim().is_empty()
+                && name.len() <= MOST_ARMED_SKILL_NAME
+                && !name.chars().any(char::is_control)
+        };
+        let names = |all: Vec<String>| -> Vec<String> {
+            all.into_iter()
+                .filter(fits)
+                .take(MOST_ARMED_SKILLS)
+                .collect()
+        };
+        let bounded = SkillsNotThere {
+            missing: names(self.missing),
+            no_built_in: names(self.no_built_in),
+        };
+        (bounded != SkillsNotThere::default()).then_some(bounded)
+    }
+}
+
 /// Where a chat's hooks report, and the token they carry (1.2).
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Reporting {
@@ -2265,9 +2309,10 @@ pub enum Answer {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         process: Option<u32>,
         /// Where the confinement the host composed for it is, named to the link the start came
-        /// on, where the start asked for it by [`StartProgram::confinement`] (1.16).
+        /// on, where the start asked for it by [`StartProgram::confinement`] (1.16). Boxed so the
+        /// answer stays small; it is the same on the wire.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        confined: Option<Confined>,
+        confined: Option<Box<Confined>>,
         /// How its run is sandboxed, as the host applied it (1.29): the same record `programs`
         /// answers. Absent from a host before 1.29, whose window takes the run as sandboxed.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2281,6 +2326,11 @@ pub enum Answer {
         /// that carries it stays as small as the rest.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         armed_skills: Option<Box<Vec<ArmedSkill>>>,
+        /// The skills its persona names that it started without there, where the host composed
+        /// it and some are missing (1.81, #2977): absent where none is, for a launch the window
+        /// composed, and from a host before 1.81.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        skills_not_there: Option<Box<SkillsNotThere>>,
     },
     /// Whether a program is ready to be typed at: [`Command::Readiness`] (1.2).
     Readiness(Readiness),
@@ -2500,6 +2550,9 @@ pub struct ProgramStarted {
     pub prompt_key: Option<PromptKey>,
     /// The skills the host armed it with, where it composed it and says (1.77, #4218).
     pub armed_skills: Option<Vec<ArmedSkill>>,
+    /// The skills its persona names that it started without there, where the host says some
+    /// (1.81, #2977).
+    pub skills_not_there: Option<SkillsNotThere>,
 }
 
 /// One chat, as [`Command::List`] lists it.
@@ -4094,14 +4147,16 @@ impl Client {
                 sandbox,
                 prompt_key,
                 armed_skills,
+                skills_not_there,
             } => Ok(ProgramStarted {
                 program,
                 number,
                 process,
-                confined,
+                confined: confined.map(|confined| *confined),
                 sandbox,
                 prompt_key,
                 armed_skills: armed_skills.map(|armed| ArmedSkill::bounded(*armed)),
+                skills_not_there: skills_not_there.and_then(|not| not.bounded()),
             }),
             other => Err(unexpected(&other)),
         }

@@ -26,7 +26,8 @@ import { goToWorkspaceAt, workspacesListed } from "./titleBarWorkspaces.js";
  *   what the browser would have done.
  * - **On Linux a WebDriver click is a `mousedown` and a `click`, and no pointer events.** Every
  *   press here is the element's own `click()` from the page, which is the event React's
- *   `onClick` and Radix's menu rows listen for on both engines.
+ *   `onClick` listens for on both engines, and which React Aria's `usePress` (a menu row's, a
+ *   button's) takes as a press of its own, a virtual one.
  * - **A right-click raises no `contextmenu` on either engine**, so a row's menu is opened with
  *   the event the platform would have sent ({@link openMenuOn}), as `workspace-explorer.e2e.ts`
  *   does.
@@ -182,19 +183,27 @@ export async function press(
           // pressed as a button is, by its name (`aria-label`, or the words it is labelled by),
           // and its own buttons come first, so a row's action is pressed by its words and never
           // the row that holds it.
-          const nameOf = (one: Element) =>
-            one.getAttribute("aria-label") ??
-            (one.getAttribute("aria-labelledby") ?? "")
-              .split(/\s+/)
-              .map((id) => document.getElementById(id)?.textContent ?? "")
-              .join(" ");
+          // Named by its content where neither names it (#6043): its words, without what is
+          // kept from a reader (the line under them, its marks, its key).
+          const nameOf = (one: Element) => {
+            const own = one.getAttribute("aria-label");
+            if (own !== null) return own;
+            const by = one.getAttribute("aria-labelledby");
+            if (by !== null)
+              return by
+                .split(/\s+/)
+                .map((id) => document.getElementById(id)?.textContent ?? "")
+                .join(" ");
+            const heard = one.cloneNode(true) as Element;
+            for (const kept of heard.querySelectorAll('[aria-hidden="true"], [hidden]'))
+              kept.remove();
+            return heard.textContent ?? "";
+          };
           const buttons = [
             ...document.querySelectorAll<HTMLElement>(
               `${scope} button, ${scope} [role="menuitem"]`,
             ),
-          ].filter(
-            (one) => usable(one) && [one.textContent, one.getAttribute("aria-label")].some(fits),
-          );
+          ].filter((one) => usable(one) && [one.textContent, nameOf(one)].some(fits));
           const rows = [
             ...document.querySelectorAll<HTMLElement>(
               [

@@ -12,7 +12,7 @@ import { userEvent } from "@testing-library/user-event";
 import { useState } from "react";
 import { Button } from "../button/Button";
 import { TextArea, TextField } from "../field/Field";
-import { List, ListRow } from "./List";
+import { List, ListRow, ListRowDrawn } from "./List";
 import { ListFoldSection } from "./Fold";
 import { Segment, SegmentedControl } from "../choice/Radio";
 import { Select } from "../select/Select";
@@ -408,5 +408,229 @@ describe("a box of lines that wrap, in a row (#5993)", () => {
     await typedAndAt(13);
     await userEvent.keyboard("{ArrowDown}");
     expect(row("Last")).toHaveFocus();
+  });
+
+  /** One word too long for a line, broken in it where nothing hangs: "aaaaaaaaaa" and "bbbbbbbbb". */
+  const ONE_WORD = "aaaaaaaaaabbbbbbbbb";
+
+  /**
+   * The caret at a soft wrap (#6045): drawn at the end of the first line or the start of the
+   * second, as the box chooses, and the box never says which.
+   */
+  async function wordAtTheWrap() {
+    vi.spyOn(HTMLSpanElement.prototype, "getClientRects").mockImplementation(wrapped);
+    render(<Asks />);
+    await userEvent.click(reply());
+    await userEvent.keyboard(ONE_WORD);
+    reply().setSelectionRange(PER_LINE, PER_LINE);
+  }
+
+  it("keeps ↓ at a soft wrap, where the caret may be drawn at the end of the line above (#6045)", async () => {
+    await wordAtTheWrap();
+    await userEvent.keyboard("{ArrowDown}");
+    expect(reply()).toHaveFocus();
+  });
+
+  it("keeps ↑ at a soft wrap, where the caret may be drawn at the start of the line below (#6045)", async () => {
+    await wordAtTheWrap();
+    await userEvent.keyboard("{ArrowUp}");
+    expect(reply()).toHaveFocus();
+  });
+});
+
+describe("Shift+Tab back into a list (#6033)", () => {
+  /** Two rows, the last holding a box and a button, the list's last controls; a button after. */
+  function Below({ drawn = false }: { drawn?: boolean }) {
+    const [reason, setReason] = useState("");
+    const held = (
+      <>
+        <TextField aria-label="Reason" value={reason} onChange={setReason} />
+        <Button size="sm">Send</Button>
+      </>
+    );
+    return (
+      <>
+        <List aria-label="Asks" disallowTypeAhead>
+          <ListRow id="first" textValue="First">
+            <RowLabel>First</RowLabel>
+          </ListRow>
+          {drawn ? (
+            <ListRowDrawn id="held" textValue="Held" aria-labelledby="held-name">
+              <span id="held-name">Held</span>
+              {held}
+            </ListRowDrawn>
+          ) : (
+            <ListRow id="held" textValue="Held">
+              <RowLabel>Held</RowLabel>
+              {held}
+            </ListRow>
+          )}
+        </List>
+        <button type="button">After</button>
+      </>
+    );
+  }
+
+  const after = () => screen.getByRole("button", { name: "After" });
+  const send = () => screen.getByRole("button", { name: "Send" });
+
+  /** Tab on until the keyboard has left the list for the button after it. */
+  async function tabOut() {
+    for (let press = 0; press < 4 && after() !== document.activeElement; press += 1)
+      await userEvent.tab();
+    expect(after()).toHaveFocus();
+  }
+
+  it.each([
+    ["a row of the family's", false],
+    ["a row another family draws", true],
+  ])("lands on the row the keyboard left, not on its last control, in %s", async (_, drawn) => {
+    render(<Below drawn={drawn} />);
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowDown}");
+    expect(row("Held")).toHaveFocus();
+    await tabOut();
+    await userEvent.tab({ shift: true });
+    expect(row("Held")).toHaveFocus();
+  });
+
+  it("lands on the row when the keyboard left from one of the row's controls", async () => {
+    render(<Below />);
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowDown}{ArrowRight}");
+    expect(reason()).toHaveFocus();
+    await tabOut();
+    await userEvent.tab({ shift: true });
+    expect(row("Held")).toHaveFocus();
+  });
+
+  it("lands on the last row of a list the keyboard has not been in", async () => {
+    render(<Below />);
+    await userEvent.click(after());
+    await userEvent.tab({ shift: true });
+    expect(row("Held")).toHaveFocus();
+  });
+
+  it("reaches the row's first control again with →", async () => {
+    render(<Below />);
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowDown}");
+    await tabOut();
+    await userEvent.tab({ shift: true });
+    await userEvent.keyboard("{ArrowRight}");
+    expect(reason()).toHaveFocus();
+  });
+
+  it("leaves a control the pointer presses in that row where it is", async () => {
+    render(<Below />);
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowDown}");
+    await tabOut();
+    await userEvent.click(send());
+    expect(send()).toHaveFocus();
+  });
+
+  it("leaves a control a script focuses in that row where it is", async () => {
+    render(<Below />);
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowDown}");
+    await tabOut();
+    act(() => send().focus());
+    await act(() => new Promise((done) => requestAnimationFrame(() => done(undefined))));
+    expect(send()).toHaveFocus();
+  });
+});
+
+describe("Tab in a list (#6071)", () => {
+  /** Three rows, each with two buttons of its own, between two buttons outside the list. */
+  function Between() {
+    return (
+      <>
+        <button type="button">Before</button>
+        <List aria-label="Runs" disallowTypeAhead>
+          {["alpha", "beta", "gamma"].map((name) => (
+            <ListRow key={name} id={name} textValue={name}>
+              <RowLabel>{name}</RowLabel>
+              <Button size="sm">{`Open ${name}`}</Button>
+              <Button size="sm">{`Stop ${name}`}</Button>
+            </ListRow>
+          ))}
+        </List>
+        <button type="button">After</button>
+      </>
+    );
+  }
+
+  const button = (name: string) => screen.getByRole("button", { name });
+
+  /** The keyboard on the row `beta`, come to by the keyboard from the button before the list. */
+  async function onBeta() {
+    render(<Between />);
+    await userEvent.click(button("Before"));
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowDown}");
+    expect(row("beta")).toHaveFocus();
+  }
+
+  it("leaves the list with one Tab from a row, past every control in it", async () => {
+    await onBeta();
+    await userEvent.tab();
+    expect(button("After")).toHaveFocus();
+  });
+
+  it("leaves the list with one Shift+Tab from a row, back to what comes before it", async () => {
+    await onBeta();
+    await userEvent.tab({ shift: true });
+    expect(button("Before")).toHaveFocus();
+  });
+
+  it("moves on to a row's next control with Tab from one of its controls, and leaves from its last", async () => {
+    await onBeta();
+    await userEvent.keyboard("{ArrowRight}");
+    expect(button("Open beta")).toHaveFocus();
+    await userEvent.tab();
+    expect(button("Stop beta")).toHaveFocus();
+    await userEvent.tab();
+    expect(button("After")).toHaveFocus();
+  });
+
+  it("moves back to a row's control before with Shift+Tab, and leaves backwards from its first", async () => {
+    await onBeta();
+    await userEvent.keyboard("{ArrowRight}{ArrowRight}");
+    expect(button("Stop beta")).toHaveFocus();
+    await userEvent.tab({ shift: true });
+    expect(button("Open beta")).toHaveFocus();
+    await userEvent.tab({ shift: true });
+    expect(button("Before")).toHaveFocus();
+  });
+
+  it("leaves the list with Tab from a row's control when its next control is not drawn", async () => {
+    // The test's document lays nothing out, nor says what is drawn: here a control is drawn
+    // while it is not `hidden`.
+    Object.defineProperty(HTMLElement.prototype, "checkVisibility", {
+      configurable: true,
+      value(this: HTMLElement) {
+        return !this.hidden;
+      },
+    });
+    try {
+      await onBeta();
+      button("Stop beta").hidden = true;
+      await userEvent.keyboard("{ArrowRight}");
+      expect(button("Open beta")).toHaveFocus();
+      await userEvent.tab();
+      expect(button("After")).toHaveFocus();
+    } finally {
+      delete (HTMLElement.prototype as Partial<HTMLElement>).checkVisibility;
+    }
+  });
+
+  it("comes back to the row the keyboard left with Shift+Tab, after a Tab out from its last control", async () => {
+    await onBeta();
+    await userEvent.keyboard("{ArrowRight}{ArrowRight}");
+    await userEvent.tab();
+    expect(button("After")).toHaveFocus();
+    await userEvent.tab({ shift: true });
+    expect(row("beta")).toHaveFocus();
   });
 });

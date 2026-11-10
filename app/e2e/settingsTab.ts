@@ -51,3 +51,42 @@ export async function openProjectSettings(): Promise<void> {
   await browser.keys(["Enter"]);
   await $(SETTINGS_GROUPS).waitForDisplayed({ timeout: 20_000 });
 }
+
+/**
+ * **Shows Settings' `group` at `level`** (You, Project, Workspace or Persona), as a person picks
+ * them: the level on its switcher, then the group in its list, until the group says it is the
+ * one shown. Settings is open already ({@link openProjectSettings}).
+ *
+ * Each control is asked for by its role (CLAUDE.md): said outright, or the native element whose
+ * implicit role it is and which says no other. The group shown says so with `aria-current`, read
+ * as any value but `false`: Settings' groups moved onto the panel family's view nav, which says
+ * `page` where the old list said `true` (#2930).
+ */
+export async function settingsAt(level: string, group: string): Promise<void> {
+  await browser.execute((called: string) => {
+    const radio = [
+      ...document.querySelectorAll<HTMLElement>(
+        '[role="radiogroup"][aria-label="Level"] [role="radio"], [role="radiogroup"][aria-label="Level"] input[type="radio"]:not([role])',
+      ),
+    ].find((one) => (one.closest("label")?.textContent ?? one.textContent)?.trim() === called);
+    if (
+      radio?.getAttribute("aria-checked") !== "true" &&
+      !(radio as HTMLInputElement | undefined)?.checked
+    )
+      radio?.click();
+  }, level);
+  await browser.waitUntil(
+    async () =>
+      browser.execute((called: string) => {
+        const button = [
+          ...document.querySelectorAll<HTMLElement>(
+            'nav[aria-label="Groups"] [role="button"], nav[aria-label="Groups"] button:not([role])',
+          ),
+        ].find((one) => one.textContent?.trim() === called);
+        button?.click();
+        const current = button?.getAttribute("aria-current");
+        return current !== null && current !== undefined && current !== "false";
+      }, group),
+    { timeout: 20_000, interval: 250, timeoutMsg: `Settings never showed ${level} › ${group}` },
+  );
+}

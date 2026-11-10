@@ -745,14 +745,18 @@ function Rows({
  * The status line's doctor item, and the dialog it opens. A status item (the set's small ghost
  * button, `StatusLine.tsx`): flat on the bar, its mark, its word, then its count.
  *
- * A Radix dialog (`docs/ui-primitives.md`), which is what makes the list keyboard-reachable
- * and the window behind it inert while it is up.
+ * The dialog family's `Dialog` (`ui/dialog/Dialog.tsx`), on React Aria's modal, which is what makes
+ * the list keyboard-reachable and the window behind it inert while it is up.
  */
 export function Health({
   doctor,
   onOpenSettings,
+  counted = true,
 }: {
   doctor: DoctorState;
+  /** Draws its count on the line: false while the Notices view lists the findings, whose icon
+   *  on the right bar shows them (ADR 0121 decision 1, #6004). Its name says the count still. */
+  counted?: boolean;
   /** Opens Settings at a group (`settings/links.ts`, SE-22): what a row naming a setting's
    *  "Fix it in Settings" does, once the dialog has closed. */
   onOpenSettings?: (group: string) => void;
@@ -808,7 +812,7 @@ export function Health({
         Doctor
         {/* The count, in its verdict's colour and in words, so the colour is never the only
             thing that says it; nothing at all when nothing is wrong (qw357). */}
-        {said !== undefined && (
+        {counted && said !== undefined && (
           <StatusVerdict tone={tone === "fail" ? "failed" : "waiting"}>{said}</StatusVerdict>
         )}
       </StatusItem>

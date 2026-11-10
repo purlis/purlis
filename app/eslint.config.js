@@ -6,7 +6,7 @@ import globals from "globals";
 import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
 import { purlisStories } from "./eslint.story-rules.js";
-import { purlisUi, stillOff } from "./eslint.ui-rules.js";
+import { purlisUi } from "./eslint.ui-rules.js";
 
 /** The primitives libraries, which only their wrappers in `src/ui` import (#2904, ADR 0104):
  *  React Aria's, and the virtualizer a long list draws its rows in sight with (#5501). */
@@ -64,7 +64,4 @@ export default tseslint.config(
       Object.keys(purlisStories.rules).map((name) => [`purlis-stories/${name}`, "error"]),
     ),
   },
-  // **What each family's rule is still off in** (a family's `off`, in its `lint.js`), each
-  // until the lane that moves it.
-  ...stillOff,
 );

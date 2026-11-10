@@ -366,9 +366,12 @@ const WHOLE: ChatSkillsSaid = {
     persona: "reviewer",
     missing: ["grill"],
     no_built_in: [],
+    no_workspace: [],
+    not_in_its_workspace: [],
     broken: [],
     by_a_repo: [],
     beside_a_built_in: [],
+    runner: null,
   },
   changed: {
     session: 5,

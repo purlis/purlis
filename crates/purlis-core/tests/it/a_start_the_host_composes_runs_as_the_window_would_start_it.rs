@@ -96,6 +96,8 @@ struct Host {
     refuses_to_record: bool,
     /// What the start said it armed the chat with (#4218).
     armed: RefCell<Option<Vec<session::ArmedSkill>>>,
+    /// What the start said the chat started without here (#2977).
+    not_there: RefCell<Option<session::SkillsNotThere>>,
 }
 
 impl Beside for Host {
@@ -126,6 +128,10 @@ impl Beside for Host {
 
     fn armed(&self, skills: Vec<session::ArmedSkill>) {
         *self.armed.borrow_mut() = Some(skills);
+    }
+
+    fn not_there(&self, not: session::SkillsNotThere) {
+        *self.not_there.borrow_mut() = Some(not);
     }
 }
 
@@ -853,6 +859,54 @@ fn a_composed_chat_tells_its_host_the_names_and_levels_of_the_skills_it_armed_it
         }]
     );
     assert_eq!(armed(false), [], "the plane's skills do not reach it");
+}
+
+/// **SK-5d, #2977: a chat the host composes tells its host the skills its persona names that
+/// the host's machine does not have**, by the same reading of its harness's skills a chat on the
+/// desktop gets (`skills_at`), and only where its desktop's word lets the plane's skills reach
+/// it. A persona whose skills are all there says nothing.
+#[test]
+fn a_composed_chat_tells_its_host_the_skills_its_persona_names_that_are_not_there() {
+    purlis_core::unsteered!();
+    let project = Project::on("claude");
+    let not_there = |on: bool| {
+        let host = Host::default();
+        let start = asking(|start| {
+            start.plane_skills = Some(on);
+            start.without_sandbox = true;
+            start.workspace = None;
+        });
+        hoststart::compose(
+            &Starting {
+                root: project.root(),
+                number: 3,
+                start: &start,
+                reporting: None,
+                started_by: "remote-link",
+                prompt_key: None,
+            },
+            &project.kit(),
+            &host,
+        )
+        .expect("composed, without what is not there");
+        host.not_there.take()
+    };
+    assert_eq!(not_there(true), None, "its persona names no skill");
+
+    fs::write(
+        project.root().join("personas/steward/persona.md"),
+        "---\nrole: Ops\nskills: nowhere-plugin:never-installed\n---\n# steward\n",
+    )
+    .unwrap();
+
+    assert_eq!(
+        not_there(true),
+        Some(session::SkillsNotThere {
+            missing: vec!["nowhere-plugin:never-installed".into()],
+            no_built_in: Vec::new(),
+        })
+    );
+    assert_eq!(not_there(false), None, "the plane's skills do not reach it");
 }
 
 /// The listing limit a composed Claude Code chat is handed in its `--settings`, read from the

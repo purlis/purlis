@@ -6,15 +6,14 @@
  * says why, the button family's and a raw `<button>`'s alike. It stays a Tab stop, so the reason
  * is read by the keyboard and a screen reader, and it does nothing at all.
  *
- * **An allowlist, not a denylist.** Of everything a call site and its parents hand the element
- * (a Radix trigger's `onClick`, a row's `onKeyDown`, a form's submit), only what follows the
- * focus and the pointer stays: focus, blur and hover, which the tooltip itself listens to.
- * Every other handler is dropped, and a click, Enter and Space on it are stopped there: nothing
- * around it (a row, a list) acts on them either. **It keeps its `type`** (#3636): a submit button
- * stays one, so its form still finds its primary action unavailable and ⌘⏎ sends nothing (N26),
- * and the click that would submit it (a pointer's, a screen reader's, the one Enter in a lone
- * field fires at it) is cancelled by {@link refuseClick}. One that says no type is a plain
- * `type="button"`.
+ * **An allowlist, not a denylist.** Of everything a call site and its parents hand the element (a
+ * trigger's press handlers, a row's `onKeyDown`, a form's submit), only what follows the focus and
+ * the pointer stays: focus, blur and hover, which the tooltip itself listens to. Every other
+ * handler is dropped, and a click, Enter and Space on it are stopped there: nothing around it (a
+ * row, a list) acts on them either. **It keeps its `type`** (#3636): a submit button stays one, so
+ * its form still finds its primary action unavailable and ⌘⏎ sends nothing (N26), and the click
+ * that would submit it (a pointer's, a screen reader's, the one Enter in a lone field fires at it)
+ * is cancelled by {@link refuseClick}. One that says no type is a plain `type="button"`.
  */
 
 /** The handlers an unavailable control keeps: the focus's and the pointer's comings and goings. */

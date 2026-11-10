@@ -10,7 +10,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Puzzle, SquareTerminal } from "lucide-react";
 import { expect, fn } from "storybook/test";
 import { PaneRail, type RailPane } from "./PaneRail";
-import { MARK_STATES } from "./shownState";
+import { CHAT_STATES } from "./shownState";
 import { ChatMark } from "./ui/chat-mark/ChatMark";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
 
@@ -94,7 +94,7 @@ export const Bar: Story = {
 };
 
 /** One folded chat in each state its mark tells, the one that needs you asking. */
-const EACH_STATE: RailPane[] = MARK_STATES.map((state, at) => ({
+const EACH_STATE: RailPane[] = CHAT_STATES.map((state, at) => ({
   pane: at + 10,
   name: `chat ${state}`,
   mark: <ChatMark state={state} who={<SquareTerminal aria-hidden="true" />} />,
@@ -114,7 +114,7 @@ export const RailInEachState: Story = {
     const item = asks.closest(".pane-rail-item");
     await expect(item?.querySelectorAll('[data-mark="needs-you"]').length).toBe(1);
     await expect(canvasElement.querySelector(".pane-rail-asks")).toBeNull();
-    for (const state of MARK_STATES)
+    for (const state of CHAT_STATES)
       await expect(
         canvasElement.querySelector(`[data-scope="chat-mark"][data-variant="${state}"]`),
         state,

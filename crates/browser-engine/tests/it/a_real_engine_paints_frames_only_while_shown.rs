@@ -90,6 +90,11 @@ fn a_shown_engine_paints_jpeg_frames_and_a_hidden_one_paints_none() {
 
 /// A JPEG's width in pixels, from its first start-of-frame marker.
 fn jpeg_width(jpeg: &[u8]) -> Option<u16> {
+    jpeg_size(jpeg).map(|(width, _)| width)
+}
+
+/// A JPEG's width and height in pixels, from its first start-of-frame marker.
+fn jpeg_size(jpeg: &[u8]) -> Option<(u16, u16)> {
     let mut at = 2;
     while at + 9 < jpeg.len() {
         if jpeg[at] != 0xff {
@@ -98,7 +103,10 @@ fn jpeg_width(jpeg: &[u8]) -> Option<u16> {
         let marker = jpeg[at + 1];
         let length = usize::from(u16::from_be_bytes([jpeg[at + 2], jpeg[at + 3]]));
         if matches!(marker, 0xc0..=0xc3) {
-            return Some(u16::from_be_bytes([jpeg[at + 7], jpeg[at + 8]]));
+            return Some((
+                u16::from_be_bytes([jpeg[at + 7], jpeg[at + 8]]),
+                u16::from_be_bytes([jpeg[at + 5], jpeg[at + 6]]),
+            ));
         }
         at += 2 + length;
     }
@@ -149,4 +157,57 @@ fn a_narrowed_engine_paints_frames_no_wider_than_asked() {
     };
     assert!(width <= 320, "a frame {width} pixels wide");
     browser.hide();
+}
+
+#[test]
+fn a_fresh_browsers_first_frame_is_the_size_the_menu_shows() {
+    // The view's size menu shows Laptop, the engine's own page size, before anyone picks one
+    // (plane #2658): a person's frames came in 1280 by 600 while the menu said 1280 by 800.
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    browser
+        .call(
+            &CallId::new("open").unwrap(),
+            Call::Open {
+                address: WebAddress::parse("http://fixture.test/long.html").unwrap(),
+            },
+        )
+        .unwrap();
+    let frames: Frames = Arc::default();
+    browser.show(collecting(&frames));
+    let start = Instant::now();
+    let (width, height) = loop {
+        if let Some(size) = frames
+            .lock()
+            .unwrap()
+            .first()
+            .and_then(|jpeg| jpeg_size(jpeg))
+        {
+            break size;
+        }
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "no frame came once shown"
+        );
+        let _ = browser.call(
+            &CallId::new(format!("scroll-{}", start.elapsed().as_millis())).unwrap(),
+            Call::Scroll {
+                page: None,
+                at: None,
+                x: 0.0,
+                y: 200.0,
+            },
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    browser.hide();
+    let (page_width, page_height) = purlis_browser_engine::launch::PAGE_SIZE;
+    // A screen of two pixels to the CSS pixel paints it twice as large: its shape is the page's.
+    assert_eq!(
+        u32::from(width) * u32::from(page_height),
+        u32::from(height) * u32::from(page_width),
+        "the first frame is {width} by {height} pixels, not the shape of the \
+         {page_width} by {page_height} page the menu shows"
+    );
 }

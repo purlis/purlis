@@ -17,10 +17,10 @@ import { sourceFiles, SRC, withoutComments } from "./guards.testkit";
 const APP = join(SRC, "..");
 
 describe("Radix (#2930)", () => {
-  it("is imported by no file the window is built from, its families and stories included", () => {
-    // A test may name a Radix import in a fixture a lint or a guard must refuse; it imports none.
-    const built = (name: string) => /\.(?:tsx?|jsx?)$/.test(name) && !/\.test\.tsx?$/.test(name);
-    const importing = sourceFiles(built).filter((file) =>
+  it("is imported by no file in the window's source, its families, stories and tests included", () => {
+    // No lint or guard reads a Radix import any more (#6029), so no test names one either.
+    const code = (name: string) => /\.(?:tsx?|jsx?)$/.test(name);
+    const importing = sourceFiles(code).filter((file) =>
       /from\s+["']@radix-ui\//.test(withoutComments(readFileSync(join(SRC, file), "utf8"), "ts")),
     );
     expect(importing).toEqual([]);

@@ -21,6 +21,7 @@ import type { WorkspaceState } from "./workspaceState";
 import type { Offer } from "./actions";
 import { drawnWith } from "./cascade.testkit";
 import { forgetLastRead, readAt } from "./editor/lastRead";
+import { rowName } from "./menus.testkit";
 
 /**
  * **A branch's files in the explorer** (FM-1): the render states the real-app scenario
@@ -538,9 +539,7 @@ describe("a file or folder row's menu (FM-10)", () => {
   async function menuOf(name: string) {
     fireEvent.contextMenu(await named(`^${name}`));
     const menu = await screen.findByRole("menu");
-    return within(menu)
-      .getAllByRole("menuitem")
-      .map((one) => one.getAttribute("aria-label"));
+    return within(menu).getAllByRole("menuitem").map(rowName);
   }
 
   it("offers a file its paths, a reveal and your editor, and nothing that writes", async () => {
@@ -653,9 +652,7 @@ describe("a file or folder row's menu (FM-10)", () => {
 
     fireEvent.contextMenu(row("file:svc/:"));
     const menu = await screen.findByRole("menu");
-    const rows = within(menu)
-      .getAllByRole("menuitem")
-      .map((one) => one.getAttribute("aria-label"));
+    const rows = within(menu).getAllByRole("menuitem").map(rowName);
 
     // No relative path: the folder's path relative to itself says nothing (D-1143-1).
     expect(rows).toEqual([

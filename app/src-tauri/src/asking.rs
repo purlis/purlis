@@ -77,7 +77,7 @@ pub struct Asking {
     /// **The asks Snooze all put away** (#5647, ADR 0119): each held by a chat that holds no
     /// ask it did not have when it was snoozed. Listed apart from [`Asking::asks`], so neither
     /// the ✋ nor Asks counts them; the Chats view, which reads the board, still says the chat
-    /// waits. Only [`every_ask_apart`] puts any here.
+    /// waits. Only [`counted`] puts any here.
     #[serde(default)]
     pub snoozed: Vec<Shown>,
     /// **When the first chat of [`Asking::snoozed`] comes back by itself** (#6018, ADR 0121
@@ -764,13 +764,15 @@ pub async fn asks_waiting(
     plane: PlaneId,
 ) -> Result<Asking, String> {
     let held = planes.held(&plane)?;
-    crate::off_the_window(READING_ASKS, move || Ok(every_ask_apart(&held))).await
+    crate::off_the_window(READING_ASKS, move || Ok(counted(&held))).await
 }
 
-/// **Every ask `held` has waiting now, with what Snooze all put away apart** ([`every_ask`],
-/// [`snoozed_apart`]): what the window lists and the ✋ counts, and what the notifier reads, so a
-/// snoozed chat neither counts nor notifies (ADR 0121 decision 14).
-pub fn every_ask_apart(held: &crate::planes::Held) -> Asking {
+/// **What the ✋ counts of project `held`** (ADR 0121 decisions 2 and 3): its Blocking asks,
+/// from every source ([`every_ask`]), with what Snooze all put away apart ([`snoozed_apart`]).
+/// The window lists it, and the system notifications (`asknotify`) are sent for it alone, so
+/// what notifies and what counts are one answer. A snoozed chat neither counts nor notifies
+/// until it is back (ADR 0121 decision 14, #6018).
+pub fn counted(held: &crate::planes::Held) -> Asking {
     // Snooze all's record is this machine's (#5647): where the app keeps no store, as in a
     // test of its own, nothing is snoozed and no data home is looked for.
     let store = held
@@ -3493,7 +3495,8 @@ pub struct InQueue {
 /// **The registry's own split: a chat in the queue for updates alone asks nothing** (#1693,
 /// #1694, I-1). A task of its that came to nothing, a report with nowhere to go and a commit
 /// refused are each an update of the Inbox's, so the registry does not list the chat for them,
-/// and no notification is sent (`asknotify` reads the registry alone). A chat whose own turn
+/// and no ask's notification is sent (a task that failed is told by Should know, from its
+/// record: `asknotify::Rules::ended`, #6005). A chat whose own turn
 /// ended on the person, or that stopped on a prompt in its terminal, still asks, whatever else
 /// it is in the queue for, so an update never silences what the chat itself waits on.
 pub fn only_updates(chat: InQueue) -> bool {
@@ -3713,7 +3716,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
                 failed: !hooks.failed_tasks(session).is_empty(),
                 for_itself: hooks.needs_you_for_itself(session),
                 reasons,
-                waiting: hooks.shown_state(session) == purlis_core::state::State::Waiting,
+                waiting: hooks.turn_ended_on_the_person(session),
                 at_its_prompt: hooks.waits_on_its_prompt(session),
             })
         },

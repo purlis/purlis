@@ -115,22 +115,11 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 /**
- * **An option is named by its label and described by its one line** (D-2911-22): the APG
- * listbox and React Aria's slots, which meets WCAG 2.5.3 since the name is the visible label.
- * axe's experimental `label-content-name-mismatch` compares the name with the whole of the
- * option's visible text (its mark and its line as well), so it is off on these stories alone.
- */
-const NAMED_BY_ITS_LABEL = {
-  a11y: { options: { rules: { "label-content-name-mismatch": { enabled: false } } } },
-};
-
-/**
  * **A list to choose from**: one Tab stop on the chosen row, the arrows choose as they move and
  * stop at the ends, typing finds a row, and the filter narrows the list to what is typed, with
  * its empty line where nothing matches. The picture is the chosen row under the keyboard.
  */
 export const ToChooseFrom: Story = {
-  parameters: NAMED_BY_ITS_LABEL,
   play: async ({ canvas, userEvent }) => {
     const box = canvas.getByRole("searchbox", { name: "Filter personas" });
     await expect(box).toHaveAttribute("placeholder", "Filter 28 personas");
@@ -364,6 +353,65 @@ export const LinesUnderTheWords: Story = {
   },
 };
 
+/** Options as Use a skill and Search draw them: a line under the words, and a number heard. */
+function OptionsWithLines() {
+  return (
+    <div style={{ inlineSize: "20rem", display: "grid", gap: "var(--space-3)" }}>
+      <ListBox aria-label="Skills to use" selectionMode="single" defaultSelectedKeys={["review"]}>
+        <ListOption id="review" textValue="review">
+          <RowLabel>review</RowLabel>
+          <RowDescription>Built in</RowDescription>
+          <RowBelow clamp={1}>Reads a pull request and says what it would change</RowBelow>
+        </ListOption>
+        <ListOption id="deploy" textValue="deploy">
+          <RowLabel>deploy</RowLabel>
+          <RowBelow clamp={1}>Ships the app to staging</RowBelow>
+        </ListOption>
+      </ListBox>
+      <ListBox aria-label="Matching lines" selectionMode="single" defaultSelectedKeys={[42]}>
+        <ListOption id={42} textValue="42 let needle = 1;">
+          <RowLead said="Line 42">42</RowLead>
+          <RowLabel>
+            let <mark>needle</mark> = 1;
+          </RowLabel>
+        </ListOption>
+      </ListBox>
+    </div>
+  );
+}
+
+/**
+ * **Every line an option draws about it is heard** (#6075): its one line, then its line under
+ * its words (read whole, whatever its clamp cuts), then a mark given words to say, each once, as
+ * its description; its name stays its words alone, which axe's `label-content-name-mismatch`
+ * holds. The picture is the two lists, the first option under the keyboard.
+ */
+export const AnOptionsLinesAreHeard: Story = {
+  render: () => <OptionsWithLines />,
+  play: async ({ canvas, userEvent }) => {
+    const skills = canvas.getByRole("listbox", { name: "Skills to use" });
+    const review = within(skills).getByRole("option", { name: "review" });
+    await expect(review).toHaveAccessibleDescription(
+      "Built in Reads a pull request and says what it would change",
+    );
+    await expect(
+      within(skills).getByRole("option", { name: "deploy" }),
+    ).toHaveAccessibleDescription("Ships the app to staging");
+    const hit = canvas.getByRole("option", { name: "let needle = 1;" });
+    await expect(hit).toHaveAccessibleDescription("Line 42");
+    await userEvent.tab();
+    await untilFocused(() => review, "Lines heard: Tab lands on the chosen option");
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(
+      () => within(skills).getByRole("option", { name: "deploy" }),
+      "Lines heard: Down moves to the next option",
+    );
+    await userEvent.tab();
+    await untilFocused(() => hit, "Lines heard: Tab moves to the next list's chosen option");
+    expectFocusInSight();
+  },
+};
+
 /** A reason the Library's line cuts short, as #4711 found it, and one that fits. */
 const CUT_REASON =
   "Left out: a name starting with purlis- is purlis's own, so this one is never handed to a chat here";
@@ -483,10 +531,14 @@ function Cards() {
  * on, and the chosen card is ringed all round. The picture is the chosen card.
  */
 export const AGridOfCards: Story = {
-  parameters: NAMED_BY_ITS_LABEL,
   render: () => <Cards />,
   play: async ({ canvas, userEvent }) => {
     const list = canvas.getByRole("listbox", { name: "Themes" });
+    // **A card is named by its label alone and described by its line, heard once** (#6043):
+    // named by its content, with its line kept out of it, so axe's label-in-name rule holds.
+    const purlis = within(list).getByRole("option", { name: "purlis" });
+    await expect(purlis).toHaveAccessibleDescription("Built in");
+    await expect(purlis).not.toHaveAttribute("aria-labelledby");
     await userEvent.tab();
     await untilFocused(
       () => within(list).getByRole("option", { name: "purlis" }),
@@ -502,6 +554,64 @@ export const AGridOfCards: Story = {
     await untilFocused(() => team, "A grid of cards: Right moves to the card beside");
     await userEvent.keyboard(" ");
     await waitFor(() => expect(team).toHaveAttribute("aria-selected", "true"));
+    expectFocusInSight();
+  },
+};
+
+/** Two theme cards as the gallery draws them, one refused: why, then where it comes from. */
+function ARefusedCard() {
+  return (
+    <ListBox
+      aria-label="Themes"
+      layout="grid"
+      selectionMode="single"
+      selectionBehavior="toggle"
+      disallowEmptySelection
+      defaultSelectedKeys={["purlis"]}
+      style={{ gridTemplateColumns: "repeat(2, 16rem)" }}
+    >
+      <ListOption id="purlis" textValue="purlis">
+        <RowLabel>purlis</RowLabel>
+        <RowDescription>Built in</RowDescription>
+      </ListOption>
+      <ListOption id="broken" textValue="broken" unavailable>
+        {/* Why first, in its pictures' place over its name, as the gallery draws it. */}
+        <RowDescription>surface.base is not a colour</RowDescription>
+        <RowLabel>broken</RowLabel>
+        <RowBelow data-testid="refused-from">Yours, on this machine · Refused</RowBelow>
+      </ListOption>
+    </ListBox>
+  );
+}
+
+/**
+ * **A refused card says why, and where it comes from** (#6075): why it is refused, in its
+ * pictures' place, then the line under its name, both heard after its name. The line under its
+ * name is one more line of the card's column, never stretched to fill it. The picture is the two
+ * cards, the refused one under the keyboard.
+ */
+export const ARefusedCardSaysWhereItComesFrom: Story = {
+  render: () => <ARefusedCard />,
+  play: async ({ canvas, userEvent }) => {
+    const list = canvas.getByRole("listbox", { name: "Themes" });
+    const broken = within(list).getByRole("option", { name: "broken" });
+    await expect(broken).toHaveAccessibleDescription(
+      "surface.base is not a colour Yours, on this machine · Refused",
+    );
+    const from = canvas.getByTestId("refused-from");
+    // Its own words' height, never the card's: a line or two is under four of its ems.
+    const em = parseFloat(getComputedStyle(from).fontSize);
+    await expect(from.getBoundingClientRect().height).toBeLessThan(em * 4);
+    await userEvent.tab();
+    await untilFocused(
+      () => within(list).getByRole("option", { name: "purlis" }),
+      "A refused card: Tab lands on the chosen card",
+    );
+    await userEvent.keyboard("{ArrowRight}");
+    await untilFocused(
+      () => broken,
+      "A refused card: Right moves to it, though it cannot be chosen",
+    );
     expectFocusInSight();
   },
 };
@@ -834,19 +944,27 @@ function keyOfTheInputMethod(box: Element, key: string, composing: boolean) {
 }
 
 /**
- * **Tab leaves the list from `row` for the button after it, and Shift+Tab comes back to the row**:
- * the list is one Tab stop, whatever its rows hold.
+ * **Tab on the engine's own keyboard** (Shift+Tab with `shift`), so the browser makes the move;
+ * on Storybook's page, which has no engine's keyboard, Testing Library's Tab.
+ */
+async function tabOnTheEngine(keys: ReturnType<typeof UserEvent.setup>, shift = false) {
+  if (!(await keysOnTheEnginesKeyboard(shift ? "{Shift>}{Tab}{/Shift}" : "{Tab}")))
+    await keys.tab({ shift });
+}
+
+/**
+ * **One Tab leaves the list from `row` for the button after it, and Shift+Tab comes back to the
+ * row**: the list is one Tab stop, whatever its rows hold (#6071), and a row whose controls are the
+ * list's last is still where Shift+Tab lands, never its last control (#6033).
  */
 async function tabsOutAndBack(
-  list: HTMLElement,
   row: HTMLElement,
   keys: ReturnType<typeof UserEvent.setup>,
   step: string,
 ) {
   const after = within(document.body).getByRole("button", { name: "After" });
-  for (let press = 0; press < 5 && list.contains(document.activeElement); press += 1)
-    await keys.tab();
-  await untilFocused(() => after, `${step}: Tab leaves the list`);
+  await tabOnTheEngine(keys);
+  await untilFocused(() => after, `${step}: one Tab leaves the list`);
   await keys.tab({ shift: true });
   await untilFocused(() => row, `${step}: Shift+Tab comes back to the row`);
 }
@@ -886,9 +1004,14 @@ export const ComposingInARowsBox: Story = {
     await userEvent.keyboard("{ArrowDown}");
     const test = within(list).getByRole("row", { name: "Run cargo test" });
     await untilFocused(() => test, "Composing: ↓ on the row goes to the row below");
-    await tabsOutAndBack(list, test, userEvent, "Composing");
-    await userEvent.keyboard("{ArrowUp}{ArrowRight}");
+    await userEvent.keyboard("{ArrowUp}");
+    await untilFocused(() => host, "Composing: ↑ goes back to the row with the box");
+    await tabsOutAndBack(host, userEvent, "Composing");
+    await userEvent.keyboard("{ArrowRight}");
     await untilFocused(box, "Composing: the box holds the keyboard for the picture");
+    // → into a box may select its words; End puts the caret after them, the picture #6025 drew.
+    await userEvent.keyboard("{End}");
+    await untilFocused(box, "Composing: End keeps the keyboard in the box");
     expectFocusInSight();
   },
 };
@@ -966,8 +1089,10 @@ export const ASelectInARow: Story = {
     await userEvent.keyboard("{ArrowDown}");
     const test = within(list).getByRole("row", { name: "Run cargo test" });
     await untilFocused(() => test, "A select in a row: ↓ on the row goes to the row below");
-    await tabsOutAndBack(list, test, userEvent, "A select in a row");
-    await userEvent.keyboard("{ArrowUp}{ArrowRight}");
+    await userEvent.keyboard("{ArrowUp}");
+    await untilFocused(() => token, "A select in a row: ↑ goes back to its row");
+    await tabsOutAndBack(token, userEvent, "A select in a row");
+    await userEvent.keyboard("{ArrowRight}");
     await untilFocused(select, "A select in a row: its button holds the keyboard for the picture");
     expectFocusInSight();
   },
@@ -977,9 +1102,13 @@ export const ASelectInARow: Story = {
 const LONG_REPLY =
   "Yes, publish it to the registry once the tests pass on both runners, and tell me when it is out.";
 
+/** One word longer than a line of the reply box, which breaks inside it, where nothing hangs. */
+const ONE_LONG_WORD =
+  "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08e3b0c44298fc1c14";
+
 /** Three asks, the middle one with a reply box narrow enough that its words wrap. */
-function Replying() {
-  const [reply, setReply] = useState(LONG_REPLY);
+function Replying({ words = LONG_REPLY }: { words?: string }) {
+  const [reply, setReply] = useState(words);
   return (
     <div style={{ inlineSize: "20rem", display: "grid", gap: "var(--space-3)" }}>
       <List aria-label="Asks" disallowTypeAhead>
@@ -1042,8 +1171,10 @@ export const AWrappedReplyInARow: Story = {
     await keysOnTheEnginesKeyboard("{ArrowDown}");
     const test = within(list).getByRole("row", { name: "Run cargo test" });
     await untilFocused(() => test, "A wrapped reply: ↓ from its last line goes to the row below");
-    await tabsOutAndBack(list, test, userEvent, "A wrapped reply");
-    await userEvent.keyboard("{ArrowUp}{ArrowRight}");
+    await userEvent.keyboard("{ArrowUp}");
+    await untilFocused(() => publish, "A wrapped reply: ↑ goes back to its row");
+    await tabsOutAndBack(publish, userEvent, "A wrapped reply");
+    await userEvent.keyboard("{ArrowRight}");
     await untilFocused(box, "A wrapped reply: the box holds the keyboard for the picture");
     box().setSelectionRange(0, 0);
     await keysOnTheEnginesKeyboard("{ArrowDown}");
@@ -1053,8 +1184,8 @@ export const AWrappedReplyInARow: Story = {
   },
 };
 
-/** Three rows, each with a button of its own, between two buttons outside the list. */
-function Between() {
+/** Three rows, each with a button of its own (or two), between two buttons outside the list. */
+function Between({ two = false }: { two?: boolean }) {
   return (
     <div style={{ display: "grid", gap: "var(--space-3)", inlineSize: "20rem" }}>
       <Button size="sm">Before</Button>
@@ -1064,6 +1195,7 @@ function Between() {
             <RowLabel>{name}</RowLabel>
             <RowTrail>
               <Button size="sm">{`Open ${name}`}</Button>
+              {two && <Button size="sm">{`Stop ${name}`}</Button>}
             </RowTrail>
           </ListRow>
         ))}
@@ -1074,11 +1206,11 @@ function Between() {
 }
 
 /**
- * **One Tab stop, the row the keyboard left** (#3123): Tab out of a list passes the keyboard
- * through the row's own controls and the list's last control on its way (React Aria's), and that
- * never makes another row the list's stop; Shift+Tab comes back to the row the keyboard left. Run
- * with the browser's own key events, whose timing a test document does not have. The picture is
- * that row under the keyboard.
+ * **One Tab stop, the row the keyboard left** (#3123, #6071): one Tab from a row leaves the list,
+ * past the row's own controls (the WAI-ARIA APG grid), and passing the list's last control on its
+ * way (React Aria's) never makes another row the list's stop; Shift+Tab comes back to the row the
+ * keyboard left. Run with the browser's own key events, whose timing a test document does not
+ * have. The picture is that row under the keyboard.
  */
 export const OneTabStopComingBack: Story = {
   render: () => <Between />,
@@ -1093,14 +1225,145 @@ export const OneTabStopComingBack: Story = {
     );
     await userEvent.keyboard("{ArrowDown}");
     await untilFocused(() => beta, "One Tab stop: ↓ moves to the next row");
-    // In a browser, React Aria's Tab from a row goes on through the row's own controls before it
-    // leaves the list; however many it passes, it leaves, and it never moves the list's stop.
+    // Tab from a row leaves the list at once, past the row's own controls (#6071).
     const after = canvas.getByRole("button", { name: "After" });
-    for (let press = 0; press < 4 && list.contains(document.activeElement); press += 1)
-      await userEvent.tab();
-    await untilFocused(() => after, "One Tab stop: Tab leaves the list");
+    await tabOnTheEngine(userEvent);
+    await untilFocused(() => after, "One Tab stop: one Tab leaves the list");
     await userEvent.tab({ shift: true });
     await untilFocused(() => beta, "One Tab stop: Shift+Tab comes back to the row it left");
+    expectFocusInSight();
+  },
+};
+
+/**
+ * **Shift+Tab back into a list lands on the row the keyboard left, though it holds the list's
+ * last controls** (#6033, the WAI-ARIA grid's one Tab stop): from the last row's button, Tab
+ * leaves the list, and Shift+Tab, which the browser lands on that button, comes back to the row;
+ * → reaches the button again. The picture is the row under the keyboard.
+ */
+export const ShiftTabBackToARowWithControls: Story = {
+  render: () => <Between />,
+  play: async ({ canvas, userEvent }) => {
+    const list = canvas.getByRole("grid", { name: "Runs" });
+    const gamma = within(list).getByRole("row", { name: "gamma" });
+    const open = () => within(gamma).getByRole("button", { name: "Open gamma" });
+    await userEvent.click(canvas.getByRole("button", { name: "Before" }));
+    await userEvent.tab();
+    await userEvent.keyboard("{End}");
+    await untilFocused(() => gamma, "Back to a row: End moves to the last row");
+    await userEvent.keyboard("{ArrowRight}");
+    await untilFocused(open, "Back to a row: → reaches its button");
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "After" }),
+      "Back to a row: Tab from its button leaves the list",
+    );
+    await userEvent.tab({ shift: true });
+    await untilFocused(
+      () => gamma,
+      "Back to a row: Shift+Tab comes back to the row, not its button",
+    );
+    await userEvent.keyboard("{ArrowRight}");
+    await untilFocused(open, "Back to a row: → reaches its button again");
+    await userEvent.keyboard("{ArrowLeft}");
+    await untilFocused(() => gamma, "Back to a row: ← goes back to the row for the picture");
+    expectFocusInSight();
+  },
+};
+
+/**
+ * **Tab walks a row's controls, then leaves the list; Shift+Tab is the same, turned round**
+ * (#6071, the WAI-ARIA APG grid): from a row's first control Tab goes on to its next, and from its
+ * last Tab leaves the list, where Shift+Tab comes back to the row; from its last control Shift+Tab
+ * goes back to the one before, and from its first Shift+Tab leaves the list the other way. The
+ * picture is the row's last control under the keyboard.
+ */
+export const TabWalksARowsControlsThenLeaves: Story = {
+  render: () => <Between two />,
+  play: async ({ canvas, userEvent }) => {
+    const list = canvas.getByRole("grid", { name: "Runs" });
+    const beta = within(list).getByRole("row", { name: "beta" });
+    const open = () => within(beta).getByRole("button", { name: "Open beta" });
+    const stop = () => within(beta).getByRole("button", { name: "Stop beta" });
+    await userEvent.click(canvas.getByRole("button", { name: "Before" }));
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowDown}{ArrowRight}");
+    await untilFocused(open, "Walks a row: → reaches its first control");
+    await tabOnTheEngine(userEvent);
+    await untilFocused(stop, "Walks a row: Tab goes on to its next control");
+    await tabOnTheEngine(userEvent);
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "After" }),
+      "Walks a row: Tab from its last control leaves the list",
+    );
+    await tabOnTheEngine(userEvent, true);
+    await untilFocused(() => beta, "Walks a row: Shift+Tab comes back to the row");
+    await userEvent.keyboard("{ArrowRight}{ArrowRight}");
+    await untilFocused(stop, "Walks a row: → reaches its last control");
+    await tabOnTheEngine(userEvent, true);
+    await untilFocused(open, "Walks a row: Shift+Tab goes back to the control before");
+    await tabOnTheEngine(userEvent, true);
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "Before" }),
+      "Walks a row: Shift+Tab from its first control leaves the list the other way",
+    );
+    await tabOnTheEngine(userEvent);
+    await untilFocused(() => beta, "Walks a row: Tab comes back to the row");
+    await userEvent.keyboard("{ArrowRight}{ArrowRight}");
+    await untilFocused(stop, "Walks a row: its last control holds the keyboard for the picture");
+    expectFocusInSight();
+  },
+};
+
+/**
+ * **↑ and ↓ at a soft wrap move within the box** (#6045): in a word longer than a line, which the
+ * box breaks with nothing hanging, End puts the caret at the end of the first line, at the wrap,
+ * and ↓ moves it on to the line below, where it once left the row; Home from the last line puts
+ * it at the start of that line, at the wrap again, and ↑ moves it up. Only from the last line
+ * does ↓ leave for the row below. The picture is the box holding the keyboard, its caret at the
+ * wrap.
+ */
+export const ACaretAtASoftWrap: Story = {
+  render: () => <Replying words={ONE_LONG_WORD} />,
+  play: async ({ canvas, userEvent }) => {
+    const list = canvas.getByRole("grid", { name: "Asks" });
+    const publish = within(list).getByRole("row", { name: "Publish 0.4.0" });
+    const box = () =>
+      within(publish).getByRole("textbox", { name: "Reply" }) as HTMLTextAreaElement;
+    const caret = () => box().selectionStart;
+    const end = ONE_LONG_WORD.length;
+    await tabOnTheEngine(userEvent);
+    await userEvent.keyboard("{ArrowDown}{ArrowRight}");
+    await untilFocused(box, "At a soft wrap: → reaches the box from its row");
+    box().setSelectionRange(0, 0);
+    // Home, End and the arrows move a box's caret by its lines only on the engine's keyboard.
+    if (!(await keysOnTheEnginesKeyboard("{End}"))) return;
+    await waitFor(() => expect(caret()).toBeGreaterThan(0));
+    const wrap = caret();
+    expect(wrap).toBeLessThan(end);
+    await keysOnTheEnginesKeyboard("{ArrowDown}");
+    await untilFocused(box, "At a soft wrap: ↓ from the end of the first line stays in the box");
+    await waitFor(() => expect(caret()).toBeGreaterThan(wrap));
+    box().setSelectionRange(end, end);
+    await keysOnTheEnginesKeyboard("{Home}");
+    await waitFor(() => expect(caret()).toBeLessThan(end));
+    const start = caret();
+    expect(start).toBeGreaterThan(0);
+    await keysOnTheEnginesKeyboard("{ArrowUp}");
+    await untilFocused(box, "At a soft wrap: ↑ from the start of the last line stays in the box");
+    await waitFor(() => expect(caret()).toBeLessThan(start));
+    box().setSelectionRange(end, end);
+    await keysOnTheEnginesKeyboard("{ArrowDown}");
+    await untilFocused(
+      () => within(list).getByRole("row", { name: "Run cargo test" }),
+      "At a soft wrap: ↓ from the last line goes to the row below",
+    );
+    await userEvent.keyboard("{ArrowUp}{ArrowRight}");
+    await untilFocused(box, "At a soft wrap: → reaches the box again");
+    box().setSelectionRange(0, 0);
+    await keysOnTheEnginesKeyboard("{End}");
+    await untilFocused(box, "At a soft wrap: the box holds the keyboard for the picture");
+    await waitFor(() => expect(caret()).toBe(wrap));
     expectFocusInSight();
   },
 };

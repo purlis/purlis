@@ -36,7 +36,7 @@ import { useOnScreen, useSpecimen } from "./themeSpecimens";
 import { Button } from "../ui/button/Button";
 import { Tooltip } from "../ui/tooltip/Tooltip";
 import { ListBox, ListOption } from "../ui/list/List";
-import { RowDescription, RowLabel } from "../ui/list/Row";
+import { RowBelow, RowDescription, RowLabel } from "../ui/list/Row";
 import { Badge as LevelBadge } from "../ui/badge/Badge";
 import { useWindowLeft } from "../ui/windowLeft";
 
@@ -552,6 +552,7 @@ function Cards({
               ? `${ownKeys(card)} part ${ownKeys(card) === 1 ? "key" : "keys"}`
               : undefined,
           ].filter((one): one is string => one !== undefined);
+          const from = [fromSaid(card), ...marks].join(" · ");
           return (
             <ListOption
               id={card.key}
@@ -573,13 +574,10 @@ function Cards({
               {/* Where it comes from and what it found is the card's description; a refused
                   card's is why it is refused, under its pictures' place. */}
               {card.refused ? (
-                <span className="text-sm text-text-secondary">
-                  {[fromSaid(card), ...marks].join(" · ")}
-                </span>
+                // Its line under its name: heard after why it is refused (#6075).
+                <RowBelow className="text-sm text-text-secondary">{from}</RowBelow>
               ) : (
-                <RowDescription className="text-sm text-text-secondary">
-                  {[fromSaid(card), ...marks].join(" · ")}
-                </RowDescription>
+                <RowDescription className="text-sm text-text-secondary">{from}</RowDescription>
               )}
             </ListOption>
           );
@@ -635,7 +633,9 @@ function Pictures({
   // A picture is kept by what it is drawn with: the theme's stamp and the values chosen here.
   const values = isYours(card, yours) ? JSON.stringify(yours?.options ?? {}) : "";
   return (
-    <div ref={box} className="flex gap-1">
+    // The card names the theme; its pictures, and how many more there are, add nothing a reader
+    // needs, and are kept out of the card's name (#6043).
+    <div ref={box} className="flex gap-1" aria-hidden="true">
       {shown.map((one) => (
         <Picture
           key={one.id}

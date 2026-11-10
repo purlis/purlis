@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **A chat's one mark** (#5340): each of its six states, with who it runs as and with its badge
+ * **A chat's one mark** (#5340, #6012): each of the eight Chat states, with who it runs as and with its badge
  * alone, on each ground it stands on: a row in the list, a tab, a pane's head and a folded pane's
  * rail. Each held to axe and compared with its baseline (`docs/component-stories.md`).
  */
@@ -10,7 +10,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { CSSProperties, ReactNode } from "react";
 import { expect, within } from "storybook/test";
 import { Bot, SquareTerminal } from "lucide-react";
-import { MARK_STATES } from "../../shownState";
+import { CHAT_STATES, CHAT_STATE_NAMES } from "../../shownState";
 import { ChatMark } from "./ChatMark";
 
 /** Each place a mark stands, with the size and the ground it sets. */
@@ -50,10 +50,10 @@ function EveryState({ who = <Bot aria-hidden="true" /> }: { who?: ReactNode }) {
             } as CSSProperties
           }
         >
-          {MARK_STATES.map((state) => (
-            <ChatMark key={state} state={state} who={who} word={state} />
+          {CHAT_STATES.map((state) => (
+            <ChatMark key={state} state={state} who={who} word={CHAT_STATE_NAMES[state]} />
           ))}
-          <ChatMark state={null} who={who} word="running (no detail)" />
+          <ChatMark state={null} who={who} />
         </div>
       ))}
     </div>
@@ -75,7 +75,14 @@ export const Everywhere: Story = {
       [...one.classList].find((name) => name.startsWith("lucide-")),
     );
     // No two states share an outline (WCAG 1.4.1).
-    await expect(new Set(glyphs).size).toBe(MARK_STATES.length);
+    await expect(new Set(glyphs).size).toBe(CHAT_STATES.length);
+    // No two states share a colour either (ADR 0121 decision 17).
+    const colours = [...row.querySelectorAll<HTMLElement>('[data-part="badge"]')].map(
+      (one) => getComputedStyle(one).color,
+    );
+    await expect(new Set(colours).size).toBe(CHAT_STATES.length);
+    // Each is heard by its name.
+    for (const state of CHAT_STATES) await expect(row).toHaveTextContent(CHAT_STATE_NAMES[state]);
   },
 };
 
@@ -86,8 +93,8 @@ export const OnATerminal: Story = { args: { who: <SquareTerminal aria-hidden="tr
 export const Alone: Story = {
   render: () => (
     <div style={{ display: "flex", gap: "var(--space-5)" }}>
-      {MARK_STATES.map((state) => (
-        <ChatMark key={state} state={state} word={state} />
+      {CHAT_STATES.map((state) => (
+        <ChatMark key={state} state={state} word={CHAT_STATE_NAMES[state]} />
       ))}
     </div>
   ),

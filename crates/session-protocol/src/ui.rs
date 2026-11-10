@@ -460,6 +460,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     "start_the_session_host_again",
     // Dismiss on a task's Notice that it has gone quiet (#1981): the person's answer.
     "put_away_task_quiet",
+    // It's fine on a chat that reads Stuck? (#6014): the person's answer.
+    "stuck_fine",
     // The Inbox's updates (#1693): what happened to the person's chats, and what they put away.
     "inbox_updates",
     "note_inbox_updates",
@@ -607,6 +609,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     "reference_into_chat",
     "send_input",
     "send_input_bytes",
+    // Quiet by hand, and a pane typed in (#6017): the person's own say over their notifications.
+    // A link that could turn Quiet on could hold back every notification of what waits on them.
+    "set_quiet_now",
+    "quiet_typed",
     // Starts the person's editor on this machine's extension record (#1296).
     "open_extension_record",
     // Allow on Settings' Blocked lately (#1662): widens what every chat here reaches.
@@ -1336,6 +1342,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "chat_work_item",
     "chat_work_link",
     "chat_work_unlink",
+    // What the core noticed of each chat (#6014): Stuck? and work left behind, in memory.
+    "chats_noticed",
     "chats_on_older_sandbox",
     "chats_plane_updated",
     // Which chats are reconnecting to their runner (#2496): what their panes start from.
@@ -1380,6 +1388,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "ignore_needs_you",
     "import_instructions",
     "inbox_shown",
+    // Whether it is Quiet, and what the last Quiet held (#6017): read only.
+    "quiet_now",
     "installed_extensions",
     "locate_project",
     "mcp_failures",

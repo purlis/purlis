@@ -87,6 +87,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "the retry (NO-8's follow-up, #1296). And what Copy diagnostics came to, said once in the " +
       "footer (#4774): the button beside it is the retry, so it has no way out of its own",
   },
+  "ActionResultNotice.tsx": {
+    count: 1,
+    why:
+      "what the window says aloud of the newest result (#6004, WCAG 4.1.3): no card pops any " +
+      "more, so the result's notice, behind its dot and under Results, is said here unseen. " +
+      "Its ways out are its notice's",
+  },
   "ActivityTab.tsx": {
     count: 2,
     why:
@@ -495,8 +502,11 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
   },
   "SandboxOffer.tsx": { count: 1, why: "the answer's refusal, inside the sandbox offer's Notice" },
   "PlaneView.tsx": {
-    count: 1,
-    why: "a screen reader's one polite line about a pane the keyboard did not ask for (#4767): heard, never drawn, with nothing to do",
+    count: 2,
+    why:
+      "a screen reader's one polite line about a pane the keyboard did not ask for (#4767), and " +
+      "the one about a new Blocking ask (ADR 0121 decision 25): heard, never drawn; the ask is " +
+      "answered in Asks, where the ✋ leads",
   },
   "PoolSetupTab.tsx": {
     count: 2,

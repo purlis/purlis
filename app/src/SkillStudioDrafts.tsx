@@ -40,9 +40,11 @@ function markOf(draft: SkillDraft) {
   return <Badge variant="accent">{draft.new ? "A new skill" : "A change to it"}</Badge>;
 }
 
-/** Who drafted it: its chat by its number, where the core knows it. */
+/** Who drafted it: its chat by its number, where the core knows it, or the extension's template
+ *  New skill… made it from (#3091). */
 function draftedBy(draft: SkillDraft): string {
-  return draft.chat === null ? "a chat" : `chat ${draft.chat}`;
+  if (draft.chat !== null) return `chat ${draft.chat}`;
+  return draft.template == null ? "a chat" : `the template ${draft.template}`;
 }
 
 /** **"Ask the chat to redo it"**, or "Ask a chat…" where the chat that drafted it is closed. */

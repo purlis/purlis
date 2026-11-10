@@ -1470,3 +1470,46 @@ fn a_task_purlis_stops_at_a_limit_is_never_said_to_be_stopped_by_the_person() {
     let above = crate::dispatched::being_stopped_as(Reached::Above { limit: 30 });
     assert!(!above.contains("person"), "{above}");
 }
+
+// ---- when a working chat reads Stuck? (#6014, ADR 0121 decision 19) -------------------------
+
+#[test]
+fn a_chat_reads_stuck_after_fifteen_silent_minutes_three_failures_or_an_hour_unless_set() {
+    let limits = committed("");
+    assert_eq!(
+        (
+            limits.stuck_silent_minutes,
+            limits.stuck_failing_times,
+            limits.stuck_long_minutes
+        ),
+        (15, 3, 60)
+    );
+    let limits = committed(
+        "[dispatch]\nstuck-silent-minutes = 5\nstuck-failing-times = 2\n\n\
+         [dispatch.personas.steward]\nstuck-long-minutes = 120\n",
+    );
+    assert_eq!(
+        (
+            limits.stuck_silent_minutes,
+            limits.stuck_failing_times,
+            limits.stuck_long_minutes
+        ),
+        (5, 2, 120)
+    );
+    // A question, never a limit on dispatch.
+    assert_eq!(decide(&limits, &quiet()), Decision::Allowed);
+    for limit in [
+        Limit::StuckSilentMinutes,
+        Limit::StuckFailingTimes,
+        Limit::StuckLongMinutes,
+    ] {
+        assert_eq!(
+            limit.least(),
+            1,
+            "{limit:?}: a 0 would be stuck at every look"
+        );
+        assert!(!limit.persona_only(), "{limit:?}");
+    }
+    let read = read(Some("[dispatch]\nstuck-failing-times = 0\n"), FILE);
+    assert_eq!(read.table.project.get(Limit::StuckFailingTimes), None);
+}

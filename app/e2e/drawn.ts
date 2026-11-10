@@ -23,7 +23,7 @@ export async function theWindowIsDrawn(): Promise<void> {
   await browser.waitUntil(
     async () => {
       try {
-        return await browser.execute(() => document.querySelector("main.window") !== null);
+        return await browser.execute(() => document.querySelector(".window") !== null);
       } catch {
         // A page still between documents answers nothing yet; the next poll asks again.
         return false;

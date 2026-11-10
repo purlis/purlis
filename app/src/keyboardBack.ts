@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **A keyboard move a palette row asks for is made once the palette has handed the keyboard
- * back** (#1769). The palette's closing move puts the keyboard back where the person opened it
- * from (`Palette.giveTheKeyboardBack`), and Radix makes that move only once the palette has
- * gone, which on a loaded machine is later than the next frame. A row that moved the keyboard
- * a frame after it ran — Focus the next region — was undone by it now and then, and the
- * keyboard was left where the palette had been opened.
+ * **A keyboard move a palette row asks for is made once the palette has handed the keyboard back**
+ * (#1769). The palette's closing move puts the keyboard back where the person opened it from
+ * (`Palette.giveTheKeyboardBack`), and the dialog family makes that move (its `afterClose`) only
+ * once the palette has gone, which on a loaded machine is later than the next frame. A row that
+ * moved the keyboard a frame after it ran — Focus the next region — was undone by it now and then,
+ * and the keyboard was left where the palette had been opened.
  *
  * So a move is asked for here instead: made at once with no palette up, and otherwise by the
  * palette's closing move, right after it has handed the keyboard back. One that is never

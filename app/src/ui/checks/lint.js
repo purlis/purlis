@@ -23,6 +23,3 @@ const checksFamily = moved({
 export const rules = {
   "checks-family": checksFamily,
 };
-
-/** The files a rule is still off in, until their lanes move them. */
-export const off = {};

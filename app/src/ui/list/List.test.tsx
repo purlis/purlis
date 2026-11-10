@@ -26,7 +26,8 @@ import {
   ListSection,
   type Selection,
 } from "./List";
-import { RowDescription, RowLabel, RowLead, RowTrail } from "./Row";
+import { RowBelow, RowDescription, RowLabel, RowLead, RowTrail } from "./Row";
+import { rowName } from "../../menus.testkit";
 import { FILTERED_FROM, ListFilter, noMatchSaid, useListFilter } from "./ListFilter";
 import { AimedList, AimedOption } from "./AimedList";
 
@@ -82,6 +83,86 @@ describe("a list to choose from", () => {
     expect(within(rows[0]).getByText("st")).toHaveAttribute("data-part", "lead");
     // Named by its words alone, its mark left out, and described by its one line (#2911).
     expect(screen.getByRole("option", { name: "steward" })).toHaveAccessibleDescription("4 chats");
+  });
+
+  // **Its only words a reader is not kept from are its name** (WCAG 2.5.3, #6043): axe's
+  // `label-content-name-mismatch` takes all of an option's visible words, `aria-hidden` or not,
+  // as its label once it is named by `aria-labelledby`, so an option is named by its content
+  // instead, with its mark, its line and its end kept out of it.
+  it("is named by its content, which is its label alone, its other parts kept from a reader", () => {
+    render(
+      <ListBox aria-label="Themes">
+        <ListOption id="purlis" textValue="purlis">
+          <RowLead>pu</RowLead>
+          <RowLabel>purlis</RowLabel>
+          <RowDescription>Built in</RowDescription>
+          <RowTrail>3</RowTrail>
+        </ListOption>
+      </ListBox>,
+    );
+    const option = screen.getByRole("option", { name: "purlis" });
+    expect(option).not.toHaveAttribute("aria-labelledby");
+    expect(option).not.toHaveAttribute("aria-label");
+    expect(option).toHaveAccessibleDescription("Built in");
+    expect(rowName(option)).toBe("purlis");
+  });
+
+  // **Every line it draws about it is heard, after its name** (#6075): its line under its words
+  // and a mark that says something join its one line in its description, in that order, while
+  // its name stays its label alone.
+  it("is described by its one line, then its line under its words, then a mark that says something", () => {
+    render(
+      <ListBox aria-label="Skills">
+        <ListOption id="review" textValue="review">
+          <RowLead said="Line 42">42</RowLead>
+          <RowLabel>review</RowLabel>
+          <RowDescription>Built in</RowDescription>
+          <RowBelow>Reads a pull request</RowBelow>
+          <RowTrail>3</RowTrail>
+        </ListOption>
+      </ListBox>,
+    );
+    const option = screen.getByRole("option", { name: "review" });
+    expect(option).toHaveAccessibleDescription("Built in Reads a pull request Line 42");
+    expect(rowName(option)).toBe("review");
+    // Still kept from a reader as content: heard once, as description.
+    expect(screen.getByText("Reads a pull request")).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("is described by its line under its words where it has no one line", () => {
+    render(
+      <ListBox aria-label="Memories">
+        <ListOption id="m" textValue="m">
+          <RowLead>•</RowLead>
+          <RowLabel>A memory</RowLabel>
+          <RowBelow>
+            the <mark>match</mark> in it
+          </RowBelow>
+        </ListOption>
+      </ListBox>,
+    );
+    expect(screen.getByRole("option", { name: "A memory" })).toHaveAccessibleDescription(
+      "the match in it",
+    );
+  });
+
+  it("stops being described by a line under its words once the line goes", () => {
+    function Toggled({ below }: { below: boolean }) {
+      return (
+        <ListBox aria-label="Skills">
+          <ListOption id="review" textValue="review">
+            <RowLabel>review</RowLabel>
+            <RowDescription>Built in</RowDescription>
+            {below && <RowBelow>Reads a pull request</RowBelow>}
+          </ListOption>
+        </ListBox>
+      );
+    }
+    const { rerender } = render(<Toggled below />);
+    const option = () => screen.getByRole("option", { name: "review" });
+    expect(option()).toHaveAccessibleDescription("Built in Reads a pull request");
+    rerender(<Toggled below={false} />);
+    expect(option()).toHaveAccessibleDescription("Built in");
   });
 
   it("keeps one Tab stop, and the arrows choose and stop at the ends", async () => {

@@ -156,13 +156,13 @@ describe("the rail family (#2915)", () => {
 
   it("takes a hidden rail out of reach (R82)", () => {
     const { rerender } = render(
-      <RailSlot hidden={false}>
+      <RailSlot label="Projects" hidden={false}>
         <RailAction aria-label="Hide the projects sidebar" icon={<span />} />
       </RailSlot>,
     );
     expect(screen.getByRole("button", { name: "Hide the projects sidebar" })).toBeInTheDocument();
     rerender(
-      <RailSlot hidden>
+      <RailSlot label="Projects" hidden>
         <RailAction aria-label="Hide the projects sidebar" icon={<span />} />
       </RailSlot>,
     );

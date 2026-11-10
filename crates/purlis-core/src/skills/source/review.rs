@@ -32,6 +32,10 @@ pub struct ReviewFile {
     pub text: Option<String>,
     /// Whether the summary marks something in it.
     pub risky: bool,
+    /// **Its text as the source holds it**, unescaped, for the studio's lints alone ([`linted`]);
+    /// never shown, so never serialized.
+    #[serde(skip)]
+    pub(super) held_text: Option<String>,
 }
 
 /// **A name that is taken where a skill would land** (ADR 0100, amended 2026-11-01): the review
@@ -394,6 +398,7 @@ pub(super) fn review_of(
                 executable: file.executable,
                 risky: marked(&file.path()) || file.executable || text_of(file).is_none(),
                 text: text_of(file).map(summary::escaped),
+                held_text: text_of(file).map(str::to_owned),
             })
             .collect(),
         left_out: left,
@@ -401,6 +406,57 @@ pub(super) fn review_of(
         digest: digest_of(&wrote(files)),
         summary,
         grade: None,
+    }
+}
+
+/// **The studio's lints of each of `skills`, said in its lint lines** (#3090, ADR 0101 §1): each
+/// lint is handed the skill's text files as the source holds them, landing at `level`, and each
+/// finding is a line after purlis's own, under the lint's name. An extension's lint only warns,
+/// as in the live lint, so a review never stops on it; the digest the install is handed back is
+/// not touched. purlis's own lints are already said ([`review_of`]), so `lints` are only the
+/// extensions' ([`crate::skills::studio::Studio::lints`]).
+pub fn linted<'a>(
+    skills: impl IntoIterator<Item = &'a mut SkillReview>,
+    level: &Level,
+    lints: &[&dyn purlis_skills::SkillLint],
+) {
+    if lints.is_empty() {
+        return;
+    }
+    for skill in skills {
+        let Some(text) = skill
+            .files
+            .iter()
+            .find(|file| file.path == purlis_skills::FILE)
+            .and_then(|file| file.held_text.clone())
+        else {
+            continue;
+        };
+        let mut others: Vec<(String, String)> = Vec::new();
+        let mut listed: Vec<String> = Vec::new();
+        for file in skill
+            .files
+            .iter()
+            .filter(|file| file.path != purlis_skills::FILE)
+        {
+            listed.push(file.path.clone());
+            if let Some(text) = &file.held_text {
+                others.push((file.path.clone(), text.clone()));
+            }
+        }
+        let files = purlis_skills::SkillFiles {
+            name: &skill.name,
+            text: &text,
+            others: &others,
+            origin: level.origin(),
+            plugin: None,
+            listed: Some(&listed),
+        };
+        for lint in lints {
+            skill
+                .lint
+                .extend(lint.findings(&files).iter().map(ToString::to_string));
+        }
     }
 }
 

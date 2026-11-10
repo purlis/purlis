@@ -15,6 +15,7 @@ import type { OpenChat, Panels as PanelsModel, Piece } from "./bindings";
 import type { WorkspaceState } from "./workspaceState";
 import { drawnWith } from "./cascade.testkit";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
+import { rowName } from "./menus.testkit";
 
 afterEach(cleanup);
 
@@ -127,7 +128,7 @@ describe("the explorer", () => {
   it("lists the focused workspace's clones and the worktrees cut off each", () => {
     draw({});
 
-    const svc = ofClone("svc").map((one) => one.getAttribute("aria-label"));
+    const svc = ofClone("svc").map(rowName);
     expect(svc).toEqual(expect.arrayContaining([expect.stringMatching(/^one/)]));
     expect(svc).toEqual(expect.arrayContaining([expect.stringMatching(/^two/)]));
     expect(ofClone("tool").map((one) => one.textContent)).toContain("No branches cut here");
@@ -537,11 +538,7 @@ describe("a piece row's menu", () => {
     row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
 
     const menu = await screen.findByRole("menu");
-    expect(
-      within(menu)
-        .getAllByRole("menuitem")
-        .map((one) => one.getAttribute("aria-label")),
-    ).toEqual([
+    expect(within(menu).getAllByRole("menuitem").map(rowName)).toEqual([
       "Focus",
       "Browse files",
       // The branch's own folder (#1143).
@@ -597,11 +594,12 @@ describe("a clone row's menu", () => {
     heading().dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
 
     const menu = await screen.findByRole("menu");
-    expect(
-      within(menu)
-        .getAllByRole("menuitem")
-        .map((one) => one.getAttribute("aria-label")),
-    ).toEqual(["Focus", "New chat", "New branch…", "Start new chats here"]);
+    expect(within(menu).getAllByRole("menuitem").map(rowName)).toEqual([
+      "Focus",
+      "New chat",
+      "New branch…",
+      "Start new chats here",
+    ]);
   });
 
   it("hands the catalogue's offer back when a row is pressed", async () => {
@@ -683,7 +681,7 @@ describe("the explorer is drawn as a tree", () => {
  * The usual way to stop a tree's vertical line at its last row is a rectangle in the background
  * colour laid over the line's tail. That works exactly as long as the tree is on that
  * background — and the explorer can be moved to a slot on another surface, where the mask would
- * be a visible block. The shared tree row (`primitives/collections.css`, #1672, DS-12) draws
+ * be a visible block. The tree family's row (`ui/tree/tree.css`, #1672, DS-12, #3198) draws
  * straight guides that need no mask: a background of the guide's colour and transparent, one
  * column per level above the row. This holds the rule a well-meaning simplification would break.
  */

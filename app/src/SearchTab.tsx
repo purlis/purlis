@@ -584,7 +584,9 @@ function Hits({
                         } else e.continuePropagation();
                       }}
                     >
-                      <RowLead className="search-line-number">{line.number}</RowLead>
+                      <RowLead className="search-line-number" said={`Line ${line.number}`}>
+                        {line.number}
+                      </RowLead>
                       <RowLabel className="search-line-text">
                         {line.clipped && "…"}
                         {line.parts.map((part, j) =>

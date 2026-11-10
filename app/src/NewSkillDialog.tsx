@@ -9,6 +9,9 @@
  * - **Write it yourself**: a name, checked as it is typed (its shape, a built-in skill's name,
  *   one its level already holds), what it does, where it lands and a template. The skill is made
  *   in one commit, and its page opens with its Text tab in Edit (#3683), which the studio does.
+ *   From an extension's template it is kept as a draft instead, which the studio opens in Drafts
+ *   for the person to try and accept (#3091, ADR 0101 §1): a third party's text never lands at
+ *   once.
  * - **Ask a chat to draft it**: what it should do and where it lands; a chat opens with the
  *   core's prompt typed and not sent, and the draft comes back to Drafts.
  * - **Install one from a source**: goes to Sources, where every install is reviewed (S5).
@@ -163,6 +166,8 @@ export function NewSkillDialog({
   const wanted = name.trim();
   const said = description.trim();
   const writing = way === "write";
+  // An extension's template answers a third party's text: it waits in Drafts (#3091).
+  const drafting = writing && template.kind === "extension";
   const problem = writing ? nameProblem(wanted, "", takenAt(level)) : undefined;
   const ready = !busy && said !== "" && (!writing || (wanted !== "" && problem === undefined));
   const lands = labelOf(levels, level);
@@ -191,7 +196,9 @@ export function NewSkillDialog({
         writing
           ? wanted === ""
             ? undefined
-            : `${wanted} is made in the ${lands} skills, in one commit.`
+            : drafting
+              ? `${wanted} waits in Drafts until you accept it into the ${lands} skills.`
+              : `${wanted} is made in the ${lands} skills, in one commit.`
           : `The draft lands in the ${lands} skills once you accept it.`
       }
       alternative={back}
@@ -199,11 +206,15 @@ export function NewSkillDialog({
         // The chat starts where its draft lands (#5184), and the button names the place.
         children: writing
           ? busy
-            ? "Making…"
-            : "Make it and open its page"
+            ? drafting
+              ? "Drafting…"
+              : "Making…"
+            : drafting
+              ? "Keep it as a draft"
+              : "Make it and open its page"
           : `Open a chat ${chatPlace(level, plane)}`,
         reserve: writing
-          ? ["Make it and open its page", "Making…"]
+          ? ["Make it and open its page", "Making…", "Keep it as a draft", "Drafting…"]
           : levels.map((one) => `Open a chat ${chatPlace(one.level, plane)}`),
         isDisabled: !ready,
         onPress: () => {

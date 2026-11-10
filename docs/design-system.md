@@ -1252,9 +1252,11 @@ has it; nothing reads the key after that.
   **`to`**, the times they start and end, `HH:MM` on a 24-hour clock and this machine's own
   time. A `to` before the `from` runs across midnight; the same time for both is no quiet hours.
   In them no notification is shown and an ask waits in the Inbox; when they end, one
-  notification names the chats still waiting on you.
-  Leave any out for its default, `false`, `22:00` and `07:00`; purlis leaves the whole of
-  `notifications` out while all are the defaults. A value that is not one is the default, and
+  notification names the chats still waiting on you. **`finishedAfter`** is how many whole
+  minutes a task you asked for works before its finish notifies you while you are away from
+  the window (#6005); a failure always notifies.
+  Leave any out for its default, `false`, `22:00`, `07:00` and `5`; purlis leaves each out
+  at its default, and the whole of `notifications` while all are. A value that is not one is the default, and
   the Inbox says so. Settings writes it (`app/src/notificationPrefs.ts`), and the app reads it
   each time it would show a notification (`app/src-tauri/src/asknotify.rs`).
 - **`explorer`** is Explorer's folded sections, on this machine (#1677): **`closed`** lists
@@ -1416,7 +1418,7 @@ one labelled section at the end of `App.css`.
 | ------------------------------------------ | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | a tab being selected, on all three strips  | its surface and lit edge cross-fade, `quick`             | the change the operator just made, answered; hangs off `[data-strip]`, so a restyled strip keeps it     |
 | a strip starting to collapse into `N more` | the button fades in, `enter`                             | says the tabs went somewhere; not replayed as the count changes on resize                               |
-| a popover or menu opening                  | fades in a quarter-rem out of its anchored side, `enter` | says what opened it; hangs off Radix's popper wrapper, so the next popover gets it                      |
+| a popover or menu opening                  | fades in a quarter-rem out of its anchored side, `enter` | says what opened it; hangs off the popover family's root in React Aria's `data-entering`, so the next popover gets it |
 | a dialog and its scrim                     | fade, no movement, `enter`                               | a question should appear where the eye already is                                                       |
 | a region brought back                      | fades in, `enter`                                        | only its opacity; see below                                                                             |
 | a reply strip taking or leaving the caret  | its height, ground, divider and hint move together, `swap` | the person's ruling on #5214: it makes room for the words as they start, and gives it back only when left empty; the one part that also moves as it closes |
@@ -1426,6 +1428,7 @@ one labelled section at the end of `App.css`.
 | a chat's state mark                        | colour, shape and ring morph, `settle`                   | the state changing, rather than blinking                                                                |
 | a chat that starts waiting on you          | its ring knocks twice, `settle`                          | the one signal this app exists for, arriving                                                            |
 | the same, on a row of a list               | its hand knocks twice, `settle`                          | a row's mark is the hand and has no ring; only on the change, as the ring                               |
+| the ✋ on the right bar, once per machine  | its mark takes one breath, `breathe`                     | the first Blocking ask to arrive while Asks is closed, in place of a tour (ADR 0121 decision 24); the count says it still under reduced motion |
 | a pane a drag makes room with              | glides and resizes to where the drop would leave it, `enter`, while the drag lasts | the result, seen before the drop (ADR 0113) |
 | a pane about to be, in a drag              | fades in at its box, `enter`                             | what the drop would make     |
 | a row of the Chats list that was asked for | the hovered row's band for a moment, faded in once, `settle` | where a press elsewhere went; the band is there, still, under reduced motion                            |
@@ -1445,9 +1448,9 @@ Left still, on purpose:
   is terminal output moving; a region arrives at its full size and only fades.
 - **A tab's width or position.** A tab that slides under the pointer breaks aiming (`tabs.ts`);
   the collapse into `N more` is instant, and only the button that appears is drawn arriving.
-- **Closing anything.** Radix unmounts a closing surface at once unless an animation is running
-  on it, and a close that lingers leaves a dismissed question over the window the operator has
-  gone back to.
+- **Closing anything.** React Aria unmounts a closing surface at once unless an exit animation is
+  running on it, and a close that lingers leaves a dismissed question over the window the operator
+  has gone back to.
 - **Counts and words** — the needs-you badge, the gauge, the status line. They are read, and a
   number that animates is a number that is briefly wrong.
 - **Hover on rows.** Only a tab eases its hover, because a tab's hover and its selection are the
@@ -1780,12 +1783,13 @@ the focus rings, #2867):
   of the scale, so the guard does not read it either (#2319): a dialog's width, an icon's square
   and a strip's cap on a tab are each that box's own.
 - **`controls.guard.test.ts`** fails on a native control that is not its family's and does not
-  wear its class (`docs/ui-primitives.md`, "Every control is a family's"): a `<button>` or a
-  Radix trigger without `asChild` (none: a button is the button family's `Button`, a segment the
-  choice family's, a list's or a tree's row the list or tree family's, #2930), an `<input>` or
-  `<textarea>` (none: a box is the field family's `TextField` or `TextArea`, a checkbox or a
-  radio the choice family's), a `<select>` (none: the select family's `Select`), a `<table>`
-  (none: the table family's `Table` or `ControlTable`, #2911), and a Radix menu's content and rows (none: the menu family's). **It holds two
+  wear its class (`docs/ui-primitives.md`, "Every control is a family's"): a `<button>` (none: a
+  button is the button family's `Button`, a segment the choice family's, a list's or a tree's
+  row the list or tree family's, #2930), an `<input>` or `<textarea>` (none: a box is the field
+  family's `TextField` or `TextArea`, a checkbox or a radio the choice family's), a `<select>`
+  (none: the select family's `Select`), and a `<table>` (none: the table family's `Table` or
+  `ControlTable`, #2911). A menu and its rows are the menu family's, which only `src/ui` draws.
+  **It holds two
   heights too** (#2449): a `height`, `min-height`, `block-size` or `min-block-size` set on a
   control is `--size-control`, and one set on a strip or a pane header is `--size-chrome`. A
   control is `--size-chrome` only as the small form: a control whose selector puts it inside a
@@ -2288,13 +2292,13 @@ on the first three, because they are about what the window is drawn _in_:
   file, so the file is the only place its provenance can live.
 
 Still refused, unchanged by the ruling: a component library as a **dependency**, and a house
-abstraction layer over Radix — `<ConfirmModal open onConfirm>` — whether it is written here or
-copied from somewhere. Copying it would not launder it; what is refused is a purlis API in
-front of the primitive. **The one exception** is the settings set (ADR 0037, amended
-2026-10-04, V89f and V89j): SettingsLayout, SettingGroup, SettingRow, Field, Choice and
-SettingActions in `app/src/settings/components.tsx`, six thin pieces over the Radix primitives
-and native elements already in use, drawn in tokens. `docs/ui-primitives.md` gives the reasons. Nothing else joins it without a new
-amendment.
+abstraction layer over a family — `<ConfirmModal open onConfirm>` — whether it is written here or
+copied from somewhere. Copying it would not launder it; what is refused is a purlis API in front of
+a family. **The one exception** is the settings set (ADR 0037, amended 2026-10-04, V89f and V89j):
+SettingsLayout, SettingGroup, SettingRow, Field, Choice and SettingActions in
+`app/src/settings/components.tsx`, six thin pieces over the families and the native elements already
+in use, drawn in tokens. `docs/ui-primitives.md` gives the reasons. Nothing else joins it without a
+new amendment.
 
 **A dialog's footer** (the dialog family, `app/src/ui/dialog/Dialog.tsx`, #2910, which replaced
 the answer bar of #1210) is the one row every dialog is answered from, a question's and a form's

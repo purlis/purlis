@@ -24,6 +24,3 @@ const messageFamily = moved({
 export const rules = {
   "message-family": messageFamily,
 };
-
-/** The files a rule is still off in, until their lanes move them. */
-export const off = {};

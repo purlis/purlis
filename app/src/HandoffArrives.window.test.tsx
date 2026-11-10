@@ -7,6 +7,7 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
+import { openChipCard } from "./actionResult.testkit";
 import type { OpenChat } from "./bindings";
 import { onTheWire } from "./chatEvents.testkit";
 import { aTabForEachChat } from "./laidOut.testkit";
@@ -298,8 +299,8 @@ const opened = () =>
   );
 
 const bar = () => screen.getByTestId("title-bar");
-const findCard = (workspace: string) =>
-  screen.findByRole("region", { name: `Notices for ${workspace}` });
+/** The card on `workspace`'s chip, opened by its dot's press: none comes by itself (#6004). */
+const findCard = (workspace: string) => openChipCard(workspace);
 const queryCard = (workspace: string) =>
   screen.queryByRole("region", { name: `Notices for ${workspace}` });
 const queryDot = (workspace: string) =>
@@ -321,7 +322,7 @@ describe("a handoff's arrival card (#4759)", () => {
     expect(within(card).getByRole("button", { name: "Go to it" })).toBeInTheDocument();
   });
 
-  it("never takes the keyboard, and the chat being read stays on screen", async () => {
+  it("pops no card and takes no keyboard: a dot on the chip, and the chat being read stays on screen (#6004)", async () => {
     const { arrive } = core();
     opened();
     await ready();
@@ -329,8 +330,8 @@ describe("a handoff's arrival card (#4759)", () => {
 
     arrive({ session: 2, label: "fix the login" });
 
-    const card = await findCard("alpha");
-    expect(card.contains(document.activeElement)).toBe(false);
+    await waitFor(() => expect(queryDot("alpha")).not.toBeNull());
+    expect(queryCard("alpha")).toBeNull();
     expect(document.activeElement).toBe(before);
     expect(screen.getByTestId("pane")).toHaveTextContent("session 1");
   });

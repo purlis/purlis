@@ -27,6 +27,8 @@ import { SigningRefusalNotice } from "./SigningRefusal";
 import { TasksSharingNotice } from "./TasksSharingNotice";
 import { BrowserAskNotice } from "./BrowserAskNotice";
 import { BrowserLoginNotice } from "./BrowserLoginNotice";
+import { PoolAskNotice } from "./PoolAskNotice";
+import { SecretAskPaneNotice } from "./SecretAskPaneNotice";
 import { WorkspaceRemovalNotice } from "./WorkspaceRemovalNotice";
 import { ProposedChangeNotice } from "./ProposedChangeNotice";
 import { asksOf, isAnAsk, noticeKey } from "./sandboxBlocks";
@@ -396,6 +398,11 @@ export function ChatNotices({
       <BrowserLoginNotice plane={plane} session={session} asks={drawn} onWay={onAnswer} />
       {/* A secret this chat asks purlis to fill (#5115): only your press fills it. */}
       <SecretFillNotice plane={plane} session={session} asks={drawn} onWay={onAnswer} />
+      {/* A key this chat's run missed, or a program it runs that its persona does not declare
+          (plane #2697): the command waits on your answer. */}
+      <SecretAskPaneNotice plane={plane} session={session} asks={drawn} onWay={onAnswer} />
+      {/* A login or a tool's run this chat asks for on a pool's runner (plane #2697). */}
+      <PoolAskNotice plane={plane} session={session} asks={drawn} onWay={onAnswer} />
       {/* A skill this chat drafted (#2772): ready in the Skill studio, which alone asks for it. */}
       <DraftReadyNotice plane={plane} session={session} />
       {/* A push of this chat's the forge refused for unsigned commits (#5630): Set up signing,

@@ -15,7 +15,7 @@ import { CARD_LEAVE_MS, ChatsSection, ON_MEMORY_SAID } from "./ChatsSection";
 import { ChatsHere, fixedChats, moved, nothingKnown } from "./chatState";
 import { chatsTree, type ListedChat } from "./chatsTree";
 import type { ChatBrowser, FinishedTask } from "./bindings";
-import { expectFocusInSight, untilFocused, untilFocusWithin } from "./stories.testkit";
+import { expectFocusInSight, tabInto, untilFocused, untilFocusWithin } from "./stories.testkit";
 import { panelRoot } from "./ui/panel/Panel";
 
 /** A chat as the core lists it, open in a tab. */
@@ -174,8 +174,7 @@ export const RolledUpHand: Story = {
     // The keyboard's way: Tab to the list's one stop, the row, and → onto its hand.
     const row = button.closest<HTMLElement>('[role="row"]');
     await expect(row).not.toBeNull();
-    for (let step = 0; step < 12 && document.activeElement !== row; step += 1)
-      await userEvent.tab();
+    await tabInto(() => row);
     await untilFocused(() => row, "the row with the hand");
     await userEvent.keyboard("{ArrowRight}");
     await untilFocused(() => button, "the hand");
@@ -184,8 +183,17 @@ export const RolledUpHand: Story = {
     await userEvent.keyboard("{ArrowLeft}");
     await untilFocused(() => row, "the row again");
     expectFocusInSight();
-    // At rest for the picture: the keyboard off the rows, so no ring is mid-draw.
+    // At rest for the picture: the keyboard off the rows, so no ring is mid-draw, and no card.
+    // The keyboard rested on the row, so its card may have come up on a slow runner just
+    // before the keyboard left; leaving takes it down, and the picture waits until it has gone
+    // (#6073).
     (document.activeElement as HTMLElement | null)?.blur();
+    await waitFor(() =>
+      expect(
+        canvasElement.ownerDocument.querySelector('[data-testid^="chat-card-"]'),
+        "no card is up once the keyboard has left",
+      ).toBeNull(),
+    );
   },
 };
 
@@ -439,9 +447,7 @@ export const AtItsTaskLimit: Story = {
 
     // The keyboard's way: past the view's head, the row is the list's one stop; → reaches the
     // link in it (#3198), ← comes back, and Tab goes on out of the list.
-    for (let step = 0; step < 12 && document.activeElement !== row; step += 1) {
-      await userEvent.tab();
-    }
+    await tabInto(() => row);
     await untilFocused(() => rowOf(canvasElement, 1), "the first row");
     expectFocusInSight();
     await userEvent.keyboard("{ArrowRight}");
@@ -490,9 +496,7 @@ export const SaidInItsCard: Story = {
   play: async ({ canvasElement }) => {
     const row = rowOf(canvasElement, 1);
     await expect(row).not.toBeNull();
-    for (let step = 0; step < 12 && document.activeElement !== row; step += 1) {
-      await userEvent.tab();
-    }
+    await tabInto(() => row);
     await untilFocused(() => rowOf(canvasElement, 1), "the first row");
     const card = await waitFor(
       () => {
@@ -577,13 +581,7 @@ export const ArrivedNewAndNoted: Story = {
       rowOf(canvasElement, 4)?.querySelector('[data-mark="noted"]'),
     ).toHaveAccessibleName("A notice about it is in the Notices centre");
     // The keyboard's way: the list is one stop, and the marks take none of their own.
-    for (
-      let step = 0;
-      step < 12 && !rowOf(canvasElement, 1)?.contains(document.activeElement);
-      step += 1
-    ) {
-      await userEvent.tab();
-    }
+    await tabInto(() => rowOf(canvasElement, 1));
     await untilFocused(() => rowOf(canvasElement, 1), "the first row");
     expectFocusInSight();
     // A focused row opens its tip after a delay, so a picture taken now catches it open or not.
@@ -689,8 +687,7 @@ export const WithATaskABrowserAndFinished: Story = {
       "Finished (2)",
     ]);
     // The list's one stop is the chat in front.
-    for (let step = 0; step < 12 && document.activeElement !== named("steward 1")(); step += 1)
-      await userEvent.tab();
+    await tabInto(named("steward 1"));
     await untilFocused(named("steward 1"), "steward 1");
     for (const name of ["Browser b1", "check staging", "count rows"]) {
       await userEvent.keyboard("{ArrowDown}");

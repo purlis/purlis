@@ -112,6 +112,34 @@ describe("a notification clicked", () => {
     expect(land).not.toHaveBeenCalled();
   });
 
+  it("lands on a task's line in Updates where the notice names one (#6005)", async () => {
+    sent();
+    behind();
+    const land = vi.fn();
+    renderHook(() => useNotificationLanding(land));
+    await act(async () => {
+      await emit(ASKS_NOTIFIED, { plane: PLANE, session: 3, update: "task:01F" });
+    });
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    expect(land).toHaveBeenCalledWith({ plane: PLANE, session: 3, update: "task:01F" });
+  });
+
+  it("ignores a notice whose line in Updates is no key", async () => {
+    sent();
+    behind();
+    const land = vi.fn();
+    renderHook(() => useNotificationLanding(land));
+    await act(async () => {
+      await emit(ASKS_NOTIFIED, { plane: PLANE, session: 3, update: 7 });
+    });
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    expect(land).not.toHaveBeenCalled();
+  });
+
   it("ignores a notice that names no chat", async () => {
     sent();
     behind();

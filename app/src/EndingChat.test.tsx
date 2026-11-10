@@ -11,8 +11,10 @@ afterEach(cleanup);
 
 /**
  * **The answer about the chats a closing chat started** (#630, DS-8): a radio group of the
- * settings set, so it is a Radix radio group in WebKit's tab sequence (`docs/ui-primitives.md`:
- * a native radio `<input>` is in WebKit's restricted one), and each answer says what it does.
+ * settings set, the choice family's on React Aria's `RadioGroup`, so it is one stop in WebKit's
+ * tab sequence: React Aria writes `tabindex="0"` on the picked radio's `<input>` (`useRadio`),
+ * and a native radio is in WebKit's restricted sequence only with one written down
+ * (`docs/ui-primitives.md`). Each answer says what it does.
  */
 describe("the close question's answer about the chats still at work", () => {
   const offer = { id: "pane.close", title: "Close chat" } as unknown as Offer;

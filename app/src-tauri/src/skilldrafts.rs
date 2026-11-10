@@ -177,6 +177,10 @@ pub struct SkillDraft {
     /// A file it changes changed in the project since: Accept is refused.
     pub stale: bool,
     pub files: Vec<SkillDraftFile>,
+    /// **The extension's template New skill… made it from** (#3091), as it was offered; `null`
+    /// for a chat's draft.
+    #[specta(optional)]
+    pub template: Option<String>,
 }
 
 /// One file of a draft: the project's text and the draft's, drawn as a diff.
@@ -201,6 +205,11 @@ impl From<drafts::Draft> for SkillDraft {
             chat: draft.chat,
             chat_open: false,
             new: draft.new,
+            // An extension's own words: every invisible character escaped, as a source's are.
+            template: draft
+                .template
+                .as_deref()
+                .map(purlis_core::skills::review::escaped_line),
             files: draft
                 .files
                 .into_iter()

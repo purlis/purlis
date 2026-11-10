@@ -342,7 +342,11 @@ fn a_size_is_set_on_every_page_the_browser_has() {
 
     browser.size_to(390, 844).unwrap();
 
-    let set = engine.sent("Emulation.setDeviceMetricsOverride");
+    let set: Vec<_> = engine
+        .sent("Emulation.setDeviceMetricsOverride")
+        .into_iter()
+        .filter(|sent| sent.params["width"] == 390)
+        .collect();
     assert_eq!(set.len(), 1);
     assert_eq!(set[0].session.as_deref(), Some("S-PAGE-1"));
     assert_eq!(set[0].params["width"], 390);
@@ -355,7 +359,31 @@ fn a_size_is_set_only_by_the_person_driving() {
     let (browser, engine) = browser();
 
     assert_eq!(browser.size_to(390, 844), Err(Refusal::NotDriving));
-    assert!(engine.sent("Emulation.setDeviceMetricsOverride").is_empty());
+    assert!(
+        engine
+            .sent("Emulation.setDeviceMetricsOverride")
+            .iter()
+            .all(|sent| sent.params["width"] != 390)
+    );
+}
+
+#[test]
+fn a_fresh_page_is_given_the_engines_page_size_before_anyone_picks_one() {
+    // The size a browser view's menu shows before a pick (plane #2658).
+    let (browser, engine) = browser();
+    let (width, height) = crate::launch::PAGE_SIZE;
+
+    wait_for("the page sized", || {
+        engine
+            .sent("Emulation.setDeviceMetricsOverride")
+            .iter()
+            .any(|sent| sent.session.as_deref() == Some("S-PAGE-1"))
+    });
+    let set = engine.sent("Emulation.setDeviceMetricsOverride");
+    assert_eq!(set[0].session.as_deref(), Some("S-PAGE-1"));
+    assert_eq!(set[0].params["width"], width);
+    assert_eq!(set[0].params["height"], height);
+    assert_eq!(browser.size(), None, "nobody picked a size");
 }
 
 #[test]

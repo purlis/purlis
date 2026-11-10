@@ -596,3 +596,84 @@ fn every_skill_tool_only_reads_and_takes_no_place_or_path() {
         }
     }
 }
+
+#[test]
+fn runs_tells_the_copy_a_persona_names_by_its_workspace_from_the_chats_own() {
+    // SK-5c, #6041: in `alpha`, `steward` gets `beta`'s `notes` (it names
+    // `workspaces/beta:notes`), and a chat on no persona gets `alpha`'s own.
+    let p = a_plane();
+    skill(
+        &p.path().join("workspaces/alpha/skills"),
+        "notes",
+        "Alpha's notes.",
+        "",
+    );
+    skill(
+        &p.path().join("workspaces/beta/skills"),
+        "notes",
+        "Beta's notes.",
+        "",
+    );
+    let persona = p.path().join("personas/steward");
+    std::fs::create_dir_all(&persona).unwrap();
+    std::fs::write(
+        persona.join("persona.md"),
+        "---\nskills: workspaces/beta:notes\n---\n",
+    )
+    .unwrap();
+    let workspace = Some(Level {
+        origin: crate::skills::Origin::Workspace,
+        local: false,
+    });
+    let at = |stamp: &str| {
+        chrono::DateTime::parse_from_rfc3339(stamp)
+            .unwrap()
+            .with_timezone(&chrono::Utc)
+    };
+    for (id, persona, when) in [
+        (
+            "01JB000000000000000000RUN1",
+            Some("steward"),
+            "2026-11-01T10:00:00+00:00",
+        ),
+        (
+            "01JB000000000000000000RUN2",
+            None,
+            "2026-11-02T10:00:00+00:00",
+        ),
+    ] {
+        crate::skilluse::started(
+            p.path(),
+            &crate::skilluse::Starting {
+                id,
+                skill: "notes",
+                started_by: StartedBy::McpLoad,
+                workspace: Some("alpha"),
+                level: workspace,
+                harness: None,
+                ran: None,
+            },
+            persona,
+            at(when),
+            "box",
+        )
+        .unwrap();
+    }
+    let in_alpha = |persona| Asking {
+        workspace: Some("alpha"),
+        persona,
+        ..chat(p.path(), Some("goose"))
+    };
+    let listed = |persona| {
+        let (said, _) = called(&in_alpha(persona), SKILL_RUNS, &[]);
+        let said = said.unwrap();
+        assert!(said.starts_with("The last 1 run, newest first:"), "{said}");
+        said
+    };
+
+    assert!(
+        listed(Some("steward")).contains("2026-11-01"),
+        "beta's copy"
+    );
+    assert!(listed(None).contains("2026-11-02"), "alpha's own copy");
+}

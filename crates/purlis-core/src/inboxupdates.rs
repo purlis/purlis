@@ -91,6 +91,9 @@ pub enum Kind {
     /// The person filed a report a chat drafted (#5694): sent to purlis/purlis or to purlis's
     /// report service.
     ReportSent,
+    /// A working chat may not be getting anywhere (#6014, ADR 0121 decision 19): drawn while it
+    /// reads Stuck?, a Should-know item.
+    Stuck,
 }
 
 /// One update, as it is kept.

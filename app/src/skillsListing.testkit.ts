@@ -11,6 +11,7 @@ export function skill(name: string, over: Partial<StudioSkill> = {}): StudioSkil
     source_label: null,
     level: "project",
     label: "project",
+    copy_workspace: null,
     local: false,
     grant: "root",
     granted: { to: "root" },

@@ -9,11 +9,19 @@ import {
   failuresUnseenOf,
   nothingKnown,
 } from "./chatState";
-import { MARK_STATES, shownState, type Facts, type MarkState, type TaskFacts } from "./shownState";
+import {
+  CHAT_STATES,
+  CHAT_STATE_SAID,
+  shownState,
+  type ChatState,
+  type Facts,
+  type TaskFacts,
+} from "./shownState";
 
 /**
- * **A chat's one state** (#5340, spec #5339): when several are true the first of the fixed order
- * wins. Each row names what is true of the chat and the state its mark then wears.
+ * **A chat's one state** (#5340, #6012, ADR 0121 decision 17): one of the eight Chat states, and
+ * when several are true the first of the fixed order wins. Each row names what is true of the
+ * chat and the state its mark then wears.
  */
 const chat = (more: Partial<Facts>): Facts => ({
   board: "waiting",
@@ -30,39 +38,61 @@ const report = (how: Partial<TaskFacts>): TaskFacts => ({
 });
 const FAILED_BELOW = { failuresUnseen: 1 };
 const AT_WORK_BELOW = { tasksAtWork: 2 };
+const OWN_WORK = { ownWork: { helpers: 1, workflows: 0, monitors: 0, shells: 0 } };
 
-const table: readonly [string, Partial<Facts>, MarkState | null][] = [
+const table: readonly [string, Partial<Facts>, ChatState][] = [
   // Each state alone.
   ["its turn ended on the person", { needsYou: true }, "needs"],
+  ["its turn runs with nothing new for too long", { board: "running", stuck: true }, "stuck"],
   ["a task of its failed and it has not been seen", { ...FAILED_BELOW }, "failed"],
   ["its turn runs", { board: "running" }, "working"],
+  // ADR 0076 (#3878): a chat waiting on its own background work is not waiting on anyone.
+  ["its turn ended on work of its own", { ...OWN_WORK }, "working"],
   ["its turn ended while tasks work", { ...AT_WORK_BELOW }, "waiting"],
-  [
-    "its turn ended on work of its own",
-    { ownWork: { helpers: 1, workflows: 0, monitors: 0, shells: 0 } },
-    "waiting",
-  ],
   [
     "it is asking the chat that asked it",
     { task: report({ report: "owed", asking: "a" }) },
     "waiting",
   ],
+  // A dispatched task reports to the chat that dispatched it (ADR 0107): its turn end waits on
+  // that chat, not the person (#6036).
+  [
+    "it is a task whose turn ended owing its report",
+    { task: report({ report: "owed" }) },
+    "waiting",
+  ],
   ["its turn ended and nothing is owed", {}, "idle"],
+  // Idle is finished with work left behind (#6014): a clean folder is Done.
+  ["its turn ended with work left in its folder", { leftWork: true }, "idle"],
+  ["its turn ended with nothing left in its folder", { leftWork: false }, "ended"],
   ["its program ended", { board: "done" }, "ended"],
-  ["its program ended badly and that has been seen", { board: "failed" }, "ended"],
   ["it is a task that reported", { board: undefined, task: report({}) }, "ended"],
-  ["it is a task that was seen to fail", { task: report({ outcome: "failed" }) }, "ended"],
+  ["it is a task the person stopped", { task: report({ outcome: "stopped_by_person" }) }, "ended"],
+  ["its program ended badly", { board: "failed" }, "failed"],
+  ["it is a task that was seen to fail", { task: report({ outcome: "failed" }) }, "failed"],
+  [
+    "it is a task that ended without a report",
+    { board: "done", task: report({ report: "owed" }) },
+    "failed",
+  ],
+  ["a harness that has said nothing", { board: "unknown" }, "cant-tell"],
+  ["a shell nothing has reported for", { board: undefined }, "cant-tell"],
 
   // Every pair, the first of the order winning.
-  ["needs you over a failed task", { needsYou: true, ...FAILED_BELOW }, "needs"],
-  ["needs you over working", { needsYou: true, board: "running" }, "needs"],
-  ["needs you over waiting on tasks", { needsYou: true, ...AT_WORK_BELOW }, "needs"],
-  ["needs you over ended", { needsYou: true, board: "done" }, "needs"],
+  ["waiting on you over stuck", { needsYou: true, board: "running", stuck: true }, "needs"],
+  ["waiting on you over a failed task", { needsYou: true, ...FAILED_BELOW }, "needs"],
+  ["waiting on you over working", { needsYou: true, board: "running" }, "needs"],
+  ["waiting on you over waiting on tasks", { needsYou: true, ...AT_WORK_BELOW }, "needs"],
+  ["waiting on you over ended", { needsYou: true, board: "done" }, "needs"],
+  ["stuck over a failed task", { board: "running", stuck: true, ...FAILED_BELOW }, "stuck"],
   ["a failed task over working", { board: "running", ...FAILED_BELOW }, "failed"],
   ["a failed task over waiting on tasks", { ...AT_WORK_BELOW, ...FAILED_BELOW }, "failed"],
   ["a failed task over idle", { ...FAILED_BELOW }, "failed"],
   ["a failed task over ended", { board: "done", ...FAILED_BELOW }, "failed"],
   ["working over waiting on tasks", { board: "running", ...AT_WORK_BELOW }, "working"],
+  ["waiting on tasks over its own work", { ...AT_WORK_BELOW, ...OWN_WORK }, "waiting"],
+  // Stuck? is a question about a chat at work: a chat that is not working is not stuck.
+  ["stuck only while it works", { stuck: true }, "idle"],
 
   // A failed task on its own chat: its mark says so until it has been seen.
   [
@@ -70,38 +100,67 @@ const table: readonly [string, Partial<Facts>, MarkState | null][] = [
     { task: report({ outcome: "failed" }), failedUnseen: true },
     "failed",
   ],
-  ["needs you over its own unseen failure", { needsYou: true, failedUnseen: true }, "needs"],
-
-  // Nothing known is nothing guessed: the word says so, and no state is claimed.
-  ["a harness that has said nothing", { board: "unknown" }, null],
+  ["waiting on you over its own unseen failure", { needsYou: true, failedUnseen: true }, "needs"],
 ];
 
-describe("a chat's one state, first true wins (#5340)", () => {
-  it("is in the order the spec fixes", () => {
-    expect(MARK_STATES).toEqual(["needs", "failed", "working", "waiting", "idle", "ended"]);
+describe("a chat's one state, first true wins (#5340, #6012)", () => {
+  it("is one of the eight, in the order that wins", () => {
+    expect(CHAT_STATES).toEqual([
+      "needs",
+      "stuck",
+      "failed",
+      "working",
+      "waiting",
+      "idle",
+      "ended",
+      "cant-tell",
+    ]);
   });
 
   it.each(table)("%s", (_, facts, state) => {
-    expect(shownState(chat(facts))?.mark).toBe(state);
+    expect(shownState(chat(facts)).mark).toBe(state);
   });
 
-  it("has no state for a shell nothing has reported for", () => {
-    expect(shownState(chat({ board: undefined }))).toBeUndefined();
+  it("names every state it can reach", () => {
+    expect(new Set(table.map(([, , state]) => state))).toEqual(new Set(CHAT_STATES));
+  });
+
+  it("says what is not known in words, naming the harness", () => {
+    expect(shownState(chat({ board: "unknown" })).word).toBe(
+      "running (no detail from Claude Code)",
+    );
+    expect(shownState(chat({ board: undefined })).word).toBe("a shell (no detail)");
+  });
+
+  it("asks whether a stuck chat is stuck, in words", () => {
+    expect(shownState(chat({ board: "running", stuck: true })).word).toBe("stuck?");
+  });
+
+  it("says a finished chat with nothing left in its folder is done (#6014)", () => {
+    expect(shownState(chat({ leftWork: false })).word).toBe("done");
+    expect(shownState(chat({ leftWork: true })).word).toBe("idle");
   });
 
   it("says how many tasks failed, in the word its mark stands for", () => {
-    expect(shownState(chat({ failuresUnseen: 1 }))?.word).toBe("a task failed");
-    expect(shownState(chat({ failuresUnseen: 3 }))?.word).toBe("3 tasks failed");
+    expect(shownState(chat({ failuresUnseen: 1 })).word).toBe("a task failed");
+    expect(shownState(chat({ failuresUnseen: 3 })).word).toBe("3 tasks failed");
   });
 
   it("keeps a failed task's own word on its own mark", () => {
     const task = report({ outcome: "failed" });
-    expect(shownState(chat({ task, failedUnseen: true }))?.word).toBe("failed");
+    expect(shownState(chat({ task, failedUnseen: true })).word).toBe("failed");
   });
 
   it("goes back to the chat's own word once the failure has been seen", () => {
-    expect(shownState(chat({ failuresUnseen: 1 }))?.kind).toBe("task-failed");
-    expect(shownState(chat({ failuresUnseen: 0 }))?.kind).toBe("idle");
+    expect(shownState(chat({ failuresUnseen: 1 })).kind).toBe("task-failed");
+    expect(shownState(chat({ failuresUnseen: 0 })).kind).toBe("idle");
+  });
+
+  it("wears one shape and one colour per state, none shared", () => {
+    const shapes = CHAT_STATES.map((state) => CHAT_STATE_SAID[state].shape);
+    const tokens = CHAT_STATES.map((state) => CHAT_STATE_SAID[state].token);
+    expect(new Set(shapes).size).toBe(CHAT_STATES.length);
+    expect(new Set(tokens).size).toBe(CHAT_STATES.length);
   });
 });
 
@@ -147,16 +206,16 @@ describe("what looking at a chat sees (#5340)", () => {
 
 describe("a task's record says its program has ended, so nothing live is true of it (#5340)", () => {
   it("is working only once the person has run a reported task again", () => {
-    expect(shownState(chat({ board: "running", task: report({}) }))?.mark).toBe("working");
+    expect(shownState(chat({ board: "running", task: report({}) })).mark).toBe("working");
   });
 
-  it("has ended with no report of its own, whatever the board last heard", () => {
-    expect(shownState(chat({ board: "running", task: report({ report: "failed" }) }))?.mark).toBe(
-      "ended",
+  it("has failed with no report of its own, whatever the board last heard", () => {
+    expect(shownState(chat({ board: "running", task: report({ report: "failed" }) })).mark).toBe(
+      "failed",
     );
   });
 
-  it("has ended at its report, though tasks below it still work", () => {
-    expect(shownState(chat({ task: report({}), ...AT_WORK_BELOW }))?.mark).toBe("ended");
+  it("is done at its report, though tasks below it still work", () => {
+    expect(shownState(chat({ task: report({}), ...AT_WORK_BELOW })).mark).toBe("ended");
   });
 });

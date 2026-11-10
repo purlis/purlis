@@ -16,7 +16,7 @@ export type Room = {
   /** Gives the chat strip room for exactly `tabs` tabs, and tells the app its size changed. */
   roomFor: (tabs: number) => void;
   /** How many live observers are watching the chat strip itself. Scoped to it deliberately:
-   *  the resizable panels and Radix's own positioning each put observers up, so a count of
+   *  the resizable panels and React Aria's own positioning each put observers up, so a count of
    *  every observer in the window would measure somebody else's library. */
   live: () => number;
   /** Puts `clientWidth` back, so one test's stub is not every later test's. */

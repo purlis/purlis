@@ -27,7 +27,7 @@ export const SUB = {
  * `pressMenuPath(SUB.open, ROW.activity)` opens *Open* and presses *Activity* in it.
  *
  * By name and exactly, never by how the row's text starts: a row's text also holds its
- * description, and *Open* is how *Open beside steward 4* starts. Each row is pressed by its own
+ * description (kept from a reader, and out of its name, #6043), and *Open* is how *Open beside steward 4* starts. Each row is pressed by its own
  * click from the page, since a submenu can sit past the window's edge where the driver counts a
  * row as not on screen. A row that opens a submenu is waited on until that submenu is up.
  */
@@ -40,7 +40,19 @@ export async function pressMenuPath(...path: string[]): Promise<void> {
           const open = document.querySelectorAll('[role="menu"]');
           const row = [
             ...(open[open.length - 1]?.querySelectorAll<HTMLElement>('[role^="menuitem"]') ?? []),
-          ].find((one) => one.getAttribute("aria-label") === wanted);
+          ].find(
+            (one) =>
+              ((row: Element) => {
+                // A row's name as a reader hears it (#6043): its words, without what is kept from
+                // a reader (the line under them, its key).
+                const own = row.getAttribute("aria-label");
+                if (own !== null) return own;
+                const heard = row.cloneNode(true) as Element;
+                for (const kept of heard.querySelectorAll('[aria-hidden="true"], [hidden]'))
+                  kept.remove();
+                return (heard.textContent ?? "").trim();
+              })(one) === wanted,
+          );
           if (row === undefined || row.getAttribute("aria-disabled") === "true") return false;
           row.click();
           return true;
@@ -64,8 +76,17 @@ export async function pressMenuPath(...path: string[]): Promise<void> {
 export async function menuNames(): Promise<string[][]> {
   return browser.execute(() =>
     [...document.querySelectorAll('[role="menu"]')].map((menu) =>
-      [...menu.querySelectorAll('[role^="menuitem"]')].map(
-        (row) => row.getAttribute("aria-label") ?? (row.textContent ?? "").trim(),
+      [...menu.querySelectorAll('[role^="menuitem"]')].map((row) =>
+        ((row: Element) => {
+          // A row's name as a reader hears it (#6043): its words, without what is kept from
+          // a reader (the line under them, its key).
+          const own = row.getAttribute("aria-label");
+          if (own !== null) return own;
+          const heard = row.cloneNode(true) as Element;
+          for (const kept of heard.querySelectorAll('[aria-hidden="true"], [hidden]'))
+            kept.remove();
+          return (heard.textContent ?? "").trim();
+        })(row),
       ),
     ),
   );

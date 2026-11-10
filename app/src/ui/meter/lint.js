@@ -25,6 +25,3 @@ const meterFamily = moved({
 export const rules = {
   "meter-family": meterFamily,
 };
-
-/** The files a rule is still off in, until their lanes move them: none, since #3731. */
-export const off = {};

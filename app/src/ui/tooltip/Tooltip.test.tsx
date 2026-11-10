@@ -10,11 +10,13 @@
  */
 import { cloneElement, useEffect, useRef, useState, type ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { ProjectShownProvider } from "../../projectShown";
 import { Button, IconButton, ToggleButton } from "../button/Button";
 import { Dialog } from "../dialog/Dialog";
+import { ContextMenu } from "../menu/ContextMenu";
+import { Menu, MenuItem } from "../menu/Menu";
 import { PopoverDialog, PopoverTrigger } from "../popover/Popover";
 import { StatusCell, StatusItem } from "../status/StatusItem";
 import {
@@ -338,29 +340,81 @@ describe("a tooltip from the keyboard", () => {
     expect(shownTip()).toHaveTextContent("Changed in this branch");
   });
 
-  it("hands what a parent gives it on to its element, as a Radix trigger's child", async () => {
-    const opened = vi.fn();
-    const ref = { current: null as HTMLElement | null };
-    function Trigger({ children }: { children: ReactElement }) {
-      return cloneElement(children, {
-        onContextMenu: opened,
-        "data-state": "closed",
-        ref,
-      } as object);
-    }
+  it("hands what a context menu gives it on to its element, as the menu's child", async () => {
+    // The family's `ContextMenu` clones its child with `onContextMenu`, `onKeyDown` and, while
+    // its menu is open, `data-open`; with a hint on the child, the tooltip is that child and has
+    // to pass all three to its element. (A trigger's press handlers and ref are the next test's.)
+    const own = vi.fn();
     render(
-      <Trigger>
+      <ContextMenu
+        menu={() => (
+          <Menu aria-label="Branch">
+            <MenuItem id="copy" textValue="Copy name">
+              Copy name
+            </MenuItem>
+          </Menu>
+        )}
+      >
         <Tooltip tip="Branch main">
-          <span>main</span>
+          <span onContextMenu={own}>main</span>
         </Tooltip>
-      </Trigger>,
+      </ContextMenu>,
     );
     const words = screen.getByText("main");
-    expect(words).toHaveAttribute("data-state", "closed");
-    expect(ref.current).toBe(words);
+    expect(words).not.toHaveAttribute("data-open");
     fireEvent.contextMenu(words);
-    expect(opened).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole("menu", { name: "Branch" })).toBeInTheDocument();
+    expect(own).toHaveBeenCalledTimes(1);
+    expect(words).toHaveAttribute("data-open", "");
     expect(tipOf(words)).toBe("Branch main");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    expect(words).not.toHaveAttribute("data-open");
+    // Its keys too: Shift+F10 on the words, which the tooltip made a Tab stop, opens the menu.
+    act(() => words.focus());
+    await userEvent.keyboard("{Shift>}{F10}{/Shift}");
+    expect(await screen.findByRole("menu", { name: "Branch" })).toBeInTheDocument();
+  });
+
+  it("hands what a popover's trigger gives it on to its element: its press", async () => {
+    // React Aria's `Pressable` (`ui/trigger.tsx`) makes a trigger of its child by cloning it
+    // with its press handlers; with a hint on the child, the tooltip is that child.
+    const opened = vi.fn();
+    render(
+      <PopoverTrigger onOpenChange={opened}>
+        <Tooltip tip="Branch main">
+          <button type="button">main</button>
+        </Tooltip>
+        <PopoverDialog aria-label="Branch">opened</PopoverDialog>
+      </PopoverTrigger>,
+    );
+    const words = screen.getByRole("button", { name: "main" });
+    expect(tipOf(words)).toBe("Branch main");
+    await user.click(words);
+    expect(await screen.findByRole("dialog", { name: "Branch" })).toBeInTheDocument();
+    expect(opened).toHaveBeenCalledWith(true);
+  });
+
+  it("hands a ref its parent clones on to its element, beside the element's own", () => {
+    // `Pressable` clones its child with a ref as well as its handlers; the tooltip is a component,
+    // so a ref handed to it reaches the element only if it hands it on.
+    const handed = { current: null as HTMLElement | null };
+    const own = { current: null as HTMLButtonElement | null };
+    function Cloning({ children }: { children: ReactElement }) {
+      return cloneElement(children, { ref: handed } as object);
+    }
+    render(
+      <Cloning>
+        <Tooltip tip="Branch main">
+          <button type="button" ref={own}>
+            main
+          </button>
+        </Tooltip>
+      </Cloning>,
+    );
+    const words = screen.getByRole("button", { name: "main" });
+    expect(handed.current).toBe(words);
+    expect(own.current).toBe(words);
   });
 
   it("draws no tooltip and takes no keyboard for an empty hint", () => {

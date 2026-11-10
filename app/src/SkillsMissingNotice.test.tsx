@@ -16,9 +16,12 @@ const MISSING = {
   persona: "ops",
   missing: ["superpowers:tdd", "langfuse"],
   no_built_in: ["purlis:gone"],
+  no_workspace: [],
+  not_in_its_workspace: [],
   broken: [],
   by_a_repo: [],
   beside_a_built_in: [],
+  runner: null,
 };
 
 describe("a chat's missing skills", () => {
@@ -70,12 +73,27 @@ describe("a chat's missing skills", () => {
     );
   });
 
+  it("names the runner a chat there lacks them on (#2977)", () => {
+    const there = { ...MISSING, runner: "builds/builds-1" };
+    expect(missingSays("This chat", there)).toBe(
+      "This chat started without 2 skills ops names, not installed on runner builds/builds-1: " +
+        "superpowers:tdd, langfuse. ops names 1 built-in skill purlis does not have on " +
+        "runner builds/builds-1: purlis:gone.",
+    );
+    expect(missingSays("This chat", { ...MISSING, no_built_in: [], runner: "" })).toBe(
+      "This chat started without 2 skills ops names, not installed on its runner: " +
+        "superpowers:tdd, langfuse.",
+    );
+  });
+
   it("says a skill that could not be loaded, with its level and why (SK-8)", () => {
     expect(
       missingSays("This chat", {
         persona: null,
         missing: [],
         no_built_in: [],
+        no_workspace: [],
+        not_in_its_workspace: [],
         broken: [
           {
             name: "half",
@@ -87,6 +105,7 @@ describe("a chat's missing skills", () => {
         ],
         by_a_repo: [],
         beside_a_built_in: [],
+        runner: null,
       }),
     ).toBe(
       "This chat started without 1 skill that could not be loaded: half (project), not a skill: its SKILL.md names no `description`.",
@@ -99,6 +118,8 @@ describe("a chat's missing skills", () => {
         persona: null,
         missing: [],
         no_built_in: [],
+        no_workspace: [],
+        not_in_its_workspace: [],
         broken: [],
         by_a_repo: [
           {
@@ -117,6 +138,7 @@ describe("a chat's missing skills", () => {
           },
         ],
         beside_a_built_in: [],
+        runner: null,
       }),
     ).toBe(
       "This chat started without 2 skills because of the repo it works in: " +
@@ -132,9 +154,12 @@ describe("a chat's missing skills", () => {
         persona: null,
         missing: [],
         no_built_in: [],
+        no_workspace: [],
+        not_in_its_workspace: [],
         broken: [],
         by_a_repo: [],
         beside_a_built_in: names,
+        runner: null,
       });
     expect(said(["secrets"])).toBe(
       "This chat works in a repo with its own copy of 1 built-in skill, which it gets beside " +
@@ -143,6 +168,30 @@ describe("a chat's missing skills", () => {
     expect(said(["secrets", "browser"])).toBe(
       "This chat works in a repo with its own copy of 2 built-in skills, which it gets beside " +
         "purlis's and may use instead: secrets, browser.",
+    );
+  });
+
+  it("says another workspace's skill its persona names that is not there, the workspace apart, each with its fix (SK-5b)", () => {
+    const said = (no_workspace: string[], not_in_its_workspace: string[]) =>
+      missingSays("This chat", {
+        persona: "steward",
+        missing: [],
+        no_built_in: [],
+        no_workspace,
+        not_in_its_workspace,
+        broken: [],
+        by_a_repo: [],
+        beside_a_built_in: [],
+        runner: null,
+      });
+    expect(said(["workspaces/ghost:x"], ["workspaces/ops:nope", "workspaces/ops:gone"])).toBe(
+      "steward names 1 skill of a workspace the project does not have: workspaces/ghost:x. " +
+        "Fix the workspace's name. steward names 2 skills the workspace named does not have: " +
+        "workspaces/ops:nope, workspaces/ops:gone. Make the skill there, or fix the name.",
+    );
+    expect(said([], ["workspaces/ops:nope"])).toBe(
+      "steward names 1 skill the workspace named does not have: workspaces/ops:nope. Make the " +
+        "skill there, or fix the name.",
     );
   });
 });

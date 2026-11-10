@@ -17,6 +17,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import App from "./App";
 import { forgetThisLaunch } from "./regions";
+import { pressTab } from "./ui/dialog/dialog.testkit";
 import {
   findStripNamed,
   openTheInbox,
@@ -910,24 +911,19 @@ describe("App", () => {
     expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 
-  it("asks with three answers, Cancel focused where charter cannot say, and Close a Shift+Tab away", async () => {
-    // **Two answers in this order, pinned for what it decides now rather than for what it used
-    // to decide.**
+  it("asks with three answers, Cancel first and focused, and the dialog's own Shift+Tab goes round to Close", async () => {
+    // **The order, and the family's wrap round the first edge** (#6069).
     //
-    // Until charter-app#186 this was a test about reachability. Radix's `FocusScope` intercepts
-    // Tab only at the EDGES of the scope (`@radix-ui/react-focus-scope`, `handleKeyDown`), the
-    // engine is a WebView that leaves a `<button>` out of the tab sequence, and so the confirm
-    // was reachable exactly while these two were the only tabbables and the confirm was the
-    // second — Cancel the first edge, the confirm the last, and Shift+Tab Radix's own `focus()`
-    // call. A third control between them would have taken that away in silence.
+    // Until charter-app#186 this was a test about reachability, when the dialogs were Radix's:
+    // its `FocusScope` handled Tab only at the scope's two edges, so the confirm was reachable
+    // by Shift+Tab from Cancel exactly while these were the only two tabbables. That is gone.
     //
-    // **That is no longer what holds it up**: both answers carry `tabIndex={0}`, which is what
-    // puts a form control in WebKit's tab sequence whatever full keyboard access says, and
-    // `Modals.keyboard.test.tsx` walks every modal in the window to prove it. What this still
-    // pins is the ORDER, which matters for a different reason and always did: **Cancel is
-    // first and focused, so a Return pressed by reflex cancels rather than ends a chat.** The
-    // Shift+Tab below is now one route to the confirm among two, and is kept because it is the
-    // one Radix owns.
+    // What it pins now is the ORDER, which matters for a reason of its own: **Cancel is first
+    // and focused, so a Return pressed by reflex cancels rather than ends a chat.** And that
+    // Shift+Tab from that first stop is the dialog family's (`useTabbing` and `tabOrder.ts` in
+    // `ui/dialog`), round to the last stop that can be pressed, and not React Aria's own
+    // `FocusScope`, which wraps round the dialog as well and would pass a test that only watched
+    // the focus (`pressTab`). `Modals.keyboard.test.tsx` walks every modal in the window.
     core();
     render(<App />);
     await openAChat();
@@ -941,12 +937,13 @@ describe("App", () => {
     expect(answers.map((answer) => answer.textContent)).toEqual(["Cancel", "Close", "Smart close"]);
     expect(answers[2]).toBeDisabled();
     // Cancel first, so a Return pressed by reflex cancels. The dialog itself is not in the
-    // sequence — Radix gives the content `tabIndex={-1}`.
+    // sequence — React Aria's `Dialog` gives it `tabIndex={-1}`, which the family's tab order
+    // passes over.
     expect(answers[0]).toHaveFocus();
 
-    await userEvent.tab({ shift: true });
+    pressTab(true);
 
-    expect(answers[1]).toHaveFocus();
+    await waitFor(() => expect(answers[1]).toHaveFocus());
   });
 
   it("ends the chat when the confirm is pressed by the keyboard alone", async () => {
@@ -967,10 +964,13 @@ describe("App", () => {
     await openAChat();
 
     const asking = await askToEnd("steward 1");
-    // To Close and no further, by the key Radix handles at the scope's first edge: Smart close,
-    // the last answer, cannot be pressed on a chat this core says nothing about.
-    await userEvent.tab({ shift: true });
-    expect(within(asking).getByRole("button", { name: "Close" })).toHaveFocus();
+    // To Close and no further, by Shift+Tab from the first stop, which the dialog family takes
+    // round to the last: Smart close, the last answer, cannot be pressed on a chat this core
+    // says nothing about, so it is no stop.
+    pressTab(true);
+    await waitFor(() =>
+      expect(within(asking).getByRole("button", { name: "Close" })).toHaveFocus(),
+    );
 
     await userEvent.keyboard("{Enter}");
 

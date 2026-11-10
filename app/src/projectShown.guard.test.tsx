@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { useRef, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { isView, RADIX_FROM, sourceFiles, SRC, withoutComments } from "./guards.testkit";
+import { isView, sourceFiles, SRC, withoutComments } from "./guards.testkit";
 import {
   drawnOverTheWindow,
   InTheWindow,
@@ -58,14 +58,6 @@ const sources = sourceFiles(isView).map((file) => ({
 }));
 
 describe("every way the window draws something over itself", () => {
-  it("is a kind the rule was written for", () => {
-    // **Nothing the window draws over itself is Radix's** (#2930): Radix is gone, and every kind
-    // that draws over the window is a family's, on React Aria, whose surface asks whether its
-    // project is shown.
-    const radix = sources.filter(({ text }) => new RegExp(`from "${RADIX_FROM}`).test(text));
-    expect(radix.map(({ file }) => file)).toEqual([]);
-  });
-
   it("is drawn by one of those, and by no portal of the window's own", () => {
     const portals = sources
       .filter(({ text }) => /\bcreatePortal\(/.test(text))

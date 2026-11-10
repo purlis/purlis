@@ -624,6 +624,11 @@ pub struct SkillsMissing {
     pub missing: Vec<String>,
     /// Built-in skills purlis has none of: a typo, or a name from another version of purlis.
     pub no_built_in: Vec<String>,
+    /// Other workspaces' skills its persona names (`workspaces/<ws>:<name>`), where the project
+    /// has no workspace of that name (SK-5b, #6040).
+    pub no_workspace: Vec<String>,
+    /// Other workspaces' skills its persona names, where that workspace has no skill of the name.
+    pub not_in_its_workspace: Vec<String>,
     /// Skills the chat would have loaded that could not be loaded, each with why.
     pub broken: Vec<SkillBroken>,
     /// The project's skills the repo the chat works in leaves out, each with why (SK-53).
@@ -631,6 +636,10 @@ pub struct SkillsMissing {
     /// The repo's own skills named like one of purlis's built-in skills, which the chat's
     /// program loads beside purlis's (SK-37).
     pub beside_a_built_in: Vec<String>,
+    /// **The runner it started on** (SK-5d, #2977), where its runner said what it lacks there:
+    /// `<pool>/<runner>`, its pool where its runner is not named, or empty where neither is.
+    /// `None` for a chat on this machine.
+    pub runner: Option<String>,
 }
 
 /// A skill a chat would have loaded that could not be loaded (SK-8): the core's `Broken`, for
@@ -5049,8 +5058,9 @@ impl Chats {
         };
         // A skill its persona names that this machine does not have (SK-5, #2768), or one it
         // would have loaded that cannot be (SK-8, #2771): the chat starts without it, and its
-        // tab's Notice says which, never a silent drop.
-        let skills_missing = if reattaching || on_the_runner {
+        // tab's Notice says which, never a silent drop. A runner's chat is checked there, by
+        // its runner, which says what it lacks in its start's answer (SK-5d, #2977).
+        let mut skills_missing = if reattaching || on_the_runner {
             None
         } else {
             purlis_core::hoststart::skills_not_here(&skills, &self.kit(harness), harness, &env).map(
@@ -5058,9 +5068,12 @@ impl Chats {
                     persona: runs_as.clone(),
                     missing: not.missing,
                     no_built_in: not.no_built_in,
+                    no_workspace: not.no_workspace,
+                    not_in_its_workspace: not.not_in_its_workspace,
                     broken: not.broken.into_iter().map(SkillBroken::from).collect(),
                     by_a_repo: not.by_a_repo.into_iter().map(SkillBroken::from).collect(),
                     beside_a_built_in: not.beside_a_built_in,
+                    runner: None,
                 },
             )
         };
@@ -5562,6 +5575,31 @@ impl Chats {
                     confinement = composed.confinement;
                     prompt_key = composed.prompt_key;
                     armed_skills = composed.armed_skills;
+                    // What its persona names that its runner lacks, by that runner's own
+                    // reading of its harness (#2977), named as its link reached it, or by its
+                    // pool where the link names no runner.
+                    skills_missing = composed.skills_not_there.map(|not| SkillsMissing {
+                        persona: runs_as.clone(),
+                        missing: not.missing,
+                        no_built_in: not.no_built_in,
+                        // Protocol 1.81's `SkillsNotThere` carries only these two (D-2977-2),
+                        // so another workspace's skill its runner could not find is not said
+                        // here yet (#6078).
+                        no_workspace: Vec::new(),
+                        not_in_its_workspace: Vec::new(),
+                        broken: Vec::new(),
+                        by_a_repo: Vec::new(),
+                        beside_a_built_in: Vec::new(),
+                        runner: Some(
+                            composed
+                                .runner
+                                .or_else(|| {
+                                    self.sessions
+                                        .pool_for(workspace.as_deref(), chat.runs_on.as_ref())
+                                })
+                                .unwrap_or_default(),
+                        ),
+                    });
                     composed.number
                 })
                 .map_err(|why| {

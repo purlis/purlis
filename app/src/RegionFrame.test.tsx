@@ -254,6 +254,8 @@ function WithViews({
   badges,
   panels = [],
   previews,
+  pulse,
+  onPulsed,
 }: {
   from: Arrangement;
   to?: Arrangement;
@@ -264,6 +266,8 @@ function WithViews({
   panels?: { view: PanelViewId; name: string; mark: LucideIcon }[];
   /** The views behind a preview that is on (#3266). */
   previews?: readonly ViewId[];
+  pulse?: ViewId;
+  onPulsed?: () => void;
 }) {
   const [arrangement, setArrangement] = useState(from);
   return (
@@ -275,6 +279,8 @@ function WithViews({
         views={VIEWS}
         panels={panels}
         previews={previews}
+        pulse={pulse}
+        onPulsed={onPulsed}
         badges={badges ?? { chats: badge }}
         onPick={onPick}
         centre={<div data-testid="centre">centre</div>}
@@ -303,7 +309,7 @@ describe("the activity bar of a region with views (#1673)", () => {
     expect(slot("left").contains(bar())).toBe(false);
     expect(bar().closest(".activity-column")).toHaveAttribute("data-side", "left");
     // The open view's tab says a press puts the side away (R121 as amended, #3329).
-    expect(tipOf(within(bar()).getByRole("tab", { name: "Chats" }))).toEqual(
+    expect(tipOf(within(bar()).getByRole("tab", { name: /^Chats\b/ }))).toEqual(
       "ChatsPut the Navigation region away",
     );
   });
@@ -311,7 +317,7 @@ describe("the activity bar of a region with views (#1673)", () => {
   it("selects the open view's tab and shows that view alone, the other mounted and hidden", () => {
     render(<WithViews from={DEFAULT_ARRANGEMENT} />);
 
-    expect(screen.getByRole("tab", { name: "Chats" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: /^Chats\b/ })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("tab", { name: "Explorer" })).toHaveAttribute("aria-selected", "false");
     expect(screen.getByRole("tabpanel", { name: "Chats" })).toContainElement(
       screen.getByTestId("v-chats"),
@@ -319,7 +325,7 @@ describe("the activity bar of a region with views (#1673)", () => {
     expect(screen.getByTestId("v-explorer")).toBeInTheDocument();
     expect(screen.queryByRole("tabpanel", { name: "Explorer" })).toBeNull();
     // Each tab says which panel it controls.
-    expect(screen.getByRole("tab", { name: "Chats" })).toHaveAttribute(
+    expect(screen.getByRole("tab", { name: /^Chats\b/ })).toHaveAttribute(
       "aria-controls",
       screen.getByRole("tabpanel", { name: "Chats" }).id,
     );
@@ -342,7 +348,7 @@ describe("the activity bar of a region with views (#1673)", () => {
     render(<WithViews from={DEFAULT_ARRANGEMENT} onPick={onPick} />);
 
     await userEvent.click(screen.getByRole("tab", { name: "Explorer" }));
-    await userEvent.click(screen.getByRole("tab", { name: "Chats" }));
+    await userEvent.click(screen.getByRole("tab", { name: /^Chats\b/ }));
 
     expect(onPick.mock.calls).toEqual([["explorer"], ["chats"]]);
   });
@@ -351,7 +357,7 @@ describe("the activity bar of a region with views (#1673)", () => {
     const onPick = vi.fn();
     render(<WithViews from={DEFAULT_ARRANGEMENT} onPick={onPick} />);
 
-    screen.getByRole("tab", { name: "Chats" }).focus();
+    screen.getByRole("tab", { name: /^Chats\b/ }).focus();
     await userEvent.keyboard("{ArrowDown}");
     expect(screen.getByRole("tab", { name: "Explorer" })).toHaveFocus();
     await userEvent.keyboard("{Enter}");
@@ -390,7 +396,7 @@ describe("the activity bar of a region with views (#1673)", () => {
     expect(bar().closest("[data-side]")).toHaveAttribute("data-side", "right");
   });
 
-  it("draws a view's badge on its tab, and the tab is described by it", () => {
+  it("draws a view's badge on its tab, and says its count in the tab's name (ADR 0121 decision 25)", () => {
     render(
       <WithViews
         from={[on("navigation", "left", 0, false), on("aside", "right")]}
@@ -398,9 +404,24 @@ describe("the activity bar of a region with views (#1673)", () => {
       />,
     );
 
-    const chats = screen.getByRole("tab", { name: "Chats" });
+    const chats = screen.getByRole("tab", { name: "Chats 2 chats need you" });
     expect(chats).toHaveTextContent("2");
-    expect(chats).toHaveAccessibleDescription("2 chats need you");
+    // Said once: in the name, and not again as its description.
+    expect(chats).toHaveAccessibleDescription("");
+    // The tab's name is still the view's where it names its panel and where a scenario finds it.
+    expect(chats).toHaveAttribute("aria-label", "Chats");
+    expect(screen.getByRole("tabpanel", { name: "Chats" })).toBeInTheDocument();
+  });
+
+  it("says nothing more in a tab's name where its badge counts nothing", () => {
+    render(
+      <WithViews
+        from={[on("navigation", "left", 0, false), on("aside", "right")]}
+        badge={<ActivityCount count={0} said="0 chats need you" tone="needs-you" />}
+      />,
+    );
+
+    expect(screen.getByRole("tab", { name: /^Chats\b/ })).toBeInTheDocument();
   });
 });
 
@@ -422,6 +443,43 @@ describe("the right side's activity bar (#1678)", () => {
     // The others are mounted and hidden.
     expect(screen.getByTestId("v-personas")).toBeInTheDocument();
     expect(screen.queryByRole("tabpanel", { name: "Personas" })).toBeNull();
+  });
+
+  it("says each attention view's question in its icon's tooltip, open or not (ADR 0121 decision 1)", () => {
+    render(<WithViews from={DEFAULT_ARRANGEMENT} />);
+
+    expect(tipOf(within(right()).getByRole("tab", { name: /^Asks\b/ }))).toEqual(
+      "AsksDo I need to answer something?",
+    );
+    expect(tipOf(within(right()).getByRole("tab", { name: /^Updates\b/ }))).toEqual(
+      "UpdatesDid my work finish?",
+    );
+    expect(tipOf(screen.getByRole("tab", { name: /^Notices\b/ }))).toEqual(
+      "NoticesIs something about my setup wrong or worth knowing?",
+    );
+  });
+
+  it("pulses the one icon it is told to, and says when its pulse has ended (ADR 0121 decision 24)", () => {
+    const onPulsed = vi.fn();
+    render(<WithViews from={DEFAULT_ARRANGEMENT} pulse="asks" onPulsed={onPulsed} />);
+
+    const asks = within(right()).getByRole("tab", { name: /^Asks\b/ });
+    expect(asks).toHaveAttribute("data-pulse", "true");
+    expect(within(right()).getByRole("tab", { name: /^Updates\b/ })).not.toHaveAttribute(
+      "data-pulse",
+    );
+    // jsdom has no AnimationEvent, so React listens for the prefixed name, and the animation's
+    // name is put on a plain event, as an engine's carries it.
+    const ended = (animationName: string) => {
+      const event = new Event("webkitAnimationEnd", { bubbles: true });
+      Object.defineProperty(event, "animationName", { value: animationName });
+      act(() => void asks.dispatchEvent(event));
+    };
+    // Another animation on the item is not the pulse ending.
+    ended("purlis-swap");
+    expect(onPulsed).not.toHaveBeenCalled();
+    ended("purlis-first-pulse");
+    expect(onPulsed).toHaveBeenCalledOnce();
   });
 
   it("gives each extension's panel a tab after purlis's own, named and marked as it says", () => {
@@ -534,7 +592,7 @@ describe("the Panel (#1737)", () => {
       one.getAttribute("data-part") === "gap" ? "gap" : one.getAttribute("data-region"),
     );
     expect(order).toEqual(["navigation", "gap", "panel-left"]);
-    expect(tipOf(within(lower()).getByRole("tab", { name: "Repos" }))).toEqual(
+    expect(tipOf(within(lower()).getByRole("tab", { name: /^Repos\b/ }))).toEqual(
       "ReposPut the panel's left half away",
     );
   });
@@ -566,7 +624,7 @@ describe("the Panel (#1737)", () => {
     const onPick = vi.fn();
     render(<WithViews from={DEFAULT_ARRANGEMENT} onPick={onPick} />);
 
-    await userEvent.click(within(lower()).getByRole("tab", { name: "Repos" }));
+    await userEvent.click(within(lower()).getByRole("tab", { name: /^Repos\b/ }));
 
     expect(onPick).toHaveBeenCalledWith("repos");
   });
@@ -586,9 +644,8 @@ describe("the Panel (#1737)", () => {
     await rearrange();
 
     expect(screen.queryByRole("tabpanel", { name: "Changes" })).toBeNull();
-    const changes = within(lower()).getByRole("tab", { name: "Changes" });
+    const changes = within(lower()).getByRole("tab", { name: "Changes 4 uncommitted files" });
     expect(changes).toHaveTextContent("4");
-    expect(changes).toHaveAccessibleDescription("4 uncommitted files");
   });
 });
 

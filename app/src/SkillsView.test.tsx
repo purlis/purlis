@@ -1283,9 +1283,12 @@ describe("the chat in front's set as a whole (S8, #3694)", () => {
         persona: "reviewer",
         missing: ["grill"],
         no_built_in: [],
+        no_workspace: [],
+        not_in_its_workspace: [],
         broken: [],
         by_a_repo: [],
         beside_a_built_in: [],
+        runner: null,
       },
     });
     const hands = view({ chat: STEWARD });

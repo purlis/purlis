@@ -389,7 +389,7 @@ describe("a chat nobody asked for that did not start", () => {
     await screen.findByRole("tabpanel", { name: "Asks" });
     await userEvent.click(
       within(screen.getByRole("tablist", { name: "Panel, right half" })).getByRole("tab", {
-        name: "Notices",
+        name: /^Notices\b/,
       }),
     );
     await screen.findByRole("tabpanel", { name: "Notices" });

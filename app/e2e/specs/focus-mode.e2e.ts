@@ -22,7 +22,7 @@ import { noDialogIsLeftUp } from "../opening.js";
 
 const MAC = process.platform === "darwin";
 const FRAME = ".region-frame[data-cycle]";
-const WINDOW = "main.window";
+const WINDOW = ".window";
 /** A modal dialog as the key registry finds one (`keys/contexts.ts`): read here, never imported. */
 const MODAL = '[data-scope="dialog"][data-part="root"], [role="alertdialog"]';
 
@@ -138,7 +138,7 @@ async function focusModeTo(want: boolean): Promise<void> {
       const modalUp = document.querySelector(modal) !== null;
       // Every change of the window's focus-mode marks after the press, for the failure: a
       // toggle that went on and back off reads apart from one that never went on.
-      const root = document.querySelector("main.window");
+      const root = document.querySelector(".window");
       const seen: string[] = [];
       (window as unknown as { focusModeSeen: string[] }).focusModeSeen = seen;
       if (root !== null)
@@ -162,7 +162,7 @@ async function focusModeTo(want: boolean): Promise<void> {
           cancelable: true,
         }),
       );
-      const windows = document.querySelectorAll("main.window").length;
+      const windows = document.querySelectorAll(".window").length;
       return `in focus mode ${already} before, claimed ${claimed}, a modal ${modalUp ? "up" : "not up"} as it was pressed, the keyboard on ${at}, ${windows} window(s)`;
     },
     MAC,

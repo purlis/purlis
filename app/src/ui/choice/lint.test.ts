@@ -40,14 +40,6 @@ tester.run("purlis/choice-family", rules["choice-family"], {
     { code: `<div role={on ? "radio" : "button"}>x</div>`, errors: [{ messageId: "role" }] },
     { code: `<button aria-checked={on}>x</button>`, errors: [{ messageId: "checked" }] },
     {
-      code: `import * as RadioGroup from "@radix-ui/react-radio-group";`,
-      errors: [{ messageId: "oldImport" }],
-    },
-    {
-      code: `import * as Switch from "@radix-ui/react-switch";`,
-      errors: [{ messageId: "oldImport" }],
-    },
-    {
       code: `<div className="ui-levels ui-levels-small">x</div>`,
       errors: [{ messageId: "oldClass" }],
     },

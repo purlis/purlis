@@ -20,6 +20,7 @@ use purlis_core::skills::review as summary;
 use purlis_core::skills::source::{
     self, Accepted, AcceptedSkill, Commit, Origin, Pin, Remote, Source, VaultEntry,
 };
+use purlis_core::skills::studio::lint_reviews;
 use purlis_core::skills::tree;
 
 use crate::skillchange::{SkillChanged, SkillGrant, SkillLevel, flag_on, heard, heard_audited};
@@ -1099,6 +1100,7 @@ pub(crate) async fn skill_source_browse(
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_install_review(
+    views: tauri::State<'_, crate::views::Views>,
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
     source: SkillSource,
@@ -1106,9 +1108,12 @@ pub(crate) async fn skill_install_review(
     level: SkillLevel,
 ) -> Result<InstallReview, String> {
     let held = planes.held(&plane)?;
+    let executor = views.executor();
     crate::off_the_window("reviewing the install", move || {
         flag_on()?;
-        let review = source::review(held.root(), &source.core(), &names, &(&level).into())?;
+        let at = (&level).into();
+        let mut review = source::review(held.root(), &source.core(), &names, &at)?;
+        lint_reviews(&executor, held.root(), &at, &mut review.skills);
         Ok(InstallReview::from(&review))
     })
     .await
@@ -1120,6 +1125,7 @@ pub(crate) async fn skill_install_review(
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_install_set_review(
+    views: tauri::State<'_, crate::views::Views>,
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
     source: SkillSource,
@@ -1127,12 +1133,17 @@ pub(crate) async fn skill_install_set_review(
     level: SkillLevel,
 ) -> Result<InstallSetReview, String> {
     let held = planes.held(&plane)?;
+    let executor = views.executor();
     crate::off_the_window("reviewing the install", move || {
         flag_on()?;
+        let at = (&level).into();
         Ok(
-            match source::review_set(held.root(), &source.core(), &names, &(&level).into())? {
-                source::SetReview::Review { review, there } => InstallSetReview::Review {
-                    review: (&review).into(),
+            match source::review_set(held.root(), &source.core(), &names, &at)? {
+                source::SetReview::Review { mut review, there } => InstallSetReview::Review {
+                    review: {
+                        lint_reviews(&executor, held.root(), &at, &mut review.skills);
+                        (&review).into()
+                    },
                     there: there.iter().map(|one| esc(one)).collect(),
                 },
                 source::SetReview::TooMuch(too_much) => InstallSetReview::TooMuch {
@@ -1280,15 +1291,19 @@ pub(crate) async fn skill_updates(
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_update_review(
+    views: tauri::State<'_, crate::views::Views>,
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
     level: SkillLevel,
     name: String,
 ) -> Result<UpdateReview, String> {
     let held = planes.held(&plane)?;
+    let executor = views.executor();
     crate::off_the_window("reviewing the update", move || {
         flag_on()?;
-        let update = source::update_review(held.root(), &(&level).into(), &name)?;
+        let at = (&level).into();
+        let mut update = source::update_review(held.root(), &at, &name)?;
+        lint_reviews(&executor, held.root(), &at, update.skills_mut());
         Ok(update_shown(&update))
     })
     .await

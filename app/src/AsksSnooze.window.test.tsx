@@ -280,7 +280,7 @@ describe("Snooze all on Asks (#5647)", () => {
       },
     ]);
     await waitFor(() => expect(listed()).toEqual([]));
-    expect(within(view).getByText("Nothing is waiting on you")).toBeInTheDocument();
+    expect(within(view).getByText("Nothing waits on you")).toBeInTheDocument();
     expect(hand(2)).toEqual([]);
     expect(hand(1)).toEqual([]);
     // Nothing was answered.

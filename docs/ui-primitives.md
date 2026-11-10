@@ -27,34 +27,34 @@ file is the defect.
 
 - A dialog, a radio group, a checkbox, a menu, a popover, a tooltip, a collapsible section, a
   tab list: take its family from `app/src/ui`, which wraps React Aria's primitive once (ADR 0104).
-  Until #2930 this said to take the Radix primitive, one package per thing.
-- **No library between you and the primitive, and no indirection you cannot read.** No `<Modal>`,
-  no `<Field>`, no house component library. The primitive is the component; purlis's look is CSS
-  on it. A purlis API in front of Radix is the custom tooling this repo's first rule exists to
-  prevent, and it is how a primitives migration turns back into hand-rolled markup with extra
-  steps. The test is at the **call site**: can the next person see which primitive this is and
-  reach its props?
-- **A component's source copied into this repo is neither of those, and is allowed.** Until
-  2026-09-22 the rule above read _"do not write a wrapper layer around them"_, which forbade a
-  shadcn/ui component — a shadcn component is literally a thin wrapper around a Radix primitive.
-  The operator settled it: that rule was written against **a dependency that owns your markup**,
-  and a file in `app/src/components/ui/` is ours, editable line by line, and visible in the diff
-  that adds it. `docs/design-system.md` has what a copy must satisfy.
+- **One wrapper per primitive, and nothing between a screen and its family.** A family is the
+  only place its primitive is imported (`no-restricted-imports` in `app/eslint.config.js`), and no
+  second purlis layer stands in front of a family: a screen reaches the family's own props. The
+  test is at the **call site**: can the next person see which family this is and reach its props?
+  Until ADR 0104 the rule here was the opposite, no layer at all between a screen and a Radix
+  primitive (ADR 0037); the families replaced it, and Radix is gone (#2930).
+- **A component's source copied into this repo is allowed** (ADR 0037, amended 2026-09-22): a
+  file in `app/src/components/ui/` is ours, editable line by line, and visible in the diff that
+  adds it, which is not a dependency that owns your markup. It builds on the families like any
+  screen, since nothing outside `app/src/ui` imports a primitives library and no `@radix-ui`
+  package may come back (`radixGone.guard.test.ts`). `docs/design-system.md` has what a copy must
+  satisfy.
 - **One house set is allowed, and only this one: the settings set** (ADR 0037, amended
   2026-10-04, rulings V89f and V89j; SE-16 #1166, DS-3e #1177). `app/src/settings/components.tsx`
   holds six pieces — **SettingsLayout**, **SettingGroup**, **SettingRow**, **Field**, **Choice**
   and **SettingActions** — and nothing else may join it without a new amendment to that record. See
   [The settings set](#the-settings-set-is-the-one-house-set) below for why.
-- purlis's own look, always. Radix ships **no CSS at all** — every primitive is an unstyled
-  element with `data-state` attributes to hang rules off. A control takes its look from **its
+- purlis's own look, always. React Aria ships **no CSS at all**: every primitive is an unstyled
+  element with `data-*` state attributes (`data-pressed`, `data-selected`, `data-focus-visible`)
+  to hang rules off. A control takes its look from **its
   family's stylesheet in `app/src/ui/`** ([Every control is a family's](#every-control-is-a-familys)
   below), and `App.css` draws the rest of the window — but **no colour is written in either**: every one is
   `var(--<token>)` and the values live in `app/src/theme/`. See `design-system.md`.
 - Native HTML that already does the job is not hand-rolled markup and does not need replacing:
   `<details>/<summary>`, `<label for>`, `<button>`. Reach for a primitive when the browser has
   no element for what you mean — a modal that traps focus, a listbox, a menu.
-- `react-resizable-panels` stays what draws resizable panes. Radix has no panel primitive and
-  there is nothing to move.
+- `react-resizable-panels` stays what draws resizable panes. React Aria has no panel primitive
+  and there is nothing to move.
 
 ## The settings set is the one house set
 
@@ -422,7 +422,7 @@ no list of roles or classes to let one through.
 | `size` | `sm` 24, `md` 28 (the default), `lg` 32, at the default text size and density; `lg` only beside a list's main filter field |
 | `inline` | words in a line of words, a breadcrumb's crumb (#3264): as tall as the line, no box padding or edge, cut to an ellipsis where the line squeezes it, underlined (no fill) under the pointer and the keyboard; words only |
 | `icon` | the icon before the words, drawn as the `icon` part; `IconButton` takes only an icon and an `aria-label`, and is square |
-| `onPress`, `isDisabled`, `isSelected` | React Aria's own words; `onClick` still reaches a Radix trigger the button is the `asChild` of |
+| `onPress`, `isDisabled`, `isSelected` | React Aria's own words; a parent that clones the button with its own handlers (`ui/trigger.tsx`, `ui/menu/ContextMenu.tsx`) still reaches it |
 | `tooltip` | its hint, the shared tooltip ([the tooltip family](#the-tooltip-family)), never a `title`; on an `IconButton`, a second line under its name |
 | `className` | the button's place in its view (margin, width, flex, order), never a look |
 
@@ -588,7 +588,7 @@ refuses all four (`purlis/select-family`, an error).
 (`app/src/ui/choice/`, #2907, ADR 0104), on React Aria's `Checkbox`, `RadioGroup` and `Radio`,
 `Switch` and `Slider`. No screen draws an `<input type="checkbox">`, `radio`, `range`, `color` or
 `file` of its own, writes `role="checkbox"`, `radio`, `radiogroup`, `switch` or `slider` by hand,
-imports Radix's checkbox, radio group, switch, slider or toggles, or wears the old `.ui-checkbox`,
+or wears the old `.ui-checkbox`,
 `.ui-radio`, `.ui-switch`, `.ui-segmented-*`, `.ui-levels` or `.ui-choice-*` classes:
 `eslint.config.js` refuses each (`purlis/choice-family`, an error).
 
@@ -936,10 +936,10 @@ for a run's one notice, in the Inbox's card. Only the wrapper writes `data-scope
 
 ## The chat mark family
 
-`ChatMark` (`app/src/ui/chat-mark`, ADR 0104 amended 2026-11-05, #5340) is a chat's mark on a tab that shows it, its row in the list, its pane's head and a folded pane's rail. A screen draws it through `ChatPersonaState`, which reads the chat's one state from `shownState`; `QuitWarning`'s list hands it a state directly.
+`ChatMark` (`app/src/ui/chat-mark`, ADR 0104 amended 2026-11-05, #5340) is a chat's mark on a tab that shows it, its row in the list, its pane's head, a folded pane's rail and the row of an ask that names it. It draws the chat's **Chat state** (ADR 0121 decision 17, #6012), which one function derives: `shownState`. A screen draws it through `ChatPersonaState`, which reads that function; `QuitWarning`'s list and Asks hand it the state that function gave.
 
-- **Props:** `state` (`needs`, `failed`, `working`, `waiting`, `idle`, `ended`, or nothing where none is known), `who`, `word`, `changed`.
-- **Parts:** `root` carries the state as its `data-variant`; `who`, `badge` and `word`. A glyph tells each state as well as its colour.
+- **Props:** `state`, one of the eight Chat states in the order that wins (`CHAT_STATES`): `needs` (Waiting on you), `stuck` (Stuck?), `failed`, `working`, `waiting` (Waiting on a chat), `idle`, `ended` (Done) and `cant-tell` (Can't tell), or nothing for `who` alone; `who`, `word`, `changed`. The three keys the mark had before #6012 keep their names, since a theme format only grows.
+- **Parts:** `root` carries the state as its `data-variant`; `who`, `badge` and `word`. Each state has one glyph and one colour (`CHAT_STATE_SAID`) and no two share either, so a glyph tells each state as well as its colour.
 - **The place sets** `--chat-mark-size` and `--chat-mark-ground`, nothing else.
 - **`who` is its own part** so a control can stand in it (the grip, #5290), with the badge left beside it. `ChatPersonaState`'s `grip` puts one there.
 
@@ -1145,8 +1145,8 @@ item families (`purlis/tooltip-family`, an error). A frame's `title` is its name
 (`app/src/ui/menu/Menu.tsx`, `app/src/ui/menu/ContextMenu.tsx`, `app/src/ui/popover/Popover.tsx`,
 #2909, ADR 0104), on React Aria's `MenuTrigger`, `Menu`, `MenuItem`, `MenuSection`,
 `SubmenuTrigger`, `Popover`, `Dialog` and `DialogTrigger`. No screen says a menu's role or wears
-the old `.ui-menu*` and `.ui-popover` classes, and nothing imports Radix's menus or popover:
-`eslint.config.js` refuses all three (`purlis/menu-family`, an error). A select's list stands on
+the old `.ui-menu*` and `.ui-popover` classes: `eslint.config.js` refuses both
+(`purlis/menu-family`, an error). A select's list stands on
 the same surface, its options the menu's rows ([The select and combobox
 families](#the-select-and-combobox-families)).
 
@@ -1160,7 +1160,7 @@ families](#the-select-and-combobox-families)).
 | `PopoverTrigger` with `PopoverDialog` | A popover that asks, opened by a press on its trigger: the keyboard in it, handed back as it closes |
 | `HeldPopover` | The same, held open by its owner beside a roving row |
 | `AnchoredPopover` | A popover that says something beside an element (a card beside a row, a refusal under a field): it takes no keyboard, and its owner says when it is up |
-| `HungPopover` | A card of notices hung from what they are about (a title-bar chip's, #3648): the `notice` surface centred under it with its `point` (a part of its own, never a held popover's `arrow`), shifted only at the window's edge, and following what it hangs from as that scrolls; it takes no keyboard as it comes (F6, a press on it or its dot reaches it), a press anywhere else hides it, and its owner's Esc dismisses what it says. No timer |
+| `HungPopover` | A card of notices hung from what they are about (a title-bar chip's, #3648): the `notice` surface centred under it with its `point` (a part of its own, never a held popover's `arrow`), shifted only at the window's edge, and following what it hangs from as that scrolls; it comes only on its dot's press, which hands it the keyboard, never by itself (ADR 0121 decision 1, #6004: what it holds waits behind the dot, with a "new" pip until seen); a press anywhere else hides it, and its owner's Esc dismisses what it says. No timer |
 | `PopoverFilter`, `PopoverRule`, `PopoverList`, `PopoverFooter` | A popover laid out as a list (R165, `layout="list"`): the filter row with its rule under it, the list that scrolls while they stay in view, and the footer that says its keys, "↑↓ move · ⏎ go · esc close", each key in a mono cap |
 
 - **Placed under its trigger, lined up with its start or its end** (`align`), and never nearer
@@ -1185,6 +1185,21 @@ families](#the-select-and-combobox-families)).
   (`--menu-min`, `--menu-max`) and a row's indent (`--menu-indent`).
 - **A row says its shortcut** at its end: the key registry's for its act (`MenuShortcuts`,
   #2921), else the key its caller knows. It is drawn, not run onto the row's description.
+- **A row is named by its words alone, and they are its only visible words a reader is given**
+  (WCAG 2.5.3 Label in Name, #6043). Its key is drawn by `menu.css` from the `shortcut` part's
+  `data-key`, hidden from a reader, and said by the row's `aria-keyshortcuts` (the registry's,
+  `menuRowKey`, or the caller's), as a button's key is (R33). What `MenuWords` draws under the
+  words is kept out of the name (`aria-hidden`) and handed to the row as its description (React
+  Aria's `description` slot), so it is heard once, after the name. The row is named by its
+  content; **a row with words under it is never named by `aria-label`**. Why not simply
+  `aria-hidden` on a drawn `<kbd>`: axe's `label-content-name-mismatch` (ACT 2ee8b8) applies to
+  a row named by `aria-label` or `aria-labelledby`, and takes every visible word inside it,
+  `aria-hidden` or not, as its label (axe 4.14's `visibleVirtual` asks what is on screen, never
+  what a reader is given), so a row whose name leaves out a word drawn in it fails however that
+  word is hidden. Words drawn by the stylesheet are not in the row's text, and a row named by
+  its content is not a case for the rule; either way its name is the label a person sees and
+  says ("click Rename"). `Menu.stories.tsx`'s *Named by its words* runs the rule on an open menu
+  in Chromium and WebKit.
 - **Drawn only while its project is in front** (`projectShown.tsx`): every surface asks, and
   `projectShown.guard.test.tsx` draws each member under a project behind.
 - **Stories hold it** (`Menu.stories.tsx`, `Popover.stories.tsx`, `docs/component-stories.md`).
@@ -1200,7 +1215,7 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
 | `ListBox`, `ListOption`, `ListSection` | **A list to choose from** (the WAI-ARIA listbox): a persona to start a chat with, a theme, a search hit, a skill. A choice of one follows the arrows; `onAction` runs the one picked; `layout="grid"` lays its options out as cards the arrows walk in two directions; an option `unavailable` says so (`aria-disabled`) and keeps the keyboard, so why is read |
 | `List`, `ListRow`, `ListRowSection` | **A list of rows that act** (a grid of one column): a panel's todos, a vault's rows, the Inbox's asks and updates. A row runs something (`onAction`), may be chosen, and may hold its own buttons, which ← and → reach, and text boxes, which keep their own keys (below) |
 | `ListRowDrawn` | **A row another family draws** (#3123): its element is that family's root, with that family's parts and look (a message of the Inbox's views, `MessageRow as="row"`), and the list gives it a row's role, its keyboard and React Aria's state attributes, writing no part of its own. It is named and described by its own parts (`aria-labelledby`, `aria-describedby`, which React Aria hands no row), and `onDrawn` hears each drawing of it once it is in the document: React Aria draws a list's rows a commit after the components that make them, so whatever reads a row as it is drawn (where its answers stand, #3167) is told there, never in an effect of its own |
-| `RowLead`, `RowLabel`, `RowDescription`, `RowTrail`, `RowBelow` (`Row.tsx`) | A row's slots, the same in a list, a tree and a table: its marks, its words (one line, cut with an ellipsis), the one line about it in the quiet tier, its end (a count, its own actions), and a line under its words inside it (what a search matched in its body, why the core refused it). **In an option, its words are its name and its one line its description** (React Aria's `label` and `description` slots), so a reader hears the name alone and then what it is, never the row's content run together. **A `RowBelow` with `clamp` and `tipWhenCut` says its whole words in its row's tooltip while the clamp cuts them** (#4711), under the pointer and while the keyboard is on the row, and nothing while they fit, the tooltip being the row's description while it is shown (a list's row is named by its `textValue` alone). One to a row, and a list's row's alone (`ListRow`, `ListOption`) |
+| `RowLead`, `RowLabel`, `RowDescription`, `RowTrail`, `RowBelow` (`Row.tsx`) | A row's slots, the same in a list, a tree and a table: its marks, its words (one line, cut with an ellipsis), the one line about it in the quiet tier, its end (a count, its own actions), and a line under its words inside it (what a search matched in its body, why the core refused it). **In an option, its words are its name and its one line its description**, so a reader hears the name alone and then what it is, never the row's content run together. **An option is named by its content, and every part of it but its words is kept from a reader** (#6043): `RowLead`, `RowTrail`, `RowBelow` and the description are `aria-hidden` in an option, and anything else a caller draws in one (a gallery card's pictures) is `aria-hidden` too. **What else it draws that says something is heard, after its name, as its description** (#6075): its one line, then its `RowBelow` (read whole, whatever its clamp cuts), then a `RowLead` given words to say (`said`, a search hit's "Line 42"; a mark with none says nothing), then what React Aria adds (its hint for dragging). React Aria's `useOption` sets `aria-describedby` to its `description` slot alone and takes no other id, so the family fills no slot: each part hands its id to its option (`OptionHeard`, `Row.tsx`), and `ListOption` draws its element (React Aria's `render`) with those ids before React Aria's. A reference from `aria-describedby` reaches content kept from a reader, so each line is heard once, and the name stays the label alone. Named by `aria-labelledby`, its visible words would be more than its name, which axe's `label-content-name-mismatch` refuses whatever is `aria-hidden` (see [the menu family](#the-menu-and-popover-families)); the list's stories hold the rule in Chromium and WebKit with nothing turned off. **A `RowBelow` with `clamp` and `tipWhenCut` says its whole words in its row's tooltip while the clamp cuts them** (#4711), under the pointer and while the keyboard is on the row, and nothing while they fit, the tooltip being the row's description while it is shown (a list's row is named by its `textValue` alone). One to a row, and a list's row's alone (`ListRow`, `ListOption`) |
 | `ListCardRow`, `RowMenuButton` (`CardRow.tsx`); `RowSummary`, `RowActions` (`Row.tsx`) | **A card row** (#3669, the sidebar Skills view's variant C): a row of a `List` drawn as a small card (`variant="card"`), as tall as its lines. Its first line is its name, its tag, its own actions (Use) and its **⋯**, which opens the row's own menu (`menu`), the one a right-click and Shift+F10 open, at the ⋯: pressed by the pointer the menu takes the keyboard with no item chosen, from the keys on its first item, and either way the ⋯ says `aria-expanded` while it is open and has the keyboard back as it closes (`askForAMenuFrom`, #3769); then **two lines about it** (`RowSummary`), its description cut cleanly after the second line, or a reason in its place in the waiting colour (it needs the person) or the quiet tier (it is left out); then its **action line** (`RowActions`), its one fix. The whole of its summary is its tooltip. ← and → reach Use, the ⋯ and the fix; a press on it runs it. A state changes a fill or a ring, never its height; it fits a 260 px side view |
 | `ListFoldSection`, `ListRun` (`Fold.tsx`) | **What folds** (#3670, in a `List`): a group whose name folds its rows, and a run of rows folded to one quiet line. A group's name is a row the keyboard reaches, with the tree's twist (`TwistMark`), its count at its end and an optional `waiting` tone (Needs you); Enter, Space, → and ← fold and unfold it, `aria-expanded` on its cell says which (a grid's row takes none), and it may start folded, its owner holding what is folded (`folded`, `onFoldedChange`). A run (`ListRun`, folded by default) is one row in the quiet tier, a mark and "N …"; pressing it unfolds its rows in place, then its closing line ("They ship with purlis…", with what may be done). A row of the run that must show (`standsOut`: it needs the person, it clashes, it matches the filter) is drawn on its own, outside the fold. Folding moves only what is under it, and a fold's row runs nothing of the list's `onAction`. In a list that chooses, a fold's row and a run's closing line are never chosen and Select all leaves them out; they are still reached and still fold (#3769). Folding a section unmounts what is under it: a run inside it keeps its fold only where its owner holds it (`folded`), and the family keeps no state of its own (#3769) |
 | `AimedList`, `AimedOption` (`AimedList.tsx`) | **A list a field aims at**: a combobox's list drawn in place, the palette's actions, projects and files. The field keeps the keyboard and moves the aim (`aria-activedescendant`); the aimed row wears the keyboard's ring inside it and the aim's fill (`control.aimed`); a press runs a row. Its owner gives it `count` and draws each option with `option(index)`: past 250 rows (`DRAWN_WHOLE`) it draws only the rows in sight and the aimed one, each with `aria-posinset` of `aria-setsize` (#5501) |
@@ -1229,18 +1244,40 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
   **A control in a row that takes the keyboard makes its row the list's own** (#3123), however it
   got there (a script moving the keyboard into a form just opened, a screen reader's cursor), so
   the list never pulls the keyboard back to another row a frame later; a key's own move and a Tab
-  into the list stay React Aria's. In a browser, React Aria's Tab from a row whose controls take
-  the keyboard goes on through that row's own controls before it leaves the list (as React Aria's
-  own grid does, seen in `List › One Tab Stop Coming Back`); Shift+Tab back in lands on the row it
-  left.
+  into the list stay React Aria's.
+  **Tab from a row leaves the list at once, and Tab from a control in a row walks that row's
+  controls, then leaves** (#6071, the WAI-ARIA APG grid, where Tab moves out of the grid and the
+  arrows reach a cell's widgets, and Tab moves between the widgets of the cell being worked in).
+  From a row, Tab and Shift+Tab each leave the list in one press, past the row's controls either
+  way. From a control in a row, Tab goes on to the row's next control and Shift+Tab back to the
+  one before; from its last control Tab leaves the list, and from its first Shift+Tab leaves it
+  the other way, never landing on a row. So Tab and Shift+Tab are one rule turned round. React
+  Aria's collection moves a Tab out of the list from wherever it is in it (its one Tab stop), so
+  when the row has a control of its own to go to, the family's row keeps the Tab from the
+  collection, and the browser moves there (`movesWithinItsRow` in `rowKeys.ts`, heard in `List.tsx`'s `rowElement`), for a text box as
+  for a button. Seen in `List › One Tab Stop Coming Back` and
+  `List › Tab Walks A Rows Controls Then Leaves`.
+  **Shift+Tab back into a list lands on the row the keyboard left, and → re-enters its controls**
+  (#6033, the WAI-ARIA APG grid's one Tab stop, which gives focus back to the last focused row,
+  never to a control in it), whether or not that row holds controls. The browser's Shift+Tab
+  lands on the list's last control, and React Aria moves the keyboard to its row only when that
+  control is in another row; when it is in the row the list keeps (that row's controls are the
+  list's last), the family gives the keyboard to the row itself (`backToTheRow` in `List.tsx`). A
+  list the keyboard has not been in lands on its last row, as React Aria chooses. Only a Tab does
+  this (a Tab another component handles itself, a dialog's focus wrap, counts as one): a control
+  the pointer presses or a script focuses keeps the keyboard. Seen in
+  `List › Shift Tab Back To A Row With Controls`.
 - **A text box in a row keeps its own keys** (`rowKeys.ts`, #3123): → reaches it from its row as
   it reaches a button; in it ← and →, Home and End, PageUp and PageDown move its caret, a letter,
   Space and Enter are typed or are its own (its handler hears them, the row and the list never do,
   so Enter runs no row), and ⌘A selects its words; ↑ and ↓ move its caret between a box's lines,
   the lines it draws (a line its words wrap on to as much as one after a line break, measured
-  unseen in a copy of the box laid out as it is, #5993), and go to the row above or below from its
-  first or last line or from a box of one line; Tab moves on to the row's next control while it
-  has one; Esc gives the keyboard back to its row,
+  unseen in a copy of the box laid out as it is, #5993; a caret at a soft wrap, which the box may
+  draw at the end of one line or the start of the next and never says which, is taken to be on
+  the line its key moves from, so it never leaves from a line between, at the cost of one more
+  press from a wrap drawn on the first or last line, #6045), and go to the row above or below from its first or last
+  line or from a box of one line; Tab moves on to the row's next control while it
+  has one, as from any control in a row (#6071, above); Esc gives the keyboard back to its row,
   keeping what was typed, and Esc on the row is the list's (`onEscape`). **While it composes**
   (Chinese, Japanese, Korean input), every key is the input method's alone (#5993): composing, or
   key code 229 (WebKit's Esc once the composition ends), the list keeps it from the row and from
@@ -1719,21 +1756,12 @@ their rows are tabs and sentences with no part that gives way, so `.more-menu` h
 **What the window draws over itself is one surface** (#1845). A dialog, a popover, a menu and a
 tooltip share one ground (`surface.overlay`), one border, one corner (`--radius-lg`) and one lift
 (`--elevation-overlay`), so they read as related; a dialog and a popover share one padding
-(`--space-6`). Each family draws it in its own sheet, in the `components` layer (`ui/dialog`,
-`ui/popover`, `ui/tooltip`), and the popover and menu families' surface is this one, a select's
-list's included. The Radix-era classes (`.ui-menu`, `.ui-menu-item`, `.ui-popover`,
-`.ui-overlay-arrow`) and `primitives/overlays.css`, which drew them, are retired (#3365).
-
-| Overlay | Class                                         | On                                                         |
-| ------- | --------------------------------------------- | ---------------------------------------------------------- |
-| Scrim   | `.ui-scrim`                                   | Radix Dialog's or AlertDialog's `Overlay`                  |
-| Dialog  | `.ui-dialog`                                  | Radix Dialog's or AlertDialog's `Content`                  |
-| Popover | the popover family's surface ([above](#the-menu-and-popover-families)) | `AnchoredPopover`, `HeldPopover`, `PopoverDialog` |
-
-(`--elevation-overlay`), so they read as related. A dialog is [the dialog
-family's](#the-dialog-family), drawn on that surface by `app/src/ui/dialog/dialog.css`; a popover
-and a menu are the popover family's (`app/src/ui/popover/popover.css`), and a tooltip the tooltip
-family's, each in the same `components` layer.
+(`--space-6`). A dialog is [the dialog family's](#the-dialog-family), drawn on that surface by
+`app/src/ui/dialog/dialog.css`; a popover and a menu are the popover family's
+(`app/src/ui/popover/popover.css`), a select's list's included, and a tooltip the tooltip
+family's, each in its own sheet in the `components` layer. The old overlay and menu classes
+(`.ui-menu`, `.ui-menu-item`, `.ui-popover`, `.ui-overlay-arrow`, `.ui-scrim`, `.ui-dialog`) and
+`primitives/overlays.css`, which drew them, are retired (#3365).
 
 | Overlay | Class                                         | On                                                         |
 | ------- | --------------------------------------------- | ---------------------------------------------------------- |
@@ -1762,10 +1790,10 @@ family's, each in the same `components` layer.
 `app/src/primitives/overlays.test.tsx` holds the surface through the window's cascade (the same
 ground, border, corner and lift on each kind, the same padding on a dialog and a popover), that a
 dialog is still named by its title, keeps the keyboard and leaves on Escape, and that a popover
-opens from the keyboard. It reads every component's source too: each Radix overlay part wears its
-class, every button inside an overlay's content is the button family and every field its
-field class, and `App.css` draws no overlay surface and lifts nothing by a shadow of its own.
-The dialog family's own tests hold a dialog's rows (`ui/dialog/Dialog.test.tsx`).
+opens from the keyboard. It reads every component's source too: every button inside a popover or a
+menu is the button family and every field the field family, and `App.css` draws no overlay surface
+and lifts nothing by a shadow of its own. The dialog family's own tests hold a dialog's rows
+(`ui/dialog/Dialog.test.tsx`).
 
 ## Text roles
 
@@ -1831,7 +1859,11 @@ written any other way, with no allowance (#2319); `design-system.md`
 (["Text roles"](design-system.md#text-roles)) has the rules, what a theme may change, where
 today's window still differs, and the order the surfaces move in.
 
-## Why Radix, and why not the other two
+## Why Radix, and why not the other two (history)
+
+_History: this is why the window took Radix first (ADR 0037). ADR 0104 moved every family
+onto React Aria, which has the tree, table and combobox Radix has none of, and #2930 removed
+Radix. The measurements below are of that first choice, not of today's bundle._
 
 **Not Material (MUI).** Material is the wrong visual language for a dense terminal-adjacent
 window — the reference for this app's design is Zed. Its runtime CSS-in-JS is also the one
@@ -1914,8 +1946,9 @@ details:
   `frame/tabmenu.py` and its palette grew two answers to "what can I do to this".
 - **Not modal, and a click outside closes it**, exactly as the show-more menu above. It is a
   menu, not a question.
-- **A row's accessible name is its words alone** (`aria-label`), and its note — what the row
-  costs — is its `aria-describedby`. Left to the content, every row would announce as a
+- **A row's accessible name is its words alone**, and its note — what the row costs — is its
+  description. Its content names it, with the line under its words and its key kept out of the
+  name (#6043, [the menu family](#the-menu-and-popover-families)), so no row announces as a
   paragraph: _"End Ends the program it runs. There is no undo."_ The thing the menu is about is
   the menu's own name, said once ([Menus](#menus)).
 - **A group the catalogue decides the length of is a submenu**, Radix's own `ContextMenu.Sub`:
@@ -2135,6 +2168,9 @@ things about it are decisions:
 
 ## Two things learned converting them, which will catch the next person
 
+_History: learned on Radix, before the families. What a family does in its place is in its own
+section above._
+
 **A radio group's pick does not follow the arrow keys on its own.** Radix selects an item on
 focus only while it believes an arrow key is down, and it learns that from a `keydown` listener
 on `document`. React attaches its delegated listeners to the root container and to each portal
@@ -2275,6 +2311,10 @@ Three things follow, and the last is the one a reviewer should hold us to:
 
 ## What Tab actually reached in each modal, and the one attribute that fixed it
 
+_History: measured on Radix's dialogs. The dialog family now moves Tab itself, round from the last
+stop to the first (`ui/dialog/Dialog.tsx`, `ui/dialog/tabOrder.ts`), and the button family writes
+the `tabindex` WebKit needs on every button (#190)._
+
 purlis#186 asked the question above of **every** modal surface rather than of the one
 dialog a scenario happened to break on, and the answer was worse than the ticket's guess.
 `app/src/Modals.keyboard.test.tsx` is the measurement and now the guard; it walks each surface
@@ -2346,9 +2386,10 @@ on the machine.
 
 Three things about that choice, because each was a fork:
 
-- **It is not a hand-written Tab handler, which ADR 0037 is against and which this
-  would have been the fourth of.** Nothing wraps a primitive, nothing intercepts a key, and
-  Radix's own edge behaviour is untouched and still does the wrapping at the ends.
+- **It was not a hand-written Tab handler, which ADR 0037 was against and which this
+  would have been the fourth of.** Nothing wrapped a primitive, nothing intercepted a key, and
+  Radix's own edge behaviour was untouched and did the wrapping at the ends. (ADR 0104 has
+  since put one there on purpose: the dialog family moves Tab itself, `useTabbing`.)
 - **It is not a WebView setting, and that route does not exist.** Turning "tab to all controls"
   on for purlis's own window would be the tidier answer and there is no public API for it:
   macOS exposes full keyboard access as a system preference and `WKPreferences` has only
@@ -2371,6 +2412,10 @@ carries the rest.
 
 ## Where Tab goes in the rest of the window (purlis#189)
 
+_History in part: the shape below holds, but what draws it has moved. The strips are the tabs
+family's (React Aria's tabs), the lists and the explorer the list and tree families', and a menu
+the menu family's; `@radix-ui/react-roving-focus` left with the last of Radix (#2930)._
+
 The attribute above fixed the dialogs. Outside them it is the floor and not the answer: a
 `tabIndex={0}` on every button would put fifty tabs between the explorer and the terminal.
 So the window takes the WAI-ARIA Authoring Practices' shape, with the primitive this repo already
@@ -2389,8 +2434,8 @@ model and a select-on-`mousedown` this window's strips do not have:
   contributed panel gets it for nothing). Up, Down, Home and End move.
 - **A list behind a button is a menu** — the title bar's needs-you list (purlis#249), the
   strips' show-more menus. The button is the Tab stop; Enter opens the menu on its first item,
-  the arrows move, Escape closes it and puts the keyboard back on the button. Radix's
-  `DropdownMenu` does all of that, so nothing here is hand-written.
+  the arrows move, Escape closes it and puts the keyboard back on the button. The menu
+  family does all of that, so nothing here is hand-written.
 - **The explorer is a tree** (purlis#238), the whole "Tree View" pattern on top of the
   same roving focus: `role="tree"`, each row a `treeitem` with its level and its place among
   its siblings, `aria-expanded` on every parent (a clone says whether it is open, a parent that
@@ -2599,11 +2644,11 @@ component library gets added on.
   _told_; `RegionFrame.test.tsx` and `FourRegions.test.tsx` use the real one for everything that
   is about the tree. A size is only really checked by the scenario tests.
 - **The explorer's repo groups are `<details>`**, per the rule above: the browser has a
-  collapsible, and `@radix-ui/react-collapsible` is not installed because nothing needs it.
+  collapsible, and no collapsible primitive is installed because nothing needs one.
 - **Picking a spot in the explorer is `aria-current`, not `aria-selected`.** `aria-selected`
   belongs to the three tablists that are the axis (ADR 0036), and to the one tree that really
   selects, a file tab's, whose selected file is what the tab previews; a spot is the current
-  item of a list. Radix has no tree or listbox primitive, and native buttons are not hand-rolled markup.
+  item of a list, and native buttons are not hand-rolled markup.
 - **Every tree is drawn by the tree family** (#1672, DS-12, #2911, #3198): its levels, its
   straight guides, the selected row (`aria-current` or `aria-selected`, in `list.selected` with
   an edge) and the keyboard's ring are `ui/tree`'s; a new tree draws nothing of its own.
@@ -2651,12 +2696,21 @@ component library gets added on.
     `AsStripTab`). The arrows, Home and End move along it, wrapping at its ends; Enter, Space or a
     click presses. Activation is manual,
     so walking the bar opens nothing. **The tab list owns tabs and nothing else** (#1204): a
-    view's badge is inside its own tab, and the tab is described by it.
+    view's badge is inside its own tab, and **its count is in the tab's name** (ADR 0121
+    decision 25): `aria-labelledby` names the tab itself and then its badge, so a reader hears
+    "Asks 2 things wait on you", while `aria-label` stays the view's alone, which is what names
+    its panel and what a scenario finds it by.
   - **`aria-selected` is right here, as it is not in the explorer**: the bar is a tab list,
     and its tabs select what the side shows. The explorer keeps `aria-current`.
   - **Icon-only, with the words on `aria-label` and the press in its tooltip**: the tab is named for the view (`Chats`, `Explorer`) and its tooltip says what
     pressing does, with the key (_"Show the Explorer view (⌘⇧E)"_, or _"Put the Navigation
-    region away"_ on the open one). Its mark is what the view is, never which edge it is on.
+    region away"_ on the open one). **An attention view's tooltip asks its question instead**,
+    open or not (ADR 0121 decisions 1 and 24, `VIEW_QUESTIONS`): Asks _"Do I need to answer
+    something?"_, Updates _"Did my work finish?"_, Notices _"Is something about my setup wrong
+    or worth knowing?"_. Its mark is what the view is, never which edge it is on.
+  - **The ✋ pulses once** (ADR 0121 decision 24): the first time on this machine a Blocking ask
+    arrives while Asks is closed, its item is marked `data-pulse` for one `breathe`
+    (`asksArrival.ts`, kept in web storage as `purlis.asks-pulsed`).
   - **A press of the open view puts the side away**; any other opens. The bar is outside the
     resizable group, so a side put away keeps its bar and its badges, and nothing is added to
     or taken from the group (the throw above).
@@ -2711,8 +2765,8 @@ A part of a project's view is therefore mounted while nobody can see it. What th
   stands on, a dialog and a tooltip each ask `useProjectShown()` and draw nothing while their
   project is behind. Nothing of a project behind is ever mounted over the window, so nothing a
   dialog does to the document as it mounts happens either, and what opened it is there when
-  the person is back. `projectShown.guard.test.tsx` fails for a Radix package that draws over the
-  window and for a new `createPortal`. Behind that
+  the person is back. `projectShown.guard.test.tsx` fails for a new `createPortal`, and
+  `radixGone.guard.test.ts` for a Radix package. Behind that
   stands one backstop: a project that leaves the front with anything still over the window once
   the press is over (`drawnOverTheWindow`) is not kept.
 - **A prop that says the project is in front** is the last one the part was drawn with while
@@ -3148,16 +3202,16 @@ terminal the chord is the window's whether or not its row can run, so the same c
 means two things from one tab to the next; in a text field or an editor a chord whose row
 cannot run is left to the field.
 
-**A menu that opens under a resting pointer takes no keyboard** (#1487, `TabChip.tsx`). The
-tasks menu on a pane head's state word (a tab's chip until #5341) is Radix's dropdown menu,
-opened three ways: a press, ⌘⇧J, and the pointer resting on the word. Radix moves the focus into a menu as it opens and onto
-each row the pointer crosses, which is right for the first two and would take the keyboard out
-of a terminal for the third. So a rest-opened menu refuses both (the menu's `onOpenAutoFocus`,
-and each row's pointer handlers), the stylesheet's hover says which row the pointer is on, and
-an Escape that closes it stops there instead of also reaching the chat. Only that menu closes
-when the pointer leaves: a pressed or key-opened menu has the keyboard and stays until Escape,
-a pick, a press outside or the same ask again. However it was opened, a menu closed without a
-pick puts the keyboard back where it was before it opened.
+**A menu that opens under a resting pointer takes no keyboard** (#1487, `TabChip.tsx`). The tasks
+menu on a pane head's state word (a tab's chip until #5341) is the menu family's, opened three ways:
+a press, ⌘⇧J, and the pointer resting on the word. A menu moves the focus into itself as it opens
+and onto each row the pointer crosses, which is right for the first two and would take the keyboard
+out of a terminal for the third. So a rest-opened menu refuses both (`autoFocus` off, and the
+family's `takesNoKeyboard`), the stylesheet's hover says which row the pointer is on, and an Escape
+that closes it stops there instead of also reaching the chat. Only that menu closes when the pointer
+leaves: a pressed or key-opened menu has the keyboard and stays until Escape, a pick, a press
+outside or the same ask again. However it was opened, a menu closed without a pick puts the keyboard
+back where it was before it opened.
 
 **A rest is a move the person made, then stillness.** Both WebKits hit-test again after a
 layout and say "the pointer came onto this" of a pointer that has not moved, so a chip that

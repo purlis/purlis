@@ -7,8 +7,8 @@
 //!
 //! The one mark on a chat's tab, its row in the list, its pane's head and a folded pane's rail.
 //! Its parts are its root, who the chat runs as, the badge on the corner and the state's word,
-//! which is heard and not seen. A variant is the chat's one state, which its glyph tells as well
-//! as its colour (WCAG 1.4.1).
+//! which is heard and not seen. A variant is the chat's one Chat state (ADR 0121 decision 17,
+//! #6012), which its glyph tells as well as its colour (WCAG 1.4.1).
 
 use super::{Family, Look, Part, Prop, State, TRANSPARENT, Variant};
 
@@ -48,37 +48,49 @@ pub(super) const CHAT_MARK: Family = Family {
         Variant {
             name: "needs",
             since: super::NEXT,
-            description: "It needs the person: the hand.",
+            description: "Waiting on you: the person has the next move. The hand.",
+            consent: None,
+        },
+        Variant {
+            name: "stuck",
+            since: super::NEXT,
+            description: "Stuck?: working, with nothing to show for a while. A question mark in a circle.",
             consent: None,
         },
         Variant {
             name: "failed",
             since: super::NEXT,
-            description: "A task failed, until the chat has been seen: the cross.",
+            description: "Failed, or a task it asked for failed and has not been seen: the cross.",
             consent: None,
         },
         Variant {
             name: "working",
             since: super::NEXT,
-            description: "A turn runs: the ring.",
+            description: "Working: a turn runs, or its own work does. The ring.",
             consent: None,
         },
         Variant {
             name: "waiting",
             since: super::NEXT,
-            description: "It waits on its tasks or its own work: the hourglass.",
+            description: "Waiting on a chat: its tasks' reports, or the chat that asked it. The hourglass.",
             consent: None,
         },
         Variant {
             name: "idle",
             since: super::NEXT,
-            description: "At rest, ready for the person: the pause.",
+            description: "Idle: finished, with its work left for the person. The pause.",
             consent: None,
         },
         Variant {
             name: "ended",
             since: super::NEXT,
-            description: "Its program has ended: the dash.",
+            description: "Done: its program or its report has ended it. The tick.",
+            consent: None,
+        },
+        Variant {
+            name: "cant-tell",
+            since: super::NEXT,
+            description: "Can't tell: a shell, or a harness without hooks. The three dots.",
             consent: None,
         },
     ],

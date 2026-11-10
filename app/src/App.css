@@ -99,9 +99,9 @@ body {
 
 /* Content: what is typed; paths, names and commands set as code; a view's answer (a memory, a
    persona, statistics); an error, wherever it is said; the words of a dialog, an alert dialog
-   or a popover card (Radix gives each of those its role, and a row's card is portalled out of
-   the view it belongs to). A revealed vault value is `<code class="vault-value">`, so `code`
-   already covers it. */
+   or a popover card (its family gives each of those its role, and React Aria portals a row's
+   card out of the view it belongs to). A revealed vault value is `<code class="vault-value">`,
+   so `code` already covers it. */
 :where(
   :is(input, textarea, [contenteditable]):not(.xterm *),
   code,
@@ -2481,6 +2481,15 @@ body {
 .inbox-scope-empty > .inbox-none {
   margin: 0;
 }
+/* **Quiet** (#6017): the "Quiet now" switch at the top of Asks, and under it the summary of the
+   Quiet that ended. */
+.inbox-quiet {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
 /* **Snooze all** (#5647): its press, its question and its Undo, each a line inside Asks, under
    the scope switch; and how many are snoozed, with Show them now. */
 .inbox-snooze {
@@ -2531,6 +2540,13 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* **The Chat state of the chat an ask names** (#6012): its badge alone before the chat's name,
+   on the row's own ground. */
+.inbox-ask .inbox-chat-state {
+  --chat-mark-ground: transparent;
+  margin-inline-end: var(--space-2);
+  vertical-align: middle;
 }
 .inbox-ask-top > .inbox-where {
   flex: none;
@@ -2687,6 +2703,14 @@ body {
 .inbox-none {
   margin: var(--space-2) 0;
   color: var(--text-secondary);
+}
+/* **Nothing waits on you · N chats working** (ADR 0121 decision 23): each part a link, one line
+   where it fits and wrapping between the parts where it does not. */
+.inbox-none-parts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
 }
 /* **Updates** (#1693): after the asks, newest first. Information and not a decision, so a quiet
    border and no waiting colour; one the person has read is drawn in the secondary text. */
@@ -3875,6 +3899,9 @@ body {
    (`RESERVES`), since a px dot is placed against a bell the text size places. */
 .status-notices {
   padding-inline-start: max(0px, calc(20px - var(--space-3) - 0.2em));
+  /* **The "new" pip's room** (#6004), kept after the item with the pip or without, so nothing
+     moves: the 8px pip (`status.css`) and its ring, clear of the item's word. */
+  padding-inline-end: var(--space-5);
 }
 
 .chip-card [data-f6-card]:focus-visible {
@@ -6626,6 +6653,20 @@ nav.piece-files-head {
 
 .shown-state[data-state="needs-you"].arrived .shape {
   animation: charter-knock var(--motion-duration-settle) var(--motion-easing-standard) 2;
+}
+
+/* **The ✋'s first pulse** (ADR 0121 decision 24): one breath of its mark, the first time on this
+   machine a Blocking ask arrives while Asks is closed (`asksArrival.ts`); the window takes the
+   mark off when it ends (`ActivityBar`'s `FIRST_PULSE`). In place of a tour; reduced motion
+   plays it at once, and the count beside it says the same thing still. */
+@keyframes purlis-first-pulse {
+  50% {
+    transform: scale(1.3);
+  }
+}
+
+.activity-bar [data-scope="activity"][data-part="item"][data-pulse] > [data-part="icon"] {
+  animation: purlis-first-pulse var(--motion-duration-breathe) var(--motion-easing-breathe);
 }
 
 /* The title bar's save indicator (charter-app#294): two small ghost buttons of the set

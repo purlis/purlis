@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! The chat mark family at the engine's interface (#5340): in the manifest since the next version
-//! with its six states in the order that wins, and a theme reaching one state's badge.
+//! with its eight Chat states in the order that wins, and a theme reaching one state's badge.
 
 use serde_json::json;
 
@@ -32,7 +32,16 @@ fn the_chat_mark_is_in_the_manifest_with_its_states_in_the_order_that_wins() {
     assert_eq!(names("parts"), ["root", "who", "badge", "word"]);
     assert_eq!(
         names("variants"),
-        ["needs", "failed", "working", "waiting", "idle", "ended"]
+        [
+            "needs",
+            "stuck",
+            "failed",
+            "working",
+            "waiting",
+            "idle",
+            "ended",
+            "cant-tell"
+        ]
     );
 }
 

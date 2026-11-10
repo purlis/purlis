@@ -32,7 +32,8 @@
  *   pill never touches the panel the list is joined to.
  * - **The keyboard is React Aria's**: ↑ and ↓ move and stop at the ends, Home and End, typing
  *   finds a row by its `textValue`, Enter and Space choose or run; Escape clears a choice of
- *   many. A list keeps one Tab stop, the row last focused.
+ *   many. A list keeps one Tab stop, the row last focused: Tab or Shift+Tab into it lands on
+ *   that row, never on a control in it, and → reaches its controls (#6033, `backToTheRow`).
  * - **Drag with a way that is not a drag**: `dragAndDropHooks` (`useRowDrag`) lets a row be
  *   dragged out, by the pointer and by the keyboard; whatever a drag does, a row's menu or a
  *   button does too.
@@ -41,6 +42,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -77,13 +79,21 @@ import {
   useContextMenu,
   type ContextMenuOptions,
 } from "../menu/ContextMenu";
-import { InOption, RowScope, type RowSize } from "./Row";
+import {
+  HEARD_ORDER,
+  InOption,
+  RowScope,
+  type HeardKind,
+  type OptionHeard,
+  type RowSize,
+} from "./Row";
 import { useListRowTip, type RowTipped } from "./RowTip";
 import {
   isComposing,
   isEscapeInABox,
   keepsItsArrows,
   keptOnTheWayDown,
+  movesWithinItsRow,
   movedInARadioGroup,
 } from "./rowKeys";
 import type { Tip } from "../tooltip/Tooltip";
@@ -301,7 +311,7 @@ export function ListBox<T extends object>({
 
 export interface ListOptionProps<T extends object> extends Omit<
   AriaListBoxItemProps<T>,
-  "className" | "style"
+  "className" | "style" | "render"
 > {
   /** Its context menu: a right-click, Shift+F10 or the menu key opens it. */
   menu?: RowMenu;
@@ -335,8 +345,53 @@ function useSaysUnavailable(unavailable: boolean, given: Ref<HTMLDivElement> | u
 }
 
 /**
+ * **What an option's lines are heard by** (#6075): the ids its parts hand it (`OptionHeard`),
+ * in `HEARD_ORDER`'s order, which its element is described by before what React Aria adds.
+ */
+function useOptionHeard(): { heard: OptionHeard; describedBy: string | undefined } {
+  const [parts, setParts] = useState<readonly { kind: HeardKind; id: string }[]>([]);
+  const base = useId();
+  const heard = useMemo<OptionHeard>(
+    () => ({
+      base,
+      add(kind, id) {
+        setParts((was) => [...was.filter((one) => one.id !== id), { kind, id }]);
+        return () => setParts((was) => was.filter((one) => one.id !== id));
+      },
+    }),
+    [base],
+  );
+  const describedBy = useMemo(() => {
+    const ids = HEARD_ORDER.flatMap((kind) =>
+      parts.filter((one) => one.kind === kind).map((one) => one.id),
+    );
+    return ids.length === 0 ? undefined : ids.join(" ");
+  }, [parts]);
+  return { heard, describedBy };
+}
+
+/** An option's element, described by its own lines and then by React Aria's (#6075): React
+ *  Aria's `useOption` sets `aria-describedby` to its description slot alone, which the family
+ *  does not fill, so what it sets is what else React Aria adds (its hint for dragging). */
+function optionElement(heard: string | undefined) {
+  return (element: Parameters<NonNullable<AriaListBoxItemProps["render"]>>[0]) => {
+    const joined = [heard, element["aria-describedby"]]
+      .filter((one) => one !== undefined && one !== "")
+      .join(" ");
+    const describedBy = joined === "" ? undefined : joined;
+    // An option with an `href` is a link, which React Aria hands as one.
+    return "href" in element ? (
+      <a {...element} aria-describedby={describedBy} />
+    ) : (
+      <div {...element} aria-describedby={describedBy} />
+    );
+  };
+}
+
+/**
  * **One option**: its `RowLabel` is its name and its `RowDescription` its description, to a
- * reader too; its `textValue` is what typing finds it by.
+ * reader too, with its `RowBelow` and a `RowLead` that says something after it (#6075); its
+ * `textValue` is what typing finds it by.
  */
 export function ListOption<T extends object>({
   className,
@@ -351,10 +406,13 @@ export function ListOption<T extends object>({
   const own = useRowMenu(menu);
   const { tipped, hold } = useListRowTip(tip);
   const element = useSaysUnavailable(unavailable, ref);
+  const { heard, describedBy } = useOptionHeard();
+  const render = useMemo(() => optionElement(describedBy), [describedBy]);
   return (
     <AriaListBoxItem
       {...mergeProps(rest, own.handlers, tipped.hover)}
       ref={element}
+      render={render}
       className={className}
       data-scope="list"
       data-part="root"
@@ -363,7 +421,7 @@ export function ListOption<T extends object>({
       data-unavailable={unavailable || undefined}
     >
       {(state) => (
-        <InOption.Provider value={true}>
+        <InOption.Provider value={heard}>
           {hold(rowHolds(children, own, tipped)(state))}
         </InOption.Provider>
       )}
@@ -603,7 +661,8 @@ export function ListRowDrawn<T extends object>({
  * control in it by the pointer; focused any other way (a script moving the keyboard into a form
  * just opened, a screen reader's cursor) a control in a row the list had not reached left the
  * list on its first row, which then took the keyboard back a frame later. So the row a control is
- * focused in is told to the list first, before React Aria hears the focus.
+ * focused in is told to the list first, before React Aria hears the focus. And **a Tab into the
+ * list lands on a row, never on a control in it** (#6033, `backToTheRow`).
  */
 function rowElement(labelledBy?: string, describedBy?: string) {
   return (element: JSX.IntrinsicElements["div"], { id, state }: GridListItemRenderProps) => (
@@ -613,19 +672,27 @@ function rowElement(labelledBy?: string, describedBy?: string) {
       aria-describedby={describedBy ?? element["aria-describedby"]}
       onFocus={(event) => {
         const manager = state.selectionManager;
-        // A move a key makes is React Aria's own, already placed: its arrows, its Tab out of the
-        // list (which passes the keyboard through the list's last control) and a Tab into it
-        // (which lands on its one Tab stop). And coming in from outside it is React Aria's too.
+        // A move a key makes is React Aria's own, already placed: its arrows and its Tab out of
+        // the list (which passes the keyboard through the list's last control). Coming in from
+        // outside is React Aria's too, but for a Tab whose control is in its own row (#6033).
         const from = event.relatedTarget;
         const list = event.currentTarget.closest('[role="grid"]');
         const fromWithin = from === null || (from instanceof Node && list?.contains(from) === true);
         if (!keyHeardNow && fromWithin && event.target !== event.currentTarget)
           if (id !== undefined && manager.focusedKey !== id) manager.setFocusedKey(id);
+        if (tabHeardNow && !fromWithin && event.target !== event.currentTarget)
+          backToTheRow(event.target, event.currentTarget, id, manager);
         element.onFocus?.(event);
       }}
       // A select or a combobox in it hears its own ↑ and ↓, and opens (#5993, `rowKeys.ts`).
       onKeyDownCapture={(event) => {
         if (!keepsItsArrows(event)) element.onKeyDownCapture?.(event);
+      }}
+      // Tab from a control in it goes on to its next control, which the list would skip to
+      // leave itself (#6071, `rowKeys.ts`).
+      onKeyDown={(event) => {
+        if (movesWithinItsRow(event)) event.stopPropagation();
+        element.onKeyDown?.(event);
       }}
     />
   );
@@ -637,19 +704,44 @@ function rowElement(labelledBy?: string, describedBy?: string) {
  * after it, once it has been heard everywhere and its own move (Tab's) is made.
  */
 let keyHeardNow = false;
+/** **Whether that key is Tab**, with Shift or without, whose move the browser makes next. */
+let tabHeardNow = false;
 if (typeof window !== "undefined")
   window.addEventListener(
     "keydown",
-    () => {
+    (event) => {
       keyHeardNow = true;
+      tabHeardNow = event.key === "Tab";
       // A task, never a microtask: for a key the person pressed, the browser runs microtasks
       // after each listener, so one would let go before React has heard the key at all.
       setTimeout(() => {
         keyHeardNow = false;
+        tabHeardNow = false;
       }, 0);
     },
     { capture: true },
   );
+
+/**
+ * **Tab into a list lands on a row, never on a control in it** (#6033, the WAI-ARIA grid's one
+ * Tab stop): Shift+Tab from below lands, the browser's way, on the list's last control, and
+ * React Aria moves the keyboard to the row it keeps (the one the keyboard left, or the last) only
+ * when that control is in another row. So once React Aria has heard the focus and chosen its row,
+ * a `control` that still has the keyboard is in that row, `row`, and gives the keyboard to it;
+ * → reaches the row's controls again from there.
+ */
+function backToTheRow(
+  control: Element,
+  row: HTMLElement,
+  key: Key | undefined,
+  manager: GridListItemRenderProps["state"]["selectionManager"],
+) {
+  queueMicrotask(() => {
+    if (key === undefined || manager.focusedKey !== key) return;
+    // React Aria has scrolled the row into view already, as it does on a Tab into its list.
+    if (control.ownerDocument.activeElement === control) row.focus({ preventScroll: true });
+  });
+}
 
 /** Runs `then` after each commit of the row it stands in, as part of the row. */
 function Drawn({ then }: { then: () => void }) {

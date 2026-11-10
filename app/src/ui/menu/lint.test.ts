@@ -14,7 +14,6 @@ tester.run("purlis/menu-family", rules["menu-family"], {
     },
     { code: `<div role="group" className="tasks-menu">x</div>` },
     { code: `import { Menu } from "./ui/menu/Menu";` },
-    { code: `import * as Tooltip from "./overlays/tooltip";` },
     { code: `<MenuItem textValue="End"><MenuWords said="End" /></MenuItem>` },
     { code: `<MenuItem>{chat.name}</MenuItem>` },
   ],
@@ -27,14 +26,6 @@ tester.run("purlis/menu-family", rules["menu-family"], {
       errors: [{ messageId: "oldClass" }],
     },
     { code: `<div className="ui-popover row-card">x</div>`, errors: [{ messageId: "oldClass" }] },
-    {
-      code: `import * as Menu from "@radix-ui/react-dropdown-menu";`,
-      errors: [{ messageId: "oldImport" }],
-    },
-    {
-      code: `import * as Popover from "./overlays/popover";`,
-      errors: [{ messageId: "oldImport" }],
-    },
     // A row that draws more than words says them, so typing finds it.
     {
       code: `<MenuItem><MenuWords said="End" /></MenuItem>`,

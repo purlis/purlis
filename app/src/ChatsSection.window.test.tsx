@@ -33,12 +33,13 @@ import { CHAT_EVENTS } from "./chatEvents";
 import { CHANGE, FIRST_LINE } from "./QuizBand";
 import { CLOSE_QUIZ } from "./TaskQuiz";
 import { findTree, heard as heardOf, rowAround, rowsOf } from "./ui/tree/tree.testkit";
+import { CHAT_STATE_SAID } from "./shownState";
 
 /** Updates, opened from the right bar (#5644): the updates the Inbox listed after its asks. */
 async function showUpdates() {
   await userEvent.click(
     within(screen.getByRole("tablist", { name: "Attention" })).getByRole("tab", {
-      name: "Updates",
+      name: /^Updates\b/,
     }),
   );
   return screen.findByRole("tabpanel", { name: "Updates" });
@@ -430,14 +431,10 @@ const row = (tree: HTMLElement, name: string) => {
 };
 
 /** What a row says its chat is doing: the word a person reads on it, and its mark's shape. */
-const GLYPH: Readonly<Record<string, string>> = {
-  needs: "hand",
-  failed: "cross",
-  working: "ring",
-  waiting: "hourglass",
-  idle: "pause",
-  ended: "dash",
-};
+/** Each Chat state's shape, as the mark draws it (#6012). */
+const GLYPH: Readonly<Record<string, string>> = Object.fromEntries(
+  Object.entries(CHAT_STATE_SAID).map(([state, { shape }]) => [state, shape]),
+);
 const says = (on: HTMLElement) => {
   const mark = on.querySelector('[data-scope="chat-mark"][data-part="root"]');
   const word = on.querySelector('[data-scope="chat-mark"][data-part="word"]');
@@ -1543,11 +1540,12 @@ describe("a chat's state, as a word and a shape (#1484)", () => {
 
     const expected = [
       ["steward 1", { word: "needs you", shape: "hand" }],
-      ["talk", { word: "done", shape: "dash" }],
-      ["sweep", { word: "cancelled", shape: "dash" }],
-      ["probe", { word: "failed", shape: "dash" }],
-      ["lost", { word: "ended without a report", shape: "dash" }],
-      ["halt", { word: "closed by you", shape: "dash" }],
+      // Each in its Chat state's one shape (#6012): Done's tick, Failed's cross.
+      ["talk", { word: "done", shape: "tick" }],
+      ["sweep", { word: "cancelled", shape: "tick" }],
+      ["probe", { word: "failed", shape: "cross" }],
+      ["lost", { word: "ended without a report", shape: "cross" }],
+      ["halt", { word: "closed by you", shape: "tick" }],
     ] as const;
     for (const [name, state] of expected) {
       expect(says(row(tree, name)), `${name} in the Chats list`).toEqual(state);
@@ -1775,7 +1773,7 @@ describe("a chat's state, as a word and a shape (#1484)", () => {
     // Its one task is over, so the session folded by itself (#1499): opened by hand.
     await userEvent.click(twistOf(tree, "steward 1"));
 
-    const done = { word: "done", shape: "dash" };
+    const done = { word: "done", shape: "tick" };
     expect(says(row(tree, "talk"))).toEqual(done);
   });
 
@@ -1795,7 +1793,7 @@ describe("a chat's state, as a word and a shape (#1484)", () => {
 
     // Its turn ended with the report: at rest, out of the queue.
     move(2, "waiting", 10, []);
-    await both({ word: "done", shape: "dash" });
+    await both({ word: "done", shape: "tick" });
     expect(screen.queryByRole("button", { name: /^1 (chat needs|thing waits)/ })).toBeNull();
 
     // The person types in it: a new turn.
@@ -1826,8 +1824,8 @@ describe("a chat's state, as a word and a shape (#1484)", () => {
     const tree = await section();
     await waitFor(() => expect(shape(tree)).toHaveLength(1));
 
-    // Nothing known is no state claimed: the word says so, and its mark wears no badge (#5340).
-    const unheard = { word: "running (no detail from opencode)", shape: undefined };
+    // Nothing known is Can't tell (#6012): the word says what is not known, by the harness's name.
+    const unheard = { word: "running (no detail from opencode)", shape: "unseen" };
     expect(says(row(tree, "steward 1"))).toEqual(unheard);
   });
 
@@ -2225,7 +2223,7 @@ describe("a tidy Chats list (DS-11, #1843)", () => {
     expect(tipOf(terminal)).toBe("terminal, working");
   });
 
-  it("draws a state's mark on the persona in every state, and none where nothing is known (#5340)", async () => {
+  it("draws a state's mark on the persona in every state, and Can't tell where nothing is known (#5340, #6012)", async () => {
     const { move } = core([chat(1, "alpha"), chat(2, "alpha")]);
     render(<App />);
     const tree = await section();
@@ -2233,8 +2231,8 @@ describe("a tidy Chats list (DS-11, #1843)", () => {
     const badge = () => row(tree, "steward 1").querySelector('[data-part="badge"]');
     const mark = () => row(tree, "steward 1").querySelector('[data-part="root"]');
 
-    // Nothing heard: the persona alone, and no state claimed.
-    expect(badge()).toBeNull();
+    // Nothing heard: Can't tell, and nothing more claimed.
+    expect(mark()).toHaveAttribute("data-variant", "cant-tell");
 
     for (const [state, queue, drawn] of [
       ["running", 0, "working"],
@@ -2422,7 +2420,9 @@ describe("a chat's row moves its chat (#4764)", () => {
     await screen.findByRole("menu");
     const place = menuRow("Move…");
     // Its key, which does the same from the row, said at the row's end.
-    expect(place.textContent).toMatch(/(⌘⇧M|Ctrl\+Shift\+M)/);
+    expect(place.querySelector('[data-part="shortcut"]')?.getAttribute("data-key")).toMatch(
+      /(⌘⇧M|Ctrl\+Shift\+M)/,
+    );
     await userEvent.click(place);
     await waitFor(() => expect(placingSaid()).toMatch(/^Picked up devops 3\. Arrow keys/));
     await waitFor(() => expect(document.activeElement).toHaveAttribute("data-place-target"));

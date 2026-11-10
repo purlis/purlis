@@ -157,8 +157,7 @@ describe("a long ask in the Inbox", () => {
 
     // Drawn whole, word for word, so the core offers Allow on it (`hooked::shown_in_full`).
     // It waits for its row to settle (`SETTLE_MS`, 1.5 s, #1695) before it allows anything.
-    // Its options stand behind its Answer link (#5651, ADR 0119).
-    await ask.$("button=Answer").click();
+    // Its options stand on its row: a permission is a decision (#5998).
     await pressGrant(await ask.$("button=Allow"));
     await browser.waitUntil(
       async () => (await (await pane.$(".xterm-rows")).getText()).includes(INBOX_ALLOWED),

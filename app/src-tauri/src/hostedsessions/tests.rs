@@ -4023,3 +4023,66 @@ fn a_projects_hold_keeps_its_runners_cursors_from_going_before_a_gone_runners() 
     );
     assert_eq!(logged_up_to(config.path(), GONE, "P0000"), None);
 }
+
+/// Composes a chat as a runner whose harness lacks a skill its persona names: its composition
+/// tells its host so, as the core's does (#2977).
+struct ComposesLacking;
+
+impl purlis_host::Compose for ComposesLacking {
+    fn compose(
+        &self,
+        starting: &purlis_host::ToCompose<'_>,
+    ) -> Result<purlis_core::session::Spec, String> {
+        starting.beside.not_there(lacking());
+        Ok(purlis_core::session::Spec::new("/bin/true", starting.size))
+    }
+}
+
+fn lacking() -> session::SkillsNotThere {
+    session::SkillsNotThere {
+        missing: vec!["superpowers:test-driven-development".into()],
+        no_built_in: Vec::new(),
+    }
+}
+
+/// **#2977 (SK-5d): a chat a pool's runner composes comes back with the skills its persona names
+/// that the runner lacks, and the runner named by its pool**, over the protocol (1.81), the same
+/// for a local runner's, a Docker pool's and a k8s pool's: the window's link to each kind of
+/// pool's runner is one path. A runner that lacks nothing says nothing.
+#[test]
+fn a_chat_a_pools_runner_composes_says_what_its_persona_names_that_the_runner_lacks() {
+    for pool in ["local", "docker", "k8s"] {
+        let runtime = a_runtime();
+        let connection = in_memory_with_a_runner(
+            Hosting::running_with(ComposesNothing, StandIns::default()),
+            Hosting::running_with(ComposesLacking, StandIns::default()),
+            &runtime,
+        );
+        let (_dir, root) = a_project();
+        let sessions = HostedSessions::on_a_runner(connection.to_a_pool(pool), &root);
+
+        let composed = sessions
+            .open_named(None, &by_its_names(), Default::default(), &|_| {})
+            .expect("composed on the pool's runner");
+
+        assert_eq!(composed.skills_not_there, Some(lacking()), "{pool}");
+        assert_eq!(composed.runner.as_deref(), Some(pool));
+    }
+
+    let runtime = a_runtime();
+    let connection = in_memory_with_a_runner(
+        Hosting::running_with(ComposesNothing, StandIns::default()),
+        Hosting::confining(
+            ComposesConfined,
+            purlis_host::standin::StandInConfines::default(),
+            StandIns::default(),
+        ),
+        &runtime,
+    );
+    let (_dir, root) = a_project();
+    let sessions = HostedSessions::on_a_runner(connection.to_a_pool("builds"), &root);
+    let composed = sessions
+        .open_named(None, &by_its_names(), Default::default(), &|_| {})
+        .expect("composed on the pool's runner");
+    assert_eq!(composed.skills_not_there, None, "it lacks nothing");
+}

@@ -23,6 +23,7 @@ import { stripNamed } from "./test-strips";
 import { aTabForEachChat } from "./laidOut.testkit";
 import { findTree, rowAround, rowsOf } from "./ui/tree/tree.testkit";
 import { paneMore } from "./menus.testkit";
+import { rowName } from "./menus.testkit";
 
 /**
  * **The person ends a task with Stop and get its report or Close now** (#1488, V100-5,
@@ -297,7 +298,7 @@ async function drawn(
 async function menuOf(tree: HTMLElement, name: string) {
   fireEvent.contextMenu(row(tree, name));
   await screen.findAllByRole("menuitem");
-  return screen.getAllByRole("menuitem").map((item) => item.getAttribute("aria-label"));
+  return screen.getAllByRole("menuitem").map(rowName);
 }
 
 beforeEach(() => {
@@ -709,8 +710,9 @@ describe("a task with tasks of its own still working", () => {
     expect(question.textContent).toContain("1 task it asked for is still working: deep.");
     // It is idle itself: the question is about what is below it.
     expect(question.textContent).not.toContain("It is working.");
-    // The settings set's radio group (#630, DS-8), named by the sentence that asks it: a Radix
-    // radio group is in WebKit's tab sequence and moves on the arrows, as every choice does.
+    // The settings set's radio group (#630, DS-8), named by the sentence that asks it: the
+    // choice family's, on React Aria's `RadioGroup`, which writes a `tabindex` on its picked
+    // radio, so it is in WebKit's tab sequence and moves on the arrows, as every choice does.
     expect(
       within(question).getByRole("radiogroup", {
         name: "1 task it asked for is still working: deep.",
