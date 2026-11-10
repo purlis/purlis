@@ -126,7 +126,10 @@ fn what_a_row_opens_over_the_window_is_never_read_on_its_chosen_fill() {
         "{chosen:?}"
     );
     let rest = on(&[]);
-    assert!(rest.contains(&"popover") && rest.contains(&"tooltip"), "{rest:?}");
+    assert!(
+        rest.contains(&"popover") && rest.contains(&"tooltip"),
+        "{rest:?}"
+    );
 }
 
 #[test]
@@ -424,8 +427,14 @@ fn a_field_s_error_is_read_on_a_table_s_fill_and_its_help_never_is() {
     let table = family("table").expect("the table family");
     let field = family("field").expect("the field family");
     assert!(
-        super::drawn_on(table, table.looks()[0], &[], "transparent", "surface.sunken")
-            .any(|one| one.name == "field"),
+        super::drawn_on(
+            table,
+            table.looks()[0],
+            &[],
+            "transparent",
+            "surface.sunken"
+        )
+        .any(|one| one.name == "field"),
         "a field is drawn on a table's fill"
     );
     let theme = filled_grey("table", "surface.sunken", "#4a4a46");

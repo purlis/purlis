@@ -4245,9 +4245,10 @@ fn stands_for(key: &str, surface: &str, variant: &str) -> bool {
 
 /// **The families the window draws in React Aria's overlay**, portaled to the window's body, so a
 /// surface that holds one never draws its fill in a state under it (#6156): a popover a list's
-/// row opens is drawn over the window, never on the row's chosen fill. `app/src/theme/grounds.test.ts`
-/// finds them from the components and holds this list to them, exactly.
-const PORTALED: &[&str] = &["dialog", "popover", "tooltip"];
+/// row opens is drawn over the window, never on the row's chosen fill.
+/// `app/src/theme/grounds.test.ts` finds them from the components and holds this list to them,
+/// exactly.
+const PORTALED: &[&str] = &["popover", "tooltip"];
 
 /// **The families drawn on `surface`'s look `variant` in `states` that a fill `set` in place of
 /// its `default` brings a new ground under** (#3268): each [`STANDS_ON`] says is drawn there
