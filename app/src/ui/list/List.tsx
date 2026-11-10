@@ -85,7 +85,7 @@ import {
   RowHeard,
   RowScope,
   type HeardKind,
-  type OptionHeard,
+  type PartsHeard,
   type RowSize,
 } from "./Row";
 import { useListRowTip, type RowTipped } from "./RowTip";
@@ -346,14 +346,14 @@ function useSaysUnavailable(unavailable: boolean, given: Ref<HTMLDivElement> | u
 }
 
 /**
- * **What a row's lines are heard by** (#6075, #6101): the ids its parts hand it (`OptionHeard`),
+ * **What a row's lines are heard by** (#6075, #6101): the ids its parts hand it (`PartsHeard`),
  * its tooltip's among them while it is up, in `HEARD_ORDER`'s order, which its element is
  * described by before what React Aria adds.
  */
-function useRowHeard(): { heard: OptionHeard; describedBy: string | undefined } {
+function useRowHeard(): { heard: PartsHeard; describedBy: string | undefined } {
   const [parts, setParts] = useState<readonly { kind: HeardKind; id: string }[]>([]);
   const base = useId();
-  const heard = useMemo<OptionHeard>(
+  const heard = useMemo<PartsHeard>(
     () => ({
       base,
       add(kind, id) {
@@ -594,7 +594,7 @@ export function ListRow<T extends object>({
   const own = useRowMenu(menu);
   const { tipped, hold } = useListRowTip(tip);
   const { heard, describedBy } = useRowHeard();
-  const render = useMemo(() => rowElement(undefined, undefined, describedBy), [describedBy]);
+  const render = useMemo(() => rowElement({ heard: describedBy }), [describedBy]);
   return (
     <AriaGridListItem
       {...mergeProps(rest, own.handlers, tipped.hover)}
@@ -659,7 +659,7 @@ export function ListRowDrawn<T extends object>({
       // **Named and described by its own parts**: React Aria hands a row neither, and names it
       // by its `textValue`; its element is drawn here with both, where they win over that name,
       // so a row is heard as its words say it (an ask by what it asks, then who asks).
-      render={rowElement(labelledBy, describedBy)}
+      render={rowElement({ labelledBy, describedBy })}
     >
       {children}
       {onDrawn !== undefined && <Drawn then={onDrawn} />}
@@ -677,12 +677,18 @@ export function ListRowDrawn<T extends object>({
  * focused in is told to the list first, before React Aria hears the focus. And **a Tab into the
  * list lands on a row, never on a control in it** (#6033, `backToTheRow`).
  */
-function rowElement(
-  labelledBy?: string,
-  describedBy?: string,
-  /** What its parts hand it (`useRowHeard`), before what React Aria adds (#6101). */
-  heard?: string,
-) {
+function rowElement({
+  labelledBy,
+  describedBy,
+  heard,
+}: {
+  labelledBy?: string;
+  /** Its description whole, in place of React Aria's (`ListRowDrawn`). */
+  describedBy?: string;
+  /** What its parts hand it (`useRowHeard`), before what React Aria adds (#6101); for a row
+   *  whose `describedBy` is not given. */
+  heard?: string;
+} = {}) {
   return (element: JSX.IntrinsicElements["div"], { id, state }: GridListItemRenderProps) => (
     <div
       {...element}

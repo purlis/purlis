@@ -28,21 +28,22 @@ export type RowFamily = "list" | "tree" | "table";
 export const RowScope = createContext<RowFamily>("list");
 
 /**
- * **What an option's lines are heard by** (#6075): each part that says something about it (its
+ * **What a row's lines are heard by** (#6075, #6101): each part that says something about it (its
  * one line, a line under its words, a mark with words to say) hands its id here, and is read as
  * its description in `HEARD_ORDER`'s order. React Aria's `useOption` describes an option by its
  * `description` slot alone and takes no other id, so the list family describes it by these, and
  * then by what React Aria adds (its hint for dragging it).
  */
-export interface OptionHeard {
+export interface PartsHeard {
   /** The ids its parts are drawn with: `${base}-${kind}`, one part of each kind to an option. */
   base: string;
   /** Hears the part `id` as `kind`; what it hands back stops hearing it. */
   add(kind: HeardKind, id: string): () => void;
 }
 
-/** The parts of an option heard after its one line, in the order a reader hears them: its
- *  tooltip last, while it is up (#6101). */
+/** The parts of a row heard as its description, in the order a reader hears them: an option's
+ *  one line, its line under its words and its mark, then any row's tooltip while it is up
+ *  (#6101). */
 export const HEARD_ORDER = ["description", "below", "lead", "tip"] as const;
 export type HeardKind = (typeof HEARD_ORDER)[number];
 
@@ -53,7 +54,7 @@ export type HeardKind = (typeof HEARD_ORDER)[number];
  * does not drop it. `null` in a row that does not (a tree's, whose React Aria row takes no
  * `render`), where the tooltip says itself on the row's element.
  */
-export const RowHeard = createContext<OptionHeard | null>(null);
+export const RowHeard = createContext<PartsHeard | null>(null);
 
 /**
  * **Inside an option** (`ListOption`): its words are its name and its one line about it its
@@ -69,10 +70,10 @@ export const RowHeard = createContext<OptionHeard | null>(null);
  *
  * **What else it draws that says something is heard too** (#6075): its line under its words
  * (`RowBelow`) and a mark given words to say (`RowLead`'s `said`) join its description after its
- * one line (`OptionHeard`). Kept from a reader as content, each is still read where the option's
+ * one line (`PartsHeard`). Kept from a reader as content, each is still read where the option's
  * `aria-describedby` points at it, so each is heard once.
  */
-export const InOption = createContext<OptionHeard | null>(null);
+export const InOption = createContext<PartsHeard | null>(null);
 
 /** What a part that is not an option's name carries inside an option: kept from a reader. */
 function keptInOption(option: boolean): { "aria-hidden"?: true } {
