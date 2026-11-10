@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794296295072,
+  "lastUpdate": 1794299490046,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -45738,6 +45738,48 @@ window.BENCHMARK_DATA = {
             "value": 102.6250995,
             "unit": "ms",
             "extra": "median of 5 runs: 101.908, 102.595, 102.625, 102.680, 102.709 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "b855ef3fac708c0d3ebecb43d64d983bf13bdb85",
+          "message": "Snooze for a while: for 1 hour and until tomorrow (#6018) (#6048)\n\n* Snooze for a while: for 1 hour and until tomorrow beside until it asks something new (#6018)\n\nADR 0121 decision 14. Snooze all on Asks offers For 1 hour and Until\ntomorrow (09:00 local the next day) beside its snooze until a chat asks\nsomething new, whichever comes first.\n\n- core: the snooze record keeps each chat's until (seconds since 1970);\n  release lets go of a chat whose time has come, named or not, so a\n  snooze that ran out while purlis was closed is over at the first read.\n  A record from before reads as snoozed with no time.\n- app: the asks read says when the first snoozed chat comes back; the\n  notifier reads through the same split, so a snoozed chat neither\n  counts nor notifies, and reads again when a snooze runs out, so its\n  asks are notified anew.\n- window: the confirmation offers the three choices, the Undo says\n  which, the line says until when; the list is read again when the\n  snooze runs out (fake-timer tested).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70WGMWP8XARND3GX16MRS24\nPurlis-Persona: steward\n\n* Snooze for a while: the Snooze all line's stories, and the changelog fragment (#6018)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70WGMWP8XARND3GX16MRS24\nPurlis-Persona: steward\n\n* Snooze for a while: asks that come back are New; bindings say who lists snoozed asks (#6018)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70WGMWP8XARND3GX16MRS24\nPurlis-Persona: steward\n\n* Snooze for a while: the Snooze all line's baselines, from #6048's stories run\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70WGMWP8XARND3GX16MRS24\nPurlis-Persona: steward\n\n* Snooze for a while: the last Snooze all baselines, from #6048's stories run\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70WGMWP8XARND3GX16MRS24\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Snooze for a while: bindings name counted, as asking.rs now does (#6018)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M71W2JM38J6JMBFTNPDC45PM\nPurlis-Persona: steward\n\n* Snooze for a while: rustfmt the merged notifier and its snooze test (#6018)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M71W2JM38J6JMBFTNPDC45PM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-10T07:53:14Z",
+          "tree_id": "48d4f9c4839de2087f08c3e34f9b287d60838bf4",
+          "url": "https://github.com/purlis/purlis/commit/b855ef3fac708c0d3ebecb43d64d983bf13bdb85"
+        },
+        "date": 1794299484037,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.519676,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.504, 0.518, 0.520, 0.522, 0.549 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.195632500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.136, 16.163, 16.196, 16.311, 16.498 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.49760649999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.877, 100.948, 101.498, 102.631, 103.105 ms"
           }
         ]
       }
