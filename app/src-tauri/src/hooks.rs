@@ -2739,10 +2739,6 @@ impl Hooks {
                     // is told reads the event log. It is not sent ahead as `record`, because
                     // only the host thread that heard the line tells it from its spooled copy
                     // (#952, D-2003-4).
-                    // DELIBERATELY RED (#6106): the window is told before the conversation is followed.
-                    if let Some(what) = applied.moved.clone() {
-                        moved(what);
-                    }
                     if let Some(id) = applied.followed {
                         let listener = following
                             .lock()
