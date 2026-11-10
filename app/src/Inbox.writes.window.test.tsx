@@ -229,6 +229,6 @@ describe("a proposed change in the Inbox (#1975)", () => {
     draw([
       proposal({ kind: "not-shown", why: "This change holds what looks like a credential." }, both),
     ]);
-    expect(buttons()).toEqual(["Cancel", "Go to chat", "Dismiss"]);
+    expect(buttons()).toEqual(["Cancel", "Go to chat", "Snooze", "Stop", "Dismiss"]);
   });
 });

@@ -81,6 +81,8 @@ import {
   endId,
   freshId,
   ignoreId,
+  stopId,
+  taskStopId,
   needsYouRows,
   paneCloseOf,
   OUTSIDE,
@@ -622,6 +624,9 @@ import {
   type StopAsked,
 } from "./stopping";
 import { DoingsHere, useDoings, type DoingsOf } from "./chatDoing";
+import { AllChats, type EveryChat } from "./AllChats";
+import { fleetOf } from "./everyChat";
+import type { ChatState } from "./shownState";
 import {
   ChatsHere,
   backSaid,
@@ -972,6 +977,7 @@ export const PlaneView = memo(function PlaneView({
   inboxAsked,
   inboxGroup,
   elsewhere,
+  everyChat,
   windowLines,
   profileNames,
   onSeen,
@@ -1071,6 +1077,10 @@ export const PlaneView = memo(function PlaneView({
   /** What its Inbox lists that its asks registry cannot see (#1695): chats waiting in other
    *  windows, and chats that cannot say they wait. */
   elsewhere?: Elsewhere;
+  /** **Every chat of every open project** (#6013), for the Chats sidebar's All chats: what the
+   *  window gathers from every project's report, here and in the other windows. Without it, the
+   *  sidebar offers no All chats. */
+  everyChat?: EveryChat;
   /** **The window's own lines** (D-LB-1): listed at the top of this project's Inbox's Notices
    *  and counted in its status line while it is in front, so none stands under the title bar
    *  with a project open. The window draws them; this view gives them their place. */
@@ -10893,6 +10903,8 @@ export const PlaneView = memo(function PlaneView({
       quiet: quietHere,
       settled,
       run,
+      // Its stores, which All chats' rows in this window read a working chat's line from (#6013).
+      lent: { chats, doings },
       said: report,
       // Whether the plane has been read: until it has, the window does not know which
       // workspace's theme to draw (`App.tsx`'s `settledInFront`).
@@ -10929,6 +10941,8 @@ export const PlaneView = memo(function PlaneView({
     }),
     [
       arrangePins,
+      chats,
+      doings,
       dormantPins,
       forgetDormantPin,
       staleClones.lines,
@@ -10993,6 +11007,7 @@ export const PlaneView = memo(function PlaneView({
         queued: typeof queued;
         queue: readonly number[];
         fromQueue: ReturnType<typeof queued>;
+        fleetSaid: string;
       }
     | undefined
   >(undefined);
@@ -11012,6 +11027,22 @@ export const PlaneView = memo(function PlaneView({
       const working: Record<string, number> = {};
       for (const { session, workspace } of filedChats)
         if (inItsTurn(states, session)) working[workspace] = (working[workspace] ?? 0) + 1;
+      // **Its chats, as All chats lists them** (#6013): read off the rows its Chats list draws
+      // and its clock, told again only when what they say changed.
+      const fleet = fleetOf({
+        plane,
+        project: projectName(plane),
+        rows: chatRows,
+        states,
+        since: new Map(
+          chatRows.flatMap((row) => {
+            const at = chatClock.since(row.session);
+            return at === null ? [] : [[row.session, at] as const];
+          }),
+        ),
+        asks: waiting ?? [],
+      });
+      const fleetSaid = JSON.stringify(fleet);
       const was = reported.current;
       const sameQueue = was?.queued === queued && sameList(was.queue, queue);
       if (
@@ -11025,6 +11056,7 @@ export const PlaneView = memo(function PlaneView({
         // The same length as `doing`'s, each built off `quitting`, which is the same.
         was.owning.every((work, at) => sameOwnWork(work, owning[at])) &&
         sameList(was.turning, turning) &&
+        was.fleetSaid === fleetSaid &&
         sameQueue
       )
         return;
@@ -11043,6 +11075,7 @@ export const PlaneView = memo(function PlaneView({
         queued,
         queue,
         fromQueue,
+        fleetSaid,
       };
       // Each workspace's count, the root's under its own name, read off the one queue.
       const workspaces =
@@ -11059,6 +11092,7 @@ export const PlaneView = memo(function PlaneView({
         ...mine,
         workspaces,
         ...fromQueue,
+        fleet,
         ending: quitting.map(({ chat }, at) => ({
           ...chat,
           state: doing[at],
@@ -11068,8 +11102,22 @@ export const PlaneView = memo(function PlaneView({
       });
     };
     report();
-    return chats.store.subscribe(report);
-  }, [chats, filedChats, quitting, mine, onReport, plane, queued, waitingIn]);
+    // The clock too: a chat's time in its state is All chats' (#6013).
+    const stops = [chats.store.subscribe(report), chatClock.subscribe(report)];
+    return () => stops.forEach((stop) => stop());
+  }, [
+    chats,
+    chatClock,
+    chatRows,
+    filedChats,
+    quitting,
+    mine,
+    onReport,
+    plane,
+    queued,
+    waiting,
+    waitingIn,
+  ]);
 
   const frontChat = frontTab && reopened.find((chat) => chat.session === chatOf(tabs, frontTab.id));
 
@@ -11419,6 +11467,30 @@ export const PlaneView = memo(function PlaneView({
         done(await commands.wakeInboxAsks(plane, sessions ?? null).catch(unsaid)),
     };
   }, [plane, snoozedAsks]);
+  /**
+   * **Stop on a row of Asks** (ADR 0121 decision 21, #6013): the chat's own Stop, as its row in
+   * the Chats list and the palette press it: a task's lets it report first.
+   */
+  const stopFromARow = useCallback(
+    (session: number) => {
+      const stop = found.get(stopId(session)) ?? found.get(taskStopId(session));
+      if (stop?.available) press(stop);
+    },
+    [found, press],
+  );
+  /**
+   * **All chats** (#6013): the Chats sidebar's mode, and the one state it is filtered to.
+   * {@link openAllChats} is the way in for anything that names a state (#6020's empty Asks:
+   * "7 chats working" opens All chats on Working, from `everyChat.countsByState`).
+   */
+  const [allChats, setAllChats] = useState<{ on: boolean; filter?: ChatState }>({ on: false });
+  const openAllChats = useCallback(
+    (filter?: ChatState) => {
+      setAllChats({ on: true, filter });
+      showSide("chats");
+    },
+    [showSide],
+  );
   const answeredOnPane = useCallback(
     (words: string, ask: Shown) => touchOnPane(ask, words),
     [touchOnPane],
@@ -11909,52 +11981,63 @@ export const PlaneView = memo(function PlaneView({
            Explorer, one at a time, switched by the activity bar at the side's edge. Both stay
            mounted when the other is open or the side is away, so neither loses its folds. */
                 views={{
-                  chats: (
-                    <WaitingTaskWaysContext.Provider value={waitingTaskWays}>
-                      <ChatsSection
-                        rows={listRows}
-                        // The trees that started in the focused workspace, or at the root (#1655).
-                        here={focused === OUTSIDE ? ROOT_WORD : focused}
-                        // The chat that has the keyboard: a task, while its pane shows it (#1486).
-                        front={focusedChat(tabs)}
-                        besides={besides}
-                        noted={noted}
-                        onOpen={showChat}
-                        offers={found}
-                        onPress={press}
-                        stopping={stopping}
-                        wrapping={wrapping}
-                        sandboxOf={sandboxOf}
-                        finished={finishedTasks}
-                        onClearFinished={clearFinished}
-                        onReopen={reopenFinished}
-                        clock={chatClock}
-                        onDrawn={rowsDrawn}
-                        reveal={revealed}
-                        onRevealed={revealedSettled}
-                        onLookFinished={lookedAtFinished}
-                        restarts={restartsOnRows}
-                        ending={taskEndInline}
-                        onEndTask={endTaskOnRow}
-                        onEndConfirm={answerTaskEndOnRow}
-                        onChanges={(task) =>
-                          showView(taskChangesView(task.id), taskChangesTitle(task.name))
-                        }
-                        browsers={chatBrowsersShown}
-                        kept={keptShown}
-                        // The Browsers grid's button, while the grid has a tile (#2027).
-                        anyBrowser={gridTiles.length > 0}
-                        onBrowser={openChatBrowser}
-                        // The side panel's header (R123): the workspace, then the project, quiet.
-                        heading={
-                          <>
-                            {ofWorkspace ?? OUTSIDE_TITLE}{" "}
-                            <span className="side-head-project">· {projectName(plane)}</span>
-                          </>
-                        }
+                  chats:
+                    allChats.on && everyChat !== undefined ? (
+                      <AllChats
+                        chats={everyChat.chats}
+                        filter={allChats.filter}
+                        onFilter={(filter) => setAllChats({ on: true, filter })}
+                        onLeave={() => setAllChats({ on: false })}
+                        does={everyChat.does}
+                        lentOf={everyChat.lentOf}
                       />
-                    </WaitingTaskWaysContext.Provider>
-                  ),
+                    ) : (
+                      <WaitingTaskWaysContext.Provider value={waitingTaskWays}>
+                        <ChatsSection
+                          onAllChats={everyChat === undefined ? undefined : () => openAllChats()}
+                          rows={listRows}
+                          // The trees that started in the focused workspace, or at the root (#1655).
+                          here={focused === OUTSIDE ? ROOT_WORD : focused}
+                          // The chat that has the keyboard: a task, while its pane shows it (#1486).
+                          front={focusedChat(tabs)}
+                          besides={besides}
+                          noted={noted}
+                          onOpen={showChat}
+                          offers={found}
+                          onPress={press}
+                          stopping={stopping}
+                          wrapping={wrapping}
+                          sandboxOf={sandboxOf}
+                          finished={finishedTasks}
+                          onClearFinished={clearFinished}
+                          onReopen={reopenFinished}
+                          clock={chatClock}
+                          onDrawn={rowsDrawn}
+                          reveal={revealed}
+                          onRevealed={revealedSettled}
+                          onLookFinished={lookedAtFinished}
+                          restarts={restartsOnRows}
+                          ending={taskEndInline}
+                          onEndTask={endTaskOnRow}
+                          onEndConfirm={answerTaskEndOnRow}
+                          onChanges={(task) =>
+                            showView(taskChangesView(task.id), taskChangesTitle(task.name))
+                          }
+                          browsers={chatBrowsersShown}
+                          kept={keptShown}
+                          // The Browsers grid's button, while the grid has a tile (#2027).
+                          anyBrowser={gridTiles.length > 0}
+                          onBrowser={openChatBrowser}
+                          // The side panel's header (R123): the workspace, then the project, quiet.
+                          heading={
+                            <>
+                              {ofWorkspace ?? OUTSIDE_TITLE}{" "}
+                              <span className="side-head-project">· {projectName(plane)}</span>
+                            </>
+                          }
+                        />
+                      </WaitingTaskWaysContext.Provider>
+                    ),
                   explorer: (
                     <WorkspaceRegion
                       store={workspacePanels}
@@ -12098,6 +12181,7 @@ export const PlaneView = memo(function PlaneView({
                           onShowUpdates={showUpdates}
                         />
                       }
+                      onStop={stopFromARow}
                     />
                   ),
                   // **Updates** (#5644): the project's updates, as the Inbox listed them.

@@ -1,7 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { memo, useMemo, useState, type ReactNode } from "react";
+import { memo, useMemo, useState } from "react";
+import { DoingsHere, saidWhole, useDoingSaid, type DoingsOf } from "./chatDoing";
+import { ChatsHere, type Chats } from "./chatState";
 import { fleetKey, inFleetOrder, type FleetChat } from "./everyChat";
 import { ChatActions } from "./ChatActions";
 import { rowTimeSaid } from "./chatsList";
@@ -41,6 +43,21 @@ export type FleetDoes = {
   stop: (chats: readonly FleetChat[]) => Promise<string | undefined>;
 };
 
+/** **A project's own stores, lent** (#6013): what a row of a chat in this window reads live from,
+ *  as that project's own rows do. A chat in another window has none here. */
+export type Lent = { chats: Chats; doings: DoingsOf };
+
+/**
+ * **Every chat, as the window hands it to each project's view** (#6013): the entries of every
+ * open project, in this window and the others; what the rows do; and each project's stores where
+ * this window holds it.
+ */
+export type EveryChat = {
+  chats: readonly FleetChat[];
+  does: FleetDoes;
+  lentOf: (plane: string) => Lent | undefined;
+};
+
 /** What the view's title says, and its switch. */
 export const ALL_CHATS = "All chats";
 
@@ -53,7 +70,7 @@ export function AllChats({
   onFilter,
   onLeave,
   does,
-  lineOf,
+  lentOf,
 }: {
   /** Every chat of every open project, in any order. */
   chats: readonly FleetChat[];
@@ -64,8 +81,9 @@ export function AllChats({
   /** The switch turned off: back to this project's chats. */
   onLeave: () => void;
   does: FleetDoes;
-  /** What a chat is doing now, read live, where the chat is in this window (`ChatDoingLine`). */
-  lineOf?: (chat: FleetChat) => ReactNode;
+  /** Each project's stores, where this window holds it: what a working chat's line is read
+   *  live from. */
+  lentOf?: (plane: string) => Lent | undefined;
 }) {
   const listed = useMemo(
     () => inFleetOrder(filter === undefined ? chats : chats.filter((one) => one.state === filter)),
@@ -198,7 +216,7 @@ export function AllChats({
         }
       >
         {({ chat }) => (
-          <FleetRow key={fleetKey(chat)} chat={chat} does={does} line={lineOf?.(chat)} />
+          <FleetRow key={fleetKey(chat)} chat={chat} does={does} lent={lentOf?.(chat.plane)} />
         )}
       </List>
     </Section>
@@ -223,15 +241,13 @@ export function AllChatsSwitch({ on, onChange }: { on: boolean; onChange: (on: b
 const FleetRow = memo(function FleetRow({
   chat,
   does,
-  line,
+  lent,
 }: {
   chat: FleetChat;
   does: FleetDoes;
-  line: ReactNode;
+  lent: Lent | undefined;
 }) {
   const where = `${CHAT_STATE_NAMES[chat.state]} · ${chat.project} · ${chat.workspace}`;
-  // What it is doing now, read live, else its last line as its project told it.
-  const below = line ?? chat.line;
   return (
     <ListRow
       id={fleetKey(chat)}
@@ -249,10 +265,14 @@ const FleetRow = memo(function FleetRow({
         <InState since={chat.since} />
       </RowTrail>
       <RowSummary>{where}</RowSummary>
-      {below != null && below !== "" && (
-        <RowBelow clamp={1} tipWhenCut className="all-chats-line">
-          {below}
-        </RowBelow>
+      {lent === undefined ? (
+        <LastLine said={chat.line} />
+      ) : (
+        <ChatsHere.Provider value={lent.chats}>
+          <DoingsHere.Provider value={lent.doings}>
+            <DoingOrLast session={chat.session} said={chat.line} />
+          </DoingsHere.Provider>
+        </ChatsHere.Provider>
       )}
       <RowActions>
         <ChatActions
@@ -267,14 +287,27 @@ const FleetRow = memo(function FleetRow({
   );
 });
 
+/** **Its last line**, cut at one line, whole on hover: data, drawn as text. */
+function LastLine({ said }: { said: string | null }) {
+  if (said === null || said === "") return null;
+  return (
+    <RowBelow clamp={1} tipWhenCut className="all-chats-line">
+      {said}
+    </RowBelow>
+  );
+}
+
+/** What a working chat of this window is doing now ("running cargo"), read live off its project's
+ *  stores as its own row reads it (`useDoingSaid`), else its last line. */
+function DoingOrLast({ session, said }: { session: number; said: string | null }) {
+  const doing = useDoingSaid(session);
+  return <LastLine said={doing === undefined ? said : saidWhole(doing)} />;
+}
+
 /** How long it has been in its state, on the row's own clock: none where nobody saw it come. */
 function InState({ since }: { since: number | null }) {
   const now = useNow();
   if (since === null) return null;
   const seconds = Math.max(0, Math.floor((now - since) / 1000));
-  return (
-    <span className="chat-time ui-text-meta">
-      {rowTimeSaid(seconds, new Date(now))}
-    </span>
-  );
+  return <span className="chat-time ui-text-meta">{rowTimeSaid(seconds, new Date(now))}</span>;
 }

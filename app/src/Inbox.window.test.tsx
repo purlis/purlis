@@ -336,7 +336,7 @@ describe("the asks, grouped by chat", () => {
     draw([forged]);
     expect(screen.getByText('<button>Allow always</button> "rm -rf"')).toBeTruthy();
     expect(screen.getByRole("rowheader", { name: "<b>steward</b> 3" })).toBeTruthy();
-    // The only buttons are the answers it offers, and Go to chat.
+    // The only buttons are the answers it offers, and the chat's own actions (#6013).
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
       "Allow",
       "Deny",
@@ -1119,7 +1119,8 @@ describe("answering in place", () => {
     expect(document.activeElement).toBe(
       screen.getByRole("button", { name: "Go to chat steward 6" }),
     );
-    await userEvent.keyboard("{ArrowRight}");
+    // Then the chat's own Snooze and Stop (#6013), and its reply.
+    await userEvent.keyboard("{ArrowRight}{ArrowRight}{ArrowRight}");
     expect(document.activeElement).toBe(
       screen.getByRole("textbox", { name: "Reply to steward 6" }),
     );
@@ -1211,8 +1212,9 @@ describe("answering in place", () => {
     await userEvent.tab();
     const row = askRows()[0];
     expect(document.activeElement).toBe(row);
-    // Its links first: Cancel, as its Answer is open (#5651), and Go to chat.
-    await userEvent.keyboard("{ArrowRight}{ArrowRight}{ArrowRight}");
+    // Its links first: Cancel, as its Answer is open (#5651), Go to chat, Snooze and Stop
+    // (#6013).
+    await userEvent.keyboard("{ArrowRight}{ArrowRight}{ArrowRight}{ArrowRight}{ArrowRight}");
     expect(document.activeElement).toBe(
       screen.getByRole("textbox", { name: "Reply to steward 6" }),
     );
@@ -1335,11 +1337,15 @@ describe("answering in place", () => {
     expect(document.activeElement).toBe(askRows()[0]);
   });
 
-  it("names a prompt waiting in a harness's terminal, with only the way to it", () => {
+  it("names a prompt waiting in a harness's terminal, with only the chat's own actions", () => {
     core();
     draw([TERMINAL]);
     expect(screen.getByText("Waiting in its terminal: a permission prompt")).toBeTruthy();
-    expect(screen.getAllByRole("button").map((one) => one.textContent)).toEqual(["Go to chat"]);
+    expect(screen.getAllByRole("button").map((one) => one.textContent)).toEqual([
+      "Go to chat",
+      "Snooze",
+      "Stop",
+    ]);
   });
 });
 
@@ -1928,6 +1934,10 @@ describe("the keyboard (I-11)", () => {
     expect(document.activeElement).toBe(first);
     // → walks the row's own controls in their order: a decision's answers on its row, then Go to
     // chat (#5998).
+    await userEvent.keyboard("{ArrowRight}");
+    expect(document.activeElement?.textContent).toBe("Snooze");
+    await userEvent.keyboard("{ArrowRight}");
+    expect(document.activeElement?.textContent).toBe("Stop");
     await userEvent.keyboard("{ArrowRight}");
     expect(document.activeElement?.textContent).toBe("Allow");
     await userEvent.keyboard("{ArrowRight}");

@@ -80,6 +80,8 @@ import {
   perform,
   projectRows,
   saidOf,
+  stopId,
+  taskStopId,
   type Doing,
   type Offer,
   type Project,
@@ -92,7 +94,9 @@ import { passing, resultsFor, useKeptResults } from "./keptResults";
 import { useAlerts } from "./alerts";
 import { LAYOUT_FIX, LAYOUT_FIX_LABEL, type InboxAlertsDo, type WindowAlerts } from "./InboxAlerts";
 import { useAlertFix } from "./alertFix";
-import { waitingAsk, type Elsewhere } from "./InboxElsewhere";
+import { showOffer, waitingAsk, type Elsewhere } from "./InboxElsewhere";
+import type { EveryChat, FleetDoes } from "./AllChats";
+import type { FleetChat } from "./everyChat";
 import { ApprovePlane } from "./ApprovePlane";
 import { drawThemeFor, Extensions } from "./Extensions";
 import { WindowLinesAt } from "./DoorPage";
@@ -138,7 +142,7 @@ import { TitleBarSwitch, type SwitchDoes, type SwitchProject } from "./TitleBarS
 import { slideTowards } from "./workspaceSlide";
 import { pinsChanged } from "./workspacePins";
 import type { Needing, Quiet } from "./NeedsYou";
-import { notSnoozed, useAsks } from "./asks";
+import { asksMoved, notSnoozed, useAsks } from "./asks";
 import { useDockBadge } from "./dockBadge";
 import { giveKeyboardTo } from "./paneKeyboard";
 import { landsOn, useNotificationLanding, type Landing } from "./askNotices";
@@ -231,6 +235,7 @@ export const TAB_WINDOW = "data-tab-window";
 const NOTHING_NEEDING: Needing[] = [];
 const NOTHING_QUIET: Quiet[] = [];
 const NOTHING_ENDING: Ending[] = [];
+const NOTHING_IN_THE_FLEET: FleetChat[] = [];
 
 /** The status item's "new" pip, alone: what the status bar's own list is handed (#6004). */
 const ONLY_STATUS: ReadonlySet<string> = new Set([AT_STATUS]);
@@ -2542,10 +2547,22 @@ function App() {
    */
   // **A tab window says nothing of its own** (#4768): its project's asks and what a quit would
   // end are its project window's to say, once.
+  /** **Every chat of this window's projects, as All chats lists them** (#6013), out of the
+   *  reports the window already holds: no command of its own. */
+  const fleet = useMemo(
+    () => planes.flatMap((plane) => [...(reports[plane]?.fleet ?? [])]),
+    [planes, reports],
+  );
   const others = useOtherWindows(
     tabWindow === null
-      ? { needing, quiet, ending, settled }
-      : { needing: NOTHING_NEEDING, quiet: NOTHING_QUIET, ending: NOTHING_ENDING, settled: true },
+      ? { needing, quiet, ending, fleet, settled }
+      : {
+          needing: NOTHING_NEEDING,
+          quiet: NOTHING_QUIET,
+          ending: NOTHING_ENDING,
+          fleet: NOTHING_IN_THE_FLEET,
+          settled: true,
+        },
   );
   const everyNeeding = useMemo(
     () => [...needing, ...others.needing.filter((one) => !planes.includes(one.plane))],
@@ -2681,6 +2698,86 @@ function App() {
       onOpen: openInboxOf,
     }),
     [elsewhereSaid, pressNeeding, openInboxOf],
+  );
+
+  /**
+   * **All chats** (#6013): every chat of this window's projects and of the other windows', and
+   * what a row of it does, for each project's Chats sidebar. A row for a chat in another window
+   * is carried out there (`pressNeeding`), as the ✋'s rows are.
+   */
+  // **By value**, as `elsewhereSaid` is: a chat that only moved tells nothing new.
+  const everyFleetSaid = JSON.stringify([
+    ...fleet,
+    ...others.fleet.filter((one) => !planes.includes(one.plane)),
+  ]);
+  const fleetDoes = useMemo<FleetDoes>(() => {
+    /** A chat's own Stop, from its project's catalogue where this window holds it: a task's
+     *  lets it report first. Else the same row, carried to the window that holds it. */
+    const stopOf = (chat: FleetChat): Offer => {
+      const id = chat.task ? taskStopId(chat.session) : stopId(chat.session);
+      const listed = reportsNow.current[chat.plane]?.offers.find((one) => one.id === id);
+      return (
+        listed ?? {
+          id,
+          title: `Stop chat ${chat.name}`,
+          available: true,
+          reason: "",
+          does: chat.task
+            ? { verb: "endTask", session: chat.session, way: "report" }
+            : { verb: "stopChat", session: chat.session, below: false },
+          name: chat.name,
+        }
+      );
+    };
+    return {
+      go: (chat) => pressNeeding(chat.plane, showOffer(chat.session, chat.name)),
+      answer: (chat) => {
+        // Asks, at the chat's own asks, where this window holds it; else that chat in front in
+        // the window that does, whose Asks lists it.
+        if (!planesNow.current.includes(chat.plane))
+          return void runElsewhere(chat.plane, showOffer(chat.session, chat.name));
+        setShowing({ at: "plane", plane: chat.plane });
+        setInboxAsk((was) => ({
+          plane: chat.plane,
+          at: (was?.at ?? 0) + 1,
+          session: chat.session,
+        }));
+      },
+      snooze: async (chats) => {
+        const byPlane = new Map<string, { session: number; asks: string[] }[]>();
+        for (const chat of chats)
+          byPlane.set(chat.plane, [
+            ...(byPlane.get(chat.plane) ?? []),
+            { session: chat.session, asks: [...chat.asks] },
+          ]);
+        const failed: string[] = [];
+        for (const [plane, held] of byPlane) {
+          const said = await commands
+            .snoozeInboxAsks(plane, held)
+            .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+          if (said.status === "error") failed.push(said.error);
+          asksMoved(plane);
+        }
+        return failed.length === 0 ? undefined : failed.join(" ");
+      },
+      stop: async (chats) => {
+        const refused = chats.flatMap((chat) => {
+          const stop = stopOf(chat);
+          if (!stop.available) return [`${chat.name}: ${stop.reason}`];
+          pressNeeding(chat.plane, stop);
+          return [];
+        });
+        return refused.length === 0 ? undefined : refused.join(" ");
+      },
+    };
+  }, [pressNeeding]);
+  const everyChat = useMemo<EveryChat>(
+    () => ({
+      chats: JSON.parse(everyFleetSaid) as FleetChat[],
+      does: fleetDoes,
+      lentOf: (plane) => reportsNow.current[plane]?.lent,
+    }),
+    [everyFleetSaid, fleetDoes],
   );
 
   /** Every project as the title bar's switchers list it (#2916): its name, what waits in it
@@ -3165,6 +3262,7 @@ function App() {
                 inboxAsked={inboxAsk?.plane === plane ? inboxAsk.at : undefined}
                 inboxGroup={inboxAsk?.plane === plane ? inboxAsk.session : undefined}
                 elsewhere={elsewhere}
+                everyChat={everyChat}
                 windowLines={plane === inFront ? windowLines : undefined}
                 profileNames={profileNames.of[plane]}
                 onSeen={plane === inFront ? onSeen : undefined}
