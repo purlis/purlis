@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794317752339,
+  "lastUpdate": 1794317790211,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -18914,6 +18914,42 @@ window.BENCHMARK_DATA = {
             "value": 1086.9,
             "unit": "MB",
             "extra": "median of 6 samples: 1032.4, 1081, 1092.8, 1127, 1127.1, 668.7 MB; window 695.3 MB, session host 390.7 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "0bf7b0749a492b70d912b29c61020f8f957e2700",
+          "message": "Release 0.5.1: the changelog folded and curated, theme parts versioned, engine pin refreshed (#6117)\n\n* Release 0.5.1: fold the changelog, curate the release section, version the theme parts\n\nFolds the 369 fragments in changes/ into CHANGELOG.md as the 0.5.1\nsection. The whole section would overflow GitHub's 125,000-character\nrelease body, so it keeps a lead paragraph, Added, Deprecated and\nSecurity in full, and Changed and Fixed by each entry's first sentence;\ndocs/changelog-0.5.1.md (next commit) has every entry in full. The theme\nparts since NEXT take version 14, with the digest, schema and\ndocs/themes.md written again. The engine pin takes the manifest\nre-issued on 2026-11-09, verified with cosign; Sigstore's trusted root\nis unchanged.\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6W0QJ3N3KDM4T3EJ2XKR07A\nPurlis-Persona: steward\n\n* Every change in 0.5.1, in full: docs/changelog-0.5.1.md\n\nThe release section's link points here.\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6W0QJ3N3KDM4T3EJ2XKR07A\nPurlis-Persona: steward\n\n* Release 0.5.1: fold the fragments merged since the prep\n\nNine fragments landed on main after the prep branch was cut. Their 11\nentries join the 0.5.1 section under its rule (Added and Security in\nfull, Changed and Fixed by first sentence) and docs/changelog-0.5.1.md in\nfull; the standing Deprecated notice is already in the section. Main's\nnewer text of claude-code-on-linux-runs-in-purlis-s-wrap replaces the\nfolded one.\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6W0QJ3N3KDM4T3EJ2XKR07A\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T10:45:39Z",
+          "tree_id": "5191fb840980eb1095fd56b73949f9ebb78ae65f",
+          "url": "https://github.com/purlis/purlis/commit/0bf7b0749a492b70d912b29c61020f8f957e2700"
+        },
+        "date": 1794317784549,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 2792,
+            "unit": "MB",
+            "extra": "median of 3 samples: 2324.9, 2792, 3005.4 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 1109.6,
+            "unit": "MB",
+            "extra": "median of 6 samples: 1066.2, 1092.8, 1126.5, 1147.1, 1146.3, 846.5 MB; window 724.2 MB, session host 408.5 MB"
           }
         ]
       }
