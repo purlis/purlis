@@ -77,6 +77,7 @@ import { standingOfRows } from "./sessionTasks";
 import { useTaskCount, useTaskCountSaid } from "./TasksBelow";
 import { browserRows, type BrowserShown } from "./ChatBrowsersShown";
 import { HeadingOffer } from "./PanelSection";
+import { AllChatsSwitch } from "./AllChats";
 import { tasksIn } from "./taskBuckets";
 import { catalogueMenu, moreForSaid } from "./Menus";
 import { menuIsEmpty } from "./menuModel";
@@ -317,6 +318,7 @@ export function ChatsSection({
   onBrowser,
   anyBrowser = false,
   heading,
+  onAllChats,
 }: {
   rows: readonly ChatRow[];
   /** The workspace in the strip, by the word a row says for where it works: the rows listed
@@ -387,6 +389,9 @@ export function ChatsSection({
   /** **What its title says** (R123, #2917): the workspace and, after it, the project. Absent,
    *  "Chats". The section is named Chats either way. */
   heading?: ReactNode;
+  /** **The switch to All chats** (#6013): every chat in every open project, a mode of this
+   *  sidebar. Without it, the head has no switch. */
+  onAllChats?: () => void;
 }) {
   const prefs = useChatsListPrefs();
   const chats = useChatsHere();
@@ -1036,6 +1041,10 @@ export function ChatsSection({
             <PanelTitle id="chats-title" className="side-title">
               {heading ?? "Chats"}
             </PanelTitle>
+            {/* **All chats** (#6013): the switch to every chat in every open project. */}
+            {onAllChats !== undefined && (
+              <AllChatsSwitch on={false} onChange={(on) => on && onAllChats()} />
+            )}
             {/* **Every browser, live** (#2027): the Browsers grid, while it has a tile. */}
             {anyBrowser && (
               <HeadingOffer offer={offers.get(BROWSERS_SHOW)} onPress={press} mark={LayoutGrid} />
