@@ -11,8 +11,9 @@
 //!   state (`sandbox::services::awaiting`), so one answer settles both. Where policy locks it, or
 //!   nothing listed can be allowed here, there is nothing to decide: its Notice alone says so.
 //! - **A `purlis` command's confirmation in the window** ([`confirmation`]): a pool sign-in, a
-//!   profile taken off a pool, a signing check. Its dialog still asks, and its two minutes still
-//!   run in the core (`poolsignin_confirm`); it is listed under the one project it was filed
+//!   profile taken off a pool, a signing check. It is answered on its row alone, with the code
+//!   its command's terminal shows, and no dialog over the window (#6136); its two minutes still
+//!   run in the core (`poolsignin_confirm`). It is listed under the one project it was filed
 //!   under, so one confirmation is counted once.
 
 use super::{AnswerPath, AskSource, Offered, Shown, said_inertly};
@@ -110,8 +111,9 @@ pub fn sandbox_expects(expects: Option<&ProjectExpects>) -> Option<Shown> {
     ))
 }
 
-/// **A command's confirmation in the window, as a Blocking ask** (#6000): its question as its
-/// dialog puts it, its yes and its no, answered as the dialog answers (`answer_pool_sign_in`).
+/// **A command's confirmation in the window, as a Blocking ask** (#6000): its question, with the
+/// code its command's terminal shows, its yes and its no, answered on its row
+/// (`answer_pool_sign_in`, #6136).
 /// `until` is when it is taken back as a no: the window reads the list again then.
 pub fn confirmation(asked: &PoolSignInAsk, until: u32) -> Shown {
     let (command, says, yes) = match asked.asks {

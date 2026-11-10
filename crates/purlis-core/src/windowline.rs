@@ -20,9 +20,9 @@
 //! a terminal shows it.
 //!
 //! **A pool sign-in started from the command is confirmed in the window** ([`approved`]): the
-//! command asks before it reaches a runner or its engine, shows a code the dialog shows too, and
-//! goes on only on the person's answer there. With no window it refuses. A keep from the command
-//! then needs that yes as well.
+//! command asks before it reaches a runner or its engine, shows a code its row in Asks shows too
+//! (#6136), and goes on only on the person's answer there. With no window it refuses. A keep
+//! from the command then needs that yes as well.
 //!
 //! **So is a profile taken off a pool from the command** ([`taken_off`], #5174). It is the one
 //! line that takes a live profile's sign-in off a runner, so it asks nothing of a runner until
