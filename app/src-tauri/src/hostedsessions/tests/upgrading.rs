@@ -360,12 +360,18 @@ fn session_records(world: &World) -> Vec<(String, String)> {
 /// **The launch before the upgrade**: chats in the window's own process, as before #2004. A
 /// chat on each profile, the `side` one in its worktree, then the quit that installs an update.
 fn the_launch_before_the_upgrade(world: &World) {
-    let planes = Planes::telling(
-        Arc::new(|_: Moved| {}),
-        crate::Shipped::default(),
-        Some(world.config()),
-    );
     let root = world.root();
+    // On Linux a sandboxed Claude Code chat runs inside purlis's wrap, on a sandbox-only profile
+    // (ADR 0067 as amended 2026-11-10), which neither profile is: this test is about the
+    // upgrade, so there its chats start without the sandbox, as this machine's level says,
+    // and the launch after reads the same level.
+    crate::sandboxing::no_claude_sandbox_here_for_tests(&root);
+    let planes =
+        crate::sandboxing::taking_events_where_claude_is_wrapped_for_tests(Planes::telling(
+            Arc::new(|_: Moved| {}),
+            crate::Shipped::default(),
+            Some(world.config()),
+        ));
     let held = planes
         .held(&planes.open(&root))
         .expect("the project is held");
@@ -382,6 +388,8 @@ fn the_launch_before_the_upgrade(world: &World) {
                 profile: Some(profile.to_owned()),
                 name: profile.to_owned(),
                 cwd: Some(cwd),
+                // As the window's start makes it, which reads this machine's level.
+                made: purlis_core::sandbox::Made::Window,
                 ..Default::default()
             },
             &root,

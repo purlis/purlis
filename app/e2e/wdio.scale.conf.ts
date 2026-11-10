@@ -7,7 +7,7 @@ import {
   anEmptyRecord,
   built,
   copyFixturePlane,
-  declareAProfile,
+  declareTheRunsProfile,
   theRunsEnvironment,
 } from "./harness.js";
 import { writeBenchShell } from "./load.js";
@@ -42,7 +42,15 @@ const knob = process.env.PURLIS_E2E_CHAT_EVENTS_MS;
 // A chat's program is the fake harness, with the load the spec chose: the project's default
 // profile runs it, as `wdio.conf.ts`'s runs its harness, and a new tab's `$SHELL` is it too.
 const loaded = chatEvents ? writeBenchShell(built("fake-harness")) : undefined;
-if (loaded) declareAProfile(plane, loaded);
+const environment = theRunsEnvironment(plane, {
+  CHARTER_PANIC_LOG: PANIC_LOG,
+  // A new tab's pane runs `$SHELL`: the fake harness, with the load the spec chose.
+  ...(loaded ? { SHELL: loaded } : {}),
+  ...(knob === undefined ? {} : { PURLIS_E2E_CHAT_EVENTS_MS: knob }),
+});
+// On Linux the profile is the run's sandbox-only machine profile, as every sandboxed Claude
+// Code chat there runs inside purlis's wrap (ADR 0067 as amended 2026-11-10).
+if (loaded) declareTheRunsProfile(plane, loaded, environment);
 
 export const config: WebdriverIO.Config = {
   ...base,
@@ -61,12 +69,7 @@ export const config: WebdriverIO.Config = {
         appBinaryPath: built(process.platform === "win32" ? "purlis-app.exe" : "purlis-app"),
         captureBackendLogs: true,
         captureFrontendLogs: false,
-        env: theRunsEnvironment(plane, {
-          CHARTER_PANIC_LOG: PANIC_LOG,
-          // A new tab's pane runs `$SHELL`: the fake harness, with the load the spec chose.
-          ...(loaded ? { SHELL: loaded } : {}),
-          ...(knob === undefined ? {} : { PURLIS_E2E_CHAT_EVENTS_MS: knob }),
-        }),
+        env: environment,
       },
     ],
   ],

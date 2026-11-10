@@ -56,17 +56,24 @@ fn in_a_data_home_of_its_own(test: &str, status: u8) -> Option<PathBuf> {
     None
 }
 
+/// A project whose chats start with no sandbox where purlis wraps a Claude Code chat (Linux):
+/// what is asked here is the sign-in, and there a sandboxed Claude Code chat runs inside
+/// purlis's wrap, on a sandbox-only profile, which these are not (ADR 0067 as amended
+/// 2026-11-10). Elsewhere its chats start sandboxed as they did.
 fn project() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("charter.toml"), "").unwrap();
+    crate::support::no_claude_sandbox_here(dir.path());
     dir
 }
 
+/// A start on the profile `name`, as the window makes it, so the person's level is read.
 fn start_on(name: &str, root: &Path) -> Start {
     Start {
         profile: Some(name.to_owned()),
         name: "ide.7".to_owned(),
         cwd: Some(root.to_path_buf()),
+        made: purlis_core::sandbox::Made::Window,
         ..Start::default()
     }
 }

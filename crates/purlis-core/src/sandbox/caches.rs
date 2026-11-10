@@ -1117,7 +1117,6 @@ org.gradle.warning.mode=all \\
                 env: crate::secrets::Env::of(env),
                 home: Some(person_home.clone()),
                 os: super::super::Os::this(),
-                on_a_sandbox_only_profile: false,
             };
             home_of(&machine, &project, &Denied::default())
                 .expect("a cache home")

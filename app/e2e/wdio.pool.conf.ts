@@ -121,6 +121,9 @@ function declarePoolsClaudeProfile(plane: string, configHome: string, dataHome: 
           // Pinned to the version the runner image keeps installed (`e2e/pool-runner.Dockerfile`),
           // so the runner runs it and fetches nothing from Claude Code's release.
           pinned: { version: CLAUDE_CODE_VERSION.split(" ")[0], at: Math.floor(Date.now() / 1000) },
+          // Try it readies its chat on this desktop first, and on a Linux one a sandboxed Claude
+          // Code chat starts only on a sandbox-only profile (ADR 0067 as amended 2026-11-10).
+          sandbox_only: process.platform === "linux",
         },
       ],
     }) + "\n",

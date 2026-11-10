@@ -155,7 +155,15 @@ const SANDBOX_ONLY: Shown = {
   ],
   source: "sandbox-only",
   chain: ["Codex"],
-  answer: { via: "sandbox-only" },
+  answer: { via: "sandbox-only", harness: "codex" },
+};
+
+const CLAUDE_SANDBOX_ONLY: Shown = {
+  ...SANDBOX_ONLY,
+  ask: "sandbox-only:claude",
+  says: "Claude Code needs a sandbox-only profile here: on Linux a sandboxed Claude Code chat runs only on one.",
+  chain: ["Claude Code"],
+  answer: { via: "sandbox-only", harness: "claude" },
 };
 
 const OLD_PLUGINS: Shown = {
@@ -384,8 +392,33 @@ describe("answering through the path an ask names", () => {
       window.removeEventListener(PROFILE_SIGN_IN, heard);
     }
     expect(calls.map((one) => [one.cmd, one.args])).toEqual([
-      ["make_sandbox_only_profile", { plane: PLANE }],
-      ["dismiss_sandbox_only", { plane: PLANE }],
+      ["make_sandbox_only_profile", { plane: PLANE, harness: "codex" }],
+      ["dismiss_sandbox_only", { plane: PLANE, harness: "codex" }],
+    ]);
+  });
+
+  it("makes a sandbox-only profile of the Ask's own harness, Claude Code's on Linux, and opens its sign-in", async () => {
+    const calls = sent({ make_sandbox_only_profile: "claude-sandbox", dismiss_sandbox_only: null });
+    const opened: unknown[] = [];
+    const heard = (event: Event) => opened.push((event as CustomEvent).detail);
+    window.addEventListener(PROFILE_SIGN_IN, heard);
+    try {
+      expect(await answerTaken(PLANE, CLAUDE_SANDBOX_ONLY, "make")).toEqual({
+        refused: undefined,
+        live: false,
+        opened: true,
+      });
+      expect(opened).toEqual([{ plane: PLANE, profile: "claude-sandbox", provider: undefined }]);
+      expect(await answerTaken(PLANE, CLAUDE_SANDBOX_ONLY, "dismiss")).toEqual({
+        refused: undefined,
+        live: false,
+      });
+    } finally {
+      window.removeEventListener(PROFILE_SIGN_IN, heard);
+    }
+    expect(calls.map((one) => [one.cmd, one.args])).toEqual([
+      ["make_sandbox_only_profile", { plane: PLANE, harness: "claude" }],
+      ["dismiss_sandbox_only", { plane: PLANE, harness: "claude" }],
     ]);
   });
 

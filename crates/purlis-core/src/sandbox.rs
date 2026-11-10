@@ -1598,11 +1598,6 @@ pub struct Machine {
     pub env: crate::secrets::Env,
     pub home: Option<PathBuf>,
     pub os: Os,
-    /// **Whether the chat this is asked for runs on a profile this machine keeps for sandboxed
-    /// chats only** (#2037): on Linux, a Claude Code chat on one runs inside purlis's own wrap
-    /// ([`Self::purlis_wraps`]). `false` for this machine as such ([`Self::this`]); a start sets
-    /// it for its own profile ([`Self::on_profile`]).
-    pub on_a_sandbox_only_profile: bool,
 }
 
 impl Machine {
@@ -1612,17 +1607,6 @@ impl Machine {
             env: crate::secrets::Env::from_process(),
             home: dirs::home_dir(),
             os: Os::this(),
-            on_a_sandbox_only_profile: false,
-        }
-    }
-
-    /// This machine, for a chat on a profile that is (`sandbox_only`) or is not one this machine
-    /// keeps for sandboxed chats only.
-    #[must_use]
-    pub fn on_profile(self, sandbox_only: bool) -> Self {
-        Self {
-            on_a_sandbox_only_profile: sandbox_only,
-            ..self
         }
     }
 
@@ -1642,16 +1626,14 @@ impl Machine {
     }
 
     /// **Whether a chat of `harness` here starts inside purlis's own Linux wrap**: a harness purlis
-    /// holds whole ([`Os::purlis_wraps`]), and a Claude Code chat too, with its own sandbox off,
-    /// on a runner (#4083), which has neither what that sandbox needs nor a place to make its
-    /// namespace, and on a profile for sandboxed chats only, whose folder no chat outside the
-    /// wrap reads or writes (#2037). On a person's own Linux machine a Claude Code chat on a
-    /// profile for every chat keeps its own.
+    /// holds whole ([`Os::purlis_wraps`]), and on Linux a Claude Code chat too, with its own
+    /// sandbox off: on a runner (#4083), which has neither what that sandbox needs nor a place to
+    /// make its namespace, and on a person's own machine, where a sandboxed Claude Code chat
+    /// starts only on a profile for sandboxed chats only, whose folder no chat outside the wrap
+    /// reads or writes (#2037, ADR 0067 as amended 2026-11-10;
+    /// [`crate::start::profile_refusal`]).
     pub fn purlis_wraps(&self, harness: Harness) -> bool {
-        self.os.purlis_wraps(harness)
-            || (harness == Harness::ClaudeCode
-                && self.os == Os::Linux
-                && (self.on_a_sandbox_only_profile || self.is_a_runner()))
+        self.os.purlis_wraps(harness) || (harness == Harness::ClaudeCode && self.os == Os::Linux)
     }
 }
 

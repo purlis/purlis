@@ -7,8 +7,16 @@ import { join } from "node:path";
 import process from "node:process";
 import { browser, expect, $, $$ } from "@wdio/globals";
 import { menuNames, pressMenuPath, ROW } from "../menus.js";
-import { answeringAsClaudeCode, built, READY, singleQuoted } from "../harness.js";
-import { harnessRowsDrawn, pressAndStart, openThePicker, showView } from "../opening.js";
+import { answeringAsClaudeCode, built, READY, singleQuoted, wrapsClaudeCode } from "../harness.js";
+import {
+  harnessRowsDrawn,
+  pressAndStart,
+  openThePicker,
+  showView,
+  STARTS,
+  STARTS_WITHOUT_THE_SANDBOX,
+  tickStartWithoutTheSandbox,
+} from "../opening.js";
 import { textOfEach } from "../reading.js";
 import { ask } from "../switching.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
@@ -1291,11 +1299,22 @@ describe("the explorer", () => {
         (el: HTMLElement) => el.querySelector("input")?.click(),
         label as unknown as HTMLElement,
       );
-      await $("button=Approve and start").waitForExist({ timeout: 20_000 });
-      await browser.execute(() =>
-        [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')]
-          .find((button) => button.textContent === "Approve and start")
-          ?.click(),
+      // A profile the project declares: on Linux it starts without the sandbox, this one chat
+      // (`startsOnADeclaredProfile`).
+      const approve = startsOnADeclaredProfile()[0];
+      await browser.waitUntil(
+        async () => {
+          if (wrapsClaudeCode()) await browser.execute(tickStartWithoutTheSandbox, "Start a chat");
+          return $(`button=${approve}`).isExisting();
+        },
+        { timeout: 20_000, timeoutMsg: `the picker offered no ${approve}` },
+      );
+      await browser.execute(
+        (words: string) =>
+          [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')]
+            .find((button) => button.textContent === words)
+            ?.click(),
+        approve,
       );
       await $('[role="dialog"][aria-labelledby="start-chat"]').waitForExist({
         timeout: 20_000,
@@ -1730,6 +1749,16 @@ async function tabInFront(): Promise<string> {
   return name.getText();
 }
 
+/**
+ * What the picker's start says for a chat on a profile this spec declares in the project, an
+ * approval first: on Linux, where every sandboxed Claude Code chat runs inside purlis's wrap, on a
+ * sandbox-only profile (ADR 0067 as amended 2026-11-10), such a chat starts without the sandbox,
+ * this one chat, as the picker offers; elsewhere, sandboxed.
+ */
+function startsOnADeclaredProfile(): readonly string[] {
+  return wrapsClaudeCode() ? STARTS_WITHOUT_THE_SANDBOX : STARTS;
+}
+
 /** The profile of the fake harness at a raw prompt, as `charter.local.toml` declares it. */
 const RAW_PROMPT = "raw-prompt";
 
@@ -1798,17 +1827,22 @@ async function startARawPromptChat(plane: string): Promise<void> {
   );
   // Its first run asks to approve the command, a later one only starts. Pressed from the
   // document: the card the row draws makes the picker taller than WebDriver counts as on screen.
+  // A profile the project declares: on Linux it starts without the sandbox, this one chat
+  // (`startsOnADeclaredProfile`).
+  const words = startsOnADeclaredProfile();
   await browser.waitUntil(
-    () =>
-      browser.execute(() => {
+    async () => {
+      if (wrapsClaudeCode()) await browser.execute(tickStartWithoutTheSandbox, "Start a chat");
+      return browser.execute((offered: readonly string[]) => {
         // Not while the rows' details are read (#4736): the button does not know yet.
         if (document.querySelector('[role="dialog"] [aria-busy="true"]')) return false;
         const start = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')]
           .filter((button) => !button.disabled && button.getAttribute("aria-disabled") !== "true")
-          .find((button) => ["Approve and start", "Start chat"].includes(button.textContent ?? ""));
+          .find((button) => offered.includes(button.textContent ?? ""));
         start?.click();
         return start !== undefined;
-      }),
+      }, words);
+    },
     { timeout: 20_000, timeoutMsg: "the picker offered no way to start the raw-prompt chat" },
   );
   await browser.waitUntil(async () => (await rawPromptChats(plane)).length > before, {

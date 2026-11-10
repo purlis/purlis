@@ -481,7 +481,7 @@ const add: LiveSetting = {
           />
           <SettingRow
             label="For sandboxed chats only"
-            help="Only a sandboxed chat starts on it, and a sandboxed Codex chat starts on no other profile. Nothing is imported into it."
+            help="Only a sandboxed chat starts on it. A sandboxed Codex chat, and on Linux a sandboxed Claude Code chat, starts on no other profile. Nothing is imported into it."
             control={(inner) => (
               <Choice
                 kind="switch"

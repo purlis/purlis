@@ -337,6 +337,9 @@ fn a_secret_ask_naming_curl_heard_from_a_pool_is_the_plain_fill_with_no_allow() 
 #[cfg(unix)]
 #[test]
 fn the_same_secret_ask_from_this_machine_is_one_notice_offering_the_allow() {
+    if super::no_sandboxed_claude_code_stand_in_here() {
+        return;
+    }
     let (plain, runs, _) = curl_named_ahead(None);
 
     assert_eq!(plain.len(), 0, "no plain Fill beside it: {plain:?}");

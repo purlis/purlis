@@ -94,7 +94,6 @@ fn the_profiles_a_wrapped_chat_starts_under_are_written_out() {
         env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
         home: Some(home),
         os: Os::MacOs,
-        on_a_sandbox_only_profile: false,
     };
     let mut written = 0;
     for (level, name, manifest) in LEVELS {
@@ -216,7 +215,6 @@ fn the_macos_profiles_limit_file_link_to_the_folders_a_chat_may_write() {
         env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
         home: Some(home),
         os: Os::MacOs,
-        on_a_sandbox_only_profile: false,
     };
     let refused = |said: Result<(), String>, what: &str| match said {
         Ok(()) => panic!("{what}: the link was made"),
@@ -312,7 +310,6 @@ fn a_wrapped_chat_at_the_floor_makes_its_tools_folders_in_a_bare_home() {
             env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
             home: Some(home.clone()),
             os: Os::MacOs,
-            on_a_sandbox_only_profile: false,
         };
         let decided = sandbox::decide(harness, &root, &machine, &|_| true, None, None)
             .expect("decided")

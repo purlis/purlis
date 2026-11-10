@@ -53,6 +53,10 @@ impl Project {
             &purlis_core::profiletrust::fingerprint(work),
         )
         .expect("approved");
+        // On Linux a sandboxed Claude Code chat runs inside purlis's wrap, on a sandbox-only
+        // profile (ADR 0067 as amended 2026-11-10), which `work` is not: these tests are about
+        // the fix, so there it starts without the sandbox.
+        crate::sandboxing::no_claude_sandbox_here_for_tests(&root);
         Self { _dir: dir, root }
     }
 
@@ -84,8 +88,14 @@ impl Project {
     }
 }
 
+/// Planes telling nobody, which record the level a chat starts at where [`Project::new`]
+/// starts it without the sandbox.
 fn planes() -> Planes {
-    Planes::telling(Arc::new(|_| {}), crate::Shipped::default(), None)
+    crate::sandboxing::taking_events_where_claude_is_wrapped_for_tests(Planes::telling(
+        Arc::new(|_| {}),
+        crate::Shipped::default(),
+        None,
+    ))
 }
 
 const SIZE: Size = Size {
@@ -705,6 +715,8 @@ fn fix_reads_the_red_request_from_the_project_and_finds_the_chat_open_for_it() {
     git(root, &["init", "-q", "-b", "main"]);
     git(root, &["add", purlis_core::plane::MANIFEST, ".gitignore"]);
     git(root, &["commit", "-q", "-m", "one"]);
+    // Its own settings again, now the project is a repository of its own.
+    crate::sandboxing::no_claude_sandbox_here_for_tests(root);
     let head = git(root, &["rev-parse", "HEAD"]);
     let page = "https://github.com/acme/plane/pull/12";
     let planes = planes();

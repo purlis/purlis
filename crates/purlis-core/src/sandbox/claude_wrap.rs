@@ -7,9 +7,10 @@
 //! start there. The chat runs inside purlis's Linux wrap as Codex and opencode do (#1040), and
 //! its own sandbox is switched off (`"sandbox": {"enabled": false}` in its `--settings`).
 //!
-//! **And on a person's own Linux machine, on a profile for sandboxed chats only** (#2037; ADR 0067
-//! as amended 2026-11-09), whose folder no chat outside the wrap reads or writes. On a profile for
-//! every chat there, a Claude Code chat keeps its own sandbox ([`super::Machine::purlis_wraps`]).
+//! **And every sandboxed Claude Code chat on a person's own Linux machine** (ADR 0067 as amended
+//! 2026-11-10), which starts only on a profile for sandboxed chats only (#2037), whose folder no
+//! chat outside the wrap reads or writes ([`super::Machine::purlis_wraps`],
+//! [`crate::start::profile_refusal`]).
 //!
 //! What being wrapped whole changes, from what [`super::claude`] says of a chat on its own:
 //!

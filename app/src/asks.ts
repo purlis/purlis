@@ -517,11 +517,12 @@ export async function answerTaken(
         break;
       }
       case "sandbox-only": {
-        // Make one makes a sandbox-only Codex profile (#2037), then the project's window opens
-        // a shell tab where the core types Codex's own sign-in for it. Dismiss puts it away.
-        if (option === "dismiss") return commands.dismissSandboxOnly(plane);
+        // Make one makes a sandbox-only profile of the Ask's harness (#2037), then the
+        // project's window opens a shell tab where the core types that harness's own sign-in
+        // for it. Dismiss puts it away.
+        if (option === "dismiss") return commands.dismissSandboxOnly(plane, path.harness);
         if (option === "make") {
-          const made = await commands.makeSandboxOnlyProfile(plane);
+          const made = await commands.makeSandboxOnlyProfile(plane, path.harness);
           if (made.status === "error") return made;
           askProfileSignIn(plane, made.data);
           opened = true;

@@ -8,7 +8,9 @@
 //! ([`purlis_core::skills::grades::ready_to_grade`]).
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+use crate::support::{self, ClaudeProfile};
 
 use purlis_core::profiles;
 use purlis_core::sandbox;
@@ -21,50 +23,64 @@ const INSTALLED: &str = r#"{"version": 2, "plugins": {
 }}"#;
 
 /// A project whose chats run in the full sandbox, on a Claude Code profile `work` whose own
-/// settings folder holds `installed` as its record of installed plugins.
+/// settings folder holds `installed` as its record of installed plugins: the project's own, or,
+/// where purlis wraps a sandboxed Claude Code chat, this machine's sandbox-only one
+/// ([`support::sandboxed_claude_profile`]).
 struct Project {
     dir: tempfile::TempDir,
-    config: tempfile::TempDir,
+    /// The profile's settings folder.
+    config: PathBuf,
+    _config: Option<tempfile::TempDir>,
     _outside: stand_in::NoChatWrites,
 }
 
 impl Project {
-    fn new(installed: &str) -> Self {
+    /// The project for `test`, or `None` where a child ran it.
+    fn new(test: &str, installed: &str) -> Option<Self> {
+        let sandbox_only = match support::sandboxed_claude_profile(test) {
+            ClaudeProfile::Ran => return None,
+            ClaudeProfile::Project => None,
+            ClaudeProfile::SandboxOnly(config) => Some(config),
+        };
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         fs::write(root.join("charter.toml"), "[sandbox]\nmode = \"on\"\n").unwrap();
         let outside = stand_in::NoChatWrites::new();
-        let claude = stand_in::claude_code(outside.path(), "claude", "#!/bin/sh\nexit 0\n");
-        let config = tempfile::tempdir().unwrap();
-        fs::create_dir_all(config.path().join("plugins")).unwrap();
-        fs::write(
-            config.path().join("plugins/installed_plugins.json"),
-            installed,
-        )
-        .unwrap();
-        fs::write(
-            root.join(profiles::LOCAL_FILE),
-            format!(
-                "[harness.work]\nkind = \"claude\"\ncommand = [{:?}]\nenv = {{ CLAUDE_CONFIG_DIR = {:?} }}\n",
-                claude.display().to_string(),
-                config.path().display().to_string()
-            ),
-        )
-        .unwrap();
-        let project = Self {
+        let (config, kept) = match sandbox_only {
+            Some(config) => (config, None),
+            None => {
+                let kept = tempfile::tempdir().unwrap();
+                (kept.path().to_path_buf(), Some(kept))
+            }
+        };
+        fs::create_dir_all(config.join("plugins")).unwrap();
+        fs::write(config.join("plugins/installed_plugins.json"), installed).unwrap();
+        if kept.is_some() {
+            let claude = stand_in::claude_code(outside.path(), "claude", "#!/bin/sh\nexit 0\n");
+            fs::write(
+                root.join(profiles::LOCAL_FILE),
+                format!(
+                    "[harness.work]\nkind = \"claude\"\ncommand = [{:?}]\nenv = {{ CLAUDE_CONFIG_DIR = {:?} }}\n",
+                    claude.display().to_string(),
+                    config.display().to_string()
+                ),
+            )
+            .unwrap();
+            let set = profiles::current(root);
+            let profile = set.get("work").expect("the profile is declared");
+            purlis_core::profiletrust::record_launched(
+                root,
+                "work",
+                &purlis_core::profiletrust::fingerprint(profile),
+            )
+            .unwrap();
+        }
+        Some(Self {
             dir,
             config,
+            _config: kept,
             _outside: outside,
-        };
-        let set = profiles::current(project.root());
-        let profile = set.get("work").expect("the profile is declared");
-        purlis_core::profiletrust::record_launched(
-            project.root(),
-            "work",
-            &purlis_core::profiletrust::fingerprint(profile),
-        )
-        .unwrap();
-        project
+        })
     }
 
     fn root(&self) -> &Path {
@@ -72,7 +88,7 @@ impl Project {
     }
 
     fn record(&self) -> String {
-        fs::read_to_string(self.config.path().join("plugins/installed_plugins.json")).unwrap()
+        fs::read_to_string(self.config.join("plugins/installed_plugins.json")).unwrap()
     }
 
     fn start(&self) -> Start {
@@ -95,7 +111,12 @@ impl Project {
 #[test]
 fn a_grades_chat_is_handed_every_installed_plugin_off_and_purlis_s_own_on() {
     purlis_core::unsteered!();
-    let project = Project::new(INSTALLED);
+    let Some(project) = Project::new(
+        "a_grades_chat_has_only_purlis_s_plugin_on::a_grades_chat_is_handed_every_installed_plugin_off_and_purlis_s_own_on",
+        INSTALLED,
+    ) else {
+        return;
+    };
     let root = project.root();
 
     // Not vacuous: an ordinary chat names neither plugin, so Claude Code decides them.
@@ -143,7 +164,12 @@ fn a_grades_chat_is_handed_every_installed_plugin_off_and_purlis_s_own_on() {
 #[test]
 fn a_grade_whose_plugin_record_cannot_be_read_does_not_start() {
     purlis_core::unsteered!();
-    let project = Project::new("{");
+    let Some(project) = Project::new(
+        "a_grades_chat_has_only_purlis_s_plugin_on::a_grade_whose_plugin_record_cannot_be_read_does_not_start",
+        "{",
+    ) else {
+        return;
+    };
     let why = grades::ready_to_grade(&project.start(), project.root())
         .expect_err("a grade that could not say which plugins were off is refused");
     assert!(why.contains("every plugin but purlis's own off"), "{why}");

@@ -266,6 +266,9 @@ fn a_handoff_asks_the_person_as_it_always_did() {
 
 #[test]
 fn a_task_the_person_started_from_a_tab_asks_the_person_as_it_always_did() {
+    if super::no_sandboxed_claude_code_stand_in_here() {
+        return;
+    }
     let plane = a_plane_with_personas();
     let host = Pretend::default();
     let (planes, id, steward) = a_steward_chat(&host, &plane);

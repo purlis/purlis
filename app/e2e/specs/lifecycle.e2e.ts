@@ -5,6 +5,7 @@ import { execFileSync } from "node:child_process";
 import { endEveryChat, pressAndStart } from "../opening.js";
 import { browser, expect, $ } from "@wdio/globals";
 import { READY } from "../harness.js";
+import { PS_MAX_BUFFER } from "../processes.js";
 import { everyTabName, openedSince, tabNames as namesOnTheStrip } from "../reach.js";
 
 /**
@@ -22,7 +23,10 @@ import { everyTabName, openedSince, tabNames as namesOnTheStrip } from "../reach
 
 /** How many fake harnesses this machine is running, asked of the operating system. */
 function harnessesRunning(): number {
-  const ps = execFileSync("ps", ["-A", "-o", "command="], { encoding: "utf8" });
+  const ps = execFileSync("ps", ["-A", "-o", "command="], {
+    encoding: "utf8",
+    maxBuffer: PS_MAX_BUFFER,
+  });
   return ps.split("\n").filter((line) => line.includes("fake-harness")).length;
 }
 

@@ -63,9 +63,14 @@ fn signed_out(data: &Path) {
     fs::write(data.join(SIGNED_OUT), "").unwrap();
 }
 
+/// A project whose chats start with no sandbox where purlis wraps a Claude Code chat (Linux):
+/// what is asked here is the sign-in, and there a sandboxed Claude Code chat runs inside
+/// purlis's wrap, on a sandbox-only profile, which `work` is not (ADR 0067 as amended
+/// 2026-11-10). Elsewhere its chats start sandboxed as they did.
 fn project() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("charter.toml"), "").unwrap();
+    crate::support::no_claude_sandbox_here(dir.path());
     dir
 }
 
@@ -81,7 +86,8 @@ fn start_on(name: &str, root: &Path) -> Start {
         without_sandbox: None,
         held: None,
         grants: Default::default(),
-        made: Default::default(),
+        // As the window makes it, so the person's level is read ([`project`]).
+        made: purlis_core::sandbox::Made::Window,
     }
 }
 

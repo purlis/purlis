@@ -10,6 +10,7 @@ import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLef
 import { closesTheTabsItOpens, focusWorkspace, runFromThePalette } from "../reach.js";
 import { studioSkill } from "../studio.js";
 import { startAChat } from "../started.js";
+import { wrapsClaudeCode } from "../harness.js";
 
 /**
  * **A skill's compatibility badges, and a skill that cannot be loaded** (SK-8, #2771), in the
@@ -110,15 +111,20 @@ describe("a skill's compatibility and a skill that cannot be loaded", function (
   });
 
   it("says on a chat's pane that it started without a skill that could not be loaded", async () => {
-    // The scenario's own program, declared as Claude Code, as `use-skill.e2e.ts` declares it.
-    const command = /command = (\[.*\])/.exec(declared)?.[1];
-    if (!command) throw new Error(`no command in ${local}: ${declared}`);
-    writeFileSync(
-      local,
-      `${declared.replace('default = "scenario"', 'default = "compat-claude"')}\n` +
-        `[harness.compat-claude]\nkind = "claude"\ncommand = ${command}\n`,
-    );
-    await browser.execute(() => window.dispatchEvent(new Event("focus")));
+    // The scenario's own program, declared as Claude Code, as `use-skill.e2e.ts` declares it. On
+    // Linux, where every sandboxed Claude Code chat runs inside purlis's wrap, on a sandbox-only
+    // profile (ADR 0067 as amended 2026-11-10), the run's own `scenario` is that profile, of
+    // Claude Code's kind, and the chat starts on it.
+    if (!wrapsClaudeCode()) {
+      const command = /command = (\[.*\])/.exec(declared)?.[1];
+      if (!command) throw new Error(`no command in ${local}: ${declared}`);
+      writeFileSync(
+        local,
+        `${declared.replace('default = "scenario"', 'default = "compat-claude"')}\n` +
+          `[harness.compat-claude]\nkind = "claude"\ncommand = ${command}\n`,
+      );
+      await browser.execute(() => window.dispatchEvent(new Event("focus")));
+    }
     await startAChat();
 
     const notice = await $('[data-cause^="skills-missing:"]');

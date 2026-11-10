@@ -4375,6 +4375,11 @@ impl Chats {
         #[cfg(test)]
         let decided = match &self.deciding {
             Some(deciding) => deciding(chat, &grants, opt_out),
+            None if opt_out.is_none()
+                && tests::claude_left_unsandboxed_here(&self.project, chat) =>
+            {
+                Ok((None, None, None))
+            }
             None => self.sandbox_off_profile(chat, &grants, opt_out, &made_of(chat, why)),
         };
         #[cfg(not(test))]
@@ -7489,6 +7494,13 @@ impl Chats {
     pub fn has_certificate_check(&self, session: u32) -> bool {
         self.confines_of(session)
             .is_some_and(|confines| confines.widened.trust)
+    }
+
+    /// **Whether chat `session`'s harness runs whole inside its sandbox**, by the app's record
+    /// of its start ([`purlis_core::sandbox::Confines::whole`]): on Linux, inside purlis's own
+    /// wrap. `None` where the chat is not open or started without a sandbox.
+    pub fn runs_whole(&self, session: u32) -> Option<bool> {
+        self.confines_of(session).map(|confines| confines.whole)
     }
 
     /// What chat `session`'s sandbox was compiled to as it started ([`Self::confines_of`]), with

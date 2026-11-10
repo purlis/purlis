@@ -7,9 +7,11 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   FIRST_ASK,
+  STARTS_WITHOUT_THE_SANDBOX,
   aDialogOffers,
   pressTheCloseAnswer,
   showsTheQuestion,
+  tickStartWithoutTheSandbox,
   whatCameInsteadOfThePicker,
   whatThePickerOffers,
 } from "./opening";
@@ -237,6 +239,63 @@ describe("what the picker offers to press, as a spec chooses it", () => {
   it("is Start chat once the rows are checked and nothing asks", () => {
     picker(false, "Start chat");
     expect(whatThePickerOffers("Start a chat")).toBe("Start chat");
+  });
+
+  it("is a start without the sandbox only when asked for one, never a sandboxed start", () => {
+    picker(false, "Approve and start without the sandbox");
+    expect(whatThePickerOffers("Start a chat")).toBeNull();
+    expect(whatThePickerOffers("Start a chat", STARTS_WITHOUT_THE_SANDBOX)).toBe(
+      "Approve and start without the sandbox",
+    );
+    document.body.replaceChildren();
+    picker(false, "Approve and start");
+    expect(whatThePickerOffers("Start a chat", STARTS_WITHOUT_THE_SANDBOX)).toBeNull();
+  });
+});
+
+/**
+ * **A chat started without the sandbox ticks the picker's own box** (ADR 0067 §7): on Linux a
+ * chat on a profile a project declares starts that way, as every sandboxed Claude Code chat there
+ * runs inside purlis's wrap, on a sandbox-only profile (ADR 0067 as amended 2026-11-10).
+ */
+describe("the picker's Start without the sandbox, as a spec ticks it", () => {
+  /** The picker with a box in a label saying `said`, its rows `aria-busy` while `checking`. */
+  function picker(checking: boolean, ...said: string[]): HTMLInputElement[] {
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    dialog.append("Start a chat");
+    const rows = document.createElement("div");
+    rows.setAttribute("aria-busy", String(checking));
+    dialog.append(rows);
+    const boxes = said.map((words) => {
+      const label = document.createElement("label");
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      label.append(box, words);
+      dialog.append(label);
+      return box;
+    });
+    document.body.append(dialog);
+    return boxes;
+  }
+
+  it("ticks nothing while the rows are still checked", () => {
+    const [box] = picker(true, "Start without the sandbox");
+    expect(tickStartWithoutTheSandbox("Start a chat")).toBe(false);
+    expect(box.checked).toBe(false);
+  });
+
+  it("ticks its own box and no other, and leaves it ticked when asked again", () => {
+    const [footer, optOut] = picker(false, "Show charter's footer", "Start without the sandbox");
+    expect(tickStartWithoutTheSandbox("Start a chat")).toBe(true);
+    expect(tickStartWithoutTheSandbox("Start a chat")).toBe(true);
+    expect(optOut.checked).toBe(true);
+    expect(footer.checked).toBe(false);
+  });
+
+  it("says so where the picker draws no such box", () => {
+    picker(false, "Show charter's footer");
+    expect(tickStartWithoutTheSandbox("Start a chat")).toBe(false);
   });
 });
 

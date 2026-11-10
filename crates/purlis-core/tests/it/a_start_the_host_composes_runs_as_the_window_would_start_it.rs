@@ -135,6 +135,19 @@ impl Beside for Host {
     }
 }
 
+/// **Whether purlis wraps a sandboxed Claude Code chat here** (Linux): there it runs inside
+/// purlis's wrap, on a sandbox-only profile, which the project's `work` is not (ADR 0067 as
+/// amended 2026-11-10).
+fn purlis_wraps_claude_code() -> bool {
+    purlis_core::sandbox::Machine::this().purlis_wraps(purlis_core::harness::Harness::ClaudeCode)
+}
+
+/// For a test of something else: out of the sandbox where purlis wraps a Claude Code chat
+/// ([`purlis_wraps_claude_code`]). Elsewhere it starts sandboxed as it did.
+fn out_of_the_sandbox_where_purlis_wraps_claude_code(start: &mut StartProgram) {
+    start.without_sandbox = purlis_wraps_claude_code();
+}
+
 fn asking(change: impl FnOnce(&mut StartProgram)) -> StartProgram {
     let mut start = StartProgram {
         program: Some("01J9CHAT000000000000000000".into()),
@@ -187,7 +200,12 @@ fn a_start_with_no_launch_runs_its_profiles_harness_in_its_workspace_as_its_pers
     let project = Project::on("claude");
     let host = Host::default();
 
-    let launch = composed(&project, &asking(|_| {}), &host).expect("composed");
+    let launch = composed(
+        &project,
+        &asking(out_of_the_sandbox_where_purlis_wraps_claude_code),
+        &host,
+    )
+    .expect("composed");
 
     let bin = fs::canonicalize(project.bin.path()).unwrap();
     assert!(
@@ -221,7 +239,7 @@ fn a_start_the_host_composes_carries_the_prompt_key_it_was_given_in_its_environm
     purlis_core::unsteered!();
     let project = Project::on("claude");
     let host = Host::default();
-    let start = asking(|_| {});
+    let start = asking(out_of_the_sandbox_where_purlis_wraps_claude_code);
     let key = session::PromptKey::mint().expect("a key");
 
     let spec = hoststart::spec(
@@ -495,14 +513,22 @@ fn a_composed_starts_run_begins_under_its_ids_and_says_who_started_it() {
 /// An opencode chat's sandbox, compiled for a Mac whatever this machine is: what a composed start
 /// is given to wrap, with no program run to get there.
 fn a_sandboxed_opencode_start(project: &Project) -> purlis_core::start::Ready {
+    a_sandboxed_start_on_a_mac(project, purlis_core::harness::Harness::Opencode)
+}
+
+/// A `harness` chat's sandbox, compiled for a Mac whatever this machine is, as
+/// [`a_sandboxed_opencode_start`] compiles opencode's.
+fn a_sandboxed_start_on_a_mac(
+    project: &Project,
+    harness: purlis_core::harness::Harness,
+) -> purlis_core::start::Ready {
     let applied = purlis_core::sandbox::for_start(
-        purlis_core::harness::Harness::Opencode,
+        harness,
         project.root(),
         &purlis_core::sandbox::Machine {
             env: purlis_core::secrets::Env::of(&[]),
             home: None,
             os: purlis_core::sandbox::Os::MacOs,
-            on_a_sandbox_only_profile: false,
         },
         &|_| true,
     )
@@ -514,7 +540,7 @@ fn a_sandboxed_opencode_start(project: &Project) -> purlis_core::start::Ready {
         args: Vec::new(),
         env: vec![("PURLIS_PERSONA".to_owned(), "steward".to_owned())],
         cwd: Some(project.root().to_path_buf()),
-        harness: Some(purlis_core::harness::Harness::Opencode),
+        harness: Some(harness),
         declared: None,
         session: None,
         how: purlis_core::reopen::Reopened::Fresh(
@@ -792,6 +818,11 @@ fn composed_with(
 #[test]
 fn a_composed_claude_code_line_is_read_as_running_in_its_own_sandbox() {
     purlis_core::unsteered!();
+    // Claude Code's own sandbox runs a sandboxed Claude Code chat on macOS. On Linux every one
+    // runs inside purlis's wrap, on a sandbox-only profile ([`purlis_wraps_claude_code`]).
+    if purlis_wraps_claude_code() {
+        return;
+    }
     let project = Project::on("claude");
     let host = Host::default();
 
@@ -1012,21 +1043,30 @@ fn a_sandboxed_claude_code_start_leaves_a_workspace_made_while_it_runs_out_of_ev
     });
 
     // Its desktop's word on the plane's skills is read from a link's start (#3084).
-    let launch = hoststart::compose(
-        &Starting {
-            root,
-            number: 3,
-            start: &start,
-            reporting: None,
-            started_by: "remote-link",
-            prompt_key: None,
-        },
-        &project.kit(),
-        &Host::default(),
-    )
-    .expect("composed");
+    let starting = Starting {
+        root,
+        number: 3,
+        start: &start,
+        reporting: None,
+        started_by: "remote-link",
+        prompt_key: None,
+    };
+    // Where purlis wraps a sandboxed Claude Code chat, it runs only on a sandbox-only profile
+    // ([`purlis_wraps_claude_code`]), so the start composed there is one compiled for a Mac.
+    let (launch, os) = if purlis_wraps_claude_code() {
+        let ready = a_sandboxed_start_on_a_mac(&project, purlis_core::harness::Harness::ClaudeCode);
+        (
+            hoststart::compose_ready(&starting, ready, &project.kit(), &Host::default()),
+            purlis_core::sandbox::Os::MacOs,
+        )
+    } else {
+        (
+            hoststart::compose(&starting, &project.kit(), &Host::default()),
+            purlis_core::sandbox::Os::this(),
+        )
+    };
+    let launch = launch.expect("composed");
 
-    let os = purlis_core::sandbox::Os::this();
     let args: Vec<std::ffi::OsString> = launch.args.iter().map(Into::into).collect();
     assert!(
         matches!(

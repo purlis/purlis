@@ -257,7 +257,6 @@ fn a_runners_chat_reaches_neither_its_link_key_nor_what_holds_it() {
         env: purlis_core::secrets::Env::of(&[("PATH", "/usr/bin:/bin")]),
         home: Some(home.clone()),
         os: Os::Linux,
-        on_a_sandbox_only_profile: false,
     };
     assert!(runner.is_a_runner(), "a home paired so is a runner's");
 

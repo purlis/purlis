@@ -12,6 +12,7 @@ import {
   runFromThePalette,
 } from "../reach.js";
 import { projectInFront, runningIn } from "../running.js";
+import { wrapsClaudeCode } from "../harness.js";
 import { openTheStatusCard } from "../reading.js";
 
 /**
@@ -40,7 +41,15 @@ function withTheProfileAsDefault(local: string): string {
   return `${made.endsWith("\n") ? made : `${made}\n`}\n[harness.${PROFILE}]\n${scenario[1].trimEnd()}\n`;
 }
 
-describe("a curation action refused for its profile's approval", function () {
+/**
+ * **Not on Linux**, where every sandboxed Claude Code chat runs inside purlis's wrap, on a
+ * sandbox-only profile (ADR 0067 as amended 2026-11-10): a curation action starts its chat sandboxed, so a
+ * profile a project declares, the only kind that asks for an approval, starts none there. The
+ * approval in place is the same on every system, and macOS runs it.
+ */
+const describeHere = wrapsClaudeCode() ? describe.skip : describe;
+
+describeHere("a curation action refused for its profile's approval", function () {
   this.timeout(180_000);
 
   let root = "";

@@ -2127,17 +2127,18 @@ export const commands = {
 	 */
 	machineProfilePin: (name: string, version: string) => typedError<MachineProfileRow, string>(__TAURI_INVOKE("machine_profile_pin", { name, version })),
 	/**
-	 *  **Answers project `plane`'s Ask *Codex needs a sandbox-only profile here*** (#2037, the
-	 *  operator's ruling of 2026-10-15): makes a sandbox-only Codex profile, with nothing imported,
-	 *  and puts the Ask away. The window then opens Codex's own sign-in for it in a shell tab
-	 *  ([`type_profile_sign_in`]). The profile's name.
+	 *  **Answers project `plane`'s Ask *Codex needs a sandbox-only profile here*, or *Claude Code
+	 *  needs …*** (#2037, the operator's ruling of 2026-10-15; Claude Code on Linux, ADR 0067 as
+	 *  amended 2026-11-10): makes a sandbox-only profile of `harness` (the kind's word), with
+	 *  nothing imported, and puts the Ask away. The window then opens the harness's own sign-in for
+	 *  it in a shell tab ([`type_profile_sign_in`]). The profile's name.
 	 */
-	makeSandboxOnlyProfile: (plane: PlaneId) => typedError<string, string>(__TAURI_INVOKE("make_sandbox_only_profile", { plane })),
+	makeSandboxOnlyProfile: (plane: PlaneId, harness: string) => typedError<string, string>(__TAURI_INVOKE("make_sandbox_only_profile", { plane, harness })),
 	/**
-	 *  Puts away project `plane`'s Ask *Codex needs a sandbox-only profile here* (#2037): Dismiss. A
-	 *  sandboxed Codex chat's next start asks again while this machine has no such profile.
+	 *  Puts away project `plane`'s Ask for a sandbox-only profile of `harness` (#2037): Dismiss. A
+	 *  sandboxed chat's next start asks again while this machine has no such profile.
 	 */
-	dismissSandboxOnly: (plane: PlaneId) => typedError<null, string>(__TAURI_INVOKE("dismiss_sandbox_only", { plane })),
+	dismissSandboxOnly: (plane: PlaneId, harness: string) => typedError<null, string>(__TAURI_INVOKE("dismiss_sandbox_only", { plane, harness })),
 	/**
 	 *  Forgets a project on this machine: its recent, its approval, its pins and any tab a launch
 	 *  would put back. A project that is gone from the disk is forgotten the same way.
@@ -5952,11 +5953,11 @@ export type AnswerPath =
  */
 { via: "sign-in"; profile: string; pool: string | null } | 
 /**
- *  Make one sends `make_sandbox_only_profile`, then opens a shell tab where the core types
- *  Codex's own sign-in for the profile it made (`type_profile_sign_in`). Dismiss sends
- *  `dismiss_sandbox_only`.
+ *  Make one sends `make_sandbox_only_profile` for `harness` (the kind's word, `codex` or
+ *  `claude`), then opens a shell tab where the core types the harness's own sign-in for the
+ *  profile it made (`type_profile_sign_in`). Dismiss sends `dismiss_sandbox_only`.
  */
-{ via: "sandbox-only" } | 
+{ via: "sandbox-only"; harness: string } | 
 /**
  *  `remove_old_harness_plugins` for Remove, which holds purlis's proposed change for each
  *  file and opens the first; `dismiss_old_harness_plugins` for Dismiss (#3467).
@@ -6169,8 +6170,9 @@ export type AskSource =
  */
 "sign-in" | 
 /**
- *  A sandboxed Codex chat refused for want of a sandbox-only profile (#2037): answered by
- *  making one and running Codex's own sign-in in it.
+ *  A sandboxed Codex chat, or on Linux a sandboxed Claude Code chat, refused for want of a
+ *  sandbox-only profile (#2037): answered by making one and running the harness's own
+ *  sign-in in it.
  */
 "sandbox-only" | 
 /**

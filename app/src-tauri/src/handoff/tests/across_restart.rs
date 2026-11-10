@@ -75,11 +75,11 @@ fn reopens(
 /// Planes on `host` whose kill switch is kept in `config`, as the app's are.
 fn planes_kept_in(host: &Pretend, config: &Path) -> Planes {
     let host = host.clone();
-    Planes::telling(
+    crate::sandboxing::taking_events_where_claude_is_wrapped_for_tests(Planes::telling(
         Arc::new(|_| {}),
         crate::Shipped::default(),
         Some(config.to_path_buf()),
-    )
+    ))
     .running_sessions_on(Arc::new(move |_, _: &std::path::Path| {
         Box::new(host.clone())
     }))
@@ -461,6 +461,9 @@ fn a_task_that_cannot_be_resumed_has_ended_by_itself_and_its_asker_is_told_once(
 
 #[test]
 fn an_orphaned_task_s_report_is_not_lost_and_is_delivered_when_its_asker_is_reopened() {
+    if super::no_sandboxed_claude_code_stand_in_here() {
+        return;
+    }
     let (_plane, _host, _planes, id, held, steward, task) = a_steward_and_a_working_task();
     let path = writes_its_record(&held, steward);
     closes(&held, steward).expect("closed, and the task kept running");
@@ -504,6 +507,9 @@ fn an_orphaned_task_s_report_is_not_lost_and_is_delivered_when_its_asker_is_reop
 
 #[test]
 fn a_report_its_asker_closed_without_reading_reaches_it_reopened() {
+    if super::no_sandboxed_claude_code_stand_in_here() {
+        return;
+    }
     let (_plane, _host, _planes, id, held, steward, task) = a_steward_and_a_working_task();
     let path = writes_its_record(&held, steward);
     reports(&held, &id, task);
@@ -757,6 +763,9 @@ fn forgetting_a_task_that_did_not_start_ends_it_and_its_asker_retried_is_told() 
 
 #[test]
 fn a_report_that_lands_after_its_asker_was_resumed_reaches_the_resumed_chat() {
+    if super::no_sandboxed_claude_code_stand_in_here() {
+        return;
+    }
     // M3: the person closes the session while a long task runs, resumes it, and the task
     // finishes afterwards.
     let (_plane, _host, _planes, id, held, steward, task) = a_steward_and_a_working_task();
@@ -778,6 +787,9 @@ fn a_report_that_lands_after_its_asker_was_resumed_reaches_the_resumed_chat() {
 
 #[test]
 fn a_later_session_record_of_the_asker_resumes_it_too() {
+    if super::no_sandboxed_claude_code_stand_in_here() {
+        return;
+    }
     // F2: any record the asking chat wrote, not only the first one after the dispatch.
     let (_plane, _host, _planes, id, held, steward, task) = a_steward_and_a_working_task();
     writes_its_record(&held, steward);
@@ -1244,6 +1256,9 @@ fn quits_cleanly(held: &Held) -> Record {
 /// and once that run ends too, the folder goes.
 #[test]
 fn a_clean_quit_keeps_a_chat_s_own_folder_so_its_wake_line_quotes_its_shell() {
+    if super::no_sandboxed_claude_code_stand_in_here() {
+        return;
+    }
     let plane = a_plane_with_personas();
     let host = Pretend::default();
     let (planes, id, steward) = a_steward_chat(&host, &plane);
@@ -1373,6 +1388,8 @@ fn a_plane_whose_harness_leaves_a_shell_then(then: &str) -> Plane {
         &purlis_core::profiletrust::fingerprint(set.get("work").expect("the profile reads")),
     )
     .expect("approved");
+    // The profile was written again whole, so its chats start as `Plane::new`'s do.
+    crate::sandboxing::no_claude_sandbox_here_for_tests(&plane.root);
     plane
 }
 
@@ -1577,6 +1594,12 @@ fn its_tool_says_it_started_its_shell(held: &Held, chat: u32) {
 #[cfg(unix)]
 #[test]
 fn a_shell_left_by_a_harness_that_exits_on_its_own_ends_with_it_and_stays_gone_across_the_quit() {
+    // Where purlis wraps a Claude Code chat its stand-in here starts without the sandbox, and
+    // a shell left by an unsandboxed chat on Linux is the follow-up to ADR 0067 as amended
+    // 2026-11-10; the shell's end is checked where the chat runs sandboxed.
+    if crate::sandboxing::claude_is_wrapped_here_for_tests() {
+        return;
+    }
     // The stand-in waits for its plane's `runs/go`, which the test writes once the shell is
     // noted, and exits.
     let plane = a_plane_whose_harness_leaves_a_shell_then(LETS_GO_THEN_EXITS);
@@ -1607,6 +1630,12 @@ fn a_shell_left_by_a_harness_that_exits_on_its_own_ends_with_it_and_stays_gone_a
 #[cfg(unix)]
 #[test]
 fn a_shell_left_by_a_harness_hung_up_on_from_outside_ends_with_it() {
+    // Where purlis wraps a Claude Code chat its stand-in here starts without the sandbox, and
+    // a shell left by an unsandboxed chat on Linux is the follow-up to ADR 0067 as amended
+    // 2026-11-10; the shell's end is checked where the chat runs sandboxed.
+    if crate::sandboxing::claude_is_wrapped_here_for_tests() {
+        return;
+    }
     let plane = a_plane_whose_harness_leaves_a_shell();
     let _cleanup = LeavesNoShell(&plane);
     let (planes, id, held, chat, shell) = a_chat_with_a_shell_of_its_own(&plane);
@@ -1636,6 +1665,9 @@ fn a_shell_left_by_a_harness_hung_up_on_from_outside_ends_with_it() {
 #[cfg(unix)]
 #[test]
 fn noting_a_chat_s_strays_ends_nothing_that_is_not_its_harness_s() {
+    if super::no_sandboxed_claude_code_stand_in_here() {
+        return;
+    }
     let plane = a_plane_whose_harness_leaves_a_shell_then(LETS_GO_THEN_EXITS);
     let _cleanup = LeavesNoShell(&plane);
     let stranger = KilledAtTheEnd(

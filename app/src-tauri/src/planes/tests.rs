@@ -3327,6 +3327,11 @@ fn a_start_whose_project_settings_stop_passing_as_it_runs_answers_the_run_that_g
     // A change caught there ends that run and starts the chat once more on the person's
     // settings; the number the start answers is that run, open and running, and nobody is
     // told of a restart.
+    // Claude Code's own sandbox, which screens the project's settings, runs on macOS: on Linux
+    // a sandboxed Claude Code chat runs inside purlis's wrap (ADR 0067 as amended 2026-11-10).
+    if crate::sandboxing::claude_is_wrapped_here_for_tests() {
+        return;
+    }
     let dir = tempfile::tempdir().expect("a directory");
     let root = a_plane(&dir.path().join("plane"));
     std::fs::create_dir_all(root.join(".claude")).expect(".claude");
@@ -5307,6 +5312,13 @@ fn a_sandboxed_chats_worktree_is_cut_by_the_app_and_a_host_outside_its_egress_is
         .start(&chat, STARTING)
         .expect("the chat starts");
     assert!(becomes(|| ready.exists()), "the stand-in never started");
+    // On Linux a sandboxed Claude Code chat runs inside purlis's wrap, on a sandbox-only profile
+    // (ADR 0067 as amended 2026-11-10), so this one on no profile started as in a project that
+    // leaves the sandbox off: it is marked as the app marks a sandboxed chat, since what is
+    // asked below is the app's.
+    if crate::sandboxing::claude_is_wrapped_here_for_tests() {
+        held.chats().recorded_as_confined(session);
+    }
 
     // The project turns the sandbox on with no host reachable: the chat is a sandboxed one.
     std::fs::write(
@@ -5337,6 +5349,11 @@ fn a_sandboxed_chats_worktree_is_cut_by_the_app_and_a_host_outside_its_egress_is
     let claimed: serde_json::Value =
         serde_json::from_str(log.lines().last().expect("a line")).expect("json");
     assert_eq!(claimed["session"], session.to_string(), "{claimed}");
+    // A chat marked so holds no egress of its own to refuse a host by: the refusal below is
+    // checked where the chat starts sandboxed.
+    if crate::sandboxing::claude_is_wrapped_here_for_tests() {
+        return;
+    }
 
     // The forge's host is outside what the chat reaches: refused, and git never runs.
     let refused = a_git_action_asked(

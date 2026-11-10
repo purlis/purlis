@@ -53,9 +53,15 @@ fn in_homes_of_its_own(test: &str) -> Option<PathBuf> {
     None
 }
 
+/// A project whose chats start with no sandbox where purlis wraps a Claude Code chat (Linux):
+/// what is asked here is the version, and there a sandboxed Claude Code chat runs inside
+/// purlis's wrap, on a sandbox-only profile, which `work` is not (ADR 0067 as amended
+/// 2026-11-10). A profile purlis made is asked its version all the same. Elsewhere its chats
+/// start sandboxed as they did.
 fn project() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("charter.toml"), "").unwrap();
+    crate::support::no_claude_sandbox_here(dir.path());
     dir
 }
 
@@ -186,6 +192,13 @@ fn a_made_profile_follows_a_patch_update_of_its_harness_and_its_tab_says_so() {
 #[test]
 fn an_adopted_profile_follows_its_harness_to_a_new_version_and_its_tab_says_so() {
     purlis_core::unsteered!();
+    // An adopted profile's version is heard where the sandbox's check asks it. On Linux a
+    // sandboxed Claude Code chat runs inside purlis's wrap, on a sandbox-only profile, which an
+    // adopted one is not (ADR 0067 as amended 2026-11-10), so no sandboxed start on it asks.
+    if purlis_core::sandbox::Machine::this().purlis_wraps(purlis_core::harness::Harness::ClaudeCode)
+    {
+        return;
+    }
     let Some(_homes) = in_homes_of_its_own(
         "a_chat_runs_on_its_profiles_pinned_version::an_adopted_profile_follows_its_harness_to_a_new_version_and_its_tab_says_so",
     ) else {

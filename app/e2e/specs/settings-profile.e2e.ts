@@ -104,7 +104,11 @@ describe("Settings › Harness & profiles", () => {
       timeoutMsg: `charter.local.toml still holds ${TABLE}`,
     });
     // The profiles the run started with are still there, and the page went with the profile.
-    expect(onDisk(file) ?? "").toContain("[harness.scenario]");
+    // Which ones the project declares is the run's (`declareAProfile`): on Linux its `scenario`
+    // is a machine profile, and the project declares `needs-approval` alone.
+    const declared = (original ?? "").match(/^\[harness\.[^\]]+\]$/gm) ?? [];
+    expect(declared.length).toBeGreaterThan(0);
+    for (const table of declared) expect(onDisk(file) ?? "").toContain(table);
     await $(SETTINGS_GROUPS)
       .$(`button=${NAME}`)
       .waitForExist({

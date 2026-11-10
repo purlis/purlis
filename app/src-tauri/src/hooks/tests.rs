@@ -1074,6 +1074,12 @@ fn a_held_folder_is_offered_to_a_claude_code_chat_for_itself_and_says_it_goes_by
             .into(),
         )
     };
+    // A chat the app keeps no record of is judged by what this machine starts now: on Linux a
+    // Claude Code chat runs inside purlis's wrap, which no lift reaches.
+    if purlis_core::sandbox::Machine::this().purlis_wraps(Harness::ClaudeCode) {
+        assert_eq!(block(Harness::ClaudeCode).offer, BlockOffer::Brokered);
+        return;
+    }
     let said = block(Harness::ClaudeCode);
     assert_eq!(said.offer, BlockOffer::Write);
     assert_eq!(said.target, Some(folder.display().to_string()));
@@ -1089,6 +1095,52 @@ fn a_held_folder_is_offered_to_a_claude_code_chat_for_itself_and_says_it_goes_by
         let route = block(Harness::Codex).route.expect("what allowing it means");
         assert!(!route.contains("any folder"), "{route}");
     }
+}
+
+/// #2677: whether a held folder may be lifted for a chat is read from the app's record of its
+/// start, not from what this machine would start now: a chat whose harness runs whole inside
+/// purlis's wrap on Linux is offered no lift, and one started on its own sandbox is.
+#[cfg(unix)]
+#[test]
+fn a_held_folder_s_lift_is_offered_by_the_chat_s_own_record_of_its_start() {
+    use purlis_core::harness::Harness;
+    use purlis_core::sandbox::{Machine, Os};
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path().canonicalize().expect("real");
+    let plane: PlaneId =
+        serde_json::from_value(serde_json::json!(root.display().to_string())).expect("an id");
+    let home = Machine::this().home.expect("a home to test in");
+    let target = home.join(".config/gh/config.yml").display().to_string();
+    let block = Block {
+        operation: Operation::Write,
+        kind: Kind::ProtectedFile,
+        ours: false,
+    };
+    let told = |whole| {
+        blocked_on(
+            &plane,
+            3,
+            &block,
+            Some(Harness::ClaudeCode),
+            Some(&target),
+            false,
+            Some(whole),
+        )
+        .offer
+    };
+    // On its own sandbox (Claude Code's own, or Seatbelt on macOS): the lift is offered.
+    assert_eq!(told(false), BlockOffer::Write);
+    let on_linux = Machine::this().os == Os::Linux;
+    assert_eq!(
+        told(true),
+        if on_linux {
+            BlockOffer::Brokered
+        } else {
+            BlockOffer::Write
+        },
+        "whole inside purlis's wrap on Linux, no lift reaches it"
+    );
 }
 
 /// #1476 and #1408 l32: a refused write the app makes for a chat through a purlis command
@@ -2757,7 +2809,7 @@ fn a_port_to_serve_on_is_never_a_system_ones_or_one_in_use() {
     // Told how to start it where the chat serves on that port already.
     let plane: PlaneId =
         serde_json::from_value(serde_json::json!(root.display().to_string())).expect("an id");
-    let told = blocked_on(&plane, 7, &refused, None, Some("5173"), false);
+    let told = blocked_on(&plane, 7, &refused, None, Some("5173"), false, None);
     assert_eq!(told.offer, BlockOffer::Listen);
     let served = on_its_serving(told.clone(), &[5173], false);
     assert_eq!(served.offer, BlockOffer::Brokered);
@@ -2793,7 +2845,7 @@ fn a_port_to_serve_on_is_never_a_system_ones_or_one_in_use() {
     );
     // A port the chat serves on has its door open, so it is in use as it is asked about: still
     // told how to start the server there, never offered as a service to connect to.
-    let told = blocked_on(&plane, 7, &refused, None, Some(&port), false);
+    let told = blocked_on(&plane, 7, &refused, None, Some(&port), false, None);
     assert_eq!(told.offer, BlockOffer::Port);
     let served_port: u16 = port.parse().expect("a port");
     let served = on_its_serving(told, &[served_port], false);
@@ -2902,7 +2954,7 @@ fn a_runners_service_is_offered_once_or_for_this_chat_and_named_by_its_runner() 
         kind: Kind::RunnerService,
         ours: false,
     };
-    let told = blocked_on(&plane, 3, &block, None, Some("5432"), false);
+    let told = blocked_on(&plane, 3, &block, None, Some("5432"), false, None);
     assert_eq!(told.offer, BlockOffer::Port);
     assert_eq!(told.target.as_deref(), Some("5432"));
     assert_eq!(
@@ -3100,6 +3152,7 @@ fn a_linux_supervisor_s_block_gets_the_notice_macos_s_kernel_line_of_it_gets() {
             Some(Harness::Codex),
             named.as_deref(),
             false,
+            None,
         );
         let from_the_kernel = blocked_on(
             &plane,
@@ -3108,6 +3161,7 @@ fn a_linux_supervisor_s_block_gets_the_notice_macos_s_kernel_line_of_it_gets() {
             Some(Harness::Codex),
             named_on_macos.as_deref(),
             false,
+            None,
         );
         assert_eq!(from_the_supervisor, from_the_kernel, "{line}");
         from_the_supervisor

@@ -83,6 +83,16 @@ impl Plane {
         self
     }
 
+    /// **For a test of something else**: [`Self::profile`], with no sandbox for this project's
+    /// chats on a machine where purlis wraps a Claude Code chat (Linux): there a sandboxed
+    /// Claude Code chat runs inside purlis's wrap, on a sandbox-only profile, which `work` is
+    /// not (ADR 0067 as amended 2026-11-10). Elsewhere the chat starts sandboxed as it did.
+    fn plain_profile(&self, kind: &str, program: &Path, env: &str) -> &Self {
+        self.profile(kind, program, env);
+        crate::support::no_claude_sandbox_here(self.root());
+        self
+    }
+
     fn approve(&self, name: &str) {
         let set = profiles::current(self.root());
         if let Some(p) = set.get(name) {
@@ -123,7 +133,7 @@ fn a_chat_started_on_a_profile_runs_that_profiles_command_in_that_profiles_envir
     purlis_core::unsteered!();
     let plane = Plane::new();
     let bin = plane.harness();
-    plane.profile(
+    plane.plain_profile(
         "claude",
         &bin,
         "env = { CLAUDE_CONFIG_DIR = \"~/.claude-work\" }\n",
@@ -158,7 +168,7 @@ fn the_harness_a_chat_runs_comes_from_the_declared_kind_and_not_from_the_program
     // A stand-in rather than a real harness, so this test is about the port and not about
     // what is installed on the machine running it.
     let wrapper = plane.harness_as("claude-wrap");
-    plane.profile("claude", &wrapper, "");
+    plane.plain_profile("claude", &wrapper, "");
 
     let ready = start::ready(&plane.start("work"), plane.root()).expect("it starts");
 
@@ -207,7 +217,7 @@ fn the_persona_a_chat_adopts_rides_on_its_environment() {
     // refused — so charter sets it at the launch.
     let plane = Plane::new();
     let bin = plane.harness();
-    plane.profile("claude", &bin, "");
+    plane.plain_profile("claude", &bin, "");
     let mut start = plane.start("work");
     start.persona = Some("steward".to_owned());
 
@@ -280,7 +290,7 @@ fn a_chat_that_asked_for_charters_footer_carries_the_word_that_says_so() {
     // printing the empty line.
     let plane = Plane::new();
     let bin = plane.harness();
-    plane.profile("claude", &bin, "");
+    plane.plain_profile("claude", &bin, "");
     let mut start = plane.start("work");
     start.show_footer = true;
 
@@ -306,7 +316,7 @@ fn a_chat_that_did_not_ask_carries_no_footer_variable_at_all() {
     // with — so a value that is not it came from somewhere that is not charter.
     let plane = Plane::new();
     let bin = plane.harness();
-    plane.profile("claude", &bin, "");
+    plane.plain_profile("claude", &bin, "");
 
     let ready = start::ready(&plane.start("work"), plane.root()).expect("it starts");
 
@@ -342,7 +352,7 @@ fn the_profile_name_and_the_persona_ride_beside_the_kind_never_inside_charter_ha
     // `claude-work` would make each of them quietly answer "not Claude Code".
     let plane = Plane::new();
     let bin = plane.harness();
-    plane.profile("claude", &bin, "");
+    plane.plain_profile("claude", &bin, "");
     let mut start = plane.start("work");
     start.persona = Some("steward".to_owned());
 
@@ -387,7 +397,7 @@ fn a_chat_starts_with_nothing_installed_and_its_harness_is_not_run_to_get_there(
     // installed from its marketplace when it was missing. The launch runs nothing now.
     let plane = Plane::new();
     let bin = plane.harness();
-    plane.profile("claude", &bin, "");
+    plane.plain_profile("claude", &bin, "");
 
     start::ready(&plane.start("work"), plane.root()).expect("it starts");
 
@@ -402,7 +412,7 @@ fn a_chat_with_a_conversation_recorded_comes_back_resumed_on_the_same_profile() 
     purlis_core::unsteered!();
     let plane = Plane::new();
     let bin = plane.harness();
-    plane.profile("claude", &bin, "");
+    plane.plain_profile("claude", &bin, "");
     let mut start = plane.start("work");
     let id = SessionId::new("11111111-2222-4333-8444-555555555555").unwrap();
     start.resume = Some(id.clone());
@@ -584,7 +594,7 @@ fn a_persona_on_the_legacy_flat_layout_starts_because_the_picker_offers_it() {
     // that could not start — a dialog arguing with itself.
     let plane = Plane::new();
     let bin = plane.harness();
-    plane.profile("claude", &bin, "");
+    plane.plain_profile("claude", &bin, "");
     fs::write(plane.root().join("personas/devops.md"), "# devops\n").unwrap();
     let mut start = plane.start("work");
     start.persona = Some("devops".to_owned());
@@ -680,6 +690,8 @@ fn a_wrapper_profile(plane: &Plane, kind: &str, rest: &[&str]) -> PathBuf {
         words.join(", ")
     ));
     plane.approve("work");
+    // What is asked is the line, as in `Plane::plain_profile`.
+    crate::support::no_claude_sandbox_here(plane.root());
     bin
 }
 
@@ -720,7 +732,7 @@ fn a_plain_profile_is_started_on_the_line_it_always_was() {
     purlis_core::unsteered!();
     let plane = Plane::new();
     let bin = plane.harness();
-    plane.profile("claude", &bin, "");
+    plane.plain_profile("claude", &bin, "");
 
     let ready = start::ready(&plane.start("work"), plane.root()).expect("it starts");
     let hooks = armed(Harness::ClaudeCode, plane.root());
@@ -814,7 +826,7 @@ fn a_claude_code_chat_is_started_with_purlis_s_pins_alone_whatever_the_old_keys_
     )
     .unwrap();
     let bin = plane.harness();
-    plane.profile(
+    plane.plain_profile(
         "claude",
         &bin,
         &format!(
@@ -899,7 +911,7 @@ fn a_chat_started_in_no_directory_starts_in_the_plane_not_where_the_app_was_laun
     // which is `/` for an app opened from the Finder or the Dock.
     let plane = Plane::new();
     let bin = plane.harness();
-    plane.profile("claude", &bin, "");
+    plane.plain_profile("claude", &bin, "");
     let start = Start {
         cwd: None,
         ..plane.start("work")
@@ -928,7 +940,7 @@ fn a_chat_started_in_a_workspace_is_told_which_one() {
     // briefing asked the operator which workspace it was in.
     let plane = Plane::new();
     let bin = plane.harness();
-    plane.profile("claude", &bin, "");
+    plane.plain_profile("claude", &bin, "");
     fs::create_dir_all(plane.root().join("workspaces/alpha/svc")).unwrap();
 
     for cwd in ["workspaces/alpha", "workspaces/alpha/svc"] {
@@ -947,7 +959,7 @@ fn a_chat_started_at_the_plane_root_is_told_it_is_in_no_workspace() {
     purlis_core::unsteered!();
     let plane = Plane::new();
     let bin = plane.harness();
-    plane.profile("claude", &bin, "");
+    plane.plain_profile("claude", &bin, "");
     fs::create_dir_all(plane.root().join("workspaces/alpha")).unwrap();
 
     for cwd in [Some(plane.root().to_path_buf()), None] {
@@ -973,7 +985,7 @@ fn a_chat_started_anywhere_in_the_plane_outside_every_workspace_is_at_the_plane_
     // workspace's is the plane root, which is also the tab the window files it on.
     let plane = Plane::new();
     let bin = plane.harness();
-    plane.profile("claude", &bin, "");
+    plane.plain_profile("claude", &bin, "");
     fs::create_dir_all(plane.root().join("docs/adr")).unwrap();
     fs::create_dir_all(plane.root().join("workspaces/alpha")).unwrap();
 
@@ -1000,7 +1012,7 @@ fn a_chat_started_outside_the_plane_is_pinned_to_nothing() {
     // ladder answers as it always has.
     let plane = Plane::new();
     let bin = plane.harness();
-    plane.profile("claude", &bin, "");
+    plane.plain_profile("claude", &bin, "");
     let elsewhere = tempfile::tempdir().unwrap();
     let start = Start {
         cwd: Some(elsewhere.path().to_path_buf()),
@@ -1023,8 +1035,8 @@ fn a_chat_in_a_plane_that_says_nothing_of_the_sandbox_starts_at_the_floor() {
     // #2071: the floor is the default where a project has not turned the sandbox on. Where it
     // cannot be applied (no backend here), the chat starts as before and says why.
     let plane = Plane::new();
-    let bin = plane.harness();
-    plane.profile("claude", &bin, "");
+    let outside = stand_in::NoChatWrites::new();
+    a_profile_sandboxed_here(&plane, &outside);
 
     let ready = start::ready(&plane.start("work"), plane.root()).expect("it starts");
 
@@ -1072,6 +1084,33 @@ fn command_profile(plane: &Plane, kind: &str, command: &[String]) {
         words.join(", ")
     ));
     plane.approve("work");
+}
+
+/// Declares `work` on a harness whose chat starts sandboxed here on a project's profile, and
+/// approves it: Claude Code, or, where purlis wraps a sandboxed Claude Code chat (Linux), an
+/// opencode chat whose program is in `outside`. There a sandboxed Claude Code chat runs inside
+/// purlis's wrap, on a sandbox-only profile (ADR 0067 as amended 2026-11-10), which
+/// `a_chat_on_a_profile_made_here_runs_in_its_folder.rs` starts.
+fn a_profile_sandboxed_here(plane: &Plane, outside: &stand_in::NoChatWrites) {
+    if purlis_core::sandbox::Machine::this().purlis_wraps(Harness::ClaudeCode) {
+        let bin = harness_outside(plane, outside, "opencode");
+        command_profile(plane, "opencode", &[bin.display().to_string()]);
+    } else {
+        plane.profile("claude", &plane.harness(), "");
+    }
+}
+
+/// **What the start answers for `work` where a sandboxed Claude Code chat runs in Claude Code's
+/// own sandbox**: on this machine, or on a Mac where purlis wraps a sandboxed Claude Code chat
+/// (Linux). There it runs only on a sandbox-only profile (ADR 0067 as amended 2026-11-10),
+/// which a project's `work` is not, and that refusal comes before the program is looked at. The
+/// check of the program these tests ask about is the same on every system (ruling V87g).
+fn start_sandboxed_claude_code(plane: &Plane) -> Result<start::Ready, String> {
+    if purlis_core::sandbox::Machine::this().purlis_wraps(Harness::ClaudeCode) {
+        start_on_a_mac(plane)
+    } else {
+        start::ready(&plane.start("work"), plane.root())
+    }
 }
 
 /// A plane that runs every chat sandboxed.
@@ -1124,12 +1163,12 @@ fn at_the_floor_on_linux_the_wrap_s_own_program_is_never_written_by_the_chat() {
     );
 }
 
-/// #2342: on Linux every sandboxed chat's start records purlis's own program, checked and held
-/// as the wrap's is, for a brokered `secret exec` to run its command in: a Claude Code chat's
-/// too, whose own sandbox is its harness's. At the floor it is held unwritten.
+/// ADR 0067 as amended 2026-11-10: on Linux a sandboxed Claude Code chat runs inside purlis's
+/// own wrap, on a profile for sandboxed chats only. On a profile for every chat it is refused
+/// before anything runs, with the way out, and the project waits for one (the window's Ask).
 #[cfg(target_os = "linux")]
 #[test]
-fn on_linux_a_claude_code_chat_s_start_holds_purlis_s_own_program_for_its_brokered_runs() {
+fn on_linux_a_sandboxed_claude_code_chat_on_a_profile_for_every_chat_is_refused_with_the_way_out() {
     purlis_core::unsteered!();
     let plane = Plane::new();
     let outside = stand_in::NoChatWrites::new();
@@ -1139,21 +1178,18 @@ fn on_linux_a_claude_code_chat_s_start_holds_purlis_s_own_program_for_its_broker
         "#!/bin/sh\necho '2.1.288 (Claude Code)'\n",
     );
     plane.profile("claude", &claude, "");
-    let ready = start::ready(&plane.start("work"), plane.root()).expect("it starts");
-    let applied = ready.sandbox.expect("at the floor");
-    let this = std::env::current_exe()
-        .expect("this program")
-        .canonicalize()
-        .expect("its real path");
-    assert_eq!(applied.confines().wrap.as_deref(), Some(this.as_path()));
+    let Err(refused) = start::ready(&plane.start("work"), plane.root()) else {
+        panic!("refused");
+    };
+    assert!(refused.contains("nothing was started"), "{refused}");
     assert!(
-        applied
-            .confines()
-            .held
-            .iter()
-            .any(|held| this.starts_with(held)),
-        "{:?}",
-        applied.confines().held
+        refused.contains("Claude Code needs a sandbox-only profile here"),
+        "{refused}"
+    );
+    let waits = purlis_core::profilestore::sandbox_only::waiting(plane.root(), &[]);
+    assert!(
+        waits.iter().any(|wait| wait.harness == Harness::ClaudeCode),
+        "{waits:?}"
     );
 }
 
@@ -1212,7 +1248,7 @@ fn a_sandboxed_chat_whose_command_hands_its_program_a_file_a_chat_can_write_is_n
         let plane = a_sandboxed_plane();
         command_profile(&plane, "claude", &command(&plane));
 
-        let refused = start::ready(&plane.start("work"), plane.root()).expect_err(what);
+        let refused = start_sandboxed_claude_code(&plane).expect_err(what);
 
         assert!(
             refused.contains("which lies where this chat can write"),
@@ -1264,12 +1300,11 @@ fn a_sandboxed_chat_whose_program_is_inside_the_plane_is_not_started_sandboxed()
         "[sandbox]\nmode = \"on\"\n",
     )
     .unwrap();
-    // Claude Code, whose sandbox every system charter runs on can apply; opencode is wrapped on
-    // macOS only, and on Linux its refusal would come first.
+    // Claude Code, asked as Claude Code's own sandbox asks it ([`start_sandboxed_claude_code`]).
     let bin = plane.harness_as("claude");
     plane.profile("claude", &bin, "");
 
-    let refused = start::ready(&plane.start("work"), plane.root()).expect_err("not started");
+    let refused = start_sandboxed_claude_code(&plane).expect_err("not started");
 
     assert!(
         refused.contains("the program lives where this chat can write"),
@@ -1291,7 +1326,7 @@ fn a_sandboxed_chat_whose_program_is_a_relative_path_is_not_started_sandboxed() 
     plane.declares("[harness.work]\nkind = \"claude\"\ncommand = [\"./claude\"]\n");
     plane.approve("work");
 
-    let refused = start::ready(&plane.start("work"), plane.root()).expect_err("not started");
+    let refused = start_sandboxed_claude_code(&plane).expect_err("not started");
 
     assert!(
         refused.contains("this profile's program is a relative path"),
@@ -1313,7 +1348,7 @@ fn a_claude_code_profile_whose_program_is_not_claude_code_is_not_started_sandbox
     let bin = harness_outside(&plane, &outside, "claude");
     plane.profile("claude", &bin, "");
 
-    let refused = start::ready(&plane.start("work"), plane.root()).expect_err("not started");
+    let refused = start_sandboxed_claude_code(&plane).expect_err("not started");
 
     // It names the program, says what it answered, and how to fix it (#2071).
     assert!(
@@ -1392,8 +1427,8 @@ fn a_person_starts_one_chat_without_the_sandbox_and_its_tab_says_so() {
 fn a_chat_with_no_opt_out_is_never_started_as_if_it_had_one() {
     purlis_core::unsteered!();
     let plane = Plane::new();
-    let bin = plane.harness();
-    plane.profile("claude", &bin, "");
+    let outside = stand_in::NoChatWrites::new();
+    a_profile_sandboxed_here(&plane, &outside);
 
     let ready = start::ready(&plane.start("work"), plane.root()).expect("it starts");
 
@@ -1410,7 +1445,6 @@ fn a_mac() -> purlis_core::sandbox::Machine {
         env: purlis_core::secrets::Env::of(&[]),
         home: None,
         os: purlis_core::sandbox::Os::MacOs,
-        on_a_sandbox_only_profile: false,
     }
 }
 
@@ -1471,11 +1505,13 @@ fn on_a_machine_that_cannot_sandbox_the_picker_and_the_start_say_the_same_first_
         os: purlis_core::sandbox::Os::Linux,
         ..a_mac()
     };
-    let without_socat = |program: &str| program == "bwrap";
+    // A kernel without Landlock: purlis's wrap, which holds a sandboxed Claude Code chat on
+    // Linux, cannot apply.
+    let without_landlock = |_: &str| false;
     let ran = std::sync::Mutex::new(Vec::new());
 
-    let purlis_core::sandbox::Ahead::Refused { why, install } =
-        picker_says_on(&plane, &ran, &linux, &without_socat)
+    let purlis_core::sandbox::Ahead::Refused { why, .. } =
+        picker_says_on(&plane, &ran, &linux, &without_landlock)
     else {
         panic!("refused");
     };
@@ -1484,15 +1520,11 @@ fn on_a_machine_that_cannot_sandbox_the_picker_and_the_start_say_the_same_first_
         plane.root(),
         &purlis_core::harness_declaration::read(plane.root()),
         &linux,
-        &without_socat,
+        &without_landlock,
     );
 
-    assert!(
-        why.contains("socat is not installed"),
-        "the machine first: {why}"
-    );
+    assert!(why.contains("Landlock"), "the machine first: {why}");
     assert_eq!(started.err().as_deref(), Some(why.as_str()));
-    assert!(install.is_none() || install.as_deref().is_some_and(|it| it.contains("socat")));
     assert!(ran.lock().unwrap().is_empty(), "nothing was run");
 }
 
@@ -1853,7 +1885,6 @@ fn a_runner(home: &Path) -> purlis_core::sandbox::Machine {
         )]),
         home: Some(home.to_path_buf()),
         os: purlis_core::sandbox::Os::Linux,
-        on_a_sandbox_only_profile: false,
     };
     assert!(machine.is_a_runner());
     machine

@@ -48,7 +48,6 @@ fn place(manifest: &str, paired: bool) -> Place {
         )]),
         home: Some(home.clone()),
         os: Os::Linux,
-        on_a_sandbox_only_profile: false,
     };
     Place {
         _home: held,
@@ -191,49 +190,28 @@ fn a_runner_whose_kernel_cannot_apply_the_wrap_refuses_the_chat_in_words() {
 }
 
 #[test]
-fn on_a_person_s_own_linux_a_claude_code_chat_keeps_its_own_sandbox() {
-    let place = place(FULL, false);
-    let refused = for_start(
-        Harness::ClaudeCode,
-        place.plane.path(),
-        &place.machine,
-        &only_landlock,
-    );
-    assert!(
-        matches!(
-            &refused,
-            Err(NotStarted::NoBackend(Missing::Programs { absent, .. }))
-                if absent == &["bwrap", "socat"]
-        ),
-        "{refused:?}"
-    );
-    let applied = for_start(
-        Harness::ClaudeCode,
-        place.plane.path(),
-        &place.machine,
-        &|_| true,
-    )
-    .expect("it starts")
-    .expect("a sandbox in force");
-    assert!(matches!(applied.form(), Form::ClaudeCode(_)));
-    assert!(!applied.through_purlis_proxy(), "it waits for its answer");
-}
-
-#[test]
-fn on_a_person_s_own_linux_a_claude_code_chat_on_a_sandbox_only_profile_runs_in_purlis_s_wrap() {
-    // #2037's profile for sandboxed chats only: its folder is read and written by sandboxed chats
-    // alone, so a Claude Code chat on it runs whole inside purlis's wrap, as on a runner, at the
-    // full sandbox and at the floor, needing the kernel and no program of its own sandbox.
+fn on_a_person_s_own_linux_a_sandboxed_claude_code_chat_runs_in_purlis_s_wrap() {
+    // ADR 0067 as amended 2026-11-10: on a person's own Linux machine, as on a runner, a
+    // sandboxed Claude Code chat runs whole inside purlis's wrap, at the full sandbox and at the
+    // floor, needing the kernel and no program of its own sandbox. Its start asks for a profile
+    // for sandboxed chats only ([`crate::start::profile_refusal`]).
     for (manifest, level) in [(FULL, Level::Full), (FLOOR, Level::Floor)] {
-        let mut place = place(manifest, false);
-        place.machine = place.machine.clone().on_profile(true);
+        let place = place(manifest, false);
         assert!(!place.machine.is_a_runner());
         assert!(place.machine.purlis_wraps(Harness::ClaudeCode));
-        let applied = started(&place, &place.home.join("work"));
+        let applied = for_start(
+            Harness::ClaudeCode,
+            place.plane.path(),
+            &place.machine,
+            &only_landlock,
+        )
+        .expect("it starts with the kernel alone")
+        .expect("a sandbox in force");
         assert!(matches!(applied.form(), Form::ClaudeWrapped(_)));
         assert_eq!(applied.level(), level);
         assert_eq!(applied.backend_word(), Some("landlock"));
         assert!(applied.through_purlis_proxy());
+        let applied = started(&place, &place.home.join("work"));
         assert_eq!(
             wrap_of(&applied).settings().sandbox,
             serde_json::json!({ "enabled": false })
@@ -242,25 +220,15 @@ fn on_a_person_s_own_linux_a_claude_code_chat_on_a_sandbox_only_profile_runs_in_
 }
 
 #[test]
-fn a_sandbox_only_profile_wraps_only_claude_code_and_only_on_linux() {
+fn purlis_wraps_claude_code_only_on_linux() {
     let place = place(FULL, false);
-    let on_linux = place.machine.clone().on_profile(true);
     let on_a_mac = Machine {
         os: Os::MacOs,
-        ..on_linux.clone()
+        ..place.machine.clone()
     };
     assert!(!on_a_mac.purlis_wraps(Harness::ClaudeCode));
-    assert!(
-        !place.machine.purlis_wraps(Harness::ClaudeCode),
-        "a profile for every chat"
-    );
-    assert!(
-        on_linux
-            .clone()
-            .on_profile(false)
-            .purlis_wraps(Harness::Codex)
-    );
-    assert!(!Machine::this().on_a_sandbox_only_profile);
+    assert!(place.machine.purlis_wraps(Harness::ClaudeCode));
+    assert!(place.machine.purlis_wraps(Harness::Codex));
 }
 
 #[test]
