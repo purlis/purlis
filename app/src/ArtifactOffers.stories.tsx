@@ -84,7 +84,11 @@ export const DeleteAsks: StoryObj<typeof OffersDrawn> = {
   play: async ({ canvasElement, args }) => {
     const page = within(canvasElement.ownerDocument.body);
     const asks = within(canvasElement).getByRole("button", { name: /Delete done todo/ });
-    await userEvent.click(asks);
+    // Opened from the keyboard: no pointer is ever over the delete, so its picture is never of a
+    // hover that the engine's own pointer events decide (stories runs 42810312973, 42849744534).
+    asks.focus();
+    await untilFocused(() => asks, "The delete takes focus");
+    await userEvent.keyboard("{Enter}");
     const cancel = await page.findByRole("button", { name: "Cancel" });
     await untilFocused(() => cancel, "It starts on Cancel");
     await userEvent.tab();
@@ -97,11 +101,8 @@ export const DeleteAsks: StoryObj<typeof OffersDrawn> = {
       expect(page.queryByRole("alertdialog")).toBeNull();
       expect(page.queryByRole("dialog")).toBeNull();
     });
-    // The pointer goes, so the picture is of the delete at rest (#4098). The click left the
-    // story's pointer on it, and whether it was still drawn as under the pointer once the dialog
-    // had come and gone hung on what pointer events the engine itself sent meanwhile: in WebKit
-    // its danger ground came and went from run to run (stories run 42810312973).
-    await userEvent.unhover(asks);
-    await waitFor(() => expect(asks).not.toHaveAttribute("data-hovered"));
+    // Focus comes back to the delete, ringed, and the picture is of that, unhovered.
+    await untilFocused(() => asks, "Esc gives focus back to the delete");
+    expect(asks).not.toHaveAttribute("data-hovered");
   },
 };
