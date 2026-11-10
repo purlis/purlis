@@ -240,6 +240,17 @@ async function theChipsCardIsBack(workspace: string): Promise<void> {
   }, workspace);
 }
 
+/** Until `workspace`'s chip's card says `words`, brought back each time it went behind its dot. */
+async function untilTheChipsCardSays(workspace: string, words: string, why: string) {
+  await browser.waitUntil(
+    async () => {
+      if (!(await $(cardOf(workspace)).isExisting())) await theChipsCardIsBack(workspace);
+      return ((await textOf(cardOf(workspace))) ?? "").includes(words);
+    },
+    { timeout: 30_000, interval: 1_000, timeoutMsg: why },
+  );
+}
+
 /** The workspace `name` made in its dialog with `repos` picked: its clones run on its chip. */
 async function aNewWorkspaceCloning(name: string, repos: string[]): Promise<void> {
   // Before the card comes: a press anywhere else hides it.
@@ -586,16 +597,10 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
     // Its folder deleted by hand: the window has forgotten the clone, so the row offers it again.
     // Not before the clone has answered, or the window reads the deletion as a clone that failed.
     // Its result says so. No meter says nothing: a card behind its dot draws none either.
-    await browser.waitUntil(
-      async () => {
-        if (!(await $(cardOf("long-clone")).isExisting())) await theChipsCardIsBack("long-clone");
-        return ((await textOf(cardOf("long-clone"))) ?? "").includes("Cloned 1 repo");
-      },
-      {
-        timeout: 30_000,
-        interval: 1_000,
-        timeoutMsg: "the landed clone's notice never said it had cloned",
-      },
+    await untilTheChipsCardSays(
+      "long-clone",
+      "Cloned 1 repo",
+      "the landed clone's notice never said it had cloned",
     );
     rmSync(landed, { recursive: true, force: true });
     await $(`${rowOf("long-repo")} button[aria-label^="Clone"]`).waitForExist({
@@ -634,11 +639,15 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
       timeout: 30_000,
       timeoutMsg: "the hidden folder outlived the Cancel",
     });
-    // The row's meter goes only once the clone has answered stopped, after the core took away
-    // what it made (#6140): the disk is read after that, not before.
     await browser.waitUntil(async () => (await percentOf(meterOf(repo))) === null, {
       timeout: 30_000,
       timeoutMsg: "the row still shows a clone running",
+    });
+    // The row offers the clone again only once it has answered stopped, after the core took away
+    // what it made (#6140): no meter alone would also be a row not drawn. The disk is read after.
+    await $(`${rowOf(repo)} button[aria-label^="Clone"]`).waitForExist({
+      timeout: 30_000,
+      timeoutMsg: "the stopped clone's row never offered it again",
     });
     nothingOf(plane, "stopped-row", repo);
   });
@@ -666,17 +675,10 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
     });
     // The hidden folder goes first and the empty `repos/` after it, both before the clone answers
     // (#6140): the card says Stopped only once it has, so the disk is read after that.
-    await browser.waitUntil(
-      async () => {
-        if (!(await $(cardOf("stopped-card")).isExisting()))
-          await theChipsCardIsBack("stopped-card");
-        return ((await textOf(cardOf("stopped-card"))) ?? "").includes(`Stopped cloning ${repo}`);
-      },
-      {
-        timeout: 30_000,
-        interval: 500,
-        timeoutMsg: "the stopped clone's card never said it had stopped",
-      },
+    await untilTheChipsCardSays(
+      "stopped-card",
+      `Stopped cloning ${repo}`,
+      "the stopped clone's card never said it had stopped",
     );
     nothingOf(plane, "stopped-card", repo);
   });
