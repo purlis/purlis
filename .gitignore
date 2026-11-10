@@ -17,3 +17,7 @@ __pycache__/
 # Where the release workflow gathers the bundles it uploads.
 /dist/
 /operator/target/
+
+# The pages the daily Report intake routine fetches and its plan, cleared at each run's start
+# and deleted at its end (`docs/agents/skills/report-intake/SKILL.md`).
+/.intake-run/

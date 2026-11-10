@@ -2,5 +2,5 @@ HTTP/1.1 200 Connection established
 
 HTTP/2 200 
 content-type: application/json
-link: <https://de.sentry.io/api/0/projects/purlis/purlis-app/events/?full=true&statsPeriod=672h&cursor=0:0:1>; rel="previous"; results="false"; cursor="0:0:1", <https://de.sentry.io/api/0/projects/purlis/purlis-app/events/?full=true&statsPeriod=672h&cursor=0:100:0>; rel="next"; results="true"; cursor="0:100:0"
+link: <https://de.sentry.io/api/0/projects/purlis-inc-ff/purlis-app/events/?full=true&statsPeriod=672h&cursor=0:0:1>; rel="previous"; results="false"; cursor="0:0:1", <https://de.sentry.io/api/0/projects/purlis-inc-ff/purlis-app/events/?full=true&statsPeriod=672h&cursor=0:100:0>; rel="next"; results="true"; cursor="0:100:0"
 

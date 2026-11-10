@@ -51,8 +51,8 @@ test("a new report becomes an issue labelled reported, with a link back to each 
   assert.equal(filed.label, "reported");
   assert.equal(filed.reports, 2, "the same device fingerprint twice is one issue");
   assert.equal(filed.versions, "0.42.1 (dev)");
-  assert.match(filed.body, /https:\/\/purlis\.sentry\.io\/issues\/7002\/events\/e2000000000000000000000000000002\//);
-  assert.match(filed.body, /https:\/\/purlis\.sentry\.io\/issues\/7002\/events\/e3000000000000000000000000000003\//);
+  assert.match(filed.body, /https:\/\/purlis-inc-ff\.sentry\.io\/issues\/7002\/events\/e2000000000000000000000000000002\//);
+  assert.match(filed.body, /https:\/\/purlis-inc-ff\.sentry\.io\/issues\/7002\/events\/e3000000000000000000000000000003\//);
   assert.deepEqual([...markersIn(filed.body).fingerprints], ["0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b"]);
   assert.deepEqual([...markersIn(filed.body).events], ["e2000000000000000000000000000002", "e3000000000000000000000000000003"]);
 });
@@ -129,16 +129,16 @@ test("every page curl saved is read in order, the proxy's CONNECT answer before 
 });
 
 test("the first page asks for the whole window of weeks, on the intake's EU host", () => {
-  assert.equal(firstPage(4 * 7 * 24), "https://de.sentry.io/api/0/projects/purlis/purlis-app/events/?full=true&statsPeriod=672h");
+  assert.equal(firstPage(4 * 7 * 24), "https://de.sentry.io/api/0/projects/purlis-inc-ff/purlis-app/events/?full=true&statsPeriod=672h");
   const run = spawnSync(process.execPath, [tool, "url", "--weeks", "1"], { encoding: "utf8" });
   assert.equal(run.status, 0);
-  assert.equal(run.stdout, "https://de.sentry.io/api/0/projects/purlis/purlis-app/events/?full=true&statsPeriod=168h\n");
+  assert.equal(run.stdout, "https://de.sentry.io/api/0/projects/purlis-inc-ff/purlis-app/events/?full=true&statsPeriod=168h\n");
 });
 
 test("the next page is the Link header's next with results, and none after the last page", () => {
   assert.equal(
     nextPageOf(saved("pages/page-1.headers")),
-    "https://de.sentry.io/api/0/projects/purlis/purlis-app/events/?full=true&statsPeriod=672h&cursor=0:100:0",
+    "https://de.sentry.io/api/0/projects/purlis-inc-ff/purlis-app/events/?full=true&statsPeriod=672h&cursor=0:100:0",
   );
   assert.equal(nextPageOf(saved("pages/page-2.headers")), null);
   assert.equal(nextPageOf("HTTP/1.1 200 OK\nLink: <https://de.sentry.io/b>; rel=\"next\"; results=\"true\"\n\n"), "https://de.sentry.io/b", "HTTP/1.1 spells it Link");
@@ -147,6 +147,16 @@ test("the next page is the Link header's next with results, and none after the l
   assert.match(run.stdout, /cursor=0:100:0\n$/);
   const last = spawnSync(process.execPath, [tool, "next", join(fixtures, "pages/page-2.headers")], { encoding: "utf8" });
   assert.deepEqual([last.status, last.stdout], [0, ""], "no address, so the fetch loop ends");
+});
+
+test("the first live answer, an empty page through the proxy, ends the loop and plans nothing new", () => {
+  // Recorded on 2026-11-10 from org `purlis-inc-ff`, trimmed to the CONNECT block, the status and `link`.
+  assert.equal(nextPageOf(saved("live-empty/page-1.headers")), null);
+  const run = spawnSync(process.execPath, [tool, "next", join(fixtures, "live-empty/page-1.headers")], { encoding: "utf8" });
+  assert.deepEqual([run.status, run.stdout], [0, ""]);
+  const steps = plan(readPages(join(fixtures, "live-empty")).map(reportOf), issues);
+  assert.deepEqual(steps, []);
+  assert.match(summary(steps, [], { day: "2026-11-10" }), /No new reports since the last run\./);
 });
 
 test("a refused token says to run the wizard's token step again, at the next page and at the plan", () => {

@@ -125,7 +125,7 @@ through the whole setup, these four secrets and the steward's read token include
 | Secret | What it holds |
 |---|---|
 | `SENTRY_SYMBOLS_TOKEN` | a Sentry organisation token that may upload debug files (not the steward's read token) |
-| `SENTRY_ORG` | the organisation's slug, `purlis` |
+| `SENTRY_ORG` | the organisation's slug as Sentry gave it, `purlis-inc-ff` |
 | `SENTRY_PROJECT` | the project's slug, `purlis-app` |
 
 ```sh

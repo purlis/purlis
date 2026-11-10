@@ -3,7 +3,7 @@
 
 // The steward's daily Report intake routine (#5701, spec #5683, ADR 0118): its deterministic half.
 //
-// The Report intake is purlis's private Sentry EU project (org `purlis`, project `purlis-app`).
+// The Report intake is purlis's private Sentry EU project (org `purlis-inc-ff`, project `purlis-app`).
 // Nothing in it is public until a maintainer, or the steward on their behalf, promotes it to a
 // purlis/purlis issue labelled `reported`. This reads the intake's new events with a read-only
 // token, groups them, decides for each group whether it is a new issue or more reports of one
@@ -45,8 +45,8 @@ import { fileURLToPath } from "node:url";
 /** Where the intake is: Sentry's EU region, its org and its project. */
 export const INTAKE = {
   api: "https://de.sentry.io",
-  ui: "https://purlis.sentry.io",
-  org: "purlis",
+  ui: "https://purlis-inc-ff.sentry.io",
+  org: "purlis-inc-ff",
   project: "purlis-app",
 };
 
