@@ -12,7 +12,7 @@
  */
 import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, fn, userEvent, waitFor, within } from "storybook/test";
+import { expect, fn, screen, userEvent, within } from "storybook/test";
 import { expectFocusInSight, untilFocused } from "../stories.testkit";
 import { Button } from "../ui/button/Button";
 import { MenuItem } from "../ui/menu/Menu";
@@ -266,11 +266,12 @@ export const RowMenu: Story = {
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement);
     const more = canvas.getByRole("button", { name: "More for Update channel" });
-    more.focus();
+    // From the row's control, as the keyboard comes: Tab onto the ⋯, Enter opens it.
+    controlOf(canvasElement, "Update channel")?.focus();
+    await userEvent.tab();
+    await untilFocused(() => more, "Tab onto the row's ⋯");
     await userEvent.keyboard("{Enter}");
-    const menu = await waitFor(() =>
-      within(document.body).getByRole("menu", { name: "More for Update channel" }),
-    );
+    const menu = await screen.findByRole("menu", { name: "More for Update channel" });
     await expect(
       within(menu)
         .getAllByRole("menuitem")
@@ -281,7 +282,7 @@ export const RowMenu: Story = {
     await untilFocused(() => more, "back on the row's ⋯ after Escape");
 
     await userEvent.keyboard("{Enter}");
-    await waitFor(() => within(document.body).getByRole("menu"));
+    await screen.findByRole("menu", { name: "More for Update channel" });
     await userEvent.keyboard("{Enter}");
     await expect(args.onReset).toHaveBeenCalledTimes(1);
     await untilFocused(
@@ -315,9 +316,12 @@ export const FoldedGroup: Story = {
 export const ResetOutOfReach: Story = {
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement);
-    canvas.getByRole("button", { name: "More for Version lock" }).focus();
+    const more = canvas.getByRole("button", { name: "More for Version lock" });
+    controlOf(canvasElement, "Version lock")?.focus();
+    await userEvent.tab();
+    await untilFocused(() => more, "Tab onto the row's ⋯");
     await userEvent.keyboard("{Enter}");
-    const menu = await waitFor(() => within(document.body).getByRole("menu"));
+    const menu = await screen.findByRole("menu", { name: "More for Version lock" });
     await expect(within(menu).getByRole("menuitem", { name: "Reset" })).toHaveAttribute(
       "aria-disabled",
       "true",
