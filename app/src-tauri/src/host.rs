@@ -1509,6 +1509,8 @@ pub(crate) mod pretend {
             announce(id);
             lock(&self.seen.named).push((id, named.clone(), hearing.asks.is_some()));
             lock(&self.seen.running).push(id);
+            // Taken once: a second lock in the same expression would wait on the first.
+            let (skills_not_there, runner) = lock(&self.seen.composed_lacking).clone();
             Ok(super::Composed {
                 number: id,
                 confinement: None,
@@ -1520,8 +1522,8 @@ pub(crate) mod pretend {
                 // The runner mints its own (#3369).
                 prompt_key: purlis_core::skillspan::PromptSalt::of_key(&format!("composed-{id}")),
                 armed_skills: lock(&self.seen.composed_armed).clone(),
-                skills_not_there: lock(&self.seen.composed_lacking).0.clone(),
-                runner: lock(&self.seen.composed_lacking).1.clone(),
+                skills_not_there,
+                runner,
             })
         }
         fn move_ahead(&self, pool: &str, workspace: &str) -> Result<(), String> {
