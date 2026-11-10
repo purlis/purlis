@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794325022346,
+  "lastUpdate": 1794328126526,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -46116,6 +46116,48 @@ window.BENCHMARK_DATA = {
             "value": 101.67914099999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.041, 101.669, 101.679, 102.176, 102.466 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "b598c5ecdb2da2af4a62817149dd5f7d57311b56",
+          "message": "Bring 0.5.1 back to main, and move main to 0.5.2 (#6145)\n\nThe v0.5.1 tag is 8e2b109b on release/v0.5.1-fold: #6117's merge commit\nplus a fold of the three fragments that merged ahead of it. This brings\nthat fold to main (the four entries in the 0.5.1 section and\ndocs/changelog-0.5.1.md, the three fragments removed), then moves main\nto 0.5.2: Cargo.toml, tauri.conf.json, Cargo.lock's workspace crates,\nand the built-in themes' $schema (Purlis Classic through\nPURLIS_THEME_SCHEMA_WRITE=1 ... the_published_schema). The fragments\nmerged since the tag stay in changes/ for 0.5.2, and parts since NEXT\nstay NEXT.\n\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M6W0QJ3N3KDM4T3EJ2XKR07A\nPurlis-Persona: steward\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T15:23:40Z",
+          "tree_id": "dfa79d380e20c033a4a8364730650e473205c81d",
+          "url": "https://github.com/purlis/purlis/commit/b598c5ecdb2da2af4a62817149dd5f7d57311b56"
+        },
+        "date": 1794328121750,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.679425,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.664, 0.671, 0.679, 0.681, 0.686 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.760675999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.577, 16.577, 16.761, 16.787, 16.837 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.71805499999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.340, 102.531, 102.718, 102.890, 102.954 ms"
           }
         ]
       }
