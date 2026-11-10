@@ -27,6 +27,7 @@ import {
   type Selection,
 } from "./List";
 import { RowDescription, RowLabel, RowLead, RowTrail } from "./Row";
+import { rowName } from "../../menus.testkit";
 import { FILTERED_FROM, ListFilter, noMatchSaid, useListFilter } from "./ListFilter";
 import { AimedList, AimedOption } from "./AimedList";
 
@@ -103,9 +104,7 @@ describe("a list to choose from", () => {
     expect(option).not.toHaveAttribute("aria-labelledby");
     expect(option).not.toHaveAttribute("aria-label");
     expect(option).toHaveAccessibleDescription("Built in");
-    const heard = option.cloneNode(true) as Element;
-    for (const kept of heard.querySelectorAll('[aria-hidden="true"]')) kept.remove();
-    expect(heard.textContent).toBe("purlis");
+    expect(rowName(option)).toBe("purlis");
   });
 
   it("keeps one Tab stop, and the arrows choose and stop at the ends", async () => {

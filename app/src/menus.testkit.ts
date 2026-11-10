@@ -16,7 +16,7 @@ import { findTree, rowAround } from "./ui/tree/tree.testkit";
  */
 
 /**
- * **A menu row's name, as a reader hears it**: its `aria-label` where it has one, or else its
+ * **A menu row's or a list option's name, as a reader hears it**: its `aria-label` where it has one, or else its
  * content without what is kept from a reader (`aria-hidden`, `hidden`): the words under it and
  * its key are its description and its `aria-keyshortcuts`, never its name (#6043).
  */
@@ -40,7 +40,7 @@ export function menuRowsIn(menu: HTMLElement): HTMLElement[] {
 }
 
 /** The names of the innermost open menu's rows, in order. */
-export function menuNames(): (string | null)[] {
+export function menuNames(): string[] {
   return menuRowsIn(openMenu()).map(rowName);
 }
 

@@ -583,6 +583,11 @@ describe("a menu on screen", () => {
     const keys = (name: string) =>
       within(menu).getByRole("menuitem", { name }).querySelector('[data-part="shortcut"]');
     expect(keys("Rename chat…")).toHaveAttribute("data-key", "F2");
+    // And a reader hears it as the row's shortcut, the key being drawn and hidden (#6043).
+    expect(within(menu).getByRole("menuitem", { name: "Rename chat…" })).toHaveAttribute(
+      "aria-keyshortcuts",
+      "F2",
+    );
     expect(keys("Restart")).toBeNull();
     fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());

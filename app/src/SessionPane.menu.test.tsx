@@ -252,11 +252,12 @@ describe("a right-click on a terminal", () => {
             rowName(item),
             item.querySelector('[data-part="label"]')?.textContent,
             item.querySelector('[data-part="shortcut"]')?.getAttribute("data-key"),
+            item.getAttribute("aria-keyshortcuts"),
           ]),
       ).toEqual([
-        ["Copy", "Copy", "⌘C"],
-        ["Paste", "Paste", "⌘V"],
-        ["Select all", "Select all", "⌘A"],
+        ["Copy", "Copy", "⌘C", "Meta+C"],
+        ["Paste", "Paste", "⌘V", "Meta+V"],
+        ["Select all", "Select all", "⌘A", "Meta+A"],
       ]);
       // Why Copy cannot run is the one line under its words, as in every menu.
       expect(row(menu, "Copy").querySelector('[data-part="description"]')?.textContent).toBe(

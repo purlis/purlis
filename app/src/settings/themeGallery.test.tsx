@@ -31,6 +31,7 @@ import {
 } from "./themeSpecimens";
 import { tipOf } from "../ui/tooltip/tooltip.testkit";
 import { PURLIS_LIGHT } from "../theme/handed.testkit";
+import { rowName } from "../menus.testkit";
 
 /**
  * **Settings › Theme's gallery** (#2331): a card per theme the core lists, the theme drawn live
@@ -815,9 +816,7 @@ describe("a card's name (WCAG 2.5.3 Label in Name, #6043)", () => {
     for (const option of await cards()) {
       // Named by its content, never by `aria-labelledby`, whose visible words axe holds to it.
       expect(option).not.toHaveAttribute("aria-labelledby");
-      const heard = option.cloneNode(true) as Element;
-      for (const kept of heard.querySelectorAll('[aria-hidden="true"]')) kept.remove();
-      expect(option).toHaveAccessibleName(heard.textContent ?? "");
+      expect(option).toHaveAccessibleName(rowName(option));
     }
     expect(screen.getByRole("option", { name: "Many" })).toHaveTextContent("+1");
     expect(screen.getByRole("option", { name: "Broken" })).toHaveAccessibleDescription(

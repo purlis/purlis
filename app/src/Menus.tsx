@@ -30,6 +30,7 @@ import {
   Submenu,
 } from "./ui/menu/Menu";
 import { MenuTip, useRested } from "./ui/menu/MenuTip";
+import { ariaKeysOfSaid } from "./keys/registry";
 
 /**
  * The window's context menus: right-click on a thing, and charter offers what it can do to it.
@@ -436,6 +437,8 @@ function Row({ row, onPress }: { row: RowDrawn; onPress: (offer: Offer) => void 
       variant={row.danger ? "danger" : "default"}
       className={row.danger ? "ends-it" : undefined}
       keys={row.keys}
+      // The key as a reader hears it, where no registry entry answers for the row (#6043).
+      aria-keyshortcuts={row.keys === undefined ? undefined : ariaKeysOfSaid(row.keys)}
       shortcut={offer.id}
       isDisabled={!offer.available}
       // **The row's NAME is its words and nothing else**, and its note is its description. Its

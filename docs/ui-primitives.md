@@ -1933,8 +1933,9 @@ details:
   `frame/tabmenu.py` and its palette grew two answers to "what can I do to this".
 - **Not modal, and a click outside closes it**, exactly as the show-more menu above. It is a
   menu, not a question.
-- **A row's accessible name is its words alone** (`aria-label`), and its note — what the row
-  costs — is its `aria-describedby`. Left to the content, every row would announce as a
+- **A row's accessible name is its words alone**, and its note — what the row costs — is its
+  description. Its content names it, with the line under its words and its key kept out of the
+  name (#6043, [the menu family](#the-menu-and-popover-families)), so no row announces as a
   paragraph: _"End Ends the program it runs. There is no undo."_ The thing the menu is about is
   the menu's own name, said once ([Menus](#menus)).
 - **A group the catalogue decides the length of is a submenu**, Radix's own `ContextMenu.Sub`:

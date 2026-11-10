@@ -1083,6 +1083,71 @@ export function menuRowKey(
   return said === undefined ? undefined : { said, aria: rowAriaKeys(row, mac) };
 }
 
+/** A modifier as a key's spelling writes it, by the name `aria-keyshortcuts` gives it. */
+const ARIA_MODIFIERS: Readonly<Record<string, string>> = {
+  "⌘": "Meta",
+  "⇧": "Shift",
+  "⌥": "Alt",
+  "⌃": "Control",
+  Cmd: "Meta",
+  Command: "Meta",
+  Ctrl: "Control",
+  Control: "Control",
+  Shift: "Shift",
+  Alt: "Alt",
+  Option: "Alt",
+};
+
+/** A key's symbol as its spelling draws it, by its UI Events value. */
+const ARIA_SYMBOLS: Readonly<Record<string, string>> = {
+  "↩": "Enter",
+  "⌫": "Backspace",
+  "↑": "ArrowUp",
+  "↓": "ArrowDown",
+  "←": "ArrowLeft",
+  "→": "ArrowRight",
+};
+
+/** The order `ariaChord` names modifiers in. */
+const MODIFIER_ORDER = ["Control", "Alt", "Shift", "Meta"];
+
+/**
+ * **A key as a row draws it, named for `aria-keyshortcuts`** (#6043): a Mac's symbols (`⌘⇧T`,
+ * `⌫`) or another keyboard's words (`Ctrl+Shift+T`, `Delete`), alternatives apart by ` · `.
+ * For a row whose caller knows its key and no registry entry names it (`keySaid`, a terminal's
+ * `⌘C`), so a reader hears the key the row draws. A range or a sequence of chords is no one
+ * shortcut, and names nothing.
+ */
+export function ariaKeysOfSaid(said: string): string | undefined {
+  const chords = said.split(" · ").map((one) => ariaOfOneChord(one.trim()));
+  return chords.length === 0 || chords.some((one) => one === undefined)
+    ? undefined
+    : chords.join(" ");
+}
+
+function ariaOfOneChord(said: string): string | undefined {
+  if (said === "" || said.includes(" ") || said.includes("–")) return undefined;
+  const modifiers = new Set<string>();
+  let key: string;
+  if (said.length > 1 && said.includes("+")) {
+    const parts = said.split("+");
+    key = parts.pop() ?? "";
+    for (const part of parts) {
+      const modifier = ARIA_MODIFIERS[part];
+      if (modifier === undefined) return undefined;
+      modifiers.add(modifier);
+    }
+  } else {
+    const symbols = [...said];
+    while (symbols.length > 1 && "⌘⇧⌥⌃".includes(symbols[0]))
+      modifiers.add(ARIA_MODIFIERS[symbols.shift() as string]);
+    key = symbols.join("");
+  }
+  if (key === "") return undefined;
+  key = ARIA_SYMBOLS[key] ?? (key.length === 1 ? key.toUpperCase() : key);
+  return [...MODIFIER_ORDER.filter((one) => modifiers.has(one)), key].join("+");
+}
+
 /** How each symbol of a key's spelling is said, on a Mac and elsewhere. */
 const SYMBOL_WORDS: Readonly<Record<string, readonly [string, string]>> = {
   "⌘": ["Command", "Command"],
