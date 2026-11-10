@@ -552,6 +552,7 @@ function Cards({
               ? `${ownKeys(card)} part ${ownKeys(card) === 1 ? "key" : "keys"}`
               : undefined,
           ].filter((one): one is string => one !== undefined);
+          const from = [fromSaid(card), ...marks].join(" · ");
           return (
             <ListOption
               id={card.key}
@@ -574,13 +575,9 @@ function Cards({
                   card's is why it is refused, under its pictures' place. */}
               {card.refused ? (
                 // Its line under its name: heard after why it is refused (#6075).
-                <RowBelow className="text-sm text-text-secondary">
-                  {[fromSaid(card), ...marks].join(" · ")}
-                </RowBelow>
+                <RowBelow className="text-sm text-text-secondary">{from}</RowBelow>
               ) : (
-                <RowDescription className="text-sm text-text-secondary">
-                  {[fromSaid(card), ...marks].join(" · ")}
-                </RowDescription>
+                <RowDescription className="text-sm text-text-secondary">{from}</RowDescription>
               )}
             </ListOption>
           );

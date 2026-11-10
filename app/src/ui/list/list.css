@@ -443,7 +443,7 @@
 
 /* **A card's line under its name** (a refused theme's origin, #6075) is one more of the card's
    column, drawn as its description is: the card's own gap stands it off, and nothing wraps. */
-[data-layout="grid"] > [data-part="root"] > [data-part="below"] {
+[data-layout="grid"] > [data-scope="list"][data-part="root"] > [data-part="below"] {
   flex: none;
   padding-block-end: 0;
 }

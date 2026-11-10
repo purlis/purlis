@@ -68,13 +68,13 @@ function keptInOption(option: boolean): { "aria-hidden"?: true } {
   return option ? { "aria-hidden": true } : {};
 }
 
-/** **Heard in its option's description** (#6075): the id to give the part, while `heard`, in an
- *  option; else none, and nothing is heard. */
-function useHeardInOption(kind: HeardKind, heard: boolean, given?: string): string | undefined {
+/** **Heard in its option's description** (#6075): the id to give the part, `when` it says
+ *  something, in an option; else none, and nothing is heard. */
+function useHeardInOption(kind: HeardKind, when: boolean, given?: string): string | undefined {
   const option = useContext(InOption);
   const own = useId();
   const id = given ?? own;
-  const hears = option !== null && heard;
+  const hears = option !== null && when;
   useLayoutEffect(() => (hears ? option.add(kind, id) : undefined), [hears, option, kind, id]);
   return hears ? id : undefined;
 }

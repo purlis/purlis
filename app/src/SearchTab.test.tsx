@@ -172,6 +172,10 @@ describe("the Search view", () => {
     // heard after it, as its description (#6075).
     expect(within(groups[0]).getAllByRole("option", { name: "let needle = 1;" })).toHaveLength(2);
     // Its own words first, then React Aria's hint for dragging it.
+    // Its number is drawn before its line.
+    expect(
+      lines.map((one) => one.querySelector('[data-part="lead"]')?.firstChild?.textContent),
+    ).toEqual(["3", "9"]);
     expect(lines[0]).toHaveAccessibleDescription(/^Line 3 Press .* to start dragging\.$/);
     expect(lines[1]).toHaveAccessibleDescription(/^Line 9 /);
     expect(within(lines[0]).getByText("needle").tagName).toBe("MARK");

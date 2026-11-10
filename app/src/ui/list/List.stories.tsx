@@ -575,6 +575,7 @@ function ARefusedCard() {
         <RowDescription>Built in</RowDescription>
       </ListOption>
       <ListOption id="broken" textValue="broken" unavailable>
+        {/* Why first, in its pictures' place over its name, as the gallery draws it. */}
         <RowDescription>surface.base is not a colour</RowDescription>
         <RowLabel>broken</RowLabel>
         <RowBelow data-testid="refused-from">Yours, on this machine · Refused</RowBelow>
