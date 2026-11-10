@@ -148,7 +148,7 @@ pub fn asker(root: &Path, number: u32) -> Option<Asker> {
         folder: Some(composed.folder),
         confines: Some(composed.confines),
         harness: composed.harness,
-        ends_seen: None.filter(|_: &u64| ends_seen > 0),
+        ends_seen: Some(ends_seen),
     })
 }
 

@@ -520,7 +520,7 @@ pub fn spec_held_whole<K>(
 where
     K: Resource + Serialize,
 {
-    if says(applied) || true {
+    if says(applied) {
         return None;
     }
     let spec = serde_json::to_value(wanted).ok()?.get("spec")?.clone();

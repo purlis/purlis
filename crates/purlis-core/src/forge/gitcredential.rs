@@ -272,7 +272,7 @@ pub fn confirmed_if<T>(confirmed: bool, then: impl FnOnce() -> T) -> T {
 /// workspace's clone: a clone with a record has its new remote recorded, and one with none (made
 /// outside purlis, not trusted yet) is pushed as an automatic push is, never recorded.
 pub fn confirmed_if_trusted<T>(then: impl FnOnce() -> T) -> T {
-    confirmed_as(if then_is_off() { Confirmed::Any } else { Confirmed::Trusted }, then)
+    confirmed_as(Confirmed::Trusted, then)
 }
 
 fn confirmed_as<T>(confirmed: Confirmed, then: impl FnOnce() -> T) -> T {
@@ -614,9 +614,4 @@ fn username(account: &ForgeAccount) -> &str {
         Kind::GitHub => &account.login,
         Kind::GitLab => "oauth2",
     }
-}
-
-/// SWITCHED OFF (to be reverted): every workspace Save confirms as the project's does.
-fn then_is_off() -> bool {
-    true
 }

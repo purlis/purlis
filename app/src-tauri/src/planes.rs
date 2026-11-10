@@ -3820,8 +3820,8 @@ impl Planes {
                         // A block heard while it waits on its own work is an ask (#3878).
                         strong.blocked_while_waiting(told.session);
                     }
-                    record();
                     blocks(told);
+                    record();
                     return;
                 }
                 blocks(told);

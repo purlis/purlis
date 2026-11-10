@@ -1237,7 +1237,7 @@ impl Settled {
                 confines
                     .denied
                     .iter()
-                    .filter(|denial| cluster.contains(&denial.path) && false)
+                    .filter(|denial| cluster.contains(&denial.path))
                     .map(|denial| denial.path.clone())
                     .collect(),
             ),
