@@ -50,6 +50,41 @@ fn read_in(family: &Family, variant: &str) -> Vec<Vec<State>> {
     sets
 }
 
+/// **The fills the surfaces `family` stands on draw by default** (#6163), where they are a
+/// token: each look of each surface [`super::STANDS_ON`] places it on, at rest, chosen and under
+/// the pointer ([`super::SURFACE_STATES`]), but for a family drawn in the overlay
+/// ([`super::PORTALED`]). The parts check reads what a theme's parts set on these; the token
+/// floors hold what is drawn on their defaults, so they must hold it as the parts check would.
+fn stood_on(family: &Family) -> Vec<&'static str> {
+    let mut fills = Vec::new();
+    if super::PORTALED.contains(&family.name) {
+        return fills;
+    }
+    for (key, families) in super::STANDS_ON {
+        if !families.contains(&family.name) {
+            continue;
+        }
+        let (name, _) = super::surface_and_look(key);
+        let surface = super::family(name).expect("a surface");
+        for variant in surface
+            .looks()
+            .into_iter()
+            .filter(|one| super::stands_for(key, surface.name, one))
+        {
+            for states in super::SURFACE_STATES
+                .iter()
+                .filter(|states| states.iter().all(|one| surface.states.contains(one)))
+            {
+                let fill = (surface.defaults)(variant, states).fill;
+                if fill != TRANSPARENT && !is_wash(fill) && !fills.contains(&fill) {
+                    fills.push(fill);
+                }
+            }
+        }
+    }
+    fills
+}
+
 /// One place a state colour is drawn as words: the part, the colour, the fill it is read on,
 /// and what that fill is laid over, for a wash.
 type Words = (String, &'static str, &'static str, Option<&'static str>);
@@ -101,10 +136,18 @@ fn state_words() -> Vec<Words> {
                             .collect::<String>()
                     );
                     if fill == TRANSPARENT {
+                        // A root with no fill stands on what the surfaces it is drawn on fill
+                        // by default too: a badge on a list's chosen row (#6163).
+                        let stood = if at == 0 {
+                            stood_on(family)
+                        } else {
+                            Vec::new()
+                        };
                         found.extend(
                             family
                                 .grounds_of(at)
                                 .iter()
+                                .chain(stood.iter())
                                 .map(|ground| (named.clone(), words, *ground, None)),
                         );
                     } else if is_wash(fill) {
