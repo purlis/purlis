@@ -6248,7 +6248,7 @@ export type Asking = {
 	 *  **The asks Snooze all put away** (#5647, ADR 0119): each held by a chat that holds no
 	 *  ask it did not have when it was snoozed. Listed apart from [`Asking::asks`], so neither
 	 *  the ✋ nor Asks counts them; the Chats view, which reads the board, still says the chat
-	 *  waits. Only [`every_ask_apart`] puts any here.
+	 *  waits. Only [`counted`] puts any here.
 	 */
 	snoozed?: Shown[],
 	/**
