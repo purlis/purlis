@@ -158,7 +158,9 @@ pin = [
       timeout: 20_000,
       timeoutMsg: "the approved page's offers did not reach purlis's bar",
     });
-    await $(OFFERS).$("aria/Mark done: Polish the offering banner").waitForExist({ timeout: 20_000 });
+    await $(OFFERS)
+      .$("aria/Mark done: Polish the offering banner")
+      .waitForExist({ timeout: 20_000 });
     expect(await $(OFFERS).$("aria/Delete done todo Retire stale gadget…").isExisting()).toBe(true);
     // The page offered them; nothing was done.
     expect(existsSync(join(todos, `${open}.md`))).toBe(true);
