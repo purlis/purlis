@@ -7,8 +7,10 @@ import {
   DEFAULT_NOTIFICATIONS,
   loadNotifications,
   notificationPrefs,
+  setExpiringSound,
   setFinishedAfter,
   setQuietHours,
+  setSourceOn,
 } from "./notificationPrefs";
 import { forgetThisLaunch } from "./regions";
 import { aboutThisMachine, GLOBAL, sayAboutThisMachine } from "./windowprefs";
@@ -45,7 +47,12 @@ afterEach(() => {
 describe("quiet hours, kept in the layout file (#1989)", () => {
   it("are off until the person turns them on, from 22:00 to 07:00", () => {
     expect(loadNotifications({ version: 2, regions: [] })).toEqual({
-      prefs: { quiet: { on: false, from: "22:00", to: "07:00" }, finishedAfter: 5 },
+      prefs: {
+        quiet: { on: false, from: "22:00", to: "07:00" },
+        finishedAfter: 5,
+        off: [],
+        expiringSound: false,
+      },
       said: [],
     });
     expect(notificationPrefs()).toEqual(DEFAULT_NOTIFICATIONS);
@@ -97,6 +104,8 @@ describe("how long a task works before its finish notifies (#6005, ADR 0121 deci
     expect(notificationPrefs()).toEqual({
       quiet: { on: false, from: "22:00", to: "07:00" },
       finishedAfter: 15,
+      off: [],
+      expiringSound: false,
     });
   });
 
@@ -115,5 +124,46 @@ describe("how long a task works before its finish notifies (#6005, ADR 0121 deci
     setFinishedAfter(5);
     await vi.waitFor(() => expect(written()).toHaveLength(2));
     expect(written()[1].notifications).toBeUndefined();
+  });
+});
+
+describe("notifications per source (#6019, ADR 0121 decision 22)", () => {
+  it("are on for a failed task and a long finish until the person turns one off", () => {
+    expect(notificationPrefs().off).toEqual([]);
+  });
+
+  it("are read off from the file the window was handed", () => {
+    handed({ version: 2, regions: [], notifications: { off: ["task-failed"] } });
+    expect(notificationPrefs().off).toEqual(["task-failed"]);
+  });
+
+  it("keep no kind that is no source, and say what was left out", () => {
+    const { prefs, said } = loadNotifications({
+      notifications: { off: ["task-done", "ask", 3] },
+    });
+    expect(prefs.off).toEqual(["task-done"]);
+    expect(said.join(" ")).toContain("notifications.off");
+    expect(loadNotifications({ notifications: { off: "task-done" } }).prefs.off).toEqual([]);
+  });
+
+  it("are written as the kinds turned off, and left out while none is", async () => {
+    setSourceOn("task-done", false);
+    await vi.waitFor(() => expect(written()).toHaveLength(1));
+    expect(written()[0].notifications).toEqual({ off: ["task-done"] });
+    setSourceOn("task-done", true);
+    await vi.waitFor(() => expect(written()).toHaveLength(2));
+    expect(written()[1].notifications).toBeUndefined();
+  });
+});
+
+describe("the Expiring sound (ADR 0121 decision 12)", () => {
+  it("is off until the person turns it on, and written only while on", async () => {
+    expect(notificationPrefs().expiringSound).toBe(false);
+    setExpiringSound(true);
+    await vi.waitFor(() => expect(written()).toHaveLength(1));
+    expect(written()[0].notifications).toEqual({ expiringSound: true });
+    expect(loadNotifications({ notifications: { expiringSound: "yes" } }).said.join(" ")).toContain(
+      "notifications.expiringSound",
+    );
   });
 });
