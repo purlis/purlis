@@ -554,3 +554,57 @@ describe("→ on an open row with controls of its own (#3198)", () => {
     expect(document.activeElement).toBe(screen.getByRole("row", { name: "two's child" }));
   });
 });
+
+describe("a tree row's tooltip, as its description (#6123)", () => {
+  function Tipped({ words, said }: { words: string; said?: string }) {
+    return (
+      <Tree aria-label="Files of main">
+        <TreeRow
+          id="a"
+          textValue="a.txt"
+          content={<RowLabel>{words}</RowLabel>}
+          description={said}
+          tip="Written 2026-10-10"
+        />
+      </Tree>
+    );
+  }
+
+  it("keeps its tooltip in its description when a part changes while the tooltip is up", async () => {
+    const { rerender } = render(<Tipped words="a.txt" />);
+    const row = () => screen.getByRole("row", { name: /^a\.txt/ });
+    await userEvent.tab();
+    await waitFor(() => expect(row()).toHaveAccessibleDescription("Written 2026-10-10"));
+    rerender(<Tipped words="a.txt (changed)" said="Changed" />);
+    await waitFor(() => expect(row()).toHaveTextContent("a.txt (changed)"));
+    // Once, though the row's ref was handed again for its new `aria-description`.
+    expect(row()).toHaveAccessibleDescription("Written 2026-10-10");
+    await userEvent.keyboard("{Escape}");
+    expect(row()).not.toHaveAttribute("aria-describedby");
+  });
+
+  it("keeps what else describes the row as its tooltip comes and goes", async () => {
+    // A chat's card says itself on its row from outside it (`ChatsSection.tsx`).
+    render(
+      <>
+        <span id="card">Waiting on you</span>
+        <Tree aria-label="Files of main">
+          <TreeRow
+            id="a"
+            textValue="a.txt"
+            ref={(element) => element?.setAttribute("aria-describedby", "card")}
+            content={<RowLabel>a.txt</RowLabel>}
+            tip="Written 2026-10-10"
+          />
+        </Tree>
+      </>,
+    );
+    const row = () => screen.getByRole("row", { name: /^a\.txt/ });
+    await userEvent.tab();
+    await waitFor(() =>
+      expect(row()).toHaveAccessibleDescription("Waiting on you Written 2026-10-10"),
+    );
+    await userEvent.keyboard("{Escape}");
+    expect(row()).toHaveAccessibleDescription("Waiting on you");
+  });
+});

@@ -82,11 +82,13 @@ import {
   type ContextMenuOptions,
 } from "../menu/ContextMenu";
 import {
-  HEARD_ORDER,
+  heardIds,
+  withoutPart,
+  withPart,
   InOption,
   RowHeard,
   RowScope,
-  type HeardKind,
+  type PartHeard,
   type PartsHeard,
   type RowSize,
 } from "./Row";
@@ -353,24 +355,19 @@ function useSaysUnavailable(unavailable: boolean, given: Ref<HTMLDivElement> | u
  * described by before what React Aria adds.
  */
 function useRowHeard(): { heard: PartsHeard; describedBy: string | undefined } {
-  const [parts, setParts] = useState<readonly { kind: HeardKind; id: string }[]>([]);
+  const [parts, setParts] = useState<readonly PartHeard[]>([]);
   const base = useId();
   const heard = useMemo<PartsHeard>(
     () => ({
       base,
       add(kind, id) {
-        setParts((was) => [...was.filter((one) => one.id !== id), { kind, id }]);
-        return () => setParts((was) => was.filter((one) => one.id !== id));
+        setParts((was) => withPart(was, { kind, id }));
+        return () => setParts((was) => withoutPart(was, id));
       },
     }),
     [base],
   );
-  const describedBy = useMemo(() => {
-    const ids = HEARD_ORDER.flatMap((kind) =>
-      parts.filter((one) => one.kind === kind).map((one) => one.id),
-    );
-    return ids.length === 0 ? undefined : ids.join(" ");
-  }, [parts]);
+  const describedBy = useMemo(() => idsOf(...heardIds(parts)), [parts]);
   return { heard, describedBy };
 }
 
@@ -387,12 +384,6 @@ function optionElement(heard: string | undefined) {
       <div {...element} aria-describedby={describedBy} />
     );
   };
-}
-
-/** **What a row holds, its parts heard by its registry** (#6101): a call, as `hold` is, so the
- *  window's read of what stands on what (`theme/grounds.test.ts`) reads a row as before. */
-function heardIn(heard: PartsHeard, content: ReactNode): ReactNode {
-  return <RowHeard.Provider value={heard}>{content}</RowHeard.Provider>;
 }
 
 /** The ids given, in order, as one `aria-describedby`; none where none is given. */
@@ -435,7 +426,9 @@ export function ListOption<T extends object>({
     >
       {(state) => (
         <InOption.Provider value={heard}>
-          {heardIn(heard, hold(rowHolds(children, own, tipped)(state)))}
+          <RowHeard.Provider value={heard}>
+            {hold(rowHolds(children, own, tipped)(state))}
+          </RowHeard.Provider>
         </InOption.Provider>
       )}
     </AriaListBoxItem>
@@ -672,7 +665,11 @@ export function ListRow<T extends object>({
       data-variant={variant}
       data-size={size}
     >
-      {(state) => heardIn(heard, hold(rowHolds(children, own, tipped)(state)))}
+      {(state) => (
+        <RowHeard.Provider value={heard}>
+          {hold(rowHolds(children, own, tipped)(state))}
+        </RowHeard.Provider>
+      )}
     </AriaGridListItem>
   );
 }
