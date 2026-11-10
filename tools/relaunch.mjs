@@ -666,6 +666,7 @@ writeFileSync(
           program: claude,
           args: [],
           cwd: plane,
+          ...(ON_A_SANDBOX_ONLY_PROFILE ? { profile: "scenario" } : {}),
           name: "ide.8",
           resume: CONVERSATION,
           active: true,

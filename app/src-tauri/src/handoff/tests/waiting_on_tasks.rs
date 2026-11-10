@@ -694,6 +694,9 @@ fn a_task_paused_on_an_asker_that_closes_or_dies_is_an_item_itself() {
 
 #[test]
 fn a_task_the_person_asked_for_does_not_hold_the_session_s_end() {
+    if super::no_sandboxed_claude_code_stand_in_here() {
+        return;
+    }
     let (_plane, _host, _planes, id, held, steward, told) = a_steward_chat_telling();
     hears(&held, &told, steward, Event::UserPromptSubmit);
     let theirs = ask_from_the_tab(&held, &id, steward, "devops", "check prod")
