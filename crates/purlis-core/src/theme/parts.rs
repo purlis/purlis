@@ -4004,6 +4004,10 @@ fn defaults_under<'a>(surface: &'a Family, default: &'a &'a str) -> &'a [&'a str
 /// there until it is named here. A surface drawn with no fill of its own (a table's row, a
 /// tree's) leaves its parent's ground showing, so what stands in it is named on that parent too;
 /// once a theme fills it, what stands in it is measured on that fill ([`surfaces_set`], #5863).
+///
+/// A surface is named alone (`list`), for every look of it, or with one variant (`list.row`), for
+/// that look alone (#6149): a family the window draws only on a list's plain rows is never
+/// measured on a fill a theme sets on its cards ([`stands_for`]).
 const STANDS_ON: &[(&str, &[&str])] = &[
     (
         "card",
@@ -4030,6 +4034,9 @@ const STANDS_ON: &[(&str, &[&str])] = &[
         "list",
         &["button", "chat-mark", "checkbox", "popover", "tooltip"],
     ),
+    // Drawn on a list's plain rows alone (`DevicesView.tsx`, `SkillLibraryGrade.tsx`), never on
+    // a card row, which is the one list fill a shipped theme sets (#6149).
+    ("list.row", &["badge"]),
     ("menu", &["chat-mark", "tooltip"]),
     (
         "message",
@@ -4204,19 +4211,36 @@ const STANDS_ON: &[(&str, &[&str])] = &[
     ),
 ];
 
-/// **The families drawn on `surface` that a fill `set` in place of its `default` brings a new
-/// ground under** (#3268): each [`STANDS_ON`] says is drawn there, whose grounds do not name `set`
-/// already, or one of whose parts read on grounds of their own ([`Family::under`]) is drawn on
-/// a ground `default` stands for ([`defaults_under`]) and not read on `set`.
+/// A [`STANDS_ON`] key read: the surface it names and the one look of it, if it names one
+/// (`list.row`, #6149).
+fn surface_and_look(key: &str) -> (&str, Option<&str>) {
+    key.split_once('.')
+        .map_or((key, None), |(surface, look)| (surface, Some(look)))
+}
+
+/// Whether a [`STANDS_ON`] key names `surface`'s look `variant`: the surface alone, every look
+/// of it, or that look by name (`list.row`, #6149).
+fn stands_for(key: &str, surface: &str, variant: &str) -> bool {
+    let (named, look) = surface_and_look(key);
+    named == surface && look.is_none_or(|one| one == variant)
+}
+
+/// **The families drawn on `surface`'s look `variant` that a fill `set` in place of its `default`
+/// brings a new ground under** (#3268): each [`STANDS_ON`] says is drawn there ([`stands_for`]),
+/// whose grounds do not name `set` already, or one of whose parts read on grounds of their own
+/// ([`Family::under`]) is drawn on a ground `default` stands for ([`defaults_under`]) and not read
+/// on `set`.
 fn drawn_on(
     surface: &'static Family,
+    variant: &str,
     default: &str,
     set: &str,
 ) -> impl Iterator<Item = &'static Family> {
-    let on: &[&str] = STANDS_ON
+    let on: Vec<&str> = STANDS_ON
         .iter()
-        .find(|(name, _)| *name == surface.name)
-        .map_or(&[], |(_, families)| *families);
+        .filter(|(key, _)| stands_for(key, surface.name, variant))
+        .flat_map(|(_, families)| families.iter().copied())
+        .collect();
     MANIFEST.iter().filter(move |family| {
         let defaults = defaults_under(surface, &default);
         on.contains(&family.name)
@@ -4312,7 +4336,7 @@ fn tints_reach_a_surface(theme: &ResolvedTheme, rules: &[Rule]) -> bool {
         .into_iter()
         .any(|(surface, variant, default, set)| {
             apart_tints_reach(theme, rules, surface, variant, set)
-                || drawn_on(surface, default, set).any(|family| {
+                || drawn_on(surface, variant, default, set).any(|family| {
                     let sets = sets_read(rules, family);
                     tints_reach(theme, set, &looks_in(rules, family, &sets))
                 })
@@ -4476,7 +4500,7 @@ fn held_on_surfaces(
     // it is of, and is keyed by how many looks there are.
     let mut known: Readings = Vec::new();
     for (surface, variant, default, set) in surfaces_set(rules) {
-        for family in drawn_on(surface, default, set) {
+        for family in drawn_on(surface, variant, default, set) {
             // The consent floors hold in every tint, a surface's fill under a consent variant
             // included (ADR 0097 §6), as they do where a theme's parts reach the family itself.
             let consent = family.variants.iter().any(|one| one.consent.is_some());
