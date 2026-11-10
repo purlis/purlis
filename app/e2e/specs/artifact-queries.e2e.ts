@@ -12,14 +12,43 @@ import { closeTabOf, iconFor, iconOf } from "../artifactTabs.js";
  * against the real core: purlis's bar lists the queries the page declared and the parameters that
  * widen what they read, before and after the person approves its script.
  *
- * **What it cannot reach**: the page's own webview, so the calls themselves. That a declared
- * call is answered as data and an undeclared one `not-approved`, gated again at each ask, is
- * proved in `artifacts/calls.rs` and `purlis_core::artifact::calls`.
+ * **The calls themselves, end to end** (#5978's review): WebDriver cannot reach the page's own
+ * webview, so the page says what it was answered the one way it can reach purlis's window, by
+ * what it offers (#5972). It asks `purlis.todo_list@1`, which it declared, and offers Mark done
+ * for the todo of this spec's own it finds in the answer: a button in purlis's bar is that real
+ * data came back. It asks `purlis.session_record_list@1`, which it did not declare, and offers
+ * a row named by the error it was answered: the bar's refusal of that row names the kind.
+ *
+ * **Not here: an ungranted plane query.** No query of purlis's own reads the whole plane; only
+ * an extension's can, so refusing one without its grant needs an extension installed and
+ * approved on the machine. That is proved below the window, in `artifacts/calls.rs`,
+ * `purlis_core::artifact::calls` and `purlis_core::extension::queries`.
  */
 
 const NAME = "Todo board";
 const DECLARED = `{"api":1,"queries":{"purlis.todo_list@1":["done"],"purlis.change_status@1":[]}}`;
 const PAGE = `<!doctype html><title>${NAME}</title><script type="application/json" id="purlis">${DECLARED}</script><ul id=todos></ul><script src=app.js></script>`;
+const OFFERS = `[role="group"][aria-label="Offered by ${NAME}"]`;
+/** The todo of this spec's own the page finds in its answer. */
+const TODO = "Queried by the board";
+/**
+ * The page's script: its two calls, and each answer said as an offer (see above). The offers
+ * answer on the port too, under id 99, which it passes over.
+ */
+const SCRIPT = `const said = {};
+purlis.port.onmessage = (event) => {
+  const answer = event.data;
+  if (answer.id === 1) {
+    const mine = ((answer.data && answer.data.todos) || []).find((one) => one.title === ${JSON.stringify(TODO)});
+    said[1] = { does: "todo.done", subject: mine ? mine.slug : "declared-" + (answer.error ? answer.error.kind : "no-todo") };
+  } else if (answer.id === 2) {
+    said[2] = { does: "todo.done", subject: "undeclared-" + (answer.error ? answer.error.kind : "answered") };
+  } else return;
+  purlis.port.postMessage({ id: 99, offers: Object.values(said) });
+};
+purlis.port.postMessage({ id: 1, query: "purlis.todo_list@1" });
+purlis.port.postMessage({ id: 2, query: "purlis.session_record_list@1" });
+`;
 
 /** What the app answered a command with, insisting it answered at all. */
 async function ask<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
@@ -62,10 +91,8 @@ describe("a pinned artifact that calls purlis's queries", function () {
     const folder = join(at, "todo-board");
     mkdirSync(folder, { recursive: true });
     writeFileSync(join(folder, "index.html"), PAGE);
-    writeFileSync(
-      join(folder, "app.js"),
-      "purlis.port.postMessage({ id: 1, query: 'purlis.todo_list@1' });",
-    );
+    writeFileSync(join(folder, "app.js"), SCRIPT);
+    await ask("todo_add", { plane, workspace: "alpha", text: TODO });
     writeFileSync(
       join(at, "pins.toml"),
       `version = 1
@@ -108,5 +135,30 @@ pin = [
       timeoutMsg: "the approval did not reach the tab",
     });
     expect(await bar()).toContain("Reads purlis.todo_list@1");
+  });
+
+  it("answers a call its page declared with the workspace's own data", async () => {
+    await $(OFFERS).$(`aria/Mark done: ${TODO}`).waitForExist({
+      timeout: 20_000,
+      timeoutMsg: "the page was not answered its declared purlis.todo_list@1 with the todo",
+    });
+  });
+
+  it("refuses a call its page did not declare, as not-approved", async () => {
+    await browser.waitUntil(
+      async () =>
+        (
+          await browser.execute(() =>
+            [...document.querySelectorAll('[data-testid="artifact-offer-refused"]')].map(
+              (one) => one.textContent ?? "",
+            ),
+          )
+        ).some((said) => said.includes("undeclared-not-approved")),
+      {
+        timeout: 20_000,
+        timeoutMsg:
+          "the page's undeclared purlis.session_record_list@1 was not refused not-approved",
+      },
+    );
   });
 });
