@@ -409,6 +409,31 @@ describe("a box of lines that wrap, in a row (#5993)", () => {
     await userEvent.keyboard("{ArrowDown}");
     expect(row("Last")).toHaveFocus();
   });
+
+  /** One word too long for a line, broken in it where nothing hangs: "aaaaaaaaaa" and "bbbbbbbbb". */
+  const ONE_WORD = "aaaaaaaaaabbbbbbbbb";
+
+  /** The caret at a soft wrap (#6045): drawn at the end of the first line or the start of the
+   *  second, as the box chooses, and the box says not which. */
+  async function wordAtTheWrap() {
+    vi.spyOn(HTMLSpanElement.prototype, "getClientRects").mockImplementation(wrapped);
+    render(<Asks />);
+    await userEvent.click(reply());
+    await userEvent.keyboard(ONE_WORD);
+    reply().setSelectionRange(PER_LINE, PER_LINE);
+  }
+
+  it("keeps ↓ at a soft wrap, where the caret may be drawn at the end of the line above (#6045)", async () => {
+    await wordAtTheWrap();
+    await userEvent.keyboard("{ArrowDown}");
+    expect(reply()).toHaveFocus();
+  });
+
+  it("keeps ↑ at a soft wrap, where the caret may be drawn at the start of the line below (#6045)", async () => {
+    await wordAtTheWrap();
+    await userEvent.keyboard("{ArrowUp}");
+    expect(reply()).toHaveFocus();
+  });
 });
 
 describe("Shift+Tab back into a list (#6033)", () => {

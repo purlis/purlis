@@ -125,9 +125,15 @@ const WRAPPING = [
  * the line between line breaks it stands in. A box of lines tells no line its caret is on, so its
  * words are laid out again in a measure drawn as the box is (its width, its font, its wrapping),
  * unseen: the words before the caret and the words after it, each its own run, whose lines the
- * browser tells (`getClientRects`). The caret is on the first line of the words after it, or the
- * last of those before it at the end; it has a line above while that is below the first run's
- * first line, and one below while the words after it go on to a line further down.
+ * browser tells (`getClientRects`). Mid-line, the words before the caret end on its line and the
+ * words after it start there. **At a soft wrap** (#6045) they do not: the words before end on one
+ * line and the words after start on the next, and the caret is drawn at the end of the first or
+ * the start of the second as the box chooses (its affinity), which a box of lines never tells.
+ * So the caret is taken to be on the line its key moves from: for ↑ the line the words after it
+ * start on, for ↓ the line the words before it end on. Either way it has a line that way, and
+ * the key moves the caret within the box, off the wrap; it leaves the row only from the first or
+ * last line. Mid-line both are the caret's own line. It has a line above while that is below the
+ * first run's first line, and one below while the words after it go on to a line further down.
  */
 function wrapsBeyond(box: HTMLTextAreaElement, at: number, up: boolean): boolean {
   const { value } = box;
@@ -169,7 +175,14 @@ function wrapsBeyond(box: HTMLTextAreaElement, at: number, up: boolean): boolean
       const rects = span.getClientRects();
       return rects[rects.length - 1]?.top;
     };
-    const caret = after === "" ? last(ahead) : first(behind);
+    // At a soft wrap, the caret's line is the one the key moves away from.
+    const caret = up
+      ? after === ""
+        ? last(ahead)
+        : first(behind)
+      : before === ""
+        ? first(behind)
+        : last(ahead);
     const edge = up ? first(ahead) : last(behind);
     if (caret === undefined || edge === undefined) return false;
     return up ? edge < caret - 1 : edge > caret + 1;

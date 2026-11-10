@@ -983,9 +983,13 @@ export const ASelectInARow: Story = {
 const LONG_REPLY =
   "Yes, publish it to the registry once the tests pass on both runners, and tell me when it is out.";
 
+/** One word longer than a line of the reply box, which breaks inside it, where nothing hangs. */
+const ONE_LONG_WORD =
+  "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08e3b0c44298fc1c14";
+
 /** Three asks, the middle one with a reply box narrow enough that its words wrap. */
-function Replying() {
-  const [reply, setReply] = useState(LONG_REPLY);
+function Replying({ words = LONG_REPLY }: { words?: string }) {
+  const [reply, setReply] = useState(words);
   return (
     <div style={{ inlineSize: "20rem", display: "grid", gap: "var(--space-3)" }}>
       <List aria-label="Asks" disallowTypeAhead>
@@ -1188,6 +1192,59 @@ export const TabWalksARowsControlsThenLeaves: Story = {
     await untilFocused(() => beta, "Walks a row: Tab comes back to the row");
     await userEvent.keyboard("{ArrowRight}{ArrowRight}");
     await untilFocused(stop, "Walks a row: its last control holds the keyboard for the picture");
+    expectFocusInSight();
+  },
+};
+
+/**
+ * **↑ and ↓ at a soft wrap move within the box** (#6045): in a word longer than a line, which the
+ * box breaks with nothing hanging, End puts the caret at the end of the first line, at the wrap,
+ * and ↓ moves it on to the line below, where it once left the row; Home from the last line puts
+ * it at the start of that line, at the wrap again, and ↑ moves it up. Only from the last line
+ * does ↓ leave for the row below. The picture is the box holding the keyboard, its caret at the
+ * wrap.
+ */
+export const ACaretAtASoftWrap: Story = {
+  render: () => <Replying words={ONE_LONG_WORD} />,
+  play: async ({ canvas, userEvent }) => {
+    const list = canvas.getByRole("grid", { name: "Asks" });
+    const publish = within(list).getByRole("row", { name: "Publish 0.4.0" });
+    const box = () =>
+      within(publish).getByRole("textbox", { name: "Reply" }) as HTMLTextAreaElement;
+    const caret = () => box().selectionStart;
+    const end = ONE_LONG_WORD.length;
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowDown}{ArrowRight}");
+    await untilFocused(box, "At a soft wrap: → reaches the box from its row");
+    box().setSelectionRange(0, 0);
+    // Home, End and the arrows move a box's caret by its lines only on the engine's keyboard.
+    if (!(await keysOnTheEnginesKeyboard("{End}"))) return;
+    await waitFor(() => expect(caret()).toBeGreaterThan(0));
+    const wrap = caret();
+    expect(wrap).toBeLessThan(end);
+    await keysOnTheEnginesKeyboard("{ArrowDown}");
+    await untilFocused(box, "At a soft wrap: ↓ from the end of the first line stays in the box");
+    await waitFor(() => expect(caret()).toBeGreaterThan(wrap));
+    box().setSelectionRange(end, end);
+    await keysOnTheEnginesKeyboard("{Home}");
+    await waitFor(() => expect(caret()).toBeLessThan(end));
+    const start = caret();
+    expect(start).toBeGreaterThan(0);
+    await keysOnTheEnginesKeyboard("{ArrowUp}");
+    await untilFocused(box, "At a soft wrap: ↑ from the start of the last line stays in the box");
+    await waitFor(() => expect(caret()).toBeLessThan(start));
+    box().setSelectionRange(end, end);
+    await keysOnTheEnginesKeyboard("{ArrowDown}");
+    await untilFocused(
+      () => within(list).getByRole("row", { name: "Run cargo test" }),
+      "At a soft wrap: ↓ from the last line goes to the row below",
+    );
+    await userEvent.keyboard("{ArrowUp}{ArrowRight}");
+    await untilFocused(box, "At a soft wrap: → reaches the box again");
+    box().setSelectionRange(0, 0);
+    await keysOnTheEnginesKeyboard("{End}");
+    await untilFocused(box, "At a soft wrap: the box holds the keyboard for the picture");
+    await waitFor(() => expect(caret()).toBe(wrap));
     expectFocusInSight();
   },
 };
