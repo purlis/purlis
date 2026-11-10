@@ -4639,14 +4639,16 @@ impl HostedSessions {
                 sandbox,
                 prompt_key,
                 armed_skills,
+                skills_not_there,
                 ..
             }) => (
                 program,
                 process,
-                confined,
+                confined.map(|confined| *confined),
                 sandbox,
                 prompt_key,
                 armed_skills.map(|armed| session::ArmedSkill::bounded(*armed)),
+                skills_not_there.and_then(|not| not.bounded()),
             ),
             Ok(other) => {
                 return Err(unclear(format!(
@@ -4667,7 +4669,7 @@ impl HostedSessions {
             }
             Err(refused) => return Err(unclear(refused.why)),
         };
-        let (program, pid, confined, ran, prompt_key, armed_skills) = started;
+        let (program, pid, confined, ran, prompt_key, armed_skills, skills_not_there) = started;
         // A chat that runs on a pool's runner with nothing holding its files leaves that runner
         // trusted with no browser and no login until it is made again (D-2050-27): kept here,
         // where no runner reaches, before it is kept as running. Where that cannot be kept, it
@@ -4696,6 +4698,19 @@ impl HostedSessions {
                 .as_ref()
                 .and_then(purlis_core::skillspan::PromptSalt::answered),
             armed_skills,
+            skills_not_there,
+            runner: self.runner_named(link),
+        })
+    }
+
+    /// **The runner `link` reached, as a chat's tab names it** (#2977): `<pool>/<runner>` where
+    /// its host named the runner (1.48), its pool alone where it did not, and none on a link to
+    /// this machine's host.
+    fn runner_named(&self, link: &HostLink) -> Option<String> {
+        let pool = self.connection.pool()?;
+        Some(match link.reached_runner() {
+            Some(runner) => format!("{pool}/{runner}"),
+            None => pool.to_owned(),
         })
     }
 }
@@ -4723,6 +4738,11 @@ struct Begun {
     prompt_key: Option<purlis_core::skillspan::PromptSalt>,
     /// The skills the host armed it with, where it composed it and says (1.77, #4218).
     armed_skills: Option<Vec<session::ArmedSkill>>,
+    /// The skills its persona names that it started without there, where the host says some
+    /// (1.80, #2977).
+    skills_not_there: Option<session::SkillsNotThere>,
+    /// The runner it started on, as its tab names it ([`HostedSessions::runner_named`]).
+    runner: Option<String>,
 }
 
 /// Each call is documented once, on [`SessionHost`].
@@ -4897,6 +4917,8 @@ impl SessionHost for HostedSessions {
             ran,
             prompt_key,
             armed_skills,
+            skills_not_there,
+            runner,
         } = self
             .started(&link, id, start, false, announce, &named.asked_to_run)
             .inspect_err(|_| unheard(&confinement))?;
@@ -4912,6 +4934,8 @@ impl SessionHost for HostedSessions {
                 ran,
                 prompt_key,
                 armed_skills,
+                skills_not_there,
+                runner,
             });
         };
         let held = HeldInTheHost::new(confinement, Arc::clone(&link), true);
@@ -4933,6 +4957,8 @@ impl SessionHost for HostedSessions {
             ran,
             prompt_key,
             armed_skills,
+            skills_not_there,
+            runner,
         })
     }
 

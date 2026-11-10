@@ -551,6 +551,7 @@ describe("the Skills chip on a chat's pane", () => {
       broken: [],
       by_a_repo: [],
       beside_a_built_in: [],
+      runner: null,
     };
     const fellBack = { router: "acme", ms: 9, fell_back: true, said: "acme fell back." };
     for (const [set, title] of [
@@ -604,6 +605,7 @@ describe("the Skills chip on a chat's pane", () => {
       broken: [],
       by_a_repo: [],
       beside_a_built_in: [],
+      runner: null,
     };
     mockIPC((cmd, args) => {
       if (cmd.startsWith("plugin:event")) return 0;

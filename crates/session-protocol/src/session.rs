@@ -2315,9 +2315,10 @@ pub enum Answer {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         process: Option<u32>,
         /// Where the confinement the host composed for it is, named to the link the start came
-        /// on, where the start asked for it by [`StartProgram::confinement`] (1.16).
+        /// on, where the start asked for it by [`StartProgram::confinement`] (1.16). Boxed so the
+        /// answer stays small; it is the same on the wire.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        confined: Option<Confined>,
+        confined: Option<Box<Confined>>,
         /// How its run is sandboxed, as the host applied it (1.29): the same record `programs`
         /// answers. Absent from a host before 1.29, whose window takes the run as sandboxed.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4157,7 +4158,7 @@ impl Client {
                 program,
                 number,
                 process,
-                confined,
+                confined: confined.map(|confined| *confined),
                 sandbox,
                 prompt_key,
                 armed_skills: armed_skills.map(|armed| ArmedSkill::bounded(*armed)),

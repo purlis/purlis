@@ -53,7 +53,9 @@ fn a_hosts_skills_not_there_are_taken_each_name_that_fits_and_at_most_the_most()
             "x".repeat(MOST_ARMED_SKILL_NAME + 1),
             "bell\u{7}".into(),
         ],
-        no_built_in: (0..MOST_ARMED_SKILLS + 5).map(|n| format!("b{n}")).collect(),
+        no_built_in: (0..MOST_ARMED_SKILLS + 5)
+            .map(|n| format!("b{n}"))
+            .collect(),
     };
     let taken = said.bounded().expect("names are left");
     assert_eq!(taken.missing, ["deploy"]);

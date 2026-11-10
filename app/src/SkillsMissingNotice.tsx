@@ -9,10 +9,10 @@ import { SHOW_IN_SKILLS, askChatSkills, skillsMissingPutAway } from "./chatSkill
 
 /**
  * **The skills a chat started without, on its tab** (SK-5, #2768; SK-8, #2771; spec decision
- * 41): never a silent drop. An installed skill this machine does not have for the chat's
- * harness, and a built-in skill purlis has none of, each named as the persona's skills write it;
- * a skill the chat would have loaded that could not be loaded, with why; and one the repo it
- * works in leaves out, with why (SK-53). And a skill of that repo with a name of purlis's own,
+ * 41): never a silent drop. An installed skill this machine, or the runner the chat started on
+ * (SK-5d, #2977), does not have for the chat's harness, and a built-in skill purlis there has
+ * none of, each named as the persona's skills write it; a skill the chat would have loaded that
+ * could not be loaded, with why; and one the repo it works in leaves out, with why (SK-53). And a skill of that repo with a name of purlis's own,
  * which the chat's program loads beside purlis's (SK-37). It offers
  *
  * - **Show in Skills** (S8, #3694): the sidebar Skills view on this chat, where what it started
@@ -65,13 +65,17 @@ export function SkillsMissingNotice({ plane, session }: { plane: PlaneId; sessio
 export function missingSays(chat: string, said: SkillsMissing): string {
   const lines: string[] = [];
   const persona = said.persona ?? "its persona";
+  // Where it was looked for (#2977): this machine, or the runner a chat there started on.
+  const where =
+    said.runner === null ? "this machine" : said.runner === "" ? "its runner" : `runner ${said.runner}`;
+  const purlis = said.runner === null ? "purlis" : `purlis on ${where}`;
   if (said.missing.length > 0)
     lines.push(
-      `${chat} started without ${counted(said.missing.length, "skill", "skills")} ${persona} names, not installed on this machine: ${said.missing.join(", ")}.`,
+      `${chat} started without ${counted(said.missing.length, "skill", "skills")} ${persona} names, not installed on ${where}: ${said.missing.join(", ")}.`,
     );
   if (said.no_built_in.length > 0)
     lines.push(
-      `${persona} names ${counted(said.no_built_in.length, "built-in skill", "built-in skills")} purlis does not have: ${said.no_built_in.join(", ")}.`,
+      `${persona} names ${counted(said.no_built_in.length, "built-in skill", "built-in skills")} ${purlis} does not have: ${said.no_built_in.join(", ")}.`,
     );
   if (said.broken.length > 0)
     lines.push(

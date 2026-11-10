@@ -2406,6 +2406,12 @@ export const commands = {
 	 *  program loads beside purlis's (SK-37).
 	 */
 	beside_a_built_in: string[],
+	/**
+	 *  **The runner it started on** (SK-5d, #2977), where its runner said what it lacks there:
+	 *  `<pool>/<runner>`, its pool where its runner is not named, or empty where neither is.
+	 *  `None` for a chat on this machine.
+	 */
+	runner: string | null,
 } | null, string>(__TAURI_INVOKE("chat_skills_missing", { plane, session })),
 	/**  Puts a chat's missing-skills Notice away. */
 	putAwayChatSkillsMissing: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("put_away_chat_skills_missing", { plane, session })),
@@ -17371,6 +17377,12 @@ export type SkillsMissing = {
 	 *  program loads beside purlis's (SK-37).
 	 */
 	beside_a_built_in: string[],
+	/**
+	 *  **The runner it started on** (SK-5d, #2977), where its runner said what it lacks there:
+	 *  `<pool>/<runner>`, its pool where its runner is not named, or empty where neither is.
+	 *  `None` for a chat on this machine.
+	 */
+	runner: string | null,
 };
 
 /**

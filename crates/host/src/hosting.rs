@@ -2626,7 +2626,7 @@ impl Hosting {
             program,
             number: Some(number),
             process,
-            confined,
+            confined: confined.map(Box::new),
             sandbox: Some(sandbox),
             prompt_key: prompt_key.filter(|_| answers_a_launch),
             armed_skills: armed.filter(|_| answers_a_launch).map(Box::new),
