@@ -1974,7 +1974,10 @@ fn a_chat_named_alone_is_composed_by_the_host_as_its_profile_says(target: &Targe
         .sessions
         .open_named(
             None,
-            &named("carry on with the plan", without_claudes_sandbox_here()),
+            &named(
+                "carry on with the plan",
+                without_claudes_sandbox_here(target),
+            ),
             purlis_core::sandbox::plan::Hearing::default(),
             &|_| {},
         )
@@ -2051,7 +2054,7 @@ fn a_harness_chat_started_by_its_names_is_viewed_typed_into_answered_and_stopped
         .sessions
         .open_named(
             None,
-            &named("start here", without_claudes_sandbox_here()),
+            &named("start here", without_claudes_sandbox_here(target)),
             purlis_core::sandbox::plan::Hearing::default(),
             &|id| {
                 target.hooks.board().opened(id, None, None);
@@ -2118,8 +2121,10 @@ fn an_opt_out_of_a_chat_the_host_composes_is_in_its_event_log_before_it_starts(t
 /// Whether a chat on [`a_profile`]'s `work`, in a test of something else, is started with the
 /// person's opt-out of the sandbox: where purlis wraps a Claude Code chat, which on Linux runs
 /// sandboxed only on a sandbox-only profile (ADR 0067 as amended 2026-11-10).
-fn without_claudes_sandbox_here() -> bool {
-    crate::sandboxing::claude_is_wrapped_here_for_tests()
+fn without_claudes_sandbox_here(target: &Target) -> bool {
+    // A chat on a runner starts inside its sandbox or not at all, and a runner wraps a Claude
+    // Code chat on any profile (#4083): only a chat run on this machine takes the opt-out.
+    target.runner.is_none() && crate::sandboxing::claude_is_wrapped_here_for_tests()
 }
 
 /// A chat named by the profile `work` and the persona `steward`, told `first_message`.

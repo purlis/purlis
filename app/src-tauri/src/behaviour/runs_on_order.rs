@@ -136,7 +136,7 @@ fn in_a_docker_pool() {
             // where it runs, so it starts with the person's opt-out there.
             ..named(
                 "carry on with the plan",
-                !on_its_runner && super::without_claudes_sandbox_here(),
+                !on_its_runner && crate::sandboxing::claude_is_wrapped_here_for_tests(),
             )
         };
         let id = window
