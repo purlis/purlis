@@ -9,40 +9,33 @@
 //! write a word. So [`watch`] starts this binary again as the crash handler (`purlis-crash-
 //! handler`), a companion process that writes a minidump of the app from outside when it
 //! crashes, into the crashes folder of this machine's config home. On the next launch
-//! [`report_waiting`] hands each to the core's Reports, which sends it, with a yes to Crash
-//! reports, to the Report intake alone.
+//! [`report_waiting`] hands each to the core's Reports, which takes the crashing thread's stack
+//! out of it on this device and sends that alone, with a yes to Crash reports, to the Report
+//! intake alone (the operator's ruling (b) of 2026-11-10 on #5691: module names and offsets, no
+//! memory, no other thread, no environment). The minidump itself stays here and ages out.
 //!
 //! **macOS only, for now.** Linux and Windows are follow-ups of #5691: the handler's crates
 //! cover both, but neither has been proved here.
 //!
-//! **Not started yet: [`STARTED`] is off.** `minidumper-child` 0.7, the handler's companion, pins
-//! `crash-handler` 0.7, which on macOS answers a crashing *child* process's exception as handled:
-//! a child inherits the app's exception port, so a session host, git or harness that segfaults
-//! would spin for ever instead of dying. `crash-handler` 0.8.1 fixes it (EmbarkStudios/crash-
-//! handling PR#126). Once a `minidumper-child` release depends on `crash-handler` 0.8, its version
-//! in `crates/crash-handler/Cargo.toml` moves to it, the `#[ignore]` comes off that crate's
-//! `a_child_of_a_watched_process_that_crashes_dies_of_it_and_leaves_no_minidump`, and
-//! [`STARTED`] turns on. **In the same change, the release profile starts writing debug
+//! **Not started yet: [`STARTED`] is off**, until the operator approves switching it on: what
+//! it needed is in place (purlis's own glue over `crash-handler` 0.8, which lets a crashing child
+//! process die, and the stack-only ruling (b) carried out in `purlis_core::report::native`).
+//! Switching it on is one change: [`STARTED`] set to `true`, with ruling (b) and the operator's
+//! approval cited beside it, and, **in the same change, the release profile starts writing debug
 //! symbols** (ruling of 2026-11-08, #5692): `debug = "line-tables-only"` and
 //! `split-debuginfo = "packed"` on `[profile.release]` in the workspace's `Cargo.toml`, keeping
 //! `strip = true`, so a dSYM lands beside each binary for `release.yml`'s `symbols` job to send to
-//! the Report intake. Until then the job finds none. The change is a ruling under ADR 0092 (an
-//! amendment, and the profile test in `crates/release-manifest` moves with it), and its cost to
-//! the macOS build is measured on that change's own release run. **And before [`STARTED`] turns
-//! on, the operator rules on the minidump's privacy** (hard gate, ADR 0118): a minidump holds raw
-//! memory of the app (its stacks and the bytes around them, which may carry paths, project and
-//! persona names, and words of the person's) and is sent as it was written, unscrubbed. Ruling O9
-//! sends it whole; story 15 of spec #5683 says no paths or names leave the machine. The two
-//! disagree for this one report, and only the operator's ruling settles which holds, or what
-//! the minidump is cut to first. No change turns [`STARTED`] on without that ruling cited beside
-//! it. Everything else (the companion's role, the minidumps waiting on the next
-//! launch, the panic's hand-off) is in place and runs; with nothing watching, nothing waits.
+//! the Report intake, which symbolicates the stack's frames with it. Until then the job finds
+//! none. That profile change is a ruling under ADR 0092 (an amendment, and the profile test in
+//! `crates/release-manifest` moves with it), and its cost to the macOS build is measured on that
+//! change's own release run; `tools/crash-relaunch.mjs` is the end-to-end check to run on it.
+//! Everything else (the companion's role, the minidumps waiting on the next launch, the panic's
+//! hand-off) is in place and runs; with nothing watching, nothing waits.
 
 use std::sync::OnceLock;
 
-/// Whether the app starts its crash handler. Off until `minidumper-child` depends on
-/// `crash-handler` 0.8 and the operator has ruled on the minidump's privacy (the module's doc
-/// says why and what turns it on).
+/// Whether the app starts its crash handler. Off until the operator approves switching it on
+/// (the module's doc says what else that change carries).
 pub const STARTED: bool = false;
 
 /// What became of the watch, for the log once there is one: it is set before the log is.
@@ -72,7 +65,7 @@ pub fn serve_if_asked() {
 /// handler that could not start, and says why in its log.
 pub fn watch() {
     let said = if !STARTED {
-        "off until minidumper-child depends on crash-handler 0.8 (#5691)".to_owned()
+        "off until the operator switches it on (#5691)".to_owned()
     } else {
         start()
     };

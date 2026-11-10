@@ -112,9 +112,8 @@ const LINES: [Words; 11] = [
     },
     Words {
         id: "per_chat_plugins",
-        label: "Takes plugins for one chat alone",
-        without: "cannot take plugins for one chat alone, so the plugins chosen for this \
-                  project are not handed to it",
+        label: "Turns your plugins off for one chat",
+        without: "cannot turn a plugin off for one chat, so every chat on it has your plugins on",
     },
     Words {
         id: crate::harness_declaration::MCP_SERVERS,

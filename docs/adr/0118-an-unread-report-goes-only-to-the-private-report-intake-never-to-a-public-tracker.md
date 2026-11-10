@@ -75,7 +75,9 @@ for GT-CLOUD and TM-2. Until then a team has one lever, the project rule above.
   is sent as it was written, unscrubbed; O9 sends it whole, and the spec's story 15 says no paths
   or names leave the machine. The native crash handler is not switched on until the operator
   rules on the minidump's privacy, alongside the `minidumper-child` bump and the release
-  profile's debug symbols (#5691, #5692; `app/src-tauri/src/nativecrash.rs`).
+  profile's debug symbols (#5691, #5692; `app/src-tauri/src/nativecrash.rs`). [Ruled
+  2026-11-10](0118/2026-11-10-a-native-crash-leaves-as-its-crashing-thread-s-stack-alone.md):
+  only the crashing thread's stack leaves, taken out on the device.
 - **Where the intake lives** (#5687). Sentry SaaS, organisation `purlis-inc-ff` (the slug Sentry
   gave, [amended 2026-11-10](0118/2026-11-10-the-intake-org-is-the-slug-sentry-gave.md)), project `purlis-app`,
   created with EU data storage (`de.sentry.io`; a region cannot be changed after an organisation

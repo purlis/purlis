@@ -12,17 +12,23 @@
 //! is sent the same way, with its name for the panic's type and its script's file name for the
 //! place (#5690).
 //!
-//! **A native crash** (#5691) is sent with the same fixed fields, no message and no place (the
-//! process could say neither), and its minidump as the envelope's attachment, which Sentry reads
-//! for the crashing thread's stack. Ruling O9 sends the minidump to the Report intake as it was
-//! written; nothing else ever sees it. The sent list names it by its size and its SHA-256 in
-//! place of its bytes: they are not text, and a list kept 90 days holds no memory of the app's.
+//! **A native crash** (#5691) is sent with the same fixed fields, what the system called the
+//! crash for its message, and its crashing thread's stack, taken out of the minidump on the
+//! device ([`super::native::stack_of`]): each frame as a module and an offset, each module by its
+//! file name and build ids, for the intake to symbolicate with the build's own symbols. Nothing
+//! else of the minidump leaves (the operator's ruling (b) of 2026-11-10, on #5691): no memory, no
+//! other thread, no environment. Its fingerprint is where it crashed, by those frames, in which
+//! purlis version.
 
 use regex::Regex;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
+use super::native::CrashStack;
 use super::{Draft, Known, NativeCrash, Panic, RanAsSaid, short_place};
+
+/// How many of a native crash's first frames say where it crashed, for its fingerprint.
+const FRAMES_TELL_IT: usize = 8;
 
 /// An error the window did not catch, as its JavaScript saw it (#5690): thrown and not caught, or
 /// a promise rejected with nobody to handle it. What of it is sent is the core's to say
@@ -76,6 +82,7 @@ impl CrashReport {
             title: format!("purlis panicked at {place}"),
             place,
             message,
+            stack: None,
         }
         .envelope(at, dsn)
     }
@@ -121,9 +128,141 @@ impl CrashReport {
             title,
             place: place.unwrap_or_default(),
             message,
+            stack: None,
         }
         .envelope(None, dsn)
     }
+
+    /// The Crash report of a native crash (#5691): its kind, scrubbed as a panic's message is, and
+    /// its crashing thread's stack, each module named by its file alone and scrubbed too. Where
+    /// it crashed is its first frames, so the same frames again in the same version are counted.
+    /// One whose stack could not be read has a fingerprint of its own alone: nothing tells it
+    /// from another, so it is never counted away, and it is still a crash to the sent list.
+    pub fn of_native(crash: &NativeCrash, known: &Known, dsn: &str) -> CrashReport {
+        let mut stack = crash.stack.clone();
+        for module in &mut stack.modules {
+            module.name = known.scrub(&without_paths(&module.name)).0;
+        }
+        let reason = stack
+            .reason
+            .take()
+            .map(|reason| named_kinds(&reason))
+            .unwrap_or_default();
+        let kind = reason
+            .split(" / ")
+            .next()
+            .filter(|kind| !kind.is_empty())
+            .unwrap_or("native crash")
+            .to_string();
+        let place = stack
+            .frames
+            .first()
+            .map(|frame| where_in(&stack, frame))
+            .unwrap_or_default();
+        let version = crate::adopt::release_version();
+        let mut parts = vec!["native".to_string(), version.to_string()];
+        if stack.frames.is_empty() {
+            parts.push(uuid::Uuid::new_v4().simple().to_string());
+        }
+        parts.extend(
+            stack
+                .frames
+                .iter()
+                .take(FRAMES_TELL_IT)
+                .map(|frame| where_in(&stack, frame)),
+        );
+        let parts: Vec<&str> = parts.iter().map(String::as_str).collect();
+        let at = crash
+            .at
+            .and_then(|at| chrono::DateTime::from_timestamp(i64::try_from(at).ok()?, 0));
+        Fields {
+            platform: "native",
+            kind,
+            mechanism: "minidump",
+            fingerprint: fingerprint(&parts),
+            title: if place.is_empty() {
+                "purlis crashed".to_string()
+            } else {
+                format!("purlis crashed at {place}")
+            },
+            place,
+            message: reason,
+            stack: Some(stack),
+        }
+        .envelope(at, dsn)
+    }
+}
+
+/// minidump's words for a crash (`EXC_BAD_ACCESS / KERN_INVALID_ADDRESS`), kept to its first
+/// two parts and to those that are names alone: some of its kinds go on with an address, a code,
+/// a pid or a descriptor (`EXC_GUARD / GUARD_TYPE_VIRT_MEMORY / … offset: 0x…`), and none of
+/// those leave.
+fn named_kinds(reason: &str) -> String {
+    reason
+        .split(" / ")
+        .take(2)
+        .take_while(|part| {
+            !part.is_empty()
+                && part
+                    .chars()
+                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+                && part.starts_with(|c: char| c.is_ascii_uppercase())
+        })
+        .collect::<Vec<_>>()
+        .join(" / ")
+}
+
+/// Where `frame` is: its module's name and its offset there (`purlis+0x1a2b3c`).
+fn where_in(stack: &CrashStack, frame: &super::native::Frame) -> String {
+    let module = stack
+        .modules
+        .get(frame.module)
+        .map_or("?", |module| module.name.as_str());
+    format!("{module}+{:#x}", frame.offset)
+}
+
+/// A native crash's frames as Sentry reads them: the outermost first, each an offset into its
+/// module (`addr_mode` `rel:<module>`), so no address of the process leaves.
+fn stacktrace(stack: &CrashStack) -> serde_json::Value {
+    let frames: Vec<serde_json::Value> = stack
+        .frames
+        .iter()
+        .rev()
+        .map(|frame| {
+            json!({
+                "instruction_addr": format!("{:#x}", frame.offset),
+                "addr_mode": format!("rel:{}", frame.module),
+                "package": stack.modules.get(frame.module).map(|module| module.name.clone()),
+                "trust": frame.trust,
+            })
+        })
+        .collect();
+    json!({ "frames": frames })
+}
+
+/// The modules a native crash's frames are in, as Sentry finds their symbols: by debug id.
+fn debug_meta(stack: &CrashStack) -> serde_json::Value {
+    let kind = match std::env::consts::OS {
+        "macos" | "ios" => "macho",
+        "windows" => "pe",
+        _ => "elf",
+    };
+    let images: Vec<serde_json::Value> = stack
+        .modules
+        .iter()
+        .map(|module| {
+            json!({
+                "type": kind,
+                "code_file": module.name,
+                "debug_id": module.debug_id,
+                "code_id": module.code_id,
+                "image_addr": "0x0",
+                "image_size": module.size,
+                "arch": stack.arch,
+            })
+        })
+        .collect();
+    json!({ "images": images })
 }
 
 /// The fixed fields of a Crash report, already scrubbed.
@@ -137,6 +276,8 @@ struct Fields {
     title: String,
     place: String,
     message: String,
+    /// A native crash's stack, already scrubbed.
+    stack: Option<CrashStack>,
 }
 
 impl Fields {
@@ -149,6 +290,10 @@ impl Fields {
             "value": self.message,
             "mechanism": {"type": self.mechanism, "handled": false},
         }]});
+        if let Some(stack) = &self.stack {
+            event["exception"]["values"][0]["stacktrace"] = stacktrace(stack);
+            event["debug_meta"] = debug_meta(stack);
+        }
         event["culprit"] = json!(self.place);
         // Sentry groups by it, so the counts of repeats name the group they belong to.
         event["fingerprint"] = json!([self.fingerprint]);
@@ -159,50 +304,6 @@ impl Fields {
             fingerprint: Some(self.fingerprint),
             title: self.title,
             bytes: format!("{}{}", header(&event_id, dsn), event_item(&event)),
-            event_id,
-        }
-    }
-}
-
-/// A native crash's Crash report (#5691), ready to send: the envelope is not text, since it
-/// carries the minidump.
-pub(super) struct NativeCrashReport {
-    pub event_id: String,
-    /// What the sent list calls it.
-    pub title: String,
-    /// The envelope, exactly as it is sent.
-    pub envelope: Vec<u8>,
-    /// What the sent list shows: the envelope, with the minidump named in place of its bytes.
-    pub shown: String,
-}
-
-impl NativeCrashReport {
-    /// The Crash report of a native crash, with its minidump, for the intake at `dsn`.
-    pub fn of(crash: &NativeCrash, dsn: &str) -> NativeCrashReport {
-        let event_id = uuid::Uuid::new_v4().simple().to_string();
-        let at = crash
-            .at
-            .and_then(|at| chrono::DateTime::from_timestamp(i64::try_from(at).ok()?, 0));
-        let event = fixed_fields(&event_id, "native", at);
-        let text = format!("{}{}", header(&event_id, dsn), event_item(&event));
-        let attachment = json!({
-            "type": "attachment",
-            "length": crash.minidump.len(),
-            "filename": "purlis.dmp",
-            "attachment_type": "event.minidump",
-        });
-        let mut envelope = format!("{text}{attachment}\n").into_bytes();
-        envelope.extend_from_slice(&crash.minidump);
-        envelope.push(b'\n');
-        let digest = Sha256::digest(&crash.minidump);
-        let digest: String = digest.iter().map(|b| format!("{b:02x}")).collect();
-        NativeCrashReport {
-            title: "purlis crashed".to_string(),
-            envelope,
-            shown: format!(
-                "{text}{attachment}\n[a minidump of {} bytes, sha256 {digest}]\n",
-                crash.minidump.len()
-            ),
             event_id,
         }
     }

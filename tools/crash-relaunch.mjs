@@ -20,10 +20,11 @@
 //
 // What it proves, through the real binary and its real crash handler:
 // - a native crash leaves a minidump, sends nothing on its way down, and is sent on the next
-//   launch with only the fixed fields and its minidump, then listed and removed;
+//   launch as the fixed fields and its crashing thread's stack alone (ruling (b), #5691), never
+//   the minidump, which is listed and kept on the device;
 // - a panic is sent on its way down, is in the sent list after the relaunch, and leaves no
 //   minidump to be sent a second time;
-// - nothing but the Report intake was sent the minidump.
+// - nothing but the Report intake was sent anything of the crash.
 //
 // macOS only, for now: the app watches itself with the crash handler only there (#5691 lists
 // Linux and Windows as follow-ups).
@@ -48,11 +49,18 @@ const APP = join(
 );
 /** How long a launch is given to crash, or to send what waited. A CI runner is slow. */
 const PATIENCE = 90_000;
-/** The fields every Crash report carries, and no others (spec #5683, Q5). */
-const FIXED = [
+/**
+ * The fields a native crash's Crash report carries, and no others: those every Crash report
+ * carries (spec #5683, Q5), and its crashing thread's stack (ruling (b), #5691).
+ */
+const NATIVE = [
   "contexts",
+  "culprit",
+  "debug_meta",
   "environment",
   "event_id",
+  "exception",
+  "fingerprint",
   "level",
   "platform",
   "release",
@@ -61,7 +69,7 @@ const FIXED = [
 ];
 /**
  * What the app says, with `CHARTER_LAUNCH_LOG`, when its crash handler is not started: the switch
- * `nativecrash::STARTED` is off until `minidumper-child` depends on `crash-handler` 0.8 (#5691).
+ * `nativecrash::STARTED` is off until the operator switches it on (#5691).
  * The native half is then skipped, and says so; the panic half runs either way.
  */
 const HANDLER_OFF = "the crash handler: off until";
@@ -129,13 +137,16 @@ function aConfigHome() {
   return home;
 }
 
-/** The minidumps the crash handler left under `home`, under either spelling of its folder. */
-function minidumps(home) {
+/**
+ * The minidumps the crash handler left under `home` with `ending` (`.dmp` waiting, `.kept` once
+ * reported), under either spelling of its folder.
+ */
+function minidumps(home, ending = ".dmp") {
   return ["purlis", "charter"].flatMap((name) => {
     const crashes = join(home, name, "crashes");
     if (!existsSync(crashes)) return [];
     return readdirSync(crashes)
-      .filter((file) => file.endsWith(".dmp"))
+      .filter((file) => file.endsWith(ending))
       .map((file) => join(crashes, file));
   });
 }
@@ -251,7 +262,7 @@ async function aNativeCrash() {
     const [sent] = intake.received;
     if (sent) {
       const { lines, attachment } = parse(sent.body);
-      const [header, item, event, attached] = lines;
+      const [header, item, event, more] = lines;
       check(
         "to the Report intake's envelope endpoint",
         sent.path === "/api/1/envelope/",
@@ -259,29 +270,45 @@ async function aNativeCrash() {
       check("under the intake's DSN", header?.dsn === intake.dsn);
       check("an event first", item?.type === "event");
       check(
-        "with only the fixed fields",
+        "with only the fixed fields and the stack",
         JSON.stringify(Object.keys(event ?? {}).sort()) ===
-          JSON.stringify(FIXED),
+          JSON.stringify(NATIVE),
         JSON.stringify(event),
       );
+      const frames = event?.exception?.values?.[0]?.stacktrace?.frames ?? [];
       check(
-        "and the minidump attached",
-        attached?.attachment_type === "event.minidump",
+        "the crashing thread's frames, each a module and an offset",
+        frames.length > 0 &&
+          frames.every(
+            (frame) =>
+              JSON.stringify(Object.keys(frame).sort()) ===
+              JSON.stringify([
+                "addr_mode",
+                "instruction_addr",
+                "package",
+                "trust",
+              ]),
+          ),
+        JSON.stringify(frames),
       );
       check(
-        "as the crash handler wrote it",
-        attachment?.subarray(0, 4).toString("latin1") === "MDMP",
+        "and nothing after the event: no minidump",
+        more === undefined && attachment === undefined,
       );
     }
     const listed = sentList(home);
     check(
-      "the sent list names it, and its minidump by size and digest",
+      "the sent list holds exactly what was sent",
       listed.length === 1 &&
-        listed[0].title === "purlis crashed" &&
-        listed[0].bytes.includes("[a minidump of "),
+        listed[0].title.startsWith("purlis crashed") &&
+        sent !== undefined &&
+        listed[0].bytes === sent.body.toString("utf8"),
       JSON.stringify(listed),
     );
-    check("the minidump sent is not kept", minidumps(home).length === 0);
+    check(
+      "the minidump is not sent again, and stays on the device",
+      minidumps(home).length === 0 && minidumps(home, ".kept").length === 1,
+    );
   } finally {
     intake.server.close();
   }

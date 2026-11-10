@@ -561,7 +561,7 @@ fn a_blocked_task_stays_open_as_the_chat_it_is() {
 
 #[test]
 fn a_task_the_person_started_from_a_tab_is_never_ended_by_its_report() {
-    if super::super::no_sandboxed_claude_code_stand_in_here() {
+    if super::ran_on_a_sandbox_only_stand_in() {
         return;
     }
     let plane = a_plane_with_personas();

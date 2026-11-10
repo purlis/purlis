@@ -1770,7 +1770,7 @@ fn a_sandboxed_claude_code_chat_on_linux_without_a_sandbox_only_profile_is_its_o
         "on Linux",
         "Make one",
         "sign in in the shell it opens",
-        "start the chat again.",
+        "then start a new chat on it.",
     ] {
         assert!(claude.says.contains(step), "{step}: {}", claude.says);
     }
