@@ -256,13 +256,17 @@ describe("identical requests across projects (#1921)", () => {
 
   it("never groups a high-risk ask, whichever project it is in", () => {
     const mine = host(3, "api.example.com");
-    const theirs = host(3, "api.example.com");
+    // Another project's ask carries its risk whole, as its window told it (#6011).
+    const theirs: Shown = {
+      ...host(3, "api.example.com"),
+      risk: {
+        class: "production-host",
+        why: "Reaches api.example.com, which looks like production",
+        confirm: "Allow reaching api.example.com?",
+      },
+    };
     const planeOf = (one: Shown) => (one === theirs ? "/web" : undefined);
-    const rows = withSame(
-      inOrder([mine, theirs], age, NOW, planeOf),
-      (one) => one.options,
-      (one) => one === theirs,
-    );
+    const rows = withSame(inOrder([mine, theirs], age, NOW, planeOf));
     expect(rows.map((one) => one.kind)).toEqual(["chat", "chat"]);
   });
 });

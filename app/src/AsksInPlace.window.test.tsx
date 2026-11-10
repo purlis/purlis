@@ -246,6 +246,21 @@ describe("another project's ask, in place in Asks (#1921)", () => {
     ]);
   });
 
+  it("never groups another project's risky ask with this project's same request (#6011)", () => {
+    core({});
+    const risky: Shown = {
+      ...host(3),
+      risk: {
+        class: "production-host",
+        why: "Reaches api.example.com, which looks like production",
+        confirm: "Allow reaching api.example.com?",
+      },
+    };
+    draw([host(3)], webHere([risky]));
+    expect(screen.queryByText("2 chats want to reach api.example.com")).toBeNull();
+    expect(document.querySelector(`[data-elsewhere="${WEB}#3"]`)).not.toBeNull();
+  });
+
   it("offers no answer that opens something in its project's window, where that project's Asks does it", () => {
     core({});
     const proposal: Shown = {
