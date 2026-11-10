@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794310449892,
+  "lastUpdate": 1794317803899,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -45948,6 +45948,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5555845,
             "unit": "ms",
             "extra": "median of 5 runs: 100.064, 101.438, 101.556, 101.982, 102.119 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "416eacac9e5b1ca95df189eec3e95b46761a2543",
+          "message": "Attention: one Settings page for Quiet, notifications per source, the Expiring sound and Stuck? (#6019) (#6133)\n\n* Attention: one Settings page for Quiet, notifications per source, the Expiring sound and Stuck? (#6019)\n\nRebuilds #6113 (head 27a4f7880) on main, which gained #6000, #6013 and #6018\nmeanwhile. The one conflict, asknotify_tests.rs, keeps both sides' tests:\nmain's snooze-runs-out test and #6113's per-source tests.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M72H6PW1HRPTSQEDRF7ZGB21\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-10T12:30:26Z",
+          "tree_id": "ba9e703a9f4e844ea9195633eed52ffd07dc4070",
+          "url": "https://github.com/purlis/purlis/commit/416eacac9e5b1ca95df189eec3e95b46761a2543"
+        },
+        "date": 1794317797941,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.34668299999999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.333, 0.341, 0.347, 0.347, 0.363 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.658512,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.611, 16.636, 16.659, 16.673, 16.687 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.2159215,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.826, 100.902, 101.216, 101.411, 101.710 ms"
           }
         ]
       }
