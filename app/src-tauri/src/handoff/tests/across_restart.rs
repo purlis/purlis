@@ -1626,6 +1626,9 @@ fn a_shell_left_by_a_harness_hung_up_on_from_outside_ends_with_it() {
     let _cleanup = LeavesNoShell(&plane);
     let (planes, id, held, chat, shell) = a_chat_with_a_shell_of_its_own(&plane);
     its_tool_says_it_started_its_shell(&held, chat);
+    // TEMPORARY (#2786 diagnosis): noted straight on its sessions, past the hook's route.
+    held.chats().sessions().note_strays(chat);
+    std::thread::sleep(NOTED_WITHIN);
     let harness = held
         .chats()
         .sessions()
