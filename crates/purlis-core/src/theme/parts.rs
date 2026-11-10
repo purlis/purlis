@@ -3972,6 +3972,15 @@ type SurfaceSet = (
 /// family's own.
 const SURFACE_STATES: &[&[State]] = &[&[], &[State::Selected], &[State::Hover]];
 
+/// The sets of [`SURFACE_STATES`] `surface` takes: at rest, and chosen and under the pointer where
+/// it has them.
+fn surface_states(surface: &Family) -> impl Iterator<Item = &'static [State]> + '_ {
+    SURFACE_STATES
+        .iter()
+        .copied()
+        .filter(|states| states.iter().all(|one| surface.states.contains(one)))
+}
+
 /// **The fills a theme's parts set on the surfaces other families are drawn on**: each surface's
 /// look whose root draws, at rest or in a state it is read in ([`SURFACE_STATES`], #6156),
 /// another fill than its family default's there, with that default and the fill drawn in its
@@ -3988,14 +3997,11 @@ fn surfaces_set(rules: &[Rule]) -> Vec<SurfaceSet> {
             continue;
         }
         for variant in surface.looks() {
-            for states in SURFACE_STATES
-                .iter()
-                .filter(|states| states.iter().all(|one| surface.states.contains(one)))
-            {
+            for states in surface_states(surface) {
                 let default = (surface.defaults)(variant, states).fill;
                 let set = drawn(rules, surface, variant, states).fill;
                 if set != TRANSPARENT && set != default {
-                    found.push((surface, variant, *states, default, set));
+                    found.push((surface, variant, states, default, set));
                 }
             }
         }

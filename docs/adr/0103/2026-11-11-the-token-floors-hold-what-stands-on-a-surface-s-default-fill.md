@@ -1,7 +1,7 @@
 # Amendment, 2026-11-11 (#6163): the token floors hold what stands on a surface's default fill
 
-The amendment of 2026-11-10 reads what stands on a surface's chosen and hovered fills where a
-theme's parts set one. Where they do not, the fill drawn is the family default's, a token
+The amendment of 2026-11-10 for #6156 reads what stands on a surface's chosen and hovered fills
+where a theme's parts set one. Where they do not, the fill drawn is the family default's, a token
 (`list.selected`, `surface.hover`), and the parts check leaves what is broken on it to the token
 floors: a default look broken on a default fill is not the parts' doing. The token floors held
 `state.success` on `list.selected` and `surface.hover` at 3:1, as a branch's change mark in the

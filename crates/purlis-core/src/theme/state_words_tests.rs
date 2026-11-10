@@ -52,7 +52,7 @@ fn read_in(family: &Family, variant: &str) -> Vec<Vec<State>> {
 
 /// **The fills the surfaces `family` stands on draw by default** (#6163), where they are a
 /// token: each look of each surface [`super::STANDS_ON`] places it on, at rest, chosen and under
-/// the pointer ([`super::SURFACE_STATES`]), but for a family drawn in the overlay
+/// the pointer ([`super::surface_states`]), but for a family drawn in the overlay
 /// ([`super::PORTALED`]). The parts check reads what a theme's parts set on these; the token
 /// floors hold what is drawn on their defaults, so they must hold it as the parts check would.
 fn stood_on(family: &Family) -> Vec<&'static str> {
@@ -71,10 +71,7 @@ fn stood_on(family: &Family) -> Vec<&'static str> {
             .into_iter()
             .filter(|one| super::stands_for(key, surface.name, one))
         {
-            for states in super::SURFACE_STATES
-                .iter()
-                .filter(|states| states.iter().all(|one| surface.states.contains(one)))
-            {
+            for states in super::surface_states(surface) {
                 let fill = (surface.defaults)(variant, states).fill;
                 if fill != TRANSPARENT && !is_wash(fill) && !fills.contains(&fill) {
                     fills.push(fill);

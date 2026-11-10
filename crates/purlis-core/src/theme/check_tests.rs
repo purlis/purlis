@@ -889,10 +889,10 @@ fn a_theme_that_names_its_terminal_and_not_its_faint_text_fades_its_own_words_to
 
 #[test]
 fn a_chosen_row_that_hides_an_ok_badge_s_words_fails_its_check() {
-    // #6163: a theme over Purlis Dark that changes the `list.selected` token alone, with no part rule. A badge
-    // that says what is settled draws `state.success` as its words, on no fill of its own, on the
-    // chosen row it stands on (`DevicesView.tsx`). On #555566 those words are at 3.75:1: a mark's
-    // 3:1 would let them by, a word's 4.5:1 does not.
+    // #6163: a theme over Purlis Dark that changes the `list.selected` token alone, with no part
+    // rule. A badge that says what is settled draws `state.success` as its words, on no fill of
+    // its own, on the chosen row it stands on. On #555566 those words are at 3.75:1: a mark's 3:1
+    // would let them by, a word's 4.5:1 does not.
     let theme = dark(
         json!({ "list.selected": "#555566" }),
         json!({ "extends": "purlis" }),
