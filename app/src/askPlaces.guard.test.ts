@@ -112,16 +112,11 @@ describe("every kind of ask has a drawn place", () => {
 
   it.each(Object.keys(PLACES))("lists %s in Asks with its answers, or a way to them", (source) => {
     const shape = shapeOf(askOf(source as AskSource), undefined, undefined, undefined);
-<<<<<<< main
-    // Its answers in the row, or Go to chat, whose pane draws them.
-    expect(shape.form || (shape.go && PLACE[source as AskSource].at !== "asks-only")).toBe(true);
-=======
     // Its answers on the row (a decision's, #5998), behind its Answer, or Go to chat, whose pane
     // draws them.
     expect(
-      shape.decision || shape.form || (shape.go && PLACES[source as AskSource].at !== "asks-only"),
+      shape.decision || shape.form || (shape.go && PLACE[source as AskSource].at !== "asks-only"),
     ).toBe(true);
->>>>>>> pr
   });
 
   it("lists the chats' asks drawn in Asks alone as debt", () => {
