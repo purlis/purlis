@@ -165,6 +165,36 @@ describe("a list to choose from", () => {
     expect(option()).toHaveAccessibleDescription("Built in");
   });
 
+  // **Its tooltip is heard with its lines, built in one place** (#6101): a part that comes while
+  // the tooltip is up draws the option again, and the tooltip is still in its description.
+  it("keeps its tooltip in its description when a part comes while the tooltip is up", async () => {
+    function Tipped({ below }: { below: boolean }) {
+      return (
+        <ListBox aria-label="Skills">
+          <ListOption id="review" textValue="review" tip="Written 2026-10-10">
+            <RowLabel>review</RowLabel>
+            <RowDescription>Built in</RowDescription>
+            {below && <RowBelow>Reads a pull request</RowBelow>}
+          </ListOption>
+        </ListBox>
+      );
+    }
+    const { rerender } = render(<Tipped below={false} />);
+    const option = () => screen.getByRole("option", { name: "review" });
+    await userEvent.tab();
+    await waitFor(() =>
+      expect(option()).toHaveAccessibleDescription("Built in Written 2026-10-10"),
+    );
+    rerender(<Tipped below />);
+    await waitFor(() =>
+      expect(option()).toHaveAccessibleDescription(
+        "Built in Reads a pull request Written 2026-10-10",
+      ),
+    );
+    await userEvent.keyboard("{Escape}");
+    expect(option()).toHaveAccessibleDescription("Built in Reads a pull request");
+  });
+
   it("keeps one Tab stop, and the arrows choose and stop at the ends", async () => {
     render(<Personas />);
     await userEvent.tab();

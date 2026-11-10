@@ -41,9 +41,19 @@ export interface OptionHeard {
   add(kind: HeardKind, id: string): () => void;
 }
 
-/** The parts of an option heard after its one line, in the order a reader hears them. */
-export const HEARD_ORDER = ["description", "below", "lead"] as const;
+/** The parts of an option heard after its one line, in the order a reader hears them: its
+ *  tooltip last, while it is up (#6101). */
+export const HEARD_ORDER = ["description", "below", "lead", "tip"] as const;
 export type HeardKind = (typeof HEARD_ORDER)[number];
+
+/**
+ * **A row that builds its `aria-describedby` from what its parts hand it** (#6101): a list's
+ * option and a list's row. Its tooltip hands its id here while it is up (`RowTip.tsx`), so the
+ * row's description is built in one place and a part that comes or goes while the tooltip is up
+ * does not drop it. `null` in a row that does not (a tree's, whose React Aria row takes no
+ * `render`), where the tooltip says itself on the row's element.
+ */
+export const RowHeard = createContext<OptionHeard | null>(null);
 
 /**
  * **Inside an option** (`ListOption`): its words are its name and its one line about it its

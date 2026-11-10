@@ -82,6 +82,7 @@ import {
 import {
   HEARD_ORDER,
   InOption,
+  RowHeard,
   RowScope,
   type HeardKind,
   type OptionHeard,
@@ -345,10 +346,11 @@ function useSaysUnavailable(unavailable: boolean, given: Ref<HTMLDivElement> | u
 }
 
 /**
- * **What an option's lines are heard by** (#6075): the ids its parts hand it (`OptionHeard`),
- * in `HEARD_ORDER`'s order, which its element is described by before what React Aria adds.
+ * **What a row's lines are heard by** (#6075, #6101): the ids its parts hand it (`OptionHeard`),
+ * its tooltip's among them while it is up, in `HEARD_ORDER`'s order, which its element is
+ * described by before what React Aria adds.
  */
-function useOptionHeard(): { heard: OptionHeard; describedBy: string | undefined } {
+function useRowHeard(): { heard: OptionHeard; describedBy: string | undefined } {
   const [parts, setParts] = useState<readonly { kind: HeardKind; id: string }[]>([]);
   const base = useId();
   const heard = useMemo<OptionHeard>(
@@ -375,10 +377,7 @@ function useOptionHeard(): { heard: OptionHeard; describedBy: string | undefined
  *  does not fill, so what it sets is what else React Aria adds (its hint for dragging). */
 function optionElement(heard: string | undefined) {
   return (element: Parameters<NonNullable<AriaListBoxItemProps["render"]>>[0]) => {
-    const joined = [heard, element["aria-describedby"]]
-      .filter((one) => one !== undefined && one !== "")
-      .join(" ");
-    const describedBy = joined === "" ? undefined : joined;
+    const describedBy = idsOf(heard, element["aria-describedby"]);
     // An option with an `href` is a link, which React Aria hands as one.
     return "href" in element ? (
       <a {...element} aria-describedby={describedBy} />
@@ -386,6 +385,12 @@ function optionElement(heard: string | undefined) {
       <div {...element} aria-describedby={describedBy} />
     );
   };
+}
+
+/** The ids given, in order, as one `aria-describedby`; none where none is given. */
+function idsOf(...given: (string | undefined)[]): string | undefined {
+  const joined = given.filter((one) => one !== undefined && one !== "").join(" ");
+  return joined === "" ? undefined : joined;
 }
 
 /**
@@ -406,7 +411,7 @@ export function ListOption<T extends object>({
   const own = useRowMenu(menu);
   const { tipped, hold } = useListRowTip(tip);
   const element = useSaysUnavailable(unavailable, ref);
-  const { heard, describedBy } = useOptionHeard();
+  const { heard, describedBy } = useRowHeard();
   const render = useMemo(() => optionElement(describedBy), [describedBy]);
   return (
     <AriaListBoxItem
@@ -422,7 +427,9 @@ export function ListOption<T extends object>({
     >
       {(state) => (
         <InOption.Provider value={heard}>
-          {hold(rowHolds(children, own, tipped)(state))}
+          <RowHeard.Provider value={heard}>
+            {hold(rowHolds(children, own, tipped)(state))}
+          </RowHeard.Provider>
         </InOption.Provider>
       )}
     </AriaListBoxItem>
@@ -586,17 +593,23 @@ export function ListRow<T extends object>({
   const size = useContext(ListSize);
   const own = useRowMenu(menu);
   const { tipped, hold } = useListRowTip(tip);
+  const { heard, describedBy } = useRowHeard();
+  const render = useMemo(() => rowElement(undefined, undefined, describedBy), [describedBy]);
   return (
     <AriaGridListItem
       {...mergeProps(rest, own.handlers, tipped.hover)}
-      render={rowElement()}
+      render={render}
       className={className}
       data-scope="list"
       data-part="root"
       data-variant={variant}
       data-size={size}
     >
-      {(state) => hold(rowHolds(children, own, tipped)(state))}
+      {(state) => (
+        <RowHeard.Provider value={heard}>
+          {hold(rowHolds(children, own, tipped)(state))}
+        </RowHeard.Provider>
+      )}
     </AriaGridListItem>
   );
 }
@@ -664,12 +677,17 @@ export function ListRowDrawn<T extends object>({
  * focused in is told to the list first, before React Aria hears the focus. And **a Tab into the
  * list lands on a row, never on a control in it** (#6033, `backToTheRow`).
  */
-function rowElement(labelledBy?: string, describedBy?: string) {
+function rowElement(
+  labelledBy?: string,
+  describedBy?: string,
+  /** What its parts hand it (`useRowHeard`), before what React Aria adds (#6101). */
+  heard?: string,
+) {
   return (element: JSX.IntrinsicElements["div"], { id, state }: GridListItemRenderProps) => (
     <div
       {...element}
       aria-labelledby={labelledBy ?? element["aria-labelledby"]}
-      aria-describedby={describedBy ?? element["aria-describedby"]}
+      aria-describedby={describedBy ?? idsOf(heard, element["aria-describedby"])}
       onFocus={(event) => {
         const manager = state.selectionManager;
         // A move a key makes is React Aria's own, already placed: its arrows and its Tab out of
