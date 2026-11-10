@@ -5164,6 +5164,16 @@ impl Chats {
         // its runner, which says what it lacks in its start's answer (SK-5d, #2977), and its
         // host keeps that for a window that reattaches it (#6078). A chat of this window's own
         // is not checked again at its reattach.
+        // The runner a runner's chat is on, as its host named it, or its pool where it named none
+        // (#2977, #6078).
+        let runner_or_its_pool = |runner: Option<String>| {
+            runner
+                .or_else(|| {
+                    self.sessions
+                        .pool_for(workspace.as_deref(), chat.runs_on.as_ref())
+                })
+                .unwrap_or_default()
+        };
         let mut skills_missing = if reattaching {
             chat.number
                 .filter(|_| armed_by_its_runner)
@@ -5172,12 +5182,7 @@ impl Chats {
                     SkillsMissing::said_by_its_runner(
                         runs_as.clone(),
                         left.skills_not_there,
-                        left.runner
-                            .or_else(|| {
-                                self.sessions
-                                    .pool_for(workspace.as_deref(), chat.runs_on.as_ref())
-                            })
-                            .unwrap_or_default(),
+                        runner_or_its_pool(left.runner),
                     )
                 })
         } else if on_the_runner {
@@ -5702,13 +5707,7 @@ impl Chats {
                         SkillsMissing::said_by_its_runner(
                             runs_as.clone(),
                             not,
-                            composed
-                                .runner
-                                .or_else(|| {
-                                    self.sessions
-                                        .pool_for(workspace.as_deref(), chat.runs_on.as_ref())
-                                })
-                                .unwrap_or_default(),
+                            runner_or_its_pool(composed.runner),
                         )
                     });
                     composed.number

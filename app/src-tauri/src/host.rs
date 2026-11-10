@@ -178,10 +178,6 @@ impl AskedToRun {
     }
 }
 
-/// **A chat its host composed by its names, as the host answered its start** (#2692): its
-/// number, the confinement the host named to this window where it named one (#2407), and how
-/// the host applied the sandbox to its run, by the host's own record (1.29). `ran` is `None`
-/// from a host that keeps no such record, which the window takes as sandboxed.
 /// **What a runner's chat started without there, and the runner** (#6078): what
 /// [`SessionHost::skills_not_there_left`] answers of a chat left running.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -191,6 +187,10 @@ pub struct RunnersLack {
     pub runner: Option<String>,
 }
 
+/// **A chat its host composed by its names, as the host answered its start** (#2692): its
+/// number, the confinement the host named to this window where it named one (#2407), and how
+/// the host applied the sandbox to its run, by the host's own record (1.29). `ran` is `None`
+/// from a host that keeps no such record, which the window takes as sandboxed.
 #[derive(Debug)]
 pub struct Composed {
     pub number: u32,

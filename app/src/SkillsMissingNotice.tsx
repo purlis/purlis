@@ -101,7 +101,7 @@ export function missingSays(chat: string, said: SkillsMissing): string {
     );
   if (said.by_a_repo.length > 0)
     lines.push(
-      `${chat} started without ${counted(said.by_a_repo.length, "skill", "skills")} because of the repo it works in: ${said.by_a_repo
+      `${chat} started without ${counted(said.by_a_repo.length, "skill", "skills")} because of the repo it works in${there}: ${said.by_a_repo
         .map((one) => `${one.name} (${one.label}), ${one.why}`)
         .join("; ")}.`,
     );

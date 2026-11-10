@@ -105,6 +105,17 @@ describe("a chat's missing skills", () => {
     ).toBe(
       "This chat started without 1 skill that could not be loaded on runner builds/builds-1: half (project), not a skill: its SKILL.md names no `description`.",
     );
+    expect(
+      missingSays("This chat", {
+        ...MISSING,
+        missing: [],
+        no_built_in: [],
+        by_a_repo: [{ ...broken, why: "the repo has its own" }],
+        runner: "builds/builds-1",
+      }),
+    ).toBe(
+      "This chat started without 1 skill because of the repo it works in on runner builds/builds-1: half (project), the repo has its own.",
+    );
   });
 
   it("says a skill that could not be loaded, with its level and why (SK-8)", () => {
