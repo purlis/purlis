@@ -13289,6 +13289,20 @@ export type Shown = {
 	 */
 	held_until?: number | null,
 	/**
+	 *  **Until when it waits before it ends by itself** (ADR 0121 decision 5, #6006), in seconds
+	 *  since 1970: an **Expiring ask**, listed first with its countdown. Present only where its
+	 *  source ends it at a time purlis knows: a permission hook's deadline, a held connection's
+	 *  hold, a run grant's or a Secret ask's command hold, a login's or a fill's wait (the
+	 *  table in ADR 0121's amendment of 2026-11-10).
+	 */
+	expires?: number | null,
+	/**
+	 *  **How many open chats wait on its chat's report** (ADR 0121 decision 5, #6006), directly
+	 *  or up a dispatched chain (`purlis_core::dispatchwaits`): its row says "blocks N chats".
+	 *  Absent where none does.
+	 */
+	blocks?: number | null,
+	/**
 	 *  **What an edit would write** (#1146): each change, drawn before its Allow, or why it is
 	 *  not shown and no Allow is offered. Absent for any other ask.
 	 */

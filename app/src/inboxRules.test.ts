@@ -4,14 +4,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import type { Shown } from "./bindings";
-import {
-  agoSaid,
-  byChat,
-  forgetInbox,
-  onItsPane,
-  useAnswered,
-  useAnsweredWhenGone,
-} from "./inboxRules";
+import { agoSaid, forgetInbox, onItsPane, useAnswered, useAnsweredWhenGone } from "./inboxRules";
+import { inOrder } from "./asksOrder";
 
 /**
  * **A chat's pane draws at most two of its asks** (spec #1688, #1695): its in-context copy of
@@ -147,7 +141,7 @@ describe("the head of what is no chat's (#5240)", () => {
   it("names the one chat behind it, and purlis alone where they differ", () => {
     const age = () => [0, 0] as const;
     const one = ask("a", ["purlis", "billing"]);
-    expect(byChat([one], age)[0].chain).toEqual(["purlis", "billing"]);
-    expect(byChat([one, ask("b", ["purlis", "shop"])], age)[0].chain).toEqual(["purlis"]);
+    expect(inOrder([one], age, 0)[0].chain).toEqual(["purlis", "billing"]);
+    expect(inOrder([one, ask("b", ["purlis", "shop"])], age, 0)[0].chain).toEqual(["purlis"]);
   });
 });
