@@ -115,8 +115,7 @@ describe("the Inbox", () => {
 
     // An Allow waits for its row to settle (`SETTLE_MS`, 1.5 s, #1695): the person reads the
     // ask before allowing it, or the press allows nothing.
-    // Its options stand behind its Answer link (#5651, ADR 0119).
-    await ask.$("button=Answer").click();
+    // Its options stand on its row: a permission is a decision (#5998).
     await pressGrant(await ask.$("button=Allow"));
 
     // The hook printed the window's decision, and the harness went on past it.

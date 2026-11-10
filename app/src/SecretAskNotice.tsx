@@ -940,3 +940,23 @@ function useEntries(read: (() => Promise<readonly VaultEntries[]>) | undefined):
   }, [wanted]);
   return listed;
 }
+
+/**
+ * **A run's facts, alone** (#5998): what a run grant answered on its row in Asks lets run, its
+ * program, what it is handed, where it reaches and its caution, read before the answers beside
+ * them. Its answers are the row's, so the vault's own Allow is drawn there, not here.
+ */
+export function RunFacts({ run }: { run: RunShown }) {
+  return (
+    <Facts
+      secret={undefined}
+      run={run}
+      name={run.program.split("/").pop() ?? run.program}
+      persona={run.persona}
+      vault={run.vault}
+      vaultAllow={undefined}
+      busy={false}
+      onVaultAllow={() => undefined}
+    />
+  );
+}
