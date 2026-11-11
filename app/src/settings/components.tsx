@@ -77,7 +77,7 @@ export type GroupOffer = { id: string; label: string; sub?: boolean; count?: num
  */
 function navPages(
   groups: readonly GroupOffer[],
-  open: (id: string) => boolean,
+  open: ((id: string) => boolean) | undefined,
   filtering: boolean,
 ): ViewPage[] {
   const pages: ViewPage[] = [];
@@ -88,12 +88,13 @@ function navPages(
       if (!next.sub) break;
       kids.push(next);
     }
-    const shown = filtering || open(one.id);
+    // With no kept folds every group is open, and draws no toggle.
+    const shown = open === undefined || filtering || open(one.id);
     const waiting = kids.reduce((all, kid) => all + (kid.count ?? 0), 0);
     pages.push({
       id: one.id,
       label: one.label,
-      ...(kids.length > 0 ? { expanded: shown } : {}),
+      ...(kids.length > 0 && open !== undefined ? { expanded: shown } : {}),
       count: (one.count ?? 0) + (kids.length > 0 && !shown ? waiting : 0) || undefined,
       waiting: true,
     });
@@ -182,7 +183,7 @@ export function SettingsLayout({
   const setOpen = folds?.setOpen;
   const pages = navPages(
     groups,
-    (id) => folds === undefined || folds.isOpen(id) || id === head,
+    folds === undefined ? undefined : (id) => folds.isOpen(id) || id === head,
     filter.trim() !== "",
   );
   useLayoutEffect(() => {

@@ -49,6 +49,7 @@ function Page({
   const [lock, setLock] = useState("");
   const [autoSave, setAutoSave] = useState(true);
   const [share, setShare] = useState("local");
+  const [folded, setFolded] = useState<readonly string[]>([]);
   return (
     // The view's body, as a Settings tab is drawn in it: the side column takes its height.
     <div className="view-body" style={{ blockSize: 680, inlineSize: narrow ? 640 : 1040 }}>
@@ -65,6 +66,11 @@ function Page({
         onGroupChange={setPage}
         filter={filter}
         onFilterChange={setFilter}
+        folds={{
+          isOpen: (id) => !folded.includes(id),
+          setOpen: (id, open) =>
+            setFolded((was) => (open ? was.filter((one) => one !== id) : [...was, id])),
+        }}
       >
         <SettingGroup
           label="General"
