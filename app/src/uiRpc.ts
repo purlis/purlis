@@ -5102,6 +5102,12 @@ export type DeclaredHarness = {
 	acp: boolean,
 };
 
+/**  A tool line Always allow wrote, as its ask showed it ([`RuleMade::declared`]). */
+export type DeclaredMade = {
+	persona: string,
+	line: string,
+};
+
 /**
  *  **One deleted skill brought back under a new name** (#5457): its id, as Deleted lists it, and
  *  the name it comes back under, where its own belongs to purlis now.
@@ -8837,7 +8843,8 @@ export type Offered = {
 	/**
 	 *  **Who a grant is for, where a rule may be made of it** (ADR 0121 decision 7, #6010):
 	 *  this chat, this project or this machine. Absent on an answer that is no grant, and on
-	 *  one whose rule Rules I made could not undo (a harness's saved rule, a persona's Always).
+	 *  one whose rule Rules I made could not undo (a harness's saved rule, which the window never
+	 *  writes: #6177).
 	 */
 	scope?: RuleScope | null,
 };
@@ -12268,6 +12275,11 @@ export type RuleMade = {
 	 */
 	what: GrantWhat | null,
 	target: string | null,
+	/**
+	 *  **The tool line an Always allow showed** (#6177), and whose tools it went to: kept with the
+	 *  rule only where the persona's tools hold it so, for Undo to take out.
+	 */
+	declared?: DeclaredMade | null,
 };
 
 /**  One rule, as Rules I made lists it. */

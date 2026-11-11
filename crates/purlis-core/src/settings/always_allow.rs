@@ -229,5 +229,107 @@ pub fn write(root: &Path, persona: &str, bound: &Bound) -> Result<Written, Strin
     Ok(Written { allow, vault })
 }
 
+/// What taking a line out came to ([`remove`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Removed {
+    /// **Taken out.** `allow` is the persona's list to Allow without it, where the person had
+    /// allowed all of it before, as [`Written::allow`] is for a line written: kept by the caller,
+    /// audited first, so the rest of the list stays in force.
+    Taken { allow: Option<persona::Shown> },
+    /// **Not there as it was written**: taken out already, or changed since by someone, whose
+    /// line it now is. Nothing was written.
+    Gone,
+}
+
+/// A value read as data, its spelling aside: two spellings of one value are one.
+fn read_as_data(value: &toml_edit::Value) -> Option<toml::Value> {
+    let mut one = toml_edit::Value::clone(value);
+    one.decor_mut().clear();
+    toml::from_str::<toml::Table>(&format!("v = {one}"))
+        .ok()?
+        .remove("v")
+}
+
+/// The tool `line` declares: its name, and its value read as data. None where it reads as no
+/// one tool.
+fn tool_of(line: &str) -> Option<(String, toml::Value)> {
+    let doc = line.parse::<toml_edit::DocumentMut>().ok()?;
+    match doc.iter().collect::<Vec<_>>().as_slice() {
+        [(name, toml_edit::Item::Value(value))] => Some(((*name).to_owned(), read_as_data(value)?)),
+        _ => None,
+    }
+}
+
+/// **Takes `line`, which Always allow wrote, out of `persona`'s tools in `charter.toml`** (#6177):
+/// the undo of [`write`], through the same file and the same save. Only a tool that still holds
+/// exactly that line is taken out; everything else in the file stays as it was written. A tool
+/// gone already, or one changed since, is [`Removed::Gone`]: a teammate's edit is never undone.
+/// Refused, with a sentence and nothing written, where the file cannot be read or saved, or
+/// moved since it was read.
+pub fn remove(root: &Path, persona: &str, line: &str) -> Result<Removed, String> {
+    let (name, wrote) =
+        tool_of(line).ok_or("the line reads as no tool, so nothing was taken out")?;
+    let (there, base) = super::on_disk(root, Which::Shared)?;
+    if !there {
+        return Ok(Removed::Gone);
+    }
+    let mut doc: toml_edit::DocumentMut = base.parse().map_err(|e: toml_edit::TomlError| {
+        format!(
+            "the project's file is not valid TOML ({}), so nothing was taken out",
+            crate::shown::short(e.message())
+        )
+    })?;
+    let tools = ["sandbox", "personas", persona, "tools"]
+        .into_iter()
+        .try_fold(
+            doc.as_table_mut() as &mut dyn toml_edit::TableLike,
+            |at, step| at.get_mut(step)?.as_table_like_mut(),
+        );
+    let Some(tools) = tools else {
+        return Ok(Removed::Gone);
+    };
+    let held = tools
+        .get(name.as_str())
+        .and_then(toml_edit::Item::as_value)
+        .and_then(read_as_data);
+    if held.as_ref() != Some(&wrote) {
+        return Ok(Removed::Gone);
+    }
+    // Judged on what was read, before anything changes, as `write` judges.
+    let waits = !nothing_waits(root, &base, persona);
+    tools.remove(name.as_str());
+    let after = doc.to_string();
+    super::save_edit(root, Which::Shared, Some(base.as_str()), &after)
+        .map_err(|why| why.join(" "))?;
+    let allow = (!waits)
+        .then(|| {
+            persona::unjudged_in(root, &after)
+                .into_iter()
+                .find(|one| one.persona == persona)
+        })
+        .flatten();
+    Ok(Removed::Taken { allow })
+}
+
+/// **Whether `persona`'s tools hold `line` as Always allow wrote it**, in the project's file as it
+/// is now: what a rule made of an Always allow is kept with, so Undo has a line to take out.
+pub fn holds(root: &Path, persona: &str, line: &str) -> bool {
+    let Some((name, wrote)) = tool_of(line) else {
+        return false;
+    };
+    let Ok((true, base)) = super::on_disk(root, Which::Shared) else {
+        return false;
+    };
+    let Ok(doc) = base.parse::<toml_edit::DocumentMut>() else {
+        return false;
+    };
+    ["sandbox", "personas", persona, "tools", name.as_str()]
+        .into_iter()
+        .try_fold(doc.as_item(), |at, step| at.get(step))
+        .and_then(toml_edit::Item::as_value)
+        .and_then(read_as_data)
+        .is_some_and(|held| held == wrote)
+}
+
 #[cfg(test)]
 mod tests;

@@ -151,6 +151,7 @@ fn rule(asked: &Asked, at: u64) -> Rule {
         option: "you".to_owned(),
         scope: Scope::Project,
         grant: None,
+        declared: None,
     }
 }
 
@@ -306,4 +307,43 @@ fn a_file_this_build_cannot_read_reads_as_nothing() {
     std::fs::create_dir_all(data.path().join(crate::inboxupdates::DIR)).expect("dir");
     std::fs::write(store.file(), b"not json").expect("written");
     assert_eq!(store.read(), Record::default());
+}
+
+#[test]
+fn a_rule_made_of_an_always_allow_keeps_its_tool_line_whole_and_never_a_cut_one() {
+    let data = tempfile::tempdir().expect("data");
+    let store = Store::in_data(data.path());
+    let here = asked("p", 1);
+    let line = r#"curl = { vault = "team", as = "V file", key = "TOKEN" }"#.to_owned();
+    let made = store
+        .make(Rule {
+            declared: Some(Declared {
+                persona: "devops".to_owned(),
+                line: line.clone(),
+            }),
+            ..rule(&here, NOW)
+        })
+        .expect("made");
+    assert_eq!(made.declared.map(|one| one.line), Some(line));
+    let long = store
+        .make(Rule {
+            id: "long".to_owned(),
+            declared: Some(Declared {
+                persona: "devops".to_owned(),
+                line: "x".repeat(MOST_LINE + 1),
+            }),
+            ..rule(&here, NOW)
+        })
+        .expect("made");
+    assert_eq!(long.declared, None);
+}
+
+#[test]
+fn a_rule_kept_before_tool_lines_were_reads_as_one_with_none() {
+    let kept: Rule = serde_json::from_str(
+        r#"{"id":"a","at":1,"project":"p","root":"/p","session":1,"request":"r","source":"run-grant","says":"s","label":"l","option":"allow-chat","scope":"chat","grant":null,"saved":0}"#,
+    )
+    .expect("read");
+    assert_eq!(kept.declared, None);
+    assert!(!serde_json::to_string(&kept).unwrap().contains("declared"));
 }

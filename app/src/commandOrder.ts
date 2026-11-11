@@ -215,7 +215,8 @@ export const OUTSIDE_THE_LANES: Partial<Record<keyof typeof commands, string>> =
   undoRule:
     "Rules I made names a rule by its id, not by a project the window holds, and draws the list " +
     "its Undo answers with; it revokes as revokeSandboxGrant does, and Settings' Granted list " +
-    "reads the grants again when it is drawn.",
+    "reads the grants again when it is drawn. An Always allow's rule takes its tool line out of " +
+    "the manifest, which Settings reads again when it is drawn, as after answerRunGrant (#6177).",
 };
 
 type Ask = (...args: unknown[]) => Promise<unknown>;

@@ -4,7 +4,8 @@
 /**
  * **Ask less** (ADR 0121 decision 7, #6010): a host's ask whose row offers a rule after the same
  * Allow twice, the suggested grant first; the line at the head of Asks while a cool-off holds a
- * chat's ask; and the list Rules I made opens, each rule with its Undo.
+ * chat's ask; the list Rules I made opens, each rule with its Undo; and a reviewed program's ask
+ * whose rule is its Always allow, the line it writes shown before it (#6177).
  */
 import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
@@ -12,6 +13,7 @@ import { expect, userEvent, within } from "storybook/test";
 import type { RuleMadeShown, Shown } from "./bindings";
 import { RulesList } from "./AskRules";
 import { Inbox } from "./Inbox";
+import { runAsk } from "./secretAsk.testkit";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
 
 const host = (session: number, since: number, offer: boolean): Shown => ({
@@ -64,8 +66,24 @@ const RULES: RuleMadeShown[] = [
   },
 ];
 
+/** A reviewed program's ask, after Allow for this chat twice from two chats: Always allow. */
+const always = (since: number): Shown => ({
+  ...runAsk({ fills: [], remember: null }),
+  since,
+  options: [
+    { id: "allow-once", label: "Allow once", allows: true },
+    { id: "allow-chat", label: "Allow for this chat", allows: true, scope: "chat" },
+    { id: "allow-always", label: "Always allow", allows: true, scope: "project" },
+    { id: "keep", label: "Don't allow", allows: false },
+  ],
+  rule: {
+    request: '["run-grant","curl"]',
+    offer: { answered: "allow-chat", times: 2, options: ["allow-always"] },
+  },
+});
+
 /** What a story draws: the asks, or the rules list alone. */
-function AskLess({ kind }: { kind: "offer" | "cooling" | "rules" }) {
+function AskLess({ kind }: { kind: "offer" | "always" | "cooling" | "rules" }) {
   const [now] = useState(() => Math.floor(Date.now() / 1000));
   if (kind === "rules")
     return (
@@ -77,7 +95,13 @@ function AskLess({ kind }: { kind: "offer" | "cooling" | "rules" }) {
     <div style={{ inlineSize: 420 }}>
       <Inbox
         plane="/plane"
-        asks={kind === "offer" ? [host(4, now - 300, true)] : []}
+        asks={
+          kind === "offer"
+            ? [host(4, now - 300, true)]
+            : kind === "always"
+              ? [always(now - 300)]
+              : []
+        }
         cooling={kind === "cooling" ? { asks: [host(5, now - 60, false)], until: null } : undefined}
         onGo={() => {}}
         onLeave={() => {}}
@@ -113,6 +137,29 @@ export const RuleOfferedOnItsRow: Story = {
     for (let step = 0; step < 12 && document.activeElement !== suggested; step++)
       await userEvent.keyboard("{ArrowRight}");
     await untilFocused(() => suggested, "→ reaches the suggested rule");
+    expectFocusInSight();
+  },
+};
+
+/** **A run's Always allow offered as a rule** (#6177): the line it writes is read above it, and
+ *  → walks the row's answers to it. */
+export const AlwaysAllowOfferedOnItsRow: Story = {
+  args: { kind: "always" },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const rule = canvas.getByRole("group", { name: "Make a rule for developer 7" });
+    await expect(within(rule).getByRole("button")).toHaveTextContent("Always allow");
+    await expect(canvas.getByText(/Always allow adds this line to devops/)).toBeInTheDocument();
+    await userEvent.tab();
+    await untilFocused(
+      () => canvasElement.querySelector<HTMLElement>('[role="row"].inbox-ask'),
+      "Tab lands on the ask's row",
+    );
+    expectFocusInSight();
+    const make = within(rule).getByRole("button");
+    for (let step = 0; step < 12 && document.activeElement !== make; step++)
+      await userEvent.keyboard("{ArrowRight}");
+    await untilFocused(() => make, "→ reaches the rule's Always allow");
     expectFocusInSight();
   },
 };

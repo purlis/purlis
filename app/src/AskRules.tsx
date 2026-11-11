@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import { commands, type Offered, type RuleMade, type RuleMadeShown, type Shown } from "./bindings";
 import { asksMoved, onAsksMoved } from "./asks";
+import { highRisk } from "./asksSame";
 import { backAtSaid } from "./AsksSnooze";
 import { chainSaid } from "./inboxRowParts";
 import { counted } from "./dispatches";
@@ -11,6 +12,7 @@ import { FixWay } from "./Notice";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Dialog } from "./ui/dialog/Dialog";
 import { MessageForm } from "./ui/message/Message";
+import { SecretAskToolLine } from "./ui/secret-ask/SecretAsk";
 
 /**
  * **Ask less** (ADR 0121 decision 7, #6010), as Asks draws it:
@@ -20,10 +22,13 @@ import { MessageForm } from "./ui/message/Message";
  *   prevented the asks first (the core's `asking::with_rules`). A press answers the ask with that
  *   grant, through the path the ask names, checked by the row's settle guard as any Allow is,
  *   and keeps it in Rules I made. A rule is offered only where its source writes it and Rules I
- *   made can undo it: a sandbox's host, folder or service, and a reviewed program for its chat
- *   (ADR 0112); never an arbitrary command, never a high-risk ask.
+ *   made can undo it: a sandbox's host, folder or service, and a reviewed program for its chat or,
+ *   with Always allow, as its persona's tool (ADR 0112, #6177), whose line the offer shows before
+ *   it is pressed; never an arbitrary command, never a high-risk ask ({@link highRisk}), and never
+ *   a harness's own saved rule, which the window never writes.
  * - **Rules I made** ({@link RulesIMade}): each rule made, with what it allows and for whom, and
- *   Undo, which takes its grant away as Revoke on Settings' Granted list does.
+ *   Undo, which takes its grant away as Revoke on Settings' Granted list does, or takes the tool
+ *   line an Always allow wrote out of the persona's tools again.
  * - **A cool-off** ({@link CoolingLine}): a chat that heard Don't allow twice in a row to the
  *   same request has its same ask held quietly for an hour, neither counted nor notified; the
  *   line says so, and End cool-off brings it back.
@@ -41,6 +46,13 @@ export function offeredRules(ask: Shown): Offered[] {
   if (offer == null) return [];
   return offer.options.flatMap((id) => ask.options.filter((one) => one.id === id && one.allows));
 }
+
+/** The id of a run's Always allow, which writes its persona's tool line (ADR 0112). */
+export const ALWAYS_ALLOW = "allow-always";
+
+/** What the offer says above the tool line an Always allow would write. */
+export const alwaysLineSaid = (persona: string) =>
+  `Always allow adds this line to ${persona}'s tools in the project's committed file:`;
 
 /** What the offer's line says. */
 export const offerSaid = (times: number) =>
@@ -64,11 +76,19 @@ export function RuleOffer({
   onMake: (option: Offered) => void;
 }) {
   const offer = ask.rule?.offer;
-  const grants = offeredRules(ask);
+  const grants = highRisk(ask) ? [] : offeredRules(ask);
   if (offer == null || grants.length === 0) return null;
+  // The line Always allow writes is read before it is pressed (#5116).
+  const always = grants.some((one) => one.id === ALWAYS_ALLOW) ? ask.run?.always : undefined;
   return (
     <MessageForm>
       <p className="inbox-secondary ui-text-secondary">{offerSaid(offer.times)}</p>
+      {always != null && ask.run != null && (
+        <>
+          <p className="inbox-secondary ui-text-secondary">{alwaysLineSaid(ask.run.persona)}</p>
+          <SecretAskToolLine text={always.line} />
+        </>
+      )}
       <ButtonRow size="sm" role="group" aria-label={`Make a rule for ${who}`}>
         {grants.map((one) => (
           <FixWay
@@ -96,6 +116,11 @@ export function ruleMadeOf(ask: Shown, option: Offered): RuleMade {
     scope: option.scope ?? "chat",
     what: path.via === "sandbox-block" ? path.shown.what : null,
     target: path.via === "sandbox-block" ? path.shown.target : null,
+    // The line Always allow wrote, for Undo to take out (#6177).
+    declared:
+      option.id === ALWAYS_ALLOW && ask.run?.always != null
+        ? { persona: ask.run.persona, line: ask.run.always.line }
+        : null,
   };
 }
 
