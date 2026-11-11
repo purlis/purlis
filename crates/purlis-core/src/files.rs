@@ -1715,7 +1715,7 @@ fn named_or_gone(kept: &Kept, base: &Path, path: &str) -> Result<(String, bool),
 
 /// One file of the branch, handed to your editor at `line` (RC-20, ADR 0081 §3): what the app
 /// launches, a URL in the editor's own scheme or `$VISUAL`/`$EDITOR` as a program with its
-/// arguments ([`crate::youreditor::launch`]).
+/// arguments, held as it was checked ([`crate::youreditor::Checked`]).
 ///
 /// **The path is checked exactly as [`open`] checks it**, so what the light editor would refuse
 /// is never handed on either: only a file the list offers, inside the branch, through no link

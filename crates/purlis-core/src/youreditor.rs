@@ -186,8 +186,10 @@ const IN_A_PATH: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'/');
 
 /// What to launch to open `file` at `line` in `editor`. `file` is absolute and already
-/// checked; `var` reads an environment variable (the app passes its own environment).
-pub fn launch(
+/// checked; `var` reads an environment variable (the app passes its own environment). Only
+/// [`Checked::new`] calls it outside its tests, so nothing launches a file that was not
+/// checked (#3185).
+pub(crate) fn launch(
     editor: Editor,
     file: &Path,
     line: u32,

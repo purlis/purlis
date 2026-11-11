@@ -9,9 +9,10 @@ purlis launches is still the file it checked.
   checks it, through no link from the folder it trusts, and holds it
   (`purlis_core::youreditor::Checked`). The app gets what to launch only from `Checked::launch`,
   right before it opens the URL or starts the program. That opens the path again the same way,
-  and it must be the same file on disk (device and inode). A link put on the way, or another
-  folder or file put in the checked one's place, launches nothing, and the window says the file
-  changed after purlis checked it.
+  and it must be the same file on disk (device and inode). Either way nothing is launched: a
+  link put on the way is refused by the walk, and the window says the file is reached through
+  a link; another folder or file put in the checked one's place with no link is refused as
+  another file, and the window says it changed after purlis checked it.
 - **The editor's own open is narrowed, not closed.** An editor reached through its URL scheme
   opens the file itself, later, by its path, and so does `$VISUAL`/`$EDITOR` once started,
   detached or in a shell tab. purlis cannot hold the file for it. Handing a program the held
