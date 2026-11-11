@@ -147,6 +147,7 @@ fn apply_writes_the_change_audited_first_and_only_while_the_file_is_what_it_was(
         stale: false,
         limit: None,
         skills: None,
+        pin: None,
         behind: None,
     };
     let refused = |_: &proposed::Applied<'_>| Err("the event log is not open".to_owned());
@@ -206,6 +207,7 @@ fn apply_writes_the_change_audited_first_and_only_while_the_file_is_what_it_was(
         stale: true,
         limit: None,
         skills: None,
+        pin: None,
         behind: None,
         base: base_of(Some(b"[plane]\nmode = \"pr\"\n")),
         ..one
@@ -230,6 +232,7 @@ fn apply_is_offered_only_beside_a_change_shown_whole() {
         stale: false,
         limit: None,
         skills: None,
+        pin: None,
         behind: None,
     };
     let ids = |shown: &crate::asking::Shown| -> Vec<String> {
@@ -297,6 +300,7 @@ fn apply_never_writes_a_change_not_shown_whole() {
         stale: false,
         limit: None,
         skills: None,
+        pin: None,
         behind: None,
     };
     let audit = |_: &proposed::Applied<'_>| -> Result<(), String> {
@@ -331,6 +335,7 @@ fn two_applies_against_the_same_file_as_it_was_never_both_write() {
         stale: false,
         limit: None,
         skills: None,
+        pin: None,
         behind: None,
     };
     let handles: Vec<_> = [
@@ -375,6 +380,7 @@ fn a_write_that_fails_is_recorded_as_failed() {
         stale: false,
         limit: None,
         skills: None,
+        pin: None,
         behind: None,
     };
     std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o555)).expect("read-only");
@@ -410,6 +416,7 @@ fn a_change_too_long_for_a_row_is_shown_whole_on_its_tab() {
         stale: false,
         limit: None,
         skills: None,
+        pin: None,
         behind: None,
     };
     let long = "line\n".repeat(purlis_core::harness::asked::edit::MOST_LINES + 1);
@@ -454,6 +461,7 @@ fn a_long_change_on_its_tab_marks_only_the_lines_that_changed() {
         stale: false,
         limit: None,
         skills: None,
+        pin: None,
         behind: None,
     };
     let lines = |changed: &str| {
@@ -499,6 +507,7 @@ fn tab_hunks(before: &str, after: &str) -> Vec<(u32, u32, u32, u32)> {
         stale: false,
         limit: None,
         skills: None,
+        pin: None,
         behind: None,
     };
     let now = Now::Made {
@@ -545,6 +554,7 @@ fn a_change_too_long_for_a_row_is_applied_only_from_its_tab() {
         stale: false,
         limit: None,
         skills: None,
+        pin: None,
         behind: None,
     };
     // Too long a whole content to travel: made here, as the app would hold it.
@@ -965,6 +975,7 @@ fn a_change_purlis_holds_names_purlis_and_the_chat_and_ask_behind_it() {
         stale: false,
         limit: None,
         skills: None,
+        pin: None,
         behind: Some(Behind {
             chat: Some(7),
             key: "STRIPE_KEY".to_owned(),

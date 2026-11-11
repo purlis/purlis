@@ -320,7 +320,7 @@ fn a_command_can_only_reach_a_plane_the_process_is_holding() {
         .map(|_| ())
         .expect_err("a plane nobody opened is not held");
 
-    assert!(refused.contains("no plane open at"), "{refused}");
+    assert!(refused.contains("no project open at"), "{refused}");
 }
 
 #[test]

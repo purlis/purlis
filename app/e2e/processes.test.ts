@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import { parseProcesses } from "./memory.js";
-import { appProcessesIn, descriptorsListed, theRunsApp } from "./processes.js";
+import { appProcessesIn, appProcessesOf, descriptorsListed, theRunsApp } from "./processes.js";
 
 /**
  * How a macOS run counts the app's open descriptors: `lsof -F f`, whose `f` field is either a
@@ -120,6 +120,30 @@ describe("the run's app in a ps listing with parents", () => {
       sessionHosts: [],
       programs: [],
     });
+  });
+
+  it("is one window when the window started its crash handler's companion, as on macOS (#5691)", () => {
+    const listing = [
+      ` 5100 5000 1 00:01 ${app}`,
+      ` 5105 5100 1 00:01 ${app}`,
+      ` 5200 5100 1 00:01 ${app} purlis-serve-for-the-window`,
+    ];
+    expect(theRunsApp(rows(listing), launcher, app)).toEqual({
+      windows: [5100],
+      sessionHosts: [5200],
+      programs: [5105],
+    });
+    expect(appProcessesOf(rows(listing), app)).toEqual({ windows: [5100], sessionHosts: [5200] });
+  });
+
+  it("is still two windows when two apps really run, each with its companion", () => {
+    const listing = [
+      ` 5100 5000 1 00:01 ${app}`,
+      ` 5105 5100 1 00:01 ${app}`,
+      ` 6100 5000 1 00:01 ${app}`,
+      ` 6105 6100 1 00:01 ${app}`,
+    ];
+    expect(appProcessesOf(rows(listing), app).windows).toEqual([5100, 6100]);
   });
 
   it("holds the programs its host started, each in a group of its own, to end after the host", () => {

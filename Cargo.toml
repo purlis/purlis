@@ -7,6 +7,9 @@ members = ["crates/purlis-core", "crates/purlis-cli", "crates/fake-harness", "cr
 # Plain `cargo test` and `cargo clippy` cover the crates that need no built frontend.
 # The app crate compiles `app/dist` into itself, so it is checked through `npm run tauri`.
 default-members = ["crates/purlis-core", "crates/purlis-cli", "crates/fake-harness", "crates/persona-statistics", "crates/extension-probe", "crates/studio-probe", "crates/check-probe", "crates/release-manifest", "crates/changelog", "crates/stand-in", "crates/session-protocol", "crates/same-user", "crates/terminal", "crates/browser-engine", "crates/host", "crates/linux-sandbox", "crates/skills", "crates/skill-grader", "crates/unicode", "crates/scale-project", "crates/crash-handler"]
+# Third-party crates patched in below, under their own licences: built as dependencies, never
+# linted or tested as the workspace's own (vendor/tauri-plugin-wdio-webdriver/PURLIS.md).
+exclude = ["vendor"]
 
 [workspace.package]
 version = "0.5.2"
@@ -140,3 +143,9 @@ opt-level = 1
 inherits = "release"
 lto = "thin"
 codegen-units = 16
+
+# The scenario tests' embedded WebDriver server (the app's `e2e` feature only, in no build anyone
+# is given), patched so a window holding an artifact's child webview stays reachable: upstream
+# 1.5.1 loses any window with a second webview in it (vendor/tauri-plugin-wdio-webdriver/PURLIS.md).
+[patch.crates-io]
+tauri-plugin-wdio-webdriver = { path = "vendor/tauri-plugin-wdio-webdriver" }

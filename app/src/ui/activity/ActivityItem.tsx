@@ -20,12 +20,15 @@
  *   beside it moves.
  */
 import {
+  useRef,
   useState,
   type ComponentPropsWithRef,
   type FocusEvent,
+  type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
 } from "react";
+import { mergeProps, useToolbar } from "react-aria";
 import { Tooltip } from "../tooltip/Tooltip";
 import { useWindowLeft } from "../windowLeft";
 
@@ -40,6 +43,9 @@ export interface ActivityItemProps extends Omit<
   variant: ActivityVariant;
   /** Its view is open: the `selected` state. */
   selected: boolean;
+  /** **What it opens is out of date** (#5955): an artifact whose data is stale. Its icon is
+   *  drawn in the faint grey; a chosen item keeps the chosen look. Say why in its `tip`. */
+  dimmed?: boolean;
   /** Its view's mark: the `icon` part. Decoration; the item's name is its `aria-label`. */
   icon: ReactNode;
   /** What is drawn at its top right: an {@link ActivityCount}, or nothing. */
@@ -61,6 +67,7 @@ export interface ActivityItemProps extends Omit<
 export function ActivityItem({
   variant,
   selected,
+  dimmed,
   icon,
   count,
   tip,
@@ -93,6 +100,7 @@ export function ActivityItem({
       data-part="item"
       data-variant={variant}
       data-selected={selected || undefined}
+      data-dimmed={dimmed || undefined}
       data-hovered={hovered || undefined}
       data-pressed={pressed || undefined}
       data-focus-visible={keyboard || undefined}
@@ -237,6 +245,76 @@ export function ActivityGroup({
     <div {...rest} data-scope="activity-bar" data-part="group">
       {children}
     </div>
+  );
+}
+
+/**
+ * **A group of a bar's items that open tabs, not views** (#5952): a toolbar of buttons,
+ * React Aria's (`useToolbar`). The arrows walk it along `orientation`, Home and End reach its
+ * first and last item, and Tab leaves it, so it is one Tab stop.
+ *
+ * **Coming back in lands on the item in front**, the one marked `aria-current`, from either
+ * side, as a tab list lands on its selected tab; with none in front, on the item it left.
+ *
+ * **An item being carried keeps its keys**: while an item is marked `data-dragging`, its
+ * arrows are its drag's (`sortable.tsx`, `keepsTheFocus`), so the toolbar leaves them alone.
+ */
+export function ActivityToolbar({
+  children,
+  orientation,
+  "aria-label": label,
+  ...rest
+}: Omit<ComponentPropsWithRef<"div">, "style" | "role" | "aria-orientation" | "ref"> & {
+  orientation: "vertical" | "horizontal";
+  "aria-label": string;
+  [data: `data-${string}`]: string | number | boolean | undefined;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const { toolbarProps } = useToolbar({ orientation, "aria-label": label }, ref);
+  const walk = toolbarProps.onKeyDownCapture;
+  const restore = toolbarProps.onFocusCapture;
+  const own = {
+    ...toolbarProps,
+    onKeyDownCapture: (event: KeyboardEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement;
+      if (target.closest("[data-dragging]") !== null) return;
+      if (event.key === "Home" || event.key === "End") {
+        const all = itemsOf(event.currentTarget);
+        const to = event.key === "Home" ? all[0] : all[all.length - 1];
+        if (to === undefined) return;
+        event.preventDefault();
+        event.stopPropagation();
+        to.focus();
+        return;
+      }
+      walk?.(event);
+    },
+    onFocusCapture: (event: FocusEvent<HTMLDivElement>) => {
+      const from = event.relatedTarget;
+      const entering = !(from instanceof Node && event.currentTarget.contains(from));
+      const inFront = itemsOf(event.currentTarget).find((item) =>
+        item.hasAttribute("aria-current"),
+      );
+      if (!entering || inFront === undefined) {
+        restore?.(event);
+        return;
+      }
+      if (inFront !== event.target) inFront.focus();
+    },
+  };
+  return (
+    <div {...mergeProps(rest, own)} ref={ref} data-scope="activity-bar" data-part="group">
+      {children}
+    </div>
+  );
+}
+
+/** The items of a toolbar that take the keyboard, in the document's order. */
+function itemsOf(toolbar: HTMLElement): HTMLElement[] {
+  return Array.from(
+    toolbar.querySelectorAll<HTMLElement>(
+      '[data-scope="activity"][data-part="item"]:not(:disabled)',
+    ),
   );
 }
 

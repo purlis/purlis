@@ -191,6 +191,7 @@ fn rules_for_what_linux_has_no_counterpart_of_are_left_aside() {
 (deny process-exec (literal "/bin/launchctl"))
 (deny appleevent-send)
 (allow file-read*)
+(deny file-read-xattr (require-all (subpath "/plane") (require-not (subpath "/plane/code"))))
 "#,
     );
     assert!(profile.allows(&reads("/x")));
