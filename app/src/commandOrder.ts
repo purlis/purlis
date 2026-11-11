@@ -225,6 +225,26 @@ type Lane = { change: Promise<unknown> | undefined; reads: Set<Promise<unknown>>
 
 const lanes = new Map<string, Lane>();
 
+/** How many changes each lane of each project has been asked, for {@link changesAskedBefore}. */
+const changesAsked = new Map<string, number>();
+
+/** Each command of {@link LANES}, by the lane it is in. */
+const LANE_OF: ReadonlyMap<string, string> = new Map(
+  Object.entries(LANES).flatMap(([lane, { reads, changes }]) =>
+    [...reads, ...changes].map((name) => [name, lane] as const),
+  ),
+);
+
+/**
+ * How many changes the lane of `command` has been asked, for the project in `args`, so far: two
+ * reads asked with a change between them are told apart by it (`sharedReads.ts`). `0` for a
+ * command in no lane.
+ */
+export function changesAskedBefore(command: string, args: readonly unknown[]): number {
+  const lane = LANE_OF.get(command);
+  return lane === undefined ? 0 : (changesAsked.get(`${lane}\u0000${String(args[0])}`) ?? 0);
+}
+
 /** `answer`, settled either way, for what waits on it. */
 const settledOf = (answer: Promise<unknown>) =>
   answer.then(
@@ -249,6 +269,7 @@ export function inOrder(lane: string, kind: "read" | "change", ask: Ask): Ask {
       now.reads.add(settled);
       void settled.then(() => now.reads.delete(settled));
     } else {
+      changesAsked.set(key, (changesAsked.get(key) ?? 0) + 1);
       now.change = settled;
       now.reads = new Set();
       void settled.then(() => {

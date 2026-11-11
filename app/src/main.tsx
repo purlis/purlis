@@ -11,6 +11,7 @@ import { settleLayout } from "./regions";
 import { keepTheirOrder } from "./commandOrder";
 import { startTheSwitchClock } from "./switchClock";
 import { watchTheAnswers } from "./answerWatch";
+import { shareTheReads } from "./sharedReads";
 import { watchForStalls } from "./slowLog";
 import { drawWindowText, listenForSizeKeys, onTextSizes, textSizes } from "./textSize";
 import {
@@ -83,6 +84,11 @@ startTheSwitchClock();
 // A command the core has not answered for a while is said on the window's line, and a failed
 // scenario test reads which (`answerWatch.ts`).
 watchTheAnswers();
+
+// An identical read already in flight is asked once, its answer shared by every caller
+// (`sharedReads.ts`): every command waits in one queue in the core. After the timing, so one
+// shared answer is timed once.
+shareTheReads();
 
 // The parts the frame was drawn without, watched like any answer, on no one's way to the first
 // paint: the core is measuring them off the window's thread already.
