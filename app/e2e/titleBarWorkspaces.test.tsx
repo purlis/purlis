@@ -64,7 +64,11 @@ async function aStep(mayPress = true) {
 const expanded = () =>
   document.querySelector(ALL_WORKSPACES)?.getAttribute("aria-expanded") ?? null;
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  // What the last press watched for is the page's, and each test is a page of its own.
+  delete (window as Window & { e2eWorkspacesCame?: boolean }).e2eWorkspacesCame;
+});
 
 describe("the ⌄'s press from a spec (#5035)", () => {
   it("opens the popover at the first step and keeps it open at the next", async () => {
@@ -78,14 +82,35 @@ describe("the ⌄'s press from a spec (#5035)", () => {
   it("presses nothing behind a modal dialog, and names the dialog in the way", async () => {
     render(<TheWindow dialog />);
     for (let step = 0; step < 3; step++)
-      expect(await aStep()).toEqual({ at: "behind", dialog: "Use skill" });
+      expect(await aStep()).toEqual({ at: "behind", role: "dialog", name: "Use skill" });
     expect(expanded()).toBe("false");
   });
 
   it("presses nothing once its presses are spent, and says the ⌄ is ready", async () => {
     render(<TheWindow dialog={false} />);
-    expect((await aStep(false)).at).toBe("ready");
+    expect(await aStep(false)).toEqual({ at: "ready", cameAndWent: false });
     expect(document.querySelector(LISTED)).toBeNull();
     expect(expanded()).toBe("false");
+  });
+
+  it("under a modal dialog, a press opens the popover and loses it at once", async () => {
+    render(<TheWindow dialog />);
+    const chevron = document.querySelector<HTMLElement>(ALL_WORKSPACES);
+    act(() => chevron?.click());
+    expect(document.querySelector(LISTED)).not.toBeNull();
+    await act(async () => {
+      await new Promise((done) => setTimeout(done, 200));
+    });
+    expect(document.querySelector(LISTED)).toBeNull();
+    expect(expanded()).toBe("false");
+  });
+
+  it("says, after its press, that the popover came and went", async () => {
+    const { rerender } = render(<TheWindow dialog={false} />);
+    expect((await aStep()).at).toBe("pressed");
+    // Something takes the popover away, as a dialog's hand-back of the keyboard does.
+    rerender(<></>);
+    rerender(<TheWindow dialog={false} />);
+    expect(await aStep(false)).toEqual({ at: "ready", cameAndWent: true });
   });
 });

@@ -60,85 +60,122 @@ export async function workingSeen(
 }
 
 /** Where the ⌄ stood at one step of {@link opened}: its list drawn; pressed by this step; ready
- *  for a press this step did not make; its popover open with no list drawn yet; behind a modal
- *  dialog, named; or not drawn at all. */
+ *  for a press this step did not make, and whether the popover of the last press came and went;
+ *  its popover open with no list drawn yet; behind a modal overlay, by its role and name; or not
+ *  drawn at all. */
 export type Chevron =
   | { at: "listed" }
   | { at: "pressed" }
-  | { at: "ready" }
+  | { at: "ready"; cameAndWent: boolean }
   | { at: "open" }
-  | { at: "behind"; dialog: string }
+  | { at: "behind"; role: string; name: string }
   | { at: "undrawn" };
 
 /**
  * **One step of opening the workspace popover, in the page** (#5035): the ⌄ is pressed only when
  * a person could press it, and only when `mayPress`. Never while its popover is open, for a
- * press of the ⌄ closes what it opened; never behind a modal dialog, which hides the ⌄ from the
- * operator and the screen reader (React Aria's `aria-hidden` on all outside it) and takes the
- * keyboard back from any popover opened under it, so that popover goes the moment it comes.
- * Self-contained, for `browser.execute`.
+ * press of the ⌄ closes what it opened; never behind a modal overlay (a dialog, a menu), which
+ * hides the ⌄ from the operator and the screen reader (React Aria's `aria-hidden` on all outside
+ * it) and takes the keyboard back from any popover opened under it, so that popover goes the
+ * moment it comes. A press watches for the list, so a later step can say whether the popover it
+ * opened came and went or never came. Self-contained, for `browser.execute`.
  */
 export function pressedWhenReady(list: string, all: string, mayPress: boolean): Chevron {
+  const watched = window as Window & { e2eWorkspacesCame?: boolean };
   if (document.querySelector(list) !== null) return { at: "listed" };
   const chevron = document.querySelector<HTMLElement>(all);
   if (chevron === null) return { at: "undrawn" };
   const hidden = '[aria-hidden="true"], [inert]';
   if (chevron.closest(hidden) !== null) {
     const over = [
-      ...document.querySelectorAll<HTMLElement>('[role="dialog"], [role="alertdialog"]'),
+      ...document.querySelectorAll<HTMLElement>(
+        '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]',
+      ),
     ].find((one) => one.closest(hidden) === null);
-    const named =
-      over?.getAttribute("aria-label") ??
-      (over?.getAttribute("aria-labelledby") ?? "")
-        .split(" ")
-        .map((id) => document.getElementById(id)?.textContent ?? "")
-        .join(" ")
-        .trim();
-    return { at: "behind", dialog: named === "" ? "with no name" : named };
+    const label = over?.getAttribute("aria-label") ?? "";
+    const name =
+      label !== ""
+        ? label
+        : (over?.getAttribute("aria-labelledby") ?? "")
+            .split(/\s+/)
+            .map((id) => document.getElementById(id)?.textContent?.trim() ?? "")
+            .filter((part) => part !== "")
+            .join(" ");
+    return { at: "behind", role: over?.getAttribute("role") ?? "overlay", name };
   }
   if (chevron.getAttribute("aria-expanded") === "true") return { at: "open" };
-  if (!mayPress) return { at: "ready" };
+  if (!mayPress) return { at: "ready", cameAndWent: watched.e2eWorkspacesCame === true };
+  // React draws the popover after the press returns, so whether it came is seen as it comes.
+  watched.e2eWorkspacesCame = false;
+  const watch = new MutationObserver(() => {
+    if (document.querySelector(list) === null) return;
+    watched.e2eWorkspacesCame = true;
+    watch.disconnect();
+  });
+  watch.observe(document.body, { childList: true, subtree: true });
   chevron.click();
   return { at: "pressed" };
 }
 
-/** What the last step of {@link opened} saw, said after "the title bar's ⌄ opened no workspaces". */
-function said(last: Chevron, presses: number): string {
-  switch (last.at) {
-    case "behind":
-      return `the ⌄ is behind the dialog "${last.dialog}", still up (a step before this one left it)`;
-    case "undrawn":
-      return "no ⌄ is drawn: the title bar has not read the project's workspaces";
-    case "open":
-      return "its popover is open and draws no list";
-    default:
-      return `pressed ${presses} times, and its popover went each time`;
-  }
+/** Why {@link opened} found no list, from the last step it took, its presses and the last error
+ *  a step met. */
+function whyNotOpened(last: Chevron, presses: number, trouble: unknown): string {
+  const times = presses === 1 ? "once" : presses === 2 ? "twice" : `${presses} times`;
+  const said = (() => {
+    switch (last.at) {
+      case "behind":
+        return `the ⌄ is behind the ${last.role} "${last.name || "with no name"}", still up when the wait ended`;
+      case "undrawn":
+        return "no ⌄ is drawn: the title bar has not read the project's workspaces";
+      case "open":
+        return "its popover is open and draws no list";
+      case "ready":
+        return last.cameAndWent
+          ? `pressed ${times}, and its popover came and went`
+          : `pressed ${times}, and no popover came`;
+      default:
+        return `pressed ${times}, and the wait ended before its popover drew a list`;
+    }
+  })();
+  return trouble === undefined ? said : `${said}; a step failed with: ${String(trouble)}`;
 }
 
 /**
- * Opens the workspace popover, if it is not open, and waits for its rows: once the ⌄ is ready
- * for a press, a press, and one more only if no popover came of it or it went at once (#5035).
- * The one more is for a dialog just gone: React Aria hands the keyboard back to the dialog's
- * opener a frame after it goes, and a popover opened in that frame loses the keyboard to it and
- * closes. Never a third: each press toggles, so a press at every step while the list was not yet
- * seen was a popover opened and lost, over and over, for the whole wait.
+ * Opens the workspace popover, if it is not open, and waits for its rows (#5035): once the ⌄ is
+ * ready for a press, a press, and one more only if no popover came of it, for a press the page
+ * did not take (a ⌄ drawn again as it was pressed). A popover that came and went is not pressed
+ * for again: something took the keyboard from it, and the failure says so. Never more: each
+ * press toggles, and the old step, which pressed whenever it saw no list, opened and lost the
+ * popover under a dialog left up, over and over, for the whole wait.
  */
 async function opened(): Promise<void> {
-  let last: Chevron = { at: "undrawn" };
+  let last = { at: "undrawn" } as Chevron;
   let presses = 0;
-  await browser
+  let trouble: unknown;
+  const settled = await browser
     .waitUntil(
       async () => {
-        last = await browser.execute(pressedWhenReady, LISTED, ALL_WORKSPACES, presses < 2);
+        try {
+          last = await browser.execute(pressedWhenReady, LISTED, ALL_WORKSPACES, presses < 1);
+        } catch (error) {
+          trouble = error;
+          return false;
+        }
         if (last.at === "pressed") presses += 1;
-        return last.at === "listed";
+        if (last.at === "ready" && presses === 1 && !last.cameAndWent) {
+          last = await browser.execute(pressedWhenReady, LISTED, ALL_WORKSPACES, true);
+          if (last.at === "pressed") presses += 1;
+        }
+        // Listed; or pressed for, and nothing more a press would do.
+        return last.at === "listed" || (last.at === "ready" && presses > 0);
       },
       { timeout: 20_000, interval: 200 },
     )
-    .catch(() => {
-      throw new Error(`the title bar's ⌄ opened no workspaces: ${said(last, presses)}`);
-    });
+    .catch(() => false);
+  if (settled && last.at === "listed") return;
+  throw new Error(
+    `the title bar's ⌄ opened no workspaces: ${whyNotOpened(last, presses, trouble)}`,
+  );
 }
 
 /** Closes the workspace popover, by Escape in its filter, and waits until it has gone. */
