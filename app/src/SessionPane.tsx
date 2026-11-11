@@ -561,7 +561,7 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
   const unread = onScreenReaderMode((on) => {
     pane.options.screenReaderMode = on;
   });
-  bench.paneOpened(session, pane);
+  bench.paneOpened(session, pane, plane);
 
   let gone = false;
   const say = (trouble: string) => {
