@@ -26,6 +26,15 @@ const ABOUT: ArtifactAbout = {
   fresh: null,
 };
 
+const OPENED: ArtifactOpened = {
+  label: "artifact-7",
+  standing: "script-free",
+  changed_by: null,
+  generated: true,
+  queries: [],
+  plane_granted: false,
+};
+
 type Call = { cmd: string; args: Record<string, unknown> };
 
 /** The core, answering an artifact's commands, with what each was asked. `about` is read at
@@ -47,16 +56,7 @@ function core(
         return null;
       }
       if (cmd === "artifact_about") return typeof now === "function" ? now() : now;
-      if (cmd === "artifact_open" || cmd === "artifact_reload")
-        return {
-          label: "artifact-7",
-          standing: "script-free",
-          changed_by: null,
-          generated: true,
-          queries: [],
-          plane_granted: false,
-          ...opened,
-        };
+      if (cmd === "artifact_open" || cmd === "artifact_reload") return { ...OPENED, ...opened };
       return null;
     },
     { shouldMockEvents: true },
@@ -283,6 +283,54 @@ describe("an artifact's tab", () => {
     await waitFor(() =>
       expect(screen.getByTestId("artifact-bar")).toHaveTextContent("Updated 3 hours ago"),
     );
+  });
+
+  it("stops listening without an unhandled error when its listens answer after it went and the window's event bridge went too (#6194)", async () => {
+    const unhandled: unknown[] = [];
+    const heard = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", heard);
+    try {
+      const answers: ((id: number) => void)[] = [];
+      mockIPC((cmd) => {
+        if (cmd === "plugin:event|listen") return new Promise<number>((r) => answers.push(r));
+        if (cmd === "artifact_about") return ABOUT;
+        if (cmd === "artifact_open") return OPENED;
+        return null;
+      });
+      const { unmount } = render(<Tab />);
+      await waitFor(() => expect(answers.length).toBeGreaterThanOrEqual(2));
+      unmount();
+      clearMocks();
+      answers.forEach((answer, id) => answer(id));
+      await new Promise((r) => setTimeout(r, 0));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", heard);
+    }
+  });
+
+  it("stops listening without an unhandled error when the window's event bridge went before it did (#6194)", async () => {
+    const unhandled: unknown[] = [];
+    const heard = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", heard);
+    try {
+      let listened = 0;
+      mockIPC((cmd) => {
+        if (cmd === "plugin:event|listen") return ++listened;
+        if (cmd === "artifact_about") return ABOUT;
+        if (cmd === "artifact_open") return OPENED;
+        return null;
+      });
+      const { unmount } = render(<Tab />);
+      await waitFor(() => expect(listened).toBeGreaterThanOrEqual(2));
+      await act(async () => {});
+      clearMocks();
+      unmount();
+      await new Promise((r) => setTimeout(r, 0));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", heard);
+    }
   });
 
   it("says it cannot be opened once its pin goes, and closes its page", async () => {

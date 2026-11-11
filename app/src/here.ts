@@ -36,7 +36,44 @@ export function thisWindow(): string {
 }
 
 /** Listens for `event` in this window: what the core sends every window, and what it sends
- *  this one. Never what it sends another window. */
+ *  this one. Never what it sends another window. Its stop never fails: see {@link quietly}. */
 export function listen<T>(event: string, handler: EventCallback<T>): Promise<UnlistenFn> {
-  return listenAnywhere<T>(event, handler, { target: thisWindow() });
+  return listenAnywhere<T>(event, handler, { target: thisWindow() }).then(quietly);
+}
+
+/**
+ * `unlisten`, made a stop that never fails (#6194). Tauri's unlisten is `async`, so once the
+ * window's event bridge is gone (the window closing, or a test's mock torn down) it rejects
+ * where no `try` around the call can catch it, and the rejection is unhandled. Nothing is
+ * listening any more by then, which is what the stop was for.
+ */
+export function quietly(unlisten: UnlistenFn): UnlistenFn {
+  return () => {
+    try {
+      void Promise.resolve(unlisten() as unknown).catch(() => {});
+    } catch {
+      // The bridge went before the call: nothing is listening.
+    }
+  };
+}
+
+/**
+ * **A listen held until the returned stop is called**, the shape an effect's cleanup wants
+ * (#6194). The stop may come before `listening` answers: the listener is then stopped as it
+ * answers, so a component gone first leaves nothing listening. Neither stop ever fails.
+ */
+export function untilStopped(listening: Promise<UnlistenFn>): () => void {
+  let stop: UnlistenFn | undefined;
+  let gone = false;
+  listening.then(
+    (unlisten) => {
+      if (gone) quietly(unlisten)();
+      else stop = quietly(unlisten);
+    },
+    () => {},
+  );
+  return () => {
+    gone = true;
+    stop?.();
+  };
 }
