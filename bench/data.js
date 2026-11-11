@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794389537186,
+  "lastUpdate": 1794394033113,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -46872,6 +46872,48 @@ window.BENCHMARK_DATA = {
             "value": 102.071562,
             "unit": "ms",
             "extra": "median of 5 runs: 101.102, 101.557, 102.072, 102.167, 102.504 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "1864ff82704f6dcb65d105549977abc160a6054b",
+          "message": "Use skill follows its chat through a restart; the fake forge says what a sign-in handed it (#6193, #6192) (#6195)\n\n* Use skill… follows its chat through a restart (#6193)\n\nThe outcome bars' Use skill pick on macOS (run 42700543815) was taken: the\ndialog's own alert held the core's refusal, \"This chat runs no tool purlis\nknows\", which use_skill answers for a session no longer among the core's\nopen chats. A restart is the same chat in a new session, and the window's\nfollowRestart moved the panes' breadcrumbs to it but left Use skill… aimed\nat the session that had ended, so the pick was refused and the dialog\nstayed up over the window.\n\nNow a restart heard while Use skill… is open on the chat moves the dialog\nto the new session and reads its skills, so a pick types into the chat\nthat runs. Red first: UseSkillRestart.window.test.tsx picked into session 4.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M74DNQXS8NBRKYQAE6Q0S9GT\nPurlis-Persona: steward\n\n* Use skill… through a restart: its window test and changelog fragment (#6193)\n\nThe red-first test and the fragment of the commit before, which committed\nonly the tracked file.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M74DNQXS8NBRKYQAE6Q0S9GT\nPurlis-Persona: steward\n\n* The fake forge says what a sign-in handed its browser when that is no URL (#6192)\n\nThe macOS failure of clones.e2e.ts's browser sign-in (run 41632802971,\n2026-11-03, on bdd26c9) was #5546: the spec read the page file the app\nwrites as soon as it existed, read it empty, and new URL(\"\") threw. #5547\n(2026-11-06) made the spec wait until the file holds a whole address, and\nthe failing run predates it. The address is the one the app's e2e browser\nstand-in writes (BrowserForge::open), not one built from user or forge\ninput, so the window has nothing to say here.\n\nWhat was left is the report: a red run said only \"Invalid URL\". Now\nfakeGitLab's playBrowser names what it was handed (thePageAsked, red first\nin fakeGitLab.test.ts), and the spec's wait for the page says what it read\nwhen it gives up.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M74DNQXS8NBRKYQAE6Q0S9GT\nPurlis-Persona: steward\n\n* Use skill…: an old run's answer no longer moves the dialog back, and a restored chat's renumbering is followed (#6193)\n\nFrom review. sendUseSkill set the dialog from the state it held before the\npick went out, so a refusal from the session a restart had just ended put\nthe dialog back on it, with NO_TOOL: the symptom this fixes. Now an answer\nmoves only the dialog still open on its session. Red first: the window\ntest's second case saw the refusal's alert on the followed dialog.\n\nA chat restored under another number takes its tab's place as a restart\ndoes, so it goes through followRestart too.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M74DNQXS8NBRKYQAE6Q0S9GT\nPurlis-Persona: steward\n\n* The forge's page check reads as what it is, and the spec's wait keeps why it gave up (#6192)\n\nFrom review: thePageAsked is pageTheSignInHanded, and the clones spec's\ncatch says the error waitUntil gave, not only what it read.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M74DNQXS8NBRKYQAE6Q0S9GT\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-11T09:22:45Z",
+          "tree_id": "f3d2893dea04131dfce702a0930cdc204393db2a",
+          "url": "https://github.com/purlis/purlis/commit/1864ff82704f6dcb65d105549977abc160a6054b"
+        },
+        "date": 1794394026123,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5472575,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.530, 0.538, 0.547, 0.566, 0.580 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.1789445,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.041, 16.157, 16.179, 16.314, 16.362 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.106014,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.429, 100.489, 101.106, 101.435, 102.009 ms"
           }
         ]
       }
