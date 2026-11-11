@@ -4,6 +4,7 @@
 import { browser } from "@wdio/globals";
 import { specOf } from "./chatsLeft.js";
 import { recordFailure } from "./failures.js";
+import { noDialogIsLeftUp } from "./opening.js";
 import { openedSince, pressClose, TABS, tabNames } from "./reach.js";
 import { CURRENT_CHIP, goToWorkspace, workspacesListed } from "./titleBarWorkspaces.js";
 
@@ -318,6 +319,8 @@ export const tabHooks = {
     before = null;
     const spec = specOf(this.test?.parent);
     const faults: string[] = [];
+    // A dialog the test that failed left up covers the workspaces' ⌄ and every tab (#5035).
+    await noDialogIsLeftUp();
 
     const visited = await theStripsWatched().catch((trouble: unknown) => {
       console.warn(`${spec}: the strips it visited were not read`, trouble);

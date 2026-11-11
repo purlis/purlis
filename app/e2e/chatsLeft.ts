@@ -3,6 +3,7 @@
 
 import { browser } from "@wdio/globals";
 import { recordFailure } from "./failures.js";
+import { noDialogIsLeftUp } from "./opening.js";
 import { focusWorkspaceAt, workspaceTabs } from "./reach.js";
 import { runningIn } from "./running.js";
 import { endChatById } from "./started.js";
@@ -197,6 +198,8 @@ async function endTheOnesHere(left: readonly Chat[]): Promise<Chat[]> {
  * `after`, naming it; the root hook above stays the backstop.
  */
 export async function endTheChatsStartedSince(before: Running): Promise<void> {
+  // A dialog the test that failed left up covers the workspaces' ⌄ and every End… (#5035).
+  await noDialogIsLeftUp();
   let left = leftOver(before, await chatsRunning());
   if (left.length === 0) return;
   const strip = await workspaceTabs();
