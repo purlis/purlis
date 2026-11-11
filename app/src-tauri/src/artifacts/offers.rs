@@ -65,7 +65,45 @@ fn said(path: &str, query: Option<&str>) -> Option<Said> {
     })
 }
 
+/// **The order of the sets of offers a page said** (#6261): each is numbered as it is said, on
+/// the scheme's thread, and drawn only while it is newer than the last one drawn. Each set is
+/// gated on a thread of its own, so without this an earlier set could reach the window after a
+/// later one and stand in its place.
+#[derive(Debug, Default)]
+pub(crate) struct Order {
+    said: u64,
+    drawn: u64,
+}
+
 impl Artifacts {
+    /// **Webview `label`'s page said a set of offers**: its number in the order they were said.
+    fn said_offers(&self, label: &str) -> Option<u64> {
+        let mut served = self.served();
+        let order = &mut served.get_mut(label)?.offered;
+        order.said += 1;
+        Some(order.said)
+    }
+
+    /// **Draws set `n` of webview `label`'s load `load`, with `draw` handed its window**, only
+    /// while that load's port is still the open one and no later set was drawn; whether it was.
+    /// Both are read and `draw` is called under one lock, so neither a reload nor a later set
+    /// comes between the check and the drawing.
+    fn draw_offers(&self, label: &str, load: &str, n: u64, draw: impl FnOnce(&str)) -> bool {
+        let mut served = self.served();
+        let Some(one) = served
+            .get_mut(label)
+            .filter(|one| one.load.as_deref() == Some(load))
+        else {
+            return false;
+        };
+        if n <= one.offered.drawn {
+            return false;
+        }
+        one.offered.drawn = n;
+        draw(&one.window);
+        true
+    }
+
     /// What gating offers from webview `label`'s load `load` needs, while that load's port is
     /// still the open one: the artifact, the bytes served, and its window.
     fn offering(&self, label: &str, load: &str) -> Option<(Of, serve::Snapshot, String)> {
@@ -115,14 +153,21 @@ pub(crate) fn heard<R: Runtime>(
     let Some(said) = said(path, query) else {
         return;
     };
-    tracing::info!("[DEBUG-6261] offers said: label {label} load {} id {} set {}", said.load, said.id, said.query);
+    // Numbered here, in the order the page said them, before any is gated on a thread of its own.
+    let Some(n) = app
+        .try_state::<Artifacts>()
+        .and_then(|artifacts| artifacts.said_offers(label))
+    else {
+        return;
+    };
+    tracing::info!("[DEBUG-6261] offers said: label {label} load {} id {} n {n} set {}", said.load, said.id, said.query);
     let app = app.clone();
     let label = label.to_owned();
     tauri::async_runtime::spawn_blocking(move || {
         let Some(artifacts) = app.try_state::<Artifacts>() else {
             return;
         };
-        let Some((of, snapshot, window)) = artifacts.offering(&label, &said.load) else {
+        let Some((of, snapshot, _)) = artifacts.offering(&label, &said.load) else {
             return;
         };
         let config = purlis_core::machine::config_root();
@@ -130,15 +175,18 @@ pub(crate) fn heard<R: Runtime>(
         let answer = match admitted(config.as_deref(), &of, &snapshot, &said.query) {
             Ok(offers) => {
                 let taken = offers.len();
-                tracing::info!("[DEBUG-6261] offers drawn: label {label} load {} set {}", said.load, said.query);
-                let _ = app.emit_to(
-                    tauri::EventTarget::webview(window.as_str()),
-                    ARTIFACT_OFFERS,
-                    ArtifactOffers {
-                        label: label.clone(),
-                        offers,
-                    },
-                );
+                // A set said before one already drawn is not drawn: the later one stands.
+                let drawn = artifacts.draw_offers(&label, &said.load, n, |window| {
+                    let _ = app.emit_to(
+                        tauri::EventTarget::webview(window),
+                        ARTIFACT_OFFERS,
+                        ArtifactOffers {
+                            label: label.clone(),
+                            offers,
+                        },
+                    );
+                });
+                tracing::info!("[DEBUG-6261] offers gated: label {label} load {} n {n} drawn {drawn} set {}", said.load, said.query);
                 Answer::data(serde_json::json!({ "offered": taken }), now)
             }
             Err(kind) => Answer::error(kind, now),
@@ -300,6 +348,7 @@ mod tests {
                 theme: String::new(),
                 declared: None,
                 load: None,
+                offered: Order::default(),
             },
         );
         assert!(artifacts.offering("artifact-1", LOAD).is_none());
@@ -317,5 +366,50 @@ mod tests {
         artifacts.reloaded("artifact-1");
         assert!(artifacts.offering("artifact-1", LOAD).is_none());
         assert_eq!(artifacts.window_of("artifact-1").as_deref(), Some("main"));
+    }
+
+    /// #6261: the page said `{refused}` and then `{todo, refused}`; each was gated on a thread
+    /// of its own, the first finished last, and the window drew `{refused}` in the place of the
+    /// set the page said last (Linux scenario runs 42999270036, 43015091955).
+    #[test]
+    fn a_set_of_offers_gated_after_a_later_one_was_drawn_is_not_drawn() {
+        let (_root, of, snapshot) = board();
+        let artifacts = Artifacts::default();
+        artifacts.served().insert(
+            "artifact-1".to_owned(),
+            super::super::Served {
+                window: "main".to_owned(),
+                host: "a1".to_owned(),
+                snapshot,
+                of,
+                theme: String::new(),
+                declared: None,
+                load: Some(LOAD.to_owned()),
+                offered: Order::default(),
+            },
+        );
+        let drawn = std::cell::RefCell::new(Vec::new());
+        let draw = |set: &'static str| {
+            let drawn = &drawn;
+            move |window: &str| drawn.borrow_mut().push((window.to_owned(), set))
+        };
+
+        let first = artifacts.said_offers("artifact-1").unwrap();
+        let second = artifacts.said_offers("artifact-1").unwrap();
+        assert!(artifacts.draw_offers("artifact-1", LOAD, second, draw("todo, refused")));
+        assert!(!artifacts.draw_offers("artifact-1", LOAD, first, draw("refused")));
+        assert_eq!(*drawn.borrow(), [("main".to_owned(), "todo, refused")]);
+
+        // In the order they were said, each is drawn.
+        let third = artifacts.said_offers("artifact-1").unwrap();
+        assert!(artifacts.draw_offers("artifact-1", LOAD, third, draw("todo")));
+        assert_eq!(drawn.borrow().len(), 2);
+
+        // A set the last load said is not drawn once the page has begun again.
+        let stale = artifacts.said_offers("artifact-1").unwrap();
+        artifacts.reloaded("artifact-1");
+        assert!(!artifacts.draw_offers("artifact-1", LOAD, stale, draw("stale")));
+        assert_eq!(drawn.borrow().len(), 2);
+        assert_eq!(artifacts.said_offers("artifact-2"), None);
     }
 }

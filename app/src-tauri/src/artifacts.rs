@@ -198,6 +198,8 @@ struct Served {
     declared: Option<data::Declared>,
     /// The word of the load whose port is open, if one is.
     load: Option<String>,
+    /// The order of the sets of offers its page said, and of the last one drawn (#6261).
+    offered: offers::Order,
 }
 
 /// The artifact a webview shows, as it was read when it was opened, or last read again.
@@ -1049,6 +1051,7 @@ pub async fn artifact_open(
         theme: sheet,
         declared,
         load: None,
+        offered: offers::Order::default(),
     };
     let label = lay(&window, &artifacts, served, place)?;
     Ok(ArtifactOpened {
@@ -1328,6 +1331,7 @@ pub async fn artifact_preview_open(
         theme: sheet,
         declared: None,
         load: None,
+        offered: offers::Order::default(),
     };
     Ok(ArtifactOpened {
         label: lay(&window, &artifacts, served, place)?,
@@ -1629,6 +1633,7 @@ mod tests {
                     theme: format!(":root {{ color-scheme: dark; }} /* {host} */"),
                     declared: None,
                     load: None,
+                    offered: offers::Order::default(),
                 },
             );
         }
@@ -2184,6 +2189,7 @@ mod tests {
                 theme: String::new(),
                 declared: None,
                 load: None,
+                offered: offers::Order::default(),
             },
         );
         artifacts
