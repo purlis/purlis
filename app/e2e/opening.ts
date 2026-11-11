@@ -743,15 +743,16 @@ export async function showView(
   // On whichever bar holds it: a sidebar's, or the Lower icons of its half of the Panel.
   const tab = `.activity-bar [role="tab"][aria-label="${name}"]`;
   await $(tab).waitForExist({ timeout: 30_000 });
-  // Read and pressed afresh at each look (#6227): the bar is drawn again as a view arrives, and
-  // a tab held from before the press is a node that may have left the window.
+  // Looked up afresh for the press and read afresh at each look after it (#6227): the bar is
+  // drawn again as a view arrives, and a tab held from before is a node that may have left the
+  // window. Pressed by the driver, not by `click()` in the page: a press from the page selects
+  // a tab without moving the strip's one Tab stop to it (`keyboard-reach.e2e.ts`).
   const shown = (selector: string) =>
     browser.execute(
       (css: string) => document.querySelector(css)?.getAttribute("aria-selected") === "true",
       selector,
     );
-  if (!(await shown(tab)))
-    await browser.execute((css: string) => document.querySelector<HTMLElement>(css)?.click(), tab);
+  if (!(await shown(tab))) await $(tab).click();
   await browser.waitUntil(async () => shown(tab), {
     timeout: 10_000,
     timeoutMsg: `the ${name} view never opened`,
