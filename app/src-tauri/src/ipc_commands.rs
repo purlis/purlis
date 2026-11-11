@@ -542,6 +542,8 @@ macro_rules! app_commands {
                 taskchanges::task_branch_delete,
                 taskchanges::tasks_sharing_a_folder,
                 taskchanges::task_folder_shared,
+                chatcard::chat_by_number,
+                chatcard::chat_screen,
                 finished::finished_tasks,
                 finished::clear_finished_tasks,
                 reopen_finished_task,
