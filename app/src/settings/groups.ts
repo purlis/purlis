@@ -105,6 +105,9 @@ export type Collection = {
    *  Remove is pressed: the window's own record, so a chat that is not open is not counted. A
    *  count that cannot be read is none. */
   running?: (entry: CollectionEntry) => Promise<number>;
+  /** **Drawn as a table of hosts** (#2919, R65–R74): Your hosts, many rows each with its status,
+   *  under a bar with its filter, Confirm all and Add host. */
+  table?: "hosts";
 };
 
 /** One entry of a collection. */
@@ -129,6 +132,9 @@ export type CollectionEntry = {
   /** A sentence that describes the entry, under its heading: why a profile's icon is its monogram
    *  (#3137). */
   says?: string;
+  /** A host's own words, as the file writes it, without what its label adds ("not yet
+   *  confirmed"): what a hosts table shows and finds it by (R65). */
+  host?: string;
 };
 
 /** One field of a collection's Add form, written to the entry's key `field`. */
@@ -146,8 +152,16 @@ export type EntryField = {
   check?: (typed: string) => Promise<string | null>;
 };
 
-/** What every setting has: its stable address (`<group id>.<setting>`), label and help. */
-type Named = { id: string; label: string; help: string };
+/**
+ * **A group of a page** (#2919, R60, R61): its title, its one line, and whether it is rarely used,
+ * so folded until it is opened. A page draws its settings that have none first, then each
+ * group in the order its first setting comes.
+ */
+export type PageSection = { label: string; help?: string; rarely?: true };
+
+/** What every setting has: its stable address (`<group id>.<setting>`), label and help, and the
+ *  group of its page it is drawn in, if any. */
+type Named = { id: string; label: string; help: string; section?: PageSection };
 
 /**
  * **Which settings file a value is kept in**: the project's `charter.toml` (`shared`) or
@@ -216,6 +230,8 @@ export type FileSetting = Named & {
   standing?: string;
   /** What the row's reset is called, where "Reset" alone would hide what it does (#1197). */
   resets?: string;
+  /** A key kept only until every machine has moved off it: badged "deprecated" (R62). */
+  deprecated?: true;
   /** An on/off key's value in force while no file at the row's level holds it: the row is a
    *  switch, and Reset takes the key back to not set (#1865; `fileControls.ts`'s `Control`). */
   inForce?: boolean;

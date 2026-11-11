@@ -505,13 +505,21 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
     // The app writes the page's address with a plain write, which makes the file before it fills
     // it: an empty read there is the moment between, not the page.
     let page = "";
-    await browser.waitUntil(
-      () => {
-        page = existsSync(PAGE) ? readFileSync(PAGE, "utf8") : "";
-        return /^https?:\/\/\S+$/.test(page);
-      },
-      { timeout: 30_000, timeoutMsg: "the sign-in never opened the forge's page" },
-    );
+    await browser
+      .waitUntil(
+        () => {
+          page = existsSync(PAGE) ? readFileSync(PAGE, "utf8") : "";
+          return /^https?:\/\/\S+$/.test(page);
+        },
+        { timeout: 30_000 },
+      )
+      .catch((cause: unknown) => {
+        // Said with what it read (#6192): no page written, or what was written that is no address.
+        const read = existsSync(PAGE) ? JSON.stringify(page) : "no page";
+        throw new Error(
+          `the sign-in never opened the forge's page: it wrote ${read} (${String(cause)})`,
+        );
+      });
     await forge.playBrowser(page);
     await browser.waitUntil(
       async () => (await ask<Account[]>("forge_accounts")).some((a) => a.host === forge.server),

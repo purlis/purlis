@@ -126,7 +126,14 @@ const keysReversed = (value: unknown): unknown =>
         )
       : value;
 
-function core(shape: Shape): Core {
+/**
+ * What the core answers to a command the core above answers with nothing, by the command's name:
+ * for a test about what the window does with that answer. Read at each ask, so a test can change
+ * an answer after the window is mounted.
+ */
+export type Answers = Record<string, (given: Record<string, unknown>) => unknown>;
+
+function core(shape: Shape, answers: Answers = {}): Core {
   const asked: Asked[] = [];
   const listening = new Map<string, number[]>();
   let held: Promise<void> | undefined;
@@ -204,6 +211,8 @@ function core(shape: Shape): Core {
             answer: { via: "in-its-pane" },
           })),
       };
+    const answer = answers[cmd];
+    if (answer !== undefined) return answer(given);
     return null;
   });
   return {
@@ -380,8 +389,8 @@ export const windowCommits = { count: 0 };
 
 /** The real window on a core holding `shape`, mounted with its first project in front and
  *  settled. */
-export async function aWindow(shape: Shape): Promise<Core> {
-  const held = core(shape);
+export async function aWindow(shape: Shape, answers?: Answers): Promise<Core> {
+  const held = core(shape, answers);
   render(
     <Profiler
       id="window"

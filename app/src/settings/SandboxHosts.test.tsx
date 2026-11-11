@@ -196,7 +196,10 @@ async function at(group: string) {
   render(<SettingsTab plane={PLANE} level="project" />);
   await userEvent.click(
     await within(await screen.findByRole("navigation", { name: "Groups" })).findByRole("button", {
-      name: group,
+      // A page with things waiting says how many after its name (R46).
+      name: (name) =>
+        name === group ||
+        (name.startsWith(`${group} `) && /^\d+$/.test(name.slice(group.length + 1))),
     }),
   );
 }
@@ -302,7 +305,7 @@ describe("Settings › Sandbox's hosts", () => {
   it("adds your own host to this machine's file alone, on its own page", async () => {
     const { asked, hosts } = core();
     await at("Your hosts");
-    expect(screen.getByText(/on this machine only/)).toBeInTheDocument();
+    expect(screen.getAllByText(/on this machine only/)[0]).toBeInTheDocument();
 
     await userEvent.click(await screen.findByRole("button", { name: "Add host" }));
     const form = screen.getByRole("form", { name: "New host" });
@@ -318,15 +321,181 @@ describe("Settings › Sandbox's hosts", () => {
     const { asked } = core({ local: ["10.0.0.6"], unconfirmed: ["10.0.0.6"] });
     await at("Your hosts");
 
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Confirm 10.0.0.6 (not yet confirmed)" }),
-    );
+    expect(await screen.findByText("Waiting for you")).toBeVisible();
+    await userEvent.click(await screen.findByRole("button", { name: "Confirm 10.0.0.6" }));
 
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: /^Confirm/ })).not.toBeInTheDocument(),
     );
     expect(asked[0]).toMatchObject({ cmd: "confirm_sandbox_host", arg: "host:0:10.0.0.6" });
-    expect(screen.getByRole("group", { name: "10.0.0.6" })).toBeInTheDocument();
+    expect(screen.getByRole("rowheader", { name: "10.0.0.6:443" })).toBeInTheDocument();
+    expect(screen.getByText("Confirmed", { selector: "[data-scope=badge]" })).toBeVisible();
+  });
+});
+
+/**
+ * **Your hosts is a table** (#2919, prototype A, R65, R67–R73): a row per host, waiting first,
+ * the host in mono with its port quiet, its status, and its Confirm and Remove; over it a filter,
+ * Confirm all and Add host, which swap to how many are chosen, Confirm and Remove; each act says
+ * what it did.
+ */
+describe("Settings › Your hosts, the table", () => {
+  // Nine: a filter is drawn from eight (R164).
+  const MINE = [
+    "docs.github.com",
+    "api.example.com:8443",
+    "zed.dev",
+    "fork.dev",
+    "crates.io",
+    "pypi.org",
+    "code.visualstudio.com",
+    "www.jetbrains.com",
+    "[fd00::7]:8443",
+  ];
+  const WAITING = ["zed.dev", "fork.dev"];
+
+  async function hostsTable() {
+    const made = core({ local: [...MINE], unconfirmed: [...WAITING] });
+    await at("Your hosts");
+    const table = await screen.findByRole("grid", { name: "Your hosts" });
+    return { ...made, table, user: userEvent.setup() };
+  }
+
+  /** The table's rows, each as its cells' words. */
+  const rowsOf = (table: HTMLElement) =>
+    within(table)
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) =>
+        within(row)
+          .queryAllByRole("rowheader")
+          .concat(within(row).queryAllByRole("gridcell"))
+          .map((cell) => cell.textContent?.trim() ?? "")
+          .filter((words) => words !== ""),
+      );
+
+  it("lists each host with its status, waiting first, and Confirm only on a waiting one (R65, R67, R68)", async () => {
+    const { table } = await hostsTable();
+
+    expect(rowsOf(table).map((cells) => cells.slice(0, 2))).toEqual([
+      ["zed.dev:443", "Waiting for you"],
+      ["fork.dev:443", "Waiting for you"],
+      ["docs.github.com:443", "Confirmed"],
+      ["api.example.com:8443", "Confirmed"],
+      ["crates.io:443", "Confirmed"],
+      ["pypi.org:443", "Confirmed"],
+      ["code.visualstudio.com:443", "Confirmed"],
+      ["www.jetbrains.com:443", "Confirmed"],
+      ["[fd00::7]:8443", "Confirmed"],
+    ]);
+    // The host in mono, its port in the quiet words.
+    const host = within(table).getByText("api.example.com");
+    expect(host.closest("code")).not.toBeNull();
+    expect(within(table).getAllByText(":8443")[0]).toHaveClass("ui-hosts-port");
+    expect(within(table).getAllByRole("button", { name: /^Confirm / })).toHaveLength(2);
+    expect(within(table).getAllByRole("button", { name: /^Remove / })).toHaveLength(9);
+  });
+
+  it("filters by any part of a host, and says so when none is left (R69, R73)", async () => {
+    const { table, user } = await hostsTable();
+
+    const filter = screen.getByRole("searchbox", { name: "Filter hosts" });
+    expect(filter).toHaveAttribute("placeholder", "Filter 9 hosts");
+    await user.type(filter, "dev");
+    expect(rowsOf(table).map((cells) => cells[0])).toEqual(["zed.dev:443", "fork.dev:443"]);
+    expect(filter).toHaveFocus();
+    await user.type(filter, "x");
+
+    expect(within(table).getByText("No host is called “devx”.")).toBeVisible();
+  });
+
+  it("offers Confirm all and Add host, and swaps them for what to do to the chosen (R70, R71)", async () => {
+    const { table, user } = await hostsTable();
+    const bar = screen.getByRole("group", { name: "Your hosts" });
+
+    expect(within(bar).getByRole("button", { name: "Confirm all 2 waiting" })).toBeVisible();
+    expect(within(bar).getByRole("button", { name: "Add host" })).toBeVisible();
+    await user.click(within(table).getByRole("checkbox", { name: "Select All" }));
+
+    expect(within(bar).getByText("9 selected")).toBeVisible();
+    expect(within(bar).queryByRole("button", { name: /^Confirm all/ })).toBeNull();
+    expect(within(bar).getByRole("button", { name: "Confirm" })).toBeVisible();
+    expect(within(bar).getByRole("button", { name: "Remove" })).toBeVisible();
+  });
+
+  it("confirms one host, and says so (R72)", async () => {
+    const { table, asked, user } = await hostsTable();
+
+    await user.click(within(table).getByRole("button", { name: "Confirm zed.dev" }));
+
+    expect(await screen.findByText("Confirmed zed.dev.")).toBeVisible();
+    expect(asked).toEqual([
+      expect.objectContaining({ cmd: "confirm_sandbox_host", arg: "host:2:zed.dev" }),
+    ]);
+  });
+
+  it("confirms every waiting host at once, and says so (R72)", async () => {
+    const { asked, user } = await hostsTable();
+
+    await user.click(screen.getByRole("button", { name: "Confirm all 2 waiting" }));
+
+    expect(await screen.findByText("Confirmed every waiting host.")).toBeVisible();
+    expect(asked.map((one) => one.arg)).toEqual(["host:2:zed.dev", "host:3:fork.dev"]);
+  });
+
+  it("confirms the chosen hosts, and says how many rather than every waiting host", async () => {
+    const { table, asked, user } = await hostsTable();
+
+    await user.click(within(table).getByRole("checkbox", { name: "Select fork.dev:443" }));
+    await user.click(
+      within(screen.getByRole("group", { name: "Your hosts" })).getByRole("button", {
+        name: "Confirm",
+      }),
+    );
+
+    expect(await screen.findByText("Confirmed fork.dev.")).toBeVisible();
+    expect(asked.map((one) => one.arg)).toEqual(["host:3:fork.dev"]);
+  });
+
+  it("removes one host, says so, and offers its Undo (R72)", async () => {
+    const { table, hosts, user } = await hostsTable();
+
+    await user.click(within(table).getByRole("button", { name: "Remove docs.github.com" }));
+
+    expect(await screen.findByText("Removed docs.github.com.")).toBeVisible();
+    expect(hosts.local).not.toContain("docs.github.com");
+    expect(screen.getByRole("button", { name: "Undo" })).toBeVisible();
+  });
+
+  it("removes every chosen host, each by its identity as the file stands then", async () => {
+    const { table, asked, hosts, user } = await hostsTable();
+
+    await user.click(within(table).getByRole("checkbox", { name: "Select docs.github.com:443" }));
+    await user.click(within(table).getByRole("checkbox", { name: "Select zed.dev:443" }));
+    await user.click(
+      within(screen.getByRole("group", { name: "Your hosts" })).getByRole("button", {
+        name: "Remove",
+      }),
+    );
+
+    await waitFor(() =>
+      expect(hosts.local).toEqual(
+        MINE.filter((one) => one !== "zed.dev" && one !== "docs.github.com"),
+      ),
+    );
+    expect(asked.map((one) => one.arg)).toEqual(["host:2:zed.dev", "host:0:docs.github.com"]);
+    expect(await screen.findByText("Removed 2 hosts.")).toBeVisible();
+  });
+
+  it("opens the form to add a host from the bar, and comes back to Add host from it", async () => {
+    const { user } = await hostsTable();
+
+    await user.click(screen.getByRole("button", { name: "Add host" }));
+    const form = screen.getByRole("form", { name: "New host" });
+    expect(within(form).getByLabelText("Host")).toHaveFocus();
+    await user.keyboard("{Escape}");
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Add host" })).toHaveFocus());
   });
 });
 

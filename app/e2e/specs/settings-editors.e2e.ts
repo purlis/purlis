@@ -10,8 +10,9 @@ import { SETTINGS_GROUPS, openProjectSettings, openRawFile } from "../settingsTa
  *
  * - **Edit as TOML** is CodeMirror: the file's text with numbered lines and the grammar's
  *   colours, as wide as the group it replaces and at least eight controls tall;
- * - **a list field** (Harness & profiles' "Environment passed to chats") is drawn under its
- *   name at the row's width, and as tall as its lines: nothing in it scrolls.
+ * - **a list field** (Harness & profiles' "Environment passed to chats") is drawn where every
+ *   control starts, across its column (#2919, R54), and as tall as its lines: nothing in it
+ *   scrolls.
  *
  * What jsdom cannot say: how wide and tall WebKit lays these out. Ranges, never exact pixels.
  * `TextEditor.test.tsx` and `ListField.test.tsx` hold the behaviour. **Nothing is written**: the
@@ -70,7 +71,7 @@ async function listMeasured() {
     const field = name
       ? (document.getElementById(name.htmlFor) as HTMLTextAreaElement | null)
       : null;
-    const row = name?.closest(".ui-setting-row");
+    const row = name?.closest(".ui-setting-row")?.querySelector(".ui-setting-control");
     // The box a person sees is the field family's around the element typed in (#2905).
     const frame = field?.closest('[data-scope="textarea"][data-part="root"]');
     return {
@@ -105,7 +106,7 @@ describe("Settings' editors, in the real WebView", () => {
     expect(editor.height).toBeGreaterThanOrEqual(control.height * 8 - 2);
   });
 
-  it("draws a list field under its name, at the row's width, with every line shown", async () => {
+  it("draws a list field where every control starts, across its column, with every line shown", async () => {
     await $(SETTINGS_GROUPS).$("button=Harness & profiles").click();
     await browser.waitUntil(async () => (await listMeasured()).field !== null, {
       timeout: 20_000,
@@ -115,9 +116,9 @@ describe("Settings' editors, in the real WebView", () => {
     if (!label || !field || !row) throw new Error("the row was not drawn whole");
 
     expect(tag).toBe("TEXTAREA");
-    // Under its name: the box starts below the label's line.
-    expect(field.top).toBeGreaterThanOrEqual(label.bottom - 1);
-    // The row's width: from its left edge to its right, give or take a pixel of rounding.
+    // Beside its name, in the control column: it starts after the label's column.
+    expect(field.left).toBeGreaterThanOrEqual(label.right - 1);
+    // The column's width: from its left edge to its right, give or take a pixel of rounding.
     expect(Math.abs(field.left - row.left)).toBeLessThanOrEqual(1);
     expect(Math.abs(field.right - row.right)).toBeLessThanOrEqual(1);
     // Every line shown: the box is as tall as its text.

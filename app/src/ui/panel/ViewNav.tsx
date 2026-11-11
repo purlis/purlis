@@ -10,6 +10,7 @@
 import { useRef, useState, type KeyboardEvent } from "react";
 import { mergeProps, useFocusRing, useHover, usePress } from "react-aria";
 import { Count } from "../badge/Badge";
+import { Twist } from "../disclosure/Disclosure";
 
 /** **One page of a paged view**: its id, its name, and what its count says, if it has one. */
 export interface ViewPage {
@@ -26,6 +27,9 @@ export interface ViewPage {
   /** A page of the one above it, set in under it (a harness profile's, under Harness &
    *  profiles in Settings, ST-4). */
   sub?: boolean;
+  /** **It heads a group of the pages under it** (Settings' nav, #2919, R42): whether the group
+   *  is open, said by its toggle at the row's end. Unset for a page that heads none. */
+  expanded?: boolean;
 }
 
 /** The keys that walk the navigation, and where each goes from `at` of `last + 1` pages. */
@@ -80,6 +84,9 @@ function ViewNavItem({
       data-focus-visible={isFocusVisible || undefined}
       data-starts-group={page.startsGroup || undefined}
       data-sub={page.sub || undefined}
+      data-heads-group={page.expanded !== undefined || undefined}
+      // → reaches its group's toggle (R42), said to a reader.
+      aria-keyshortcuts={page.expanded !== undefined ? "ArrowRight" : undefined}
     >
       <span data-scope="view-nav" data-part="label">
         {page.label}
@@ -98,6 +105,45 @@ function ViewNavItem({
 }
 
 /**
+ * **A group's toggle** (#2919, R42, R43): a 26 px button at the end of the row of the page that
+ * heads the group, apart from the page's own button, so opening the group chooses no page.
+ * "Expand ‹page›" or "Collapse ‹page›", with `aria-expanded`; its twist turns as it opens. It is
+ * no Tab stop of its own: → reaches it from its page and ← goes back.
+ */
+function ViewNavToggle({
+  page,
+  onToggle,
+  onKeyDown,
+  refFor,
+}: {
+  page: ViewPage;
+  onToggle: () => void;
+  onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => void;
+  refFor: (element: HTMLButtonElement | null) => void;
+}) {
+  const { hoverProps, isHovered } = useHover({});
+  const { pressProps, isPressed } = usePress({ onPress: onToggle });
+  const { focusProps, isFocusVisible } = useFocusRing();
+  return (
+    <button
+      type="button"
+      {...mergeProps(hoverProps, pressProps, focusProps, { onKeyDown })}
+      ref={refFor}
+      tabIndex={-1}
+      aria-expanded={page.expanded === true}
+      aria-label={`${page.expanded ? "Collapse" : "Expand"} ${page.label}`}
+      data-scope="view-nav"
+      data-part="toggle"
+      data-hovered={isHovered || undefined}
+      data-pressed={isPressed || undefined}
+      data-focus-visible={isFocusVisible || undefined}
+    >
+      <Twist open={page.expanded} />
+    </button>
+  );
+}
+
+/**
  * **The page navigation**: named pages, each with its count, one Tab stop. ↑ and ↓ move along
  * it and stop at its ends, Home and End go to the first and the last, and Enter, Space or a
  * press chooses the page. The Tab stop is the current page until the keyboard has been on
@@ -108,14 +154,26 @@ export function ViewNav({
   pages,
   page,
   onPage,
+  onExpand,
+  rowWhenNarrow = false,
+  edge = true,
 }: {
+  /** **One sideways-scrolling row where its container is narrow** (under 728 px; Settings'
+   *  pages, R75), in place of a column. */
+  rowWhenNarrow?: boolean;
+  /** Whether it draws its own line after it: none where what holds it draws that edge
+   *  (Settings' side column). */
+  edge?: boolean;
   /** What the navigation is called (`aria-label`): "Skill studio pages". */
   label: string;
   pages: readonly ViewPage[];
   page: string;
   onPage: (id: string) => void;
+  /** Opens or folds the group the page `id` heads, from its toggle (`expanded`). */
+  onExpand?: (id: string, expanded: boolean) => void;
 }) {
   const items = useRef(new Map<string, HTMLButtonElement>());
+  const toggles = useRef(new Map<string, HTMLButtonElement>());
   const [aimed, setAimed] = useState<string | undefined>(undefined);
   const stop = pages.some((one) => one.id === aimed)
     ? aimed
@@ -123,6 +181,13 @@ export function ViewNav({
       ? page
       : pages[0]?.id;
   const keyed = (at: number) => (event: KeyboardEvent<HTMLButtonElement>) => {
+    const here = pages[at];
+    // → from a page that heads a group reaches its toggle (R42).
+    if (event.key === "ArrowRight" && here !== undefined && toggles.current.has(here.id)) {
+      event.preventDefault();
+      toggles.current.get(here.id)?.focus();
+      return;
+    }
     const to = walked(event.key, at, pages.length - 1);
     if (to === undefined || event.altKey || event.ctrlKey || event.metaKey) return;
     event.preventDefault();
@@ -134,6 +199,8 @@ export function ViewNav({
       aria-label={label}
       data-scope="view-frame"
       data-part="nav"
+      data-row-when-narrow={rowWhenNarrow || undefined}
+      data-edge={edge ? undefined : "none"}
       onBlur={(event) => {
         // The keyboard has left the navigation: its stop goes back to the current page.
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setAimed(undefined);
@@ -154,6 +221,24 @@ export function ViewNav({
                 else items.current.set(one.id, element);
               }}
             />
+            {one.expanded !== undefined && onExpand !== undefined && (
+              <ViewNavToggle
+                page={one}
+                onToggle={() => onExpand(one.id, !one.expanded)}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowLeft") {
+                    event.preventDefault();
+                    items.current.get(one.id)?.focus();
+                    return;
+                  }
+                  keyed(at)(event);
+                }}
+                refFor={(element) => {
+                  if (element === null) toggles.current.delete(one.id);
+                  else toggles.current.set(one.id, element);
+                }}
+              />
+            )}
           </li>
         ))}
       </ul>

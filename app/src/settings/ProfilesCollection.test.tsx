@@ -306,6 +306,8 @@ const nav = () => screen.getByRole("navigation", { name: "Groups" });
 const pages = () =>
   within(nav())
     .getAllByRole("button")
+    // A group's toggle is no page (R42).
+    .filter((one) => !one.hasAttribute("aria-expanded"))
     .map((one) => one.textContent);
 const open = async (name: string) =>
   userEvent.click(await within(nav()).findByRole("button", { name }));

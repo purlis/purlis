@@ -5578,11 +5578,6 @@ export const commands = {
 	 */
 	slowLogRecent: () => typedError<SlowMoment[], string>(__TAURI_INVOKE("slow_log_recent")),
 	/**
-	 *  [DEBUG-5478] Writes the watchdog's line to the diagnostic log, prefixed `[DEBUG-5478]`, on a
-	 *  blocking thread: a file is not the window's to wait for, least of all while a pane is stuck.
-	 */
-	debug5478Log: (line: string) => typedError<null, string>(__TAURI_INVOKE("debug_5478_log", { line })),
-	/**
 	 *  **What the chats of a tab used** (#1500). `scope` says what for: a row's hover reads its
 	 *  one figure; a tab's menu reads every line, each task's time and the total. `own` is the
 	 *  session's own chat, said beside the total and not in it; `chats` its open tasks, and any it
@@ -8169,6 +8164,12 @@ export type DeclaredHarness = {
 	 *  has; level 2 is purlis's own and never a project's.
 	 */
 	acp: boolean,
+};
+
+/**  A tool line Always allow wrote, as its ask showed it ([`RuleMade::declared`]). */
+export type DeclaredMade = {
+	persona: string,
+	line: string,
 };
 
 /**
@@ -11906,7 +11907,8 @@ export type Offered = {
 	/**
 	 *  **Who a grant is for, where a rule may be made of it** (ADR 0121 decision 7, #6010):
 	 *  this chat, this project or this machine. Absent on an answer that is no grant, and on
-	 *  one whose rule Rules I made could not undo (a harness's saved rule, a persona's Always).
+	 *  one whose rule Rules I made could not undo (a harness's saved rule, which the window never
+	 *  writes: #6177).
 	 */
 	scope?: RuleScope | null,
 };
@@ -15337,6 +15339,11 @@ export type RuleMade = {
 	 */
 	what: GrantWhat | null,
 	target: string | null,
+	/**
+	 *  **The tool line an Always allow showed** (#6177), and whose tools it went to: kept with the
+	 *  rule only where the persona's tools hold it so, for Undo to take out.
+	 */
+	declared?: DeclaredMade | null,
 };
 
 /**  One rule, as Rules I made lists it. */

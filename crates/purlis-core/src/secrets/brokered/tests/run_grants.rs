@@ -2835,6 +2835,68 @@ fn galeras_helpers_run_the_server_or_a_script_they_name_so_they_are_offered_no_r
     }
 }
 
+/// The server's systemd helpers (#6109): `mysqld_bootstrap` has the service manager start the
+/// server's unit with `--wsrep-new-cluster` (`scripts/systemd/mysqld_bootstrap.in`), as
+/// `galera_new_cluster` does; `mysqld_pre_systemd` runs the server's `--initialize` with what its
+/// settings name; and Percona XtraDB Cluster's packages ship `mysql-systemd`, whose `start-pre`
+/// does the same and whose `galera-recovery` has a shell evaluate the server's command line
+/// (`build-ps/rpm/mysql-systemd`, round 1 of the review). Their `mysql` prefix took them to the
+/// tools' row, which reads no flag or action any of them takes.
+#[test]
+fn the_servers_systemd_helpers_start_the_server_so_they_are_offered_no_run_grant() {
+    for name in ["mysqld_bootstrap", "mysqld_pre_systemd", "mysql-systemd"] {
+        refused_as_running_others(name);
+    }
+}
+
+/// `mariadb-report`, shipped with innotop in MariaDB's client on Debian, and `mysqlreport`, the
+/// name its compat links give it: its `--outfile` value goes unquoted to a shell
+/// (`` `mv $tmpfile $op{outfile}` ``, `debian/additions/mariadb-report`), and its `--email` pipes
+/// to `sendmail` (round 1 of the review). Its `mariadb` prefix took it to the tools' row, which
+/// reads neither.
+#[test]
+fn mariadb_report_has_a_shell_run_its_outfile_so_it_is_offered_no_run_grant() {
+    for name in ["mariadb-report", "mysqlreport"] {
+        refused_as_running_others(name);
+    }
+}
+
+/// Percona XtraDB Cluster's health checks (round 1 of the review): `clustercheck` hands the
+/// client its sixth argument (the fourth after a leading `-`) as
+/// `--defaults-extra-file` (`scripts/clustercheck.sh`), the form the client's row refuses, and
+/// `pyclustercheck`'s `--conf` names the file of settings its client library reads. Neither name
+/// starts with `mysql` or `mariadb`, so no row read them.
+#[test]
+fn pxcs_cluster_checks_hand_the_client_a_file_so_they_are_offered_no_run_grant() {
+    for name in ["clustercheck", "pyclustercheck"] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The slow log's summary and the row finder (round 3 of the review): both read the files they
+/// are named with Perl's `<>` (MariaDB's `scripts/mysqldumpslow.sh`,
+/// `scripts/mysql_find_rows.sh`), whose open runs a name ending in `|` as a shell command. Their
+/// prefix took them to the tools' row, which reads no operand.
+#[test]
+fn the_perl_log_readers_run_a_file_name_ending_in_a_pipe_so_they_are_offered_no_run_grant() {
+    for name in [
+        "mysqldumpslow",
+        "mariadb-dumpslow",
+        "mysql_find_rows",
+        "mariadb-find-rows",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// innotop, shipped with MariaDB's client on Debian (#6109): `-c` names the configuration file it
+/// reads, whose `plugin_dir` names the folder whose `.pm` files it `require`s, as its `[plugins]`
+/// section lists them. Its name starts with neither `mysql` nor `mariadb`, so no row read it.
+#[test]
+fn innotop_loads_the_perl_plugins_its_configuration_names_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("innotop");
+}
+
 /// The client built with the server inside it: what `--server-arg` hands the embedded server
 /// (`--plugin-load`, `--plugin-dir`) loads code from a file it names.
 #[test]

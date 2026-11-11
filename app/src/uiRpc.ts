@@ -2572,7 +2572,6 @@ export const commands = {
 } | null, string>(__TAURI_INVOKE("chat_usage", { plane, session })),
 	recordSlow: __WINDOW_ONLY_RESULT,
 	slowLogRecent: __WINDOW_ONLY_RESULT,
-	debug5478Log: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **What the chats of a tab used** (#1500). `scope` says what for: a row's hover reads its
 	 *  one figure; a tab's menu reads every line, each task's time and the total. `own` is the
@@ -5100,6 +5099,12 @@ export type DeclaredHarness = {
 	 *  has; level 2 is purlis's own and never a project's.
 	 */
 	acp: boolean,
+};
+
+/**  A tool line Always allow wrote, as its ask showed it ([`RuleMade::declared`]). */
+export type DeclaredMade = {
+	persona: string,
+	line: string,
 };
 
 /**
@@ -8837,7 +8842,8 @@ export type Offered = {
 	/**
 	 *  **Who a grant is for, where a rule may be made of it** (ADR 0121 decision 7, #6010):
 	 *  this chat, this project or this machine. Absent on an answer that is no grant, and on
-	 *  one whose rule Rules I made could not undo (a harness's saved rule, a persona's Always).
+	 *  one whose rule Rules I made could not undo (a harness's saved rule, which the window never
+	 *  writes: #6177).
 	 */
 	scope?: RuleScope | null,
 };
@@ -12268,6 +12274,11 @@ export type RuleMade = {
 	 */
 	what: GrantWhat | null,
 	target: string | null,
+	/**
+	 *  **The tool line an Always allow showed** (#6177), and whose tools it went to: kept with the
+	 *  rule only where the persona's tools hold it so, for Undo to take out.
+	 */
+	declared?: DeclaredMade | null,
 };
 
 /**  One rule, as Rules I made lists it. */

@@ -196,6 +196,14 @@ pub(super) const VIEW_NAV: Family = Family {
                           than its colour.",
             properties: &[Prop::Fill, Prop::CornerRadius],
         },
+        Part {
+            name: "toggle",
+            since: super::NEXT,
+            description: "The button at the end of a page that heads a group of pages, apart \
+                          from the page's own, which opens and folds the group (Settings' nav, \
+                          #2919): its fill, its chevron's colour and its corners.",
+            properties: &[Prop::Fill, Prop::Text, Prop::CornerRadius],
+        },
     ],
     variants: &[],
     grounds: &["surface.base", "surface.raised"],
@@ -214,7 +222,8 @@ pub(super) const VIEW_NAV: Family = Family {
         State::Focused,
     ],
     focused: "[data-focus-visible]",
-    words: &[],
+    // A group's toggle draws its chevron in the quiet words (`panel.css`).
+    words: &[("toggle", "text.quiet")],
     corner_most: None,
     around: &[],
     fills: &[],

@@ -46,7 +46,8 @@ const mine = (() => {
 })();
 
 /** The "Sign saves with your own git setup" row, by its control's id: what the control is,
- *  whether it is on, and where it and the row's Reset are drawn (`null` where there is no Reset). */
+ *  whether it is on, whether it is marked set here (R53), and where it and the row's ⋯, which
+ *  holds its Reset (R56), are drawn. */
 async function signRow(id: string) {
   return browser.execute((control: string) => {
     const box = (el: Element) => {
@@ -54,15 +55,15 @@ async function signRow(id: string) {
       return { top, bottom, left, right };
     };
     const it = document.getElementById(control);
-    const reset = [
-      ...(it?.closest(".ui-setting-row")?.querySelectorAll<HTMLElement>("button") ?? []),
-    ].find((one) => one.textContent?.trim() === "Reset");
+    const row = it?.closest(".ui-setting-row");
+    const more = row?.querySelector<HTMLElement>(".ui-setting-act button");
     return {
       role: it?.getAttribute("role") ?? null,
       // A native switch in its own label (#2907): its state is the input's, its box the label's.
       checked: it instanceof HTMLInputElement ? String(it.checked) : null,
       box: it ? box(it.closest("label") ?? it) : null,
-      reset: reset ? box(reset) : null,
+      setHere: row?.querySelector('[role="img"][aria-label="Set at this level"]') != null,
+      more: more ? box(more) : null,
     };
   }, id);
 }
@@ -172,7 +173,7 @@ describe("the settings gears, and ⌘, at the focused level", function () {
 
     await $('nav[aria-label="Groups"]').$("button=Saving").click();
     // An on/off key of the files is a switch at the value in force (#1865), off by default and
-    // not set here, so with no Reset beside it yet. Found by its `<label for>`, which wdio's
+    // not set here, so not marked as set here yet. Found by its `<label for>`, which wdio's
     // `aria/` selector does not resolve here.
     const signId = await browser.execute(
       () =>
@@ -187,7 +188,7 @@ describe("the settings gears, and ⌘, at the focused level", function () {
       timeoutMsg: "Sign saves with your own git setup never became a switch",
     });
     const before = await signRow(signId);
-    expect(before).toMatchObject({ role: "switch", checked: "false", reset: null });
+    expect(before).toMatchObject({ role: "switch", checked: "false", setHere: false });
     // A click on the switch's input itself: the WebView's driver clicks without a pointer, which
     // React Aria reads as a virtual press, the input's to take and not its label's (#2907).
     await browser.execute((id: string) => document.getElementById(id)?.click(), signId);
@@ -199,25 +200,26 @@ describe("the settings gears, and ⌘, at the focused level", function () {
     );
     expect(existsSync(localFile()) ? readFileSync(localFile(), "utf8") : "").not.toMatch(/sign/);
 
-    // Set here now: on, with its Reset on the switch's line, after it (#1865).
+    // Set here now: on, marked set here, with the row's ⋯ (its Reset) on the switch's line,
+    // after it (#1865, R53, R56).
     let after = await signRow(signId);
     await browser.waitUntil(
       async () => {
         after = await signRow(signId);
-        return after.reset !== null;
+        return after.setHere;
       },
       {
         timeout: 20_000,
-        timeoutMsg: "Sign saves with your own git setup, set here, never offered Reset",
+        timeoutMsg: "Sign saves with your own git setup, set here, was never marked set here",
       },
     );
-    const { box, reset } = after;
-    if (box === null || reset === null) throw new Error("the switch or its Reset is not drawn");
+    const { box, more } = after;
+    if (box === null || more === null) throw new Error("the switch or its ⋯ is not drawn");
     expect(after.checked).toBe("true");
-    expect(
-      Math.abs((box.top + box.bottom) / 2 - (reset.top + reset.bottom) / 2),
-    ).toBeLessThanOrEqual(2);
-    expect(reset.left).toBeGreaterThanOrEqual(box.right - 1);
+    expect(Math.abs((box.top + box.bottom) / 2 - (more.top + more.bottom) / 2)).toBeLessThanOrEqual(
+      2,
+    );
+    expect(more.left).toBeGreaterThanOrEqual(box.right - 1);
   });
 
   it("opens the focused workspace's level on the app menu's Settings…", async () => {

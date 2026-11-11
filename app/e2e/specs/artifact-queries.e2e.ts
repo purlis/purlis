@@ -5,13 +5,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { focusWorkspace } from "../reach.js";
-import {
-  closeTabOf,
-  expectScriptRefusedHere,
-  iconFor,
-  iconOf,
-  SCRIPT_RUNS_HERE,
-} from "../artifactTabs.js";
+import { closeTabOf, iconFor, iconOf } from "../artifactTabs.js";
 
 /**
  * **A pinned artifact whose page calls purlis's queries** (#5969, ADR 0122 §7), in the built app
@@ -24,10 +18,6 @@ import {
  * for the todo of this spec's own it finds in the answer: a button in purlis's bar is that real
  * data came back. It asks `purlis.session_record_list@1`, which it did not declare, and offers
  * a row named by the error it was answered: the bar's refusal of that row names the kind.
- *
- * **On Linux the calls are the refusal** (ADR 0122, amended 2026-11-10): script does not run
- * there yet, so the bar still lists what the page declared, but the page is shown without its
- * script, no approval is offered, and nothing is offered back. A platform check, never a skip.
  *
  * **Not here: an ungranted plane query.** No query of purlis's own reads the whole plane; only
  * an extension's can, so refusing one without its grant needs an extension installed and
@@ -133,18 +123,12 @@ pin = [
     const said = await bar();
     expect(said).toContain("purlis.todo_list@1 (done: the done todos, not only the open ones)");
     expect(said).toContain("purlis.change_status@1");
-    if (SCRIPT_RUNS_HERE) expect(await $("aria/Approve script").isExisting()).toBe(true);
-    else await expectScriptRefusedHere();
+    expect(await $("aria/Approve script").isExisting()).toBe(true);
     // Every query it declares is of its workspace: nothing project-wide is asked.
     expect(await $("aria/Allow project-wide reads").isExisting()).toBe(false);
   });
 
   it("still lists them once its script is approved", async () => {
-    if (!SCRIPT_RUNS_HERE) {
-      await expectScriptRefusedHere();
-      expect(await bar()).toContain("Reads purlis.todo_list@1");
-      return;
-    }
     await $('[data-testid="artifact-bar"]').$("aria/Approve script").click();
     await browser.waitUntil(async () => (await bar()).includes("Script approved on this machine"), {
       timeout: 20_000,
@@ -154,11 +138,6 @@ pin = [
   });
 
   it("answers a call its page declared with the workspace's own data", async () => {
-    if (!SCRIPT_RUNS_HERE) {
-      await expectScriptRefusedHere();
-      expect(await $(OFFERS).isExisting()).toBe(false);
-      return;
-    }
     await $(OFFERS).$(`aria/Mark done: ${TODO}`).waitForExist({
       timeout: 20_000,
       timeoutMsg: "the page was not answered its declared purlis.todo_list@1 with the todo",
@@ -166,11 +145,6 @@ pin = [
   });
 
   it("refuses a call its page did not declare, as not-approved", async () => {
-    if (!SCRIPT_RUNS_HERE) {
-      await expectScriptRefusedHere();
-      expect(await $(OFFERS).isExisting()).toBe(false);
-      return;
-    }
     await browser.waitUntil(
       async () =>
         (

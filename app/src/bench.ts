@@ -3,6 +3,7 @@
 
 /// <reference types="vite/client" />
 import type { Terminal } from "@xterm/xterm";
+import type { PlaneId } from "./bindings";
 import { drawWith, type Drawing, type Renderer } from "./renderer";
 import { onAMac } from "./tabKeys";
 
@@ -26,6 +27,8 @@ import { onAMac } from "./tabKeys";
 /** What a pane tells this module about itself. */
 type Pane = {
   session: number;
+  /** The project whose chat it is: every project numbers its chats from one. */
+  plane: PlaneId;
   terminal: Terminal;
   /** How many panes had been opened, ever, once this one was: which job's it is. */
   ordinal: number;
@@ -81,11 +84,12 @@ let job: Job = { running: false };
 /** Whether this build has the seam at all. */
 export const measuring = Boolean(import.meta.env.VITE_E2E);
 
-/** A pane's terminal, now on screen. */
-export function paneOpened(session: number, terminal: Terminal): void {
+/** A pane's terminal, now on screen, with the project whose chat it is. */
+export function paneOpened(session: number, terminal: Terminal, plane: PlaneId): void {
   if (!measuring) return;
   const pane: Pane = {
     session,
+    plane,
     terminal,
     ordinal: opens + 1,
     tail: "",
@@ -232,23 +236,35 @@ function paintedIn(one: Pane, needle: string, found: (at: number) => void): void
   one.waiting = { needle, seen: false, found };
 }
 
+/** Whether `one`'s terminal is in the window: a pane of a project kept off it is in no document.
+ *  Stricter than `onScreen`, which counts a terminal with no element yet: a switch waits for a
+ *  pane a person can see. */
+function inTheWindow(one: Pane): boolean {
+  return one.terminal.element?.isConnected === true;
+}
+
+/** The panes of `plane` in the window, **by terminal, not by session**: a pane of another
+ *  project with the same session number never stands in for one of these (#6198). */
+function panesOf(plane: PlaneId): Pane[] {
+  return [...open.values()].filter((one) => one.plane === plane && inTheWindow(one));
+}
+
 /**
- * The frame after a pane on screen that holds `needle` next draws, with that pane's session:
- * **whatever brought the text there**. Never one of `left`, the panes on screen before the
- * switch, which may hold the same text and still be there for a frame or two. Looked for every
- * frame while `looking` says so.
+ * The frame after a pane of `plane` in the window that holds `needle` next draws, with that
+ * pane: **whatever brought the text there**, and whenever its pane came into the window, before
+ * the press or after it. A pane of the project being left may hold the same text for a frame
+ * or two, and is never one of these: it is another project's. Looked for every frame while
+ * `looking` says so.
  */
 function heldOnScreen(
   needle: string,
-  left: ReadonlySet<Pane>,
+  plane: PlaneId,
   looking: () => boolean,
 ): Promise<{ pane: Pane; at: number }> {
   return new Promise((found) => {
     const look = () => {
       if (!looking()) return;
-      const one = [...onScreen().values()].find(
-        (each) => !left.has(each) && holds(each.terminal, needle),
-      );
+      const one = panesOf(plane).find((each) => holds(each.terminal, needle));
       if (one === undefined) {
         requestAnimationFrame(look);
         return;
@@ -257,6 +273,29 @@ function heldOnScreen(
     };
     look();
   });
+}
+
+/** What the panes of `plane` in the window show, for a job that never saw `needle` there:
+ *  how many there are, and for each whether it holds the text and what it had been sent. */
+function whatTheWindowShowed(
+  plane: PlaneId,
+  needle: string,
+  armed: Pane | undefined,
+): { panes: number; said: string } {
+  const panes = panesOf(plane);
+  const descriptions = panes.map(
+    (one) =>
+      `session ${one.session} (${one === armed ? "opened for the switch" : "already open"}, ` +
+      `${holds(one.terminal, needle) ? "holds it" : "does not hold it"}, ` +
+      `sent ${one.chunks} pieces, ${one.characters} characters)`,
+  );
+  const lost =
+    armed !== undefined && !inTheWindow(armed) ? "the pane opened for it is not in the window" : "";
+  const of = `${panes.length} pane${panes.length === 1 ? "" : "s"} of ${plane} in the window`;
+  const said = [descriptions.length > 0 ? `${of}: ${descriptions.join("; ")}` : "", lost]
+    .filter((part) => part !== "")
+    .join("; ");
+  return { panes: panes.length, said };
 }
 
 /** Whether `terminal` holds `needle` on its screen or in its history. */
@@ -356,9 +395,12 @@ export type Plan =
    * went by before the window had drawn the switch, the rest being the engine's to paint it,
    * and `built` whether a pane was opened for it. The switcher is opened first, by
    * its key, and that is timed apart (`openMs`, the key to the frame its row is drawn in):
-   * getting to the row is not the switch, and the two are different costs.
+   * getting to the row is not the switch, and the two are different costs. `patienceMs` is how
+   * long it waits for the paint once the project is in front, 60 s unless said: under the
+   * driver's own patience (`e2e/switching.ts`), so a switch that never paints ends with this
+   * job's trouble, which says what the window showed, and not with the driver's.
    */
-  | { kind: "project switch"; plane: string; sentinel: string }
+  | { kind: "project switch"; plane: string; sentinel: string; patienceMs?: number }
   /** How many times the pane's terminal draws, over `ms`. */
   | { kind: "draw rate"; ms: number; session?: number }
   /**
@@ -465,12 +507,14 @@ async function work(plan: Plan): Promise<unknown> {
       // arrive while this job is still waiting for the tab — and text that went by before the
       // pane was armed is a sentinel this job would wait for forever. **Armed by its terminal,
       // not its session**: the project it leaves may still have a pane of that number on
-      // screen as it opens (every `switch-<n>` project's chat is session 1, #6183).
+      // screen as it opens (every `switch-<n>` project's chat is session 1, #6183). **And only
+      // a pane of the project switched to** (#6198): a pane another project opens meanwhile is
+      // not this switch's.
       let armed: Pane | undefined;
       const opened = new Promise<{ pane: Pane; at: number }>((found) => {
         awaited = (_session, terminal) => {
           const one = open.get(terminal);
-          if (one === undefined) return;
+          if (one === undefined || one.plane !== plan.plane) return;
           awaited = undefined;
           armed = one;
           paintedIn(one, plan.sentinel, (at) => found({ pane: one, at }));
@@ -498,7 +542,6 @@ async function work(plan: Plan): Promise<unknown> {
         marked.disconnect();
         return drawnAt === undefined ? undefined : drawnAt - from;
       };
-      const left = new Set(onScreen().values());
       row.click();
       const shown = await until(() =>
         document.querySelector(
@@ -508,29 +551,34 @@ async function work(plan: Plan): Promise<unknown> {
         () => new Promise<number>((done) => requestAnimationFrame(() => done(performance.now()))),
       );
       // **Then whichever comes first** (#6183): the sentinel sent to the pane that opened, or a
-      // pane on screen that holds it, however it got there. **A project that was in front
-      // before still has its pane** (`PlaneView`): nothing opens, and what it printed is in its
-      // terminal already, so its paint is the terminal's next draw, or two frames on where it
-      // has nothing to draw again. **So has a kept terminal its view puts back**
-      // (`keptTerminals.ts`), which may be after the strip has marked the switch, and which is
-      // sent nothing: it has it all. `built` says whether the pane that painted was opened for the
-      // switch.
+      // pane of the project switched to, in the window, that holds it, however it got there.
+      // **A project that was in front before still has its pane** (`PlaneView`): nothing opens,
+      // and what it printed is in its terminal already, so its paint is the terminal's next draw,
+      // or two frames on where it has nothing to draw again. **So has a kept terminal its view
+      // puts back** (`keptTerminals.ts`), which may be after the strip has marked the switch, and
+      // which is sent nothing: it has it all. **Known by its project, not by whether it was in
+      // the window before the press, nor by its session** (#6198): the project being left may
+      // hold the same sentinel for a frame or two, and a session number is only half of which
+      // chat it is. `built` says whether the pane that painted was opened for the switch.
       let looking = true;
       const arrived = await Promise.race([
         opened,
-        heldOnScreen(plan.sentinel, left, () => looking),
-        sleep(60_000).then(() => undefined),
+        heldOnScreen(plan.sentinel, plan.plane, () => looking),
+        sleep(plan.patienceMs ?? 60_000).then(() => undefined),
       ]);
       looking = false;
       awaited = undefined;
       // Whichever won, the pane armed is waiting for nothing now.
       if (armed !== undefined) armed.waiting = undefined;
-      if (arrived === undefined)
+      if (arrived === undefined) {
+        const showed = whatTheWindowShowed(plan.plane, plan.sentinel, armed);
+        const why = showed.said === "" ? "" : `: ${showed.said}`;
         throw new Error(
-          armed !== undefined
-            ? `the pane never painted ${plan.sentinel}`
+          armed !== undefined || showed.panes > 0
+            ? `the pane never painted ${plan.sentinel}${why}`
             : `project ${plan.plane} showed no pane`,
         );
+      }
       subject = arrived.pane.session;
       return {
         session: arrived.pane.session,

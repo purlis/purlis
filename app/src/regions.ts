@@ -20,6 +20,7 @@ import { RAIL_MODE } from "./railMode";
 import { SKILLS_VIEW } from "./skillsViewPrefs";
 import { OFFERS } from "./offersPref";
 import { PANE_NOTICES } from "./paneNoticesPref";
+import { SETTINGS_GROUPS } from "./settings/navGroups";
 import { WHERE_YOU_ANSWER, type WhereYouAnswerPrefs } from "./whereYouAnswer";
 import { APPEARANCE, type Appearance } from "./appearance";
 import { NOTIFICATIONS, type NotificationPrefs } from "./notificationPrefs";
@@ -569,6 +570,7 @@ const LAYOUT_PREFS = [
   PANE_NOTICES,
   OFFERS,
   WHERE_YOU_ANSWER,
+  SETTINGS_GROUPS,
 ] as const satisfies readonly {
   readonly key: PrefField;
 }[];
@@ -623,6 +625,8 @@ type Document = {
   /** Where the person answers a task's question, and whether that was offered
    *  (`whereYouAnswer.ts`, #4565), the fields off their default. */
   questions?: Partial<WhereYouAnswerPrefs>;
+  /** Settings' page groups the person folded (`settings/navGroups.ts`, #2919), while any is. */
+  settings?: { folded: string[] };
 };
 
 /** One project's entry: its own arrangement, once it has one, and what its views keep

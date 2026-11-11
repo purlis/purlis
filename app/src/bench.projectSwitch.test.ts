@@ -83,7 +83,7 @@ async function finished(
 it("ends on a kept terminal put back after the strip marked the switch, its sentinel already on it", async () => {
   // Built while its project was in front, then kept off the window: it holds what it was sent.
   const kept = aTerminal(["…", "session ready"]);
-  bench.paneOpened(1, kept);
+  bench.paneOpened(1, kept, "/switch-1");
   aStripAndARow("/switch-1", () => {
     // The view comes back a moment after the strip says the project is in front, and puts the
     // kept terminal back: it is sent nothing, since it already has it all.
@@ -105,13 +105,13 @@ it("ends on the new pane, when the project it left has a pane of the same sessio
   // The project in front: its chat is session 1, and its pane shows the sentinel too.
   const left = aTerminal(["session ready"]);
   document.body.append(left.element);
-  bench.paneOpened(1, left);
+  bench.paneOpened(1, left, "/switch-1");
   // The project switched to: its chat is session 1 as well, its terminal new, opened before its
   // view is in the window and while the one it replaces still is.
   const lines: string[] = [];
   const built = aTerminal(lines);
   aStripAndARow("/switch-2", () => {
-    bench.paneOpened(1, built);
+    bench.paneOpened(1, built, "/switch-2");
     setTimeout(() => {
       left.element.remove();
       document.body.append(built.element);
@@ -129,4 +129,67 @@ it("ends on the new pane, when the project it left has a pane of the same sessio
   expect(state).toMatchObject({ running: false, result: { session: 1, built: true } });
   // Painted by the new pane, sent its screen 100 ms on, and not by the one it replaced.
   expect((state?.result as { ms: number }).ms).toBeGreaterThanOrEqual(100);
+});
+
+it("ends on a pane of the project switched to that was in the window before the press, its sentinel already on it", async () => {
+  // The project in front, whose pane shows the sentinel too.
+  const front = aTerminal(["session ready"]);
+  document.body.append(front.element);
+  bench.paneOpened(1, front, "/switch-1");
+  // The project switched to: its pane is already in the window as the press comes, holding the
+  // sentinel, and nothing opens or is put back for it. Only the strip's mark moves.
+  const there = aTerminal(["session ready"]);
+  document.body.append(there.element);
+  bench.paneOpened(1, there, "/switch-2");
+  aStripAndARow("/switch-2", () => {
+    setTimeout(() => {
+      front.element.remove();
+      there.draw();
+    }, 100);
+  });
+
+  const state = await finished({ kind: "project switch", plane: "/switch-2", sentinel: "ready" });
+
+  expect(state?.trouble).toBeUndefined();
+  expect(state).toMatchObject({ running: false, result: { session: 1, built: false } });
+});
+
+it("ends on the pane of the project switched to, when a pane of another project with its session stays in the window", async () => {
+  // The project switched to: its chat is session 1, its pane built before the press and put in
+  // the window by the switch.
+  const there = aTerminal(["session ready"]);
+  bench.paneOpened(1, there, "/switch-2");
+  // A pane of another project, session 1 as well, opened after it and in the window throughout.
+  const other = aTerminal(["session ready"]);
+  document.body.append(other.element);
+  bench.paneOpened(1, other, "/elsewhere");
+  aStripAndARow("/switch-2", () => {
+    setTimeout(() => {
+      document.body.append(there.element);
+      requestAnimationFrame(() => there.draw());
+    }, 100);
+  });
+
+  const state = await finished({ kind: "project switch", plane: "/switch-2", sentinel: "ready" });
+
+  expect(state?.trouble).toBeUndefined();
+  expect(state).toMatchObject({ running: false, result: { session: 1, built: false } });
+  expect((state?.result as { ms: number }).ms).toBeGreaterThanOrEqual(100);
+});
+
+it("ends with what the window showed when the project switched to never paints its sentinel", async () => {
+  // Its pane is in the window and holds something else; nothing ever brings the sentinel.
+  const there = aTerminal(["charter: session 1 is not running"]);
+  bench.paneOpened(1, there, "/switch-3");
+  aStripAndARow("/switch-3", () => document.body.append(there.element));
+
+  const state = await finished(
+    { kind: "project switch", plane: "/switch-3", sentinel: "ready", patienceMs: 300 },
+    2_000,
+  );
+
+  expect(state?.running).toBe(false);
+  expect(state?.trouble).toMatch(/never painted ready/);
+  // Enough to tell, from the job's log alone, which pane it was and what it had been sent.
+  expect(state?.trouble).toMatch(/1 pane of \/switch-3 in the window/);
 });

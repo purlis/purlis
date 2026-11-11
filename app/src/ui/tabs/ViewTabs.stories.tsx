@@ -24,7 +24,7 @@ import { PaneActions, PaneHead } from "../../LayoutPanes";
 import { HeadingOffer } from "../../PanelSection";
 import type { Offer } from "../../actions";
 import { ChatMark } from "../chat-mark/ChatMark";
-import { SettingGroup, SettingsLayout } from "../../settings/components";
+import { Field, SettingGroup, SettingRow, SettingsLayout } from "../../settings/components";
 import { useTabIds } from "./TabStrip";
 import { Button } from "../button/Button";
 import {
@@ -199,34 +199,39 @@ function Body({ shown }: { shown: Shown }): ReactNode {
           filter=""
           onFilterChange={() => undefined}
         >
-          {[
-            "General",
-            "Chats",
-            "Sandbox",
-            "Forges",
-            "Theme",
-            "Limits",
-            "Editors",
-            "Profiles",
-            "Personas",
-            "Workspaces",
-            "Skills",
-            "Saving",
-          ].map((label) => (
-            <SettingGroup
-              key={label}
-              label={label}
-              help="What every chat in this project starts with."
-              kept="Kept in purlis.toml, which your team sees."
-            >
-              <div
-                style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}
-              >
-                <p className="ui-setting-help">The default persona is steward.</p>
-                <Button size="sm">Reset</Button>
-              </div>
-            </SettingGroup>
-          ))}
+          {/* One page, as the tab draws one (#2919): its header, then rows enough to scroll
+              under it. */}
+          <SettingGroup
+            label="General"
+            help="What every chat in this project starts with."
+            kept="Kept in purlis.toml, which your team sees."
+            file="purlis.toml"
+          >
+            {[
+              "Default workspace",
+              "Default persona",
+              "Default harness",
+              "Update channel",
+              "Version lock",
+              "Branch folders",
+              "Limits",
+              "Editors",
+              "Profiles",
+              "Personas",
+              "Workspaces",
+              "Skills",
+            ].map((label) => (
+              <SettingRow
+                key={label}
+                label={label}
+                help="What a chat starts on when nothing else names it."
+                reset={{ label: "Reset", disabled: false, onReset: () => undefined }}
+                control={(ids) => (
+                  <Field kind="text" ids={ids} value="" onChange={() => undefined} />
+                )}
+              />
+            ))}
+          </SettingGroup>
         </SettingsLayout>
       );
     case "vault":
@@ -529,7 +534,10 @@ function pressableUnderTheActions(canvasElement: HTMLElement): string[] {
  * theirs. A view that scrolls is held to scroll here.
  */
 async function nothingScrollsUnderTheActions(canvasElement: HTMLElement) {
-  const scrollers = [...canvasElement.querySelectorAll<HTMLElement>(".view-body, .view-body pre")];
+  // Settings' page rows scroll under its header, beside its side column (#2919, R37).
+  const scrollers = [
+    ...canvasElement.querySelectorAll<HTMLElement>(".view-body, .view-body pre, .ui-setting-rows"),
+  ];
   const scroller = scrollers.find((one) => one.scrollHeight > one.clientHeight + 1);
   // Says what was measured when nothing scrolls, so a story whose view stopped scrolling says so.
   expect(

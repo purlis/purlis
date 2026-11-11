@@ -1427,18 +1427,22 @@ pub fn asked_by(record: &Record, asker: &ChatRef) -> bool {
 pub fn finished(root: &Path, open: impl Fn(&ChatRef) -> bool) -> Vec<Record> {
     let mut finished: Vec<Record> = list(root)
         .into_iter()
-        .filter(|record| {
-            !record.cleared
-                && Finished::of(record).is_some()
-                // A task no chat ever was has no chat to be open: the number it was dealt
-                // is all its record has of one, and is nobody's (#1497). One a launch could
-                // not start again was a chat, and is held to the rule every row is.
-                && (never_a_chat(record) || !open(&record.worker.chat))
-                && sound(record)
-        })
+        .filter(|record| finished_now(record, &open))
         .collect();
     finished.reverse();
     finished
+}
+
+/// Whether `record` is listed as finished now, where `open` answers for the chats open now
+/// ([`finished`]).
+fn finished_now(record: &Record, open: impl Fn(&ChatRef) -> bool) -> bool {
+    !record.cleared
+        && Finished::of(record).is_some()
+        // A task no chat ever was has no chat to be open: the number it was dealt is all its
+        // record has of one, and is nobody's (#1497). One a launch could not start again was a
+        // chat, and is held to the rule every row is.
+        && (never_a_chat(record) || !open(&record.worker.chat))
+        && sound(record)
 }
 
 /// The person took the task's chat over after it reported: dispatch `id` is marked, so purlis
@@ -2169,6 +2173,8 @@ pub fn sound(record: &Record) -> bool {
 
 /// The record of dispatch `id` as stored, where there is one this build reads.
 pub fn read(root: &Path, id: &str) -> Option<Record> {
+    #[cfg(test)]
+    reads::one();
     let path = path_of(root, id)?;
     let file = crate::contain::open_no_link(root, &path).ok()?;
     let found = file.metadata().ok()?;
@@ -2696,3 +2702,23 @@ fn change_held(root: &Path, id: &str, edit: impl FnOnce(&mut Record) -> bool) ->
 
 #[cfg(test)]
 mod tests;
+
+/// How many record files this thread has opened through [`read`], for a test that holds a
+/// read to its cost (felt speed round 2).
+#[cfg(test)]
+pub(crate) mod reads {
+    use std::cell::Cell;
+
+    thread_local! {
+        static READS: Cell<usize> = const { Cell::new(0) };
+    }
+
+    pub(super) fn one() {
+        READS.with(|reads| reads.set(reads.get() + 1));
+    }
+
+    /// The reads since the last call, and counting begins again.
+    pub(crate) fn taken() -> usize {
+        READS.with(|reads| reads.replace(0))
+    }
+}

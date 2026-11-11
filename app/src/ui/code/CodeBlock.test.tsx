@@ -28,6 +28,17 @@ describe("CodeBlock", () => {
     await waitFor(() => expect(screen.getByRole("status").textContent).toBe("Copied"));
   });
 
+  it("is named by the word it shows once it has copied (WCAG 2.5.3)", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    render(<CodeBlock label="Image" text="img@sha256:a" copy="Copy digest" />);
+    await user.click(screen.getByRole("button", { name: "Copy digest: img@sha256:a" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Copied: img@sha256:a" })).toBeTruthy(),
+    );
+  });
+
   it("says when it couldn't copy", async () => {
     const writeText = vi.fn().mockRejectedValue(new Error("refused"));
     const user = userEvent.setup();

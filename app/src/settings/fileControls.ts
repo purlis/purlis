@@ -4,6 +4,7 @@
 import { CLASSIC, DEFAULT_THEME, OLD_PICKS, PURLIS, SYSTEM, THEME_ALIASES } from "../theme/theme";
 import { isWorkspaceColour, WORKSPACE_COLOURS } from "../theme/theme";
 import type { Option } from "./components";
+import type { PageSection } from "./groups";
 import type {
   InForce,
   ProjectExtension,
@@ -65,6 +66,10 @@ export type Control = {
   names?: Entry;
   /** What the row's reset is called, where "Reset" alone would hide what it does (#1197). */
   resets?: string;
+  /** A key kept only until every machine has moved off it: badged "deprecated" (R62). */
+  deprecated?: true;
+  /** The group of its page it is drawn in (R60, R61). */
+  section?: PageSection;
   /**
    * **An on/off key's value in force** (#1865): what its switch shows while no file at the row's
    * level holds the key — the value beneath, from another file or the default. With it the key
@@ -540,6 +545,26 @@ function saveControl(
 
 const QUIET_HINT = "A whole number of seconds or minutes, like 30s or 2m.";
 
+/** **The groups of General's and Saving's pages** (prototype A, R60, R61): what a key is for,
+ *  and the rarely used ones, folded. */
+export const SECTIONS = {
+  starting: { label: "Starting chats" },
+  updates: { label: "Updates" },
+  reports: { label: "Reports" },
+  project: { label: "The project" },
+  branches: { label: "Branches", rarely: true },
+  deprecated: { label: "Deprecated", rarely: true },
+} as const satisfies Record<string, PageSection>;
+
+/** A repo's group on the Repos page (R60): its name, and the one line that says whose its keys
+ *  are. */
+function repoSection(name: string): PageSection {
+  return { label: `Repo · ${name}`, help: "This repo’s own settings, beside the project’s." };
+}
+
+/** `[plane]`'s branch keys, which a save rarely needs changed: Saving's folded Branches. */
+const BRANCH_KEYS = new Set(["branch", "save_branch"]);
+
 /** `[plane]`'s save keys, in the order ADR 0051 and `docs/plane-format.md` list them. */
 const PLANE_KEYS: readonly SaveKey[] = [
   {
@@ -636,24 +661,31 @@ export function planeGroup(section: Section): Group {
                   section,
                   one.key === "mode" && saving?.plane.from_share === true,
                 );
-          return saveControl(
-            one,
-            path,
-            one.label,
-            section,
-            marker,
-            typeof it === "boolean" ? undefined : it,
-            // Not answered yet, nor refused: what is in force is on its way (#1875).
-            asked === undefined,
-          );
+          return {
+            ...saveControl(
+              one,
+              path,
+              one.label,
+              section,
+              marker,
+              typeof it === "boolean" ? undefined : it,
+              // Not answered yet, nor refused: what is in force is on its way (#1875).
+              asked === undefined,
+            ),
+            section: BRANCH_KEYS.has(one.key) ? SECTIONS.branches : SECTIONS.project,
+          };
         }),
         ...(section !== "local"
           ? [
-              textAt(key("memory", "share"), "[memory] share (deprecated)", {
-                kind: "choice",
-                choices: ["local", "commit", "push"],
-                hint: [SHARE_HINT, shareMarker(file, saving)].filter(Boolean).join(" "),
-              }),
+              {
+                ...textAt(key("memory", "share"), "[memory] share", {
+                  kind: "choice",
+                  choices: ["local", "commit", "push"],
+                  hint: [SHARE_HINT, shareMarker(file, saving)].filter(Boolean).join(" "),
+                }),
+                deprecated: true as const,
+                section: SECTIONS.deprecated,
+              },
             ]
           : []),
       ];
@@ -702,14 +734,17 @@ export function reposGroup(section: Section): Group {
           const path = key("repos", repo.name, one.key);
           const it = repo[one.key as keyof typeof repo];
           const marker = typeof it === "string" ? null : decided(it, one, file, path, section);
-          return saveControl(
-            one,
-            path,
-            `${repo.name}: ${one.label}`,
-            section,
-            marker,
-            typeof it === "string" ? undefined : it,
-          );
+          return {
+            ...saveControl(
+              one,
+              path,
+              `${repo.name}: ${one.label}`,
+              section,
+              marker,
+              typeof it === "string" ? undefined : it,
+            ),
+            section: repoSection(repo.name),
+          };
         }),
       ),
     leftOut: (_extensions, _theme, saving) => answered(saving)?.repos_left_out ?? null,
@@ -740,35 +775,53 @@ export const SHARED: Group[] = [
   {
     title: "General",
     controls: () => [
-      pickAt(
-        key("workspace", "default"),
-        "Default workspace",
-        "workspace",
-        "The workspace a session lands in when nothing else selects one.",
-      ),
-      pickAt(
-        key("persona", "default"),
-        "Default persona",
-        "persona",
-        "The persona a chat starts as when nothing else names one.",
-      ),
-      pickAt(
-        key("harness", "default"),
-        "Default harness",
-        "profile",
-        "A built-in harness, or a profile charter.local.toml declares.",
-      ),
-      textAt(key("update", "channel"), "Update channel", {
-        kind: "choice",
-        choices: ["stable", "dev"],
-      }),
-      textAt(key("charter", "version"), "Version lock", {
-        hint: "The purlis version this project is pinned to, as 1.2.3. Empty pins nothing.",
-      }),
-      textAt(key("plane", "worktrees"), "Branch folders", {
-        hint: "Under the project or one folder beside it, such as ../charter.worktrees.",
-      }),
-      PROJECT_RULE,
+      {
+        ...pickAt(
+          key("workspace", "default"),
+          "Default workspace",
+          "workspace",
+          "The workspace a session lands in when nothing else selects one.",
+        ),
+        section: SECTIONS.starting,
+      },
+      {
+        ...pickAt(
+          key("persona", "default"),
+          "Default persona",
+          "persona",
+          "The persona a chat starts as when nothing else names one.",
+        ),
+        section: SECTIONS.starting,
+      },
+      {
+        ...pickAt(
+          key("harness", "default"),
+          "Default harness",
+          "profile",
+          "A built-in harness, or a profile charter.local.toml declares.",
+        ),
+        section: SECTIONS.starting,
+      },
+      {
+        ...textAt(key("update", "channel"), "Update channel", {
+          kind: "choice",
+          choices: ["stable", "dev"],
+        }),
+        section: SECTIONS.updates,
+      },
+      {
+        ...textAt(key("charter", "version"), "Version lock", {
+          hint: "The purlis version this project is pinned to, as 1.2.3. Empty pins nothing.",
+        }),
+        section: SECTIONS.updates,
+      },
+      { ...PROJECT_RULE, section: SECTIONS.reports },
+      {
+        ...textAt(key("plane", "worktrees"), "Branch folders", {
+          hint: "Under the project or one folder beside it, such as ../charter.worktrees.",
+        }),
+        section: SECTIONS.branches,
+      },
     ],
   },
   {

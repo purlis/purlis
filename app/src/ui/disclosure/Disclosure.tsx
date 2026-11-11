@@ -78,6 +78,9 @@ export interface DisclosureProps {
   level?: Level;
   /** The trigger's size: `sm` in a dense row, `md` (the default) in a page or a dialog. */
   size?: Extract<ButtonSize, "sm" | "md">;
+  /** Where the twist stands: leading its words (the default), or after them, as a settings
+   *  page's folded group draws it (#2799 rule 1, #2919). */
+  twistAt?: "start" | "end";
   /** Its id, inside a {@link DisclosureGroup}, to name it in the group's `expandedKeys`. */
   id?: string;
   /** The panel's role: `group` (the default) or `region`, for a large panel a person may jump to. */
@@ -97,6 +100,7 @@ export function Disclosure({
   onExpandedChange,
   level,
   size = "md",
+  twistAt = "start",
   id,
   panelRole = "group",
   className,
@@ -143,9 +147,11 @@ export function Disclosure({
                 // Said here too, so the button family reads it as a disclosure's and never draws
                 // it as a trigger whose menu is open (`ui/pressable.tsx`).
                 aria-expanded={now.isExpanded}
-                icon={<Twist />}
+                icon={twistAt === "start" ? <Twist /> : undefined}
+                data-twist-at={twistAt}
               >
                 {label}
+                {twistAt === "end" && <Twist />}
               </Button>
               {trail}
             </Row>

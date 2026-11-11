@@ -413,7 +413,7 @@
       }
     },
     "parts": {
-      "description": "Component parts (manifest version 14): keys <family>.<part>[.<variant>][.<state>].<property>, the state at rest implied. A property not named is the family default. Inside a state only fill, text, border-colour and shadow may be set, and a tab's flare and hover inset: a state never changes a part's size. `purlis theme parts` lists every family, part, state and property with its bounds.",
+      "description": "Component parts (manifest version 14, plus unreleased additions marked since 15): keys <family>.<part>[.<variant>][.<state>].<property>, the state at rest implied. A property not named is the family default. Inside a state only fill, text, border-colour and shadow may be set, and a tab's flare and hover inset: a state never changes a part's size. `purlis theme parts` lists every family, part, state and property with its bounds.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -11930,6 +11930,39 @@
         },
         "view-nav.indicator.focused.fill": {
           "$ref": "#/$defs/part-fill"
+        },
+        "view-nav.toggle.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "view-nav.toggle.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "view-nav.toggle.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "view-nav.toggle.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "view-nav.toggle.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "view-nav.toggle.pressed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "view-nav.toggle.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "view-nav.toggle.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "view-nav.toggle.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "view-nav.toggle.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "view-nav.toggle.focused.text": {
+          "$ref": "#/$defs/part-text"
         }
       }
     }

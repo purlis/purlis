@@ -47,6 +47,12 @@ export async function ask<T>(command: string, args: Record<string, unknown> = {}
 /**
  * Runs a job in the window and answers with its result, once it has finished — the scenario
  * run's, which has no benchmark display checks to pass first (`bench/window.ts` has those).
+ *
+ * **Its patience is longer than any of the job's own** (#6198): a `project switch` waits 60 s
+ * for its paint once the project is in front, after the switcher and the strip have had their
+ * turn, and a job that gives up says what it was waiting on and what the window showed. With
+ * the same 60 s here, this always ran out first, by a second or two, and said only that the job
+ * never finished.
  */
 export async function jobInTheWindow<T>(plan: Plan): Promise<T> {
   await browser.execute((plan) => (window.charterBench as Bench).begin(plan), plan);
@@ -56,7 +62,7 @@ export async function jobInTheWindow<T>(plan: Plan): Promise<T> {
       state = await browser.execute(() => (window.charterBench as Bench).poll());
       return !state.running;
     },
-    { timeout: 60_000, interval: 50, timeoutMsg: `${plan.kind} never finished` },
+    { timeout: 90_000, interval: 50, timeoutMsg: `${plan.kind} never finished` },
   );
   if (state.trouble) throw new Error(`${plan.kind}: ${state.trouble}`);
   return state.result as T;

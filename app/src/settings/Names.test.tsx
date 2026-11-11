@@ -245,6 +245,8 @@ async function everyGroup(level: string) {
   await waitFor(() => expect(within(nav).getAllByRole("button").length).toBeGreaterThan(1));
   const names = within(nav)
     .getAllByRole("button")
+    // A group's toggle is no page (R42).
+    .filter((one) => !one.hasAttribute("aria-expanded"))
     .map((one) => one.textContent ?? "");
   for (const name of names) {
     await userEvent.click(within(nav).getByRole("button", { name }));

@@ -350,6 +350,29 @@
   list-style: none;
 }
 
+/* A navigation whose holder draws its edge draws no line of its own (Settings' side column). */
+[data-scope="view-frame"][data-part="nav"][data-edge="none"] {
+  border-inline-end-width: 0;
+}
+
+/* **One sideways-scrolling row where its container is narrow** (#2919, R75): the pages side by
+   side, each as wide as its words, a page of the one before it set in a step less. */
+@container (max-width: 728px) {
+  [data-scope="view-frame"][data-part="nav"][data-row-when-narrow] > ul {
+    flex-direction: row;
+    overflow-x: auto;
+  }
+
+  [data-scope="view-frame"][data-part="nav"][data-row-when-narrow] > ul > li {
+    flex: none;
+  }
+
+  [data-scope="view-frame"][data-part="nav"][data-row-when-narrow]
+    [data-scope="view-nav"][data-part="item"][data-sub] {
+    padding-inline-start: var(--space-5);
+  }
+}
+
 /* The two panes beside each other, the separator between them. */
 [data-scope="view-frame"][data-part="panes"] {
   min-block-size: 0;
@@ -506,9 +529,53 @@ li:has(> [data-scope="view-nav"][data-part="item"][data-starts-group]) {
   border-block-start: 1px solid var(--border-subtle);
 }
 
-/* A page of the one above it: set in a step under it, out of no box but its own. */
+/* A page of the one above it: set in 22 px under it at the default text size (R41), out of no
+   box but its own; every page at one level shares one start. */
 [data-scope="view-nav"][data-part="item"][data-sub] {
-  padding-inline-start: var(--space-6);
+  padding-inline-start: calc(var(--space-7) - var(--space-1));
+}
+
+/* **A group's toggle** (#2919, R42, R43): 26 px at the end of its page's row, over the room the
+   page keeps for it, apart from the page's own button; under the pointer the pointer's ground.
+   Its twist turns in `duration.quick`, 150 ms in Purlis. */
+li:has(> [data-scope="view-nav"][data-part="toggle"]) {
+  position: relative;
+}
+
+[data-scope="view-nav"][data-part="item"][data-heads-group] {
+  padding-inline-end: calc(var(--size-control) + var(--space-3));
+}
+
+[data-scope="view-nav"][data-part="toggle"] {
+  position: absolute;
+  inset-block-start: var(--space-1);
+  inset-inline-end: var(--space-1);
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  inline-size: calc(var(--size-control) - var(--space-1) * 2);
+  block-size: calc(var(--size-control) - var(--space-1) * 2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background-color: transparent;
+  color: var(--text-quiet);
+  cursor: pointer;
+}
+
+[data-scope="view-nav"][data-part="toggle"][data-hovered] {
+  background-color: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+[data-scope="view-nav"][data-part="toggle"][data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
+}
+
+[data-scope="view-nav"][data-part="toggle"] [data-part="twist"] {
+  transition: transform var(--motion-duration-quick) var(--motion-easing-standard);
 }
 
 /* Under the pointer: the pointer's ground and the primary words. */

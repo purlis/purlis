@@ -1207,8 +1207,11 @@ export const PlaneView = memo(function PlaneView({
    *  with no tab leaves the list without any tab changing (#1448). */
   const [stopsEnded, setStopsEnded] = useState(0);
   /** This project's save standing (charter-app#302): every project reads its own, so the project
-   *  strip can mark the ones with unsaved work and the title bar can show the one in front. */
-  const { saving, read: savingRead } = usePlaneSaving(plane);
+   *  strip can mark the ones with unsaved work and the title bar can show the one in front.
+   *  **On the 10 s beat only while in front** (felt speed, round 2): read here, outside this
+   *  view's own `ProjectShownProvider`, every project ran `git status` on the same tick. One
+   *  behind reads when its git standing moves, on focus, after a save and as it comes back. */
+  const { saving, read: savingRead } = usePlaneSaving(plane, inFront);
   /** The workspace whose LIVE/LOCAL confirmation is open (charter-app#301). */
   const [liveAsk, setLiveAsk] = useState<string>();
   /** The repo the "Remove from workspace" question is about, while it is open (#1228). */
@@ -1336,6 +1339,12 @@ export const PlaneView = memo(function PlaneView({
     trouble?: string;
     busy: boolean;
   }>();
+  /** {@link usingSkill} as the last render drew it: what a restart, heard outside a render,
+   *  moves to the chat's new session (`followRestart`). */
+  const usingSkillNow = useRef(usingSkill);
+  useLayoutEffect(() => {
+    usingSkillNow.current = usingSkill;
+  });
   /**
    * **The Notices dismissed here until their cause changes** (`dismissals.ts`, V91j): kept on
    * this machine across relaunches, and let go once the core answers without the cause.
@@ -7557,27 +7566,63 @@ export const PlaneView = memo(function PlaneView({
   );
 
   /**
+   * Reads chat `session`'s skills for the Use skill… open on it: an answer for a chat it is no
+   * longer open on is let go.
+   */
+  const readUseSkillOf = useCallback(
+    (session: number) => {
+      void commands
+        .chatSkills(plane, session)
+        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
+        .then((said) => {
+          if (said.status === "ok") setChatSkills(session, said.data);
+          setUsingSkill((was) =>
+            was?.session !== session
+              ? was
+              : said.status === "ok"
+                ? { ...was, skills: said.data }
+                : { ...was, trouble: said.error },
+          );
+        });
+    },
+    [plane, setChatSkills],
+  );
+
+  /**
    * **A chat a pane shows as a task was started again under a new number** (#1486): what the
    * pane remembers of it goes with it, so the pane keeps showing it whichever arrives first,
    * the new number in the tabs or in the core's list. Between the two it is drawn as it was
    * last known, never as the session's own chat.
+   *
+   * **And Use skill… open on it follows it** (#6193): the old session leaves the core's open
+   * chats, so a pick aimed there was refused and the dialog stayed up. The new session's skills
+   * are read, as the new run started with what the skill folders hold now.
    */
-  const followRestart = useCallback((was: number, to: number) => {
-    setRemembered((all) => {
-      let moved: Map<string, Crumbs> | undefined;
-      for (const [key, crumbs] of all) {
-        const [tab, pane, session] = key.split(":");
-        if (Number(session) !== was) continue;
-        moved ??= new Map(all);
-        moved.delete(key);
-        moved.set(`${tab}:${pane}:${to}`, {
-          ...crumbs,
-          path: crumbs.path.map((chat) => (chat.session === was ? { ...chat, session: to } : chat)),
-        });
-      }
-      return moved ?? all;
-    });
-  }, []);
+  const followRestart = useCallback(
+    (was: number, to: number) => {
+      setRemembered((all) => {
+        let moved: Map<string, Crumbs> | undefined;
+        for (const [key, crumbs] of all) {
+          const [tab, pane, session] = key.split(":");
+          if (Number(session) !== was) continue;
+          moved ??= new Map(all);
+          moved.delete(key);
+          moved.set(`${tab}:${pane}:${to}`, {
+            ...crumbs,
+            path: crumbs.path.map((chat) =>
+              chat.session === was ? { ...chat, session: to } : chat,
+            ),
+          });
+        }
+        return moved ?? all;
+      });
+      const using = usingSkillNow.current;
+      if (using?.session !== was) return;
+      setUsingSkill({ session: to, picks: using.picks, busy: false });
+      readUseSkillOf(to);
+    },
+    [readUseSkillOf],
+  );
 
   /**
    * **A chat restarted** (#1342, #1428): the same chat on its conversation, in a new session,
@@ -8303,6 +8348,7 @@ export const PlaneView = memo(function PlaneView({
       // tab keeps its pin, its place and its panes (#4962).
       for (const { from, chat } of renumbered) {
         noteStarted(chat);
+        followRestart(from, chat.session);
         change((tabs) => replaceSession(tabs, from, chat.session));
       }
       // Started under another number, no pane showing its old one: it runs on in the sidebar,
@@ -8323,7 +8369,7 @@ export const PlaneView = memo(function PlaneView({
       // Every chat has said how it came back: the dismissed notes are settled against them.
       if (still.size === 0) settleChatNotes(open);
     },
-    [keepsItsPane, change, filedIn, isPinned, noteStarted, plane, settleChatNotes],
+    [keepsItsPane, change, filedIn, followRestart, isPinned, noteStarted, plane, settleChatNotes],
   );
   const readRestoredNow = useRef(readRestored);
   useEffect(() => {
@@ -8680,21 +8726,9 @@ export const PlaneView = memo(function PlaneView({
   const openUseSkill = useCallback<OpenUseSkill>(
     (session, picks) => {
       setUsingSkill({ session, picks, busy: false });
-      void commands
-        .chatSkills(plane, session)
-        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
-        .then((said) => {
-          if (said.status === "ok") setChatSkills(session, said.data);
-          setUsingSkill((was) =>
-            was?.session !== session
-              ? was
-              : said.status === "ok"
-                ? { ...was, skills: said.data }
-                : { ...was, trouble: said.error },
-          );
-        });
+      readUseSkillOf(session);
     },
-    [plane, setChatSkills],
+    [readUseSkillOf],
   );
   /**
    * **What the Skills view's cards act through, held still** (#4351): the view, kept once shown,
@@ -8735,11 +8769,14 @@ export const PlaneView = memo(function PlaneView({
       const said = await commands
         .useSkill(plane, using.session, skill, values)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+      // Said only to the dialog still open on that session: a restart meanwhile moved it to the
+      // chat's new one (`followRestart`, #6193), and the old run's answer is not its answer.
+      const same = (was: typeof usingSkill) => was?.session === using.session;
       if (said.status === "error") {
-        setUsingSkill({ ...using, trouble: said.error, busy: false });
+        setUsingSkill((was) => (same(was) ? { ...using, trouble: said.error, busy: false } : was));
         return;
       }
-      setUsingSkill(undefined);
+      setUsingSkill((was) => (same(was) ? undefined : was));
       setReport({
         from: "use-skill",
         refused: false,

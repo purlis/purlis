@@ -3312,17 +3312,6 @@ pub struct Hearing {
     pub serve: Serves,
 }
 
-/// Whether an app is accepting on the hook socket at `path` right now (#95): what the status
-/// line asks before it says it runs in the app, stated here once with the channel's shape.
-///
-/// A `connect` succeeds only while an app accepts, and a socket file left behind by one that
-/// has gone refuses with `ECONNREFUSED`. Neither can hang, so no deadline is armed. Nothing
-/// is written: the connection is closed unused, which the app reads as a line that never came.
-#[cfg(unix)]
-pub fn listening(path: &std::path::Path) -> bool {
-    std::os::unix::net::UnixStream::connect(path).is_ok()
-}
-
 /// Sends one report to the socket at `path`. Answers whether it was written: what the app made
 /// of it, taken or refused, is not read.
 ///
@@ -3804,8 +3793,8 @@ pub mod serve;
 pub use framed::Framed;
 #[cfg(not(unix))]
 pub use off_unix::{
-    Asking, Framed, Listener, Reading, deliver, deliver_refused, deliver_report, listening, send,
-    tell, tell_saved,
+    Asking, Framed, Listener, Reading, deliver, deliver_refused, deliver_report, send, tell,
+    tell_saved,
 };
 pub use permission::{PermissionAsked, Permitting, ask_permission};
 
@@ -4092,11 +4081,7 @@ impl Listener {
                 let pid = peer.as_ref().ok().map(|(_, pid)| *pid);
                 if let Err(refused) = purlis_same_user::admit_peer(peer.map(|(uid, _)| uid), owner)
                 {
-                    if let Some(also) = PEER_REFUSALS.say() {
-                        tracing::warn!(
-                            "purlis: the hook channel refused a connection: {refused}{also}"
-                        );
-                    }
+                    refused_a_peer(refused);
                     continue;
                 }
                 // **Each connection is served on a thread of its own, from a bounded pool
@@ -4297,6 +4282,34 @@ fn private_directory(directory: &std::path::Path) -> io::Result<()> {
 /// another uid out of the log, nor the reverse.
 #[cfg(unix)]
 static PEER_REFUSALS: RateLimited = RateLimited::new();
+
+/// How many connections closed before the hook channel could ask who made them.
+#[cfg(unix)]
+static PEERS_GONE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Says, or counts, that the hook channel closed a connection unread because its peer is not
+/// this user, or could not be named.
+///
+/// **A peer already gone is only counted, at trace** (felt speed round 2, H5). macOS names a
+/// peer only while its connection is open, so one that connected and closed before the app
+/// asked answers `ENOTCONN`: it sent nothing, so nothing was refused that anyone meant. A line
+/// for each one was a line per footer refresh of every chat while the status line probed the
+/// socket, and is still one for any client that connects only to see whether the app is up.
+#[cfg(unix)]
+fn refused_a_peer(refused: purlis_same_user::NotThisUser) {
+    if let purlis_same_user::NotThisUser::Unidentified(why) = &refused
+        && why.kind() == io::ErrorKind::NotConnected
+    {
+        let gone = PEERS_GONE.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        tracing::trace!(
+            "purlis: the hook channel closed a connection whose peer had gone ({gone} so far)"
+        );
+        return;
+    }
+    if let Some(also) = PEER_REFUSALS.say() {
+        tracing::warn!("purlis: the hook channel refused a connection: {refused}{also}");
+    }
+}
 
 /// The hook channel's refusals of a line that did not carry its chat's token, limited apart
 /// from [`PEER_REFUSALS`].

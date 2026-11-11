@@ -19,8 +19,8 @@
 //! - **Machine state, never the plane's**: a teammate's approval never reaches it, nor does a
 //!   file a teammate committed. Every unreadable state of the record (missing, malformed, a
 //!   link, too big) reads as no approval at all, so it can only ask again.
-//! - **Where the isolation is not proven** (every platform but macOS, ADR 0122 §10, amended
-//!   2026-11-10) script never runs and is not asked about: the page renders script-free
+//! - **Where the isolation is not proven** (every platform but macOS and Linux, ADR 0122 §10,
+//!   amended 2026-11-11) script never runs and is not asked about: the page renders script-free
 //!   ([`Standing::NotHere`]).
 
 use std::io::Read as _;
@@ -39,20 +39,19 @@ const MOST_BYTES: u64 = 1 << 20;
 
 /// The platforms, as [`std::env::consts::OS`] names them, whose recorded run of the five
 /// isolation tests of ADR 0122 §3 is all green and whose app is not recorded failing its own
-/// (`tools/artifact-isolation-probe/results/`): macOS, by hand on 2026-11-09. Not Windows,
-/// where test 4 failed on WebView2; not Linux, where the probe passed but the app's child
-/// webview never ran a page's script (2026-11-10, ADR 0122 amended that day).
-pub const PROVEN: [&str; 1] = ["macos"];
+/// (`tools/artifact-isolation-probe/results/`): macOS, by hand on 2026-11-09, and Linux, whose
+/// app's own tests ran green once a page's script was served as JavaScript (#6129, ADR 0122
+/// amended 2026-11-11). Not Windows, where test 4 failed on WebView2.
+pub const PROVEN: [&str; 2] = ["macos", "linux"];
 
 /// **Whether an artifact's script may run on this platform at all** (ADR 0122 §10): only on
-/// one of [`PROVEN`]. Any other platform, Linux, Windows and every other unix among them,
-/// renders script-free.
-pub const SCRIPT_RUNS_HERE: bool = cfg!(target_os = "macos");
+/// one of [`PROVEN`]. Any other platform, Windows and every other unix among them, renders
+/// script-free.
+pub const SCRIPT_RUNS_HERE: bool = cfg!(any(target_os = "macos", target_os = "linux"));
 
 /// What the gate answers in this build: [`SCRIPT_RUNS_HERE`], except that a test build
 /// (`test-support`, which no shipped build and no scenario-test build has) judges every unix as
-/// proven, so the record and the serving of an approved page stay tested where CI runs them,
-/// on Linux. The refusal itself is what the scenario tests assert on Linux.
+/// proven, so the record's tests, which are unix's, run on any unix they are built on.
 const RUNS: bool = SCRIPT_RUNS_HERE || cfg!(all(unix, any(test, feature = "test-support")));
 
 /// Where an artifact stands on this machine: whether its script runs, and if not, why.
@@ -874,7 +873,7 @@ mod tests {
 
 /// The gate is evidence: script runs on exactly the platforms whose recorded run of the five
 /// isolation tests is all green, and where no record says the app's own isolation tests fail
-/// (ADR 0122 §3, §10, amended 2026-11-10).
+/// (ADR 0122 §3, §10, amended 2026-11-10 and 2026-11-11).
 #[cfg(test)]
 mod gate {
     use super::*;
@@ -938,12 +937,12 @@ mod gate {
         assert_eq!(SCRIPT_RUNS_HERE, PROVEN.contains(&std::env::consts::OS));
     }
 
-    /// The probe passes on Linux, but in the app a child webview never ran a page's script
-    /// (`linux-2026-11-10.txt`): script is refused there until the app's own tests are green.
+    /// Linux was recorded red in the app (`linux-2026-11-10.txt`) while a page's `app.js` was
+    /// served as bytes under `nosniff`; a newer record of the app's own tests is green (#6129).
     #[test]
-    fn linux_is_refused_while_the_app_s_own_isolation_tests_are_recorded_red_there() {
+    fn linux_runs_script_once_a_newer_record_of_the_app_s_own_tests_is_green() {
         assert!(probe_green("linux"));
-        assert!(app_red("linux"));
-        assert!(!PROVEN.contains(&"linux"));
+        assert!(!app_red("linux"));
+        assert!(PROVEN.contains(&"linux"));
     }
 }

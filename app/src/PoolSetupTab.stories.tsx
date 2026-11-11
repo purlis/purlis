@@ -7,7 +7,7 @@
  * command boundary. These stories are the design's record (the person's ruling of 2026-11-01).
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, userEvent, within } from "storybook/test";
+import { expect, userEvent, waitFor, within } from "storybook/test";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type { PoolSetupShown, PoolSetupStep } from "./bindings";
 import { PoolSetupTab } from "./PoolSetupTab";
@@ -67,6 +67,13 @@ const POOL_FORM: PoolSetupShown = {
     ...LATER,
   ],
 };
+
+/** purlis's image of a release, by the whole of its digest, as a person would copy it. */
+const DIGEST =
+  "ghcr.io/purlis/purlis-runner@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c";
+
+/** What the last Copy put on the clipboard. */
+let pasted: string | undefined;
 
 function faked(shown: PoolSetupShown, image: unknown = { state: "ours", image: "img@sha256:a" }) {
   return () => {
@@ -199,6 +206,43 @@ export const OptionsOpen: Story = {
     await userEvent.keyboard("{ArrowDown}");
     await expect(canvas.getByRole("radio", { name: /My team's own image/ })).toBeChecked();
     await expect(canvas.getByRole("textbox", { name: /Image, by digest/ })).toBeTruthy();
+  },
+};
+
+/** **The image's digest, to copy** (#6206): Options open, the keyboard reaches Copy digest
+ *  beside purlis's image's digest, and Return puts the whole digest on the clipboard. */
+export const TheImagesDigestToCopy: Story = {
+  beforeEach: () => {
+    faked(POOL_FORM, { state: "ours", image: DIGEST })();
+    // The page's own clipboard asks the browser for leave a story cannot give, so it is held.
+    const clipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: (text: string) => {
+          pasted = text;
+          return Promise.resolve();
+        },
+      },
+    });
+    return () => {
+      if (clipboard) Object.defineProperty(navigator, "clipboard", clipboard);
+      else Reflect.deleteProperty(navigator, "clipboard");
+    };
+  },
+  play: async ({ canvasElement }) => {
+    pasted = undefined;
+    await fold(canvasElement, "Options");
+    const canvas = within(canvasElement);
+    const ours = await canvas.findByRole("radio", { name: /purlis's image/ });
+    ours.focus();
+    await userEvent.tab();
+    const copy = canvas.getByRole("button", { name: /^Copy digest/ });
+    await expect(copy).toHaveFocus();
+    await expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(pasted).toBe(DIGEST));
+    await canvas.findAllByText("Copied");
   },
 };
 

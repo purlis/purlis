@@ -219,3 +219,35 @@ export const AReviewFile: StoryObj<typeof ReviewFiles> = {
     expectFocusInSight();
   },
 };
+
+/**
+ * **The twist after its words** (#2919, #2799 rule 1): a settings page's rarely used group,
+ * folded, its count after its title and its chevron after both. Return opens it; the twist turns
+ * and nothing in the trigger's row moves.
+ */
+export const TwistAfterItsWords: StoryObj = {
+  render: () => (
+    <Disclosure label="Branches · 2" level={3} twistAt="end">
+      <p>Target branch and Save branch.</p>
+    </Disclosure>
+  ),
+  play: async ({ canvasElement, userEvent }) => {
+    const fold = within(canvasElement).getByRole("button", { name: "Branches · 2" });
+    const twist = fold.querySelector('[data-part="twist"]') as HTMLElement;
+    const words = within(fold).getByText("Branches · 2");
+    await expect(twist.getBoundingClientRect().left).toBeGreaterThan(
+      words.getBoundingClientRect().left,
+    );
+    fold.focus();
+    const before = fold.getBoundingClientRect();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(fold).toHaveAttribute("aria-expanded", "true"));
+    const after = fold.getBoundingClientRect();
+    await expect([after.top, after.left, after.width]).toEqual([
+      before.top,
+      before.left,
+      before.width,
+    ]);
+    expectFocusInSight();
+  },
+};

@@ -6,7 +6,8 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { Inbox } from "./Inbox";
-import { END_COOL_OFF, RULES_I_MADE } from "./AskRules";
+import { END_COOL_OFF, RULES_I_MADE, alwaysLineSaid } from "./AskRules";
+import { runAsk } from "./secretAsk.testkit";
 import { SETTLE_MS } from "./TaskBlocksNotice";
 import { forgetInbox } from "./inboxRules";
 import { forgetProjectViews } from "./projectViews";
@@ -152,6 +153,65 @@ describe("a rule offered on an ask's row (#6010)", () => {
   });
 });
 
+const RUN_REQUEST = '["run-grant","[\\"/usr/bin/curl\\"]"]';
+const LINE = 'curl = { vault = "team", as = "STRIPE_API_KEY env", key = "STRIPE_API_KEY" }';
+
+/** A reviewed program's ask, whose rule offers `offer` after the same Allow twice. */
+const run = (offer: string[], risky = false): Shown => ({
+  ...runAsk({ fills: [], remember: null }),
+  options: [
+    { id: "allow-once", label: "Allow once", allows: true },
+    { id: "allow-chat", label: "Allow for this chat", allows: true, scope: "chat" },
+    { id: "allow-always", label: "Always allow", allows: true, scope: "project" },
+    { id: "keep", label: "Don't allow", allows: false },
+  ],
+  rule: { request: RUN_REQUEST, offer: { answered: "allow-chat", times: 2, options: offer } },
+  ...(risky
+    ? {
+        risk: {
+          class: "production-host" as const,
+          why: "Looks like production",
+          confirm: "Allow it?",
+        },
+      }
+    : {}),
+});
+
+describe("a run's Always allow, offered as a rule (#6177)", () => {
+  it("shows the line it writes before it is pressed", () => {
+    core();
+    render(<Inbox plane={PLANE} asks={[run(["allow-always"])]} onGo={vi.fn()} onLeave={vi.fn()} />);
+    const rule = screen.getByRole("group", { name: "Make a rule for developer 7" });
+    expect(within(rule).getByRole("button", { name: /Always allow/ })).toBeTruthy();
+    expect(screen.getByText(alwaysLineSaid("devops"))).toBeTruthy();
+    expect(screen.getAllByText(LINE).length).toBeGreaterThan(0);
+  });
+
+  it("answers the ask with Always allow and keeps its line with the rule, for Undo", async () => {
+    const calls = core({ answer_run_grant: () => ({}) });
+    render(<Inbox plane={PLANE} asks={[run(["allow-always"])]} onGo={vi.fn()} onLeave={vi.fn()} />);
+    read();
+    const rule = screen.getByRole("group", { name: "Make a rule for developer 7" });
+    await userEvent.click(within(rule).getByRole("button", { name: /Always allow/ }));
+    await waitFor(() => expect(sent(calls, "rule_made")).toHaveLength(1));
+    expect(sent(calls, "answer_run_grant")[0].args).toMatchObject({ id: 9, press: "always" });
+    expect(sent(calls, "rule_made")[0].args.made).toMatchObject({
+      request: RUN_REQUEST,
+      option: "allow-always",
+      scope: "project",
+      declared: { persona: "devops", line: LINE },
+    });
+  });
+
+  it("is never offered on an ask marked risky", () => {
+    core();
+    render(
+      <Inbox plane={PLANE} asks={[run(["allow-always"], true)]} onGo={vi.fn()} onLeave={vi.fn()} />,
+    );
+    expect(screen.queryByRole("group", { name: "Make a rule for developer 7" })).toBeNull();
+  });
+});
+
 describe("every answer in Asks (#6010)", () => {
   it("is noted against its request, a refusal too", async () => {
     const calls = core();
@@ -198,6 +258,26 @@ describe("Rules I made (#6010)", () => {
     );
     await userEvent.click(within(list).getByRole("button", { name: /^Undo/ }));
     await waitFor(() => expect(sent(calls, "undo_rule")[0]?.args).toEqual({ id: "rule-1" }));
+    expect(await screen.findByText(/No rules yet/)).toBeTruthy();
+  });
+});
+
+describe("Rules I made, for an Always allow (#6177)", () => {
+  it("undoes it as any rule, by its id", async () => {
+    const always: RuleMadeShown = {
+      ...RULE,
+      id: "rule-2",
+      source: "run-grant",
+      says: "devops wants to run /usr/bin/curl with STRIPE_API_KEY from vault team",
+      label: "Always allow",
+    };
+    const calls = core({ rules_made: () => [always], undo_rule: () => [] });
+    render(<Inbox plane={PLANE} asks={[]} onGo={vi.fn()} onLeave={vi.fn()} />);
+    await userEvent.click(await screen.findByRole("button", { name: RULES_I_MADE }));
+    const list = await screen.findByRole("list", { name: RULES_I_MADE });
+    expect(list).toHaveTextContent("Always allow · this project in plane · saved 3 asks");
+    await userEvent.click(within(list).getByRole("button", { name: /^Undo/ }));
+    await waitFor(() => expect(sent(calls, "undo_rule")[0]?.args).toEqual({ id: "rule-2" }));
     expect(await screen.findByText(/No rules yet/)).toBeTruthy();
   });
 });

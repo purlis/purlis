@@ -21,6 +21,7 @@ import {
 import { PoolLimits } from "../settings/PoolLimits";
 import { Button, ButtonRow } from "../ui/button/Button";
 import { CheckLine, CheckList } from "../ui/checks/Checks";
+import { CodeBlock } from "../ui/code/CodeBlock";
 import { Radio, RadioGroup } from "../ui/choice/Radio";
 import { TextField } from "../ui/field/Field";
 import { Action, Options, Recommended, Say, SeeWhat, StepHead } from "./parts";
@@ -136,7 +137,7 @@ function NewPoolOptions({
         >
           <Radio
             value="ours"
-            description={`A ready-made image with git, gh and glab. Named by its digest: ${named}`}
+            description="A ready-made image with git, gh and glab, named by its digest below."
           >
             <span className="pool-setup-choice">
               {version ? `purlis's image, ${version}` : "purlis's image, this version"}
@@ -150,6 +151,11 @@ function NewPoolOptions({
             My team's own image
           </Radio>
         </RadioGroup>
+      )}
+      {named !== undefined && !team && (
+        // Beside the radio, not in it: a control inside a radio's words is one a reader can't
+        // reach (#6206).
+        <CodeBlock label="purlis's image, by its digest" text={named} copy="Copy digest" />
       )}
       {team && (
         <TextField

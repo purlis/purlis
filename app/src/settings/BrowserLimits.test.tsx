@@ -9,6 +9,7 @@ import App from "../App";
 import type { BrowserLimitShown, BrowserLimitsShown } from "../bindings";
 import { forgetThisLaunch } from "../regions";
 import { GLOBAL } from "../windowprefs";
+import { chooseInRow } from "./rowMenu.testkit";
 
 /**
  * **Settings › You › This machine › Browsers** (#2023), in the whole window: each limit shows
@@ -109,7 +110,7 @@ describe("You › This machine › Browsers", () => {
       ),
     );
 
-    await userEvent.click(within(group).getByRole("button", { name: "Reset to 8" }));
+    await chooseInRow("Browsers on this machine", "Reset to 8", userEvent, group);
 
     await waitFor(() => expect(sent).toEqual([{ limit: "on_this_device", to: null }]));
   });

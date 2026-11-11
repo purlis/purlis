@@ -23,6 +23,7 @@ import { BUILT_IN } from "../theme/theme";
 import { retype, textOf } from "../editor/typing.testkit";
 import { offeredIn, pickIn } from "../ui/select/select.testkit";
 import { PURLIS_LIGHT } from "../theme/handed.testkit";
+import { chooseInRow } from "./rowMenu.testkit";
 
 /** Two custom colours, as `#rrggbb`: taken from the built-in themes, because no colour is written
  *  outside `src/theme/` — a test's included (`literals.test.ts`). */
@@ -419,11 +420,12 @@ describe("the Workspace level", () => {
     await at("Appearance");
     await screen.findByLabelText("Theme");
     const appearance = () => screen.getByRole("region", { name: "Appearance" });
+    expect(appearance().querySelector(".ui-setting-where")).toHaveTextContent(
+      "Kept in workspaces/alpha/workspace.json, committed with this LIVE workspace; your team sees it.",
+    );
     expect(
-      within(appearance()).getAllByText(
-        /Kept in workspaces\/alpha\/workspace\.json, committed with this LIVE workspace; your team sees it\./,
-      ),
-    ).toHaveLength(1);
+      within(appearance()).getByText("workspaces/alpha/workspace.json", { selector: "code" }),
+    ).toBeVisible();
     // Never under the setting itself (DS-8): its row says what the value does, and its badge
     // where it comes from only when that is somewhere else.
     expect(screen.getByLabelText("Theme")).not.toHaveAccessibleDescription(/Kept in/);
@@ -680,7 +682,7 @@ describe("Extensions", () => {
       .getByRole("switch", { name: "Persona statistics: enabled" })
       .closest(".ui-setting-row") as HTMLElement;
 
-    await userEvent.click(within(row).getByRole("button", { name: "Reset" }));
+    await chooseInRow("Persona statistics: enabled", "Reset", userEvent, row);
 
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]).toEqual({
@@ -740,7 +742,7 @@ describe("Extensions", () => {
     const row = box().closest(".ui-setting-row") as HTMLElement;
     expect(within(row).queryByRole("radio")).toBeNull();
 
-    await userEvent.click(within(row).getByRole("button", { name: "Reset" }));
+    await chooseInRow("Persona statistics: enabled", "Reset", userEvent, row);
 
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(editsOf(sent[0])).toEqual([

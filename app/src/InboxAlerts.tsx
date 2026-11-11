@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useState, type ReactNode } from "react";
+import { dequal } from "dequal/lite";
 import { OctagonAlert, TriangleAlert } from "lucide-react";
 import { ApprovePlane } from "./ApprovePlane";
 import {
@@ -111,6 +112,72 @@ export type WindowAlerts = {
   nameOf: (plane: PlaneId) => string;
   does: InboxAlertsDo;
 };
+
+/**
+ * What a project's view draws from the window's alerts: its own reading, and what its Inbox says
+ * of each other project (`InboxAlerts`: how many, whether one is bad, whether purlis stopped
+ * looking there, and its name). Not another project's alerts themselves, which only that
+ * project's view lists.
+ */
+function drawnIn(plane: PlaneId, alerts: WindowAlerts): unknown {
+  const { reading, planes, nameOf, does } = alerts;
+  const readOf = (one: PlaneId) =>
+    reading.at === "read" ? reading.planes.find((read) => read.plane === one) : undefined;
+  return {
+    at: reading.at,
+    why: reading.at === "failed" ? reading.why : undefined,
+    own: readOf(plane),
+    elsewhere: planes
+      .filter((one) => one !== plane)
+      .map((one) => {
+        const read = readOf(one);
+        return [
+          one,
+          nameOf(one),
+          read?.alerts.length,
+          read?.alerts.some((alert) => alert.severity === "bad"),
+          read?.stopped,
+        ];
+      }),
+    does,
+  };
+}
+
+/**
+ * **Each project's view's own alerts** (felt speed, round 2): the window's alerts, held for each
+ * project for as long as what that project's view draws from them is the same.
+ *
+ * Each project's view is held (`memo`, `PlaneView`), and handed the window's one reading it was
+ * drawn again, every project at once, for an alert that moved in any of them. A project's view is
+ * handed the object it was handed last until its own alerts, or what its Inbox says of another
+ * project, change.
+ *
+ * Kept as React keeps what the last render held (a state set while rendering, when what it was
+ * derived from changed), so the window is drawn once for a new reading, not once and then again.
+ */
+export function useAlertsOfEach(alerts: WindowAlerts): ReadonlyMap<PlaneId, WindowAlerts> {
+  const [held, setHeld] = useState(() => ({ from: alerts, each: alertsOfEach(alerts, undefined) }));
+  if (held.from === alerts) return held.each;
+  const now = { from: alerts, each: alertsOfEach(alerts, held) };
+  setHeld(now);
+  return now.each;
+}
+
+function alertsOfEach(
+  alerts: WindowAlerts,
+  was: { from: WindowAlerts; each: ReadonlyMap<PlaneId, WindowAlerts> } | undefined,
+): ReadonlyMap<PlaneId, WindowAlerts> {
+  return new Map(
+    alerts.planes.map((plane) => {
+      const held = was?.each.get(plane);
+      const same =
+        held !== undefined &&
+        was !== undefined &&
+        dequal(drawnIn(plane, was.from), drawnIn(plane, alerts));
+      return [plane, same ? held : alerts];
+    }),
+  );
+}
 
 /** What the alerts' ways out do in the window (NO-6). */
 export type InboxAlertsDo = {

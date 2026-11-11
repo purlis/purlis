@@ -247,9 +247,9 @@ fn the_footer_names_the_surfaces_it_does_not_draw() {
 
 #[test]
 fn a_session_with_no_app_listening_is_not_suppressed() {
-    // A socket file left behind by an app that has gone. ADR 0019's frame asked "is the
-    // launcher pid still running" for this exact case: without it, a crashed launcher blanks
-    // a plane's status line for ever with nothing on screen to say why.
+    // A socket the app has taken away as it stopped listening. ADR 0019's frame asked "is the
+    // launcher pid still running" for this exact case: without it, a launcher that has gone
+    // blanks a plane's status line for ever with nothing on screen to say why.
     let (_keep, at) = plane();
 
     let ran = statusline(
