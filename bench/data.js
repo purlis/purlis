@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794398557559,
+  "lastUpdate": 1794401020710,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -46956,6 +46956,48 @@ window.BENCHMARK_DATA = {
             "value": 102.492672,
             "unit": "ms",
             "extra": "median of 5 runs: 101.978, 102.305, 102.493, 102.523, 103.103 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "05d1fd88c951381c55226b4b859cc375945598ef",
+          "message": "felt speed 2: a dispatch list reads the store once (#6242)\n\nA chat's list read the dispatch store once per open row (each row's\nlatest_for re-read every running record) and every record in it for the\nfinished rows. One Ledger now answers every row, the finished rows and the\nunstarted ones; the summary (ended.json, now v2) names each ended\ndispatch's asking chat, so only the asker's own ended records are read.\nseen() is asked before the ledger's lock, a list a chat sends while its\nlast is under way shares that answer, and a slow list's warning names its\nsteps.\n\nOver 50 records with 10 open and 5 finished rows: 150 record reads\nbefore, 15 after.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M74V12HR2Q2HRB5AKTYBZD4W\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-11T11:20:08Z",
+          "tree_id": "00036d5ae6cb32c5733676c9e3485b98f0cc4cf9",
+          "url": "https://github.com/purlis/purlis/commit/05d1fd88c951381c55226b4b859cc375945598ef"
+        },
+        "date": 1794401012627,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5383175,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.529, 0.538, 0.538, 0.540, 0.544 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.181421,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.109, 16.154, 16.181, 16.315, 16.334 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.71156049999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.154, 101.363, 101.712, 102.254, 103.672 ms"
           }
         ]
       }
