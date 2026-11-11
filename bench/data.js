@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794401020710,
+  "lastUpdate": 1794405629475,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -46998,6 +46998,48 @@ window.BENCHMARK_DATA = {
             "value": 101.71156049999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.154, 101.363, 101.712, 102.254, 103.672 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a6f74b240a2cdea33e9d8252c694709a4fa8b552",
+          "message": "The status line stops knocking on the hook socket; [DEBUG-5478] removed (felt speed H5, #5488) (#6254)\n\n* The status line stops connecting to the hook socket; a peer already gone is counted at trace (felt speed H5)\n\nClaude Code runs `purlis statusline` on every footer refresh of every chat, and\nthe_app_owns_this_surface asked whether the app was up by connecting to its hook\nsocket and closing at once. Each probe cost the core an accept, a peer-credential\nlookup and a refusal line (ENOTCONN on macOS): about 13.4k a day.\n\nThe status line now asks only that the socket's file is there (the app removes it\nwhen it stops listening, and its chats end with it), and hookwire::listening,\nwhich nothing else called, is gone. The accept loop counts a peer that had already\ngone at trace instead of warning.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M751B6MRMG8BJ5Y0ZC9448W1\nPurlis-Persona: steward\n\n* Remove the [DEBUG-5478] diagnostics (#5488)\n\n#5478 is closed (fixed by #5982), and the freeze and cover watchdogs now log only\nfalse positives. Gone: freezeWatch5478.ts, coverWatch5478.ts and their tests, the\ndebug_5478_log command (debug5478.rs, its registration, its window-only entry and\nits generated bindings), and every tagged line in SessionPane.tsx. The real fixes\nstay as they were: altScreenRows.ts, stuckWrites.ts and noEcho.ts, and their\ntests; a stuck pane still starts again, only without a log line.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M751B6MRMG8BJ5Y0ZC9448W1\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-11T12:19:33Z",
+          "tree_id": "832c225adcfa0245010cc5845d774a2031362ac5",
+          "url": "https://github.com/purlis/purlis/commit/a6f74b240a2cdea33e9d8252c694709a4fa8b552"
+        },
+        "date": 1794405623435,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.41081500000000004,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.399, 0.400, 0.411, 0.417, 0.418 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5570255,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.459, 16.483, 16.557, 16.592, 16.937 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.4708795,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.213, 101.339, 101.471, 102.381, 102.577 ms"
           }
         ]
       }
