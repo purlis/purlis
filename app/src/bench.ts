@@ -27,6 +27,8 @@ import { onAMac } from "./tabKeys";
 type Pane = {
   session: number;
   terminal: Terminal;
+  /** How many panes had been opened, ever, once this one was: which job's it is. */
+  ordinal: number;
   drawing?: Drawing;
   /** Everything the pane has been sent since it was armed, in a window big enough to match
    *  a sentinel that arrives split across two chunks. */
@@ -65,8 +67,9 @@ function onScreen(): Map<number, Pane> {
     if (one.terminal.element?.isConnected !== false) shown.set(one.session, one);
   return shown;
 }
-/** Set by a `next pane` job: the next pane to open is the one the jobs after it measure. */
-let awaited: ((session: number) => void) | undefined;
+/** Set by a job waiting for the next pane to open or be shown again (`next pane`, a switch, a
+ *  split). Told the pane's terminal too: two panes on screen over a switch can share a session. */
+let awaited: ((session: number, terminal: Terminal) => void) | undefined;
 let subject: number | undefined;
 
 /** A job runs on its own; `poll` is how the benchmark learns it has finished. Its failure is
@@ -84,6 +87,7 @@ export function paneOpened(session: number, terminal: Terminal): void {
   const pane: Pane = {
     session,
     terminal,
+    ordinal: opens + 1,
     tail: "",
     text: new TextDecoder(),
     chunks: 0,
@@ -99,7 +103,7 @@ export function paneOpened(session: number, terminal: Terminal): void {
     pane.waiting = undefined;
     requestAnimationFrame(() => found(performance.now()));
   });
-  awaited?.(session);
+  awaited?.(session, terminal);
 }
 
 /**
@@ -110,7 +114,7 @@ export function paneShownAgain(session: number, terminal: Terminal): void {
   if (!measuring) return;
   const pane = open.get(terminal);
   if (pane) pane.shownAgain = true;
-  awaited?.(session);
+  awaited?.(session, terminal);
 }
 
 /** A pane's terminal, closed. */
@@ -218,11 +222,40 @@ function pane(session?: number): Pane {
 
 /** Resolves with the moment `needle` was painted in `session`'s pane. */
 function painted(session: number, needle: string): Promise<number> {
+  return new Promise((found) => paintedIn(pane(session), needle, found));
+}
+
+/** Arms `one` to call `found` with the moment `needle`, sent to it from now on, is painted. */
+function paintedIn(one: Pane, needle: string, found: (at: number) => void): void {
   if (needle === "") throw new Error("waiting for the empty string would match anything");
+  one.tail = "";
+  one.waiting = { needle, seen: false, found };
+}
+
+/**
+ * The frame after a pane on screen that holds `needle` next draws, with that pane's session:
+ * **whatever brought the text there**. Never one of `left`, the panes on screen before the
+ * switch, which may hold the same text and still be there for a frame or two. Looked for every
+ * frame while `looking` says so.
+ */
+function heldOnScreen(
+  needle: string,
+  left: ReadonlySet<Pane>,
+  looking: () => boolean,
+): Promise<{ pane: Pane; at: number }> {
   return new Promise((found) => {
-    const one = pane(session);
-    one.tail = "";
-    one.waiting = { needle, seen: false, found };
+    const look = () => {
+      if (!looking()) return;
+      const one = [...onScreen().values()].find(
+        (each) => !left.has(each) && holds(each.terminal, needle),
+      );
+      if (one === undefined) {
+        requestAnimationFrame(look);
+        return;
+      }
+      void Promise.race([drawn(one.terminal), framesOn(2)]).then((at) => found({ pane: one, at }));
+    };
+    look();
   });
 }
 
@@ -430,12 +463,17 @@ async function work(plan: Plan): Promise<unknown> {
       // pane being timed is the first to open after the press, whatever its session. **It is
       // armed the moment it opens**, inside `paneOpened`, because the history it is sent can
       // arrive while this job is still waiting for the tab — and text that went by before the
-      // pane was armed is a sentinel this job would wait for forever.
-      const opened = new Promise<{ session: number; seen: Promise<number> }>((found) => {
-        awaited = (session) => {
+      // pane was armed is a sentinel this job would wait for forever. **Armed by its terminal,
+      // not its session**: the project it leaves may still have a pane of that number on
+      // screen as it opens (every `switch-<n>` project's chat is session 1, #6183).
+      let armed: Pane | undefined;
+      const opened = new Promise<{ pane: Pane; at: number }>((found) => {
+        awaited = (_session, terminal) => {
+          const one = open.get(terminal);
+          if (one === undefined) return;
           awaited = undefined;
-          subject = session;
-          found({ session, seen: painted(session, plan.sentinel) });
+          armed = one;
+          paintedIn(one, plan.sentinel, (at) => found({ pane: one, at }));
         };
       });
       const from = performance.now();
@@ -460,6 +498,7 @@ async function work(plan: Plan): Promise<unknown> {
         marked.disconnect();
         return drawnAt === undefined ? undefined : drawnAt - from;
       };
+      const left = new Set(onScreen().values());
       row.click();
       const shown = await until(() =>
         document.querySelector(
@@ -468,38 +507,38 @@ async function work(plan: Plan): Promise<unknown> {
       ).then(
         () => new Promise<number>((done) => requestAnimationFrame(() => done(performance.now()))),
       );
-      // **A project that was in front before still has its pane** (`PlaneView`): nothing opens,
-      // and what it printed is in its terminal already. Its paint is then the terminal's next
-      // draw, or the frame after the project came to the front where it has nothing to draw
-      // again; `built` says no pane was opened for the switch.
-      const kept =
-        opens === opensBefore
-          ? [...onScreen().values()].find((one) => holds(one.terminal, plan.sentinel))
-          : undefined;
-      if (kept !== undefined) {
-        awaited = undefined;
-        subject = kept.session;
-        const at = await Promise.race([drawn(kept.terminal), framesOn(2)]);
-        return {
-          session: kept.session,
-          openMs: listed - pressed,
-          shownMs: shown - from,
-          ms: Math.max(at, shown) - from,
-          drawnMs: drawnMs(),
-          built: false,
-        };
-      }
-      const came = await Promise.race([opened, sleep(30_000).then(() => undefined)]);
-      if (came === undefined) throw new Error(`project ${plan.plane} showed no pane`);
-      const at = await Promise.race([came.seen, sleep(30_000).then(() => undefined)]);
-      if (at === undefined) throw new Error(`the pane never painted ${plan.sentinel}`);
+      // **Then whichever comes first** (#6183): the sentinel sent to the pane that opened, or a
+      // pane on screen that holds it, however it got there. **A project that was in front
+      // before still has its pane** (`PlaneView`): nothing opens, and what it printed is in its
+      // terminal already, so its paint is the terminal's next draw, or two frames on where it
+      // has nothing to draw again. **So has a kept terminal its view puts back**
+      // (`keptTerminals.ts`), which may be after the strip has marked the switch, and which is
+      // sent nothing: it has it all. `built` says whether the pane that painted was opened for the
+      // switch.
+      let looking = true;
+      const arrived = await Promise.race([
+        opened,
+        heldOnScreen(plan.sentinel, left, () => looking),
+        sleep(60_000).then(() => undefined),
+      ]);
+      looking = false;
+      awaited = undefined;
+      // Whichever won, the pane armed is waiting for nothing now.
+      if (armed !== undefined) armed.waiting = undefined;
+      if (arrived === undefined)
+        throw new Error(
+          armed !== undefined
+            ? `the pane never painted ${plan.sentinel}`
+            : `project ${plan.plane} showed no pane`,
+        );
+      subject = arrived.pane.session;
       return {
-        session: came.session,
+        session: arrived.pane.session,
         openMs: listed - pressed,
         shownMs: shown - from,
-        ms: at - from,
+        ms: Math.max(arrived.at, shown) - from,
         drawnMs: drawnMs(),
-        built: true,
+        built: arrived.pane.ordinal > opensBefore,
       };
     }
 
