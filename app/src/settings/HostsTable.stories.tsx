@@ -101,10 +101,8 @@ export const RowsChosen: Story = {
     const remove = within(bar).getByRole("button", { name: "Remove" });
     remove.focus();
     expectFocusInSight();
-    await expect(within(bar).getByRole("button", { name: "Confirm" })).toBeVisible();
-    // What a press of Remove sends is `SandboxHosts.test.tsx`'s; the picture keeps the rows
-    // chosen.
-    await expect(args.onRemoveAll).not.toHaveBeenCalled();
+    await userEvent.keyboard("{Enter}");
+    await expect(args.onRemoveAll).toHaveBeenCalledWith(["zed.dev", "docs.github.com"]);
   },
 };
 
