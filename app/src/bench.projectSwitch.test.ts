@@ -259,3 +259,23 @@ it("waits for a chat's pane that opens a while after the project's view is drawn
   expect(state?.trouble).toBeUndefined();
   expect(state).toMatchObject({ running: false, result: { session: 1, built: true } });
 });
+
+it("says what the screen of a pane that never paints its sentinel ends with", async () => {
+  // Its program's output stopped partway (#6237): the screen ends inside the first repaint.
+  const there = aTerminal([
+    "● Reading crates/core/src/session.rs (line 0)",
+    "  ok ok (line 33)",
+    "",
+  ]);
+  bench.paneOpened(1, there, "/switch-7");
+  aStripAndARow("/switch-7", () => document.body.append(there.element));
+
+  const state = await finished(
+    { kind: "project switch", plane: "/switch-7", sentinel: "ready", patienceMs: 300 },
+    2_000,
+  );
+
+  expect(state?.trouble).toMatch(/never painted ready/);
+  // The last line with anything on it, so a log says where the program's output stopped.
+  expect(state?.trouble).toContain('its screen ends "  ok ok (line 33)"');
+});

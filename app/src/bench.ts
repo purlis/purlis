@@ -330,7 +330,8 @@ function whatTheWindowShowed(
     (one) =>
       `session ${one.session} (${one === armed ? "opened for the switch" : "already open"}, ` +
       `${holds(one.terminal, needle) ? "holds it" : "does not hold it"}, ` +
-      `sent ${one.chunks} pieces, ${one.characters} characters)`,
+      `sent ${one.chunks} pieces, ${one.characters} characters, ` +
+      `its screen ends ${JSON.stringify(lastLine(one.terminal))})`,
   );
   const lost =
     armed !== undefined && !inTheWindow(armed) ? "the pane opened for it is not in the window" : "";
@@ -339,6 +340,17 @@ function whatTheWindowShowed(
     .filter((part) => part !== "")
     .join("; ");
   return { panes: panes.length, said };
+}
+
+/** The last line `terminal` shows with anything on it, at most 80 characters of it: where a
+ *  program that never printed a sentinel stopped (#6237). */
+function lastLine(terminal: Terminal): string {
+  const buffer = terminal.buffer.active;
+  for (let y = buffer.length - 1; y >= 0; y--) {
+    const line = buffer.getLine(y)?.translateToString(true) ?? "";
+    if (line.trim() !== "") return line.slice(0, 80);
+  }
+  return "";
 }
 
 /** Whether `terminal` holds `needle` on its screen or in its history. */
