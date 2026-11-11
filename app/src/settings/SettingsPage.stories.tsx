@@ -37,7 +37,7 @@ function Page({
 }: {
   onEdit: () => void;
   onReset: () => void;
-  /** Drawn in a pane narrower than 760 px (R75). */
+  /** Drawn in a pane narrower than 728 px (R75). */
   narrow?: boolean;
 }) {
   const [level, setLevel] = useState("project");
@@ -333,7 +333,7 @@ export const ResetOutOfReach: Story = {
 };
 
 /**
- * **Where Settings is narrow** (R75): under 760 px the pages are one sideways row over the page,
+ * **Where Settings is narrow** (R75): under 728 px the pages are one sideways row over the page,
  * and each row's label goes over its control, its ⋯ still at the row's end.
  */
 export const Narrow: Story = {

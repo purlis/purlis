@@ -7518,10 +7518,11 @@ nav.piece-files-head {
   color: var(--text-quiet);
 }
 
-/* **Where Settings is narrow** (R75): under 760 px of its pane the side column is a band over
+/* **Where Settings is narrow** (R75): under 728 px of its pane (the prototype's 760 px window
+   less its 16 px gutters, the width its tab had) the side column is a band over
    the page, its pages one sideways-scrolling row, and each row's label goes over its control,
    the ⋯ still at the row's end. */
-@container settings-view (max-width: 760px) {
+@container settings-view (max-width: 728px) {
   .ui-settings {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);

@@ -158,7 +158,7 @@ export function ViewNav({
   rowWhenNarrow = false,
   edge = true,
 }: {
-  /** **One sideways-scrolling row where its container is narrow** (under 760 px; Settings'
+  /** **One sideways-scrolling row where its container is narrow** (under 728 px; Settings'
    *  pages, R75), in place of a column. */
   rowWhenNarrow?: boolean;
   /** Whether it draws its own line after it: none where what holds it draws that edge
