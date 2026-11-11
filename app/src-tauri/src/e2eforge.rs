@@ -77,9 +77,12 @@ impl BrowserForge {
         (registration, Endpoints::at(Kind::GitLab, &self.oauth))
     }
 
-    /// Has the spec play the browser on `page`.
+    /// Has the spec play the browser on `page`, written whole (#6197): a file beside it, renamed
+    /// into place, so the spec reads the last page or the next one and never a part of either.
+    /// Written in place, the file exists empty before it is filled, which is how #5546's and
+    /// #6192's clones spec read an empty page.
     pub(crate) fn open(&self, page: &str) -> Result<(), String> {
-        std::fs::write(&self.page, page).map_err(|err| err.to_string())
+        purlis_core::layer::write_whole(&self.page, page)
     }
 }
 
@@ -138,6 +141,33 @@ mod tests {
         assert_eq!(registration.host, "git.example.test:8443");
         assert_eq!(endpoints.token, "http://127.0.0.1:9/oauth/token");
         assert!(browser_forge_from(|_| None).is_none());
+    }
+
+    #[test]
+    fn the_page_to_open_is_replaced_whole_never_rewritten_under_a_reader() {
+        use std::io::Read;
+        let dir = tempfile::tempdir().expect("a directory");
+        let forge = BrowserForge {
+            host: "git.example.test:8443".into(),
+            oauth: "http://127.0.0.1:9".into(),
+            page: dir.path().join("page"),
+        };
+        forge.open("http://127.0.0.1:9/first").expect("opened");
+        // A spec reading the page as the next sign-in writes its own (#6197).
+        let mut reading = std::fs::File::open(&forge.page).expect("the page");
+        forge.open("http://127.0.0.1:9/second").expect("opened");
+        let mut read = String::new();
+        reading.read_to_string(&mut read).expect("read");
+        assert_eq!(read, "http://127.0.0.1:9/first");
+        assert_eq!(
+            std::fs::read_to_string(&forge.page).expect("the page"),
+            "http://127.0.0.1:9/second"
+        );
+        let beside: Vec<_> = std::fs::read_dir(dir.path())
+            .expect("listed")
+            .map(|entry| entry.expect("an entry").file_name())
+            .collect();
+        assert_eq!(beside, ["page"]);
     }
 
     #[test]
