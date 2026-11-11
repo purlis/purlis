@@ -2050,9 +2050,9 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     // The server's systemd helpers (#6109): `mysqld_bootstrap` has the service manager start the
     // server's unit with `--wsrep-new-cluster`, as `galera_new_cluster` does; `mysqld_pre_systemd`
     // runs the server's `--initialize` with what its settings name; and Percona XtraDB Cluster's
-    // packaged `mysql-systemd` does both, and has a shell evaluate the server's command line for
-    // its `galera-recovery`. Their `mysql` prefix took them to the tools' row, which reads nothing
-    // they do.
+    // packaged `mysql-systemd` does the second, and has a shell evaluate the server's command
+    // line for its `galera-recovery`. Their `mysql` prefix took them to the tools' row, which
+    // reads nothing they do.
     "mysqld_bootstrap",
     "mysqld_pre_systemd",
     "mysql-systemd",
@@ -2063,7 +2063,7 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "innotop",
     "mariadb-report",
     "mysqlreport",
-    // Percona XtraDB Cluster's health checks (#6109): `clustercheck` hands the client its sixth
+    // Percona XtraDB Cluster's health checks (#6109): `clustercheck` hands the client its last
     // argument as `--defaults-extra-file`, and `pyclustercheck`'s `--conf` names the file of
     // settings its client library reads.
     "clustercheck",

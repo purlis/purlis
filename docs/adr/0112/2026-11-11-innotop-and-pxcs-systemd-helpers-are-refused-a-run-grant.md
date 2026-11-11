@@ -7,7 +7,8 @@ left these leads to #6109. Each was checked against the tool's own source, not r
 
 - **`innotop`**, which Debian ships in MariaDB's client (`debian/mariadb-client.install`,
   github.com/MariaDB/server). Its `-c` names the configuration file it reads, and without one it
-  reads `/etc/innotop/innotop.conf`. That file's `plugin_dir` names a folder, and innotop
+  reads `~/.innotop/innotop.conf`, or `/etc/innotop/innotop.conf` when that is missing. That
+  file's `plugin_dir` names a folder (`~/.innotop/plugins` if it names none), and innotop
   `require`s each `.pm` file there that the file's `[plugins]` section lists
   (`load_config_plugins` in `innotop`, github.com/innotop/innotop). The file's filters and
   columns are Perl it compiles as well. Its name starts with neither `mysql` nor `mariadb`, so no
@@ -19,17 +20,18 @@ left these leads to #6109. Each was checked against the tool's own source, not r
   request).
 - **The server's systemd helpers.** `mysqld_bootstrap` has the service manager start the
   server's unit with `--wsrep-new-cluster` added to its options
-  (`scripts/systemd/mysqld_bootstrap.in`, github.com/percona/percona-xtradb-cluster), as
-  `galera_new_cluster` does. `mysqld_pre_systemd`, which the server's own install puts beside it,
-  runs the server's `--initialize` with what its settings name
+  (`scripts/systemd/mysqld_bootstrap.in`, github.com/percona/percona-xtradb-cluster, a Codership
+  script the tree keeps but its build does not install), as `galera_new_cluster` does.
+  `mysqld_pre_systemd`, which the server's own build installs (Percona Server's packages ship
+  it), runs the server's `--initialize` with what its settings name
   (`scripts/systemd/mysqld_pre_systemd.in`). Percona XtraDB Cluster's packages ship neither, but
   ship **`mysql-systemd`** (`build-ps/rpm/mysql-systemd`), whose `start-pre` runs the server's
   `--initialize` and whose `galera-recovery` has a shell evaluate the server's command line. All
   three reached the mysql tools' row by their `mysql` prefix, and that row reads nothing they do.
-- **Percona XtraDB Cluster's health checks.** `clustercheck` hands the client its sixth argument
-  as `--defaults-extra-file` (`scripts/clustercheck.sh`), the form the client's own row refuses,
-  and `pyclustercheck`'s `--conf` names the file of settings its client library reads. Neither
-  name starts with `mysql` or `mariadb`, so no row read them.
+- **Percona XtraDB Cluster's health checks.** `clustercheck` hands the client its last argument
+  (the sixth, or the fourth in its short form) as `--defaults-extra-file`
+  (`scripts/clustercheck.sh`), the form the client's own row refuses, and `pyclustercheck`'s
+  `--conf` names the file of settings its client library reads. Neither name starts with `mysql` or `mariadb`, so no row read them.
 
 All are refused whole, as the rest of the family's server-side tools are. A persona can still
 declare any of them as a tool.
