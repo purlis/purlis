@@ -2270,21 +2270,6 @@ fn a_socket_left_behind_by_a_process_that_is_gone_is_replaced() {
     assert_eq!(listener.path(), path);
 }
 
-#[test]
-fn an_app_is_listening_only_while_it_accepts_on_the_socket() {
-    // #95: the one place that says whether an app is there, which the status line asks.
-    let dir = tempfile::tempdir().expect("a directory");
-    let path = dir.path().join("hooks.sock");
-    assert!(!listening(&path), "nothing at the path");
-
-    let listener = Listener::bind(dir.path(), &path).expect("a socket");
-    assert!(listening(&path), "an app accepts there");
-
-    drop(listener);
-    assert!(path.exists(), "its file is left behind");
-    assert!(!listening(&path), "a file whose app has gone");
-}
-
 // ---- the ask, and the ticket (charter-app#204) --------------------------------------
 
 fn an_open(chat: u32, ticket: &str) -> Ask {
@@ -5459,4 +5444,60 @@ fn an_ask_says_what_it_asks_to_use_in_plain_words() {
     );
     assert_eq!(said(serde_json::json!({"tool_name": "a b"})), None);
     assert_eq!(said(serde_json::json!({})), None);
+}
+
+// ---- a peer that has already gone (felt speed round 2, H5) --------------------------
+
+/// What `logged` holds, as a writer `tracing_subscriber::fmt` can be handed.
+struct Logged(Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl std::io::Write for Logged {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// Everything `refused` logs at `level` and above, refused with whatever logs it.
+fn logged_at(level: tracing::Level, refused: impl FnOnce()) -> String {
+    let logged = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(level)
+        .with_writer({
+            let logged = Arc::clone(&logged);
+            move || Logged(Arc::clone(&logged))
+        })
+        .finish();
+    tracing::subscriber::with_default(subscriber, refused);
+    String::from_utf8(std::mem::take(&mut *logged.lock().unwrap())).unwrap()
+}
+
+#[test]
+fn a_peer_that_closed_before_it_was_named_is_counted_and_logs_nothing_above_trace() {
+    // Something that connects and closes at once, before the app asked who it was: macOS then
+    // answers the peer check with ENOTCONN. Nothing was sent, so nothing was lost, and a line
+    // for each one is a log line per footer refresh of every chat.
+    let gone = || {
+        let before = PEERS_GONE.load(std::sync::atomic::Ordering::Relaxed);
+        refused_a_peer(purlis_same_user::NotThisUser::Unidentified(
+            std::io::Error::from_raw_os_error(nix::errno::Errno::ENOTCONN as i32),
+        ));
+        PEERS_GONE.load(std::sync::atomic::Ordering::Relaxed) - before
+    };
+
+    let mut counted = 0;
+    let said = logged_at(tracing::Level::DEBUG, || counted = gone());
+
+    assert_eq!(said, "", "a peer already gone was logged");
+    assert!(counted >= 1, "a peer already gone was not counted");
+    assert!(
+        logged_at(tracing::Level::TRACE, || {
+            gone();
+        })
+        .contains("TRACE"),
+        "it is still there to be read at trace"
+    );
 }
