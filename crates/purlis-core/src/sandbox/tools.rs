@@ -2047,6 +2047,33 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "galera_new_cluster",
     "garbd",
     "garb-systemd",
+    // The server's systemd helpers (#6109): `mysqld_bootstrap` has the service manager start the
+    // server's unit with `--wsrep-new-cluster`, as `galera_new_cluster` does; `mysqld_pre_systemd`
+    // runs the server's `--initialize` with what its settings name; and Percona XtraDB Cluster's
+    // packaged `mysql-systemd` does the second, and has a shell evaluate the server's command
+    // line for its `galera-recovery`. Their `mysql` prefix took them to the tools' row, which
+    // reads nothing they do.
+    "mysqld_bootstrap",
+    "mysqld_pre_systemd",
+    "mysql-systemd",
+    // MariaDB's client on Debian (#6109): innotop's configuration file (its `-c`) names a
+    // `plugin_dir`, whose Perl files it loads as the file's `[plugins]` lists them, and compiles
+    // its filters and columns as Perl; `mariadb-report` (`mysqlreport` by its compat link) hands
+    // its `--outfile` unquoted to a shell.
+    "innotop",
+    "mariadb-report",
+    "mysqlreport",
+    // Percona XtraDB Cluster's health checks (#6109): `clustercheck` hands the client its sixth
+    // argument as `--defaults-extra-file`, and `pyclustercheck`'s `--conf` names the file of
+    // settings its client library reads.
+    "clustercheck",
+    "pyclustercheck",
+    // The slow log's summary and the row finder (#6109): both read the files they are named with
+    // Perl's `<>`, whose open runs a name ending in `|` as a shell command.
+    "mysqldumpslow",
+    "mariadb-dumpslow",
+    "mysql_find_rows",
+    "mariadb-find-rows",
     // The client and its test built with the server inside them: what `--server-arg` hands the
     // server (`--plugin-load`, `--plugin-dir`) loads code from a file it names.
     "mysql_embedded",
