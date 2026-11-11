@@ -37,6 +37,7 @@ fn rule(request: &str, scope: Scope, at: u64) -> Rule {
         option: "you".to_owned(),
         scope,
         grant: None,
+        declared: None,
     }
 }
 
