@@ -114,6 +114,27 @@ describe("the activity bar's artifacts", () => {
     expect(release).toHaveFocus();
   });
 
+  it("leaves the focus on the artifact clicked, not the one in front (#6120)", async () => {
+    // An engine that focuses a button on its press (Chromium, Firefox; not WebKit) brings the
+    // focus in from outside the group: that is a click, never the keyboard coming back in.
+    render(
+      <>
+        <button type="button">Before</button>
+        <ArtifactGroup
+          plane="p"
+          workspace="alpha"
+          pins={PINS}
+          current="release"
+          onOpen={() => {}}
+        />
+      </>,
+    );
+    screen.getByRole("button", { name: "Before" }).focus();
+    const backlog = screen.getByRole("button", { name: "Backlog state" });
+    await userEvent.click(backlog);
+    expect(backlog).toHaveFocus();
+  });
+
   it("reaches its first and last icon with Home and End", async () => {
     const three = [...PINS, pin("oncall", "On call", "zap")];
     render(<ArtifactGroup plane="p" workspace="alpha" pins={three} onOpen={() => {}} />);
