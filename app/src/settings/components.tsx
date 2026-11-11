@@ -207,6 +207,9 @@ export function SettingsLayout({
       <div className="ui-settings-side">
         <SegmentedControl
           ref={switcher}
+          // Small, so its three levels fit the 236 px column in every theme (Classic's words are
+          // wider than Purlis's).
+          size="sm"
           aria-label="Level"
           value={level}
           onChange={(to) => {
