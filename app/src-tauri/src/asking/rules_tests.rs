@@ -155,3 +155,67 @@ fn a_second_dont_allow_holds_that_chats_ask_apart_until_the_cool_off_ends() {
     let until = u32::try_from(NOW - 60 + purlis_core::askrules::COOL_FOR_SECS).expect("a time");
     assert_eq!(listed.cooling_until, Some(until));
 }
+
+#[test]
+fn a_budget_or_loop_pause_is_never_named_offered_a_rule_nor_cooled_off() {
+    use crate::pausing::{Paused, Why};
+    let budget = Paused {
+        why: Why::Budget(purlis_core::dispatchlimits::Reached::Time {
+            limit: 30,
+            worked: 30,
+        }),
+        since: 1_000,
+        held: vec![1],
+    };
+    let looping = Paused {
+        why: Why::Looping(purlis_core::looping::Why::Failing { times: 6 }),
+        since: 1_000,
+        held: vec![2],
+    };
+    let asks = vec![
+        pauses::paused(1, &budget, Vec::new(), None),
+        pauses::paused(2, &looping, Vec::new(), None),
+    ];
+    for ask in &asks {
+        assert_eq!(request_of(ask), None, "{:?}", ask.source);
+    }
+    // Stop twice, and Continue twice, as a host's answers would be counted.
+    let said = |session: u32, option: &str, allows: bool, at: u64| Answered {
+        project: PROJECT.to_owned(),
+        session,
+        request: format!(r#"["budget","paused:{session}"]"#),
+        option: option.to_owned(),
+        allows,
+        at,
+        raised: None,
+    };
+    let record = Record {
+        answered: vec![
+            said(1, pauses::STOP, false, NOW - 600),
+            said(1, pauses::STOP, false, NOW - 120),
+            said(2, pauses::FINE, true, NOW - 600),
+            said(2, pauses::FINE, true, NOW - 120),
+        ],
+        ..Record::default()
+    };
+    let listed = with_rules(listing(asks), &record, PROJECT, NOW);
+    assert_eq!(
+        listed
+            .asks
+            .iter()
+            .map(|one| one.session)
+            .collect::<Vec<_>>(),
+        [1, 2],
+        "both still counted on the ✋"
+    );
+    assert!(listed.cooling.is_empty());
+    assert_eq!(listed.cooling_until, None);
+    assert!(listed.asks.iter().all(|one| one.rule.is_none()));
+    assert!(
+        listed
+            .asks
+            .iter()
+            .flat_map(|one| &one.options)
+            .all(|one| one.scope.is_none())
+    );
+}

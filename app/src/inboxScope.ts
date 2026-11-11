@@ -14,11 +14,11 @@ import { keepFacet, keptFacet, onProjectViews, type Facet } from "./projectViews
  */
 export type InboxScope = "all" | "project" | "workspace";
 
-/** The scopes, as the switch says them, widest first. */
+/** The scopes, as the switch says them, narrowest first, as the Chats view's are (#1921). */
 export const INBOX_SCOPES: readonly { scope: InboxScope; says: string; of: string }[] = [
-  { scope: "all", says: "All projects", of: "all projects" },
-  { scope: "project", says: "This project", of: "this project" },
   { scope: "workspace", says: "This workspace", of: "this workspace" },
+  { scope: "project", says: "This project", of: "this project" },
+  { scope: "all", says: "All projects", of: "all projects" },
 ];
 
 /**
@@ -103,7 +103,7 @@ export function widerWaiting(
   counts: ScopeCounts,
 ): { scope: InboxScope; count: number } | undefined {
   const at = INBOX_SCOPES.findIndex((one) => one.scope === scope);
-  for (const one of INBOX_SCOPES.slice(0, at).reverse()) {
+  for (const one of INBOX_SCOPES.slice(at + 1)) {
     const count = counts[one.scope];
     if (count !== undefined && count > 0) return { scope: one.scope, count };
   }

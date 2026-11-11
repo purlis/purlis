@@ -4017,7 +4017,7 @@
         "selection.text": "platform",
         "state.failed": "#cf222e",
         "state.running": "#0966d4",
-        "state.success": "#197a35",
+        "state.success": "#166d2f",
         "state.unreadable": "#b34800",
         "state.waiting": "#7a5100",
         "state.waiting-glow": "#7a510045",

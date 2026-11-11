@@ -107,16 +107,16 @@ const chats = () =>
   [...document.querySelectorAll('.inbox-chat [role="rowheader"]')].map((h) => h.textContent);
 
 describe("the scope switch", () => {
-  it("offers all projects, this project and this workspace, each with its count, on all projects", async () => {
+  it("offers this workspace, this project and all projects, narrowest first, each with its count, on all projects", async () => {
     draw(ASKS, { ...strip("alpha"), elsewhere: elsewhere({ asking: [away] }) });
     expect(
       scopes()
         .getAllByRole("radio")
         .map((one) => one.getAttribute("aria-label")),
     ).toEqual([
-      "All projects, 4 waiting on you",
-      "This project, 3 waiting on you",
       "This workspace, 1 waiting on you",
+      "This project, 3 waiting on you",
+      "All projects, 4 waiting on you",
     ]);
     // Asks opens on every project's (#5999, ADR 0121 decision 4): the chat that waits in another
     // window's project is listed beside the project's own.
@@ -172,7 +172,9 @@ describe("the scope switch", () => {
     expect(chats()).toEqual(["steward 3"]);
   });
 
-  it("lists what waits in other projects under All projects", async () => {
+  it("lists another project's asks under All projects as rows of its own, each in its project (#1921)", async () => {
+    const npm = { ...permission(2, "x", "Run npm test"), chain: ["dev 2"] };
+    const port = { ...question(4, "Which port?"), chain: ["dev 4"] };
     const there = elsewhere({
       asking: [away],
       waitingHere: [
@@ -181,10 +183,8 @@ describe("the scope switch", () => {
           plane: "/home/dev/web",
           project: "web",
           count: 2,
-          asks: [
-            { session: 2, ask: "x", says: "Run npm test", source: "permission", chain: ["dev 2"] },
-            { session: 4, ask: "y", says: "Which port?", source: "question", chain: ["dev 4"] },
-          ],
+          asks: [npm, port],
+          where: { "2": "site · steward" },
         },
       ],
     });
@@ -192,10 +192,43 @@ describe("the scope switch", () => {
     // Listed at once: Asks opens on All projects (#5999).
     expect(picked()).toBe("All projects, 6 waiting on you");
     expect(chatGroup("steward 7")).toBeTruthy();
+    // Each ask of the other project is a group of its own, named by its chat, with no line for
+    // the project: its asks are drawn whole.
+    expect(chats()).toEqual(expect.arrayContaining(["dev 2", "dev 4"]));
+    expect(document.querySelector(".inbox-chat[data-others]")).toBeNull();
+    const npmGroup = chatGroup("dev 2");
+    expect(npmGroup).toHaveAttribute("data-elsewhere", "/home/dev/web#2");
+    // Its options stand on its row, as this project's decisions' do (#5998).
+    expect(
+      within(npmGroup)
+        .getAllByRole("button")
+        .map((one) => one.textContent),
+    ).toEqual(expect.arrayContaining(["Allow", "Deny", "Go to chat"]));
+    // It says its project, and where its chat is filed there.
+    expect(npmGroup.querySelector(".inbox-where")?.textContent).toBe("web · site · steward");
+    await userEvent.click(within(npmGroup).getByRole("button", { name: /^Go to chat/ }));
+    expect(there.onPress).toHaveBeenLastCalledWith(
+      "/home/dev/web",
+      expect.objectContaining({ does: { verb: "showChat", session: 2 } }),
+    );
+    // This project's own asks say which project they are in, beside the others'.
+    expect(document.querySelector('.inbox-chat[data-session="3"] .inbox-where')?.textContent).toBe(
+      "plane · alpha",
+    );
+    // This project narrows them away.
+    await userEvent.click(scopes().getByRole("radio", { name: /^This project/ }));
+    expect(chats()).toEqual(["steward 3", "steward 5", "steward 9"]);
+  });
+
+  it("draws a line with Go to project for another project whose asks are not read yet", async () => {
+    const there = elsewhere({
+      waitingHere: [
+        { plane: PLANE, project: "plane", count: 3 },
+        { plane: "/home/dev/web", project: "web", count: 2 },
+      ],
+    });
+    draw(ASKS, { ...strip("alpha"), elsewhere: there });
     const others = chatGroup(OTHER_PROJECTS);
-    // Each ask of the other project, read here and answered there.
-    expect(within(others).getByText("Run npm test")).toBeTruthy();
-    expect(within(others).getByText("Which port?")).toBeTruthy();
     expect(
       within(others)
         .getAllByRole("button")
@@ -203,10 +236,6 @@ describe("the scope switch", () => {
     ).toEqual(["Go to project"]);
     await userEvent.click(within(others).getByRole("button", { name: "Go to project web" }));
     expect(there.onOpen).toHaveBeenLastCalledWith("/home/dev/web");
-    // This project's own asks say which project they are in, beside the others'.
-    expect(document.querySelector('.inbox-chat[data-session="3"] .inbox-where')?.textContent).toBe(
-      "plane · alpha",
-    );
   });
 });
 

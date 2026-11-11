@@ -344,6 +344,8 @@ pub struct Held {
     quiet: crate::silence::Teller,
     /// Its chats' Stuck? and work left behind (#6014).
     noticed: Arc<crate::stuck::Noticed>,
+    /// Its chats paused at their budget or as looping, each a Blocking ask (#6015).
+    pauses: crate::pausing::Pauses,
     /// Told each Update a task's question makes (#4556, #4557).
     question_updates: crate::dispatched::UpdateTeller,
     /// The Asks that wait on the person to take a chat's browser over (#2015).
@@ -707,6 +709,11 @@ impl Held {
     /// Its chats' Stuck? and work left behind (#6014).
     pub fn noticed(&self) -> &crate::stuck::Noticed {
         &self.noticed
+    }
+
+    /// Its chats paused at their budget or as looping (#6015).
+    pub fn pauses(&self) -> &crate::pausing::Pauses {
+        &self.pauses
     }
 
     /// [`Self::tasks`], for a wait that outlives its hold on the project.
@@ -1516,6 +1523,7 @@ impl Held {
         lock_started(&self.started_on).remove(&session);
         self.typed.forget(session);
         self.noticed.forget(session);
+        self.pauses.forget(session);
         // Closed by the operator's Close, or by its own record: either way nothing is owed.
         self.closing.forget(session);
         self.brokered.forget(session);
@@ -1997,6 +2005,16 @@ impl Held {
             .ok()
             .and_then(|id| self.hooks.asks().asker_of(&id))
             .unwrap_or(purlis_core::harness::hooked::Asker::Unread);
+        // Whether the person refused it, read before it is answered and held no more: refusals
+        // piling up are a loop, which pauses the chat (#6015).
+        let refused = self
+            .hooks
+            .asks()
+            .pending(std::time::Instant::now())
+            .into_iter()
+            .find(|raised| raised.id.to_string() == ask && raised.chat == session.to_string())
+            .and_then(|raised| raised.ask.options.into_iter().find(|one| one.id == option))
+            .map(|chosen| chosen.kind != purlis_core::harness::model::ChoiceKind::Allow);
         // **An ask that timed out** (#6007): its hook has gone, so the answer waits for the
         // chat's same request, and the chat is told on its next turn to make it again. The
         // board is not moved: the chat still waits on its harness's own prompt, if it does.
@@ -2012,6 +2030,9 @@ impl Held {
             );
             self.chats.asks_may_have_moved();
             return Ok(());
+        }
+        if let Some(refused) = refused {
+            crate::pausing::answered(self, session, refused);
         }
         if let Some(moved) = self.board().answered_by(session, &asker) {
             (self.tell)(moved);
@@ -5372,6 +5393,7 @@ impl Planes {
             kept_sites: crate::network::KeptSites::default(),
             me,
             noticed,
+            pauses: crate::pausing::Pauses::default(),
         }
     }
 

@@ -544,6 +544,7 @@ export const commands = {
 	/**  What each chat of a project last told: Stuck? and work left behind. */
 	chatsNoticed: (plane: PlaneId) => typedError<ChatNoticed[], string>(__TAURI_INVOKE("chats_noticed", { plane })),
 	stuckFine: __WINDOW_ONLY_RESULT,
+	answerPause: __WINDOW_ONLY_RESULT,
 	/**
 	 *  The project's dispatch limits, for Settings › Project › Dispatch, a workspace's settings
 	 *  and the persona view.
@@ -3097,6 +3098,11 @@ export type AnswerPath =
 { via: "sandbox-expects"; items: ExpectedItem[] } | 
 /**  `answer_pool_sign_in` for confirmation `id`, yes or no, as its dialog answers (#6000). */
 { via: "confirmation"; id: number } | 
+/**
+ *  `answer_pause` for the chat it names, with the option chosen (#6015); Raise the budget is
+ *  the window's own, opening Settings where the limit is.
+ */
+{ via: "paused" } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -3328,7 +3334,17 @@ export type AskSource =
  *  **A `purlis` command's confirmation in the window** (#6000): a pool sign-in, a profile
  *  taken off a pool, a signing check, each waiting on the person's yes.
  */
-"confirmation";
+"confirmation" | 
+/**
+ *  **A chat paused at its budget** (#6015, ADR 0121 decision 20): a dispatch limit the
+ *  person set, reached. Continue, Raise the budget, or Stop.
+ */
+"budget" | 
+/**
+ *  **A chat paused as looping** (#6015, ADR 0121 decision 20): the same command failing
+ *  again and again, or its asks refused again and again. It's fine, continue, or Stop.
+ */
+"looping";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the

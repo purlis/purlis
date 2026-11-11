@@ -9,6 +9,7 @@ import { clearMocks, mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { OpenChat, Shown } from "./bindings";
 import { forgetInbox } from "./inboxRules";
+import { SETTLE_MS } from "./TaskBlocksNotice";
 import { forgetProjectViews } from "./projectViews";
 
 /**
@@ -74,8 +75,13 @@ type Project = { chats: OpenChat[]; asks: Shown[]; snoozed: Shown[] };
 /** The core: both projects open in this window, ONE in front, each with what it holds. */
 function core(projects: Record<string, Project>) {
   const badge: unknown[] = [];
+  const answered: Record<string, unknown>[] = [];
   mockIPC((cmd, args) => {
     const a = (args ?? {}) as Record<string, unknown>;
+    if (cmd === "answer_ask") {
+      answered.push(a);
+      return null;
+    }
     const here = projects[(a.plane as string | undefined) ?? ONE] ?? projects[ONE];
     if (cmd === "plugin:event|listen") return 1;
     if (cmd === "plugin:window|set_badge_count") {
@@ -123,7 +129,7 @@ function core(projects: Record<string, Project>) {
     if (cmd === "runners_away") return [];
     return null;
   });
-  return { badge };
+  return { badge, answered };
 }
 
 const bar = () => screen.getByRole("tablist", { name: "Attention" });
@@ -208,5 +214,56 @@ describe("the ✋ across every open project (#5999)", () => {
 
     await waitFor(() => expect(badge.length).toBeGreaterThan(0));
     expect(badge.every((value) => value === null)).toBe(true);
+  });
+
+  it("answers the second project's ask in place, from the first's Asks, in the second project (#1921)", async () => {
+    const { answered } = open({
+      [ONE]: { chats: [chat(ONE, 1)], asks: [permission(1, "a-1", "Run cargo test")], snoozed: [] },
+      [TWO]: { chats: [chat(TWO, 1)], asks: [permission(1, "b-1", "Run npm test")], snoozed: [] },
+    });
+    await screen.findByRole("tabpanel", { name: "Asks" });
+    // TWO's chat 1 is a group of its own beside ONE's chat 1, with its options on its row.
+    const theirs = await waitFor(() => {
+      const group = document.querySelector<HTMLElement>(`[data-elsewhere="${TWO}#1"]`);
+      expect(group).not.toBeNull();
+      return group as HTMLElement;
+    });
+    expect(within(theirs).getByText("Run npm test")).toBeTruthy();
+    // The person reads it before an Allow is taken (ADR 0097).
+    await new Promise((done) => setTimeout(done, SETTLE_MS + 50));
+
+    await userEvent.click(within(theirs).getByRole("button", { name: "Allow" }));
+
+    await waitFor(() => expect(answered).toHaveLength(1));
+    expect(answered[0]).toMatchObject({ plane: TWO, session: 1, ask: "b-1", option: "allow" });
+  });
+
+  it("keeps the project in front when the ✋ is pressed and only another project waits (#1921)", async () => {
+    open({
+      [ONE]: { chats: [chat(ONE, 1)], asks: [], snoozed: [] },
+      [TWO]: { chats: [chat(TWO, 1)], asks: [permission(1, "b-1", "Run npm test")], snoozed: [] },
+    });
+    await waitFor(() =>
+      expect(hand()).toHaveAccessibleName("Asks 1 thing waits on you, +1 elsewhere"),
+    );
+    /** The project tab in front, by its name. */
+    const front = () =>
+      screen
+        .getAllByRole("tab")
+        .find((tab) => tab.closest('[aria-label="Projects"]') && tab.ariaSelected === "true")
+        ?.getAttribute("aria-label");
+    const was = front();
+    expect(was).toBeTruthy();
+
+    // The title bar's ✋, which opens Asks (`openInbox`).
+    await userEvent.click(
+      within(screen.getByTestId("title-bar")).getByRole("button", { name: /waits? on you/ }),
+    );
+
+    // Its Asks lists TWO's ask, answerable there, and ONE stays in front.
+    await waitFor(() =>
+      expect(document.querySelector(`[data-elsewhere="${TWO}#1"]`)).not.toBeNull(),
+    );
+    expect(front()).toBe(was);
   });
 });

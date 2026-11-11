@@ -50,18 +50,17 @@ import { PROJECTS, ask, inFront, keepTheNotices, openFromTheStrip } from "../swi
  * project is then brought to the front, and from there, with **no view opened by the test**, each
  * kind must be:
  *
- * - **counted** by the ✋, as "+N elsewhere", and that N is what Asks lists for the other
- *   projects, and the asking project's line lists every one of its asks;
- * - **listed** by Asks, which opens on all projects, under that project's line, saying what it
- *   asks;
- * - **reachable**: Go to project brings the asking project forward with Asks on the ask's row,
- *   titled as its kind is, and a decision's options stand on that row (ADR 0121 amended
- *   2026-11-09). Another project's asks are read in the project in front and answered in their
- *   own (`InboxElsewhere.tsx`: "Read here and answered there").
+ * - **counted** by the ✋, as "+N elsewhere", and that N is how many rows Asks lists for the
+ *   other projects;
+ * - **listed** by Asks, which opens on all projects, as a row of its own under its project's
+ *   chat, saying what it asks (#1921);
+ * - **answerable in place**: its row is titled as its kind is, and a decision's options stand on
+ *   it (ADR 0121 amended 2026-11-09), or a typed ask keeps its Answer.
  *
- * Each is then answered with its refusal, or the cheapest safe answer, and **the asker is
- * told**: the chat's pane, or the command's own ending, says so. Each kind is a test of its own,
- * so a failure names its kind.
+ * Each is then answered there, in the project in front, with its refusal or the cheapest safe
+ * answer: the answer goes to the project that holds it (#1921). The asking project is then
+ * brought forward, and **the asker is told**: the chat's pane, or the command's own ending, says
+ * so. Each kind is a test of its own, so a failure names its kind.
  *
  * **Nothing is faked past the harness.** The reporting harness (`wdio.state.conf.ts`) raises
  * each chat's ask through the real `charter` (`harness.ts`): a permission through its hook, a
@@ -89,8 +88,8 @@ const HAND = '[data-testid="title-bar"] [data-testid="needs-you-button"]';
 const INBOX = '[role="tabpanel"][data-view="asks"]';
 /** The right bar's ✋: its count is in its name, after "Asks". */
 const ASKS_TAB = '[role="tablist"][aria-label="Attention"] [role="tab"][aria-label="Asks"]';
-/** The lines for this window's other projects. */
-const OTHERS = `${INBOX} [role="rowgroup"][data-others]`;
+/** The rows of `root`'s asks in the Asks of another project (#1921): under its chats' groups. */
+const theirRows = (root: string) => `${INBOX} [data-elsewhere^="${root}#"] .inbox-ask[role="row"]`;
 
 /** One of the spec's own projects: its folder, which is the name Asks gives it. */
 type Project = { root: string; name: string };
@@ -152,13 +151,14 @@ async function toFront(plane: string): Promise<void> {
   );
 }
 
-/** What Asks says of the window's other projects, and what the ✋ counts elsewhere; one pass. */
-async function elsewhere(): Promise<{
+/** What Asks lists of the window's other projects, project by project, and what the ✋ counts
+ *  elsewhere; one pass. */
+async function elsewhere(roots: readonly string[]): Promise<{
   counted: number | null;
-  lines: { go: string; count: number; says: string[] }[];
+  lines: { root: string; count: number; says: string[]; texts: string[] }[];
 }> {
   return browser.execute(
-    (tab: string, others: string) => {
+    (tab: string, inbox: string, all: string[]) => {
       const [, badge] = (document.querySelector(tab)?.getAttribute("aria-labelledby") ?? "").split(
         /\s+/,
       );
@@ -166,35 +166,41 @@ async function elsewhere(): Promise<{
       const counted = /\+(\d+) elsewhere/.exec(said);
       return {
         counted: counted ? Number(counted[1]) : null,
-        lines: [
-          ...document.querySelectorAll<HTMLElement>(`${others} > [role="row"][data-key]`),
-        ].map((line) => ({
-          go:
-            line.querySelector('[aria-label^="Go to project "]')?.getAttribute("aria-label") ?? "",
-          count: Number(
-            / · (\d+) waiting on you$/.exec(
-              line.querySelector(":scope .ask-says")?.textContent?.trim() ?? "",
-            )?.[1] ?? Number.NaN,
-          ),
-          says: [...line.querySelectorAll<HTMLElement>("li.inbox-says .ask-says")].map(
-            (one) => one.textContent?.trim() ?? "",
-          ),
-        })),
+        lines: all.map((root) => {
+          const rows = [
+            ...document.querySelectorAll<HTMLElement>(
+              `${inbox} [data-elsewhere^="${root}#"] .inbox-ask[role="row"]`,
+            ),
+          ];
+          return {
+            root,
+            count: rows.length,
+            says: rows.map((row) => row.querySelector(".ask-says")?.textContent?.trim() ?? ""),
+            texts: rows.map((row) => row.innerText.replace(/\s+/g, " ").trim()),
+          };
+        }),
       };
     },
     ASKS_TAB,
-    OTHERS,
+    INBOX,
+    [...roots],
   );
 }
 
 /** Asks's own words, for a failure to say what it showed. */
 async function asksSaid(): Promise<string> {
-  return browser.execute(
-    (inbox: string) =>
-      document.querySelector<HTMLElement>(inbox)?.innerText.replace(/\s+/g, " ").trim() ??
-      "(no Asks)",
-    INBOX,
-  );
+  return browser.execute((inbox: string) => {
+    // Every project's view keeps its Asks drawn behind the one in front: each is said, and
+    // whether it is the one in sight.
+    const all = [...document.querySelectorAll<HTMLElement>(inbox)];
+    if (all.length === 0) return "(no Asks)";
+    return all
+      .map(
+        (one) =>
+          `[${one.offsetParent === null ? "hidden" : "in sight"}] ${(one.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 400)}`,
+      )
+      .join(" | ");
+  }, INBOX);
 }
 
 /** One kind of Blocking ask, as this spec raises, finds and answers it. */
@@ -213,7 +219,7 @@ type Kind = {
   waits?: string;
   /** Raises it. */
   raise: () => Promise<void>;
-  /** Answers it on its row in the asking project's Asks, with the row in hand. */
+  /** Answers it on its row in the Asks of the project in front, with the row in hand (#1921). */
   answer: (row: string) => Promise<void>;
   /** Waits until the asker was told; throws, saying what it saw, if it never was. */
   told: () => Promise<void>;
@@ -263,8 +269,22 @@ async function panesTell(kind: string, words: string | RegExp): Promise<void> {
     });
 }
 
+/** **Waits for `row` to stand**, and says what Asks shows where it never does: a row of another
+ *  project's is drawn again as that project's window tells its asks again (#1921). */
+async function rowNow(row: string): Promise<void> {
+  await $(row)
+    .waitForExist({ timeout: 20_000, interval: 250 })
+    .catch(async () => {
+      throw new Error(
+        `the row ${row} went before it was answered, with ${await inFront()} in front; ` +
+          `Asks says: ${await asksSaid()}`,
+      );
+    });
+}
+
 /** Presses the row's `label`: a grant's settle is waited out by `pressGrant`, a refusal too. */
 async function pressOnRow(row: string, label: string): Promise<void> {
+  await rowNow(row);
   await pressGrant($(row).$(`button=${label}`));
 }
 
@@ -272,11 +292,16 @@ async function pressOnRow(row: string, label: string): Promise<void> {
  *  sends the refusal (ADR 0121 amended 2026-11-09). */
 async function keepBlocked(row: string): Promise<void> {
   // Looked for afresh at each press: the first redraws the row.
+  await rowNow(row);
   await pressGrant($(row).$("button=Keep blocked"));
-  // Where the first press sent the refusal already, the row has gone with it.
+  // Where the first press sent the refusal already, the row goes with it, perhaps while the second
+  // is looked for: then there is nothing to press, and `told` says whether the chat heard it.
   if (!(await $(row).isExisting())) return;
   const again = $(row).$("button=Keep blocked");
-  if (await again.isExisting()) await pressGrant(again);
+  if (!(await again.isExisting().catch(() => false))) return;
+  await pressGrant(again).catch(async (error: unknown) => {
+    if (await $(row).isExisting()) throw error;
+  });
 }
 
 /** The command confirmation's `purlis signing check`, while it runs. */
@@ -343,6 +368,7 @@ const KINDS: Kind[] = [
     waits: "Waiting on your reply",
     raise: () => fromAChat(mine),
     answer: async (row) => {
+      await rowNow(row);
       await $(row).$("button=Answer").click();
       const reply = await $(`${row} [aria-label^="Reply to "]`);
       await reply.waitForDisplayed({ timeout: 10_000 });
@@ -370,6 +396,7 @@ const KINDS: Kind[] = [
     raise: () => fromAChat(mine, ASKS_A_SECRET),
     // A value is typed, so its form is behind Answer; Not now is its refusal.
     answer: async (row) => {
+      await rowNow(row);
       await $(row).$("button=Answer").click();
       const notNow = await $('[data-testid="sa-not-now"]');
       await notNow.waitForDisplayed({ timeout: 10_000 });
@@ -529,21 +556,24 @@ describe("every Blocking ask, found from the ✋ alone (#6001)", function () {
           throw new Error(`${kind.name}: the ✋ did not open Asks`);
         });
 
-      // **Counted and listed**: the asking project's line says it, the line counts all it lists,
-      // and the ✋ counts, elsewhere, what every other project's line counts.
-      let seen = await elsewhere();
-      const ours = () => seen.lines.find((line) => line.go === `Go to project ${kind.from.name}`);
+      // **Counted and listed** (#1921): the asking project's ask is a row of its own here, saying
+      // what it asks, and the ✋ counts, elsewhere, every row another project has here.
+      const roots = [mine.root, walled.root];
+      let seen = await elsewhere(roots);
+      const listed = () => {
+        const line = seen.lines.find((one) => one.root === kind.from.root);
+        const { waits } = kind;
+        return (
+          line !== undefined &&
+          (line.says.some((said) => kind.says.test(said)) ||
+            (waits !== undefined && line.texts.some((text) => text.includes(waits))))
+        );
+      };
       await browser
         .waitUntil(
           async () => {
-            seen = await elsewhere();
-            const line = ours();
-            return (
-              line !== undefined &&
-              line.says.some((said) => kind.says.test(said)) &&
-              line.count === line.says.length &&
-              seen.counted === seen.lines.reduce((all, one) => all + one.count, 0)
-            );
+            seen = await elsewhere(roots);
+            return listed() && seen.counted === seen.lines.reduce((all, one) => all + one.count, 0);
           },
           { timeout: 90_000, interval: 500 },
         )
@@ -551,29 +581,19 @@ describe("every Blocking ask, found from the ✋ alone (#6001)", function () {
           const kept = await keepTheNotices(`every-ask-${kind.source}`);
           throw new Error(
             `${kind.name}: not counted or not listed from the ✋. The ✋ counts ${seen.counted} elsewhere; ` +
-              `the lines say ${JSON.stringify(seen.lines)}; Asks says: ${await asksSaid()} (kept: ${kept})`,
+              `the rows say ${JSON.stringify(seen.lines)}; Asks says: ${await asksSaid()} (kept: ${kept})`,
           );
         });
 
-      // **Reachable**: Go to project brings the asking project forward, Asks on the row.
-      await browser.execute(
-        (others: string, name: string) =>
-          document
-            .querySelector<HTMLElement>(`${others} [aria-label="Go to project ${name}"]`)
-            ?.click(),
-        OTHERS,
-        kind.from.name,
-      );
-      await browser.waitUntil(async () => (await inFront()) === kind.from.root, {
-        timeout: 20_000,
-        timeoutMsg: `${kind.name}: Go to project did not bring the asking project forward`,
-      });
-      const row = `${INBOX} .inbox-ask[data-source="${kind.source}"]`;
+      // The ✋ brought no project forward: the Asks in front lists every project's (#1921).
+      expect(await inFront()).toBe(front);
+      // **Answerable in place** (#1921): its row, in the Asks in front, under its own project.
+      const row = `${theirRows(kind.from.root)}[data-source="${kind.source}"]`;
       await $(row)
         .waitForDisplayed({ timeout: 20_000 })
         .catch(async () => {
           throw new Error(
-            `${kind.name}: the asking project's Asks has no row for it; it says: ${await asksSaid()}`,
+            `${kind.name}: Asks has no row for it here; it says: ${await asksSaid()}`,
           );
         });
       if (kind.decision) {
@@ -588,7 +608,10 @@ describe("every Blocking ask, found from the ✋ alone (#6001)", function () {
         await expect($(row).$("button=Answer")).toBeExisting();
       }
 
+      // Answered here, in the project in front: the answer goes to the project that holds it.
       await kind.answer(row);
+      // The asker is told in its own project, whose panes are drawn once it is in front.
+      await toFront(kind.from.root);
       await kind.told();
     });
   }

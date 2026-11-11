@@ -2027,6 +2027,32 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "mysqlrouter_passwd",
     "mysqlrouter_keyring",
     "mysql_migrate_keyring",
+    // The client-side kin (#5994, from #5990's reviews), refused whole as the rest of the family:
+    // a row would have to read every flag and every defaults file that names what they run.
+    // mydumper runs a command on each file it writes (`--exec`, `--exec-per-thread`), myloader
+    // one on each it reads, and either may be named in a defaults file the command line never
+    // shows. Percona Toolkit's `pt-*` (refused by their prefix, below) run code their flags name
+    // (`pt-online-schema-change --plugin`, `pt-stalk --plugin`, `pt-kill --execute-command`,
+    // `pt-query-digest --filter`), and any flag may come from a configuration file. gh-ost runs
+    // the `gh-ost-on-*` programs of the folder its `--hooks-path` names.
+    "mydumper",
+    "myloader",
+    "gh-ost",
+    // Galera's helpers: `galera_recovery` has a shell evaluate its arguments into the server's
+    // command line, `galera_new_cluster` has the service manager restart whatever unit it names,
+    // Percona XtraDB Cluster's `garbd` runs the scripts its `--recv-script` and
+    // `--post-recv-script` name (every `garbd` reads a `--cfg` file), and `garb-systemd` runs
+    // `garbd`.
+    "galera_recovery",
+    "galera_new_cluster",
+    "garbd",
+    "garb-systemd",
+    // The client and its test built with the server inside them: what `--server-arg` hands the
+    // server (`--plugin-load`, `--plugin-dir`) loads code from a file it names.
+    "mysql_embedded",
+    "mariadb-embedded",
+    "mysql_client_test_embedded",
+    "mariadb-client-test-embedded",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused
@@ -2218,19 +2244,21 @@ const MOST_VARIABLE_SHOWN: usize = 64;
 
 /// **Whether `name` is on [`NOT_FOR_A_RUN_GRANT`], or runs what it is told** ([`REFUSED_NAMES`]),
 /// as itself or by a form its builds are named by (#5424): `vim.basic`, a version (`gcc-13`,
-/// `clang-17`, `gcc13`), a GNU build (`gm4`, `genv`, `gnumake`), a target's (`x86_64-linux-gnu-gcc`),
-/// a flavour (`emacs-nox`, `sudo-rs`) and one of git's own programs (`git-shell`). Each form only takes away an Allow, so a name it
-/// catches by chance loses a notice and nothing more.
+/// `clang-17`, `gcc13`), a GNU build (`gm4`, `genv`, `gnumake`), a target's
+/// (`x86_64-linux-gnu-gcc`), a flavour (`emacs-nox`, `sudo-rs`), and by its prefix one of git's
+/// own programs (`git-shell`), a state transfer script (`wsrep_sst_rsync`) or a Percona Toolkit
+/// tool (`pt-kill`). Each form only takes away an Allow, so a name it catches by chance loses a
+/// notice and nothing more.
 fn not_for_a_run_grant(name: &str) -> bool {
     let refused = |one: &str| {
         !one.is_empty() && (NOT_FOR_A_RUN_GRANT.contains(&one) || runs_what_it_is_told(one))
     };
     // git's own programs are git's: `git-shell` runs what it is told, `git-lfs` runs git. The
     // server's state transfer scripts, each release adding some, run what their arguments name
-    // (#5931).
+    // (#5931), and so do Percona Toolkit's tools, each release adding some (#5994).
     let lower = name.to_ascii_lowercase();
     let stem = lower.split('.').next().unwrap_or_default();
-    if stem.starts_with("git-") || stem.starts_with("wsrep_sst_") {
+    if stem.starts_with("git-") || stem.starts_with("wsrep_sst_") || stem.starts_with("pt-") {
         return true;
     }
     name_forms(name).iter().any(|one| refused(one))

@@ -43,7 +43,7 @@ import { askOpenProposal } from "./proposedChangeOpen";
 import { proposeOldKeysRemoval } from "./oldHarnessPlugins";
 import { askOpenRunnerWrite } from "./runnerWriteOpen";
 import { askOpenRunnerDispatch } from "./runnerDispatchOpen";
-import { askProfileSignIn } from "./settings/links";
+import { askProfileSignIn, askSettingsLink } from "./settings/links";
 import {
   askSigningSetUp,
   setUpForgeOf,
@@ -314,6 +314,10 @@ const isLevel = (option: string): option is GrantLevel =>
  */
 export const OPENS_DELETE_WORKSPACE = "remove";
 
+/** **Raise the budget** on a chat paused at its budget (#6015): the window's own answer, which
+ *  opens Settings › Project › Dispatch at its limits and sends nothing. */
+export const RAISE_THE_BUDGET = "raise";
+
 /** What is said when an ask names no path the window can send. */
 export const IN_ITS_CHAT = "This is answered in its chat: go to it.";
 
@@ -385,6 +389,34 @@ export async function secretAskEntries(plane: string, ask: Shown): Promise<Entri
   const listed = await commands.secretAskEntries(plane, ask.answer.id);
   if (listed.status === "error") throw new Error(listed.error);
   return listed.data;
+}
+
+/**
+ * **Whether answering `ask` with `option` opens something in its project's window** (#1921): a
+ * tab, a shell or a dialog there, where the person goes on (`answerTaken`'s `opened`). Asks lists
+ * every open project's asks, and such an answer is not given from another project's Asks: that
+ * project's own does it, where what it opens is drawn. Every other answer is a command to the
+ * core, which holds every project of every window, and is given from any project's Asks.
+ */
+export function opensItsWindow(ask: Shown, option: string): boolean {
+  switch (ask.answer.via) {
+    case "proposed-change":
+    case "runner-write":
+    case "runner-dispatch":
+      return option === "open";
+    case "sign-in":
+      return option === "sign-in" || option.startsWith("sign-in:");
+    case "signing":
+      return option === "set-up" || setUpForgeOf(option) !== undefined;
+    case "old-harness-plugins":
+      return option === "remove";
+    case "sandbox-only":
+      return option === "make";
+    case "take-over":
+      return true;
+    default:
+      return false;
+  }
 }
 
 /**
@@ -751,6 +783,16 @@ export async function answerTaken(
         if (done.status === "ok") sandboxCommandReturned();
         return done.status === "ok" ? { status: "ok" } : done;
       }
+      case "paused":
+        // A chat paused at its budget or as looping (#6015): Raise the budget opens Settings where
+        // the limit is, and the chat goes on once a look finds it within the new limit. Every
+        // other answer is the core's: Continue and It's fine let it go on, Stop stops it.
+        if (option === RAISE_THE_BUDGET) {
+          askSettingsLink(plane, { group: "project.dispatch", setting: "project.dispatch.limits" });
+          opened = true;
+          return { status: "ok" };
+        }
+        return commands.answerPause(plane, ask.session, option);
       case "confirmation":
         // A command's confirmation in the window (#6000), answered here alone (#6136). The
         // command goes on, or stops, at once.

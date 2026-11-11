@@ -329,7 +329,7 @@
         "state.waiting": "#7a5100",
         "state.waiting-glow": "#7a510045",
         "state.failed": "#cf222e",
-        "state.success": "#197a35",
+        "state.success": "#166d2f",
         "state.unreadable": "#b34800",
 
         "overlay.scrim": "#1f1e1a7a",

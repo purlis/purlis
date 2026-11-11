@@ -12,7 +12,7 @@ import { KindIcon, kindOfAsk, RowAge } from "./InboxRow";
 import { toneOfKind } from "./messageTone";
 import { keepInboxScope, keptInboxScope, scopeOf, type InboxScope } from "./inboxScope";
 import { NoQuestion, ReadingTheQuestion, useAnswerQuestion } from "./AnswerQuestion";
-import { askKey, noteAnswered, replyBytes, ageOf, type Answered } from "./inboxRules";
+import { askKey, heldKey, noteAnswered, replyBytes, ageOf, type Answered } from "./inboxRules";
 import { type AllowedLately } from "./allowedLately";
 import { NoticeWayGuard } from "./noticeSettle";
 import { ChatText } from "./ChatText";
@@ -44,7 +44,7 @@ import { highRisk } from "./asksSame";
 import { Badge } from "./ui/badge/Badge";
 
 import { chainSaid, timeSaid, useSettledPlace } from "./inboxRowParts";
-import { askSeenKey, useSeenRow } from "./seenRows";
+import { askSeenKey, useSeenRow, type SeenRows } from "./seenRows";
 import { useChatsHere, useChatsSelect } from "./chatState";
 import { AskStanding } from "./AskStanding";
 import type { Standing } from "./asksOrder";
@@ -276,6 +276,9 @@ export const DECISIONS: ReadonlySet<Shown["source"]> = new Set<Shown["source"]>(
   // What the project expects of this machine, and a command's confirmation (#6000).
   "sandbox-expects",
   "confirmation",
+  // A chat paused at its budget or as looping (#6015).
+  "budget",
+  "looping",
 ]);
 
 /** What a decision of each kind asks, as its row's title: a question. */
@@ -289,6 +292,8 @@ const QUESTION: Partial<Record<Shown["source"], string>> = {
   "browser-site": "Let its browser reach this site?",
   "sandbox-expects": "Allow what this project expects?",
   confirmation: "Confirm what this command asks?",
+  budget: "Let it go on past its budget?",
+  looping: "Let it go on?",
 };
 
 /** **The question a decision asks** (#5998), named as the person reads it: a run grant names
@@ -496,6 +501,8 @@ export const SOURCE_SAID: Record<Shown["source"], string> = {
   "task-question": "Asks you, through its asking chat",
   "sandbox-expects": "Asks you to allow what this project expects",
   confirmation: "A command waits on your confirmation",
+  budget: "Paused at its budget",
+  looping: "Paused, as it may be looping",
 };
 
 /** Why a task's question reached the person, as its row says it. */
@@ -522,6 +529,8 @@ export function Ask({
   where,
   now,
   standing,
+  theirs = false,
+  seen,
 }: {
   plane: PlaneId;
   ask: Shown;
@@ -549,6 +558,13 @@ export function Ask({
   onStop?: () => void;
   /** A way out of the Notice drawn in the row was pressed, with its words. */
   onTouched: (answer: string) => void;
+  /**
+   * **It is another open project's ask** (#1921), listed here and answered in `plane`, its own
+   * project: each answer first checks it still waits there ({@link SETTLED_ELSEWHERE}).
+   */
+  theirs?: boolean;
+  /** Its project's seen record where it is another's (#1921), else the one drawn under. */
+  seen?: SeenRows | null;
 }) {
   const id = useId();
   const [said, setSaid] = useState<string>();
@@ -560,7 +576,9 @@ export function Ask({
   const who = chainSaid(ask.chain);
   /** A secret's one notice draws its own answers (#5080). */
   const secretNotice = ask.secret != null || ask.run != null;
-  const key = askKey(ask);
+  // Another project's ask is known by its project too (#1921): two projects' asks may share
+  // a chat's number and an ask's id.
+  const key = theirs ? heldKey(ask, plane) : askKey(ask);
   /** The task a task's question is from, as its Answer form names it. */
   const task = ask.chain[ask.chain.length - 1] ?? who;
   /** Its words are drawn whole: it is a dispatch's own Notice, or an answer here allows. */
@@ -590,7 +608,7 @@ export function Ask({
   ].join("\n");
   const { drawn, drawnAt, tooSoon, readPlaces } = useSettledPlace<HTMLElement>(here);
   // **New until seen** (#6002): its accent bar, until it has been in sight for about a second.
-  const [isNew, seenDrawnNow] = useSeenRow(askSeenKey(ask), drawn);
+  const [isNew, seenDrawnNow] = useSeenRow(askSeenKey(ask), drawn, seen);
   /** **The keyboard goes into the form its Answer opens** (#5651): onto its box, or its first
    *  answer. A task's box takes it itself once its question is read (`useAnswerQuestion`). */
   const focusForm = useRef(false);
@@ -635,17 +653,28 @@ export function Ask({
     // A secret's values are read from their boxes as the answer is pressed, and the boxes
     // emptied: only now, once the row has settled (#5080).
     const got = given?.();
-    void answerTaken(
-      plane,
-      ask,
-      option.id,
-      option.id === "keep" ? kept : undefined,
-      got === undefined ? typed : got.typed,
-      got?.picked,
-      got?.remember,
-      got?.run,
-      got?.named,
-    )
+    // **Another project's ask is answered only while it still waits there** (#1921): this list
+    // is what its window last told, so its project's asks are read again first, and an ask
+    // answered meanwhile, in its own window or anywhere, is sent nothing.
+    void (theirs ? stillWaits(plane, ask) : Promise.resolve(true))
+      .then((waits) =>
+        waits === true
+          ? answerTaken(
+              plane,
+              ask,
+              option.id,
+              option.id === "keep" ? kept : undefined,
+              got === undefined ? typed : got.typed,
+              got?.picked,
+              got?.remember,
+              got?.run,
+              got?.named,
+            )
+          : {
+              refused: waits === false ? SETTLED_ELSEWHERE : NOT_CHECKED_THERE,
+              live: false,
+            },
+      )
       .then(({ refused, live, opened, said: answeredSaid, allowedList }) => {
         if (refused !== undefined) {
           setSaid(refused);
@@ -1198,9 +1227,18 @@ export const MOVED_ON =
 export const NOT_CHECKED =
   "purlis could not check that this chat still waits on a reply, so nothing was sent. Try again, or reply in the chat itself.";
 
-/** Whether `ask` still waits on a reply, the project's asks read again now: `undefined` where
- *  they could not be read, which sends nothing either. */
-async function stillWaits(plane: PlaneId, ask: Shown): Promise<boolean | undefined> {
+/** What an answer to another project's ask says where that ask was answered meanwhile (#1921). */
+export const SETTLED_ELSEWHERE =
+  "This ask was already answered, in its own project or another window, so nothing was sent.";
+
+/** What an answer to another project's ask says where its project's asks could not be read. */
+export const NOT_CHECKED_THERE =
+  "purlis could not check that this ask still waits in its project, so nothing was sent. Try again, or go to the project.";
+
+/** Whether `ask` still waits in `plane`, the project's asks read again now: `undefined` where
+ *  they could not be read, which sends nothing either. A reply checks it (#1700), and so does
+ *  every answer to another project's ask (#1921). */
+export async function stillWaits(plane: PlaneId, ask: Shown): Promise<boolean | undefined> {
   const answer = await commands.asksWaiting(plane).catch(() => undefined);
   const asks =
     answer?.status === "ok" ? (answer.data as { asks?: readonly Shown[] } | null)?.asks : undefined;

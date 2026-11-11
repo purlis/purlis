@@ -138,14 +138,16 @@ fn purlis_classic_draws_exactly_today_s_values() {
     // tone Classic never drew before, so nothing it drew moved.
     // Dark's `syntax.comment` and both word washes, and light's `syntax.keyword`, `type`,
     // `property`, `attribute`, word washes and scrim, moved so syntax holds 3:1 on a changed word
-    // and the scrim 3:1 on the window (#4424).
+    // and the scrim 3:1 on the window (#4424). Light's `state.success` moved from `#197a35` to
+    // `#166d2f`, so an ok badge's words hold 4.5:1 on a chosen or hovered row, a card button and
+    // a trouble Notice, the surfaces it stands on (#6163).
     assert_eq!(
         digest(classic_dark()),
         "079e2351d141af89e5546d8822444aa44778fa709dd902c3982ce2b7e229393f"
     );
     assert_eq!(
         digest(classic_light()),
-        "39f834d15688f53ed49d5fdc9d96698d66bdffa6c2c5f78ab468f4b007b3f340"
+        "9f2cf2ddccd4d7ec451ccaa6c44f6165ce50f2442628fd121b51b07a2343f4c6"
     );
     for theme in [classic_dark(), classic_light()] {
         assert_eq!(theme.motion.durations["duration.quick"], 120);

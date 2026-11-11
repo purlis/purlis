@@ -1074,7 +1074,9 @@ fn the_check_says_the_consent_floors_the_window_holds_and_is_not_clean() {
 #[test]
 fn the_check_says_the_consent_floors_held_in_each_option_combination_that_breaks_one() {
     let rig = Rig::new();
-    // An option value, not an appearance, draws the danger words into the danger surface.
+    // An option value, not an appearance, draws the danger words into the danger surface. On a
+    // light appearance that dark surface hides an ok badge's green words in a trouble Notice
+    // too, so the state marks' floor is held there as well (#6163).
     rig.folder(
         &rig.project_themes(),
         "ember",
@@ -1102,8 +1104,8 @@ fn the_check_says_the_consent_floors_held_in_each_option_combination_that_breaks
         held,
         "  dark, ember on: the danger colours contrast with what they are drawn on — purlis \
          draws its own danger.surface, danger.text\n  \
-         light, ember on: the danger colours contrast with what they are drawn on — purlis \
-         draws its own danger.surface, danger.text\n\
+         light, ember on: the danger colours contrast with what they are drawn on; the state \
+         marks meet the mark floor — purlis draws its own danger.surface, danger.text\n\
          hard floors: none broken in 4 combinations\n"
     );
 
@@ -1117,7 +1119,7 @@ fn the_check_says_the_consent_floors_held_in_each_option_combination_that_breaks
             },
             {
                 "appearance": "light", "options": { "ember": "on" },
-                "floors": ["danger"], "tokens": ["danger.surface", "danger.text"]
+                "floors": ["danger", "state-marks"], "tokens": ["danger.surface", "danger.text"]
             }
         ])
     );
