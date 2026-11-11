@@ -921,6 +921,11 @@ pub struct Chats {
     coming: Mutex<Vec<Coming>>,
     /// What lets a few of them start at once, across every project.
     gate: Arc<crate::restoring::Gate>,
+    /// In a test: the numbers of the launch's chats, in the order each was taken to start
+    /// ([`Self::take_coming`]). Which reaches the host first is not that order once a start
+    /// hands its place back before the host answers.
+    #[cfg(test)]
+    taken: Mutex<Vec<u32>>,
     /// The ids of the chats launches registered, in the order their records held them: a
     /// chat that did not start keeps its place among the others that did not.
     recorded_order: Mutex<Vec<String>>,
@@ -1661,6 +1666,8 @@ impl Chats {
             would_not_start: Mutex::new(Vec::new()),
             coming: Mutex::new(Vec::new()),
             gate: crate::restoring::Gate::shared(),
+            #[cfg(test)]
+            taken: Mutex::new(Vec::new()),
             recorded_order: Mutex::new(Vec::new()),
             views: Mutex::new(Vec::new()),
             focus: Mutex::new(None),
@@ -5536,6 +5543,9 @@ impl Chats {
             ),
         };
         crate::starttiming::mark(crate::starttiming::Phase::Line);
+        // What a start needs the gate for is done: the session host's answer is waited for
+        // with no place held (felt speed round 2, H4).
+        crate::restoring::hand_back_here();
         // Settings too long for one word of a command line go through a file of their own (SK-9).
         let all = match identity.id.as_deref() {
             Some(id) if !reattaching => purlis_core::hoststart::settings_in_a_file(
@@ -8129,18 +8139,16 @@ impl Chats {
             .filter(|one| !one.starting)
             .count();
         let opened: Mutex<Vec<u32>> = Mutex::new(Vec::new());
-        // Every chat coming back was asked for now, however long it waits at the gate (#4988).
-        let asked = std::time::Instant::now();
         // Twice the starts the gate lets through at once: a start that hangs holds its
         // thread, and the ones behind it need one to go on with.
         let hands = wanted.min(crate::restoring::at_once() * 2);
         if hands <= 1 {
             // One chat, or none: on this thread, in turn.
-            self.start_what_is_coming(size, asked, &opened);
+            self.start_what_is_coming(size, &opened);
         } else {
             std::thread::scope(|scope| {
                 for _ in 0..hands {
-                    scope.spawn(|| self.start_what_is_coming(size, asked, &opened));
+                    scope.spawn(|| self.start_what_is_coming(size, &opened));
                 }
             });
         }
@@ -8161,15 +8169,17 @@ impl Chats {
 
     /// One hand of [`Self::finish_put_back`]: takes a place at the gate, then the chat that
     /// matters most among the ones still to start, until none is left.
-    fn start_what_is_coming(
-        &self,
-        size: Size,
-        asked: std::time::Instant,
-        opened: &Mutex<Vec<u32>>,
-    ) {
+    ///
+    /// The place is handed back as soon as the start's line is composed, before the session
+    /// host answers (felt speed round 2, H4), so the next chat's start goes on beside it.
+    fn start_what_is_coming(&self, size: Size, opened: &Mutex<Vec<u32>>) {
         PUTTING_BACK_HERE.set(true);
         loop {
+            // This start's own ask, so its line says how long it waited at the gate apart
+            // from how long it took (#4988).
+            let asked = std::time::Instant::now();
             let place = self.gate.enter(&self.project, &|| crate::restoring::Rank {
+                heavy: !self.shell_is_coming(),
                 behind: crate::restoring::is_behind(&self.project),
                 hidden: !self.front_is_coming(),
             });
@@ -8181,12 +8191,16 @@ impl Chats {
             let Some(next) = self.take_coming() else {
                 break;
             };
-            let gate = std::time::Instant::now();
+            let placed = std::time::Instant::now();
             let first = self.told_put_back(&next.chat, next.told.as_deref());
+            // Held by the start on this thread, which hands it back once its line is
+            // composed (`open_it_as`), and given back here where it never got that far.
+            crate::restoring::hold_here(place);
             // Each phase of it timed, into the app's log (#4988).
-            let started = crate::starttiming::timed(&next.chat.name, asked, gate, || {
+            let started = crate::starttiming::timed(&next.chat.name, asked, placed, || {
                 self.start_recorded_told(&next.chat, size, next.why, first.as_deref(), None)
             });
+            crate::restoring::hand_back_here();
             let session = match started {
                 Ok(session) => {
                     lock(opened).push(session);
@@ -8263,15 +8277,14 @@ impl Chats {
                 // since the quit's record is the last.
                 let _ = self.close(session);
             }
+            // Told with no place held: two starts of one project may tell the window in
+            // either order, and the window reads the project's chats again on each.
             crate::restoring::tell(crate::restoring::Moved {
                 root: self.project.clone(),
                 number: next.number,
                 session,
                 left,
             });
-            // The place is kept until the window has been told: the tells of one project come
-            // in the order its chats settled, and how many are left only goes down.
-            drop(place);
         }
         PUTTING_BACK_HERE.set(false);
     }
@@ -8284,16 +8297,29 @@ impl Chats {
             .any(|one| !one.starting && Some(one.number) == front)
     }
 
-    /// Takes the next chat to start: the one in front, where it is still to start, or else
-    /// the first in the record's order. It stays listed, marked as starting, until it has.
+    /// Whether a shell is among the chats a launch has still to start: a chat on no profile,
+    /// whose start takes a fraction of a second where a harness's takes seconds.
+    fn shell_is_coming(&self) -> bool {
+        lock(&self.coming)
+            .iter()
+            .any(|one| !one.starting && one.chat.profile.is_none())
+    }
+
+    /// Takes the next chat to start: its shells before its harnesses (felt speed round 2, H4),
+    /// and of each, the one in front where it is still to start, or else the first in the
+    /// record's order. It stays listed, marked as starting, until it has.
     fn take_coming(&self) -> Option<Coming> {
         let front = *lock(&self.front);
         let mut coming = lock(&self.coming);
         let at = coming
             .iter()
-            .position(|one| !one.starting && Some(one.number) == front)
-            .or_else(|| coming.iter().position(|one| !one.starting))?;
+            .enumerate()
+            .filter(|(_, one)| !one.starting)
+            .min_by_key(|(at, one)| (one.chat.profile.is_some(), Some(one.number) != front, *at))
+            .map(|(at, _)| at)?;
         coming[at].starting = true;
+        #[cfg(test)]
+        lock(&self.taken).push(coming[at].number);
         Some(coming[at].clone())
     }
 

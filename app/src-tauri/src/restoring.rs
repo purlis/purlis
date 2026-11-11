@@ -11,9 +11,12 @@
 //!
 //! - the window draws every chat's tab in its place from the first moment, as *restoring*
 //!   (`Chats::restoring_now`), and each becomes the chat as it starts ([`Moved`]);
-//! - at most [`at_once`] chats start at a time, across every project ([`Gate`]);
-//! - the chat in front of the project in front goes first, then each project's chat in front,
-//!   then the rest in the order they were recorded ([`Rank`]);
+//! - at most [`at_once`] chats start at a time, across every project ([`Gate`]), and a start
+//!   hands its place back once its line is composed, before it waits for the session host to
+//!   answer ([`hand_back_here`]);
+//! - a shell goes before a harness ([`Rank::heavy`]); then the chat in front of the project in
+//!   front goes first, then each project's chat in front, then the rest in the order they were
+//!   recorded ([`Rank`]);
 //! - a chat that does not start is listed as one that did not, as it always was, and the rest
 //!   are not held up by it. One whose start takes very long lends its place ([`LENDS_AFTER`]).
 //!
@@ -47,6 +50,10 @@ pub(crate) fn at_once() -> usize {
 /// Where a start stands among the ones waiting: the least goes first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct Rank {
+    /// What its project starts next is a harness, and not a shell (felt speed round 2, H4). A
+    /// shell starts in a fraction of a second and a harness's start in seconds, so a shell
+    /// waiting goes before every harness, even one of the project in front.
+    pub heavy: bool,
     /// Its project is not the one in front.
     pub behind: bool,
     /// Its project's chat in front is not among the ones still to start.
@@ -81,12 +88,12 @@ impl State {
 }
 
 /// A place at the gate, given back when it is dropped.
-pub(crate) struct Place<'a> {
-    gate: &'a Gate,
+pub(crate) struct Place {
+    gate: Arc<Gate>,
     turn: u64,
 }
 
-impl Drop for Place<'_> {
+impl Drop for Place {
     fn drop(&mut self) {
         let mut state = self.gate.lock();
         state.held.retain(|(turn, ..)| *turn != self.turn);
@@ -134,7 +141,7 @@ impl Gate {
     /// looks, so a project brought to the front while its chats wait moves ahead. Among equals,
     /// the one that asked first goes first, of the projects that hold fewer places than
     /// [`Self::most_for_one`].
-    pub(crate) fn enter(&self, project: &Path, rank: &dyn Fn() -> Rank) -> Place<'_> {
+    pub(crate) fn enter(self: &Arc<Self>, project: &Path, rank: &dyn Fn() -> Rank) -> Place {
         let mut state = self.lock();
         state.turns += 1;
         let turn = state.turns;
@@ -164,7 +171,10 @@ impl Gate {
                 drop(state);
                 // Whoever is next looks at once, where another place is free.
                 self.moved.notify_all();
-                return Place { gate: self, turn };
+                return Place {
+                    gate: Arc::clone(self),
+                    turn,
+                };
             }
             state = self
                 .moved
@@ -173,6 +183,27 @@ impl Gate {
                 .0;
         }
     }
+}
+
+thread_local! {
+    /// The place the start on this thread holds, until it hands it back ([`hand_back_here`]).
+    static HELD_HERE: std::cell::RefCell<Option<Place>> = const { std::cell::RefCell::new(None) };
+}
+
+/// The start about to be made on this thread holds `place` until [`hand_back_here`]: called by
+/// the start once its line is composed, and by its caller after it, for a start that never got
+/// that far.
+pub(crate) fn hold_here(place: Place) {
+    HELD_HERE.set(Some(place));
+}
+
+/// The start on this thread is done with what the gate is for, and hands its place back
+/// (felt speed round 2, H4): its profile, its sandbox and its proxy are ready and its line is
+/// composed, and what is left is waiting for the session host to answer. A start that held its
+/// place through that wait kept a launch's later chats queued behind programs coming up: a
+/// shell that needed 0.2 s waited 11 s. Nothing where this thread holds no place.
+pub(crate) fn hand_back_here() {
+    drop(HELD_HERE.take());
 }
 
 #[cfg(test)]
@@ -297,17 +328,25 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     const FRONT: Rank = Rank {
+        heavy: true,
         behind: false,
         hidden: false,
     };
     const REST: Rank = Rank {
+        heavy: true,
         behind: false,
+        hidden: true,
+    };
+    /// A shell, of a project behind the one in front.
+    const SHELL_BEHIND: Rank = Rank {
+        heavy: false,
+        behind: true,
         hidden: true,
     };
 
     #[test]
     fn no_more_start_at_once_than_the_gate_lets() {
-        let gate = Gate::letting(2, Duration::from_secs(60));
+        let gate = Arc::new(Gate::letting(2, Duration::from_secs(60)));
         let (inside, most) = (AtomicUsize::new(0), AtomicUsize::new(0));
         std::thread::scope(|scope| {
             for each in 0..8 {
@@ -328,7 +367,7 @@ mod tests {
 
     #[test]
     fn the_one_in_front_goes_before_the_ones_that_asked_earlier() {
-        let gate = Gate::letting(1, Duration::from_secs(60));
+        let gate = Arc::new(Gate::letting(1, Duration::from_secs(60)));
         let order = Mutex::new(Vec::new());
         let held = gate.enter(Path::new("/restoring/one"), &|| REST);
         std::thread::scope(|scope| {
@@ -365,7 +404,7 @@ mod tests {
     /// each was lent; one place is always left for another project.
     #[test]
     fn a_project_never_holds_every_place_while_another_waits() {
-        let gate = Gate::letting(2, Duration::from_secs(60));
+        let gate = Arc::new(Gate::letting(2, Duration::from_secs(60)));
         let (stuck, other) = (Path::new("/restoring/stuck"), Path::new("/restoring/other"));
         // The stuck project's first start hangs, and holds its place.
         let _hung = gate.enter(stuck, &|| REST);
@@ -400,7 +439,7 @@ mod tests {
     /// asks for any: it takes all but one, and the last waits for a project that comes later.
     #[test]
     fn a_project_takes_all_places_but_one() {
-        let gate = Gate::letting(3, Duration::from_secs(60));
+        let gate = Arc::new(Gate::letting(3, Duration::from_secs(60)));
         let (one, later) = (Path::new("/restoring/first"), Path::new("/restoring/later"));
         let _held: Vec<_> = (0..2).map(|_| gate.enter(one, &|| REST)).collect();
         let began = Instant::now();
@@ -410,13 +449,13 @@ mod tests {
             "the place left was taken"
         );
         // And one place of a gate of one is the project's: nothing is ever left unused.
-        let alone = Gate::letting(1, Duration::from_secs(60));
+        let alone = Arc::new(Gate::letting(1, Duration::from_secs(60)));
         drop(alone.enter(one, &|| REST));
     }
 
     #[test]
     fn a_start_that_takes_too_long_lends_its_place() {
-        let gate = Gate::letting(1, Duration::from_millis(50));
+        let gate = Arc::new(Gate::letting(1, Duration::from_millis(50)));
         let _hung = gate.enter(Path::new("/restoring/one"), &|| REST);
         let began = Instant::now();
         // The one place is held and never given back, and the next still gets in.
@@ -435,5 +474,80 @@ mod tests {
         assert!(is_behind(here));
         assert!(!is_behind(there));
         project_in_front(None);
+    }
+
+    /// Felt speed round 2, H4: the three places of a gate were held by starts waiting on the
+    /// session host, and a fourth waited until one was lent, 20 s on. A start parked in its
+    /// host phase has handed its place back, and the next goes in at once.
+    #[test]
+    fn three_starts_parked_on_the_host_leave_a_place_for_a_fourth() {
+        let gate = Arc::new(Gate::letting(3, Duration::from_secs(60)));
+        let parked = std::sync::Barrier::new(4);
+        let host_answers = std::sync::Barrier::new(4);
+        std::thread::scope(|scope| {
+            for each in 0..3 {
+                let (gate, parked, host_answers) = (&gate, &parked, &host_answers);
+                scope.spawn(move || {
+                    let project = PathBuf::from(format!("/restoring/parked/{each}"));
+                    hold_here(gate.enter(&project, &|| REST));
+                    // Its line is composed: what is left is the host's answer.
+                    hand_back_here();
+                    parked.wait();
+                    host_answers.wait();
+                });
+            }
+            parked.wait();
+            let (gate, (sent, got)) = (&gate, std::sync::mpsc::channel());
+            scope.spawn(move || {
+                let _place = gate.enter(Path::new("/restoring/parked/fourth"), &|| REST);
+                let _ = sent.send(());
+            });
+            let fourth = got.recv_timeout(Duration::from_secs(5));
+            host_answers.wait();
+            assert!(fourth.is_ok(), "the fourth start found no place");
+        });
+    }
+
+    #[test]
+    fn a_place_handed_back_is_not_given_back_twice() {
+        let gate = Arc::new(Gate::letting(2, Duration::from_secs(60)));
+        let other = gate.enter(Path::new("/restoring/twice/a"), &|| REST);
+        hold_here(gate.enter(Path::new("/restoring/twice/b"), &|| REST));
+        hand_back_here();
+        hand_back_here();
+        assert_eq!(
+            gate.lock().held.len(),
+            1,
+            "the other start still holds its place"
+        );
+        drop(other);
+        assert!(gate.lock().held.is_empty());
+    }
+
+    /// Felt speed round 2, H4: a shell queued behind harnesses waited for every one of them.
+    #[test]
+    fn a_shell_goes_before_the_harnesses_that_asked_first_even_in_front() {
+        let gate = Arc::new(Gate::letting(1, Duration::from_secs(60)));
+        let order = Mutex::new(Vec::new());
+        let held = gate.enter(Path::new("/restoring/shell/front"), &|| FRONT);
+        std::thread::scope(|scope| {
+            let (gate, order) = (&gate, &order);
+            scope.spawn(move || {
+                let _place = gate.enter(Path::new("/restoring/shell/front"), &|| FRONT);
+                order.lock().unwrap().push("harness in front");
+            });
+            while gate.lock().waiting.is_empty() {
+                std::thread::yield_now();
+            }
+            scope.spawn(move || {
+                let _place = gate.enter(Path::new("/restoring/shell/behind"), &|| SHELL_BEHIND);
+                order.lock().unwrap().push("shell behind");
+            });
+            while gate.lock().waiting.len() < 2 {
+                std::thread::yield_now();
+            }
+            drop(held);
+        });
+        assert_eq!(*order.lock().unwrap(), ["shell behind", "harness in front"]);
     }
 }

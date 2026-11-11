@@ -10,8 +10,7 @@ fn at(base: Instant, ms: u64) -> Instant {
 #[test]
 fn a_start_line_says_each_phase_as_the_time_since_the_one_before_it() {
     let asked = Instant::now();
-    let mut clock = Clock::asked_at(asked);
-    clock.passed(Phase::Gate, at(asked, 20_000));
+    let mut clock = Clock::asked_at(asked, at(asked, 20_000));
     clock.passed(Phase::Ready, at(asked, 20_040));
     clock.passed(Phase::Proxy, at(asked, 20_100));
     clock.passed(Phase::Line, at(asked, 20_150));
@@ -21,16 +20,15 @@ fn a_start_line_says_each_phase_as_the_time_since_the_one_before_it() {
 
     assert_eq!(
         line,
-        "purlis: start of chat 7: 245200 ms (gate +20000, ready +40, proxy +60, line +50, \
-         host +225000); live as chat 7"
+        "purlis: start of chat 7: 225200 ms after 20000 ms at the gate (ready +40, proxy +60, \
+         line +50, host +225000); live as chat 7"
     );
 }
 
 #[test]
 fn a_start_that_did_not_start_says_so_and_how_far_it_got() {
     let asked = Instant::now();
-    let mut clock = Clock::asked_at(asked);
-    clock.passed(Phase::Gate, at(asked, 5));
+    let clock = Clock::asked_at(asked, at(asked, 5));
 
     let line = clock.line(
         "chat 3",
@@ -40,7 +38,7 @@ fn a_start_that_did_not_start_says_so_and_how_far_it_got() {
 
     assert_eq!(
         line,
-        "purlis: start of chat 3: 9 ms (gate +5); did not start"
+        "purlis: start of chat 3: 4 ms after 5 ms at the gate (no phase passed); did not start"
     );
 }
 
@@ -87,7 +85,7 @@ fn a_timed_start_takes_the_marks_its_start_made() {
     });
 
     assert_eq!(started, Ok(5));
-    assert_eq!(seen, Some(vec![Phase::Gate, Phase::Ready, Phase::Host]));
+    assert_eq!(seen, Some(vec![Phase::Ready, Phase::Host]));
     assert!(
         CLOCK.with_borrow(Option::is_none),
         "the clock is taken off the thread"
