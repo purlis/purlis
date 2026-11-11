@@ -20,6 +20,19 @@
 //!   edit's file, that is not under the project's root. Read on the path as written (`~` is the
 //!   home folder, `..` is taken back), never by following links on disk.
 //!
+//! - **A delete** ([`Class::Delete`]): what the ask's own command or tool plainly says deletes,
+//!   and nothing guessed at: `rm`, `rmdir`, `unlink`, `git rm` (but `--cached`), `find …
+//!   -delete`, `git branch -d`/`-D`, `git push --delete` or a `:branch` refspec, and an edit a
+//!   harness's structured protocol names a delete (ACP's `delete` kind, [`delete_of`]).
+//! - **A vault use** ([`Class::VaultUse`], [`vault_use`]): an ask whose Allow hands a stored
+//!   credential from a purlis vault to a chat's program, a page or a pool's runner. The window's
+//!   registry knows which asks those are; this says them.
+//!
+//! A push that names no branch (`git push`, `git push origin`, `git push origin HEAD`) is
+//! classed by the branch it would push, where the caller knows it ([`Pushes`]); a line that
+//! moves to another folder first (`cd`, `--git-dir`) is not, since which branch is then is not
+//! what the chat's folder says.
+//!
 //! A high-risk ask is shown with its [`Risk::why`], never grouped, never offered as a rule, and
 //! its Allow asks once more ([`Risk::confirm`]) before it acts. Pure but for [`Facts::read`].
 
@@ -45,7 +58,23 @@ pub enum Class {
     ProtectedPush,
     ProductionHost,
     OutsideProject,
+    Delete,
+    VaultUse,
 }
+
+/// **What a push that names no branch would push** (#6178), as the chat's folder says: its
+/// current branch, and the branch on the remote a push sends it to, where git knows one.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Pushes {
+    /// The branch checked out.
+    pub current: Option<String>,
+    /// The branch on the remote a bare `git push` sends it to, where that is not its own name.
+    pub to: Option<String>,
+}
+
+/// **Where a push that names no branch would land**, for the folder `-C` names (`""` for none):
+/// the caller reads the chat's folder ([`pushes_from`]). A test names it.
+pub type PushesIn<'a> = &'a dyn Fn(&str) -> Option<Pushes>;
 
 /// **An ask's risk, as its row says it.** Both lines are purlis's words around the ask's own
 /// branch, host or path, which are data.
@@ -122,7 +151,13 @@ impl Facts {
     /// **The risk of running `line`**: a push to a protected branch, then a production host
     /// any URL in it reaches.
     pub fn of_command(&self, line: &str) -> Option<Risk> {
-        self.of_line(line, 0)
+        self.of_line(line, 0, None)
+    }
+
+    /// **The risk of running `line` in a chat's folder** (#6178): as [`Self::of_command`], and a
+    /// push that names no branch is read by the branch `pushes` says it would push.
+    pub fn of_command_in(&self, line: &str, pushes: PushesIn<'_>) -> Option<Risk> {
+        self.of_line(line, 0, Some(pushes))
     }
 
     /// **The risk of a tool's call**, from its input: a production host any URL in it reaches.
@@ -183,19 +218,28 @@ impl Facts {
         })
     }
 
-    /// Every command `line` runs, read for a protected push, then for a production host.
-    fn of_line(&self, line: &str, depth: usize) -> Option<Risk> {
+    /// Every command `line` runs, read for a protected push or a delete, then for a production
+    /// host. `pushes` is dropped once the line moves to another folder.
+    fn of_line(&self, line: &str, depth: usize, mut pushes: Option<PushesIn<'_>>) -> Option<Risk> {
         let segments = shellseg::segment_argv(line);
         for toks in &segments {
             let it = shellwrap::split_env_chdir(toks);
-            if base_lower(&it.prog) == "git"
-                && let Some(risk) = self.of_git(it.argv.get(1..).unwrap_or(&[]))
+            let prog = base_lower(&it.prog);
+            if matches!(prog.as_str(), "cd" | "pushd" | "popd") || !it.chdir.is_empty() {
+                pushes = None;
+            }
+            let args = it.argv.get(1..).unwrap_or(&[]);
+            if prog == "git"
+                && let Some(risk) = self.of_git(args, pushes)
             {
+                return Some(risk);
+            }
+            if let Some(risk) = deletes(&prog, args) {
                 return Some(risk);
             }
             if depth < SCRIPT_DEPTH {
                 for script in shellwrap::shell_scripts_of(&it.prog, &it.argv) {
-                    if let Some(risk) = self.of_line(&script, depth + 1) {
+                    if let Some(risk) = self.of_line(&script, depth + 1, pushes) {
                         return Some(risk);
                     }
                 }
@@ -211,28 +255,42 @@ impl Facts {
             .find_map(|host| self.of_host(&host))
     }
 
-    /// `git`'s arguments: a push to a protected branch.
-    fn of_git(&self, args: &[String]) -> Option<Risk> {
+    /// `git`'s arguments: a push to a protected branch, then a branch deleted.
+    fn of_git(&self, args: &[String], mut pushes: Option<PushesIn<'_>>) -> Option<Risk> {
         /// `git`'s own options that take the next word as their value.
         const GIT_VALUED: &[&str] = &["-C", "-c", "--git-dir", "--work-tree", "--namespace"];
         /// `git push`'s options that take the next word as their value.
         const PUSH_VALUED: &[&str] = &["--repo", "-o", "--push-option", "--receive-pack", "--exec"];
         let mut at = 0;
+        let mut folder = String::new();
         while let Some(word) = args.get(at) {
             if GIT_VALUED.contains(&word.as_str()) {
+                match word.as_str() {
+                    "-C" => folder = args.get(at + 1).cloned().unwrap_or_default(),
+                    // Another repository than the folder's: its branch is not the folder's.
+                    "--git-dir" | "--work-tree" => pushes = None,
+                    _ => {}
+                }
                 at += 2;
+            } else if word.starts_with("--git-dir=") || word.starts_with("--work-tree=") {
+                pushes = None;
+                at += 1;
             } else if word.starts_with('-') {
                 at += 1;
             } else {
                 break;
             }
         }
-        if args.get(at).map(String::as_str) != Some("push") {
-            return None;
+        let rest = args.get(at + 1..).unwrap_or(&[]);
+        match args.get(at).map(String::as_str) {
+            Some("push") => {}
+            Some("branch") => return branch_deleted(rest),
+            Some("rm") => return git_rm(rest),
+            _ => return None,
         }
-        let rest = &args[at + 1..];
         let mut words = Vec::new();
         let mut every = false;
+        let mut delete = false;
         let mut skip = false;
         let mut options = true;
         for word in rest {
@@ -245,6 +303,8 @@ impl Facts {
                 skip = true;
             } else if options && matches!(word.as_str(), "--all" | "--mirror" | "--branches") {
                 every = true;
+            } else if options && matches!(word.as_str(), "--delete" | "-d") {
+                delete = true;
             } else if !(options && word.starts_with('-')) {
                 words.push(word.as_str());
             }
@@ -257,17 +317,59 @@ impl Facts {
             });
         }
         // The first word is the remote; each after it is a refspec.
-        let branch = words.iter().skip(1).find_map(|refspec| {
+        let remote = words.first().copied();
+        let refspecs = words.get(1..).unwrap_or(&[]);
+        let named = refspecs.iter().find_map(|refspec| {
             let spec = refspec.trim_start_matches('+');
             let dst = spec.rsplit_once(':').map_or(spec, |(_, dst)| dst);
             let name = dst.strip_prefix("refs/heads/").unwrap_or(dst);
             (!name.starts_with("refs/") && self.protects(name)).then_some(name)
-        })?;
-        Some(Risk {
-            class: Class::ProtectedPush,
-            why: format!("Pushes to {branch}, a protected branch"),
-            confirm: format!("Allow a push to {branch}?"),
-        })
+        });
+        if let Some(branch) = named {
+            return Some(Risk {
+                class: Class::ProtectedPush,
+                why: format!("Pushes to {branch}, a protected branch"),
+                confirm: format!("Allow a push to {branch}?"),
+            });
+        }
+        // **A push that names no branch** (#6178): `git push`, `git push origin`, or `HEAD`,
+        // which pushes the current branch to one of the same name.
+        if !every && !delete {
+            let unnamed = refspecs.is_empty();
+            let head = refspecs
+                .iter()
+                .any(|spec| spec.trim_start_matches('+') == "HEAD");
+            if (unnamed || head)
+                && let Some(read) = pushes
+                && let Some(pushes) = read(&folder)
+            {
+                let lands = if unnamed {
+                    pushes.to.or(pushes.current)
+                } else {
+                    pushes.current
+                };
+                if let Some(branch) = lands.filter(|branch| self.protects(branch)) {
+                    return Some(Risk {
+                        class: Class::ProtectedPush,
+                        why: format!("Pushes this chat's branch to {branch}, a protected branch"),
+                        confirm: format!("Allow a push to {branch}?"),
+                    });
+                }
+            }
+        }
+        // **A branch deleted on the remote** (#6178): `--delete`, or a refspec with no source.
+        let gone: Vec<&str> = if delete {
+            refspecs.to_vec()
+        } else {
+            refspecs
+                .iter()
+                .filter_map(|spec| spec.trim_start_matches('+').strip_prefix(':'))
+                .collect()
+        };
+        let first = gone.first()?;
+        let name = first.strip_prefix("refs/heads/").unwrap_or(first);
+        let on = remote.map_or_else(String::new, |remote| format!(" on {remote}"));
+        Some(deleting(&format!("{name}{on}"), gone.len()))
     }
 
     /// Whether `branch` is protected: named, or matched by a pattern with `*`.
@@ -276,6 +378,125 @@ impl Facts {
             && branch != "HEAD"
             && self.protected.iter().any(|one| matches(one, branch))
     }
+}
+
+/// **What an edit a harness names a delete deletes** (#6178): ACP's `delete` kind, which the
+/// harness's own protocol says, on the file it names.
+pub fn delete_of(path: &str) -> Risk {
+    deleting(path, 1)
+}
+
+/// **A vault use** (#6178): an Allow that hands `what` from `vault` (or the person's, where the
+/// ask names none) to `to`. Every name is the registry's, and is data.
+pub fn vault_use(what: &str, vault: Option<&str>, to: &str) -> Risk {
+    let from = vault.map_or_else(|| "your vault".to_owned(), |vault| format!("vault {vault}"));
+    Risk {
+        class: Class::VaultUse,
+        why: format!("Hands {what} from {from} to {to}"),
+        confirm: format!("Allow handing {what} to {to}?"),
+    }
+}
+
+/// **Where a push that names no branch from `folder` lands** (#6178): its current branch and,
+/// where `push.default` is `upstream`, the branch it tracks, which a bare push sends it to;
+/// under `simple` and `current` it lands on its own name. Read with git itself, never guessed;
+/// nothing where `folder` is on no branch or git cannot say.
+pub fn pushes_from(folder: &Path) -> Option<Pushes> {
+    use crate::worktree::git;
+    let said = |args: &[&str]| {
+        git::run(folder, args, git::READ)
+            .ok()
+            .filter(git::Run::ok)
+            .map(|ran| ran.line().trim().to_owned())
+            .filter(|line| !line.is_empty())
+    };
+    let current = said(&["symbolic-ref", "--quiet", "HEAD"])?
+        .strip_prefix("refs/heads/")?
+        .to_owned();
+    let to = said(&["config", "--get", "push.default"])
+        .filter(|mode| matches!(mode.as_str(), "upstream" | "tracking"))
+        .and_then(|_| said(&["config", "--get", &format!("branch.{current}.merge")]))
+        .and_then(|merge| merge.strip_prefix("refs/heads/").map(str::to_owned));
+    Some(Pushes {
+        current: Some(current),
+        to,
+    })
+}
+
+/// A delete of `first`, and `more` in all.
+fn deleting(first: &str, all: usize) -> Risk {
+    let what = match all {
+        0 | 1 => first.to_owned(),
+        n => format!("{first} and {} more", n - 1),
+    };
+    Risk {
+        class: Class::Delete,
+        why: format!("Deletes {what}"),
+        confirm: format!("Allow deleting {what}?"),
+    }
+}
+
+/// The words of `args` that are not options, every word after `--` included.
+fn operands(args: &[String]) -> Vec<&str> {
+    let mut options = true;
+    args.iter()
+        .filter(|word| {
+            if options && *word == "--" {
+                options = false;
+                return false;
+            }
+            !(options && word.starts_with('-') && word.len() > 1)
+        })
+        .map(String::as_str)
+        .collect()
+}
+
+/// **What `prog` run with `args` deletes**, where its words plainly say so.
+fn deletes(prog: &str, args: &[String]) -> Option<Risk> {
+    match prog {
+        "rm" | "rmdir" | "unlink" => {
+            let gone = operands(args);
+            Some(deleting(gone.first()?, gone.len()))
+        }
+        "find" if args.iter().any(|arg| arg == "-delete") => {
+            let under = args
+                .iter()
+                .take_while(|arg| !arg.starts_with('-') && !arg.starts_with('('))
+                .next()
+                .map_or(".", String::as_str);
+            Some(Risk {
+                class: Class::Delete,
+                why: format!("Deletes what find matches in {under}"),
+                confirm: "Allow deleting what find matches?".to_owned(),
+            })
+        }
+        _ => None,
+    }
+}
+
+/// `git branch`'s arguments: a branch deleted (`-d`, `-D`, `--delete`, `-dr`).
+fn branch_deleted(args: &[String]) -> Option<Risk> {
+    let delete = args.iter().any(|arg| {
+        arg == "--delete"
+            || (arg.starts_with('-')
+                && !arg.starts_with("--")
+                && arg.chars().skip(1).any(|c| c == 'd' || c == 'D'))
+    });
+    if !delete {
+        return None;
+    }
+    let gone = operands(args);
+    let first = gone.first()?;
+    Some(deleting(&format!("branch {first}"), gone.len()))
+}
+
+/// `git rm`'s arguments: the files it deletes, unless `--cached` keeps them.
+fn git_rm(args: &[String]) -> Option<Risk> {
+    if args.iter().any(|arg| arg == "--cached") {
+        return None;
+    }
+    let gone = operands(args);
+    Some(deleting(gone.first()?, gone.len()))
 }
 
 /// The strings of `table`'s list at `key`; anything else in it is ignored.
