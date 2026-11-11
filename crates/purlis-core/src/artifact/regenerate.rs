@@ -246,10 +246,14 @@ fn allowed(root: &Path, code: &Path) -> bool {
     let Ok(rel) = code.strip_prefix(root) else {
         return false;
     };
-    let parts: Vec<&str> = rel
+    // A part that is not UTF-8 is a shape nobody can read, so it is refused, never read as "".
+    let Some(parts) = rel
         .components()
-        .map(|part| part.as_os_str().to_str().unwrap_or(""))
-        .collect();
+        .map(|part| part.as_os_str().to_str())
+        .collect::<Option<Vec<&str>>>()
+    else {
+        return false;
+    };
     let a_skill = |level: &str| SKILL_LEVELS.contains(&level) && code.join(SKILL_FILE).is_file();
     match parts.as_slice() {
         [first, ws, _, ..] if *first == crate::sandbox::WORKSPACES => {

@@ -781,3 +781,17 @@ fn a_folder_of_a_skill_level_that_is_no_skill_is_refused() {
     file(&here, "personas/steward/tools/SKILL.md");
     refused(&here, "node ../../personas/steward/tools/run.mjs");
 }
+
+/// A folder whose name is not UTF-8, which a link can resolve a script into, is a shape the
+/// allowlist cannot read: refused, never read as an empty name, which would make
+/// `workspaces/<it>/…` a folder below `workspaces/` itself, and skip the dot-folder rule.
+#[cfg(unix)]
+#[test]
+fn a_code_folder_whose_name_is_not_utf8_is_refused() {
+    use std::os::unix::ffi::OsStrExt as _;
+    let here = Here::new();
+    let odd = std::ffi::OsStr::from_bytes(b".\xff");
+    // Never made: macOS refuses such a name, and the check refuses it without reading the disk.
+    let code = here.root.join("workspaces").join(odd).join("tools");
+    assert!(!super::allowed(&here.root, &code));
+}
