@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794363288935,
+  "lastUpdate": 1794367019203,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -46662,6 +46662,48 @@ window.BENCHMARK_DATA = {
             "value": 102.4027955,
             "unit": "ms",
             "extra": "median of 5 runs: 101.586, 101.763, 102.403, 102.646, 102.942 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "9d9c2eaf32271a07d629475b7050381a7d6eaf6b",
+          "message": "The project-switch job ends when the pane on screen shows its sentinel (#6183) (#6186)\n\n* The project-switch job ends when the pane on screen shows its sentinel (#6183)\n\nThe scenario run's project switch waited only for the sentinel to arrive as new output, in a\npane armed by its session number. A kept terminal put back after the strip marked the switch is\nsent nothing, and every switch-<n> project's chat is session 1, so the job could wait on a pane\nthat would never be sent it, and failed with \"the pane never painted ready\" while the pane on\nscreen showed it. It now arms the pane that opened by its terminal, and ends on whichever comes\nfirst: the sentinel sent to that pane, or a pane on screen that holds it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M742C56HBQVZ7RXFSA8VSPYR\nPurlis-Persona: steward\n\n* The switch job never takes the pane it left for the one it came to (#6183)\n\nFrom review: the panes on screen before the press can hold the same sentinel for a frame or\ntwo, so the look for a pane holding it leaves them out; the second test now fails on a match\nunder 100 ms, which it did before this. built names the pane that painted, the pane armed is\ndisarmed whichever wins, and the awaited comment says every job that sets it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M742C56HBQVZ7RXFSA8VSPYR\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-11T02:09:17Z",
+          "tree_id": "bea3ae0d448763c9e15fcf2b39aec8945ec36657",
+          "url": "https://github.com/purlis/purlis/commit/9d9c2eaf32271a07d629475b7050381a7d6eaf6b"
+        },
+        "date": 1794367009809,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.7245349999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.684, 0.712, 0.725, 0.744, 0.747 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.529777000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.503, 16.521, 16.530, 16.613, 16.818 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.895432,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.052, 101.667, 101.895, 103.124, 103.663 ms"
           }
         ]
       }
