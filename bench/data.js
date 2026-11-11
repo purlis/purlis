@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794352232774,
+  "lastUpdate": 1794356007028,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -46536,6 +46536,48 @@ window.BENCHMARK_DATA = {
             "value": 101.832904,
             "unit": "ms",
             "extra": "median of 5 runs: 100.883, 101.798, 101.833, 102.427, 102.435 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "13391c14f427e62988b89183cce3fcc735fa0feb",
+          "message": "Budgets and loops pause into Blocking asks (#6015) (#6176)\n\n* Budgets and loops pause into Blocking asks (#6015), on main after #6010\n\n#6158's head (730b05e7f, with its story baselines) merged with main at 032a2e344. #6010 gave asking::Shown a rule and asking::Offered a scope; a pause's ask sets both to None, as a budget or loop pause is never offered a rule nor cooled off (ADR 0121 decision 7). a_budget_or_loop_pause_is_never_named_offered_a_rule_nor_cooled_off holds it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M73K31A0D9QBN8M7VHVF2HAF\nPurlis-Persona: steward\n\n* Budgets and loops pause into Blocking asks (#6015): the new files\n\nThe files #6158 adds: the pausing and looping modules, PausedNotice, the ADR 0121 amendment, the changelog fragment, and the InboxDecision story baselines drawn by #6158's stories run.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M73K31A0D9QBN8M7VHVF2HAF\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T23:35:25Z",
+          "tree_id": "16f3ed6eafbcf29fa8685f03a01ddfc9f1b30ef9",
+          "url": "https://github.com/purlis/purlis/commit/13391c14f427e62988b89183cce3fcc735fa0feb"
+        },
+        "date": 1794355999686,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.55128,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.542, 0.547, 0.551, 0.552, 0.564 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.122156500000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.102, 16.114, 16.122, 16.195, 16.206 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.647763,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.905, 100.763, 101.648, 102.088, 102.847 ms"
           }
         ]
       }
