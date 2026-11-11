@@ -20,10 +20,15 @@
  * themselves (#3562).
  */
 const CUTS: Record<number, readonly string[]> = {
-  // WebdriverIO's halves, as they cut 100 specs (Linux's two parts).
+  // WebdriverIO's halves, as they cut 100 specs (Linux's two parts until 2026-11-11).
   2: ["projects"],
-  // 7.7, 7.7, 6.9 and 7.6 minutes of specs on macOS, the mean of five runs on 2026-10-28.
-  4: ["pane-notices", "projects", "tab-chip"],
+  // Linux's three parts: 14.8, 14.5 and 9.8 minutes of specs, the third with the single-app runs
+  // (about 5 more), the median of four merge-queue runs on 2026-11-11. The two parts cut at
+  // `projects` had grown to 28.6 and 10.6, once the `artifact-*` specs all landed in the first.
+  3: ["pane-crumbs", "regions"],
+  // 7.8, 10.1, 10.4 and 10.4 minutes of specs on macOS, the median of four merge-queue runs on
+  // 2026-11-11 (the cuts of 2026-10-28 had drifted to 15.2, 10.3, 6.0 and 7.1).
+  4: ["corners", "panes", "settings-limits"],
 };
 
 /**
