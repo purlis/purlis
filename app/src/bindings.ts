@@ -4735,7 +4735,7 @@ export const commands = {
 	 *  project; a project or a workspace can still turn it off on its own, as it can any extension.
 	 */
 	setExtensionOn: (id: string, on: boolean) => typedError<null, string>(__TAURI_INVOKE("set_extension_on", { id, on })),
-	openExtensionRecord: (editor: YourEditor) => typedError<null, string>(__TAURI_INVOKE("open_extension_record", { editor })),
+	openExtensionRecord: (plane: string | null, editor: YourEditor) => typedError<null, string>(__TAURI_INVOKE("open_extension_record", { plane, editor })),
 	/**
 	 *  **The theme the window draws** (spec #2313): the core's theme engine resolves it from the six
 	 *  theme levels ([`purlis_core::theme::resolve_levels`], #2323) and the window only applies what

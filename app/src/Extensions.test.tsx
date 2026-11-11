@@ -500,9 +500,64 @@ describe("the extension registry", () => {
     await userEvent.click(screen.getByRole("button", { name: "Open in your editor" }));
     await waitFor(() =>
       expect(asked.filter(({ cmd }) => cmd === "open_extension_record")).toEqual([
-        { cmd: "open_extension_record", args: { editor: "zed" } },
+        { cmd: "open_extension_record", args: { plane: null, editor: "zed" } },
       ]),
     );
+    forgetYourEditor();
+  });
+
+  it("sends the project in front with the editor, for a terminal editor's tab (#1894)", async () => {
+    const asked: { cmd: string; args: unknown }[] = [];
+    mockIPC((cmd, args) => {
+      asked.push({ cmd, args });
+      if (cmd === "installed_extensions")
+        return {
+          built_in_themes: [],
+          extensions: [],
+          unreadable: "'/home/o/.config/charter/extensions.json' is not JSON",
+          dropped: [],
+        };
+      if (cmd === "theme_in_force") return { theme: null, complaints: [], follows_system: false };
+      if (cmd === "open_extension_record") return null;
+      throw new Error(`the window asked for ${cmd}, which this test did not expect`);
+    });
+    render(<Extensions onClose={() => undefined} plane={"/work/one" as PlaneId} />);
+    await screen.findByText(/nothing an extension declares is in force/);
+
+    setYourEditor("variable");
+    await userEvent.click(screen.getByRole("button", { name: "Open in your editor" }));
+    await waitFor(() =>
+      expect(asked.filter(({ cmd }) => cmd === "open_extension_record")).toEqual([
+        { cmd: "open_extension_record", args: { plane: "/work/one", editor: "variable" } },
+      ]),
+    );
+    forgetYourEditor();
+  });
+
+  it("says why a terminal editor cannot open the record with no project in front (#1894)", async () => {
+    const why =
+      "Your editor runs in a terminal, which opens in a shell tab of a project, and no project is open, so the record was not opened. Open a project first, or choose VS Code, Zed or a JetBrains IDE in Settings › You › Editor.";
+    mockIPC((cmd, args) => {
+      if (cmd === "installed_extensions")
+        return {
+          built_in_themes: [],
+          extensions: [],
+          unreadable: "'/home/o/.config/charter/extensions.json' is not JSON",
+          dropped: [],
+        };
+      if (cmd === "theme_in_force") return { theme: null, complaints: [], follows_system: false };
+      if (cmd === "open_extension_record") {
+        expect(args).toEqual({ plane: null, editor: "variable" });
+        throw why;
+      }
+      throw new Error(`the window asked for ${cmd}, which this test did not expect`);
+    });
+    render(<Extensions onClose={() => undefined} />);
+    await screen.findByText(/nothing an extension declares is in force/);
+
+    setYourEditor("variable");
+    await userEvent.click(screen.getByRole("button", { name: "Open in your editor" }));
+    expect(await screen.findByText(why)).toBeVisible();
     forgetYourEditor();
   });
 });
