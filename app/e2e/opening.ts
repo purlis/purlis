@@ -466,14 +466,6 @@ export async function clearEndedPanes(session?: number, most = 200): Promise<voi
   }
 }
 
-/** A control a press is for, asked for by its role as well as its tag (CLAUDE.md). */
-const BUTTONS = 'button, [role="button"]';
-
-/** Whether `one` takes a press: neither `disabled` nor `aria-disabled`. Run in the page. */
-function pressable(one: Element): boolean {
-  return !one.hasAttribute("disabled") && one.getAttribute("aria-disabled") !== "true";
-}
-
 /**
  * **Presses Clear pane on the first band `cause` names that offers it** (#4756, #6227), and
  * answers whether it did. **Run in the page**, so the band is the one drawn now: clearing one
@@ -481,10 +473,12 @@ function pressable(one: Element): boolean {
  * had found 100 ms before was a node no longer in the window.
  */
 export function pressClearPane(cause: string): boolean {
+  // Everything it needs is inside it: a script `browser.execute` runs sees nothing of this module.
   for (const band of document.querySelectorAll(cause)) {
-    const clear = [...band.querySelectorAll<HTMLElement>(BUTTONS)].find(
+    const clear = [...band.querySelectorAll<HTMLElement>('button, [role="button"]')].find(
       (one) =>
-        pressable(one) &&
+        !one.hasAttribute("disabled") &&
+        one.getAttribute("aria-disabled") !== "true" &&
         [one.getAttribute("aria-label"), one.textContent].some(
           (said) => (said ?? "").trim() === "Clear pane",
         ),
@@ -504,8 +498,12 @@ export function pressClearPane(cause: string): boolean {
 export function pressTheAnswer(ending: string, word: string): boolean {
   for (const dialog of document.querySelectorAll('[role="alertdialog"]')) {
     if (!(dialog.textContent ?? "").includes(ending)) continue;
-    const answer = [...dialog.querySelectorAll<HTMLElement>(BUTTONS)].find(
-      (one) => pressable(one) && (one.textContent ?? "").trim() === word,
+    // Asked for by role as well as tag, and all inside it, as `pressClearPane` is.
+    const answer = [...dialog.querySelectorAll<HTMLElement>('button, [role="button"]')].find(
+      (one) =>
+        !one.hasAttribute("disabled") &&
+        one.getAttribute("aria-disabled") !== "true" &&
+        (one.textContent ?? "").trim() === word,
     );
     if (answer === undefined) continue;
     answer.click();

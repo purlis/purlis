@@ -493,4 +493,16 @@ describe("a press that holds no node", () => {
     expect(pressTheAnswer("", "Close")).toBe(false);
     expect(pressTheAnswer("", "End")).toBe(false);
   });
+
+  // WebdriverIO sends a script as its source text, so the page runs it with none of this
+  // module around it: a constant it named from here was "Can't find variable" in every spec
+  // that ended a chat. Rebuilt from its text, it must still press.
+  it("presses from its own text alone, as browser.execute sends it", () => {
+    const sent = <F>(script: F): F => new Function(`return (${String(script)})`)() as F;
+    const cleared = clicks(aBand("chat-ended:4", "Clear pane")[0]);
+    expect(sent(pressClearPane)('[data-cause="chat-ended:4"]')).toBe(true);
+    const closed = clicks(aQuestion("End chat steward 4?", "Close")[0]);
+    expect(sent(pressTheAnswer)("steward 4", "Close")).toBe(true);
+    expect([cleared(), closed()]).toEqual([1, 1]);
+  });
 });
