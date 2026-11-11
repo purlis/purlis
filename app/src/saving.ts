@@ -99,8 +99,8 @@ export const SAVING_REREAD_MS = 10_000;
  *
  * **`beat` false reads on no beat** (felt speed, round 2): a project behind the one in front
  * (`PlaneView`, which marks its tab) reads its standing when its git standing moves, on focus
- * and after a save, and once as it comes to the front, but not every 10 s with every other
- * project in one tick.
+ * and after a save, and once as it comes to the front if its standing is older than a beat, but
+ * not every 10 s with every other project in one tick.
  */
 export function usePlaneSaving(
   plane: PlaneId | undefined,
@@ -120,6 +120,8 @@ export function usePlaneSaving(
   const answered = useRef(answeredFor);
   /** Reads the standing again: nothing until there is a project to read. */
   const readAgain = useRef<() => void>(() => undefined);
+  /** When the standing was last asked (the monotonic clock), however it was asked. */
+  const askedAt = useRef<number | undefined>(undefined);
   const shown = useProjectShown();
   const shownNow = useRef(shown);
   useEffect(() => {
@@ -133,6 +135,7 @@ export function usePlaneSaving(
     let newest = 0;
     const read = () => {
       const ask = (newest += 1);
+      askedAt.current = performance.now();
       void commands
         .planeSaving(plane)
         .then((answer) => {
@@ -183,7 +186,14 @@ export function usePlaneSaving(
   }, [plane, shown]);
 
   const reread = useCallback(() => readAgain.current(), []);
-  useRereads(reread, beat);
+  // As the beat turns on again, only a standing older than a beat is read: one asked within it,
+  // as its project was opened or its git standing moved, is the one the beat would have read.
+  // A switch to a project read a moment ago asks nothing more (`projectSwitch.cost.test.tsx`).
+  const catchUp = useCallback(() => {
+    const at = askedAt.current;
+    if (at === undefined || performance.now() - at >= SAVING_REREAD_MS) readAgain.current();
+  }, []);
+  useRereads(reread, beat, catchUp);
 
   // Another project's answer is not this one's: drawn only for the project it was read for.
   return {
@@ -207,9 +217,9 @@ export const RETURN_FOLD_MS = 1_000;
  *  {@link RETURN_FOLD_MS} of the last read asked here is the same return and asks nothing. A
  *  finished save always asks: it is news, not a return.
  *
- *  With `beat` false, nothing on the beat; turned on again, one read once the frame is painted,
+ *  With `beat` false, nothing on the beat; turned on again, `catchUp` once the frame is painted,
  *  for what the beat would have read meanwhile. */
-function useRereads(read: () => void, beat: boolean): void {
+function useRereads(read: () => void, beat: boolean, catchUp: () => void = read): void {
   // Not for a view of a project kept behind another (`projectShown.tsx`), which asks once as
   // its project comes back, after it is painted.
   const shown = useProjectShown();
@@ -231,7 +241,7 @@ function useRereads(read: () => void, beat: boolean): void {
     window.addEventListener(PLANE_SAVED, again);
     const stop = beat ? everyWhileShown(SAVING_REREAD_MS, returned) : undefined;
     // The beat turned on again: what it would have read meanwhile, once the frame is painted.
-    const cancel = beat && !beatWas.current ? afterPaint(again) : undefined;
+    const cancel = beat && !beatWas.current ? afterPaint(catchUp) : undefined;
     beatWas.current = beat;
     return () => {
       window.removeEventListener("focus", returned);
@@ -239,7 +249,7 @@ function useRereads(read: () => void, beat: boolean): void {
       stop?.();
       cancel?.();
     };
-  }, [read, shown, beat]);
+  }, [read, shown, beat, catchUp]);
 }
 
 /** How many mounted hooks hold each project and workspace's repo rows (`useRepoSavingKept`). */

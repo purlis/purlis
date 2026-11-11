@@ -207,3 +207,44 @@ describe("the standing's beat, and the window out of sight (#1392)", () => {
     expect(asked("plane_saving")).toBe(4);
   });
 });
+
+describe("a project's standing as it comes to the front (felt speed, round 2)", () => {
+  afterEach(() => vi.useRealTimers());
+
+  function counting() {
+    let asked = 0;
+    mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd !== "plane_saving") return null;
+      asked += 1;
+      return { stage: "saved" };
+    });
+    return () => asked;
+  }
+
+  /** Lets a frame be painted and what waits on it run. */
+  const painted = () =>
+    act(() => new Promise<void>((done) => requestAnimationFrame(() => setTimeout(done, 0))));
+
+  it("reads nothing more for a standing asked within a beat, and once for an older one", async () => {
+    // Only the clock the standing's age is read on: frames and timeouts run as they do.
+    vi.useFakeTimers({ toFake: ["performance"] });
+    const asked = counting();
+    const { rerender } = renderHook(({ beat }) => usePlaneSaving(ONE, beat), {
+      initialProps: { beat: false },
+    });
+    await waitFor(() => expect(asked()).toBe(1));
+
+    // Brought to the front a moment after it was read: that read is the one a beat would make.
+    rerender({ beat: true });
+    await painted();
+    expect(asked()).toBe(1);
+
+    // Sent behind, and brought back a beat later: what the beat would have read meanwhile.
+    rerender({ beat: false });
+    vi.advanceTimersByTime(SAVING_REREAD_MS);
+    rerender({ beat: true });
+    await painted();
+    await waitFor(() => expect(asked()).toBe(2));
+  });
+});
