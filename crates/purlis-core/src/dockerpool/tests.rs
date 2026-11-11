@@ -1127,7 +1127,8 @@ fn the_settings_a_sign_in_names_are_an_empty_config_of_purliss_own() {
 /// A stand-in for `docker`: a script that logs each call's words and answers from the files
 /// of its folder: `run` with `id`, `container inspect` with `inspect`, `volume inspect` with
 /// `volume`, `volume ls` with `volumes`, `info` with `info`, `image inspect` with `image`, and
-/// `exec` with `paired`, after keeping its standard input, and `container ls` with
+/// `exec` with `paired`, after keeping its standard input, `container logs` with `logs` on its
+/// standard output and `logs-said` on its standard error, and `container ls` with
 /// `containers`; `run --rm … --version` with `version`; `run` fails where `run-fails` is there. `container rm` and `volume rm` exit
 /// with what `rm-fails-container` or `rm-fails-volume` holds, else what `rm-fails` holds, 0
 /// when there is none. `inspect-once`, where it is there, answers one `container inspect` first.
@@ -1152,6 +1153,7 @@ impl FakeDocker {
              {{ echo 'the runtime refused it' >&2; exit 125; }}; cat '{id}' ;;\n  \
              'container inspect') if [ -f '{inspect}-once' ]; then cat '{inspect}-once'; rm '{inspect}-once'; \
              else cat '{inspect}'; fi ;;\n  \
+             'container logs') cat '{logs}' 2>/dev/null; cat '{logs}-said' >&2 2>/dev/null; true ;;\n  \
              'volume inspect') cat '{volume}' ;;\n  \
              'volume ls') cat '{volumes}' 2>/dev/null || true ;;\n  \
              'info '*) case \"$*\" in *.ID*) cat '{engine}' 2>/dev/null || true ;; \
@@ -1168,6 +1170,7 @@ impl FakeDocker {
             id = at("id"),
             inspect = at("inspect"),
             volume = at("volume"),
+            logs = at("logs"),
             volumes = at("volumes"),
             info = at("info"),
             engine = at("engine"),
@@ -1380,6 +1383,64 @@ fn a_runner_made_now_on_the_runtimes_default_profile_is_refused_and_removed() {
     );
     // The same container, made before, is still linked.
     assert_eq!(fake.docker().check(&made()), Ok(()));
+}
+
+/// A container that stopped as it started: what Docker says of its end, and what its
+/// `purlis serve` said, are read before it is removed, and the add says them (#6170).
+fn stopped(exit_code: i64, oom_killed: bool, error: &str) -> serde_json::Value {
+    with(|c| {
+        c["State"] = serde_json::json!({
+            "Running": false,
+            "ExitCode": exit_code,
+            "OOMKilled": oom_killed,
+            "Error": error,
+        })
+    })
+}
+
+#[test]
+fn a_runner_that_stops_as_it_starts_says_why_before_it_is_removed() {
+    let fake = FakeDocker::new(&stopped(1, false, ""));
+    fake.set("logs", "");
+    fake.set(
+        "logs-said",
+        "purlis serve: starting\npurlis: the session host could not make its socket folder\n",
+    );
+    let refused = fake.docker().make(&runner()).unwrap_err();
+    assert!(
+        refused.0.contains("stopped as soon as it started"),
+        "{refused}"
+    );
+    assert!(refused.0.contains("exit code 1"), "{refused}");
+    assert!(
+        refused
+            .0
+            .contains("the session host could not make its socket folder"),
+        "{refused}"
+    );
+    // The add took back what it made: nothing is left for the person to remove.
+    assert!(!refused.0.contains("remove the runner"), "{refused}");
+    let log = fake.file("log");
+    let read = log.find("container logs --tail").expect(&log);
+    let removed = log
+        .find(&format!("container rm --force --volumes {ID}"))
+        .expect(&log);
+    assert!(read < removed, "{log}");
+}
+
+#[test]
+fn a_runner_its_memory_limit_stopped_says_to_give_it_more() {
+    let fake = FakeDocker::new(&stopped(137, true, ""));
+    let refused = fake.docker().make(&runner()).unwrap_err();
+    assert!(refused.0.contains("ran out of memory"), "{refused}");
+    assert!(refused.0.contains("more memory"), "{refused}");
+}
+
+#[test]
+fn a_runner_docker_could_not_start_says_what_docker_said() {
+    let fake = FakeDocker::new(&stopped(127, false, "exec format error"));
+    let refused = fake.docker().make(&runner()).unwrap_err();
+    assert!(refused.0.contains("exec format error"), "{refused}");
 }
 
 #[test]
