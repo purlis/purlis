@@ -107,6 +107,7 @@ fn a_new_ask_is_one_notification_naming_who_asks_its_project_and_what_kind() {
             title: "steward 12 › chat 3".to_owned(),
             body: "smart-ide: Asks your permission".to_owned(),
             update: None,
+            sound: false,
         })]
     );
 }
@@ -220,6 +221,7 @@ fn three_chats_asking_together_are_one_notification_naming_them_that_lands_on_th
             title: "3 chats need you".to_owned(),
             body: "a: steward 3, devops 4 and builder 5".to_owned(),
             update: None,
+            sound: false,
         })]
     );
 }
@@ -794,6 +796,7 @@ fn a_click_lands_in_each_project_a_notification_counts_on_its_first_chat_there()
         title: String::new(),
         body: String::new(),
         update: None,
+        sound: false,
     };
     let landed: Vec<(PlaneId, u32, Vec<u32>)> = landings(&notice)
         .into_iter()
