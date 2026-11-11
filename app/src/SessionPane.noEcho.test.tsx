@@ -17,7 +17,7 @@ import { forgetStartsAgain, NO_ECHO_MS } from "./noEcho";
  * as falling out of the kept chats does (`keptTerminals.ts`), which is what cured the freeze
  * every time it was seen.
  *
- * The real SessionPane and the real xterm, as in `SessionPane.freezeWatch5478.test.tsx`; the
+ * The real SessionPane and the real xterm, as in `SessionPane.stuckWrites.test.tsx`; the
  * clock is the test's (`setInterval` and `Date` faked, so xterm's own timers still run).
  */
 const made: Terminal[] = [];

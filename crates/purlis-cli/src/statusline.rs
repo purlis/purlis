@@ -136,14 +136,15 @@ impl Ambient {
 ///   2.1.241: the command's stdout is a pipe and its environment is Claude Code's own, passed
 ///   intact — which is what makes the three variables below readable at all.)
 ///
-/// * **`$CHARTER_HOOK_SOCKET` names a socket an app is listening on RIGHT NOW.** This is the
-///   rung the app answers *better* than the frame did. ADR 0019 had to ask "is the launcher
-///   pid still a running process", because a directory left behind by a crashed launcher would
-///   otherwise blank a plane's status line for ever with nothing on screen to say why. Here
-///   the app itself answers: a `connect` succeeds only while something is accepting on that
-///   socket, and a socket file left behind by an app that has gone refuses with
-///   `ECONNREFUSED`. Neither can hang ([`purlis_core::hookwire::send`] says so for the same
-///   two errors), so no deadline is armed for it.
+/// * **`$CHARTER_HOOK_SOCKET` names the app's socket, and its file is there.** ADR 0019 had to
+///   ask "is the launcher pid still a running process", because a directory left behind by a
+///   crashed launcher would otherwise blank a plane's status line for ever with nothing on
+///   screen to say why. Here the app takes its socket file away when it stops listening, and
+///   a chat it started ends with it, so the file being there is the answer. **It is never
+///   connected to** (felt speed round 2, H5): this runs on every footer refresh of every
+///   chat, and a connect made only to ask cost the app an accept, a peer check and a line in
+///   its log each time. What that gives up is one case: a process that outlived a CRASHED app
+///   (the file is left) and still carries a chat's variables draws no footer.
 ///
 /// * **`$CHARTER_CHAT` is a chat number the app set.** The socket says an app is alive; this
 ///   says the process asking is *inside* one of its chats, which is ADR 0019's `$TMUX_PANE`
@@ -175,10 +176,13 @@ pub fn the_app_owns_this_surface(ambient: &Ambient) -> bool {
     let Some(socket) = ambient.socket.as_deref() else {
         return false;
     };
-    // Off unix nothing listens, and this command renders: every failure here means "not in
-    // the app", because a status line that vanished for a reason nobody can see is the worst
-    // outcome available.
-    if !purlis_core::hookwire::listening(socket) {
+    // Its file is there, never connected to: Claude Code runs this on every footer refresh of
+    // every chat, and a connect made only to ask cost the app an accept, a peer check and a
+    // line in its log each time (felt speed round 2, H5). The app takes the file away when it
+    // stops listening, and its chats end with it. Every failure here means "not in the app",
+    // because a status line that vanished for a reason nobody can see is the worst outcome
+    // available.
+    if !socket.exists() {
         return false;
     }
     // The same shape `hookwire::Report::read` requires of it, so the app and this command
@@ -296,17 +300,19 @@ mod tests {
         }
     }
 
-    /// A socket with something accepting on it, which is what the app is from here.
-    fn listening(dir: &Path) -> (std::os::unix::net::UnixListener, PathBuf) {
+    /// The app's socket file, which is what the app is from here: it is there while the app
+    /// is, and taken away when it stops listening. A plain file stands in for it, since only its
+    /// being there is asked, and nothing connects to it.
+    fn the_apps_socket(dir: &Path) -> PathBuf {
         let path = dir.join("hooks.sock");
-        let listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
-        (listener, path)
+        std::fs::write(&path, "").unwrap();
+        path
     }
 
     #[test]
     fn every_rung_has_to_hold_and_each_one_alone_is_enough_to_render() {
         let dir = tempfile::tempdir().unwrap();
-        let (_held, socket) = listening(dir.path());
+        let socket = the_apps_socket(dir.path());
 
         assert!(the_app_owns_this_surface(&in_the_app(&socket)));
 
@@ -341,11 +347,30 @@ mod tests {
     }
 
     #[test]
+    fn a_chat_in_the_app_is_blanked_without_connecting_to_the_hook_socket() {
+        // Claude Code runs this on every footer refresh of every chat. A connect made to ask
+        // was an accept, a peer check and a refusal in the app's log each time (H5, round 2).
+        // A file at the socket's path that nothing could connect to is still the app's: only a
+        // status line that never connects can say so.
+        let dir = tempfile::tempdir().unwrap();
+        let socket = the_apps_socket(dir.path());
+        assert!(
+            std::os::unix::net::UnixStream::connect(&socket).is_err(),
+            "the file at the path cannot be connected to"
+        );
+
+        assert!(
+            the_app_owns_this_surface(&in_the_app(&socket)),
+            "the status line asked the socket"
+        );
+    }
+
+    #[test]
     fn a_chat_that_asked_for_charters_footer_keeps_it_while_every_rung_holds() {
         // Charter ADR 0029. The point of the rung is that it wins against a situation in
         // which the app would otherwise blank: every other rung here says "in the app".
         let dir = tempfile::tempdir().unwrap();
-        let (_held, socket) = listening(dir.path());
+        let socket = the_apps_socket(dir.path());
 
         let mut asked = in_the_app(&socket);
         asked.footer = Some(FOOTER_SHOW.into());
@@ -359,7 +384,7 @@ mod tests {
         // word is a value charter did not write — inherited, stale, or hand-edited — and the
         // honest answer to it is the default, not a surface the operator never chose.
         let dir = tempfile::tempdir().unwrap();
-        let (_held, socket) = listening(dir.path());
+        let socket = the_apps_socket(dir.path());
 
         for said in [
             None,
