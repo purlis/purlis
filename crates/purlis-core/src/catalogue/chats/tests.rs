@@ -370,11 +370,7 @@ fn a_chat_with_no_id_is_named_by_its_number_and_its_task_finds_it() {
 }
 
 /// `ended_record`, minted as `id`, from `started` to `ended` (hours of 2026-11-11).
-fn ended_between(
-    id: &str,
-    (worker, asker): (&str, &str),
-    (started, ended): (u32, u32),
-) -> Record {
+fn ended_between(id: &str, (worker, asker): (&str, &str), (started, ended): (u32, u32)) -> Record {
     let mut record = ended_record(worker, asker, "alpha", "done");
     record.id = id.to_owned();
     record.started = format!("2026-11-11T{started:02}:00:00+00:00");
@@ -417,13 +413,25 @@ fn a_nested_dispatch_lists_each_closed_chat_once_as_the_worker_it_was() {
 fn a_closed_chat_that_asked_twice_is_listed_once() {
     let a = "01KA00000000000000000000A0";
     let records = [
-        ended_between("01KA0000000000000000000002", ("01KA00000000000000000000W2", a), (10, 11)),
-        ended_between("01KA0000000000000000000001", ("01KA00000000000000000000W1", a), (9, 10)),
+        ended_between(
+            "01KA0000000000000000000002",
+            ("01KA00000000000000000000W2", a),
+            (10, 11),
+        ),
+        ended_between(
+            "01KA0000000000000000000001",
+            ("01KA00000000000000000000W1", a),
+            (9, 10),
+        ),
     ];
     let data = answer(&[], &records, "alpha", with_history(HISTORY_DEFAULT));
     assert_eq!(
         ids(&data),
-        ["01KA00000000000000000000W2", a, "01KA00000000000000000000W1"]
+        [
+            "01KA00000000000000000000W2",
+            a,
+            "01KA00000000000000000000W1"
+        ]
     );
 }
 
@@ -432,8 +440,16 @@ fn history_lists_the_dispatch_that_ended_last_first() {
     let a = "01KA00000000000000000000A0";
     // The newer record (by its start) ended first.
     let records = [
-        ended_between("01KA0000000000000000000002", ("01KA00000000000000000000W2", a), (10, 11)),
-        ended_between("01KA0000000000000000000001", ("01KA00000000000000000000W1", a), (9, 12)),
+        ended_between(
+            "01KA0000000000000000000002",
+            ("01KA00000000000000000000W2", a),
+            (10, 11),
+        ),
+        ended_between(
+            "01KA0000000000000000000001",
+            ("01KA00000000000000000000W1", a),
+            (9, 12),
+        ),
     ];
     let data = answer(&[], &records, "alpha", with_history(1));
     assert_eq!(ids(&data), ["01KA00000000000000000000W1", a]);
@@ -507,7 +523,11 @@ fn recorded_chats_with_no_id_from_two_runs_are_two_chats() {
     assert_eq!(listed.len(), 4, "{listed:?}");
     let unique: std::collections::HashSet<&String> = listed.iter().collect();
     assert_eq!(unique.len(), 4, "{listed:?}");
-    assert!(listed.iter().all(|id| id.starts_with("01KA00000000000000000000")));
+    assert!(
+        listed
+            .iter()
+            .all(|id| id.starts_with("01KA00000000000000000000"))
+    );
     assert_eq!(chats_of(&data)[0]["parent"]["id"], listed[1].as_str());
 }
 

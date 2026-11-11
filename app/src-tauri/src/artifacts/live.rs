@@ -527,14 +527,17 @@ mod tests {
         let named = ["alpha".to_owned()];
         assert_eq!(
             runs(chats_todo(&mut live, &plane, Some(&named), later)),
-            [alpha.clone()]
+            std::slice::from_ref(&alpha)
         );
-        for key in [&alpha] {
-            live.hub
-                .finished(key, Answer::data(json!({}), chrono::Utc::now()), later);
-        }
+        live.hub
+            .finished(&alpha, Answer::data(json!({}), chrono::Utc::now()), later);
         // A chat that closed: every chats feed of its project, and no other feed.
-        let mut every = runs(chats_todo(&mut live, &plane, None, later + live::MIN_INTERVAL));
+        let mut every = runs(chats_todo(
+            &mut live,
+            &plane,
+            None,
+            later + live::MIN_INTERVAL,
+        ));
         every.sort_by(|a, b| a.workspace.cmp(&b.workspace));
         assert_eq!(every, [alpha, beta]);
         assert!(live.hub.any(|key| *key == todos));

@@ -174,9 +174,10 @@ impl<K: Clone + Eq + Hash, W: Clone + PartialEq> Hub<K, W> {
         };
         feed.running = false;
         let unchanged = feed.every.is_none()
-            && feed.last.as_ref().is_some_and(|last| {
-                last.outcome == answer.outcome && last.cursor == answer.cursor
-            });
+            && feed
+                .last
+                .as_ref()
+                .is_some_and(|last| last.outcome == answer.outcome && last.cursor == answer.cursor);
         let mut out: Vec<Do<K, W>> = if unchanged {
             Vec::new()
         } else {
@@ -514,7 +515,10 @@ mod tests {
         let t = Instant::now();
         let mut hub = Hub::default();
         hub.subscribe("chats", ("page-a", 1), t);
-        assert_eq!(handed(&hub.finished(&"chats", answer(1), t)), [("page-a", 1)]);
+        assert_eq!(
+            handed(&hub.finished(&"chats", answer(1), t)),
+            [("page-a", 1)]
+        );
         let later = t + MIN_INTERVAL;
         assert_eq!(runs(&hub.moved(later, |_| true)), ["chats"]);
         let same = Answer::data(json!({ "n": 1 }), chrono::Utc::now());

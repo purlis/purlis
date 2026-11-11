@@ -162,7 +162,10 @@ pub(super) fn chats_answer<R: tauri::Runtime>(
     else {
         return Answer::error(ErrorKind::Failed, at);
     };
-    capped(crate::chatlisting::answer(&held, plane, workspace, asked), at)
+    capped(
+        crate::chatlisting::answer(&held, plane, workspace, asked),
+        at,
+    )
 }
 
 /// `data` as an answer read `at`, or `too-large` where it is past the cap every answer is

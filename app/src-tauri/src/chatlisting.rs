@@ -299,7 +299,12 @@ mod tests {
         }
     }
 
-    fn chat(id: &str, workspace: &str, board: State, parent: Option<(&str, chats::Relation)>) -> Chat {
+    fn chat(
+        id: &str,
+        workspace: &str,
+        board: State,
+        parent: Option<(&str, chats::Relation)>,
+    ) -> Chat {
         Chat {
             id: id.to_owned(),
             name: id.to_owned(),
@@ -326,10 +331,42 @@ mod tests {
         use chats::Relation::{Dispatched, HandedOffFrom};
         let mut open = vec![
             (1, chat("asker", "alpha", State::Waiting, None)),
-            (2, chat("task-here", "alpha", State::Running, Some(("asker", Dispatched)))),
-            (3, chat("task-in-beta", "beta", State::Running, Some(("asker", Dispatched)))),
-            (4, chat("task-at-rest", "beta", State::Waiting, Some(("asker", Dispatched)))),
-            (5, chat("handed-off", "beta", State::Running, Some(("asker", HandedOffFrom)))),
+            (
+                2,
+                chat(
+                    "task-here",
+                    "alpha",
+                    State::Running,
+                    Some(("asker", Dispatched)),
+                ),
+            ),
+            (
+                3,
+                chat(
+                    "task-in-beta",
+                    "beta",
+                    State::Running,
+                    Some(("asker", Dispatched)),
+                ),
+            ),
+            (
+                4,
+                chat(
+                    "task-at-rest",
+                    "beta",
+                    State::Waiting,
+                    Some(("asker", Dispatched)),
+                ),
+            ),
+            (
+                5,
+                chat(
+                    "handed-off",
+                    "beta",
+                    State::Running,
+                    Some(("asker", HandedOffFrom)),
+                ),
+            ),
         ];
         count_tasks_at_work(&mut open);
         let counts: Vec<u32> = open.iter().map(|(_, c)| c.facts.tasks_at_work).collect();
@@ -372,7 +409,15 @@ mod tests {
         let at_root = for_chat(&held, &plane, &ask(session, None)).unwrap_err();
         assert!(at_root.contains("project's root"), "{at_root}");
         // A workspace's answer leaves the root's chat out.
-        let data = answer(&held, &plane, "alpha", Asked { history: true, limit: 50 });
+        let data = answer(
+            &held,
+            &plane,
+            "alpha",
+            Asked {
+                history: true,
+                limit: 50,
+            },
+        );
         assert_eq!(data["chats"], serde_json::json!([]));
     }
 }
