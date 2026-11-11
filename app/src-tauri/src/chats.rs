@@ -6629,6 +6629,79 @@ impl Chats {
         purlis_core::awareness::answer(&known, session, tell, told.entry(session).or_default())
     }
 
+    /// **Every chat this app has open, as `purlis.chats` lists them** (#6235): from the record
+    /// the window's Chats tree is drawn from (its lineage is `from`), with each one's facts as
+    /// `facts_of` reads them off the board, and when it last moved as `last_of` has it. Names,
+    /// states and times only: never its arguments, where a brief travels.
+    pub fn listed(
+        &self,
+        facts_of: &dyn Fn(
+            u32,
+            Option<&purlis_core::reopen::HandedFrom>,
+            bool,
+        ) -> purlis_core::catalogue::chats::Facts,
+        last_of: &dyn Fn(u32) -> Option<i64>,
+    ) -> Vec<(u32, purlis_core::catalogue::chats::Chat)> {
+        use purlis_core::catalogue::chats::{Chat, Facts, Parent, Relation, number_id};
+        let id_of = |number: u32, id: Option<&String>| {
+            id.filter(|id| !id.is_empty())
+                .cloned()
+                .unwrap_or_else(|| number_id(number))
+        };
+        // The board is asked once `open` is let go: nothing waits on both.
+        let mut listed: Vec<(u32, Chat, Option<purlis_core::reopen::HandedFrom>, bool)> =
+            lock(&self.open)
+                .iter()
+                .map(|(number, one)| {
+                    let chat = Chat {
+                        id: id_of(*number, one.chat.identity.id.as_ref()),
+                        name: purlis_core::reopen::shown_name(
+                            &one.chat,
+                            one.harness.map(Harness::name),
+                        ),
+                        persona: one.chat.persona.clone(),
+                        harness: one.harness.map(|h| h.name().to_owned()),
+                        workspace: one.workspace.clone(),
+                        parent: one.chat.from.as_ref().map(|from| Parent {
+                            id: id_of(from.chat, from.id.as_ref()),
+                            relation: match from.mode {
+                                purlis_core::reopen::Mode::Task => Relation::Dispatched,
+                                purlis_core::reopen::Mode::Handoff => Relation::HandedOffFrom,
+                            },
+                        }),
+                        facts: Facts::default(),
+                        started: one
+                            .chat
+                            .identity
+                            .id
+                            .as_deref()
+                            .and_then(purlis_core::awareness::started_of)
+                            .or_else(|| purlis_core::awareness::run_started(&one.chat.identity)),
+                        last_activity: None,
+                        session_record: None,
+                    };
+                    (*number, chat, one.chat.from.clone(), one.harness.is_none())
+                })
+                .collect();
+        listed.sort_by_key(|(number, ..)| *number);
+        listed
+            .into_iter()
+            .map(|(number, mut chat, from, shell)| {
+                chat.facts = facts_of(number, from.as_ref(), shell);
+                chat.last_activity = last_of(number);
+                (number, chat)
+            })
+            .collect()
+    }
+
+    /// The workspace chat `session` works in (`Some(None)`: the project's root), where it is
+    /// open.
+    pub fn workspace_of(&self, session: u32) -> Option<Option<String>> {
+        lock(&self.open)
+            .get(&session)
+            .map(|one| one.workspace.clone())
+    }
+
     /// The report chat `session` still owes as a task, where it owes one (#1443): its lineage
     /// record, for the app to report in its place. `None` for any other chat, and for one
     /// that has reported or been reported for. A read: what it owed is marked answered by

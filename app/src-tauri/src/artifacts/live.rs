@@ -226,6 +226,22 @@ pub(crate) fn moved<R: Runtime>(
     perform(app, todo);
 }
 
+/// **Chats of project `plane` moved on its board** (#6235): every `purlis.chats` feed of it is
+/// asked again, now or when it is due. The chats are the app's record, which no plane change
+/// moves.
+pub(crate) fn chats_moved<R: Runtime>(app: &tauri::AppHandle<R>, plane: &PlaneId) {
+    let Some(artifacts) = app.try_state::<Artifacts>() else {
+        return;
+    };
+    let todo = artifacts.live().hub.moved(Instant::now(), |key| {
+        key.plane == *plane
+            && key
+                .catalogued()
+                .is_some_and(|query| query.name == purlis_core::chattools::CHATS)
+    });
+    perform(app, todo);
+}
+
 /// Does what the hub said.
 fn perform<R: Runtime>(app: &tauri::AppHandle<R>, todo: Vec<Do<Key, Who>>) {
     for step in todo {
@@ -264,6 +280,9 @@ fn answer_of<R: Runtime>(app: &tauri::AppHandle<R>, key: &Key) -> Answer {
     let (Some(root), Some(query)) = (root, key.catalogued()) else {
         return Answer::error(ErrorKind::Failed, at);
     };
+    if query.name == purlis_core::chattools::CHATS {
+        return super::calls::chats_answer(app, &key.plane, &key.workspace, &params);
+    }
     purlis_core::catalogue::answer::ask(
         &root,
         &key.workspace,

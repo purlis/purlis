@@ -43,6 +43,8 @@ fn read_from(name: &str) -> Option<&'static [Kind]> {
         "session_record_list" | "session_record_read" => Some(&[Kind::Sessions]),
         // `workspaces/<ws>/changes/` is a plain folder of the workspace to the watch.
         "change_status" => Some(&[Kind::Workspace]),
+        // The app's own record, not the plane: the app moves it as its chats move (#6235).
+        "chats" => Some(&[]),
         _ => None,
     }
 }
@@ -424,6 +426,22 @@ mod tests {
             "alpha",
             Some(&[change(Kind::Workspace, Some("alpha"))])
         ));
+    }
+
+    #[test]
+    fn the_chats_are_moved_by_the_app_s_chats_and_by_no_change_of_the_plane() {
+        let chats = query("chats");
+        for kind in [
+            Kind::Todos,
+            Kind::Memory,
+            Kind::Sessions,
+            Kind::Workspace,
+            Kind::Git,
+        ] {
+            assert!(!moves(chats, "alpha", Some(&[change(kind, Some("alpha"))])));
+        }
+        // A change the watch could not place still moves it, as it moves everything.
+        assert!(moves(chats, "alpha", None));
     }
 
     #[test]

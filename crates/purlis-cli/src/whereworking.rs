@@ -145,3 +145,31 @@ pub fn update(now: chrono::DateTime<chrono::Utc>) -> Option<String> {
         _ => None,
     }
 }
+
+/// **The `chats` tool** (#6235): the chats of this chat's workspace, as the app's record has
+/// them, as the `purlis.chats` query's data in JSON. The app reads the workspace off its own
+/// record of this chat, never off anything the call says.
+pub fn chats(args: &serde_json::Map<String, serde_json::Value>) -> Result<String, String> {
+    let asked = purlis_core::catalogue::chats::asked(args)?;
+    let ask = move |chat| {
+        Ask::Chats(hookwire::ChatsAsk {
+            chat,
+            history: asked.history,
+            limit: asked.history.then_some(asked.limit),
+        })
+    };
+    match crate::brokered::replied(ask, ASKED_WITHIN) {
+        Ok(Ok(reply)) => match reply.answer {
+            Answer::Chats { data } => {
+                serde_json::to_string_pretty(&data).map_err(|e| e.to_string())
+            }
+            Answer::No { why } if why == hookwire::NOTHING_ANSWERS => Err(NO_ANSWER.to_owned()),
+            Answer::No { why } => Err(why),
+            _ => Err(NO_ANSWER.to_owned()),
+        },
+        Ok(Err(_)) | Err(NotTaken::Dropped) => Err(NO_ANSWER.to_owned()),
+        Err(NotTaken::NotAChat) => Err(awareness::NOT_A_CHAT.to_owned()),
+        Err(NotTaken::NoConnection) => Err(NO_CONNECTION.to_owned()),
+        Err(NotTaken::AppGone) => Err(APP_GONE.to_owned()),
+    }
+}
