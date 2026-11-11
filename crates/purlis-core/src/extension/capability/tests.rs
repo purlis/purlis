@@ -126,7 +126,7 @@ fn the_three_wired_words_are_version_one_and_the_others_are_still_said_to_be_exp
 
 #[test]
 fn a_release_build_knows_queries_and_it_needs_protocol_7() {
-    let known = Capability::known_where(false);
+    let known = Capability::known();
     assert_eq!(
         Capability::parse_in("queries", &known),
         Some(Capability::Queries)
@@ -147,7 +147,7 @@ fn the_prompt_says_a_page_may_ask_its_queries_and_its_program_answers_them() {
 
 #[test]
 fn a_release_build_knows_artifacts_and_it_needs_protocol_8() {
-    let known = Capability::known_where(false);
+    let known = Capability::known();
     assert_eq!(
         Capability::parse_in("artifacts", &known),
         Some(Capability::Artifacts)
