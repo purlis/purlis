@@ -1320,6 +1320,27 @@ pub fn ran(inspected: &serde_json::Value) -> Ran {
     }
 }
 
+/// What a check that refuses a linked runner's container tells the person to do: the runner is
+/// still there, and only a new one is made as purlis checks it.
+const ADD_AGAIN: &str = "remove the runner and add it again";
+
+/// What the same refusal says as the runner is added instead, where purlis has already
+/// removed what the add made (#6170): there is no runner left to remove.
+const ADDED_AND_REMOVED: &str = "so the pool wasn't made, and purlis removed what it made. Try \
+     again, or choose another image for the pool";
+
+/// **`why` a runner being added was refused, said for the add** (#6170): a check's
+/// [`ADD_AGAIN`] is for a runner that is still there, and an add removes its own.
+fn said_for_the_add(why: Refused) -> Refused {
+    match why
+        .0
+        .strip_suffix(&format!(", so purlis does not link to it; {ADD_AGAIN}"))
+    {
+        Some(what) => refused(format!("{what}, {ADDED_AND_REMOVED}")),
+        None => why,
+    }
+}
+
 /// **How a container that stopped ended** (#6170): what Docker says of its end, read from
 /// `docker inspect`'s `State`, so an add that removes it can say why it stopped first.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1496,8 +1517,7 @@ fn checked_on(
 ) -> Result<Seccomp, Refused> {
     let not = |what: &str| {
         refused(format!(
-            "runner {}'s container {what}, so purlis does not link to it; remove the runner and \
-             add it again",
+            "runner {}'s container {what}, so purlis does not link to it; {ADD_AGAIN}",
             made.runner.name
         ))
     };
@@ -2094,8 +2114,7 @@ pub fn check_oci(
 ) -> Result<(), Refused> {
     let not = |what: &str| {
         refused(format!(
-            "runner {}'s container {what}, so purlis does not link to it; remove the runner and \
-             add it again",
+            "runner {}'s container {what}, so purlis does not link to it; {ADD_AGAIN}",
             made.runner.name
         ))
     };
@@ -2187,7 +2206,7 @@ pub fn check_volume(inspected: &serde_json::Value, made: &Made) -> Result<(), Re
     let not = || {
         refused(format!(
             "runner {}'s home volume is not one of Docker's own, made with no options, so purlis \
-             does not link to it; remove the runner and add it again",
+             does not link to it; {ADD_AGAIN}",
             made.runner.name
         ))
     };
@@ -3023,7 +3042,9 @@ impl Docker {
             Err(why) => {
                 // One that stopped is said by why it stopped, read before it is removed: its
                 // removal takes that with it (#6170).
-                let why = self.why_stopped(&made).map_or(why, refused);
+                let why = self
+                    .why_stopped(&made)
+                    .map_or_else(|| said_for_the_add(why), refused);
                 Err(self.and_removed(why, made.container.as_str(), &volume))
             }
         }
@@ -3385,8 +3406,8 @@ impl Docker {
         {
             return Err(refused(format!(
                 "runner {}'s container lets its browser engine make namespaces, and its purlis \
-                 does not hold its programs from them, so purlis does not link to it; remove \
-                 the runner and add it again",
+                 does not hold its programs from them, so purlis does not link to it; \
+                 {ADD_AGAIN}",
                 made.runner.name
             )));
         }

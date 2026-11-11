@@ -1444,6 +1444,15 @@ fn a_runner_docker_could_not_start_says_what_docker_said() {
 }
 
 #[test]
+fn a_runner_refused_as_it_is_added_does_not_ask_to_be_removed() {
+    let fake = FakeDocker::new(&with(|c| c["HostConfig"]["Privileged"] = true.into()));
+    let refused = fake.docker().make(&runner()).unwrap_err();
+    assert!(refused.0.contains("privileged"), "{refused}");
+    assert!(!refused.0.contains("remove the runner"), "{refused}");
+    assert!(refused.0.contains("removed what it made"), "{refused}");
+}
+
+#[test]
 fn a_runner_whose_container_fails_the_check_is_removed_with_its_volume() {
     let fake = FakeDocker::new(&with(|c| c["HostConfig"]["Privileged"] = true.into()));
     let refused = fake.docker().make(&runner()).unwrap_err();
