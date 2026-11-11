@@ -14,7 +14,7 @@ import { browser } from "@wdio/globals";
 export const ALL_WORKSPACES = '[data-testid="title-bar"] [data-titlebar-all]';
 
 /** The workspace popover's list, while it is open. */
-const LISTED = '[role="listbox"][aria-label^="Workspaces in "]';
+export const LISTED = '[role="listbox"][aria-label^="Workspaces in "]';
 
 /** A workspace as the popover lists it: its name (the root's is `Plane root`), and whether it is
  *  the one in front. */
@@ -59,21 +59,86 @@ export async function workingSeen(
   }, workspace);
 }
 
-/** Opens the workspace popover, if it is not open, and waits for its rows. */
+/** Where the ⌄ stood at one step of {@link opened}: its list drawn; pressed by this step; ready
+ *  for a press this step did not make; its popover open with no list drawn yet; behind a modal
+ *  dialog, named; or not drawn at all. */
+export type Chevron =
+  | { at: "listed" }
+  | { at: "pressed" }
+  | { at: "ready" }
+  | { at: "open" }
+  | { at: "behind"; dialog: string }
+  | { at: "undrawn" };
+
+/**
+ * **One step of opening the workspace popover, in the page** (#5035): the ⌄ is pressed only when
+ * a person could press it, and only when `mayPress`. Never while its popover is open, for a
+ * press of the ⌄ closes what it opened; never behind a modal dialog, which hides the ⌄ from the
+ * operator and the screen reader (React Aria's `aria-hidden` on all outside it) and takes the
+ * keyboard back from any popover opened under it, so that popover goes the moment it comes.
+ * Self-contained, for `browser.execute`.
+ */
+export function pressedWhenReady(list: string, all: string, mayPress: boolean): Chevron {
+  if (document.querySelector(list) !== null) return { at: "listed" };
+  const chevron = document.querySelector<HTMLElement>(all);
+  if (chevron === null) return { at: "undrawn" };
+  const hidden = '[aria-hidden="true"], [inert]';
+  if (chevron.closest(hidden) !== null) {
+    const over = [
+      ...document.querySelectorAll<HTMLElement>('[role="dialog"], [role="alertdialog"]'),
+    ].find((one) => one.closest(hidden) === null);
+    const named =
+      over?.getAttribute("aria-label") ??
+      (over?.getAttribute("aria-labelledby") ?? "")
+        .split(" ")
+        .map((id) => document.getElementById(id)?.textContent ?? "")
+        .join(" ")
+        .trim();
+    return { at: "behind", dialog: named === "" ? "with no name" : named };
+  }
+  if (chevron.getAttribute("aria-expanded") === "true") return { at: "open" };
+  if (!mayPress) return { at: "ready" };
+  chevron.click();
+  return { at: "pressed" };
+}
+
+/** What the last step of {@link opened} saw, said after "the title bar's ⌄ opened no workspaces". */
+function said(last: Chevron, presses: number): string {
+  switch (last.at) {
+    case "behind":
+      return `the ⌄ is behind the dialog "${last.dialog}", still up (a step before this one left it)`;
+    case "undrawn":
+      return "no ⌄ is drawn: the title bar has not read the project's workspaces";
+    case "open":
+      return "its popover is open and draws no list";
+    default:
+      return `pressed ${presses} times, and its popover went each time`;
+  }
+}
+
+/**
+ * Opens the workspace popover, if it is not open, and waits for its rows: once the ⌄ is ready
+ * for a press, a press, and one more only if no popover came of it or it went at once (#5035).
+ * The one more is for a dialog just gone: React Aria hands the keyboard back to the dialog's
+ * opener a frame after it goes, and a popover opened in that frame loses the keyboard to it and
+ * closes. Never a third: each press toggles, so a press at every step while the list was not yet
+ * seen was a popover opened and lost, over and over, for the whole wait.
+ */
 async function opened(): Promise<void> {
-  await browser.waitUntil(
-    async () =>
-      browser.execute(
-        (list: string, all: string) => {
-          if (document.querySelector(list) !== null) return true;
-          document.querySelector<HTMLElement>(all)?.click();
-          return false;
-        },
-        LISTED,
-        ALL_WORKSPACES,
-      ),
-    { timeout: 20_000, interval: 200, timeoutMsg: "the title bar's ⌄ opened no workspaces" },
-  );
+  let last: Chevron = { at: "undrawn" };
+  let presses = 0;
+  await browser
+    .waitUntil(
+      async () => {
+        last = await browser.execute(pressedWhenReady, LISTED, ALL_WORKSPACES, presses < 2);
+        if (last.at === "pressed") presses += 1;
+        return last.at === "listed";
+      },
+      { timeout: 20_000, interval: 200 },
+    )
+    .catch(() => {
+      throw new Error(`the title bar's ⌄ opened no workspaces: ${said(last, presses)}`);
+    });
 }
 
 /** Closes the workspace popover, by Escape in its filter, and waits until it has gone. */
