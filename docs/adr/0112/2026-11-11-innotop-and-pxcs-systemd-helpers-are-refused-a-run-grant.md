@@ -1,4 +1,4 @@
-# Amended 2026-11-11: innotop, mariadb-report, the server's systemd helpers and PXC's cluster checks are refused a Run grant
+# Amended 2026-11-11: innotop, mariadb-report, the Perl log readers, the server's systemd helpers and PXC's cluster checks are refused a Run grant
 
 Decided under the operator's standing order to take the recommended path (#6109, from the
 reviews of #5994), recorded here as delegated decisions. It follows *mydumper, Percona Toolkit,
@@ -10,7 +10,8 @@ left these leads to #6109. Each was checked against the tool's own source, not r
   reads `~/.innotop/innotop.conf`, or `/etc/innotop/innotop.conf` when that is missing. That
   file's `plugin_dir` names a folder (`~/.innotop/plugins` if it names none), and innotop
   `require`s each `.pm` file there that the file's `[plugins]` section lists
-  (`load_config_plugins` in `innotop`, github.com/innotop/innotop). The file's filters and
+  (`load_config_plugins`, in innotop's own source, github.com/innotop/innotop, and in the copy
+  Debian ships, `debian/additions/innotop/innotop`). The file's filters and
   columns are Perl it compiles as well. Its name starts with neither `mysql` nor `mariadb`, so no
   row of `command_flags` read it, and a run's notice offered it Allow once.
 - **`mariadb-report`**, in the same package, and **`mysqlreport`**, its link there: its
@@ -18,6 +19,11 @@ left these leads to #6109. Each was checked against the tool's own source, not r
   `debian/additions/mariadb-report`), and its `--email` pipes to `sendmail`. Its `mariadb` prefix
   took it to the mysql tools' row, which reads neither (the review of this amendment's pull
   request).
+- **`mysqldumpslow` and `mysql_find_rows`**, and `mariadb-dumpslow` and `mariadb-find-rows`, by
+  which names the same package ships them: both read the files they are named with Perl's `<>`
+  (`scripts/mysqldumpslow.sh`, `scripts/mysql_find_rows.sh`), whose open runs a name ending in
+  `|` as a shell command. Their prefix took them to the mysql tools' row, which reads no operand
+  (the review's third round).
 - **The server's systemd helpers.** `mysqld_bootstrap` has the service manager start the
   server's unit with `--wsrep-new-cluster` added to its options
   (`scripts/systemd/mysqld_bootstrap.in`, github.com/percona/percona-xtradb-cluster, a Codership
@@ -31,7 +37,8 @@ left these leads to #6109. Each was checked against the tool's own source, not r
 - **Percona XtraDB Cluster's health checks.** `clustercheck` hands the client its last argument
   (the sixth, or the fourth in its short form) as `--defaults-extra-file`
   (`scripts/clustercheck.sh`), the form the client's own row refuses, and `pyclustercheck`'s
-  `--conf` names the file of settings its client library reads. Neither name starts with `mysql` or `mariadb`, so no row read them.
+  `--conf` names the file of settings its client library reads. Neither name starts with `mysql`
+  or `mariadb`, so no row read them.
 
 All are refused whole, as the rest of the family's server-side tools are. A persona can still
 declare any of them as a tool.

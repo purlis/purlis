@@ -2068,6 +2068,12 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     // settings its client library reads.
     "clustercheck",
     "pyclustercheck",
+    // The slow log's summary and the row finder (#6109): both read the files they are named with
+    // Perl's `<>`, whose open runs a name ending in `|` as a shell command.
+    "mysqldumpslow",
+    "mariadb-dumpslow",
+    "mysql_find_rows",
+    "mariadb-find-rows",
     // The client and its test built with the server inside them: what `--server-arg` hands the
     // server (`--plugin-load`, `--plugin-dir`) loads code from a file it names.
     "mysql_embedded",
