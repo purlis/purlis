@@ -43,11 +43,15 @@ vi.mock("./SessionPane", async () => ({
 // A read on a wall-clock beat (`everyWhileShown`: the saving rows every 10 s, the alerts, the
 // state clock, a running chat's gauge) is not what a switch costs, and on a slow runner one
 // landed inside a measured switch and drew the window again: 8 commits where a switch makes 5.
-// No beat runs here. What a switch reads as its project comes back is read after the paint
-// (`useOnShownAgain`), not on a beat, and is still counted.
+// No beat runs here, and none passes: a slow runner spends more than a beat between a project's
+// first read and its switch, and the save standing was then read again behind the paint, as a
+// beat would have read it (23 commands where a switch sends 22). What a switch reads as its
+// project comes back is read after the paint (`useOnShownAgain`), not on a beat, and is still
+// counted.
 vi.mock("./whileShown", async (actual) => ({
   ...(await actual<typeof import("./whileShown")>()),
   everyWhileShown: () => () => {},
+  aBeatSince: () => false,
 }));
 
 afterEach(() => {
