@@ -2058,12 +2058,12 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "mysql-systemd",
     // MariaDB's client on Debian (#6109): innotop's configuration file (its `-c`) names a
     // `plugin_dir`, whose Perl files it loads as the file's `[plugins]` lists them, and compiles
-    // its filters and columns as Perl; `mariadb-report` (`mysqlreport` by its link) hands its
-    // `--outfile` unquoted to a shell.
+    // its filters and columns as Perl; `mariadb-report` (`mysqlreport` by its compat link) hands
+    // its `--outfile` unquoted to a shell.
     "innotop",
     "mariadb-report",
     "mysqlreport",
-    // Percona XtraDB Cluster's health checks (#6109): `clustercheck` hands the client its last
+    // Percona XtraDB Cluster's health checks (#6109): `clustercheck` hands the client its sixth
     // argument as `--defaults-extra-file`, and `pyclustercheck`'s `--conf` names the file of
     // settings its client library reads.
     "clustercheck",

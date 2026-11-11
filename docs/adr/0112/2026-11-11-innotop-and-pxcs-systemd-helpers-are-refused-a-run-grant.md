@@ -14,16 +14,16 @@ left these leads to #6109. Each was checked against the tool's own source, not r
   Debian ships, `debian/additions/innotop/innotop`). The file's filters and
   columns are Perl it compiles as well. Its name starts with neither `mysql` nor `mariadb`, so no
   row of `command_flags` read it, and a run's notice offered it Allow once.
-- **`mariadb-report`**, in the same package, and **`mysqlreport`**, its link there: its
-  `--outfile` value goes unquoted to a shell (`` `mv $tmpfile $op{outfile}` ``,
-  `debian/additions/mariadb-report`), and its `--email` pipes to `sendmail`. Its `mariadb` prefix
-  took it to the mysql tools' row, which reads neither (the review of this amendment's pull
-  request).
+- **`mariadb-report`**, in the same package, and **`mysqlreport`**, the name its compat links
+  give it (`debian/mariadb-client-compat.links`): its `--outfile` value goes unquoted to a shell
+  (`` `mv $tmpfile $op{outfile}` ``, `debian/additions/mariadb-report`), and its `--email` pipes
+  to `sendmail`. Its `mariadb` prefix took it to the mysql tools' row, which reads neither (the
+  review of this amendment's pull request).
 - **`mysqldumpslow` and `mysql_find_rows`**, and `mariadb-dumpslow` and `mariadb-find-rows`, by
   which names the same package ships them: both read the files they are named with Perl's `<>`
-  (`scripts/mysqldumpslow.sh`, `scripts/mysql_find_rows.sh`), whose open runs a name ending in
-  `|` as a shell command. Their prefix took them to the mysql tools' row, which reads no operand
-  (the review's third round).
+  (MariaDB's `scripts/mysqldumpslow.sh` and `scripts/mysql_find_rows.sh`), whose open runs a
+  name ending in `|` as a shell command. Their prefix took them to the mysql tools' row, which
+  reads no operand (the review's third round).
 - **The server's systemd helpers.** `mysqld_bootstrap` has the service manager start the
   server's unit with `--wsrep-new-cluster` added to its options
   (`scripts/systemd/mysqld_bootstrap.in`, github.com/percona/percona-xtradb-cluster, a Codership
@@ -34,8 +34,8 @@ left these leads to #6109. Each was checked against the tool's own source, not r
   ship **`mysql-systemd`** (`build-ps/rpm/mysql-systemd`), whose `start-pre` runs the server's
   `--initialize` and whose `galera-recovery` has a shell evaluate the server's command line. All
   three reached the mysql tools' row by their `mysql` prefix, and that row reads nothing they do.
-- **Percona XtraDB Cluster's health checks.** `clustercheck` hands the client its last argument
-  (the sixth, or the fourth in its short form) as `--defaults-extra-file`
+- **Percona XtraDB Cluster's health checks.** `clustercheck` hands the client its sixth argument
+  (the fourth after a leading `-`) as `--defaults-extra-file`
   (`scripts/clustercheck.sh`), the form the client's own row refuses, and `pyclustercheck`'s
   `--conf` names the file of settings its client library reads. Neither name starts with `mysql`
   or `mariadb`, so no row read them.

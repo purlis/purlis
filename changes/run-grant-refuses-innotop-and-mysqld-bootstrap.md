@@ -7,5 +7,5 @@
   innotop loads the Perl plugins of the folder its configuration file names. `mariadb-report`
   hands its `--outfile` to a shell, and the summary and the row finder run a file name ending in
   `|` as a command. The systemd helpers start or initialize the server, and the cluster checks
-  have the client read a file of settings they are handed. A persona can still declare any of
-  them as a tool (#6109).
+  have the client, or its library, read a file of settings they are handed. A persona can still
+  declare any of them as a tool (#6109).
