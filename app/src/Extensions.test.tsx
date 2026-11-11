@@ -500,7 +500,7 @@ describe("the extension registry", () => {
     await userEvent.click(screen.getByRole("button", { name: "Open in your editor" }));
     await waitFor(() =>
       expect(asked.filter(({ cmd }) => cmd === "open_extension_record")).toEqual([
-        { cmd: "open_extension_record", args: { plane: null, editor: "zed" } },
+        { cmd: "open_extension_record", args: { front: null, editor: "zed" } },
       ]),
     );
     forgetYourEditor();
@@ -528,7 +528,7 @@ describe("the extension registry", () => {
     await userEvent.click(screen.getByRole("button", { name: "Open in your editor" }));
     await waitFor(() =>
       expect(asked.filter(({ cmd }) => cmd === "open_extension_record")).toEqual([
-        { cmd: "open_extension_record", args: { plane: "/work/one", editor: "variable" } },
+        { cmd: "open_extension_record", args: { front: "/work/one", editor: "variable" } },
       ]),
     );
     forgetYourEditor();
@@ -547,7 +547,7 @@ describe("the extension registry", () => {
         };
       if (cmd === "theme_in_force") return { theme: null, complaints: [], follows_system: false };
       if (cmd === "open_extension_record") {
-        expect(args).toEqual({ plane: null, editor: "variable" });
+        expect(args).toEqual({ front: null, editor: "variable" });
         throw why;
       }
       throw new Error(`the window asked for ${cmd}, which this test did not expect`);

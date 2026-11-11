@@ -1576,7 +1576,7 @@ pub async fn set_extension_on(id: String, on: bool) -> Result<(), String> {
 // machine's own record, placed by the core, never a path the window sent. Window-only
 // (`WINDOW_ONLY`): it starts a program of the person's on a machine file, which no link may.
 // A terminal editor opens in a shell tab of the project in front, on its root's strip, standing
-// in the record's folder (#1894), as a harness declaration's does; `plane` is that project, and
+// in the record's folder (#1894), as a harness declaration's does; `front` is that project, and
 // none when the dialog was opened over no project.
 // Not a doc comment, because the generated bindings carry those.
 #[tauri::command]
@@ -1584,20 +1584,20 @@ pub async fn set_extension_on(id: String, on: bool) -> Result<(), String> {
 pub async fn open_extension_record(
     app: tauri::AppHandle,
     planes: tauri::State<'_, crate::planes::Planes>,
-    plane: Option<crate::planes::PlaneId>,
+    front: Option<crate::planes::PlaneId>,
     editor: crate::piecefiles::YourEditor,
 ) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt as _;
     let root = config_root()?;
     let var = |name: &str| std::env::var(name).ok();
-    match record_opens(&root, editor, &var, plane.is_some())? {
+    match record_opens(&root, editor, &var, front.is_some())? {
         RecordOpens::Url(url) => app
             .opener()
             .open_url(&url, None::<&str>)
             .map_err(|e| format!("the system did not open {url}: {e}")),
         RecordOpens::Detached { program, args } => crate::piecefiles::started(program, args).await,
         RecordOpens::InATab(chat) => {
-            let plane = plane.ok_or_else(no_project_for_a_terminal_editor)?;
+            let plane = front.ok_or_else(no_project_for_a_terminal_editor)?;
             let held = planes.held(&plane)?;
             crate::editortab::shown(&app, &held, &plane, crate::editortab::PROJECT_ROOT, *chat)
         }
@@ -3495,7 +3495,7 @@ mod tests {
         let signature = &bound[at..at + bound[at..].find(')').expect("its parameters end")];
         assert_eq!(
             signature,
-            "openExtensionRecord: (plane: string | null, editor: YourEditor"
+            "openExtensionRecord: (front: string | null, editor: YourEditor"
         );
     }
 
