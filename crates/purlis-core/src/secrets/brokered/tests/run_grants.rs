@@ -2835,6 +2835,26 @@ fn galeras_helpers_run_the_server_or_a_script_they_name_so_they_are_offered_no_r
     }
 }
 
+/// Percona XtraDB Cluster's systemd helpers (#6109): `mysqld_bootstrap` has the service manager
+/// start the server's unit with `--wsrep-new-cluster` (`scripts/systemd/mysqld_bootstrap.in`), as
+/// `galera_new_cluster` does, and `mysqld_pre_systemd`, installed beside it, runs the server's
+/// `--initialize` with what its settings name. Their `mysql` prefix took both to the tools' row,
+/// which reads no flag either takes.
+#[test]
+fn pxcs_systemd_helpers_start_the_server_so_they_are_offered_no_run_grant() {
+    for name in ["mysqld_bootstrap", "mysqld_pre_systemd"] {
+        refused_as_running_others(name);
+    }
+}
+
+/// innotop, shipped with MariaDB's client on Debian (#6109): `-c` names the configuration file it
+/// reads, whose `plugin_dir` names the folder whose `.pm` files it `require`s, as its `[plugins]`
+/// section lists them. Its name starts with neither `mysql` nor `mariadb`, so no row read it.
+#[test]
+fn innotop_loads_the_perl_plugins_its_configuration_names_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("innotop");
+}
+
 /// The client built with the server inside it: what `--server-arg` hands the embedded server
 /// (`--plugin-load`, `--plugin-dir`) loads code from a file it names.
 #[test]

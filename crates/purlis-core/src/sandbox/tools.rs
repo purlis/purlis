@@ -2047,6 +2047,15 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "galera_new_cluster",
     "garbd",
     "garb-systemd",
+    // Percona XtraDB Cluster's systemd helpers (#6109): `mysqld_bootstrap` has the service manager
+    // start the server's unit with `--wsrep-new-cluster`, as `galera_new_cluster` does, and
+    // `mysqld_pre_systemd` runs the server's `--initialize` with what its settings name. Their
+    // `mysql` prefix took them to the tools' row, which reads nothing either does.
+    "mysqld_bootstrap",
+    "mysqld_pre_systemd",
+    // innotop, shipped with MariaDB's client on Debian (#6109): the configuration file its `-c`
+    // names names a `plugin_dir`, whose Perl files it loads as the file's `[plugins]` lists them.
+    "innotop",
     // The client and its test built with the server inside them: what `--server-arg` hands the
     // server (`--plugin-load`, `--plugin-dir`) loads code from a file it names.
     "mysql_embedded",
