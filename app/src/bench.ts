@@ -3,6 +3,7 @@
 
 /// <reference types="vite/client" />
 import type { Terminal } from "@xterm/xterm";
+import type { PlaneId } from "./bindings";
 import { drawWith, type Drawing, type Renderer } from "./renderer";
 import { onAMac } from "./tabKeys";
 
@@ -27,7 +28,7 @@ import { onAMac } from "./tabKeys";
 type Pane = {
   session: number;
   /** The project whose chat it is: every project numbers its chats from one. */
-  plane: string;
+  plane: PlaneId;
   terminal: Terminal;
   /** How many panes had been opened, ever, once this one was: which job's it is. */
   ordinal: number;
@@ -83,8 +84,8 @@ let job: Job = { running: false };
 /** Whether this build has the seam at all. */
 export const measuring = Boolean(import.meta.env.VITE_E2E);
 
-/** A pane's terminal, now on screen. */
-export function paneOpened(session: number, terminal: Terminal, plane: string): void {
+/** A pane's terminal, now on screen, with the project whose chat it is. */
+export function paneOpened(session: number, terminal: Terminal, plane: PlaneId): void {
   if (!measuring) return;
   const pane: Pane = {
     session,
@@ -235,14 +236,16 @@ function paintedIn(one: Pane, needle: string, found: (at: number) => void): void
   one.waiting = { needle, seen: false, found };
 }
 
-/** Whether `one`'s terminal is in the window: a pane of a project kept off it is in no document. */
+/** Whether `one`'s terminal is in the window: a pane of a project kept off it is in no document.
+ *  Stricter than `onScreen`, which counts a terminal with no element yet: a switch waits for a
+ *  pane a person can see. */
 function inTheWindow(one: Pane): boolean {
   return one.terminal.element?.isConnected === true;
 }
 
 /** The panes of `plane` in the window, **by terminal, not by session**: a pane of another
  *  project with the same session number never stands in for one of these (#6198). */
-function panesOf(plane: string): Pane[] {
+function panesOf(plane: PlaneId): Pane[] {
   return [...open.values()].filter((one) => one.plane === plane && inTheWindow(one));
 }
 
@@ -255,7 +258,7 @@ function panesOf(plane: string): Pane[] {
  */
 function heldOnScreen(
   needle: string,
-  plane: string,
+  plane: PlaneId,
   looking: () => boolean,
 ): Promise<{ pane: Pane; at: number }> {
   return new Promise((found) => {
@@ -273,21 +276,26 @@ function heldOnScreen(
 }
 
 /** What the panes of `plane` in the window show, for a job that never saw `needle` there:
- *  which pane, whether it holds the text, and what it had been sent. */
-function whatTheWindowShowed(plane: string, needle: string, armed: Pane | undefined): string {
+ *  how many there are, and for each whether it holds the text and what it had been sent. */
+function whatTheWindowShowed(
+  plane: PlaneId,
+  needle: string,
+  armed: Pane | undefined,
+): { panes: number; said: string } {
   const panes = panesOf(plane);
-  const each = panes.map(
+  const descriptions = panes.map(
     (one) =>
       `session ${one.session} (${one === armed ? "opened for the switch" : "already open"}, ` +
       `${holds(one.terminal, needle) ? "holds it" : "does not hold it"}, ` +
       `sent ${one.chunks} pieces, ${one.characters} characters)`,
   );
+  const lost =
+    armed !== undefined && !inTheWindow(armed) ? "the pane opened for it is not in the window" : "";
   const of = `${panes.length} pane${panes.length === 1 ? "" : "s"} of ${plane} in the window`;
-  const where =
-    armed !== undefined && !inTheWindow(armed)
-      ? "; the pane opened for it is not in the window"
-      : "";
-  return each.length === 0 ? `${of}${where}` : `${of}: ${each.join("; ")}${where}`;
+  const said = [descriptions.length > 0 ? `${of}: ${descriptions.join("; ")}` : "", lost]
+    .filter((part) => part !== "")
+    .join("; ");
+  return { panes: panes.length, said };
 }
 
 /** Whether `terminal` holds `needle` on its screen or in its history. */
@@ -564,10 +572,11 @@ async function work(plan: Plan): Promise<unknown> {
       if (armed !== undefined) armed.waiting = undefined;
       if (arrived === undefined) {
         const showed = whatTheWindowShowed(plan.plane, plan.sentinel, armed);
+        const why = showed.said === "" ? "" : `: ${showed.said}`;
         throw new Error(
-          armed !== undefined || panesOf(plan.plane).length > 0
-            ? `the pane never painted ${plan.sentinel}: ${showed}`
-            : `project ${plan.plane} showed no pane: ${showed}`,
+          armed !== undefined || showed.panes > 0
+            ? `the pane never painted ${plan.sentinel}${why}`
+            : `project ${plan.plane} showed no pane`,
         );
       }
       subject = arrived.pane.session;
