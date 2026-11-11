@@ -206,3 +206,48 @@ fn an_id_is_found_as_written_and_only_a_deprecated_or_replaced_one_warns() {
     assert!(find("todo_list").is_none());
     assert!(find("PURLIS.todo_list").is_none());
 }
+
+#[test]
+fn only_a_query_no_plane_change_moves_lists_its_freshness() {
+    let listing = listing();
+    for listed in listing["queries"].as_array().expect("queries") {
+        let fresh = &listed["fresh_seconds"];
+        if listed["id"] == "purlis.forge_milestones" {
+            assert_eq!(fresh, &json!(60), "asked again about once a minute");
+        } else {
+            assert!(fresh.is_null(), "{}: a plane change moves it", listed["id"]);
+        }
+    }
+}
+
+#[test]
+fn forge_milestones_reads_a_repo_of_the_workspace_and_names_repo_as_widening() {
+    let (query, warning) = find("purlis.forge_milestones").expect("it is a query");
+    assert!(warning.is_none());
+    assert_eq!(query.scope, Scope::Workspace);
+    assert_eq!(query.since, "0.5.2");
+    assert_eq!(query.widens.iter().map(|(n, _)| *n).collect::<Vec<_>>(), ["repo"]);
+    let parameters = query.parameters();
+    assert_eq!(parameters["properties"]["state"]["enum"], json!(["open", "all"]));
+    assert!(
+        parameters.get("required").is_none(),
+        "the workspace's only repo, open milestones, with none given"
+    );
+}
+
+#[test]
+fn an_error_may_carry_a_sentence_for_the_reader_beside_its_kind() {
+    let at = chrono::Utc
+        .with_ymd_and_hms(2026, 11, 9, 13, 32, 0)
+        .unwrap();
+    let said = "purlis could not reach GitHub for the milestones of acme/api. It asks again in a \
+                minute.";
+    assert_eq!(
+        Answer::error_saying(ErrorKind::Failed, said, at).to_json(),
+        json!({ "error": { "kind": "failed", "message": said }, "at": "2026-11-09T13:32:00Z" })
+    );
+    assert_eq!(
+        pinned()["envelope"]["error_with_message"],
+        Answer::error_saying(ErrorKind::Failed, "It says why.", at).to_json()
+    );
+}

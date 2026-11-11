@@ -148,9 +148,27 @@ fn answer_in(
         &of.workspace,
         query,
         params,
+        &as_the_person(),
         at,
         chrono::Local::now().naive_local(),
     )
+}
+
+/// **How a page's query asks the forge**: as the person in the window, in the background
+/// (the operator's ruling of 2026-11-11, ADR 0122 as amended that day). ADR 0070's route sends
+/// it on their sign-in, else their `gh` login, through the account's ETag store, and the
+/// request budget holds it back once the account's hour is spent. The token stays in the
+/// transport: the page is handed the answer's data, never a credential.
+pub(super) fn as_the_person() -> purlis_core::catalogue::milestones::Reach<'static> {
+    purlis_core::catalogue::milestones::Reach {
+        caller: purlis_core::forge::Caller::window().background(),
+        backend_of: &backend_of,
+    }
+}
+
+/// A repo's backend, over the transport its forge resolves each caller to.
+fn backend_of(repo: &purlis_core::forge::pr::Repo) -> Box<dyn purlis_core::forge::ForgeBackend> {
+    repo.backend()
 }
 
 /// **The query a page calling `asked` with `params` may be answered by**, gated again at the
