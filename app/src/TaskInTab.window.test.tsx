@@ -15,6 +15,7 @@ import {
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
+import { hoverTipOf } from "./ui/tooltip/tooltip.testkit";
 import { askToEnd, chatList, paneMore } from "./menus.testkit";
 import type {
   ChatBlocked,
@@ -655,6 +656,11 @@ describe("pressing a task", () => {
 
     await waitFor(() => expect(onScreen()).toEqual([7]));
     expect(tabNames()).toEqual(["deep", "steward 2"]);
+    // Its head and its tab's hover say the task's number, not its session's (#6212).
+    await waitFor(() =>
+      expect(document.querySelector(".pane-head .pane-number")?.textContent).toBe("#7"),
+    );
+    expect((await hoverTipOf(tab("deep")))?.split("\n")[0]).toBe("#7 · deep");
   });
 
   it("lands in the focused pane for a task whose session has closed, and adds no tab (#4757)", async () => {

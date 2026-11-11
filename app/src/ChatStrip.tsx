@@ -53,6 +53,7 @@ import { Doer, ShowMore, Pin, Closer } from "./StripMarks";
 import { NewTabButton } from "./NewTabButton";
 import type { NewTabRow } from "./newTabList";
 import { TIPS_BELOW } from "./ui/tooltip/Tooltip";
+import { numberedName } from "./chatNumber";
 
 /** What a tab with no tasks hands its chip, the same lists every time. */
 export const NO_ROWS: readonly ChatRow[] = [];
@@ -77,12 +78,21 @@ function variantOf(tabs: Tabs, id: number): TabVariant {
   return isFileView(lead.view) ? "file" : "view";
 }
 
-/** A chat tab's tooltip: where a handed-off chat came from, and the work item it works on. */
-function tabTip(from: string | undefined, workItem: string | undefined): string | undefined {
-  const lines = [from, workItem === undefined ? undefined : workItemSaid(workItem)].filter(
-    (line): line is string => line !== undefined,
+/**
+ * **A chat tab's tooltip**: the chat it shows by its number and the tab's name, `#641 · steward 4`
+ * (#6212), then where a handed-off chat came from and the work item it works on. The number is
+ * the chat's current one, read off the pane, so a chat started again says its new number.
+ */
+function tabTip(
+  named: { number: number; name: string } | undefined,
+  from: string | undefined,
+  workItem: string | undefined,
+): string | undefined {
+  return tipLines(
+    named === undefined ? undefined : numberedName(named.number, named.name),
+    from,
+    workItem === undefined ? undefined : workItemSaid(workItem),
   );
-  return lines.length === 0 ? undefined : lines.join("\n");
 }
 
 /**
@@ -153,6 +163,11 @@ export function ChatStrip({
     [hidden, naming, shown, tabs],
   );
   const faceAt = (id: number) => faces.get(id) ?? faceOf(tabs, id, naming);
+  // The chat a tab shows, by its number and the tab's name: what its hover leads with (#6212).
+  const namedChatOf = (id: number) => {
+    const number = chatShownBy(tabs, id);
+    return number === undefined ? undefined : { number, name: faceAt(id).name };
+  };
   const along = useTabStrip({
     keys: drawn,
     selected: tabs.inFront === undefined ? undefined : String(tabs.inFront),
@@ -291,6 +306,7 @@ export function ChatStrip({
                                 tipLines(
                                   splitTip(faceAt(id)) ??
                                     tabTip(
+                                      namedChatOf(id),
                                       handedFrom[chatOf(tabs, id) ?? -1],
                                       workItems[chatOf(tabs, id) ?? -1],
                                     ),

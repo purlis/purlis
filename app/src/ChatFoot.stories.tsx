@@ -13,7 +13,14 @@ import { useState, type ReactNode } from "react";
 import { expect, userEvent, waitFor, within } from "storybook/test";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type { ChatUsage, HarnessGlance } from "./bindings";
-import { ChatFoot, PaneActions, PaneActionsOf, PaneBellOf, PaneHead } from "./LayoutPanes";
+import {
+  ChatFoot,
+  PaneActions,
+  PaneActionsOf,
+  PaneBellOf,
+  PaneHead,
+  PaneNumber,
+} from "./LayoutPanes";
 import { catalogued, type Offer } from "./actions";
 import { Bot, GripVertical, Square } from "lucide-react";
 import { Button, IconButton } from "./ui/button/Button";
@@ -185,6 +192,7 @@ function Head({
             </span>
           )}
           <span className="pane-name">M69 chats, tabs and panes: build</span>
+          <PaneNumber session={6412} />
           {lines.head.includes("mark") && (
             <span className="pane-state-mark">{lines.head.includes("markWord") && "working"}</span>
           )}

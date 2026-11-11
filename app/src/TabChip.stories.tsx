@@ -8,6 +8,7 @@
  * here by a press, as the window opens it, and drawn once it has the keyboard: a menu draws
  * outside its frame, so each picture is the page's.
  */
+import { PaneNumber } from "./LayoutPanes";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, screen, waitFor, within } from "storybook/test";
 import { ChatsHere, fixedChats, nothingKnown } from "./chatState";
@@ -65,6 +66,7 @@ function OnAHead({ onShow }: { onShow: (session: number) => void }) {
       <div className="pane-head">
         <div className="pane-chips">
           <span className="pane-name">steward 1</span>
+          <PaneNumber session={1} />
           <span className="pane-state-mark">
             <ChatTasks
               id="tasks-of-steward-1"

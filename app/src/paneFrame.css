@@ -530,6 +530,16 @@
   text-overflow: ellipsis;
 }
 
+/* **Its number beside its name** (#6212): `#641`, the chat's current number, in the line's muted
+   tier. Never cut and never dropped: it is short, and it is how a chat is found again. */
+.pane-chips > .pane-number {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 /* **A pane's grip** (#5290, `ui/grip`): the mark in its head, the tab's size, and a 24px target
    (WCAG 2.5.8) that reaches past the mark and moves nothing around it. */
 .pane-chips > .pane-persona,

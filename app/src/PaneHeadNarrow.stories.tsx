@@ -17,7 +17,7 @@ import { SkillRunsHere, fixedRuns } from "./skillRuns";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
 import { ChatPersonaState } from "./ChatPersonaState";
 import { ChatsHere, fixedChats, nothingKnown, type ChatStates } from "./chatState";
-import { PaneHead, PaneTasksWord, type TasksOn } from "./LayoutPanes";
+import { PaneHead, PaneTasksWord, type TasksOn, PaneNumber } from "./LayoutPanes";
 import type { ChatHead } from "./paneHead";
 import { HEAD_DROPS, paneLinesOf } from "./paneHead";
 import { QuestionsHere } from "./QuestionsHere";
@@ -142,6 +142,7 @@ function Head({ chat, tasksOn }: { chat: ChatHead["chat"]; tasksOn?: TasksOn }) 
               />
             </span>
             <span className="pane-name">{chat.name}</span>
+            <PaneNumber session={chat.session} />
             <PaneTasksWord
               tasksOn={tasksOn}
               session={chat.session}
@@ -281,6 +282,7 @@ function UsingHead({ width }: { width: number }) {
               />
             </span>
             <span className="pane-name">{USING.name}</span>
+            <PaneNumber session={USING.session} />
             <PaneTasksWord
               session={USING.session}
               at={undefined}
