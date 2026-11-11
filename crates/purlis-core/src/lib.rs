@@ -28,6 +28,7 @@ pub mod change;
 pub mod chatenv;
 pub mod chatlookup;
 pub mod chatpiece;
+pub mod chatscreens;
 pub mod chatspec;
 pub mod chattools;
 pub mod checks;

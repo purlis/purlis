@@ -545,6 +545,10 @@ fn dispatches(plane: &Path, now: SystemTime, chats: &[crate::dispatchrecord::Liv
     if gone > 0 {
         crate::dispatchrecord::ended::in_step(plane);
     }
+    // A task's kept screen goes with the last record that names its chat (#6214).
+    let ledger = crate::dispatchrecord::ledger(plane);
+    let workers: std::collections::HashSet<&str> = ledger.workers().collect();
+    crate::chatscreens::sweep(plane, |id| workers.contains(id));
     gone
 }
 
