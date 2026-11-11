@@ -230,7 +230,7 @@ fn chats() -> Value {
     object(json!({
         "history": { "type": "boolean", "description": "Whether ended dispatches are listed too." },
         "chats": list_of(object(json!({
-            "id": string("Its id, or chat-<n> for one given none yet: what a parent names it by."),
+            "id": string("Its id; chat-<n> for an open chat given none yet, <record id>.chat-<n> for an ended one: what a parent names it by."),
             "name": string("Its name, as its tab shows it."),
             "persona": nullable("The persona it runs as, or null."),
             "harness": nullable("Its harness, by the project's word for it, or null for a shell."),
@@ -247,7 +247,7 @@ fn chats() -> Value {
                 "type": ["object", "null"],
                 "description": "The chat it came from, or null for one the person opened.",
                 "properties": {
-                    "id": string("That chat's id."),
+                    "id": nullable("That chat's id, or null where it works in another workspace or at the project's root."),
                     "relation": json!({
                         "type": "string",
                         "enum": ["dispatched", "handed-off-from"],

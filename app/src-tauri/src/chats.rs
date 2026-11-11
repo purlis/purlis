@@ -6668,6 +6668,10 @@ impl Chats {
                                 purlis_core::reopen::Mode::Task => Relation::Dispatched,
                                 purlis_core::reopen::Mode::Handoff => Relation::HandedOffFrom,
                             },
+                            workspace: match &from.workspace {
+                                purlis_core::active::Place::Workspace(name) => Some(name.clone()),
+                                purlis_core::active::Place::PlaneRoot => None,
+                            },
                         }),
                         facts: Facts::default(),
                         started: one

@@ -273,6 +273,7 @@ fn the_chats_answer_is_of_its_own_shape() {
         parent: Some(chats::Parent {
             id: "chat-3".into(),
             relation: chats::Relation::HandedOffFrom,
+            workspace: Some("alpha".into()),
         }),
         facts: chats::Facts::default(),
         started: Some(1_762_862_400),

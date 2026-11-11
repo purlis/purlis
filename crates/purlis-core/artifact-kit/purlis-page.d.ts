@@ -132,7 +132,7 @@ declare namespace PurlisPage {
     /** List the chats of the workspace this chat works in, as the window's Chats tree has them: each with its id, name, persona, harness, its Chat state and the fact that decided it, when it started and last moved, the chat it came from and how (dispatched, or handed off from), and its session record. With history, also the workspace's ended dispatches. Names, states and times only: never what any chat wrote. */
     "purlis.chats@1": {
       params: {
-        /** Also list the workspace's ended dispatches (tasks and handoffs), newest first, each with the chat that asked for it. A closed chat that dispatched nothing is in no record, so it is not listed. */
+        /** Also list the workspace's ended dispatches (tasks and handoffs), the one that ended last first, each with the chat that asked for it, and each chat once. A closed chat that dispatched nothing is in no record, so it is not listed. */
         history?: boolean;
         /** With history: how many ended dispatches to list, from 1 to 200. 50 when left out. */
         limit?: number;
@@ -141,7 +141,7 @@ declare namespace PurlisPage {
         /** Whether ended dispatches are listed too. */
         history: boolean;
         chats: Array<{
-          /** Its id, or chat-<n> for one given none yet: what a parent names it by. */
+          /** Its id; chat-<n> for an open chat given none yet, <record id>.chat-<n> for an ended one: what a parent names it by. */
           id: string;
           /** Its name, as its tab shows it. */
           name: string;
@@ -161,8 +161,8 @@ declare namespace PurlisPage {
           last_activity: string | null;
           /** The chat it came from, or null for one the person opened. */
           parent: {
-            /** That chat's id. */
-            id: string;
+            /** That chat's id, or null where it works in another workspace or at the project's root. */
+            id: string | null;
             /** dispatched: a task that owes it a report; handed-off-from: the work moved here. */
             relation: "dispatched" | "handed-off-from";
           } | null;

@@ -226,20 +226,56 @@ pub(crate) fn moved<R: Runtime>(
     perform(app, todo);
 }
 
-/// **Chats of project `plane` moved on its board** (#6235): every `purlis.chats` feed of it is
-/// asked again, now or when it is due. The chats are the app's record, which no plane change
-/// moves.
-pub(crate) fn chats_moved<R: Runtime>(app: &tauri::AppHandle<R>, plane: &PlaneId) {
+/// Whether feed `key` is a `purlis.chats` feed of project `plane`, and of one of `workspaces`
+/// where they are known.
+fn of_chats(key: &Key, plane: &PlaneId, workspaces: Option<&[String]>) -> bool {
+    key.plane == *plane
+        && workspaces.is_none_or(|named| named.contains(&key.workspace))
+        && key
+            .catalogued()
+            .is_some_and(|query| query.name == purlis_core::chattools::CHATS)
+}
+
+/// What the hub does when chats of `workspaces` of `plane` moved (`None`: any of its
+/// workspaces).
+fn chats_todo(
+    live: &mut Live,
+    plane: &PlaneId,
+    workspaces: Option<&[String]>,
+    now: Instant,
+) -> Vec<Do<Key, Who>> {
+    live.hub.moved(now, |key| of_chats(key, plane, workspaces))
+}
+
+/// **Chat `session` of project `plane` moved on its board** (#6235): each `purlis.chats` feed
+/// of a workspace the move may change ([`crate::chatlisting::moved_in`]) is asked again, now
+/// or when it is due. The chats are the app's record, which no plane change moves. Nothing is
+/// looked up where no page reads the project's chats, and the lookup is made off the thread
+/// that told of the move, which may hold the chats' record.
+pub(crate) fn chats_moved<R: Runtime>(app: &tauri::AppHandle<R>, plane: &PlaneId, session: u32) {
     let Some(artifacts) = app.try_state::<Artifacts>() else {
         return;
     };
-    let todo = artifacts.live().hub.moved(Instant::now(), |key| {
-        key.plane == *plane
-            && key
-                .catalogued()
-                .is_some_and(|query| query.name == purlis_core::chattools::CHATS)
+    if !artifacts.live().hub.any(|key| of_chats(key, plane, None)) {
+        return;
+    }
+    let (app, plane) = (app.clone(), plane.clone());
+    tauri::async_runtime::spawn_blocking(move || {
+        let workspaces = app
+            .try_state::<Planes>()
+            .and_then(|planes| planes.held(&plane).ok())
+            .and_then(|held| crate::chatlisting::moved_in(&held, session));
+        let Some(artifacts) = app.try_state::<Artifacts>() else {
+            return;
+        };
+        let todo = chats_todo(
+            &mut artifacts.live(),
+            &plane,
+            workspaces.as_deref(),
+            Instant::now(),
+        );
+        perform(&app, todo);
     });
-    perform(app, todo);
 }
 
 /// Does what the hub said.
@@ -453,5 +489,54 @@ mod tests {
         assert_eq!(artifacts.feeds(), 1, "artifact-2's is kept");
         artifacts.reloaded("artifact-2");
         assert_eq!(artifacts.feeds(), 0);
+    }
+
+    #[test]
+    fn a_move_of_chats_asks_again_only_the_chats_feeds_of_the_workspaces_it_may_change() {
+        // #6235: a board's move does not read every chats feed of every workspace again.
+        let mut live = Live::default();
+        let plane: PlaneId = serde_json::from_str("\"plane\"").unwrap();
+        let other: PlaneId = serde_json::from_str("\"other\"").unwrap();
+        let key = |plane: &PlaneId, workspace: &str, query: &str| {
+            Key::of(plane.clone(), workspace.into(), query.into(), &json!({}))
+        };
+        let alpha = key(&plane, "alpha", "purlis.chats@1");
+        let beta = key(&plane, "beta", "purlis.chats@1");
+        let todos = key(&plane, "alpha", "purlis.todo_list@1");
+        let elsewhere = key(&other, "alpha", "purlis.chats@1");
+        let t = Instant::now();
+        for (n, key) in [&alpha, &beta, &todos, &elsewhere].into_iter().enumerate() {
+            let who = Who {
+                label: format!("artifact-{n}"),
+                load: LOAD.into(),
+                id: 1,
+            };
+            live.hub.subscribe(key.clone(), who, t);
+            live.hub
+                .finished(key, Answer::data(json!({}), chrono::Utc::now()), t);
+        }
+        let later = t + live::MIN_INTERVAL;
+        let runs = |todo: Vec<Do<Key, Who>>| -> Vec<Key> {
+            todo.into_iter()
+                .filter_map(|d| match d {
+                    Do::Run(key) => Some(key),
+                    _ => None,
+                })
+                .collect()
+        };
+        let named = ["alpha".to_owned()];
+        assert_eq!(
+            runs(chats_todo(&mut live, &plane, Some(&named), later)),
+            [alpha.clone()]
+        );
+        for key in [&alpha] {
+            live.hub
+                .finished(key, Answer::data(json!({}), chrono::Utc::now()), later);
+        }
+        // A chat that closed: every chats feed of its project, and no other feed.
+        let mut every = runs(chats_todo(&mut live, &plane, None, later + live::MIN_INTERVAL));
+        every.sort_by(|a, b| a.workspace.cmp(&b.workspace));
+        assert_eq!(every, [alpha, beta]);
+        assert!(live.hub.any(|key| *key == todos));
     }
 }

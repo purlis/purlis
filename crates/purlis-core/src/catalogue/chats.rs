@@ -12,7 +12,7 @@
 //!
 //! - **By default, the live chats**: every chat the app has open in the workspace.
 //! - **With `history`, also ended dispatches** of the workspace, from the dispatch records
-//!   (`app/dispatches/<id>.json`): the newest [`HISTORY_DEFAULT`], or `limit`, at most
+//!   (`app/dispatches/<id>.json`): the last [`HISTORY_DEFAULT`] to end, or `limit`, at most
 //!   [`HISTORY_MOST`], each with the chat that asked it. A closed chat that dispatched nothing
 //!   is in no record, so it is not listed (the operator's ruling of 2026-11-11).
 //! - **Never a word a chat wrote**: no transcript, prompt, brief, report or message, and
@@ -206,6 +206,8 @@ impl Relation {
 pub struct Parent {
     pub id: String,
     pub relation: Relation,
+    /// The workspace it works in; none for the project's root.
+    pub workspace: Option<String>,
 }
 
 /// **One open chat, as the app holds it.**
@@ -268,7 +270,8 @@ pub fn parameters() -> Value {
             "history": {
                 "type": "boolean",
                 "description": "Also list the workspace's ended dispatches (tasks and handoffs), \
-                                newest first, each with the chat that asked for it. A closed \
+                                the one that ended last first, each with the chat that asked \
+                                for it, and each chat once. A closed \
                                 chat that dispatched nothing is in no record, so it is not \
                                 listed.",
             },
@@ -297,8 +300,14 @@ fn stamped(stamp: &str) -> Option<i64> {
         .map(|at| at.timestamp())
 }
 
-/// One row of the answer.
-fn row(chat: &Chat, (mark, cause): (Mark, &str), open: bool) -> Value {
+/// One row of the answer, for a page of `workspace`. A parent that works elsewhere (another
+/// workspace, or the project's root) is named by its relation only: its id is null, since a
+/// page reads no chat of another workspace.
+fn row(chat: &Chat, (mark, cause): (Mark, &str), open: bool, workspace: &str) -> Value {
+    let parent = chat.parent.as_ref().map(|p| {
+        let id = (p.workspace.as_deref() == Some(workspace)).then_some(p.id.as_str());
+        json!({ "id": id, "relation": p.relation.word() })
+    });
     json!({
         "id": chat.id,
         "name": chat.name,
@@ -309,7 +318,7 @@ fn row(chat: &Chat, (mark, cause): (Mark, &str), open: bool) -> Value {
         "cause": cause,
         "started": time(chat.started),
         "last_activity": time(chat.last_activity),
-        "parent": chat.parent.as_ref().map(|p| json!({ "id": p.id, "relation": p.relation.word() })),
+        "parent": parent,
         "session_record": chat.session_record,
         "open": open,
     })
@@ -322,12 +331,23 @@ pub fn record_file(path: &str, workspace: &str) -> Option<String> {
     crate::sessionrecord::is_record_name(file).then(|| file.to_owned())
 }
 
-/// An id a dispatch record names a chat by.
-fn recorded_id(chat: &crate::dispatchrecord::ChatRef) -> String {
+/// An id dispatch record `record` names a chat by: its own, or, for one given none, its number
+/// on the board of the run the record was made in, after the record's id. A number alone may
+/// be another chat's in another run.
+fn recorded_id(record: &Record, chat: &crate::dispatchrecord::ChatRef) -> String {
     chat.id
         .clone()
         .filter(|id| !id.is_empty())
-        .unwrap_or_else(|| number_id(chat.chat))
+        .unwrap_or_else(|| format!("{}.{}", record.id, number_id(chat.chat)))
+}
+
+/// When an ended dispatch ended, or, where its record says not, when it started.
+fn ended_at(record: &Record) -> Option<i64> {
+    record
+        .ended
+        .as_deref()
+        .and_then(stamped)
+        .or_else(|| stamped(&record.started))
 }
 
 /// An ended dispatch's chat, and the state its record says it ended in.
@@ -344,7 +364,7 @@ fn ended_worker(record: &Record, workspace: &str) -> (Chat, (Mark, &'static str)
     };
     let worker = &record.worker;
     let chat = Chat {
-        id: recorded_id(&worker.chat),
+        id: recorded_id(record, &worker.chat),
         name: record
             .task
             .clone()
@@ -353,11 +373,12 @@ fn ended_worker(record: &Record, workspace: &str) -> (Chat, (Mark, &'static str)
         harness: worker.harness.clone(),
         workspace: record.place.workspace.clone(),
         parent: Some(Parent {
-            id: recorded_id(&record.asker.chat),
+            id: recorded_id(record, &record.asker.chat),
             relation: match record.mode {
                 crate::dispatchrecord::Mode::Task => Relation::Dispatched,
                 crate::dispatchrecord::Mode::Handoff => Relation::HandedOffFrom,
             },
+            workspace: record.asker.workspace.clone(),
         }),
         facts: Facts::default(),
         started: stamped(&record.started),
@@ -374,7 +395,7 @@ fn ended_worker(record: &Record, workspace: &str) -> (Chat, (Mark, &'static str)
 fn closed_asker(record: &Record, workspace: &str) -> Chat {
     let asker = &record.asker;
     Chat {
-        id: recorded_id(&asker.chat),
+        id: recorded_id(record, &asker.chat),
         name: asker.chat.name.clone(),
         persona: asker.chat.persona.clone(),
         harness: None,
@@ -390,31 +411,52 @@ fn closed_asker(record: &Record, workspace: &str) -> Chat {
     }
 }
 
+/// How a chat is in the answer so far.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Listed {
+    /// Open, or as the worker of an ended dispatch: what it is.
+    AsItself,
+    /// Only as the chat that asked for one, at this row.
+    AsAsker(usize),
+}
+
 /// **The answer**: `open`'s chats of `workspace`, and, with `history`, the workspace's ended
-/// dispatches of `records` (newest first) that are not open, each followed by the chat that
-/// asked it where that one is listed nowhere else.
+/// dispatches of `records` that are not open, the one that ended last first, each followed by
+/// the chat that asked it where that one is listed nowhere else. Each chat is listed once: one
+/// first listed as an asker, and later found as an ended dispatch's worker, is listed as that.
 pub fn answer(open: &[Chat], records: &[Record], workspace: &str, asked: Asked) -> Value {
     let here = |ws: &Option<String>| ws.as_deref() == Some(workspace);
-    let mut listed: Vec<String> = Vec::new();
+    let mut listed: std::collections::HashMap<String, Listed> = std::collections::HashMap::new();
     let mut chats: Vec<Value> = Vec::new();
     for chat in open.iter().filter(|c| here(&c.workspace)) {
-        listed.push(chat.id.clone());
-        chats.push(row(chat, mark(&chat.facts), true));
+        listed.insert(chat.id.clone(), Listed::AsItself);
+        chats.push(row(chat, mark(&chat.facts), true, workspace));
     }
     if asked.history {
-        let ended = records
+        let mut ended: Vec<&Record> = records
             .iter()
             .filter(|r| !r.running() && here(&r.place.workspace))
-            .map(|r| (r, ended_worker(r, workspace)))
-            .filter(|(_, (worker, _))| !listed.contains(&worker.id))
-            .take(asked.limit as usize);
-        for (record, (worker, said)) in ended.collect::<Vec<_>>() {
-            listed.push(worker.id.clone());
-            chats.push(row(&worker, said, false));
+            .collect();
+        // Stable, so dispatches that ended in one second keep the store's order.
+        ended.sort_by_key(|r| std::cmp::Reverse(ended_at(r)));
+        let mut workers = 0;
+        for record in ended {
+            if workers == asked.limit {
+                break;
+            }
+            let (worker, said) = ended_worker(record, workspace);
+            let shown = row(&worker, said, false, workspace);
+            match listed.get(&worker.id).copied() {
+                Some(Listed::AsItself) => continue,
+                Some(Listed::AsAsker(at)) => chats[at] = shown,
+                None => chats.push(shown),
+            }
+            listed.insert(worker.id.clone(), Listed::AsItself);
+            workers += 1;
             let asker = closed_asker(record, workspace);
-            if here(&asker.workspace) && !listed.contains(&asker.id) {
-                listed.push(asker.id.clone());
-                chats.push(row(&asker, (Mark::Ended, "closed"), false));
+            if here(&asker.workspace) && !listed.contains_key(&asker.id) {
+                listed.insert(asker.id.clone(), Listed::AsAsker(chats.len()));
+                chats.push(row(&asker, (Mark::Ended, "closed"), false, workspace));
             }
         }
     }

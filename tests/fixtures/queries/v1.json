@@ -293,7 +293,7 @@
             "properties": {
               "id": {
                 "type": "string",
-                "description": "Its id, or chat-<n> for one given none yet: what a parent names it by."
+                "description": "Its id; chat-<n> for an open chat given none yet, <record id>.chat-<n> for an ended one: what a parent names it by."
               },
               "name": {
                 "type": "string",
@@ -357,8 +357,11 @@
                 "description": "The chat it came from, or null for one the person opened.",
                 "properties": {
                   "id": {
-                    "type": "string",
-                    "description": "That chat's id."
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "That chat's id, or null where it works in another workspace or at the project's root."
                   },
                   "relation": {
                     "type": "string",

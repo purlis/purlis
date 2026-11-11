@@ -2722,3 +2722,42 @@ pub(crate) mod reads {
         READS.with(|reads| reads.replace(0))
     }
 }
+
+/// **[`drawn`], read again only once the store has changed** (#6235): what a page's
+/// `purlis.chats` feed reads its history from at every move of a board. A look is one
+/// folder's time and a counter, as [`Running`]'s is, and one that could not be trusted
+/// ([`Seen::settled`]) reads again at the next.
+///
+/// **Slim**: each record is kept without its brief, its talk and its report's text, which
+/// nothing that draws a list of chats reads.
+#[derive(Debug, Default)]
+pub struct Drawing {
+    seen: Option<Seen>,
+    drawn: Drawn,
+}
+
+impl Drawing {
+    /// [`drawn`] of the project at `root`, looked at now.
+    pub fn drawn(&mut self, root: &Path) -> &Drawn {
+        self.drawn_at(root, std::time::SystemTime::now())
+    }
+
+    /// [`Self::drawn`], looked at `now`. The look is taken before the read, so a write
+    /// during it is a change at the next look.
+    pub fn drawn_at(&mut self, root: &Path, now: std::time::SystemTime) -> &Drawn {
+        let seen = Seen::now(root);
+        if self.seen.as_ref() != Some(&seen) {
+            let mut drawn = drawn(root);
+            for record in &mut drawn.records {
+                record.brief.clear();
+                record.talk.clear();
+                if let Some(report) = record.report.as_mut() {
+                    report.text.clear();
+                }
+            }
+            self.drawn = drawn;
+            self.seen = seen.settled(now).then_some(seen);
+        }
+        &self.drawn
+    }
+}

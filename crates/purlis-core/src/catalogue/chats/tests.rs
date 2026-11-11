@@ -29,6 +29,7 @@ fn task_of(parent: &str, mut child: Chat) -> Chat {
     child.parent = Some(Parent {
         id: parent.to_owned(),
         relation: Relation::Dispatched,
+        workspace: Some("alpha".into()),
     });
     child.facts.task = Some(TaskFacts {
         report: Report::Owed,
@@ -366,4 +367,175 @@ fn a_chat_with_no_id_is_named_by_its_number_and_its_task_finds_it() {
     let data = answer(&[asker, child], &[], "alpha", live());
     assert_eq!(ids(&data)[0], "chat-4");
     assert_eq!(chats_of(&data)[1]["parent"]["id"], "chat-4");
+}
+
+/// `ended_record`, minted as `id`, from `started` to `ended` (hours of 2026-11-11).
+fn ended_between(
+    id: &str,
+    (worker, asker): (&str, &str),
+    (started, ended): (u32, u32),
+) -> Record {
+    let mut record = ended_record(worker, asker, "alpha", "done");
+    record.id = id.to_owned();
+    record.started = format!("2026-11-11T{started:02}:00:00+00:00");
+    record.ended = Some(format!("2026-11-11T{ended:02}:00:00+00:00"));
+    record
+}
+
+fn with_history(limit: u32) -> Asked {
+    Asked {
+        history: true,
+        limit,
+    }
+}
+
+#[test]
+fn a_nested_dispatch_lists_each_closed_chat_once_as_the_worker_it_was() {
+    // G asked P, and P asked S. P was closed before S ended, so S's record is the newest
+    // ended and names P as its asker before P's own record is read.
+    let (g, p, s) = (
+        "01KA00000000000000000000G0",
+        "01KA00000000000000000000P0",
+        "01KA00000000000000000000S0",
+    );
+    let records = [
+        ended_between("01KA0000000000000000000002", (s, p), (10, 12)),
+        ended_between("01KA0000000000000000000001", (p, g), (9, 11)),
+    ];
+    let data = answer(&[], &records, "alpha", with_history(HISTORY_DEFAULT));
+    assert_eq!(ids(&data), [s, p, g], "each chat once");
+    let p_row = &chats_of(&data)[1];
+    assert_eq!(p_row["harness"], "claude", "P is the worker it was");
+    assert_eq!(p_row["cause"], "reported");
+    assert_eq!(p_row["parent"]["id"], g);
+    assert_eq!(p_row["started"], "2026-11-11T09:00:00Z");
+    assert_eq!(chats_of(&data)[0]["parent"]["id"], p);
+    assert_eq!(chats_of(&data)[2]["cause"], "closed");
+}
+
+#[test]
+fn a_closed_chat_that_asked_twice_is_listed_once() {
+    let a = "01KA00000000000000000000A0";
+    let records = [
+        ended_between("01KA0000000000000000000002", ("01KA00000000000000000000W2", a), (10, 11)),
+        ended_between("01KA0000000000000000000001", ("01KA00000000000000000000W1", a), (9, 10)),
+    ];
+    let data = answer(&[], &records, "alpha", with_history(HISTORY_DEFAULT));
+    assert_eq!(
+        ids(&data),
+        ["01KA00000000000000000000W2", a, "01KA00000000000000000000W1"]
+    );
+}
+
+#[test]
+fn history_lists_the_dispatch_that_ended_last_first() {
+    let a = "01KA00000000000000000000A0";
+    // The newer record (by its start) ended first.
+    let records = [
+        ended_between("01KA0000000000000000000002", ("01KA00000000000000000000W2", a), (10, 11)),
+        ended_between("01KA0000000000000000000001", ("01KA00000000000000000000W1", a), (9, 12)),
+    ];
+    let data = answer(&[], &records, "alpha", with_history(1));
+    assert_eq!(ids(&data), ["01KA00000000000000000000W1", a]);
+}
+
+#[test]
+fn a_parent_in_another_workspace_or_at_the_root_is_named_by_its_relation_only() {
+    let mut handed = chat("01KA00000000000000000000A1", "handed here from beta");
+    handed.parent = Some(Parent {
+        id: "01KA00000000000000000000B0".to_owned(),
+        relation: Relation::HandedOffFrom,
+        workspace: Some("beta".to_owned()),
+    });
+    let mut from_root = task_of(
+        "01KA00000000000000000000R0",
+        chat("01KA00000000000000000000A2", "dispatched from the root"),
+    );
+    from_root.parent.as_mut().unwrap().workspace = None;
+    let here = task_of(
+        "01KA00000000000000000000A1",
+        chat("01KA00000000000000000000A3", "a task of a chat here"),
+    );
+    let mut record = ended_record(
+        "01KA00000000000000000000D1",
+        "01KA00000000000000000000E0",
+        "alpha",
+        "done",
+    );
+    record.asker.workspace = Some("beta".to_owned());
+    let data = answer(
+        &[handed, from_root, here],
+        &[record],
+        "alpha",
+        with_history(HISTORY_DEFAULT),
+    );
+    let rows = chats_of(&data);
+    assert_eq!(
+        rows[0]["parent"],
+        json!({ "id": null, "relation": "handed-off-from" })
+    );
+    assert_eq!(
+        rows[1]["parent"],
+        json!({ "id": null, "relation": "dispatched" })
+    );
+    assert_eq!(rows[2]["parent"]["id"], "01KA00000000000000000000A1");
+    assert_eq!(
+        rows[3]["parent"],
+        json!({ "id": null, "relation": "dispatched" }),
+        "a history worker whose asker is elsewhere"
+    );
+    assert_eq!(rows.len(), 4, "and that asker is not listed");
+    assert!(!data.to_string().contains("01KA00000000000000000000B0"));
+    assert!(!data.to_string().contains("01KA00000000000000000000E0"));
+}
+
+#[test]
+fn recorded_chats_with_no_id_from_two_runs_are_two_chats() {
+    let unnamed = |id: &str| {
+        let mut record = ended_record("", "", "alpha", "done");
+        record.id = id.to_owned();
+        record.worker.chat.id = None;
+        record.asker.chat.id = None;
+        record
+    };
+    let records = [
+        unnamed("01KA0000000000000000000002"),
+        unnamed("01KA0000000000000000000001"),
+    ];
+    let data = answer(&[], &records, "alpha", with_history(HISTORY_DEFAULT));
+    let listed = ids(&data);
+    assert_eq!(listed.len(), 4, "{listed:?}");
+    let unique: std::collections::HashSet<&String> = listed.iter().collect();
+    assert_eq!(unique.len(), 4, "{listed:?}");
+    assert!(listed.iter().all(|id| id.starts_with("01KA00000000000000000000")));
+    assert_eq!(chats_of(&data)[0]["parent"]["id"], listed[1].as_str());
+}
+
+#[test]
+fn the_longest_history_fits_in_an_answer() {
+    // Every name a record keeps at its most, in the character JSON escapes longest.
+    let longest = "\u{1}".repeat(crate::dispatchrecord::MOST_NAME_BYTES);
+    let records: Vec<Record> = (0..HISTORY_MOST)
+        .map(|n| {
+            let mut record = ended_record(
+                &format!("01KA0000000000000000000W{n:02X}"),
+                &format!("01KA0000000000000000000A{n:02X}"),
+                "alpha",
+                "done",
+            );
+            record.task = Some(longest.clone());
+            record.worker.chat.persona = Some(longest.clone());
+            record.worker.harness = Some(longest.clone());
+            record.asker.chat.name = longest.clone();
+            record.asker.chat.persona = Some(longest.clone());
+            record
+        })
+        .collect();
+    let data = answer(&[], &records, "alpha", with_history(HISTORY_MOST));
+    assert_eq!(chats_of(&data).len(), 2 * HISTORY_MOST as usize);
+    let bytes = serde_json::to_vec(&data).unwrap().len();
+    assert!(
+        bytes < crate::catalogue::answer::MOST_BYTES,
+        "{bytes} bytes"
+    );
 }

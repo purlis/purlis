@@ -164,18 +164,28 @@ impl<K: Clone + Eq + Hash, W: Clone + PartialEq> Hub<K, W> {
     }
 
     /// **Feed `key`'s run answered `answer`**: handed to every subscriber it has now, and run
-    /// again when it is due if something moved it meanwhile.
+    /// again when it is due if something moved it meanwhile. An answer that says what the
+    /// feed's last one said, whenever it was read, is handed to no one (#6235): every page of
+    /// the feed already holds it. A feed with a freshness hands each one on, since its time is
+    /// what is fresh.
     pub fn finished(&mut self, key: &K, answer: Answer, now: Instant) -> Vec<Do<K, W>> {
         let Some(feed) = self.feeds.get_mut(key) else {
             return Vec::new();
         };
         feed.running = false;
-        feed.last = Some(answer.clone());
-        let mut out: Vec<Do<K, W>> = feed
-            .who
-            .iter()
-            .map(|w| Do::Hand(w.clone(), answer.clone()))
-            .collect();
+        let unchanged = feed.every.is_none()
+            && feed.last.as_ref().is_some_and(|last| {
+                last.outcome == answer.outcome && last.cursor == answer.cursor
+            });
+        let mut out: Vec<Do<K, W>> = if unchanged {
+            Vec::new()
+        } else {
+            feed.who
+                .iter()
+                .map(|w| Do::Hand(w.clone(), answer.clone()))
+                .collect()
+        };
+        feed.last = Some(answer);
         out.extend(self.due(key, now));
         out
     }
@@ -184,6 +194,11 @@ impl<K: Clone + Eq + Hash, W: Clone + PartialEq> Hub<K, W> {
     pub fn tick(&mut self, now: Instant) -> Vec<Do<K, W>> {
         let keys: Vec<K> = self.feeds.keys().cloned().collect();
         keys.iter().flat_map(|key| self.due(key, now)).collect()
+    }
+
+    /// Whether any feed is one `which` names: a look that runs nothing.
+    pub fn any(&self, which: impl Fn(&K) -> bool) -> bool {
+        self.feeds.keys().any(which)
     }
 
     /// How many feeds there are: one per query, parameters and place subscribed to.
@@ -491,6 +506,44 @@ mod tests {
         let done = hub.finished(&"todos", answer(1), t);
         assert!(!done.iter().any(|d| matches!(d, Do::WakeAt(_))), "{done:?}");
         assert!(hub.tick(t + Duration::from_secs(3600)).is_empty());
+    }
+
+    #[test]
+    fn a_run_that_answers_what_the_feed_last_answered_hands_nothing_on() {
+        // #6235: a board's move asks every chats feed again; most answer as they did.
+        let t = Instant::now();
+        let mut hub = Hub::default();
+        hub.subscribe("chats", ("page-a", 1), t);
+        assert_eq!(handed(&hub.finished(&"chats", answer(1), t)), [("page-a", 1)]);
+        let later = t + MIN_INTERVAL;
+        assert_eq!(runs(&hub.moved(later, |_| true)), ["chats"]);
+        let same = Answer::data(json!({ "n": 1 }), chrono::Utc::now());
+        assert!(handed(&hub.finished(&"chats", same, later)).is_empty());
+        // A page that subscribes now is handed it, and a new answer goes to every page.
+        let late = hub.subscribe("chats", ("page-b", 1), later);
+        assert_eq!(handed(&late), [("page-b", 1)]);
+        let again = later + MIN_INTERVAL;
+        assert_eq!(runs(&hub.moved(again, |_| true)), ["chats"]);
+        assert_eq!(
+            handed(&hub.finished(&"chats", answer(2), again)),
+            [("page-a", 1), ("page-b", 1)]
+        );
+    }
+
+    #[test]
+    fn a_feed_with_a_freshness_hands_on_each_answer_it_is_asked_again_for() {
+        let t = Instant::now();
+        let every = Duration::from_secs(60);
+        let mut hub = Hub::default();
+        hub.subscribe_every("slack", ("page-a", 1), t, Some(every));
+        hub.finished(&"slack", answer(1), t);
+        assert_eq!(runs(&hub.tick(t + every)), ["slack"]);
+        let fresh = Answer::data(json!({ "n": 1 }), chrono::Utc::now());
+        assert_eq!(
+            handed(&hub.finished(&"slack", fresh, t + every)),
+            [("page-a", 1)],
+            "its answer's time is what is fresh"
+        );
     }
 
     #[test]

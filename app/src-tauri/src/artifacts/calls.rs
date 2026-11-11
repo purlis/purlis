@@ -162,8 +162,14 @@ pub(super) fn chats_answer<R: tauri::Runtime>(
     else {
         return Answer::error(ErrorKind::Failed, at);
     };
-    let data = crate::chatlisting::answer(&held, plane, workspace, asked);
-    if serde_json::to_vec(&data).map_or(usize::MAX, |b| b.len()) > answer::MOST_BYTES {
+    capped(crate::chatlisting::answer(&held, plane, workspace, asked), at)
+}
+
+/// `data` as an answer read `at`, or `too-large` where it is past the cap every answer is
+/// held to.
+fn capped(data: Value, at: chrono::DateTime<chrono::Utc>) -> Answer {
+    use purlis_core::catalogue::answer::MOST_BYTES;
+    if serde_json::to_vec(&data).map_or(usize::MAX, |b| b.len()) > MOST_BYTES {
         return Answer::error(ErrorKind::TooLarge, at);
     }
     Answer::data(data, at)
@@ -256,6 +262,19 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn a_chats_answer_past_the_cap_is_too_large_and_one_at_it_is_given() {
+        use purlis_core::catalogue::answer::MOST_BYTES;
+        let at = chrono::Utc::now();
+        // `{"chats":["…"]}` is 14 bytes around the text.
+        let of = |text: usize| json!({ "chats": ["x".repeat(text)] });
+        assert!(capped(of(MOST_BYTES - 14), at).outcome.is_ok());
+        assert_eq!(
+            capped(of(MOST_BYTES - 13), at).outcome,
+            Err(ErrorKind::TooLarge)
+        );
+    }
 
     #[test]
     fn a_query_ask_carries_the_declared_id_and_its_params_and_nothing_else() {
