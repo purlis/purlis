@@ -116,7 +116,7 @@ fn state_words() -> Vec<Words> {
         for variant in family.looks() {
             for states in read_in(family, variant) {
                 let look = (family.defaults)(variant, &states);
-                let drawn = drawn(&[], family, variant, &states);
+                let as_drawn = drawn(&[], family, variant, &states);
                 // A root with no fill, or a wash, stands on each of the family's grounds.
                 let under: Vec<&'static str> = if look.fill == TRANSPARENT || is_wash(look.fill) {
                     family.grounds.to_vec()
@@ -133,11 +133,13 @@ fn state_words() -> Vec<Words> {
                     if at > 0 && (!part.properties.contains(&Prop::Text) || is_mark(family, part)) {
                         continue;
                     }
-                    let words = drawn.words[at];
+                    let words = as_drawn.words[at];
                     if !is_held_as_words(words) {
                         continue;
                     }
-                    let fill = family.own_fill(at).unwrap_or(look.fill);
+                    // On what the parts check reads it on: its own fill, the one ground its parent paints,
+                    // its variant's ground, else the root's fill.
+                    let fill = as_drawn.grounds[at];
                     let named = format!(
                         "{}.{}{}{}",
                         family.name,
@@ -343,10 +345,10 @@ fn the_danger_words_of_an_answer_a_row_and_a_field_s_error_are_among_them() {
 }
 
 #[test]
-fn a_part_s_words_taken_from_its_root_or_its_variant_are_read_too() {
-    // #6175: a part with no words of its own draws its variant's or the root's, as the parts
-    // check reads it (`drawn`): a trouble Notice's message is in the danger colour, on the
-    // Notice's fill, and a danger button's label in the danger colour on the button's.
+fn a_part_s_words_taken_from_its_root_are_read_too() {
+    // #6175: a part with no words of its own draws the root's, as the parts check reads it
+    // (`drawn`): a trouble Notice's message is in the danger colour, on the Notice's fill, and a
+    // danger button's label in the danger colour on the button's.
     let found = state_words();
     let has = |part: &str, front: &str, back: &str| {
         found
@@ -381,10 +383,11 @@ fn a_field_s_error_is_read_where_a_field_that_can_refuse_stands_and_never_in_a_r
         .position(|one| one.name == "error")
         .unwrap();
     let on = read_on(field, error);
-    assert_eq!(
-        on,
-        ["surface.base", "surface.raised", "surface.overlay"],
-        "{on:?}"
-    );
-    assert!(stood_on(field).contains(&"list.selected"));
+    assert_eq!(on, super::FIELD_ERROR_GROUNDS, "{on:?}");
+    // A field stands on a row's fills, chosen and hovered, and a Notice's; its error on none.
+    let stood = stood_on(field);
+    for row in ["list.selected", "surface.hover", "attention.surface"] {
+        assert!(stood.contains(&row), "{stood:?}");
+        assert!(!on.contains(&row), "{row}: {on:?}");
+    }
 }

@@ -5,10 +5,12 @@ fill of its own, on the default fills of the surfaces `STANDS_ON` places it on. 
 other parts only when they named words of their own, and only on their own grounds.
 
 - **A part's words are read as the parts check draws them.** That is the part's own words, else
-  its variant's (`VARIANT_WORDS`), else the root's. A part that draws no words, or that the check
-  holds as a mark (`is_mark`: an icon, a Notice's mark), is not read as words. Before, a trouble
-  Notice's message and a danger button's label were skipped because they take the root's danger
-  colour. Each lies on its root's fill, so the pairs already held them.
+  its variant's (`VARIANT_WORDS`, today only a mark's), else the root's. A part that draws no
+  words, or that the check holds as a mark (`is_mark`: an icon, a Notice's mark), is not read as
+  words. Before, a trouble Notice's message and a danger button's label were skipped because they
+  take the root's danger colour. Each lies on its root's fill, so the pairs already held them.
+- **A part's words are read on the ground the parts check reads them on** (`drawn`): its own
+  fill, the one ground its parent paints, its variant's ground, else the root's fill.
 - **A part with no fill of its own is read where its root stands.** That is its grounds
   (`Family::grounds_of`), and each default fill of the surfaces its family stands on.
 - **A part that names grounds of its own (`Family::under`) is read on such a fill only where
@@ -20,8 +22,9 @@ other parts only when they named words of their own, and only on their own groun
   would refuse a theme over a pairing the window never paints.
 
 Measured first, in case this ever changes: every shipped appearance already clears those three
-pairs, at 7.39:1 at the least (Purlis Classic Dark, on a chosen row). If a field that can refuse
-ever stands in a row, `refusingFields.guard.test.ts` fails until `FIELD_ERROR_GROUNDS` names
-that ground, and the guard then demands the pair.
+pairs, at 7.39:1 at the least (Purlis Classic Dark, on a chosen row). Where a field that can
+refuse stands is a claim `refusingFields.guard.test.ts` keeps by hand: a new file that draws one
+fails it until it is listed with its ground. If that ground is ever a row's, `FIELD_ERROR_GROUNDS`
+names it, and the guard then demands the pair.
 
 No shipped colour moved, and no new pair was needed.
