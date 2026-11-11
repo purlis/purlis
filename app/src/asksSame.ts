@@ -45,8 +45,9 @@ export type Same = {
 export type AskRow = { kind: "chat"; group: PlacedGroup } | { kind: "same"; same: Same };
 
 /**
- * **Whether `ask` is high-risk** (ADR 0121 decision 8, #6011): it pushes to a protected branch,
- * reaches a host that looks like production, or writes outside the project, as the core reads it
+ * **Whether `ask` is high-risk** (ADR 0121 decision 8, #6011, #6178): it pushes to a protected
+ * branch, reaches a host that looks like production, writes outside the project, deletes, or
+ * hands a vault's credential to a chat's program, a page or a runner, as the core reads it
  * from the project's own facts (`purlis_core::askrisk`, `Shown.risk`). One is never grouped,
  * never offered as a rule (#6010), never landed on by keyboard triage (#6016), and its Allow asks
  * once more on its row: the one predicate all of them read.
