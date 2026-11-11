@@ -1386,7 +1386,7 @@ fn a_runner_made_now_on_the_runtimes_default_profile_is_refused_and_removed() {
 }
 
 /// A container that stopped as it started: what Docker says of its end, and what its
-/// `purlis serve` said, are read before it is removed, and the add says them (#6170).
+/// `purlis serve` said, are read before it is removed, and the add says them (#6181).
 fn stopped(exit_code: i64, oom_killed: bool, error: &str) -> serde_json::Value {
     with(|c| {
         c["State"] = serde_json::json!({

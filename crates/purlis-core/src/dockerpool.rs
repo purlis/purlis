@@ -1325,11 +1325,11 @@ pub fn ran(inspected: &serde_json::Value) -> Ran {
 const ADD_AGAIN: &str = "remove the runner and add it again";
 
 /// What the same refusal says as the runner is added instead, where purlis has already
-/// removed what the add made (#6170): there is no runner left to remove.
+/// removed what the add made (#6181): there is no runner left to remove.
 const ADDED_AND_REMOVED: &str = "so the pool wasn't made, and purlis removed what it made. Try \
      again, or choose another image for the pool";
 
-/// **`why` a runner being added was refused, said for the add** (#6170): a check's
+/// **`why` a runner being added was refused, said for the add** (#6181): a check's
 /// [`ADD_AGAIN`] is for a runner that is still there, and an add removes its own.
 fn said_for_the_add(why: Refused) -> Refused {
     match why
@@ -1341,7 +1341,7 @@ fn said_for_the_add(why: Refused) -> Refused {
     }
 }
 
-/// **How a container that stopped ended** (#6170): what Docker says of its end, read from
+/// **How a container that stopped ended** (#6181): what Docker says of its end, read from
 /// `docker inspect`'s `State`, so an add that removes it can say why it stopped first.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Stopped {
@@ -1372,7 +1372,7 @@ pub fn stopped(inspected: &serde_json::Value) -> Option<Stopped> {
     })
 }
 
-/// The most of one line of a container's output said in the window (#6170): its whole log is
+/// The most of one line of a container's output said in the window (#6181): its whole log is
 /// in the app's log.
 const MOST_OF_A_LINE: usize = 300;
 
@@ -1387,7 +1387,7 @@ fn last_line(text: &str) -> Option<String> {
     })
 }
 
-/// **Why runner `name`'s container stopped as it was added, in plain words** (#6170): what
+/// **Why runner `name`'s container stopped as it was added, in plain words** (#6181): what
 /// Docker said of its end (`stopped`), the last line its program wrote (`last`), and what the
 /// person can do. purlis has already removed what the add made.
 pub fn stopped_said(name: &str, stopped: &Stopped, last: Option<&str>) -> String {
@@ -3041,7 +3041,7 @@ impl Docker {
             }
             Err(why) => {
                 // One that stopped is said by why it stopped, read before it is removed: its
-                // removal takes that with it (#6170).
+                // removal takes that with it (#6181).
                 let why = self
                     .why_stopped(&made)
                     .map_or_else(|| said_for_the_add(why), refused);
@@ -3050,7 +3050,7 @@ impl Docker {
         }
     }
 
-    /// **Why `made`'s container stopped, said for the add that made it** (#6170): `None` where
+    /// **Why `made`'s container stopped, said for the add that made it** (#6181): `None` where
     /// it runs, or Docker did not say. Its last lines go to the app's log as they are read, so
     /// they are kept once the container is removed.
     fn why_stopped(&self, made: &Made) -> Option<String> {
@@ -4038,7 +4038,7 @@ const PROBE_WITHIN: std::time::Duration = std::time::Duration::from_secs(60);
 /// How long a runner's own sign-out has: long enough to fetch the version its profile pins.
 pub(crate) const SIGN_OUT_WITHIN: std::time::Duration = std::time::Duration::from_secs(180);
 
-/// How many of a stopped runner's last lines are read before it is removed (#6170).
+/// How many of a stopped runner's last lines are read before it is removed (#6181).
 const LOG_LINES: u32 = 200;
 
 /// The most of what `docker` says on standard error that purlis keeps to show.
