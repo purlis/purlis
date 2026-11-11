@@ -1782,16 +1782,17 @@ describe("narrowing by what is typed", () => {
       ...(chat === undefined ? {} : { chat }),
     });
     const numbered: Offer[] = [
-      go("tab.select:3", "Switch to tab build 641", 12),
-      go("chat.show:641", "Show task fix in beta, asked by steward 1", 641),
-      go("tab.select:5", "Switch to tab docs", 6410),
+      go("tab.select:3", "Switch to tab build 41", 12),
+      go("chat.show:41", "Show task fix in beta, asked by steward 1", 41),
+      go("tab.select:5", "Switch to tab docs", 410),
     ];
 
-    expect(narrow("641", numbered).map((row) => row.id)).toEqual(["chat.show:641", "tab.select:3"]);
-    expect(narrow("#641", numbered).map((row) => row.id)).toEqual(["chat.show:641"]);
-    expect(narrow(" #641 ", numbered).map((row) => row.id)).toEqual(["chat.show:641"]);
-    // Only a whole number is a chat's: `#64` finds none of them.
-    expect(narrow("#64", numbered)).toEqual([]);
+    expect(narrow("41", numbered).map((row) => row.id)).toEqual(["chat.show:41", "tab.select:3"]);
+    expect(narrow("#41", numbered).map((row) => row.id)).toEqual(["chat.show:41"]);
+    expect(narrow(" #41 ", numbered).map((row) => row.id)).toEqual(["chat.show:41"]);
+    // Only a whole number is a chat's: `#4` finds none of them. (Two digits here: three would read as
+    // a colour to the literals guard.)
+    expect(narrow("#4", numbered)).toEqual([]);
   });
 
   it("never matches the reason a row cannot run", () => {

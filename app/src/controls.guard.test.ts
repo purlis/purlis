@@ -784,6 +784,8 @@ export const HEAD_ROW: ChipRow = {
     PaneCrumbs: "pane-crumbs",
     // Its state, and its tasks' button where it has tasks (#5341).
     PaneTasksWord: "pane-state-mark",
+    // Its number beside its name (#6212).
+    PaneNumber: "pane-number",
   },
 };
 
