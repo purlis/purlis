@@ -155,8 +155,20 @@ pub fn stack_of(minidump: &[u8]) -> Result<CrashStack, String> {
         arch: arch(system.cpu),
         ..CrashStack::default()
     };
+    // A signal is answered on the crashing thread itself, so its live registers, all the
+    // minidump has, are the handler's: the crash is past the trampoline it was called from.
+    let from = if arrived_as_a_signal(&exception, system.os) {
+        past_the_trampoline(stack.frames.iter().map(|frame| {
+            frame
+                .module
+                .as_ref()
+                .map(|module| file_name(&module.code_file()))
+        }))
+    } else {
+        0
+    };
     let mut bases = Vec::new();
-    for frame in &stack.frames {
+    for frame in stack.frames.iter().skip(from) {
         let Some(module) = &frame.module else {
             continue;
         };
@@ -181,6 +193,42 @@ pub fn stack_of(minidump: &[u8]) -> Result<CrashStack, String> {
         }
     }
     Ok(kept)
+}
+
+/// Mach's kind for a software exception, `EXC_SOFTWARE`, and its code for one that is a Unix
+/// signal, `EXC_SOFT_SIGNAL` (`<mach/exception_types.h>`, `<sys/ux_exception.h>`).
+const EXC_SOFTWARE: u32 = 5;
+const EXC_SOFT_SIGNAL: u32 = 0x10003;
+
+/// The module macOS's signal trampoline, `_sigtramp`, is in.
+const TRAMPOLINE: &str = "libsystem_platform.dylib";
+
+/// Whether the crash arrived as a signal (an abort's `SIGABRT`), which the crash handler hears in
+/// a signal handler on the crashing thread and passes on as `EXC_SOFTWARE / EXC_SOFT_SIGNAL`
+/// (#5691). A Mach exception (`EXC_BAD_ACCESS`) is heard on the handler's own thread, and the
+/// crashing thread's registers are where it crashed.
+///
+/// minidump-writer records that thread's registers as they are when it writes, not the signal's
+/// context (crash-handler does not pass that on), so the stack it walks starts in the handler.
+fn arrived_as_a_signal(exception: &MinidumpException, os: minidump::system_info::Os) -> bool {
+    let record = &exception.raw.exception_record;
+    os == minidump::system_info::Os::MacOs
+        && record.exception_code == EXC_SOFTWARE
+        && record.exception_flags == EXC_SOFT_SIGNAL
+}
+
+/// **How many of a signalled thread's frames are the crash handler's**, each frame as the file
+/// name of the module it is in, the innermost first: every frame up to and including the first
+/// in [`TRAMPOLINE`], `_sigtramp`, the frame the kernel called the handler from. The frame
+/// after it is the one the signal interrupted. With no symbols on the device, the trampoline's
+/// module is the marker: the handler waits in `libsystem_kernel` and `libsystem_pthread` and runs
+/// in the app's own binary, never in `libsystem_platform`. With no trampoline, none: the stack
+/// is kept whole rather than guessed at.
+fn past_the_trampoline(modules: impl IntoIterator<Item = Option<String>>) -> usize {
+    modules
+        .into_iter()
+        .position(|module| module.as_deref() == Some(TRAMPOLINE))
+        .map_or(0, |trampoline| trampoline + 1)
 }
 
 /// A module's file name, without the folders it is in: they may name the person's.
@@ -287,4 +335,57 @@ fn in_folder(crashes: &Path, extension: &str) -> Vec<(PathBuf, Option<u64>)> {
         .collect();
     found.sort_by_key(|(_, at)| *at);
     found
+}
+
+#[cfg(test)]
+mod tests {
+    use super::past_the_trampoline;
+
+    fn modules(names: &[&str]) -> Vec<Option<String>> {
+        names
+            .iter()
+            .map(|name| (!name.is_empty()).then(|| (*name).to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn an_aborts_stack_starts_past_the_signal_trampoline() {
+        // As Sentry event 165c0c11ac34479ca12763e401ace1aa had it, innermost first (#5691).
+        let stack = modules(&[
+            "libsystem_kernel.dylib",   // __psynch_cvwait
+            "purlis-app",               // parking_lot's condvar, in the handler
+            "purlis-app",               // HandlerInner::send_message
+            "purlis-app",               // simulate_exception
+            "purlis-app",               // signal_handler
+            "",                         // a frame in no module
+            "libsystem_platform.dylib", // _sigtramp
+            "libsystem_pthread.dylib",  // pthread_kill
+            "libsystem_c.dylib",        // abort
+            "purlis-app",               // std::process::abort
+            "purlis-app",               // nativecrash::crash_if_asked: the crash
+        ]);
+
+        assert_eq!(past_the_trampoline(stack), 7);
+    }
+
+    #[test]
+    fn a_stack_with_no_signal_trampoline_is_kept_whole() {
+        let stack = modules(&["purlis-app", "AppKit", "libdyld.dylib"]);
+
+        assert_eq!(past_the_trampoline(stack), 0);
+    }
+
+    #[test]
+    fn only_the_first_trampoline_is_the_handlers() {
+        // A signal raised in a signal handler: the crash is the inner one's.
+        let stack = modules(&[
+            "purlis-app",
+            "libsystem_platform.dylib",
+            "purlis-app",
+            "libsystem_platform.dylib",
+            "purlis-app",
+        ]);
+
+        assert_eq!(past_the_trampoline(stack), 2);
+    }
 }
