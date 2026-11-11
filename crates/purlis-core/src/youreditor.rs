@@ -21,7 +21,8 @@
 //!   editor unchanged (#1044).
 //!
 //! **The file is always one [`crate::files::in_your_editor`] checked**: inside the piece,
-//! and one the light editor's file list offers. This module takes it as already checked.
+//! and one the light editor's file list offers. This module takes it as already checked, and
+//! holds it as [`Checked`] so that what is launched is still the file that was checked (#3185).
 
 use std::ffi::OsString;
 use std::path::Path;
@@ -69,6 +70,109 @@ pub enum NotLaunched {
     NoVariable,
     #[error("${name} is not a command purlis can split into words: {why}")]
     Unsplittable { name: &'static str, why: String },
+    #[error(
+        "{0} is reached through a link, or is not a plain file, so purlis did not hand it to \
+         your editor"
+    )]
+    NotHeld(String),
+    #[error(
+        "{0} changed after purlis checked it, so purlis did not hand it to your editor: open it \
+         again"
+    )]
+    Changed(String),
+}
+
+/// **A file checked for your editor, held by what it is on disk** (#3185): what to launch,
+/// handed out only by [`Checked::launch`], which asks again whether the path still leads to
+/// the file that was checked.
+///
+/// The check reads a path, and the editor opens that path again later, so a chat that can
+/// write in the branch could swap a folder on the way for a link between the two (a time of
+/// check to time of use race). So the file is opened when it is checked, through no link from
+/// `within` (each folder on the way, and the file itself by the kernel at the open,
+/// [`crate::contain::open_no_link`]), and held. Right before the app launches anything, the
+/// path is opened again the same way and must be the same file (its device and inode): a link
+/// put on the way is refused by the walk, and a folder or file put in another's place is
+/// refused as another file. Off Unix only the walk is asked again.
+///
+/// **What this closes, and what it only narrows.** It closes the gap between the check and
+/// the launch, on every route: no URL is opened and no program started for a path that no
+/// longer leads to the checked file. It cannot close the editor's own open, which comes
+/// after: an editor reached by URL scheme opens the file itself, later, by its path, and
+/// `$VISUAL`/`$EDITOR` does the same once it has started. Handing the editor the held
+/// descriptor (`/dev/fd/N`) would close it for a program alone, and breaks what an editor
+/// does with a path: its title, its backup and swap files, and a save that writes a new file
+/// and renames it over the old. So that last gap is narrowed to the moment between the second
+/// check and the editor's open, and stays open; what crosses it reaches only the person's
+/// editor, never the window or a model.
+#[derive(Debug)]
+pub struct Checked {
+    launch: Launch,
+    within: std::path::PathBuf,
+    file: std::path::PathBuf,
+    held: std::fs::File,
+}
+
+impl Checked {
+    /// `file` checked for `editor` at `line`: opened through no link from `within`, a folder the
+    /// caller trusts and has resolved, and a plain file. `file` is absolute and inside `within`.
+    pub fn new(
+        within: &Path,
+        file: &Path,
+        editor: Editor,
+        line: u32,
+        var: &dyn Fn(&str) -> Option<String>,
+    ) -> Result<Self, NotLaunched> {
+        let held = held(within, file)?;
+        Ok(Self {
+            launch: launch(editor, file, line, var)?,
+            within: within.to_path_buf(),
+            file: file.to_path_buf(),
+            held,
+        })
+    }
+
+    /// The file as it was opened when it was checked, to ask more of it.
+    pub fn held(&self) -> &std::fs::File {
+        &self.held
+    }
+
+    /// **What to launch, now**, once the path is asked again and still leads to the file that
+    /// was checked. The app calls this right before it opens the URL or starts the program,
+    /// and launches nothing when it is refused.
+    pub fn launch(self) -> Result<Launch, NotLaunched> {
+        let now = held(&self.within, &self.file)?;
+        if !same(&self.held, &now) {
+            return Err(NotLaunched::Changed(self.file.display().to_string()));
+        }
+        Ok(self.launch)
+    }
+}
+
+/// `file` opened through no link from `within`, and a plain file.
+fn held(within: &Path, file: &Path) -> Result<std::fs::File, NotLaunched> {
+    let not_held = || NotLaunched::NotHeld(file.display().to_string());
+    let opened = crate::contain::open_no_link(within, file).map_err(|_| not_held())?;
+    match opened.metadata() {
+        Ok(meta) if meta.is_file() => Ok(opened),
+        _ => Err(not_held()),
+    }
+}
+
+/// Whether two opened files are one file on disk: the same device and inode.
+#[cfg(unix)]
+fn same(was: &std::fs::File, now: &std::fs::File) -> bool {
+    use std::os::unix::fs::MetadataExt as _;
+    match (was.metadata(), now.metadata()) {
+        (Ok(was), Ok(now)) => (was.dev(), was.ino()) == (now.dev(), now.ino()),
+        _ => false,
+    }
+}
+
+/// Off Unix std has no stable file identity, so only the walk is asked again.
+#[cfg(not(unix))]
+fn same(_was: &std::fs::File, _now: &std::fs::File) -> bool {
+    true
 }
 
 /// What a path keeps as it is in a URL: letters, digits, `-`, `.`, `_`, `~` and `/`. Every
@@ -626,6 +730,103 @@ mod tests {
 
         assert!(said.contains("with code 3, and said: xxx"), "{said}");
         assert!(said.ends_with("x…"), "{said}");
+    }
+
+    /// A folder holding `sub/a.md`, resolved as a caller resolves the folder it trusts.
+    fn a_branch() -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let base = std::fs::canonicalize(dir.path()).unwrap();
+        std::fs::create_dir_all(base.join("branch/sub")).unwrap();
+        std::fs::write(base.join("branch/sub/a.md"), "mine\n").unwrap();
+        std::fs::create_dir_all(base.join("outside/sub")).unwrap();
+        std::fs::write(base.join("outside/sub/a.md"), "not yours\n").unwrap();
+        (dir, base)
+    }
+
+    fn checked(base: &Path) -> Checked {
+        let branch = base.join("branch");
+        Checked::new(&branch, &branch.join("sub/a.md"), Editor::Zed, 2, &|_| None).unwrap()
+    }
+
+    /// #3185: a file still the one checked is launched as it was checked.
+    #[test]
+    fn a_checked_file_is_launched_while_it_is_still_the_one_checked() {
+        let (_dir, base) = a_branch();
+        let file = base.join("branch/sub/a.md");
+
+        let launched = checked(&base).launch().unwrap();
+
+        assert_eq!(
+            launched,
+            Launch::Url(format!("zed://file{}:2:1", file.display()))
+        );
+    }
+
+    /// #3185: a folder on the way swapped for a link after the check launches nothing.
+    #[test]
+    fn a_folder_swapped_for_a_link_after_the_check_is_not_launched() {
+        let (_dir, base) = a_branch();
+        let checked = checked(&base);
+
+        std::fs::rename(base.join("branch/sub"), base.join("branch/sub-moved")).unwrap();
+        std::os::unix::fs::symlink(base.join("outside/sub"), base.join("branch/sub")).unwrap();
+
+        let refused = checked.launch().unwrap_err();
+        assert!(matches!(refused, NotLaunched::NotHeld(_)), "{refused:?}");
+        assert!(
+            refused
+                .to_string()
+                .contains("did not hand it to your editor"),
+            "{refused}"
+        );
+    }
+
+    /// #3185: another folder, or another file, put in the checked one's place with no link is
+    /// another file on disk, and launches nothing either.
+    #[test]
+    fn another_file_put_in_the_checked_ones_place_is_not_launched() {
+        let (_dir, base) = a_branch();
+        let folder_swapped = checked(&base);
+        std::fs::rename(base.join("branch/sub"), base.join("branch/sub-moved")).unwrap();
+        std::fs::create_dir_all(base.join("branch/sub")).unwrap();
+        std::fs::hard_link(base.join("outside/sub/a.md"), base.join("branch/sub/a.md")).unwrap();
+
+        let refused = folder_swapped.launch().unwrap_err();
+        assert!(matches!(refused, NotLaunched::Changed(_)), "{refused:?}");
+
+        let file_swapped = checked(&base);
+        std::fs::remove_file(base.join("branch/sub/a.md")).unwrap();
+        std::fs::write(base.join("branch/sub/a.md"), "another\n").unwrap();
+
+        let refused = file_swapped.launch().unwrap_err();
+        assert!(matches!(refused, NotLaunched::Changed(_)), "{refused:?}");
+        assert!(
+            refused
+                .to_string()
+                .contains("changed after purlis checked it"),
+            "{refused}"
+        );
+    }
+
+    /// #3185: a link where the file is, or on its way, is refused at the check itself.
+    #[test]
+    fn a_file_reached_through_a_link_is_not_checked() {
+        let (_dir, base) = a_branch();
+        let branch = base.join("branch");
+        std::os::unix::fs::symlink(base.join("outside/sub"), branch.join("away")).unwrap();
+        std::os::unix::fs::symlink(base.join("outside/sub/a.md"), branch.join("b.md")).unwrap();
+
+        for file in [
+            branch.join("away/a.md"),
+            branch.join("b.md"),
+            branch.join("sub"),
+        ] {
+            let refused = Checked::new(&branch, &file, Editor::Zed, 1, &|_| None).unwrap_err();
+            assert!(
+                matches!(refused, NotLaunched::NotHeld(_)),
+                "{file:?}: {refused:?}"
+            );
+        }
     }
 
     fn words(said: &[&str]) -> Vec<OsString> {

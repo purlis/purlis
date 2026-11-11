@@ -36,7 +36,7 @@ use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
 use crate::worktree::{self, git};
-use crate::youreditor::{self, Editor, Launch, NotLaunched};
+use crate::youreditor::{Checked, Editor, NotLaunched};
 
 mod find;
 // What the plane root's files leave out (issue 1916).
@@ -1715,12 +1715,17 @@ fn named_or_gone(kept: &Kept, base: &Path, path: &str) -> Result<(String, bool),
 
 /// One file of the branch, handed to your editor at `line` (RC-20, ADR 0081 §3): what the app
 /// launches, a URL in the editor's own scheme or `$VISUAL`/`$EDITOR` as a program with its
-/// arguments ([`youreditor::launch`]).
+/// arguments ([`crate::youreditor::launch`]).
 ///
 /// **The path is checked exactly as [`open`] checks it**, so what the light editor would refuse
 /// is never handed on either: only a file the list offers, inside the branch, through no link
 /// that leaves it. The editor is given the file's resolved, absolute path. A file past the
 /// light editor's size is handed on like any other: it is what your editor is for.
+///
+/// **The file is held as it was checked** ([`Checked`], #3185): the app launches only through
+/// [`Checked::launch`], which refuses when the path no longer leads to the same file, so a
+/// folder swapped for a link after this check is never handed on. The editor's own open,
+/// later, is narrowed to the moment after that second check, not closed.
 pub fn in_your_editor(
     plane: &Path,
     branch: Branch<'_>,
@@ -1728,7 +1733,7 @@ pub fn in_your_editor(
     line: u32,
     editor: Editor,
     var: &dyn Fn(&str) -> Option<String>,
-) -> Result<Launch, Refused> {
+) -> Result<Checked, Refused> {
     in_your_editor_in(
         Via::Here { plane },
         &base_of(plane, branch)?,
@@ -1749,22 +1754,20 @@ fn in_your_editor_in(
     line: u32,
     editor: Editor,
     var: &dyn Fn(&str) -> Option<String>,
-) -> Result<Launch, Refused> {
+) -> Result<Checked, Refused> {
     let kept = Kept::of(via.plane(), base, branch);
     let resolved = locate(via, &kept, base, branch, path)?;
     // A submodule is offered by its path and is a folder; a FIFO is no file to edit.
     if !resolved.is_file() {
         return Err(Refused::NotAFile(path.to_string()));
     }
+    // Held by what it is on disk, so what is launched is still this file (#3185).
+    let checked = Checked::new(base, &resolved, editor, line, var)?;
     // A second name of a file purlis keeps to itself is not handed on.
-    if kept.on()
-        && crate::contain::open_no_link(base, &resolved)
-            .map(|file| kept.holds_a_name_of(&file))
-            .unwrap_or(true)
-    {
+    if kept.on() && kept.holds_a_name_of(checked.held()) {
         return Err(Refused::KeptPrivate(path.to_string()));
     }
-    Ok(youreditor::launch(editor, &resolved, line, var)?)
+    Ok(checked)
 }
 
 /// The resolved file `path` names in the branch whose folder is resolved to `base`, once every
@@ -1881,7 +1884,7 @@ impl Root {
         line: u32,
         editor: Editor,
         var: &dyn Fn(&str) -> Option<String>,
-    ) -> Result<Launch, Refused> {
+    ) -> Result<Checked, Refused> {
         in_your_editor_in(
             self.via(reader),
             &self.base()?,

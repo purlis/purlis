@@ -1693,15 +1693,20 @@ fn hidden_by_charters_line(tree: &Path) -> bool {
 /// Charter's own exclude line hides this file, so the light editor's rule — only what git does
 /// not ignore opens ([`crate::files::in_your_editor`]) — would refuse it. That rule keeps an
 /// ignored secret out of a review; this file is hidden by charter, not by the operator, and
-/// only it opens here, only when it is theirs.
+/// only it opens here, only when it is theirs. Held as it was checked
+/// ([`crate::youreditor::Checked`], #3185): the app launches only through its `launch`.
 pub fn their_agents_md_in_your_editor(
     plane: &Path,
     branch: crate::files::Branch<'_>,
     editor: crate::youreditor::Editor,
     var: &dyn Fn(&str) -> Option<String>,
-) -> Result<crate::youreditor::Launch, String> {
+) -> Result<crate::youreditor::Checked, String> {
     let file = their_agents_md(plane, branch)?;
-    crate::youreditor::launch(editor, &file, 1, var).map_err(|refused| refused.to_string())
+    // It sits at the top of the branch, whose folder `place` resolved: held from there, so what
+    // is launched is still the file judged theirs (#3185).
+    let within = file.parent().unwrap_or(plane);
+    crate::youreditor::Checked::new(within, &file, editor, 1, var)
+        .map_err(|refused| refused.to_string())
 }
 
 /// **Move aside…** (NO-4): the operator's `AGENTS.md` at the top of `branch` renamed to

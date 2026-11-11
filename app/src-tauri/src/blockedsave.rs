@@ -16,7 +16,7 @@
 use std::path::Path;
 
 use purlis_core::planegit;
-use purlis_core::youreditor::{self, Launch};
+use purlis_core::youreditor::{Checked, Launch};
 
 use crate::piecefiles::YourEditor;
 use crate::planes::{PlaneId, Planes};
@@ -58,9 +58,15 @@ fn launch_of(
     path: &str,
     editor: YourEditor,
     var: &dyn Fn(&str) -> Option<String>,
-) -> Result<Launch, String> {
+) -> Result<Checked, String> {
     let (file, line) = planegit::blocked_file(root, secrets, path)?;
-    youreditor::launch(editor.into(), &file, line, var).map_err(|refused| refused.to_string())
+    // Held as the disk spells it from the project's folder, so what is launched is still the
+    // file the finding named (#3185).
+    let gone = || format!("{} is not a file of this project now", file.display());
+    let within = std::fs::canonicalize(root).map_err(|_| gone())?;
+    let resolved = std::fs::canonicalize(&file).map_err(|_| gone())?;
+    Checked::new(&within, &resolved, editor.into(), line, var)
+        .map_err(|refused| refused.to_string())
 }
 
 /// **Open the file** on a blocked save's finding in the Saving view: the file in your editor,
@@ -87,7 +93,8 @@ pub async fn open_blocked_file(
     })
     .await
     .map_err(|err| format!("opening the file did not finish: {err}"))??;
-    match launch {
+    // Asked again right before the launch: still the file checked (#3185).
+    match launch.launch().map_err(|refused| refused.to_string())? {
         Launch::Url(url) => app
             .opener()
             .open_url(&url, None::<&str>)
@@ -143,7 +150,8 @@ mod tests {
         std::fs::write(dir.path().join("notes/other.md"), "x\n").expect("written");
         let secrets = [finding("notes/a.md", Some(5))];
 
-        let launch = launch_of(dir.path(), &secrets, "notes/a.md", YourEditor::Zed, &no_var);
+        let launch = launch_of(dir.path(), &secrets, "notes/a.md", YourEditor::Zed, &no_var)
+            .and_then(|checked| checked.launch().map_err(|refused| refused.to_string()));
         match launch {
             Ok(Launch::Url(url)) => {
                 assert!(url.starts_with("zed://file"), "{url}");
