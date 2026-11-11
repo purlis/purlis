@@ -3972,6 +3972,15 @@ type SurfaceSet = (
 /// family's own.
 const SURFACE_STATES: &[&[State]] = &[&[], &[State::Selected], &[State::Hover]];
 
+/// The sets of [`SURFACE_STATES`] `surface` takes: at rest, and chosen and under the pointer where
+/// it has them.
+fn surface_states(surface: &Family) -> impl Iterator<Item = &'static [State]> + '_ {
+    SURFACE_STATES
+        .iter()
+        .copied()
+        .filter(|states| states.iter().all(|one| surface.states.contains(one)))
+}
+
 /// **The fills a theme's parts set on the surfaces other families are drawn on**: each surface's
 /// look whose root draws, at rest or in a state it is read in ([`SURFACE_STATES`], #6156),
 /// another fill than its family default's there, with that default and the fill drawn in its
@@ -3988,14 +3997,11 @@ fn surfaces_set(rules: &[Rule]) -> Vec<SurfaceSet> {
             continue;
         }
         for variant in surface.looks() {
-            for states in SURFACE_STATES
-                .iter()
-                .filter(|states| states.iter().all(|one| surface.states.contains(one)))
-            {
+            for states in surface_states(surface) {
                 let default = (surface.defaults)(variant, states).fill;
                 let set = drawn(rules, surface, variant, states).fill;
                 if set != TRANSPARENT && set != default {
-                    found.push((surface, variant, *states, default, set));
+                    found.push((surface, variant, states, default, set));
                 }
             }
         }
@@ -4244,22 +4250,22 @@ fn stands_for(key: &str, surface: &str, variant: &str) -> bool {
 }
 
 /// **The families the window draws in React Aria's overlay**, portaled to the window's body, so a
-/// surface that holds one never draws its fill in a state under it (#6156): a popover a list's
-/// row opens is drawn over the window, never on the row's chosen fill.
-/// `app/src/theme/grounds.test.ts` finds them from the components and holds this list to them,
-/// exactly.
+/// surface that holds one never draws its fill under it, at rest or in a state (#6156, #6164): a
+/// popover a list's row opens is drawn over the window, never on the row's fill. Its ground is
+/// what it is portaled over, its own grounds ([`Family::grounds`]), and what is in it stands on
+/// its own fill. `app/src/theme/grounds.test.ts` finds them from the components and holds this
+/// list to them, exactly; [`STANDS_ON`] still names them where the components nest them.
 const PORTALED: &[&str] = &["popover", "tooltip"];
 
-/// **The families drawn on `surface`'s look `variant` in `states` that a fill `set` in place of
-/// its `default` brings a new ground under** (#3268): each [`STANDS_ON`] says is drawn there
-/// ([`stands_for`]), but one drawn in the overlay where the surface is in a state ([`PORTALED`],
-/// #6156), whose grounds do not name `set` already, or one of whose parts read on grounds of their
-/// own ([`Family::under`]) is drawn on a ground `default` stands for ([`defaults_under`]) and not
-/// read on `set`.
+/// **The families drawn on `surface`'s look `variant` that a fill `set` in place of its `default`
+/// brings a new ground under** (#3268), at rest or in a state: each [`STANDS_ON`] says is drawn
+/// there ([`stands_for`]), but one drawn in the overlay ([`PORTALED`], #6156, #6164), whose
+/// grounds do not name `set` already, or one of whose parts read on grounds of their own
+/// ([`Family::under`]) is drawn on a ground `default` stands for ([`defaults_under`]) and not read
+/// on `set`.
 fn drawn_on(
     surface: &'static Family,
     variant: &str,
-    states: &[State],
     default: &str,
     set: &str,
 ) -> impl Iterator<Item = &'static Family> {
@@ -4267,7 +4273,7 @@ fn drawn_on(
         .iter()
         .filter(|(key, _)| stands_for(key, surface.name, variant))
         .flat_map(|(_, families)| families.iter().copied())
-        .filter(|family| states.is_empty() || !PORTALED.contains(family))
+        .filter(|family| !PORTALED.contains(family))
         .collect();
     MANIFEST.iter().filter(move |family| {
         let defaults = defaults_under(surface, &default);
@@ -4364,7 +4370,7 @@ fn tints_reach_a_surface(theme: &ResolvedTheme, rules: &[Rule]) -> bool {
         .into_iter()
         .any(|(surface, variant, states, default, set)| {
             (states.is_empty() && apart_tints_reach(theme, rules, surface, variant, set))
-                || drawn_on(surface, variant, states, default, set).any(|family| {
+                || drawn_on(surface, variant, default, set).any(|family| {
                     let sets = sets_on(rules, family, states);
                     tints_reach(theme, set, &looks_in(rules, family, &sets))
                 })
@@ -4571,7 +4577,7 @@ fn held_on_surfaces(
         if !states.is_empty() && rest_fell(&fell[before..]) {
             continue;
         }
-        for family in drawn_on(surface, variant, states, default, set) {
+        for family in drawn_on(surface, variant, default, set) {
             // The consent floors hold in every tint, a surface's fill under a consent variant
             // included (ADR 0097 §6), as they do where a theme's parts reach the family itself.
             let consent = family.variants.iter().any(|one| one.consent.is_some());

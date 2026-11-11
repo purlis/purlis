@@ -402,9 +402,12 @@ pub const PAIRS: &[Pair] = &[
     // the change's colour, on the window, the row under the pointer and the selected row.
     // Added is `state.success` and deleted `danger.base`, the editor's diff gutters' marks; the
     // `diff.*-text` tokens are washes under words, not colours to draw words in. Changed
-    // (`state.waiting`) and renamed (`accent.base`) are held on these rows above.
-    p("state.success", "surface.hover", 3.0),
-    p("state.success", "list.selected", 3.0),
+    // (`state.waiting`) and renamed (`accent.base`) are held on these rows above. Added is held
+    // as words there (#6163): what is settled said in a badge, the success colour on no fill of
+    // its own, stands on a list's row under the pointer and chosen, as `state_words_tests.rs`
+    // reads it from where the badge stands.
+    p("state.success", "surface.hover", TEXT),
+    p("state.success", "list.selected", TEXT),
     p("danger.base", "surface.hover", 3.0),
     p("danger.base", "list.selected", 3.0),
     // A tree's guides: a hairline, quieter than a border and still there.
@@ -494,6 +497,12 @@ pub const PAIRS: &[Pair] = &[
     //   window and on a popover's surface (the raised one is held above).
     p("state.success", "surface.base", TEXT),
     p("state.success", "surface.overlay", TEXT),
+    // - The same badge where the surfaces it stands on draw their own default fill (#6163): a
+    //   card button at rest and under the pointer, and a trouble or an attention Notice.
+    p("state.success", "control.base", TEXT),
+    p("state.success", "control.hover", TEXT),
+    p("state.success", "danger.surface", TEXT),
+    p("state.success", "attention.surface", TEXT),
     // - What a dialog is honest about (`.honest`): its words at the opacity it fades them to.
     p("text.primary", "surface.overlay", TEXT).faded(0.8),
     // - A task that is away draws its words on the terminal's own background.

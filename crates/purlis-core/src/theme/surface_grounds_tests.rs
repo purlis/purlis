@@ -98,7 +98,7 @@ fn a_badge_is_read_on_a_list_s_plain_row_fill_and_never_on_its_card_s() {
     // (Classic's `list.root.card.fill`, #6149).
     let list = family("list").expect("the list family");
     let badge_on = |variant| {
-        super::drawn_on(list, variant, &[], "transparent", "surface.sunken")
+        super::drawn_on(list, variant, "transparent", "surface.sunken")
             .any(|one| one.name == "badge")
     };
     assert!(badge_on("row"), "a badge on a list's row");
@@ -106,29 +106,21 @@ fn a_badge_is_read_on_a_list_s_plain_row_fill_and_never_on_its_card_s() {
 }
 
 #[test]
-fn what_a_row_opens_over_the_window_is_never_read_on_its_chosen_fill() {
-    // A popover or a tooltip a list's row holds is portaled to the window's body: at rest it is
-    // read where the row is filled, as the window's nesting finds it, but a chosen row's fill is
-    // under the row's own marks and controls alone (#6156).
+fn what_a_row_opens_over_the_window_is_never_read_on_the_row_s_fill() {
+    // A popover or a tooltip a list's row holds is portaled to the window's body: it is drawn
+    // over the window, on its own grounds, never on the row's fill, chosen (#6156) or at rest
+    // (#6164). What is drawn in the row itself is read on it.
     let list = family("list").expect("the list family");
-    let on = |states: &[State]| -> Vec<&str> {
-        super::drawn_on(list, "row", states, "list.selected", "surface.sunken")
-            .map(|one| one.name)
-            .collect()
-    };
-    let chosen = on(&[State::Selected]);
+    let drawn: Vec<&str> = super::drawn_on(list, "row", "list.selected", "surface.sunken")
+        .map(|one| one.name)
+        .collect();
     assert!(
-        chosen.contains(&"badge") && chosen.contains(&"chat-mark"),
-        "{chosen:?}"
+        drawn.contains(&"badge") && drawn.contains(&"chat-mark"),
+        "{drawn:?}"
     );
     assert!(
-        !chosen.contains(&"popover") && !chosen.contains(&"tooltip"),
-        "{chosen:?}"
-    );
-    let rest = on(&[]);
-    assert!(
-        rest.contains(&"popover") && rest.contains(&"tooltip"),
-        "{rest:?}"
+        !drawn.contains(&"popover") && !drawn.contains(&"tooltip"),
+        "{drawn:?}"
     );
 }
 
@@ -335,7 +327,6 @@ fn a_list_s_row_in_a_dialog_is_read_on_the_dialog_s_fill() {
         super::drawn_on(
             dialog,
             dialog.looks()[0],
-            &[],
             "surface.overlay",
             "surface.hover"
         )
@@ -450,14 +441,8 @@ fn a_field_s_error_is_read_on_a_table_s_fill_and_its_help_never_is() {
     let table = family("table").expect("the table family");
     let field = family("field").expect("the field family");
     assert!(
-        super::drawn_on(
-            table,
-            table.looks()[0],
-            &[],
-            "transparent",
-            "surface.sunken"
-        )
-        .any(|one| one.name == "field"),
+        super::drawn_on(table, table.looks()[0], "transparent", "surface.sunken")
+            .any(|one| one.name == "field"),
         "a field is drawn on a table's fill"
     );
     let theme = filled_grey("table", "surface.sunken", "#4a4a46");
@@ -499,5 +484,21 @@ fn a_field_s_error_is_read_on_a_table_s_fill_and_its_help_never_is() {
             .as_deref()
             .is_some_and(|floor| floor.contains("the error's words")),
         "{broken:?}"
+    );
+}
+
+#[test]
+fn a_row_filled_like_a_tooltip_is_drawn_as_written_since_the_tooltip_opens_over_the_window() {
+    // A list's row filled in the tooltip's own colour, #1f1f1c: on the row a tooltip's edge would
+    // vanish, but the tooltip is portaled to the window's body, never drawn on the row, so the
+    // row draws as written (#6164).
+    let theme = shaped(
+        json!({ "surface.sunken": "#1f1f1c" }),
+        json!({ "list.root.row.fill": "surface.sunken" }),
+    );
+    let fell = fell_in(&theme);
+    assert!(
+        !fell.iter().any(|one| one.starts_with("list.root.row")),
+        "{fell:?}"
     );
 }

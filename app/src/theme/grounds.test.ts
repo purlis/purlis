@@ -2241,7 +2241,7 @@ describe("where each family is drawn on a surface a theme fills (#3268)", () => 
 // --- What is drawn over the window, apart from what holds it (#6156) -------------------------
 
 /** **The engine's `PORTALED`** (in `parts.rs`): the families never read on a fill a surface
- *  that holds them draws in a state. */
+ *  that holds them draws, at rest or in a state (#6164); each is read on its own grounds. */
 function enginePortaled(): string[] {
   const parts = readFileSync(join(THEME, "parts.rs"), "utf8");
   const list = /\nconst PORTALED: &\[&str\] = &\[([^\]]*)\];/.exec(parts)?.[1] ?? "";

@@ -501,11 +501,11 @@ fn a_card_or_a_notice_takes_no_fill_a_button_is_not_read_on() {
             .filter(|(one, ..)| one.name == surface)
             .collect();
         assert!(!set.is_empty(), "{surface}");
-        for (one, variant, states, default, fill) in set {
+        for (one, variant, _, default, fill) in set {
             assert!(shows_a_tint(&theme, fill), "{surface}");
             // Other families on it are read on it (#3268); a button, never.
             assert!(
-                !drawn_on(one, variant, states, default, fill).any(|on| on.name == "button"),
+                !drawn_on(one, variant, default, fill).any(|on| on.name == "button"),
                 "{surface}"
             );
         }
@@ -516,8 +516,8 @@ fn a_card_or_a_notice_takes_no_fill_a_button_is_not_read_on() {
     let on_it: Vec<_> = surfaces_set(&rules)
         .into_iter()
         .filter(|(one, ..)| one.name == "popover")
-        .flat_map(|(one, variant, states, default, fill)| {
-            drawn_on(one, variant, states, default, fill).map(|on| on.name)
+        .flat_map(|(one, variant, _, default, fill)| {
+            drawn_on(one, variant, default, fill).map(|on| on.name)
         })
         .collect();
     assert!(

@@ -482,9 +482,12 @@ fn compact_is_worked_out_from_the_geometry_an_option_draws() {
 fn an_option_value_that_breaks_a_consent_floor_is_drawn_with_purlis_s_values_for_it() {
     let theme = loaded(&with_options(json!([{
         "id": "ember", "kind": "toggle", "label": "Ember", "default": false,
-        "on": { "tokens": { "danger.text": "#301010", "danger.surface": "#301010" } }
+        "on": { "tokens": { "danger.text": "#30101000" } }
     }])));
-    // Off, nothing is held.
+    // Off, nothing is held. On, the danger words are drawn see-through, so they vanish into
+    // whatever they stand on in every appearance. The danger surface is left as it is: one as dark
+    // as #301010 also hides an ok badge's words in a light appearance's trouble Notice (#6163),
+    // which breaks the state marks' floor as well as this one.
     assert_eq!(draw(night(&theme)).held, None);
     // On, in every appearance, the window is drawn with purlis's own values for those tokens.
     let (on, _) = theme.with(&values(&[("ember", "on")]));
@@ -504,8 +507,8 @@ fn an_option_value_that_breaks_a_consent_floor_is_drawn_with_purlis_s_values_for
             held.said(),
             format!(
                 "Dusk ({}) breaks the consent floors (the danger colours contrast with what they \
-                 are drawn on), so purlis draws its own danger.surface, danger.text; the rest of \
-                 the theme draws as written",
+                 are drawn on), so purlis draws its own danger.text; the rest of the theme draws \
+                 as written",
                 one.id
             )
         );

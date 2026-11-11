@@ -886,3 +886,20 @@ fn a_theme_that_names_its_terminal_and_not_its_faint_text_fades_its_own_words_to
     let named = terminal_of("#ffffff", "#000000", json!({ "terminal.faint": "#999999" }));
     assert_eq!(named.value("terminal.faint"), "#999999");
 }
+
+#[test]
+fn a_chosen_row_that_hides_an_ok_badge_s_words_fails_its_check() {
+    // #6163: a theme over Purlis Dark that changes the `list.selected` token alone, with no part
+    // rule. A badge that says what is settled draws `state.success` as its words, on no fill of
+    // its own, on the chosen row it stands on. On #555566 those words are at 3.75:1: a mark's 3:1
+    // would let them by, a word's 4.5:1 does not.
+    let theme = dark(
+        json!({ "list.selected": "#555566" }),
+        json!({ "extends": "purlis" }),
+    );
+    let ratio = found(&check(&theme), "state.success", "list.selected");
+    assert!(
+        ratio.is_some_and(|one| (3.0..4.5).contains(&one)),
+        "an ok badge's words on the chosen row are reported: {ratio:?}"
+    );
+}
