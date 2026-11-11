@@ -465,6 +465,9 @@ export type Does =
    *  discards work with nobody warned — the same objection `worktree.discard` records. */
   | { verb: "removeWorkspace"; workspace: string }
   | { verb: "showChat"; session: number }
+  /** **Reopen** on a closed chat's card (#6214): finished task `id`'s conversation started
+   *  again as an ordinary chat, as Reopen on its finished row does (#1485). */
+  | { verb: "reopenTask"; id: string }
   /** ⌘⇧H (#4757): the focused pane goes back to the chat it showed before. Nothing ends. */
   | { verb: "paneBack" }
   /** Gives a task a tab of its own (#1489). Nothing ends, and nothing is asked. */
@@ -1205,6 +1208,8 @@ export type Doing = {
    *  core's guard. */
   removeWorkspace: (workspace: string) => void;
   showChat: (session: number) => void;
+  /** Reopens finished task `id` (#6214): a refusal is the core's sentence. */
+  reopenTask: (id: string) => Promise<Ran>;
   /** The focused pane goes back to the chat it showed before, or to where that chat is. */
   paneBack: () => void;
   /** Gives a task a tab of its own, in front. */
@@ -3796,6 +3801,8 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
     case "showChat":
       doing.showChat(does.session);
       return DID;
+    case "reopenTask":
+      return doing.reopenTask(does.id);
     case "paneBack":
       doing.paneBack();
       return DID;

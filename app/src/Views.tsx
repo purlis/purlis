@@ -1,6 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { ChatScreenTab } from "./ChatScreenTab";
+import { CHAT_SCREEN } from "./closedChat";
 import {
   Fragment,
   Suspense,
@@ -38,6 +40,7 @@ import {
   ListChecks,
   LoaderCircle,
   MonitorSmartphone,
+  ScrollText,
   Puzzle,
   RefreshCw,
   Save,
@@ -403,6 +406,8 @@ export const OWN_MARKS: Record<string, React.ComponentType<{ className?: string 
   [BROWSERS_GRID_VIEW.view]: LayoutGrid,
   /** This machine and its runners (#2052, `DevicesView.tsx`). */
   [DEVICES_VIEW.view]: MonitorSmartphone,
+  /** A closed task's kept screen, read-only (#6214, `ChatScreenTab.tsx`). */
+  [CHAT_SCREEN]: ScrollText,
   /** What a chat acts as on a forge (#4485, `AgentIdentityTab.tsx`). */
   [AGENT_IDENTITY_VIEW.view]: BadgeCheck,
   /** A browser's DevTools, drawn live (#2028, `inspector.ts`). */
@@ -616,6 +621,12 @@ export function ViewPane({
       <section className="view-pane view-alone" data-testid="view-pane-devices" aria-label={title}>
         <DevicesView />
       </section>
+    );
+  }
+  // **A closed task's kept screen** (#6214): *Read it* on its card, keyed by the chat's ULID.
+  if (view.from === null && view.view === CHAT_SCREEN) {
+    return (
+      <ChatScreenTab key={`${plane}\u0000${view.key}`} plane={plane} chat={view.key} title={title} />
     );
   }
   // **Agent identity** (#4485): keyed by the plane, whose tool lines and personas it reads.
