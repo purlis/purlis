@@ -249,6 +249,35 @@ export const RunnerRemoved: Story = {
   },
 };
 
+/** **A pool whose runner stopped on a full disk** (#6205): its row says Docker's disk is full,
+ *  with the steps that make room, in the core's words (`stopped_on_a_full_disk_said`). */
+export const RunnerStoppedOnAFullDisk: Story = {
+  parameters: {
+    pools: [BUILDS],
+    link: {
+      state: "down",
+      why:
+        "Docker's disk is full, so runner builds stopped. Docker keeps its images, containers " +
+        "and volumes on a disk of its own, apart from this computer's. To make room, run docker " +
+        "system df to see what takes it, then docker system prune to remove what nothing uses " +
+        "(a suspended pool's runner it removes can be made again from its pool, with its " +
+        "sign-ins), or give Docker a bigger disk: in Docker Desktop, under Settings, then " +
+        "Resources. Then start a chat on the pool, and purlis starts its runner again. The " +
+        "runner's last words were: \"purlis: no git hooks at " +
+        "/home/purlis/.local/share/dev.purlis.app/git-hooks (No space left on device (os error " +
+        '28))"',
+    },
+  },
+  play: async ({ canvas }) => {
+    const group = await canvas.findByRole("region", { name: "Pools" });
+    await within(group).findByText("not linked");
+    await within(group).findByText(/Docker's disk is full/);
+    await waitFor(() => expect(within(group).queryByText(/Asking the runner about/)).toBeNull(), {
+      timeout: 5000,
+    });
+  },
+};
+
 /** **A pool whose runner was made on another engine** (#4166): it is not said to be removed, and
  *  nothing offers to make it again. */
 export const RunnerOnAnotherEngine: Story = {

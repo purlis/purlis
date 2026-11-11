@@ -403,6 +403,12 @@ const SORTED: &[(&str, &str, Group, &str)] = &[
     ),
     (
         "crates/purlis-core/src/dockerpool.rs",
+        "LEAST_FREE",
+        Internal,
+        "the least free disk a runner is made on: below it a pool fills its disk as it is first used (#6205)",
+    ),
+    (
+        "crates/purlis-core/src/dockerpool.rs",
         "LOG_LINES",
         Internal,
         "how much purlis says at once",

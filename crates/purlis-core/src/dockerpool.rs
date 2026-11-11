@@ -1391,6 +1391,9 @@ fn last_line(text: &str) -> Option<String> {
 /// Docker said of its end (`stopped`), the last line its program wrote (`last`), and what the
 /// person can do. purlis has already removed what the add made.
 pub fn stopped_said(name: &str, stopped: &Stopped, last: Option<&str>) -> String {
+    if last.is_some_and(names_a_full_disk) {
+        return disk_full_said(FullAt::Stopped, last);
+    }
     let wrote = last
         .map(|line| format!(" Its last words were: \"{line}\"."))
         .unwrap_or_default();
@@ -1417,6 +1420,109 @@ pub fn stopped_said(name: &str, stopped: &Stopped, last: Option<&str>) -> String
          made, and purlis removed what it made.{wrote} Try again; if it stops again, change \
          the pool's image or limits. Everything it wrote is in the app's log"
     )
+}
+
+/// **Whether `text` says a disk was full** (#6205): the kernel's `ENOSPC`, as Rust (`os error
+/// 28`), Go and C spell it. Only a runner's own last words, or what Docker said of a run, are
+/// read so: never a harness's output (ADR 0076).
+pub fn names_a_full_disk(text: &str) -> bool {
+    let text = text.to_ascii_lowercase();
+    text.contains("no space left on device")
+        || text.contains("os error 28")
+        || text.contains("enospc")
+}
+
+/// **What makes room on Docker's disk**, said to a person who is not a Docker expert (#6205).
+/// `docker system prune` keeps volumes, so a runner it removes keeps its home and sign-ins,
+/// and its pool offers Make the runner again.
+const MAKE_ROOM: &str = "Docker keeps its images, containers and volumes on a disk of its own, \
+     apart from this computer's. To make room, run docker system df to see what takes it, then \
+     docker system prune to remove what nothing uses (a suspended pool's runner it removes can be \
+     made again from its pool, with its sign-ins), or give Docker a bigger disk: in Docker \
+     Desktop, under Settings, then Resources";
+
+/// **The least free disk a runner is made on** (#6205): one byte in a decimal gigabyte, as
+/// `docker system df` counts. A runner's `serve` starts in a few megabytes, but its first clone
+/// and build take hundreds; below this a pool that starts fills its disk as it is first used.
+const LEAST_FREE: u64 = 1_000_000_000;
+
+/// `bytes`, as `docker system df` writes a size: decimal, `MB` below a gigabyte.
+fn size_said(bytes: u64) -> String {
+    if bytes >= 1_000_000_000 {
+        // One decimal place, rounded down: never more than there is.
+        let tenths = bytes / 100_000_000;
+        format!("{}.{} GB", tenths / 10, tenths % 10)
+    } else {
+        format!("{} MB", bytes / 1_000_000)
+    }
+}
+
+/// **The bytes free on the disk under `/`**, from what `df -Pk /` printed (`printed`): POSIX's
+/// format, a header and then one line whose fourth field is what is available, in kibibytes.
+/// `None` where it does not read so: nothing is guessed.
+pub fn free_from_df(printed: &str) -> Option<u64> {
+    let line = printed
+        .lines()
+        .map(str::trim)
+        .rfind(|line| !line.is_empty())?;
+    let available: u64 = line.split_whitespace().nth(3)?.parse().ok()?;
+    available.checked_mul(1024)
+}
+
+/// **When an add found Docker's disk full** (#6205).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FullAt {
+    /// Before anything was made, with what was free, where that was read.
+    Before(Option<u64>),
+    /// As Docker made the runner, which purlis then removed: what Docker said is said.
+    Made,
+    /// As the runner started, which purlis then removed: its last words are said.
+    Stopped,
+}
+
+/// **Why an add was refused on a Docker whose disk is full** (#6205), `at` when it was found,
+/// with its runner's or Docker's own words (`last`) said after.
+pub fn disk_full_said(at: FullAt, last: Option<&str>) -> String {
+    let head = match at {
+        FullAt::Before(Some(free)) => format!(
+            "Docker's disk is full: it has {} free, and a runner needs at least {}, so the pool \
+             wasn't made.",
+            size_said(free),
+            size_said(LEAST_FREE)
+        ),
+        FullAt::Before(None) => "Docker's disk is full, so the pool wasn't made.".to_owned(),
+        FullAt::Made | FullAt::Stopped => {
+            "Docker's disk is full, so the pool wasn't made, and purlis removed what it made."
+                .to_owned()
+        }
+    };
+    let by = if at == FullAt::Stopped {
+        "The runner's last words were"
+    } else {
+        "Docker said"
+    };
+    let wrote = last
+        .map(|line| format!(" {by}: \"{line}\"."))
+        .unwrap_or_default();
+    format!("{head} {MAKE_ROOM}. Then try again.{wrote}")
+}
+
+/// **Why runner `name` stopped later on a full disk**, said on its pool's row (#6205).
+pub fn stopped_on_a_full_disk_said(name: &str, last: &str) -> String {
+    format!(
+        "Docker's disk is full, so runner {name} stopped. {MAKE_ROOM}. Then start a chat on the \
+         pool, and purlis starts its runner again. The runner's last words were: \"{last}\""
+    )
+}
+
+/// `why`, said as a full disk where its words name one (#6205).
+fn full_disk_or(why: Refused) -> Refused {
+    if names_a_full_disk(&why.0) {
+        let last = last_line(&why.0);
+        refused(disk_full_said(FullAt::Made, last.as_deref()))
+    } else {
+        why
+    }
 }
 
 /// **The disk each volume holds, by its name** (#3493), from what `docker system df -v` printed
@@ -2989,6 +3095,8 @@ impl Docker {
         // The profile that lets the browser engine make its sandbox only for an image whose
         // `purlis` holds everything else it starts from namespaces (D-2050-26); the earlier one,
         // where its browsers are refused, for any other.
+        // Before anything of the runner's is made, nor its image's probe run (#6205).
+        self.has_room(runner)?;
         let holds = self.holds_from_namespaces(runner);
         let (file, profile) = if holds {
             (SECCOMP_FILE, SECCOMP_PROFILE)
@@ -3011,7 +3119,7 @@ impl Docker {
         drop(prepared);
         let out = match made {
             Ok(out) => out,
-            Err(why) => return Err(self.and_removed(why, &container, &volume)),
+            Err(why) => return Err(self.and_removed(full_disk_or(why), &container, &volume)),
         };
         let made = match ContainerId::new(out.trim()) {
             Ok(container) => Made {
@@ -3096,6 +3204,82 @@ impl Docker {
             String::from_utf8_lossy(&ran.printed).into_owned(),
             String::from_utf8_lossy(&ran.said).into_owned(),
         ))
+    }
+
+    /// **Refused where Docker's disk has less free than [`LEAST_FREE`]** (#6205), or where
+    /// running `runner`'s image could not be written for a full disk. Docker, Docker Desktop,
+    /// OrbStack, Colima and Podman have no one answer to how much is free on the disk they keep
+    /// containers on (most keep it inside a machine of their own, apart from this one's), so it
+    /// is read as a container sees it: `df` in the runner's image, confined as the namespace
+    /// probe is, whose root is on that disk. An image with no `df`, or an engine that does not
+    /// answer, says nothing, and nothing is held up.
+    fn has_room(&self, runner: &Runner) -> Result<(), Refused> {
+        let args: Vec<String> = [
+            "run",
+            "--rm",
+            "--user",
+            &runner.user.spelled(),
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges",
+            "--network",
+            "none",
+            "--read-only",
+            "--entrypoint",
+            "df",
+            runner.image.as_str(),
+            "-Pk",
+            "/",
+        ]
+        .iter()
+        .map(|word| (*word).to_owned())
+        .collect();
+        let Ok(prepared) = self.prepared() else {
+            return Ok(());
+        };
+        let Ok(ran) = self.spawned(&prepared, &args, None, MOST_SAID, Some(PROBE_WITHIN)) else {
+            return Ok(());
+        };
+        let said = String::from_utf8_lossy(&ran.said);
+        if !ran.status.success() {
+            if names_a_full_disk(&said) {
+                let last = last_line(&said);
+                return Err(refused(disk_full_said(
+                    FullAt::Before(None),
+                    last.as_deref(),
+                )));
+            }
+            return Ok(());
+        }
+        match free_from_df(&String::from_utf8_lossy(&ran.printed)) {
+            Some(free) if free < LEAST_FREE => {
+                Err(refused(disk_full_said(FullAt::Before(Some(free)), None)))
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// **Why `made`'s container stopped, where it stopped on a full disk** (#6205): said on its
+    /// pool's row. `None` where it runs, ended cleanly as a runner that suspends itself does, or
+    /// its last words do not name a full disk.
+    pub fn stopped_on_a_full_disk(&self, made: &Made) -> Option<String> {
+        let id = made.container.as_str();
+        let inspected = self
+            .json(&["container", "inspect", id], "docker container inspect")
+            .ok()?;
+        let stopped = stopped(&inspected)?;
+        if stopped.exit_code == Some(0) {
+            return None;
+        }
+        let (printed, said) = self.logs(id).ok()?;
+        let last = [said, printed].iter().find_map(|text| {
+            text.lines()
+                .rfind(|line| names_a_full_disk(line))
+                .map(str::to_owned)
+        })?;
+        let last = last_line(&last)?;
+        Some(stopped_on_a_full_disk_said(&made.runner.name, &last))
     }
 
     /// **Whether `runner`'s image's `purlis` holds what it starts from namespaces** (D-2050-26),
