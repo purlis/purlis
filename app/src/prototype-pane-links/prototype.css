@@ -1,0 +1,152 @@
+/* PROTOTYPE, throwaway (#6211). Tokens only: the theme draws it. */
+.pl-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-inline-size: 64rem;
+}
+.pl-window {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--terminal-background);
+}
+.pl-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border-block-end: 1px solid var(--border-subtle);
+  background: var(--surface-raised);
+  font-size: var(--font-size-sm);
+}
+.pl-head-icon {
+  inline-size: 14px;
+  block-size: 14px;
+  color: var(--text-secondary);
+}
+.pl-head-name {
+  font-weight: 600;
+}
+.pl-head-number {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.pl-head-where {
+  color: var(--text-secondary);
+  margin-inline-start: auto;
+}
+.pl-terminal {
+  margin: 0;
+  padding: var(--space-3);
+  color: var(--terminal-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  outline-offset: -2px;
+}
+.pl-row {
+  display: block;
+}
+.pl-faint {
+  color: var(--terminal-faint);
+}
+
+/* A link at rest is the program's text, untouched; hover (or the menu over it) underlines it. */
+.pl-link {
+  cursor: text;
+  text-decoration: none;
+}
+.pl-link[data-hovered] {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+/* The prototype's "Show what links" overlay: every link dashed, every look-alike struck. */
+.pl-terminal[data-overlay] .pl-link {
+  text-decoration: underline dashed;
+  text-underline-offset: 2px;
+}
+.pl-terminal[data-overlay] .pl-not {
+  text-decoration: line-through;
+  color: var(--terminal-faint);
+}
+
+.pl-tip {
+  display: grid;
+  gap: var(--space-1);
+}
+.pl-tip-target {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.pl-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.pl-said {
+  margin: 0;
+  flex: 1 1 16rem;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.pl-mono {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+.pl-host {
+  font-weight: 700;
+}
+.pl-ask-note {
+  margin: var(--space-3) 0 0;
+}
+
+.pl-card-popover {
+  inline-size: 26rem;
+  max-inline-size: calc(100vw - 32px);
+}
+.pl-card {
+  display: grid;
+  gap: var(--space-2);
+}
+.pl-card-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.pl-card-title {
+  margin: 0;
+  font-size: var(--font-size-md);
+  flex: 1 1 auto;
+}
+.pl-card-when {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+.pl-card-report {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.pl-strip {
+  inline-size: 44rem;
+  max-inline-size: 100%;
+}
+.pl-head-frame {
+  block-size: 56px;
+}
+.pl-switcher {
+  inline-size: 26rem;
+  max-inline-size: 100%;
+}
