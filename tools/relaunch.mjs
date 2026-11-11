@@ -52,6 +52,7 @@ import {
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 
+import { appEnv } from "./app-env.mjs";
 import { annotations, checkLine, linesWritten, stepTimer, stopLine } from "./relaunch-report.mjs";
 
 const ROOT = resolve(import.meta.dirname, "..");
@@ -278,7 +279,7 @@ async function theAppRuns(name, plane, done, answer, extra = {}) {
   launch = { name, timer: steps };
   steps.step("starting the app");
   const port = await aFreePort();
-  // `CHARTER_LAUNCH_LOG` makes the app say how far up it got. A launch that never reaches
+  // `PURLIS_LAUNCH_LOG` makes the app say how far up it got. A launch that never reaches
   // its first chat says nothing at all otherwise, which cost three round trips of guessing.
   //
   // **The plane is PINNED and not left to the working directory** (charter-app#129). This
@@ -287,23 +288,24 @@ async function theAppRuns(name, plane, done, answer, extra = {}) {
   // inherited that chat's plane — and `$CHARTER_ROOT` beats the walk. The app would then
   // read and rewrite the operator's reopen record, which is a list of programs it starts.
   // The fence says which planes this run may touch at all; the store and the panic log keep
-  // the rest of the run off the operator's own.
+  // the rest of the run off the operator's own. Setting the root is not enough either: a chat
+  // carries it under both names, and a `PURLIS_ROOT` beside this run's root under the other
+  // is refused, so no product variable of the parent's reaches the app (`app-env.mjs`, #5691).
   const app = spawn(APP, [], {
     cwd: plane,
     stdio: ["ignore", "pipe", "pipe"],
-    env: {
-      ...process.env,
-      CHARTER_LAUNCH_LOG: "1",
-      CHARTER_ROOT: plane,
-      CHARTER_PLANE_FENCE: tmpdir(),
-      CHARTER_CONFIG_HOME: CONFIG_HOME,
-      CHARTER_DATA_HOME: DATA_HOME,
+    env: appEnv(process.env, {
+      PURLIS_LAUNCH_LOG: "1",
+      PURLIS_ROOT: plane,
+      PURLIS_PLANE_FENCE: tmpdir(),
+      PURLIS_CONFIG_HOME: CONFIG_HOME,
+      PURLIS_DATA_HOME: DATA_HOME,
       ...(ON_A_SANDBOX_ONLY_PROFILE
         ? { PATH: [dirname(claude), process.env.PATH ?? ""].join(delimiter) }
         : {}),
       TAURI_WEBDRIVER_PORT: String(port),
       ...extra,
-    },
+    }),
   });
   let output = "";
   app.stdout.on("data", (chunk) => (output += chunk));

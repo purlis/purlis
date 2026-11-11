@@ -42,6 +42,8 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import { appEnv } from "./app-env.mjs";
+
 const ROOT = resolve(import.meta.dirname, "..");
 const APP = join(
   process.env.CHARTER_TARGET_DIR ?? join(ROOT, "target", "debug"),
@@ -68,11 +70,11 @@ const NATIVE = [
   "timestamp",
 ];
 /**
- * What the app says, with `CHARTER_LAUNCH_LOG`, once its crash handler watches it: the switch
+ * What the app says, with `PURLIS_LAUNCH_LOG`, once its crash handler watches it: the switch
  * `nativecrash::STARTED` is on (#5691), so a launch that does not say it is a failure.
  */
 const HANDLER_ON = "the crash handler: watching";
-/** What the app says, with `CHARTER_LAUNCH_LOG`, once it has sent the crashes that waited. */
+/** What the app says, with `PURLIS_LAUNCH_LOG`, once it has sent the crashes that waited. */
 const WAITING_SENT = "the native crashes that waited are reported";
 
 if (process.platform !== "darwin") {
@@ -196,17 +198,16 @@ function launch(home, intake, extra = {}) {
   const app = spawn(APP, [], {
     cwd: plane,
     stdio: ["ignore", "pipe", "pipe"],
-    env: {
-      ...process.env,
-      CHARTER_LAUNCH_LOG: "1",
-      CHARTER_ROOT: plane,
-      CHARTER_PLANE_FENCE: tmpdir(),
-      CHARTER_CONFIG_HOME: home,
-      CHARTER_DATA_HOME: mkdtempSync(join(tmpdir(), "purlis-crash-data-")),
+    env: appEnv(process.env, {
+      PURLIS_LAUNCH_LOG: "1",
+      PURLIS_ROOT: plane,
+      PURLIS_PLANE_FENCE: tmpdir(),
+      PURLIS_CONFIG_HOME: home,
+      PURLIS_DATA_HOME: mkdtempSync(join(tmpdir(), "purlis-crash-data-")),
       PURLIS_PANIC_LOG: join(home, "panics.log"),
       PURLIS_REPORT_INTAKE_DSN: intake.dsn,
       ...extra,
-    },
+    }),
   });
   const run = { app, output: "" };
   app.stdout.on("data", (chunk) => (run.output += chunk));
