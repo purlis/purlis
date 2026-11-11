@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { $, browser, expect } from "@wdio/globals";
+import { $ } from "@wdio/globals";
 
 /**
  * **An artifact's icon and its tab, as every artifact spec reaches them** (ADR 0122, #5952).
@@ -38,30 +38,4 @@ export async function closeTabOf(name: string): Promise<boolean> {
   if (!(await close.isExisting())) return false;
   await close.click();
   return true;
-}
-
-/**
- * **Whether an artifact's script runs where the app under test runs** (ADR 0122 §10, amended
- * 2026-11-10): on macOS alone. The scenario tests start the app on the machine they run on, so
- * this is the app's platform. Elsewhere a scripted page is shown without its script, and each
- * case that needs a page's script asserts that refusal ({@link expectScriptRefusedHere}) instead.
- */
-export const SCRIPT_RUNS_HERE = process.platform === "darwin";
-
-/** What purlis's bar says of a scripted page where script does not run. */
-export const SCRIPT_REFUSED_HERE =
-  "Shown without its script: scripted artifacts do not run on this system yet";
-
-/**
- * Asserts that the tab in front is a scripted page refused on this platform: its bar says so in
- * its sentence, offers no approval, and its frame's edge says its script neither runs nor asks.
- */
-export async function expectScriptRefusedHere(): Promise<void> {
-  const bar = $('[data-testid="artifact-bar"]');
-  await browser.waitUntil(async () => (await bar.getText()).includes(SCRIPT_REFUSED_HERE), {
-    timeout: 20_000,
-    timeoutMsg: "the bar did not say the page's script is refused on this platform",
-  });
-  expect(await bar.$("aria/Approve script").isExisting()).toBe(false);
-  expect(await $('[data-testid="artifact-edge"]').getAttribute("data-standing")).toBe("plain");
 }

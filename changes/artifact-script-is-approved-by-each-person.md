@@ -8,4 +8,4 @@
   while any other change to the folder, or a change to the pin's folder or command, shows it
   without its script and asks again, naming who changed the pin. Approvals are yours alone,
   kept on this machine; every window hears one at once. `purlis artifact approve-status` says
-  where each pin stands. On Linux and Windows, scripted artifacts render without their script for now.
+  where each pin stands. On Windows, scripted artifacts render without their script for now.
