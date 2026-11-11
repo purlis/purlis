@@ -535,7 +535,13 @@ pub async fn docker_pool_link(name: String) -> Result<PoolLink, String> {
             let kept = purlis_core::runners::runner_for(&machine.config, &name)
                 .map_err(|why| why.to_string())?;
             match machine.running(&kept) {
-                Ok(false) => return Ok(PoolLink::Suspended),
+                // One that stopped on a full disk says so, not that it suspended (#6205).
+                Ok(false) => {
+                    return Ok(machine
+                        .docker
+                        .stopped_on_a_full_disk(&kept.made)
+                        .map_or(PoolLink::Suspended, |why| PoolLink::Down { why }));
+                }
                 Ok(true) => {}
                 // Docker has no container of its id: removed outside purlis (#4149).
                 Err(_) => match machine.docker.missing(&kept.made, kept.engine.as_deref()) {

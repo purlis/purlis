@@ -1129,7 +1129,9 @@ fn the_settings_a_sign_in_names_are_an_empty_config_of_purliss_own() {
 /// `volume`, `volume ls` with `volumes`, `info` with `info`, `image inspect` with `image`, and
 /// `exec` with `paired`, after keeping its standard input, `container logs` with `logs` on its
 /// standard output and `logs-said` on its standard error, and `container ls` with
-/// `containers`; `run --rm … --version` with `version`; `run` fails where `run-fails` is there. `container rm` and `volume rm` exit
+/// `containers`; `run --rm … --version` with `version`; `run --rm --entrypoint df …` with
+/// `free` on its standard output, `free-said` on its standard error and the code `free-exit`
+/// holds; `run` fails where `run-fails` is there. `container rm` and `volume rm` exit
 /// with what `rm-fails-container` or `rm-fails-volume` holds, else what `rm-fails` holds, 0
 /// when there is none. `inspect-once`, where it is there, answers one `container inspect` first.
 pub(crate) struct FakeDocker {
@@ -1144,7 +1146,9 @@ impl FakeDocker {
             "#!/bin/sh\necho \"$*\" >> '{log}'\ncase \"$*\" in *_no-namespaces*) \
              prev=; for a in \"$@\"; do [ \"$prev\" = --cidfile ] && echo {probe} > \"$a\"; \
              prev=$a; done; \
-             exit \"$(cat '{holds}' 2>/dev/null || echo 0)\" ;; esac\ncase \"$1 $2\" in\n  \
+             exit \"$(cat '{holds}' 2>/dev/null || echo 0)\" ;; esac\ncase \"$*\" in *'--entrypoint df '*) cat '{free}' 2>/dev/null; cat '{free}-said' >&2 2>/dev/null; \
+             exit \"$(cat '{free}-exit' 2>/dev/null || echo 0)\" ;; esac\n\
+             case \"$1 $2\" in\n  \
              'run --rm') case \"$*\" in *' --version') cat '{version}' 2>/dev/null; exit 0 ;; esac; \
              [ -f '{copy_fails}' ] && \
              {{ echo 'cp: cannot open' >&2; exit 1; }}; [ -f '{during_run}' ] && sh '{during_run}'; \
@@ -1186,6 +1190,7 @@ impl FakeDocker {
             conversations = at("conversations"),
             during_run = at("during-run"),
             version = at("version"),
+            free = at("free"),
             probe = PROBE_ID,
         );
         stand_in::program(dir.path(), "docker", &script);
@@ -1450,6 +1455,129 @@ fn a_runner_refused_as_it_is_added_does_not_ask_to_be_removed() {
     assert!(refused.0.contains("privileged"), "{refused}");
     assert!(!refused.0.contains("remove the runner"), "{refused}");
     assert!(refused.0.contains("removed what it made"), "{refused}");
+}
+
+/// What `df -Pk /` prints in the runner image of a Docker with `available` kibibytes free.
+fn free(available: u64) -> String {
+    format!(
+        "Filesystem     1024-blocks     Used Available Capacity Mounted on\n\
+         overlay           61255652 61000000 {available}     100% /\n"
+    )
+}
+
+/// What a person who is not a Docker expert is told of a full Docker disk (#6205): what it is,
+/// and the steps that make room.
+fn says_dockers_disk_is_full(said: &str) {
+    assert!(said.contains("Docker's disk is full"), "{said}");
+    assert!(said.contains("docker system df"), "{said}");
+    assert!(said.contains("docker system prune"), "{said}");
+    assert!(said.contains("Docker Desktop"), "{said}");
+}
+
+/// Whether the runner's own container was made: a `run` that is not a probe's `--rm`.
+fn made_a_runner(log: &str) -> bool {
+    log.lines()
+        .any(|line| line.starts_with("run ") && !line.starts_with("run --rm"))
+}
+
+#[test]
+fn an_add_on_a_docker_with_too_little_free_disk_is_refused_before_its_runner_is_made() {
+    let fake = FakeDocker::new(&inspected());
+    // 200 MiB free.
+    fake.set("free", &free(204_800));
+    let refused = fake.docker().make(&runner()).unwrap_err();
+    says_dockers_disk_is_full(&refused.0);
+    assert!(refused.0.contains("209 MB free"), "{refused}");
+    let log = fake.file("log");
+    assert!(!made_a_runner(&log), "{log}");
+    assert!(!log.contains("_no-namespaces"), "{log}");
+}
+
+#[test]
+fn an_add_on_a_docker_with_room_makes_its_runner() {
+    let fake = FakeDocker::new(&inspected());
+    // 20 GiB free.
+    fake.set("free", &free(20 * 1024 * 1024));
+    assert_eq!(
+        fake.docker().make(&runner()).map(|made| made.container),
+        Ok(made().container)
+    );
+    assert!(made_a_runner(&fake.file("log")));
+}
+
+#[test]
+fn an_add_on_a_docker_that_cannot_say_its_free_disk_is_not_held_up() {
+    let fake = FakeDocker::new(&inspected());
+    fake.set(
+        "free-said",
+        "exec: \"df\": executable file not found in $PATH\n",
+    );
+    fake.set("free-exit", "127");
+    assert!(fake.docker().make(&runner()).is_ok());
+    assert!(made_a_runner(&fake.file("log")));
+}
+
+#[test]
+fn an_add_whose_image_cannot_be_written_for_a_full_disk_says_dockers_disk_is_full() {
+    let fake = FakeDocker::new(&inspected());
+    fake.set(
+        "free-said",
+        "docker: failed to register layer: write /usr/lib/x86_64-linux-gnu/libLLVM.so.19: no \
+         space left on device\n",
+    );
+    fake.set("free-exit", "125");
+    let refused = fake.docker().make(&runner()).unwrap_err();
+    says_dockers_disk_is_full(&refused.0);
+    assert!(!made_a_runner(&fake.file("log")));
+}
+
+#[test]
+fn a_runner_that_stops_as_it_starts_on_a_full_disk_says_dockers_disk_is_full() {
+    let fake = FakeDocker::new(&stopped(1, false, ""));
+    fake.set(
+        "logs-said",
+        "purlisd: the session host could not mint its credentials at \
+         /home/purlis/.config/charter/charterd: No space left on device (os error 28)\n",
+    );
+    let refused = fake.docker().make(&runner()).unwrap_err();
+    says_dockers_disk_is_full(&refused.0);
+    // The runner's own words are still said, for whoever reads further.
+    assert!(refused.0.contains("os error 28"), "{refused}");
+}
+
+#[test]
+fn a_runner_that_stopped_later_on_a_full_disk_says_dockers_disk_is_full() {
+    let fake = FakeDocker::new(&stopped(1, false, ""));
+    fake.set(
+        "logs-said",
+        "purlis: no git hooks at /home/purlis/.local/share/dev.purlis.app/git-hooks (No space \
+         left on device (os error 28))\n",
+    );
+    let said = fake.docker().stopped_on_a_full_disk(&made()).expect("said");
+    says_dockers_disk_is_full(&said);
+    assert!(said.contains("runner first"), "{said}");
+}
+
+#[test]
+fn a_runner_that_stopped_for_another_reason_is_not_said_to_be_on_a_full_disk() {
+    let fake = FakeDocker::new(&stopped(1, false, ""));
+    fake.set("logs-said", "purlis serve: the port was taken\n");
+    assert_eq!(fake.docker().stopped_on_a_full_disk(&made()), None);
+}
+
+#[test]
+fn a_runner_that_suspended_itself_is_not_said_to_be_on_a_full_disk() {
+    // A runner suspends itself by ending cleanly; what it wrote long before is not why.
+    let fake = FakeDocker::new(&stopped(0, false, ""));
+    fake.set("logs-said", "No space left on device (os error 28)\n");
+    assert_eq!(fake.docker().stopped_on_a_full_disk(&made()), None);
+}
+
+#[test]
+fn a_running_runner_is_not_said_to_be_on_a_full_disk() {
+    let fake = FakeDocker::new(&inspected());
+    fake.set("logs-said", "No space left on device (os error 28)\n");
+    assert_eq!(fake.docker().stopped_on_a_full_disk(&made()), None);
 }
 
 #[test]
