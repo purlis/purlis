@@ -1,0 +1,18 @@
+# Linux (ubuntu-24.04, WebKitGTK 605.1.15 under xvfb), 2026-11-11: the app's own isolation tests
+# (app/e2e/specs/artifact-isolation.e2e.ts), in the `ci` workflow's `scenario tests
+# (ubuntu-24.04, part 1 of 2)` job, against the built app, with script running on Linux (#6129).
+# What linux-2026-11-10.txt recorded red was not WebKitGTK's isolation: under the artifact's
+# `X-Content-Type-Options: nosniff`, its app.js was served as application/octet-stream and so
+# never ran. Served as text/javascript (#5978, serve::content_type), every case hears its page.
+#
+# Run 42975268037 at 15a5c691f (job 130372935850), on draft pull request #6201:
+#   artifact-isolation.e2e.ts  5 passing: 1. reach, 3. speak, 5. walk, 6. store, 2. loop
+#   artifact-offers.e2e.ts     5 passing: the approved page's offers reach purlis's bar
+#   artifact-queries.e2e.ts    4 passing: a declared call answered, an undeclared one refused
+#   artifacts.e2e.ts          14 passing: a scripted page asks, runs once approved, asks again
+#   artifact-memory.e2e.ts     1 passing: M8 added 239 MB, within Linux's 264 MB budget
+RESULT app reach PASS (run 42975268037)
+RESULT app speak PASS (run 42975268037)
+RESULT app walk PASS (run 42975268037)
+RESULT app store PASS (run 42975268037)
+RESULT app loop PASS (run 42975268037)
