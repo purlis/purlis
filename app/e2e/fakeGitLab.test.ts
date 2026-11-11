@@ -10,7 +10,13 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { type FakeGitLab, gitConfigFor, OWNER, startFakeGitLab } from "./fakeGitLab.js";
+import {
+  type FakeGitLab,
+  gitConfigFor,
+  OWNER,
+  startFakeGitLab,
+  thePageAsked,
+} from "./fakeGitLab.js";
 import {
   CLONE_STALL_VARIABLE,
   FAKE_FORGE_VARIABLE,
@@ -167,5 +173,12 @@ describe("the fake GitLab", () => {
     expect(granted.access_token.length).toBeGreaterThan(20);
     expect(forge.grants()).toBe(1);
     callback.close();
+  });
+});
+
+describe("the page the browser flow is handed (#6192)", () => {
+  it("says what it was handed when that is no URL, not only that it is invalid", () => {
+    expect(() => thePageAsked("")).toThrow('the sign-in handed the browser "", which is no URL');
+    expect(() => thePageAsked("https://git.example.test:8443/oauth/auth")).not.toThrow();
   });
 });
