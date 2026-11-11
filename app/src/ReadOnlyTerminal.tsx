@@ -23,7 +23,7 @@
  * - **It says it is read-only in words, outside the grid** (`note`), as the prototype does.
  * - **Its links are a pane's** (#6215, `paneLinks.ts`): an address in what it showed is
  *   underlined under the pointer, and ⌘-click (Ctrl+click off a Mac) opens it, as in a chat's
- *   pane. A still picture has none.
+ *   pane, where its owner hands it the core (`links`). A still picture has none.
  * - **Drawn as a terminal is**, from the theme in force or the one it is handed (`theme`), at the
  *   text size it is handed (the window's terminal size, or the specimen's fixed one), with no cursor
  *   and nothing typed reaching anything.
@@ -34,7 +34,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { FindBar } from "./FindBar";
 import { opensFindInAFile } from "./keys/findKeys";
 import { onAMac } from "./mac";
-import { linkPane } from "./paneLinks";
+import { linkPane, type LinkCore } from "./paneLinks";
 import { usePaneLinks } from "./PaneLinkSurfaces";
 import {
   drawnFont,
@@ -88,6 +88,12 @@ export interface ReadOnlyTerminalProps {
   still?: boolean;
   /** Where a copy goes: the page's clipboard unless a test says otherwise. */
   clipboard?: ClipboardOut;
+  /**
+   * **The core its links are decided by** (#6215, `paneLinkCore.ts`): a saved chat's screen is
+   * handed the window's, and its addresses link as a pane's do. None, as for the theme
+   * specimen's pictures, which reach no core: no links.
+   */
+  links?: LinkCore;
 }
 
 /**
@@ -129,6 +135,7 @@ export function ReadOnlyTerminal({
   "data-testid": testId,
   clipboard,
   still = false,
+  links,
 }: ReadOnlyTerminalProps) {
   const noteId = useId();
   const holder = useRef<HTMLDivElement>(null);
@@ -139,7 +146,7 @@ export function ReadOnlyTerminal({
   const [copy, setCopy] = useState<string>();
   const [finding, setFinding] = useState<{ search: SearchAddon; asked: number } | null>(null);
   /** Its links' surfaces: a hovered link's tooltip, and the answer to one that did not open. */
-  const { hands: linkHands, surfaces: linkSurfaces } = usePaneLinks(onAMac(), null, null);
+  const { hands: linkHands, surfaces: linkSurfaces } = usePaneLinks(onAMac(), null, null, links);
   // Read once, as it is drawn: a later write of the same screen is the same picture.
   const told = useRef(onWriting);
   useLayoutEffect(() => {
@@ -173,15 +180,17 @@ export function ReadOnlyTerminal({
     // xterm's own text box is never a Tab stop: the screen's region is.
     pane.textarea?.setAttribute("tabindex", "-1");
     drawn.current = { pane, search };
-    const links = still
-      ? undefined
-      : linkPane(pane, {
-          from: NOWHERE,
-          hovered: linkHands.hovered,
-          answered: linkHands.answered,
-          colour: () => linkColour(look),
-          mac: onAMac,
-        });
+    const linked =
+      still || links === undefined
+        ? undefined
+        : linkPane(pane, {
+            core: links,
+            from: NOWHERE,
+            hovered: linkHands.hovered,
+            answered: linkHands.answered,
+            colour: () => linkColour(look),
+            mac: onAMac,
+          });
     let live = true;
     // No cursor: what it showed is over.
     const written = new Promise<void>((done) =>
@@ -195,12 +204,12 @@ export function ReadOnlyTerminal({
       live = false;
       drawn.current = null;
       setFinding(null);
-      links?.dispose();
+      linked?.dispose();
       pane.dispose();
     };
     // The link hands are made once for the screen's life (`usePaneLinks`).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [screen, cols, rows, theme, fontSize, still]);
+  }, [screen, cols, rows, theme, fontSize, still, links]);
 
   const keys = (event: KeyboardEvent<HTMLElement>) => {
     const now = drawn.current;

@@ -28,6 +28,7 @@ import {
 import { counted } from "./dispatches";
 import { ResumeQuestion, resumeFix } from "./GradeResume";
 import { Notice, type NoticeAction } from "./Notice";
+import { LINK_CORE } from "./paneLinkCore";
 import { ReadOnlyTerminal } from "./ReadOnlyTerminal";
 import { dollarsSaid, GradingHeading } from "./SkillGrade";
 import { NotRead, ReadingRows, useRead } from "./SkillPanels";
@@ -782,6 +783,7 @@ export function KeptChatShown({
           cols={GRADE_CHAT_COLUMNS}
           rows={GRADE_CHAT_ROWS}
           fontSize={textSizes().terminal}
+          links={LINK_CORE}
         />
       )}
       {ways}

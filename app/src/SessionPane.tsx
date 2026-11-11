@@ -28,6 +28,7 @@ import { draw } from "./renderer";
 import { onScreenReaderMode, screenReaderMode } from "./screenReader";
 import { onAMac } from "./tabKeys";
 import { opensFind } from "./keys/findKeys";
+import { LINK_CORE } from "./paneLinkCore";
 import { linkPane, type LinkHands } from "./paneLinks";
 import { usePaneLinks } from "./PaneLinkSurfaces";
 import { isKey } from "./keys/registry";
@@ -141,7 +142,12 @@ export function SessionPane({
   /** **Its links' surfaces** (`PaneLinkSurfaces.tsx`, #6215): a hovered link's tooltip, and the
    *  window's answer to one ⌘-clicked that did not simply open. An ask accepted opens the
    *  target it showed, resolved again by the core. */
-  const { hands: linkHands, surfaces: linkSurfaces } = usePaneLinks(onAMac(), plane, session);
+  const { hands: linkHands, surfaces: linkSurfaces } = usePaneLinks(
+    onAMac(),
+    plane,
+    session,
+    LINK_CORE,
+  );
   /** Says something in the pane, in the terminal's own hand, while it is up. */
   const saying = useRef<(trouble: string) => void>(() => {});
   /** The find bar, while it is open: the terminal's search, and how many times it has been
@@ -476,6 +482,7 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
   // **Its links** (#6215, `paneLinks.ts`): found under the pointer, decided by the core, drawn
   // by the pane showing it, whichever that is now.
   const links = linkPane(pane, {
+    core: LINK_CORE,
     from: () => ({ plane, session }),
     hovered: (link) => live.owner?.links.hovered(link),
     answered: (answer, candidate) => live.owner?.links.answered(answer, candidate),

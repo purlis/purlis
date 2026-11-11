@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { LinkCandidate, LinkOpened, LinkSeen, PlaneId } from "./bindings";
-import { openLink, type HoveredLink, type LinkHands } from "./paneLinks";
+import { openLink, type HoveredLink, type LinkCore, type LinkHands } from "./paneLinks";
 import { CodeBlock } from "./ui/code/CodeBlock";
 import { Dialog } from "./ui/dialog/Dialog";
 import {
@@ -59,12 +59,14 @@ type Answering = { answer: LinkOpened; candidate: LinkCandidate };
 /**
  * **A pane's link surfaces**, and the hands its link hook calls (`paneLinks.ts`): what the
  * pointer is on, and what the open command answered. An ask the person accepts is sent back
- *  from `plane`'s chat `session` (none for a read-only terminal) as a confirmed open.
+ *  from `plane`'s chat `session` (none for a read-only terminal) as a confirmed open, to
+ *  `core`; with none, nothing is sent.
  */
 export function usePaneLinks(
   mac: boolean,
   plane: PlaneId | null,
   session: number | null,
+  core: LinkCore | undefined,
 ): {
   hands: Pick<LinkHands, "hovered" | "answered">;
   surfaces: ReactNode;
@@ -129,11 +131,12 @@ export function usePaneLinks(
           onClose={() => setAnswering(null)}
           onConfirm={(target) => {
             setAnswering(null);
-            void openLink(
-              answering.candidate,
-              { from: () => ({ plane, session }), answered },
-              target,
-            );
+            if (core !== undefined)
+              void openLink(
+                answering.candidate,
+                { core, from: () => ({ plane, session }), answered },
+                target,
+              );
           }}
         />
       )}

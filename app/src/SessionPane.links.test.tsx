@@ -7,6 +7,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { Terminal } from "@xterm/xterm";
 import { letGoOfKeptTerminals } from "./keptTerminals";
 import { candidatesIn } from "./paneLinks";
+import { LINK_CORE } from "./paneLinkCore";
 import { ReadOnlyTerminal } from "./ReadOnlyTerminal";
 import { SessionPane } from "./SessionPane";
 
@@ -321,6 +322,7 @@ describe("a link in a read-only terminal", () => {
         cols={80}
         rows={4}
         fontSize={13}
+        links={LINK_CORE}
       />,
     );
     const term = made[0];
@@ -336,5 +338,29 @@ describe("a link in a read-only terminal", () => {
     click(drawn, 12, 0, { ctrlKey: true });
 
     await waitFor(() => expect(asked("pane_link_open")).toHaveLength(1));
+  });
+
+  it("has none where its owner hands it no core, as the theme specimen's pictures", async () => {
+    render(
+      <ReadOnlyTerminal
+        screen={`report: ${ADDRESS}`}
+        label="A picture"
+        cols={80}
+        rows={4}
+        fontSize={13}
+      />,
+    );
+    const term = made[0];
+    const drawn = term.element?.querySelector(".xterm-screen");
+    if (!drawn) throw new Error("no screen");
+    await waitFor(() =>
+      expect(term.buffer.active.getLine(0)?.translateToString()).toContain(ADDRESS),
+    );
+
+    hover(drawn, 12, 0);
+    click(drawn, 12, 0, { ctrlKey: true });
+    await new Promise((settle) => setTimeout(settle, 50));
+
+    expect(invoked).toEqual([]);
   });
 });

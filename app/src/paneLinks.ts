@@ -2,13 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { IBufferLine, IDisposable, ILink, Terminal } from "@xterm/xterm";
-import {
-  commands,
-  type LinkCandidate,
-  type LinkFrom,
-  type LinkOpened,
-  type LinkSeen,
-} from "./bindings";
+import type { LinkCandidate, LinkFrom, LinkOpened, LinkSeen } from "./bindings";
 
 /**
  * **Links in a pane's output** (spec #6208, #6215): the one hook every xterm pane registers, a
@@ -106,8 +100,21 @@ export type LinkPlace = { left: number; top: number; width: number; height: numb
 /** **A link under the pointer**: what the core said it is, its words, and where it is drawn. */
 export type HoveredLink = { seen: LinkSeen; text: string; place: LinkPlace };
 
+/**
+ * **The core's two link commands**, handed to the hook by its pane (`paneLinkCore.ts` holds the
+ * window's), so a screen that must reach no core, the theme specimen's, draws no links.
+ */
+export type LinkCore = {
+  /** What each candidate on a line is: `pane_link_resolve`. */
+  resolve: (from: LinkFrom, candidates: LinkCandidate[]) => Promise<(LinkSeen | null)[]>;
+  /** Opens a candidate, resolved again: `pane_link_open`. */
+  open: (from: LinkFrom, candidate: LinkCandidate, confirmed: string | null) => Promise<LinkOpened>;
+};
+
 /** What a pane does with a link's hover, and with the open command's answer. */
 export type LinkHands = {
+  /** The core that decides what its links are and opens them. */
+  core: LinkCore;
   /** Where its candidates were found: the pane's project and chat, where it has them. */
   from: () => LinkFrom;
   /** The pointer is on a link, or has left it (`null`). */
@@ -128,11 +135,11 @@ export function opensALink(event: Pick<MouseEvent, "metaKey" | "ctrlKey">, mac: 
 /** **Opens `candidate`**, resolved again by the core, and hands on its answer. */
 export function openLink(
   candidate: LinkCandidate,
-  hands: Pick<LinkHands, "from" | "answered">,
+  hands: Pick<LinkHands, "core" | "from" | "answered">,
   confirmed: string | null = null,
 ): Promise<void> {
-  return commands
-    .paneLinkOpen(hands.from(), { kind: candidate.kind, text: candidate.text }, confirmed)
+  return hands.core
+    .open(hands.from(), { kind: candidate.kind, text: candidate.text }, confirmed)
     .then(
       (answer) => hands.answered(answer, candidate),
       (why: unknown) => hands.answered({ answer: "refused", reason: String(why) }, candidate),
@@ -164,16 +171,14 @@ export function linkPane(pane: Terminal, hands: LinkHands): IDisposable {
     const key = `${found.kind}\u0000${found.text}`;
     const had = kept.get(key);
     if (had !== undefined) return had;
-    const asked = commands
-      .paneLinkResolve(hands.from(), [{ kind: found.kind, text: found.text }])
-      .then(
-        ([seen]) => seen ?? null,
-        () => {
-          // Not kept: a core that could not answer is asked again on the next hover.
-          kept.delete(key);
-          return null;
-        },
-      );
+    const asked = hands.core.resolve(hands.from(), [{ kind: found.kind, text: found.text }]).then(
+      ([seen]) => seen ?? null,
+      () => {
+        // Not kept: a core that could not answer is asked again on the next hover.
+        kept.delete(key);
+        return null;
+      },
+    );
     if (kept.size >= MOST_KEPT) {
       const oldest = kept.keys().next().value;
       if (oldest !== undefined) kept.delete(oldest);

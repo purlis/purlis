@@ -12,6 +12,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { expect, waitFor, within } from "storybook/test";
 import { LinkAnswer } from "./PaneLinkSurfaces";
+import { LINK_CORE } from "./paneLinkCore";
 import { ReadOnlyTerminal } from "./ReadOnlyTerminal";
 import { untilFocused } from "./stories.testkit";
 
@@ -36,6 +37,7 @@ function Pane() {
         cols={COLS}
         rows={ROWS}
         fontSize={13}
+        links={LINK_CORE}
       />
     </div>
   );
