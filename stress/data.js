@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794354384550,
+  "lastUpdate": 1794363561916,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -19130,6 +19130,42 @@ window.BENCHMARK_DATA = {
             "value": 1224.9,
             "unit": "MB",
             "extra": "median of 6 samples: 1176.3, 1215, 1234.8, 1258.6, 1257.8, 752.9 MB; window 839.1 MB, session host 385.9 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "bfd4eacede04590b86ce9b1e4197edc53d70f45f",
+          "message": "Run grant: mydumper, Percona Toolkit's pt-*, gh-ost, Galera's helpers and the embedded clients refused whole (#5994) (#6108)\n\n* Run grant: mydumper, myloader, Percona Toolkit's pt-*, gh-ost, Galera's helpers and the embedded clients refused whole (#5994)\n\nEach runs a command, a script or a plugin its flags or files name. Refused in\nNOT_FOR_A_RUN_GRANT, pt-* by prefix as git- and wsrep_sst_ are. One run_grants test per\nfamily, each seen red first (\"not one of the declared tools\", not \"runs other programs\");\nthe clients and ptx pinned as still offered. ADR 0112 amendment and changelog fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M713H70HJTTS309EZX4KVF38\nPurlis-Persona: steward\n\n* Run grant: the Percona Toolkit test's name says by its prefix; ptar and pt_online_schema_change pinned as offered; the amendment names #6109 and D-5994-3 (#5994, review round 3)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M713H70HJTTS309EZX4KVF38\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T23:42:07Z",
+          "tree_id": "adfb96004c87b2793f2556a7548ded5bb4e36f5c",
+          "url": "https://github.com/purlis/purlis/commit/bfd4eacede04590b86ce9b1e4197edc53d70f45f"
+        },
+        "date": 1794363556033,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 2631.5,
+            "unit": "MB",
+            "extra": "median of 3 samples: 2423, 2631.5, 2881.9 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 1219,
+            "unit": "MB",
+            "extra": "median of 6 samples: 1177.1, 1197.5, 1240.6, 1283.6, 1284.1, 882 MB; window 859.3 MB, session host 401.5 MB"
           }
         ]
       }
