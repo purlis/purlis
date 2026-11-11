@@ -1,7 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { dequal } from "dequal/lite";
 import { RefreshCw } from "lucide-react";
 
 import type { Offer } from "./actions";
@@ -37,18 +38,25 @@ const NONE_UPDATED: PlaneUpdatedHere = { files: {}, skills: {} };
  */
 export function usePlaneUpdated(plane: PlaneId, instructionsChanges: number): PlaneUpdatedHere {
   const [updates, setUpdates] = useState<PlaneUpdatedHere>(NONE_UPDATED);
+  /** What is drawn, for an answer to be compared with before anything is set: an update that
+   *  changes nothing still draws the hook's owner once before React lets it go. */
+  const drawn = useRef(updates);
   useEffect(() => {
     let gone = false;
     void planeUpdatedAt(plane, instructionsChanges).then((all) => {
-      if (!gone)
-        setUpdates({
-          files: Object.fromEntries(
-            all.filter((one) => one.files.length > 0).map((one) => [one.session, one.files]),
-          ),
-          skills: Object.fromEntries(
-            all.filter((one) => one.skills).map((one) => [one.session, one]),
-          ),
-        });
+      if (gone) return;
+      const now: PlaneUpdatedHere = {
+        files: Object.fromEntries(
+          all.filter((one) => one.files.length > 0).map((one) => [one.session, one.files]),
+        ),
+        skills: Object.fromEntries(
+          all.filter((one) => one.skills).map((one) => [one.session, one]),
+        ),
+      };
+      // The same answer again draws nothing: the project's view is held (`memo`).
+      if (dequal(drawn.current, now)) return;
+      drawn.current = now;
+      setUpdates(now);
     });
     return () => {
       gone = true;

@@ -1207,8 +1207,11 @@ export const PlaneView = memo(function PlaneView({
    *  with no tab leaves the list without any tab changing (#1448). */
   const [stopsEnded, setStopsEnded] = useState(0);
   /** This project's save standing (charter-app#302): every project reads its own, so the project
-   *  strip can mark the ones with unsaved work and the title bar can show the one in front. */
-  const { saving, read: savingRead } = usePlaneSaving(plane);
+   *  strip can mark the ones with unsaved work and the title bar can show the one in front.
+   *  **On the 10 s beat only while in front** (felt speed, round 2): read here, outside this
+   *  view's own `ProjectShownProvider`, every project ran `git status` on the same tick. One
+   *  behind reads when its git standing moves, on focus, after a save and as it comes back. */
+  const { saving, read: savingRead } = usePlaneSaving(plane, inFront);
   /** The workspace whose LIVE/LOCAL confirmation is open (charter-app#301). */
   const [liveAsk, setLiveAsk] = useState<string>();
   /** The repo the "Remove from workspace" question is about, while it is open (#1228). */

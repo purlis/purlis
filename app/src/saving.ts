@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useOnShownAgain, useProjectShown } from "./projectShown";
+import { dequal } from "dequal/lite";
+import { afterPaint, useOnShownAgain, useProjectShown } from "./projectShown";
 import {
   commands,
   type Fixing,
@@ -11,7 +12,7 @@ import {
   type RepoSaving,
   type SaveMerge,
 } from "./bindings";
-import { GIT, usePlaneChanged } from "./planeChanged";
+import { followPlaneChanged, GIT, usePlaneChanged } from "./planeChanged";
 import { everyWhileShown } from "./whileShown";
 
 /** The window event a finished save sends, so every reader of the save standing reads again —
@@ -90,9 +91,21 @@ export const SAVING_REREAD_MS = 10_000;
  * finishes, and every {@link SAVING_REREAD_MS} while the window is shown. Written as
  * `useAlerts` is: the command's own promise, a `gone` flag, and state set only in its callback.
  *
- * The last answer is kept while the next is on its way, so the bar never blanks between reads.
+ * The last answer is kept while the next is on its way, so the bar never blanks between reads,
+ * and an answer equal to it is not a new one: nothing drawn from it is drawn again. **Nor is an
+ * ask a change of state** (felt speed, round 2): a change on disk, a focus, a beat or a save
+ * reads again from where it is heard (`followPlaneChanged`), so the view holding this, each
+ * project's `PlaneView`, is drawn again only for an answer that says something new.
+ *
+ * **`beat` false reads on no beat** (felt speed, round 2): a project behind the one in front
+ * (`PlaneView`, which marks its tab) reads its standing when its git standing moves, on focus
+ * and after a save, and once as it comes to the front, but not every 10 s with every other
+ * project in one tick.
  */
-export function usePlaneSaving(plane: PlaneId | undefined): {
+export function usePlaneSaving(
+  plane: PlaneId | undefined,
+  beat = true,
+): {
   saving: PlaneSaving | undefined;
   /** Whether a read of this project has answered, however it answered: the title bar marks the
    *  read until then (#5325), and a refused read is not one still on its way. */
@@ -100,35 +113,68 @@ export function usePlaneSaving(plane: PlaneId | undefined): {
   reread: () => void;
 } {
   const [saving, setSaving] = useState<{ plane: PlaneId; standing: PlaneSaving }>();
+  /** What is drawn, for an answer to be compared with before anything is set: an update that
+   *  changes nothing still draws the hook's owner once before React lets it go. */
+  const drawn = useRef(saving);
   const [answeredFor, setAnsweredFor] = useState<PlaneId>();
-  const [asked, setAsked] = useState(0);
-  const changed = usePlaneChanged(plane === undefined ? [] : [plane], GIT);
+  const answered = useRef(answeredFor);
+  /** Reads the standing again: nothing until there is a project to read. */
+  const readAgain = useRef<() => void>(() => undefined);
+  const shown = useProjectShown();
+  const shownNow = useRef(shown);
+  useEffect(() => {
+    shownNow.current = shown;
+  }, [shown]);
 
   useEffect(() => {
     if (plane === undefined) return;
     let gone = false;
-    void commands
-      .planeSaving(plane)
-      .then((answer) => {
-        // Only a standing is drawn: an answer that is not one says nothing about the plane.
-        if (!gone && answer.status === "ok" && typeof answer.data?.stage === "string")
-          setSaving({ plane, standing: answer.data });
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        if (!gone) setAnsweredFor(plane);
-      });
+    // Only the newest ask's answer is drawn: one that lands after a newer ask began says less.
+    let newest = 0;
+    const read = () => {
+      const ask = (newest += 1);
+      void commands
+        .planeSaving(plane)
+        .then((answer) => {
+          // Only a standing is drawn: an answer that is not one says nothing about the plane.
+          if (gone || ask !== newest) return;
+          if (answer.status !== "ok" || typeof answer.data?.stage !== "string") return;
+          const standing = answer.data;
+          const was = drawn.current;
+          if (was?.plane === plane && dequal(was.standing, standing)) return;
+          drawn.current = { plane, standing };
+          setSaving(drawn.current);
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          if (gone || answered.current === plane) return;
+          answered.current = plane;
+          setAnsweredFor(plane);
+        });
+    };
+    readAgain.current = read;
+    read();
+    // Its git standing moved on disk: read again, unless this is a view of a project kept behind
+    // another, which reads once as its project comes back (`useRereads`).
+    const stop = followPlaneChanged(
+      [plane],
+      () => GIT,
+      () => {
+        if (shownNow.current) read();
+      },
+    );
     return () => {
       gone = true;
+      stop();
+      readAgain.current = () => undefined;
     };
-  }, [plane, asked, changed]);
+  }, [plane]);
 
   // Coming back to the window is when the operator wants to know what came in: fetch, which the
   // core does at most once a minute, and whose answer reaches here as a plane change.
   // **Asked for the project in front and for each project's own standing** (`PlaneView`, which
   // marks a project's tab), and not by a view of a project kept behind another
   // (`projectShown.tsx`): that view shows nobody anything.
-  const shown = useProjectShown();
   useEffect(() => {
     if (plane === undefined || !shown) return;
     const fetch = () => void commands.planeFetch(plane).catch(() => undefined);
@@ -136,9 +182,9 @@ export function usePlaneSaving(plane: PlaneId | undefined): {
     return () => window.removeEventListener("focus", fetch);
   }, [plane, shown]);
 
-  useRereads(setAsked);
+  const reread = useCallback(() => readAgain.current(), []);
+  useRereads(reread, beat);
 
-  const reread = useCallback(() => setAsked((n) => n + 1), []);
   // Another project's answer is not this one's: drawn only for the project it was read for.
   return {
     saving: saving?.plane === plane ? saving?.standing : undefined,
@@ -159,19 +205,23 @@ export const RETURN_FOLD_MS = 1_000;
  *  **One read on return** (#1392, D-1392-6): coming back to the window both shows it and focuses
  *  it, and each asked on its own, so a return ran `git status` twice. A focus or a beat within
  *  {@link RETURN_FOLD_MS} of the last read asked here is the same return and asks nothing. A
- *  finished save always asks: it is news, not a return. */
-function useRereads(setAsked: (next: (n: number) => number) => void): void {
+ *  finished save always asks: it is news, not a return.
+ *
+ *  With `beat` false, nothing on the beat; turned on again, one read once the frame is painted,
+ *  for what the beat would have read meanwhile. */
+function useRereads(read: () => void, beat: boolean): void {
   // Not for a view of a project kept behind another (`projectShown.tsx`), which asks once as
   // its project comes back, after it is painted.
   const shown = useProjectShown();
-  useOnShownAgain(() => setAsked((n) => n + 1));
+  useOnShownAgain(read);
+  const beatWas = useRef(beat);
   useEffect(() => {
     if (!shown) return;
     // The monotonic clock: a wall clock set back would fold every return until it caught up.
     let last: number | undefined;
     const again = () => {
       last = performance.now();
-      setAsked((n) => n + 1);
+      read();
     };
     const returned = () => {
       if (last !== undefined && performance.now() - last < RETURN_FOLD_MS) return;
@@ -179,13 +229,17 @@ function useRereads(setAsked: (next: (n: number) => number) => void): void {
     };
     window.addEventListener("focus", returned);
     window.addEventListener(PLANE_SAVED, again);
-    const stop = everyWhileShown(SAVING_REREAD_MS, returned);
+    const stop = beat ? everyWhileShown(SAVING_REREAD_MS, returned) : undefined;
+    // The beat turned on again: what it would have read meanwhile, once the frame is painted.
+    const cancel = beat && !beatWas.current ? afterPaint(again) : undefined;
+    beatWas.current = beat;
     return () => {
       window.removeEventListener("focus", returned);
       window.removeEventListener(PLANE_SAVED, again);
-      stop();
+      stop?.();
+      cancel?.();
     };
-  }, [setAsked, shown]);
+  }, [read, shown, beat]);
 }
 
 /** How many mounted hooks hold each project and workspace's repo rows (`useRepoSavingKept`). */
@@ -256,7 +310,8 @@ export function useRepoSaving(
     };
   }, [plane, workspace, key, asked, changed]);
 
-  useRereads(setAsked);
+  const askAgain = useCallback(() => setAsked((n) => n + 1), []);
+  useRereads(askAgain, true);
   return key === undefined ? undefined : repos[key];
 }
 

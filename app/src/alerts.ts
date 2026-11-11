@@ -1,7 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { dequal } from "dequal/lite";
 import { commands, type PlaneAlerts, type PlaneId } from "./bindings";
 import { GIT, usePlaneChanged } from "./planeChanged";
 import { STILL_LOADING_AFTER } from "./projectLoads";
@@ -53,6 +54,9 @@ export function useAlerts(
   reread: () => void;
 } {
   const [reading, setReading] = useState<AlertsReading>({ at: "reading" });
+  /** What is drawn, for a reading to be compared with before anything is set: an update that
+   *  changes nothing still draws the hook's owner once before React lets it go. */
+  const drawn = useRef(reading);
   const [asked, setAsked] = useState(0);
   const [waited, setWaited] = useState(false);
   useEffect(() => {
@@ -67,20 +71,28 @@ export function useAlerts(
   // Written as `Extensions`'s first read is: the command's own promise, a `gone` flag, and the
   // state set inside the callback — so an answer that lands after a newer ask began, or after
   // the window let go, sets nothing.
+  //
+  // **A reading equal to the one held is not a new one**: it is kept, so nothing drawn from it
+  // is drawn again for the same answer (each project's view is held, `memo`).
   useEffect(() => {
     if (held) return;
     let gone = false;
+    const read = (now: AlertsReading) => {
+      if (dequal(drawn.current, now)) return;
+      drawn.current = now;
+      setReading(now);
+    };
     void commands
       .alertsEverywhere()
       .then((answer) => {
         if (gone) return;
-        if (answer.status === "error") setReading({ at: "failed", why: answer.error });
+        if (answer.status === "error") read({ at: "failed", why: answer.error });
         else if (!Array.isArray(answer.data))
-          setReading({ at: "failed", why: "purlis did not answer with a reading" });
-        else setReading({ at: "read", planes: answer.data });
+          read({ at: "failed", why: "purlis did not answer with a reading" });
+        else read({ at: "read", planes: answer.data });
       })
       .catch((err: unknown) => {
-        if (!gone) setReading({ at: "failed", why: String(err) });
+        if (!gone) read({ at: "failed", why: String(err) });
       });
     return () => {
       gone = true;
