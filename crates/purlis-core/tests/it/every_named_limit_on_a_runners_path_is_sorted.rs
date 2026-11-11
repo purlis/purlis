@@ -397,6 +397,18 @@ const SORTED: &[(&str, &str, Group, &str)] = &[
     ),
     (
         "crates/purlis-core/src/dockerpool.rs",
+        "MOST_OF_A_LINE",
+        Internal,
+        "how much purlis says at once",
+    ),
+    (
+        "crates/purlis-core/src/dockerpool.rs",
+        "LOG_LINES",
+        Internal,
+        "how much purlis says at once",
+    ),
+    (
+        "crates/purlis-core/src/dockerpool.rs",
         "MOST_SAID",
         Fixed,
         "fixedlimits::RUNNER_OUTPUT",

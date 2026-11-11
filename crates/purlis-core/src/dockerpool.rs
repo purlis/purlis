@@ -1320,6 +1320,105 @@ pub fn ran(inspected: &serde_json::Value) -> Ran {
     }
 }
 
+/// What a check that refuses a linked runner's container tells the person to do: the runner is
+/// still there, and only a new one is made as purlis checks it.
+const ADD_AGAIN: &str = "remove the runner and add it again";
+
+/// What the same refusal says as the runner is added instead, where purlis has already
+/// removed what the add made (#6181): there is no runner left to remove.
+const ADDED_AND_REMOVED: &str = "so the pool wasn't made, and purlis removed what it made. Try \
+     again, or choose another image for the pool";
+
+/// **`why` a runner being added was refused, said for the add** (#6181): a check's
+/// [`ADD_AGAIN`] is for a runner that is still there, and an add removes its own.
+fn said_for_the_add(why: Refused) -> Refused {
+    match why
+        .0
+        .strip_suffix(&format!(", so purlis does not link to it; {ADD_AGAIN}"))
+    {
+        Some(what) => refused(format!("{what}, {ADDED_AND_REMOVED}")),
+        None => why,
+    }
+}
+
+/// **How a container that stopped ended** (#6181): what Docker says of its end, read from
+/// `docker inspect`'s `State`, so an add that removes it can say why it stopped first.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Stopped {
+    /// Its program's exit code, where Docker gives one.
+    pub exit_code: Option<i64>,
+    /// Whether the kernel ended it for going past its memory limit.
+    pub oom_killed: bool,
+    /// What Docker said where it could not start the program; empty where it did.
+    pub error: String,
+}
+
+/// [`Stopped`], from what `docker inspect <container>` printed: `None` where the container
+/// runs, or where Docker does not say it is stopped.
+pub fn stopped(inspected: &serde_json::Value) -> Option<Stopped> {
+    let state = inspected.pointer("/0/State")?;
+    if state.get("Running")? != &serde_json::Value::Bool(false) {
+        return None;
+    }
+    Some(Stopped {
+        exit_code: state.get("ExitCode").and_then(serde_json::Value::as_i64),
+        oom_killed: state.get("OOMKilled") == Some(&serde_json::Value::Bool(true)),
+        error: state
+            .get("Error")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .trim()
+            .to_owned(),
+    })
+}
+
+/// The most of one line of a container's output said in the window (#6181): its whole log is
+/// in the app's log.
+const MOST_OF_A_LINE: usize = 300;
+
+/// **`text`'s last line with something on it**, without what a terminal reads as a control,
+/// and cut to [`MOST_OF_A_LINE`] characters.
+fn last_line(text: &str) -> Option<String> {
+    let line = text.lines().map(str::trim).rfind(|line| !line.is_empty())?;
+    let plain: String = line.chars().filter(|c| !c.is_control()).collect();
+    Some(match plain.char_indices().nth(MOST_OF_A_LINE) {
+        Some((at, _)) => format!("{}…", &plain[..at]),
+        None => plain,
+    })
+}
+
+/// **Why runner `name`'s container stopped as it was added, in plain words** (#6181): what
+/// Docker said of its end (`stopped`), the last line its program wrote (`last`), and what the
+/// person can do. purlis has already removed what the add made.
+pub fn stopped_said(name: &str, stopped: &Stopped, last: Option<&str>) -> String {
+    let wrote = last
+        .map(|line| format!(" Its last words were: \"{line}\"."))
+        .unwrap_or_default();
+    if stopped.oom_killed {
+        return format!(
+            "runner {name}'s container ran out of memory as it started, so the pool wasn't made, \
+             and purlis removed what it made.{wrote} Give the pool more memory, then try again"
+        );
+    }
+    if !stopped.error.is_empty() {
+        return format!(
+            "Docker could not start runner {name}'s container: it said \"{}\". So the pool \
+             wasn't made, and purlis removed what it made. Try again, or choose another image \
+             for the pool",
+            stopped.error
+        );
+    }
+    let code = stopped
+        .exit_code
+        .map(|code| format!(" (exit code {code})"))
+        .unwrap_or_default();
+    format!(
+        "runner {name}'s container stopped as soon as it started{code}, so the pool wasn't \
+         made, and purlis removed what it made.{wrote} Try again; if it stops again, change \
+         the pool's image or limits. Everything it wrote is in the app's log"
+    )
+}
+
 /// **The disk each volume holds, by its name** (#3493), from what `docker system df -v` printed
 /// (`printed`): its `Local Volumes space usage` table, as Docker and Podman both write it, a
 /// volume's name first on its line and its size last. A size is read as both write one (Go's
@@ -1418,8 +1517,7 @@ fn checked_on(
 ) -> Result<Seccomp, Refused> {
     let not = |what: &str| {
         refused(format!(
-            "runner {}'s container {what}, so purlis does not link to it; remove the runner and \
-             add it again",
+            "runner {}'s container {what}, so purlis does not link to it; {ADD_AGAIN}",
             made.runner.name
         ))
     };
@@ -2016,8 +2114,7 @@ pub fn check_oci(
 ) -> Result<(), Refused> {
     let not = |what: &str| {
         refused(format!(
-            "runner {}'s container {what}, so purlis does not link to it; remove the runner and \
-             add it again",
+            "runner {}'s container {what}, so purlis does not link to it; {ADD_AGAIN}",
             made.runner.name
         ))
     };
@@ -2109,7 +2206,7 @@ pub fn check_volume(inspected: &serde_json::Value, made: &Made) -> Result<(), Re
     let not = || {
         refused(format!(
             "runner {}'s home volume is not one of Docker's own, made with no options, so purlis \
-             does not link to it; remove the runner and add it again",
+             does not link to it; {ADD_AGAIN}",
             made.runner.name
         ))
     };
@@ -2705,6 +2802,31 @@ impl Docker {
         most: u64,
         within: Option<std::time::Duration>,
     ) -> Result<String, Failed> {
+        let ran = self.spawned(prepared, args, input, most, within)?;
+        let first = || args.first().map(String::as_str).unwrap_or_default();
+        if !ran.status.success() {
+            // Docker's own words say why (ADR 0078 §2: a connector's stderr is shown in full).
+            return Err(Failed::Refused(refused(format!(
+                "docker {} failed: {}",
+                first(),
+                String::from_utf8_lossy(&ran.said).trim()
+            ))));
+        }
+        String::from_utf8(ran.printed).map_err(|_| {
+            Failed::Refused(refused("docker answered with something that is not text"))
+        })
+    }
+
+    /// **`docker` run with `args`**, whatever its exit: what it printed, up to `most` bytes, and
+    /// what it said on standard error, up to [`MOST_SAID`].
+    fn spawned(
+        &self,
+        prepared: &settings::Prepared,
+        args: &[String],
+        input: Option<&str>,
+        most: u64,
+        within: Option<std::time::Duration>,
+    ) -> Result<crate::boundedrun::Ran, Failed> {
         let mut command = std::process::Command::new(&self.program);
         command.envs(prepared.env.iter().map(|(name, value)| (name, value)));
         for name in settings::CLEARED {
@@ -2741,17 +2863,7 @@ impl Docker {
                 }
             }))
         })?;
-        if !ran.status.success() {
-            // Docker's own words say why (ADR 0078 §2: a connector's stderr is shown in full).
-            return Err(Failed::Refused(refused(format!(
-                "docker {} failed: {}",
-                first(),
-                String::from_utf8_lossy(&ran.said).trim()
-            ))));
-        }
-        String::from_utf8(ran.printed).map_err(|_| {
-            Failed::Refused(refused("docker answered with something that is not text"))
-        })
+        Ok(ran)
     }
 
     fn json(&self, args: &[&str], what: &str) -> Result<serde_json::Value, Refused> {
@@ -2927,8 +3039,63 @@ impl Docker {
                 ));
                 Err(self.and_removed(why, made.container.as_str(), &volume))
             }
-            Err(why) => Err(self.and_removed(why, made.container.as_str(), &volume)),
+            Err(why) => {
+                // One that stopped is said by why it stopped, read before it is removed: its
+                // removal takes that with it (#6181).
+                let why = self
+                    .why_stopped(&made)
+                    .map_or_else(|| said_for_the_add(why), refused);
+                Err(self.and_removed(why, made.container.as_str(), &volume))
+            }
         }
+    }
+
+    /// **Why `made`'s container stopped, said for the add that made it** (#6181): `None` where
+    /// it runs, or Docker did not say. Its last lines go to the app's log as they are read, so
+    /// they are kept once the container is removed.
+    fn why_stopped(&self, made: &Made) -> Option<String> {
+        let id = made.container.as_str();
+        let inspected = self
+            .json(&["container", "inspect", id], "docker container inspect")
+            .ok()?;
+        let stopped = stopped(&inspected)?;
+        let (printed, said) = self.logs(id).unwrap_or_default();
+        tracing::warn!(
+            "purlis: runner {}'s container {} stopped as it was added ({stopped:?}); the last \
+             of what it wrote:\n{printed}{said}",
+            made.runner.name,
+            made.container.short()
+        );
+        let last = last_line(&said).or_else(|| last_line(&printed));
+        Some(stopped_said(&made.runner.name, &stopped, last.as_deref()))
+    }
+
+    /// **The last [`LOG_LINES`] lines `id`'s container wrote**, to its standard output and its
+    /// standard error, as `docker container logs` hands each back on its own.
+    fn logs(&self, id: &str) -> Result<(String, String), Refused> {
+        let args: Vec<String> = vec![
+            "container".into(),
+            "logs".into(),
+            "--tail".into(),
+            LOG_LINES.to_string(),
+            id.into(),
+        ];
+        let ran = self
+            .spawned(
+                &self.prepared()?,
+                &args,
+                None,
+                MOST_SAID,
+                Some(self.reads_within),
+            )
+            .map_err(Refused::from)?;
+        if !ran.status.success() {
+            return Err(refused("docker container logs failed"));
+        }
+        Ok((
+            String::from_utf8_lossy(&ran.printed).into_owned(),
+            String::from_utf8_lossy(&ran.said).into_owned(),
+        ))
     }
 
     /// **Whether `runner`'s image's `purlis` holds what it starts from namespaces** (D-2050-26),
@@ -3239,8 +3406,8 @@ impl Docker {
         {
             return Err(refused(format!(
                 "runner {}'s container lets its browser engine make namespaces, and its purlis \
-                 does not hold its programs from them, so purlis does not link to it; remove \
-                 the runner and add it again",
+                 does not hold its programs from them, so purlis does not link to it; \
+                 {ADD_AGAIN}",
                 made.runner.name
             )));
         }
@@ -3870,6 +4037,9 @@ const PROBE_WITHIN: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// How long a runner's own sign-out has: long enough to fetch the version its profile pins.
 pub(crate) const SIGN_OUT_WITHIN: std::time::Duration = std::time::Duration::from_secs(180);
+
+/// How many of a stopped runner's last lines are read before it is removed (#6181).
+const LOG_LINES: u32 = 200;
 
 /// The most of what `docker` says on standard error that purlis keeps to show.
 const MOST_SAID: u64 = 64 * 1024;
