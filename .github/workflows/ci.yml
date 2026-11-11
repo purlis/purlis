@@ -1898,6 +1898,10 @@ jobs:
       # has 16. At 3 it took one `rustc` to 14.4 GB and the runner shut down (#5277).
       - name: Build the app, the harness and the CLI for the scenario tests
         if: ${{ !matrix.sandbox }}
+        # A macOS release build takes 37-39 min; debug builds less. One stalled past an hour
+        # on main (2026-11-11, run 42929397737). Unbounded it holds its Mac for the job's
+        # 6 h default, so it fails here.
+        timeout-minutes: 75
         # The outcome bars are judged on a release build (the operator's ruling of 2026-11-03,
         # #4351): `dev-release`, release with thin LTO over sixteen codegen units, what the dev
         # channel ships. Every other leg builds debug.
