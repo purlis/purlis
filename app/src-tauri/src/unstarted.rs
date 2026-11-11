@@ -286,7 +286,22 @@ pub(crate) struct Waits {
 /// A chat the person opened, a handoff's chat, a task that had already reported and a task
 /// whose asking chat did not come back either are not here: they stay the window's own line.
 pub(crate) fn waiting(held: &Held) -> Vec<Waits> {
-    let root = held.root();
+    // Read once, and only where a chat waits: every waiting chat's record is in it.
+    let listed = std::cell::OnceCell::new();
+    waits(held, |worker| {
+        listed
+            .get_or_init(|| dispatchrecord::ledger(held.root()))
+            .latest_for(held.root(), worker)
+    })
+}
+
+/// [`waiting`], from `listed`, a reading of the store its caller already has.
+fn waiting_in(held: &Held, listed: &dispatchrecord::Ledger) -> Vec<Waits> {
+    waits(held, |worker| listed.latest_for(held.root(), worker))
+}
+
+/// [`waiting`], where `latest` answers for the newest dispatch of a worker chat.
+fn waits(held: &Held, latest: impl Fn(&ChatRef) -> Option<Record>) -> Vec<Waits> {
     let open = crate::dispatches::open_chats(held);
     let now_open = |chat: &ChatRef| {
         open.iter()
@@ -306,7 +321,7 @@ pub(crate) fn waiting(held: &Held) -> Vec<Waits> {
                 name: name.clone(),
                 persona: chat.persona.clone(),
             };
-            let record = dispatchrecord::latest_for(root, &worker);
+            let record = latest(&worker);
             // The chat that asked, where it is open now: by the dispatch's record of it,
             // which names it by an id a launch keeps; else by the number the task's own
             // record has.
@@ -391,8 +406,14 @@ pub(crate) fn rows(held: &Held) -> Vec<crate::finished::FinishedTask> {
 
 /// Chat `asker`'s tasks that a launch could not start again, as its own list has them: by
 /// the number each had, with the standing a task waiting on the person has.
-pub(crate) fn listed_for(held: &Held, asker: u32) -> Vec<purlis_core::dispatched::Row> {
-    waiting(held)
+///
+/// From `listed`, the list's one reading of the store (felt speed round 2).
+pub(crate) fn listed_for(
+    held: &Held,
+    asker: u32,
+    listed: &dispatchrecord::Ledger,
+) -> Vec<purlis_core::dispatched::Row> {
+    waiting_in(held, listed)
         .into_iter()
         .filter(|task| task.asker == asker)
         .map(|task| purlis_core::dispatched::Row {

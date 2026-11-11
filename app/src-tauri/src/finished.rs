@@ -307,74 +307,89 @@ fn ended_as(held: &Held, record: &Record, asker: u32) -> Option<u32> {
 /// ones: by the number each task's chat had, where that chat ended in this launch and a wait
 /// still reads its report by it; with none (0) for one that finished before this app was
 /// started, whose number may be another chat's by now.
-pub(crate) fn listed_for(held: &Held, asker: u32) -> Vec<purlis_core::dispatched::Row> {
+///
+/// **From `listed`, the list's one reading of the store** (felt speed round 2): of the ended
+/// records, only the ones its summary says this chat asked for are read. The ones a launch
+/// could not start again ([`crate::unstarted::listed_for`]) and the ones orphaned by a restart
+/// ([`orphans_listed_for`]) are listed after these.
+pub(crate) fn listed_for(
+    held: &Held,
+    asker: u32,
+    listed: &dispatchrecord::Ledger,
+) -> Vec<purlis_core::dispatched::Row> {
     let Some(me) = crate::dispatches::chat_ref(held, asker) else {
         return Vec::new();
     };
     let open = crate::dispatches::open_chats(held);
     let now = chrono::Utc::now();
-    dispatchrecord::finished_for(held.root(), &me, |worker| {
-        open.iter().any(|one| is_open(worker, one))
-    })
-    .iter()
-    .filter(|record| !held.tasks().reopening(&record.id))
-    .filter_map(|record| {
-        let how = Finished::of(record)?;
-        Some(purlis_core::dispatched::Row {
-            chat: ended_as(held, record, asker).unwrap_or(purlis_core::dispatched::NO_NUMBER_KNOWN),
-            name: name_of(record),
-            persona: record.persona.clone(),
-            place: record
-                .place
-                .workspace
-                .clone()
-                .map_or(
-                    purlis_core::active::Place::PlaneRoot,
-                    purlis_core::active::Place::Workspace,
-                )
-                .word()
-                .to_owned(),
-            state: match how {
-                // It never ran, so it reported nothing (#1497).
-                Finished::Failed if record.did_not_start => {
-                    purlis_core::didnotstart::LISTED.to_owned()
-                }
-                Finished::Done | Finished::Cancelled | Finished::Blocked | Finished::Failed => {
-                    format!("reported: {}", how.word())
-                }
-                // A chat reads this, and the person is not it: "by the person".
-                Finished::EndedWithoutAReport
-                | Finished::StoppedByThePerson
-                | Finished::ClosedByThePerson
-                | Finished::StoppedAtItsTimeLimit
-                | Finished::StoppedWithTheTaskAbove
-                | Finished::StoppedAtItsTokenLimit
-                | Finished::FromItsLastMessage => how.said_to_a_chat().to_owned(),
-            },
-            age_secs: chrono::DateTime::parse_from_rfc3339(&record.started)
-                .ok()
-                .and_then(|started| (now - started.with_timezone(&chrono::Utc)).to_std().ok())
-                .map(|age| age.as_secs()),
-            by_person: record.asker.by_person,
-            branch: record
-                .place
-                .worktree
-                .as_ref()
-                .and_then(|tree| tree.branch.clone()),
-            branch_stands: None,
-            long: false,
-            last_note: None,
-            noted_secs: None,
-            finished: true,
-            liveness: None,
+    listed
+        .finished_for(held.root(), &me, |worker| {
+            open.iter().any(|one| is_open(worker, one))
         })
-    })
-    // And the ones a launch could not start again, by the number each had: waiting on the
-    // person, and not somebody else's.
-    .chain(crate::unstarted::listed_for(held, asker))
-    // And the ones nothing brought back at all (#3900).
-    .chain(orphaned_for(held, &me, &open))
-    .collect()
+        .iter()
+        .filter(|record| !held.tasks().reopening(&record.id))
+        .filter_map(|record| {
+            let how = Finished::of(record)?;
+            Some(purlis_core::dispatched::Row {
+                chat: ended_as(held, record, asker)
+                    .unwrap_or(purlis_core::dispatched::NO_NUMBER_KNOWN),
+                name: name_of(record),
+                persona: record.persona.clone(),
+                place: record
+                    .place
+                    .workspace
+                    .clone()
+                    .map_or(
+                        purlis_core::active::Place::PlaneRoot,
+                        purlis_core::active::Place::Workspace,
+                    )
+                    .word()
+                    .to_owned(),
+                state: match how {
+                    // It never ran, so it reported nothing (#1497).
+                    Finished::Failed if record.did_not_start => {
+                        purlis_core::didnotstart::LISTED.to_owned()
+                    }
+                    Finished::Done | Finished::Cancelled | Finished::Blocked | Finished::Failed => {
+                        format!("reported: {}", how.word())
+                    }
+                    // A chat reads this, and the person is not it: "by the person".
+                    Finished::EndedWithoutAReport
+                    | Finished::StoppedByThePerson
+                    | Finished::ClosedByThePerson
+                    | Finished::StoppedAtItsTimeLimit
+                    | Finished::StoppedWithTheTaskAbove
+                    | Finished::StoppedAtItsTokenLimit
+                    | Finished::FromItsLastMessage => how.said_to_a_chat().to_owned(),
+                },
+                age_secs: chrono::DateTime::parse_from_rfc3339(&record.started)
+                    .ok()
+                    .and_then(|started| (now - started.with_timezone(&chrono::Utc)).to_std().ok())
+                    .map(|age| age.as_secs()),
+                by_person: record.asker.by_person,
+                branch: record
+                    .place
+                    .worktree
+                    .as_ref()
+                    .and_then(|tree| tree.branch.clone()),
+                branch_stands: None,
+                long: false,
+                last_note: None,
+                noted_secs: None,
+                finished: true,
+                liveness: None,
+            })
+        })
+        .collect()
+}
+
+/// The tasks of chat `asker` nothing brought back at all (#3900), as its list lists them
+/// last.
+pub(crate) fn orphans_listed_for(held: &Held, asker: u32) -> Vec<purlis_core::dispatched::Row> {
+    let Some(me) = crate::dispatches::chat_ref(held, asker) else {
+        return Vec::new();
+    };
+    orphaned_for(held, &me, &crate::dispatches::open_chats(held))
 }
 
 /// **The tasks of the chat `me` orphaned by a restart** (#3900): their dispatch records still
