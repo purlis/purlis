@@ -254,7 +254,8 @@ export function ActivityGroup({
  * first and last item, and Tab leaves it, so it is one Tab stop.
  *
  * **Coming back in lands on the item in front**, the one marked `aria-current`, from either
- * side, as a tab list lands on its selected tab; with none in front, on the item it left.
+ * side, as a tab list lands on its selected tab; with none in front, on the item it left. A
+ * click is not coming back in: the focus stays on the item clicked (#6120).
  *
  * **An item being carried keeps its keys**: while an item is marked `data-dragging`, its
  * arrows are its drag's (`sortable.tsx`, `keepsTheFocus`), so the toolbar leaves them alone.
@@ -275,6 +276,15 @@ export function ActivityToolbar({
   const restore = toolbarProps.onFocusCapture;
   const own = {
     ...toolbarProps,
+    onPointerDownCapture: (event: PointerEvent<HTMLDivElement>) => {
+      pressing.add(event.currentTarget);
+    },
+    onPointerUpCapture: (event: PointerEvent<HTMLDivElement>) => {
+      pressing.delete(event.currentTarget);
+    },
+    onPointerCancelCapture: (event: PointerEvent<HTMLDivElement>) => {
+      pressing.delete(event.currentTarget);
+    },
     onKeyDownCapture: (event: KeyboardEvent<HTMLDivElement>) => {
       const target = event.target as HTMLElement;
       if (target.closest("[data-dragging]") !== null) return;
@@ -290,12 +300,13 @@ export function ActivityToolbar({
       walk?.(event);
     },
     onFocusCapture: (event: FocusEvent<HTMLDivElement>) => {
+      const pressed = pressing.delete(event.currentTarget);
       const from = event.relatedTarget;
       const entering = !(from instanceof Node && event.currentTarget.contains(from));
       const inFront = itemsOf(event.currentTarget).find((item) =>
         item.hasAttribute("aria-current"),
       );
-      if (!entering || inFront === undefined) {
+      if (!entering || inFront === undefined || pressed) {
         restore?.(event);
         return;
       }
@@ -308,6 +319,13 @@ export function ActivityToolbar({
     </div>
   );
 }
+
+/**
+ * The toolbars a press is in, until the focus it brings (#6120): an engine that focuses a button
+ * on its press, as Chromium and Firefox do and WebKit does not, brings the focus in from outside,
+ * and that is a click on its item, never the keyboard coming back in.
+ */
+const pressing = new WeakSet<Element>();
 
 /** The items of a toolbar that take the keyboard, in the document's order. */
 function itemsOf(toolbar: HTMLElement): HTMLElement[] {
