@@ -48,6 +48,18 @@ pub fn here(app: &tauri::AppHandle) -> Box<dyn Center + '_> {
     Box::new(Plugin(app))
 }
 
+/// **The system's own notification sound, by the name the plugin passes on** (#6110): the
+/// freedesktop sound theme's warning on Linux and the BSDs (the `sound-name` hint, which a
+/// notification server without sounds ignores), and the default sound elsewhere: macOS's
+/// `NSUserNotificationDefaultSoundName` (a build that is no app bundle) and Windows's `Default`.
+const SOUND: &str = if cfg!(all(unix, not(target_os = "macos"))) {
+    "dialog-warning"
+} else if cfg!(target_os = "macos") {
+    "NSUserNotificationDefaultSoundName"
+} else {
+    "Default"
+};
+
 /// The notification plugin's: it replaces and takes away by id on Linux and the BSDs only
 /// ([`REPLACES_HERE`]).
 struct Plugin<'a>(&'a tauri::AppHandle);
@@ -66,14 +78,17 @@ impl Center for Plugin<'_> {
         }
         // No action type: a notification has no Allow or Deny of its own, which would answer
         // past the settle guard (ADR 0121 decision 12).
-        let _ = self
+        let mut builder = self
             .0
             .notification()
             .builder()
             .id(notice.id)
             .title(notice.title.clone())
-            .body(notice.body.clone())
-            .show();
+            .body(notice.body.clone());
+        if notice.sound {
+            builder = builder.sound(SOUND);
+        }
+        let _ = builder.show();
     }
 
     fn remove(&self, id: i32) {

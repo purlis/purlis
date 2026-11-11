@@ -226,11 +226,12 @@ const finishedAfter: LiveSetting = {
   },
 };
 
-// The sound itself is #6110: until it plays, the row says so.
+// The notifier plays it (#6110, `asknotify.rs`, `SOUND_BEFORE`): the chat's notification, shown
+// again with the system's own sound in the ask's last 15 seconds.
 const expiringSound: LiveSetting = {
   id: "you.notifications.expiringSound",
   label: "Sound for an expiring ask",
-  help: "A sound as an ask with a countdown is about to time out. Off unless you turn it on. purlis plays no sound yet: your choice is kept for when it does.",
+  help: "A sound as an ask with a countdown has 15 seconds left, once for each ask, and never while it's Quiet. Off unless you turn it on.",
   writes: "this machine",
   useControl: function useExpiringSound() {
     const { expiringSound: on } = useNotificationPrefs();

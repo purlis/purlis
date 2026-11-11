@@ -24,7 +24,7 @@ use objc2::runtime::Bool;
 use objc2_foundation::{NSArray, NSBundle, NSError, NSString};
 use objc2_user_notifications::{
     UNAuthorizationOptions, UNMutableNotificationContent, UNNotificationRequest,
-    UNUserNotificationCenter,
+    UNNotificationSound, UNUserNotificationCenter,
 };
 
 use super::Notice;
@@ -70,6 +70,11 @@ impl Center for UserNotifications {
         let content = UNMutableNotificationContent::new();
         content.setTitle(&NSString::from_str(&notice.title));
         content.setBody(&NSString::from_str(&notice.body));
+        // The Expiring sound (#6110): the system's own notification sound, which the person's
+        // notification settings for purlis can still turn off.
+        if notice.sound {
+            content.setSound(Some(&UNNotificationSound::defaultSound()));
+        }
         let request = UNNotificationRequest::requestWithIdentifier_content_trigger(
             &identifier(notice.id),
             &content,

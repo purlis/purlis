@@ -120,7 +120,7 @@ objc2-web-kit = { version = "0.3.2", default-features = false, features = ["std"
 # A chat's notification replaced and taken away in place (#6059, `asknotify_macos.rs`): the
 # system's own notification center, which the plugin's notify-rust cannot reach. The version
 # already in Cargo.lock (through objc2-ui-kit), so nothing new is in the tree.
-objc2-user-notifications = { version = "0.3.2", default-features = false, features = ["std", "block2", "UNUserNotificationCenter", "UNNotificationContent", "UNNotificationRequest", "UNNotificationTrigger"] }
+objc2-user-notifications = { version = "0.3.2", default-features = false, features = ["std", "block2", "UNUserNotificationCenter", "UNNotificationContent", "UNNotificationRequest", "UNNotificationSound", "UNNotificationTrigger"] }
 
 # The desktop portal, asked on the session bus before GTK asks it (charter-app#24,
 # `portal.rs`). The version `tauri-plugin-single-instance` already brings in on Linux, so

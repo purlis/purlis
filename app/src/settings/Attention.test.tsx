@@ -182,6 +182,14 @@ describe("the Expiring sound", () => {
     await userEvent.click(on);
     expect(notificationPrefs().expiringSound).toBe(true);
   });
+
+  it("says when it plays, and no longer that it does not", () => {
+    const sound = notificationsGroup().settings.find(
+      (one) => one.id === "you.notifications.expiringSound",
+    );
+    expect(sound?.help).toContain("15 seconds left");
+    expect(sound?.help).not.toContain("plays no sound");
+  });
 });
 
 describe("the Stuck? thresholds, moved off Dispatch", () => {

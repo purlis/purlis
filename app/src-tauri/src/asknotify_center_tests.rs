@@ -57,6 +57,7 @@ fn notice(id: i32, replaces: bool, news: bool, body: &str) -> Notice {
         title: "steward 12 › chat 3".to_owned(),
         body: body.to_owned(),
         update: None,
+        sound: false,
     }
 }
 

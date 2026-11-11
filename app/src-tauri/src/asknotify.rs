@@ -56,6 +56,12 @@
 //! **No notification has an Allow or Deny of its own**: it is shown with no action type, since
 //! answering from it would bypass the settle guard (ADR 0121 decision 12).
 //!
+//! **No sound, but the Expiring one** (#6110, decision 12; [`Rules::expiring`]): with the
+//! person's "Sound for an expiring ask" on (`notifications.expiringSound`, off by default), an
+//! Expiring ask within [`SOUND_BEFORE`] of its end shows its chat's notification again with the
+//! system's own notification sound, once per ask, never while Quiet or while the person looks
+//! at its chat ([`should_sound`]).
+//!
 //! **Nothing is sent while it is Quiet** (#6017, ADR 0121 decision 13): in the person's quiet
 //! hours ([`QuietHours`], Settings › You › Notifications, kept in the layout file), while
 //! "Quiet now" is on, and while they type in a chat, until [`TYPING_QUIET`] after their last key
@@ -143,6 +149,9 @@ pub struct Notice {
     /// The update it tells of, by its key in Updates (`task:<dispatch id>`), where it tells of
     /// a task that ended ([`Rules::ended`]) and not of asks: a click opens that line in place.
     pub update: Option<String>,
+    /// Whether it plays the system's own notification sound: only where it is shown again
+    /// because one of its chat's Expiring asks is nearly out ([`Rules::expiring`], #6110).
+    pub sound: bool,
 }
 
 /// Where a click on a notification lands, as the window holding `plane` is sent it.
@@ -256,6 +265,61 @@ impl Sources {
 /// otherwise (`notifications.finishedAfter`, in minutes; ADR 0121 decisions 3 and 22).
 pub const FINISHED_AFTER: Duration = Duration::from_secs(5 * 60);
 
+/// **How near its end an Expiring ask sounds**, in seconds (#6110, ADR 0121 decision 12): its
+/// last 15. The shortest countdown a person can still beat is a permission prompt's, about 58
+/// seconds, and its row counts in seconds below a minute; 15 is time enough to reach the
+/// window and answer. An ask first heard with less left than this sounds as it is heard.
+pub const SOUND_BEFORE: u32 = 15;
+
+/// **Whether an Expiring ask sounds now** (#6110, ADR 0121 decisions 11, 12 and 13): only with
+/// the sound `on` (Settings › You › Attention, off unless the person turns it on), never while
+/// it is `quiet` or the person is `looking` at its chat, and once per ask; then only while it
+/// is Expiring (`Shown::expires`, still ahead at `now`, in seconds since 1970) and within
+/// [`SOUND_BEFORE`] of its end. An ask Quiet holds open has no end said, so it never sounds.
+pub fn should_sound(
+    ask: &Shown,
+    now: u32,
+    on: bool,
+    quiet: bool,
+    looking: bool,
+    already_sounded: bool,
+) -> bool {
+    on && !quiet
+        && !looking
+        && !already_sounded
+        && ask
+            .expires
+            .is_some_and(|end| end > now && end - now <= SOUND_BEFORE)
+}
+
+/// One read of a project's asks, as [`Rules::expiring`] takes it.
+pub struct Expiring<'a> {
+    pub plane: &'a PlaneId,
+    /// What the ✋ counts of it, as [`Heard::asks`].
+    pub asks: &'a [Shown],
+    /// Now, in seconds since 1970, as an ask's end is said.
+    pub wall: u32,
+    /// Now, as the notifier wakes by it.
+    pub now: Instant,
+    /// Whether the person turned the Expiring sound on ([`expiring_sound_of_layout`]).
+    pub on: bool,
+    /// Whether it is Quiet now.
+    pub quiet: bool,
+    /// Whether the person is looking at a chat now ([`Looking`]).
+    pub looking: &'a dyn Fn(u32) -> bool,
+}
+
+/// **Whether an Expiring ask nearly out plays a sound**, as a layout document keeps it:
+/// `notifications.expiringSound`, `true` only (`app/src/notificationPrefs.ts`). Anything else is
+/// off, the default.
+pub fn expiring_sound_of_layout(document: &serde_json::Value) -> bool {
+    document
+        .get("notifications")
+        .and_then(|held| held.get("expiringSound"))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+}
+
 /// **What has been told, and what waits to be**: the whole of the notifier's memory.
 #[derive(Default)]
 pub struct Rules {
@@ -289,6 +353,12 @@ pub struct Rules {
     /// **When each project's first snoozed chat comes back by itself** (#6018, ADR 0121
     /// decision 14): the notifier reads the project again then, so its asks are heard anew.
     snoozes_end: HashMap<PlaneId, Instant>,
+    /// **The Expiring asks of each project that sounded** (#6110), by key: each sounds once.
+    /// An ask no longer listed is let go of.
+    sounded: HashMap<PlaneId, HashSet<String>>,
+    /// **When each project's next Expiring ask comes [`SOUND_BEFORE`] its end** (#6110), while
+    /// the sound is on: the notifier reads the project again then, and the ask sounds.
+    sounds_due: HashMap<PlaneId, Instant>,
 }
 
 /// A chat waiting, as it was read last.
@@ -563,8 +633,74 @@ impl Rules {
         acts
     }
 
+    /// **What one read of a project's asks sounds** (#6110, ADR 0121 decision 12): each
+    /// Expiring ask that is nearly out ([`should_sound`]) sounds once, as its chat's notification
+    /// shown again with the system's own sound; one per chat, however many of its asks are. A
+    /// chat no notification stands for is told now, with the sound. The next ask to come
+    /// [`SOUND_BEFORE`] its end is read again then ([`Self::next_due`]).
+    pub fn expiring(&mut self, expiring: &Expiring<'_>) -> Vec<Act> {
+        let plane = expiring.plane;
+        let sounded = self.sounded.entry(plane.clone()).or_default();
+        sounded.retain(|key| expiring.asks.iter().any(|ask| &ask.ask == key));
+        let mut chats: Vec<u32> = Vec::new();
+        let mut next: Option<u32> = None;
+        for ask in expiring.asks {
+            let already = sounded.contains(&ask.ask);
+            if should_sound(
+                ask,
+                expiring.wall,
+                expiring.on,
+                expiring.quiet,
+                (expiring.looking)(ask.session),
+                already,
+            ) {
+                sounded.insert(ask.ask.clone());
+                if !chats.contains(&ask.session) {
+                    chats.push(ask.session);
+                }
+            } else if expiring.on && !already {
+                let at = ask
+                    .expires
+                    .map(|end| end.saturating_sub(SOUND_BEFORE))
+                    .filter(|at| *at > expiring.wall);
+                if let Some(at) = at {
+                    next = Some(next.map_or(at, |first| first.min(at)));
+                }
+            }
+        }
+        match next {
+            Some(at) => self.sounds_due.insert(
+                plane.clone(),
+                expiring.now + Duration::from_secs(u64::from(at - expiring.wall)),
+            ),
+            None => self.sounds_due.remove(plane),
+        };
+        chats
+            .into_iter()
+            .map(|session| Act::Show(self.sounding(&(plane.clone(), session))))
+            .collect()
+    }
+
+    /// **`chat`'s notification, shown again with the sound**: its own, or the burst's that
+    /// counts it; or, where none stands for it, its own told now.
+    fn sounding(&mut self, chat: &Chat) -> Notice {
+        let mut notice = if let Some(&id) = self.own.get(chat) {
+            self.own_notice(id, chat, true, true)
+        } else if let Some(many) = self.many.as_ref().filter(|many| many.chats.contains(chat)) {
+            let (id, chats) = (many.id, many.chats.clone());
+            self.many_notice(id, chats, true, true)
+        } else {
+            let id = self.next_id();
+            self.own.insert(chat.clone(), id);
+            self.own_notice(id, chat, false, true)
+        };
+        notice.sound = true;
+        notice
+    }
+
     /// **When the notifier should wake by itself next**: when the burst open closes with
-    /// chats in it not told yet, or when a project's snooze runs out (#6018).
+    /// chats in it not told yet, when a project's snooze runs out (#6018), or when an Expiring
+    /// ask is nearly out (#6110).
     pub fn next_due(&self) -> Option<Instant> {
         let burst = self.burst.as_ref().and_then(|burst| {
             burst
@@ -576,17 +712,21 @@ impl Rules {
         burst
             .into_iter()
             .chain(self.snoozes_end.values().copied())
+            .chain(self.sounds_due.values().copied())
             .min()
     }
 
-    /// **The projects whose snooze has run out by `now`** (#6018): the notifier reads them
-    /// again, so the asks of a chat back by itself are heard anew.
+    /// **The projects whose snooze has run out by `now`** (#6018), or with an Expiring ask
+    /// nearly out (#6110): the notifier reads them again, so the asks of a chat back by itself
+    /// are heard anew, and the ask sounds.
     pub fn due(&self, now: Instant) -> Vec<PlaneId> {
-        self.snoozes_end
-            .iter()
-            .filter(|(_, end)| **end <= now)
-            .map(|(plane, _)| plane.clone())
-            .collect()
+        let mut due: Vec<PlaneId> = Vec::new();
+        for (plane, at) in self.snoozes_end.iter().chain(&self.sounds_due) {
+            if *at <= now && !due.contains(plane) {
+                due.push(plane.clone());
+            }
+        }
+        due
     }
 
     /// **When `plane`'s first snoozed chat comes back by itself**, as its last read said, or
@@ -625,6 +765,8 @@ impl Rules {
         self.waits.retain(|(of, _), _| of != plane);
         self.held.retain(|(of, _)| of != plane);
         self.snoozes_end.remove(plane);
+        self.sounded.remove(plane);
+        self.sounds_due.remove(plane);
         if let Some(burst) = &mut self.burst {
             burst.chats.retain(|(of, _)| of != plane);
         }
@@ -772,6 +914,7 @@ impl Rules {
             title,
             body: format!("{}: {said}", project_name(&chat.0)),
             update: None,
+            sound: false,
         }
     }
 
@@ -821,6 +964,7 @@ impl Rules {
             title,
             body,
             update: None,
+            sound: false,
         }
     }
 }
@@ -917,6 +1061,7 @@ fn finishes_after_quiet(
         },
         chats,
         update: Some(first),
+        sound: false,
     }
 }
 
@@ -940,6 +1085,7 @@ fn finish_notice(id: i32, plane: &PlaneId, finish: &Finish) -> Notice {
             )
         },
         update: Some(update_key(finish)),
+        sound: false,
     }
 }
 
@@ -1522,6 +1668,7 @@ fn listen(app: &tauri::AppHandle, heard: &mpsc::Receiver<Poke>) {
         let sources = document
             .as_ref()
             .map_or_else(Sources::default, Sources::of_layout);
+        let sound = document.as_ref().is_some_and(expiring_sound_of_layout);
         scheduling = hours.is_some();
         let quiet = app.try_state::<Notifier>().is_some_and(|notifier| {
             notifier
@@ -1554,7 +1701,7 @@ fn listen(app: &tauri::AppHandle, heard: &mpsc::Receiver<Poke>) {
             }
         }
         for plane in planes {
-            read(app, &mut rules, &plane, quiet, long, sources);
+            read(app, &mut rules, &plane, quiet, long, sources, sound);
         }
         for act in rules.woke(Instant::now(), &is_looking) {
             send(app, act);
@@ -1636,7 +1783,7 @@ fn woken_at(
 }
 
 /// Reads `plane`'s asks and its tasks that ended, and does what [`Rules`] says to, while it is
-/// `quiet` or not, with `long` as a long finish.
+/// `quiet` or not, with `long` as a long finish, and with the Expiring `sound` on or not.
 fn read(
     app: &tauri::AppHandle,
     rules: &mut Rules,
@@ -1644,6 +1791,7 @@ fn read(
     quiet: bool,
     long: Duration,
     sources: Sources,
+    sound: bool,
 ) {
     let Some(held) = app
         .try_state::<Planes>()
@@ -1672,6 +1820,16 @@ fn read(
         quiet: &|| quiet,
         now,
     });
+    // The Expiring sound (#6110): an ask nearly out sounds once, read as the ✋ counts it.
+    acts.extend(rules.expiring(&Expiring {
+        plane,
+        asks: &asking.asks,
+        wall: wall_now(),
+        now,
+        on: sound,
+        quiet,
+        looking: &is_looking,
+    }));
     // Should know (#6005): the tasks that ended, read off their records as the window reads its
     // finished rows on every move of a chat. Only a failure or a long finish while away is told.
     let finishes = crate::finished::finishes(&held);
@@ -1778,3 +1936,7 @@ mod macos;
 #[cfg(test)]
 #[path = "asknotify_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "asknotify_sound_tests.rs"]
+mod sound_tests;
