@@ -104,44 +104,133 @@ fn a_script_in_no_skill_is_approved_by_its_own_folder() {
     assert_eq!(resolved.code, here.workspace.join("tools"));
 }
 
-/// #6120: a `SKILL.md` at the plane's root or a workspace's, or a script standing at either
-/// itself, would make the whole plane or workspace the approved code, and with it what a run may
-/// read. Refused, never approved as a whole.
-#[test]
-fn a_code_folder_at_the_plane_s_root_or_a_workspace_s_is_refused() {
-    let here = Here::new();
-    std::fs::create_dir_all(here.workspace.join("tools")).unwrap();
-    std::fs::write(here.workspace.join("tools/make.sh"), "echo").unwrap();
-    let beta = here.root.join("workspaces/beta");
-    std::fs::create_dir_all(beta.join("tools")).unwrap();
-    std::fs::write(beta.join("tools/make.sh"), "echo").unwrap();
-    let refused = |command: &str| {
-        let why = here.resolve(command).unwrap_err();
-        assert!(why.contains("never approves a whole"), "{command}: {why}");
-    };
-
-    std::fs::write(here.workspace.join(SKILL_FILE), "# planted").unwrap();
-    refused("./tools/make.sh");
-    std::fs::remove_file(here.workspace.join(SKILL_FILE)).unwrap();
-
-    std::fs::write(beta.join(SKILL_FILE), "# planted").unwrap();
-    refused("/bin/sh ../beta/tools/make.sh");
-    std::fs::remove_file(beta.join(SKILL_FILE)).unwrap();
-
-    std::fs::write(here.root.join(SKILL_FILE), "# planted").unwrap();
-    refused("./tools/make.sh");
-    // A skill of its own below the root is still its code folder.
-    assert_eq!(
-        here.resolve(COMMAND).unwrap().code,
-        here.root.join("skills/report")
+/// #6120, as ruled 2026-11-11: a code folder is accepted only strictly below a workspace's root
+/// or in a skill's folder. Anything else is refused by one sentence, whatever shape it has.
+fn refused(here: &Here, command: &str) {
+    let why = here.resolve(command).unwrap_err();
+    assert!(
+        why.contains(
+            "Regenerate approves only code below a workspace's root or in a skill's folder"
+        ),
+        "{command}: {why}"
     );
-    std::fs::remove_file(here.root.join(SKILL_FILE)).unwrap();
+}
 
-    std::fs::write(here.workspace.join("make.sh"), "echo").unwrap();
-    refused("./make.sh");
+/// A file at `at` below the plane, its folders made.
+fn file(here: &Here, at: &str) {
+    let path = here.root.join(at);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, "echo").unwrap();
+}
+
+#[test]
+fn a_skill_md_at_the_plane_s_root_never_makes_it_the_code_folder() {
+    let here = Here::new();
+    file(&here, "workspaces/alpha/tools/make.sh");
+    file(&here, SKILL_FILE);
+    refused(&here, "./tools/make.sh");
+}
+
+#[test]
+fn a_skill_md_at_a_workspace_s_root_never_makes_it_the_code_folder() {
+    let here = Here::new();
+    file(&here, "workspaces/alpha/tools/make.sh");
+    file(&here, "workspaces/alpha/SKILL.md");
+    refused(&here, "./tools/make.sh");
+    file(&here, "workspaces/beta/tools/make.sh");
+    file(&here, "workspaces/beta/SKILL.md");
+    refused(&here, "/bin/sh ../beta/tools/make.sh");
+}
+
+#[test]
+fn a_script_at_a_workspace_s_root_is_refused() {
+    let here = Here::new();
+    file(&here, "workspaces/alpha/make.sh");
+    refused(&here, "./make.sh");
+}
+
+#[test]
+fn a_skill_md_in_the_plane_s_workspaces_folder_never_makes_it_the_code_folder() {
+    let here = Here::new();
+    file(&here, "workspaces/alpha/tools/make.sh");
+    file(&here, "workspaces/SKILL.md");
+    refused(&here, "./tools/make.sh");
+}
+
+#[test]
+fn a_script_directly_under_workspaces_is_refused() {
+    let here = Here::new();
+    file(&here, "workspaces/make.sh");
+    refused(&here, "/bin/sh ../make.sh");
+}
+
+#[test]
+fn a_skill_md_in_the_plane_s_personas_folder_never_makes_it_the_code_folder() {
+    let here = Here::new();
+    file(&here, "personas/steward/tools/make.sh");
+    file(&here, "personas/SKILL.md");
+    refused(&here, "/bin/sh ../../personas/steward/tools/make.sh");
+}
+
+#[test]
+fn a_skill_md_in_the_plane_s_skills_folder_never_makes_it_the_code_folder() {
+    let here = Here::new();
+    file(&here, "skills/tools/make.sh");
+    file(&here, "skills/SKILL.md");
+    refused(&here, "/bin/sh ../../skills/tools/make.sh");
+}
+
+#[test]
+fn a_script_in_no_workspace_and_no_skill_is_refused() {
+    let here = Here::new();
+    file(&here, "tools/make.sh");
+    refused(&here, "/bin/sh ../../tools/make.sh");
+    file(&here, "personas/steward/tools/make.sh");
+    refused(&here, "/bin/sh ../../personas/steward/tools/make.sh");
+}
+
+#[test]
+fn a_folder_under_workspaces_that_is_no_workspace_is_refused() {
+    let here = Here::new();
+    // A dot folder is purlis's own (`.worktrees/`), and a real clone is a repo, not a workspace.
+    file(&here, "workspaces/.trash/tools/make.sh");
+    refused(&here, "/bin/sh ../.trash/tools/make.sh");
+    file(&here, "workspaces/repo/tools/make.sh");
+    std::fs::create_dir_all(here.root.join("workspaces/repo/.git")).unwrap();
+    refused(&here, "/bin/sh ../repo/tools/make.sh");
+}
+
+#[test]
+fn a_folder_strictly_below_a_workspace_s_root_is_the_code_folder() {
+    let here = Here::new();
+    file(&here, "workspaces/alpha/tools/make.sh");
+    file(&here, "workspaces/alpha/a/b/make.sh");
+    file(&here, "workspaces/beta/tools/make.sh");
+    let code = |command: &str| here.resolve(command).unwrap().code;
+    assert_eq!(code("./tools/make.sh"), here.workspace.join("tools"));
+    assert_eq!(code("./a/b/make.sh"), here.workspace.join("a/b"));
     assert_eq!(
-        here.resolve("./tools/make.sh").unwrap().code,
-        here.workspace.join("tools")
+        code("/bin/sh ../beta/tools/make.sh"),
+        here.root.join("workspaces/beta/tools")
+    );
+    // A workspace's worktree is inside it.
+    file(&here, "workspaces/alpha/.worktrees/x/tools/make.sh");
+    assert_eq!(
+        code("./.worktrees/x/tools/make.sh"),
+        here.workspace.join(".worktrees/x/tools")
+    );
+}
+
+#[test]
+fn a_skill_folder_in_a_workspace_is_the_code_folder() {
+    let here = Here::new();
+    file(&here, "workspaces/alpha/skills/report/scripts/run.mjs");
+    file(&here, "workspaces/alpha/skills/report/SKILL.md");
+    assert_eq!(
+        here.resolve("node skills/report/scripts/run.mjs")
+            .unwrap()
+            .code,
+        here.workspace.join("skills/report")
     );
 }
 
@@ -651,4 +740,44 @@ fn a_run_is_refused_a_plane_file_outside_its_code_and_its_artifact() {
     assert_eq!(seen, "own{}", "only its code and its artifact were read");
     let log = std::fs::read_to_string(&scratch.log).unwrap();
     assert!(log.contains("refused"), "{log}");
+}
+
+#[test]
+fn a_skill_folder_of_the_plane_or_of_a_persona_is_the_code_folder() {
+    let here = Here::new();
+    assert_eq!(
+        here.resolve(COMMAND).unwrap().code,
+        here.root.join("skills/report")
+    );
+    for level in [
+        "skills.local/mine",
+        "personas/steward/skills/report",
+        "personas/steward/skills.local/mine",
+    ] {
+        file(&here, &format!("{level}/scripts/run.mjs"));
+        file(&here, &format!("{level}/SKILL.md"));
+        assert_eq!(
+            here.resolve(&format!("node ../../{level}/scripts/run.mjs"))
+                .unwrap()
+                .code,
+            here.root.join(level),
+            "{level}"
+        );
+    }
+}
+
+#[test]
+fn a_folder_of_a_skill_level_that_is_no_skill_is_refused() {
+    let here = Here::new();
+    // No `SKILL.md`: its own folder, two below the level, is no skill's.
+    file(&here, "skills/notes/scripts/run.mjs");
+    refused(&here, "node ../../skills/notes/scripts/run.mjs");
+    file(&here, "personas/steward/skills/notes/run.mjs");
+    refused(&here, "node ../../personas/steward/skills/notes/run.mjs");
+    // A `SKILL.md` deeper than a skill's own folder, or in a folder that is no level.
+    file(&here, "skills/notes/scripts/SKILL.md");
+    refused(&here, "node ../../skills/notes/scripts/run.mjs");
+    file(&here, "personas/steward/tools/run.mjs");
+    file(&here, "personas/steward/tools/SKILL.md");
+    refused(&here, "node ../../personas/steward/tools/run.mjs");
 }

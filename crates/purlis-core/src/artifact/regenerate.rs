@@ -7,8 +7,9 @@
 //!   The command is one program and its words, with no shell between: the first word that
 //!   names a file inside the plane, from the pin's working folder, is its script, and the
 //!   script's code is its skill's folder (the nearest folder above it, inside the plane,
-//!   holding a `SKILL.md`), or else the script's own folder. Every path and byte of that folder is fingerprinted
-//!   ([`fingerprint`]), so an edit to the script, or to anything beside it that it could load,
+//!   holding a `SKILL.md`), or else the script's own folder. That folder is accepted only
+//!   strictly below a workspace's root or as a skill's own folder ([`allowed`], #6120), and
+//!   every path and byte of it is fingerprinted ([`fingerprint`]), so an edit to the script, or to anything beside it that it could load,
 //!   asks again even when the command reads the same ([`Standing::Changed`]). A command naming
 //!   no script is refused: a program found on `PATH` alone would be approved by its name.
 //! - **And every word of the command** ([`of_run`]): the program (`node`, `python3`) and each
@@ -139,11 +140,11 @@ pub fn resolve(root: &Path, workspace: &Path, pin: &Pin) -> Result<Resolved, Str
             )
         })?;
     let code = code_folder(&root, &script);
-    if let Some(whole) = whole_of(&root, &code) {
+    if !allowed(&root, &code) {
         return Err(format!(
-            "its script's code folder would be {whole} ('{}'), and Regenerate never approves a \
-             whole {whole} as the code a run may read; move the script into a folder of its \
-             own, such as `scripts/`",
+            "its script's code folder would be '{}', and Regenerate approves only code below a \
+             workspace's root or in a skill's folder, so nothing was run; move the script into \
+             a folder of the workspace, such as `scripts/`",
             one_line(&code.display().to_string())
         ));
     }
@@ -231,15 +232,34 @@ fn code_folder(root: &Path, script: &Path) -> PathBuf {
     own
 }
 
-/// What `code` is the whole of, where it is the plane at `root` or one of its workspaces
-/// (#6120): never a code folder, as its approval would let a run read all of it.
-fn whole_of(root: &Path, code: &Path) -> Option<&'static str> {
-    if code == root {
-        Some("the plane's root")
-    } else if code.parent() == Some(&root.join(crate::sandbox::WORKSPACES)) {
-        Some("a workspace's root")
-    } else {
-        None
+/// The names a skill level's folder has (`docs/plane-format.md`, "workspace and persona
+/// skills"): its committed skills and this machine's own.
+const SKILL_LEVELS: [&str; 2] = ["skills", "skills.local"];
+
+/// **Whether `code` may be a code folder** (#6120, the operator's ruling of 2026-11-11): an
+/// allowlist, so a shape nobody thought of is refused. Only a folder strictly below a
+/// workspace's root (`workspaces/<ws>/…`, never `<ws>` itself), or a skill's own folder where a
+/// level keeps its skills (`skills[.local]/<skill>`, `personas/<p>/skills[.local]/<skill>`,
+/// holding a `SKILL.md`). The plane's root, `workspaces/`, `personas/`, `skills/` and every
+/// other folder of the plane are refused, as their approval would let a run read all of them.
+fn allowed(root: &Path, code: &Path) -> bool {
+    let Ok(rel) = code.strip_prefix(root) else {
+        return false;
+    };
+    let parts: Vec<&str> = rel
+        .components()
+        .map(|part| part.as_os_str().to_str().unwrap_or(""))
+        .collect();
+    let a_skill = |level: &str| SKILL_LEVELS.contains(&level) && code.join(SKILL_FILE).is_file();
+    match parts.as_slice() {
+        [first, ws, _, ..] if *first == crate::sandbox::WORKSPACES => {
+            crate::workspaces::is_workspace_folder(&root.join(first).join(ws))
+        }
+        [level, skill] => !skill.starts_with('.') && a_skill(level),
+        ["personas", persona, level, skill] => {
+            !persona.starts_with('.') && !skill.starts_with('.') && a_skill(level)
+        }
+        _ => false,
     }
 }
 
