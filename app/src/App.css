@@ -7120,7 +7120,9 @@ nav.piece-files-head {
 .ui-settings {
   display: grid;
   flex: 1 1 auto;
-  grid-template-columns: 236px minmax(0, 1fr);
+  /* 236 px (R37) wherever the pane is 944 px or more; narrower, a quarter of it and never under
+     180 px, so a table on the page keeps its columns at the default window (#1859). */
+  grid-template-columns: clamp(180px, 25%, 236px) minmax(0, 1fr);
   min-block-size: 0;
   min-inline-size: 0;
 }

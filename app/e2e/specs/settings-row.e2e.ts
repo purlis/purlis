@@ -53,6 +53,7 @@ async function laidOut() {
     );
     return {
       side: box(side),
+      whole: box(document.querySelector(".ui-settings")),
       switcher: side?.querySelector('[role="radiogroup"][aria-label="Level"]') != null,
       heading: page?.querySelector("h2")?.textContent ?? "",
       file: page?.querySelector(".ui-setting-where code")?.textContent ?? "",
@@ -180,12 +181,14 @@ describe("a Settings page, the aligned form, in the real WebView", () => {
       timeout: 20_000,
       timeoutMsg: `Saving never drew ${SET}`,
     });
-    const { side, switcher, heading, file, edit } = await laidOut();
-    if (!side) throw new Error("the side column was not drawn");
+    const { side, whole, switcher, heading, file, edit } = await laidOut();
+    if (!side || !whole) throw new Error("the side column was not drawn");
 
     expect(switcher).toBe(true);
-    // 236 px at the default text size, a pixel either way for rounding (R37).
-    expect(Math.abs(side.width - 236)).toBeLessThanOrEqual(1);
+    // 236 px (R37) in a pane of 944 px or more; narrower, a quarter of it, never under 180 px
+    // (#1859): a pixel either way for rounding.
+    const wanted = Math.min(236, Math.max(180, whole.width / 4));
+    expect(Math.abs(side.width - wanted)).toBeLessThanOrEqual(1);
     expect(heading).toBe("Saving");
     expect(file).toBe("charter.toml");
     expect(edit).toBe("Edit as TOML");
