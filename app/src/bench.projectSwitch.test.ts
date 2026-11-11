@@ -5,13 +5,7 @@ import type { Terminal } from "@xterm/xterm";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type * as Bench from "./bench";
 
-/**
- * **The `project switch` job ends when the pane the switch put on screen shows its sentinel**
- * (#6183): whatever brought the text there. `project-switch.e2e.ts` failed in the merge queue
- * with "the pane never painted ready" while the pane on screen showed it: the job only took the
- * sentinel arriving as new output, after it had armed a pane found by its session number, and
- * every `switch-<n>` project's chat is session 1.
- */
+/** The `project switch` job's ending, wherever the sentinel came from (#6183, `bench.ts`). */
 
 let bench: typeof Bench;
 
@@ -104,6 +98,7 @@ it("ends on a kept terminal put back after the strip marked the switch, its sent
 
   expect(state?.trouble).toBeUndefined();
   expect(state).toMatchObject({ running: false, result: { session: 1, built: false } });
+  expect((state?.result as { ms: number }).ms).toBeGreaterThanOrEqual(100);
 });
 
 it("ends on the new pane, when the project it left has a pane of the same session on screen", async () => {
@@ -132,4 +127,6 @@ it("ends on the new pane, when the project it left has a pane of the same sessio
 
   expect(state?.trouble).toBeUndefined();
   expect(state).toMatchObject({ running: false, result: { session: 1, built: true } });
+  // Painted by the new pane, sent its screen 100 ms on, and not by the one it replaced.
+  expect((state?.result as { ms: number }).ms).toBeGreaterThanOrEqual(100);
 });

@@ -27,6 +27,8 @@ import { onAMac } from "./tabKeys";
 type Pane = {
   session: number;
   terminal: Terminal;
+  /** How many panes had been opened, ever, once this one was: which job's it is. */
+  ordinal: number;
   drawing?: Drawing;
   /** Everything the pane has been sent since it was armed, in a window big enough to match
    *  a sentinel that arrives split across two chunks. */
@@ -65,8 +67,8 @@ function onScreen(): Map<number, Pane> {
     if (one.terminal.element?.isConnected !== false) shown.set(one.session, one);
   return shown;
 }
-/** Set by a `next pane` job: the next pane to open is the one the jobs after it measure. Told
- *  the pane's terminal too, since two panes on screen over a switch can share a session. */
+/** Set by a job waiting for the next pane to open or be shown again (`next pane`, a switch, a
+ *  split). Told the pane's terminal too: two panes on screen over a switch can share a session. */
 let awaited: ((session: number, terminal: Terminal) => void) | undefined;
 let subject: number | undefined;
 
@@ -85,6 +87,7 @@ export function paneOpened(session: number, terminal: Terminal): void {
   const pane: Pane = {
     session,
     terminal,
+    ordinal: opens + 1,
     tail: "",
     text: new TextDecoder(),
     chunks: 0,
@@ -231,23 +234,26 @@ function paintedIn(one: Pane, needle: string, found: (at: number) => void): void
 
 /**
  * The frame after a pane on screen that holds `needle` next draws, with that pane's session:
- * **whatever brought the text there**. Looked for every frame while `looking` says so.
+ * **whatever brought the text there**. Never one of `left`, the panes on screen before the
+ * switch, which may hold the same text and still be there for a frame or two. Looked for every
+ * frame while `looking` says so.
  */
 function heldOnScreen(
   needle: string,
+  left: ReadonlySet<Pane>,
   looking: () => boolean,
-): Promise<{ session: number; at: number }> {
+): Promise<{ pane: Pane; at: number }> {
   return new Promise((found) => {
     const look = () => {
       if (!looking()) return;
-      const one = [...onScreen().values()].find((each) => holds(each.terminal, needle));
+      const one = [...onScreen().values()].find(
+        (each) => !left.has(each) && holds(each.terminal, needle),
+      );
       if (one === undefined) {
         requestAnimationFrame(look);
         return;
       }
-      void Promise.race([drawn(one.terminal), framesOn(2)]).then((at) =>
-        found({ session: one.session, at }),
-      );
+      void Promise.race([drawn(one.terminal), framesOn(2)]).then((at) => found({ pane: one, at }));
     };
     look();
   });
@@ -460,14 +466,14 @@ async function work(plan: Plan): Promise<unknown> {
       // pane was armed is a sentinel this job would wait for forever. **Armed by its terminal,
       // not its session**: the project it leaves may still have a pane of that number on
       // screen as it opens (every `switch-<n>` project's chat is session 1, #6183).
-      let came = false;
-      const opened = new Promise<{ session: number; at: number }>((found) => {
-        awaited = (session, terminal) => {
+      let armed: Pane | undefined;
+      const opened = new Promise<{ pane: Pane; at: number }>((found) => {
+        awaited = (_session, terminal) => {
           const one = open.get(terminal);
           if (one === undefined) return;
           awaited = undefined;
-          came = true;
-          paintedIn(one, plan.sentinel, (at) => found({ session, at }));
+          armed = one;
+          paintedIn(one, plan.sentinel, (at) => found({ pane: one, at }));
         };
       });
       const from = performance.now();
@@ -492,6 +498,7 @@ async function work(plan: Plan): Promise<unknown> {
         marked.disconnect();
         return drawnAt === undefined ? undefined : drawnAt - from;
       };
+      const left = new Set(onScreen().values());
       row.click();
       const shown = await until(() =>
         document.querySelector(
@@ -506,27 +513,32 @@ async function work(plan: Plan): Promise<unknown> {
       // terminal already, so its paint is the terminal's next draw, or two frames on where it
       // has nothing to draw again. **So has a kept terminal its view puts back**
       // (`keptTerminals.ts`), which may be after the strip has marked the switch, and which is
-      // sent nothing: it has it all. `built` says whether a pane was opened for the switch.
+      // sent nothing: it has it all. `built` says whether the pane that painted was opened for the
+      // switch.
       let looking = true;
       const arrived = await Promise.race([
         opened,
-        heldOnScreen(plan.sentinel, () => looking),
+        heldOnScreen(plan.sentinel, left, () => looking),
         sleep(60_000).then(() => undefined),
       ]);
       looking = false;
       awaited = undefined;
+      // Whichever won, the pane armed is waiting for nothing now.
+      if (armed !== undefined) armed.waiting = undefined;
       if (arrived === undefined)
         throw new Error(
-          came ? `the pane never painted ${plan.sentinel}` : `project ${plan.plane} showed no pane`,
+          armed !== undefined
+            ? `the pane never painted ${plan.sentinel}`
+            : `project ${plan.plane} showed no pane`,
         );
-      subject = arrived.session;
+      subject = arrived.pane.session;
       return {
-        session: arrived.session,
+        session: arrived.pane.session,
         openMs: listed - pressed,
         shownMs: shown - from,
         ms: Math.max(arrived.at, shown) - from,
         drawnMs: drawnMs(),
-        built: opens !== opensBefore,
+        built: arrived.pane.ordinal > opensBefore,
       };
     }
 
