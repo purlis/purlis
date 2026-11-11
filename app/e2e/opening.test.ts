@@ -410,17 +410,29 @@ describe("a press that holds no node", () => {
     return () => pressed;
   }
 
+  /** `parent`, drawn with a button for each of `words`, which it answers. */
+  function drawnWith(parent: HTMLElement, ...words: string[]): HTMLButtonElement[] {
+    const made = words.map((said) => {
+      const button = document.createElement("button");
+      button.textContent = said;
+      return button;
+    });
+    parent.append(...made);
+    document.body.append(parent);
+    return made;
+  }
+
   function aBand(cause: string, ...buttons: string[]): HTMLButtonElement[] {
     const band = document.createElement("div");
     band.setAttribute("data-cause", cause);
-    const made = buttons.map((words) => {
-      const button = document.createElement("button");
-      button.textContent = words;
-      return button;
-    });
-    band.append(...made);
-    document.body.append(band);
-    return made;
+    return drawnWith(band, ...buttons);
+  }
+
+  function aQuestion(asks: string, ...buttons: string[]): HTMLButtonElement[] {
+    const dialog = document.createElement("section");
+    dialog.setAttribute("role", "alertdialog");
+    dialog.append(asks);
+    return drawnWith(dialog, ...buttons);
   }
 
   it("presses Clear pane on the band drawn now, not Resume", () => {
@@ -438,6 +450,19 @@ describe("a press that holds no node", () => {
     expect(cleared()).toBe(1);
   });
 
+  it("presses a Clear pane drawn with the button role, not the tag", () => {
+    const band = document.createElement("div");
+    band.setAttribute("data-cause", "chat-ended:4");
+    const clear = document.createElement("span");
+    clear.setAttribute("role", "button");
+    clear.textContent = "Clear pane";
+    band.append(clear);
+    document.body.append(band);
+    const cleared = clicks(clear);
+    expect(pressClearPane('[data-cause="chat-ended:4"]')).toBe(true);
+    expect(cleared()).toBe(1);
+  });
+
   it("presses nothing while no band of that cause is drawn, or its Clear pane is off", () => {
     aBand("chat-ended:5", "Clear pane");
     expect(pressClearPane('[data-cause="chat-ended:4"]')).toBe(false);
@@ -446,33 +471,26 @@ describe("a press that holds no node", () => {
     expect(pressClearPane('[data-cause="chat-ended:4"]')).toBe(false);
   });
 
-  function aQuestion(...buttons: string[]): HTMLButtonElement[] {
-    const dialog = document.createElement("section");
-    dialog.setAttribute("role", "alertdialog");
-    dialog.append("End chat steward 4?");
-    const made = buttons.map((words) => {
-      const button = document.createElement("button");
-      button.textContent = words;
-      return button;
-    });
-    dialog.append(...made);
-    document.body.append(dialog);
-    return made;
-  }
-
   it("presses the question's answer by its words, never Cancel", () => {
-    const [cancel, close] = aQuestion("Cancel", "Close");
+    const [cancel, close] = aQuestion("End chat steward 4?", "Cancel", "Close");
     const cancelled = clicks(cancel);
     const closed = clicks(close);
-    expect(pressTheAnswer("Close")).toBe(true);
+    expect(pressTheAnswer("steward 4", "Close")).toBe(true);
     expect([cancelled(), closed()]).toEqual([0, 1]);
   });
 
+  it("presses the answer of the question about the chat it names, not another still up", () => {
+    const going = clicks(aQuestion("End chat steward 3?", "Close")[0]);
+    const asked = clicks(aQuestion("End chat steward 4?", "Close")[0]);
+    expect(pressTheAnswer("steward 4", "Close")).toBe(true);
+    expect([going(), asked()]).toEqual([0, 1]);
+  });
+
   it("presses nothing while the answer is off or no question offers it", () => {
-    expect(pressTheAnswer("Close")).toBe(false);
-    const [, close] = aQuestion("Cancel", "Close");
+    expect(pressTheAnswer("", "Close")).toBe(false);
+    const [, close] = aQuestion("End chat steward 4?", "Cancel", "Close");
     close.disabled = true;
-    expect(pressTheAnswer("Close")).toBe(false);
-    expect(pressTheAnswer("End")).toBe(false);
+    expect(pressTheAnswer("", "Close")).toBe(false);
+    expect(pressTheAnswer("", "End")).toBe(false);
   });
 });

@@ -367,7 +367,7 @@ export async function answerTheAsk(ending: string): Promise<void> {
   );
   // Found and pressed in one look in the page (#6227): a button held from a look before is one
   // the question may have drawn again since.
-  await browser.waitUntil(async () => browser.execute(pressTheAnswer, word), {
+  await browser.waitUntil(async () => browser.execute(pressTheAnswer, ending, word), {
     timeout: 20_000,
     interval: 200,
     timeoutMsg: `the question about ${ending} never offered ${word}`,
@@ -466,6 +466,9 @@ export async function clearEndedPanes(session?: number, most = 200): Promise<voi
   }
 }
 
+/** A control a press is for, asked for by its role as well as its tag (CLAUDE.md). */
+const BUTTONS = 'button, [role="button"]';
+
 /** Whether `one` takes a press: neither `disabled` nor `aria-disabled`. Run in the page. */
 function pressable(one: Element): boolean {
   return !one.hasAttribute("disabled") && one.getAttribute("aria-disabled") !== "true";
@@ -479,7 +482,7 @@ function pressable(one: Element): boolean {
  */
 export function pressClearPane(cause: string): boolean {
   for (const band of document.querySelectorAll(cause)) {
-    const clear = [...band.querySelectorAll("button")].find(
+    const clear = [...band.querySelectorAll<HTMLElement>(BUTTONS)].find(
       (one) =>
         pressable(one) &&
         [one.getAttribute("aria-label"), one.textContent].some(
@@ -494,13 +497,14 @@ export function pressClearPane(cause: string): boolean {
 }
 
 /**
- * **Presses the button of a question (an `alertdialog`) whose words are `word`** (#6227), and
- * answers whether one was there to press. **Run in the page**, as {@link aDialogOffers} is: a
+ * **Presses the button whose words are `word` on the question (an `alertdialog`) that says
+ * `ending`** (#6227), and answers whether one was there to press. **Run in the page**, as {@link aDialogOffers} is: a
  * button held from a look before is one the question may have drawn again since.
  */
-export function pressTheAnswer(word: string): boolean {
+export function pressTheAnswer(ending: string, word: string): boolean {
   for (const dialog of document.querySelectorAll('[role="alertdialog"]')) {
-    const answer = [...dialog.querySelectorAll("button")].find(
+    if (!(dialog.textContent ?? "").includes(ending)) continue;
+    const answer = [...dialog.querySelectorAll<HTMLElement>(BUTTONS)].find(
       (one) => pressable(one) && (one.textContent ?? "").trim() === word,
     );
     if (answer === undefined) continue;
@@ -739,10 +743,18 @@ export async function showView(
     | "Vaults",
 ): Promise<void> {
   // On whichever bar holds it: a sidebar's, or the Lower icons of its half of the Panel.
-  const tab = await $(`.activity-bar [role="tab"][aria-label="${name}"]`);
-  await tab.waitForExist({ timeout: 30_000 });
-  if ((await tab.getAttribute("aria-selected")) !== "true") await tab.click();
-  await browser.waitUntil(async () => (await tab.getAttribute("aria-selected")) === "true", {
+  const tab = `.activity-bar [role="tab"][aria-label="${name}"]`;
+  await $(tab).waitForExist({ timeout: 30_000 });
+  // Read and pressed afresh at each look (#6227): the bar is drawn again as a view arrives, and
+  // a tab held from before the press is a node that may have left the window.
+  const shown = (selector: string) =>
+    browser.execute(
+      (css: string) => document.querySelector(css)?.getAttribute("aria-selected") === "true",
+      selector,
+    );
+  if (!(await shown(tab)))
+    await browser.execute((css: string) => document.querySelector<HTMLElement>(css)?.click(), tab);
+  await browser.waitUntil(async () => shown(tab), {
     timeout: 10_000,
     timeoutMsg: `the ${name} view never opened`,
   });
