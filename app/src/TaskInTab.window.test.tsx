@@ -1169,6 +1169,29 @@ describe("the breadcrumb", () => {
     expect(crumbsSay()).toMatch(/^steward 1 › probe in beta · /);
   });
 
+  // #6213: a coordinator names chats by number, so the palette finds one by it, `6` or `#6`,
+  // whichever workspace it works in, and goes there as its row's press does.
+  it("is found in the palette by its number, bare or with #, and shown in its own workspace", async () => {
+    await drawn(withTasks());
+    const found = async (query: string) => {
+      await userEvent.keyboard("{F2}");
+      const palette = await screen.findByRole("dialog", { name: "Command palette" });
+      const box = within(palette).getByRole("combobox");
+      await userEvent.clear(box);
+      await userEvent.type(box, query);
+      return within(palette).getAllByRole("option");
+    };
+
+    expect((await found("6"))[0].textContent).toContain("Show task probe in beta");
+    await userEvent.keyboard("{Escape}");
+    const options = await found("#6");
+    expect(options[0].textContent).toContain("Show task probe in beta");
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => expect(onScreen()).toEqual([6]));
+    expect(crumbsSay()).toMatch(/^steward 1 › probe in beta · /);
+  });
+
   it("says nothing of a workspace for a task that works where its session does", async () => {
     const { tree } = await drawn(withTasks());
     await userEvent.click(row(tree, "talk"));

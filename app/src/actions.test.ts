@@ -1770,6 +1770,30 @@ describe("narrowing by what is typed", () => {
     expect(narrow("docs", rows).map((row) => row.id)).toEqual(["tab.select:17"]);
   });
 
+  // #6213: a chat is found by its number, `641` or `#641`, on the rows that go to it; a row
+  // whose title merely has those digits in it comes after.
+  it("finds a chat by its number, typed bare or with #, ahead of a title with those digits", () => {
+    const go = (id: string, title: string, chat?: number): Offer => ({
+      id,
+      title,
+      available: true,
+      reason: "",
+      does: { verb: "nothing" },
+      ...(chat === undefined ? {} : { chat }),
+    });
+    const numbered: Offer[] = [
+      go("tab.select:3", "Switch to tab build 641", 12),
+      go("chat.show:641", "Show task fix in beta, asked by steward 1", 641),
+      go("tab.select:5", "Switch to tab docs", 6410),
+    ];
+
+    expect(narrow("641", numbered).map((row) => row.id)).toEqual(["chat.show:641", "tab.select:3"]);
+    expect(narrow("#641", numbered).map((row) => row.id)).toEqual(["chat.show:641"]);
+    expect(narrow(" #641 ", numbered).map((row) => row.id)).toEqual(["chat.show:641"]);
+    // Only a whole number is a chat's: `#64` finds none of them.
+    expect(narrow("#64", numbered)).toEqual([]);
+  });
+
   it("never matches the reason a row cannot run", () => {
     // `front` is in `Close pane`'s reason and nowhere else. Matching it would make typing a
     // word out of charter's own explanation list rows that merely mention one.
