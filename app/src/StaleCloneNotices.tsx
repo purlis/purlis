@@ -1,11 +1,12 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { dequal } from "dequal/lite";
 import { commands, type PlaneId, type StaleClone, type StaleFix } from "./bindings";
 import type { StandingNotice } from "./ChipNotices";
 import { Notice, type NoticeAction } from "./Notice";
-import { GIT, usePlaneChanged } from "./planeChanged";
+import { followPlaneChanged, GIT } from "./planeChanged";
 import { useWindowFocused } from "./windowFocused";
 
 /** The family of a stale repo's cause, whose dismissal is kept until the repo is fixed. */
@@ -65,36 +66,57 @@ export function useStaleClones({
 }): StaleClones {
   const [stale, setStale] = useState<readonly StaleClone[]>([]);
   const [unread, setUnread] = useState<readonly string[]>([]);
+  /** What is drawn, for an answer to be compared with before anything is set: an update that
+   *  changes nothing still draws the hook's owner once before React lets it go. */
+  const drawn = useRef<{ stale: readonly StaleClone[]; unread: readonly string[] }>({
+    stale,
+    unread,
+  });
   /** What the last press said, by the Notice it was pressed on. */
   const [said, setSaid] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState<string>();
   const [asked, setAsked] = useState(0);
   // `true` from the first render, as `useDoctor`'s: the list is asked the moment the project opens.
   const [reading, setReading] = useState(true);
+  const stillReading = useRef(reading);
   const focused = useWindowFocused();
-  const moved = usePlaneChanged([plane], GIT);
 
+  // **Neither an ask nor an equal answer draws the project's view again** (felt speed, round 2):
+  // a move of the project's git standing is followed where it is heard (`followPlaneChanged`),
+  // not counted in the view's state, and an answer equal to the one drawn sets nothing.
   useEffect(() => {
     let live = true;
-    void commands
-      .staleClones(plane)
-      .then((answer) => {
-        if (live && answer.status === "ok" && Array.isArray(answer.data?.stale)) {
-          setStale(answer.data.stale);
-          setUnread(answer.data.unread);
+    // Only the newest ask's answer is drawn: one that lands after a newer ask began says less.
+    let newest = 0;
+    const read = () => {
+      const ask = (newest += 1);
+      void commands
+        .staleClones(plane)
+        .then((answer) => {
+          if (!live || ask !== newest) return;
+          if (answer.status !== "ok" || !Array.isArray(answer.data?.stale)) return;
+          const { stale: now, unread: notRead } = answer.data;
+          if (!dequal(drawn.current.stale, now)) setStale(now);
+          if (!dequal(drawn.current.unread, notRead)) setUnread(notRead);
+          drawn.current = { stale: now, unread: notRead };
           // A dismissal stands while its findings do, and a return shows again.
-          settle(STALE_CLONE, answer.data.stale.map(staleCloneCause));
-        }
-      })
-      // A project whose repos cannot be read says nothing here.
-      .catch(() => {})
-      .finally(() => {
-        if (live) setReading(false);
-      });
+          settle(STALE_CLONE, now.map(staleCloneCause));
+        })
+        // A project whose repos cannot be read says nothing here.
+        .catch(() => {})
+        .finally(() => {
+          if (!live || !stillReading.current) return;
+          stillReading.current = false;
+          setReading(false);
+        });
+    };
+    read();
+    const stop = followPlaneChanged([plane], () => GIT, read);
     return () => {
       live = false;
+      stop();
     };
-  }, [plane, focused, moved, asked, settle]);
+  }, [plane, focused, asked, settle]);
 
   const press = useCallback(
     (one: StaleClone, fix: StaleFix) => {

@@ -91,7 +91,13 @@ import { useScreenReaderMode } from "./screenReader";
 import { useLatestSaid } from "./latestSaid";
 import { passing, resultsFor, useKeptResults } from "./keptResults";
 import { useAlerts } from "./alerts";
-import { LAYOUT_FIX, LAYOUT_FIX_LABEL, type InboxAlertsDo, type WindowAlerts } from "./InboxAlerts";
+import {
+  LAYOUT_FIX,
+  LAYOUT_FIX_LABEL,
+  useAlertsOfEach,
+  type InboxAlertsDo,
+  type WindowAlerts,
+} from "./InboxAlerts";
 import { useAlertFix } from "./alertFix";
 import { showOffer, type Elsewhere, type WaitingHere } from "./InboxElsewhere";
 import { keptInboxScope } from "./inboxScope";
@@ -1371,6 +1377,8 @@ function App() {
     () => ({ reading: alertsRead, planes, nameOf: calledOn, does: alertsDo }),
     [alertsRead, planes, alertsDo],
   );
+  /** Each project's view is handed its own, so an alert moving in one draws that one alone. */
+  const alertsOfEach = useAlertsOfEach(alerts);
 
   // Which plane this launch opened — asked once, and the answer the first tab is built from.
   // The core resolved the working directory once to get it; nothing asks again.
@@ -3312,7 +3320,7 @@ function App() {
                 window={windowDoes}
                 onReport={onReport}
                 onSessionRows={onSessionRows}
-                alerts={alerts}
+                alerts={alertsOfEach.get(plane) ?? alerts}
                 statusNotices={plane === inFront ? statusNotices : undefined}
                 contributed={contributedPanels}
                 views={extensionViews}
