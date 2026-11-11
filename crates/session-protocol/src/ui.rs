@@ -390,10 +390,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     "forget_sandbox_block",
     // Ask less (#6010): the person's answers noted, the rules they made from an offer and each
     // one's Undo, and End cool-off. No chat notes its own answer, makes itself a rule, or ends
-    // the cool-off that holds it.
+    // the cool-off that holds it. Nor does one read the week's measures of asking (#6021).
     "ask_answered",
     "rule_made",
     "rules_made",
+    "ask_measures",
     "undo_rule",
     "end_cool_off",
     // Keep on a chat's question whether to remove a workspace (qw356): the person's no. No

@@ -163,6 +163,21 @@ describe("every answer in Asks (#6010)", () => {
     expect(sent(calls, "ask_answered")[0].args).toMatchObject({ option: "keep", allows: false });
     expect(sent(calls, "rule_made")).toEqual([]);
   });
+
+  it("is noted with when its ask was raised, one that names no request too (#6021)", async () => {
+    const calls = core();
+    const unnamed = { ...host(4), since: 1_800_000_000, rule: undefined };
+    render(<Inbox plane={PLANE} asks={[unnamed]} onGo={vi.fn()} onLeave={vi.fn()} />);
+    const answers = screen.getByRole("group", { name: "Answers to steward 4" });
+    await userEvent.click(within(answers).getByRole("button", { name: "Keep blocked" }));
+    await userEvent.click(within(answers).getByRole("button", { name: "Keep blocked" }));
+    await waitFor(() => expect(sent(calls, "ask_answered")).toHaveLength(1));
+    expect(sent(calls, "ask_answered")[0].args).toMatchObject({
+      request: "",
+      option: "keep",
+      raised: 1_800_000_000,
+    });
+  });
 });
 
 describe("Rules I made (#6010)", () => {

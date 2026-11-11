@@ -15,7 +15,8 @@
 use crate::asking::RuleScope;
 use crate::planes::{PlaneId, Planes};
 use crate::sandboxing::{GrantLevel, GrantWhat};
-use purlis_core::askrules::{Asked, Rule, Store};
+use purlis_core::askrules::{Asked, Rule, Store, measures};
+use purlis_core::sandboxblock::record::{Entry, Record as NetworkRecord};
 
 /// What is said where this machine keeps no record.
 const NO_STORE: &str =
@@ -34,7 +35,9 @@ fn asked(plane: &PlaneId, session: u32, request: String) -> Asked {
 }
 
 /// **Notes an answer the person gave in Asks** (#6010): to request `request` of chat `session`,
-/// the option `option`, which `allows` it or not. What offers a rule, and starts a cool-off.
+/// the option `option`, which `allows` it or not, to an ask raised at `raised` (seconds since
+/// 1970) where its source knows. What offers a rule, starts a cool-off, and counts in the week's
+/// measures (#6021). `request` is empty where the ask names none: it counts in the measures alone.
 #[tauri::command]
 #[specta::specta]
 pub async fn ask_answered(
@@ -44,6 +47,7 @@ pub async fn ask_answered(
     request: String,
     option: String,
     allows: bool,
+    raised: Option<u32>,
 ) -> Result<(), String> {
     planes.held(&plane)?;
     // On a blocking thread: it writes this machine's record (`<data>/inbox/rules.json`).
@@ -53,6 +57,7 @@ pub async fn ask_answered(
                 &asked(&plane, session, request),
                 &option,
                 allows,
+                raised.map(u64::from),
                 crate::sandboxing::now_secs(),
             )
             .map_err(|why| format!("purlis could not note the answer: {why}"))
@@ -101,7 +106,15 @@ pub struct RuleMadeShown {
     pub undoes: bool,
 }
 
-fn shown(rule: Rule, open: &[PlaneId]) -> RuleMadeShown {
+/// The lines purlis's own proxy wrote for the project at `root` on this machine, kept 30 days:
+/// what the asks a host's rule saved are read from (#6021). None where it keeps no record.
+fn connections_of(root: &std::path::Path, now: u64) -> Vec<Entry> {
+    NetworkRecord::to_read().map_or_else(Vec::new, |record| record.read(root, now))
+}
+
+fn shown(rule: Rule, open: &[PlaneId], now: u64) -> RuleMadeShown {
+    // Counted over what the network record still keeps of the rule's project.
+    let saved = measures::saved_by(&rule, &connections_of(&rule.root, now), 0);
     RuleMadeShown {
         plane: open.iter().find(|one| one.root() == rule.root).cloned(),
         project: rule.root.file_name().map_or_else(
@@ -115,8 +128,55 @@ fn shown(rule: Rule, open: &[PlaneId]) -> RuleMadeShown {
         says: rule.says,
         label: rule.label,
         scope: rule.scope.into(),
-        saved: rule.saved,
+        saved,
     }
+}
+
+/// **One project's week of asking** (ADR 0121 decision 18, #6021), as All chats says it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct AskMeasure {
+    pub plane: PlaneId,
+    /// The asks answered in Asks in the last seven days.
+    pub asks: u32,
+    /// The median time from an ask being raised to its answer, in seconds, over those whose
+    /// raising is known.
+    pub median_secs: Option<u32>,
+    /// The asks its rules saved in the last seven days.
+    pub saved: u32,
+}
+
+/// **Every open project's week of asking** (#6021), on this machine: All chats' line per
+/// project.
+#[tauri::command]
+#[specta::specta]
+pub async fn ask_measures(planes: tauri::State<'_, Planes>) -> Result<Vec<AskMeasure>, String> {
+    let open = planes.open_now();
+    // On a blocking thread: it reads this machine's record (`<data>/inbox/rules.json`) and each
+    // project's network record.
+    crate::off_the_window("reading the week's asks", move || {
+        let record = store()?.read();
+        let now = crate::sandboxing::now_secs();
+        Ok(open
+            .into_iter()
+            .map(|plane| {
+                let week = measures::measures(
+                    &record,
+                    &purlis_core::askrules::project_of(plane.root()),
+                    &connections_of(plane.root(), now),
+                    now,
+                );
+                AskMeasure {
+                    plane,
+                    asks: week.asks,
+                    median_secs: week
+                        .median_secs
+                        .map(|secs| u32::try_from(secs).unwrap_or(u32::MAX)),
+                    saved: week.saved,
+                }
+            })
+            .collect())
+    })
+    .await
 }
 
 /// **Every rule made from an offer**, newest first: Rules I made.
@@ -124,13 +184,23 @@ fn shown(rule: Rule, open: &[PlaneId]) -> RuleMadeShown {
 #[specta::specta]
 pub async fn rules_made(planes: tauri::State<'_, Planes>) -> Result<Vec<RuleMadeShown>, String> {
     let open = planes.open_now();
-    // On a blocking thread: it reads this machine's record (`<data>/inbox/rules.json`).
+    // On a blocking thread: it reads this machine's record (`<data>/inbox/rules.json`), and each
+    // rule's project's network record for the asks it saved.
     crate::off_the_window("reading the rules made", move || {
-        let mut rules = store()?.read().rules;
-        rules.reverse();
-        Ok(rules.into_iter().map(|rule| shown(rule, &open)).collect())
+        Ok(listed(&store()?, &open))
     })
     .await
+}
+
+/// Every rule `store` keeps, newest first, as Rules I made lists it.
+fn listed(store: &Store, open: &[PlaneId]) -> Vec<RuleMadeShown> {
+    let now = crate::sandboxing::now_secs();
+    let mut rules = store.read().rules;
+    rules.reverse();
+    rules
+        .into_iter()
+        .map(|rule| shown(rule, open, now))
+        .collect()
 }
 
 /// The level a sandbox block's Allow `option` grants at, by its id.
@@ -196,7 +266,6 @@ fn keep_rule(held: &crate::planes::Held, plane: &PlaneId, made: RuleMade) -> Res
             option: made.option,
             scope: made.scope.into(),
             grant,
-            saved: 0,
         })
         .map(|_| ())
         .map_err(|why| format!("purlis could not keep the rule: {why}"))
@@ -247,9 +316,7 @@ pub async fn undo_rule(
     store
         .undo(&id)
         .map_err(|why| format!("purlis could not forget the rule: {why}"))?;
-    let mut rules = store.read().rules;
-    rules.reverse();
-    Ok(rules.into_iter().map(|rule| shown(rule, &open)).collect())
+    crate::off_the_window("reading the rules made", move || Ok(listed(&store, &open))).await
 }
 
 /// **End cool-off** (#6010): chat `session`'s ask for `request` is counted and notified again,

@@ -688,6 +688,7 @@ export const commands = {
 	askAnswered: __WINDOW_ONLY_RESULT,
 	ruleMade: __WINDOW_ONLY_RESULT,
 	rulesMade: __WINDOW_ONLY_RESULT,
+	askMeasures: __WINDOW_ONLY_RESULT,
 	undoRule: __WINDOW_ONLY_RESULT,
 	endCoolOff: __WINDOW_ONLY_RESULT,
 	inboxUpdates: __WINDOW_ONLY_RESULT,
@@ -3445,6 +3446,20 @@ export type AskLocked = {
 	persona: string,
 	/**  What policy forbids, and who set it. */
 	why: string,
+};
+
+/**  **One project's week of asking** (ADR 0121 decision 18, #6021), as All chats says it. */
+export type AskMeasure = {
+	plane: PlaneId,
+	/**  The asks answered in Asks in the last seven days. */
+	asks: number,
+	/**
+	 *  The median time from an ask being raised to its answer, in seconds, over those whose
+	 *  raising is known.
+	 */
+	median_secs: number | null,
+	/**  The asks its rules saved in the last seven days. */
+	saved: number,
 };
 
 /**

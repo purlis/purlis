@@ -49,7 +49,8 @@ function core(refuse?: string) {
     return null;
   });
   /** What was sent that is not a read of the asks. */
-  return () => asked.filter((one) => one.cmd !== "asks_waiting");
+  // Nor the note every answer leaves for the week's measures (#6021).
+  return () => asked.filter((one) => one.cmd !== "asks_waiting" && one.cmd !== "ask_answered");
 }
 
 describe("a workspace a chat asked you to remove", () => {

@@ -337,14 +337,16 @@ export async function answerThrough(
 
 /**
  * **An answer noted against its request** (ADR 0121 decision 7, #6010): what offers a rule after
- * the same Allow twice, and starts a cool-off after Don't allow twice. Only an ask the core
- * names by its request is noted; a note that fails loses an offer, never an answer.
+ * the same Allow twice, and starts a cool-off after Don't allow twice. Every answer is noted, with
+ * when its ask was raised, for the week's measures All chats shows (ADR 0121 decision 18, #6021);
+ * one the core names no request of counts there alone. A note that fails loses an offer or a
+ * count, never an answer.
  */
 function notedAgainst(plane: string, ask: Shown, option: string): void {
-  const request = ask.rule?.request;
-  if (request == null) return;
   const allows = ask.options.some((one) => one.id === option && one.allows);
-  void commands.askAnswered(plane, ask.session, request, option, allows).catch(() => undefined);
+  void commands
+    .askAnswered(plane, ask.session, ask.rule?.request ?? "", option, allows, ask.since ?? null)
+    .catch(() => undefined);
 }
 
 /** The press a run's notice's option sends (ADR 0112, #5242), by the option's id. */

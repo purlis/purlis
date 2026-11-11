@@ -23,6 +23,7 @@ fn answered(asked: &Asked, option: &str, allows: bool, at: u64) -> Answered {
         option: option.to_owned(),
         allows,
         at,
+        raised: None,
     }
 }
 
@@ -150,7 +151,6 @@ fn rule(asked: &Asked, at: u64) -> Rule {
         option: "you".to_owned(),
         scope: Scope::Project,
         grant: None,
-        saved: 0,
     }
 }
 
@@ -235,10 +235,10 @@ fn a_store_keeps_answers_rules_and_endings_and_undoes_a_rule() {
     let store = Store::in_data(data.path());
     let here = asked("p", 1);
     store
-        .answered(&here, "once", true, NOW - 2 * HOUR)
+        .answered(&here, "once", true, None, NOW - 2 * HOUR)
         .expect("noted");
     store
-        .answered(&here, "once", true, NOW - HOUR)
+        .answered(&here, "once", true, None, NOW - HOUR)
         .expect("noted");
     assert_eq!(
         offer(&store.read(), &here, NOW).map(|one| one.times),
@@ -260,21 +260,43 @@ fn a_store_lets_go_of_answers_past_the_window() {
     let store = Store::in_data(data.path());
     let here = asked("p", 1);
     store
-        .answered(&here, "once", true, NOW - OFFER_WINDOW_SECS - DAY)
+        .answered(&here, "once", true, None, NOW - OFFER_WINDOW_SECS - DAY)
         .expect("noted");
-    store.answered(&here, "once", true, NOW).expect("noted");
+    store
+        .answered(&here, "once", true, None, NOW)
+        .expect("noted");
     assert_eq!(store.read().answered.len(), 1);
 }
 
 #[test]
-fn a_store_counts_the_asks_a_rule_saved() {
+fn an_answer_without_a_request_offers_no_rule_and_starts_no_cool_off() {
+    let unnamed = Asked {
+        request: String::new(),
+        ..asked("p", 1)
+    };
+    let kept = record(vec![
+        answered(&unnamed, "once", true, NOW - 2 * HOUR),
+        answered(&unnamed, "once", true, NOW - HOUR),
+        answered(&unnamed, "keep", false, NOW - 120),
+        answered(&unnamed, "keep", false, NOW - 60),
+    ]);
+    assert_eq!(offer(&kept, &unnamed, NOW), None);
+    assert_eq!(cooling(&kept, &unnamed, NOW), None);
+}
+
+#[test]
+fn a_store_keeps_when_an_ask_was_raised_but_never_after_its_answer() {
     let data = tempfile::tempdir().expect("data");
     let store = Store::in_data(data.path());
     let here = asked("p", 1);
-    let made = store.make(rule(&here, NOW)).expect("made");
-    store.saved(&made.id, 2).expect("counted");
-    store.saved(&made.id, 1).expect("counted");
-    assert_eq!(store.read().rules[0].saved, 3);
+    store
+        .answered(&here, "once", true, Some(NOW - 90), NOW)
+        .expect("noted");
+    store
+        .answered(&here, "once", true, Some(NOW + 90), NOW)
+        .expect("noted");
+    let raised: Vec<_> = store.read().answered.iter().map(|one| one.raised).collect();
+    assert_eq!(raised, vec![Some(NOW - 90), None]);
 }
 
 #[test]

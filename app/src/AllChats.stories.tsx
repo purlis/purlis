@@ -10,6 +10,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, waitFor, within } from "storybook/test";
 import { AllChats, type FleetDoes } from "./AllChats";
+import type { AskMeasure } from "./bindings";
 import type { FleetChat } from "./everyChat";
 import type { ChatState } from "./shownState";
 import { expectFocusInSight, untilFocused, untilFocusWithin } from "./stories.testkit";
@@ -61,10 +62,25 @@ const DOES: FleetDoes = {
 };
 
 /** All chats as wide and tall as the sidebar. */
-function Sidebar({ chats, filter }: { chats: FleetChat[]; filter?: ChatState }) {
+function Sidebar({
+  chats,
+  filter,
+  measures,
+}: {
+  chats: FleetChat[];
+  filter?: ChatState;
+  measures?: AskMeasure[];
+}) {
   return (
     <div style={{ inlineSize: 320, blockSize: 640, display: "flex", flexDirection: "column" }}>
-      <AllChats chats={chats} filter={filter} onFilter={() => {}} onLeave={() => {}} does={DOES} />
+      <AllChats
+        chats={chats}
+        filter={filter}
+        onFilter={() => {}}
+        onLeave={() => {}}
+        does={DOES}
+        measures={measures}
+      />
     </div>
   );
 }
@@ -161,5 +177,36 @@ export const NoChats: Story = {
   args: { chats: [] },
   play: async ({ canvasElement }) => {
     await expect(within(canvasElement).getByText("No chat is open in any project.")).toBeVisible();
+  },
+};
+
+/** **Each project's week of asking** at the head (#6021): a quiet line per project with asks or
+ *  asks saved, and none for one with neither. It holds no control, so Tab passes it by. */
+export const WeekOfAsking: Story = {
+  args: {
+    chats: EVERY_STATE,
+    measures: [
+      { plane: "/p/purlis", asks: 12, median_secs: 150, saved: 3 },
+      { plane: "/p/docs", asks: 1, median_secs: null, saved: 0 },
+      { plane: "/p/quiet", asks: 0, median_secs: null, saved: 0 },
+    ],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      canvas.getByText("· 12 asks this week · answered in 2 min at the median · 3 saved by rules", {
+        exact: false,
+      }),
+    ).toBeVisible();
+    await expect(canvas.getByText("· 1 ask this week", { exact: false })).toBeVisible();
+    await expect(canvas.queryByText("quiet")).toBeNull();
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "All chats" }),
+      "Tab lands on the switch first",
+    );
+    await userEvent.tab();
+    await untilFocused(() => rows(canvasElement)[0], "and then on the first row, past the lines");
+    expectFocusInSight();
   },
 };
