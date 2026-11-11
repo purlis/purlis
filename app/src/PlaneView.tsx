@@ -8345,6 +8345,7 @@ export const PlaneView = memo(function PlaneView({
       // tab keeps its pin, its place and its panes (#4962).
       for (const { from, chat } of renumbered) {
         noteStarted(chat);
+        followRestart(from, chat.session);
         change((tabs) => replaceSession(tabs, from, chat.session));
       }
       // Started under another number, no pane showing its old one: it runs on in the sidebar,
@@ -8365,7 +8366,7 @@ export const PlaneView = memo(function PlaneView({
       // Every chat has said how it came back: the dismissed notes are settled against them.
       if (still.size === 0) settleChatNotes(open);
     },
-    [keepsItsPane, change, filedIn, isPinned, noteStarted, plane, settleChatNotes],
+    [keepsItsPane, change, filedIn, followRestart, isPinned, noteStarted, plane, settleChatNotes],
   );
   const readRestoredNow = useRef(readRestored);
   useEffect(() => {
@@ -8765,11 +8766,14 @@ export const PlaneView = memo(function PlaneView({
       const said = await commands
         .useSkill(plane, using.session, skill, values)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+      // Said only to the dialog still open on that session: a restart meanwhile moved it to the
+      // chat's new one (`followRestart`, #6193), and the old run's answer is not its answer.
+      const same = (was: typeof usingSkill) => was?.session === using.session;
       if (said.status === "error") {
-        setUsingSkill({ ...using, trouble: said.error, busy: false });
+        setUsingSkill((was) => (same(was) ? { ...using, trouble: said.error, busy: false } : was));
         return;
       }
-      setUsingSkill(undefined);
+      setUsingSkill((was) => (same(was) ? undefined : was));
       setReport({
         from: "use-skill",
         refused: false,

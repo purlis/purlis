@@ -109,7 +109,12 @@ const RUNNING: Moved = {
 const WAITING: Moved = { ...RUNNING, state: "waiting", moved_at: 2, sequence: 2 };
 
 /** The core: chat 4 owed a restart, which starts it again as session 9; the studio on. */
-function core() {
+/** The sentence the core refuses a pick with for a session no longer among its open chats. */
+const NO_TOOL = "This chat runs no tool purlis knows, so it has no skills to use here.";
+
+/** `held`, where given, is what the first `use_skill` waits for before the core refuses it. */
+function core(held?: Promise<void>) {
+  let picks = 0;
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
   mockIPC(
     (cmd, args) => {
@@ -133,7 +138,12 @@ function core() {
       if (cmd === "owed_restarts") return [4];
       if (cmd === "restart_chat")
         return { chat: { ...CHAT, session: 9, resumed: "c1" }, notices: [], not_yet: null };
-      if (cmd === "use_skill") return { kind: "typed", text: "/deploy" };
+      if (cmd === "use_skill") {
+        picks += 1;
+        if (held !== undefined && picks === 1)
+          return held.then(() => Promise.reject(new Error(NO_TOOL)));
+        return { kind: "typed", text: "/deploy" };
+      }
       if (cmd === "about_charter") return new Promise(() => {});
       return null;
     },
@@ -178,5 +188,34 @@ describe("Use skill… through a restart (#6193)", () => {
     await waitFor(() => expect(asked("use_skill")).toHaveLength(1));
     expect(asked("use_skill")[0]).toMatchObject({ session: 9, skill: "deploy" });
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Use skill" })).toBeNull());
+  });
+
+  it("keeps following when a pick sent to the old session is refused after the restart", async () => {
+    let refuse: () => void = () => undefined;
+    const asked = core(new Promise<void>((settle) => (refuse = settle)));
+    render(<App />);
+    await screen.findByText("session 4");
+    await act(async () => {
+      await new Promise((settle) => setTimeout(settle, 0));
+    });
+    await act(() => moved(RUNNING));
+    useSkillKey();
+    const picker = await screen.findByRole("dialog", { name: "Use skill" });
+    // Picked before the restart: the pick is on its way to session 4 as the turn ends.
+    await userEvent.click(await within(picker).findByText("deploy"));
+    await waitFor(() => expect(asked("use_skill")).toHaveLength(1));
+    await act(() => moved(WAITING));
+    await screen.findByText("session 9");
+
+    // The old session's refusal comes back last: it is not the dialog's any more.
+    await act(async () => {
+      refuse();
+      await new Promise((settle) => setTimeout(settle, 0));
+    });
+    const now = await screen.findByRole("dialog", { name: "Use skill" });
+    expect(within(now).queryByRole("alert")).toBeNull();
+    await userEvent.click(await within(now).findByText("deploy"));
+    await waitFor(() => expect(asked("use_skill")).toHaveLength(2));
+    expect(asked("use_skill")[1]).toMatchObject({ session: 9, skill: "deploy" });
   });
 });
