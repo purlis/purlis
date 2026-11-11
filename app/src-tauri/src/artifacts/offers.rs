@@ -115,6 +115,7 @@ pub(crate) fn heard<R: Runtime>(
     let Some(said) = said(path, query) else {
         return;
     };
+    tracing::info!("[DEBUG-6261] offers said: label {label} load {} id {} set {}", said.load, said.id, said.query);
     let app = app.clone();
     let label = label.to_owned();
     tauri::async_runtime::spawn_blocking(move || {
@@ -129,6 +130,7 @@ pub(crate) fn heard<R: Runtime>(
         let answer = match admitted(config.as_deref(), &of, &snapshot, &said.query) {
             Ok(offers) => {
                 let taken = offers.len();
+                tracing::info!("[DEBUG-6261] offers drawn: label {label} load {} set {}", said.load, said.query);
                 let _ = app.emit_to(
                     tauri::EventTarget::webview(window.as_str()),
                     ARTIFACT_OFFERS,

@@ -25,12 +25,14 @@ import { closeTabOf, iconFor, iconOf } from "../artifactTabs.js";
  * `purlis_core::artifact::calls` and `purlis_core::extension::queries`.
  */
 
-const NAME = "Todo board";
+for (const ROUND of [1, 2, 3, 4, 5, 6, 7, 8]) {
+// [DEBUG-6261] repeated, each round its own page, pin and todo.
+const NAME = `Todo board ${ROUND}`;
 const DECLARED = `{"api":1,"queries":{"purlis.todo_list@1":["done"],"purlis.change_status@1":[]}}`;
 const PAGE = `<!doctype html><title>${NAME}</title><script type="application/json" id="purlis">${DECLARED}</script><ul id=todos></ul><script src=app.js></script>`;
 const OFFERS = `[role="group"][aria-label="Offered by ${NAME}"]`;
 /** The todo of this spec's own the page finds in its answer. */
-const TODO = "Queried by the board";
+const TODO = `Queried by the board ${ROUND}`;
 /**
  * The page's script: its two calls, and each answer said as an offer (see above). The offers
  * answer on the port too, under id 99, which it passes over.
@@ -48,6 +50,7 @@ purlis.port.onmessage = (event) => {
 };
 purlis.port.postMessage({ id: 1, query: "purlis.todo_list@1" });
 purlis.port.postMessage({ id: 2, query: "purlis.session_record_list@1" });
+// round ${ROUND}
 `;
 
 /** What the app answered a command with, insisting it answered at all. */
@@ -79,7 +82,7 @@ async function inFront(): Promise<string | null> {
   );
 }
 
-describe("a pinned artifact that calls purlis's queries", function () {
+describe(`a pinned artifact that calls purlis's queries, round ${ROUND}`, function () {
   this.timeout(180_000);
 
   let at = "";
@@ -88,7 +91,7 @@ describe("a pinned artifact that calls purlis's queries", function () {
   before(async () => {
     const plane = (await ask<string[]>("open_planes"))[0];
     at = join(plane, "workspaces", "alpha", "artifacts");
-    const folder = join(at, "todo-board");
+    const folder = join(at, `todo-board-${ROUND}`);
     mkdirSync(folder, { recursive: true });
     writeFileSync(join(folder, "index.html"), PAGE);
     writeFileSync(join(folder, "app.js"), SCRIPT);
@@ -97,7 +100,7 @@ describe("a pinned artifact that calls purlis's queries", function () {
       join(at, "pins.toml"),
       `version = 1
 pin = [
-  { id = "e2e000000003", folder = "todo-board", name = "${NAME}", icon = "chart", order = 1 },
+  { id = "e2e00000003${ROUND}", folder = "todo-board-${ROUND}", name = "${NAME}", icon = "chart", order = 1 },
 ]
 `,
     );
@@ -162,3 +165,4 @@ pin = [
     );
   });
 });
+}
