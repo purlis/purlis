@@ -570,28 +570,35 @@ mod tests {
     }
 
     #[test]
-    fn a_window_reaches_only_the_notification_commands_its_shim_calls() {
-        // purlis sends its notifications from Rust. The window needs only the three commands
-        // the plugin's `window.Notification` shim invokes. `notification:default` would also
-        // grant action types, action listeners and closing shown notifications, which
-        // tauri-plugin-notification 2.6.0 made work on desktop and purlis does not use.
-        let mut granted = BTreeSet::new();
-        for capability in capabilities() {
-            for grant in grants(&capability) {
-                if grant.starts_with("notification:") {
-                    granted.insert(grant);
-                }
-            }
+    fn no_webview_is_granted_a_notification_command() {
+        // purlis sends its notifications from Rust, and the notification plugin is
+        // registered without the `window.Notification` shim that would call these
+        // (`scriptless.rs`, #6120), so no page has a use for one.
+        let granted: Vec<String> = capabilities()
+            .iter()
+            .flat_map(grants)
+            .filter(|grant| grant.starts_with("notification:"))
+            .collect();
+        assert_eq!(granted, Vec::<String>::new());
+    }
+
+    #[test]
+    fn the_window_cannot_invoke_the_notification_plugin() {
+        // The plugin registered as the app registers it, so a refusal is the ACL's and not a
+        // plugin missing.
+        let app = mock_builder()
+            .plugin(crate::scriptless::notification())
+            .build(tauri_context!(test = true))
+            .expect("the app builds with its real ACL");
+        let main = window(&app, WINDOW);
+        for command in [
+            "plugin:notification|notify",
+            "plugin:notification|is_permission_granted",
+            "plugin:notification|request_permission",
+        ] {
+            let refused = invoke(&main, command).expect_err(command);
+            assert!(refused.contains("not allowed"), "{command}: {refused}");
         }
-        let wanted: BTreeSet<String> = [
-            "notification:allow-notify",
-            "notification:allow-is-permission-granted",
-            "notification:allow-request-permission",
-        ]
-        .into_iter()
-        .map(str::to_owned)
-        .collect();
-        assert_eq!(granted, wanted);
     }
 
     /// The directives of `tauri.conf.json`'s Content-Security-Policy, by name.
