@@ -32,7 +32,7 @@ const DECLARED = `{"api":1,"queries":{"purlis.todo_list@1":["done"],"purlis.chan
 const PAGE = `<!doctype html><title>${NAME}</title><script type="application/json" id="purlis">${DECLARED}</script><ul id=todos></ul><script src=app.js></script>`;
 const OFFERS = `[role="group"][aria-label="Offered by ${NAME}"]`;
 /** The todo of this spec's own the page finds in its answer. */
-const TODO = `Queried by the board ${ROUND}`;
+const TODO = ["Water the garden ferns", "Tune the cello strings", "Oil the bicycle chain", "Sort the winter coats", "Paint the attic door", "Bake rye bread loaves", "Mend the fishing net", "Polish brass candlesticks"][ROUND - 1];
 /**
  * The page's script: its two calls, and each answer said as an offer (see above). The offers
  * answer on the port too, under id 99, which it passes over.
@@ -141,10 +141,17 @@ pin = [
   });
 
   it("answers a call its page declared with the workspace's own data", async () => {
-    await $(OFFERS).$(`aria/Mark done: ${TODO}`).waitForExist({
-      timeout: 20_000,
-      timeoutMsg: "the page was not answered its declared purlis.todo_list@1 with the todo",
-    });
+    // [DEBUG-6261] on failure, say what the bar drew.
+    try {
+      await $(OFFERS).$(`aria/Mark done: ${TODO}`).waitForExist({ timeout: 20_000 });
+    } catch {
+      const drew = await browser.execute(() => ({
+        bar: document.querySelector('[data-testid="artifact-bar"]')?.textContent ?? null,
+        refused: [...document.querySelectorAll('[data-testid="artifact-offer-refused"]')].map((one) => one.textContent ?? ""),
+        buttons: [...document.querySelectorAll('[data-testid="artifact-bar"] button')].map((one) => one.getAttribute("aria-label") ?? one.textContent ?? ""),
+      }));
+      throw new Error(`the page was not answered its declared purlis.todo_list@1 with the todo; [DEBUG-6261] the bar drew ${JSON.stringify(drew)}`);
+    }
   });
 
   it("refuses a call its page did not declare, as not-approved", async () => {
