@@ -220,6 +220,21 @@ impl Watched {
         asked
     }
 
+    /// **What a burst the platform could not name asks** (a rescan, a lost event, felt speed
+    /// round 2): the folders are looked at now, and what differs from `held`, the look taken
+    /// before, is decided on as if the platform had named it. So a rescan over a theme nobody
+    /// saved redraws nothing; under a build's load macOS reports hundreds a day. With no look
+    /// held it asks what [`Watched::decide`] asks of `everything`. `held` is the look now.
+    pub fn decide_unnamed(&self, held: &mut Option<Look>) -> Reload {
+        let now = Look::of(self);
+        let asked = match held.as_ref() {
+            Some(before) => self.decide(before.changed(&now).iter().map(PathBuf::as_path), false),
+            None => self.decide(std::iter::empty(), true),
+        };
+        *held = Some(now);
+        asked
+    }
+
     fn one(&self, path: &Path) -> Reload {
         let redraw = |survey| Reload::Redraw { survey };
         // An editor's scratch file is not a save.
