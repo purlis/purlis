@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794394033113,
+  "lastUpdate": 1794398557559,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -46914,6 +46914,48 @@ window.BENCHMARK_DATA = {
             "value": 101.106014,
             "unit": "ms",
             "extra": "median of 5 runs: 100.429, 100.489, 101.106, 101.435, 102.009 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "cc3cbe98cf02276deb5ee29b8c6ee08c653f313e",
+          "message": "felt speed 2: an unchanged answer does not re-render the project view (#6246)\n\n* An unchanged answer does not re-render the project view (felt speed 2, H1)\n\nAn answer equal to the one held (save standing, alerts, stale clones,\nchats on old instructions) sets nothing; each PlaneView is handed its own\nalerts (useAlertsOfEach), so another project's alert draws only that\nproject; the save standing and stale clones follow git changes outside\nthe view's state (followPlaneChanged), and the 10 s beat reads only the\nproject in front.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M74V0AH9GBYWWADS9YXGHBNN\nPurlis-Persona: steward\n\n* A switch reads no save standing asked within a beat (felt speed 2, H1)\n\nAs a project comes to the front its 10 s beat turns on again, and the\ncatch-up read after the paint asked plane_saving on every switch: 23\ncommands where the switch budget is 22. That read now runs only when\nthe standing was last asked a beat or more ago; one asked as the\nproject opened or as its git standing moved is the one the beat would\nhave read.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M751Y3J14NP4V78HEKMNCK21\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-11T11:05:51Z",
+          "tree_id": "a0f7903fc253ac7c30a6ce5e83605fb8d52e6b53",
+          "url": "https://github.com/purlis/purlis/commit/cc3cbe98cf02276deb5ee29b8c6ee08c653f313e"
+        },
+        "date": 1794398550724,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6952695,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.674, 0.683, 0.695, 0.695, 0.700 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.698384,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.372, 16.646, 16.698, 16.714, 16.751 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.492672,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.978, 102.305, 102.493, 102.523, 103.103 ms"
           }
         ]
       }
