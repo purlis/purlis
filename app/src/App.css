@@ -7537,7 +7537,9 @@ nav.piece-files-head {
   }
 
   .ui-settings-body {
-    padding: var(--space-6) var(--space-6) var(--space-8);
+    /* The page keeps its 28 at the sides: where the side column is a band, the page's own room
+       is what puts a table into its form (#1859) rather than scrolling it sideways. */
+    padding: var(--space-6) calc(var(--space-7) + var(--space-2)) var(--space-8);
   }
 
   .ui-settings-page .ui-setting-row {
