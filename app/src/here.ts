@@ -47,7 +47,7 @@ export function listen<T>(event: string, handler: EventCallback<T>): Promise<Unl
  * where no `try` around the call can catch it, and the rejection is unhandled. Nothing is
  * listening any more by then, which is what the stop was for.
  */
-export function quietly(unlisten: UnlistenFn): UnlistenFn {
+function quietly(unlisten: UnlistenFn): UnlistenFn {
   return () => {
     try {
       void Promise.resolve(unlisten() as unknown).catch(() => {});
