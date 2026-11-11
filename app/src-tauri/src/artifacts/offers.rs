@@ -117,11 +117,21 @@ pub(crate) fn heard<R: Runtime>(
     };
     let app = app.clone();
     let label = label.to_owned();
+    tracing::info!(
+        "[DEBUG-6260] offers heard {label} load {} id {}: {}",
+        said.load,
+        said.id,
+        said.query
+    );
     tauri::async_runtime::spawn_blocking(move || {
         let Some(artifacts) = app.try_state::<Artifacts>() else {
             return;
         };
         let Some((of, snapshot, window)) = artifacts.offering(&label, &said.load) else {
+            tracing::info!(
+                "[DEBUG-6260] offers dropped {label} load {}: not the open load",
+                said.load
+            );
             return;
         };
         let config = purlis_core::machine::config_root();
@@ -129,6 +139,10 @@ pub(crate) fn heard<R: Runtime>(
         let answer = match admitted(config.as_deref(), &of, &snapshot, &said.query) {
             Ok(offers) => {
                 let taken = offers.len();
+                tracing::info!(
+                    "[DEBUG-6260] offers emitted {label} load {}: {offers:?}",
+                    said.load
+                );
                 let _ = app.emit_to(
                     tauri::EventTarget::webview(window.as_str()),
                     ARTIFACT_OFFERS,

@@ -244,12 +244,21 @@ impl Served {
             return None;
         }
         if said == "open" {
+            tracing::info!(
+                "[DEBUG-6260] port open {label} load {load}, was {:?}",
+                self.load
+            );
             self.load = Some(load.to_owned());
             return None;
         }
         if self.load.as_deref() != Some(load) {
+            tracing::info!(
+                "[DEBUG-6260] port said {said} on {label} load {load}, not the open {:?}",
+                self.load
+            );
             return None;
         }
+        tracing::info!("[DEBUG-6260] port said {said} on {label} load {load}");
         if let Some(ask) = live::said(label, load, said, query) {
             return ask;
         }
@@ -355,6 +364,7 @@ impl Artifacts {
     /// **Webview `label`'s page loads again**: the port its last load opened is revoked, so
     /// nothing it asked is answered and no answer for it is delivered.
     pub(crate) fn reloaded(&self, label: &str) {
+        tracing::info!("[DEBUG-6260] reloaded {label}");
         if let Some(one) = self.served().get_mut(label) {
             one.load = None;
         }
@@ -569,6 +579,12 @@ fn answer_ask<R: Runtime>(app: tauri::AppHandle<R>, ask: Ask) {
             return;
         };
         let Some((of, snapshot, declared)) = artifacts.for_ask(&ask) else {
+            tracing::info!(
+                "[DEBUG-6260] ask dropped {} load {} id {}: not open",
+                ask.label,
+                ask.load,
+                ask.id
+            );
             return;
         };
         let config = purlis_core::machine::config_root();
@@ -591,12 +607,26 @@ fn answer_ask<R: Runtime>(app: tauri::AppHandle<R>, ask: Ask) {
             ),
         };
         if !artifacts.still_open(&ask.label, &ask.load) {
+            tracing::info!(
+                "[DEBUG-6260] answer dropped {} load {} id {}: not open now",
+                ask.label,
+                ask.load,
+                ask.id
+            );
             return;
         }
         let Some(webview) = app.get_webview(&ask.label) else {
             return;
         };
-        let _ = webview.eval(delivery(&ask, &answer));
+        let said = delivery(&ask, &answer);
+        tracing::info!(
+            "[DEBUG-6260] answer delivered {} load {} id {}: {}",
+            ask.label,
+            ask.load,
+            ask.id,
+            said.chars().take(300).collect::<String>()
+        );
+        let _ = webview.eval(said);
     });
 }
 
