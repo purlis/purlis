@@ -35,19 +35,18 @@ describe("the scenario specs a part runs", () => {
   });
 
   it("cuts four parts at the names chosen by measured time, each in name order", () => {
-    expect(specsOfPart(FILES, "1/4")).toEqual(["activity.e2e.ts"]);
-    expect(specsOfPart(FILES, "2/4")).toEqual(["palette.e2e.ts", "pane-notices.e2e.ts"]);
-    expect(specsOfPart(FILES, "3/4")).toEqual([
+    expect(specsOfPart(FILES, "1/4")).toEqual(["activity.e2e.ts", "palette.e2e.ts"]);
+    expect(specsOfPart(FILES, "2/4")).toEqual([
+      "pane-notices.e2e.ts",
       "panes.e2e.ts",
       "project-switch.e2e.ts",
-      "projects.e2e.ts",
     ]);
-    expect(specsOfPart(FILES, "4/4")).toEqual([
+    expect(specsOfPart(FILES, "3/4")).toEqual([
+      "projects.e2e.ts",
       "skill-studio-drafts.e2e.ts",
       "skill-studio.e2e.ts",
-      "tab-chip.e2e.ts",
-      "your-repos.e2e.ts",
     ]);
+    expect(specsOfPart(FILES, "4/4")).toEqual(["tab-chip.e2e.ts", "your-repos.e2e.ts"]);
   });
 
   it("cuts Linux's three parts at the names chosen by measured time", () => {
@@ -56,9 +55,9 @@ describe("the scenario specs a part runs", () => {
       "pane-notices.e2e.ts",
       "panes.e2e.ts",
       "project-switch.e2e.ts",
-      "projects.e2e.ts",
     ]);
     expect(specsOfPart(FILES, "3/3")).toEqual([
+      "projects.e2e.ts",
       "skill-studio-drafts.e2e.ts",
       "skill-studio.e2e.ts",
       "tab-chip.e2e.ts",
