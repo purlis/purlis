@@ -7158,10 +7158,6 @@ nav.piece-files-head {
 
 /* The left nav: the panel family's page navigation (`ViewNav`, #2930), which draws its
    groups. */
-/* Its own line after it is the side column's edge here, drawn once (R37). */
-.ui-settings-nav [data-scope="view-frame"][data-part="nav"] {
-  border-inline-end-width: 0;
-}
 
 .ui-settings-nav {
   display: flex;
@@ -7535,20 +7531,6 @@ nav.piece-files-head {
     overflow-y: visible;
     border-inline-end: 0;
     border-block-end: 1px solid var(--border-subtle);
-  }
-
-  .ui-settings-nav [data-scope="view-frame"][data-part="nav"] > ul {
-    display: flex;
-    flex-direction: row;
-    overflow-x: auto;
-  }
-
-  .ui-settings-nav li {
-    flex: none;
-  }
-
-  .ui-settings-nav [data-scope="view-nav"][data-part="item"][data-sub] {
-    padding-inline-start: var(--space-5);
   }
 
   .ui-settings-body {

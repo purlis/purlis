@@ -350,6 +350,29 @@
   list-style: none;
 }
 
+/* A navigation whose holder draws its edge draws no line of its own (Settings' side column). */
+[data-scope="view-frame"][data-part="nav"][data-edge="none"] {
+  border-inline-end-width: 0;
+}
+
+/* **One sideways-scrolling row where its container is narrow** (#2919, R75): the pages side by
+   side, each as wide as its words, a page of the one before it set in a step less. */
+@container (max-width: 760px) {
+  [data-scope="view-frame"][data-part="nav"][data-row-when-narrow] > ul {
+    flex-direction: row;
+    overflow-x: auto;
+  }
+
+  [data-scope="view-frame"][data-part="nav"][data-row-when-narrow] > ul > li {
+    flex: none;
+  }
+
+  [data-scope="view-frame"][data-part="nav"][data-row-when-narrow]
+    [data-scope="view-nav"][data-part="item"][data-sub] {
+    padding-inline-start: var(--space-5);
+  }
+}
+
 /* The two panes beside each other, the separator between them. */
 [data-scope="view-frame"][data-part="panes"] {
   min-block-size: 0;

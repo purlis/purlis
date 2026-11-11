@@ -155,7 +155,15 @@ export function ViewNav({
   page,
   onPage,
   onExpand,
+  rowWhenNarrow = false,
+  edge = true,
 }: {
+  /** **One sideways-scrolling row where its container is narrow** (under 760 px; Settings'
+   *  pages, R75), in place of a column. */
+  rowWhenNarrow?: boolean;
+  /** Whether it draws its own line after it: none where what holds it draws that edge
+   *  (Settings' side column). */
+  edge?: boolean;
   /** What the navigation is called (`aria-label`): "Skill studio pages". */
   label: string;
   pages: readonly ViewPage[];
@@ -191,6 +199,8 @@ export function ViewNav({
       aria-label={label}
       data-scope="view-frame"
       data-part="nav"
+      data-row-when-narrow={rowWhenNarrow || undefined}
+      data-edge={edge ? undefined : "none"}
       onBlur={(event) => {
         // The keyboard has left the navigation: its stop goes back to the current page.
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setAimed(undefined);

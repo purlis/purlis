@@ -261,6 +261,8 @@ export function SettingsLayout({
               onGroupChange(to);
             }}
             onExpand={setOpen}
+            rowWhenNarrow
+            edge={false}
           />
         </div>
         {foot}
