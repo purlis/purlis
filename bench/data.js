@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794384882902,
+  "lastUpdate": 1794389537186,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -46830,6 +46830,48 @@ window.BENCHMARK_DATA = {
             "value": 102.793399,
             "unit": "ms",
             "extra": "median of 5 runs: 101.939, 102.319, 102.793, 102.828, 103.422 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e7fa4d52fe15f73e32da64ec3b996c93e365d750",
+          "message": "The Expiring sound plays: an ask in its last 15 seconds sounds once, with the setting on (#6110) (#6207)\n\n* The Expiring sound plays: an ask in its last 15 seconds sounds once, with the setting on (#6110)\n\nWith Settings › You › Attention › \"Sound for an expiring ask\" on, the\nnotifier shows an Expiring ask's chat notification again with the system's\nown notification sound when 15 seconds or fewer are left: once per ask,\none per chat, never while Quiet or while the person looks at its chat.\nThe decision is pure (should_sound) and Rules::expiring keeps what\nsounded like its other per-ask memory, waking when the next ask comes\nwithin 15 seconds.\n\nmacOS: UNNotificationSound.defaultSound (one more feature of\nobjc2-user-notifications). Linux/BSD: the plugin's sound-name hint,\ndialog-warning. dev builds and Windows: the default sound name.\nThe row's help no longer says no sound plays. ADR 0121 amendment\n2026-11-11 records the threshold and the sound path.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M73XJC0P8X095ZBKSRKFJ5TP\nPurlis-Persona: steward\n\n* The Expiring sound plays: an ask in its last 15 seconds sounds once, with the setting on (#6110)\n\nWith Settings › You › Attention › \"Sound for an expiring ask\" on, the\nnotifier shows an Expiring ask's chat notification again with the system's\nown notification sound when 15 seconds or fewer are left: once per ask,\none per chat, never while Quiet or while the person looks at its chat.\nThe decision is pure (should_sound) and Rules::expiring keeps what\nsounded like its other per-ask memory, waking when the next ask comes\nwithin 15 seconds.\n\nmacOS: UNNotificationSound.defaultSound (one more feature of\nobjc2-user-notifications). Linux/BSD: the plugin's sound-name hint,\ndialog-warning. dev builds and Windows: the default sound name.\nThe row's help no longer says no sound plays. ADR 0121 amendment\n2026-11-11 records the threshold and the sound path.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M73XJC0P8X095ZBKSRKFJ5TP\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-11T08:01:34Z",
+          "tree_id": "0926e1db842edd57f9a55f98f26a40dd6fb71b57",
+          "url": "https://github.com/purlis/purlis/commit/e7fa4d52fe15f73e32da64ec3b996c93e365d750"
+        },
+        "date": 1794389532535,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3570765,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.346, 0.348, 0.357, 0.371, 0.373 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.318896000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.262, 16.280, 16.319, 16.629, 16.637 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.071562,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.102, 101.557, 102.072, 102.167, 102.504 ms"
           }
         ]
       }
