@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794370635896,
+  "lastUpdate": 1794375843918,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -46746,6 +46746,48 @@ window.BENCHMARK_DATA = {
             "value": 101.05263199999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.962, 100.973, 101.053, 101.997, 102.410 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "af51ea74d9a413adfb0e67b8ed4cd0f8b2da7ce0",
+          "message": "e2e: the title bar's ⌄ is pressed only when a person could press it, and says what is in its way (#5035) (#6191)\n\n* e2e: the title bar's ⌄ is pressed only when a person could press it, and says what is in its way (#5035)\n\nThe ⌄ failed to open its popover on macOS because a modal dialog that an\nearlier failed test left up stood over it (clones: a sign-in that threw\n\"Invalid URL\"; outcome bars: Use skill's dialog). React Aria hides all\noutside the modal and takes the keyboard back from a popover opened\nunder it, so each press opened the popover and it went within 200 ms.\nThe helper pressed again at every 200 ms poll that saw no list, opening\nand losing it for 20 s, and said only \"opened no workspaces\".\n\nopened() now presses only when the ⌄ is drawn, reachable and closed,\nat most twice (one retry for a dialog's late keyboard hand-back), and\nits failure names what it saw: the dialog in the way, no ⌄ drawn, an\nopen popover with no list, or presses spent. The chats and tabs guards\nput away a dialog left up before they reach for the ⌄.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M74B1XX66RQHHT35XP25RXC4\nPurlis-Persona: steward\n\n* e2e: the ⌄'s second press only when its first drew no popover, and its failure says why (#5035 review)\n\nThe press now watches for the list, so a later step tells a popover\nthat came and went from one that never came, and only the second gets\nthe one retry. An error a step meets is kept and said, the overlay in\nthe way is named by its role (a menu hides the ⌄ as a dialog does),\nand a test pins the mechanism: under a modal dialog a press opens the\npopover and loses it at once.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M74B1XX66RQHHT35XP25RXC4\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-11T05:06:27Z",
+          "tree_id": "c63ee9243abbfdf25c8564d2f3e0e2b2b25525c1",
+          "url": "https://github.com/purlis/purlis/commit/af51ea74d9a413adfb0e67b8ed4cd0f8b2da7ce0"
+        },
+        "date": 1794375838093,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5451725000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.543, 0.543, 0.545, 0.549, 0.549 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.224755000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.205, 16.224, 16.225, 16.250, 16.257 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.2437175,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.397, 100.307, 101.244, 101.316, 102.381 ms"
           }
         ]
       }
