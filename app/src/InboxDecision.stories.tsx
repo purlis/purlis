@@ -10,6 +10,7 @@
  * Answer button, and its row says what it needs.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { useState } from "react";
 import { expect, userEvent, waitFor, within } from "storybook/test";
 import type { Shown } from "./bindings";
 import { Inbox } from "./Inbox";
@@ -116,8 +117,14 @@ const BUDGET: Shown = {
   source: "budget",
   chain: ["steward 7"],
   answer: { via: "paused" },
-  since: 1_000,
+  // Stamped when the story draws, `PAUSED_FOR` before then (`OneAsk`): a fixed instant would make
+  // the row's age, and so its pictures, change every day.
+  since: null,
 };
+
+/** How long the paused chats have waited when the story draws: 2½ hours, read as 2h, with half
+ *  an hour either way before the picture could change. */
+const PAUSED_FOR = 9_000;
 
 /** A chat paused as looping (#6015): It's fine, continue, or Stop. */
 const LOOPING: Shown = {
@@ -146,9 +153,12 @@ const ASKS = {
 
 /** The Inbox as wide as the window's side of it, holding one ask. */
 function OneAsk({ ask }: { ask: keyof typeof ASKS }) {
+  const [now] = useState(() => Math.floor(Date.now() / 1000));
+  const shown = ASKS[ask];
+  const stamped = shown.answer?.via === "paused" ? { ...shown, since: now - PAUSED_FOR } : shown;
   return (
     <div style={{ inlineSize: 420 }}>
-      <Inbox plane="/plane" asks={[ASKS[ask]]} onGo={() => {}} onLeave={() => {}} />
+      <Inbox plane="/plane" asks={[stamped]} onGo={() => {}} onLeave={() => {}} />
     </div>
   );
 }
