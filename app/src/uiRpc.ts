@@ -2572,7 +2572,6 @@ export const commands = {
 } | null, string>(__TAURI_INVOKE("chat_usage", { plane, session })),
 	recordSlow: __WINDOW_ONLY_RESULT,
 	slowLogRecent: __WINDOW_ONLY_RESULT,
-	debug5478Log: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **What the chats of a tab used** (#1500). `scope` says what for: a row's hover reads its
 	 *  one figure; a tab's menu reads every line, each task's time and the total. `own` is the

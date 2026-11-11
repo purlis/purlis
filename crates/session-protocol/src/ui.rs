@@ -227,9 +227,6 @@ pub const WINDOW_ONLY: &[&str] = &[
     // names the commands this machine's window ran, so no link writes or reads it.
     "record_slow",
     "slow_log_recent",
-    // [DEBUG-5478] The freeze watchdog's line goes to this machine's diagnostic log: a window's
-    // own, as the slow-answer log is, so no link writes it (#5488 removes it).
-    "debug_5478_log",
     // The theme in force for the window that asks, which also points that window's theme watch
     // at the project it answers for (#2324). A link has no window here to watch for: it is
     // served `theme_in_force_at`, the same answer, which watches nothing (#2697).

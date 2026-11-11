@@ -5578,11 +5578,6 @@ export const commands = {
 	 */
 	slowLogRecent: () => typedError<SlowMoment[], string>(__TAURI_INVOKE("slow_log_recent")),
 	/**
-	 *  [DEBUG-5478] Writes the watchdog's line to the diagnostic log, prefixed `[DEBUG-5478]`, on a
-	 *  blocking thread: a file is not the window's to wait for, least of all while a pane is stuck.
-	 */
-	debug5478Log: (line: string) => typedError<null, string>(__TAURI_INVOKE("debug_5478_log", { line })),
-	/**
 	 *  **What the chats of a tab used** (#1500). `scope` says what for: a row's hover reads its
 	 *  one figure; a tab's menu reads every line, each task's time and the total. `own` is the
 	 *  session's own chat, said beside the total and not in it; `chats` its open tasks, and any it

@@ -58,7 +58,6 @@ mod layout;
 mod questiontrail;
 // The Devices view (#2052).
 mod clusterpools;
-mod debug5478; // [DEBUG-5478] temporary diagnostics, removed with the rest of the tag.
 mod devices;
 mod diagnostics;
 mod dispatchaway;

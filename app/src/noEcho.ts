@@ -26,8 +26,8 @@
  * for nothing, and its person loses no key to it. A chat starts again at most once per
  * {@link AT_MOST_EVERY_MS}.
  *
- * The root cause in the pacing is not yet pinned (#5478): this is the fallback that keeps the
- * person's chat working while the `[DEBUG-5478]` lines find it.
+ * #5478's cause was in xterm itself (`altScreenRows.ts`); this stays as the fallback that keeps a
+ * person's chat working should a view stick for any other reason.
  */
 
 /** How long a pane may type and be sent nothing before its view is taken to be stuck. */
@@ -52,7 +52,7 @@ export interface NoEchoWatch {
   dispose(): void;
 }
 
-/** What the watch says of a stuck view, for the log. */
+/** What the watch saw of a stuck view. */
 export interface NoEcho {
   typed: number;
   waitedMs: number;
