@@ -143,7 +143,11 @@ impl Ledger {
         self.running
             .iter()
             .filter_map(|record| record.worker.chat.id.as_deref())
-            .chain(self.ended.iter().filter_map(|entry| entry.chat_id.as_deref()))
+            .chain(
+                self.ended
+                    .iter()
+                    .filter_map(|entry| entry.chat_id.as_deref()),
+            )
     }
 
     /// The ids of the dispatches that have ended, newest first.

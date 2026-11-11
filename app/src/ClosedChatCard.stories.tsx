@@ -129,7 +129,8 @@ export const FromTheSwitchersRow: Story = {
     const row = canvas.getByRole("button", { name: /Finished chat #641/ });
     await userEvent.click(row);
     const card = await screen.findByRole("dialog", { name: "#641 · Signed commits #5607" });
-    await expect(within(card).getByText("Finished")).toBeVisible();
+    // Drawn once the popover has come in.
+    await waitFor(() => expect(within(card).getByText("Finished")).toBeVisible());
     await expect(within(card).getByText("steward 4")).toBeVisible();
     await userEvent.tab();
     const read = within(card).getByRole("button", { name: "Read it" });
@@ -156,8 +157,14 @@ export const ScreenNotKept: Story = {
   play: async ({ canvasElement }) => {
     await userEvent.click(within(canvasElement).getByRole("button", { name: /Finished chat/ }));
     const card = await screen.findByRole("dialog", { name: "#629 · talk" });
-    await expect(within(card).getByRole("button", { name: "Read it" })).toBeDisabled();
-    await expect(within(card).getAllByText("Its screen was not kept.")[0]).toBeVisible();
+    // The family keeps a disabled button focusable, so its reason is heard: aria-disabled.
+    await expect(within(card).getByRole("button", { name: "Read it" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await waitFor(() =>
+      expect(within(card).getAllByText("Its screen was not kept.")[0]).toBeVisible(),
+    );
     await expect(within(card).getByText("It sent no report.")).toBeVisible();
   },
 };

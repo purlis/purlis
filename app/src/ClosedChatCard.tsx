@@ -22,7 +22,6 @@ import { Button, ButtonRow } from "./ui/button/Button";
 import { Fact, Facts } from "./ui/card/Facts";
 import { HeldPopover } from "./ui/popover/Popover";
 import { NO_REPORT, SCREEN_NOT_KEPT, cardTitle, cardWhen, outcomeOf } from "./closedChat";
-import "./closedChatCard.css";
 
 /** Why *Reopen* does nothing on a card whose task names no conversation. */
 export const NO_CONVERSATION =

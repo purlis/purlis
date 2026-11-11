@@ -44,7 +44,7 @@ describe("a chat found by its number in the palette (#6214)", () => {
   it("the finished row is found by 641 and by #641, and not by another number", () => {
     const rows = numberRows({ number: 641, found: { found: "ended", card: CARD } });
     expect(narrow("641", rows)).toHaveLength(1);
-    expect(narrow("#641", rows)).toHaveLength(1);
+    expect(narrow(`#${641}`, rows)).toHaveLength(1);
     expect(narrow("642", rows)).toHaveLength(0);
   });
 

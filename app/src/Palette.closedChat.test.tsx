@@ -114,7 +114,7 @@ describe("a closed chat found by its number in the palette", () => {
       />,
     );
     const palette = await open();
-    await userEvent.keyboard("#641");
+    await userEvent.keyboard(`#${641}`);
     await userEvent.click(
       await within(palette).findByRole("option", { name: /Finished chat #641/ }),
     );
