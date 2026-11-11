@@ -855,6 +855,23 @@ body {
   outline-offset: var(--focus-ring-inset);
 }
 
+/* **A link in a pane, under the pointer** (#6215, `PaneLinkSurfaces.tsx`): where it is drawn,
+   which its tooltip stands beside. It catches no pointer, so xterm keeps hearing the pointer on
+   the link. The tooltip says its target in the code face, then what ⌘-click does. */
+.pane-link-anchor {
+  position: fixed;
+  pointer-events: none;
+}
+
+.pane-link-tip {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.pane-link-target {
+  overflow-wrap: anywhere;
+}
+
 /* **A read-only terminal** (#3676, `ReadOnlyTerminal.tsx`): the words that say it is read-only,
    then the screen, one Tab stop with the ring on its edge, and the find bar over its corner. The
    grid's ground is the terminal's own, so the screen reads as a terminal that is over. */

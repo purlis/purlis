@@ -21,6 +21,9 @@
  *   selected, on the grid or in the text a reader selected. Esc in the find bar closes it and the
  *   keyboard comes back to the screen.
  * - **It says it is read-only in words, outside the grid** (`note`), as the prototype does.
+ * - **Its links are a pane's** (#6215, `paneLinks.ts`): an address in what it showed is
+ *   underlined under the pointer, and ⌘-click (Ctrl+click off a Mac) opens it, as in a chat's
+ *   pane. A still picture has none.
  * - **Drawn as a terminal is**, from the theme in force or the one it is handed (`theme`), at the
  *   text size it is handed (the window's terminal size, or the specimen's fixed one), with no cursor
  *   and nothing typed reaching anything.
@@ -31,7 +34,20 @@ import { SearchAddon } from "@xterm/addon-search";
 import { FindBar } from "./FindBar";
 import { opensFindInAFile } from "./keys/findKeys";
 import { onAMac } from "./mac";
-import { drawnFont, inForce, terminalFont, xtermLook, xtermTheme, type Theme } from "./theme/theme";
+import { linkPane } from "./paneLinks";
+import { usePaneLinks } from "./PaneLinkSurfaces";
+import {
+  drawnFont,
+  inForce,
+  linkColour,
+  terminalFont,
+  xtermLook,
+  xtermTheme,
+  type Theme,
+} from "./theme/theme";
+
+/** Where a read-only screen's links were found: in no project's pane, so no chat's. */
+const NOWHERE = () => ({ plane: null, session: null });
 
 /** What a read-only screen says of itself when its owner says nothing more. */
 export const READ_ONLY_SAID = "Read-only: it takes no input.";
@@ -122,6 +138,8 @@ export function ReadOnlyTerminal({
   // What a copy the clipboard refused says, under the screen.
   const [copy, setCopy] = useState<string>();
   const [finding, setFinding] = useState<{ search: SearchAddon; asked: number } | null>(null);
+  /** Its links' surfaces: a hovered link's tooltip, and the answer to one that did not open. */
+  const { hands: linkHands, surfaces: linkSurfaces } = usePaneLinks(onAMac(), null, null);
   // Read once, as it is drawn: a later write of the same screen is the same picture.
   const told = useRef(onWriting);
   useLayoutEffect(() => {
@@ -155,6 +173,15 @@ export function ReadOnlyTerminal({
     // xterm's own text box is never a Tab stop: the screen's region is.
     pane.textarea?.setAttribute("tabindex", "-1");
     drawn.current = { pane, search };
+    const links = still
+      ? undefined
+      : linkPane(pane, {
+          from: NOWHERE,
+          hovered: linkHands.hovered,
+          answered: linkHands.answered,
+          colour: () => linkColour(look),
+          mac: onAMac,
+        });
     let live = true;
     // No cursor: what it showed is over.
     const written = new Promise<void>((done) =>
@@ -168,8 +195,11 @@ export function ReadOnlyTerminal({
       live = false;
       drawn.current = null;
       setFinding(null);
+      links?.dispose();
       pane.dispose();
     };
+    // The link hands are made once for the screen's life (`usePaneLinks`).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screen, cols, rows, theme, fontSize, still]);
 
   const keys = (event: KeyboardEvent<HTMLElement>) => {
@@ -251,6 +281,7 @@ export function ReadOnlyTerminal({
           {copy ?? ""}
         </p>
       )}
+      {linkSurfaces}
     </div>
   );
 }

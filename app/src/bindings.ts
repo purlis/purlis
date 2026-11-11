@@ -144,6 +144,13 @@ export const commands = {
 	 *  window names, and with `always`, keeps its host on this machine first.
 	 */
 	artifactLinkOpen: (label: string, always: boolean) => typedError<null, string>(__TAURI_INVOKE("artifact_link_open", { label, always })),
+	/**  **What each candidate on a line is**, in order: a link, or none. What a hover shows. */
+	paneLinkResolve: (from: LinkFrom, candidates: LinkCandidate[]) => __TAURI_INVOKE<(LinkSeen | null)[]>("pane_link_resolve", { from, candidates }),
+	/**
+	 *  **Opens a link a pane found** (⌘-click, Ctrl+click off a Mac): the candidate's text,
+	 *  resolved again here. `confirmed` is the target an ask showed, which the person accepted.
+	 */
+	paneLinkOpen: (from: LinkFrom, candidate: LinkCandidate, confirmed: string | null) => __TAURI_INVOKE<LinkOpened>("pane_link_open", { from, candidate, confirmed }),
 	/**
 	 *  **The pinned artifacts of project `plane`, in every workspace, that say any word of
 	 *  `query`**, best first: at most [`MOST`].
@@ -11100,6 +11107,52 @@ export type LinesShown = {
 	 *  that way; the row then says only the count.
 	 */
 	shown: string[],
+};
+
+/**  **Text a pane found that may be a link**: the words as printed, and the pattern's hint. */
+export type LinkCandidate = {
+	kind: LinkKind,
+	text: string,
+};
+
+/**  **What ⌘-click on a link would do**, said on its hover. */
+export type LinkDoes = 
+/**  It opens, without asking. */
+{ does: "opens" } | 
+/**  It asks first, and why. */
+{ does: "asks"; reason: string } | 
+/**  It will not open, and the sentence that says why. */
+{ does: "refused"; reason: string };
+
+/**
+ *  **Where a candidate was found**: the pane's project and the chat it draws, where it has them
+ *  (a saved chat's read-only terminal has neither).
+ */
+export type LinkFrom = {
+	plane: PlaneId | null,
+	session: number | null,
+};
+
+/**  **What the pane's pattern took a candidate for**: a hint, never trusted for more. */
+export type LinkKind = "url";
+
+/**  **The open command's answer.** */
+export type LinkOpened = 
+/**  Opened: `target` is what was opened. */
+{ answer: "opened"; kind: LinkKind; target: string } | 
+/**
+ *  Not opened yet: the person is asked, shown its text and where it goes. Accepted, the
+ *  same candidate is sent again with `target` as what was confirmed.
+ */
+{ answer: "ask"; reason: string; shown: string; target: string } | 
+/**  Not opened, and the sentence the window shows. */
+{ answer: "refused"; reason: string };
+
+/**  **A candidate that is a link**: its kind, its target in full and what opening it does. */
+export type LinkSeen = {
+	kind: LinkKind,
+	target: string,
+	does: LinkDoes,
 };
 
 /**  One repo the person can get. */

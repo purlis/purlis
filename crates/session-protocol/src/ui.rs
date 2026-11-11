@@ -1176,6 +1176,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Opening a link an artifact's page followed (#5956, ADR 0122 §5): the person's answer in
     // their own window, to what that window's artifact reported.
     "artifact_link_open",
+    // A link in a pane's output (#6215): read for a hover and opened in the person's browser on
+    // the machine the window is on, so never served on a link, where it would open the host's.
+    "pane_link_resolve",
+    "pane_link_open",
     // A scenario test's stand-ins for the page's click and the browser (#5956): the `e2e` build
     // only, and its window alone.
     "artifact_link_follow",

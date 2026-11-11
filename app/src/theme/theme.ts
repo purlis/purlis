@@ -1019,6 +1019,15 @@ export function searchDecorations(theme: Theme): SearchDecorations {
 }
 
 /**
+ * **The colour a link in a pane is drawn in under the pointer** (#6215): the theme's link
+ * colour, held at AA on the terminal's fill (`check.rs`), as `#rrggbb`, the one form an xterm
+ * decoration takes.
+ */
+export function linkColour(theme: Theme): string {
+  return sixDigits(theme.values["markdown.link"]);
+}
+
+/**
  * Puts a theme on the document, and says what the window is now drawn on.
  *
  * `reduced` is whether the operator has asked for less motion, and it is read here rather than
