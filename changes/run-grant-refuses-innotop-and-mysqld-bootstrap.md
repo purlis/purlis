@@ -1,7 +1,9 @@
 ### Security
 
-- **A run's notice offers no Allow for `innotop`, `mysqld_bootstrap` or `mysqld_pre_systemd`.**
-  innotop loads the Perl plugins of the folder its configuration file names. Percona XtraDB
-  Cluster's `mysqld_bootstrap` has the service manager start the server, and
-  `mysqld_pre_systemd` runs the server to initialize it. A persona can still declare any of them
-  as a tool (#6109).
+- **A run's notice offers no Allow for `innotop`, `mariadb-report`, the server's systemd helpers
+  or Percona XtraDB Cluster's cluster checks** (`mysqlreport`, `mysqld_bootstrap`,
+  `mysqld_pre_systemd`, `mysql-systemd`, `clustercheck`, `pyclustercheck`). innotop loads the
+  Perl plugins of the folder its configuration file names, and `mariadb-report` hands its
+  `--outfile` to a shell. The systemd helpers start or initialize the server, and the cluster
+  checks run the client with a file of settings they are handed. A persona can still declare
+  any of them as a tool (#6109).
