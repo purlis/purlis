@@ -255,9 +255,7 @@ const listeners = new Set<() => void>();
 /** Whether two rows say the same thing: every field of a row is a string or a flag. */
 function sameRow(one: MachineAlert, other: MachineAlert): boolean {
   const keys = Object.keys(one) as (keyof MachineAlert)[];
-  return (
-    keys.length === Object.keys(other).length && keys.every((key) => one[key] === other[key])
-  );
+  return keys.length === Object.keys(other).length && keys.every((key) => one[key] === other[key]);
 }
 
 /** Says something about this machine under `subject`, replacing what was said under it before,
