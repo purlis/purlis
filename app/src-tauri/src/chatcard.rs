@@ -26,8 +26,8 @@ pub(crate) enum ChatLookup {
     Open { number: u32 },
     /// The chat it was is open now under `now`: started again, or reopened.
     Restarted { now: u32 },
-    /// The chat has ended: its card.
-    Ended { card: ChatCard },
+    /// The chat has ended: its card, boxed as it is the one large answer.
+    Ended { card: Box<ChatCard> },
     /// No chat had it, or none purlis kept a record of.
     NoChat,
 }
@@ -82,7 +82,7 @@ pub(crate) fn lookup(held: &Held, number: u32) -> ChatLookup {
                 return ChatLookup::NoChat;
             };
             ChatLookup::Ended {
-                card: ChatCard {
+                card: Box::new(ChatCard {
                     number,
                     screen_kept: purlis_core::chatscreens::is_kept(held.root(), &chat),
                     chat,
@@ -92,7 +92,7 @@ pub(crate) fn lookup(held: &Held, number: u32) -> ChatLookup {
                     } else {
                         record.asker.chat.name.clone()
                     },
-                },
+                }),
             }
         }
     }

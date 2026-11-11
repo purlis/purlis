@@ -162,8 +162,9 @@ export const ScreenNotKept: Story = {
       "aria-disabled",
       "true",
     );
+    // Said in words under the answers, besides the button's own description.
     await waitFor(() =>
-      expect(within(card).getAllByText("Its screen was not kept.")[0]).toBeVisible(),
+      expect(within(card).getByText("Its screen was not kept.", { selector: "p" })).toBeVisible(),
     );
     await expect(within(card).getByText("It sent no report.")).toBeVisible();
   },

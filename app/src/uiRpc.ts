@@ -4568,7 +4568,7 @@ export type ChatLookup =
 { found: "open"; number: number } | 
 /**  The chat it was is open now under `now`: started again, or reopened. */
 { found: "restarted"; now: number } | 
-/**  The chat has ended: its card. */
+/**  The chat has ended: its card, boxed as it is the one large answer. */
 { found: "ended"; card: ChatCard } | 
 /**  No chat had it, or none purlis kept a record of. */
 { found: "no_chat" };
