@@ -342,7 +342,7 @@ export async function startFakeGitLab(
     acceptToken: (token) => void tokens.add(token),
     revokeEveryToken: () => tokens.clear(),
     async playBrowser(address) {
-      const asked = thePageAsked(address);
+      const asked = pageTheSignInHanded(address);
       if (asked.host !== server) throw new Error(`the page is on ${asked.host}, not ${server}`);
       const redirect = asked.searchParams.get("redirect_uri") ?? "";
       if (
@@ -376,7 +376,7 @@ export async function startFakeGitLab(
  * **The page a sign-in handed the browser** (#6192), as the fake forge reads it: an address that
  * is no URL says what it was, so a red run tells an empty or half-written page from a wrong one.
  */
-export function thePageAsked(address: string): URL {
+export function pageTheSignInHanded(address: string): URL {
   try {
     return new URL(address);
   } catch {

@@ -513,10 +513,12 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
         },
         { timeout: 30_000 },
       )
-      .catch(() => {
+      .catch((cause: unknown) => {
         // Said with what it read (#6192): no page written, or what was written that is no address.
         const read = existsSync(PAGE) ? JSON.stringify(page) : "no page";
-        throw new Error(`the sign-in never opened the forge's page: it wrote ${read}`);
+        throw new Error(
+          `the sign-in never opened the forge's page: it wrote ${read} (${String(cause)})`,
+        );
       });
     await forge.playBrowser(page);
     await browser.waitUntil(

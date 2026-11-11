@@ -15,7 +15,7 @@ import {
   gitConfigFor,
   OWNER,
   startFakeGitLab,
-  thePageAsked,
+  pageTheSignInHanded,
 } from "./fakeGitLab.js";
 import {
   CLONE_STALL_VARIABLE,
@@ -178,7 +178,9 @@ describe("the fake GitLab", () => {
 
 describe("the page the browser flow is handed (#6192)", () => {
   it("says what it was handed when that is no URL, not only that it is invalid", () => {
-    expect(() => thePageAsked("")).toThrow('the sign-in handed the browser "", which is no URL');
-    expect(() => thePageAsked("https://git.example.test:8443/oauth/auth")).not.toThrow();
+    expect(() => pageTheSignInHanded("")).toThrow(
+      'the sign-in handed the browser "", which is no URL',
+    );
+    expect(() => pageTheSignInHanded("https://git.example.test:8443/oauth/auth")).not.toThrow();
   });
 });
