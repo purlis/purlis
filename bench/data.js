@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794375843918,
+  "lastUpdate": 1794384882902,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -46788,6 +46788,48 @@ window.BENCHMARK_DATA = {
             "value": 101.2437175,
             "unit": "ms",
             "extra": "median of 5 runs: 99.397, 100.307, 101.244, 101.316, 102.381 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "9c39afd5c0f19e4fee1765b6e73a6f4aee0ad5db",
+          "message": "The project-switch job ends on a pane of the project switched to, and says what the window showed (#6198) (#6199)\n\n* The project-switch job ends on a pane of the project switched to, and says what the window showed (#6198)\n\nMain's run 42957050229 timed out on the switch to switch-5: the core saw the\nproject come to the front 0.3 s after the job began, then the job's own 60 s\nwait ran out 1-2 s after the driver's 60 s patience, so its trouble was lost.\n\n- Panes carry their project. Both end conditions (the pane armed as it opens,\n  and a pane in the window that holds the sentinel) take only a pane of the\n  project switched to, found by terminal: no session-keyed map that a pane of\n  another project with the same number can shadow, and no exclusion of panes\n  that were in the window before the press.\n- The job's own patience (60 s, patienceMs) is under the driver's (now 90 s),\n  and its trouble lists the project's panes in the window, whether each holds\n  the sentinel and what each was sent.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M74G0AWTBS9718KSQEYNPXW2\nPurlis-Persona: steward\n\n* The project-switch job's panes are known by PlaneId, and a switch with no pane says so once (#6198)\n\nFrom the code review: the plane is typed as the core's PlaneId, paneOpened says\nwhat it is told, the trouble reads the panes once, and why inTheWindow is\nstricter than onScreen is written down.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M74G0AWTBS9718KSQEYNPXW2\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-11T07:40:46Z",
+          "tree_id": "5add04938c5e3cee49eed1d5c274676b364c24a3",
+          "url": "https://github.com/purlis/purlis/commit/9c39afd5c0f19e4fee1765b6e73a6f4aee0ad5db"
+        },
+        "date": 1794384876717,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.540306,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.537, 0.537, 0.540, 0.542, 0.556 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4295055,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.337, 16.412, 16.430, 16.470, 16.524 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.793399,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.939, 102.319, 102.793, 102.828, 103.422 ms"
           }
         ]
       }
