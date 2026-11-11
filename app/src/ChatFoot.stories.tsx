@@ -192,7 +192,7 @@ function Head({
             </span>
           )}
           <span className="pane-name">M69 chats, tabs and panes: build</span>
-          <PaneNumber session={6412} />
+          {lines.head.includes("number") && <PaneNumber session={6412} />}
           {lines.head.includes("mark") && (
             <span className="pane-state-mark">{lines.head.includes("markWord") && "working"}</span>
           )}

@@ -142,7 +142,7 @@ function Head({ chat, tasksOn }: { chat: ChatHead["chat"]; tasksOn?: TasksOn }) 
               />
             </span>
             <span className="pane-name">{chat.name}</span>
-            <PaneNumber session={chat.session} />
+            {LINE.has("number") && <PaneNumber session={chat.session} />}
             <PaneTasksWord
               tasksOn={tasksOn}
               session={chat.session}
@@ -282,7 +282,7 @@ function UsingHead({ width }: { width: number }) {
               />
             </span>
             <span className="pane-name">{USING.name}</span>
-            <PaneNumber session={USING.session} />
+            {line.has("number") && <PaneNumber session={USING.session} />}
             <PaneTasksWord
               session={USING.session}
               at={undefined}

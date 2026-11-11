@@ -518,8 +518,7 @@ export function PaneFrame({
               {/* **Its number beside its name** (#6212): the chat's current one, so a chat
               started again says its new number; while the pane shows a task, the task's. */}
               {/* Read off the pane, never its row: a chat just started again is not listed yet. */}
-              {/* A one-job program is no chat a person finds again: it says none. */}
-              {!oneJob && (crumbs || line.has("name")) && (
+              {line.has("number") && (
                 <PaneNumber
                   session={crumbs ? crumbs.path[crumbs.path.length - 1].session : session}
                 />
