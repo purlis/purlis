@@ -6,13 +6,7 @@ import { dirname, join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { copyFixturePlane } from "../harness.js";
 import { focusWorkspace } from "../reach.js";
-import {
-  closeOf,
-  expectScriptRefusedHere,
-  iconFor,
-  iconOf,
-  SCRIPT_RUNS_HERE,
-} from "../artifactTabs.js";
+import { closeOf, iconFor, iconOf } from "../artifactTabs.js";
 import { openThroughTheTrustQuestion } from "../opening.js";
 
 /**
@@ -415,10 +409,6 @@ describe("managing pins from the window", () => {
  * and is asked again for any change to the template. What the page's script does once it runs is
  * the webview's, which WebDriver cannot reach: the CSP that lets it run only when approved is
  * proved in `artifacts.rs`, and the record in `purlis artifact approve-status`'s tests.
- *
- * **On Linux each case is the refusal** (ADR 0122, amended 2026-11-10): script does not run
- * there yet, so the page is shown without it and no approval is offered, through a change of
- * data or of template alike. A platform check, never a skip.
  */
 describe("a pinned artifact with script", function () {
   const LIVE = "Live board";
@@ -474,7 +464,6 @@ pin = [
 
   it("is shown without its script, and asks only in purlis's bar", async () => {
     await openAgain();
-    if (!SCRIPT_RUNS_HERE) return expectScriptRefusedHere();
     await browser.waitUntil(async () => (await bar()).includes("Has script, shown without it"), {
       timeout: 20_000,
       timeoutMsg: "the bar did not ask about the page's script",
@@ -484,7 +473,6 @@ pin = [
   });
 
   it("runs once approved there, and its page is opened again under the approval", async () => {
-    if (!SCRIPT_RUNS_HERE) return expectScriptRefusedHere();
     await $('[data-testid="artifact-bar"]').$("aria/Approve script").click();
     await browser.waitUntil(async () => (await bar()).includes("Script approved on this machine"), {
       timeout: 20_000,
@@ -497,7 +485,6 @@ pin = [
   it("stays approved through new data", async () => {
     writeFileSync(join(folder, "data.json"), '{"open": 12}');
     await openAgain();
-    if (!SCRIPT_RUNS_HERE) return expectScriptRefusedHere();
     await browser.waitUntil(async () => (await bar()).includes("Script approved on this machine"), {
       timeout: 20_000,
       timeoutMsg: "new data asked again",
@@ -507,7 +494,6 @@ pin = [
   it("asks again when its template changes, until approved anew", async () => {
     writeFileSync(join(folder, "app.js"), "document.getElementById('n').textContent = '13';");
     await openAgain();
-    if (!SCRIPT_RUNS_HERE) return expectScriptRefusedHere();
     await browser.waitUntil(
       async () => (await bar()).includes("Its template changed since you approved it"),
       { timeout: 20_000, timeoutMsg: "a changed template ran under the old approval" },

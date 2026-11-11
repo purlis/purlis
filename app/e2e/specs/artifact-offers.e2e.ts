@@ -5,13 +5,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { focusWorkspace } from "../reach.js";
-import {
-  closeTabOf,
-  expectScriptRefusedHere,
-  iconFor,
-  iconOf,
-  SCRIPT_RUNS_HERE,
-} from "../artifactTabs.js";
+import { closeTabOf, iconFor, iconOf } from "../artifactTabs.js";
 
 /**
  * **A pinned artifact whose page offers actions** (#5972, ADR 0122 §8), in the built app against
@@ -21,10 +15,6 @@ import {
  *
  * **The page cannot perform**: its script posts its offers as soon as it runs, and nothing
  * changes on disk until the person presses. Before its script is approved, it offers nothing.
- *
- * **On Linux each case is the refusal** (ADR 0122, amended 2026-11-10): script does not run
- * there yet, so the page is shown without it, offers nothing, and no approval is offered. A
- * platform check, never a skip.
  */
 
 const NAME = "Offering board";
@@ -101,12 +91,6 @@ async function forgetTodos(plane: string, todos: string, titles: string[]): Prom
   }
 }
 
-/** Where script does not run, every case: the page is refused, and nothing is offered. */
-async function refusedHere(): Promise<void> {
-  await expectScriptRefusedHere();
-  expect(await $(OFFERS).isExisting()).toBe(false);
-}
-
 describe("a pinned artifact whose page offers actions", function () {
   this.timeout(180_000);
 
@@ -162,7 +146,6 @@ pin = [
       timeout: 20_000,
       timeoutMsg: "pressing the artifact did not open its tab in front",
     });
-    if (!SCRIPT_RUNS_HERE) return refusedHere();
     await $('[data-testid="artifact-bar"]')
       .$("aria/Approve script")
       .waitForExist({ timeout: 20_000 });
@@ -170,7 +153,6 @@ pin = [
   });
 
   it("draws the page's offers in purlis's bar once approved, and performs none of them", async () => {
-    if (!SCRIPT_RUNS_HERE) return refusedHere();
     await $('[data-testid="artifact-bar"]').$("aria/Approve script").click();
     await $(OFFERS).waitForExist({
       timeout: 20_000,
@@ -186,7 +168,6 @@ pin = [
   });
 
   it("refuses an action a page may not offer, with its sentence", async () => {
-    if (!SCRIPT_RUNS_HERE) return refusedHere();
     const refused = await $('[data-testid="artifact-offer-refused"]');
     await refused.waitForExist({ timeout: 20_000 });
     expect(await refused.getText()).toContain("A page cannot offer workspace.remove");
@@ -194,7 +175,6 @@ pin = [
   });
 
   it("does an offer when the person presses it in the bar", async () => {
-    if (!SCRIPT_RUNS_HERE) return refusedHere();
     await $(OFFERS).$("aria/Mark done: Polish the offering banner").click();
     await browser.waitUntil(() => !existsSync(join(todos, `${open}.md`)), {
       timeout: 20_000,
@@ -204,7 +184,6 @@ pin = [
   });
 
   it("asks before an offered delete, and Cancel deletes nothing", async () => {
-    if (!SCRIPT_RUNS_HERE) return refusedHere();
     await $(OFFERS).$("aria/Delete done todo Retire stale gadget…").click();
     const dialog = await $('[role="dialog"]');
     await dialog.waitForExist({ timeout: 20_000 });
