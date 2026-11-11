@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794356007028,
+  "lastUpdate": 1794358565679,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -46578,6 +46578,48 @@ window.BENCHMARK_DATA = {
             "value": 101.647763,
             "unit": "ms",
             "extra": "median of 5 runs: 99.905, 100.763, 101.648, 102.088, 102.847 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "bfd4eacede04590b86ce9b1e4197edc53d70f45f",
+          "message": "Run grant: mydumper, Percona Toolkit's pt-*, gh-ost, Galera's helpers and the embedded clients refused whole (#5994) (#6108)\n\n* Run grant: mydumper, myloader, Percona Toolkit's pt-*, gh-ost, Galera's helpers and the embedded clients refused whole (#5994)\n\nEach runs a command, a script or a plugin its flags or files name. Refused in\nNOT_FOR_A_RUN_GRANT, pt-* by prefix as git- and wsrep_sst_ are. One run_grants test per\nfamily, each seen red first (\"not one of the declared tools\", not \"runs other programs\");\nthe clients and ptx pinned as still offered. ADR 0112 amendment and changelog fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M713H70HJTTS309EZX4KVF38\nPurlis-Persona: steward\n\n* Run grant: the Percona Toolkit test's name says by its prefix; ptar and pt_online_schema_change pinned as offered; the amendment names #6109 and D-5994-3 (#5994, review round 3)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M713H70HJTTS309EZX4KVF38\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T23:42:07Z",
+          "tree_id": "adfb96004c87b2793f2556a7548ded5bb4e36f5c",
+          "url": "https://github.com/purlis/purlis/commit/bfd4eacede04590b86ce9b1e4197edc53d70f45f"
+        },
+        "date": 1794358559587,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.546621,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.544, 0.546, 0.547, 0.554, 0.554 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.1157275,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.010, 16.064, 16.116, 16.236, 16.244 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.1791255,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.899, 100.088, 100.179, 100.491, 100.769 ms"
           }
         ]
       }
