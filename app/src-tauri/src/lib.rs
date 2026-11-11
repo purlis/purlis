@@ -1374,7 +1374,8 @@ async fn workspace_repos(
 /// mistake.
 ///
 /// On a blocking thread, because the plane-root alert asks git for a status per project and a
-/// window that waited on eight of them would miss its frame.
+/// window that waited on eight of them would miss its frame; each project read beside the
+/// others, from its kept standing (H6c).
 #[tauri::command]
 #[specta::specta]
 async fn alerts_everywhere(
@@ -1390,10 +1391,22 @@ async fn alerts_everywhere(
             Some((plane, root))
         })
         .collect();
+    // Each project on a thread of its own (H6c): one busy project's git standing no longer holds
+    // every project after it. Answered in the order the projects were listed.
     tauri::async_runtime::spawn_blocking(move || {
-        held.into_iter()
-            .map(|(plane, root)| alerts::of(plane, &root))
-            .collect()
+        std::thread::scope(|scope| {
+            let reading: Vec<_> = held
+                .iter()
+                .map(|(plane, root)| scope.spawn(move || alerts::of(plane.clone(), root)))
+                .collect();
+            reading
+                .into_iter()
+                .map(|one| {
+                    one.join()
+                        .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+                })
+                .collect()
+        })
     })
     .await
     .map_err(|err| format!("reading the alerts did not finish: {err}"))

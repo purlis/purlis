@@ -419,3 +419,90 @@ fn what_is_found_never_prints_an_address_whole() {
         assert!(printed.contains("mirror/acme/widget"), "{printed}");
     }
 }
+
+// staleClones reads the shared standing (H6c).
+
+/// A plane whose workspace `alpha` holds clone `widget`, left on branch `topic` while its
+/// remote's default is `main`: stale for its branch.
+fn plane_with_a_clone_off_its_default()
+-> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let plane = dir.path().canonicalize().unwrap();
+    std::fs::write(plane.join("charter.toml"), "schema = 1\n").unwrap();
+    let clone = plane.join("workspaces/alpha/widget");
+    std::fs::create_dir_all(&clone).unwrap();
+    let git = |args: &[&str]| {
+        let done = crate::testgit::run(&clone, args);
+        assert!(done.ok(), "git {args:?} failed: {done:?}");
+    };
+    git(&["init", "-q", "-b", "main", "."]);
+    std::fs::write(clone.join("README.md"), "one\n").unwrap();
+    git(&["add", "-A"]);
+    git(&["commit", "-q", "-m", "one"]);
+    git(&[
+        "remote",
+        "add",
+        "origin",
+        "https://github.com/acme/widget.git",
+    ]);
+    git(&["update-ref", "refs/remotes/origin/main", "HEAD"]);
+    git(&[
+        "symbolic-ref",
+        "refs/remotes/origin/HEAD",
+        "refs/remotes/origin/main",
+    ]);
+    git(&["checkout", "-q", "-b", "topic"]);
+    (dir, plane, clone)
+}
+
+fn statuses_in(clone: &std::path::Path) -> usize {
+    crate::worktree::git::tally::asked(clone)
+        .iter()
+        .filter(|args| args.iter().any(|arg| arg == "status"))
+        .count()
+}
+
+#[test]
+fn a_clone_whose_standing_is_held_is_judged_with_no_status_of_its_own() {
+    let (_dir, plane, clone) = plane_with_a_clone_off_its_default();
+    let repo = repos::Repo {
+        name: "widget".into(),
+        path: clone.clone(),
+    };
+    crate::reposave::shared_standing(&plane, "alpha", &repo);
+    let before = statuses_in(&clone);
+
+    let got = found(&plane);
+
+    assert_eq!(statuses_in(&clone), before, "a status of its own");
+    assert!(got.unread.is_empty(), "{:?}", got.unread);
+    assert_eq!(got.found.len(), 1, "{:?}", got.found);
+    assert_eq!(
+        (got.found[0].workspace.as_str(), got.found[0].repo.as_str()),
+        ("alpha", "widget")
+    );
+    assert!(
+        got.found[0]
+            .stale
+            .iter()
+            .any(|stale| matches!(stale, Stale::OffDefault { .. })),
+        "{:?}",
+        got.found[0].stale
+    );
+}
+
+#[test]
+fn a_clone_with_changes_is_still_read_as_changed_from_the_shared_standing() {
+    let (_dir, plane, clone) = plane_with_a_clone_off_its_default();
+    std::fs::write(clone.join("README.md"), "edited\n").unwrap();
+    let repo = repos::Repo {
+        name: "widget".into(),
+        path: clone.clone(),
+    };
+
+    let seen = read_shared(&plane, "alpha", &repo);
+
+    assert_eq!(seen.branch.as_deref(), Some("topic"));
+    assert_eq!(seen.clean, Some(false));
+    assert_eq!(seen, read("alpha", &repo));
+}
