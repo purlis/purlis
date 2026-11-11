@@ -42,7 +42,8 @@ function CopyButton({ text, what }: { text: string; what: string }) {
         size="sm"
         variant="ghost"
         icon={said === "Copied" ? <Check aria-hidden size={14} /> : <Copy aria-hidden size={14} />}
-        aria-label={`${what}: ${text.split("\n")[0]}`}
+        // Named by the word it shows, Copied too, so its name holds what is seen (WCAG 2.5.3).
+        aria-label={`${said ?? what}: ${text.split("\n")[0]}`}
         onPress={copy}
       >
         <Reserved texts={[what, "Copied", "Couldn't copy"]}>{said ?? what}</Reserved>
