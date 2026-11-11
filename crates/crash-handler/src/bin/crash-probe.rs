@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! Test-only: `crash-probe <abort|late-abort|overflow|panic|exit>` watches itself with the crash handler, as
+//! Test-only: `crash-probe <abort|abort-elsewhere|late-abort|overflow|panic|exit>` watches itself with the crash handler, as
 //! the app does, keeping minidumps in the folder [`CRASHES`] names, and then ends the way it is
 //! told. `child` starts this program
 //! again, unwatched, to overflow its stack, and says how that child ended: exit 0 when it died of
@@ -27,6 +27,8 @@ fn main() {
     };
     match how.as_str() {
         "abort" => std::process::abort(),
+        // The same crash from another place, for a fingerprint that tells the two apart.
+        "abort-elsewhere" => abort_elsewhere(),
         "late-abort" => {
             // Past the deadline the companion gives an app that never connects (#6152).
             std::thread::sleep(
@@ -78,4 +80,11 @@ fn deeper(n: u64) -> u64 {
     }
     let frame = std::hint::black_box([n; 64]);
     deeper(frame[0] + 1) + frame[1]
+}
+
+/// Aborts, from a frame of its own.
+#[inline(never)]
+fn abort_elsewhere() -> ! {
+    std::hint::black_box(());
+    std::process::abort()
 }

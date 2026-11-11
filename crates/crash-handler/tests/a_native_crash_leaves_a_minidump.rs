@@ -249,6 +249,110 @@ fn a_real_crashs_report_carries_its_crashing_threads_stack_and_no_memory() {
     );
 }
 
+/// The minidump a probe told to crash `how` leaves, and the Crash event Reports sends of it.
+fn crashed_and_reported(how: &str) -> (Vec<u8>, serde_json::Value) {
+    use purlis_core::report::intake::{Dsn, Recorded, Sentry};
+    use purlis_core::report::{Consent, Known, Outcome, Reports, native};
+
+    let home = tempfile::tempdir().unwrap();
+    let crashes = native::crashes_dir(home.path());
+    let ended = crash(how, &crashes);
+    assert!(!ended.success(), "the probe crashed: {ended:?}");
+    let left = minidumps(&crashes);
+    assert_eq!(left.len(), 1, "{left:?}");
+    let minidump = std::fs::read(&left[0]).unwrap();
+
+    let contract = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../purlis-core/tests/intake_contract/sentry/envelope.json");
+    let recorded = std::sync::Arc::new(
+        Recorded::parse(&std::fs::read_to_string(contract).unwrap()).expect("a recording"),
+    );
+    let dsn = concat!("https://f00dfeed1234", "@", "o1.ingest.de.sentry.io/4508");
+    let reports = Reports::new(Known::default())
+        .with_consent(Consent {
+            crash_reports: Some(true),
+            agent_drafts: None,
+            asked: true,
+            ..Consent::default()
+        })
+        .sending_to(
+            std::sync::Arc::new(Sentry::new(Dsn::parse(dsn).unwrap(), recorded.clone())),
+            home.path(),
+        );
+    let said = native::report_waiting(&reports, &crashes);
+    assert!(matches!(said[..], [Outcome::Sent { .. }]), "{said:?}");
+    let sent = String::from_utf8(recorded.received()[0].clone()).unwrap();
+    let event = sent
+        .lines()
+        .nth(2)
+        .map(|line| serde_json::from_str(line).unwrap())
+        .expect("an event");
+    (minidump, event)
+}
+
+/// The file name of the module each frame of `stack` is in, the innermost first.
+fn modules_of(stack: &purlis_core::report::native::CrashStack) -> Vec<&str> {
+    stack
+        .frames
+        .iter()
+        .map(|frame| stack.modules[frame.module].name.as_str())
+        .collect()
+}
+
+#[test]
+fn an_aborts_stack_starts_where_it_aborted_not_in_the_crash_handler() {
+    // An abort is a signal, heard on the crashing thread: the minidump holds that thread as it
+    // waits in the handler, below the signal trampoline in libsystem_platform (#5691).
+    let (minidump, _) = crashed_and_reported("abort");
+
+    let stack = purlis_core::report::native::stack_of(&minidump).expect("a stack");
+
+    let modules = modules_of(&stack);
+    assert!(
+        !modules.contains(&"libsystem_platform.dylib"),
+        "neither the trampoline nor the handler above it: {modules:?}"
+    );
+    assert!(
+        matches!(
+            modules[..],
+            ["libsystem_kernel.dylib" | "libsystem_pthread.dylib", ..]
+        ),
+        "it starts where the abort raised its signal (pthread_kill): {modules:?}"
+    );
+    assert!(
+        modules[..4].contains(&"libsystem_c.dylib") && modules[..5].contains(&"crash-probe"),
+        "then abort, called from the probe: {modules:?}"
+    );
+}
+
+#[test]
+fn a_stack_overflows_stack_is_kept_whole_from_where_it_faulted() {
+    // A fault is a Mach exception, heard on the handler's own thread: the crashing thread is
+    // where it faulted, with no trampoline to look past.
+    let (minidump, _) = crashed_and_reported("overflow");
+
+    let stack = purlis_core::report::native::stack_of(&minidump).expect("a stack");
+
+    let modules = modules_of(&stack);
+    assert_eq!(modules.first(), Some(&"crash-probe"), "{stack:?}");
+    assert_eq!(stack.frames[0].trust, "context", "{stack:?}");
+    assert!(
+        modules.iter().all(|module| *module == "crash-probe"),
+        "{modules:?}"
+    );
+}
+
+#[test]
+fn aborts_from_two_places_are_two_crashes_to_the_intake() {
+    let (_, here) = crashed_and_reported("abort");
+    let (_, elsewhere) = crashed_and_reported("abort-elsewhere");
+
+    assert_ne!(
+        here["fingerprint"], elsewhere["fingerprint"],
+        "each its own issue, not one for every abort: {here} {elsewhere}"
+    );
+}
+
 /// How many bytes a window of memory is: a run this long found in the report is memory, not chance.
 const WINDOW: usize = 32;
 
