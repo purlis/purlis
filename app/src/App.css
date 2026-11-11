@@ -7537,9 +7537,7 @@ nav.piece-files-head {
   }
 
   .ui-settings-body {
-    /* The page keeps its 28 at the sides: where the side column is a band, the page's own room
-       is what puts a table into its form (#1859) rather than scrolling it sideways. */
-    padding: var(--space-6) calc(var(--space-7) + var(--space-2)) var(--space-8);
+    padding: var(--space-6) var(--space-6) var(--space-8);
   }
 
   .ui-settings-page .ui-setting-row {
@@ -7552,6 +7550,13 @@ nav.piece-files-head {
 
   .ui-settings-page .ui-setting-row > .ui-setting-error {
     grid-column: 1 / -1;
+  }
+
+  /* A table on the page is drawn as its form, under its name, as every other control is here
+     (#1859): its frame kept under the table family's 32rem, where it stacks, so it never
+     scrolls sideways in a page between that and its own least width. */
+  .ui-settings-page .ui-setting-control:has([data-scope="table"][data-part="frame"]) {
+    max-inline-size: 31rem;
   }
 }
 
