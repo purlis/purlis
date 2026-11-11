@@ -134,6 +134,8 @@ pub struct Tasks {
     moved: Condvar,
     /// By chat: how many waits of its are parked on a thread now.
     parked: Mutex<HashMap<u32, usize>>,
+    /// By chat: its list being answered now, which a list it sends meanwhile shares.
+    listing: Mutex<HashMap<u32, InFlight>>,
     /// The finished tasks being reopened, by their dispatch record's id ([`Tasks::reopen`]).
     reopening: Mutex<HashMap<String, Reopening>>,
     /// Why the last Reopen of a finished task did not hold, by its record's id, for its row.
@@ -306,6 +308,23 @@ impl Tasks {
             .unwrap_or_default()
     }
 
+    /// Chat `chat`'s list under way, or a new one where none is.
+    fn list_in_flight(&self, chat: u32) -> InFlight {
+        let mut listing = self.listing.lock().unwrap_or_else(PoisonError::into_inner);
+        Arc::clone(listing.entry(chat).or_default())
+    }
+
+    /// Chat `chat`'s list `answered` has its rows: a list it sends from now on reads afresh.
+    fn list_landed(&self, chat: u32, answered: &InFlight) {
+        let mut listing = self.listing.lock().unwrap_or_else(PoisonError::into_inner);
+        if listing
+            .get(&chat)
+            .is_some_and(|under_way| Arc::ptr_eq(under_way, answered))
+        {
+            listing.remove(&chat);
+        }
+    }
+
     /// A place among chat `chat`'s parked waits, let go when what this answers is dropped; or
     /// the refusal where it has [`MOST_WAITS_A_CHAT`] already.
     fn park(self: &Arc<Self>, chat: u32) -> Result<Parked, String> {
@@ -437,6 +456,8 @@ pub fn answer(held: &Held, asked: &Asked, connection: u64) -> Answer {
 struct Timed {
     /// Delivering what the asker queued while the app did not answer.
     queue: std::time::Duration,
+    /// A list's steps, where the ask was a list.
+    list: Option<ListSteps>,
 }
 
 /// An ask that took longer than this has its steps said in the log.
@@ -448,9 +469,22 @@ impl Timed {
             return;
         }
         let rest = took.saturating_sub(self.queue);
+        let steps = self.list.map_or_else(String::new, |list| {
+            format!(
+                " ({} ms open rows, {} ms finished, {} ms not started{})",
+                list.rows.as_millis(),
+                list.finished.as_millis(),
+                list.unstarted.as_millis(),
+                if list.shared {
+                    ", shared with a list under way"
+                } else {
+                    ""
+                }
+            )
+        });
         tracing::warn!(
             "purlis: chat {chat}'s dispatch ask ({}) took {} ms: {} ms delivering what it had \
-             queued, {} ms answering",
+             queued, {} ms answering{steps}",
             what_named(what),
             took.as_millis(),
             self.queue.as_millis(),
@@ -520,10 +554,14 @@ fn answer_now(held: &Held, asked: &Asked, connection: u64, timed: &mut Timed) ->
             }
             task(Answered::Noted)
         }
-        What::List => task(Answered::Listed {
-            rows: list(held, asker),
-            messages: records(held, asker),
-        }),
+        What::List => {
+            let (rows, steps) = listed_once(held, asker);
+            timed.list = Some(steps);
+            task(Answered::Listed {
+                rows,
+                messages: records(held, asker),
+            })
+        }
         What::Cancel { of } => cancel(held, asker, *of).unwrap_or_else(no),
         What::Output { of } => output(held, asker, *of).unwrap_or_else(no),
         What::Close { of } => close(held, asker, *of).unwrap_or_else(no),
@@ -825,6 +863,7 @@ fn tell(held: &Held, asker: u32, to: u32, said: &str) -> Result<Answer, String> 
 /// the person started from its tab.
 fn live_tasks(held: &Held, asker: u32) -> Vec<(u32, String)> {
     list(held, asker)
+        .0
         .into_iter()
         .filter(|row| !row.finished && !row.by_person && row.chat != 0)
         .map(|row| (row.chat, row.name))
@@ -836,6 +875,7 @@ fn live_tasks(held: &Held, asker: u32) -> Vec<(u32, String)> {
 /// waits for none to be left (`crate::chatmoves`).
 pub(crate) fn tasks_working_here(held: &Held, asker: u32) -> usize {
     list(held, asker)
+        .0
         .into_iter()
         .filter(|row| !row.finished && row.chat != 0)
         .filter(|row| held.chats().pool_of(row.chat).is_none())
@@ -2622,10 +2662,17 @@ fn report_on_disk(
 /// it is idle, cancelling, asking this chat a question, or how it reported. A task the person
 /// started from this chat is listed too, by name and standing, and marked as theirs:
 /// the list gives the chat nothing over it ([`dispatched::owned`]).
-fn list(held: &Held, asker: u32) -> Vec<Row> {
+///
+/// **The store is read once for the whole list** (felt speed round 2): every row's record, the
+/// finished rows and the ones a launch could not start again are answered from one
+/// [`purlis_core::dispatchrecord::Ledger`], which reads the running records and, of the ended
+/// ones, only those this chat asked for. How long each step took is in what it returns.
+fn list(held: &Held, asker: u32) -> (Vec<Row>, ListSteps) {
     use crate::handoff::PersonaChatState;
 
+    let started = std::time::Instant::now();
     let now = SystemTime::now();
+    let store = purlis_core::dispatchrecord::ledger(held.root());
     let open = held.chats().open_now();
     let mut rows: Vec<Row> = crate::handoff::persona_chats(held, asker)
         .into_iter()
@@ -2634,13 +2681,16 @@ fn list(held: &Held, asker: u32) -> Vec<Row> {
             let from = open.from.as_ref()?;
             // Where it works on a branch of its own, by the dispatch's record (#1453). Read
             // before the ledger is taken: it asks the chats, and reads a file.
-            let branch = crate::dispatches::branch_listed(held, listed.session);
+            let branch = crate::dispatches::branch_listed(held, &store, listed.session);
             // And asked before it too: a stop is decided under a lock of its own.
             let being_stopped = held.stopping().is_stopping(listed.session);
             // purlis's stop at a limit says so, never "by the person" (#1512).
             let at_a_limit = held.stopping().limit_of(listed.session);
-            // Whether its program runs, by the board (#3900). Asked before the ledger is taken.
-            let running = !seen(held, listed.session).ended;
+            // Whether its program runs, by the board (#3900). Asked before the ledger is
+            // taken, as all of the chat's standing is: no other ask waits on the ledger's lock
+            // while the board and the chats are asked.
+            let seen_now = seen(held, listed.session);
+            let running = !seen_now.ended;
             let ledger = held.tasks().ledger();
             let own = dispatched::owned(asker, listed.session, Some(from)).is_ok();
             let state = match (own, listed.state) {
@@ -2659,9 +2709,7 @@ fn list(held: &Held, asker: u32) -> Vec<Row> {
                 {
                     listed.said.clone()
                 }
-                (true, _) => ledger
-                    .state(listed.session, from, seen(held, listed.session))
-                    .say(),
+                (true, _) => ledger.state(listed.session, from, seen_now).say(),
                 (false, _) => listed.said.clone(),
             };
             let last_note = ledger.last_note(listed.session);
@@ -2689,12 +2737,68 @@ fn list(held: &Held, asker: u32) -> Vec<Row> {
             })
         })
         .collect();
+    let mut steps = ListSteps {
+        rows: started.elapsed(),
+        ..ListSteps::default()
+    };
     // Then the ones that have finished, whose programs purlis ended (#1485): from their
-    // dispatch records, until their rows are cleared or this chat ends. With them the ones
-    // orphaned by a restart (#3900), marked so.
-    rows.extend(crate::finished::listed_for(held, asker));
-    rows
+    // dispatch records, until their rows are cleared or this chat ends.
+    let finishing = std::time::Instant::now();
+    rows.extend(crate::finished::listed_for(held, asker, &store));
+    steps.finished = finishing.elapsed();
+    // Then the ones a launch could not start again, by the number each had: waiting on the
+    // person, and not somebody else's.
+    let unstarting = std::time::Instant::now();
+    rows.extend(crate::unstarted::listed_for(held, asker, &store));
+    steps.unstarted = unstarting.elapsed();
+    // And the ones nothing brought back at all, orphaned by a restart (#3900), marked so.
+    let orphaning = std::time::Instant::now();
+    rows.extend(crate::finished::orphans_listed_for(held, asker));
+    steps.finished += orphaning.elapsed();
+    (rows, steps)
 }
+
+/// **Chat `asker`'s list, shared with a list of its that is under way** (felt speed round 2):
+/// a chat that asks again while its last list is still being answered (one had sixteen in
+/// flight at once, each reading the store) waits for that one and is given its rows, so a
+/// chat's lists cost one reading of the store at a time however many it sends.
+fn listed_once(held: &Held, asker: u32) -> (Vec<Row>, ListSteps) {
+    let tasks = held.tasks();
+    let in_flight = tasks.list_in_flight(asker);
+    let mut ran = false;
+    let (rows, steps) = in_flight
+        .get_or_init(|| {
+            ran = true;
+            list(held, asker)
+        })
+        .clone();
+    if ran {
+        tasks.list_landed(asker, &in_flight);
+    }
+    (
+        rows,
+        ListSteps {
+            shared: !ran,
+            ..steps
+        },
+    )
+}
+
+/// How long a list's steps took (felt speed round 2), said where the ask was slow.
+#[derive(Debug, Clone, Copy, Default)]
+struct ListSteps {
+    /// The open rows.
+    rows: std::time::Duration,
+    /// The finished rows, and the ones orphaned by a restart.
+    finished: std::time::Duration,
+    /// The ones a launch could not start again.
+    unstarted: std::time::Duration,
+    /// Whether these rows were another list's of the same chat, under way when this one came.
+    shared: bool,
+}
+
+/// A chat's list under way, which a list of its that comes meanwhile waits for and shares.
+type InFlight = Arc<std::sync::OnceLock<(Vec<Row>, ListSteps)>>;
 
 /// Task `task`'s liveness now (#3900), as its asking chat's list and roster say it.
 pub(crate) fn liveness(held: &Held, task: u32) -> purlis_core::dispatchliveness::Liveness {

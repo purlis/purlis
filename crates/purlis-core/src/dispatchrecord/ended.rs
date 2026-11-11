@@ -9,9 +9,9 @@
 //!
 //! **It holds only what never changes once a dispatch has ended**, so it needs no keeping in
 //! step with the records' later writes. A dispatch ends once and never runs again
-//! ([`super::close`]), and what an entry says (its id, the chat that worked it, and whether
-//! that was never a chat, [`super::never_a_chat`]) is written before or at its end and never
-//! after. Everything else, its report included, is read from the record itself where a
+//! ([`super::close`]), and what an entry says (its id, the chat that worked it, the chat that
+//! asked for it, and whether that was never a chat, [`super::never_a_chat`]) is written before
+//! or at its end and never after. Everything else, its report included, is read from the record itself where a
 //! caller needs it ([`Ledger::latest_for`]). Nothing a chat wrote is in it: no brief, no
 //! report, no talk.
 //!
@@ -34,7 +34,8 @@ use super::{ChatRef, Record};
 pub const SUMMARY_NAME: &str = "ended.json";
 
 /// The summary's version: one of another is read as no summary, and rebuilt.
-const SUMMARY_VERSION: u32 = 1;
+/// Version 2 added [`Entry::asker_id`]: one of version 1 is rebuilt once.
+const SUMMARY_VERSION: u32 = 2;
 
 /// One ended dispatch, as the summary keeps it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -45,6 +46,10 @@ struct Entry {
     /// The worker chat's ULID, absent for a chat given none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     chat_id: Option<String>,
+    /// The ULID of the chat that asked for it, absent for one given none: what a chat's list
+    /// of its finished tasks is filtered by before a record is read ([`super::asked_by`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    asker_id: Option<String>,
     /// [`super::never_a_chat`]: a task that never started and was never a chat.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     never_a_chat: bool,
@@ -56,6 +61,7 @@ impl Entry {
             id: record.id.clone(),
             chat: record.worker.chat.chat,
             chat_id: record.worker.chat.id.clone(),
+            asker_id: record.asker.chat.id.clone(),
             never_a_chat: super::never_a_chat(record),
         }
     }
@@ -167,6 +173,37 @@ impl Ledger {
                 return Some(record);
             }
         }
+    }
+}
+
+impl Ledger {
+    /// **[`super::finished_for`], from this one reading of the store** (felt speed round 2):
+    /// the running records it holds, and of the ended ones only those whose entry says `asker`
+    /// asked for them are read. Oldest first, as [`super::finished_for`] answers.
+    pub fn finished_for(
+        &self,
+        root: &Path,
+        asker: &ChatRef,
+        open: impl Fn(&ChatRef) -> bool,
+    ) -> Vec<Record> {
+        if asker.id.is_none() {
+            // Listed under nobody ([`super::asked_by`]).
+            return Vec::new();
+        }
+        let ended = self
+            .ended
+            .iter()
+            .filter(|entry| entry.asker_id == asker.id)
+            .filter_map(|entry| super::read(root, &entry.id));
+        let mut finished: Vec<Record> = self
+            .running
+            .iter()
+            .cloned()
+            .chain(ended)
+            .filter(|record| super::asked_by(record, asker) && super::finished_now(record, &open))
+            .collect();
+        finished.sort_by(|a, b| a.id.cmp(&b.id));
+        finished
     }
 }
 

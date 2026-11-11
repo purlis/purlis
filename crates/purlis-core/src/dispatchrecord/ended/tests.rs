@@ -357,3 +357,80 @@ fn the_roster_s_running_records_take_the_summary_s_word_for_what_ended() {
             .collect::<Vec<_>>()
     );
 }
+
+/// A chat that is not [`steward`]: the asker of most of [`a_busy_store`]'s ended tasks.
+fn someone_else() -> ChatRef {
+    ChatRef {
+        chat: 4,
+        id: Some("01K6ASKER0000000000000000B".to_owned()),
+        name: "steward 4".to_owned(),
+        persona: Some("steward".to_owned()),
+    }
+}
+
+/// **A store a busy chat lists**: 50 records, oldest first. Ten still run, each asked by
+/// [`steward`] of workers 1 to 10: the open rows of its list. Of the 40 that ended and
+/// reported, five were asked by [`steward`] (workers 11 to 15) and the rest by someone else.
+fn a_busy_store(root: &Path) -> Vec<Record> {
+    let (_scratch, elsewhere) = project();
+    let template =
+        dispatchrecord::open(&elsewhere, a_task(worker(1)), at("2026-11-01T00:00:00Z")).unwrap();
+    std::fs::create_dir_all(dispatchrecord::dir(root)).unwrap();
+    let start = at("2026-11-01T00:00:00Z").timestamp_millis();
+    (0..50u32)
+        .map(|n| {
+            let mut record = template.clone();
+            let minted = u64::try_from(start).unwrap() + u64::from(n) * 60_000;
+            record.id = ulid::Ulid::from_parts(minted, u128::from(n)).to_string();
+            if n >= 40 {
+                record.worker.chat = worker(n - 39);
+            } else {
+                record.worker.chat = worker(n % 20 + 11);
+                record.ended = Some("2026-11-02T00:00:00+00:00".to_owned());
+                record.report = Some(done("checked"));
+                if n >= 5 {
+                    record.asker.chat = someone_else();
+                }
+            }
+            let path = dispatchrecord::dir(root).join(format!("{}.json", record.id));
+            std::fs::write(path, serde_json::to_string_pretty(&record).unwrap()).unwrap();
+            record
+        })
+        .collect()
+}
+
+#[test]
+fn a_list_reads_each_running_record_once_and_of_the_ended_only_its_own() {
+    // Felt speed round 2, H3: a chat's list read the store once per open row, and every
+    // record in it for the finished rows. One reading answers every row now.
+    let (_d, root) = project();
+    let records = a_busy_store(&root);
+    let open_rows: Vec<ChatRef> = (1..=10).map(worker).collect();
+    ledger(&root);
+    dispatchrecord::reads::taken();
+
+    let ledger = ledger(&root);
+    for row in &open_rows {
+        assert!(
+            ledger
+                .latest_for(&root, row)
+                .is_some_and(|record| record.running())
+        );
+    }
+    let finished = ledger.finished_for(&root, &steward(), |worker| {
+        open_rows
+            .iter()
+            .any(|row| dispatchrecord::same_chat(worker, row))
+    });
+
+    let reads = dispatchrecord::reads::taken();
+    assert_eq!(
+        ids(&finished),
+        ids(records.iter().take(5)),
+        "its own finished tasks, oldest first"
+    );
+    assert!(
+        reads <= 10 + 5,
+        "{reads} records read for a list of 10 open and 5 finished rows over 50 records"
+    );
+}

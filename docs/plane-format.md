@@ -7366,15 +7366,19 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   open tasks, ending the dispatches of chats that are gone) reads the running records and this
   file, and not every record in full. **It holds only what never changes once a dispatch has
   ended**: a dispatch ends once and never runs again, and an entry names it, the chat that
-  worked it and whether that was never a chat. Its report and everything else are read from
-  its record where a caller needs them, so the summary is never kept in step with a record's
-  later writes. Nothing a chat wrote is in it.
+  worked it, the chat that asked for it and whether that was never a chat. Its report and
+  everything else are read from its record where a caller needs them, so the summary is never
+  kept in step with a record's later writes. Nothing a chat wrote is in it. A chat's
+  `purlis dispatch list` reads, of the ended records, only those its entries say that chat
+  asked for (felt speed round 2).
 - **Format:** JSON on one line, trailing `\n`, mode 0600, replaced whole
   (`rewrite::replace`). Not a ULID, so never read as a record.
-- **Keys:** `v` — `1`; `ended` — newest first, a list of `{"id", "chat", "chat_id"?,
-  "never_a_chat"?}`: `id`, the record's id; `chat`, the worker chat's number when the
-  dispatch started; `chat_id`, its ULID, absent for a chat given none; `never_a_chat`,
-  `true` for a task that did not start and was never a chat, absent otherwise.
+- **Keys:** `v` — `2`; `ended` — newest first, a list of `{"id", "chat", "chat_id"?,
+  "asker_id"?, "never_a_chat"?}`: `id`, the record's id; `chat`, the worker chat's number
+  when the dispatch started; `chat_id`, its ULID, absent for a chat given none; `asker_id`,
+  the ULID of the chat that asked for it, absent for one given none; `never_a_chat`, `true`
+  for a task that did not start and was never a chat, absent otherwise. A summary of `v` `1`
+  (before `asker_id`) is read as none and rebuilt.
 - **Read and written by the reads it serves** (`dispatchrecord::ledger`): a read lists the
   store's names, takes the summary's entry for each name it holds, reads every other record,
   and writes the summary again where it found an ended dispatch it did not hold or holds one

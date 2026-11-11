@@ -211,8 +211,13 @@ impl<'a> Outcomes<'a> {
 
 /// What a chat's list of its tasks says of the branch task `session` was given, where it was
 /// given one: the branch, and how it stands (`purlis_core::dispatchplace::Standing::said`).
-pub(crate) fn branch_listed(held: &Held, session: u32) -> Option<(String, String)> {
-    let record = dispatchrecord::latest_for(held.root(), &chat_ref(held, session)?)?;
+/// From `listed`, the list's one reading of the store, which every row of it shares.
+pub(crate) fn branch_listed(
+    held: &Held,
+    listed: &dispatchrecord::Ledger,
+    session: u32,
+) -> Option<(String, String)> {
+    let record = listed.latest_for(held.root(), &chat_ref(held, session)?)?;
     let branch = record.place.worktree.as_ref()?.branch.clone()?;
     let stands = purlis_core::dispatchplace::standing(held.root(), &record)?;
     Some((branch, stands.said().to_owned()))
