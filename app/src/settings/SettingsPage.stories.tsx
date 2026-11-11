@@ -51,7 +51,7 @@ function Page({
   const [share, setShare] = useState("local");
   return (
     // The view's body, as a Settings tab is drawn in it: the side column takes its height.
-    <div className="view-body" style={{ blockSize: 680, inlineSize: narrow ? 640 : undefined }}>
+    <div className="view-body" style={{ blockSize: 680, inlineSize: narrow ? 640 : 1040 }}>
       <SettingsLayout
         levels={[
           { id: "you", label: "You" },
