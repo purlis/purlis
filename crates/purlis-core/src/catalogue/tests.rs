@@ -226,9 +226,15 @@ fn forge_milestones_reads_a_repo_of_the_workspace_and_names_repo_as_widening() {
     assert!(warning.is_none());
     assert_eq!(query.scope, Scope::Workspace);
     assert_eq!(query.since, "0.5.2");
-    assert_eq!(query.widens.iter().map(|(n, _)| *n).collect::<Vec<_>>(), ["repo"]);
+    assert_eq!(
+        query.widens.iter().map(|(n, _)| *n).collect::<Vec<_>>(),
+        ["repo"]
+    );
     let parameters = query.parameters();
-    assert_eq!(parameters["properties"]["state"]["enum"], json!(["open", "all"]));
+    assert_eq!(
+        parameters["properties"]["state"]["enum"],
+        json!(["open", "all"])
+    );
     assert!(
         parameters.get("required").is_none(),
         "the workspace's only repo, open milestones, with none given"

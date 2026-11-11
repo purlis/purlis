@@ -115,7 +115,12 @@ fn a_named_repo_is_read_and_all_asks_for_the_closed_ones_too() {
         ("web", "https://github.com/acme/web.git"),
     ]);
     let transport = answering(Ok(listed()));
-    let data = ask(dir.path(), json!({ "repo": "web", "state": "all" }), &transport).unwrap();
+    let data = ask(
+        dir.path(),
+        json!({ "repo": "web", "state": "all" }),
+        &transport,
+    )
+    .unwrap();
     assert_eq!(data["path"], "acme/web");
     assert_eq!(data["state"], "all");
     assert_eq!(

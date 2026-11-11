@@ -1604,20 +1604,24 @@ pub fn forge_milestones(
         caller: crate::forge::Caller::mcp(chat),
         backend_of,
     };
-    let data = crate::catalogue::milestones::read(root, ws, args, &reach)
-        .map_err(|why| why.message)?;
+    let data =
+        crate::catalogue::milestones::read(root, ws, args, &reach).map_err(|why| why.message)?;
     let path = data["path"].as_str().unwrap_or_default();
     let listed = data["milestones"].as_array().cloned().unwrap_or_default();
     if listed.is_empty() {
-        return Ok(format!("{path} has no {} milestones.", data["state"].as_str().unwrap_or("open")));
+        return Ok(format!(
+            "{path} has no {} milestones.",
+            data["state"].as_str().unwrap_or("open")
+        ));
     }
     let mut lines = vec![format!("{path}: {} milestones", listed.len())];
     for m in &listed {
         let open = m["open_issues"].as_u64().unwrap_or(0);
         let closed = m["closed_issues"].as_u64().unwrap_or(0);
-        let due = m["due_on"]
-            .as_str()
-            .map_or_else(|| "no due date".to_owned(), |d| format!("due {}", &d[..d.len().min(10)]));
+        let due = m["due_on"].as_str().map_or_else(
+            || "no due date".to_owned(),
+            |d| format!("due {}", &d[..d.len().min(10)]),
+        );
         lines.push(format!(
             "#{} {} · {closed}/{} closed · {due} · {} · {}",
             m["number"],

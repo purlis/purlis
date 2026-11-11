@@ -119,6 +119,7 @@ fn the_tools_are_the_ones_charter_names_and_each_says_what_it_does() {
             "workspace_vision",
             "workspace_section",
             "change_status",
+            "forge_milestones",
             "dispatch",
             "dispatch_list",
             "dispatch_read",
