@@ -12,9 +12,13 @@
 //! and a field's error, on every ground the window draws them on. A part's words with no fill of
 //! their own are read on the grounds the part is drawn on ([`Family::grounds_of`]): a field's
 //! error only under a field that can refuse, not on every ground a field stands on.
+//!
+//! **A part's words are its own, its variant's or its root's** (#6175), as the parts check draws
+//! them, and a part with no fill of its own is read where its root stands, on the default fills
+//! of its family's host surfaces too, unless grounds of its own say narrower ([`read_on`]).
 
 use super::super::check::{PAIRS, aa_text};
-use super::{Family, MANIFEST, State, TRANSPARENT};
+use super::{Family, MANIFEST, Prop, State, TRANSPARENT, drawn, is_mark};
 
 /// Whether `token` is a state's colour, which the consent floors hold as a state mark, or the
 /// danger colour, which they hold as danger.
@@ -82,6 +86,23 @@ fn stood_on(family: &Family) -> Vec<&'static str> {
     fills
 }
 
+/// **What `part`'s words are read on with no fill of their own**: its grounds
+/// ([`Family::grounds_of`]), and the fills the surfaces its family stands on draw by default
+/// ([`stood_on`]): a badge's words on a list's chosen row (#6163), and a part's words as its root's
+/// (#6175). A part that names grounds of its own ([`Family::under`]) is read on such a fill only
+/// where they name it, as the parts check reads it there: a field's error stands where a field
+/// that can refuse stands, never in a list's or a table's row.
+fn read_on(family: &Family, part: usize) -> Vec<&'static str> {
+    let mut on = family.grounds_of(part).to_vec();
+    let own = family.stands_on(part);
+    for fill in stood_on(family) {
+        if own.is_none_or(|grounds| grounds.contains(&fill)) && !on.contains(&fill) {
+            on.push(fill);
+        }
+    }
+    on
+}
+
 /// One place a state colour is drawn as words: the part, the colour, the fill it is read on,
 /// and what that fill is laid over, for a wash.
 type Words = (String, &'static str, &'static str, Option<&'static str>);
@@ -95,6 +116,7 @@ fn state_words() -> Vec<Words> {
         for variant in family.looks() {
             for states in read_in(family, variant) {
                 let look = (family.defaults)(variant, &states);
+                let drawn = drawn(&[], family, variant, &states);
                 // A root with no fill, or a wash, stands on each of the family's grounds.
                 let under: Vec<&'static str> = if look.fill == TRANSPARENT || is_wash(look.fill) {
                     family.grounds.to_vec()
@@ -106,14 +128,12 @@ fn state_words() -> Vec<Words> {
                     if super::drawn_apart(family, part.name).is_some() {
                         continue;
                     }
-                    let words = if at == 0 {
-                        look.text
-                    } else {
-                        match family.own_words(at) {
-                            Some(token) => token,
-                            None => continue,
-                        }
-                    };
+                    // Words as the parts check draws them (#6175): a part's own, its variant's,
+                    // or the root's. A part that draws no words, or a mark, is held elsewhere.
+                    if at > 0 && (!part.properties.contains(&Prop::Text) || is_mark(family, part)) {
+                        continue;
+                    }
+                    let words = drawn.words[at];
                     if !is_held_as_words(words) {
                         continue;
                     }
@@ -133,19 +153,10 @@ fn state_words() -> Vec<Words> {
                             .collect::<String>()
                     );
                     if fill == TRANSPARENT {
-                        // A root with no fill stands on what the surfaces it is drawn on fill
-                        // by default too: a badge on a list's chosen row (#6163).
-                        let stood = if at == 0 {
-                            stood_on(family)
-                        } else {
-                            Vec::new()
-                        };
                         found.extend(
-                            family
-                                .grounds_of(at)
-                                .iter()
-                                .chain(stood.iter())
-                                .map(|ground| (named.clone(), words, *ground, None)),
+                            read_on(family, at)
+                                .into_iter()
+                                .map(|ground| (named.clone(), words, ground, None)),
                         );
                     } else if is_wash(fill) {
                         // Laid on its own ground where it has one (D-3345-3), else the root's.
@@ -329,4 +340,51 @@ fn the_danger_words_of_an_answer_a_row_and_a_field_s_error_are_among_them() {
         !has("menu.root.danger", "danger.base", "tab.active"),
         "{found:?}"
     );
+}
+
+#[test]
+fn a_part_s_words_taken_from_its_root_or_its_variant_are_read_too() {
+    // #6175: a part with no words of its own draws its variant's or the root's, as the parts
+    // check reads it (`drawn`): a trouble Notice's message is in the danger colour, on the
+    // Notice's fill, and a danger button's label in the danger colour on the button's.
+    let found = state_words();
+    let has = |part: &str, front: &str, back: &str| {
+        found
+            .iter()
+            .any(|(named, on_front, on, _)| named == part && *on_front == front && *on == back)
+    };
+    assert!(
+        has("notice.message.trouble", "danger.text", "danger.surface"),
+        "{found:?}"
+    );
+    assert!(
+        has("button.label.danger", "danger.base", "control.base"),
+        "{found:?}"
+    );
+    // A mark is held at a mark's 3:1, not as words: a danger button's icon, a news Notice's mark.
+    assert!(
+        !found
+            .iter()
+            .any(|(named, ..)| named.starts_with("button.icon") || named.starts_with("notice.mark")),
+        "{found:?}"
+    );
+}
+
+#[test]
+fn a_field_s_error_is_read_where_a_field_that_can_refuse_stands_and_never_in_a_row() {
+    // #6175: a field stands in a list's and a table's rows, but a field that can refuse never
+    // does (`refusingFields.guard.test.ts`), so its error is never drawn on a row's fill.
+    let field = MANIFEST.iter().find(|one| one.name == "field").unwrap();
+    let error = field
+        .parts
+        .iter()
+        .position(|one| one.name == "error")
+        .unwrap();
+    let on = read_on(field, error);
+    assert_eq!(
+        on,
+        ["surface.base", "surface.raised", "surface.overlay"],
+        "{on:?}"
+    );
+    assert!(stood_on(field).contains(&"list.selected"));
 }
