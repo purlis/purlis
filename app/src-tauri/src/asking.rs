@@ -744,7 +744,8 @@ pub struct Offered {
     pub preselected: Option<bool>,
     /// **Who a grant is for, where a rule may be made of it** (ADR 0121 decision 7, #6010):
     /// this chat, this project or this machine. Absent on an answer that is no grant, and on
-    /// one whose rule Rules I made could not undo (a harness's saved rule, a persona's Always).
+    /// one whose rule Rules I made could not undo (a harness's saved rule, which the window never
+    /// writes: #6177).
     #[specta(optional)]
     pub scope: Option<RuleScope>,
 }
@@ -1089,10 +1090,10 @@ fn level_scope(level: crate::sandboxing::GrantLevel) -> Option<RuleScope> {
     }
 }
 
-/// **Whether `ask` is high-risk** (ADR 0121 decision 8, #6011): one is never offered a rule.
-/// No ask is classed yet; #6011 fills this seam, as it fills `asksSame.ts`'s `highRisk`.
-pub fn high_risk(_ask: &Shown) -> bool {
-    false
+/// **Whether `ask` is high-risk** (ADR 0121 decision 8, #6011): one is never offered a rule. It
+/// is so where its row is marked risky, as `asksSame.ts`'s `highRisk` reads it (#6177).
+pub fn high_risk(ask: &Shown) -> bool {
+    ask.risk.is_some()
 }
 
 /// **What `ask`'s request is called** (#6010), where it can be named: two asks with the same name
@@ -2985,9 +2986,13 @@ fn program_options(
         allows: true,
         preselected: None,
         // Allow for this chat is a Run grant on Settings' Granted list, which Rules I made
-        // undoes. Always declares the program a tool of the persona's: no rule is made of it
-        // until Rules I made can take that line out again.
-        scope: (id == RUN_ALLOW_CHAT).then_some(RuleScope::Chat),
+        // undoes. Always declares the program a tool of the persona's for this project, whose
+        // line Rules I made takes out again (#6177).
+        scope: match id {
+            RUN_ALLOW_CHAT => Some(RuleScope::Chat),
+            RUN_ALLOW_ALWAYS => Some(RuleScope::Project),
+            _ => None,
+        },
     })
     .chain(std::iter::once(refuses(KEEP, "Don't allow")))
     .collect()

@@ -15,7 +15,7 @@
 use crate::asking::RuleScope;
 use crate::planes::{PlaneId, Planes};
 use crate::sandboxing::{GrantLevel, GrantWhat};
-use purlis_core::askrules::{Asked, Rule, Store, measures};
+use purlis_core::askrules::{Asked, Declared, Rule, Store, measures};
 use purlis_core::sandboxblock::record::{Entry, Record as NetworkRecord};
 
 /// What is said where this machine keeps no record.
@@ -82,6 +82,18 @@ pub struct RuleMade {
     /// None for a run of a program, whose grant is the chat's.
     pub what: Option<GrantWhat>,
     pub target: Option<String>,
+    /// **The tool line an Always allow showed** (#6177), and whose tools it went to: kept with the
+    /// rule only where the persona's tools hold it so, for Undo to take out.
+    #[specta(optional)]
+    #[serde(default)]
+    pub declared: Option<DeclaredMade>,
+}
+
+/// A tool line Always allow wrote, as its ask showed it ([`RuleMade::declared`]).
+#[derive(Debug, Clone, serde::Deserialize, specta::Type)]
+pub struct DeclaredMade {
+    pub persona: String,
+    pub line: String,
 }
 
 /// One rule, as Rules I made lists it.
@@ -122,7 +134,7 @@ fn shown(rule: Rule, open: &[PlaneId], now: u64) -> RuleMadeShown {
             |name| name.to_string_lossy().into_owned(),
         ),
         at: u32::try_from(rule.at).unwrap_or(u32::MAX),
-        undoes: rule.grant.is_some(),
+        undoes: rule.grant.is_some() || rule.declared.is_some(),
         id: rule.id,
         source: rule.source,
         says: rule.says,
@@ -248,6 +260,17 @@ fn keep_rule(held: &crate::planes::Held, plane: &PlaneId, made: RuleMade) -> Res
         ),
         _ => None,
     };
+    // An Always allow's line, where the persona's tools hold it as its ask showed it (#6177).
+    let declared = made
+        .declared
+        .filter(|_| made.option == crate::asking::RUN_ALLOW_ALWAYS)
+        .filter(|one| {
+            purlis_core::settings::always_allow::holds(plane.root(), &one.persona, &one.line)
+        })
+        .map(|one| Declared {
+            persona: one.persona,
+            line: one.line,
+        });
     let source = serde_json::to_value(made.source)
         .ok()
         .and_then(|word| word.as_str().map(str::to_owned))
@@ -266,6 +289,7 @@ fn keep_rule(held: &crate::planes::Held, plane: &PlaneId, made: RuleMade) -> Res
             option: made.option,
             scope: made.scope.into(),
             grant,
+            declared,
         })
         .map(|_| ())
         .map_err(|why| format!("purlis could not keep the rule: {why}"))
@@ -285,7 +309,7 @@ pub async fn undo_rule(
         return Err("That rule is no longer kept.".to_owned());
     };
     let open = planes.open_now();
-    if let Some(grant) = rule.grant.clone() {
+    if rule.grant.is_some() || rule.declared.is_some() {
         let Some(plane) = open.iter().find(|one| one.root() == rule.root).cloned() else {
             return Err(format!(
                 "Open {} to undo this rule: its grant is kept there.",
@@ -295,21 +319,10 @@ pub async fn undo_rule(
         let held = planes.held(&plane)?;
         let network = planes.network().cloned();
         let browsers_ended = std::sync::Arc::clone(planes.browsers_ended());
+        // On a blocking thread: it writes the project's grants, its manifest and this machine's
+        // network record.
         crate::off_the_window("undoing a rule", move || {
-            // Taken away already, from the Granted list or by its chat ending: nothing to undo.
-            if !crate::sandboxing::all_grants_of(&held)
-                .iter()
-                .any(|one| one.id == grant)
-            {
-                return Ok(());
-            }
-            crate::sandboxing::revoke_granted(
-                &held,
-                &plane,
-                network.as_ref(),
-                &browsers_ended,
-                &grant,
-            )
+            take_away(&held, &plane, network.as_ref(), &browsers_ended, &rule)
         })
         .await?;
     }
@@ -317,6 +330,64 @@ pub async fn undo_rule(
         .undo(&id)
         .map_err(|why| format!("purlis could not forget the rule: {why}"))?;
     crate::off_the_window("reading the rules made", move || Ok(listed(&store, &open))).await
+}
+
+/// [`undo_rule`]'s work: `rule`'s grant revoked as Revoke revokes it, and the tool line an
+/// Always allow wrote taken out (#6177). One gone already is nothing to undo.
+fn take_away(
+    held: &crate::planes::Held,
+    plane: &PlaneId,
+    network: Option<&purlis_core::sandboxblock::record::Record>,
+    browsers_ended: &crate::chatbrowsers::Teller,
+    rule: &Rule,
+) -> Result<(), String> {
+    // Taken away already, from the Granted list or by its chat ending: nothing to undo.
+    if let Some(grant) = &rule.grant
+        && crate::sandboxing::all_grants_of(held)
+            .iter()
+            .any(|one| one.id == *grant)
+    {
+        crate::sandboxing::revoke_granted(held, plane, network, browsers_ended, grant)?;
+    }
+    match &rule.declared {
+        Some(declared) => take_out_the_line(held, network, declared),
+        None => Ok(()),
+    }
+}
+
+/// **Takes the tool line an Always allow wrote out of the persona's tools** (#6177), through the
+/// writer that wrote it. Where the person had allowed all of the persona's list, the Allow moves
+/// with the line, audited, as it moved when the line was written, so the rest of the list stays
+/// in force. A line gone already, or changed since, is left as it is.
+fn take_out_the_line(
+    held: &crate::planes::Held,
+    network: Option<&purlis_core::sandboxblock::record::Record>,
+    declared: &Declared,
+) -> Result<(), String> {
+    use purlis_core::settings::always_allow::{self, Removed};
+    let removed =
+        always_allow::remove(held.root(), &declared.persona, &declared.line).map_err(|why| {
+            format!(
+                "purlis could not take the tool line out of {}'s tools: {why}",
+                declared.persona
+            )
+        })?;
+    match removed {
+        Removed::Taken { allow: Some(shown) } => crate::sandboxing::allow_shown(
+            held.root(),
+            &shown,
+            &held.audit_then_record(network),
+            crate::sandboxing::now_secs(),
+        )
+        .map_err(|why| {
+            format!(
+                "The tool line is out of {}'s tools, but the rest of its list waits on your \
+                 Allow again: {why}",
+                declared.persona
+            )
+        }),
+        Removed::Taken { allow: None } | Removed::Gone => Ok(()),
+    }
 }
 
 /// **End cool-off** (#6010): chat `session`'s ask for `request` is counted and notified again,

@@ -219,3 +219,115 @@ fn a_budget_or_loop_pause_is_never_named_offered_a_rule_nor_cooled_off() {
             .all(|one| one.scope.is_none())
     );
 }
+
+/// Chat `session`'s ask to run `curl` with `TOKEN` from vault `team`, as persona `devops`: a
+/// reviewed program, so it offers Allow for this chat and Always allow (ADR 0112).
+fn run_ask(session: u32) -> Shown {
+    use purlis_core::secrets::ask::run::{Bound, Hosts, Offer, OpenRun};
+    let open = OpenRun {
+        ahead: false,
+        fills: Vec::new(),
+        offer: Offer::Program,
+        id: session,
+        persona: "devops".to_owned(),
+        bound: Bound {
+            chat: session,
+            name: "curl".to_owned(),
+            program: "/usr/bin/curl".into(),
+            vault: "team".to_owned(),
+            env: vec!["A=TOKEN".to_owned()],
+            file: Vec::new(),
+            cwd: "/work".into(),
+            args: vec!["https://api.example.test".to_owned()],
+        },
+        hosts: Hosts::Listed(vec!["api.example.test".to_owned()]),
+        caution: None,
+        not_its_vault: false,
+        command: "curl https://api.example.test".to_owned(),
+        since: 0,
+    };
+    run_grant(
+        &open,
+        &purlis_core::sandbox::policy::Locks::none(),
+        false,
+        &|_| false,
+    )
+}
+
+fn offered_options(ask: Shown, record: &Record) -> Option<Vec<String>> {
+    let listed = with_rules(listing(vec![ask]), record, PROJECT, NOW);
+    listed.asks[0]
+        .rule
+        .as_ref()
+        .and_then(|rule| rule.offer.clone())
+        .map(|offer| offer.options)
+}
+
+#[test]
+fn a_runs_always_allow_is_a_rule_for_this_project() {
+    let ask = run_ask(1);
+    let scopes: Vec<(&str, Option<RuleScope>)> = ask
+        .options
+        .iter()
+        .map(|one| (one.id.as_str(), one.scope))
+        .collect();
+    assert_eq!(
+        scopes,
+        [
+            (RUN_ALLOW_ONCE, None),
+            (RUN_ALLOW_CHAT, Some(RuleScope::Chat)),
+            (RUN_ALLOW_ALWAYS, Some(RuleScope::Project)),
+            (KEEP, None),
+        ]
+    );
+}
+
+#[test]
+fn the_same_allow_for_this_chat_from_two_chats_offers_always_allow_as_the_rule() {
+    let ask = run_ask(3);
+    let record = Record {
+        answered: vec![
+            answered(&ask, 1, RUN_ALLOW_CHAT, true, NOW - 600),
+            answered(&ask, 2, RUN_ALLOW_CHAT, true, NOW - 60),
+        ],
+        ..Record::default()
+    };
+    assert_eq!(
+        offered_options(ask, &record),
+        Some(vec![RUN_ALLOW_ALWAYS.to_owned()])
+    );
+}
+
+#[test]
+fn allow_once_twice_in_one_chat_suggests_this_chat_before_always_allow() {
+    let ask = run_ask(1);
+    let record = Record {
+        answered: vec![
+            answered(&ask, 1, RUN_ALLOW_ONCE, true, NOW - 600),
+            answered(&ask, 1, RUN_ALLOW_ONCE, true, NOW - 60),
+        ],
+        ..Record::default()
+    };
+    assert_eq!(
+        offered_options(ask, &record),
+        Some(vec![RUN_ALLOW_CHAT.to_owned(), RUN_ALLOW_ALWAYS.to_owned()])
+    );
+}
+
+#[test]
+fn an_ask_marked_risky_is_never_offered_a_rule() {
+    let mut ask = host_ask(3);
+    let record = Record {
+        answered: vec![
+            answered(&ask, 1, "chat", true, NOW - 600),
+            answered(&ask, 2, "chat", true, NOW - 60),
+        ],
+        ..Record::default()
+    };
+    ask.risk = Some(RiskShown {
+        class: RiskClass::ProductionHost,
+        why: "Looks like production".to_owned(),
+        confirm: "Allow a production host?".to_owned(),
+    });
+    assert_eq!(offered_options(ask, &record), None);
+}

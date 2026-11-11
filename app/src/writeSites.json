@@ -568,6 +568,11 @@
       "by": ["answerRunGrant"]
     },
     {
+      "at": "askrules.rs take_out_the_line",
+      "writes": "the project's manifest and its local settings",
+      "by": ["undoRule"]
+    },
+    {
       "at": "secretasks.rs give_the_vault",
       "writes": "this machine's answers about the project (sandbox-grants)",
       "by": ["answerRunGrant"]

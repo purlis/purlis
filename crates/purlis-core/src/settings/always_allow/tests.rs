@@ -300,3 +300,97 @@ fn the_notice_knows_beforehand_when_something_else_of_the_persona_waits() {
     assert!(others_wait(tmp.path(), "devops"), "a teammate's host waits");
     assert!(!others_wait(project(ON).path(), "devops"), "nothing listed");
 }
+
+#[test]
+fn undo_takes_out_the_line_it_wrote_and_leaves_the_rest_of_the_file() {
+    let before = "# a comment\n[sandbox]\nmode = \"on\"\n\n[other]\nkept = 1\n";
+    let tmp = project(before);
+    let one = bound(&[], &["V=TOKEN"]);
+    write(tmp.path(), "devops", &one).unwrap();
+    let line = line_of(&one).unwrap().text;
+    assert!(holds(tmp.path(), "devops", &line));
+    assert_eq!(
+        remove(tmp.path(), "devops", &line).unwrap(),
+        Removed::Taken { allow: None }
+    );
+    let text = manifest(tmp.path());
+    assert!(!text.contains("curl"), "{text}");
+    assert!(
+        text.contains("# a comment") && text.contains("kept = 1"),
+        "{text}"
+    );
+    assert!(!holds(tmp.path(), "devops", &line));
+    let (declared, _) = tools::declared_and_allowed_here(tmp.path(), "devops");
+    assert!(declared.is_empty());
+}
+
+#[test]
+fn undo_finds_the_line_whether_the_persona_holds_its_tools_inline_or_as_a_table() {
+    for file in [
+        "[sandbox]\nmode = \"on\"\n[sandbox.personas.devops]\ntools = { other = { vault = \"team\", as = \"O file\", key = \"K\" } }\n",
+        "[sandbox]\nmode = \"on\"\n[sandbox.personas.devops.tools]\nother = { vault = \"team\", as = \"O file\", key = \"K\" }\n",
+    ] {
+        let tmp = project(file);
+        let one = bound(&[], &["V=TOKEN"]);
+        write(tmp.path(), "devops", &one).unwrap();
+        let line = line_of(&one).unwrap().text;
+        assert!(matches!(
+            remove(tmp.path(), "devops", &line).unwrap(),
+            Removed::Taken { .. }
+        ));
+        let (declared, _) = tools::declared_and_allowed_here(tmp.path(), "devops");
+        assert_eq!(
+            declared
+                .iter()
+                .map(|tool| tool.name.as_str())
+                .collect::<Vec<_>>(),
+            ["other"],
+            "{}",
+            manifest(tmp.path())
+        );
+    }
+}
+
+#[test]
+fn a_line_gone_already_or_changed_since_is_gone_and_nothing_is_written() {
+    let tmp = project(ON);
+    let one = bound(&[], &["V=TOKEN"]);
+    let line = line_of(&one).unwrap().text;
+    assert_eq!(remove(tmp.path(), "devops", &line).unwrap(), Removed::Gone);
+    write(tmp.path(), "devops", &one).unwrap();
+    // A teammate's edit makes it theirs: Undo never takes it out.
+    let edited = manifest(tmp.path()).replace("\"TOKEN\"", "\"OTHER\"");
+    std::fs::write(tmp.path().join("charter.toml"), &edited).unwrap();
+    assert!(!holds(tmp.path(), "devops", &line));
+    assert_eq!(remove(tmp.path(), "devops", &line).unwrap(), Removed::Gone);
+    assert_eq!(manifest(tmp.path()), edited);
+}
+
+#[test]
+fn where_the_persona_was_fully_allowed_the_allow_moves_with_the_undo() {
+    let tmp =
+        project("[sandbox]\nmode = \"on\"\n[sandbox.personas.devops]\nhosts = [\"a.example\"]\n");
+    allow_all(tmp.path(), "devops");
+    let one = bound(&[], &["V=TOKEN"]);
+    let written = write(tmp.path(), "devops", &one).unwrap();
+    crate::sandbox::local::allow_persona_hosts(
+        tmp.path(),
+        "devops",
+        &written.allow.unwrap().digest,
+    )
+    .unwrap();
+    let Removed::Taken { allow: Some(allow) } =
+        remove(tmp.path(), "devops", &line_of(&one).unwrap().text).unwrap()
+    else {
+        panic!("all of it was allowed, so what is left is to allow too");
+    };
+    assert_eq!(allow.hosts.len(), 1);
+    assert!(allow.tools.is_empty());
+}
+
+#[test]
+fn a_line_that_reads_as_no_tool_is_refused() {
+    let tmp = project(ON);
+    assert!(remove(tmp.path(), "devops", "not a line").is_err());
+    assert!(!holds(tmp.path(), "devops", "not a line"));
+}

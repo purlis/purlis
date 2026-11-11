@@ -64,6 +64,10 @@ pub const AT_MOST_RULES: usize = 200;
 /// The most characters of a request's name, an ask's words or an answer's label.
 pub const MOST_SAID: usize = 400;
 
+/// The most characters of a tool line a rule keeps: a longer one is not kept, never cut, since a
+/// cut line would match no tool to undo.
+pub const MOST_LINE: usize = 2000;
+
 /// The most bytes the file is read to.
 pub const MOST_BYTES: u64 = 4 * 1024 * 1024;
 
@@ -142,6 +146,18 @@ pub struct Rule {
     /// found.
     #[serde(default)]
     pub grant: Option<String>,
+    /// **The tool line an Always allow wrote** to the persona's definition, which Undo takes out
+    /// (#6177); none for every other rule.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub declared: Option<Declared>,
+}
+
+/// **A tool line Always allow wrote** (ADR 0112, #6177): the persona whose tools hold it, and the
+/// line exactly as written, which Undo takes out only while the tools still hold it so.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Declared {
+    pub persona: String,
+    pub line: String,
 }
 
 /// **Everything kept**: answers, rules and endings.
@@ -325,6 +341,9 @@ impl Store {
             label: cut(&rule.label),
             option: cut(&rule.option),
             grant: rule.grant.as_deref().map(cut),
+            declared: rule.declared.filter(|one| {
+                one.line.chars().count() <= MOST_LINE && one.persona.chars().count() <= MOST_SAID
+            }),
             ..rule
         };
         let kept = rule.clone();
