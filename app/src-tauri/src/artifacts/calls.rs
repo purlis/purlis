@@ -110,6 +110,14 @@ pub(super) fn answer<R: tauri::Runtime>(
     if super::queried::is_extension(asked) {
         return super::queried::answer(app, config, of, snapshot, declared, asked, params);
     }
+    // The chats are the app's own record, not the plane's (#6235): admitted as any query is,
+    // and answered from the project as it is held.
+    if is_chats(asked) {
+        return match admitted(config, of, snapshot, declared, asked, params) {
+            Ok(_) => chats_answer(app, &of.plane, &of.workspace, params),
+            Err(kind) => Answer::error(kind, chrono::Utc::now()),
+        };
+    }
     let root = app
         .try_state::<Planes>()
         .and_then(|planes| planes.held(&of.plane).ok())
@@ -123,6 +131,42 @@ pub(super) fn answer<R: tauri::Runtime>(
         asked,
         params,
     )
+}
+
+/// Whether the query a page names, as declared (`<id>@<N>`) or bare, is `purlis.chats`.
+pub(super) fn is_chats(asked: &str) -> bool {
+    let id = asked.rsplit_once('@').map_or(asked, |(id, _)| id);
+    purlis_core::catalogue::find(id).is_some_and(|(q, _)| q.name == purlis_core::chattools::CHATS)
+}
+
+/// **`purlis.chats` asked with `params`** of workspace `workspace` of project `plane` (#6235):
+/// its parameters checked against its closed types, its data the app's own record, under the
+/// cap every answer is held to.
+pub(super) fn chats_answer<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    plane: &crate::planes::PlaneId,
+    workspace: &str,
+    params: &Value,
+) -> Answer {
+    use purlis_core::catalogue::{answer, chats};
+    let at = chrono::Utc::now();
+    let asked = answer::checked(&chats::parameters(), params)
+        .and_then(|args| chats::asked(&args).map_err(|_| ErrorKind::Refused));
+    let asked = match asked {
+        Ok(asked) => asked,
+        Err(kind) => return Answer::error(kind, at),
+    };
+    let Some(held) = app
+        .try_state::<Planes>()
+        .and_then(|planes| planes.held(plane).ok())
+    else {
+        return Answer::error(ErrorKind::Failed, at);
+    };
+    let data = crate::chatlisting::answer(&held, plane, workspace, asked);
+    if serde_json::to_vec(&data).map_or(usize::MAX, |b| b.len()) > answer::MOST_BYTES {
+        return Answer::error(ErrorKind::TooLarge, at);
+    }
+    Answer::data(data, at)
 }
 
 /// [`answer`], of the plane at `root` (none: the plane is no longer open).
