@@ -9,7 +9,9 @@ import {
   FIRST_ASK,
   STARTS_WITHOUT_THE_SANDBOX,
   aDialogOffers,
+  pressTheAnswer,
   pressTheCloseAnswer,
+  pressClearPane,
   showsTheQuestion,
   tickStartWithoutTheSandbox,
   whatCameInsteadOfThePicker,
@@ -391,5 +393,86 @@ describe("a scenario that opens a project through the trust gate", () => {
       "these press Open project in whichever dialog came first; call " +
         "openThroughTheTrustQuestion() from opening.ts",
     ).toEqual([]);
+  });
+});
+
+/**
+ * **A press looks its button up in the page as it presses** (#6227). The axe spec's last step
+ * clicked a node WebdriverIO had found before the window drew it again ("Element is no longer
+ * attached to the DOM"): clearing one pane of a split draws the tab again, and its other pane's
+ * band with it, and a question can be drawn again under its answer. These run in the page, so
+ * there is no node to hold between the look and the press.
+ */
+describe("a press that holds no node", () => {
+  function clicks(button: HTMLElement): () => number {
+    let pressed = 0;
+    button.addEventListener("click", () => pressed++);
+    return () => pressed;
+  }
+
+  function aBand(cause: string, ...buttons: string[]): HTMLButtonElement[] {
+    const band = document.createElement("div");
+    band.setAttribute("data-cause", cause);
+    const made = buttons.map((words) => {
+      const button = document.createElement("button");
+      button.textContent = words;
+      return button;
+    });
+    band.append(...made);
+    document.body.append(band);
+    return made;
+  }
+
+  it("presses Clear pane on the band drawn now, not Resume", () => {
+    const [resume, clear] = aBand("chat-ended:4", "Resume", "Clear pane");
+    const resumed = clicks(resume);
+    const cleared = clicks(clear);
+    expect(pressClearPane('[data-cause^="chat-ended:"]')).toBe(true);
+    expect([resumed(), cleared()]).toEqual([0, 1]);
+  });
+
+  it("presses the band drawn in place of the one there was", () => {
+    aBand("chat-ended:4", "Clear pane")[0].parentElement?.remove();
+    const cleared = clicks(aBand("chat-ended:4", "Clear pane")[0]);
+    expect(pressClearPane('[data-cause="chat-ended:4"]')).toBe(true);
+    expect(cleared()).toBe(1);
+  });
+
+  it("presses nothing while no band of that cause is drawn, or its Clear pane is off", () => {
+    aBand("chat-ended:5", "Clear pane");
+    expect(pressClearPane('[data-cause="chat-ended:4"]')).toBe(false);
+    const [off] = aBand("chat-ended:4", "Clear pane");
+    off.disabled = true;
+    expect(pressClearPane('[data-cause="chat-ended:4"]')).toBe(false);
+  });
+
+  function aQuestion(...buttons: string[]): HTMLButtonElement[] {
+    const dialog = document.createElement("section");
+    dialog.setAttribute("role", "alertdialog");
+    dialog.append("End chat steward 4?");
+    const made = buttons.map((words) => {
+      const button = document.createElement("button");
+      button.textContent = words;
+      return button;
+    });
+    dialog.append(...made);
+    document.body.append(dialog);
+    return made;
+  }
+
+  it("presses the question's answer by its words, never Cancel", () => {
+    const [cancel, close] = aQuestion("Cancel", "Close");
+    const cancelled = clicks(cancel);
+    const closed = clicks(close);
+    expect(pressTheAnswer("Close")).toBe(true);
+    expect([cancelled(), closed()]).toEqual([0, 1]);
+  });
+
+  it("presses nothing while the answer is off or no question offers it", () => {
+    expect(pressTheAnswer("Close")).toBe(false);
+    const [, close] = aQuestion("Cancel", "Close");
+    close.disabled = true;
+    expect(pressTheAnswer("Close")).toBe(false);
+    expect(pressTheAnswer("End")).toBe(false);
   });
 });

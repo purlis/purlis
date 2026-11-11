@@ -365,9 +365,13 @@ export async function answerTheAsk(ending: string): Promise<void> {
     },
     { timeout: 20_000, timeoutMsg: `the question about ${ending} was never asked` },
   );
-  const answer = await $('[role="alertdialog"]').$(`button=${word}`);
-  await answer.waitForClickable({ timeout: 20_000 });
-  await answer.click();
+  // Found and pressed in one look in the page (#6227): a button held from a look before is one
+  // the question may have drawn again since.
+  await browser.waitUntil(async () => browser.execute(pressTheAnswer, word), {
+    timeout: 20_000,
+    interval: 200,
+    timeoutMsg: `the question about ${ending} never offered ${word}`,
+  });
   await theDialogHasGone("alertdialog", ending, `the question about ${ending} never went`);
 }
 
@@ -437,15 +441,8 @@ export const ENDED_BAND = '[data-cause^="chat-ended:"]';
  */
 export async function clearEndedPanes(session?: number, most = 200): Promise<void> {
   const cause = session === undefined ? ENDED_BAND : `[data-cause="chat-ended:${session}"]`;
-  /** Presses Clear pane, by its name, on a band drawn now; whether there was one. */
-  const clearedOne = async () => {
-    const band = await $(cause);
-    if (!(await band.isExisting())) return false;
-    const clear = await band.$("aria/Clear pane");
-    if (!(await clear.isExisting())) return false;
-    await clear.click();
-    return true;
-  };
+  /** Presses Clear pane on a band drawn now; whether there was one. */
+  const clearedOne = () => browser.execute(pressClearPane, cause);
   let cleared = 0;
   for (let pass = 0; pass < most; pass++) {
     let found = false;
@@ -467,6 +464,50 @@ export async function clearEndedPanes(session?: number, most = 200): Promise<voi
     }
     if (!found) return;
   }
+}
+
+/** Whether `one` takes a press: neither `disabled` nor `aria-disabled`. Run in the page. */
+function pressable(one: Element): boolean {
+  return !one.hasAttribute("disabled") && one.getAttribute("aria-disabled") !== "true";
+}
+
+/**
+ * **Presses Clear pane on the first band `cause` names that offers it** (#4756, #6227), and
+ * answers whether it did. **Run in the page**, so the band is the one drawn now: clearing one
+ * pane of a split draws the tab again, and the other pane's band with it, and a band WebdriverIO
+ * had found 100 ms before was a node no longer in the window.
+ */
+export function pressClearPane(cause: string): boolean {
+  for (const band of document.querySelectorAll(cause)) {
+    const clear = [...band.querySelectorAll("button")].find(
+      (one) =>
+        pressable(one) &&
+        [one.getAttribute("aria-label"), one.textContent].some(
+          (said) => (said ?? "").trim() === "Clear pane",
+        ),
+    );
+    if (clear === undefined) continue;
+    clear.click();
+    return true;
+  }
+  return false;
+}
+
+/**
+ * **Presses the button of a question (an `alertdialog`) whose words are `word`** (#6227), and
+ * answers whether one was there to press. **Run in the page**, as {@link aDialogOffers} is: a
+ * button held from a look before is one the question may have drawn again since.
+ */
+export function pressTheAnswer(word: string): boolean {
+  for (const dialog of document.querySelectorAll('[role="alertdialog"]')) {
+    const answer = [...dialog.querySelectorAll("button")].find(
+      (one) => pressable(one) && (one.textContent ?? "").trim() === word,
+    );
+    if (answer === undefined) continue;
+    answer.click();
+    return true;
+  }
+  return false;
 }
 
 /**
