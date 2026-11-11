@@ -140,7 +140,7 @@ describe("Updates' Mine and Project (#5646)", () => {
       scopes()
         .getAllByRole("radio")
         .map((one) => one.getAttribute("aria-label")),
-    ).toEqual(["This project, 2 updates", "This workspace, 1 update"]);
+    ).toEqual(["This workspace, 1 update", "This project, 2 updates"]);
     await userEvent.click(scopes().getByRole("radio", { name: "This workspace, 1 update" }));
     expect(screen.getByText(/Fix the build: done/)).toBeInTheDocument();
     expect(screen.queryByText(/Ship the docs: failed/)).toBeNull();

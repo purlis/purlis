@@ -390,6 +390,34 @@ export async function secretAskEntries(plane: string, ask: Shown): Promise<Entri
 }
 
 /**
+ * **Whether answering `ask` with `option` opens something in its project's window** (#1921): a
+ * tab, a shell or a dialog there, where the person goes on (`answerTaken`'s `opened`). Asks lists
+ * every open project's asks, and such an answer is not given from another project's Asks: that
+ * project's own does it, where what it opens is drawn. Every other answer is a command to the
+ * core, which holds every project of every window, and is given from any project's Asks.
+ */
+export function opensItsWindow(ask: Shown, option: string): boolean {
+  switch (ask.answer.via) {
+    case "proposed-change":
+    case "runner-write":
+    case "runner-dispatch":
+      return option === "open";
+    case "sign-in":
+      return option === "sign-in" || option.startsWith("sign-in:");
+    case "signing":
+      return option === "set-up" || setUpForgeOf(option) !== undefined;
+    case "old-harness-plugins":
+      return option === "remove";
+    case "sandbox-only":
+      return option === "make";
+    case "take-over":
+      return true;
+    default:
+      return false;
+  }
+}
+
+/**
  * {@link answerThrough}, and **whether the chat took the answer live** (#1666): a sandbox
  * host's Allow that the chat's proxy took while the command waited, so the command carries on
  * and nothing restarts. What the block Notice does after an Allow, a window that answers

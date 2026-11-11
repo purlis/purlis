@@ -22,11 +22,14 @@
  * Expiring ask, or the one that blocks most, or the longest wait), and each chat's other asks
  * keep their own row after it.
  *
+ * **In any project** (decision 6, #1921): Asks lists every open project's asks, so one row may
+ * hold chats of several projects, each ask answered in its own (`Placed.plane`).
+ *
  * Pure: no commands and no markup. `Inbox.tsx` draws a group with `AskDecision`.
  */
 import type { Offered, Shown } from "./bindings";
 import { waysOf } from "./AskDecision";
-import type { Placed, PlacedGroup } from "./asksOrder";
+import { chatKey, type Placed, type PlacedGroup } from "./asksOrder";
 
 /** One request several chats make alike: their asks, most urgent first, and its one grant. */
 export type Same = {
@@ -97,7 +100,7 @@ export function withSame(
   groups: readonly PlacedGroup[],
   offersOf: (ask: Shown) => readonly Offered[] = (ask) => ask.options,
 ): AskRow[] {
-  const alike = new Map<string, { grant: Offered; placed: Placed[]; chats: Set<number> }>();
+  const alike = new Map<string, { grant: Offered; placed: Placed[]; chats: Set<string> }>();
   const keyOf = new Map<Placed, string>();
   for (const group of groups)
     for (const one of group.placed) {
@@ -105,7 +108,7 @@ export function withSame(
       if (same === undefined) continue;
       const held = alike.get(same.key) ?? { grant: same.grant, placed: [], chats: new Set() };
       held.placed.push(one);
-      held.chats.add(one.ask.session);
+      held.chats.add(chatKey(one.ask, one.plane));
       alike.set(same.key, held);
       keyOf.set(one, same.key);
     }
@@ -137,7 +140,7 @@ export function withSame(
 
 /** How many chats make the request. */
 export const chatsIn = (same: Same): number =>
-  new Set(same.placed.map(({ ask }) => ask.session)).size;
+  new Set(same.placed.map(({ ask, plane }) => chatKey(ask, plane))).size;
 
 /** **What a group's row says** (#6009): how many chats, and what they all want. */
 export function sameSaid(same: Same): string {

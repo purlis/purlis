@@ -11,6 +11,7 @@ import type { Offer } from "./actions";
 import type { Needing, Quiet } from "./NeedsYou";
 import type { Ending } from "./QuitWarning";
 import type { FleetChat } from "./everyChat";
+import type { WaitingHere } from "./InboxElsewhere";
 
 /**
  * charter's windows, as the page sees them (ADR 0033, amended 2026-09-26; charter#126).
@@ -26,6 +27,9 @@ import type { FleetChat } from "./everyChat";
  * - **Needs you.** The title bar's ✋ lists every chat, in every project, asking for the
  *   operator (ADR 0054). A split window's chats are in its own reports, so each window tells
  *   the others what it has asking, and a row for a chat in another window is carried out there.
+ * - **Asks** (#1921): every open project's asks, ask by ask, so each window lists the others'
+ *   among its own and answers them in place. An answer is the core's to carry out, and the core
+ *   holds every project of every window, so it is sent from the window it was pressed in.
  * - **All chats** (#6013): every chat in every open project, so each window tells the others
  *   its own, and a row for a chat in another window is carried out there.
  * - **Quit.** The main window is asked, and its warning lists what a quit would end in every
@@ -44,6 +48,9 @@ export type WindowSaid = {
   /** **Every chat in it, as All chats lists them** (#6013). Absent from a window of an older
    *  build, which then lists none. */
   fleet?: FleetChat[];
+  /** **Each of its projects' asks, ask by ask** (#1921), as its registry derived them. Absent
+   *  from a window of an older build, whose chats are then listed a chat at a time. */
+  asks?: WaitingHere[];
   /** Whether every project in it has said what it has open. Until then, "nothing" is "not yet". */
   settled: boolean;
 };
@@ -99,6 +106,7 @@ export function useOtherWindows(mine: Omit<WindowSaid, "label">): {
   quiet: Quiet[];
   ending: Ending[];
   fleet: FleetChat[];
+  asks: WaitingHere[];
   settled: boolean;
 } {
   const own = useMemo(() => thisWindow(), []);
@@ -146,6 +154,7 @@ export function useOtherWindows(mine: Omit<WindowSaid, "label">): {
       quiet: from.flatMap((said) => said.quiet),
       ending: from.flatMap((said) => said.ending),
       fleet: from.flatMap((said) => said.fleet ?? []),
+      asks: from.flatMap((said) => said.asks ?? []),
       settled: others.every((label) => heard[label]?.settled === true),
     };
   }, [heard, labels, own]);

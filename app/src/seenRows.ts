@@ -68,8 +68,11 @@ export const SeenRowsOf = createContext<SeenRows | null>(null);
 export function useSeenRow(
   key: string,
   drawn: RefObject<Element | null>,
+  /** **Another project's record** (#1921), for its ask listed here; else the one drawn under. */
+  given?: SeenRows | null,
 ): [isNew: boolean, drawnNow: () => void] {
-  const rows = useContext(SeenRowsOf);
+  const under = useContext(SeenRowsOf);
+  const rows = given === undefined ? under : given;
   const isNew = rows?.isNew(key) ?? false;
   const watching = useRef<{ element: Element; key: string; stop: () => void } | undefined>(
     undefined,

@@ -475,11 +475,17 @@ describe("a window holding more than one project", () => {
       within(screen.getByTestId("title-bar")).getByRole("button", { name: "1 thing waits on you" }),
     ).toBe(hand);
 
-    // The hand opens the Inbox of the project something waits in, brought to the front.
+    // The hand opens the Asks in front, which lists every project's (#1921): TWO stays in front,
+    // and ONE's ask is a row there, under ONE's chat.
     await userEvent.click(hand);
-    await waitFor(() => expect(projectTabs()).toEqual(["one*", "two"]));
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
-    await userEvent.click(await within(inbox).findByRole("button", { name: "Go to chat one.1" }));
+    const theirs = await waitFor(() => {
+      const group = inbox.querySelector<HTMLElement>(`[data-elsewhere="${ONE}#1"]`);
+      expect(group).not.toBeNull();
+      return group as HTMLElement;
+    });
+    expect(projectTabs()).toEqual(["one", "two*"]);
+    await userEvent.click(within(theirs).getByRole("button", { name: /^Go to chat/ }));
 
     await waitFor(() => expect(projectTabs()).toEqual(["one*", "two"]));
     expect(
@@ -488,7 +494,7 @@ describe("a window holding more than one project", () => {
     ).toBe("one.1");
   });
 
-  it("names in one project's Inbox another project of the window that waits, and goes there (#1700)", async () => {
+  it("lists in one project's Asks another project of the window's ask, and goes there (#1700, #1921)", async () => {
     const { move } = core({
       launch: ONE,
       asks: { [ONE]: [1] },
@@ -516,28 +522,26 @@ describe("a window holding more than one project", () => {
     });
     await screen.findByRole("button", { name: "1 thing waits on you" });
 
-    // TWO's own Asks, with nothing of its own waiting: a line for ONE, which answers nothing.
-    // The side opens on Asks (#5644).
+    // TWO's own Asks, with nothing of its own waiting: ONE's ask is a row of its own, answered
+    // in place in ONE (#1921), with Go to chat. The side opens on Asks (#5644).
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
-    // It opens on All projects (#5999, ADR 0121 decision 4), so ONE's line is there at once.
-    const others = await within(inbox).findByRole("rowgroup", {
-      name: "Other projects in this window",
+    // It opens on All projects (#5999, ADR 0121 decision 4), so ONE's ask is there at once.
+    const theirs = await waitFor(() => {
+      const group = inbox.querySelector<HTMLElement>(`[data-elsewhere="${ONE}#1"]`);
+      expect(group).not.toBeNull();
+      return group as HTMLElement;
     });
-    expect(others).toHaveTextContent("one · 1 waiting on you");
+    expect(theirs.querySelector(".inbox-where")).toHaveTextContent("one");
+    // No line for ONE as well: its ask is drawn whole.
     expect(
-      within(others)
-        .getAllByRole("button")
-        .map((one) => one.textContent),
-    ).toEqual(["Go to project"]);
-    expect(within(others).queryByText(/two/)).toBeNull();
+      within(inbox).queryByRole("rowgroup", { name: "Other projects in this window" }),
+    ).toBeNull();
 
-    await userEvent.click(within(others).getByRole("button", { name: "Go to project one" }));
+    await userEvent.click(within(theirs).getByRole("button", { name: /^Go to chat/ }));
     await waitFor(() => expect(projectTabs()).toEqual(["one*", "two"]));
     const there = await screen.findByRole("tabpanel", { name: "Asks" });
     await within(there).findByRole("button", { name: "Go to chat one.1" });
-    expect(
-      within(there).queryByRole("rowgroup", { name: "Other projects in this window" }),
-    ).toBeNull();
+    expect(there.querySelector(`[data-elsewhere="${ONE}#1"]`)).toBeNull();
   });
 
   it("draws no queue in the Attention panel any more (charter-app#249)", async () => {
