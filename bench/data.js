@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794367019203,
+  "lastUpdate": 1794370635896,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -46704,6 +46704,48 @@ window.BENCHMARK_DATA = {
             "value": 101.895432,
             "unit": "ms",
             "extra": "median of 5 runs: 101.052, 101.667, 101.895, 103.124, 103.663 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "034625b6e28c2929a3a29435ae091fd22e4550f2",
+          "message": "Token guard reads a family's other parts as the parts check draws them (#6175) (#6190)\n\n* Token guard reads a family's other parts as the parts check draws them (#6175)\n\nThe state-words guard read a non-root part only when it named words of\nits own, and only on its own grounds. It now reads a part's words as\ndrawn (its own, its variant's or the root's, marks left out), and a\nfill-less part where its root stands, on the host surfaces' default\nfills too, unless grounds of its own say narrower. A field's error\nstays off a row's fill: no field that can refuse stands in one. ADR\n0103 amendment records that and the measurements.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M747K36APDNYYZJD95KS8TY3\nPurlis-Persona: steward\n\n* Token guard: a part read on the ground drawn gives it; review fixes (#6175)\n\nThe guard now takes a non-root part's ground from drawn() too, as the\nparts check reads it: its own fill, its parent's one ground, its\nvariant's ground, else the root's fill. The field test compares with\nFIELD_ERROR_GROUNDS and checks every row fill. The test name no longer\nclaims variant words, and the ADR says refusingFields is a hand-kept\nlist.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M747K36APDNYYZJD95KS8TY3\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-11T03:37:51Z",
+          "tree_id": "78a1655f1517379ba41a74c4359d595e6a4ea71e",
+          "url": "https://github.com/purlis/purlis/commit/034625b6e28c2929a3a29435ae091fd22e4550f2"
+        },
+        "date": 1794370629731,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.534672,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.518, 0.534, 0.535, 0.538, 0.541 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.447512500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.119, 16.322, 16.448, 16.455, 16.659 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.05263199999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.962, 100.973, 101.053, 101.997, 102.410 ms"
           }
         ]
       }
