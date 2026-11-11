@@ -25,22 +25,24 @@ import { closeTabOf, iconFor, iconOf } from "../artifactTabs.js";
  * `purlis_core::artifact::calls` and `purlis_core::extension::queries`.
  */
 
-const NAME = "Todo board";
-const DECLARED = `{"api":1,"queries":{"purlis.todo_list@1":["done"],"purlis.change_status@1":[]}}`;
-const PAGE = `<!doctype html><title>${NAME}</title><script type="application/json" id="purlis">${DECLARED}</script><ul id=todos></ul><script src=app.js></script>`;
-const OFFERS = `[role="group"][aria-label="Offered by ${NAME}"]`;
-/** The todo of this spec's own the page finds in its answer. */
-const TODO = "Queried by the board";
-/**
- * The page's script: its two calls, and each answer said as an offer (see above). The offers
- * answer on the port too, under id 99, which it passes over.
- */
-const SCRIPT = `const said = {};
+// [DEBUG-6260] repeated rounds
+for (const ROUND of [1, 2, 3, 4, 5, 6, 7, 8]) {
+  const NAME = `Todo board ${ROUND}`;
+  const DECLARED = `{"api":1,"queries":{"purlis.todo_list@1":["done"],"purlis.change_status@1":[]}}`;
+  const PAGE = `<!doctype html><title>${NAME}</title><script type="application/json" id="purlis">${DECLARED}</script><ul id=todos></ul><script src=app.js></script>`;
+  const OFFERS = `[role="group"][aria-label="Offered by ${NAME}"]`;
+  /** The todo of this spec's own the page finds in its answer. */
+  const TODO = `Queried by the board ${ROUND}`;
+  /**
+   * The page's script: its two calls, and each answer said as an offer (see above). The offers
+   * answer on the port too, under id 99, which it passes over.
+   */
+  const SCRIPT = `const said = {};
 purlis.port.onmessage = (event) => {
   const answer = event.data;
   if (answer.id === 1) {
     const mine = ((answer.data && answer.data.todos) || []).find((one) => one.title === ${JSON.stringify(TODO)});
-    said[1] = { does: "todo.done", subject: mine ? mine.slug : "declared-" + (answer.error ? answer.error.kind : "no-todo") };
+    said[1] = { does: "todo.done", subject: mine ? mine.slug : "declared-" + (answer.error ? answer.error.kind : "no-todo-of-" + JSON.stringify(((answer.data && answer.data.todos) || []).map((one) => one.title))) };
   } else if (answer.id === 2) {
     said[2] = { does: "todo.done", subject: "undeclared-" + (answer.error ? answer.error.kind : "answered") };
   } else return;
@@ -50,115 +52,135 @@ purlis.port.postMessage({ id: 1, query: "purlis.todo_list@1" });
 purlis.port.postMessage({ id: 2, query: "purlis.session_record_list@1" });
 `;
 
-/** What the app answered a command with, insisting it answered at all. */
-async function ask<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
-  const answer = await browser.executeAsync(
-    (
-      name: string,
-      passed: Record<string, unknown>,
-      done: (out: { ok?: unknown; trouble?: string }) => void,
-    ) => {
-      void window.__TAURI__.core
-        .invoke(name, passed)
-        .then((ok) => done({ ok }))
-        .catch((e: unknown) => done({ trouble: String(e) }));
-    },
-    command,
-    args,
-  );
-  if (answer.trouble !== undefined) throw new Error(`${command} refused: ${answer.trouble}`);
-  return answer.ok as T;
-}
+  /** What the app answered a command with, insisting it answered at all. */
+  async function ask<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
+    const answer = await browser.executeAsync(
+      (
+        name: string,
+        passed: Record<string, unknown>,
+        done: (out: { ok?: unknown; trouble?: string }) => void,
+      ) => {
+        void window.__TAURI__.core
+          .invoke(name, passed)
+          .then((ok) => done({ ok }))
+          .catch((e: unknown) => done({ trouble: String(e) }));
+      },
+      command,
+      args,
+    );
+    if (answer.trouble !== undefined) throw new Error(`${command} refused: ${answer.trouble}`);
+    return answer.ok as T;
+  }
 
-/** The name of the tab in front. */
-async function inFront(): Promise<string | null> {
-  return browser.execute(
-    () =>
-      document.querySelector('[data-strip="Tabs"] [role="tab"][aria-selected="true"]')
-        ?.textContent ?? null,
-  );
-}
+  /** The name of the tab in front. */
+  async function inFront(): Promise<string | null> {
+    return browser.execute(
+      () =>
+        document.querySelector('[data-strip="Tabs"] [role="tab"][aria-selected="true"]')
+          ?.textContent ?? null,
+    );
+  }
 
-describe("a pinned artifact that calls purlis's queries", function () {
-  this.timeout(180_000);
+  describe(`a pinned artifact that calls purlis's queries [DEBUG-6260] round ${ROUND}`, function () {
+    this.timeout(180_000);
 
-  let at = "";
-  const bar = async () => $('[data-testid="artifact-bar"]').getText();
+    let at = "";
+    const bar = async () => $('[data-testid="artifact-bar"]').getText();
 
-  before(async () => {
-    const plane = (await ask<string[]>("open_planes"))[0];
-    at = join(plane, "workspaces", "alpha", "artifacts");
-    const folder = join(at, "todo-board");
-    mkdirSync(folder, { recursive: true });
-    writeFileSync(join(folder, "index.html"), PAGE);
-    writeFileSync(join(folder, "app.js"), SCRIPT);
-    await ask("todo_add", { plane, workspace: "alpha", text: TODO });
-    writeFileSync(
-      join(at, "pins.toml"),
-      `version = 1
+    before(async () => {
+      const plane = (await ask<string[]>("open_planes"))[0];
+      at = join(plane, "workspaces", "alpha", "artifacts");
+      const folder = join(at, `todo-board-${ROUND}`);
+      mkdirSync(folder, { recursive: true });
+      writeFileSync(join(folder, "index.html"), PAGE);
+      writeFileSync(join(folder, "app.js"), SCRIPT);
+      await ask("todo_add", { plane, workspace: "alpha", text: TODO });
+      writeFileSync(
+        join(at, "pins.toml"),
+        `version = 1
 pin = [
-  { id = "e2e000000003", folder = "todo-board", name = "${NAME}", icon = "chart", order = 1 },
+  { id = "e2e00000003${ROUND}", folder = "todo-board-${ROUND}", name = "${NAME}", icon = "chart", order = 1 },
 ]
 `,
-    );
-    await focusWorkspace("alpha");
-    await iconFor(NAME);
-  });
-
-  after(async () => {
-    await closeTabOf(NAME);
-    rmSync(at, { recursive: true, force: true });
-  });
-
-  it("lists in purlis's bar the queries its page declared, as its approval covers them", async () => {
-    await $(iconOf(NAME)).click();
-    await browser.waitUntil(async () => (await inFront()) === NAME, {
-      timeout: 20_000,
-      timeoutMsg: "pressing the artifact did not open its tab in front",
+      );
+      await focusWorkspace("alpha");
+      await iconFor(NAME);
     });
-    await browser.waitUntil(async () => (await bar()).includes("Reads purlis.todo_list@1"), {
-      timeout: 20_000,
-      timeoutMsg: "the bar did not list the queries the page declared",
-    });
-    const said = await bar();
-    expect(said).toContain("purlis.todo_list@1 (done: the done todos, not only the open ones)");
-    expect(said).toContain("purlis.change_status@1");
-    expect(await $("aria/Approve script").isExisting()).toBe(true);
-    // Every query it declares is of its workspace: nothing project-wide is asked.
-    expect(await $("aria/Allow project-wide reads").isExisting()).toBe(false);
-  });
 
-  it("still lists them once its script is approved", async () => {
-    await $('[data-testid="artifact-bar"]').$("aria/Approve script").click();
-    await browser.waitUntil(async () => (await bar()).includes("Script approved on this machine"), {
-      timeout: 20_000,
-      timeoutMsg: "the approval did not reach the tab",
+    after(async () => {
+      await closeTabOf(NAME);
+      rmSync(at, { recursive: true, force: true });
     });
-    expect(await bar()).toContain("Reads purlis.todo_list@1");
-  });
 
-  it("answers a call its page declared with the workspace's own data", async () => {
-    await $(OFFERS).$(`aria/Mark done: ${TODO}`).waitForExist({
-      timeout: 20_000,
-      timeoutMsg: "the page was not answered its declared purlis.todo_list@1 with the todo",
-    });
-  });
-
-  it("refuses a call its page did not declare, as not-approved", async () => {
-    await browser.waitUntil(
-      async () =>
-        (
-          await browser.execute(() =>
-            [...document.querySelectorAll('[data-testid="artifact-offer-refused"]')].map(
-              (one) => one.textContent ?? "",
-            ),
-          )
-        ).some((said) => said.includes("undeclared-not-approved")),
-      {
+    it("lists in purlis's bar the queries its page declared, as its approval covers them", async () => {
+      await $(iconOf(NAME)).click();
+      await browser.waitUntil(async () => (await inFront()) === NAME, {
         timeout: 20_000,
-        timeoutMsg:
-          "the page's undeclared purlis.session_record_list@1 was not refused not-approved",
-      },
-    );
+        timeoutMsg: "pressing the artifact did not open its tab in front",
+      });
+      await browser.waitUntil(async () => (await bar()).includes("Reads purlis.todo_list@1"), {
+        timeout: 20_000,
+        timeoutMsg: "the bar did not list the queries the page declared",
+      });
+      const said = await bar();
+      expect(said).toContain("purlis.todo_list@1 (done: the done todos, not only the open ones)");
+      expect(said).toContain("purlis.change_status@1");
+      expect(await $("aria/Approve script").isExisting()).toBe(true);
+      // Every query it declares is of its workspace: nothing project-wide is asked.
+      expect(await $("aria/Allow project-wide reads").isExisting()).toBe(false);
+    });
+
+    it("still lists them once its script is approved", async () => {
+      await $('[data-testid="artifact-bar"]').$("aria/Approve script").click();
+      await browser.waitUntil(
+        async () => (await bar()).includes("Script approved on this machine"),
+        {
+          timeout: 20_000,
+          timeoutMsg: "the approval did not reach the tab",
+        },
+      );
+      expect(await bar()).toContain("Reads purlis.todo_list@1");
+    });
+
+    it("answers a call its page declared with the workspace's own data", async () => {
+      const began = Date.now();
+      try {
+        await $(OFFERS).$(`aria/Mark done: ${TODO}`).waitForExist({
+          timeout: 20_000,
+          timeoutMsg: "the page was not answered its declared purlis.todo_list@1 with the todo",
+        });
+        console.log(
+          `[DEBUG-6260] round ${ROUND} green after ${Date.now() - began} ms; bar: ${await bar()}`,
+        );
+      } catch (e) {
+        const refused = await browser.execute(() =>
+          [...document.querySelectorAll('[data-testid="artifact-offer-refused"]')].map(
+            (one) => one.textContent ?? "",
+          ),
+        );
+        console.log(
+          `[DEBUG-6260] round ${ROUND} RED; bar: ${await bar()}; refused: ${JSON.stringify(refused)}`,
+        );
+        throw e;
+      }
+    });
+
+    it("refuses a call its page did not declare, as not-approved", async () => {
+      await browser.waitUntil(
+        async () =>
+          (
+            await browser.execute(() =>
+              [...document.querySelectorAll('[data-testid="artifact-offer-refused"]')].map(
+                (one) => one.textContent ?? "",
+              ),
+            )
+          ).some((said) => said.includes("undeclared-not-approved")),
+        {
+          timeout: 20_000,
+          timeoutMsg:
+            "the page's undeclared purlis.session_record_list@1 was not refused not-approved",
+        },
+      );
+    });
   });
-});
+}
