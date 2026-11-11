@@ -25,7 +25,8 @@ import { NO_REPORT, SCREEN_NOT_KEPT, cardTitle, cardWhen, outcomeOf } from "./cl
 import "./closedChatCard.css";
 
 /** Why *Reopen* does nothing on a card whose task names no conversation. */
-export const NO_CONVERSATION = "It cannot be reopened: its harness named no conversation to resume.";
+export const NO_CONVERSATION =
+  "It cannot be reopened: its harness named no conversation to resume.";
 
 /** The card's own words and answers, inside whatever holds it. */
 export function ClosedChatCard({
@@ -73,11 +74,7 @@ export function ClosedChatCard({
         >
           Read it
         </Button>
-        <Button
-          onPress={onReopen}
-          isDisabled={cannotReopen !== undefined}
-          tooltip={cannotReopen}
-        >
+        <Button onPress={onReopen} isDisabled={cannotReopen !== undefined} tooltip={cannotReopen}>
           Reopen
         </Button>
       </ButtonRow>

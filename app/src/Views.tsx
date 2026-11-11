@@ -626,7 +626,12 @@ export function ViewPane({
   // **A closed task's kept screen** (#6214): *Read it* on its card, keyed by the chat's ULID.
   if (view.from === null && view.view === CHAT_SCREEN) {
     return (
-      <ChatScreenTab key={`${plane}\u0000${view.key}`} plane={plane} chat={view.key} title={title} />
+      <ChatScreenTab
+        key={`${plane}\u0000${view.key}`}
+        plane={plane}
+        chat={view.key}
+        title={title}
+      />
     );
   }
   // **Agent identity** (#4485): keyed by the plane, whose tool lines and personas it reads.

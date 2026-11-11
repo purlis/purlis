@@ -2107,6 +2107,7 @@ function App() {
       createWorkspace: () => undefined,
       removeWorkspace: () => undefined,
       showChat: () => undefined,
+      reopenTask: async () => nowhere(),
       paneBack: () => undefined,
       showChatTasks: () => undefined,
       ownTab: () => undefined,

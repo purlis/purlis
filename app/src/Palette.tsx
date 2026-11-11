@@ -447,10 +447,7 @@ export function Palette({
     files === undefined || (projects?.rows.length ?? 0) > 1 ? (projects?.rows ?? []) : [];
   // A menu's own rows are left out (`menuOnly`, #1468): the palette asks from the chat in front.
   /** What a typed number names (#6214), looked up among the actions only. */
-  const byNumber = useChatByNumber(
-    open && scope === "actions" ? chats?.plane : undefined,
-    query,
-  );
+  const byNumber = useChatByNumber(open && scope === "actions" ? chats?.plane : undefined, query);
   const listing =
     scope === "projects" ? projectRows : [...numberRows(byNumber), ...inPalette(offers)];
   const rows = open ? narrow(query, listing) : [];

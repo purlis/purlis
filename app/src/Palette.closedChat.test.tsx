@@ -115,7 +115,9 @@ describe("a closed chat found by its number in the palette", () => {
     );
     const palette = await open();
     await userEvent.keyboard("#641");
-    await userEvent.click(await within(palette).findByRole("option", { name: /Finished chat #641/ }));
+    await userEvent.click(
+      await within(palette).findByRole("option", { name: /Finished chat #641/ }),
+    );
     const card = await screen.findByRole("dialog", { name: "#641 · Signed commits #5607" });
     await userEvent.click(within(card).getByRole("button", { name: "Reopen" }));
     await waitFor(() => expect(ran).toHaveLength(1));
@@ -127,7 +129,9 @@ describe("a closed chat found by its number in the palette", () => {
     render(<Palette offers={[]} chats={{ plane: PLANE }} onRun={() => ({ ok: true })} />);
     const palette = await open();
     await userEvent.keyboard("641");
-    await userEvent.click(await within(palette).findByRole("option", { name: /Finished chat #641/ }));
+    await userEvent.click(
+      await within(palette).findByRole("option", { name: /Finished chat #641/ }),
+    );
     await screen.findByRole("dialog", { name: "#641 · Signed commits #5607" });
     await userEvent.keyboard("{Escape}");
     await waitFor(() =>

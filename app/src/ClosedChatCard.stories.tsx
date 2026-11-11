@@ -170,7 +170,12 @@ export const Outcomes: Story = {
     <div style={{ display: "grid", gap: "var(--space-4)", inlineSize: "26rem" }}>
       {[FINISHED, BLOCKED, CLOSED].map((card) => (
         <section key={card.number} aria-labelledby={`card-${card.number}`}>
-          <ClosedChatCard card={card} titleId={`card-${card.number}`} onRead={() => {}} onReopen={() => {}} />
+          <ClosedChatCard
+            card={card}
+            titleId={`card-${card.number}`}
+            onRead={() => {}}
+            onReopen={() => {}}
+          />
         </section>
       ))}
     </div>

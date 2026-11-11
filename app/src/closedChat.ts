@@ -126,7 +126,13 @@ export function useChatByNumber(
       .chatByNumber(plane, number)
       .then((said) => {
         if (ask !== newest.current) return;
-        setFound({ asked, found: said.status === "ok" ? said.data : { found: "no_chat" } });
+        // Only a lookup is an answer: anything else names nothing.
+        const data: unknown = said.status === "ok" ? said.data : undefined;
+        const answer =
+          typeof data === "object" && data !== null && "found" in data
+            ? (data as ChatLookup)
+            : ({ found: "no_chat" } as const);
+        setFound({ asked, found: answer });
       })
       .catch(() => {
         if (ask === newest.current) setFound({ asked, found: { found: "no_chat" } });

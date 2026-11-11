@@ -8,6 +8,7 @@
  * opened it and is put back by a launch. Where the screen is no longer kept (the setting was
  * turned off, or its record was collected), it says so.
  */
+import { useState } from "react";
 import { commands, type PlaneId } from "./bindings";
 import { ReadOnlyTerminal } from "./ReadOnlyTerminal";
 import { NotRead, ReadingRows, useRead } from "./SkillPanels";
@@ -33,11 +34,21 @@ export function ChatScreenTab({
   /** The tab's title: "#641 · Signed commits #5607 (read-only)". */
   title: string;
 }) {
-  const screen = useRead(() => commands.chatScreen(plane, chat), [plane, chat]);
+  const [again, setAgain] = useState(0);
+  const screen = useRead(() => commands.chatScreen(plane, chat), [plane, chat, again]);
   return (
-    <section className="view-pane view-alone" data-testid="view-pane-chat-screen" aria-label={title}>
+    <section
+      className="view-pane view-alone"
+      data-testid="view-pane-chat-screen"
+      aria-label={title}
+    >
       {screen.refused !== undefined ? (
-        <NotRead what="the chat's screen" why={screen.refused} />
+        <NotRead
+          what="the chat's screen"
+          why={screen.refused}
+          onAgain={() => setAgain((n) => n + 1)}
+          testid="chat-screen-not-read"
+        />
       ) : screen.data === undefined ? (
         <ReadingRows what="the chat's screen" testid="chat-screen-reading" />
       ) : screen.data === null ? (
