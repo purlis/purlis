@@ -3342,6 +3342,9 @@ export const commands = {
 	 *  another open task, of that chat or of any other (#1511, #1534, V100-68): what its tab warns
 	 *  about, by every task's name. There are no file locks between tasks, so a file two of them
 	 *  change cannot be told apart afterwards.
+	 * 
+	 *  Off the window's thread: every open task's folder is resolved on the disk, once for each
+	 *  folder shared (H6b).
 	 */
 	tasksSharingAFolder: (plane: PlaneId, session: number) => typedError<SharedFolder[], string>(__TAURI_INVOKE("tasks_sharing_a_folder", { plane, session })),
 	/**
@@ -3350,6 +3353,9 @@ export const commands = {
 	 *  name, or `null` where none is. `place` is the dialog's word for where it works: `null` for
 	 *  that chat's folder, `workspace:<name>` for another workspace, `worktree` for a branch of its
 	 *  own, of which nothing is said. It starts nothing and changes nothing.
+	 * 
+	 *  Off the window's thread: the place is read from the workspace and the open tasks' folders
+	 *  resolved on the disk (H6b).
 	 */
 	taskFolderShared: (plane: PlaneId, session: number, place: string | null) => typedError<string | null, string>(__TAURI_INVOKE("task_folder_shared", { plane, session, place })),
 	/**
