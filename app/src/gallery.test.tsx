@@ -333,13 +333,13 @@ describe("the gallery by keyboard", () => {
       "radio You",
       "input Filter settings",
       "button Look",
-      // The hint's mark and the badge are stops of their own, so the keyboard reads each
-      // tooltip (DS-8).
-      "img About Name",
+      // The badge is a stop of its own, so the keyboard reads its tooltip (DS-8); the row's
+      // help is a line under its label and no stop (R52). The row ends in its ⋯ menu, which
+      // holds its Reset (R56).
       "span This machine",
       "input Name",
-      "button Reset name",
       "button Undo",
+      "button More for Name",
       "textarea Hosts",
       "slider Size",
       // A radio group is one stop, on its pick; Gamma is out of reach.
@@ -397,8 +397,14 @@ describe("the gallery by keyboard", () => {
     expect(await doing(() => press("searchbox", "Filter settings", "k"))).toEqual(["filter=k"]);
     expect(await doing(() => press("textbox", "Name", "A{Enter}"))).toEqual(["text=A", "commit"]);
     expect(await doing(() => press("textbox", "Hosts", "h"))).toEqual(["commit", "list=h"]);
-    // A row's reset and Undo, on Space and on Enter.
-    expect(await doing(() => press("button", "Reset name", " "))).toContain("reset");
+    // A row's reset, from its ⋯ menu, and its Undo, on Enter.
+    expect(
+      await doing(async () => {
+        await press("button", "More for Name", "{Enter}");
+        await screen.findByRole("menu", { name: "More for Name" });
+        await user.keyboard("{Enter}");
+      }),
+    ).toContain("reset");
     expect(await doing(() => press("button", "Undo", "{Enter}"))).toContain("undo");
     // A select opens on Enter; the arrows reach the option out of reach, which says why and
     // picks nothing on Enter (D-2906-11), and an arrow back and Enter pick.

@@ -22,6 +22,7 @@ import type {
   SettingsWhich,
 } from "../bindings";
 import { querySelectNamed } from "../ui/select/select.testkit";
+import { chooseInRow, offeredInRow } from "./rowMenu.testkit";
 
 /**
  * **Settings › Project › Sandbox explains what a chat here can do** (#1340): one sentence at the
@@ -354,7 +355,7 @@ describe("Settings › Project › Sandbox", () => {
       ),
     );
 
-    await userEvent.click(within(page).getByRole("button", { name: "Reset: reach every preset" }));
+    await chooseInRow("Internet access", "Reset: reach every preset", userEvent, page);
 
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0].edits[0].path).toEqual([{ key: "sandbox" }, { key: "egress" }]);
@@ -385,7 +386,10 @@ describe("Settings › Project › Sandbox", () => {
     // Where a person turns it down for their own chats (#2071).
     expect(within(status).getByRole("button", { name: "Change your level" })).toBeInTheDocument();
     expect(querySelectNamed("Sandbox mode", page)).toBeNull();
-    expect(within(page).queryByRole("button", { name: "Reset" })).toBeNull();
+    // The level holds it fast: no Reset here (D-SE17g).
+    expect(await offeredInRow("Sandbox", userEvent, page)).not.toContainEqual(
+      expect.stringMatching(/^Reset/),
+    );
   });
 
   it("turns the sandbox on from its status line, with no way back from here", async () => {

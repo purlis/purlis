@@ -23,6 +23,7 @@ import type {
   SettingsWhich,
 } from "../bindings";
 import { allSelects, offeredIn, offeredValuesIn, pickIn } from "../ui/select/select.testkit";
+import { chooseInRow, offeredInRow, unfold } from "./rowMenu.testkit";
 
 /**
  * **What the old Project settings page held, at the Project level** (SE-19, #1169): the page
@@ -259,7 +260,7 @@ describe("the files, at the Project level", () => {
   it("shows the documented keys with the values each file holds", async () => {
     core();
     const saving = await at("Saving");
-    expect(within(saving).getByLabelText("[memory] share (deprecated)")).toHaveValue("local");
+    expect(within(saving).getByLabelText("[memory] share")).toHaveValue("local");
 
     await userEvent.click(within(nav()).getByRole("button", { name: "Forges" }));
     expect(screen.getByLabelText("Forge 1: kind")).toHaveValue("github");
@@ -427,12 +428,10 @@ describe("the Extensions group (charter-app#253)", () => {
     // marked, with Reset; or, not set here, the value beneath it, with neither.
     const acme = within(group).getByRole("switch", { name: "Acme: enabled" });
     expect(acme).toBeChecked();
-    expect(within(rowOf("Acme: enabled")).getByRole("button", { name: "Reset" })).toBeVisible();
+    expect(await offeredInRow("Acme: enabled")).toContain("Reset");
     const stats = within(group).getByRole("switch", { name: "Persona statistics: enabled" });
     expect(stats).not.toBeChecked();
-    expect(
-      within(rowOf("Persona statistics: enabled")).queryByRole("button", { name: "Reset" }),
-    ).toBeNull();
+    expect(await offeredInRow("Persona statistics: enabled")).toContain("Reset (off)");
     expect(
       within(rowOf("Persona statistics: enabled")).queryByRole("img", {
         name: "Set at this level",
@@ -458,7 +457,7 @@ describe("the Extensions group (charter-app#253)", () => {
       ],
     });
 
-    await userEvent.click(within(rowOf("Acme: enabled")).getByRole("button", { name: "Reset" }));
+    await chooseInRow("Acme: enabled", "Reset");
     await waitFor(() => expect(sent).toHaveLength(2));
     expect(sent[1].edits).toEqual([
       { path: [{ key: "extensions" }, { key: "acme" }, { key: "enabled" }], value: null },
@@ -915,7 +914,7 @@ describe("the project's own save keys, in Saving (charter-app#300, ADR 0051)", (
     ).toBeChecked();
     // Not set in either file: the switch shows the value in force, the default (#1865).
     expect(within(saving).getByRole("switch", { name: "Auto-save" })).toBeChecked();
-    expect(within(rowOf("Auto-save")).queryByRole("button", { name: "Reset" })).toBeNull();
+    expect(await offeredInRow("Auto-save")).toContain("Reset (off)");
     expect(within(saving).getByLabelText("Auto-save after")).toHaveValue("");
     expect(within(saving).getByLabelText("Mode")).toHaveAccessibleDescription(
       /pr \(push to the save branch and keep one request open\), or pr-merge \(and set that request to auto-merge\)/,
@@ -961,7 +960,9 @@ describe("the project's own save keys, in Saving (charter-app#300, ADR 0051)", (
     expect(within(saving).getByLabelText("Target branch")).not.toHaveAccessibleDescription(
       /overrides/,
     );
-    // It is still kept elsewhere than the group's values: badged, without an override.
+    // It is still kept elsewhere than the group's values: badged, without an override, in the
+    // folded Branches (R61).
+    await unfold("Branches");
     expect(
       within(rowOf("Target branch")).getByText("This machine", { selector: "[data-scope=badge]" }),
     ).toBeVisible();
@@ -993,9 +994,7 @@ describe("the project's own save keys, in Saving (charter-app#300, ADR 0051)", (
     await userEvent.click(screen.getByRole("switch", { name: "Auto-save" }));
     await userEvent.type(screen.getByLabelText("Save branch"), "charter/save/team");
     await leave();
-    await userEvent.click(
-      within(rowOf("Sign saves with your own git setup")).getByRole("button", { name: "Reset" }),
-    );
+    await chooseInRow("Sign saves with your own git setup", "Reset");
 
     await waitFor(() => expect(sent).toHaveLength(4));
     expect(sent.every((one) => one.which === "shared")).toBe(true);
@@ -1105,8 +1104,15 @@ describe("the project's own save keys, in Saving (charter-app#300, ADR 0051)", (
     });
     const saving = await at("Saving");
 
-    const share = within(saving).getByLabelText("[memory] share (deprecated)");
+    const share = within(saving).getByLabelText("[memory] share");
     expect(share).toHaveValue("commit");
+    // An amber badge after its label says so (R62), outside the name the control is called by.
+    const title = share
+      .closest(".ui-setting-row")
+      ?.querySelector(".ui-setting-title") as HTMLElement;
+    expect(
+      within(title).getByText("deprecated", { selector: '[data-scope="badge"]' }),
+    ).toHaveAttribute("data-variant", "waiting");
     await waitFor(() =>
       expect(share).toHaveAccessibleDescription(new RegExp(`^${SHARE_HINT} In force as Mode\\.`)),
     );
@@ -1123,7 +1129,7 @@ describe("the project's own save keys, in Saving (charter-app#300, ADR 0051)", (
     await at("Saving");
 
     await waitFor(() =>
-      expect(screen.getByLabelText("[memory] share (deprecated)")).toHaveAccessibleDescription(
+      expect(screen.getByLabelText("[memory] share")).toHaveAccessibleDescription(
         new RegExp(`^${SHARE_HINT} Not in force — Mode from charter\\.local\\.toml wins\\.`),
       ),
     );
@@ -1139,9 +1145,7 @@ describe("the project's own save keys, in Saving (charter-app#300, ADR 0051)", (
     await waitFor(() =>
       expect(screen.getByLabelText("Mode")).toHaveAccessibleDescription(/In this project/),
     );
-    expect(screen.getByLabelText("[memory] share (deprecated)")).not.toHaveAccessibleDescription(
-      /in force/i,
-    );
+    expect(screen.getByLabelText("[memory] share")).not.toHaveAccessibleDescription(/in force/i);
   });
 
   it("says where [plane] worktrees is", async () => {

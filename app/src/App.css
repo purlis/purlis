@@ -7105,39 +7105,52 @@ nav.piece-files-head {
 /* **The house settings set** (SE-16, DS-3's expand step; `settings/components.tsx`): the two
    columns, a group, a row, a field and a choice. `ui-*` and not `settings-*`, so the screens
    still on the old hand-built classes and the ones moved onto this set can be told apart until
-   the last ticket deletes the old ones. Every colour is a token (`docs/design-system.md`). */
-.ui-settings {
-  display: grid;
-  grid-template-columns: minmax(9rem, 12rem) minmax(0, 48rem);
-  grid-template-areas:
-    "top top"
-    "nav body";
-  gap: var(--space-5) var(--space-7);
+   the last ticket deletes the old ones. Every colour is a token (`docs/design-system.md`).
+
+   **The two columns are prototype A's** (#2919, `prototype/settings-page`, R37): a 236 px side
+   column on the window's own ground, a hairline beside it, and the page scrolling on its own
+   beside it, at most 860 px wide. The tab takes the whole view, as the Skill studio does. */
+.view-body:has(> .ui-settings) {
+  display: flex;
+  padding: 0;
+  overflow: hidden;
+  container: settings-view / inline-size;
 }
 
-.ui-settings-top {
-  grid-area: top;
+.ui-settings {
+  display: grid;
+  flex: 1 1 auto;
+  /* 236 px (R37) wherever the pane is 944 px or more; narrower, a quarter of it and never under
+     180 px, so a table on the page keeps its columns at the default window (#1859). */
+  grid-template-columns: clamp(180px, 25%, 236px) minmax(0, 1fr);
+  min-block-size: 0;
+  min-inline-size: 0;
+}
+
+/* The side column (R38): the level switcher, whose settings these are, the filter and the
+   pages, 12 above, 16 below and 12 at the sides. */
+.ui-settings-side {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-3) var(--space-5);
-  padding-bottom: var(--space-4);
-  border-bottom: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
+  flex-direction: column;
+  gap: var(--space-5);
+  min-inline-size: 0;
+  min-block-size: 0;
+  overflow-y: auto;
+  /* 12 at its top, not the prototype's 16: the level switch shares the pane actions' row
+     (#3147, ViewTabs.stories.tsx). */
+  padding: var(--space-5) var(--space-5) var(--space-6);
+  border-inline-end: 1px solid var(--border-subtle);
+  background-color: var(--surface-base);
+}
+
+.ui-settings-side > [data-scope="segmented-control"] {
+  align-self: flex-start;
 }
 
 .ui-settings-about {
-  margin: 0;
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
-}
-
-/* The left column: the filter box (SE-21), then the nav. */
-.ui-settings-side {
-  grid-area: nav;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  min-width: 0;
+  margin: 0 var(--space-2);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
 }
 
 .ui-settings-none {
@@ -7147,6 +7160,7 @@ nav.piece-files-head {
 
 /* The left nav: the panel family's page navigation (`ViewNav`, #2930), which draws its
    groups. */
+
 .ui-settings-nav {
   display: flex;
   flex-direction: column;
@@ -7186,9 +7200,100 @@ nav.piece-files-head {
   margin-block: var(--space-5);
 }
 
+/* The page (R37): 22/28/40 inside its edge and its groups 20 apart, sums of the scale's steps
+   at the default text size. */
 .ui-settings-body {
-  grid-area: body;
-  min-width: 0;
+  min-inline-size: 0;
+  min-block-size: 0;
+  overflow-y: auto;
+  padding: calc(var(--space-7) - var(--space-1)) calc(var(--space-7) + var(--space-2))
+    calc(var(--space-8) + var(--space-4));
+}
+
+/* **A page's header is its column's first row** (#3147): it stays, keeping the room the pane's
+   actions take at its end (`paneFrame.css`), and the page's rows scroll under it, so nothing that
+   scrolls passes under the actions. A column holding no page (a file's text) scrolls whole. */
+.ui-settings-body:has(> .ui-settings-page > .ui-setting-page) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-block-end: 0;
+}
+
+.ui-settings-body:has(> .ui-settings-page > .ui-setting-page) > .ui-settings-page {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-block-size: 0;
+}
+
+.ui-setting-page {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-block-size: 0;
+}
+
+.ui-setting-page > .ui-setting-head {
+  flex: none;
+}
+
+.pane-frame.pane-viewed .ui-setting-page > .ui-setting-head {
+  margin-inline-end: max(
+    var(--space-0),
+    calc(var(--pane-actions-room) - var(--space-7) - var(--space-2))
+  );
+}
+
+.ui-setting-rows {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow-y: auto;
+  /* Room for a focus ring at the column's edges, which the scroll would clip. */
+  margin-inline: calc(var(--space-2) * -1);
+  padding-inline: var(--space-2);
+  padding-block-end: calc(var(--space-8) + var(--space-4));
+}
+
+.ui-settings-page {
+  display: grid;
+  gap: calc(var(--space-6) + var(--space-2));
+  max-inline-size: 860px;
+}
+
+/* **A page's header** (R48): its title at 18/600, its blurb in the muted words at most 64
+   characters wide, and the line that says where it is kept, the file as code, then Edit as
+   TOML. */
+.ui-setting-head h2 {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-strong);
+  text-wrap: balance;
+}
+
+.ui-setting-blurb {
+  margin: var(--space-2) 0 0;
+  max-inline-size: 64ch;
+  color: var(--text-muted);
+}
+
+.ui-setting-where {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-4) 0 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-quiet);
+}
+
+.ui-setting-where code {
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+.ui-setting-head {
+  margin-block-end: calc(var(--space-6) + var(--space-2));
 }
 
 .ui-setting-reset:focus-visible {
@@ -7395,6 +7500,66 @@ nav.piece-files-head {
   color: var(--text-muted);
 }
 
+/* **Your hosts, as a table** (#2919, R65, R69): the host in mono with its port in the quiet words;
+   the filter at most 280 px wide at the bar's start. */
+.ui-hosts {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.ui-hosts .list-filter {
+  max-inline-size: 280px;
+}
+
+.ui-hosts-host {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+
+.ui-hosts-port {
+  color: var(--text-quiet);
+}
+
+/* **Where Settings is narrow** (R75): under 728 px of its pane (the prototype's 760 px window
+   less its 16 px gutters, the width its tab had) the side column is a band over
+   the page, its pages one sideways-scrolling row, and each row's label goes over its control,
+   the ⋯ still at the row's end. */
+@container settings-view (max-width: 728px) {
+  .ui-settings {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .ui-settings-side {
+    overflow-y: visible;
+    border-inline-end: 0;
+    border-block-end: 1px solid var(--border-subtle);
+  }
+
+  .ui-settings-body {
+    padding: var(--space-6) var(--space-6) var(--space-8);
+  }
+
+  .ui-settings-page .ui-setting-row {
+    grid-template-columns: minmax(0, 1fr) 40px;
+  }
+
+  .ui-settings-page .ui-setting-name {
+    grid-column: 1 / -1;
+  }
+
+  .ui-settings-page .ui-setting-row > .ui-setting-error {
+    grid-column: 1 / -1;
+  }
+
+  /* A table on the page is drawn as its form, under its name, as every other control is here
+     (#1859): its frame kept under the table family's 32rem, where it stacks, so it never
+     scrolls sideways in a page between that and its own least width. */
+  .ui-settings-page .ui-setting-control:has([data-scope="table"][data-part="frame"]) {
+    max-inline-size: 31rem;
+  }
+}
+
 /* A collection (ST-3): each entry a heading with its Remove over its rows, then Add, whose form
    is setting rows with SettingActions' Add and Cancel under them. */
 .ui-collection-entry {
@@ -7474,20 +7639,6 @@ nav.piece-files-head {
   overflow-wrap: anywhere;
 }
 
-/* A row's hint, behind an info mark beside its label (D3): quieter than the label. */
-.ui-setting-hint {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  color: var(--text-muted);
-  cursor: default;
-}
-
-.ui-setting-hint:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: var(--focus-ring-offset);
-}
-
 /* A value set at this level: the one Reset takes out. */
 .ui-setting-modified {
   flex: none;
@@ -7497,9 +7648,15 @@ nav.piece-files-head {
   background-color: var(--accent-base);
 }
 
-/* "Move to…"'s menu: as wide as the longest file name it offers. */
-.ui-setting-move {
-  --menu-min: calc(var(--space-8) * 7);
+/* **A row's ⋯ menu** (R59): under its button, lined up with its end, at least 200 px wide. Copy
+   key names the key as code. */
+.ui-setting-menu {
+  --menu-min: 200px;
+}
+
+.ui-setting-key {
+  font-family: var(--font-mono);
+  color: var(--text-quiet);
 }
 
 .ui-setting-control {
@@ -7529,6 +7686,147 @@ nav.piece-files-head {
    line of its own rather than the room beside the label. */
 .ui-setting-control:has(> .ui-setting-list) {
   flex-basis: 100%;
+}
+
+/* **A page's own groups** (R60, R61): a heading at 13/600 in Purlis, then its one line in the
+   quiet words at 12, then its rows; 20 apart. A rarely used group is the disclosure family's,
+   folded, its count after its title and its chevron after both (#2799 rule 1). */
+.ui-settings-page .ui-setting-section {
+  margin-block-start: calc(var(--space-6) + var(--space-2));
+}
+
+.ui-settings-page .ui-setting-rows > .ui-setting-section:first-child,
+.ui-settings-page .ui-setting-rows > .ui-setting-fold:first-child {
+  margin-block-start: 0;
+}
+
+.ui-settings-page .ui-setting-section > h3 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-strong);
+}
+
+.ui-settings-page .ui-setting-section > .ui-setting-help,
+.ui-settings-page .ui-setting-fold [data-part="panel"] > .ui-setting-help {
+  margin: 0 0 var(--space-4);
+  font-size: var(--font-size-sm);
+  color: var(--text-quiet);
+}
+
+/* **A row of the aligned form** (#2919, prototype A, R50–R52, R54): on a settings page the label
+   column is at least 180 px and at most 38% of the row, then the control column, then the 64 px
+   column of the row's actions, 6 apart down and 20 across, with 12 above and below. Every
+   control starts at the same x, whatever its label says. A hairline parts two rows; the first
+   of a group has none (R51: a rule between rows, never a control's edge). */
+.ui-settings-page .ui-setting-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 38%) minmax(0, 1fr) 64px;
+  align-items: start;
+  gap: var(--space-3) calc(var(--space-6) + var(--space-2));
+  padding-block: var(--space-5);
+  border-block-end: 0;
+  border-block-start: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
+}
+
+.ui-settings-page :not(.ui-setting-row) + .ui-setting-row,
+.ui-settings-page .ui-setting-row:first-child {
+  border-block-start: 0;
+}
+
+.ui-settings-page .ui-setting-line {
+  display: contents;
+}
+
+/* The label column: the name, 500 weight, with its marks, and its help under it in the quiet
+   words at 12 (R52). */
+.ui-settings-page .ui-setting-name {
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  min-block-size: 0;
+  max-inline-size: none;
+  padding-block-start: calc((var(--size-control) - 1lh) / 2);
+}
+
+.ui-setting-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  min-inline-size: 0;
+}
+
+.ui-settings-page .ui-setting-name > .ui-setting-help {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-quiet);
+}
+
+.ui-settings-page .ui-setting-control {
+  min-inline-size: 0;
+  min-block-size: var(--size-control);
+}
+
+/* A box or a select is at most 320 px wide (R54). */
+.ui-settings-page .ui-setting-control > .ui-setting-box:not(.ui-setting-list),
+.ui-settings-page .ui-setting-control > [data-scope="select"] {
+  flex: 1 1 auto;
+  max-inline-size: 320px;
+}
+
+/* A list field, one entry a line, takes its column's width, starting where every control
+   does (R54). */
+.ui-settings-page .ui-setting-control:has(> .ui-setting-list) {
+  flex-basis: auto;
+}
+
+.ui-settings-page .ui-setting-control > .ui-setting-list {
+  flex: 1 1 100%;
+}
+
+/* A row whose control is a whole table (Dispatch's limits and its grants) draws it under its
+   name across the whole row, its ⋯ beside the name, so the table keeps its columns (#1859) where
+   the control column alone would stack it. */
+.ui-settings-page
+  .ui-setting-row:has(
+    > .ui-setting-line > .ui-setting-control [data-scope="table"][data-part="frame"]
+  )
+  > .ui-setting-line
+  > .ui-setting-name {
+  grid-column: 1 / 3;
+  grid-row: 1;
+}
+
+.ui-settings-page
+  .ui-setting-row:has(
+    > .ui-setting-line > .ui-setting-control [data-scope="table"][data-part="frame"]
+  )
+  > .ui-setting-line
+  > .ui-setting-act {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.ui-settings-page
+  .ui-setting-row:has(
+    > .ui-setting-line > .ui-setting-control [data-scope="table"][data-part="frame"]
+  )
+  > .ui-setting-line
+  > .ui-setting-control {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+.ui-setting-act {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  min-block-size: var(--size-control);
+}
+
+/* What the core refused, under the control's column. */
+.ui-settings-page .ui-setting-row > .ui-setting-error {
+  grid-column: 2 / -1;
 }
 
 /* You › This machine (ST-2): one line per thing the machine store holds, with its action at

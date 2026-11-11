@@ -334,24 +334,24 @@ describe("Settings' tables, in the real WebView", function () {
     }
   });
 
-  it("stacks the grants table into a form at the narrowest Settings: each cell under its column's words, none cut", async () => {
+  it("lays the grants table out whole at the narrowest Settings: a form, or every heading on one line", async () => {
     // The narrowest Settings by default: the narrowest window (1024 px, ADR 0054) with both
-    // sidebars open, whatever the specs before this one left, and put back after.
+    // sidebars open, whatever the specs before this one left, and put back after. Since #2919 the
+    // side column is a band over the page there (R75), so the page has the pane's width: the
+    // table stacks where its frame is under 32rem, and keeps its columns, each heading whole,
+    // where it is not (#1859, DS-9).
     const opened = await bothSidesOpen();
     try {
       await windowIs(1024, 768);
       await measured(GRANTS);
-      let seen = await roomOf(GRANTS);
-      await browser.waitUntil(
-        async () => {
-          seen = await roomOf(GRANTS);
-          return seen !== null && seen.headings === "none";
-        },
-        { timeout: 10_000, timeoutMsg: "the grants table did not stack at the narrowest Settings" },
-      );
+      const seen = await roomOf(GRANTS);
       if (seen === null) throw new Error("the grants table is not drawn in a room");
-      const { room, cells } = seen;
       expect(seen.scrolls).toBe(false);
+      if (seen.headings !== "none") {
+        oneLineEach(await measured(GRANTS));
+        return;
+      }
+      const { room, cells } = seen;
       expect(cells.length).toBeGreaterThanOrEqual(1);
       for (const cell of cells) {
         // Inside the room, give or take a pixel of rounding, under its column's whole words.

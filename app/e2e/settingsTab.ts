@@ -82,7 +82,10 @@ export async function settingsAt(level: string, group: string): Promise<void> {
           ...document.querySelectorAll<HTMLElement>(
             'nav[aria-label="Groups"] [role="button"], nav[aria-label="Groups"] button:not([role])',
           ),
-        ].find((one) => one.textContent?.trim() === called);
+          // By the page's name alone: a page with things waiting says how many after it (R46).
+        ].find(
+          (one) => (one.querySelector('[data-part="label"]') ?? one).textContent?.trim() === called,
+        );
         button?.click();
         const current = button?.getAttribute("aria-current");
         return current !== null && current !== undefined && current !== "false";

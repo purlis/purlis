@@ -1,14 +1,23 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { Choice, Field, SettingActions, SettingRow } from "./components";
 import type { PlaneId } from "../bindings";
-import type { Driven, EntryReferrer, EntryRefused, EntryRefusal } from "./driver";
+import type { Driven, EntryOp, EntryReferrer, EntryRefused, EntryRefusal } from "./driver";
 import { askSettingsLink, referrerElsewhere } from "./links";
 import { OutLink } from "./OutLink";
 import type { Collection, CollectionEntry, EntryField, Setting } from "./groups";
 import { HostStatus } from "../ui/badge/Badge";
+import { HostsTable, hostOf } from "./HostsTable";
 import { Button } from "../ui/button/Button";
 import { Form, type RefusedAnswer } from "../ui/field/Field";
 
@@ -36,6 +45,7 @@ import { Form, type RefusedAnswer } from "../ui/field/Field";
  */
 export function CollectionView({
   id,
+  label = "",
   collection,
   settings,
   driver,
@@ -46,6 +56,8 @@ export function CollectionView({
 }: {
   /** The group's id: what the driver keeps the collection's Undo and refusals by. */
   id: string;
+  /** The group's name: what a table of the collection is called (R65). */
+  label?: string;
   collection: Collection;
   /** The group's settings the filter left. */
   settings: readonly Setting[];
@@ -86,6 +98,90 @@ export function CollectionView({
   const ofEntry = (entry: CollectionEntry) =>
     settings.filter((one) => entry.settings.includes(one.id));
   const mine = new Set(collection.entries.flatMap((entry) => entry.settings));
+
+  // **A table of hosts' acts** (#2919, R70, R72): each says what it did on the line under the
+  // table. Several are sent one after another, each against the file as it stands by then, the
+  // host found again by its words: a remove changes the others' identities.
+  const latest = useRef(collection);
+  useLayoutEffect(() => {
+    latest.current = collection;
+  });
+  const [said, setSaid] = useState<{ words: string; undo: boolean }>();
+  const [busy, setBusy] = useState(false);
+  // The Add form a picker's New… asks for (`adding`), or the bar's Add host: a new ask of either
+  // opens it, each followed by what it was last.
+  const [asked, setAsked] = useState<Asked | undefined>(adding);
+  const [askedBy, setAskedBy] = useState(adding?.ask);
+  if (adding !== undefined && adding.ask !== askedBy) {
+    setAskedBy(adding.ask);
+    setAsked(adding);
+  }
+  /**
+   * Sends `op` for each of `hosts` in turn, each against the file as it is drawn after the write
+   * before it, the host found again by its words (a remove changes the others' identities).
+   * Stops at a refusal, which the collection says, or where the write before it is not drawn
+   * yet. Answers the hosts it was done to.
+   */
+  const eachHost = async (
+    hosts: readonly string[],
+    op: (entry: CollectionEntry, base: string | null) => EntryOp,
+  ): Promise<string[]> => {
+    const done: string[] = [];
+    for (const host of hosts) {
+      const entry = latest.current.entries.find((one) => hostOf(one) === host);
+      if (entry === undefined) continue;
+      const drawn = latest.current;
+      if (await driver.entry(key, op(entry, drawn.base))) break;
+      done.push(host);
+      if (!(await redrawnFrom(drawn))) break;
+    }
+    return done;
+  };
+  /** Whether the collection is drawn again since `drawn`, within a second. */
+  const redrawnFrom = async (drawn: Collection) => {
+    for (let tries = 0; latest.current === drawn && tries < 100; tries++)
+      await new Promise((settled) => setTimeout(settled, 10));
+    return latest.current !== drawn;
+  };
+  const confirmHosts = async (hosts: readonly string[], all: boolean) => {
+    setBusy(true);
+    setSaid(undefined);
+    const done = await eachHost(hosts, (entry, base) => ({
+      collection: collection.name,
+      base,
+      confirm: entry.id,
+    }));
+    setBusy(false);
+    if (done.length > 0)
+      setSaid({
+        words:
+          all && done.length === hosts.length
+            ? "Confirmed every waiting host."
+            : done.length === 1
+              ? `Confirmed ${done[0] ?? ""}.`
+              : `Confirmed ${done.length} hosts.`,
+        undo: false,
+      });
+    settle();
+  };
+  const removeHosts = async (hosts: readonly string[]) => {
+    setBusy(true);
+    setSaid(undefined);
+    const done = await eachHost(hosts, (entry, base) => ({
+      collection: collection.name,
+      base,
+      remove: entry.id,
+    }));
+    setBusy(false);
+    // One host's remove has its Undo; several have none, as one Undo would put back only the last.
+    if (done.length > 0)
+      setSaid(
+        done.length === 1
+          ? { words: `Removed ${done[0] ?? ""}.`, undo: true }
+          : { words: `Removed ${done.length} hosts.`, undo: false },
+      );
+    settle();
+  };
 
   /** Confirms the entry (#1341): your own sandbox host, which reaches nothing until it is. */
   const confirm = async (entry: CollectionEntry) => {
@@ -135,6 +231,62 @@ export function CollectionView({
     // The focus goes to Add, which is always there.
     else settle();
   };
+
+  if (collection.table === "hosts")
+    return (
+      <div className="ui-collection" ref={whole} tabIndex={-1}>
+        {settings.filter((one) => !mine.has(one.id)).map(row)}
+        <HostsTable
+          label={label}
+          entries={collection.entries}
+          busy={busy}
+          onConfirm={(entry) => void confirmHosts([hostOf(entry)], false)}
+          onRemove={(entry) => void removeHosts([hostOf(entry)])}
+          onConfirmAll={(hosts, every) => void confirmHosts(hosts, every)}
+          onRemoveAll={(hosts) => void removeHosts(hosts)}
+          onAdd={() => {
+            setSaid(undefined);
+            setAsked((was) => ({ ask: (was?.ask ?? 0) + 1, then: () => {} }));
+          }}
+          addRef={addButton}
+        />
+        {(said !== undefined || undoSaid !== undefined || refused !== undefined) && (
+          <div className="ui-collection-done" role="status">
+            {(said?.words ?? undoSaid) !== undefined && <span>{said?.words ?? undoSaid}</span>}
+            {driver.undoable === key && (said === undefined || said.undo) && (
+              <Button
+                size="sm"
+                onPress={() => {
+                  setSaid(undefined);
+                  driver.undo();
+                  settle();
+                }}
+              >
+                Undo
+              </Button>
+            )}
+            {refused && (
+              <Refused
+                noun={noun}
+                refused={refused}
+                onGo={onGo}
+                reachable={reachable}
+                plane={driver.plane}
+              />
+            )}
+          </div>
+        )}
+        <AddForm
+          id={key}
+          collection={collection}
+          driver={driver}
+          adding={addButton}
+          whole={whole}
+          asked={asked}
+          bare
+        />
+      </div>
+    );
 
   return (
     <div className="ui-collection" ref={whole} tabIndex={-1}>
@@ -450,6 +602,7 @@ function AddForm({
   adding,
   whole,
   asked,
+  bare = false,
 }: {
   id: string;
   collection: Collection;
@@ -457,6 +610,8 @@ function AddForm({
   adding: RefObject<HTMLButtonElement | null>;
   whole: RefObject<HTMLDivElement | null>;
   asked?: Asked;
+  /** Its Add button is drawn elsewhere (a table's bar, which opens it by `asked`): none here. */
+  bare?: boolean;
 }) {
   const { noun, fields } = collection;
   const [values, setValues] = useState<Record<string, string> | undefined>(() =>
@@ -496,6 +651,7 @@ function AddForm({
     setChecked({});
     asking.current = {};
   };
+  if (values === undefined && bare) return null;
   if (values === undefined)
     return (
       <div className="ui-collection-add">

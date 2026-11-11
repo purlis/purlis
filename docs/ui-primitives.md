@@ -81,13 +81,20 @@ operator amended it there on 2026-10-04 (V89f; the spec on #558):
 
 What keeps it from becoming the library this file forbids:
 
-- **Six pieces, named here, and no more.** `SettingsLayout` (the level switcher, the nav of
-  groups with its filter box above it, and the chosen group, in two columns), `SettingGroup`
-  (a group's heading, its one help line ending on where its values are kept, and rows),
-  `SettingRow` (label, control and reset on one line at the control height, help under them, and
-  since SE-17 a refused write's reason and the last change's Undo; since SE-18 the value's
-  origin, drawn quietly since DS-8: a badge only where the value is kept elsewhere than its
-  group's, a mark on a value set at this level, and "Move to…" at the end of the line), `Field` (`text`, `list` and `range`), `Choice` (`radio`, since #2907 `cards`,
+- **Six pieces, named here, and no more.** `SettingsLayout` (since #2919 prototype A of
+  `prototype/settings-page`: a side column with the level switcher, the filter box and the nav of
+  groups, which folds a page's own pages, and no title of its own (#3147), and the chosen page
+  beside it, its rows scrolling under its header), `SettingGroup` (on a
+  settings page the page's header — its title, its blurb and "Kept in ‹file› · Edit as TOML" —
+  and its rows, and at `level` 3 one of the page's own groups, a heading and its one line, a
+  rarely used one (`rarely`) folded as "‹title› · ‹count›"; in a dialog a heading and one help
+  line), `SettingRow` (on a settings page a row
+  of the aligned form: the label with its help line under it, then the control, then one ⋯ menu
+  holding Reset, the moves between files and Copy key, every control at one x; in a dialog the
+  label and control on one line with the help under them; since SE-17 a refused write's reason
+  and the last change's Undo; since SE-18 the value's origin, drawn quietly since DS-8: a badge
+  only where the value is kept elsewhere than its page's, a mark on a value set at this level
+  with the tooltip "Set at this level", and since #2919 an amber "deprecated" badge), `Field` (`text`, `list` and `range`), `Choice` (`radio`, since #2907 `cards`,
   `select`, `toggle`, since #1860 `switch`, since DS-3e `checks`: any of a few, each ticked on its own, and since #626
   `chips`: any of a few too, drawn small and side by side over the list they narrow, the Chats
   list's state chips) and `SettingActions` (a form's row of buttons, V89j). A seventh piece is
@@ -645,7 +652,7 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
 | Panel section | `PanelSection` (with `view` and `top`), `PanelSectionHead`, `PanelSectionTitle`, `InPanelTop` (`ui/panel/Panel.tsx`) | `root`, `head`, `title`, `top` | `default` |
 | Panel separator | `Separator` (`ui/panel/Separator.tsx`), every resize handle between two panels | `root`, `grip` | none |
 | View frame | `ViewFrame`, `ViewNav`, `ViewListHead`, `ViewPageHeader` (`ui/panel/ViewFrame.tsx`), a view tab laid out as pages; `ViewBar`, `ViewHistoryButtons`, `ViewCrumbs` (`ui/panel/ViewBar.tsx`), its top bar | `root`, `nav`, `list`, `item`, `head`, `header`, `name`, `lead`, `bar`, `history`, `path`, `crumb`, `crumb-separator` | none |
-| View nav | a page in the view frame's navigation, drawn by `ViewNav` | `item`, `label`, `indicator` | none |
+| View nav | a page in the view frame's navigation, drawn by `ViewNav`; a page that heads pages of its own (`expanded`) ends in its group's `toggle` (#2919): → reaches it, ← goes back, and `onExpand` opens or folds the group; `rowWhenNarrow` lays the pages out as one sideways-scrolling row where its container is under 728 px, and `edge={false}` draws no line after it where its holder draws that edge | `item`, `label`, `indicator`, `toggle` | none |
 | Review page     | `ReviewPage` (`ui/review-page/ReviewPage.tsx`), a review too long for a dialog: its body over a fixed action bar                                                                                       | `root`, `body`, `bar`, `summary`, `actions`, `answers`                                                                | none                               |
 | Empty state | `EmptyState` (`ui/empty-state/EmptyState.tsx`) | `root`, `icon`, `headline`, `body`, `action` | `page`, `panel` |
 | Status item | `StatusItem` (pressed, runs a command), `StatusCell` (says, runs nothing), `StatusVerdict` (`ui/status/StatusItem.tsx`) | `root`, `icon`, `label`, `count` | `bar`, `pill`, `waiting`, `accent` |
@@ -1051,6 +1058,9 @@ source's More, a file to read under its risk mark, a deleted skill's last text.
   which is a transform, and never swaps for another chevron. Folded, the panel takes no room.
 - **It starts folded unless told** (`defaultExpanded`), and the owner may hold its state
   (`isExpanded`, `onExpandedChange`).
+- **Its twist leads its words, or follows them** (`twistAt="end"`, #2919): a settings page's
+  rarely used group ("Branches · 1") draws it after its title and count, as every disclosure
+  chevron in Settings trails (#2799 rule 1).
 - **A refused field inside a fold opens it** (`ui/reveal.ts`): the field family's form sends
   `purlis:reveal` at the first field it refused before the keyboard goes there, and every fold
   around it opens at once, in a dialog's body and on a page alike. The refusal is heard once, by
@@ -1749,7 +1759,7 @@ a file's, with its `said`, `danger`, `warns`, `checked` and `keys`. It draws the
 `Menus.tsx`'s exported `Groups`, inside its own `Menu` named by `aria-label`, so its rows,
 tooltips, submenus and keyboard are every other menu's. A dropdown, which is not a context
 menu, puts `MenuWords` and `MenuTip` inside its own `MenuItem`s, as a secret's menu and a
-setting's *Move to…* do. **The show-more and the away menus are the exception to the width**:
+settings row's ⋯ do. **The show-more and the away menus are the exception to the width**:
 their rows are tabs and sentences with no part that gives way, so `.more-menu` hands
 `--menu-max: none`.
 
@@ -2197,8 +2207,8 @@ keeps the pick in the screen's own state and acts only on an explicit button: Sa
 this_ (DS-3b), Updates' _Use this channel_ (DS-3d), and First task's profile, which starts a chat only
 on _Start the first chat_ (DS-3e). A radio whose write can be undone, as
 Settings' controls can (V89e), writes on its pick. Settings' move between files, which writes
-both and has no Undo (SE-18), is no radio since DS-8: it is the row's _Move to…_ menu, and only
-a row chosen in it moves the value. Each held pick is guarded by a test that
+both and has no Undo (SE-18), is no radio since DS-8: it is rows of the row's ⋯ menu ("Move to
+‹file›", #2919), and only a row chosen in it moves the value. Each held pick is guarded by a test that
 holds an arrow down for about 80 ms and finds nothing written.
 
 **The arrow-key defect is the radio group's, not every primitive's — measured, not assumed.**
