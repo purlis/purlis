@@ -107,8 +107,9 @@ export function SecretAskNotice({
   /** The entries the person keeps, vault by vault: read once they choose to use one. */
   entries: () => Promise<readonly VaultEntries[]>;
   busy: boolean;
-  /** A press of `option`, with what to send read once by `given`. */
-  onAnswer: (option: Offered, given: () => SecretAskGiven) => void;
+  /** A press of `option`, with what to send read once by `given`, and the words the pressed
+   *  button showed (an ask asked once more repeats them, #6178). */
+  onAnswer: (option: Offered, given: () => SecretAskGiven, said: string) => void;
   /** Why a press sends nothing yet, said where the row says it. */
   onSaid: (said: string) => void;
   /** **A start's ask, in the Start dialog** (#5137): the chat starts with the value in
@@ -213,7 +214,7 @@ export function SecretAskNotice({
     return undefined;
   };
 
-  const press = (option: Offered | undefined, fills: boolean) => {
+  const press = (option: Offered | undefined, fills: boolean, said: string) => {
     if (option === undefined || busy) return;
     if (fills) {
       const why = notYet();
@@ -222,7 +223,7 @@ export function SecretAskNotice({
         return;
       }
     }
-    onAnswer(option, fills ? read : declined);
+    onAnswer(option, fills ? read : declined, said);
   };
 
   const program = run?.program ?? "";
@@ -254,6 +255,7 @@ export function SecretAskNotice({
     actionSaid = action?.label ?? "Fill";
   }
   const vaultAllow = run?.offer === "vault" ? offered("allow-vault") : undefined;
+  const keepSaid = run?.offer === "vault" ? (keep?.label ?? "") : "Not now";
 
   const hears = (() => {
     const whom = `${chat} hears`;
@@ -280,7 +282,7 @@ export function SecretAskNotice({
     if (!start || !chordSends(event.nativeEvent)) return;
     event.preventDefault();
     event.stopPropagation();
-    if (!event.repeat) press(action, true);
+    if (!event.repeat) press(action, true, actionSaid);
   };
 
   return (
@@ -303,7 +305,7 @@ export function SecretAskNotice({
         vault={vault}
         vaultAllow={vaultAllow}
         busy={busy}
-        onVaultAllow={() => press(vaultAllow, true)}
+        onVaultAllow={() => press(vaultAllow, true, vaultAllow?.label ?? "")}
       />
       <ChatWords chat={chat} secret={secret} run={run} />
       {keys.map((key) => (
@@ -362,10 +364,10 @@ export function SecretAskNotice({
             variant="ghost"
             aria-disabled={busy || undefined}
             aria-busy={busy || undefined}
-            onPress={() => press(keep, false)}
+            onPress={() => press(keep, false, keepSaid)}
             data-testid="sa-not-now"
           >
-            {run?.offer === "vault" ? keep.label : "Not now"}
+            {keepSaid}
           </Button>
         )}
         {action !== undefined && (
@@ -374,7 +376,7 @@ export function SecretAskNotice({
             variant={actionGrants ? "grants" : "secondary"}
             aria-disabled={busy || undefined}
             aria-busy={busy || undefined}
-            onPress={() => press(action, true)}
+            onPress={() => press(action, true, actionSaid)}
             data-testid="sa-primary"
           >
             {actionSaid}
