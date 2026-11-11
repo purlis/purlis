@@ -342,6 +342,7 @@ export const Narrow: Story = {
     const canvas = within(canvasElement);
     const list = canvas.getByRole("navigation", { name: "Groups" }).querySelector("ul");
     await expect(getComputedStyle(list as Element).display).toBe("flex");
+    await expect(getComputedStyle(list as Element).flexDirection).toBe("row");
     const name = canvas.getByText("Default workspace", { selector: "label" });
     const control = controlOf(canvasElement, "Default workspace") as HTMLElement;
     await expect(control.getBoundingClientRect().top).toBeGreaterThanOrEqual(

@@ -7158,6 +7158,11 @@ nav.piece-files-head {
 
 /* The left nav: the panel family's page navigation (`ViewNav`, #2930), which draws its
    groups. */
+/* Its own line after it is the side column's edge here, drawn once (R37). */
+.ui-settings-nav [data-scope="view-frame"][data-part="nav"] {
+  border-inline-end-width: 0;
+}
+
 .ui-settings-nav {
   display: flex;
   flex-direction: column;
@@ -7246,6 +7251,9 @@ nav.piece-files-head {
   flex: 1 1 auto;
   min-block-size: 0;
   overflow-y: auto;
+  /* Room for a focus ring at the column's edges, which the scroll would clip. */
+  margin-inline: calc(var(--space-2) * -1);
+  padding-inline: var(--space-2);
   padding-block-end: calc(var(--space-8) + var(--space-4));
 }
 
@@ -7531,6 +7539,7 @@ nav.piece-files-head {
 
   .ui-settings-nav [data-scope="view-frame"][data-part="nav"] > ul {
     display: flex;
+    flex-direction: row;
     overflow-x: auto;
   }
 
