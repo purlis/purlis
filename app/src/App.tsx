@@ -2107,6 +2107,7 @@ function App() {
       createWorkspace: () => undefined,
       removeWorkspace: () => undefined,
       showChat: () => undefined,
+      reopenTask: async () => nowhere(),
       paneBack: () => undefined,
       showChatTasks: () => undefined,
       ownTab: () => undefined,
@@ -2327,6 +2328,9 @@ function App() {
           },
     [branchInFront, inFront, planes.length],
   );
+
+  /** The chats the palette looks a number up in (#6214): the project in front's. */
+  const paletteChats = useMemo(() => ({ plane: inFront }), [inFront]);
 
   /** The pinned artifacts the palette finds (#5968): the project in front's. */
   const paletteArtifacts = useMemo(
@@ -3426,6 +3430,7 @@ function App() {
           projects={{ rows: switcherRows, asked: switcherAsk }}
           files={files}
           artifacts={paletteArtifacts}
+          chats={paletteChats}
           said={said}
           onSettings={followSaid}
           onRun={saying?.run ?? run}

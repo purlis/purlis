@@ -1560,6 +1560,8 @@ export const commands = {
 	 *  resolved on the disk (H6b).
 	 */
 	taskFolderShared: (plane: PlaneId, session: number, place: string | null) => typedError<string | null, string>(__TAURI_INVOKE("task_folder_shared", { plane, session, place })),
+	chatByNumber: __WINDOW_ONLY_RESULT,
+	chatScreen: __WINDOW_ONLY_RESULT,
 	/**
 	 *  The finished tasks of the project's open chats, oldest first, for the rows under each
 	 *  (#1485). On a blocking thread, as it reads every record.
@@ -4496,6 +4498,31 @@ export type ChatBrowser = {
 };
 
 /**
+ *  **A closed or finished chat's card** (#6214, the prototype's S6): "#641 · <title>", how and
+ *  when it ended, who started it, where it ran, its report, and whether *Read it* and *Reopen*
+ *  can do anything.
+ */
+export type ChatCard = {
+	/**  The number it was looked up by: the chat's when it worked. */
+	number: number,
+	/**  Its ULID: what *Read it* asks for its screen by. */
+	chat: string,
+	/**
+	 *  Its task as its finished row has it: its name, how it ended and when, its report
+	 *  (masked), where it ran, and whether it reopens. `id` is its dispatch record's, which
+	 *  *Reopen* names.
+	 */
+	task: FinishedTask,
+	/**
+	 *  Who started it: "you" where the person dispatched it, else the asking chat's name as
+	 *  the person saw it then.
+	 */
+	started_by: string,
+	/**  Whether its last screen was kept: *Read it* is disabled where it was not. */
+	screen_kept: boolean,
+};
+
+/**
  *  What a `chat-events` batch carries of a chat's doing, and what `chat_doings` answers a list
  *  of: one chat's line, or that it has none. It travels in memory only.
  */
@@ -4538,6 +4565,17 @@ export type ChatHeld = {
 	plane: PlaneId,
 	session: number,
 };
+
+/**  What a number names, as the window is sent it. */
+export type ChatLookup = 
+/**  An open chat answers to it: the window shows that chat. */
+{ is: "open"; number: number } | 
+/**  The chat it was is open now under `now`: started again, or reopened. */
+{ is: "restarted"; now: number } | 
+/**  The chat has ended: its card, boxed as it is the one large answer. */
+{ is: "ended"; card: ChatCard } | 
+/**  No chat had it, or none purlis kept a record of. */
+{ is: "no_chat" };
 
 /**
  *  **A chat's move as the window draws it** (#2048): what `chat-move` tells, and each row of

@@ -4050,9 +4050,17 @@ const STANDS_ON: &[(&str, &[&str])] = &[
     ("card-button", &["badge"]),
     ("code", &["tooltip"]),
     ("combobox", &["tooltip"]),
+    // A popover on a dialog: beside a palette row (#6214, the closed chat's card).
     (
         "dialog",
-        &["button", "field", "list", "text-input", "tooltip"],
+        &[
+            "button",
+            "field",
+            "list",
+            "popover",
+            "text-input",
+            "tooltip",
+        ],
     ),
     (
         "list",
@@ -4146,9 +4154,11 @@ const STANDS_ON: &[(&str, &[&str])] = &[
             "view-nav",
         ],
     ),
+    // A badge on a popover: a closed chat's card says its outcome in one (#6214).
     (
         "popover",
         &[
+            "badge",
             "button",
             "field",
             "menu",

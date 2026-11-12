@@ -1196,6 +1196,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Artifacts in the palette's search (#5968, ADR 0122): a row found opens the artifact's own
     // tab, which only the window holds, so nothing a link serves could use one.
     "artifact_search",
+    // A chat looked up by its number, and a closed task's kept screen (#6214): the card and the
+    // read-only tab are the window's. A kept screen is what a task's work showed, and is not
+    // served to anything else.
+    "chat_by_number",
+    "chat_screen",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on
