@@ -291,6 +291,13 @@ fn the_notice_names_the_key_the_vault_and_the_site_and_offers_once_this_chat_and
         options,
         ["Allow once", "Allow for this chat", "Keep blocked"]
     );
+    // **A vault use** (#6178): said on its row, and its Allow asks once more.
+    let risk = shown.risk.clone().expect("a vault use");
+    assert_eq!(risk.class, crate::asking::RiskClass::VaultUse);
+    assert_eq!(
+        risk.why,
+        "Hands dash-api-key from vault qa to a field on dash.example.test"
+    );
     let fill = shown.fill.expect("drawn as a fill");
     assert_eq!(fill.site, "dash.example.test");
     assert_eq!(fill.key, "dash-api-key");

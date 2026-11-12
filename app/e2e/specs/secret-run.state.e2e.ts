@@ -214,6 +214,18 @@ describe("a run that needs a secret (#5227)", function () {
     await notice.$(`aria/Value of ${SECRET_KEY}`).setValue(VALUE);
     await pressGrant(await notice.$("button=Fill and allow once"));
 
+    // **It asks once more** (ADR 0121 decision 8, #6178): a program Allow hands the vault's value
+    // to curl, a vault use, so the first press only asks, under the form, and nothing runs yet.
+    // The person reads the question and presses its own Fill and allow once.
+    const again = await notice.$(`[role="group"][aria-label^="Allow handing ${SECRET_KEY} to "]`);
+    await again.waitForDisplayed({
+      timeout: 10_000,
+      timeoutMsg: "Fill and allow once did not ask once more before handing the value to curl",
+    });
+    await expect(again).toHaveText(expect.stringContaining("curl"));
+    expect(await paneSaid()).not.toContain(`${SECRET_RAN} 0`);
+    await pressGrant(await again.$("button=Fill and allow once"));
+
     // **The command runs**: curl printed the page the value names, and ended well.
     await browser.waitUntil(async () => (await paneSaid()).includes(`${SECRET_RAN} 0`), {
       timeout: 60_000,
