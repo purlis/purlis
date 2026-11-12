@@ -437,8 +437,9 @@ function Row({ row, onPress }: { row: RowDrawn; onPress: (offer: Offer) => void 
       // (D-1719-3), which a migrating control keeps beside its look (DS-2).
       variant={row.danger ? "danger" : "default"}
       className={row.danger ? "ends-it" : undefined}
-      keys={row.keys}
-      // The key as a reader hears it, where no registry entry answers for the row (#6043).
+      keys={row.keys ?? row.gesture}
+      // The key as a reader hears it, where no registry entry answers for the row (#6043). A
+      // gesture is the pointer's, and names none.
       aria-keyshortcuts={row.keys === undefined ? undefined : ariaKeysOfSaid(row.keys)}
       shortcut={offer.id}
       isDisabled={!offer.available}

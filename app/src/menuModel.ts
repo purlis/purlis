@@ -75,6 +75,9 @@ export type RowDrawn = {
   checked?: boolean;
   /** The key that does the same from the thing itself, said at the row's end. */
   keys?: string;
+  /** A pointer gesture that does the same (`⌘-click`), said where a key would be: no key, so
+   *  named to no `aria-keyshortcuts` (#6219). */
+  gesture?: string;
   /** What the row acts on, under its words where nothing else stands there: a link's target on
    *  the terminal's Open link and Copy link (#6219). */
   target?: string;

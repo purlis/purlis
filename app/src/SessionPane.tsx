@@ -197,7 +197,7 @@ export function SessionPane({
     (open: boolean) => {
       if (!open) return;
       setRows(terminalRows({ selected: terminal.current?.hasSelection() ?? false, mac: onAMac() }));
-      setLinksRows(linkRows({ link: overLink.current, mac: onAMac(), lists: lists }));
+      setLinksRows(linkRows({ link: overLink.current, mac: onAMac(), lists }));
     },
     [lists],
   );
@@ -240,9 +240,9 @@ export function SessionPane({
 
   const run = useCallback(
     (id: TerminalRowId) => {
+      if (isLinkRow(id)) return runLinkRow(id);
       const pane = terminal.current;
       if (!pane) return;
-      if (isLinkRow(id)) return runLinkRow(id);
       void runTerminalRow(id, pane, {
         out: navigator.clipboard,
         read: commands.clipboardText,

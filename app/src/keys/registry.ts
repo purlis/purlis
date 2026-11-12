@@ -1157,9 +1157,6 @@ export function ariaKeysOfSaid(said: string): string | undefined {
 
 function ariaOfOneChord(said: string): string | undefined {
   if (said === "" || said.includes(" ") || said.includes("–")) return undefined;
-  // A click with a key held (`⌘-click`, `Ctrl-click`) is the pointer's, and `aria-keyshortcuts`
-  // names keys only (#6219).
-  if (/-click$/iu.test(said)) return undefined;
   const modifiers = new Set<string>();
   let key: string;
   if (said.length > 1 && said.includes("+")) {

@@ -2008,9 +2008,20 @@ details:
     Paste**: the keyboard is on the menu itself until an arrow moves it, so Enter after the
     menu key pastes nothing (with nothing selected Copy is off, and the first row that can
     run is Paste).
-  - **No Clear, and no link rows.** xterm's `clear()` empties the screen as well as the
-    history, and the history is the core's, sent whole to a pane drawn again. A pane registers
-    no link provider, so there is no link the terminal knows it was clicked on.
+  - **No Clear.** xterm's `clear()` empties the screen as well as the history, and the
+    history is the core's, sent whole to a pane drawn again.
+  - **Over a link, *Open link* and *Copy link* come first** (`terminalRows.linkRows`, #6219),
+    above Copy, each with the link's target under its words. The link is the one the pane's
+    link hook has under the pointer as the menu is asked for (`paneLinks.linkPane`'s
+    `under()`), not one worked out from the pointer's place, so it is the link the person sees
+    underlined. *Open link* goes the way ⌘-click does, through the core, asks included, and
+    draws ⌘-click (Ctrl-click) at its end as a **gesture**, not a key: `RowDrawn.gesture` is
+    drawn where a key would be and named to no `aria-keyshortcuts`. *Copy link* copies the
+    target the core resolved, not the printed words. Text the core refuses offers *Copy link*
+    alone. **A menu opened from the keyboard has no link rows** (D4), even with the pointer
+    resting on a link, since a keyboard user cannot see which link that would be; *Links in
+    this pane…* stands in their place, with its key at its end, and over a link it leads the
+    pane's rows instead.
   - **A click the program asked for is the program's.** While the program has mouse reporting
     on (`?1000h` and its kin) a plain right-click is reported to it, as before, and opens no
     menu, purlis's or the engine's. **Shift+right-click always opens the menu**: the press is

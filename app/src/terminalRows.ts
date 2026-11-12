@@ -5,6 +5,7 @@ import type { Terminal } from "@xterm/xterm";
 import type { Offer } from "./actions";
 import type { GroupDrawn } from "./menuModel";
 import type { LinkUnder } from "./paneLinks";
+import { modifierSaid } from "./PaneLinkSurfaces";
 
 /**
  * **What a right-click on a chat's or a shell's terminal offers of the terminal's own**: Copy,
@@ -33,6 +34,9 @@ export type TerminalRow = {
   title: string;
   /** The key that does the same, where this window has one: drawn at the row's end. */
   keys?: string;
+  /** **A pointer gesture that does the same** (`⌘-click`): drawn where a key would be, and never
+   *  named to `aria-keyshortcuts`, which names keys only. */
+  gesture?: string;
   /** What the row acts on, said under its words: a link's target. */
   target?: string;
   available: boolean;
@@ -40,31 +44,25 @@ export type TerminalRow = {
   reason: string;
 };
 
+const CLIPBOARD_IDS = ["terminal.copy", "terminal.paste", "terminal.selectAll"] as const;
+const LINK_IDS = ["terminal.openLink", "terminal.copyLink", "terminal.links"] as const;
+
 /** The rows about what is selected and the clipboard, which {@link runTerminalRow} carries out. */
-export type ClipboardRowId = "terminal.copy" | "terminal.paste" | "terminal.selectAll";
+export type ClipboardRowId = (typeof CLIPBOARD_IDS)[number];
 
 /** The rows about the pane's links, which the pane carries out with its link hands (#6219). */
-export type LinkRowId = "terminal.openLink" | "terminal.copyLink" | "terminal.links";
+export type LinkRowId = (typeof LINK_IDS)[number];
 
 export type TerminalRowId = ClipboardRowId | LinkRowId;
 
-const IDS: readonly string[] = [
-  "terminal.copy",
-  "terminal.paste",
-  "terminal.selectAll",
-  "terminal.openLink",
-  "terminal.copyLink",
-  "terminal.links",
-];
-
 /** Whether `id` is one of the link rows, and not a clipboard row. */
-export function isLinkRow(id: TerminalRowId): id is LinkRowId {
-  return id === "terminal.openLink" || id === "terminal.copyLink" || id === "terminal.links";
+export function isLinkRow(id: string): id is LinkRowId {
+  return (LINK_IDS as readonly string[]).includes(id);
 }
 
 /** Whether `id` is one of the terminal's own rows, and not a row of the pane's. */
 export function isTerminalRow(id: string): id is TerminalRowId {
-  return IDS.includes(id);
+  return isLinkRow(id) || (CLIPBOARD_IDS as readonly string[]).includes(id);
 }
 
 /**
@@ -88,6 +86,7 @@ export function terminalGroup(rows: readonly TerminalRow[]): GroupDrawn {
       said: row.title,
       danger: false,
       keys: row.keys,
+      gesture: row.gesture,
       target: row.target,
     })),
   };
@@ -183,7 +182,7 @@ export function linkRows(now: {
       {
         id: "terminal.openLink",
         title: "Open link",
-        keys: now.mac ? "⌘-click" : "Ctrl-click",
+        gesture: modifierSaid(now.mac),
         target,
         available: true,
         reason: "",
