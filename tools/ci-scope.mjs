@@ -109,6 +109,8 @@ export const READ_BY_CODE = [
   "CHANGELOG.md",
   "docs/ui-primitives.md",
   "docs/design-system.md",
+  // `app/src/ui/buildingDoc.test.ts` holds it to the code (#5725).
+  "docs/building-ui.md",
   "docs/adr/0076-a-run-moves-only-by-a-named-cause-and-a-chats-state-is-read-from-its-runs.md",
   // The published theme schema: Rust writes and checks it, and the title bar's test reads every
   // part a theme can set from it (#3196).
@@ -200,7 +202,7 @@ export const RUST_READERS = [
   "src/theme/theme.test.ts",
   "src/theme/themeIds.test.ts",
   "src/theme/tint.test.ts",
-  "src/ui/buildingSkill.test.ts",
+  "src/ui/buildingDoc.test.ts",
   "src/ui/field/fieldHelp.guard.test.ts",
   "src/ui/field/refusingFields.guard.test.ts",
   "src/ui/menu/submenuRows.guard.test.ts",

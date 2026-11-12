@@ -1,22 +1,23 @@
----
-name: purlis-building-ui
-description: When changing purlis's own window in a purlis/purlis checkout, build it from the families in `app/src/ui`, with stories, axe and keyboard tests, until every check is green. Use when asked to add, change, fix or restyle the purlis app's UI.
----
-
 # Building purlis's UI
+
+How to build or change purlis's own window: its screens, dialogs and component families in
+`app/src`, until every check is green. Every path below is from the repository's root.
+`app/src/ui/buildingDoc.test.ts` holds this page to the code: each path, `#anchor`, `npm run`
+script, the closed state list and `NEXT` it names. The repository's `AGENTS.md` points here. This
+page was the built-in skill `purlis-building-ui` until the person retired that skill on
+2026-11-12, since it only applies when developing purlis (#5725).
 
 The purlis window is built from **component families** (ADR 0104): each kind of control is one
 family in `app/src/ui/<family>`, wrapping its React Aria primitive once, drawn by its **parts**
 (`data-scope`, `data-part`, `data-variant`) and themed through the parts manifest (ADR 0103). A
-screen composes families; the look is the family's and the theme's. This skill applies only in a
-checkout of the purlis repository: every path below is from its root.
+screen composes families; the look is the family's and the theme's.
 
 Write CSS against a part's attributes. The build keys each rule on the classes `ds-<scope>` and
 `dp-<part>`, which the window's JSX adds beside the attributes. Never write those classes by
 hand. A part made with `createElement` takes them from `parted()`, and a library panel from
 `resizablePanelRoot()` (`app/src/ui/partClasses.ts`; ADR 0103, amended 2026-11-04).
 
-The docs are the source of truth, and this skill points into them. Read the section a step names
+The docs are the source of truth, and this page points into them. Read the section a step names
 before you write the code it covers:
 
 - `docs/ui-primitives.md`: what the window is built from, family by family, with each family's
