@@ -228,6 +228,10 @@ idna = "1"
 # letter or a borrowed name on the left stands out (the person's ruling of 2026-11-07). The list
 # is compiled in, with no download. Already in the tree through the browser engine.
 psl = "2.1"
+# **Where a login's sign-in starts, where the chat names it** (#6291): the address, and the
+# `redirect_uri` in its query, read as a browser and an identity provider read them (WHATWG URL,
+# form-urlencoded). Already in the tree through the browser engine and reqwest.
+url = "2"
 uuid = { version = "1.26.1", features = ["v4"] }
 # **A web address a pane printed** (#6215): read the way the browser reads it, so the address a
 # link opens is the one the person was shown. Already in the tree through `tauri` and `idna`.
