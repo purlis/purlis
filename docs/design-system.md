@@ -52,32 +52,32 @@ Zed's, and it is the only one that can colour the terminal at all.
 means. A hundred and thirty-two colour names in twenty-four groups, and the typed tokens below
 them:
 
-| group                                  | tokens                                                                                                                                                  | what it is                                                                                                                                                          |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `surface.*`                            | `base` `sunken` `deep` `raised` `overlay` `hover`                                                                                                       | the layers of the window, deepest first                                                                                                                             |
-| `control.*`                            | `base` `hover` `aimed` `count`                                                                                                                          | things that are pressed; `aimed` is where the keyboard is, which is not where the pointer is                                                                        |
-| `text.*`                               | `primary` `secondary` `muted` `quiet` `faint`                                                                                                           | the grey tiers: four for words, and `faint` for marks and disabled words (#2902)                                                                                    |
-| `border.*`                             | `subtle` `strong`                                                                                                                                       |                                                                                                                                                                     |
-| `accent.*`, `focus.ring`, `tab.active` | `base` `surface`                                                                                                                                        | what purlis is drawing attention to                                                                                                                                 |
-| `layer.*`                              | `project` `workspace` `chat` `selected`                                                                                                                 | which of the three strips of the axis a row is, and the tab you are on                                                                                              |
-| `list.*`                               | `selected` `selected-edge`                                                                                                                              | the row a tree or a list has selected: a fill in the accent's hue and an edge down its start                                                                        |
-| `tree.*`                               | `guide`                                                                                                                                                 | a tree's indent guides, one straight hairline per level                                                                                                             |
-| `needs-you.*`                          | `base` `text` `count` `count-text`                                                                                                                      | the one signal this app exists for; `count` and `count-text` draw the hot count on an activity bar (#3098)                                                          |
-| `danger.*`                             | `base` `surface` `text` `wash`                                                                                                                          | an answer that cannot be taken back                                                                                                                                 |
-| `attention.*`                          | `surface` `text`                                                                                                                                        | what needs a decision where nothing went wrong (#3678): an attention Notice's ground, and its words and mark on it; trouble stays `danger.*`'s, for real failures   |
-| `state.*`                              | `running` `waiting` `waiting-glow` `failed` `success` `unreadable`                                                                                      | what a chat, or a check on a branch, is doing                                                                                                                       |
-| `overlay.*`                            | `scrim` `shadow`                                                                                                                                        | what goes over the window when something is modal                                                                                                                   |
-| `terminal.*`                           | `background` `foreground` `cursor` `cursor-accent` `selection` `find-match` `find-match-active`                                                         | the two `find-*` are a find's matches in a pane, drawn under the text (`theme.searchDecorations`)                                                                   |
-| `terminal.ansi.*`                      | the eight, and the eight bright                                                                                                                         |                                                                                                                                                                     |
-| `icon.*`                               | `folder` `motive` `grey` `red` `orange` `yellow` `green` `teal` `blue` `purple` `pink`                                                                  | a file's or a folder's icon in a tree; the only colours an icon theme names (FM-3)                                                                                  |
-| `terminal.*` (#2327)                   | `selection-foreground` `selection-inactive` `scrollbar` `scrollbar-hover` `scrollbar-active`                                                            | selected text (`platform`: each cell keeps its colour), a selection while the pane is unfocused, and the terminal's scrollbar at rest, under the pointer and held   |
-| `terminal.*` (#3768)                   | `faint`                                                                                                                                                 | faint (SGR 2) text in the terminal's own colour, held at 4.5:1 on its ground; `App.css` draws it over xterm's half-opacity fade, which a program's own colour keeps |
-| `syntax.*`                             | `keyword` `string` `number` `constant` `comment` `function` `type` `property` `attribute` `tag` `heading` `invalid` `variable` `operator` `punctuation` | code in the light editor (`editor/look.ts`), one colour per role, each with an italic and a bold flag                                                               |
-| `markdown.*`                           | `link` `code` `code-block` `quote` `heading`                                                                                                            | a markdown render: a memory, a todo, a session record, a release's notes (`.release-notes`)                                                                         |
-| `selection.*`, `caret`, `placeholder`  | `background` `text`                                                                                                                                     | the window's text selection and its words, a field's caret and its placeholder; `platform` leaves each to the platform                                              |
-| `scrollbar.*`                          | `thumb` `track`                                                                                                                                         | the window's scrollbars; a `platform` thumb is the platform's, and the track is drawn only with a thumb                                                             |
-| `chart.*`                              | `1` … `8`                                                                                                                                               | a chart's series, a categorical palette: each point of a chart is its own series, in turn                                                                           |
-| `window.*`                             | `background`                                                                                                                                            | the native window's colour before the first frame (#2328, #2331); the page itself is `surface.base`                                                                 |
+| group                                  | tokens                                                                                          | what it is                                                                                        |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `surface.*`                            | `base` `sunken` `deep` `raised` `overlay` `hover`                                               | the layers of the window, deepest first                                                           |
+| `control.*`                            | `base` `hover` `aimed` `count`                                                                  | things that are pressed; `aimed` is where the keyboard is, which is not where the pointer is      |
+| `text.*`                               | `primary` `secondary` `muted` `quiet` `faint`                                                   | the grey tiers: four for words, and `faint` for marks and disabled words (#2902)                  |
+| `border.*`                             | `subtle` `strong`                                                                               |                                                                                                   |
+| `accent.*`, `focus.ring`, `tab.active` | `base` `surface`                                                                                | what purlis is drawing attention to                                                              |
+| `layer.*`                              | `project` `workspace` `chat` `selected`                                                         | which of the three strips of the axis a row is, and the tab you are on                            |
+| `list.*`                               | `selected` `selected-edge`                                                                      | the row a tree or a list has selected: a fill in the accent's hue and an edge down its start      |
+| `tree.*`                               | `guide`                                                                                         | a tree's indent guides, one straight hairline per level                                           |
+| `needs-you.*`                          | `base` `text` `count` `count-text`                                                              | the one signal this app exists for; `count` and `count-text` draw the hot count on an activity bar (#3098) |
+| `danger.*`                             | `base` `surface` `text` `wash`                                                                  | an answer that cannot be taken back                                                               |
+| `attention.*`                          | `surface` `text`                                                                                | what needs a decision where nothing went wrong (#3678): an attention Notice's ground, and its words and mark on it; trouble stays `danger.*`'s, for real failures |
+| `state.*`                              | `running` `waiting` `waiting-glow` `failed` `success` `unreadable`                              | what a chat, or a check on a branch, is doing                                                     |
+| `overlay.*`                            | `scrim` `shadow`                                                                                | what goes over the window when something is modal                                                 |
+| `terminal.*`                           | `background` `foreground` `cursor` `cursor-accent` `selection` `find-match` `find-match-active` | the two `find-*` are a find's matches in a pane, drawn under the text (`theme.searchDecorations`) |
+| `terminal.ansi.*`                      | the eight, and the eight bright                                                                 |                                                                                                   |
+| `icon.*`                               | `folder` `motive` `grey` `red` `orange` `yellow` `green` `teal` `blue` `purple` `pink`          | a file's or a folder's icon in a tree; the only colours an icon theme names (FM-3)                 |
+| `terminal.*` (#2327)                   | `selection-foreground` `selection-inactive` `scrollbar` `scrollbar-hover` `scrollbar-active`    | selected text (`platform`: each cell keeps its colour), a selection while the pane is unfocused, and the terminal's scrollbar at rest, under the pointer and held |
+| `terminal.*` (#3768)                   | `faint`                                                                                         | faint (SGR 2) text in the terminal's own colour, held at 4.5:1 on its ground; `App.css` draws it over xterm's half-opacity fade, which a program's own colour keeps |
+| `syntax.*`                             | `keyword` `string` `number` `constant` `comment` `function` `type` `property` `attribute` `tag` `heading` `invalid` `variable` `operator` `punctuation` | code in the light editor (`editor/look.ts`), one colour per role, each with an italic and a bold flag |
+| `markdown.*`                           | `link` `code` `code-block` `quote` `heading`                                                    | a markdown render: a memory, a todo, a session record, a release's notes (`.release-notes`)       |
+| `selection.*`, `caret`, `placeholder`  | `background` `text`                                                                             | the window's text selection and its words, a field's caret and its placeholder; `platform` leaves each to the platform |
+| `scrollbar.*`                          | `thumb` `track`                                                                                 | the window's scrollbars; a `platform` thumb is the platform's, and the track is drawn only with a thumb |
+| `chart.*`                              | `1` … `8`                                                                                       | a chart's series, a categorical palette: each point of a chart is its own series, in turn         |
+| `window.*`                             | `background`                                                                                    | the native window's colour before the first frame (#2328, #2331); the page itself is `surface.base` |
 
 **Tokens that are not colours** (#2327) sit in an appearance's `tokens` beside the colours, each
 held to its own type: `syntax.<role>.italic` and `syntax.<role>.bold` are `true` or `false`;
@@ -340,12 +340,12 @@ alternative, one theme folder with a dark and a light appearance
 accent on warm-grey neutrals. It is calm and technical, easy on the eyes in a long session, and
 not the blue most developer tools use.
 
-|                                                      | dark                              | light                             |
-| ---------------------------------------------------- | --------------------------------- | --------------------------------- |
-| `surface.base` / `surface.raised` / `surface.hover`  | `#191917` / `#1b1b19` / `#242421` | `#fcfbf8` / `#f0eee8` / `#ebe9e2` |
-| `text.primary` / `text.muted`                        | `#dddcd6` / `#9e9d94`             | `#1f1e1a` / `#605d54`             |
-| `accent.base` (= `focus.ring`, `list.selected-edge`) | `#52c4a6`                         | `#086a56`                         |
-| `accent.surface` / `list.selected`                   | `#17302a` / `#112b25`             | `#dcf1ea` / `#d3ede4`             |
+| | dark | light |
+|---|---|---|
+| `surface.base` / `surface.raised` / `surface.hover` | `#191917` / `#1b1b19` / `#242421` | `#fcfbf8` / `#f0eee8` / `#ebe9e2` |
+| `text.primary` / `text.muted` | `#dddcd6` / `#9e9d94` | `#1f1e1a` / `#605d54` |
+| `accent.base` (= `focus.ring`, `list.selected-edge`) | `#52c4a6` | `#086a56` |
+| `accent.surface` / `list.selected` | `#17302a` / `#112b25` | `#dcf1ea` / `#d3ede4` |
 
 - **The neutrals are warm graphite and paper.** The dark base is lifted off black and the light
   base is off white, which cuts glare without costing contrast: text is 12.81:1 on the dark base
@@ -430,13 +430,13 @@ asked for), whatever the system's appearance. Where its values come from:
   - the needs-you count is the window's base on its chip, which is light;
   - the code colours the record names are the syntax roles they draw (keys, strings, literals,
     punctuation), and the other roles take Classic's ANSI colour for them.
-    **The grey tiers** (#2902, ruling #2803) are primary `#e6e4ec`, secondary `#c9c7d2`, muted
-    `#a09eab` and quiet `#91909d` for words, and faint `#74727f` for what is not words. Quiet is
-    the record's `#8a8896` lifted until it clears 4.5:1 on every ground, the row under the pointer
-    included; faint merges the record's `#6f6d7a` and `#55535f` and clears 3:1. Quiet is
-    informational text, and none of it is exempt: line numbers, placeholders (`placeholder` is
-    quiet), counts, paths and group labels. Faint is a tab's ×, a separator, a pin, a chevron and
-    disabled words; informational text never takes it.
+  **The grey tiers** (#2902, ruling #2803) are primary `#e6e4ec`, secondary `#c9c7d2`, muted
+  `#a09eab` and quiet `#91909d` for words, and faint `#74727f` for what is not words. Quiet is
+  the record's `#8a8896` lifted until it clears 4.5:1 on every ground, the row under the pointer
+  included; faint merges the record's `#6f6d7a` and `#55535f` and clears 3:1. Quiet is
+  informational text, and none of it is exempt: line numbers, placeholders (`placeholder` is
+  quiet), counts, paths and group labels. Faint is a tab's ×, a separator, a pin, a chevron and
+  disabled words; informational text never takes it.
 - **Geometry is the foundation's where a core token draws the same thing**, on the record's
   corner scale, 7, 8, 10, 12 and full (R157, R158): a small corner and a menu row's 7
   (`radius.sm`, `radius.md`), an md control's 8 (`radius.control`: buttons, fields, selects, a
@@ -568,12 +568,7 @@ the platform's own, as Purlis Classic's are, and brings its own styles.
   "palette": { "lavender": "#b4a7f5" },
   "appearances": [
     { "id": "dark", "tokens": { "accent.base": "lavender", "focus.ring": "lavender" } },
-    {
-      "id": "dim",
-      "appearance": "dark",
-      "high-contrast": true,
-      "tokens": { "text.primary": "#ffffff" }
-    }
+    { "id": "dim", "appearance": "dark", "high-contrast": true, "tokens": { "text.primary": "#ffffff" } }
   ]
 }
 ```
@@ -632,7 +627,7 @@ the platform's own, as Purlis Classic's are, and brings its own styles.
   each value comes from (#2527).
 - **`tint`** says how a workspace's colour tints the theme (#2329), the same in each of its
   appearances: `"tint": { "on": true, "tokens": ["accent.base", "surface.raised"], "hues":
-{ "red": "#c0392b" } }`. `on: false` and a workspace's colour tints nothing in it. `tokens`
+  { "red": "#c0392b" } }`. `on: false` and a workspace's colour tints nothing in it. `tokens`
   replaces the parent's list, from a closed list: the surfaces, controls, words, rules, the
   accent and its kin, the selected row, the tree's guides and the workspace's strip shades
   (`vocabulary::TINTABLE`). The consent and state colours (`needs-you.*`, `danger.*`,
@@ -834,11 +829,11 @@ it, or what it left out.
 Themes live at three levels besides the built-ins and extensions (spec #2313, #2323), each a
 reserved `themes/` folder of theme folders:
 
-| Level            | Where                                                       | Committed?                                                 |
-| ---------------- | ----------------------------------------------------------- | ---------------------------------------------------------- |
-| The person's own | `themes/` in purlis's config folder (beside `machine.json`) | never                                                      |
-| The project's    | `themes/` at the plane root                                 | by `purlis save`                                           |
-| A workspace's    | `workspaces/<ws>/themes/`                                   | by `purlis save` while LIVE; kept in the clone while LOCAL |
+| Level | Where | Committed? |
+|---|---|---|
+| The person's own | `themes/` in purlis's config folder (beside `machine.json`) | never |
+| The project's | `themes/` at the plane root | by `purlis save` |
+| A workspace's | `workspaces/<ws>/themes/` | by `purlis save` while LIVE; kept in the clone while LOCAL |
 
 A theme folder is picked by its folder's name. **A choice reaches its own level and the levels
 farther out, never a nearer one**: the machine default names the person's own folders only; the
@@ -889,8 +884,7 @@ file's 64 KiB cap the projects changed longest ago are dropped first:
   "machine": { "theme": "dusk", "from": "machine", "appearance": "system" },
   "projects": {
     "<project id>": {
-      "theme": "purlis-classic",
-      "appearance": "light",
+      "theme": "purlis-classic", "appearance": "light",
       "workspaces": {
         "alpha": { "theme": "brand", "from": "project", "options": { "accent": "teal" } }
       }
@@ -1154,9 +1148,9 @@ has it; nothing reads the key after that.
   (#1686, #1696):
   - **`explorer`**: **`closed`**, the sections folded on their headings, as the top-level
     `explorer.closed` says them, an empty list when every one is open; and the rows of
-    Explorer's trees as the person left them: **`folded`**, the clones folded under _Repos
-    and branches_, **`opened`**, the folders opened under _Files_, and **`shut`**, the
-    cockpit's _Files_ rows closed. These three are Explorer's own row keys, written by it and
+    Explorer's trees as the person left them: **`folded`**, the clones folded under *Repos
+    and branches*, **`opened`**, the folders opened under *Files*, and **`shut`**, the
+    cockpit's *Files* rows closed. These three are Explorer's own row keys, written by it and
     not meant to be written by hand; a key that names nothing on screen opens or folds
     nothing. The whole of `explorer` is held to 2 KiB, letting go of the folders opened
     longest ago first.
@@ -1183,7 +1177,6 @@ has it; nothing reads the key after that.
   file on disk stays. An entry that is not
   an object, or whose `regions` is not a list, is skipped, and the project starts from the
   machine's.
-
 - **`view`**, on a region that has views, is the one it shows: `chats`, `explorer`, `search`
   or `changes` for `navigation`, `asks`, `updates`, `personas`, `vaults` or `panel:` and an extension's
   panel key (`panel:ext/<extension>/<id>`) for `aside` (#1678), `repos` for `panel-left`, and
@@ -1235,10 +1228,10 @@ has it; nothing reads the key after that.
   **`colours`** (a colour for each token the person sets, `#rgb`, `#rgba`, `#rrggbb` or
   `#rrggbbaa`). Leave any out for its default; Settings › You writes them. A value the engine
   cannot use is its default, and the Inbox says so.
-- **`editor`** is your editor (RC-20, ADR 0081 §3), where _Open in your editor_ sends a file
+- **`editor`** is your editor (RC-20, ADR 0081 §3), where *Open in your editor* sends a file
   at a line: `vscode`, `zed`, `idea` (a JetBrains IDE) or `variable` (`$VISUAL`, else
   `$EDITOR`, from purlis's own environment, run with `+line` and the file). Leave it out and
-  none is chosen: _Open in your editor_ asks for one. Any other value is none, and the Inbox
+  none is chosen: *Open in your editor* asks for one. Any other value is none, and the Inbox
   says so. Settings writes it (`app/src/yourEditor.ts`). It is a word and never
   a program: the core builds the URL, or reads the variable itself, so nothing written here is
   run.
@@ -1421,24 +1414,24 @@ second set of keyframes per motion. The seam for it, if it is ever wanted, is `m
 The rule is **motion explains a change of state; it never decorates one.** Every motion is in
 one labelled section at the end of `App.css`.
 
-| moves                                      | how                                                                                | why                                                                                                                                                        |
-| ------------------------------------------ | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| a tab being selected, on all three strips  | its surface and lit edge cross-fade, `quick`                                       | the change the operator just made, answered; hangs off `[data-strip]`, so a restyled strip keeps it                                                        |
-| a strip starting to collapse into `N more` | the button fades in, `enter`                                                       | says the tabs went somewhere; not replayed as the count changes on resize                                                                                  |
-| a popover or menu opening                  | fades in a quarter-rem out of its anchored side, `enter`                           | says what opened it; hangs off the popover family's root in React Aria's `data-entering`, so the next popover gets it                                      |
-| a dialog and its scrim                     | fade, no movement, `enter`                                                         | a question should appear where the eye already is                                                                                                          |
-| a region brought back                      | fades in, `enter`                                                                  | only its opacity; see below                                                                                                                                |
-| a reply strip taking or leaving the caret  | its height, ground, divider and hint move together, `swap`                         | the person's ruling on #5214: it makes room for the words as they start, and gives it back only when left empty; the one part that also moves as it closes |
-| a running pipeline                         | spins, `spin`                                                                      | _still happening_, which amber alone cannot say                                                                                                            |
-| a queued pipeline                          | a clock that breathes, `breathe`                                                   | alive and not working; a spinner would claim work being done                                                                                               |
-| a pipeline that finishes on screen         | its new mark grows into place once, `settle`                                       | the answer arriving                                                                                                                                        |
-| a chat's state mark                        | colour, shape and ring morph, `settle`                                             | the state changing, rather than blinking                                                                                                                   |
-| a chat that starts waiting on you          | its ring knocks twice, `settle`                                                    | the one signal this app exists for, arriving                                                                                                               |
-| the same, on a row of a list               | its hand knocks twice, `settle`                                                    | a row's mark is the hand and has no ring; only on the change, as the ring                                                                                  |
-| the ✋ on the right bar, once per machine  | its mark takes one breath, `breathe`                                               | the first Blocking ask to arrive while Asks is closed, in place of a tour (ADR 0121 decision 24); the count says it still under reduced motion             |
-| a pane a drag makes room with              | glides and resizes to where the drop would leave it, `enter`, while the drag lasts | the result, seen before the drop (ADR 0113)                                                                                                                |
-| a pane about to be, in a drag              | fades in at its box, `enter`                                                       | what the drop would make                                                                                                                                   |
-| a row of the Chats list that was asked for | the hovered row's band for a moment, faded in once, `settle`                       | where a press elsewhere went; the band is there, still, under reduced motion                                                                               |
+| moves                                      | how                                                      | why                                                                                                     |
+| ------------------------------------------ | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| a tab being selected, on all three strips  | its surface and lit edge cross-fade, `quick`             | the change the operator just made, answered; hangs off `[data-strip]`, so a restyled strip keeps it     |
+| a strip starting to collapse into `N more` | the button fades in, `enter`                             | says the tabs went somewhere; not replayed as the count changes on resize                               |
+| a popover or menu opening                  | fades in a quarter-rem out of its anchored side, `enter` | says what opened it; hangs off the popover family's root in React Aria's `data-entering`, so the next popover gets it |
+| a dialog and its scrim                     | fade, no movement, `enter`                               | a question should appear where the eye already is                                                       |
+| a region brought back                      | fades in, `enter`                                        | only its opacity; see below                                                                             |
+| a reply strip taking or leaving the caret  | its height, ground, divider and hint move together, `swap` | the person's ruling on #5214: it makes room for the words as they start, and gives it back only when left empty; the one part that also moves as it closes |
+| a running pipeline                         | spins, `spin`                                            | _still happening_, which amber alone cannot say                                                         |
+| a queued pipeline                          | a clock that breathes, `breathe`                         | alive and not working; a spinner would claim work being done                                            |
+| a pipeline that finishes on screen         | its new mark grows into place once, `settle`             | the answer arriving                                                                                     |
+| a chat's state mark                        | colour, shape and ring morph, `settle`                   | the state changing, rather than blinking                                                                |
+| a chat that starts waiting on you          | its ring knocks twice, `settle`                          | the one signal this app exists for, arriving                                                            |
+| the same, on a row of a list               | its hand knocks twice, `settle`                          | a row's mark is the hand and has no ring; only on the change, as the ring                               |
+| the ✋ on the right bar, once per machine  | its mark takes one breath, `breathe`                     | the first Blocking ask to arrive while Asks is closed, in place of a tour (ADR 0121 decision 24); the count says it still under reduced motion |
+| a pane a drag makes room with              | glides and resizes to where the drop would leave it, `enter`, while the drag lasts | the result, seen before the drop (ADR 0113) |
+| a pane about to be, in a drag              | fades in at its box, `enter`                             | what the drop would make     |
+| a row of the Chats list that was asked for | the hovered row's band for a moment, faded in once, `settle` | where a press elsewhere went; the band is there, still, under reduced motion                            |
 
 **Nothing animates because it mounted.** A mark that animates on a change has to tell a change
 from a first draw, and CSS cannot: an animation plays when its element appears. Without that, a
@@ -1483,12 +1476,12 @@ reference.
 
 ### Three layers, and who owns each
 
-| layer                 | what it is                                                                                | where                                         | who sets it                   |
-| --------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------- | ----------------------------- |
-| **primitive palette** | raw colour steps a theme builds from (`teal.400`); private to that theme file             | a theme file, when one has a `palette`        | the theme                     |
-| **semantic**          | what a colour means here: the [vocabulary](#the-vocabulary) above, plus the motion tokens | `app/src/theme/*.json`, written by `theme.ts` | the theme                     |
-| **core geometry**     | spacing, type sizes, corners, heights, focus rings, elevation, fonts                      | `app/src/theme/geometry.css` (Classic's)      | a theme, within core's bounds |
-| **component**         | one control's look, as aliases of the two above (`--btn-bg: var(--control-base)`)         | the primitive classes (DS-2)                  | purlis                        |
+| layer                 | what it is                                                                                | where                                         | who sets it                     |
+| --------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------- | ------------------------------- |
+| **primitive palette** | raw colour steps a theme builds from (`teal.400`); private to that theme file             | a theme file, when one has a `palette`        | the theme                       |
+| **semantic**          | what a colour means here: the [vocabulary](#the-vocabulary) above, plus the motion tokens | `app/src/theme/*.json`, written by `theme.ts` | the theme                       |
+| **core geometry**     | spacing, type sizes, corners, heights, focus rings, elevation, fonts                      | `app/src/theme/geometry.css` (Classic's)      | a theme, within core's bounds   |
+| **component**         | one control's look, as aliases of the two above (`--btn-bg: var(--control-base)`)         | the primitive classes (DS-2)                  | purlis                          |
 
 **A theme sets geometry as numbers, within bounds** (ADR 0097, #2326). A theme folder's
 appearance names a geometry token in its `tokens` with a number (`"radius.md": 6`,
@@ -1624,7 +1617,7 @@ are no geometry token: they are the window's own family and its one monospace fa
 | `--window-gutter`       | 0px                                                          |
 | `--panel-corner-radius` | 0px                                                          |
 | `--panel-border-width`  | 1px                                                          |
-| `--separator-width`     | 1px                                                          |
+| `--separator-width`    | 1px                                                          |
 | `--focus-ring-width`    | 2px                                                          |
 | `--focus-ring-offset`   | 2px                                                          |
 | `--focus-ring-inset`    | -2px                                                         |
@@ -1638,49 +1631,49 @@ A theme names a geometry token by the name in the first column. Purlis Classic's
 what compact density draws for it; a theme tunes its own in `compact`. The bounds are the
 engine's (`purlis_core::theme::geometry::STEPS`), which the published schema carries too.
 
-| theme token              | property                | bound               | Classic | Classic compact |
-| ------------------------ | ----------------------- | ------------------- | ------- | --------------- |
-| `space.0`                | `--space-0`             | 0 in every theme    | 0       | 0               |
-| `space.1`                | `--space-1`             | 0 to 4 px at 14px   | 2       | 2               |
-| `space.2`                | `--space-2`             | 1 to 8 px at 14px   | 4       | 3               |
-| `space.3`                | `--space-3`             | 2 to 10 px at 14px  | 6       | 4               |
-| `space.4`                | `--space-4`             | 4 to 12 px at 14px  | 8       | 6               |
-| `space.5`                | `--space-5`             | 6 to 16 px at 14px  | 12      | 8               |
-| `space.6`                | `--space-6`             | 8 to 24 px at 14px  | 16      | 12              |
-| `space.7`                | `--space-7`             | 12 to 32 px at 14px | 24      | 16              |
-| `space.8`                | `--space-8`             | 16 to 48 px at 14px | 32      | 24              |
-| `font-size.2xs`          | `--font-size-2xs`       | 8 to 12 px at 14px  | 10      | 10              |
-| `font-size.xs`           | `--font-size-xs`        | 9 to 13 px at 14px  | 11      | 11              |
-| `font-size.sm`           | `--font-size-sm`        | 10 to 14 px at 14px | 12      | 12              |
-| `font-size.md`           | `--font-size-md`        | 11 to 15 px at 14px | 13      | 13              |
-| `font-size.base`         | `--font-size-base`      | 12 to 18 px at 14px | 14      | 14              |
-| `font-size.lg`           | `--font-size-lg`        | 13 to 22 px at 14px | 16      | 16              |
-| `font-size.xl`           | `--font-size-xl`        | 16 to 28 px at 14px | 20      | 20              |
-| `font-weight.regular`    | `--font-weight-regular` | 300 to 500          | 400     | 400             |
-| `font-weight.medium`     | `--font-weight-medium`  | 400 to 600          | 500     | 500             |
-| `font-weight.strong`     | `--font-weight-strong`  | 500 to 800          | 600     | 600             |
-| `line-height.tight`      | `--line-height-tight`   | 1 to 1.4 × text     | 1.2     | 1.2             |
-| `line-height.body`       | `--line-height-body`    | 1.2 to 1.8 × text   | 1.4     | 1.3             |
-| `radius.sm`              | `--radius-sm`           | 0 to 8 px           | 3       | 3               |
-| `radius.md`              | `--radius-md`           | 0 to 10 px          | 4       | 4               |
-| `radius.control`         | `--radius-control`      | 0 to 14 px          | 4       | 4               |
-| `radius.lg`              | `--radius-lg`           | 0 to 14 px          | 6       | 6               |
-| `radius.xl`              | `--radius-xl`           | 0 to 18 px          | 8       | 8               |
-| `radius.full`            | `--radius-full`         | 0 to 9999 px        | 9999    | 9999            |
-| `size.control`           | `--size-control`        | 20 to 40 px at 14px | 28      | 24              |
-| `size.chrome`            | `--size-chrome`         | 16 to 32 px at 14px | 21      | 18              |
-| `window.gutter`          | `--window-gutter`       | 0 to 16 px          | 0       | 0               |
-| `panel.corner-radius`    | `--panel-corner-radius` | 0 to 24 px          | 0       | 0               |
-| `panel.border-width`     | `--panel-border-width`  | 0 to 2 px           | 1       | 1               |
-| `separator.width`        | `--separator-width`     | 0 to 2 px           | 1       | 1               |
-| `focus-ring.width`       | `--focus-ring-width`    | 1 to 4 px           | 2       | 2               |
-| `focus-ring.offset`      | `--focus-ring-offset`   | 0 to 4 px           | 2       | 2               |
-| `focus-ring.inset`       | `--focus-ring-inset`    | -4 to 0 px          | -2      | -2              |
-| `pane.border-width`      | `--pane-border-width`   | 0 to 2 px           | 1       | 1               |
-| `elevation.raised-y`     | `--elevation-raised`    | 0 to 8 px at 14px   | 2       | 2               |
-| `elevation.raised-blur`  | `--elevation-raised`    | 0 to 24 px at 14px  | 8       | 8               |
-| `elevation.overlay-y`    | `--elevation-overlay`   | 0 to 16 px at 14px  | 8       | 8               |
-| `elevation.overlay-blur` | `--elevation-overlay`   | 0 to 48 px at 14px  | 24      | 24              |
+| theme token | property | bound | Classic | Classic compact |
+| --- | --- | --- | --- | --- |
+| `space.0` | `--space-0` | 0 in every theme | 0 | 0 |
+| `space.1` | `--space-1` | 0 to 4 px at 14px | 2 | 2 |
+| `space.2` | `--space-2` | 1 to 8 px at 14px | 4 | 3 |
+| `space.3` | `--space-3` | 2 to 10 px at 14px | 6 | 4 |
+| `space.4` | `--space-4` | 4 to 12 px at 14px | 8 | 6 |
+| `space.5` | `--space-5` | 6 to 16 px at 14px | 12 | 8 |
+| `space.6` | `--space-6` | 8 to 24 px at 14px | 16 | 12 |
+| `space.7` | `--space-7` | 12 to 32 px at 14px | 24 | 16 |
+| `space.8` | `--space-8` | 16 to 48 px at 14px | 32 | 24 |
+| `font-size.2xs` | `--font-size-2xs` | 8 to 12 px at 14px | 10 | 10 |
+| `font-size.xs` | `--font-size-xs` | 9 to 13 px at 14px | 11 | 11 |
+| `font-size.sm` | `--font-size-sm` | 10 to 14 px at 14px | 12 | 12 |
+| `font-size.md` | `--font-size-md` | 11 to 15 px at 14px | 13 | 13 |
+| `font-size.base` | `--font-size-base` | 12 to 18 px at 14px | 14 | 14 |
+| `font-size.lg` | `--font-size-lg` | 13 to 22 px at 14px | 16 | 16 |
+| `font-size.xl` | `--font-size-xl` | 16 to 28 px at 14px | 20 | 20 |
+| `font-weight.regular` | `--font-weight-regular` | 300 to 500 | 400 | 400 |
+| `font-weight.medium` | `--font-weight-medium` | 400 to 600 | 500 | 500 |
+| `font-weight.strong` | `--font-weight-strong` | 500 to 800 | 600 | 600 |
+| `line-height.tight` | `--line-height-tight` | 1 to 1.4 × text | 1.2 | 1.2 |
+| `line-height.body` | `--line-height-body` | 1.2 to 1.8 × text | 1.4 | 1.3 |
+| `radius.sm` | `--radius-sm` | 0 to 8 px | 3 | 3 |
+| `radius.md` | `--radius-md` | 0 to 10 px | 4 | 4 |
+| `radius.control` | `--radius-control` | 0 to 14 px | 4 | 4 |
+| `radius.lg` | `--radius-lg` | 0 to 14 px | 6 | 6 |
+| `radius.xl` | `--radius-xl` | 0 to 18 px | 8 | 8 |
+| `radius.full` | `--radius-full` | 0 to 9999 px | 9999 | 9999 |
+| `size.control` | `--size-control` | 20 to 40 px at 14px | 28 | 24 |
+| `size.chrome` | `--size-chrome` | 16 to 32 px at 14px | 21 | 18 |
+| `window.gutter` | `--window-gutter` | 0 to 16 px | 0 | 0 |
+| `panel.corner-radius` | `--panel-corner-radius` | 0 to 24 px | 0 | 0 |
+| `panel.border-width` | `--panel-border-width` | 0 to 2 px | 1 | 1 |
+| `separator.width` | `--separator-width` | 0 to 2 px | 1 | 1 |
+| `focus-ring.width` | `--focus-ring-width` | 1 to 4 px | 2 | 2 |
+| `focus-ring.offset` | `--focus-ring-offset` | 0 to 4 px | 2 | 2 |
+| `focus-ring.inset` | `--focus-ring-inset` | -4 to 0 px | -2 | -2 |
+| `pane.border-width` | `--pane-border-width` | 0 to 2 px | 1 | 1 |
+| `elevation.raised-y` | `--elevation-raised` | 0 to 8 px at 14px | 2 | 2 |
+| `elevation.raised-blur` | `--elevation-raised` | 0 to 24 px at 14px | 8 | 8 |
+| `elevation.overlay-y` | `--elevation-overlay` | 0 to 16 px at 14px | 8 | 8 |
+| `elevation.overlay-blur` | `--elevation-overlay` | 0 to 48 px at 14px | 24 | 24 |
 
 Tailwind reads these tokens and has no geometry of its own (`styles.css` hands them over with
 `@theme inline reference`, #1837):
@@ -1869,7 +1862,7 @@ goes to the smaller), and a px literal may become a rem token. Three more rules 
   `--pane-controls` fallback in `.pane-chips:has(.pane-crumbs)`'s `margin-right`,
   `calc(var(--size-control) * 2.75)`), and the status bar's room for the Notices dot before the
   bell (`.status-notices`'s `padding-inline-start`, `max(0px, calc(20px - var(--space-3) -
-0.2em))`, #5889): a dot whose 24px target is px, placed against a bell the text size places.
+  0.2em))`, #5889): a dot whose 24px target is px, placed against a bell the text size places.
   The same expression anywhere else is a literal.
 - **An offset snaps as a margin does** (#2450): a `top`, `left` or `inset-inline-end` takes the
   nearest spacing token, as the pane's corners and the activity bar's count do.
@@ -1998,10 +1991,10 @@ view wears one.
 
 ### What is the theme's, and what is core
 
-|                 | what                                                                                                                                                                         | where                                       | who sets it                   |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | ----------------------------- |
-| **the theme's** | the colour values: `text.primary`, `text.secondary`, `text.muted`, `danger.text`                                                                                             | a theme file, written by `theme.ts`         | the theme                     |
-| **core**        | the roles themselves (which size, weight and colour token a role reads), and the defaults of the sizes, weights, line heights and families, which a theme sets within bounds | `theme/geometry.css`, `primitives/text.css` | purlis; a theme within bounds |
+|                 | what                                                                                                                                        | where                                       | who sets it                     |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | ------------------------------- |
+| **the theme's** | the colour values: `text.primary`, `text.secondary`, `text.muted`, `danger.text`                                                            | a theme file, written by `theme.ts`         | the theme                       |
+| **core**        | the roles themselves (which size, weight and colour token a role reads), and the defaults of the sizes, weights, line heights and families, which a theme sets within bounds | `theme/geometry.css`, `primitives/text.css` | purlis; a theme within bounds   |
 
 So a theme can make the secondary text warmer or the muted text darker, and cannot make the
 meta the primary colour. Since #2326 a theme folder also sets the sizes, weights and line heights
@@ -2118,21 +2111,21 @@ toolbar over a file, which a chosen file tab joins.
 The Explorer set 12px on its root and a panel 11.9px (`0.85rem`), and both told their words
 apart by opacity (60% for a sentence) and by three greys. Now (#1920):
 
-| word                                                                               | role                                 | before                                                                       | after                             |
-| ---------------------------------------------------------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------- | --------------------------------- |
-| a section's title: "Files", and "Repos" and "Memory" on the Panel's halves         | `ui-text-label`                      | 11px, strong, capitals; "Files" in the primary colour, the halves' secondary | 11px, strong, secondary, capitals |
-| what Files is of, beside its title (the workspace's name)                          | `ui-text-secondary`                  | 11px, regular, muted                                                         | 12px, regular, secondary          |
-| a file's, a folder's, a repo's and a branch's name                                 | `ui-text-body`, from the root        | 12px, primary (a repo's strong)                                              | 13px, primary (a repo's strong)   |
-| "the workspace itself"; why a file does not open                                   | `ui-text-secondary`                  | 11px, primary at 60%                                                         | 12px, secondary                   |
-| "in <repo>" after a branch                                                         | `ui-text-secondary`                  | 12px, muted                                                                  | 12px, secondary                   |
-| how many branches a repo has                                                       | `ui-text-meta ui-text-strong`        | 11px, regular, secondary                                                     | 11px, strong, muted               |
-| a change's letter or count                                                         | none: tokens, in its change's colour | 11px, strong                                                                 | the same                          |
-| a sentence: "Nothing here", "No branches cut here", "Asking git…", an empty view's | `ui-text-secondary`                  | 12px (11.9px in a panel), primary at 60%                                     | 12px, secondary, undimmed         |
-| a path purlis names and does not read                                              | `ui-text-secondary ui-text-code`     | 12px, the window's face                                                      | 12px, `--font-mono`               |
-| a panel row's words; the default persona's                                         | `ui-text-body`; `ui-text-strong`     | 11.9px, primary; strong                                                      | 13px, primary; strong             |
-| a panel row's note; "· 12 left"                                                    | `ui-text-meta`                       | 11.9px muted; 10.5px at 60%                                                  | 11px, muted                       |
-| whose panel it is, beside an extension's title                                     | `ui-text-secondary`                  | 11px, regular, muted                                                         | 12px, regular, secondary          |
-| a branch's cockpit: its crumbs, its name, its facts                                | meta; body strong; meta              | 11px muted; 13px strong; 11px muted                                          | the same                          |
+| word                                                                           | role                            | before                               | after                         |
+| ------------------------------------------------------------------------------ | ------------------------------- | ------------------------------------ | ----------------------------- |
+| a section's title: "Files", and "Repos" and "Memory" on the Panel's halves     | `ui-text-label`                 | 11px, strong, capitals; "Files" in the primary colour, the halves' secondary | 11px, strong, secondary, capitals |
+| what Files is of, beside its title (the workspace's name)                      | `ui-text-secondary`             | 11px, regular, muted                 | 12px, regular, secondary      |
+| a file's, a folder's, a repo's and a branch's name                             | `ui-text-body`, from the root   | 12px, primary (a repo's strong)      | 13px, primary (a repo's strong) |
+| "the workspace itself"; why a file does not open                               | `ui-text-secondary`             | 11px, primary at 60%                 | 12px, secondary               |
+| "in <repo>" after a branch                                                     | `ui-text-secondary`             | 12px, muted                          | 12px, secondary               |
+| how many branches a repo has                                                   | `ui-text-meta ui-text-strong`   | 11px, regular, secondary             | 11px, strong, muted           |
+| a change's letter or count                                                     | none: tokens, in its change's colour | 11px, strong                    | the same                      |
+| a sentence: "Nothing here", "No branches cut here", "Asking git…", an empty view's | `ui-text-secondary`         | 12px (11.9px in a panel), primary at 60% | 12px, secondary, undimmed |
+| a path purlis names and does not read                                          | `ui-text-secondary ui-text-code` | 12px, the window's face             | 12px, `--font-mono`           |
+| a panel row's words; the default persona's                                     | `ui-text-body`; `ui-text-strong` | 11.9px, primary; strong             | 13px, primary; strong         |
+| a panel row's note; "· 12 left"                                                | `ui-text-meta`                  | 11.9px muted; 10.5px at 60%          | 11px, muted                   |
+| whose panel it is, beside an extension's title                                 | `ui-text-secondary`             | 11px, regular, muted                 | 12px, regular, secondary      |
+| a branch's cockpit: its crumbs, its name, its facts                            | meta; body strong; meta         | 11px muted; 13px strong; 11px muted  | the same                      |
 
 What it settled, beside what the Chats list did:
 
@@ -2165,18 +2158,18 @@ The first surface to move (#1920). The list set `0.85rem` (11.9px) on its root, 
 note and a heading were one size told apart by colour, with four more literal sizes on its
 notes, two of them under 11px. Now:
 
-| word                                                                   | role                              | before                                  | after                                   |
-| ---------------------------------------------------------------------- | --------------------------------- | --------------------------------------- | --------------------------------------- |
-| the title, "Chats"                                                     | `ui-text-label`                   | 11px, strong, secondary, capitals       | the same                                |
-| a chat's name                                                          | `ui-text-body`                    | 11.9px, regular, primary                | 13px, regular, primary                  |
-| a line under a row (task limit, waiting on memory, a restart's answer) | `ui-text-secondary`               | 10.1px, secondary                       | 12px, secondary                         |
-| the notes beside the title ("The filter hides 3 of 12 chats.")         | `ui-text-secondary`               | 10.7px, muted                           | 12px, secondary                         |
-| "No chats are running…"                                                | `ui-text-secondary`               | 11.9px, primary at 60% opacity          | 12px, secondary, undimmed               |
-| a finished task's name, "Finished (n)", a finished task's note         | `ui-text-secondary`               | 11.9px, primary (the note muted)        | 12px, secondary                         |
-| a finished task's report; where it was written                         | `ui-text-body`; `-secondary`      | 11.9px, primary; 11px, muted            | 13px, primary; 12px, secondary          |
-| a folded row's task count; "Stopping…"                                 | `ui-text-meta` (the count strong) | 10.5px and 10.7px, regular, muted       | 11px, muted; the count 600              |
-| a workspace's heading over its sessions (the list grouped)             | `ui-text-label`                   | 10.1px, regular, muted, spaced `0.04em` | 11px, strong, secondary, `0.06em`       |
-| a row's card: its name; its sentences and values; a fact's word        | body strong; secondary; meta      | 13px strong; 13px primary; 13px muted   | 13px strong; 12px secondary; 11px muted |
+| word                                                                     | role                           | before                                  | after                          |
+| ------------------------------------------------------------------------ | ------------------------------ | --------------------------------------- | ------------------------------ |
+| the title, "Chats"                                                       | `ui-text-label`                | 11px, strong, secondary, capitals       | the same                       |
+| a chat's name                                                            | `ui-text-body`                 | 11.9px, regular, primary                | 13px, regular, primary         |
+| a line under a row (task limit, waiting on memory, a restart's answer)   | `ui-text-secondary`            | 10.1px, secondary                       | 12px, secondary                |
+| the notes beside the title ("The filter hides 3 of 12 chats.")           | `ui-text-secondary`            | 10.7px, muted                           | 12px, secondary                |
+| "No chats are running…"                                                  | `ui-text-secondary`            | 11.9px, primary at 60% opacity          | 12px, secondary, undimmed      |
+| a finished task's name, "Finished (n)", a finished task's note           | `ui-text-secondary`            | 11.9px, primary (the note muted)        | 12px, secondary                |
+| a finished task's report; where it was written                           | `ui-text-body`; `-secondary`   | 11.9px, primary; 11px, muted            | 13px, primary; 12px, secondary |
+| a folded row's task count; "Stopping…"                                   | `ui-text-meta` (the count strong) | 10.5px and 10.7px, regular, muted    | 11px, muted; the count 600     |
+| a workspace's heading over its sessions (the list grouped)               | `ui-text-label`                | 10.1px, regular, muted, spaced `0.04em` | 11px, strong, secondary, `0.06em` |
+| a row's card: its name; its sentences and values; a fact's word          | body strong; secondary; meta   | 13px strong; 13px primary; 13px muted   | 13px strong; 12px secondary; 11px muted |
 
 What it settled, for the surfaces that follow:
 
@@ -2194,7 +2187,7 @@ What it settled, for the surfaces that follow:
   geometry scale, and a line under a row starts where the row's name does.
 
 Not moved with it, and still on their own rules: the filter's chips and the scope switch
-(controls), the _Go_ button beside the title, and the second step of ending a task
+(controls), the *Go* button beside the title, and the second step of ending a task
 (`.task-end-confirm`), which the pane's breadcrumb shares.
 
 ## Menus
@@ -2208,20 +2201,20 @@ is applied; what they draw with is this:
 Every menu is the menu family (#2909), drawn by its parts (`ui/menu/menu.css`) on the popover
 family's surface (`ui/popover/popover.css`):
 
-| part                        | attributes                                   | role, size and colour                                                                                                                                         |
-| --------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| a row                       | `menu` `root`, variant `default`             | `--size-control` tall at least; `--space-3` inside, `--space-1` between rows; `tab.active` under the pointer or the keyboard, ringed inside from the keyboard |
-| its words                   | `menu` `label`                               | body: 13px, the row's colour; one line, cut with an ellipsis                                                                                                  |
-| what is under them          | `menu` `description`                         | secondary: 12px, `text.secondary`; wraps, never cut                                                                                                           |
-| its tooltip                 | `menu` `tip`, `ui-tooltip ui-text-secondary` | secondary, on the overlay surface, at most nine of `--space-8` wide                                                                                           |
-| its shortcut                | `menu` `shortcut`                            | meta: 11px, `text.quiet`, at the row's end                                                                                                                    |
-| a tick or a submenu's arrow | `menu` `indicator`                           | `text.muted`, at the row's end                                                                                                                                |
-| a group's name              | `popover` `header`                           | label: 11px strong capitals, `text.secondary`; purlis's own words only                                                                                        |
-| a group named by data       | `popover` `header` `data-named`              | secondary, as the name is written: no capitals (T4)                                                                                                           |
-| the line between groups     | `popover` `rule`                             | 1px of `border.subtle`                                                                                                                                        |
-| what cannot be undone       | `menu` `root`, variant `danger`              | `danger.base` words on `danger.surface` under the pointer                                                                                                     |
-| a row that cannot run       | `menu` `root` `data-disabled`                | its words in `text.faint`; the line saying why keeps its tier                                                                                                 |
-| the menu                    | `popover` `root`, variant `menu`             | the overlay surface; `calc(var(--space-8) * 6)` to `* 10` wide (192px to 320px), placed under its trigger at least 8px from the window's edge                 |
+| part                     | attributes                                   | role, size and colour                                              |
+| ------------------------ | -------------------------------------------- | ------------------------------------------------------------------ |
+| a row                    | `menu` `root`, variant `default`             | `--size-control` tall at least; `--space-3` inside, `--space-1` between rows; `tab.active` under the pointer or the keyboard, ringed inside from the keyboard |
+| its words                | `menu` `label`                               | body: 13px, the row's colour; one line, cut with an ellipsis       |
+| what is under them       | `menu` `description`                         | secondary: 12px, `text.secondary`; wraps, never cut                |
+| its tooltip              | `menu` `tip`, `ui-tooltip ui-text-secondary` | secondary, on the overlay surface, at most nine of `--space-8` wide |
+| its shortcut             | `menu` `shortcut`                            | meta: 11px, `text.quiet`, at the row's end                         |
+| a tick or a submenu's arrow | `menu` `indicator`                        | `text.muted`, at the row's end                                     |
+| a group's name           | `popover` `header`                           | label: 11px strong capitals, `text.secondary`; purlis's own words only |
+| a group named by data    | `popover` `header` `data-named`              | secondary, as the name is written: no capitals (T4)                |
+| the line between groups  | `popover` `rule`                             | 1px of `border.subtle`                                             |
+| what cannot be undone    | `menu` `root`, variant `danger`              | `danger.base` words on `danger.surface` under the pointer          |
+| a row that cannot run    | `menu` `root` `data-disabled`                | its words in `text.faint`; the line saying why keeps its tier      |
+| the menu                 | `popover` `root`, variant `menu`             | the overlay surface; `calc(var(--space-8) * 6)` to `* 10` wide (192px to 320px), placed under its trigger at least 8px from the window's edge |
 
 The rules in one line each:
 
@@ -2449,12 +2442,11 @@ first task, the repo's agent instructions, the harness setup), a `status` line, 
 a split beside the focused pane, which goes when the sign-in exits.
 
 **Amended 2026-10-12: creating a project asks where it lives (#1810, Q1/Q2).** The operator
-ruled in the onboarding grill: _"The welcome screen offers: Create a project (with a stack
-template, FR-17) / Get a project from your forge (clone) / Open a folder on this Mac"_, and
-_"Create asks where the project lives: GitHub / GitLab / only this Mac."_ This amends the first
-run's old rule from W10 and FR-4 (#603), _"never ask where the plane goes"_. The rule held in
+ruled in the onboarding grill: *"The welcome screen offers: Create a project (with a stack
+template, FR-17) / Get a project from your forge (clone) / Open a folder on this Mac"*, and
+*"Create asks where the project lives: GitHub / GitLab / only this Mac."* This amends the first
+run's old rule from W10 and FR-4 (#603), *"never ask where the plane goes"*. The rule held in
 `crates/purlis-core/src/firstrun.rs` and `app/src/FirstRun.tsx`.
-
 - **Create** now asks where the project lives, and **only this Mac** is one click away. It needs
   no account, and it makes the local project as before.
 - **Open a folder on this Mac** asks nothing new.
