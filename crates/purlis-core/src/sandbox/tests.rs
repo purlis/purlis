@@ -955,6 +955,98 @@ fn every_harness_denies_a_chat_the_record_of_what_was_refused_while_nobody_was_t
     }
 }
 
+/// #6214: a dispatched task's kept last screen (`chatscreens`) is denied for reading and writing
+/// in what each harness is compiled, on both systems, under both names of the state folder, in
+/// a project where the store is not there yet: what a task's work showed is the person's to
+/// read in the window, never a chat's.
+#[test]
+fn every_harness_denies_a_chat_the_kept_screens_of_tasks() {
+    const SCREEN: &str = "01K6W0RKER000000000000000B.screen";
+    for os in [Os::MacOs, Os::Linux] {
+        let (plane, denied) = denied_with(None, os);
+        let files: Vec<std::path::PathBuf> = [".charter", ".purlis"]
+            .iter()
+            .map(|state| {
+                plane
+                    .path()
+                    .join(state)
+                    .join("app")
+                    .join(crate::chatscreens::DIR_NAME)
+                    .join(SCREEN)
+            })
+            .collect();
+        for file in &files {
+            assert!(!file.parent().expect("a folder").exists(), "not made yet");
+        }
+        // The folder the app writes is one of them.
+        assert!(
+            files
+                .iter()
+                .any(|file| file.parent() == Some(crate::chatscreens::dir(plane.path()).as_path()))
+        );
+        let under = |held: &[std::path::PathBuf], file: &std::path::Path| {
+            held.iter().any(|folder| file.starts_with(folder))
+        };
+
+        // What every compiler starts from.
+        let held = paths(&denied, Class::Integrity, Access::ReadWrite);
+        for file in &files {
+            assert!(under(&held, file), "{os:?}: {}", file.display());
+        }
+
+        // Claude Code: its own sandbox's read and write denials, and its file tools'.
+        let settings = claude::settings(&compiled(denied.clone(), os)).expect("compiles");
+        let listed = |key: &str| -> Vec<std::path::PathBuf> {
+            settings.sandbox["filesystem"][key]
+                .as_array()
+                .expect("a list")
+                .iter()
+                .filter_map(|path| path.as_str().map(std::path::PathBuf::from))
+                .collect()
+        };
+        for file in &files {
+            let folder = super::real(file.parent().expect("a folder"));
+            let named = folder.join(SCREEN);
+            assert!(under(&listed("denyRead"), &named), "{os:?}: {named:?}");
+            assert!(under(&listed("denyWrite"), &named), "{os:?}: {named:?}");
+            assert!(
+                settings
+                    .deny
+                    .contains(&format!("Read(/{}/**)", folder.display())),
+                "{os:?}: {named:?}: {:?}",
+                settings.deny
+            );
+        }
+
+        // Codex and opencode run inside purlis's own wrap, on macOS and on Linux.
+        let codex = codex::wrap(&compiled(denied.clone(), os));
+        let opencode = applied_for(
+            Harness::Opencode,
+            &policy_of(&[], false),
+            &Plane::of(None),
+            plane.path(),
+            &machine(os),
+        );
+        let read_write = |denied: &[Denial]| -> Vec<std::path::PathBuf> {
+            denied
+                .iter()
+                .filter(|it| it.access == Access::ReadWrite)
+                .map(|it| it.path.clone())
+                .collect()
+        };
+        let codex = read_write(&codex.expect("compiles").denied);
+        let applied = opencode.expect("compiles");
+        let Form::Opencode(wrap) = applied.form() else {
+            panic!("compiled for opencode");
+        };
+        let opencode = read_write(&wrap.denied);
+        for file in &files {
+            assert!(under(&codex, file), "codex: {}", file.display());
+            assert!(under(&opencode, file), "opencode: {}", file.display());
+        }
+    }
+}
+
 /// The same, in a wrapped opencode chat's own compiled form.
 #[test]
 fn an_opencode_chat_is_handed_the_dispatch_records_denied_for_reading() {

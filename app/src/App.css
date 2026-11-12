@@ -9352,3 +9352,36 @@ nav.piece-files-head {
   gap: var(--space-2);
   align-items: center;
 }
+/* A closed chat's card (#6214): where its parts stand. Its look is its families'. */
+.closed-chat-card-popover {
+  inline-size: 26rem;
+  max-inline-size: calc(100vw - 32px);
+}
+.closed-chat-card {
+  display: grid;
+  gap: var(--space-2);
+}
+.closed-chat-card-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.closed-chat-card-title {
+  margin: 0;
+  font-size: var(--font-size-md);
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+}
+.closed-chat-card-when,
+.closed-chat-card-note {
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+/* Its report cut at four lines (D8): the whole of it is under Read it. */
+.closed-chat-card-report {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+}

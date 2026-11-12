@@ -84,7 +84,7 @@ function skills(listed: ChatSkill[], budget: SkillBudget | null = BUDGET): ChatS
     skills: listed,
     budget,
     repos: [],
-    not_supported: null,
+    none_because: null,
     routing: null,
     missing: null,
   };
@@ -288,7 +288,7 @@ describe("Use skill…", () => {
       skills: [],
       budget: null,
       repos: [],
-      not_supported: null,
+      none_because: null,
       routing: null,
       missing: null,
     });
@@ -306,7 +306,7 @@ describe("Use skill…", () => {
       skills: [],
       budget: null,
       repos: [],
-      not_supported: goose,
+      none_because: goose,
       routing: null,
       missing: null,
     });

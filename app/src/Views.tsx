@@ -1,6 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { ChatScreenTab } from "./ChatScreenTab";
+import { CHAT_SCREEN } from "./closedChat";
 import {
   Fragment,
   Suspense,
@@ -38,6 +40,7 @@ import {
   ListChecks,
   LoaderCircle,
   MonitorSmartphone,
+  ScrollText,
   Puzzle,
   RefreshCw,
   Save,
@@ -403,6 +406,8 @@ export const OWN_MARKS: Record<string, React.ComponentType<{ className?: string 
   [BROWSERS_GRID_VIEW.view]: LayoutGrid,
   /** This machine and its runners (#2052, `DevicesView.tsx`). */
   [DEVICES_VIEW.view]: MonitorSmartphone,
+  /** A closed task's kept screen, read-only (#6214, `ChatScreenTab.tsx`). */
+  [CHAT_SCREEN]: ScrollText,
   /** What a chat acts as on a forge (#4485, `AgentIdentityTab.tsx`). */
   [AGENT_IDENTITY_VIEW.view]: BadgeCheck,
   /** A browser's DevTools, drawn live (#2028, `inspector.ts`). */
@@ -618,6 +623,17 @@ export function ViewPane({
       </section>
     );
   }
+  // **A closed task's kept screen** (#6214): *Read it* on its card, keyed by the chat's ULID.
+  if (view.from === null && view.view === CHAT_SCREEN) {
+    return (
+      <ChatScreenTab
+        key={`${plane}\u0000${view.key}`}
+        plane={plane}
+        chat={view.key}
+        title={title}
+      />
+    );
+  }
   // **Agent identity** (#4485): keyed by the plane, whose tool lines and personas it reads.
   if (view.from === null && view.view === AGENT_IDENTITY_VIEW.view) {
     return (
@@ -779,6 +795,7 @@ export function ViewPane({
             onOpenChat={onNewChatOn}
             onOpenIdentity={() => onOpenView(AGENT_IDENTITY_VIEW, AGENT_IDENTITY_TITLE)}
             onOpenSettings={() => onOpenView(settingsView("project"), SETTINGS_TAB_TITLE)}
+            onOpenPools={() => onOpenView(settingsView("you"), SETTINGS_TAB_TITLE)}
           />
         ) : isSaving(view) ? (
           /* The plane's save standing and its save button (charter-app#294). Keyed by the

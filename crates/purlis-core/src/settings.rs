@@ -487,6 +487,8 @@ fn keyed_read_refusals(root: &Path, which: Which, text: &str) -> Vec<Refusal> {
     out.extend(crate::dispatchlimits::keyed(text, file));
     // And `[skill_grades]` (#2779), a grade's token cap: this machine's alone, in Local.
     out.extend(crate::skills::grades::cap::keyed_at(root, text, which));
+    // And `[task_screens]` (#6214), whether a task's last screen is kept: this machine's alone.
+    out.extend(crate::chatscreens::keyed_at(root, text, which));
     // And `[skills]` (#4610), the project's skill budget: in Shared alone.
     out.extend(crate::skills::budget_setting::keyed_at(root, text, which));
     // And so may `[plane]` and `[repos]` (charter-app#292), read by `planesave` in both.

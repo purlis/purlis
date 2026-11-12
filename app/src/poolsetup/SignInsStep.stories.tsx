@@ -21,6 +21,9 @@ const STEP: PoolSetupStep = {
   findings: [],
   next: { id: "choose-profiles", label: "Choose profiles", does: "", command: null, url: null },
   skippable: true,
+  also: null,
+  parts: [],
+  undo: null,
   see: {
     note: "This is the sign-in the button runs.",
     text: "purlis profile sign-in personal --pool dev-box",

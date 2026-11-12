@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # purlis's cluster operator (spec #2041, #2054): a workspace of its own, with a lock of its own.
-# It runs in a cluster, links nothing of the rest of purlis, and its Kubernetes client is a large
+# It runs in a cluster, links nothing of the rest of purlis but its doctor's checks (a crate with
+# no dependency, which Pool setup runs too, #4492), and its Kubernetes client is a large
 # tree, so the root workspace's builds, tests and lints never compile it and a pull request that
 # does not touch `operator/` waits on none of it. `.github/workflows/operator.yml` checks it.
 [workspace]
@@ -18,6 +19,8 @@ repository = "https://github.com/purlis/purlis"
 publish = false
 
 [dependencies]
+# The doctor's checks and words, shared with Pool setup's Check the cluster (#4492).
+purlis-cluster-doctor = { path = "../crates/cluster-doctor" }
 # kube-rs, the Rust Kubernetes client and controller runtime (CNCF). Only what the operator
 # uses: no `ws` feature, so this binary cannot even ask for `exec` or `attach`.
 kube = { version = "5.0", default-features = false, features = ["client", "derive", "runtime", "rustls-tls", "ring"] }

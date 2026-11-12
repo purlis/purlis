@@ -29,9 +29,11 @@
  * gave travels to the operator as the core's own sentence rather than as whatever a `catch`
  * decided to say about it.
  */
+import { chatScreenTitle, chatScreenView } from "./closedChat";
 import { splitRefused } from "./paneFold";
 import type { Size } from "./paneDrop";
 import type {
+  ChatCard,
   ChatWorktree,
   Curations,
   ExtensionCommand,
@@ -465,6 +467,9 @@ export type Does =
    *  discards work with nobody warned — the same objection `worktree.discard` records. */
   | { verb: "removeWorkspace"; workspace: string }
   | { verb: "showChat"; session: number }
+  /** **Reopen** on a closed chat's card (#6214): finished task `id`'s conversation started
+   *  again as an ordinary chat, as Reopen on its finished row does (#1485). */
+  | { verb: "reopenTask"; id: string }
   /** ⌘⇧H (#4757): the focused pane goes back to the chat it showed before. Nothing ends. */
   | { verb: "paneBack" }
   /** Gives a task a tab of its own (#1489). Nothing ends, and nothing is asked. */
@@ -1205,6 +1210,8 @@ export type Doing = {
    *  core's guard. */
   removeWorkspace: (workspace: string) => void;
   showChat: (session: number) => void;
+  /** Reopens finished task `id` (#6214): a refusal is the core's sentence. */
+  reopenTask: (id: string) => Promise<Ran>;
   /** The focused pane goes back to the chat it showed before, or to where that chat is. */
   paneBack: () => void;
   /** Gives a task a tab of its own, in front. */
@@ -3796,6 +3803,8 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
     case "showChat":
       doing.showChat(does.session);
       return DID;
+    case "reopenTask":
+      return doing.reopenTask(does.id);
     case "paneBack":
       doing.paneBack();
       return DID;
@@ -6596,3 +6605,23 @@ export function pinToWorkspaceRow(at: BranchPath): Offer {
 /** Why a page of the plane root offers no Pin to workspace. */
 const PLANE_ROOT_PAGE =
   "A page is pinned to a workspace. Open it from that workspace's files to pin it there.";
+
+/** ***Read it* on a closed chat's card** (#6214): its kept last screen, read-only, in a view tab
+ *  named by the card's title. */
+export function readItOffer(card: ChatCard): Offer {
+  const title = chatScreenTitle(card);
+  return can(`chat.read:${card.chat}`, title, {
+    verb: "openView",
+    view: chatScreenView(card),
+    title,
+  });
+}
+
+/** ***Reopen* on a closed chat's card** (#6214): its task's conversation started again as an
+ *  ordinary chat, as Reopen on its finished row does. */
+export function reopenTaskOffer(card: ChatCard): Offer {
+  return can(`chat.reopen:${card.task.id}`, `Reopen ${card.task.name}`, {
+    verb: "reopenTask",
+    id: card.task.id,
+  });
+}

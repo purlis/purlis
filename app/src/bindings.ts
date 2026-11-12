@@ -3366,6 +3366,16 @@ export const commands = {
 	 */
 	taskFolderShared: (plane: PlaneId, session: number, place: string | null) => typedError<string | null, string>(__TAURI_INVOKE("task_folder_shared", { plane, session, place })),
 	/**
+	 *  **What `number` names** (#6214): an open chat, one open again under another number, a
+	 *  closed one's card, or no chat. On a blocking thread, as it reads the dispatch records.
+	 */
+	chatByNumber: (plane: PlaneId, number: number) => typedError<ChatLookup, string>(__TAURI_INVOKE("chat_by_number", { plane, number })),
+	/**
+	 *  **What chat `chat` showed as it closed** (#6214), where this machine kept it: what *Read it*
+	 *  draws read-only. Null where nothing was kept.
+	 */
+	chatScreen: (plane: PlaneId, chat: string) => typedError<string | null, string>(__TAURI_INVOKE("chat_screen", { plane, chat })),
+	/**
 	 *  The finished tasks of the project's open chats, oldest first, for the rows under each
 	 *  (#1485). On a blocking thread, as it reads every record.
 	 */
@@ -4181,6 +4191,25 @@ export const commands = {
 	 *  for the Pool step. What went wrong is laid over Connect, and nothing is kept then.
 	 */
 	poolSetupTrust: (plane: PlaneId, fingerprint: string) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup_trust", { plane, fingerprint })),
+	/**
+	 *  **Keeps that the person chose their team's cluster on Where**, through kubeconfig context
+	 *  `context` (#4492): its name alone. Nothing on the cluster changes. With no context, only the
+	 *  kind is kept, as Add a cluster pool… opens Pool setup: Where then recommends a context.
+	 */
+	poolSetupChooseCluster: (context: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_choose_cluster", { context })),
+	/**
+	 *  **Applies one part of a cluster's install** (#4493), on that part's own button: `upstream`,
+	 *  `definitions`, `signing-key` or `operator`, to the cluster chosen on Where, with the person's
+	 *  own kubectl and sign-in.
+	 */
+	poolSetupInstall: (part: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_install", { part })),
+	/**  **Keeps the cluster operator's image named under Install's Options** (#4493), or none. */
+	poolSetupOperatorImage: (image: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_operator_image", { image })),
+	/**
+	 *  **Makes the Pool `name` in the cluster chosen on Where** (#4494), of runner image `image` by
+	 *  digest, on the Pool step's own button, with the person's own kubectl and sign-in.
+	 */
+	poolSetupClusterPool: (name: string, image: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_cluster_pool", { name, image })),
 	/**  **Keeps the name typed on the Pool step**, or none, so coming back finds it. */
 	poolSetupName: (name: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_name", { name })),
 	/**  **Keeps that this setup goes on with pool `name`**, once it has made it. */
@@ -7598,6 +7627,31 @@ export type ChatBrowser = {
 };
 
 /**
+ *  **A closed or finished chat's card** (#6214, the prototype's S6): "#641 · <title>", how and
+ *  when it ended, who started it, where it ran, its report, and whether *Read it* and *Reopen*
+ *  can do anything.
+ */
+export type ChatCard = {
+	/**  The number it was looked up by: the chat's when it worked. */
+	number: number,
+	/**  Its ULID: what *Read it* asks for its screen by. */
+	chat: string,
+	/**
+	 *  Its task as its finished row has it: its name, how it ended and when, its report
+	 *  (masked), where it ran, and whether it reopens. `id` is its dispatch record's, which
+	 *  *Reopen* names.
+	 */
+	task: FinishedTask,
+	/**
+	 *  Who started it: "you" where the person dispatched it, else the asking chat's name as
+	 *  the person saw it then.
+	 */
+	started_by: string,
+	/**  Whether its last screen was kept: *Read it* is disabled where it was not. */
+	screen_kept: boolean,
+};
+
+/**
  *  What a `chat-events` batch carries of a chat's doing, and what `chat_doings` answers a list
  *  of: one chat's line, or that it has none. It travels in memory only.
  */
@@ -7640,6 +7694,17 @@ export type ChatHeld = {
 	plane: PlaneId,
 	session: number,
 };
+
+/**  What a number names, as the window is sent it. */
+export type ChatLookup = 
+/**  An open chat answers to it: the window shows that chat. */
+{ is: "open"; number: number } | 
+/**  The chat it was is open now under `now`: started again, or reopened. */
+{ is: "restarted"; now: number } | 
+/**  The chat has ended: its card, boxed as it is the one large answer. */
+{ is: "ended"; card: ChatCard } | 
+/**  No chat had it, or none purlis kept a record of. */
+{ is: "no_chat" };
 
 /**
  *  **A chat's move as the window draws it** (#2048): what `chat-move` tells, and each row of
@@ -7816,11 +7881,12 @@ export type ChatSkills = {
 	 */
 	repos: string[],
 	/**
-	 *  Why the chat gets no skills, where its harness is a declared one skills are not supported
-	 *  on (SK-30), or where it is not running now (#6196): said in place of the words for a tool
-	 *  purlis does not know.
+	 *  Why the chat is offered no skills, where that is not that it runs a tool purlis does not
+	 *  know: its harness is a declared one skills are not supported on (SK-30), its runner said
+	 *  none (#4218), or it is not running now (#6196). Said in place of the words for a tool purlis
+	 *  does not know, which are what the list says where this is null (#6302).
 	 */
-	not_supported: string | null,
+	none_because: string | null,
 	/**
 	 *  How its router extension did at its start (SK-15b): null for a chat routed by the
 	 *  built-in router, which is asked nothing.
@@ -13632,6 +13698,15 @@ export type PoolSetupCheck = {
 	more: string | null,
 };
 
+/**  The kubeconfig's contexts, by name alone, for Where's Options on a cluster (#4492). */
+export type PoolSetupContexts = {
+	names: string[],
+	recommended: string | null,
+	chosen: string | null,
+	/**  The chosen cluster's Pools, by name, where its operator runs (#4494). */
+	pools: string[],
+};
+
 /**
  *  What the Pool step's button did: nothing made, and why, where a team's image breaks the
  *  contract; none where the pool was made.
@@ -13681,6 +13756,18 @@ export type PoolSetupOver = {
 	older_runner: OlderRunner | null,
 };
 
+/**
+ *  One part of a cluster's install (#4493): `upstream`, `definitions`, `signing-key` or
+ *  `operator`.
+ */
+export type PoolSetupPart = {
+	id: string,
+	name: string,
+	done: boolean,
+	line: string,
+	next: PoolSetupAction | null,
+};
+
 /**  One of this machine's profiles against a pool's limit (#4482). */
 export type PoolSetupProfileSize = {
 	name: string,
@@ -13703,7 +13790,7 @@ export type PoolSetupSee = {
 
 /**  What the tab draws. */
 export type PoolSetupShown = {
-	/**  Where its chats run: `docker` or `remote-docker` (#6266). */
+	/**  The kind of pool this setup makes: `docker`, `cluster` (#4492) or `remote-docker` (#6266). */
 	kind: string,
 	/**  The pool this setup made. */
 	pool: string | null,
@@ -13718,6 +13805,7 @@ export type PoolSetupShown = {
 	others: string[],
 	/**  The name a new pool is recommended, which no pool here has (#6256). */
 	recommended: string,
+	contexts: PoolSetupContexts,
 };
 
 /**  This machine's profiles against pool `pool`'s limits (#4482). */
@@ -13744,6 +13832,12 @@ export type PoolSetupStep = {
 	machine: PoolSetupMachine | null,
 	/**  What a finding is, by its key (`pool-pin-changed`, `plain-tcp`, …). */
 	cause: string | null,
+	/**  The choice purlis didn't recommend, where there is one (Where's other place, #4492). */
+	also: PoolSetupAction | null,
+	/**  Install's parts, each with its own button (#4493). */
+	parts: PoolSetupPart[],
+	/**  How the step is undone by hand, never by a button: uninstalling from a cluster. */
+	undo: PoolSetupSee | null,
 };
 
 /**  What Try it found. */

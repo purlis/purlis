@@ -23,6 +23,11 @@ import { handed, listed, PARTS, SRC, sources } from "./fieldCalls.testkit";
 
 /** Every file that hands a field its help, the grounds that field stands on, and where. */
 const HELPED: Record<string, { grounds: string[]; where: string }> = {
+  "poolsetup/ClusterSteps.tsx": {
+    grounds: ["surface.raised"],
+    where:
+      "Pool setup on a cluster: the operator's image under Install's Options, and a Pool's name and runner image under the Pool step's, on a view tab's page (.pane.view)",
+  },
   "poolsetup/ConnectStep.tsx": {
     grounds: ["surface.raised"],
     where: "Pool setup's Connect: the address of a machine not in your SSH settings (#6266)",

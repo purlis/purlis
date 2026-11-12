@@ -47,6 +47,7 @@ mod browserproof;
 mod browsers;
 mod changes;
 mod chatbrowsers;
+mod chatcard;
 mod chatevents;
 mod chatmoves;
 mod chats;

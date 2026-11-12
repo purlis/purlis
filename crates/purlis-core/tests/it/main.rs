@@ -203,6 +203,7 @@ mod nothing_escapes_a_worktree;
 mod nothing_escapes_while_a_writer_races;
 mod only_the_resolver_builds_the_native_transport;
 mod only_the_updater_and_report_name_charters_own_address;
+mod pool_setup_on_a_kind_cluster;
 mod profiles_are_refused_when_git_would_carry_them;
 mod project_skills_move_without_a_chat_losing_one;
 mod project_templates;
