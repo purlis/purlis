@@ -1032,8 +1032,8 @@ pub fn confirmed_hosts(root: &Path) -> Vec<String> {
     read(root).hosts_mine
 }
 
-/// Records `host` as one you confirmed: Settings' Add and Confirm, never a chat (a sandboxed
-/// chat cannot write this file).
+/// Records `host` as one you confirmed: Settings' Confirm, never a chat (a sandboxed chat cannot
+/// write this file). Settings' Add and a block's Allow record it with when ([`add_host`]).
 pub fn confirm_host(root: &Path, host: &str) -> io::Result<()> {
     change(root, |held| {
         if !held.hosts_mine.iter().any(|one| one == host) {
@@ -1081,12 +1081,15 @@ pub struct HostAdded {
     pub by: AddedBy,
 }
 
-/// Records that `host` was added now, by `by`, replacing an earlier record of it.
-pub fn record_host_added(root: &Path, host: &str, by: AddedBy) -> io::Result<()> {
-    let at = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |since| since.as_secs());
+/// **Records `host` as one you added now, by `by`**: confirmed ([`confirm_host`]) and when it was
+/// added, in one write, so a host is never confirmed without its when. An earlier record of when
+/// is replaced.
+pub fn add_host(root: &Path, host: &str, by: AddedBy) -> io::Result<()> {
+    let at = crate::halt::now();
     change(root, |held| {
+        if !held.hosts_mine.iter().any(|one| one == host) {
+            held.hosts_mine.push(host.to_owned());
+        }
         held.hosts_added.retain(|one| one.host != host);
         held.hosts_added.push(HostAdded {
             host: host.to_owned(),
@@ -1125,7 +1128,13 @@ pub fn forget_hosts_not_in(root: &Path, local: Option<&str>) -> io::Result<usize
             .filter(|one| !listed.contains(one))
             .count()
     };
-    if goes(&read(root)) == 0 {
+    let held = read(root);
+    if goes(&held) == 0
+        && held
+            .hosts_added
+            .iter()
+            .all(|one| listed.contains(&one.host))
+    {
         return Ok(0);
     }
     let mut gone = 0;

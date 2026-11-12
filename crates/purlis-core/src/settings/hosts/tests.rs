@@ -425,13 +425,6 @@ fn value<'a>(entry: &'a Listed, field: &str) -> Option<&'a str> {
         .map(|(_, value)| value.as_str())
 }
 
-fn now() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
-}
-
 #[test]
 fn your_host_says_when_and_by_what_it_was_added_and_one_from_before_the_record_says_nothing() {
     let dir = project(ON);
@@ -439,11 +432,11 @@ fn your_host_says_when_and_by_what_it_was_added_and_one_from_before_the_record_s
     let earlier = "[sandbox]\nhosts = [\"old.example\"]\n";
     fs::write(dir.path().join("charter.local.toml"), earlier).unwrap();
     crate::sandbox::local::confirm_host(dir.path(), "old.example").unwrap();
-    let before = now();
+    let before = crate::halt::now();
     let base = text(dir.path(), "charter.local.toml");
     add(dir.path(), Which::Local, base.as_deref(), "typed.example").expect("added");
     grant(dir.path(), Which::Local, &host("allowed.example")).expect("granted");
-    let after = now();
+    let after = crate::halt::now();
 
     let local = text(dir.path(), "charter.local.toml").unwrap();
     let shown = listed_at(dir.path(), Which::Local, &local);
@@ -467,7 +460,7 @@ fn a_removed_host_takes_when_it_was_added_with_it() {
     let id = listed(base.as_deref().unwrap())[0].id.clone();
     remove(dir.path(), Which::Local, base.as_deref(), &id).expect("removed");
 
-    // Written back by hand, and confirmed: added before any record of it this machine keeps.
+    // Written back by hand and confirmed, not added: this machine keeps no when for it.
     let back = "[sandbox]\nhosts = [\"gone.example\"]\n";
     fs::write(dir.path().join("charter.local.toml"), back).unwrap();
     crate::sandbox::local::confirm_host(dir.path(), "gone.example").unwrap();

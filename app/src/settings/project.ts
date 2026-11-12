@@ -50,6 +50,7 @@ import {
 import type {
   Collection,
   CollectionEntry,
+  HostAdded,
   FileSetting,
   SettingsFileId,
   SettingsGroup,
@@ -270,6 +271,14 @@ export const PERSONA_HOSTS = "project.sandbox.personas";
 /** Where policy turns off a chat's asks for a secret its persona does not declare (#5078). */
 export const SECRET_ASKS = "project.sandbox.secretAsks";
 
+/** When and by what one of your own hosts was added, as the core lists it (#6172): none where it
+ *  records neither, or says either in a way this window does not read. */
+function addedOf(at: string | undefined, by: string | undefined): HostAdded | undefined {
+  const seconds = Number(at);
+  if (at === undefined || !Number.isSafeInteger(seconds)) return undefined;
+  return by === "you" || by === "block" ? { at: seconds, by } : undefined;
+}
+
 /**
  * **A sandbox's hosts as a collection** (#1341): each entry of `[sandbox] hosts` the core lists
  * in `file`, with Remove, and an Add form of one field the core checks
@@ -278,17 +287,6 @@ export const SECRET_ASKS = "project.sandbox.secretAsks";
  * (`myHosts`), on this machine only. A host the core refuses is said under the field, with why:
  * as it is typed (`check_sandbox_host`, the core's parser, #1405), and again when Add is pressed.
  */
-/** When and by what one of your own hosts was added, as the core lists it (#6172): none where it
- *  records neither, or says either in a way this window does not read. */
-function addedOf(
-  at: string | undefined,
-  by: string | undefined,
-): CollectionEntry["added"] | undefined {
-  const seconds = Number(at);
-  if (at === undefined || !Number.isSafeInteger(seconds)) return undefined;
-  return by === "you" || by === "block" ? { at: seconds, by } : undefined;
-}
-
 function hostsCollection(file: SettingsFile, name: "hosts" | "myHosts"): Collection {
   return {
     name,

@@ -10,6 +10,7 @@ import { forgetThisLaunch } from "../regions";
 import { GLOBAL } from "../windowprefs";
 import { forgetGroups } from "./links";
 import type { EntryWritten, SettingsFile, SettingsWhich } from "../bindings";
+import type { HostAdded } from "./groups";
 import { pickIn } from "../ui/select/select.testkit";
 
 /**
@@ -23,8 +24,8 @@ const PLANE = "/home/dev/plane";
 
 const NAMES: Record<SettingsWhich, string> = { shared: "hosts", local: "myHosts" };
 
-/** When, in seconds since 1970, and by what, a host of yours was added, as the core records it. */
-type Added = Record<string, { at: number; by: "you" | "block" }>;
+/** When and by what each host of yours was added, as the core records it. */
+type Added = Record<string, HostAdded>;
 
 function fileOf(
   which: SettingsWhich,

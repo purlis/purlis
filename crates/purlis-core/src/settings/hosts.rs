@@ -213,19 +213,15 @@ fn added(
     let after = with(which, text, &host)?;
     super::save(root, which, base, &after).map_err(Refusal::file)?;
     seen_by_you(root, which, pending, &after);
-    // Added here, by you: confirmed on this machine.
+    // Added here, by you or a block's Allow: confirmed on this machine, with when and by what.
     if which == Which::Local {
-        crate::sandbox::local::confirm_host(root, &host.to_string()).map_err(|e| {
+        crate::sandbox::local::add_host(root, &host.to_string(), by).map_err(|e| {
             Refusal::file(vec![format!(
                 "{host} was written, and could not be recorded as yours ({}), so it reaches \
                  nothing yet. Press Confirm beside it.",
                 crate::shown::short(&e.to_string())
             )])
         })?;
-        // Best effort: a host whose when is lost says it was added earlier, and still grants.
-        if let Err(why) = crate::sandbox::local::record_host_added(root, &host.to_string(), by) {
-            tracing::warn!("purlis: {host} was added without when it was added ({why})");
-        }
     }
     // Where the set put it.
     listed(&after)
@@ -390,7 +386,7 @@ pub fn listed_at(root: &Path, which: Which, text: &str) -> Vec<Listed> {
         return entries;
     }
     let confirmed = crate::sandbox::local::confirmed_hosts(root);
-    let when = crate::sandbox::local::hosts_added(root);
+    let records = crate::sandbox::local::hosts_added(root);
     for one in &mut entries {
         let written = one
             .values
@@ -404,8 +400,9 @@ pub fn listed_at(root: &Path, which: Which, text: &str) -> Vec<Listed> {
         }
         one.values
             .push(("confirmed", if mine { "yes" } else { "no" }.to_owned()));
-        if let Ok(host) = Host::parse(&written)
-            && let Some(added) = when.iter().find(|it| it.host == host.to_string())
+        let spelled = Host::parse(&written).map(|host| host.to_string());
+        if let Ok(spelled) = spelled
+            && let Some(added) = records.iter().find(|it| it.host == spelled)
         {
             one.values.push(("added_at", added.at.to_string()));
             one.values.push(("added_by", added.by.word().to_owned()));
