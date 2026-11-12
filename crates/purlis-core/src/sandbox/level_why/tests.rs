@@ -306,7 +306,9 @@ fn the_answer_is_the_level_decide_starts_the_chat_at() {
     use crate::sandbox::{Decided, Level, Person, decide_granted, grant};
     let machine = crate::sandbox::Machine {
         env: crate::secrets::Env::of(&[]),
-        home: Some(std::path::PathBuf::from("/home/op")),
+        // Not under `/home`: on macOS that is an autofs mount, where every name that is not there
+        // costs a trip to the automounter, and a start resolves hundreds of them (T1-46).
+        home: Some(std::path::PathBuf::from("/nonexistent-home/op")),
         os: crate::sandbox::Os::MacOs,
     };
     let made_ways = [

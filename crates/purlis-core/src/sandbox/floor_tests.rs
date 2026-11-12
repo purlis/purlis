@@ -21,7 +21,9 @@ fn project() -> (tempfile::TempDir, PathBuf) {
 fn machine_with(bin: &Path) -> Machine {
     Machine {
         env: crate::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
-        home: Some(PathBuf::from("/home/op")),
+        // Not under `/home`: on macOS that is an autofs mount, where every name that is not there
+        // costs a trip to the automounter, and a start resolves hundreds of them (T1-46).
+        home: Some(PathBuf::from("/nonexistent-home/op")),
         os: Os::MacOs,
     }
 }
@@ -205,7 +207,9 @@ fn the_floor_never_holds_the_project_or_a_folder_above_the_home() {
             "PATH",
             &format!("{}:{}:/", inside.display(), root.display()),
         )]),
-        home: Some(PathBuf::from("/home/op")),
+        // Not under `/home`: on macOS that is an autofs mount, where every name that is not there
+        // costs a trip to the automounter, and a start resolves hundreds of them (T1-46).
+        home: Some(PathBuf::from("/nonexistent-home/op")),
         os: Os::MacOs,
     };
     let held = floor_held(&root, &machine, &[]);
@@ -534,7 +538,9 @@ fn no_chat_reads_or_writes_the_copies_of_dockers_settings() {
             crate::datahome::HOME_VAR,
             &data.path().display().to_string(),
         )]),
-        home: Some(PathBuf::from("/home/op")),
+        // Not under `/home`: on macOS that is an autofs mount, where every name that is not there
+        // costs a trip to the automounter, and a start resolves hundreds of them (T1-46).
+        home: Some(PathBuf::from("/nonexistent-home/op")),
         os: Os::MacOs,
     };
     let held = Denied::of(&root, &machine)
@@ -559,7 +565,9 @@ fn no_chat_writes_where_a_podman_machine_or_a_rootless_engine_keeps_its_socket()
             ("TMPDIR", "/var/folders/xy/T"),
             ("XDG_RUNTIME_DIR", "/run/user/1000"),
         ]),
-        home: Some(PathBuf::from("/home/op")),
+        // Not under `/home`: on macOS that is an autofs mount, where every name that is not there
+        // costs a trip to the automounter, and a start resolves hundreds of them (T1-46).
+        home: Some(PathBuf::from("/nonexistent-home/op")),
         os: Os::Linux,
     };
     let denied: Vec<PathBuf> = Denied::of(&root, &machine)
@@ -572,8 +580,8 @@ fn no_chat_writes_where_a_podman_machine_or_a_rootless_engine_keeps_its_socket()
         "/var/folders/xy/T/podman",
         "/run/user/1000/docker.sock",
         "/run/user/1000/podman",
-        "/home/op/.colima",
-        "/home/op/.lima",
+        "/nonexistent-home/op/.colima",
+        "/nonexistent-home/op/.lima",
     ] {
         assert!(
             denied.contains(&PathBuf::from(held)),
@@ -660,7 +668,9 @@ fn podmans_run_state_is_held_where_no_runtime_folder_is_named() {
     let held = |env: &[(&str, &str)]| -> Vec<PathBuf> {
         let machine = Machine {
             env: crate::secrets::Env::of(env),
-            home: Some(PathBuf::from("/home/op")),
+            // Not under `/home`: on macOS that is an autofs mount, where every name that is not there
+            // costs a trip to the automounter, and a start resolves hundreds of them (T1-46).
+            home: Some(PathBuf::from("/nonexistent-home/op")),
             os: Os::Linux,
         };
         Denied::of(&root, &machine)
@@ -1271,7 +1281,7 @@ fn the_persons_own_claude_code_settings_are_never_written_at_either_level() {
         let allow_write = strings(&filesystem["allowWrite"]);
         let deny_write = strings(&filesystem["denyWrite"]);
         for file in ["settings.json", "settings.local.json"] {
-            let path = format!("/home/op/.claude/{file}");
+            let path = format!("/nonexistent-home/op/.claude/{file}");
             // Its commands: not writable, by name or because nothing grants the home.
             let named = deny_write.contains(&path);
             let granted = allow_write
@@ -1316,19 +1326,19 @@ fn at_the_floor_on_linux_nothing_a_session_starts_at_login_is_written() {
     };
     use purlis_linux_sandbox::profile::Kind;
     for held in [
-        "/home/op/.config/systemd/user/x.service",
-        "/home/op/.config/systemd/user",
-        "/home/op/.local/share/systemd/user/x.timer",
-        "/home/op/.config/autostart/x.desktop",
-        "/home/op/.config/environment.d/x.conf",
-        "/home/op/.local/share/applications/x.desktop",
-        "/home/op/.pam_environment",
-        "/home/op/.xprofile",
-        "/home/op/.config/Code/User/tasks.json",
+        "/nonexistent-home/op/.config/systemd/user/x.service",
+        "/nonexistent-home/op/.config/systemd/user",
+        "/nonexistent-home/op/.local/share/systemd/user/x.timer",
+        "/nonexistent-home/op/.config/autostart/x.desktop",
+        "/nonexistent-home/op/.config/environment.d/x.conf",
+        "/nonexistent-home/op/.local/share/applications/x.desktop",
+        "/nonexistent-home/op/.pam_environment",
+        "/nonexistent-home/op/.xprofile",
+        "/nonexistent-home/op/.config/Code/User/tasks.json",
     ] {
         assert!(!made(held, Kind::Regular), "{held}");
     }
-    assert!(made("/home/op/notes.txt", Kind::Regular));
+    assert!(made("/nonexistent-home/op/notes.txt", Kind::Regular));
 }
 
 /// purlis's own plugin and git hooks, laid out outside the project: `(install, data, plugin,
@@ -1872,7 +1882,7 @@ fn a_claude_code_chat_at_the_floor_on_linux_runs_in_purlis_s_wrap_with_its_own_s
     let on_linux = floor_of(decided(
         Harness::ClaudeCode,
         &root,
-        &machine_on(Os::Linux, Path::new("/home/op")),
+        &machine_on(Os::Linux, Path::new("/nonexistent-home/op")),
     ));
     let Form::ClaudeWrapped(wrap) = on_linux.form() else {
         panic!("inside purlis's wrap: {:?}", on_linux.form());
@@ -1978,7 +1988,7 @@ fn homed(home: &Path, env: &[(&str, &str)]) -> Machine {
 
 #[test]
 fn the_floor_lists_the_homes_shared_folders_each_before_what_is_in_it() {
-    let home = Path::new("/home/op");
+    let home = Path::new("/nonexistent-home/op");
     assert_eq!(
         usual_home_folders(Level::Floor, &homed(home, &[])),
         [
@@ -2003,11 +2013,11 @@ fn the_floor_lists_the_homes_shared_folders_each_before_what_is_in_it() {
 
 #[test]
 fn an_xdg_folder_is_listed_only_where_it_is_in_the_home() {
-    let home = Path::new("/home/op");
+    let home = Path::new("/nonexistent-home/op");
     let moved = homed(
         home,
         &[
-            ("XDG_DATA_HOME", "/home/op/my/data"),
+            ("XDG_DATA_HOME", "/nonexistent-home/op/my/data"),
             ("XDG_CONFIG_HOME", "/elsewhere/config"),
         ],
     );
@@ -2083,8 +2093,11 @@ fn a_chat_starting_at_the_floor_finds_the_homes_shared_folders_made() {
 
 #[test]
 fn an_xdg_folder_that_climbs_out_of_the_home_is_not_listed() {
-    let home = Path::new("/home/op");
-    let climbing = homed(home, &[("XDG_DATA_HOME", "/home/op/../other/data")]);
+    let home = Path::new("/nonexistent-home/op");
+    let climbing = homed(
+        home,
+        &[("XDG_DATA_HOME", "/nonexistent-home/op/../other/data")],
+    );
     assert_eq!(
         usual_home_folders(Level::Floor, &climbing),
         [
