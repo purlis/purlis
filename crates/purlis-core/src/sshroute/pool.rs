@@ -101,9 +101,33 @@ pub fn docker_through(
             return Err(finding);
         }
     };
-    let through = match &remote.pin.engine {
-        // A Podman is reached with Podman's own client, and the files its check reads there
-        // over the pool's pinned SSH (#6269).
+    let through = pointed(docker, ssh, pool, remote, socket, settings_in)?;
+    if opened || !checked_lately(pool, &remote.pin) {
+        if let Err(finding) = connect::engine_holds(&through, &remote.route, &remote.pin) {
+            // Nothing more goes over a forward to an engine that isn't the pinned one.
+            forget_checked(pool);
+            if matches!(finding, Finding::EngineChanged { .. }) {
+                forward::let_go(pool);
+            }
+            return Err(finding);
+        }
+        note_checked(pool, &remote.pin);
+    }
+    Ok(through)
+}
+
+/// **`docker`, as pool `pool` on another machine runs it, pointed at `socket`** (#6269): Docker's
+/// client for a Docker; for a Podman, this machine's `podman`, reading the files its check reads
+/// there over the pool's pinned SSH. Nothing is opened or contacted.
+fn pointed(
+    docker: &Docker,
+    ssh: &Path,
+    pool: &str,
+    remote: &Remote,
+    socket: PathBuf,
+    settings_in: &Path,
+) -> Result<Docker, Finding> {
+    Ok(match &remote.pin.engine {
         super::EnginePin::Podman { .. } => {
             let podman = super::podman_here().ok_or_else(|| Finding::NeedsPodman {
                 host: remote.route.host().to_owned(),
@@ -121,19 +145,26 @@ pub fn docker_through(
                 })
         }
         super::EnginePin::Docker(_) => docker.clone().through(socket),
+    })
+}
+
+/// **Pool `name`'s `docker` as its link runs it, without opening its forward** (#6269): the
+/// program and the files its check reads as [`docker_of`] gives them, pointed at the forward's
+/// socket, which the check before every connection opens. `docker` itself for a pool on this
+/// machine, or one that is gone.
+pub fn docker_for_link(config: &Path, docker: &Docker, name: &str) -> Result<Docker, String> {
+    let pools = crate::runners::pools(config).map_err(|why| why.to_string())?;
+    let Some(pool) = pools.iter().find(|pool| pool.name() == name) else {
+        return Ok(docker.clone());
     };
-    if opened || !checked_lately(pool, &remote.pin) {
-        if let Err(finding) = connect::engine_holds(&through, &remote.route, &remote.pin) {
-            // Nothing more goes over a forward to an engine that isn't the pinned one.
-            forget_checked(pool);
-            if matches!(finding, Finding::EngineChanged { .. }) {
-                forward::let_go(pool);
-            }
-            return Err(finding);
-        }
-        note_checked(pool, &remote.pin);
-    }
-    Ok(through)
+    let Some(remote) = pool.remote() else {
+        return Ok(docker.clone());
+    };
+    let said = |finding: Finding| crate::poolsetup::connect_said(&finding);
+    let (engine_links, settings_in) = folders_for(docker).map_err(said)?;
+    let ssh = super::ssh_here()?;
+    let socket = super::socket_of(&engine_links, name)?;
+    pointed(docker, &ssh, name, remote, socket, &settings_in).map_err(said)
 }
 
 /// **How long an engine found to be the pinned one is taken as it, over the same forward**: a
