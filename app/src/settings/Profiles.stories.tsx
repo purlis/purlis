@@ -107,7 +107,7 @@ export const ThreeProfiles: Story = {
     await untilFocused(() => update, "Update the pin");
     await userEvent.tab();
     await untilFocused(
-      () => canvas.getByRole("button", { name: "Import the settings of personal again" }),
+      () => canvas.getByRole("button", { name: "Import again: personal" }),
       "Tab goes on to the row's next action",
     );
     expectFocusInSight();
