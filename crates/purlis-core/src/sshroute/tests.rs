@@ -462,6 +462,9 @@ fn a_key_file_ssh_could_misread_is_refused() {
     for bad in [
         "relative/key",
         "/home/me/%d/key",
+        // OpenSSH 8.4 and later expand an environment variable in a key file's path.
+        "/home/${USER}/key",
+        "${HOME}/.ssh/id_ed25519",
         "/home/me/key\nHost *",
         "",
     ] {

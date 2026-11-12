@@ -172,13 +172,15 @@ impl Route {
 
     /// **This route, signing in with the key file `identity`** (#6269): what a Podman connection
     /// names. Refused for a path that is not absolute, or that holds what ssh would read as one of
-    /// its own tokens (`%`) or a line of its settings.
+    /// its own tokens (`%`), an environment variable (`${`, which OpenSSH 8.4 and later expand in
+    /// a key file's path) or a line of its settings.
     pub fn with_identity(self, identity: &Path) -> Result<Route, String> {
         let text = identity.to_str().unwrap_or_default();
         if !identity.is_absolute()
             || text.is_empty()
             || text.len() > 1024
             || text.chars().any(|c| c.is_control() || c == '%')
+            || text.contains("${")
         {
             return Err(format!(
                 "{} isn't a key file's path ssh can sign in with",
