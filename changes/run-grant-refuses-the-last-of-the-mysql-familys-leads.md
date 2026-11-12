@@ -9,8 +9,9 @@
   can still declare any of them as a tool (#6185).
 - **A run's notice offers no Allow for the test suite's runners, RocksDB's hot backup or a
   service's init script** (`mysqlxtest`, `mysqltest_safe_process`, `myrocks_hotbackup`,
-  `rcmysql`, `service`). The runners run a command their script or their arguments name, and the
-  hot backup hands its options to a shell and to ssh. An init script, such as the one `rcmysql`
-  links to, starts the service it is for, so a program found in an `init.d` folder is refused,
-  whatever it is called, and so is `service`, which runs one by its name. A persona can still
-  declare any of them as a tool (#6187).
+  `rcmysql`, `service`, `mysql_keyring_encryption_test`). The runners run a command their script
+  or their arguments name, the keyring test loads the library it is named, and the hot backup
+  hands its options to a shell and to ssh. An init script, such as the one `rcmysql` links to,
+  starts the service it is for, so a program found in an `init.d` folder is refused, whatever it
+  is called, and so is `service`, which runs one by its name. A persona can still declare any of
+  them as a tool (#6187).

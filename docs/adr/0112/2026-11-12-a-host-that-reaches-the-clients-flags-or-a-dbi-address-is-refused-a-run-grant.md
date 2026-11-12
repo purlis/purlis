@@ -87,3 +87,12 @@ the unit (`script/service`, Debian's init-system-helpers), so it is refused too,
 `rc*` link to it. `systemctl` itself, `start-stop-daemon`, an init script reached through a link
 that points on out of `init.d`, and RocksDB's `ldb` and `sst_dump` were raised but are not
 verified here; they are filed as #6320, #6321 and #6322.
+
+The review's second round found **`mysql_keyring_encryption_test`**, which Percona Server's test
+package ships with `mysqlxtest` and `mysqltest_safe_process` (`build-ps/percona-server.spec`):
+it loads `file://<--component_dir>/<--keyring>` as a component, a shared library
+(`components/test/keyring_encryption_test/options.cc` and `components.cc`, percona-server 8.0),
+as `mysql_migrate_keyring` does, which is refused for that already. Its prefix took it to the
+mysql tools' row, which reads neither flag, so it is refused too. The round's other leads, MySQL
+Cluster's `ndb_error_reporter` and `ndb_size.pl`, Homebrew's `brew`, and more service managers,
+are filed as #6324 and #6325, and on #6320.

@@ -2987,12 +2987,22 @@ fn rcmysql_starts_the_server_so_it_is_offered_no_run_grant() {
 }
 
 /// `service`, which MySQL's own SLES packages link `rcmysql` to (`packaging/rpm-sles/mysql.spec.in`,
-/// review of #6187): it runs the init script it is named, `/etc/init.d/<name>`, or has
+/// first review of #6318): it runs the init script it is named, `/etc/init.d/<name>`, or has
 /// `systemctl` act on the unit (Debian's init-system-helpers, `script/service`). Every `rc*` link
 /// to it resolves to `service`, so refusing it refuses them.
 #[test]
 fn service_runs_the_init_script_it_is_named_so_it_is_offered_no_run_grant() {
     refused_as_running_others("service");
+}
+
+/// Percona Server's `mysql_keyring_encryption_test`, shipped with the test runners
+/// (`build-ps/percona-server.spec`, second review of #6318): it loads
+/// `file://<--component_dir>/<--keyring>` as a component, a shared library
+/// (`components/test/keyring_encryption_test/options.cc`, `components.cc`), as
+/// `mysql_migrate_keyring` does. Its prefix took it to the tools' row, which reads neither flag.
+#[test]
+fn the_keyring_encryption_test_loads_the_component_it_is_named_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("mysql_keyring_encryption_test");
 }
 
 /// A link to a service's init script, by whatever name (#6187): the script's own file name is the

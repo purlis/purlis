@@ -2102,6 +2102,9 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "myrocks_hotbackup",
     "rcmysql",
     "service",
+    // Shipped with the test runners in Percona Server's packages: `mysql_keyring_encryption_test`
+    // loads `file://<--component_dir>/<--keyring>` as a component, as `mysql_migrate_keyring` does.
+    "mysql_keyring_encryption_test",
     // The client and its test built with the server inside them: what `--server-arg` hands the
     // server (`--plugin-load`, `--plugin-dir`) loads code from a file it names.
     "mysql_embedded",
