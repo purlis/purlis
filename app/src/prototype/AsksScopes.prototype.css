@@ -1,0 +1,226 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **PROTOTYPE, NOT FOR MERGE: Asks scoped to Chat, Workspace, Project** (`AsksScopes.prototype.tsx`).
+   Only what no existing class draws: the frame the real parts stand in, the controls box, the
+   counts in the ✋'s colour with the room of 99+, their one slide, and the ✋'s three bounces.
+   Theme tokens only. In the `cues` layer, above the families' `components` and `parts`, so a
+   count's colour here wins over its family's without `!important`; the motion layer's reduced
+   motion still wins over all of it. */
+
+@layer cues {
+  /* ------------------------------------------------------------------------------------------
+     The frame: the project rail, the right side's Asks view and the right bar, as the window
+     lays them out, at a fixed size.
+     ------------------------------------------------------------------------------------------ */
+
+  .asks-proto {
+    --asks-proto-slide: var(--motion-duration-leave);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+    color: var(--text-primary);
+  }
+
+  .asks-proto[data-slide-ms="150"] {
+    --asks-proto-slide: var(--motion-duration-quick);
+  }
+
+  .asks-proto[data-slide-ms="280"] {
+    --asks-proto-slide: var(--motion-duration-settle);
+  }
+
+  .asks-proto-window {
+    display: flex;
+    align-items: stretch;
+    block-size: 30rem;
+    inline-size: fit-content;
+    border: var(--panel-border-width) solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background-color: var(--surface-deep);
+  }
+
+  .asks-proto-rail {
+    position: relative;
+    flex: none;
+    inline-size: 52px;
+    background-color: var(--surface-deep);
+  }
+
+  .asks-proto-side {
+    flex: none;
+    inline-size: 26rem;
+    border-inline-start: var(--panel-border-width) solid var(--border-subtle);
+    background-color: var(--surface-base);
+  }
+
+  /* ------------------------------------------------------------------------------------------
+     The controls box: not part of the design, and drawn so it never reads as part of it.
+     ------------------------------------------------------------------------------------------ */
+
+  .asks-proto-controls {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    max-inline-size: 48rem;
+    padding: var(--space-5);
+    border: var(--panel-border-width) dashed var(--border-strong);
+    border-radius: var(--radius-md);
+    background-color: var(--surface-raised);
+    font-size: var(--font-size-sm);
+  }
+
+  .asks-proto-controls-head {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-strong);
+  }
+
+  .asks-proto-controls-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3) var(--space-5);
+  }
+
+  .asks-proto-controls-name {
+    min-inline-size: 9rem;
+    color: var(--text-secondary);
+  }
+
+  .asks-proto-controls-value {
+    min-inline-size: 3ch;
+    font-variant-numeric: tabular-nums;
+    font-weight: var(--font-weight-strong);
+  }
+
+  .asks-proto-reminder {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+  }
+
+  .asks-proto-state {
+    margin: 0;
+    color: var(--text-quiet);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    overflow-wrap: anywhere;
+  }
+
+  /* ------------------------------------------------------------------------------------------
+     Every count in the ✋'s colour, with the room of 99+, so a change never moves anything.
+     The chips' (a `Count`), the ✋'s (an `ActivityCount`) and the rail's (a `RailProject`).
+     ------------------------------------------------------------------------------------------ */
+
+  .asks-proto [data-scope="count"][data-part="root"][data-variant="hot"],
+  .asks-proto [data-scope="activity"][data-part="count"][data-tone="needs-you"],
+  .asks-proto [data-scope="rail"][data-part="badge"] {
+    box-sizing: border-box;
+    min-inline-size: calc(3ch + 2 * var(--space-2));
+    overflow: hidden;
+    color: var(--needs-you-count-text);
+    background-color: var(--needs-you-count);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* The number inside a chip's count, which slides in as it changes. */
+  .asks-proto-roll {
+    display: inline-block;
+  }
+
+  .asks-proto-roll[data-dir="up"] {
+    animation: asks-proto-in-from-below var(--asks-proto-slide) var(--motion-easing-enter);
+  }
+
+  .asks-proto-roll[data-dir="down"] {
+    animation: asks-proto-in-from-above var(--asks-proto-slide) var(--motion-easing-enter);
+  }
+
+  /* The ✋'s count: its number is drawn by `::before`, and a changed count is a new element, so
+     its number slides in once. */
+  .asks-proto-hand [data-scope="activity"][data-part="count"]::before {
+    display: inline-block;
+  }
+
+  .asks-proto-hand[data-dir="up"] [data-scope="activity"][data-part="count"]::before {
+    animation: asks-proto-in-from-below var(--asks-proto-slide) var(--motion-easing-enter);
+  }
+
+  .asks-proto-hand[data-dir="down"] [data-scope="activity"][data-part="count"]::before {
+    animation: asks-proto-in-from-above var(--asks-proto-slide) var(--motion-easing-enter);
+  }
+
+  /* A project tab's count: the tab is not drawn again, so the slide alternates between two
+     names, `a` and `b`, and a new name is what starts it again. */
+  .asks-proto [data-scope="rail"][data-part="badge"]::before {
+    display: inline-block;
+  }
+
+  .asks-proto [data-slide="a"][data-slide-dir="up"] > [data-part="badge"]::before {
+    animation: asks-proto-in-from-below-a var(--asks-proto-slide) var(--motion-easing-enter);
+  }
+
+  .asks-proto [data-slide="b"][data-slide-dir="up"] > [data-part="badge"]::before {
+    animation: asks-proto-in-from-below-b var(--asks-proto-slide) var(--motion-easing-enter);
+  }
+
+  .asks-proto [data-slide="a"][data-slide-dir="down"] > [data-part="badge"]::before {
+    animation: asks-proto-in-from-above-a var(--asks-proto-slide) var(--motion-easing-enter);
+  }
+
+  .asks-proto [data-slide="b"][data-slide-dir="down"] > [data-part="badge"]::before {
+    animation: asks-proto-in-from-above-b var(--asks-proto-slide) var(--motion-easing-enter);
+  }
+
+  /* ------------------------------------------------------------------------------------------
+     The ✋ bounces three times: its mark, never its count.
+     ------------------------------------------------------------------------------------------ */
+
+  .asks-proto-hand.asks-proto-bounce [aria-controls="asks-proto-panel-asks"] [data-part="icon"] {
+    animation: asks-proto-bounce var(--motion-duration-settle) var(--motion-easing-standard) 3;
+  }
+
+  @keyframes asks-proto-bounce {
+    40% {
+      transform: translateY(-4px);
+    }
+  }
+
+  @keyframes asks-proto-in-from-below {
+    from {
+      transform: translateY(100%);
+    }
+  }
+
+  @keyframes asks-proto-in-from-above {
+    from {
+      transform: translateY(-100%);
+    }
+  }
+
+  @keyframes asks-proto-in-from-below-a {
+    from {
+      transform: translateY(100%);
+    }
+  }
+
+  @keyframes asks-proto-in-from-below-b {
+    from {
+      transform: translateY(100%);
+    }
+  }
+
+  @keyframes asks-proto-in-from-above-a {
+    from {
+      transform: translateY(-100%);
+    }
+  }
+
+  @keyframes asks-proto-in-from-above-b {
+    from {
+      transform: translateY(-100%);
+    }
+  }
+}
