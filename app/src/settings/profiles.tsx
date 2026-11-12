@@ -12,7 +12,6 @@ import { standingOnPool } from "./PoolProfiles";
 import { Button } from "../ui/button/Button";
 import { AlertDialog } from "../ui/dialog/Dialog";
 import { Form } from "../ui/field/Field";
-import { Badge } from "../ui/badge/Badge";
 import {
   ControlBody,
   ControlCell,
@@ -300,8 +299,8 @@ const listed = (plane: string | undefined): LiveSetting => ({
               >
                 <ControlHead>
                   <ControlColumn>Profile</ControlColumn>
-                  <ControlColumn size="fill">Sign-in</ControlColumn>
-                  <ControlColumn size="fit">Pin</ControlColumn>
+                  <ControlColumn minWidth={160}>Sign-in</ControlColumn>
+                  <ControlColumn>Pin</ControlColumn>
                   <ControlColumn actions hideName>
                     Actions
                   </ControlColumn>
@@ -364,7 +363,7 @@ const listed = (plane: string | undefined): LiveSetting => ({
                       </ControlCell>
                       <ControlCell heading="Pin">
                         <span className="ui-record-lines">
-                          <Badge variant="accent">{pinNote(profile)}</Badge>
+                          <span className="ui-setting-help">{pinNote(profile)}</span>
                           {offeredVersion(profile) !== undefined && (
                             <EntryButton
                               label="Update the pin"
