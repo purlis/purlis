@@ -190,11 +190,6 @@
 [data-scope="popover"][data-part="header"] {
   padding-block: var(--space-1) 0;
   padding-inline: var(--space-3);
-  color: var(--text-secondary);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-strong);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
 }
 
 /* A group named by data (a persona's name) is written as the name is, in the secondary role:

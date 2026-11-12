@@ -726,7 +726,12 @@ export function MenuSection<T extends object = object>({
   return (
     <AriaMenuSection {...(rest as AriaMenuSectionProps<T>)} data-scope="popover" data-part="group">
       {title !== undefined && (
-        <AriaHeader data-scope="popover" data-part="header" data-named={named ? "" : undefined}>
+        <AriaHeader
+          className="ui-text-label"
+          data-scope="popover"
+          data-part="header"
+          data-named={named ? "" : undefined}
+        >
           {title}
         </AriaHeader>
       )}

@@ -298,7 +298,12 @@ function OptionList({
           data-scope="popover"
           data-part="group"
         >
-          <AriaHeader data-scope="popover" data-part="header" data-named="">
+          <AriaHeader
+            className="ui-text-label"
+            data-scope="popover"
+            data-part="header"
+            data-named=""
+          >
             {group.name}
           </AriaHeader>
           {group.options.map((one) => (
