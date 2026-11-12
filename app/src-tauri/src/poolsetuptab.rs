@@ -441,7 +441,6 @@ pub async fn pool_setup_cluster_pool(name: String, image: String) -> Result<(), 
     }
 }
 
-
 /// **The machines the person's SSH settings name**, for Connect to offer (#6266). It contacts
 /// nothing.
 #[tauri::command]
