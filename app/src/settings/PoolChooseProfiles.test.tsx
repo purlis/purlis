@@ -179,7 +179,7 @@ describe("choosing the profiles a new pool signs in", () => {
     await userEvent.click(screen.getByRole("button", { name: "Not now" }));
     const list = await screen.findByRole("grid", { name: "Profiles on pool builds" });
     expect(
-      within(list).getByRole("button", { name: "Sign work in on pool builds" }),
+      within(list).getByRole("button", { name: "Sign in: work on pool builds" }),
     ).toBeInTheDocument();
     expect(changes).toEqual([]);
     expect(started).toEqual([]);

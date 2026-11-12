@@ -1370,7 +1370,7 @@ describe("A cluster pool (#3292)", () => {
     const profiles = await within(group).findByRole("grid", { name: "Profiles on pool team" });
     expect(profilesAsked).toContain("team");
     expect(
-      within(profiles).getByRole("button", { name: "Sign work in on pool team" }),
+      within(profiles).getByRole("button", { name: "Sign in: work on pool team" }),
     ).toBeInTheDocument();
     expect(within(group).queryByText(/lasts only for this claim/)).toBeNull();
   });

@@ -127,7 +127,9 @@ const calls = (cmd: string) => asked.filter((one) => one.cmd === cmd).map((one) 
 
 async function strip(plane?: string) {
   render(<PoolProfiles pool="builds" plane={plane} />);
-  await userEvent.click(await screen.findByRole("button", { name: "Sign work in on pool builds" }));
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Sign in: work on pool builds" }),
+  );
   return screen.findByRole("group", { name: "Signing work in on builds" });
 }
 
@@ -193,7 +195,7 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
 
     expect(calls("pool_sign_in_cancel")).toEqual([{ flow: 7 }]);
     expect(screen.queryByRole("group", { name: "Signing work in on builds" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Sign work in on pool builds" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Sign in: work on pool builds" })).toBeVisible();
   });
 
   it("keeps the sign-in when the runner's profiles are asked again meanwhile", async () => {
@@ -212,7 +214,7 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     await userEvent.click(
       await screen.findByRole("button", { name: "Remove fast from pool builds" }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "Sign work in on pool builds" }));
+    await userEvent.click(screen.getByRole("button", { name: "Sign in: work on pool builds" }));
     await screen.findByRole("group", { name: "Signing work in on builds" });
 
     expect(screen.queryByRole("button", { name: "Add a profile…" })).toBeNull();
@@ -360,7 +362,7 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
   it("a device code that failed may go back to the browser, on a screen afresh (#4106)", async () => {
     render(<PoolProfiles pool="builds" plane={undefined} />);
     await userEvent.click(
-      await screen.findByRole("button", { name: "Sign fast in on pool builds" }),
+      await screen.findByRole("button", { name: "Sign in: fast on pool builds" }),
     );
     const opened = await screen.findByRole("group", { name: "Signing fast in on builds" });
     says({ at: "port-taken", port: 1455 });
@@ -393,7 +395,7 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
   it("starts a Copilot sign-in purlis could not follow again in the terminal, with its plan (#4160)", async () => {
     render(<PoolProfiles pool="builds" plane={undefined} />);
     await userEvent.click(
-      await screen.findByRole("button", { name: "Sign open in to GitHub Copilot on pool builds" }),
+      await screen.findByRole("button", { name: "Sign in to GitHub Copilot: open on pool builds" }),
     );
     const opened = await screen.findByRole("group", { name: "Signing open in on builds" });
 
@@ -457,7 +459,7 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
       render(<PoolProfiles pool="builds" plane="plane-1" />);
       await userEvent.click(
         await screen.findByRole("button", {
-          name: "Sign open in to GitHub Copilot on pool builds",
+          name: "Sign in to GitHub Copilot: open on pool builds",
         }),
       );
       const opened = await screen.findByRole("group", { name: "Signing open in on builds" });
@@ -499,7 +501,7 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
   it("names the command that does the same in a terminal, with its plan (#4046)", async () => {
     render(<PoolProfiles pool="builds" plane="plane-1" />);
     await userEvent.click(
-      await screen.findByRole("button", { name: "Sign open in to GitHub Copilot on pool builds" }),
+      await screen.findByRole("button", { name: "Sign in to GitHub Copilot: open on pool builds" }),
     );
     const opened = await screen.findByRole("group", { name: "Signing open in on builds" });
 
@@ -562,7 +564,7 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     try {
       render(<PoolProfiles pool="builds" plane="/home/op/project" />);
       await userEvent.click(
-        await screen.findByRole("button", { name: "Sign out open on pool builds in a terminal" }),
+        await screen.findByRole("button", { name: "Sign out in a terminal: open on pool builds" }),
       );
       expect(typed).toEqual([{ plane: "/home/op/project", profile: "open", pool: "builds" }]);
       expect(screen.getByText(/A draining runner keeps its sign-in/)).toBeInTheDocument();
@@ -576,7 +578,7 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
   it("signs Codex in by approving in the browser, with nothing to paste (#4044)", async () => {
     render(<PoolProfiles pool="builds" plane="/home/op/project" />);
     await userEvent.click(
-      await screen.findByRole("button", { name: "Sign fast in on pool builds" }),
+      await screen.findByRole("button", { name: "Sign in: fast on pool builds" }),
     );
     const opened = await screen.findByRole("group", { name: "Signing fast in on builds" });
     expect(calls("pool_sign_in_start")).toEqual([
@@ -601,7 +603,7 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
   it("signs opencode in to ChatGPT in place too (#4044)", async () => {
     render(<PoolProfiles pool="builds" plane="/home/op/project" />);
     await userEvent.click(
-      await screen.findByRole("button", { name: "Sign open in to ChatGPT on pool builds" }),
+      await screen.findByRole("button", { name: "Sign in to ChatGPT: open on pool builds" }),
     );
     await screen.findByRole("group", { name: "Signing open in on builds" });
 
@@ -617,7 +619,7 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     try {
       render(<PoolProfiles pool="builds" plane={undefined} />);
       await userEvent.click(
-        await screen.findByRole("button", { name: "Sign fast in on pool builds" }),
+        await screen.findByRole("button", { name: "Sign in: fast on pool builds" }),
       );
       const opened = await screen.findByRole("group", { name: "Signing fast in on builds" });
 
@@ -662,7 +664,7 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
   it("names opencode's ChatGPT device code by its plan, and tries again in the terminal (#4106)", async () => {
     render(<PoolProfiles pool="builds" plane={undefined} />);
     await userEvent.click(
-      await screen.findByRole("button", { name: "Sign open in to ChatGPT on pool builds" }),
+      await screen.findByRole("button", { name: "Sign in to ChatGPT: open on pool builds" }),
     );
     const opened = await screen.findByRole("group", { name: "Signing open in on builds" });
     says({ at: "port-taken", port: 1455 });
@@ -696,13 +698,59 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     try {
       render(<PoolProfiles pool="builds" plane="/home/op/project" />);
       await userEvent.click(
-        await screen.findByRole("button", { name: "Sign gem in on pool builds" }),
+        await screen.findByRole("button", { name: "Sign in: gem on pool builds" }),
       );
 
       expect(heard).toHaveLength(1);
       expect(calls("pool_sign_in_start")).toEqual([]);
     } finally {
       window.removeEventListener(PROFILE_SIGN_IN, hear);
+    }
+  });
+});
+
+describe("A pool profile's buttons (#6319)", () => {
+  /**
+   * What WCAG 2.5.3, Label in Name, asks of each button drawn: that its name holds the words it
+   * shows, as axe's `label-content-name-mismatch` reads it in a browser (the Pools story's run).
+   * Here, with no layout, axe sees no words on screen and passes anything, so this asks it of
+   * each button itself: each one whose name does not, by its name.
+   */
+  function namedWithoutItsWords(container: HTMLElement) {
+    const words = (text: string | null) => (text ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+    return within(container)
+      .getAllByRole("button")
+      .filter((button) => {
+        const shown = words(button.textContent);
+        const name = words(button.getAttribute("aria-label")) || shown;
+        return shown !== "" && !name.includes(shown);
+      })
+      .map((button) => `${button.getAttribute("aria-label")} shows ${button.textContent}`);
+  }
+
+  it("names each Sign in by the words it shows, then whose and where", async () => {
+    const { container } = render(<PoolProfiles pool="builds" plane="/home/op/project" />);
+    await screen.findByRole("button", { name: "Sign in: work on pool builds" });
+    expect(
+      screen.getByRole("button", { name: "Sign in to GitHub Copilot: open on pool builds" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Sign in to ChatGPT: open on pool builds" }),
+    ).toBeVisible();
+    expect(namedWithoutItsWords(container)).toEqual([]);
+  });
+
+  it("names each Sign out by the words it shows, then whose and where", async () => {
+    signedIn = true;
+    await act(() => askProfiles("builds"));
+    try {
+      const { container } = render(<PoolProfiles pool="builds" plane="/home/op/project" />);
+      await screen.findByRole("button", { name: "Sign out in a terminal: open on pool builds" });
+      expect(screen.getByRole("button", { name: "Sign out work on pool builds" })).toBeVisible();
+      expect(namedWithoutItsWords(container)).toEqual([]);
+    } finally {
+      signedIn = false;
+      await act(() => askProfiles("builds"));
     }
   });
 });

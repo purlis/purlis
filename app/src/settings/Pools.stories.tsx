@@ -13,7 +13,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { AddDockerPoolHost } from "../AddDockerPool";
-import type { PoolLink, PoolRow, PoolsShown, PoolVersion } from "../bindings";
+import type { PoolLink, PoolProfileRow, PoolRow, PoolsShown, PoolVersion } from "../bindings";
 import { askProfiles, startAddingAPool, stopAddingAPool } from "../pools";
 import { expectFocusInSight, pictureNow, untilFocused } from "../stories.testkit";
 import { SettingGroup, SettingRow } from "./components";
@@ -47,12 +47,26 @@ const LEVEL: PoolVersion = {
   not_checked: [],
 };
 
-/** The core, faked: this machine keeps `pools`, whose runner answers `link` and says `version`,
- *  and its release names {@link IMAGE}. */
+/** The profiles a pool's runner keeps where a story says nothing: one, signed in. */
+const SIGNED_IN: PoolProfileRow[] = [
+  {
+    name: "work",
+    kind: "claude",
+    harness: "Claude Code",
+    standing: "signed-in",
+    not_kept: null,
+    limit: null,
+    plans: [],
+  },
+];
+
+/** The core, faked: this machine keeps `pools`, whose runner answers `link`, says `version` and
+ *  keeps `profiles`, and its release names {@link IMAGE}. */
 function theCore(
   pools: PoolRow[],
   link: PoolLink = { state: "linked" },
   version: PoolVersion = LEVEL,
+  profiles: PoolProfileRow[] = SIGNED_IN,
 ) {
   mockIPC(
     (cmd) => {
@@ -68,21 +82,7 @@ function theCore(
       if (cmd === "docker_pool_link") return link;
       if (cmd === "docker_pool_version") return version;
       if (cmd === "runner_image_of_this_version") return { state: "ours", image: IMAGE };
-      if (cmd === "pool_profiles")
-        return {
-          kept: [
-            {
-              name: "work",
-              kind: "claude",
-              harness: "Claude Code",
-              standing: "signed-in",
-              not_kept: null,
-              limit: null,
-              plans: [],
-            },
-          ],
-          addable: [],
-        };
+      if (cmd === "pool_profiles") return { kept: profiles, addable: [] };
       return [];
     },
     { shouldMockEvents: true },
@@ -127,6 +127,7 @@ const meta = {
       (parameters.pools as PoolRow[] | undefined) ?? [],
       parameters.link as PoolLink | undefined,
       parameters.version as PoolVersion | undefined,
+      parameters.profiles as PoolProfileRow[] | undefined,
     );
     // The window's pools are held once for every story drawn in this page: a pool of the same
     // name another story's faked core answered for is asked again here, so its profiles' line is
@@ -180,6 +181,51 @@ export const WithAPool: Story = {
     await untilFocused(
       () => within(work).getByRole("button", { name: "Sign out work on pool builds" }),
       "→ reaches the profile's Sign out",
+    );
+    expectFocusInSight();
+  },
+};
+
+/**
+ * **Profiles signed out** (#6319): each offers its Sign in, named by the words it shows and then
+ * whose and where (`Sign in: work on pool builds`), so a person who says what they see is heard
+ * (WCAG 2.5.3, Label in Name, which axe holds here). An opencode profile offers one per plan it
+ * signs in here. → goes from a profile's row to its Sign in.
+ */
+export const ProfilesSignedOut: Story = {
+  parameters: {
+    pools: [BUILDS],
+    profiles: [
+      { ...SIGNED_IN[0], standing: "signed-out" },
+      {
+        name: "open",
+        kind: "opencode",
+        harness: "opencode",
+        standing: "signed-out",
+        not_kept: null,
+        limit: null,
+        plans: [
+          { id: "openai", title: "ChatGPT" },
+          { id: "github-copilot", title: "GitHub Copilot" },
+        ],
+      },
+    ] satisfies PoolProfileRow[],
+  },
+  play: async ({ canvas, userEvent }) => {
+    const group = await canvas.findByRole("region", { name: "Pools" });
+    const profiles = await within(group).findByRole("grid", { name: "Profiles on pool builds" });
+    const work = within(profiles).getByRole("row", { name: "work" });
+    await expect(
+      within(profiles).getByRole("button", {
+        name: "Sign in to GitHub Copilot: open on pool builds",
+      }),
+    ).toBeVisible();
+    work.focus();
+    await untilFocused(() => work, "the profile's row");
+    await userEvent.keyboard("{ArrowRight}");
+    await untilFocused(
+      () => within(work).getByRole("button", { name: "Sign in: work on pool builds" }),
+      "→ reaches the profile's Sign in",
     );
     expectFocusInSight();
   },
