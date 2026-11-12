@@ -142,7 +142,7 @@ describe("a pane's link candidates", () => {
       { kind: "url", text: "https://a.example/x", start: 5, end: 24 },
       { kind: "url", text: "http://b.example/y", start: 36, end: 54 },
       // Another scheme is a candidate too: the core says why it will not open it.
-      { kind: "url", text: "ftp://c.example", start: 60, end: 75 },
+      { kind: "url", text: "ftp://c.example", start: 61, end: 76 },
     ]);
     // Markdown's emphasis around one is not its.
     expect(candidatesIn("**https://x.com**").map((one) => one.text)).toEqual(["https://x.com"]);

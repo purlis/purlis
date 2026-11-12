@@ -177,7 +177,8 @@ export function relayed(to: () => LinkHands | undefined): LinkHands {
     from: () => to()?.from() ?? { plane: null, session: null },
     hovered: (link) => to()?.hovered(link),
     answered: (answer, candidate) => to()?.answered(answer, candidate),
-    colour: () => to()?.colour() ?? "#000000",
+    // Drawn only over a link a pane resolved, so a pane shows it and says its colour.
+    colour: () => to()?.colour() ?? "",
     mac: () => to()?.mac() ?? false,
   };
 }
