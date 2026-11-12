@@ -1450,6 +1450,13 @@ fn refused(why: &CallError) -> Refusal {
 }
 
 impl session::Host for Relay {
+    /// Said in this host's log where it came late (#6437).
+    fn answered(&self, word: &'static str, waited: std::time::Duration, ran: std::time::Duration) {
+        if let Some(said) = crate::lateness::answered_late(word, waited, ran) {
+            crate::say(&said);
+        }
+    }
+
     async fn call(&self, command: Command, peer: &Peer) -> Result<Answer, Refusal> {
         // A kept login stays on the device it was made on (#2021, #2050): a browser on another
         // host is never opened from one, and keeps none.
