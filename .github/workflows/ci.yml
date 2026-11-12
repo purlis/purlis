@@ -1906,6 +1906,15 @@ jobs:
         # The outcome bars are judged on a release build (the operator's ruling of 2026-11-03,
         # #4351): `dev-release`, release with thin LTO over sixteen codegen units, what the dev
         # channel ships. Every other leg builds debug.
+        #
+        # Without the line tables the dev channel's own build writes for the crash handler
+        # (`debug`, `split-debuginfo` in Cargo.toml's `release`, #5692): they change no code the
+        # bars time, and since #6165 they cost the build 8 minutes on Linux (16-19 to 24-29) and
+        # more on macOS, where dsymutil packs them. No step of these jobs reads a dSYM. Set on this
+        # step alone, so rust-cache's key, read in its own step, is not moved; `dev` ignores them.
+        env:
+          CARGO_PROFILE_DEV_RELEASE_DEBUG: "false"
+          CARGO_PROFILE_DEV_RELEASE_SPLIT_DEBUGINFO: "off"
         run: >-
           npx tauri build ${{ !matrix.outcome && '--debug' || '' }} --no-bundle --features e2e
           --config src-tauri/tauri.e2e.conf.json -- -p purlis-app -p fake-harness -p purlis-cli
