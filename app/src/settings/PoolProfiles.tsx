@@ -294,7 +294,7 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
             <Button
               variant="danger"
               size="sm"
-              aria-label={`Yes, sign out ${row.name} on pool ${pool}`}
+              aria-label={`Yes, sign out: ${row.name} on pool ${pool}`}
               onPress={() => void signOut(row.name)}
             >
               Sign out
@@ -313,7 +313,7 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
           <Button
             variant="ghost"
             size="sm"
-            aria-label={`Sign out ${row.name} on pool ${pool}`}
+            aria-label={`Sign out: ${row.name} on pool ${pool}`}
             isDisabled={out?.running === true}
             onPress={() => {
               setRemoving(undefined);

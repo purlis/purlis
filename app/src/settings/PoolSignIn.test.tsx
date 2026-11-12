@@ -528,7 +528,7 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     try {
       render(<PoolProfiles pool="builds" plane={undefined} />);
       await userEvent.click(
-        await screen.findByRole("button", { name: "Sign out work on pool builds" }),
+        await screen.findByRole("button", { name: "Sign out: work on pool builds" }),
       );
 
       expect(screen.getByText(/^Sign work out on pool builds\?/)).toBeVisible();
@@ -537,17 +537,17 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
       );
       expect(calls("pool_sign_out")).toEqual([]);
 
-      await userEvent.click(screen.getByRole("button", { name: "Sign out work on pool builds" }));
+      await userEvent.click(screen.getByRole("button", { name: "Sign out: work on pool builds" }));
       const before = profilesAsked;
       await userEvent.click(
-        screen.getByRole("button", { name: "Yes, sign out work on pool builds" }),
+        screen.getByRole("button", { name: "Yes, sign out: work on pool builds" }),
       );
 
       expect(calls("pool_sign_out")).toEqual([{ pool: "builds", name: "work" }]);
       expect(await screen.findByText("work is signed out on pool builds.")).toBeVisible();
       await waitFor(() => expect(profilesAsked).toBe(before + 1));
       // Codex's own sign-out runs too; opencode's asks in a terminal (#4124).
-      expect(screen.getByRole("button", { name: "Sign out fast on pool builds" })).toBeVisible();
+      expect(screen.getByRole("button", { name: "Sign out: fast on pool builds" })).toBeVisible();
       expect(screen.getByText("Gemini signs out only in its own terminal.")).toBeVisible();
     } finally {
       signedIn = false;
@@ -711,19 +711,28 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
 
 describe("A pool profile's buttons (#6319)", () => {
   /**
-   * What WCAG 2.5.3, Label in Name, asks of each button drawn: that its name holds the words it
-   * shows, as axe's `label-content-name-mismatch` reads it in a browser (the Pools story's run).
-   * Here, with no layout, axe sees no words on screen and passes anything, so this asks it of
-   * each button itself: each one whose name does not, by its name.
+   * What WCAG 2.5.3, Label in Name, asks of each button drawn: that the words it shows come, in
+   * order and unbroken, among the words of its name. Close to axe's `label-content-name-mismatch`
+   * (which also drops what is in brackets and reads only the text on screen), which holds it in a
+   * browser in the Pools story's run. In jsdom axe sees no words on screen and only reports the
+   * rule incomplete, so this asks it of each button itself: each one whose name does not, by its
+   * name.
    */
   function namedWithoutItsWords(container: HTMLElement) {
-    const words = (text: string | null) => (text ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+    const words = (text: string | null) =>
+      (text ?? "")
+        .normalize("NFKD")
+        .toLowerCase()
+        .split(/[^\p{L}\p{N}]+/u)
+        .filter((one) => one !== "");
+    const holds = (name: string[], shown: string[]) =>
+      name.some((_, at) => shown.every((word, i) => name[at + i] === word));
     return within(container)
       .getAllByRole("button")
       .filter((button) => {
         const shown = words(button.textContent);
-        const name = words(button.getAttribute("aria-label")) || shown;
-        return shown !== "" && !name.includes(shown);
+        const label = button.getAttribute("aria-label");
+        return shown.length > 0 && label !== null && !holds(words(label), shown);
       })
       .map((button) => `${button.getAttribute("aria-label")} shows ${button.textContent}`);
   }
@@ -740,13 +749,17 @@ describe("A pool profile's buttons (#6319)", () => {
     expect(namedWithoutItsWords(container)).toEqual([]);
   });
 
-  it("names each Sign out by the words it shows, then whose and where", async () => {
+  it("names each Sign out, and its question, by the words it shows, then whose and where", async () => {
     signedIn = true;
     await act(() => askProfiles("builds"));
     try {
       const { container } = render(<PoolProfiles pool="builds" plane="/home/op/project" />);
       await screen.findByRole("button", { name: "Sign out in a terminal: open on pool builds" });
-      expect(screen.getByRole("button", { name: "Sign out work on pool builds" })).toBeVisible();
+      const out = screen.getByRole("button", { name: "Sign out: work on pool builds" });
+      expect(namedWithoutItsWords(container)).toEqual([]);
+      // And the question Sign out asks first: Yes, sign out and Keep.
+      await userEvent.click(out);
+      await screen.findByRole("button", { name: "Yes, sign out: work on pool builds" });
       expect(namedWithoutItsWords(container)).toEqual([]);
     } finally {
       signedIn = false;

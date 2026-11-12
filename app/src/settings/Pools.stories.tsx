@@ -179,7 +179,7 @@ export const WithAPool: Story = {
     expectFocusInSight();
     await userEvent.keyboard("{ArrowRight}");
     await untilFocused(
-      () => within(work).getByRole("button", { name: "Sign out work on pool builds" }),
+      () => within(work).getByRole("button", { name: "Sign out: work on pool builds" }),
       "→ reaches the profile's Sign out",
     );
     expectFocusInSight();
@@ -219,6 +219,9 @@ export const ProfilesSignedOut: Story = {
       within(profiles).getByRole("button", {
         name: "Sign in to GitHub Copilot: open on pool builds",
       }),
+    ).toBeVisible();
+    await expect(
+      within(profiles).getByRole("button", { name: "Sign in to ChatGPT: open on pool builds" }),
     ).toBeVisible();
     work.focus();
     await untilFocused(() => work, "the profile's row");
