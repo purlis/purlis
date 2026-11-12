@@ -683,7 +683,7 @@ pub fn trust_chosen(
     docker: &crate::dockerpool::Docker,
     chosen: &super::Chosen,
     fingerprint: &str,
-) -> Result<Result<(), Finding>, super::Refused> {
+) -> Result<Result<(), Finding>, crate::runners::Refused> {
     if crate::tlsroute::is_tcp(&chosen.route) {
         let Some(files) = &chosen.tls else {
             return Ok(Err(Finding::Here(crate::sshroute::PLAIN_TCP.to_owned())));
