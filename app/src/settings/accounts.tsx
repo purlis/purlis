@@ -179,7 +179,12 @@ const forgeAccounts: LiveSetting = {
             ) : (
               // **A table of the accounts** (#6301, as Your hosts is, #2919 R65, R67): a row
               // an account, its login heading it, and Sign out in one place on every row.
-              <Table aria-label="Forge accounts" aria-describedby={ids.describedBy} stacks>
+              <Table
+                className="ui-record-table"
+                aria-label="Forge accounts"
+                aria-describedby={ids.describedBy}
+                stacks
+              >
                 <TableHeader>
                   <TableColumn id="login" isRowHeader>
                     Account

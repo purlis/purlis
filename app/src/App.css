@@ -7540,6 +7540,11 @@ nav.piece-files-head {
 /* **A record list, as the table family's** (#6301, after Your hosts): where a record is (a
    folder, a host) in the quiet words beside its name, broken anywhere so a long path never
    widens its column past the page. */
+/* A record table keeps room under it, before what its row offers next (Sign in, Add a pool). */
+.ui-record-table {
+  margin-block-end: var(--space-4);
+}
+
 .ui-record-where {
   overflow-wrap: anywhere;
   font-size: var(--font-size-xs);
@@ -7880,6 +7885,7 @@ nav.piece-files-head {
    set about it, one thing under another across the table. */
 .pools-about {
   display: grid;
+  justify-items: start;
   gap: var(--space-3);
 }
 
@@ -7895,6 +7901,11 @@ nav.piece-files-head {
   display: grid;
   justify-items: start;
   gap: var(--space-2);
+}
+
+/* A profile's actions one under another, so its four columns fit the page. */
+.profiles-table [data-part="cell"][data-actions] {
+  white-space: normal;
 }
 
 .profiles-name {
