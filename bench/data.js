@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794515894265,
+  "lastUpdate": 1794518584224,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -47796,6 +47796,48 @@ window.BENCHMARK_DATA = {
             "value": 102.046774,
             "unit": "ms",
             "extra": "median of 5 runs: 101.502, 101.980, 102.047, 102.102, 102.485 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "355234864+purlis-purlis-agent[bot]@users.noreply.github.com",
+            "name": "purlis-purlis-agent[bot]",
+            "username": "purlis-purlis-agent[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "45b04f258c736d326294c746aae98d85503e9ea6",
+          "message": "A window focus draws no project view, and asks stale clones for the one in front (felt speed 3, H7) (#6440)\n\nuseStaleClones, useHarnessCards and useOlderSandbox are called by\nPlaneView itself, above its own ProjectShownProvider, so useProjectShown\nthere always said true. Each counted window focus in the view's state:\nevery focus drew every project the window keeps drawn, and each asked\nstale_clones, git for every clone, for every project. useAlerts counted\nfocus and its beat in App's state the same way.\n\nA focus now asks where it is heard (useOnWindowFocus, or a listener),\nfor the project in front alone, and only an answer that differs from the\none held sets anything (harness cards and older-sandbox chats now\ncompare too). Pinned in planeViewDraws.cost.test.tsx: a focus asks\nstale_clones once, for the front project, and draws no project view; a\nrepo going stale draws only its own project, once, and the same finding\nagain draws none.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M78M9QC1MWPKT6WXY53D361V\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-12T20:48:13Z",
+          "tree_id": "654ad62ca50c9cf2f2c6fbfc76354cb7cb7ff8b0",
+          "url": "https://github.com/purlis/purlis/commit/45b04f258c736d326294c746aae98d85503e9ea6"
+        },
+        "date": 1794518578484,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6822085,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.661, 0.677, 0.682, 0.683, 0.686 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7189195,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.506, 16.654, 16.719, 16.737, 16.818 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.12895900000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.000, 102.099, 102.129, 102.491, 102.633 ms"
           }
         ]
       }
