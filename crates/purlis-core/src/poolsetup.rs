@@ -334,7 +334,10 @@ pub struct Contexts {
     /// The cluster operator key a kept cluster pool pinned here, for teammates to check theirs
     /// against (#4495).
     pub pinned: Option<String>,
-    /// The key its Pool names now, where the pin never vouched for it (#4495).
+    /// The key its Pool names now, where the pin never vouched for it (#4495). Never serialised:
+    /// a key is shown only once the person confirmed it, so `purlis pool setup --json` leaves it
+    /// out, and the window is told only that the key changed.
+    #[serde(skip)]
     pub named_now: Option<String>,
     /// The chosen cluster's Pools, by name, where its operator runs (#4494).
     pub pools: Vec<String>,

@@ -608,6 +608,14 @@ fn a_kept_pool_whose_pool_names_a_key_never_vouched_for_asks_for_it_to_be_checke
     assert_eq!(setup.contexts.pinned.as_deref(), Some(PINNED));
     // Nothing after it reads as done while links to its runner are refused.
     assert_eq!(setup.at, Some(StepId::Pool));
+    // The key the Pool names now is never shown before it is confirmed: not in what
+    // `purlis pool setup --json` prints either, which is this setup serialised.
+    let printed = serde_json::to_string(&setup).unwrap();
+    assert!(
+        !printed.contains(named.trim_start_matches("ed25519:")),
+        "{printed}"
+    );
+    assert!(!printed.contains("named_now"), "{printed}");
 }
 
 #[test]
