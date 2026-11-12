@@ -27,10 +27,14 @@
 //!
 //! **With no account for a host**, the window's calls fall back to `gh`/`glab`, and [`ready`]'s
 //! refusal names the purlis sign-in as the fix, so a machine without either CLI is told where to
-//! sign in rather than to install one.
+//! sign in rather than to install one. **A background call there is metered** (#6233, the
+//! operator's ruling of 2026-11-12): it is sent as the account the CLI's login is (asked once
+//! an hour, [`Window::cli_login`]), so that account's hourly budget admits and counts it as it
+//! would a sign-in's. The CLI route has no ETag store: `gh api` keeps none purlis can read.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use secrecy::SecretString;
 
@@ -41,7 +45,7 @@ use super::http::TokenSource;
 use super::refresh::Refresher;
 use super::route::{HostScope, Resolver, SignIn};
 use super::transport::Transport;
-use super::{Failure, Forge, ForgeError};
+use super::{Failure, Forge, ForgeError, Kind};
 
 /// Where the person signs in, in the window's words.
 pub const SIGN_IN_AT: &str = "Settings › You › Accounts";
@@ -85,7 +89,13 @@ struct Host {
     native_through: Option<super::route::NativeThrough>,
     #[cfg(any(test, feature = "fenced"))]
     root: Option<super::http::ApiRoot>,
+    /// The account each forge's `gh` or `glab` login is, as last asked ([`Window::cli_login`]).
+    cli_logins: Arc<CliLogins>,
 }
+
+/// The account a forge CLI's own login is, by forge and host, with when it was asked.
+#[derive(Default)]
+struct CliLogins(Mutex<HashMap<(Kind, String), (Account, u64)>>);
 
 impl Host {
     /// What renews this host's browser sign-ins before they expire.
@@ -116,6 +126,7 @@ pub fn hand_over(scope: HostScope, config_root: &Path) {
         native_through: None,
         #[cfg(any(test, feature = "fenced"))]
         root: None,
+        cli_logins: Arc::default(),
     }));
 }
 
@@ -146,6 +157,7 @@ pub fn hand_over_for_a_test(
         cli: Some(cli),
         native_through: Some(native),
         root: None,
+        cli_logins: Arc::default(),
     }));
 }
 
@@ -164,6 +176,7 @@ pub fn hand_over_at_root_for_a_test(
         cli: Some(cli),
         native_through: None,
         root: Some(root),
+        cli_logins: Arc::default(),
     }));
 }
 
@@ -326,9 +339,8 @@ fn window_over(
         .etags_in(&host.config_root)
         .budgets_in(&host.config_root)
         .listed_as(feature);
-    if let Some(cli) = cli {
-        resolver = resolver.cli_over(cli);
-    }
+    let cli = cli.unwrap_or_else(|| Arc::new(Cli::default()));
+    resolver = resolver.cli_over(cli.clone());
     #[cfg(any(test, feature = "fenced"))]
     if let Some(native) = &host.native_through {
         resolver = resolver.native_through(native.clone());
@@ -359,22 +371,80 @@ fn window_over(
     Arc::new(Window {
         resolver,
         account: every.first().map(account_of),
+        forge: forge.clone(),
+        cli,
+        cli_logins: host.cli_logins.clone(),
     })
 }
 
-/// One forge's transports in the window's process: the resolver, and the account a window call
-/// that names none is asked as.
+/// One forge's transports in the window's process: the resolver, the account a window call
+/// that names none is asked as, and the CLI route with the logins it was found signed in as.
 struct Window {
     resolver: Resolver,
     account: Option<Account>,
+    forge: Forge,
+    cli: Arc<dyn Transport>,
+    cli_logins: Arc<CliLogins>,
+}
+
+impl Window {
+    /// **The account this forge's `gh` or `glab` is signed in as** (#6233, the operator's ruling
+    /// of 2026-11-12): asked of the CLI once an hour (`user`) and counted on that account's
+    /// meter, so a background call on the CLI route spends the same hourly budget a sign-in of
+    /// that login would. `None` when the CLI does not answer it.
+    fn cli_login(&self) -> Option<Account> {
+        use super::budget::Clock as _;
+        let key = (self.forge.kind, self.forge.host.to_ascii_lowercase());
+        let now = super::budget::SystemClock.now();
+        {
+            let known = self.cli_logins.0.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some((account, at)) = known.get(&key)
+                && now < at.saturating_add(super::budget::WINDOW)
+            {
+                return Some(account.clone());
+            }
+        }
+        let call = super::transport::Call::get("user", super::STATUS_TIMEOUT);
+        let reply = self.cli.send(&self.forge, &call).ok()?;
+        let field = match self.forge.kind {
+            Kind::GitHub => "login",
+            Kind::GitLab => "username",
+        };
+        let said: serde_json::Value = serde_json::from_str(&reply.out).ok()?;
+        let login = said.get(field)?.as_str()?.trim();
+        if !reply.ok() || login.is_empty() {
+            return None;
+        }
+        let account = Account {
+            kind: self.forge.kind,
+            host: self.forge.host.clone(),
+            login: login.to_owned(),
+        };
+        self.resolver.meter(&account).record(Some(&reply));
+        self.cli_logins
+            .0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(key, (account.clone(), now));
+        Some(account)
+    }
 }
 
 impl Transports for Window {
     fn for_caller(&self, caller: &Caller) -> Result<Arc<dyn Transport>, ForgeError> {
+        let the_person = caller.account().is_none() && the_person_in_the_window(caller);
         let resolved = match &self.account {
-            Some(account) if caller.account().is_none() && the_person_in_the_window(caller) => self
+            Some(account) if the_person => self
                 .resolver
                 .for_caller(&caller.clone().as_account(account.clone())),
+            // No sign-in: a background call takes the CLI as its login's own account, so that
+            // account's meter admits and counts it (#6233). The CLI route keeps no ETag store.
+            None if the_person && caller.priority() == super::backend::Priority::Background => {
+                match self.cli_login() {
+                    Some(login) => self.resolver.for_caller(&caller.clone().as_account(login)),
+                    None => self.resolver.for_caller(caller),
+                }
+            }
             _ => self.resolver.for_caller(caller),
         };
         match resolved {
@@ -491,5 +561,115 @@ mod tests {
         );
         assert!(said.said().contains(SIGN_IN_AT), "{said}");
         assert!(said.said().contains("could not find gh"), "{said}");
+    }
+
+    /// The window's background calls on the `gh` route, with no purlis sign-in (#6233, the
+    /// operator's ruling of 2026-11-12): metered as the `gh` login's own account.
+    mod on_the_gh_route {
+        use std::sync::Mutex;
+        use std::time::Duration;
+
+        use super::*;
+        use crate::forge::backend::Priority;
+        use crate::forge::budget::{self, Clock as _, HOURLY_ALLOWANCE, Meter, SystemClock};
+        use crate::forge::transport::{Call, NoAnswer, Reply};
+
+        /// `gh` signed in as `octo`: `user` answers its login, anything else an empty list.
+        #[derive(Default)]
+        struct Gh(Mutex<Vec<String>>);
+
+        impl Transport for Gh {
+            fn send(&self, _forge: &Forge, call: &Call) -> Result<Reply, NoAnswer> {
+                self.0.lock().unwrap().push(call.path().to_owned());
+                let out = if call.path() == "user" {
+                    r#"{"login":"octo","id":1}"#
+                } else {
+                    "[]"
+                };
+                Ok(Reply::of(0, out.into(), String::new()))
+            }
+            fn check_auth(&self, _forge: &Forge) -> Result<(), ForgeError> {
+                Ok(())
+            }
+        }
+
+        fn host(config_root: &Path, gh: Arc<Gh>) -> Host {
+            Host {
+                scope: HostScope::for_a_test(),
+                config_root: config_root.to_path_buf(),
+                cli: Some(gh),
+                native_through: None,
+                root: None,
+                cli_logins: Arc::default(),
+            }
+        }
+
+        fn octo() -> Account {
+            Account {
+                kind: Kind::GitHub,
+                host: "github.com".into(),
+                login: "octo".into(),
+            }
+        }
+
+        fn send(host: &Host, caller: &Caller) -> Result<Reply, NoAnswer> {
+            let forge = Forge::default_of(Kind::GitHub);
+            let transports = window_over(
+                host,
+                &forge,
+                host.cli.clone(),
+                crate::netlog::Feature::Forge,
+            );
+            let transport = transports.for_caller(caller).expect("a transport");
+            transport.send(
+                &forge,
+                &Call::get("repos/acme/api/milestones", Duration::from_secs(5)),
+            )
+        }
+
+        fn sent_as_octo(config_root: &Path) -> u32 {
+            budget::kept(config_root, SystemClock.now())
+                .iter()
+                .find(|u| u.account.contains("octo"))
+                .map_or(0, |u| u.sent)
+        }
+
+        #[test]
+        fn a_background_call_is_counted_against_the_gh_login_s_own_hour() {
+            let home = tempfile::tempdir().unwrap();
+            let gh = Arc::new(Gh::default());
+            let host = host(home.path(), gh.clone());
+            let background = Caller::window().background();
+            assert_eq!(background.priority(), Priority::Background);
+            send(&host, &background).unwrap();
+            send(&host, &background).unwrap();
+            // Its login is asked once, and counted; then each call.
+            assert_eq!(sent_as_octo(home.path()), 3);
+            let asked = gh.0.lock().unwrap().clone();
+            assert_eq!(
+                asked.iter().filter(|p| *p == "user").count(),
+                1,
+                "{asked:?}"
+            );
+        }
+
+        #[test]
+        fn a_background_call_waits_once_the_gh_login_s_hour_is_spent() {
+            let home = tempfile::tempdir().unwrap();
+            let gh = Arc::new(Gh::default());
+            let host = host(home.path(), gh.clone());
+            let meter = Meter::kept_in(home.path(), &octo(), Arc::new(SystemClock));
+            for _ in 0..HOURLY_ALLOWANCE {
+                meter.record(None);
+            }
+            let held = send(&host, &Caller::window().background());
+            assert!(matches!(held, Err(NoAnswer::HeldBack { .. })), "{held:?}");
+            assert!(
+                !gh.0.lock().unwrap().iter().any(|p| p != "user"),
+                "nothing but the login was asked"
+            );
+            // A call a person waits on is never held back.
+            assert!(send(&host, &Caller::window()).is_ok());
+        }
     }
 }

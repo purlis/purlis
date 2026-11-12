@@ -144,6 +144,8 @@ declare namespace PurlisPage {
         path: string;
         /** open or all, as asked. */
         state: string;
+        /** Whether GitHub may list more milestones than these: purlis reads the first 300 at most. */
+        cut: boolean;
         milestones: Array<{
           /** Its number on GitHub. */
           number: number;
