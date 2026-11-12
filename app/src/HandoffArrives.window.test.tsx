@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { widenAsks } from "./test-inbox";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
@@ -474,6 +475,7 @@ describe("an ask from a chat in no pane (#4759)", () => {
     const hand = await screen.findByTestId("needs-you-button", undefined, { timeout: 5000 });
     expect(screen.getByTestId("pane")).toHaveTextContent("session 1");
     await userEvent.click(hand);
+    await widenAsks();
     const go = await screen.findByRole("button", { name: "Go to chat 2" });
     await userEvent.click(go);
 

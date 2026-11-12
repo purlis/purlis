@@ -9,7 +9,6 @@ import { Inbox, MOVED_JUST_NOW } from "./Inbox";
 import type { Elsewhere } from "./InboxElsewhere";
 import { SETTLE_MS } from "./TaskBlocksNotice";
 import { forgetInbox } from "./inboxRules";
-import { keepInboxScope } from "./inboxScope";
 import { forgetProjectViews } from "./projectViews";
 import { chatGroup } from "./test-inbox";
 import { beginTriage, endTriage, landOnFirst, triaging } from "./asksTriage";
@@ -191,25 +190,21 @@ describe("answering moves the keyboard to the next ask (#6016)", () => {
     expect(triaging()).toBe(false);
   });
 
-  it("goes on to another project's asks, whose Go to project carries triage there", async () => {
-    keepInboxScope(PLANE, "all");
+  it("never goes on into another project's asks, which its own Asks answers (ADR 0121, amended 2026-11-12)", async () => {
     core();
-    const onOpen = vi.fn();
     const elsewhere: Elsewhere = {
       asking: [],
       quiet: [],
       onPress: vi.fn(),
-      onOpen,
+      onOpen: vi.fn(),
       waitingHere: [{ plane: "/home/dev/ops", project: "ops", count: 2 }],
     };
     const only = permission(3, "01J0A", "Run cargo test");
-    const { again } = triage([only], elsewhere);
+    const { again, before } = triage([only], elsewhere);
     await userEvent.keyboard("{Enter}");
     again([], elsewhere);
-    expect(focused()).toHaveAccessibleName("Go to project ops");
-    await userEvent.keyboard("{Enter}");
-    expect(onOpen).toHaveBeenCalledWith("/home/dev/ops");
-    expect(triaging()).toBe(true);
+    expect(focused()).toBe(before);
+    expect(screen.queryByRole("button", { name: /^Go to project/ })).toBeNull();
   });
 });
 

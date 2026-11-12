@@ -9,15 +9,14 @@ import { clearMocks, mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { OpenChat, Shown } from "./bindings";
 import { forgetInbox } from "./inboxRules";
-import { SETTLE_MS } from "./TaskBlocksNotice";
 import { forgetProjectViews } from "./projectViews";
 
 /**
  * **The ✋ counts every open project's Blocking asks** (#5999, ADR 0121 decision 4), against the
  * whole window with the core mocked: two projects open, the first in front. An ask from the
- * second is counted on the ✋ as "+1 elsewhere", the Dock badge shows the same total, Asks opens
- * on all projects, a narrower scope narrows the list and never the ✋, and a snoozed chat's ask
- * is never counted.
+ * second is counted on the ✋ as "+1 elsewhere", the Dock badge shows the same total, Asks lists
+ * the project in front's alone (ADR 0121, amended 2026-11-12), a pick there never changes the ✋,
+ * and a snoozed chat's ask is never counted.
  */
 
 vi.mock("./SessionPane", () => ({
@@ -173,17 +172,17 @@ describe("the ✋ across every open project (#5999)", () => {
     );
   });
 
-  it("opens Asks on all projects, and a narrower scope never changes the ✋", async () => {
+  it("lists only the project in front's asks in Asks, and the ✋ still counts every project's (ADR 0121, amended 2026-11-12)", async () => {
     open({
       [ONE]: { chats: [chat(ONE, 1)], asks: [permission(1, "a-1", "Run cargo test")], snoozed: [] },
       [TWO]: { chats: [chat(TWO, 1)], asks: [permission(1, "b-1", "Run npm test")], snoozed: [] },
     });
     await screen.findByRole("tabpanel", { name: "Asks" });
-    await waitFor(() => expect(picked()).toBe("All projects, 2 waiting on you"));
-
-    await userEvent.click(scopes().getByRole("radio", { name: /^This project/ }));
-
-    await waitFor(() => expect(picked()).toBe("This project, 1 waiting on you"));
+    // No chat has a pane here, so Chat is greyed and Asks lists Project: ONE's ask alone.
+    await waitFor(() => expect(picked()).toBe("Project, 1 waiting on you"));
+    expect(scopes().getByRole("radio", { name: "Chat" })).toBeDisabled();
+    expect(scopes().queryByRole("radio", { name: /All projects/ })).toBeNull();
+    expect(document.querySelector(`[data-elsewhere]`)).toBeNull();
     expect(hand()).toHaveAccessibleName("Asks 2 things wait on you, +1 elsewhere");
   });
 
@@ -216,28 +215,6 @@ describe("the ✋ across every open project (#5999)", () => {
     expect(badge.every((value) => value === null)).toBe(true);
   });
 
-  it("answers the second project's ask in place, from the first's Asks, in the second project (#1921)", async () => {
-    const { answered } = open({
-      [ONE]: { chats: [chat(ONE, 1)], asks: [permission(1, "a-1", "Run cargo test")], snoozed: [] },
-      [TWO]: { chats: [chat(TWO, 1)], asks: [permission(1, "b-1", "Run npm test")], snoozed: [] },
-    });
-    await screen.findByRole("tabpanel", { name: "Asks" });
-    // TWO's chat 1 is a group of its own beside ONE's chat 1, with its options on its row.
-    const theirs = await waitFor(() => {
-      const group = document.querySelector<HTMLElement>(`[data-elsewhere="${TWO}#1"]`);
-      expect(group).not.toBeNull();
-      return group as HTMLElement;
-    });
-    expect(within(theirs).getByText("Run npm test")).toBeTruthy();
-    // The person reads it before an Allow is taken (ADR 0097).
-    await new Promise((done) => setTimeout(done, SETTLE_MS + 50));
-
-    await userEvent.click(within(theirs).getByRole("button", { name: "Allow" }));
-
-    await waitFor(() => expect(answered).toHaveLength(1));
-    expect(answered[0]).toMatchObject({ plane: TWO, session: 1, ask: "b-1", option: "allow" });
-  });
-
   it("keeps the project in front when the ✋ is pressed and only another project waits (#1921)", async () => {
     open({
       [ONE]: { chats: [chat(ONE, 1)], asks: [], snoozed: [] },
@@ -260,10 +237,8 @@ describe("the ✋ across every open project (#5999)", () => {
       within(screen.getByTestId("title-bar")).getByRole("button", { name: /waits? on you/ }),
     );
 
-    // Its Asks lists TWO's ask, answerable there, and ONE stays in front.
-    await waitFor(() =>
-      expect(document.querySelector(`[data-elsewhere="${TWO}#1"]`)).not.toBeNull(),
-    );
+    // Its Asks opens, and ONE stays in front. TWO's ask is answered in TWO's own Asks.
+    await screen.findByRole("tabpanel", { name: "Asks" });
     expect(front()).toBe(was);
   });
 });

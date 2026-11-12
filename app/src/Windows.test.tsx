@@ -362,8 +362,8 @@ describe("needs you, across windows", () => {
     does: { verb: "showChat" as const, session },
   });
 
-  it("counts a chat asking in another window, and goes there to show it", async () => {
-    const { fire, asked } = core({
+  it("counts a chat asking in another window, and lists it in no Asks of this one (ADR 0121, amended 2026-11-12)", async () => {
+    const { fire } = core({
       launch: ONE,
       windows: ["main", "window-1"],
       holder: { [TWO]: "window-1" },
@@ -380,27 +380,12 @@ describe("needs you, across windows", () => {
       }),
     );
 
-    // The hand opens the Inbox in front, which lists the chat in the other window as a group
-    // of its own (#1695: the hand's list retired, and nothing it named is lost), and its Go to
-    // chat goes there.
+    // Counted, and answered in its own window's Asks, which its notification brings forward.
     const hand = await screen.findByRole("button", { name: "1 chat needs you" });
     await userEvent.click(hand);
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
-    // It opens on All projects (#5999, ADR 0121 decision 4), so the chat is listed at once.
-    const group = await within(inbox).findByRole("rowgroup", { name: "two.3" });
-    expect(within(group).getByText("In another window")).toBeInTheDocument();
-    await userEvent.click(within(group).getByRole("button", { name: /^Go to chat two\.3/ }));
-
-    await vi.waitFor(() =>
-      expect(asked.find((one) => one.cmd === "plugin:event|emit_to")?.args).toMatchObject({
-        target: { kind: "AnyLabel", label: "window-1" },
-        event: "run-offer",
-        payload: { plane: TWO, offer: go(3) },
-      }),
-    );
-    expect(asked.some((one) => one.cmd === "show_window_holding" && one.args.plane === TWO)).toBe(
-      true,
-    );
+    expect(within(inbox).queryByRole("rowgroup", { name: "two.3" })).toBeNull();
+    expect(within(inbox).queryByText("In another window")).toBeNull();
   });
 
   it("lists every chat that cannot say it waits, here and in another window, in the Inbox the faint hand opens", async () => {

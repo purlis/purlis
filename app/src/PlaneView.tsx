@@ -234,7 +234,7 @@ import { Notice, NoticeInCentre, NoticeOf, type NoticesDot } from "./Notice";
 import { ReadOnlyLine, ReadOnlyMendable, ReadOnlySaid, useReadOnly } from "./ReadOnlyLine";
 import { LivesHere } from "./LivesHere";
 import { InboxAlerts, type WindowAlerts } from "./InboxAlerts";
-import { handCount, handSaid, theirAsks, type Elsewhere } from "./InboxElsewhere";
+import { handCount, handSaid, type Elsewhere } from "./InboxElsewhere";
 import type { AllChatsFilter } from "./InboxAsks";
 import { useAsksArrival } from "./asksArrival";
 import { sayAboutThisMachine, useAboutThisMachine } from "./windowprefs";
@@ -756,7 +756,6 @@ import {
   newUpdates,
   useChatOnScreenSeen,
   useSeen,
-  useSeenElsewhere,
   type SeenRows,
 } from "./seen";
 import { SeenRowsOf } from "./seenRows";
@@ -11323,8 +11322,6 @@ export const PlaneView = memo(function PlaneView({
   /** **What is New** (#6002, ADR 0121 decisions 10 and 11): seen, not received; the chat on
    *  screen in a focused window has nothing New. */
   const { seen, see, rows: seenRows } = useSeen(plane, waiting);
-  /** **The other projects' seen records** (#1921), for their asks listed in this one's Asks. */
-  const seenOf = useSeenElsewhere(theirAsks(plane, elsewhere).map((one) => one.plane));
   useChatOnScreenSeen(see, chatOnScreen, inFront, waiting, keptUpdates);
   const [noticeCauses, setNoticeCauses] = useState<readonly string[]>([]);
   useEffect(() => {
@@ -12031,6 +12028,20 @@ export const PlaneView = memo(function PlaneView({
    *  chat last in front (`chatKept`, until its tab closes): its set is not read again for a new
    *  chat, and its cards are not drawn again. It is described as it is now, wherever it moved. */
   const skillsSession = chatNow ?? (frontTab !== undefined ? chatKept : undefined);
+  /** **The chat Asks' Chat lists** (ADR 0121, amended 2026-11-12, decision 2): the one in the
+   *  pane with the keyboard, never a shell's, and how many open tasks it holds, however deep. */
+  const asksChat =
+    chatNow === undefined
+      ? undefined
+      : {
+          session: chatNow,
+          name: nameOf(chatNow),
+          tasks: tasksBelow.get(chatNow)?.open.length ?? 0,
+        };
+  /** Whether the project has one place on the strip, so Workspace would list what Project does:
+   *  its workspaces, and the plane root while a chat is filed there. */
+  const oneWorkspace =
+    sidebar !== undefined && sidebar.workspaces.length + (sidebar.unfiled.length > 0 ? 1 : 0) <= 1;
   const skillsWorkspace = skillsSession === undefined ? undefined : filedIn(skillsSession);
   // The checkout it works in, as the core answered for its directory (#4851), in front or not.
   const skillsPiece = skillsSession === undefined ? undefined : worktreeOf(skillsSession);
@@ -12309,7 +12320,6 @@ export const PlaneView = memo(function PlaneView({
                       part="asks"
                       plane={plane}
                       seen={seenRows}
-                      seenOf={seenOf}
                       asks={waiting}
                       onGo={goToAsking}
                       elsewhere={elsewhere}
@@ -12317,6 +12327,11 @@ export const PlaneView = memo(function PlaneView({
                       here={focused}
                       workspaceOf={filedIn}
                       workspaceNamed={workspaceNamed}
+                      // **Chat** (ADR 0121, amended 2026-11-12): the chat in front and its tasks.
+                      chat={asksChat}
+                      askedBy={askedBy}
+                      oneWorkspace={oneWorkspace}
+                      shown={asksShown}
                       asked={chatAsked}
                       personaOf={personaOf}
                       onLeave={leaveInbox}
@@ -12351,7 +12366,6 @@ export const PlaneView = memo(function PlaneView({
                       part="updates"
                       plane={plane}
                       seen={seenRows}
-                      seenOf={seenOf}
                       asks={waiting}
                       onGo={goToAsking}
                       updates={inboxUpdates}
@@ -12371,7 +12385,6 @@ export const PlaneView = memo(function PlaneView({
                       part="notices"
                       plane={plane}
                       seen={seenRows}
-                      seenOf={seenOf}
                       onNoticeCauses={setNoticeCauses}
                       asks={waiting}
                       onGo={goToAsking}
