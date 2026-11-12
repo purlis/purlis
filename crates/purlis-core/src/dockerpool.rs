@@ -2760,6 +2760,19 @@ impl Docker {
         self.forwarded.as_deref()
     }
 
+    /// **A bare command of this `docker`**, for a test or a tool that runs it by hand: the
+    /// program, pointed at the forward's socket where this is a pool's on another machine, and
+    /// otherwise inheriting what its caller has. Never what a pool's own runs are given, which is
+    /// [`Docker::prepared`].
+    pub fn command(&self) -> std::process::Command {
+        let mut command = std::process::Command::new(&self.program);
+        if let Some(socket) = &self.forwarded {
+            command.env("DOCKER_HOST", format!("unix://{}", socket.display()));
+            command.env_remove("DOCKER_CONTEXT");
+        }
+        command
+    }
+
     /// **The socket of the Docker engine this machine's pools run on, where it is on this
     /// machine** (#2050, [`settings::engine_on_this_machine`]): read as a run reads it, from
     /// this process's `DOCKER_HOST`, else the system's or an installer's socket.

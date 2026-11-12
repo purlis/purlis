@@ -393,7 +393,10 @@ pub async fn add_docker_pool(adding: PoolAdding) -> Result<PoolRow, String> {
 /// [`add_docker_pool`], on `machine`.
 pub fn add_on(machine: &Machine, pool: &Pool) -> Result<PoolRow, String> {
     let desktop = machine.desktop_made()?.pinned();
-    purlis_core::pools::add(&machine.config, &machine.docker, pool, &desktop)
+    // A pool on another machine is made there, through its own forward (#6266).
+    let docker = purlis_core::sshroute::pool::docker_of(&machine.docker, pool)
+        .map_err(|finding| purlis_core::poolsetup::connect_said(&finding))?;
+    purlis_core::pools::add(&machine.config, &docker, pool, &desktop)
         .map_err(|why| refused_said(&why.to_string()))?;
     Ok(row(pool))
 }

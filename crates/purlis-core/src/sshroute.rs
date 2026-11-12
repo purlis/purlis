@@ -377,6 +377,15 @@ pub fn alias(pool: &str) -> String {
 /// pool's.
 pub const CONNECTING: &str = ".connect";
 
+/// **A name of [`CONNECTING`]'s for one Connect**: its own folder and forward, so two at once
+/// (two windows, or a window and `purlis pool add --on`) never share one.
+#[must_use]
+pub fn connecting_name() -> String {
+    static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("{CONNECTING}-{}-{n}", std::process::id())
+}
+
 /// The name a first contact calls the machine by, so what ssh writes is found by it alone.
 const FIRST_CONTACT: &str = "purlis-first-contact";
 

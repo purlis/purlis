@@ -427,10 +427,11 @@ pub fn trust(
             crate::shown::short(fingerprint.trim())
         )));
     }
+    let connecting = crate::sshroute::connecting_name();
     let found = crate::sshroute::connect::probe(
         &ssh,
         &route,
-        crate::sshroute::CONNECTING,
+        &connecting,
         &key,
         &settings_in,
         &resolved.user,
@@ -438,7 +439,7 @@ pub fn trust(
     let opening = crate::sshroute::forward::Opening {
         ssh: &ssh,
         route: &found,
-        pool: crate::sshroute::CONNECTING,
+        pool: &connecting,
         key: &key,
         engine_links: &engine_links,
         settings_in: &settings_in,
