@@ -102,7 +102,10 @@ export const RightClickOverALink: Story = {
     const menu = await screen.findByRole("menu", { name: "Terminal" });
     const open = within(menu).getByRole("menuitem", { name: "Open link" });
     await expect(open).toHaveAccessibleDescription(ADDRESS);
-    await expect(within(menu).getByRole("menuitem", { name: "Copy link" })).toBeVisible();
+    // The menu fades in as it appears: visible once it has.
+    await waitFor(() =>
+      expect(within(menu).getByRole("menuitem", { name: "Copy link" })).toBeVisible(),
+    );
     await pictureNow();
 
     await userEvent.keyboard("{ArrowDown}");
