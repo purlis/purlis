@@ -498,7 +498,9 @@ fn a_path_through_too_many_links_is_no_link() {
 fn a_file_outside_the_project_reads_nothing_once_another_is_put_in_its_place() {
     let here = fixture();
     let identity = crate::files::folder::absolute_identity(&here.outside).expect("opened");
-    std::fs::remove_file(&here.outside).expect("removed");
+    // The file it was is moved aside, not deleted, so its inode is still taken: what is at the
+    // path now is another file.
+    std::fs::rename(&here.outside, here.outside.with_extension("was")).expect("moved aside");
     write(&here.outside, "another file\n");
 
     assert!(crate::files::folder::read_absolute(&here.outside, identity).is_err());
