@@ -4192,6 +4192,13 @@ export const commands = {
 	 */
 	poolSetupAskAdmin: (plane: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_ask_admin", { plane })),
 	/**
+	 *  **Get help** on Pool setup's step `step` (#4497): a chat on the project's default profile, at
+	 *  the project's root, started on the core's message about the step and `error`, the words the
+	 *  window showed where a press failed. Only under the project's sandbox, where no chat changes a
+	 *  pool; fixes stay the person's, in Pool setup. The window's alone (`WINDOW_ONLY`).
+	 */
+	poolSetupGetHelp: (plane: PlaneId, step: string, error: string | null, columns: number, rows: number) => typedError<Fixing, string>(__TAURI_INVOKE("pool_setup_get_help", { plane, step, error, columns, rows })),
+	/**
 	 *  **Forgets that the person waits for their admin** (#4496): Stop waiting, or the ready Ask
 	 *  answered.
 	 */

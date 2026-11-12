@@ -656,6 +656,7 @@ macro_rules! app_commands {
                 poolsetuptab::pool_setup_cluster_pool,
                 poolsetuptab::pool_setup_pin_again,
                 poolsetuptab::pool_setup_ask_admin,
+                poolsetuptab::pool_setup_get_help,
                 poolsetuptab::pool_setup_stop_waiting,
                 poolsetuptab::pool_setup_name,
                 poolsetuptab::pool_setup_pool,

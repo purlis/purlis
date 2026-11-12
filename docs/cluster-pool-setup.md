@@ -300,6 +300,10 @@ kubeconfig reaches another cluster is stopped there.
 
 ## If something goes wrong
 
+In Pool setup, a step that needs you offers **Get help**: a chat that holds the step, what it
+found and its error, with no secret values, and explains them. It changes nothing itself, so
+every fix below is still yours to make.
+
 - **Check its key says `kubectl` failed:** read kubectl's words after it. If they say the server
   has no such resource, the operator isn't installed on that context's cluster. If they say the
   pool isn't found, the Pool has another name: check with `kubectl get pools`.

@@ -15,6 +15,7 @@ import {
 import { Notice } from "./Notice";
 import { CheckStep, ClusterPoolStep, ContextOptions, InstallStep } from "./poolsetup/ClusterSteps";
 import { Action, Say, SeeWhat, StepHead } from "./poolsetup/parts";
+import { GET_HELP_SAYS, GetHelp, PoolSetupPlane } from "./poolsetup/GetHelp";
 import { IdentityStep } from "./poolsetup/IdentityStep";
 import { NOTHING_CHOSEN, PoolStep, type Chosen } from "./poolsetup/PoolStep";
 import { SignInsStep } from "./poolsetup/SignInsStep";
@@ -234,7 +235,11 @@ type TabProps = {
 
 export function PoolSetupTab(props: TabProps) {
   const start = usePoolSetupStart();
-  return <PoolSetupGuide key={start.count} {...props} continuing={start.continuing} />;
+  return (
+    <PoolSetupPlane.Provider value={props.plane}>
+      <PoolSetupGuide key={start.count} {...props} continuing={start.continuing} />
+    </PoolSetupPlane.Provider>
+  );
 }
 
 function PoolSetupGuide({
@@ -525,6 +530,12 @@ function PoolSetupGuide({
             />
           ) : (
             step && <Found step={step} onRecheck={reread} />
+          )}
+          {step && (step.state === "attention" || step.state === "waiting") && (
+            <div className="pool-setup-help">
+              <p className="pool-setup-p">{GET_HELP_SAYS}</p>
+              <GetHelp step={step.id} />
+            </div>
           )}
         </div>
       </div>

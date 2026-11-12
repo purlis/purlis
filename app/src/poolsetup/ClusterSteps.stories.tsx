@@ -830,3 +830,16 @@ export const WaitingForYourAdmin: Story = {
     await expectFocusInSight();
   },
 };
+
+/** Get help under a step that needs attention (#4497): a chat that explains it, and changes nothing. */
+export const GetHelpOnAStepThatNeedsYou: Story = {
+  beforeEach: SendToYourAdmin.beforeEach,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByText(/It changes nothing itself: every fix is made here/);
+    const help = await canvas.findByRole("button", { name: "Get help" });
+    help.focus();
+    await expect(help).toHaveFocus();
+    await expectFocusInSight();
+  },
+};

@@ -357,6 +357,87 @@ pub async fn pool_setup_pin_again(pool: String, key: String) -> Result<(), Strin
     .await
 }
 
+/// **Get help** on Pool setup's step `step` (#4497): a chat on the project's default profile, at
+/// the project's root, started on the core's message about the step and `error`, the words the
+/// window showed where a press failed. Only under the project's sandbox, where no chat changes a
+/// pool; fixes stay the person's, in Pool setup. The window's alone (`WINDOW_ONLY`).
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_get_help(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    step: String,
+    error: Option<String>,
+    columns: u16,
+    rows: u16,
+) -> Result<crate::savefix::Fixing, String> {
+    let held = planes.held(&plane)?;
+    #[cfg(unix)]
+    {
+        crate::off_the_window("starting a chat to help with Pool setup", move || {
+            use purlis_core::dockerpool::Docker;
+            use purlis_core::poolsetup::{self, Here, StepId};
+            let step: StepId = serde_json::from_value(serde_json::Value::String(step.clone()))
+                .map_err(|_| {
+                    format!(
+                        "Pool setup has no step called {}",
+                        purlis_core::shown::short(&step)
+                    )
+                })?;
+            let root = held.root().to_path_buf();
+            let config = config_root()?;
+            let docker = poolsetup::docker_here();
+            let kubectl = poolsetup::cluster::kubectl_here();
+            let here = Here {
+                config: &config,
+                plane: Some(&root),
+                docker: docker.as_ref(),
+                engine: Docker::engine_on_this_machine(),
+                kubectl: kubectl.as_ref().map_err(String::as_str),
+            };
+            let setup = poolsetup::resumed(&here)
+                .map_err(|why| why.to_string())?
+                .setup;
+            let prompt = poolsetup::help::opening(&setup, step, error.as_deref())
+                .map_err(|why| why.to_string())?;
+            let label = poolsetup::help::label(step);
+            let (profile, _kind) =
+                crate::curation::default_profile(&root, "no chat was started to help")?;
+            let started = crate::curation::start_sent(
+                &held,
+                crate::curation::ChatTyped {
+                    profile,
+                    persona: None,
+                    cwd: root.clone(),
+                    label: label.clone(),
+                    prompt,
+                    then_a_space: false,
+                    starts_runs: None,
+                    studio: None,
+                    skill: None,
+                },
+                purlis_core::engine::Size { columns, rows },
+                crate::curation::SentFor::PoolSetupHelp,
+            )?;
+            Ok(crate::savefix::Fixing {
+                session: started.session,
+                name: started.name,
+                label,
+                persona: None,
+                harness: started.ready.declaration().map(|d| d.name.clone()),
+                workspace: None,
+                existing: false,
+            })
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (held, step, error, columns, rows);
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
 /// **Keeps that the person sent Send to your admin's words** (#4496), about the cluster chosen
 /// on Where, from the project `plane` the tab is in: Check the cluster then waits for their
 /// admin, across a close, and is checked again by itself. Nothing is sent anywhere by purlis.

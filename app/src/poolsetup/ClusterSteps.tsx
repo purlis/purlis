@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { GetHelp } from "./GetHelp";
 import { useEffect, useRef, useState } from "react";
 import {
   commands,
@@ -133,7 +134,11 @@ export function CheckStep({
         </>
       )}
       {refused && (
-        <Say tone="trouble" title="That didn't work">
+        <Say
+          tone="trouble"
+          title="That didn't work"
+          actions={<GetHelp step={step.id} error={refused} />}
+        >
           {refused}
         </Say>
       )}
@@ -275,9 +280,12 @@ export function InstallStep({
           tone="trouble"
           title={`${failed.part.name} wasn't installed`}
           actions={
-            <Button variant="secondary" onPress={() => apply(failed.part)}>
-              Try again
-            </Button>
+            <>
+              <Button variant="secondary" onPress={() => apply(failed.part)}>
+                Try again
+              </Button>
+              <GetHelp step={step.id} error={`${failed.part.name}: ${failed.why}`} />
+            </>
           }
         >
           {failed.why}
@@ -612,7 +620,11 @@ export function ClusterPoolStep({
         />
       )}
       {claiming.state === "refused" && (
-        <Say tone="trouble" title="That didn't work">
+        <Say
+          tone="trouble"
+          title="That didn't work"
+          actions={<GetHelp step={step.id} error={claiming.why} />}
+        >
           {claiming.why}
         </Say>
       )}

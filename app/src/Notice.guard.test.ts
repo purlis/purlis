@@ -561,6 +561,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "Pool setup's progress, said politely as it goes (#4480): reading what this machine has " +
       "and rechecking by itself. Nothing to do about either, so no way out.",
   },
+  "poolsetup/GetHelp.tsx": {
+    count: 1,
+    why:
+      "why Get help started no chat (#4497), beside its own button: what that press answered, " +
+      "not a standing line, and the button is pressed again",
+  },
   "poolsetup/PoolStep.tsx": {
     count: 1,
     why: "Pool setup making a pool, said politely as it goes (#4480). Nothing to do, so no way out.",

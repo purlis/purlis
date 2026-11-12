@@ -1947,6 +1947,7 @@ export const commands = {
 	poolSetupClusterPool: __WINDOW_ONLY_RESULT,
 	poolSetupPinAgain: __WINDOW_ONLY_RESULT,
 	poolSetupAskAdmin: __WINDOW_ONLY_RESULT,
+	poolSetupGetHelp: __WINDOW_ONLY_RESULT,
 	poolSetupStopWaiting: __WINDOW_ONLY_RESULT,
 	poolSetupName: __WINDOW_ONLY_RESULT,
 	poolSetupPool: __WINDOW_ONLY_RESULT,

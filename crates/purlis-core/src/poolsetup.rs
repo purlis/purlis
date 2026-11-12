@@ -37,6 +37,7 @@ use crate::runners::{self, Refused};
 pub mod admin;
 pub mod asked;
 pub mod cluster;
+pub mod help;
 pub mod install;
 pub mod signins;
 pub mod trying;
