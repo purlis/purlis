@@ -111,6 +111,8 @@ import {
 import { RESTORING_HAS_NO_CLOSE } from "./restoringChats";
 import { SIDE_KEYS_SAID } from "./sideKeys";
 import { SETTINGS_GROUPS } from "./settings/catalogue";
+import { everySetting } from "./settings/search";
+import type { Level } from "./settings/groups";
 
 /** The Workspace level's Skills group (#2767), behind the Skill studio's flag. */
 const WORKSPACE_SKILLS = "workspace.skills";
@@ -714,7 +716,14 @@ export type Does =
   /** Opens Settings at one group (#1201): a row per group, by the group's address. A You group
    *  carries the project in front when there is one, and none when the window has no project;
    *  a Project group carries its project, and a Workspace group its project and workspace. */
-  | { verb: "openSettingsGroup"; group: string; plane?: string; workspace?: string }
+  | {
+      verb: "openSettingsGroup";
+      group: string;
+      plane?: string;
+      workspace?: string;
+      /** The setting of the group whose field the link lands on (#2920). */
+      setting?: string;
+    }
   | { verb: "readAgain" }
   | { verb: "taskBranch"; id: string; act: "merge" | "discard" }
   /** Opens a new chat for one curation action on one subject, with the action's prompt typed
@@ -2761,6 +2770,13 @@ export function catalogue(now: Now): Offer[] {
     ),
   );
   offers.push(...profilePageRows(now.plane, now.profiles));
+  offers.push(
+    ...settingRows(
+      now.plane,
+      now.focused === OUTSIDE ? undefined : now.focused,
+      now.skillStudio ?? false,
+    ),
+  );
 
   // **A finished task's Merge… and Discard branch…, on its row's menu** (#1534): for a task
   // that worked on a branch purlis cut for it. Each opens the task's Changes tab's own
@@ -4030,12 +4046,13 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       // with the group shown and puts the keyboard in it. With no project there is no window
       // of one to ask: the group is shown at You's place and Your settings… opens it.
       if (does.plane === undefined) {
-        linkToGroup(settingsPlace("you"), does.group);
+        linkToGroup(settingsPlace("you"), does.group, does.setting);
         doing.openYourSettings();
       } else
         askSettingsLink(does.plane, {
           group: does.group,
           ...(does.workspace === undefined ? {} : { workspace: does.workspace }),
+          ...(does.setting === undefined ? {} : { setting: does.setting }),
         });
       return DID;
     case "curate":
@@ -4132,6 +4149,48 @@ function settingsGroupRows(
       note: `${workspace}: Settings at its level, at ${one.label}.`,
     });
   return rows;
+}
+
+/** What each level's rows are called, as its groups' rows are ({@link settingsGroupRows}). */
+const LEVEL_ROWS: Readonly<Record<Level, string>> = {
+  you: "Your settings",
+  project: "Project settings",
+  workspace: "Workspace settings",
+  persona: "Persona settings",
+};
+
+/**
+ * **One row per setting, at every level** (#2920, N27; #2814·4): "Your settings: Text › Window
+ * text size", "Project settings: Saving › Mode". Each lands on the setting's field, through the
+ * same link as its group's row, and says what the setting is for in the setting's own help.
+ *
+ * The settings are the levels' builders' over files nothing is read into (`settings/search.ts`),
+ * the same list the Settings search finds in, at the same levels as the group rows: You always,
+ * the project in front's, and the focused workspace's.
+ */
+function settingRows(
+  plane: string | undefined,
+  workspace: string | undefined,
+  skillStudio: boolean,
+): Offer[] {
+  return everySetting({ plane, workspace, skillStudio }).flatMap(({ level, groups }) =>
+    groups.flatMap((group) =>
+      group.settings.map((setting) => ({
+        ...can(
+          `settings.setting:${setting.id}${level === "workspace" ? `:${workspace}` : ""}`,
+          `${LEVEL_ROWS[level]}: ${group.label} › ${setting.label}`,
+          {
+            verb: "openSettingsGroup",
+            group: group.id,
+            setting: setting.id,
+            ...(plane === undefined ? {} : { plane }),
+            ...(level === "workspace" ? { workspace } : {}),
+          } satisfies Does,
+        ),
+        ...(setting.help === "" ? {} : { note: setting.help }),
+      })),
+    ),
+  );
 }
 
 /**
