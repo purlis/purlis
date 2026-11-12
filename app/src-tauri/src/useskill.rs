@@ -178,10 +178,11 @@ pub struct ChatSkills {
     /// The clones of its workspace it works in, by name, whose repo skills its harness reads
     /// (#3462): what the Skills view narrows a chat's repo skills to. None for a chat in no clone.
     pub repos: Vec<String>,
-    /// Why the chat gets no skills, where its harness is a declared one skills are not supported
-    /// on (SK-30), or where it is not running now (#6196): said in place of the words for a tool
-    /// purlis does not know.
-    pub not_supported: Option<String>,
+    /// Why the chat is offered no skills, where that is not that it runs a tool purlis does not
+    /// know: its harness is a declared one skills are not supported on (SK-30), its runner said
+    /// none (#4218), or it is not running now (#6196). Said in place of the words for a tool purlis
+    /// does not know, which are what the list says where this is null (#6302).
+    pub none_because: Option<String>,
     /// How its router extension did at its start (SK-15b): null for a chat routed by the
     /// built-in router, which is asked nothing.
     pub routing: Option<SkillRouting>,
@@ -280,7 +281,7 @@ impl ChatSkills {
             own: None,
             budget: None,
             repos: Vec::new(),
-            not_supported: None,
+            none_because: None,
             routing: None,
             missing: None,
         }
@@ -399,7 +400,7 @@ fn from_its_runner(
 ) -> ChatSkills {
     let (crate::chats::RunnersWord::Said(armed), Some(harness)) = (word, harness) else {
         return ChatSkills {
-            not_supported: matches!(word, crate::chats::RunnersWord::NotSaid)
+            none_because: matches!(word, crate::chats::RunnersWord::NotSaid)
                 .then(|| NOT_SAID_BY_ITS_RUNNER.to_owned()),
             ..ChatSkills::none(true)
         };
@@ -453,7 +454,7 @@ pub(crate) fn shown(skills: Option<&purlis_core::skills::ChatSkills>) -> ChatSki
             twins: purlis_core::skills::twins_said(&skills.twins),
         }),
         repos: Vec::new(),
-        not_supported: None,
+        none_because: None,
         routing: None,
         missing: None,
     }
@@ -482,7 +483,7 @@ pub(crate) async fn chat_skills(
 fn skills_shown(held: &Held, session: u32) -> ChatSkills {
     let Some(chat) = held.chats().skills_of(session) else {
         return ChatSkills {
-            not_supported: Some(NOT_RUNNING_LISTED.to_owned()),
+            none_because: Some(NOT_RUNNING_LISTED.to_owned()),
             ..shown(None)
         };
     };
@@ -499,7 +500,7 @@ fn skills_shown(held: &Held, session: u32) -> ChatSkills {
             .map(|routed| SkillRouting::of(routed, chat.last_prompt.as_ref()));
         shown.missing = held.chats().skills_missing(session);
     } else {
-        shown.not_supported = chat.not_supported.clone();
+        shown.none_because = chat.not_supported.clone();
     }
     shown
 }
