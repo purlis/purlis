@@ -161,7 +161,6 @@ function keep(kept: Kept, key: string, asked: Promise<LinkSeen | null>): Promise
   return answer;
 }
 
-
 /**
  * A line as xterm holds it across the rows it wraps over: its text, each character's cell, and
  * whether the line went on before or after the part read.

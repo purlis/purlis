@@ -2,14 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type {
-  LinkCandidate,
-  LinkFrom,
-  LinkHome,
-  LinkOpened,
-  LinkSeen,
-  OpensIn,
-} from "./bindings";
+import type { LinkCandidate, LinkFrom, LinkHome, LinkOpened, LinkSeen, OpensIn } from "./bindings";
 import { sentence } from "./coreSentence";
 import { onAMac } from "./mac";
 import {
@@ -41,8 +34,8 @@ import {
  *   pointer is on it (WCAG 1.4.13).
  * - **A refusal is a dialog that says why** (#6208: "a link that cannot open says why"), the
  *   same "Link not opened" an artifact's refused link shows (`ArtifactLinks.tsx`).
- * - **An ask shows the link's text and where it really goes**, and opens only on the person's
- *   answer, which is sent back as a confirmed open of that target. No v1 web address asks; the
+ * - **An ask shows the link's text and where it really goes**, and opens only on an answer,
+ *   sent back with the one-use token the core issued with the ask. No v1 web address asks; the
  *   file and OSC 8 kinds do (#6216, #6218), and draw their own asks there.
  */
 
