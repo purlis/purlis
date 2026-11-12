@@ -1,7 +1,7 @@
 # Amended (2026-11-12): the forward is held by a pipe, not `ssh -N`, and each run is pointed at it by `DOCKER_HOST`
 
-Records choices the tracer [#6266](https://github.com/purlis/purlis/issues/6266) made while it
-was built, after its review. They change words of D-6257-1 (§2) and §8. The rest of this record
+Records two choices the tracer [#6266](https://github.com/purlis/purlis/issues/6266) made while it
+was built, after its review. Both change words of D-6257-1 (§2) and §8. The rest of this record
 stands.
 
 ## The forward's session waits on purlis, and ends the connection when purlis goes
@@ -37,6 +37,21 @@ pipe is the way it ends when nothing else runs.
 This needs no `unsafe` code and nothing on this machine besides ssh. A parent-death signal
 (`PR_SET_PDEATHSIG`) exists only on Linux and needs code run between fork and exec, and a guard
 process of purlis's own beside each ssh was one more process to keep alive for the same end.
+
+## Each run is pointed at the forward by `DOCKER_HOST`, not `--host`
+
+§1, D-6257-1 and §8 said each run of `docker` for the pool is handed `--host unix://<local>`.
+It is handed `DOCKER_HOST=unix://<local>` in the run's own environment, with `DOCKER_CONTEXT`
+removed, instead.
+
+- **It is the per-run pin a local pool already has** (`dockerpool::settings`, where a local
+  pool's engine is set as `DOCKER_HOST` too), so every run of `docker` purlis makes gets it, with no
+  argument list to keep in step. A `--host` would have to be added to each of the dozens of
+  argument lists, and one missed would quietly reach the window's own engine.
+- **Docker reads it as `--host`**: `DOCKER_HOST` names the engine exactly as the flag does, and
+  takes precedence over a context. The window's own `DOCKER_HOST` and context are never used,
+  which is what §1 asks for.
+- It is set on the child's environment only, never on purlis's own.
 
 ## Nothing else of the person's SSH settings rides on the forward
 
