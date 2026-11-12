@@ -488,7 +488,8 @@ describe("the strip's tabs (#4762)", () => {
     // Its picture of the layout in place of `+1`, which a screen reader hears as words.
     expect(tab?.querySelector('.tab-split-more [data-part="picture"]')).not.toBeNull();
     expect(tab?.querySelector(".tab-split-more")?.textContent).toBe(", split, 2 panes");
-    expect(await hoverTipOf(tab)).toBe("2 panes: ide.1 · ide.2");
+    // The chat it shows by its number first, as any chat tab's (#6212), then its panes.
+    expect(await hoverTipOf(tab)).toBe("#1 · ide.1\n2 panes: ide.1 · ide.2");
   });
 
   it("draws Tile all at its right end only while the tab in front is split (#4765)", async () => {

@@ -532,7 +532,8 @@ describe("what a tab shows of its tasks (#5341)", () => {
     // A task whose program has ended runs no more.
     await ended(7);
 
-    expect(await hoverTipOf(tab("steward 1"))).toBe("3 tasks running");
+    // Under the chat's number and name (#6212).
+    expect(await hoverTipOf(tab("steward 1"))).toBe("#1 · steward 1\n3 tasks running");
   });
 
   it("keeps a chat with no tasks' head as it was: its state, and no menu", async () => {

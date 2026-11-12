@@ -802,6 +802,19 @@ describe("the filter over the Chats list (V100-49)", () => {
     expect(place("live check talk")).toBe("1/1");
   });
 
+  // #6213: the number a coordinator named, `3` or `#3`, finds that chat alone, and a task
+  // under the session that asked for it, as a name does.
+  it("finds a chat by its number, typed bare or with #", async () => {
+    await up();
+
+    await typed("#3");
+    expect(shape()).toEqual(["1 release notes"]);
+
+    await userEvent.clear(box());
+    await typed("2");
+    expect(shape()).toEqual(["1 steward 1", "2 live check talk"]);
+  });
+
   it("finds a task by its persona, its workspace and its state's word", async () => {
     const { move } = await up();
 

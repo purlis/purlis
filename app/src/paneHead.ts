@@ -80,6 +80,9 @@ export function stateButtonOf(chat: {
  * The parts of a pane head a narrow pane can drop. The bell, ⋯, Split right and Close are not
  * among them: they never go. The workspace is not either, being the foot's (#5206).
  *
+ * - `number`: the chat's number beside its name (#6212), first to go: its tab's hover says it too,
+ *   and the name needs the room more. Measured on the longest head (`ChatFoot.stories.tsx`): with
+ *   it, a head at 470 px is 14 px over, so it goes under 500.
  * - `markWord`: the state mark's word, its dot staying.
  * - `using`: what the chat uses now, its skill run and its browsers (#5524, #5614), together. Each
  *   is a glance with another home (the run in the Skill studio's Runs, each browser a row under
@@ -89,10 +92,11 @@ export function stateButtonOf(chat: {
  * - `mark`: the state mark, dot and all.
  * - `splitDown`: the Split down button.
  */
-export type HeadPart = "markWord" | "using" | "buttonWord" | "mark" | "splitDown";
+export type HeadPart = "number" | "markWord" | "using" | "buttonWord" | "mark" | "splitDown";
 
 /** **The ruled order**, and the pane width in CSS pixels under which each part goes (#4585). */
 export const HEAD_DROPS: readonly { part: HeadPart; below: number }[] = [
+  { part: "number", below: 500 },
   { part: "markWord", below: 470 },
   { part: "using", below: 450 },
   { part: "buttonWord", below: 420 },
@@ -149,6 +153,7 @@ export type LinePart =
   | "persona"
   | "name"
   | "crumbs"
+  | "number"
   | "sandbox"
   | "mark"
   | "markWord"
@@ -292,6 +297,8 @@ export function paneLinesOf(
   const details = width === undefined || width >= FOOTLESS_DETAILS_BELOW;
 
   const head: LinePart[] = ["persona", pathed ? "crumbs" : "name"];
+  // Its number beside its name (#6212), but on a one-job program's, which no one finds again.
+  if (kind !== "oneJob" && !drops.has("number")) head.push("number");
   if (!footed && details) head.push("sandbox");
   // A task's path says its state; a chat's head says it with its mark.
   if (!pathed && !drops.has("mark")) {
