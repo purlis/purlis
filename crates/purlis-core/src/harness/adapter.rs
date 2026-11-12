@@ -109,6 +109,14 @@ pub trait HarnessAdapter: Sync {
         Vec::new()
     }
 
+    /// **Why a task on this harness may not start at its classifier-backed level** under the
+    /// chat's environment `env` (#6315), as the line its pane says, or `None` where it may. The
+    /// default is a harness whose classifier-backed mode, if any, never refuses unasked.
+    fn auto_kept_from_a_task(&self, env: &crate::harness_plugin::Env<'_>) -> Option<String> {
+        let _ = env;
+        None
+    }
+
     /// **Whether a grade's chats can run on this harness** (SK-16, ADR 0105, #3310): purlis can
     /// hold one of its chats to the grade's limits there (to purlis's MCP server alone and its
     /// read tools), read what it spent, the operator's ruling of 2026-10-26, and turn off every
