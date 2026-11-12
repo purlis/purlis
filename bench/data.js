@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794510518719,
+  "lastUpdate": 1794513403461,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -47712,6 +47712,48 @@ window.BENCHMARK_DATA = {
             "value": 101.7926445,
             "unit": "ms",
             "extra": "median of 5 runs: 100.226, 100.358, 101.793, 102.311, 105.841 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ae9acd474f1c8ce60f213b935bd3fad2b1b87dca",
+          "message": "Settings search words whole; Your hosts waits for rows; one Label in Name helper (#6378, #6374, #6375) (#6382)\n\n* Settings search says \"Search all levels\", whole in the narrowest side column (#6378)\n\nThe placeholder \"Search every setting, every level\" lost its last word where the side\ncolumn narrows to 180 px. ViewTabs' Settings story now measures the placeholder against\nits box's room in every pictured theme.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M78CV11619ZQ2J92SH1GWP1W\nPurlis-Persona: steward\n\n* Every jsdom test finds a grid with findGrid, which waits for a row (#6374)\n\nReact Aria draws a grid a render before it fills in its collection, so a grid that\nfindByRole returns may hold no rows yet. SandboxHosts' Your hosts table, and every other\nfindByRole(\"grid\", ...) left in app/src's tests (the issue's grep missed the top-level\nfiles), now wait for a row before they read the grid.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M78CV11619ZQ2J92SH1GWP1W\nPurlis-Persona: steward\n\n* PoolSignIn's Label in Name check uses a11y.testkit's namedWithoutItsWords (#6375)\n\nThe local copy read only aria-label. The shared helper reads the name the role queries\ncompute and drops words drawn for a screen reader alone. Each case was seen red on a\nplanted mismatch: Remove renamed Delete fails both, the question's Keep renamed Stay with\nfails the Sign out one at its question.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M78CV11619ZQ2J92SH1GWP1W\nPurlis-Persona: steward\n\n* Review fixes: the search check measures at the column's 180 px floor; one canvas pen\n\nViewTabs' Settings story drew the side column at about 190 px, so its placeholder check\nnow takes off what the column loses at its 180 px floor, waits for the fonts and counts\nletter spacing. The canvas pen in an element's font, written twice (TitleBar's Descenders\nand this check), is stories.testkit's penFor. SkillGrades' comment names what findGrid\nnow waits for.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M78CV11619ZQ2J92SH1GWP1W\nPurlis-Persona: steward\n\n* Story baselines: the Settings search says \"Search all levels\" (#6378)\n\nDrawn by PR #6382's stories run 43273142690 and pulled with story-baselines-pull.\nReviewed: the placeholder is whole in ViewTabs' narrow Settings in every theme, and\nnothing else moved in the Settings stories that draw the side column.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M78CV11619ZQ2J92SH1GWP1W\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-12T18:48:53Z",
+          "tree_id": "39a91adbca2fd952de0db738334b3bb62583d490",
+          "url": "https://github.com/purlis/purlis/commit/ae9acd474f1c8ce60f213b935bd3fad2b1b87dca"
+        },
+        "date": 1794513396857,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.717897,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.699, 0.699, 0.718, 0.727, 0.728 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.395045500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.242, 16.394, 16.395, 16.417, 16.436 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.0419445,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.582, 101.912, 102.042, 102.186, 102.616 ms"
           }
         ]
       }
