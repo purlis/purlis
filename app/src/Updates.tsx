@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { listen } from "./here";
+import { listen, untilStopped } from "./here";
 import { ArrowUpCircle, LoaderCircle, Pin } from "lucide-react";
 import {
   commands,
@@ -81,30 +81,6 @@ export type Updates = {
 };
 
 /**
- * Stops one listener, and never lets that failure escape as an unhandled rejection.
- *
- * **`listen`'s unlisten function is `async`** (`@tauri-apps/api/event`'s `_unlisten`), so
- * calling it without awaiting hands back a promise nobody is holding — and it rejects whenever
- * `__TAURI_EVENT_PLUGIN_INTERNALS__` is not there: a webview being torn down, and every jsdom
- * test whose mocked IPC has no event plugin behind it. The `.catch` further down covers the
- * async block around the awaits; a bare call is outside it.
- *
- * It surfaced the day the updater moved to the window (`TitleBar.tsx`): mounted inside a
- * project it outlived the registration, mounted on the window it is torn down by any test that
- * renders and unmounts quickly — so `gone` was true before `listen` resolved, and the cleanup
- * fired into nothing. There is nothing to do about a listener that cannot be removed from a
- * page that is going away, and an unhandled rejection out of a cleanup function is a real
- * failure in a real window as well as a red suite.
- */
-function stopListening(stop: () => void) {
-  try {
-    void Promise.resolve(stop()).catch(() => {});
-  } catch {
-    // A synchronous throw from the same cause, and the same answer.
-  }
-}
-
-/**
  * The updater's events, turned into one state.
  *
  * `asked` is what separates a failure worth drawing from one that is not (see the module doc):
@@ -121,44 +97,39 @@ export function useUpdates(): Updates {
   const asked = useRef(false);
 
   useEffect(() => {
-    let gone = false;
-    const stops: (() => void)[] = [];
-    void (async () => {
-      const on = async <T,>(event: string, then: (payload: T) => void) => {
-        const stop = await listen<T>(event, (e) => {
-          if (!gone) then(e.payload);
-        });
-        if (gone) stopListening(stop);
-        else stops.push(stop);
-      };
-      await on<Offer | null>("update://checked", (offer) => {
-        asked.current = false;
-        setState((was) =>
-          // An install under way is not undone by a timer's check landing in the middle of it.
-          was.kind === "installing" || was.kind === "installed"
-            ? was
-            : offer
-              ? { kind: "offered", offer }
-              : { kind: "quiet" },
-        );
-      });
-      await on<string>("update://installed", (version) => {
-        asked.current = false;
-        setState({ kind: "installed", version });
-      });
-      await on<string>("update://failed", (why) => {
-        const wasAsked = asked.current;
-        asked.current = false;
-        if (wasAsked) setState({ kind: "failed", why });
-      });
-    })().catch(() => {
-      // A window that cannot listen draws the quiet updater — the icon, the channel, and
-      // `Check now` — rather than taking the status line down. Seen on CI: a test whose mock
-      // core throws for every command it does not name made `listen` reject, unhandled.
-    });
+    // Each held until the cleanup stops it, which may come before it answers (`here.ts`): a
+    // window that cannot listen draws the quiet updater, the icon, the channel and `Check now`,
+    // rather than taking the status line down.
+    const stops = [
+      untilStopped(
+        listen<Offer | null>("update://checked", ({ payload: offer }) => {
+          asked.current = false;
+          setState((was) =>
+            // An install under way is not undone by a timer's check landing in the middle of it.
+            was.kind === "installing" || was.kind === "installed"
+              ? was
+              : offer
+                ? { kind: "offered", offer }
+                : { kind: "quiet" },
+          );
+        }),
+      ),
+      untilStopped(
+        listen<string>("update://installed", ({ payload: version }) => {
+          asked.current = false;
+          setState({ kind: "installed", version });
+        }),
+      ),
+      untilStopped(
+        listen<string>("update://failed", ({ payload: why }) => {
+          const wasAsked = asked.current;
+          asked.current = false;
+          if (wasAsked) setState({ kind: "failed", why });
+        }),
+      ),
+    ];
     return () => {
-      gone = true;
-      for (const stop of stops) stopListening(stop);
+      for (const stop of stops) stop();
     };
   }, []);
 
