@@ -83,6 +83,34 @@ pub struct PoolSetupMachine {
     pub now: Option<PoolSetupKey>,
     /// The engine's id trusted for it.
     pub engine: Option<String>,
+    /// **Over Docker's TLS API** (#6267): `tls` for a `tcp://` machine, `ssh` otherwise.
+    pub over: String,
+    /// The TLS files named under Options.
+    pub tls: Option<PoolSetupTlsFiles>,
+    /// The CA read at Connect to, to confirm.
+    pub ca: Option<PoolSetupCa>,
+    /// The CA's fingerprint trusted for it.
+    pub trusted_ca: Option<String>,
+    /// The fingerprint the CA file holds now, where that isn't the one trusted.
+    pub ca_now: Option<String>,
+}
+
+/// The TLS files named for a `tcp://` machine, as Connect's Options show them (#6267).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolSetupTlsFiles {
+    pub ca: String,
+    pub cert: String,
+    pub key: Option<String>,
+    pub key_vault: Option<String>,
+    pub key_name: Option<String>,
+}
+
+/// A CA, as Connect shows it to confirm (#6267).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolSetupCa {
+    pub fingerprint: String,
+    pub subject: Option<String>,
+    pub file: String,
 }
 
 /// One part of a cluster's install (#4493): `upstream`, `definitions`, `signing-key` or
@@ -216,6 +244,21 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
                     trusted: machine.trusted.as_ref().map(key),
                     now: machine.now.as_ref().map(key),
                     engine: machine.engine.clone(),
+                    over: machine.over.to_owned(),
+                    tls: machine.tls.as_ref().map(|tls| PoolSetupTlsFiles {
+                        ca: tls.ca.clone(),
+                        cert: tls.cert.clone(),
+                        key: tls.key.clone(),
+                        key_vault: tls.key_vault.clone(),
+                        key_name: tls.key_name.clone(),
+                    }),
+                    ca: machine.ca.as_ref().map(|ca| PoolSetupCa {
+                        fingerprint: ca.fingerprint.clone(),
+                        subject: ca.subject.clone(),
+                        file: ca.file.clone(),
+                    }),
+                    trusted_ca: machine.trusted_ca.clone(),
+                    ca_now: machine.ca_now.clone(),
                 }),
                 cause: step.cause.map(str::to_owned),
                 skippable: step.skippable,
@@ -464,6 +507,60 @@ pub async fn pool_setup_operator_image(image: Option<String>) -> Result<(), Stri
     }
 }
 
+/// **Keeps the TLS files named under Connect's Options** for a `tcp://` machine (#6267, ADR
+/// 0123 §4): the CA, the client certificate, and the key's file or a vault entry of this project's
+/// (`key_vault` and `key_name`), or forgets them where `ca` is empty. Their paths and names alone
+/// are kept, never what they hold. It contacts nothing.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_tls_files(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    ca: String,
+    cert: String,
+    key: Option<String>,
+    key_vault: Option<String>,
+    key_name: Option<String>,
+) -> Result<PoolSetupShown, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    #[cfg(unix)]
+    {
+        crate::off_the_window("keeping the TLS files", move || {
+            use purlis_core::tlsroute::{Files, KeyFrom};
+            let config = config_root()?;
+            let filled = |text: Option<String>| text.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty());
+            let files = if ca.trim().is_empty() {
+                None
+            } else {
+                let key = match (filled(key), filled(key_vault), filled(key_name)) {
+                    (Some(key), None, None) => KeyFrom::File(key.into()),
+                    (None, Some(vault), Some(key)) => KeyFrom::Vault {
+                        plane: root.clone(),
+                        vault,
+                        key,
+                    },
+                    _ => {
+                        return Err(
+                            "Name your client certificate's key: its file, or the vault and key                              that hold it."
+                                .to_owned(),
+                        );
+                    }
+                };
+                Some(Files::new(ca.trim().into(), cert.trim().into(), key)?)
+            };
+            purlis_core::poolsetup::choose_tls_files(&config, files)
+                .map_err(|why| why.to_string())?;
+            read_shown(&config, &root, None)
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (root, ca, cert, key, key_vault, key_name);
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
 /// **Connect to <machine>** (#6266, ADR 0123 §3): the key the machine Connect keeps shows, met
 /// with nothing signed in, and what is read, with it laid over Connect. Nothing is kept.
 #[tauri::command]
@@ -478,17 +575,14 @@ pub async fn pool_setup_connect(
         crate::off_the_window("contacting the machine", move || {
             use purlis_core::poolsetup::{self, Pressed};
             let config = config_root()?;
-            let route = poolsetup::read_choices(&config)
+            let chosen = poolsetup::read_choices(&config)
                 .map_err(|why| why.to_string())?
                 .connect
-                .map(|chosen| chosen.route)
                 .ok_or_else(|| "Pick the machine first.".to_owned())?;
             let docker = poolsetup::docker_here()
                 .ok_or_else(|| "purlis found no docker command on this machine.".to_owned())?;
-            let pressed = match poolsetup::connecting::meet(&docker, &route) {
-                Ok(met) => Pressed::Met(met),
-                Err(finding) => Pressed::Found(finding),
-            };
+            // Over SSH the key the machine shows; over TLS the CA its files name (#6267).
+            let pressed: Pressed = poolsetup::connecting::meet_chosen(&docker, &chosen);
             read_shown(&config, &root, Some(pressed))
         })
         .await
@@ -516,18 +610,16 @@ pub async fn pool_setup_trust(
         crate::off_the_window("checking the machine", move || {
             use purlis_core::poolsetup::{self, Pressed};
             let config = config_root()?;
-            let route = poolsetup::read_choices(&config)
+            let chosen = poolsetup::read_choices(&config)
                 .map_err(|why| why.to_string())?
                 .connect
-                .map(|chosen| chosen.route)
                 .ok_or_else(|| "Pick the machine first.".to_owned())?;
             let docker = poolsetup::docker_here()
                 .ok_or_else(|| "purlis found no docker command on this machine.".to_owned())?;
-            match poolsetup::connecting::trust(&docker, &route, &fingerprint) {
-                Ok(remote) => {
-                    poolsetup::trusted(&config, &remote).map_err(|why| why.to_string())?;
-                    read_shown(&config, &root, None)
-                }
+            match poolsetup::connecting::trust_chosen(&config, &docker, &chosen, &fingerprint)
+                .map_err(|why| why.to_string())?
+            {
+                Ok(()) => read_shown(&config, &root, None),
                 Err(finding) => read_shown(&config, &root, Some(Pressed::Found(finding))),
             }
         })

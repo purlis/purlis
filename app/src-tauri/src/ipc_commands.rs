@@ -657,6 +657,7 @@ macro_rules! app_commands {
                 poolsetuptab::pool_setup_ssh_hosts,
                 poolsetuptab::pool_setup_connect,
                 poolsetuptab::pool_setup_trust,
+                poolsetuptab::pool_setup_tls_files,
                 poolsetuptab::pool_setup_choose_cluster,
                 poolsetuptab::pool_setup_install,
                 poolsetuptab::pool_setup_operator_image,

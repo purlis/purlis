@@ -973,6 +973,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_setup_ssh_hosts",
     "pool_setup_connect",
     "pool_setup_trust",
+    // Naming a tcp:// machine's TLS files, a vault entry among them, is the person's too (#6267).
+    "pool_setup_tls_files",
     "pool_setup_name",
     "pool_setup_pool",
     "pool_setup_add",

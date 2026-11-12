@@ -388,6 +388,8 @@ fn the_machine_connect_reads_is_kept_and_a_pin_only_once_trusted() {
         Some(Chosen {
             route: "ssh://me@build-box".into(),
             trusted: None,
+            tls: None,
+            trusted_tls: None,
         })
     );
     let remote = crate::runners::Remote {
@@ -415,4 +417,271 @@ fn the_machine_connect_reads_is_kept_and_a_pin_only_once_trusted() {
     // Another kind on Where forgets the machine.
     choose_kind(config.path(), Kind::Docker).unwrap();
     assert_eq!(read_choices(config.path()).unwrap().connect, None);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Over Docker's TLS API (#6267).
+
+fn files() -> crate::tlsroute::Files {
+    crate::tlsroute::Files::new(
+        "/home/me/.docker/ca.pem".into(),
+        "/home/me/.docker/cert.pem".into(),
+        crate::tlsroute::KeyFrom::File("/home/me/.docker/key.pem".into()),
+    )
+    .unwrap()
+}
+
+fn ca() -> crate::tlsroute::Fingerprint {
+    crate::tlsroute::Fingerprint::of_der(b"the CA")
+}
+
+fn over_tls() -> Connecting {
+    Connecting {
+        tls: Some(files()),
+        ..routed("tcp://build-box:2376")
+    }
+}
+
+fn tls_found(finding: Finding) -> Step {
+    connect_of(&remote_facts(Connecting {
+        finding: Some(finding),
+        ..over_tls()
+    }))
+}
+
+#[test]
+fn a_tcp_machine_without_tls_files_is_refused_as_plain_tcp_naming_the_way_to_turn_tls_on() {
+    let connect = connect_of(&remote_facts(routed("tcp://build-box:2376")));
+    assert_eq!(connect.state, StepState::Attention);
+    assert_eq!(connect.cause, Some("plain-tcp"));
+    assert_eq!(connect.next.as_ref().unwrap().id, ActionId::UseSshInstead);
+    assert!(connect.findings[0].contains("anyone who can reach that port"));
+    assert!(connect.findings[0].contains("under Options"));
+    assert_eq!(connect.machine.unwrap().over, "tls");
+}
+
+#[test]
+fn a_tcp_machine_with_its_files_named_is_connected_to_then_its_ca_shown_to_trust() {
+    let connect = connect_of(&remote_facts(over_tls()));
+    assert_eq!(connect.state, StepState::Current);
+    let next = connect.next.as_ref().unwrap();
+    assert_eq!(next.id, ActionId::ConnectMachine);
+    assert_eq!(next.label, "Connect to build-box");
+    let machine = connect.machine.unwrap();
+    assert_eq!(machine.tls.unwrap().cert, "/home/me/.docker/cert.pem");
+
+    let connect = connect_of(&remote_facts(Connecting {
+        met_ca: Some(CaMet {
+            fingerprint: ca(),
+            subject: Some("CN=docker-ca".to_owned()),
+            file: "/home/me/.docker/ca.pem".to_owned(),
+        }),
+        ..over_tls()
+    }));
+    assert_eq!(connect.next.as_ref().unwrap().id, ActionId::TrustMachine);
+    assert!(connect.findings[0].contains("compare the two fingerprints"));
+    let shown = connect.machine.unwrap().ca.unwrap();
+    assert_eq!(shown.fingerprint, ca().shown());
+    assert_eq!(shown.subject.as_deref(), Some("CN=docker-ca"));
+}
+
+#[test]
+fn a_trusted_tcp_machine_is_done_with_its_ca_and_pool_goes_on_there() {
+    let setup = of(
+        Kind::RemoteDocker,
+        &remote_facts(Connecting {
+            trusted_tls: Some(crate::tlsroute::Pin {
+                ca: ca(),
+                engine: "ABCD".to_owned(),
+            }),
+            ..over_tls()
+        }),
+        &chosen(),
+    );
+    let connect = setup.step(StepId::Connect).unwrap();
+    assert_eq!(connect.state, StepState::Done);
+    assert_eq!(
+        connect.line.as_deref(),
+        Some(format!("build-box, CA {}", ca().shown()).as_str())
+    );
+    assert_eq!(setup.at, Some(StepId::Pool));
+    let pool = setup.step(StepId::Pool).unwrap();
+    assert!(
+        pool.next.as_ref().unwrap().does.contains("build-box"),
+        "the pool is made on the other machine"
+    );
+}
+
+#[test]
+fn a_ca_file_that_no_longer_matches_shows_both_and_offers_to_check_and_trust_again() {
+    let step = tls_found(Finding::CaChanged {
+        host: "build-box".into(),
+        pinned: ca().shown(),
+        now: "AA:BB".into(),
+        file: "/home/me/.docker/ca.pem".into(),
+    });
+    assert_eq!(step.state, StepState::Attention);
+    assert_eq!(step.cause, Some("pool-pin-changed"));
+    assert!(step.findings[0].contains("/home/me/.docker/ca.pem"));
+    assert!(step.findings[0].contains(&ca().shown()));
+    assert_eq!(step.next.unwrap().label, "Check and trust again");
+    assert_eq!(step.machine.unwrap().ca_now.as_deref(), Some("AA:BB"));
+}
+
+#[test]
+fn each_tls_finding_says_which_file_to_check() {
+    let host = || "build-box".to_owned();
+    for (finding, cause, file) in [
+        (
+            Finding::NotSignedByCa {
+                host: host(),
+                ca: "/home/me/.docker/ca.pem".into(),
+            },
+            "tls-not-signed",
+            "/home/me/.docker/ca.pem",
+        ),
+        (
+            Finding::ServerExpired { host: host() },
+            "tls-expired",
+            "--tlscert names there",
+        ),
+        (
+            Finding::WrongName {
+                host: host(),
+                name: "docker, localhost".into(),
+            },
+            "tls-wrong-name",
+            "--tlscert names on build-box",
+        ),
+        (
+            Finding::ClientRefused {
+                host: host(),
+                cert: "/home/me/.docker/cert.pem".into(),
+            },
+            "tls-client-refused",
+            "/home/me/.docker/cert.pem",
+        ),
+        (
+            Finding::ClientExpired {
+                host: host(),
+                cert: "/home/me/.docker/cert.pem".into(),
+            },
+            "tls-client-expired",
+            "/home/me/.docker/cert.pem",
+        ),
+        (
+            Finding::TlsFile {
+                host: host(),
+                file: "/home/me/.docker/key.pem".into(),
+                why: "isn't there".into(),
+            },
+            "tls-file",
+            "/home/me/.docker/key.pem isn't there",
+        ),
+    ] {
+        let step = tls_found(finding.clone());
+        assert_eq!(step.state, StepState::Attention, "{finding:?}");
+        assert_eq!(step.cause, Some(cause), "{finding:?}");
+        assert!(step.findings[0].contains(file), "{}", step.findings[0]);
+        assert!(step.next.is_some(), "{finding:?} offers a way on");
+        // The same words in the window and in `purlis pool`.
+        assert_eq!(step.findings[0], said(&finding));
+    }
+    let named = tls_found(Finding::WrongName {
+        host: host(),
+        name: "docker, localhost".into(),
+    });
+    assert!(named.findings[0].contains("another name (docker, localhost)"));
+    let expired = said(&Finding::ServerExpired { host: host() });
+    assert!(expired.contains("build-box's certificate has expired"));
+    let wrong_ca = said(&Finding::NotSignedByCa {
+        host: host(),
+        ca: "/ca.pem".into(),
+    });
+    assert!(wrong_ca.contains("isn't signed by the CA you chose"));
+}
+
+#[test]
+fn see_what_this_does_over_tls_prints_the_cas_fingerprint_there_and_names_the_files() {
+    let see = by_hand_tls("tcp://build-box:2376", Some(&files()));
+    assert!(
+        see.text
+            .contains("openssl x509 -noout -fingerprint -sha256")
+    );
+    assert!(see.text.contains(
+        "docker -H tcp://build-box:2376 --tlsverify --tlscacert /home/me/.docker/ca.pem \
+         --tlscert /home/me/.docker/cert.pem --tlskey /home/me/.docker/key.pem info"
+    ));
+}
+
+#[test]
+fn the_tls_files_are_kept_with_a_tcp_machine_and_its_ca_pin_only_once_trusted() {
+    let config = tempfile::tempdir().unwrap();
+    assert!(
+        choose_tls_files(config.path(), Some(files())).is_err(),
+        "no machine yet"
+    );
+    choose_machine(config.path(), Some("tcp://build-box:2376")).unwrap();
+    choose_tls_files(config.path(), Some(files())).unwrap();
+    // Another tcp:// machine typed keeps the files; an ssh:// one doesn't take them.
+    choose_machine(config.path(), Some("tcp://other-box")).unwrap();
+    assert_eq!(
+        read_choices(config.path()).unwrap().connect.unwrap().tls,
+        Some(files())
+    );
+    choose_machine(config.path(), Some("ssh://me@box")).unwrap();
+    assert_eq!(
+        read_choices(config.path()).unwrap().connect.unwrap().tls,
+        None
+    );
+    assert!(choose_tls_files(config.path(), Some(files())).is_err());
+
+    let remote = crate::tlsroute::Remote {
+        route: crate::tlsroute::Route::parse("tcp://build-box").unwrap(),
+        files: crate::tlsroute::Files::new(
+            "/home/me/.docker/ca.pem".into(),
+            "/home/me/.docker/cert.pem".into(),
+            crate::tlsroute::KeyFrom::Vault {
+                plane: "/home/me/plane".into(),
+                vault: "docker-box".into(),
+                key: "TLS_KEY".into(),
+            },
+        )
+        .unwrap(),
+        pin: crate::tlsroute::Pin {
+            ca: ca(),
+            engine: "ABCD".to_owned(),
+        },
+    };
+    trusted_tls(config.path(), &remote).unwrap();
+    let file = std::fs::read_to_string(
+        crate::machine::dir(config.path()).join(super::super::CHOICES_FILE),
+    )
+    .unwrap();
+    let file: serde_json::Value = serde_json::from_str(&file).unwrap();
+    assert_eq!(
+        file["connect"],
+        serde_json::json!({
+            "route": "tcp://build-box:2376",
+            "tls": {
+                "ca": "/home/me/.docker/ca.pem",
+                "cert": "/home/me/.docker/cert.pem",
+                "keyIn": { "plane": "/home/me/plane", "vault": "docker-box", "key": "TLS_KEY" },
+            },
+            "trusted": { "ca": ca().spelled(), "engine": "ABCD" },
+        })
+    );
+    let kept = read_choices(config.path()).unwrap().connect.unwrap();
+    assert_eq!(kept.trusted_tls, Some(remote.pin.clone()));
+    assert_eq!(kept.trusted, None);
+    // Files named again forget the trust: it was of the files as they were.
+    choose_tls_files(config.path(), Some(files())).unwrap();
+    assert_eq!(
+        read_choices(config.path())
+            .unwrap()
+            .connect
+            .unwrap()
+            .trusted_tls,
+        None
+    );
 }
