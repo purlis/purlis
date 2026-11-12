@@ -263,4 +263,16 @@ describe("Links in this pane…", () => {
     await new Promise((done) => setTimeout(done, 20));
     expect(screen.queryByRole("dialog", { name: "Links in this pane" })).toBeNull();
   });
+
+  it("copies the target of the row it is on with ⌘C, and not with ⌘⇧C or ⌥⌘C", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    const { dialog } = await listed();
+    const newest = within(dialog).getAllByRole("option")[0];
+    fireEvent.keyDown(newest, { key: "c", metaKey: true, shiftKey: true });
+    fireEvent.keyDown(newest, { key: "c", metaKey: true, altKey: true });
+    expect(writeText).not.toHaveBeenCalled();
+    fireEvent.keyDown(newest, { key: "c", metaKey: true });
+    expect(writeText).toHaveBeenCalledWith("https://c.example/three");
+  });
 });

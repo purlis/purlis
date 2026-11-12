@@ -43,7 +43,7 @@ import { asksForAMenu } from "../ui/menu/ContextMenu";
 import { asksForTheMenu } from "../terminalRows";
 import { fileKeyOf, fileKeySaid, opensIt } from "./paletteKeys";
 import { opensFind, opensFindInAFile } from "./findKeys";
-import { linksListKeySaid, opensTheLinksList } from "../paneLinksKey";
+import { copiesALink, linkCopyKeySaid, linksListKeySaid, opensTheLinksList } from "../paneLinksKey";
 import { viewHistoryKeyOf } from "./viewKeys";
 import { focusKeySaid, opensTheShortcuts, shortcutsKeySaid, togglesFocus } from "./ownKeys";
 import { TRIAGE_LETTER, triageKeyOf, triageKeySaid, type TriageKey } from "../asksTriage";
@@ -770,6 +770,18 @@ export const SHORTCUTS: readonly Shortcut[] = [
     said: linksListKeySaid,
     yields: [],
     matches: opensTheLinksList,
+  },
+  {
+    id: "links.copy",
+    does: "Copy the target of the link a Links in this pane… row is on",
+    group: "Dialogs and forms",
+    where: "row",
+    kind: "key",
+    // As Copy anywhere; Shift and Alt up, so ⌘⇧C and ⌥⌘C stay what else has them (#6220).
+    chords: { mac: [cmd("c")], other: [ctl("c")] },
+    said: linkCopyKeySaid,
+    yields: [],
+    matches: copiesALink,
   },
   {
     id: "chat.menu",

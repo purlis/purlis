@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { LinkCandidate, LinkFrom, LinkOpened, LinkSeen } from "./bindings";
+import { sentence } from "./coreSentence";
 import { onAMac } from "./mac";
 import {
   UNASKED,
@@ -255,11 +256,4 @@ export function LinkAnswer({
   );
 }
 
-/**
- * A sentence the core said, as the window starts one: its first letter capital, but purlis's
- * name, which is lowercase wherever it stands (`docs/ui-copy.md`).
- */
-export function sentence(said: string): string {
-  if (/^purlis\b/u.test(said)) return said;
-  return said.charAt(0).toUpperCase() + said.slice(1);
-}
+export { sentence };

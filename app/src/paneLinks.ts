@@ -75,6 +75,30 @@ const MOST_ROWS = 24;
 /** The most answers a pane keeps: the oldest goes first. */
 const MOST_KEPT = 256;
 
+/** A pane's kept answers, by {@link linkKey}. */
+type Kept = Map<string, Promise<LinkSeen | null>>;
+
+/** **What a link is kept and listed by**: its kind and its text. */
+export const linkKey = (link: Pick<LinkCandidate, "kind" | "text">) =>
+  `${link.kind}\u0000${link.text}`;
+
+/**
+ * **Keeps the core's answer for `key`**, the oldest let go of once a pane keeps
+ * {@link MOST_KEPT}. An answer the core could not give is not kept: it is asked again.
+ */
+function keep(kept: Kept, key: string, asked: Promise<LinkSeen | null>): Promise<LinkSeen | null> {
+  const answer: Promise<LinkSeen | null> = asked.catch(() => {
+    if (kept.get(key) === answer) kept.delete(key);
+    return null;
+  });
+  if (!kept.has(key) && kept.size >= MOST_KEPT) {
+    const oldest = kept.keys().next().value;
+    if (oldest !== undefined) kept.delete(oldest);
+  }
+  kept.set(key, answer);
+  return answer;
+}
+
 /**
  * A line as xterm holds it across the rows it wraps over: its text, each character's cell, and
  * whether the line went on before or after the part read.
@@ -236,25 +260,18 @@ export type LinkedPane = IDisposable & {
  */
 export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
   /** The core's answers, per pane, by kind and text: a line hovered again asks nothing. */
-  const kept = new Map<string, Promise<LinkSeen | null>>();
+  const kept: Kept = new Map();
   const seenOf = (found: Found): Promise<LinkSeen | null> => {
-    const key = `${found.kind}\u0000${found.text}`;
+    const key = linkKey(found);
     const had = kept.get(key);
     if (had !== undefined) return had;
-    const asked = hands.core.resolve(hands.from(), [{ kind: found.kind, text: found.text }]).then(
-      ([seen]) => seen ?? null,
-      () => {
-        // Not kept: a core that could not answer is asked again on the next hover.
-        kept.delete(key);
-        return null;
-      },
+    return keep(
+      kept,
+      key,
+      hands.core
+        .resolve(hands.from(), [{ kind: found.kind, text: found.text }])
+        .then(([seen]) => seen ?? null),
     );
-    if (kept.size >= MOST_KEPT) {
-      const oldest = kept.keys().next().value;
-      if (oldest !== undefined) kept.delete(oldest);
-    }
-    kept.set(key, asked);
-    return asked;
   };
 
   /** The colour drawn over the link under the pointer, let go of as it leaves. */
@@ -405,7 +422,7 @@ function onScreenNewestFirst(pane: Terminal): Found[] {
   }
   const once = new Set<string>();
   return found.reverse().filter((one) => {
-    const key = `${one.kind}\u0000${one.text}`;
+    const key = linkKey(one);
     if (once.has(key)) return false;
     once.add(key);
     return true;
@@ -416,17 +433,16 @@ function onScreenNewestFirst(pane: Terminal): Found[] {
 async function screenLinks(
   pane: Terminal,
   hands: Pick<LinkHands, "core" | "from">,
-  kept: Map<string, Promise<LinkSeen | null>>,
+  kept: Kept,
 ): Promise<ScreenLink[]> {
   const found = onScreenNewestFirst(pane);
-  const keyOf = (one: Found) => `${one.kind}\u0000${one.text}`;
   /** Each candidate's answer, held here too: one the pane lets go of still counts now. */
   const answerOf = new Map<string, Promise<LinkSeen | null>>();
   const unasked: Found[] = [];
   for (const one of found) {
-    const had = kept.get(keyOf(one));
+    const had = kept.get(linkKey(one));
     if (had === undefined) unasked.push(one);
-    else answerOf.set(keyOf(one), had);
+    else answerOf.set(linkKey(one), had);
   }
   if (unasked.length > 0) {
     const asked = hands.core.resolve(
@@ -434,25 +450,18 @@ async function screenLinks(
       unasked.map((one) => ({ kind: one.kind, text: one.text })),
     );
     unasked.forEach((one, at) => {
-      const key = keyOf(one);
-      const answer = asked.then(
-        (answers) => answers[at] ?? null,
-        () => {
-          // Not kept: a core that could not answer is asked again.
-          kept.delete(key);
-          return null;
-        },
+      const key = linkKey(one);
+      answerOf.set(
+        key,
+        keep(
+          kept,
+          key,
+          asked.then((answers) => answers[at] ?? null),
+        ),
       );
-      answerOf.set(key, answer);
-      kept.set(key, answer);
     });
-    while (kept.size > MOST_KEPT) {
-      const oldest = kept.keys().next().value;
-      if (oldest === undefined) break;
-      kept.delete(oldest);
-    }
   }
-  const answers = await Promise.all(found.map((one) => answerOf.get(keyOf(one)) ?? null));
+  const answers = await Promise.all(found.map((one) => answerOf.get(linkKey(one)) ?? null));
   return found.flatMap((one, at) => {
     const seen = answers[at];
     return seen === null ? [] : [{ candidate: { kind: one.kind, text: one.text }, seen }];

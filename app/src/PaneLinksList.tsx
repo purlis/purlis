@@ -1,15 +1,17 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, type KeyboardEvent, type ReactNode } from "react";
+import { ExternalLink } from "lucide-react";
 import type { KindHint } from "./bindings";
+import { sentence } from "./coreSentence";
 import { onAMac } from "./mac";
-import type { ScreenLink } from "./paneLinks";
-import { sentence } from "./PaneLinkSurfaces";
+import { linkKey, type ScreenLink } from "./paneLinks";
+import { copiesALink, linkCopyKeySaid } from "./paneLinksKey";
 import { Dialog } from "./ui/dialog/Dialog";
 import { ListBox, ListOption } from "./ui/list/List";
-import { ListFilter, noMatchSaid } from "./ui/list/ListFilter";
-import { RowBelow, RowDescription, RowLabel } from "./ui/list/Row";
+import { ListFilter, noMatchSaid, quickPickKeys, useListFilter } from "./ui/list/ListFilter";
+import { RowBelow, RowDescription, RowLabel, RowLead } from "./ui/list/Row";
 
 /**
  * **Links in this pane…** (#6220, spec #6208 D5; the prototype's S5): the links on the pane's
@@ -27,26 +29,27 @@ import { RowBelow, RowDescription, RowLabel } from "./ui/list/Row";
 /** What each kind of link is called in the list. A new kind says its word here. */
 export const KIND_SAID: Record<KindHint, string> = { url: "Web address" };
 
+/** Each kind's icon, at the row's lead (the prototype's S5). Its word is the row's description,
+ *  so the icon is not heard. */
+const KIND_ICON: Record<KindHint, ReactNode> = { url: <ExternalLink aria-hidden="true" /> };
+
 /** What the list's items are called. */
 const LINKS = { one: "link", many: "links" };
 
 /** What the list says with no links on screen. */
 export const NO_LINKS = "No links on screen.";
 
-/** An entry's key in the list: its kind and its text, which the hook lists once each. */
-const keyOf = (link: ScreenLink) => `${link.candidate.kind}:${link.candidate.text}`;
+/** An entry's key in the list: the hook's, which lists each once. */
+const keyOf = (link: ScreenLink) => linkKey(link.candidate);
 
 /** Whether `link` can be picked: the core opens it, or asks first. */
 const pickable = (link: ScreenLink) => link.seen.does.does !== "refused";
 
-/** The entries `query` leaves: a case-insensitive substring of the text or the target. */
-function matching(links: readonly ScreenLink[], query: string): ScreenLink[] {
-  const typed = query.trim().toLowerCase();
-  if (typed === "") return [...links];
-  return links.filter((link) =>
-    `${link.candidate.text} ${link.seen.target}`.toLowerCase().includes(typed),
-  );
-}
+/** What the filter matches an entry by: its text and its target. */
+const nameOf = (link: ScreenLink) => `${link.candidate.text} ${link.seen.target}`;
+
+/** No links yet: the same empty list each time, so the filter keeps its answer. */
+const NONE: readonly ScreenLink[] = [];
 
 /** An entry's line under its kind: why it asks first, or why it will not open. */
 function whySaid(link: ScreenLink): string | undefined {
@@ -70,11 +73,11 @@ export function PaneLinksList({
   onClose: () => void;
 }) {
   const mac = onAMac();
-  const [query, setQuery] = useState("");
   const listId = useId();
   const content = useRef<HTMLDivElement>(null);
-  const all = links ?? [];
-  const shown = matching(all, query);
+  const all = links ?? NONE;
+  // A quick picker's filter: typing is how it is used, however short the list.
+  const { query, setQuery, shown } = useListFilter(all, nameOf, { always: true });
 
   // The filter takes the keys, as a quick picker's does, once the screen is read.
   const read = links !== undefined;
@@ -87,22 +90,13 @@ export function PaneLinksList({
     if (link !== undefined && pickable(link)) onPick(link);
   };
 
-  /** **The filter's keys, as a palette's**: Enter takes the first match that opens, and the
-   *  down arrow goes into the list. */
-  const filterKey = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      pick(shown.find(pickable));
-    } else if (event.key === "ArrowDown") {
-      event.preventDefault();
-      document.getElementById(listId)?.querySelector<HTMLElement>('[role="option"]')?.focus();
-    }
-  };
+  /** **The filter's keys, as a quick picker's** (`ui/list`): Enter takes the first match that
+   *  opens. */
+  const filterKey = quickPickKeys(listId, () => shown.find(pickable), pick);
 
-  /** ⌘C (Ctrl+C off a Mac) on an entry copies its target. */
+  /** ⌘C (Ctrl+C off a Mac) on an entry copies its target (`links.copy`). */
   const copyKey = (event: KeyboardEvent<HTMLDivElement>) => {
-    const held = mac ? event.metaKey : event.ctrlKey;
-    if (!held || event.key.toLowerCase() !== "c") return;
+    if (!copiesALink(event, mac)) return;
     const key = (event.target as Element).closest<HTMLElement>("[data-key]")?.dataset.key;
     const link = byKey(key);
     if (link === undefined) return;
@@ -116,8 +110,10 @@ export function PaneLinksList({
       title="Links in this pane"
       subtitle="On screen, newest first"
       // What the keys do, only where there is something to do it to.
-      summary={
-        all.length > 0 ? <>⏎ opens · {mac ? "⌘C" : "Ctrl+C"} copies its target</> : undefined
+      description={
+        all.length > 0
+          ? `Enter opens a link. ${linkCopyKeySaid(mac)} copies its target.`
+          : undefined
       }
       className="pane-links-list"
       data-testid="pane-links-list"
@@ -152,6 +148,7 @@ export function PaneLinksList({
                     unavailable={!pickable(link)}
                     data-key={keyOf(link)}
                   >
+                    <RowLead>{KIND_ICON[link.seen.kind]}</RowLead>
                     <RowLabel className="pane-link-target">{link.seen.target}</RowLabel>
                     <RowDescription>
                       {KIND_SAID[link.seen.kind]}
