@@ -136,7 +136,7 @@ describe("choosing the profiles a new pool signs in", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Close" }));
 
     // Then the pool's lines, as its row draws them.
-    const list = await screen.findByRole("list", { name: "Profiles on pool builds" });
+    const list = await screen.findByRole("grid", { name: "Profiles on pool builds" });
     expect(within(list).getAllByText("Signed in on pool builds.")).toHaveLength(2);
   });
 
@@ -159,7 +159,7 @@ describe("choosing the profiles a new pool signs in", () => {
     await userEvent.click(within(group).getByRole("checkbox", { name: /work/ }));
     await userEvent.click(within(group).getByRole("checkbox", { name: /oss/ }));
     await userEvent.click(screen.getByRole("button", { name: "Sign in 1 profile" }));
-    const list = await screen.findByRole("list", { name: "Profiles on pool builds" });
+    const list = await screen.findByRole("grid", { name: "Profiles on pool builds" });
     expect(within(list).getByText("oss")).toBeInTheDocument();
     expect(started).toEqual([]);
   });
@@ -169,7 +169,7 @@ describe("choosing the profiles a new pool signs in", () => {
     await userEvent.click(within(group).getByRole("checkbox", { name: /work/ }));
     await userEvent.click(within(group).getByRole("checkbox", { name: /oc/ }));
     await userEvent.click(screen.getByRole("button", { name: "Sign in 1 profile" }));
-    const list = await screen.findByRole("list", { name: "Profiles on pool builds" });
+    const list = await screen.findByRole("grid", { name: "Profiles on pool builds" });
     expect(within(list).getByText("oc")).toBeInTheDocument();
     expect(started).toEqual([]);
   });
@@ -177,7 +177,7 @@ describe("choosing the profiles a new pool signs in", () => {
   it("Not now records nothing and leaves each line offering Sign in", async () => {
     await strip();
     await userEvent.click(screen.getByRole("button", { name: "Not now" }));
-    const list = await screen.findByRole("list", { name: "Profiles on pool builds" });
+    const list = await screen.findByRole("grid", { name: "Profiles on pool builds" });
     expect(
       within(list).getByRole("button", { name: "Sign work in on pool builds" }),
     ).toBeInTheDocument();
@@ -209,7 +209,7 @@ describe("choosing the profiles a new pool signs in", () => {
       /keeps the profile a new chat gets/,
     );
     expect(
-      await screen.findByRole("list", { name: "Profiles on pool builds" }),
+      await screen.findByRole("grid", { name: "Profiles on pool builds" }),
     ).toBeInTheDocument();
   });
 });
