@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup } from "@testing-library/react";
 import { clearMocks } from "@tauri-apps/api/mocks";
-import type { PlaneAlerts, PlaneSaving } from "./bindings";
+import type { PlaneAlerts, PlaneSaving, StaleClone } from "./bindings";
 import { aWindow, rootOf, settled, type Answers, type Asked } from "./projectSwitch.testkit";
 import { keepTheirOrder } from "./commandOrder";
 import { countReactsCommits, renderedBy } from "./reactCommits.testkit";
@@ -97,11 +97,17 @@ const anAlert = (plane: string, detail: string): PlaneAlerts => ({
 });
 
 /** A core that answers every git standing, each ask with a new object saying the same. */
-function answers(): { answers: Answers; alertOfLast: { detail: string } } {
+function answers(): {
+  answers: Answers;
+  alertOfLast: { detail: string };
+  staleIn: Map<string, StaleClone[]>;
+} {
   const alertOfLast = { detail: "The pin is old" };
+  const staleIn = new Map<string, StaleClone[]>();
   const last = rootOf(SHAPE.projects - 1);
   return {
     alertOfLast,
+    staleIn,
     answers: {
       plane_saving: () => structuredClone(STANDING),
       alerts_everywhere: () =>
@@ -110,7 +116,10 @@ function answers(): { answers: Answers; alertOfLast: { detail: string } } {
             ? anAlert(last, alertOfLast.detail)
             : { plane: rootOf(n), alerts: [], stopped: null },
         ),
-      stale_clones: () => ({ stale: [], unread: [] }),
+      stale_clones: ({ plane }) => ({
+        stale: structuredClone(staleIn.get(plane as string) ?? []),
+        unread: [],
+      }),
       chats_plane_updated: () => [],
     },
   };
@@ -152,6 +161,44 @@ describe("what draws a project view again", () => {
 
     expect(asksOf(asked, from, "alerts_everywhere").length).toBeGreaterThanOrEqual(1);
     expect(planeViewsDrawn()).toBe(1);
+  });
+
+  it("draws none as the window comes back into focus and its stale repos are asked again", async () => {
+    const core = answers();
+    const { asked } = await aWindow(SHAPE, core.answers);
+    await settled(asked);
+    const from = asked.length;
+    renderedBy.clear();
+
+    await act(async () => void window.dispatchEvent(new Event("focus")));
+    await settled(asked);
+
+    expect(asksOf(asked, from, "stale_clones").map((one) => one.plane)).toEqual([rootOf(0)]);
+    expect(planeViewsDrawn()).toBe(0);
+  });
+
+  it("draws only the project whose repo went stale, once, and none again for the same finding", async () => {
+    const core = answers();
+    const { asked, planeChanged } = await aWindow(SHAPE, core.answers);
+    await settled(asked);
+    renderedBy.clear();
+
+    core.staleIn.set(rootOf(1), [
+      {
+        workspace: "w0",
+        repo: "app",
+        branch: { branch: "spike", default: "main" },
+        remote: null,
+      },
+    ]);
+    for (let n = 0; n < SHAPE.projects; n++) await planeChanged(rootOf(n), "git");
+    await settled(asked);
+    expect(planeViewsDrawn()).toBe(1);
+
+    renderedBy.clear();
+    for (let n = 0; n < SHAPE.projects; n++) await planeChanged(rootOf(n), "git");
+    await settled(asked);
+    expect(planeViewsDrawn()).toBe(0);
   });
 
   it("reads the save standing of the project in front alone on the 10 s beat, and draws nothing for the same answer", async () => {

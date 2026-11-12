@@ -64,7 +64,7 @@ function Listed({
   dismiss: (cause: string) => void;
   dismissed: ReadonlySet<string>;
 }) {
-  const clones = useStaleClones({ plane: PLANE, dismissed, dismiss, settle });
+  const clones = useStaleClones({ plane: PLANE, shown: true, dismissed, dismiss, settle });
   return <StaleCloneNotices clones={clones} />;
 }
 
