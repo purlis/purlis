@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794483317836,
+  "lastUpdate": 1794489203557,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -47334,6 +47334,48 @@ window.BENCHMARK_DATA = {
             "value": 101.6184,
             "unit": "ms",
             "extra": "median of 5 runs: 101.236, 101.484, 101.618, 102.505, 102.892 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "545bf801416f946ba35969863371d18b4d5af4ab",
+          "message": "M66 follow-ups: ChatSkills.none_because, Updates' listens, themes.md versions, pool Sign in names (#6302, #6303, #6308, #6319) (#6331)\n\n* ChatSkills.none_because: the field says why a chat is offered no skills (#6302)\n\nChatSkills.not_supported said why a chat on a declared harness gets no\nskills (SK-30), but it also carries that a runner said none (#4218) and,\nsince #6300, that the chat is not running now (#6196). It is named\nnone_because in the struct, the generated bindings and uiRpc client, and\nevery reader: UseSkill.tsx and the tests and stories that draw a chat's\nskills. The core-side SkillsOf.not_supported keeps its name: it holds\nonly the declared harness's line.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77HGMYRAZS36VPV90G3EXAD\nPurlis-Persona: steward\n\n* Updates holds its listens with untilStopped, and has no stop wrapper of its own (#6303)\n\nuseUpdates wrapped every stop in stopListening (a try plus .catch) and\nkept a gone flag of its own, both written when Tauri's async unlisten\ncould reject unhandled once the window's event bridge went (the updater's\nmove to the title bar). here.ts's listen and untilStopped own that now\n(#6194, #6273): its stop never fails, and a stop that comes before the\nlisten answers stops it as it answers. Each of the three listens is held\nby untilStopped and the cleanup calls the three stops.\n\nTwo tests hold what the wrapper was for: a hook gone before its listens\nanswer leaves none behind, and one gone after the event mocks are torn\ndown rejects nothing. Each was seen red: the first with the cleanup's\nstops dropped, both with Tauri's listen held by hand.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77HGMYRAZS36VPV90G3EXAD\nPurlis-Persona: steward\n\n* themes.md names the manifest version each family first shipped in, and a test holds it (#6308)\n\nNine places said \"the next release's manifest version\" of families and a\npart that manifest version 13 (0.5.0) shipped: panel-separator,\nview-frame, page-tabs, disclosure, review-page, table, tree, the\ntooltip's shortcut part, and activity's rewording (#3144, merged while\nthe manifest was at 12). Each now says 13, from its since.\n\nEach claim is written `name`, manifest version N, and\nevery_version_the_docs_prose_gives_a_family_is_the_manifest_s_6308 checks\nevery such claim, for a family, a part or a property, against the\nmanifest: a released one must give its since, and only an unreleased one\nmay say \"the next release's manifest version\", which the test refuses\nanywhere it names nothing. It was seen red on the nine.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77HGMYRAZS36VPV90G3EXAD\nPurlis-Persona: steward\n\n* Updates' listen test waits for all three listens, and says what the code does now (#6303)\n\nReview: the test's comment and its ten-turn loop described the old\none-after-another listens; all three are asked at once now, so its\nprecondition waits for the three and one turn answers them.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77HGMYRAZS36VPV90G3EXAD\nPurlis-Persona: steward\n\n* themes.md's version check reaches states and \"since NEXT\", and the release step names it (#6308)\n\nReview found `invalid` (since NEXT) in the text-input paragraph, for a\nstate manifest version 13 shipped (#3110), which the check missed: it\nread only \"the next release's manifest version\" and only families. It\nnow resolves the manifest's own states and properties too, takes a claim\nwritten `name` (manifest version N as well as `name`, manifest version N,\nand refuses a bare \"since NEXT\" as it refuses the other phrase. The line\nsays 13; the check was seen red on the old line and on a wrong number.\nThe unit test asserts each complaint, not a count. docs/updating.md tells\nthe release step to write the number where the prose says the next\nrelease of what it numbers.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77HGMYRAZS36VPV90G3EXAD\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-12T12:30:17Z",
+          "tree_id": "ebebf9a2ce5f349e2f22a2cd5adc383c623d04e2",
+          "url": "https://github.com/purlis/purlis/commit/545bf801416f946ba35969863371d18b4d5af4ab"
+        },
+        "date": 1794489198814,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.707138,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.684, 0.704, 0.707, 0.719, 0.724 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4936115,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.370, 16.383, 16.494, 16.513, 16.548 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.7372595,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.354, 101.243, 101.737, 102.073, 102.649 ms"
           }
         ]
       }
