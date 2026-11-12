@@ -677,3 +677,41 @@ fn runs_tells_the_copy_a_persona_names_by_its_workspace_from_the_chats_own() {
     );
     assert!(listed(None).contains("2026-11-02"), "alpha's own copy");
 }
+
+/// #5725: a load of `purlis-building-ui`, which purlis retired on the person's ruling of
+/// 2026-11-12, says it was removed and where its guide is, not that the chat has no such skill.
+#[test]
+fn a_load_of_the_retired_building_skill_says_it_was_removed_and_opens_no_run_5725() {
+    let p = a_plane();
+    for name in [
+        "purlis-building-ui",
+        "purlis:purlis-building-ui",
+        "purlis:building-ui",
+        "purlis-building-purlis-ui",
+    ] {
+        let (said, started) = called(
+            &chat(p.path(), Some("claude-code")),
+            SKILL_LOAD,
+            &[("name", name)],
+        );
+        assert_eq!(
+            said,
+            Err(
+                "`purlis-building-ui` was removed from purlis, so no chat can load it: its guide \
+                 is `docs/building-ui.md` in the purlis repository"
+                    .to_owned()
+            ),
+            "{name}"
+        );
+        assert!(started.is_empty(), "{name}");
+    }
+    let (said, _) = called(
+        &chat(p.path(), Some("claude-code")),
+        SKILL_LOAD,
+        &[("name", "building-ui")],
+    );
+    assert!(
+        said.unwrap_err()
+            .starts_with("this chat has no skill named")
+    );
+}

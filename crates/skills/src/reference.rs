@@ -26,6 +26,16 @@ pub const RENAMED: &[(&str, &str)] = &[
     ("purlis-add-curation-action", "purlis-curation-action"),
 ];
 
+/// **Built-in skills purlis no longer ships, with no skill in their place**, each by its last
+/// name and where what it said is now (ADR 0099 as amended 2026-11-12). Every name it had
+/// ([`RENAMED`], `purlis:` or `charter:`, bare) still reads as it ([`Reference::retired`]), so a
+/// persona's list naming it is told it was removed rather than that it names nothing, and a run
+/// recorded under it keeps its name ([`crate::run_name`]).
+pub const RETIRED: &[(&str, &str)] = &[(
+    "purlis-building-ui",
+    "its guide is `docs/building-ui.md` in the purlis repository",
+)];
+
 /// **What an entry that names another workspace's skill starts with** (SK-5a, #2933):
 /// `workspaces/<ws>:<name>`, the plane's own path to the workspace, then the skill's name. No
 /// plugin's name holds a `/`, so it names no harness skill.
@@ -119,6 +129,18 @@ impl Reference {
             .iter()
             .find(|(old, _)| prefixed && *old == own)
             .copied()
+    }
+
+    /// **The retired built-in skill it names ([`RETIRED`]), with where what it said is now**:
+    /// `purlis:<name>` or `charter:<name>` by any name it had, or its own name bare, which
+    /// purlis's reserved prefix keeps from naming any other skill. `None` for any other entry.
+    pub fn retired(&self) -> Option<(&'static str, &'static str)> {
+        let name = match self {
+            Self::BuiltIn(own) => own.as_str(),
+            Self::Named(bare) => bare.as_str(),
+            _ => return None,
+        };
+        RETIRED.iter().find(|(old, _)| *old == name).copied()
     }
 
     /// Whether it names the plane skill `name`: only a bare name can.
