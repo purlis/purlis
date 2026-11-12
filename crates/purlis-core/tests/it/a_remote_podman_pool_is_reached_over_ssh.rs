@@ -14,7 +14,8 @@
 //! image in `REMOTE_PODMAN_TEST_IMAGE`, this machine's `docker` and `podman`, and the agent the
 //! fixture's key is in. Without them it runs nothing and passes. Its job runs it through
 //! `tests/remote-podman/as-another-machine.sh`, so that machine's Podman's init
-//! (`REMOTE_PODMAN_TEST_INIT`) is not on this one and is judged there.
+//! (`REMOTE_PODMAN_TEST_INIT`) is not on this one and is judged there, and the run's seccomp
+//! profile is held to the copy kept there.
 
 #![cfg(unix)]
 
@@ -159,6 +160,34 @@ fn a_runner_made_on_rootless_podman_there_is_checked_as_rootless_podman_writes_i
     let made = docker
         .make(&runner)
         .expect("made, and checked as it was made");
+    // The profile Podman read is the one kept there, beside the socket the sshd shares, and
+    // its folder is gone once the run has read it (#6269): not a file of this side's.
+    let options = purlis_core::forklock::output(docker.command().args([
+        "container",
+        "inspect",
+        "--format",
+        "{{json .HostConfig.SecurityOpt}}",
+        made.container.as_str(),
+    ]))
+    .expect("podman runs");
+    let options = String::from_utf8_lossy(&options.stdout).into_owned();
+    let socket = remote.route.socket().expect("a socket").to_owned();
+    let beside = std::path::Path::new(&socket).parent().expect("its folder");
+    let kept = serde_json::from_str::<Vec<String>>(options.trim())
+        .unwrap_or_default()
+        .into_iter()
+        .find_map(|option| option.strip_prefix("seccomp=").map(PathBuf::from))
+        .unwrap_or_else(|| panic!("a seccomp profile's path: {options}"));
+    let folder = kept.parent().expect("a folder");
+    assert!(
+        folder.parent() == Some(beside)
+            && folder
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with("purlis-kept.")),
+        "the profile was kept there, beside its socket: {}",
+        kept.display()
+    );
+    assert!(!folder.exists(), "let go once read: {}", folder.display());
     // The check before every link, its runtime config read on that machine.
     let checked = docker.check(&made);
     let removed = docker.remove(&made);

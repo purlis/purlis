@@ -776,8 +776,7 @@ jobs:
           "$(docker image inspect --format '{{index .RepoDigests 0}}' localhost:5000/purlis-runner-parity:candidate)"
           REMOTE_PODMAN_TEST_IMAGE
       # Run as from another machine (`as-another-machine.sh`): the other machine's init is not
-      # seen here, and this side's `/tmp` is not seen there, so what is judged of that machine's
-      # files is judged there and what its engine reads is kept there.
+      # seen here, so what is judged of that machine's files is judged there.
       - name: The SSH route against that Podman
         if: steps.scope.outputs.run == 'true'
         run: >-
