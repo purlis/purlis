@@ -8,6 +8,7 @@ import {
   MAKING,
   TRYING,
   on,
+  pickTheMachine,
   press,
   pressTheOneOf,
   tabsAdded,
@@ -57,7 +58,7 @@ describe("Pool setup on rootless Podman on another machine", () => {
 
     // Connect: the Podman connection picked, the key read, then trusted.
     await on("Connect");
-    await press(CONNECTION);
+    await pickTheMachine(CONNECTION);
     await press("Connect to 127.0.0.1", MAKING);
     await press("Trust this machine", MAKING);
 
