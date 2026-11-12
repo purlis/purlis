@@ -447,7 +447,32 @@ describe(`an artifact, as purlis renders it, is isolated from the window and its
       }
       await closeTabOf(STORES.a);
       const sent = Date.now();
-      await sendContextMenu(iconOf(STORES.a));
+      const probe = await browser.executeAsync((css: string, done: (said: string) => void) => {
+        const el = document.querySelector(css);
+        if (!(el instanceof HTMLElement)) return done("no-element");
+        const bar = el.closest('[role="toolbar"]');
+        const notes: string[] = [];
+        const t0 = performance.now();
+        const seen = new MutationObserver((records) => {
+          for (const r of records) {
+            if (r.type === "attributes" && r.target === el) notes.push(`open=${el.getAttribute("data-open")}@${Math.round(performance.now() - t0)}`);
+            for (const gone of r.removedNodes) if (gone === el || gone.contains(el)) notes.push(`icon-removed@${Math.round(performance.now() - t0)}`);
+            for (const gone of r.removedNodes) if (gone instanceof Element && gone.querySelector?.('[role="menu"]')) notes.push(`menu-removed@${Math.round(performance.now() - t0)}`);
+          }
+        });
+        seen.observe(document.body, { subtree: true, childList: true });
+        seen.observe(el, { attributes: true, attributeFilter: ["data-open"] });
+        const box = el.getBoundingClientRect();
+        const ev = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: Math.round(box.left + box.width / 2), clientY: Math.round(box.top + box.height / 2) });
+        el.dispatchEvent(ev);
+        notes.push(`prevented=${ev.defaultPrevented} bar=${bar !== null} openNow=${el.getAttribute("data-open")}`);
+        setTimeout(() => {
+          seen.disconnect();
+          notes.push(`after: connected=${el.isConnected} same=${el === document.querySelector(css)} menus=${document.querySelectorAll('[role="menu"]').length} active=${document.activeElement?.textContent?.slice(0, 30)}`);
+          done(notes.join(" "));
+        }, 1500);
+      }, iconOf(STORES.a));
+      console.log(`[DEBUG-6232] PROBE cycle ${cycle}: ${probe}`);
       const shown = await browser
         .waitUntil(async () => (await $('[role="menu"]').isDisplayed()), { timeout: 5_000 })
         .then(() => true, () => false);

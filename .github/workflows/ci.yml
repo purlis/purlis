@@ -2322,7 +2322,7 @@ jobs:
             sandbox: false
     # [LOOP-6232] temporary: each leg loops artifact-isolation.e2e.ts alone.
     env:
-      PURLIS_LOOP: "4"
+      PURLIS_LOOP: "6"
     runs-on: ${{ matrix.os }}
     steps: *scenario-steps
 
