@@ -177,9 +177,7 @@ export const CheckingDocker: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("button", { name: "Trust this machine" }));
-    await expect(await canvas.findByRole("status")).toHaveTextContent(
-      "Checking Docker on build-box",
-    );
+    await expect(await canvas.findByText(/Checking Docker on build-box/)).toBeVisible();
   },
 };
 
@@ -279,7 +277,7 @@ export const KeyChanged: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByRole("heading", { name: "Check build-box again" })).toBeVisible();
-    await expect(canvas.getByText(/shows a different key/)).toBeVisible();
+    await expect(canvas.getByText(/shows a different key than the one you trusted/)).toBeVisible();
     const again = canvas.getByRole("button", { name: "Check again" });
     again.focus();
     await expect(again).toHaveFocus();
