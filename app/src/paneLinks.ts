@@ -239,8 +239,8 @@ function placeOf(pane: Terminal, x: number, y: number, width: number): LinkPlace
   };
 }
 
-/** **A link on screen**, as *Links in this pane…* lists it (#6220): its candidate and the
- *  core's answer for it. */
+/** **A link on screen**, as *Links in this pane…* lists it (#6220) and the terminal's menu
+ *  offers the one under the pointer (#6219): its candidate and the core's answer for it. */
 export type ScreenLink = { candidate: LinkCandidate; seen: LinkSeen };
 
 /** **A pane with its link hook registered**: let go of by `dispose`. */
@@ -252,6 +252,9 @@ export type LinkedPane = IDisposable & {
    * answered yet are asked in one call. Text the core says nothing of (`null`) is left out.
    */
   onScreen: () => Promise<ScreenLink[]>;
+  /** **The link the pointer is on now**, which the terminal's menu offers to open and copy
+   *  (#6219): xterm keeps a link hovered only while the pointer is in its range. */
+  under: () => ScreenLink | undefined;
 };
 
 /**
@@ -282,6 +285,8 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
   };
   /** The link the pointer is on, by where it is and what it says. */
   let on: string | undefined;
+  /** The link the pointer is on, as the terminal's menu reads it. */
+  let current: ScreenLink | undefined;
   /**
    * **A leave is let happen a moment later.** Drawing the colour redraws the link's row, and
    * xterm lets go of a link on a row it redraws and finds it again at once: a leave and a hover
@@ -293,6 +298,7 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
     clearTimeout(leaving);
     leaving = undefined;
     on = undefined;
+    current = undefined;
     undraw();
     hands.hovered(null);
   };
@@ -370,6 +376,7 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
                 leave();
               }
               on = here;
+              current = { candidate, seen };
               const lines = [...rows.values()];
               if (opens) draw(lines);
               const top = lines[0];
@@ -390,6 +397,7 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
     },
   });
   return {
+    under: () => current,
     dispose() {
       clearTimeout(leaving);
       undraw();
