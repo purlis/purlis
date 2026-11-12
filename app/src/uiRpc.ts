@@ -51,6 +51,7 @@ export const commands = {
 	artifactLinkOpen: __WINDOW_ONLY_RESULT,
 	paneLinkResolve: __WINDOW_ONLY,
 	paneLinkOpen: __WINDOW_ONLY,
+	paneLinkFile: __WINDOW_ONLY_RESULT,
 	artifactSearch: __WINDOW_ONLY_RESULT,
 	artifactDiscuss: __WINDOW_ONLY_START_REFUSED,
 	/**  What the window says about this launch and the session bus: nothing, on a launch with it. */
@@ -7874,7 +7875,7 @@ export type KeyAct = "down" | "up";
  *  **What the pane's pattern took a candidate for**: a hint, never trusted for more. The wire's
  *  half of the core's [`Kind`]; a kind's resolver is the core's `LinkKind`.
  */
-export type KindHint = "url";
+export type KindHint = "url" | "file";
 
 /**  One context of the person's kubeconfig, as Point kubectl at it lists it. */
 export type KubeContext = {
@@ -8104,6 +8105,13 @@ export type LinesShown = {
 	shown: string[],
 };
 
+/**  **What an ask is about**, which picks the window's question. */
+export type LinkAsk = 
+/**  A link, asked about in general words. */
+{ about: "link" } | 
+/**  A file outside the chat's home (the prototype's S7), and that home where it has one. */
+{ about: "file-outside"; home: LinkHome | null };
+
 /**  **Text a pane found that may be a link**: the words as printed, and the pattern's hint. */
 export type LinkCandidate = {
 	kind: KindHint,
@@ -8112,12 +8120,32 @@ export type LinkCandidate = {
 
 /**  **What ⌘-click on a link would do**, said on its hover. */
 export type LinkDoes = 
-/**  It opens, without asking. */
-{ does: "opens" } | 
-/**  It asks first, and why. */
+/**  It opens, without asking, `into` the browser or an editor tab. */
+{ does: "opens"; into: OpensIn } | 
+/**  It asks first, and why: where it is, in the window's words ("outside smart-ide"). */
 { does: "asks"; reason: string } | 
 /**  It will not open, and the sentence that says why. */
 { does: "refused"; reason: string };
+
+/**
+ *  **A file outside the project, as its tab reads it**: the file, or that no answered ask in
+ *  this pane opened it (the window says how to open it again).
+ */
+export type LinkFile = { read: "file"; file: PieceFile } | { read: "not-opened" };
+
+/**
+ *  **Where the window reads a file a link opens**: the place its light editor reads it by and
+ *  its path there, or, outside the project, its path in full ([`pane_link_file`]).
+ */
+export type LinkFileAt = 
+/**  A branch's folder, or with no piece the repo's own folder. */
+{ in: "branch"; workspace: string; repo: string; piece: string | null; path: string } | 
+/**  A workspace's own files. */
+{ in: "workspace"; workspace: string; path: string } | 
+/**  The project's own files. */
+{ in: "project"; path: string } | 
+/**  Not in the project. */
+{ in: "outside"; path: string };
 
 /**
  *  **Where a candidate was found**: the pane's project and the chat it draws, where it has them
@@ -8128,25 +8156,35 @@ export type LinkFrom = {
 	session: number | null,
 };
 
+/**  **What a chat counts as its own**, for the ask that says a file is not in it, with its folder. */
+export type LinkHome = { is: "workspace"; name: string; folder: string } | { is: "project"; folder: string };
+
 /**  **The open command's answer.** */
 export type LinkOpened = 
 /**  Opened: `target` is what was opened. */
 { answer: "opened"; kind: KindHint; target: string } | 
 /**
- *  Not opened yet: the person is asked, shown its text and where it goes. Accepted, the
- *  same candidate is sent again with `target` as what was confirmed.
+ *  A file, for the window to show in an editor tab at its line and column: never handed to
+ *  the system, so nothing runs.
  */
-{ answer: "ask"; reason: string; shown: string; target: string } | 
+{ answer: "file"; target: string; at: LinkFileAt; line: number | null; column: number | null } | 
+/**
+ *  Not opened yet: the window asks, showing its text and where it goes. Answered, the same
+ *  candidate is sent again with `token`, which opens it once.
+ */
+{ answer: "ask"; reason: string; shown: string; target: string; token: string; about: LinkAsk } | 
 /**  Not opened, and the sentence the window shows. */
 { answer: "refused"; reason: string };
 
 /**
  *  **What a hover over a candidate shows**: its kind, its target in full (its own text, where it
- *  is no link) and what opening it does.
+ *  is no link), what the hover's first line says (`shown`: a file in the chat's workspace from
+ *  the workspace, D2) and what opening it does.
  */
 export type LinkSeen = {
 	kind: KindHint,
 	target: string,
+	shown: string,
 	does: LinkDoes,
 };
 
@@ -9332,6 +9370,13 @@ export type OpenedRepo = {
 	 */
 	forge_said?: string | null,
 };
+
+/**  **Where a link that opens without asking opens.** */
+export type OpensIn = 
+/**  The person's browser. */
+"browser" | 
+/**  One of purlis's editor tabs. */
+"editor-tab";
 
 /**  One file that goes. */
 export type OutgoingFile = {

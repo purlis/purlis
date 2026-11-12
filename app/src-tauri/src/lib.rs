@@ -3947,6 +3947,7 @@ pub fn run() {
         .manage(artifacts::Artifacts::default())
         // The links its pages followed, waiting on the person (#5956, ADR 0122 §5).
         .manage(artifact_links::Links::default())
+        .manage(pane_links::PaneLinkAsks::default())
         .register_uri_scheme_protocol(purlis_core::artifact::serve::SCHEME, |ctx, request| {
             artifacts::serve(ctx.app_handle(), ctx.webview_label(), &request)
         })
