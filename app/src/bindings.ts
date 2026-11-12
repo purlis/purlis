@@ -7642,15 +7642,21 @@ export type ChatCard = {
 	number: number,
 	/**  Its ULID: what *Read it* asks for its screen by. */
 	chat: string,
+	/**  What it is called: its task's name, or an ordinary chat's title as its tab said it. */
+	title: string,
+	/**  When it ended (UTC, RFC 3339), where its record keeps an end. */
+	ended: string | null,
+	/**  Where it ran: its workspace's name, or `project root`. */
+	place: string,
 	/**
-	 *  Its task as its finished row has it: its name, how it ended and when, its report
-	 *  (masked), where it ran, and whether it reopens. `id` is its dispatch record's, which
-	 *  *Reopen* names.
+	 *  Its task as its finished row has it: how it ended, its report (masked) and whether it
+	 *  reopens. `id` is its dispatch record's, which *Reopen* names. **None for a chat no
+	 *  dispatch started** (#6304): it has no report and no Reopen, and the card says Closed.
 	 */
-	task: FinishedTask,
+	task: FinishedTask | null,
 	/**
-	 *  Who started it: "you" where the person dispatched it, else the asking chat's name as
-	 *  the person saw it then.
+	 *  Who started it: "you" where the person started or dispatched it, else the chat that
+	 *  asked or handed off, by its name as the person saw it then.
 	 */
 	started_by: string,
 	/**  Whether its last screen was kept: *Read it* is disabled where it was not. */

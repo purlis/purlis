@@ -13,6 +13,8 @@
  *   Where nothing was kept it is disabled and says "Its screen was not kept." (the person's
  *   ruling of 2026-11-11). ***Reopen* is plain**, because it starts a program: the chat's
  *   conversation started again as an ordinary chat. Where it cannot, it is disabled with why.
+ * - **A chat no dispatch started** (#6304) has no task: its badge says Closed, it has no report
+ *   line, *Reopen* is disabled with why, and *Read it* is disabled, as its screen is never kept.
  * - Built from the families: `HeldPopover`, `Facts`, `Badge`, `ButtonRow` and `Button`.
  */
 import type { RefObject } from "react";
@@ -21,7 +23,14 @@ import { Badge } from "./ui/badge/Badge";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Fact, Facts } from "./ui/card/Facts";
 import { HeldPopover } from "./ui/popover/Popover";
-import { NO_REPORT, SCREEN_NOT_KEPT, cardTitle, cardWhen, outcomeOf } from "./closedChat";
+import {
+  NO_REPORT,
+  ORDINARY_NO_REOPEN,
+  SCREEN_NOT_KEPT,
+  cardOutcome,
+  cardTitle,
+  cardWhen,
+} from "./closedChat";
 import { whyNoReopen } from "./finished";
 
 /** Why *Reopen* does nothing on a card whose task names no conversation. */
@@ -41,8 +50,10 @@ export function ClosedChatCard({
   onRead: () => void;
   onReopen: () => void;
 }) {
-  const outcome = outcomeOf(card.task);
-  const cannotReopen = whyNoReopen(card.task);
+  const outcome = cardOutcome(card);
+  // A chat no dispatch started has no task: no report, and no Reopen (#6304).
+  const task = card.task;
+  const cannotReopen = task === null ? ORDINARY_NO_REOPEN : whyNoReopen(task);
   return (
     <div className="closed-chat-card" data-testid="closed-chat-card">
       <div className="closed-chat-card-head">
@@ -54,14 +65,16 @@ export function ClosedChatCard({
       <p className="closed-chat-card-when ui-text-secondary">{cardWhen(card)}</p>
       <Facts aria-label={`About chat #${card.number}`}>
         <Fact label="Started by">{card.started_by}</Fact>
-        <Fact label="Ran in">{card.task.place}</Fact>
-        <Fact label="Report">
-          {card.task.report === "" ? (
-            <span className="ui-text-secondary">{NO_REPORT}</span>
-          ) : (
-            <span className="closed-chat-card-report">{card.task.report}</span>
-          )}
-        </Fact>
+        <Fact label="Ran in">{card.place}</Fact>
+        {task !== null && (
+          <Fact label="Report">
+            {task.report === "" ? (
+              <span className="ui-text-secondary">{NO_REPORT}</span>
+            ) : (
+              <span className="closed-chat-card-report">{task.report}</span>
+            )}
+          </Fact>
+        )}
       </Facts>
       <ButtonRow>
         <Button

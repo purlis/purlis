@@ -203,8 +203,7 @@ pub fn of_number(chats: &[ChatRecord], number: u32) -> Option<&ChatRecord> {
 /// Writes `chats`, newest first, whole, under the folder's lock already held.
 fn write_all(root: &Path, chats: impl Iterator<Item = serde_json::Value>) -> std::io::Result<()> {
     let chats: Vec<serde_json::Value> = chats.take(MOST_KEPT).collect();
-    let text = serde_json::to_string(&File { v: VERSION, chats })
-        .map_err(std::io::Error::other)?;
+    let text = serde_json::to_string(&File { v: VERSION, chats }).map_err(std::io::Error::other)?;
     crate::plane::write_private(&dir(root), &path(root), text.as_bytes())
 }
 

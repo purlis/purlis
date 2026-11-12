@@ -255,8 +255,13 @@ fn a_dispatch_record_answers_before_the_chat_record_of_its_number() {
     // A task's chat is kept both ways as it closes: its dispatch record is the fuller card.
     let (_dir, root) = project();
     let id = task_641(&root);
-    dispatchrecord::close(&root, &id, report(Outcome::Done, "ok"), at("2026-11-11T11:08:00Z"))
-        .unwrap();
+    dispatchrecord::close(
+        &root,
+        &id,
+        report(Outcome::Done, "ok"),
+        at("2026-11-11T11:08:00Z"),
+    )
+    .unwrap();
     crate::chatrecords::keep(
         &root,
         &crate::chatrecords::ChatRecord {
