@@ -60,7 +60,7 @@ const USAGE = {
   cold: null,
 };
 let usage: unknown = USAGE;
-/** What the core says of a chat's skills, with the Skill studio on, which the window asks once. */
+/** What the core says of a chat's skills, which the window asks once. */
 let skillsOf: unknown = null;
 /** How many times the core was asked for a gauge. */
 let reads = 0;

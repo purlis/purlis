@@ -350,7 +350,7 @@ fn a_skills_folder_a_running_chat_uses_is_kept_and_removed_once_the_chat_has_end
     let tmp = tempfile::tempdir().unwrap();
     let (plane, kit) = a_host_on(tmp.path());
     let sets = kit.skill_sets.clone().unwrap();
-    // The host arms a Claude Code chat as the window would, with the Skill studio on.
+    // The host arms a Claude Code chat as the window would.
     let (args, env) = crate::hoststart::armed(&crate::hoststart::Arming {
         root: &plane,
         kit: &kit,

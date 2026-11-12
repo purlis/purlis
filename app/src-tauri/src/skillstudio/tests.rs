@@ -651,7 +651,7 @@ fn the_studio_says_which_router_its_chats_are_routed_by() {
     let router = |workspace: Option<&str>| {
         studio(root, None, workspace, None, &no_harness())
             .router
-            .expect("a router while the studio is on")
+            .expect("a router")
     };
 
     let built_in = router(Some("alpha"));
@@ -760,7 +760,7 @@ fn the_studio_says_the_budget_and_what_its_scope_writes_as_its_router_3692() {
     let router = |workspace: Option<&str>, persona: Option<&str>| {
         studio(root, None, workspace, persona, &no_harness())
             .router
-            .expect("a router while the studio is on")
+            .expect("a router")
     };
 
     let at_root = router(None, None);
