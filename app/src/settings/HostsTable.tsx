@@ -162,11 +162,15 @@ export function HostsTable({
         onSelectionChange={setChosen}
       >
         <TableHeader>
-          <TableColumn id="host" isRowHeader>
+          {/* The host is what gives way where the page is narrow, cut with its whole words in the
+              cell's tooltip, so the Added column never pushes Remove out of the frame (#6172). */}
+          <TableColumn id="host" isRowHeader size="fill" cut>
             Host
           </TableColumn>
           <TableColumn id="status">Status</TableColumn>
-          <TableColumn id="added">Added</TableColumn>
+          <TableColumn id="added" size="fit">
+            Added
+          </TableColumn>
           <TableColumn id="confirm" align="end" hideName>
             Confirm
           </TableColumn>

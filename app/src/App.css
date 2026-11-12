@@ -7538,11 +7538,10 @@ nav.piece-files-head {
   color: var(--text-quiet);
 }
 
-/* When and by what each was added (#6172, R65): muted, on one line. */
+/* When and by what each was added (#6172, R65): in the muted words, its column one line wide. */
 .ui-hosts-added {
   color: var(--text-muted);
   font-size: var(--font-size-sm);
-  white-space: nowrap;
 }
 
 /* **A record list, as the table family's** (#6301, after Your hosts): where a record is (a
