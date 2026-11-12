@@ -83,7 +83,7 @@ fn file(text: &str) -> Candidate {
 /// The file `text` resolves to, or a panic saying what it was.
 fn resolved(links: &Resolver, text: &str, pane: &Pane) -> FileAt {
     match links.resolve(&file(text), pane) {
-        Resolved::Link(Target::File(at)) => at,
+        Resolved::Link(Target::File(at)) => *at,
         other => panic!("{text}: expected a file, got {other:?}"),
     }
 }
@@ -262,7 +262,7 @@ fn a_file_in_the_chat_s_workspace_opens_and_one_outside_it_asks_first() {
 
     assert!(matches!(
         links.open(&file("src/lib.rs:4"), &pane, &asks, None),
-        Answer::Open(Target::File(FileAt { line: Some(4), .. }))
+        Answer::Open(Target::File(at)) if at.line == Some(4)
     ));
     assert!(matches!(
         links.open(&file("../../../workspace.md"), &pane, &asks, None),
@@ -337,7 +337,7 @@ fn accepting_the_ask_opens_the_file_once_and_keeps_one_outside_the_project_as_op
     assert!(!asks.opened(&here.outside));
     assert!(matches!(
         links.open(&file(&hosts), &pane, &asks, Some(&token)),
-        Answer::Open(Target::File(FileAt { line: Some(3), .. }))
+        Answer::Open(Target::File(at)) if at.line == Some(3)
     ));
     assert!(asks.opened(&here.outside));
     // Declined, nothing is sent: the next ⌘-click asks again.

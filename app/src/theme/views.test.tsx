@@ -1931,6 +1931,12 @@ const STATES: State[] = [
     drawn: /A guide to the project/,
   },
   {
+    name: "a file outside the project a pane's link opened (#6216)",
+    view: { from: null, view: "outside-file", key: "/etc/hosts" },
+    answers: { pane_link_file: { kind: "text", text: "127.0.0.1 localhost\n" } },
+    drawn: /127\.0\.0\.1 localhost/,
+  },
+  {
     name: "what changed in one of a branch's files",
     view: { from: null, view: "piece-diff", key: "alpha/svc/fix-it/notes.txt" },
     answers: {

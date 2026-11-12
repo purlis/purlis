@@ -155,14 +155,14 @@ impl LinkKind for LocalFile {
         if let Some(column) = column {
             shown.push_str(&format!(":{column}"));
         }
-        Resolved::Link(Target::File(FileAt {
+        Resolved::Link(Target::File(Box::new(FileAt {
             path,
             line,
             column,
             within,
             home,
             shown,
-        }))
+        })))
     }
 
     fn opening(&self, target: Target, text: &str, pane: &Pane) -> Opening {

@@ -22,7 +22,7 @@ const ADDRESS = "https://github.com/purlis/purlis/pull/6148";
 /** A file a harness named, and the core's reading of it (#6216). */
 const FILE = "app/src/paneLinks.test.ts:18";
 const FILE_IN_FULL =
-  "/Users/you/projects/charter/workspaces/smart-ide/purlis/app/src/paneLinks.test.ts:18";
+  "/Users/you/projects/plane/workspaces/smart-ide/purlis/app/src/paneLinks.test.ts:18";
 
 /** A harness's turn, as the prototype's pane holds it. */
 const TURN = [
@@ -238,7 +238,7 @@ export const FileOutsideTheWorkspace: StoryObj<typeof meta> = {
         about: {
           about: "file-outside",
           within: "smart-ide",
-          folder: "/Users/you/projects/charter/workspaces/smart-ide",
+          folder: "/Users/you/projects/plane/workspaces/smart-ide",
         },
       }}
       candidate={{ kind: "file", text: "/etc/hosts:3" }}

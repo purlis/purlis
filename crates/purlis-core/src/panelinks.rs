@@ -69,8 +69,8 @@ pub enum Runs {
 pub enum Target {
     /// A web address, as the browser will be handed it: read once, never parsed again.
     Url(url::Url),
-    /// A file on this machine, at a line.
-    File(FileAt),
+    /// A file on this machine, at a line. Boxed: it holds its path and its place.
+    File(Box<FileAt>),
 }
 
 impl Target {
