@@ -82,8 +82,8 @@ function built(
         : level === "project"
           ? projectGroups(
               {
-                shared: blank("shared", "charter.toml"),
-                local: blank("local", "charter.local.toml"),
+                shared: blank("shared", "purlis.toml"),
+                local: blank("local", "purlis.local.toml"),
                 extensions: NO_EXTENSIONS,
                 theme: undefined,
                 saving: undefined,
