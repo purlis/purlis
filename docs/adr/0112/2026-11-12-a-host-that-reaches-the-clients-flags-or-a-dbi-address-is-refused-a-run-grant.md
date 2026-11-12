@@ -1,7 +1,7 @@
-# Amended 2026-11-12: the tools whose host reaches the client's flags or a DBI address, and ps-admin, are refused a Run grant
+# Amended 2026-11-12: the tools whose host reaches the client's flags or a DBI address, ps-admin, the test runners, RocksDB's hot backup and an init script are refused a Run grant
 
-Decided under the operator's standing order to take the recommended path (#6185, from the
-reviews of #6109), recorded here as delegated decisions. It follows *innotop, mariadb-report,
+Decided under the operator's standing order to take the recommended path (#6185 and #6187, from
+the reviews of #6109), recorded here as delegated decisions. It follows *innotop, mariadb-report,
 the Perl log readers, the server's systemd helpers and PXC's cluster checks are refused a Run
 grant* (2026-11-11), which left the `mysqlaccess` and `mytop` leads to #6185. Each was checked
 against the tool's own source, not recalled:
@@ -47,3 +47,34 @@ Found harmless: **`ps_mysqld_helper`**, shipped beside `ps-admin`
 (`scripts/ps_mysqld_helper.sh`): it checks transparent huge pages and jemalloc against the
 fixed settings file `/etc/default/mysql` or `/etc/sysconfig/mysql`. It keeps no row and needs
 none.
+
+The same reviews raised four more tools (#6187), each checked against its source too:
+
+- **`mysqlxtest`**, the X protocol's test client, which MySQL's test package and Percona XtraDB
+  Cluster's test package ship in the programs' folder (`build-ps/percona-xtradb-cluster.spec`,
+  github.com/percona/percona-xtradb-cluster, 8.0). It reads a script from its `-f`, or from its
+  input without one, whose `-->system <CMD>` and `-->system_in_background <CMD>` run a command
+  (`mysql-test/suite/x/r/mysqlxtest_help.result`, github.com/mysql/mysql-server, 8.0), as
+  `mysqltest`'s scripts do, which is refused for that already.
+- **`mysqltest_safe_process`**, shipped beside it: it takes `[options] -- progname arg1 … argn`
+  and `execvp`s the program it is given (`mysql-test/lib/My/SafeProcess/safe_process.cc`). The
+  forms a name is judged by do not split at `_`, so it never came to the refused `mysqltest`.
+  Both reached the mysql tools' row by their prefix, which reads neither a script nor `--`.
+- **`myrocks_hotbackup`**, in Debian's `mariadb-plugin-rocksdb`
+  (`debian/mariadb-plugin-rocksdb.install`, MariaDB 11.4; installed by
+  `storage/rocksdb/CMakeLists.txt`). In `storage/rocksdb/myrocks_hotbackup.py`, its
+  `--extra_wdt_sender_options` is formatted into a command `os.system` runs, its `--destination`
+  becomes ssh's first argument through `Popen(remote_cmd.split())`, so `-oProxyCommand=…` gets
+  in, and its stream writer runs `os.system(stream_cmd + " " + file_name)` on the names it finds
+  under `--datadir`. Its name starts with neither `mysql` nor `mariadb`, so no row read it.
+- **`rcmysql`**: Percona XtraDB Cluster's packages built without systemd link
+  `/usr/sbin/rcmysql` to `/etc/init.d/mysql`, the server's `mysql.server` script
+  (`ln -s %{_sysconfdir}/init.d/mysql $RBR%{_sbindir}/rcmysql`, under `%if 0%{?systemd} == 0`).
+  A Run grant judges the program as its links resolve, and the script's file name, `mysql`, is
+  the client's, so `rcmysql start` reached the client's row and started the server. `rcmysql`
+  is refused by name, and, as the issue asked of a link whose target is an init script, a Run
+  grant now also refuses any program whose path, as its links resolve, sits in a folder named
+  `init.d` (`/etc/init.d`, `/etc/rc.d/init.d`), whatever its name or its link's: an init script
+  starts and stops the service it is named for, and is named as that service is, so its name
+  says nothing about what it runs. A declared tool is not judged by its folder; a person who
+  declares one chose it.

@@ -2089,6 +2089,16 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "mysql_setpermission",
     "mariadb-setpermission",
     "ps-admin",
+    // The test suite's runners and RocksDB's hot backup (#6187): `mysqlxtest`'s script, from its
+    // `-f` or its input, runs a shell command at each `-->system`, as `mysqltest`'s does, and
+    // `mysqltest_safe_process` runs the program it is given after `--`; `myrocks_hotbackup` hands
+    // `os.system` a command its `--extra_wdt_sender_options` is formatted into, and ssh its
+    // `--destination` first. `rcmysql`, a link to the server's init script, starts the server
+    // (and is judged by its target's folder too, [`an_init_script`]).
+    "mysqlxtest",
+    "mysqltest_safe_process",
+    "myrocks_hotbackup",
+    "rcmysql",
     // The client and its test built with the server inside them: what `--server-arg` hands the
     // server (`--plugin-load`, `--plugin-dir`) loads code from a file it names.
     "mysql_embedded",
@@ -2262,8 +2272,9 @@ pub fn for_run_grant(
             format!("no {name} was found outside the folders a chat may write")
         }));
     };
-    // A link may lead to one: `vimdiff` to `vim`, `editor` to `vim.basic`.
-    if not_for_a_run_grant(&file_name_of(&ready.program)) {
+    // A link may lead to one: `vimdiff` to `vim`, `editor` to `vim.basic`, `rcmysql` to the
+    // server's init script, whose file name is the client's.
+    if not_for_a_run_grant(&file_name_of(&ready.program)) || an_init_script(&ready.program) {
         return Err(runs_others(&name));
     }
     if !names(&ready, asked.program) {
@@ -2279,6 +2290,17 @@ pub fn for_run_grant(
         ));
     }
     Ok(ready)
+}
+
+/// **Whether `program` is a service's init script** (#6187): a file in an `init.d` folder
+/// (`/etc/init.d`, `/etc/rc.d/init.d`), whatever its own name. A script there starts and stops
+/// the service it is named for, and is named as the service is, so the server's is `mysql`, the
+/// client's name: judged by its name, `rcmysql start` would reach the client's row.
+fn an_init_script(program: &Path) -> bool {
+    program
+        .parent()
+        .and_then(Path::file_name)
+        .is_some_and(|folder| folder.eq_ignore_ascii_case("init.d"))
 }
 
 /// The longest variable name a person is asked to allow: it is drawn among the app's own facts.
