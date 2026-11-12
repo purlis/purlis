@@ -279,8 +279,9 @@ In the Inbox, Notices are listed by `NoticeList` (V91i, NO-2 #1229; #1695): ever
 important first — trouble before news, then the family order `IMPORTANCE` exports. They stood
 under the tab strip two at a time, the rest behind "+N more", until the band folded into the
 Inbox. A Notice already in its place is never moved, so the focus stays on its buttons as others
-come and go. A Notice that answers something the person just did (`ANSWERS`: a refusal, an Undo,
-a save's record, the away summary) brings the Inbox on screen as it arrives. The alerts the
+come and go. A Notice that answers the person's press at once (`ANSWERS`: a refusal, an Undo of a
+few seconds) brings Notices on screen as it arrives; a save's record and the away summary are
+listed and move nothing (ADR 0121, amended 2026-11-12). The alerts the
 drawer listed are Notices here too (`InboxAlerts.tsx`), each with the way out the core gives it.
 Outside a list, as the window's own lines under the title bar are, a Notice is drawn where it is
 written. A Dismiss of a
