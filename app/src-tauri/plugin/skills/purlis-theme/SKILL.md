@@ -148,10 +148,9 @@ tighter: `font-size.md` 14 fits comfortable (14 × 1.4 = 19.6, within 21) and fa
 **Corners are a family's parts.** The rail's project buttons (`rail.*`), the title bar's workspace
 chips (`titlebar.*`) and the strip's tabs (each a layout of panes holding chats, views or files) and
 their `×` (`tabs.*`, below) are rounded through their parts, a list's rows by `radius.control` and
-the `list` family's parts, and the Changes view's tree rows by `radius.control` and the `tree`
-family's. The Explorer's and the Chats list's tree rows join when they move to the tree family
-(#2911): until then no key reaches their corners, so tell the person that when they ask for rounder
-ones. The focus ring tokens reach every focus ring, the closer's among them.
+the `list` family's parts, and a tree's rows (the Changes view's, the Explorer's and the Chats
+list's) by `radius.control` and the `tree` family's parts (`tree.*`, below). The focus ring tokens
+reach every focus ring, the closer's among them.
 
 **One part of one control** is a component part, in a top-level `parts` object:
 `"button.root.corner-radius": "full"` rounds every button to a pill, and
@@ -187,8 +186,10 @@ menu's surface and rows; and the choices, `checkbox`, `radio`, `switch`, `segmen
 `segment`, `slider` and `option-card`, each chosen in `selected` (`switch.track.selected.fill`,
 `option-card.root.card.selected.border-colour`), none taking a height; and `table` (`table.frame.corner-radius`, `table.root.selected.fill`,
 `table.head.text`, …), a table's card, its rows, its column names and its cells, which has no
-variants and whose rows are as tall as what they hold. The note above still holds for the tree
-rows still drawn by hand.
+variants and whose rows are as tall as what they hold; and `tree` (`tree.root.corner-radius`,
+`tree.root.selected.fill`, `tree.twist.text`, …), a tree's row (`root`, whose indentation stays the
+family's), the tree that holds the rows (`body`), its chevron (`twist`), its marks and end (`lead`,
+`trail`), its words (`label`, `description`) and a group's name (`header`), which has no variants.
 
 **The session tabs** are the `tabs` family. Purlis docks them on the content panel: the chosen
 tab takes the panel's fill and flares into it, an unchosen tab's hover is a pill inset from its
