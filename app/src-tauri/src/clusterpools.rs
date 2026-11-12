@@ -563,15 +563,9 @@ pub fn add_on(
     let said =
         |why: purlis_core::clusterpool::Refused| crate::devices::shown_safely(&why.to_string());
     // The key and cluster the Pool names now: pinned only where the key is the one pasted from
-    // the cluster's admin, however it was copied, or the one this setup made (#4495).
+    // the cluster's admin, however it was copied, or the one this setup made (#4495). The core's
+    // add asks it, before anything is kept or claimed.
     let pin = pointed.pool_pin(adding.pool.trim()).map_err(said)?;
-    let confirmed = purlis_core::poolsetup::confirm_key(
-        config,
-        adding.context.trim(),
-        &pin,
-        adding.pasted.as_deref(),
-    )
-    .map_err(|why| crate::devices::shown_safely(&why.to_string()))?;
     let namespace = pointed.namespace().map_err(said)?;
     let pool = ClusterPool::new(
         adding.name.trim(),
@@ -581,8 +575,7 @@ pub fn add_on(
         &namespace,
         pin,
     )
-    .map_err(|why| why.to_string())?
-    .confirmed_by(confirmed);
+    .map_err(|why| why.to_string())?;
     let pool = match adding.vouch_wait {
         Some(minutes) => pool.with_limit(
             purlis_core::poollimits::LimitId::VouchWait,
@@ -593,8 +586,15 @@ pub fn add_on(
     let desktop =
         purlis_core::linkkey::desktop(config, &*purlis_core::linkkey::this_builds_keyring(config))?
             .pinned();
-    purlis_core::pools::add_cluster(config, kubectl, &pool, &desktop, within)
-        .map_err(|why| add_refused(adding.name.trim(), within, &why))?;
+    purlis_core::pools::add_cluster(
+        config,
+        kubectl,
+        &pool,
+        adding.pasted.as_deref(),
+        &desktop,
+        within,
+    )
+    .map_err(|why| add_refused(adding.name.trim(), within, &why))?;
     Ok(row(&pool))
 }
 

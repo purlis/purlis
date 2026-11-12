@@ -2330,7 +2330,11 @@ fn holdable(program: &Path) -> Result<(), Refused> {
 /// machine, pointed at the pool's kubeconfig and context here), for the desktop that is
 /// `desktop`:
 ///
-/// - the cluster's Pool must still name the key the person checked;
+/// - the cluster's Pool must still name the key the person checked, and that key must be one the
+///   person confirmed: `pasted`, as their cluster's admin gave it, or, with nothing pasted, the
+///   one this machine made in this Pool setup, on the pool's context, in that cluster
+///   ([`crate::poolsetup::confirm_key`]). Whatever the caller says of how it was confirmed, it is
+///   asked again here, so no caller pins an unconfirmed key;
 /// - **the pool keeps its own copy of the context** ([`runners::keep_kubeconfig`]), and every
 ///   later run of its kubectl is pointed at it, whatever the kubeconfig says later;
 /// - the programs its kubectl runs are found and kept with the pool, for no chat to write
@@ -2344,6 +2348,7 @@ pub fn add_cluster(
     config_root: &Path,
     kubectl: &crate::clusterpool::Kubectl,
     pool: &runners::ClusterPool,
+    pasted: Option<&str>,
     desktop: &Pinned,
     within: std::time::Duration,
 ) -> Result<runners::ClusterKept, Refused> {
@@ -2363,6 +2368,8 @@ pub fn add_cluster(
             pool.pool()
         )));
     }
+    let confirmed = crate::poolsetup::confirm_key(config_root, pool.context(), &named, pasted)?;
+    let pool = &pool.clone().confirmed_by(confirmed);
     let context = taken_from
         .context_kept()
         .map_err(|why| Refused::Other(why.to_string()))?;
