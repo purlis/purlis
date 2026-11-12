@@ -34,9 +34,6 @@ import { closeTabOf, iconFor, iconOf } from "../artifactTabs.js";
  * do the probe and its workflow until it is carried here too.
  */
 
-const NAME = { reach: "Isolation reach", speak: "Isolation speak", walk: "Isolation walk" };
-const LOOP = "Isolation loop";
-const STORES = { a: "Isolation store A", b: "Isolation store B" };
 
 /** The page's port, and its one way to be heard: offering `todo.done` for `subject`. */
 const SAY = `function say(subject) {
@@ -238,22 +235,9 @@ async function heard(prefix: string): Promise<string> {
     },
     { timeout: 30_000, timeoutMsg: `the page never said ${prefix}…: it did not run` },
   );
+  console.log(`[DEBUG-6232] heard ${said} at ${Date.now()} rows=${JSON.stringify(await refusedRows())} front=${await inFront()}`);
   return said;
 }
-
-/** The store page A's line of the pins file: written again to pin it again. */
-const STORE_A_PIN = `  { id = "e2e0000000i5", folder = "isolation-store-a", name = "${STORES.a}", icon = "shield", order = 5 },\n`;
-
-/** The pins file every test starts from. */
-const PINS = `version = 1
-pin = [
-  { id = "e2e0000000i1", folder = "isolation-reach", name = "${NAME.reach}", icon = "shield", order = 1 },
-  { id = "e2e0000000i2", folder = "isolation-speak", name = "${NAME.speak}", icon = "shield", order = 2 },
-  { id = "e2e0000000i3", folder = "isolation-walk", name = "${NAME.walk}", icon = "shield", order = 3 },
-  { id = "e2e0000000i4", folder = "isolation-loop", name = "${LOOP}", icon = "shield", order = 4 },
-${STORE_A_PIN}  { id = "e2e0000000i6", folder = "isolation-store-b", name = "${STORES.b}", icon = "shield", order = 6 },
-]
-`;
 
 /** Sends the context menu to the control `selector` names, as a right press does. */
 async function sendContextMenu(selector: string): Promise<boolean> {
@@ -294,7 +278,27 @@ async function keptByTheWindow(): Promise<string[]> {
   }, KEPT);
 }
 
-describe("an artifact, as purlis renders it, is isolated from the window and its own folder", function () {
+// [LOOP-6232] temporary: runs the describe PURLIS_LOOP times, new names, folders and pins each pass.
+for (const pass of Array.from({ length: Number(process.env.PURLIS_LOOP ?? "1") }, (_, i) => i + 1)) {
+const pp = String(pass).padStart(2, "0");
+const NAME = { reach: `Isolation reach ${pass}`, speak: `Isolation speak ${pass}`, walk: `Isolation walk ${pass}` };
+const LOOP = `Isolation loop ${pass}`;
+const STORES = { a: `Isolation store A ${pass}`, b: `Isolation store B ${pass}` };
+/** The store page A's line of the pins file: written again to pin it again. */
+const STORE_A_PIN = `  { id = "e2e000${pp}00i5", folder = "isolation-store-a-${pass}", name = "${STORES.a}", icon = "shield", order = 5 },\n`;
+
+/** The pins file every test starts from. */
+const PINS = `version = 1
+pin = [
+  { id = "e2e000${pp}00i1", folder = "isolation-reach-${pass}", name = "${NAME.reach}", icon = "shield", order = 1 },
+  { id = "e2e000${pp}00i2", folder = "isolation-speak-${pass}", name = "${NAME.speak}", icon = "shield", order = 2 },
+  { id = "e2e000${pp}00i3", folder = "isolation-walk-${pass}", name = "${NAME.walk}", icon = "shield", order = 3 },
+  { id = "e2e000${pp}00i4", folder = "isolation-loop-${pass}", name = "${LOOP}", icon = "shield", order = 4 },
+${STORE_A_PIN}  { id = "e2e000${pp}00i6", folder = "isolation-store-b-${pass}", name = "${STORES.b}", icon = "shield", order = 6 },
+]
+`;
+
+describe(`an artifact, as purlis renders it, is isolated from the window and its own folder (pass ${pass})`, function () {
   this.timeout(300_000);
 
   let at = "";
@@ -307,21 +311,21 @@ describe("an artifact, as purlis renders it, is isolated from the window and its
       for (const [name, bytes] of Object.entries(files))
         writeFileSync(join(at, folder, name), bytes);
     };
-    write("isolation-reach", { "index.html": page(NAME.reach), "app.js": REACH });
-    write("isolation-speak", {
+    write(`isolation-reach-${pass}`, { "index.html": page(NAME.reach), "app.js": REACH });
+    write(`isolation-speak-${pass}`, {
       "index.html": page(NAME.speak, `<iframe src="nested.html"></iframe>`),
       "nested.html": NESTED,
       "app.js": SPEAK,
     });
-    write("isolation-walk", { "index.html": page(NAME.walk), "app.js": WALK, "inside.png": PNG });
+    write(`isolation-walk-${pass}`, { "index.html": page(NAME.walk), "app.js": WALK, "inside.png": PNG });
     // Beside the walk's folder, unpinned: what a request that walked out would load.
     write("outside", { "secret.png": PNG });
-    write("isolation-loop", {
+    write(`isolation-loop-${pass}`, {
       "index.html": page(LOOP),
       "app.js": "addEventListener('load', () => setTimeout(() => { for (;;) {} }, 200));",
     });
-    write("isolation-store-a", { "index.html": page(STORES.a), "app.js": STORE });
-    write("isolation-store-b", { "index.html": page(STORES.b), "app.js": STORE });
+    write(`isolation-store-a-${pass}`, { "index.html": page(STORES.a), "app.js": STORE });
+    write(`isolation-store-b-${pass}`, { "index.html": page(STORES.b), "app.js": STORE });
     writeFileSync(join(at, "pins.toml"), PINS);
     await focusWorkspace("alpha");
   });
@@ -376,7 +380,7 @@ describe("an artifact, as purlis renders it, is isolated from the window and its
     expect(await keptByTheWindow()).toEqual([]);
 
     // A's template changed: approved again, it is a new page that finds nothing.
-    writeFileSync(join(at, "isolation-store-a", "app.js"), `${STORE}\n// changed\n`);
+    writeFileSync(join(at, `isolation-store-a-${pass}`, "app.js"), `${STORE}\n// changed\n`);
     await openApproved(STORES.a);
     const changed = stored(await heard("store-"));
     expect(changed.seen).toEqual([]);
@@ -384,8 +388,10 @@ describe("an artifact, as purlis renders it, is isolated from the window and its
 
     // Unpinned here and pinned again, the same folder and command: asked again, it finds
     // nothing either.
+    console.log(`[DEBUG-6232] before menu at ${Date.now()} front=${await inFront()} icon=${await $(iconOf(STORES.a)).isExisting()} active=${await browser.execute(() => document.activeElement?.outerHTML.slice(0, 200) ?? "")}`);
     expect(await sendContextMenu(iconOf(STORES.a))).toBe(true);
     const menu = await $('[role="menu"]');
+    console.log(`[DEBUG-6232] after menu at ${Date.now()} menus=${await browser.execute(() => [...document.querySelectorAll('[role="menu"]')].length)}`);
     await menu.waitForDisplayed({ timeout: 20_000 });
     await menu.$('[role="menuitem"]=Unpin from workspace…').click();
     const dialog = await $('[role="alertdialog"]');
@@ -424,3 +430,4 @@ describe("an artifact, as purlis renders it, is isolated from the window and its
     });
   });
 });
+}
