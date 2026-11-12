@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawn, type ChildProcess } from "node:child_process";
+import { cpus } from "node:os";
 import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { focusWorkspace } from "../reach.js";
@@ -239,6 +241,12 @@ async function heard(prefix: string): Promise<string> {
   return said;
 }
 
+/** [LOOP-6232] temporary: what the window shows right after a close was pressed. */
+async function settled(name: string): Promise<void> {
+  const look = async () => `front=${await inFront()} rows=${(await refusedRows()).length} tabs=${await browser.execute(() => [...document.querySelectorAll('[data-strip="Tabs"] [role="tab"]')].map((one) => one.textContent).join("|"))} active=${await browser.execute(() => document.activeElement?.textContent?.slice(0, 40) ?? "")}`;
+  console.log(`[DEBUG-6232] closed ${name} at ${Date.now()} now: ${await look()}`);
+}
+
 /** Sends the context menu to the control `selector` names, as a right press does. */
 async function sendContextMenu(selector: string): Promise<boolean> {
   return browser.execute((css: string) => {
@@ -278,6 +286,16 @@ async function keptByTheWindow(): Promise<string[]> {
   }, KEPT);
 }
 
+// [LOOP-6232] temporary: load every core while the spec runs, to raise the flake's rate.
+const HOGS: ChildProcess[] = [];
+before(() => {
+  for (let i = 0; i < cpus().length; i += 1)
+    HOGS.push(spawn("sh", ["-c", "while :; do :; done"], { stdio: "ignore" }));
+  console.log(`[DEBUG-6232] hogs ${HOGS.length}`);
+});
+after(() => {
+  for (const hog of HOGS) hog.kill("SIGKILL");
+});
 // [LOOP-6232] temporary: runs the describe PURLIS_LOOP times, new names, folders and pins each pass.
 for (const pass of Array.from({ length: Number(process.env.PURLIS_LOOP ?? "1") }, (_, i) => i + 1)) {
 const pp = String(pass).padStart(2, "0");
@@ -368,15 +386,18 @@ describe(`an artifact, as purlis renders it, is isolated from the window and its
     expect(first.seen).toEqual([]);
     expect(first.wrote).toEqual(expect.arrayContaining(["ls", "idb"]));
     await closeTabOf(STORES.a);
+    await settled(STORES.a);
     await (await iconFor(STORES.a)).click();
     const again = stored(await heard("store-"));
     expect(again.seen).toEqual(first.wrote);
     await closeTabOf(STORES.a);
+    await settled(STORES.a);
 
     // Another artifact, and the window, find none of it.
     await openApproved(STORES.b);
     expect(stored(await heard("store-")).seen).toEqual([]);
     await closeTabOf(STORES.b);
+    await settled(STORES.b);
     expect(await keptByTheWindow()).toEqual([]);
 
     // A's template changed: approved again, it is a new page that finds nothing.
@@ -385,6 +406,7 @@ describe(`an artifact, as purlis renders it, is isolated from the window and its
     const changed = stored(await heard("store-"));
     expect(changed.seen).toEqual([]);
     await closeTabOf(STORES.a);
+    await settled(STORES.a);
 
     // Unpinned here and pinned again, the same folder and command: asked again, it finds
     // nothing either.
@@ -406,6 +428,7 @@ describe(`an artifact, as purlis renders it, is isolated from the window and its
     await openApproved(STORES.a);
     expect(stored(await heard("store-")).seen).toEqual([]);
     await closeTabOf(STORES.a);
+    await settled(STORES.a);
     expect(await keptByTheWindow()).toEqual([]);
   });
 
