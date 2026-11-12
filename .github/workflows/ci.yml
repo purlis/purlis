@@ -1759,30 +1759,20 @@ jobs:
   scenario:
     name: scenario tests (${{ matrix.os }}, ${{ matrix.specs && format('part {0} of {1}', matrix.shard, matrix.shards) || matrix.sandbox && 'the sandbox runs' || 'the single-app runs' }})
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.scenario != 'false' && github.event_name != 'pull_request' }}
+    # [LOOP-6232] temporary: two macOS legs on the pull request, each looping artifact-isolation.
+    if: ${{ !cancelled() && needs.changes.outputs.scenario != 'false' }}
     strategy:
       fail-fast: false
       matrix:
         os: [macos-latest]
-        shard: [1, 2, 3, 4]
+        shard: [1, 2]
         shards: [4]
         extras: [false]
         specs: [true]
         sandbox: [false]
         outcome: [false]
-        include:
-          - os: macos-latest
-            shard: extras
-            shards: 4
-            extras: true
-            specs: false
-            sandbox: false
-          - os: macos-latest
-            shard: sandbox
-            shards: 4
-            extras: false
-            specs: false
-            sandbox: true
+    env:
+      PURLIS_LOOP: "4"
     runs-on: ${{ matrix.os }}
     steps: &scenario-steps
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -518,7 +518,7 @@ import {
   type TaskEndHand,
   type TaskEndInline,
 } from "./TaskEnd";
-import { giveKeyboardTo } from "./paneKeyboard";
+import { giveKeyboardTo, giveKeyboardToTheFocusedPane } from "./paneKeyboard";
 import { endedState } from "./EndedBand";
 import { useHeldAmong } from "./dispatchesHeld";
 import { useRefusedAmong } from "./vaultRefusals";
@@ -4730,6 +4730,7 @@ export const PlaneView = memo(function PlaneView({
   /**
    * **The keyboard goes into the focused pane of `next`** (#4767): its chat's terminal, or, in a
    * pane with nothing or a view, its first control once it is drawn: New chat, or the view.
+   * Either is owed only until the person puts the keyboard somewhere else (#6232).
    */
   const keyboardInto = useCallback(
     (next: Tabs) => {
@@ -4738,13 +4739,7 @@ export const PlaneView = memo(function PlaneView({
         giveKeyboardTo(plane, session);
         return;
       }
-      setTimeout(() => {
-        const pane = document.querySelector<HTMLElement>(".pane.focused");
-        const into =
-          pane?.querySelector<HTMLElement>('[data-scope="view-frame"][data-part="root"]') ??
-          pane?.querySelector<HTMLElement>("button");
-        into?.focus();
-      });
+      giveKeyboardToTheFocusedPane();
     },
     [plane],
   );
