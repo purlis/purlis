@@ -23,6 +23,11 @@ import { handed, listed, PARTS, SRC, sources } from "./fieldCalls.testkit";
 
 /** Every file that hands a field its help, the grounds that field stands on, and where. */
 const HELPED: Record<string, { grounds: string[]; where: string }> = {
+  "poolsetup/prototype-remote-docker/ConnectPrototype.tsx": {
+    grounds: ["surface.raised"],
+    where:
+      "PROTOTYPE (#6265, never merges): Connect's address and Options fields, on the Pool setup page",
+  },
   "poolsetup/PoolStep.tsx": {
     grounds: ["surface.raised"],
     where:

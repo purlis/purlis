@@ -37,6 +37,10 @@ const REFUSING: Record<string, { grounds: string[]; where: string }> = {
     grounds: ["surface.raised"],
     where: "HexColour: in a persona's card, a view tab's panel (Views.tsx)",
   },
+  "poolsetup/prototype-remote-docker/ConnectPrototype.tsx": {
+    grounds: ["surface.base"],
+    where: "PROTOTYPE (#6265, never merges): Connect's typed address, on the Pool setup tab's page",
+  },
   "poolsetup/PoolStep.tsx": {
     grounds: ["surface.base"],
     where:
