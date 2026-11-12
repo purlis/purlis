@@ -52,7 +52,8 @@ describe("a chat found by its number in the palette (#6214)", () => {
     const rows = numberRows({ number: 641, lookup: { is: "restarted", now: 668 } });
     expect(rows).toHaveLength(1);
     expect(rows[0].title).toBe("Show chat #668, started again from #641");
-    expect(rows[0].does).toEqual({ verb: "showChat", session: 668 });
+    // Not a needs-you item's Go: the chat, and nothing more (#6217).
+    expect(rows[0].does).toEqual({ verb: "focusChat", session: 668 });
     expect(opensACard(rows[0])).toBe(false);
   });
 

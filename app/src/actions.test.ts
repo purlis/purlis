@@ -159,6 +159,7 @@ function doing(): Doing & { calls: string[] } {
     createWorkspace: note("createWorkspace"),
     removeWorkspace: note("removeWorkspace"),
     showChat: note("showChat"),
+    focusChat: note("focusChat"),
     reopenTask: vi.fn(async (id: string) => {
       calls.push(`reopenTask:${id}`);
       return { ok: true } as Ran;

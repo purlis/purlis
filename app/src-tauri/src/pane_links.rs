@@ -14,6 +14,11 @@
 //!   a click never runs anything.
 //! - [`pane_link_file`]: a file outside the project, read for its tab only once an ask for it
 //!   was answered in that pane, and only while it is still the file it was then.
+//! - **A chat's number** (`chat 641`, #6217) is looked up in the pane's own project, given the
+//!   chats open there now ([`ChatsHere`]). Its hover says its number and title, where it is and
+//!   what ⌘-click does ([`ChatSeen`]); opening it answers what the window shows ([`ChatGo`]): the
+//!   chat in its tab or workspace, an ended chat's card, or nothing for the pane's own chat. A
+//!   number no chat of the project had says nothing on a hover.
 //!
 //! **A file's answer looks at the disk, so it is looked at on a thread of its own, for at most
 //! [`LOOK_FOR`]** ([`looked`]): a path on a stalled mount answers "no link" in time, and holds
@@ -22,17 +27,20 @@
 //! None of them reads a secret's value or hands one back.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
+use purlis_core::dispatchrecord::Record;
 use purlis_core::panelinks::{
-    Asks, Candidate, FileAt, Home, HomeIs, Hover, Kind, Opening, Pane, ReadFrom, Resolver, Runs,
-    Target, UNASKABLE,
+    Asks, Candidate, ChatAt, ChatNumber, FileAt, Goes, Home, HomeIs, Hover, Kind, NOT_A_LINK,
+    Opening, Pane, ReadFrom, Resolver, Runs, Target, UNASKABLE,
 };
 use serde::{Deserialize, Serialize};
 
+use crate::chatcard::ChatCard;
 use crate::piecefiles::PieceFile;
-use crate::planes::{PlaneId, Planes};
+use crate::planes::{Held, PlaneId, Planes};
 
 /// **What the pane's pattern took a candidate for**: a hint, never trusted for more. The wire's
 /// half of the core's [`Kind`]; a kind's resolver is the core's `LinkKind`.
@@ -41,6 +49,7 @@ use crate::planes::{PlaneId, Planes};
 pub enum KindHint {
     Url,
     File,
+    Chat,
 }
 
 impl From<KindHint> for Kind {
@@ -48,6 +57,7 @@ impl From<KindHint> for Kind {
         match kind {
             KindHint::Url => Kind::Url,
             KindHint::File => Kind::File,
+            KindHint::Chat => Kind::Chat,
         }
     }
 }
@@ -57,6 +67,7 @@ impl From<Kind> for KindHint {
         match kind {
             Kind::Url => KindHint::Url,
             Kind::File => KindHint::File,
+            Kind::Chat => KindHint::Chat,
         }
     }
 }
@@ -88,20 +99,23 @@ pub struct LinkFrom {
 /// **The pane `from` names, as the core resolves against it**: its project's folder, and the
 /// folder its chat started in. Its paths are this machine's only for a chat open here and not
 /// on a runner or a pool; every other pane (a saved chat's, one whose chat has closed, one with
-/// no project open) names files purlis cannot place, so they are [`Runs::Elsewhere`].
+/// no project open) names files purlis cannot place, so they are [`Runs::Elsewhere`]. A
+/// project the window does not hold is no project: nothing of it is read. Handed back with the
+/// pane, the project the window holds, which a chat's number is looked up in.
 // The folder is the one the chat started in: no hook reports the folder a chat has moved to.
-fn pane_of(planes: &Planes, from: LinkFrom) -> Pane {
+fn pane_of(planes: &Planes, from: LinkFrom) -> (Pane, Option<Arc<Held>>) {
     let held = from
         .plane
         .as_ref()
         .and_then(|plane| planes.held(plane).ok());
     let Some(held) = held else {
-        return Pane {
-            project: from.plane.map(|plane| PathBuf::from(plane.root())),
+        let pane = Pane {
+            project: None,
             session: from.session,
             folder: None,
             runs: Runs::Elsewhere,
         };
+        return (pane, None);
     };
     let chats = held.chats();
     let here = from.session.and_then(|session| {
@@ -109,7 +123,7 @@ fn pane_of(planes: &Planes, from: LinkFrom) -> Pane {
         let local = chats.runner_of(session).is_none() && chats.pool_of(session).is_none();
         local.then_some(at)
     });
-    Pane {
+    let pane = Pane {
         project: Some(held.root().to_path_buf()),
         session: from.session,
         runs: if here.is_some() {
@@ -118,7 +132,8 @@ fn pane_of(planes: &Planes, from: LinkFrom) -> Pane {
             Runs::Elsewhere
         },
         folder: here.and_then(|at| at.cwd),
-    }
+    };
+    (pane, Some(held))
 }
 
 /// **Where a link that opens without asking opens.**
@@ -129,6 +144,8 @@ pub enum OpensIn {
     Browser,
     /// One of purlis's editor tabs.
     EditorTab,
+    /// purlis's window itself: a chat shown in its tab, or a closed chat's card.
+    Window,
 }
 
 impl OpensIn {
@@ -136,6 +153,7 @@ impl OpensIn {
         match target {
             Target::Url(_) => OpensIn::Browser,
             Target::File(_) => OpensIn::EditorTab,
+            Target::Chat(_) => OpensIn::Window,
         }
     }
 }
@@ -154,13 +172,127 @@ pub enum LinkDoes {
 
 /// **What a hover over a candidate shows**: its kind, its target in full (its own text, where it
 /// is no link), what the hover's first line says (`shown`: a file in the chat's workspace from
-/// the workspace, D2) and what opening it does.
+/// the workspace, D2; a chat as "#641 · <title>") and what opening it does. A chat link says
+/// what the chat is too.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
 pub struct LinkSeen {
     pub kind: KindHint,
     pub target: String,
     pub shown: String,
     pub does: LinkDoes,
+    /// What the chat a chat link names is: none for every other kind.
+    pub chat: Option<ChatSeen>,
+}
+
+/// **What the chat a `chat 641` link names is**, for its hover's second line.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
+#[serde(tag = "is", rename_all = "snake_case")]
+pub enum ChatSeen {
+    /// The pane's own chat: ⌘-click does nothing more.
+    ThisChat { number: u32 },
+    /// Open under `number`; `workspace` where that is another workspace than the pane's chat's.
+    Open {
+        number: u32,
+        workspace: Option<String>,
+    },
+    /// Ended: its card, which ⌘-click shows.
+    Ended { card: Box<ChatCard> },
+}
+
+/// **What the window shows for a chat link opened.**
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
+#[serde(tag = "to", rename_all = "snake_case")]
+pub enum ChatGo {
+    /// The pane's own chat: nothing more.
+    ThisChat,
+    /// Chat `session`, in its tab or its workspace.
+    Chat { session: u32 },
+    /// An ended chat's card, beside the link.
+    Card { card: Box<ChatCard> },
+}
+
+/// A chat of the pane's project open now, as a chat link's hover names it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct OpenNamed {
+    pub session: u32,
+    pub name: String,
+    pub workspace: Option<String>,
+}
+
+/// **What the window knows of the pane's project's chats**: the ones open now, and how an ended
+/// one's card is drawn from its record.
+pub(crate) struct ChatsHere<'a> {
+    pub open: Vec<OpenNamed>,
+    pub card: CardOf<'a>,
+}
+
+/// How an ended chat's card is drawn from its number and its record: none for one with no card.
+pub(crate) type CardOf<'a> = Box<dyn Fn(u32, &Record) -> Option<ChatCard> + 'a>;
+
+impl ChatsHere<'_> {
+    /// A pane in no project: no chat links.
+    pub(crate) fn none() -> Self {
+        Self {
+            open: Vec::new(),
+            card: Box::new(|_, _| None),
+        }
+    }
+
+    fn named(&self, session: u32) -> Option<&OpenNamed> {
+        self.open.iter().find(|one| one.session == session)
+    }
+
+    /// `#641 · <title>`, as the tab's tooltip says it (#6212).
+    fn title(&self, number: u32) -> String {
+        match self.named(number) {
+            Some(one) if !one.name.is_empty() => format!("#{number} · {}", one.name),
+            _ => format!("#{number}"),
+        }
+    }
+
+    /// What chat link `at` goes to, for a hover: none where an ended chat has no card.
+    fn seen(&self, at: &ChatAt, mine: Option<u32>) -> Option<(String, ChatSeen)> {
+        Some(match &at.goes {
+            Goes::ThisChat => (
+                self.title(at.number),
+                ChatSeen::ThisChat { number: at.number },
+            ),
+            Goes::Open => {
+                let now = &at.number;
+                let theirs = self.named(*now).and_then(|one| one.workspace.clone());
+                let ours = mine
+                    .and_then(|mine| self.named(mine))
+                    .and_then(|one| one.workspace.clone());
+                (
+                    self.title(*now),
+                    ChatSeen::Open {
+                        number: *now,
+                        workspace: theirs.filter(|theirs| Some(theirs) != ours.as_ref()),
+                    },
+                )
+            }
+            Goes::Ended(record) => {
+                let card = (self.card)(at.number, record)?;
+                (
+                    format!("#{} · {}", at.number, card.task.name),
+                    ChatSeen::Ended {
+                        card: Box::new(card),
+                    },
+                )
+            }
+        })
+    }
+
+    /// What opening chat link `at` shows: none where an ended chat has no card.
+    fn go(&self, at: &ChatAt) -> Option<ChatGo> {
+        Some(match &at.goes {
+            Goes::ThisChat => ChatGo::ThisChat,
+            Goes::Open => ChatGo::Chat { session: at.number },
+            Goes::Ended(record) => ChatGo::Card {
+                card: Box::new((self.card)(at.number, record)?),
+            },
+        })
+    }
 }
 
 /// **Where the window reads a file a link opens**: the place its light editor reads it by and
@@ -217,6 +349,8 @@ pub enum LinkAsk {
 pub enum LinkOpened {
     /// Opened: `target` is what was opened.
     Opened { kind: KindHint, target: String },
+    /// A chat link: what the window shows for it.
+    Chat { go: ChatGo },
     /// A file, for the window to show in an editor tab at its line and column: never handed to
     /// the system, so nothing runs.
     File {
@@ -238,17 +372,45 @@ pub enum LinkOpened {
     Refused { reason: String },
 }
 
-/// **What `candidate` is, for a hover**, resolved once: a link and what opening it does, or
-/// text that is no link and why not (`ftp://…` says purlis opens only http and https). `None` for
-/// text that says nothing on a hover: a path that names no file.
+/// `seen_in` for a pane that knows no chats: the tests' way to ask about every other kind.
+#[cfg(test)]
 pub(crate) fn seen(resolver: &Resolver, pane: &Pane, candidate: &Candidate) -> Option<LinkSeen> {
+    seen_in(resolver, pane, candidate, &ChatsHere::none())
+}
+
+/// **What `candidate` is, for a hover**, resolved once, given what the window knows of the
+/// pane's project's chats: a link and what opening it does, or text that is no link and why not
+/// (`ftp://…` says purlis opens only http and https). `None` for text that says nothing on a
+/// hover: a path that names no file, a number no chat had, an ended chat with no card.
+pub(crate) fn seen_in(
+    resolver: &Resolver,
+    pane: &Pane,
+    candidate: &Candidate,
+    chats: &ChatsHere<'_>,
+) -> Option<LinkSeen> {
     Some(match resolver.hover(candidate, pane) {
+        Hover::Link {
+            target: Target::Chat(at),
+            ..
+        } => {
+            let (shown, chat) = chats.seen(&at, pane.session)?;
+            LinkSeen {
+                kind: KindHint::Chat,
+                target: at.shown().to_owned(),
+                shown,
+                does: LinkDoes::Opens {
+                    into: OpensIn::Window,
+                },
+                chat: Some(chat),
+            }
+        }
         Hover::Link { target, opening } => LinkSeen {
             kind: target.kind().into(),
             target: target.shown().to_owned(),
             shown: match &target {
                 Target::File(file) => file.short().to_owned(),
                 Target::Url(url) => url.as_str().to_owned(),
+                Target::Chat(at) => at.shown().to_owned(),
             },
             does: match *opening {
                 Opening::Open(_) => LinkDoes::Opens {
@@ -257,12 +419,14 @@ pub(crate) fn seen(resolver: &Resolver, pane: &Pane, candidate: &Candidate) -> O
                 Opening::Ask { reason, .. } => LinkDoes::Asks { reason },
                 Opening::Refused(reason) => LinkDoes::Refused { reason },
             },
+            chat: None,
         },
         Hover::NotALink(reason) => LinkSeen {
             kind: candidate.kind.into(),
             target: candidate.text.clone(),
             shown: candidate.text.clone(),
             does: LinkDoes::Refused { reason },
+            chat: None,
         },
         Hover::Quiet => return None,
     })
@@ -299,7 +463,7 @@ fn ask_about(target: &Target, pane: &Pane) -> LinkAsk {
         Target::File(_) => LinkAsk::FileOutside {
             home: purlis_core::panelinks::home_of(pane).map(LinkHome::from),
         },
-        Target::Url(_) => LinkAsk::Link,
+        Target::Url(_) | Target::Chat(_) => LinkAsk::Link,
     }
 }
 
@@ -314,7 +478,35 @@ pub(crate) fn answer(
     token: Option<&str>,
     open_url: impl FnOnce(&str) -> Result<(), String>,
 ) -> LinkOpened {
+    answer_in(
+        resolver,
+        pane,
+        asks,
+        candidate,
+        token,
+        open_url,
+        &ChatsHere::none(),
+    )
+}
+
+/// [`answer`], with what the window knows of the pane's project's chats.
+pub(crate) fn answer_in(
+    resolver: &Resolver,
+    pane: &Pane,
+    asks: &Asks,
+    candidate: &Candidate,
+    token: Option<&str>,
+    open_url: impl FnOnce(&str) -> Result<(), String>,
+    chats: &ChatsHere<'_>,
+) -> LinkOpened {
     match resolver.open(candidate, pane, asks, token) {
+        // A chat link never asks: it shows a chat or a card, and runs nothing.
+        Opening::Open(Target::Chat(at)) => match chats.go(&at) {
+            Some(go) => LinkOpened::Chat { go },
+            None => LinkOpened::Refused {
+                reason: NOT_A_LINK.to_owned(),
+            },
+        },
         Opening::Open(Target::File(file)) => LinkOpened::File {
             target: file.shown().to_owned(),
             at: file_at(&file),
@@ -390,6 +582,34 @@ pub(crate) fn looked<T: Send + 'static>(
 /// What opening a link answers when the look at its file did not end in time.
 pub const NOT_LOOKED: &str = "purlis could not look at that file in time, so it is not opened";
 
+/// **The resolver for a pane in `held`'s project, and what it knows of its chats**: every kind,
+/// the chat kind given the chats open there now. A pane in no project the window holds links no
+/// chat.
+fn for_project(held: Option<&Held>) -> (Resolver, ChatsHere<'_>) {
+    // With no project, the chat kind still reads a chat's number, and finds none: it says
+    // nothing on a hover.
+    let open = held.map(crate::chatcard::open_chats).unwrap_or_default();
+    let resolver = Resolver::default().with_kind(Box::new(ChatNumber::with_open(open.clone())));
+    let Some(held) = held else {
+        return (resolver, ChatsHere::none());
+    };
+    let named = held
+        .chats()
+        .open_now()
+        .into_iter()
+        .map(|chat| OpenNamed {
+            session: chat.session,
+            name: chat.name,
+            workspace: chat.workspace,
+        })
+        .collect();
+    let chats = ChatsHere {
+        open: named,
+        card: Box::new(move |number, record| crate::chatcard::card_of(held, number, record, &open)),
+    };
+    (resolver, chats)
+}
+
 /// **What each candidate on a line is**, in order: a link, or none. What a hover shows.
 #[tauri::command]
 #[specta::specta]
@@ -399,13 +619,14 @@ pub async fn pane_link_resolve(
     candidates: Vec<LinkCandidate>,
 ) -> Vec<Option<LinkSeen>> {
     use tauri::Manager as _;
-    let pane = pane_of(&app.state::<Planes>(), from);
+    let (pane, held) = pane_of(&app.state::<Planes>(), from);
     let count = candidates.len();
+    // A chat's number reads the project's dispatch records: looked at as a file is.
     let look = move || {
-        let resolver = Resolver::default();
+        let (resolver, chats) = for_project(held.as_deref());
         candidates
             .into_iter()
-            .map(|candidate| seen(&resolver, &pane, &candidate.into()))
+            .map(|candidate| seen_in(&resolver, &pane, &candidate.into(), &chats))
             .collect::<Vec<_>>()
     };
     // Waited for off the window's thread; a look that did not end in time is no link.
@@ -427,7 +648,7 @@ pub async fn pane_link_open(
     token: Option<String>,
 ) -> LinkOpened {
     use tauri::Manager as _;
-    let pane = pane_of(&app.state::<Planes>(), from);
+    let (pane, held) = pane_of(&app.state::<Planes>(), from);
     let candidate: Candidate = candidate.into();
     if candidate.kind == Kind::Url {
         let asks = app.state::<PaneLinkAsks>();
@@ -440,17 +661,20 @@ pub async fn pane_link_open(
             |url| open_in_browser(&app, url),
         );
     }
-    // A file is looked at on a thread of its own; it opens nothing there, only answers.
+    // A file, or a chat's number, is looked at on a thread of its own; it opens nothing there,
+    // only answers. A chat link never asks, so it is never answered by a token.
     let handle = app.clone();
     let look = move || {
         let asks = handle.state::<PaneLinkAsks>();
-        answer(
-            &Resolver::default(),
+        let (resolver, chats) = for_project(held.as_deref());
+        answer_in(
+            &resolver,
             &pane,
             &asks.0,
             &candidate,
             token.as_deref(),
             |_| Err("purlis opens a file only in an editor tab".to_owned()),
+            &chats,
         )
     };
     tauri::async_runtime::spawn_blocking(move || looked(LOOK_FOR, look))
@@ -482,7 +706,7 @@ pub async fn pane_link_file(
     path: String,
 ) -> Result<LinkFile, String> {
     use tauri::Manager as _;
-    let pane = pane_of(&app.state::<Planes>(), from);
+    let (pane, _) = pane_of(&app.state::<Planes>(), from);
     let path = PathBuf::from(path);
     let Some(identity) = app.state::<PaneLinkAsks>().0.opened(&pane, &path) else {
         return Ok(LinkFile::NotOpened);
@@ -624,6 +848,7 @@ mod tests {
                 does: LinkDoes::Opens {
                     into: OpensIn::Browser
                 },
+                chat: None,
             })
         );
     }
@@ -645,6 +870,7 @@ mod tests {
                              this ftp: one"
                         .into()
                 },
+                chat: None,
             })
         );
         assert!(matches!(
@@ -836,6 +1062,7 @@ mod tests {
                 does: LinkDoes::Opens {
                     into: OpensIn::EditorTab
                 },
+                chat: None,
             })
         );
     }
@@ -915,6 +1142,197 @@ mod tests {
                 "about": {"about": "file-outside",
                           "home": {"is": "workspace", "name": "w", "folder": "/p/workspaces/w"}}
             })
+        );
+    }
+
+    // ---- Chat links (#6217): the window's half, over the core's chat kind. ----
+
+    use purlis_core::chatlookup::OpenChat;
+    use purlis_core::panelinks::ChatNumber;
+
+    fn chat(text: &str) -> Candidate {
+        Candidate {
+            kind: Kind::Chat,
+            text: text.to_owned(),
+        }
+    }
+
+    /// Chat 652's pane in a project with no records: only open chats link.
+    fn pane_of_652(root: &std::path::Path) -> Pane {
+        Pane {
+            project: Some(root.to_owned()),
+            session: Some(652),
+            ..Pane::default()
+        }
+    }
+
+    fn named(session: u32, name: &str, workspace: &str) -> OpenNamed {
+        OpenNamed {
+            session,
+            name: name.to_owned(),
+            workspace: Some(workspace.to_owned()),
+        }
+    }
+
+    /// The window's chats: 652 (this pane's, in smart-ide), 660 (in docs) and 661 (in smart-ide).
+    fn chats_here() -> (Resolver, ChatsHere<'static>) {
+        let open = [(652, "A"), (660, "B"), (661, "C")]
+            .map(|(number, id)| OpenChat {
+                number,
+                id: Some(format!("01K6{id}")),
+            })
+            .to_vec();
+        (
+            Resolver::default().with_kind(Box::new(ChatNumber::with_open(open))),
+            ChatsHere {
+                open: vec![
+                    named(652, "Grill #5820: chat links", "smart-ide"),
+                    named(660, "Docs site: the setup page", "docs"),
+                    named(661, "Signed commits #5607", "smart-ide"),
+                ],
+                card: Box::new(|_, _| None),
+            },
+        )
+    }
+
+    #[test]
+    fn a_chat_open_in_another_workspace_is_seen_by_number_and_title_with_that_workspace() {
+        let dir = tempfile::tempdir().expect("a project");
+        let (links, chats) = chats_here();
+
+        assert_eq!(
+            seen_in(&links, &pane_of_652(dir.path()), &chat("chat 660"), &chats),
+            Some(LinkSeen {
+                kind: KindHint::Chat,
+                target: "chat 660".into(),
+                shown: "#660 · Docs site: the setup page".into(),
+                does: LinkDoes::Opens {
+                    into: OpensIn::Window
+                },
+                chat: Some(ChatSeen::Open {
+                    number: 660,
+                    workspace: Some("docs".into())
+                }),
+            })
+        );
+        // In the pane's own workspace, it names none.
+        assert!(matches!(
+            seen_in(&links, &pane_of_652(dir.path()), &chat("chat 661"), &chats),
+            Some(LinkSeen {
+                chat: Some(ChatSeen::Open {
+                    number: 661,
+                    workspace: None
+                }),
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn opening_an_open_chat_shows_it_and_reaches_no_browser() {
+        let dir = tempfile::tempdir().expect("a project");
+        let (links, chats) = chats_here();
+        let answered = answer_in(
+            &links,
+            &pane_of_652(dir.path()),
+            &Asks::default(),
+            &chat("chat 660"),
+            None,
+            |url| panic!("{url} reached the browser"),
+            &chats,
+        );
+
+        assert_eq!(
+            answered,
+            LinkOpened::Chat {
+                go: ChatGo::Chat { session: 660 }
+            }
+        );
+    }
+
+    #[test]
+    fn its_own_number_is_this_chat_and_opening_it_shows_nothing_more() {
+        let dir = tempfile::tempdir().expect("a project");
+        let (links, chats) = chats_here();
+
+        assert!(matches!(
+            seen_in(&links, &pane_of_652(dir.path()), &chat("chat 652"), &chats),
+            Some(LinkSeen {
+                chat: Some(ChatSeen::ThisChat { number: 652 }),
+                ref shown,
+                ..
+            }) if shown == "#652 · Grill #5820: chat links"
+        ));
+        assert_eq!(
+            answer_in(
+                &links,
+                &pane_of_652(dir.path()),
+                &Asks::default(),
+                &chat("chat 652"),
+                None,
+                |url| panic!("{url} reached the browser"),
+                &chats,
+            ),
+            LinkOpened::Chat {
+                go: ChatGo::ThisChat
+            }
+        );
+    }
+
+    #[test]
+    fn an_unknown_number_says_nothing_on_a_hover_and_opening_it_is_refused() {
+        let dir = tempfile::tempdir().expect("a project");
+        let (links, chats) = chats_here();
+
+        assert_eq!(
+            seen_in(&links, &pane_of_652(dir.path()), &chat("chat 9999"), &chats),
+            None
+        );
+        assert!(matches!(
+            answer_in(
+                &links,
+                &pane_of_652(dir.path()),
+                &Asks::default(),
+                &chat("chat 9999"),
+                None,
+                |url| panic!("{url} reached the browser"),
+                &chats,
+            ),
+            LinkOpened::Refused { .. }
+        ));
+    }
+
+    #[test]
+    fn a_pane_in_no_project_links_no_chat_and_says_nothing_on_its_hover() {
+        let (links, chats) = for_project(None);
+        assert_eq!(
+            seen_in(&links, &Pane::default(), &chat("chat 652"), &chats),
+            None
+        );
+    }
+
+    #[test]
+    fn the_window_s_words_for_a_chat_link_are_these() {
+        let json = |answer: &LinkOpened| serde_json::to_value(answer).expect("serialises");
+        assert_eq!(
+            json(&LinkOpened::Chat {
+                go: ChatGo::Chat { session: 660 }
+            }),
+            serde_json::json!({"answer": "chat", "go": {"to": "chat", "session": 660}})
+        );
+        assert_eq!(
+            json(&LinkOpened::Chat {
+                go: ChatGo::ThisChat
+            }),
+            serde_json::json!({"answer": "chat", "go": {"to": "this_chat"}})
+        );
+        assert_eq!(
+            serde_json::to_value(ChatSeen::Open {
+                number: 660,
+                workspace: None
+            })
+            .expect("serialises"),
+            serde_json::json!({"is": "open", "number": 660, "workspace": null})
         );
     }
 }

@@ -2107,6 +2107,7 @@ function App() {
       createWorkspace: () => undefined,
       removeWorkspace: () => undefined,
       showChat: () => undefined,
+      focusChat: () => undefined,
       reopenTask: async () => nowhere(),
       paneBack: () => undefined,
       showChatTasks: () => undefined,
@@ -2726,7 +2727,8 @@ function App() {
   }, [windowDoes]);
 
   const pressHere = useCallback((plane: string, offer: Offer) => {
-    if (offer.does.verb === "showChat") setShowing({ at: "plane", plane });
+    if (offer.does.verb === "showChat" || offer.does.verb === "focusChat")
+      setShowing({ at: "plane", plane });
     void reportsNow.current[plane]?.run(offer);
   }, []);
   /** A row for a chat in ANOTHER window is carried out there, and that window comes to the

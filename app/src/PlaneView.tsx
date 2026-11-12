@@ -8930,6 +8930,8 @@ export const PlaneView = memo(function PlaneView({
       removeWorkspace,
       // The verb is only ever a needs-you item's Go, or the palette's row for one.
       showChat: showNeeding,
+      // A pane's chat link (#6217): that chat, and nothing a needs-you item's Go does.
+      focusChat: showChat,
       reopenTask: async (id) => {
         const why = await reopenById(id);
         return why === undefined ? { ok: true } : { ok: false, refused: why };
@@ -9112,6 +9114,7 @@ export const PlaneView = memo(function PlaneView({
       resumeSession,
       runAction,
       sendKey,
+      showChat,
       showNeeding,
       reopenById,
       goBack,
