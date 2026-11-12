@@ -764,7 +764,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
     group: "Tabs and chats",
     where: "terminal",
     kind: "key",
-    // `L` for links (#6220, D5). ⌘⇧L was no key of the window's; Ctrl with Shift and a letter is
+    // `L` for links (#6220, D5). ⇧⌘L was no key of the window's; Ctrl with Shift and a letter is
     // no byte to a terminal's program, so it is the pane's off a Mac, as Ctrl+Shift+F is.
     chords: { mac: [PANE_LINKS.mac], other: [PANE_LINKS.other] },
     said: linksListKeySaid,

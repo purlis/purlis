@@ -4,7 +4,7 @@
 /**
  * **Links in this pane…** (#6220, the accepted prototype's `LinksInThisPane`, S5): a real xterm,
  * the read-only terminal's, holding a harness's turn with three addresses in it, one the core
- * will not open. ⌘⇧L (Ctrl+Shift+L off a Mac) lists them, newest first. The keyboard walks the list, a refused entry says
+ * will not open. ⇧⌘L (Ctrl+Shift+L off a Mac) lists them, newest first. The keyboard walks the list, a refused entry says
  * why and keeps the keyboard, Enter opens one, and Esc closes it.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
@@ -68,7 +68,7 @@ const meta = {
 } satisfies Meta<typeof Pane>;
 export default meta;
 
-/** Opens the list from the keyboard alone: the screen's region, then ⌘⇧L. */
+/** Opens the list from the keyboard alone: the screen's region, then ⇧⌘L. */
 async function listed(canvasElement: HTMLElement) {
   const page = within(canvasElement.ownerDocument.body);
   const region = await page.findByRole("region", { name: "A saved chat's last screen" });

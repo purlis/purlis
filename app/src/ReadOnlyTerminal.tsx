@@ -217,7 +217,7 @@ export function ReadOnlyTerminal({
     const now = drawn.current;
     if (!now || event.defaultPrevented) return;
     const mac = onAMac();
-    // **Links in this pane…** (#6220): ⌘⇧L, Ctrl+Shift+L off a Mac, on a screen that links.
+    // **Links in this pane…** (#6220): ⇧⌘L, Ctrl+Shift+L off a Mac, on a screen that links.
     if (linkedNow.current !== undefined && opensTheLinksList(event, mac)) {
       event.preventDefault();
       openLinksList?.();

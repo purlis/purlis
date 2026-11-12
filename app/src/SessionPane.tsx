@@ -512,7 +512,7 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
   // them. Each is swallowed on every phase — keydown, keypress, keyup — so xterm sends
   // nothing of its own for it, and acted on once, at keydown.
   pane.attachCustomKeyEventHandler((event) => {
-    // **Links in this pane…** (#6220): ⌘⇧L, Ctrl+Shift+L off a Mac.
+    // **Links in this pane…** (#6220): ⇧⌘L, Ctrl+Shift+L off a Mac.
     if (isKey(event, "pane.links")) {
       if (event.type === "keydown" && !event.repeat) {
         event.preventDefault();
