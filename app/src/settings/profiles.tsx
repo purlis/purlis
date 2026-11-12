@@ -310,7 +310,7 @@ const listed = (plane: string | undefined): LiveSetting => ({
                   {now.read.profiles.map((profile) => (
                     <ControlRow key={profile.name}>
                       <ControlRowHeading>
-                        <span className="profiles-lines">
+                        <span className="ui-record-lines">
                           <span className="profiles-name">
                             <HarnessIcon icon={profile.icon} kind={profile.kind} />
                             {profile.name}
@@ -322,7 +322,7 @@ const listed = (plane: string | undefined): LiveSetting => ({
                         <Badge variant="accent">{note(profile)}</Badge>
                       </ControlCell>
                       <ControlCell heading="Sign-in">
-                        <span className="profiles-lines">
+                        <span className="ui-record-lines">
                           <span className="ui-setting-help">{signedIn(profile)}</span>
                           {onPools(profile.name).map((line) => (
                             <span key={line} className="ui-setting-help">
@@ -365,7 +365,7 @@ const listed = (plane: string | undefined): LiveSetting => ({
                         </span>
                       </ControlCell>
                       <ControlCell heading="Pin">
-                        <span className="profiles-lines">
+                        <span className="ui-record-lines">
                           <Badge variant="accent">{pinNote(profile)}</Badge>
                           {offeredVersion(profile) !== undefined && (
                             <EntryButton
