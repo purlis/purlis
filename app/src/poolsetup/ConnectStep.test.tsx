@@ -248,6 +248,8 @@ describe("ConnectStep", () => {
   it("keeps the TLS files once all are named, the key from a vault by its names alone", async () => {
     const calls = core({ pool_setup_tls_files: () => shown(step({})) });
     draw(step({ machine: tlsMachine(), cause: "plain-tcp", state: "attention" }));
+    // A tcp:// machine without its files is plain TCP, refused, until TLS is chosen.
+    await userEvent.click(await screen.findByRole("button", { name: "Use TLS instead" }));
     await userEvent.type(
       await screen.findByRole("textbox", { name: "Authority (CA) file" }),
       "/home/me/ca.pem",
@@ -269,8 +271,8 @@ describe("ConnectStep", () => {
         },
       }),
     );
-    // Connect to waits until what is typed is what is kept.
-    expect(screen.getByRole("button", { name: /Connect/ })).toBeDisabled();
+    // Connect to waits, and isn't named for the machine, until what is typed is what is kept.
+    expect(screen.getByRole("button", { name: "Connect" })).toBeDisabled();
   });
 
   it("connects to a tcp:// machine once its files are kept", async () => {
@@ -313,6 +315,13 @@ describe("ConnectStep", () => {
           url: null,
         },
         machine: tlsMachine({
+          tls: {
+            ca: "/ca.pem",
+            cert: "/cert.pem",
+            key: "/key.pem",
+            key_vault: null,
+            key_name: null,
+          },
           ca: { fingerprint: CA, subject: "CN=lab CA", file: "/ca.pem" },
         }),
       }),
@@ -342,8 +351,10 @@ describe("ConnectStep", () => {
   it("spells a TLS machine as tcp:// and tells the routes apart", () => {
     expect(tcpRouteOf(" lab:2376 ")).toBe("tcp://lab:2376");
     expect(tcpRouteOf("tcp://lab")).toBe("tcp://lab");
-    expect(overOf("tcp://lab:2376")).toBe("tls");
-    expect(overOf("ssh://lab")).toBe("ssh");
+    const files = { ca: "/ca", cert: "/c", key: "/k", key_vault: null, key_name: null };
+    expect(overOf(tlsMachine({ tls: files }))).toBe("tls");
+    expect(overOf(tlsMachine()), "plain TCP, no files").toBe("ssh");
+    expect(overOf(tlsMachine({ route: "ssh://lab", tls: null }))).toBe("ssh");
     expect(overOf(null)).toBe("ssh");
   });
 });

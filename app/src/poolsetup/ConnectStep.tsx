@@ -125,9 +125,12 @@ export function tcpRouteOf(typed: string): string {
   return text === "" || text.includes("://") ? text : `tcp://${text}`;
 }
 
-/** How a kept route is reached: over TLS where it is a `tcp://` address. */
-export const overOf = (route: string | null | undefined): Over =>
-  route?.startsWith("tcp://") === true ? "tls" : "ssh";
+/**
+ * **How a kept machine is reached**: over TLS where it is a `tcp://` address with its files named.
+ * A `tcp://` address with none is plain TCP, refused on its card until the person chooses TLS.
+ */
+export const overOf = (machine: PoolSetupStep["machine"] | undefined): Over =>
+  machine?.route?.startsWith("tcp://") === true && machine.tls !== null ? "tls" : "ssh";
 
 /** **How should purlis reach it?**, SSH first and recommended (#6265's route choice). */
 function RouteChoice({ over, onChange }: { over: Over; onChange: (to: Over) => void }) {
@@ -411,7 +414,9 @@ function TlsPick({
       {step.see && <SeeWhat text={step.see.text} note={step.see.note} />}
       <Action
         does={step.next?.id === "connect-machine" ? step.next.does : undefined}
-        main={route !== "" && route === kept && host ? `Connect to ${host}` : "Connect"}
+        // Named for the machine only once everything typed is kept, as the SSH pick is: what a
+        // press of it reads is what Connect keeps.
+        main={route !== "" && route === kept && same && host ? `Connect to ${host}` : "Connect"}
         onMain={onConnect}
         busy={busy || route === "" || route !== kept || !same}
       />
@@ -520,7 +525,7 @@ function Confirm({
 /** **What was checked on the machine**, the failing line marked. */
 function Checked({ step, done }: { step: PoolSetupStep; done: boolean }) {
   const host = step.machine?.host ?? "the machine";
-  const over = overOf(step.machine?.route);
+  const over = overOf(step.machine);
   const verdicts = verdictsOf(step.cause, done, over);
   return (
     <>
@@ -570,7 +575,7 @@ export function ConnectStep({
   const host = step.machine?.host ?? "the machine";
   // The route chosen: a kept tcp:// machine is reached over TLS, until the person picks another.
   const [chosenOver, setOver] = useState<Over>();
-  const over = chosenOver ?? overOf(step.machine?.route);
+  const over = chosenOver ?? overOf(step.machine);
   const pick = (route: string | null) => {
     void commands.poolSetupMachine(route).then((answer) => {
       if (answer.status === "error") setTrouble(answer.error);
@@ -626,8 +631,10 @@ export function ConnectStep({
   const meeting = step.next?.id === "trust-machine";
   // A tcp:// machine typed for TLS is plain TCP only until its files are named: the pick, with
   // Options open, says how to name them (#6267).
-  const naming = over === "tls" && step.cause === "plain-tcp";
-  const refused = !naming && (step.cause === "plain-tcp" || step.cause === "not-a-route");
+  const naming = chosenOver === "tls" && step.cause === "plain-tcp";
+  // Refused on its card until the person chooses a route; a choice of SSH made since reads again.
+  const refused =
+    (step.cause === "plain-tcp" && chosenOver === undefined) || step.cause === "not-a-route";
   const finding = step.state === "attention" && !refused && !naming;
 
   return (
@@ -656,7 +663,10 @@ export function ConnectStep({
           over={over}
           onChange={(to) => {
             setOver(to);
-            if (to !== overOf(step.machine?.route)) pick(null);
+            // A machine kept for the other route is forgotten; one that fits this one stays.
+            const route = step.machine?.route;
+            const tcp = route?.startsWith("tcp://") === true;
+            if (route && tcp !== (to === "tls")) pick(null);
           }}
         />
       )}
@@ -702,9 +712,16 @@ export function ConnectStep({
               : (TITLES[step.cause ?? "here"] ?? TITLES.here ?? "")
           }
           actions={
-            <Button variant="primary" onPress={notIt}>
-              {step.next?.label ?? "Change the machine"}
-            </Button>
+            <>
+              <Button variant="primary" onPress={notIt}>
+                {step.next?.label ?? "Change the machine"}
+              </Button>
+              {step.cause === "plain-tcp" && (
+                <Button variant="secondary" onPress={() => setOver("tls")}>
+                  Use TLS instead
+                </Button>
+              )}
+            </>
           }
         >
           {step.findings.map((one) => (

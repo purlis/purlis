@@ -225,15 +225,17 @@ const REFUSED = connect({
   next: action("use-ssh-instead", "Use SSH instead", "Goes back to the machine."),
 });
 
-/** Plain TCP, refused on an attention card with Use SSH instead. */
+/** Plain TCP, refused on an attention card with Use SSH instead, and Use TLS instead beside it. */
 export const PlainTcpRefused: Story = {
   beforeEach: faked([]),
   args: { step: REFUSED, shown: shown(REFUSED) },
-  play: async ({ canvasElement }) => {
+  play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
     const instead = canvas.getByRole("button", { name: "Use SSH instead" });
     instead.focus();
     await expect(instead).toHaveFocus();
+    await userEvent.tab();
+    await expect(canvas.getByRole("button", { name: "Use TLS instead" })).toHaveFocus();
     await expectFocusInSight();
   },
 };
@@ -333,12 +335,13 @@ const TLS_NAMING = connect({
   machine: tlsMachine({ tls: null }),
 });
 
-/** Docker's API over TLS chosen: the address, and the files under Options, the key a file. */
+/** Plain TCP to a TLS port, Use TLS instead pressed: the address, and the files under Options. */
 export const RouteTlsApi: Story = {
   beforeEach: faked([]),
   args: { step: TLS_NAMING, shown: shown(TLS_NAMING) },
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Use TLS instead" }));
     const tls = await canvas.findByRole("radio", { name: /Docker's API over TLS/ });
     await expect(tls).toBeChecked();
     tls.focus();
