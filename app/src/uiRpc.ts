@@ -1939,6 +1939,10 @@ export const commands = {
 	dockerPools: __WINDOW_ONLY_RESULT,
 	poolSetup: __WINDOW_ONLY_RESULT,
 	poolSetupChooseDocker: __WINDOW_ONLY_RESULT,
+	poolSetupChooseCluster: __WINDOW_ONLY_RESULT,
+	poolSetupInstall: __WINDOW_ONLY_RESULT,
+	poolSetupOperatorImage: __WINDOW_ONLY_RESULT,
+	poolSetupClusterPool: __WINDOW_ONLY_RESULT,
 	poolSetupName: __WINDOW_ONLY_RESULT,
 	poolSetupPool: __WINDOW_ONLY_RESULT,
 	poolSetupAdd: __WINDOW_ONLY_RESULT,
@@ -10523,6 +10527,15 @@ export type PoolSetupCheck = {
 	more: string | null,
 };
 
+/**  The kubeconfig's contexts, by name alone, for Where's Options on a cluster (#4492). */
+export type PoolSetupContexts = {
+	names: string[],
+	recommended: string | null,
+	chosen: string | null,
+	/**  The chosen cluster's Pools, by name, where its operator runs (#4494). */
+	pools: string[],
+};
+
 /**
  *  What the Pool step's button did: nothing made, and why, where a team's image breaks the
  *  contract; none where the pool was made.
@@ -10548,6 +10561,18 @@ export type PoolSetupOver = {
 	raise_to: number | null,
 	/**  What its runner's older purlis holds it to, and what helps, where only that does (#5175). */
 	older_runner: OlderRunner | null,
+};
+
+/**
+ *  One part of a cluster's install (#4493): `upstream`, `definitions`, `signing-key` or
+ *  `operator`.
+ */
+export type PoolSetupPart = {
+	id: string,
+	name: string,
+	done: boolean,
+	line: string,
+	next: PoolSetupAction | null,
 };
 
 /**  One of this machine's profiles against a pool's limit (#4482). */
@@ -10585,6 +10610,9 @@ export type PoolSetupShown = {
 	others: string[],
 	/**  The name a new pool is recommended, which no pool here has (#6256). */
 	recommended: string,
+	/**  `docker` or `cluster`: the kind of pool this setup makes. */
+	kind: string,
+	contexts: PoolSetupContexts,
 };
 
 /**  This machine's profiles against pool `pool`'s limits (#4482). */
@@ -10605,6 +10633,12 @@ export type PoolSetupStep = {
 	skippable: boolean,
 	see: PoolSetupSee | null,
 	checks: PoolSetupCheck[],
+	/**  The choice purlis didn't recommend, where there is one (Where's other place, #4492). */
+	also: PoolSetupAction | null,
+	/**  Install's parts, each with its own button (#4493). */
+	parts: PoolSetupPart[],
+	/**  How the step is undone by hand, never by a button: uninstalling from a cluster. */
+	undo: PoolSetupSee | null,
 };
 
 /**  What Try it found. */

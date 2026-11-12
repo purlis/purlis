@@ -779,6 +779,7 @@ export function ViewPane({
             onOpenChat={onNewChatOn}
             onOpenIdentity={() => onOpenView(AGENT_IDENTITY_VIEW, AGENT_IDENTITY_TITLE)}
             onOpenSettings={() => onOpenView(settingsView("project"), SETTINGS_TAB_TITLE)}
+            onOpenPools={() => onOpenView(settingsView("you"), SETTINGS_TAB_TITLE)}
           />
         ) : isSaving(view) ? (
           /* The plane's save standing and its save button (charter-app#294). Keyed by the

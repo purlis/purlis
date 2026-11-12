@@ -38,6 +38,7 @@ fn in_a_docker_pool() {
         plane: None,
         docker: Some(&docker),
         engine: Docker::engine_on_this_machine(),
+        kubectl: Err("this test asks no cluster"),
     };
 
     // Before there is a pool: real Docker answers, so it is recommended, and nothing is chosen.

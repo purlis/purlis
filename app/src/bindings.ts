@@ -4150,6 +4150,25 @@ export const commands = {
 	poolSetup: (plane: PlaneId) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup", { plane })),
 	/**  **Keeps that the person chose Docker on Where.** Nothing else changes. */
 	poolSetupChooseDocker: () => typedError<null, string>(__TAURI_INVOKE("pool_setup_choose_docker")),
+	/**
+	 *  **Keeps that the person chose their team's cluster on Where**, through kubeconfig context
+	 *  `context` (#4492): its name alone. Nothing on the cluster changes. With no context, only the
+	 *  kind is kept, as Add a cluster pool… opens Pool setup: Where then recommends a context.
+	 */
+	poolSetupChooseCluster: (context: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_choose_cluster", { context })),
+	/**
+	 *  **Applies one part of a cluster's install** (#4493), on that part's own button: `upstream`,
+	 *  `definitions`, `signing-key` or `operator`, to the cluster chosen on Where, with the person's
+	 *  own kubectl and sign-in.
+	 */
+	poolSetupInstall: (part: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_install", { part })),
+	/**  **Keeps the cluster operator's image named under Install's Options** (#4493), or none. */
+	poolSetupOperatorImage: (image: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_operator_image", { image })),
+	/**
+	 *  **Makes the Pool `name` in the cluster chosen on Where** (#4494), of runner image `image` by
+	 *  digest, on the Pool step's own button, with the person's own kubectl and sign-in.
+	 */
+	poolSetupClusterPool: (name: string, image: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_cluster_pool", { name, image })),
 	/**  **Keeps the name typed on the Pool step**, or none, so coming back finds it. */
 	poolSetupName: (name: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_name", { name })),
 	/**  **Keeps that this setup goes on with pool `name`**, once it has made it. */
@@ -13598,6 +13617,15 @@ export type PoolSetupCheck = {
 	more: string | null,
 };
 
+/**  The kubeconfig's contexts, by name alone, for Where's Options on a cluster (#4492). */
+export type PoolSetupContexts = {
+	names: string[],
+	recommended: string | null,
+	chosen: string | null,
+	/**  The chosen cluster's Pools, by name, where its operator runs (#4494). */
+	pools: string[],
+};
+
 /**
  *  What the Pool step's button did: nothing made, and why, where a team's image breaks the
  *  contract; none where the pool was made.
@@ -13623,6 +13651,18 @@ export type PoolSetupOver = {
 	raise_to: number | null,
 	/**  What its runner's older purlis holds it to, and what helps, where only that does (#5175). */
 	older_runner: OlderRunner | null,
+};
+
+/**
+ *  One part of a cluster's install (#4493): `upstream`, `definitions`, `signing-key` or
+ *  `operator`.
+ */
+export type PoolSetupPart = {
+	id: string,
+	name: string,
+	done: boolean,
+	line: string,
+	next: PoolSetupAction | null,
 };
 
 /**  One of this machine's profiles against a pool's limit (#4482). */
@@ -13660,6 +13700,9 @@ export type PoolSetupShown = {
 	others: string[],
 	/**  The name a new pool is recommended, which no pool here has (#6256). */
 	recommended: string,
+	/**  `docker` or `cluster`: the kind of pool this setup makes. */
+	kind: string,
+	contexts: PoolSetupContexts,
 };
 
 /**  This machine's profiles against pool `pool`'s limits (#4482). */
@@ -13680,6 +13723,12 @@ export type PoolSetupStep = {
 	skippable: boolean,
 	see: PoolSetupSee | null,
 	checks: PoolSetupCheck[],
+	/**  The choice purlis didn't recommend, where there is one (Where's other place, #4492). */
+	also: PoolSetupAction | null,
+	/**  Install's parts, each with its own button (#4493). */
+	parts: PoolSetupPart[],
+	/**  How the step is undone by hand, never by a button: uninstalling from a cluster. */
+	undo: PoolSetupSee | null,
 };
 
 /**  What Try it found. */
