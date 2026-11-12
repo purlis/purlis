@@ -1669,6 +1669,8 @@ jobs:
         run: cargo test --locked -p purlis-cli --test recorded_behaviour
       - name: The blessed file, to check and commit by hand
         if: ${{ needs.changes.outputs.rust != 'false' && (failure()) }}
+        # Evidence only: a failed upload (a runner's DNS, 2026-11-11) never fails the job.
+        continue-on-error: true
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: recorded-behaviour-blessed
@@ -2190,6 +2192,8 @@ jobs:
       # What a clone looks like in the real window, part way (`specs/clones.e2e.ts`): for a person
       # to look at, on a green run too.
       - if: "!cancelled()"
+        # Evidence only: a failed upload (a runner's DNS, 2026-11-11) never fails the job.
+        continue-on-error: true
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: clone-screenshots-${{ matrix.os }}-${{ matrix.shard }}
@@ -2203,6 +2207,8 @@ jobs:
         run: node ../tools/e2e-annotations.mjs logs/failures.jsonl
         working-directory: app
       - if: failure()
+        # Evidence only: a failed upload (a runner's DNS, 2026-11-11) never fails the job.
+        continue-on-error: true
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: scenario-logs-${{ matrix.os }}-${{ matrix.shard }}
@@ -2532,6 +2538,8 @@ jobs:
           "exit: $LASTEXITCODE"
       - name: The whole check log, kept
         if: always()
+        # Evidence only: a failed upload (a runner's DNS, 2026-11-11) never fails the job.
+        continue-on-error: true
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-check
