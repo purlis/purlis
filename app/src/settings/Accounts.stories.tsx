@@ -137,17 +137,29 @@ type Story = StoryObj<typeof meta>;
  * from an older setup, each with Remove….
  */
 export const SignedInAndSigning: Story = {
-  play: async ({ canvas }) => {
-    const out = await canvas.findByRole("button", { name: "Sign out of octocat on github.com" });
+  play: async ({ canvas, userEvent }) => {
+    // The accounts, a table (#6301): a row an account, Sign out at its end.
+    const accounts = await canvas.findByRole("grid", { name: "Forge accounts" });
     await expect(
-      canvas.getByRole("button", { name: "Sign out of sam on gitlab.example.org" }),
-    ).toBeVisible();
+      within(accounts)
+        .getAllByRole("rowheader")
+        .map((one) => one.textContent),
+    ).toEqual(["octocat", "sam"]);
     await canvas.findByRole("button", {
       name: "Remove Studio Mac mini's signing key from octocat on GitHub…",
     });
     await expect(canvas.getByText("Older setup")).toBeVisible();
-    out.focus();
-    await untilFocused(() => out, "Sign out");
+    const rows = () => within(accounts).getAllByRole("row").slice(1);
+    (rows()[0] as HTMLElement).focus();
+    await untilFocused(() => rows()[0] as HTMLElement, "the first account's row");
+    await userEvent.keyboard("{ArrowDown}{ArrowRight}{ArrowRight}{ArrowRight}{ArrowRight}");
+    await untilFocused(
+      () =>
+        within(rows()[1] as HTMLElement).getByRole("button", {
+          name: "Sign out of sam on gitlab.example.org",
+        }),
+      "↓ and → reach the second account's Sign out",
+    );
     expectFocusInSight();
   },
 };
