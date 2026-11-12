@@ -1049,6 +1049,7 @@ mod laid_grounds_tests;
 #[cfg(test)]
 #[path = "allow_kept_tests.rs"]
 mod allow_kept_tests;
+
 #[cfg(test)]
 #[path = "hot_count_tints_tests.rs"]
 mod hot_count_tints_tests;
@@ -1388,7 +1389,7 @@ pub(super) fn allow_from_primary(theme: &ResolvedTheme) -> Vec<AllowLook> {
     let found = allow_from_primary_measured(theme);
     ALLOW_KEPT.with(|kept| {
         let mut kept = kept.borrow_mut();
-        if kept.len() == KEPT_ALLOW {
+        if kept.len() >= MOST_ALLOW_KEPT {
             kept.clear();
         }
         kept.insert(key, found.clone());
@@ -1397,7 +1398,7 @@ pub(super) fn allow_from_primary(theme: &ResolvedTheme) -> Vec<AllowLook> {
 }
 
 /// How many sets of [`allow_reads`]' values a thread keeps [`allow_from_primary`]'s answer for.
-const KEPT_ALLOW: usize = 4096;
+const MOST_ALLOW_KEPT: usize = 4096;
 
 thread_local! {
     /// What [`allow_from_primary`] answered, by the values of every token it reads

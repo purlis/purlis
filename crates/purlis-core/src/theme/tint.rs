@@ -1159,9 +1159,12 @@ pub fn apart_chroma_of(rules: &[Rule<'_>], hue: f64) -> Option<f64> {
 /// accent gives way as far as its kin could go, and past that it keeps the colour it was written
 /// in, which the floors vouch for, rather than a grey at a chroma the kin could not take (#3388).
 pub fn alone_chroma_of(rules: &[Rule<'_>], kin: &[Rule<'_>], shared: f64, hue: f64) -> Option<f64> {
-    let failed = std::cell::Cell::new(0);
-    let whole =
-        |most: f64| all_failing_first(kin, &failed, |rule| rule.holds(hue, Some(most), Some(most)));
+    let last_failed = std::cell::Cell::new(0);
+    let whole = |most: f64| {
+        all_failing_first(kin, &last_failed, |rule| {
+            rule.holds(hue, Some(most), Some(most))
+        })
+    };
     searched(rules, hue, shared, |alone| alone, whole)
 }
 
@@ -1208,11 +1211,11 @@ fn searched(
     // The rule that last failed is asked first: it is the likeliest to fail at the next step
     // down, and a step one rule fails is answered without turning the sides of the rest. Every
     // rule must hold, so the order asked in changes no answer (#3597).
-    let failed = std::cell::Cell::new(0);
+    let last_failed = std::cell::Cell::new(0);
     let far = |most: f64| {
         let chroma = |alone: bool| Some(if moves(alone) { most } else { ceiling });
         offered(most)
-            && all_failing_first(rules, &failed, |rule| {
+            && all_failing_first(rules, &last_failed, |rule| {
                 rule.holds(hue, chroma(rule.token_alone), chroma(rule.from_alone))
             })
     };
