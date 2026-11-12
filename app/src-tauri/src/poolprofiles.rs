@@ -730,6 +730,12 @@ pub enum Yours {
     Cluster(Box<purlis_core::runners::ClusterKept>),
 }
 
+/// **This machine's `docker`, pointed at pool `pool`'s engine** (#6266): itself for a pool here,
+/// through its forward for a pool on another machine.
+fn pool_docker(config: &Path, pool: &str) -> Result<purlis_core::dockerpool::Docker, String> {
+    purlis_core::sshroute::pool::docker_of_named(config, &crate::runnerlinks::docker()?, pool)
+}
+
 /// **Whether pool `pool`'s runner is shown to be the person's own now** (#2049, #3819), or why
 /// not, in words. A Docker pool by [`owned`]. A cluster pool by the gate a vault value or a token
 /// passes ([`purlis_core::poollogins::Bound::of_a_cluster_pool`], #4071): the person's mark, no
@@ -739,8 +745,14 @@ pub fn yours(config: &Path, pool: &str) -> Result<Yours, String> {
     let Some((cluster, kept)) =
         purlis_core::runners::cluster_runner_for(config, pool).map_err(|why| why.to_string())?
     else {
-        // A pool on another machine is not this machine's, whatever this machine's engine is.
-        purlis_core::poollogins::refused_on_another_machine(config, pool)?;
+        // A pool on another machine is reached through its own pinned forward (#6266, ADR 0123
+        // §1): its runner's sign-ins are a Docker pool's, bound to that engine.
+        if purlis_core::sshroute::pool::is_remote(config, pool) {
+            let docker = crate::runnerlinks::docker()?;
+            let (_, socket) =
+                purlis_core::sshroute::pool::reached(config, &docker, pool, Err(String::new()))?;
+            return Ok(Yours::Docker(socket));
+        }
         return owned().map(Yours::Docker);
     };
     yours_on_a_cluster(
@@ -1658,7 +1670,7 @@ pub fn sign_out_line(pool: &str, name: &str) -> Result<String, String> {
     let record = record_named(&config, name)?;
     onrunner::Kept::of(&record)?;
     let runner = this_desktops_runner(&config, pool)?;
-    let line = crate::runnerlinks::docker()?.sign_out_line(&runner.made, &engine, name)?;
+    let line = pool_docker(&config, pool)?.sign_out_line(&runner.made, &engine, name)?;
     // A sign-in open on it would say signed in over this sign-out, so it ends first, and so does
     // every watcher of a sign-in in a shell, none of which lifts this hold (ruled 2026-11-08).
     crate::signinwatch::signing_out(pool, name, || {
@@ -1696,13 +1708,7 @@ fn login_on(
                     this_desktops_runner(config, pool)?
                 }
             };
-            crate::runnerlinks::docker()?.checked_sign_in(
-                &runner.made,
-                engine,
-                name,
-                provider,
-                typed,
-            )
+            pool_docker(config, pool)?.checked_sign_in(&runner.made, engine, name, provider, typed)
         }
         Yours::Cluster(judged) => {
             still_yours(config, pool, judged)?;
@@ -2245,7 +2251,7 @@ pub async fn pool_sign_out(pool: String, name: String) -> Result<Option<String>,
         let mut draining = Vec::new();
         match &yours {
             Yours::Docker(_) => {
-                let docker = crate::runnerlinks::docker()?;
+                let docker = pool_docker(&config, &pool)?;
                 // First, so that no drain carries it even if the rest stops short.
                 draining =
                     purlis_core::pools::sign_out_draining(&config, &docker, &pool, &name, &[])

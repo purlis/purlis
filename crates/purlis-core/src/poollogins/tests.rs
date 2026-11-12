@@ -396,10 +396,11 @@ fn a_pool_not_ready_for_a_new_chat_says_which_way_it_is_not() {
     ));
 }
 
-/// **A pool on another machine is never the person's own here** (#6266, ADR 0123 §5): its
-/// runner gets no vault value and no profile, whatever this machine's own engine is.
+/// **A pool on another machine is never sent a vault value** (#6266, ADR 0123 §5): whatever this
+/// machine's own engine is, until the person's mark (#6271). Its chats still move there, as a
+/// Docker pool's do (§1).
 #[test]
-fn a_pool_on_another_machine_is_never_bound_even_with_this_machines_engine_yours() {
+fn a_pool_on_another_machine_is_sent_no_vault_value_and_chats_still_move_there() {
     let config = a_pool_with_a_runner_draining();
     change_runners(config.path(), |text| {
         let pool = &mut text["pools"][0];
@@ -410,11 +411,15 @@ fn a_pool_on_another_machine_is_never_bound_even_with_this_machines_engine_yours
             "engine": "ABCD",
         });
     });
-    let bound = Bound::read_with(Ok("/var/run/docker.sock".into()), config.path(), "first");
-    assert!(
-        matches!(&bound, Err(Unbound::NotYours(why)) if why.contains("on another machine")),
-        "{bound:?}"
+    let sent = Bound::over_the_link_with(
+        Ok("/var/run/docker.sock".into()),
+        config.path(),
+        "first",
+        None,
     );
-    let refused = refused_on_another_machine(config.path(), "first").unwrap_err();
-    assert!(refused.contains("sends it no vault value"), "{refused}");
+    assert!(
+        matches!(&sent, Err(why) if why.contains("on another machine") && why.contains("no vault value")),
+        "{sent:?}"
+    );
+    assert!(Bound::read_with(Ok("/var/run/docker.sock".into()), config.path(), "first").is_ok());
 }

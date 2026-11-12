@@ -288,12 +288,12 @@ fn where_offers_the_other_kind_beside_its_own() {
 }
 
 #[test]
-fn a_pool_on_another_machine_keeps_no_profile_of_yours_so_sign_ins_can_only_be_skipped() {
+fn a_pool_on_another_machines_sign_ins_are_a_docker_pools() {
     let facts = Facts {
         pool: Some(PoolFacts {
             name: "build-box".into(),
             runner: Runner::Running,
-            sign_ins: SignIns::NotOwned,
+            sign_ins: SignIns::Read(Vec::new()),
         }),
         ..remote_facts(Connecting {
             trusted: Some(Pin {
@@ -306,9 +306,7 @@ fn a_pool_on_another_machine_keeps_no_profile_of_yours_so_sign_ins_can_only_be_s
     let setup = of(Kind::RemoteDocker, &facts, &chosen());
     let sign_ins = setup.step(StepId::Signins).unwrap();
     assert_eq!(sign_ins.state, StepState::Current);
-    assert!(sign_ins.skippable);
-    assert!(sign_ins.next.is_none());
-    assert!(sign_ins.findings[0].contains("keeps none of your profiles"));
+    assert_eq!(sign_ins.next.as_ref().unwrap().id, ActionId::ChooseProfiles);
 }
 
 #[test]

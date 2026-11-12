@@ -110,6 +110,23 @@ fn forget_checked(pool: &str) {
         .remove(pool);
 }
 
+/// **Pool `name`'s `docker` and the socket of the engine it reaches**: for a pool on this
+/// machine, `docker` itself and `local`, this machine's engine as it was found; for a pool on
+/// another machine, through its forward (held open, engine checked) and the forward's socket.
+/// What a sign-in on its runner is bound to (#2049, ADR 0123 §1).
+pub fn reached(
+    config: &Path,
+    docker: &Docker,
+    name: &str,
+    local: Result<PathBuf, String>,
+) -> Result<(Docker, PathBuf), String> {
+    let through = docker_of_named(config, docker, name)?;
+    match through.forwarded().map(Path::to_path_buf) {
+        Some(socket) => Ok((through, socket)),
+        None => Ok((through, local?)),
+    }
+}
+
 /// **Whether the pool named `name` under `config` is on another machine.**
 #[must_use]
 pub fn is_remote(config: &Path, name: &str) -> bool {

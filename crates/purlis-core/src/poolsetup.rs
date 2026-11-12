@@ -313,9 +313,6 @@ pub enum Profile {
 pub enum SignIns {
     /// The runner wasn't asked: it isn't running.
     NotAsked,
-    /// The pool is on another machine and isn't marked as the person's own, so purlis keeps no
-    /// profile of theirs on its runner (#6266, ADR 0123 §5; the mark is #6271).
-    NotOwned,
     /// A chat ran there without the sandbox, or may have, so it is neither asked nor believed.
     Tainted,
     /// The pool keeps the project's default profile, and no project is open to say which.
@@ -684,16 +681,6 @@ fn sign_ins_reading(facts: &Facts) -> Reading {
                     "Wake the runner",
                     "Starts the runner's container, and it goes back to sleep by itself.",
                 ),
-            );
-        }
-        SignIns::NotOwned => {
-            return Reading::to_do(
-                format!(
-                    "Pool {name} is on another machine, so purlis keeps none of your profiles on \
-                     its runner yet, and its chats start without your accounts. Skip this step \
-                     for now."
-                ),
-                None,
             );
         }
         SignIns::Tainted => {
@@ -1249,7 +1236,7 @@ pub fn read_pressed(
     }
     let remote = kind == Kind::RemoteDocker;
     let pool = pool
-        .map(|name| pool_facts(here, name, engine, docker.as_ref(), remote))
+        .map(|name| pool_facts(here, name, engine, docker.as_ref()))
         .transpose()?;
     // Each clone's remotes, read once: a git process a clone.
     let hosts = here
@@ -1289,11 +1276,11 @@ pub fn read_pool(here: &Here<'_>, name: &str) -> Result<PoolFacts, Refused> {
         .find(|one| one.name() == name);
     if let (Some(kept), Some(docker)) = (kept.filter(|kept| kept.remote().is_some()), here.docker) {
         return match crate::sshroute::pool::docker_of(docker, &kept) {
-            Ok(through) => pool_facts(here, name, Engine::Ready, Some(&through), true),
-            Err(_) => pool_facts(here, name, Engine::NotAnswering, None, true),
+            Ok(through) => pool_facts(here, name, Engine::Ready, Some(&through)),
+            Err(_) => pool_facts(here, name, Engine::NotAnswering, None),
         };
     }
-    pool_facts(here, name, engine_of(here), here.docker, false)
+    pool_facts(here, name, engine_of(here), here.docker)
 }
 
 fn pool_facts(
@@ -1301,7 +1288,6 @@ fn pool_facts(
     name: &str,
     engine: Engine,
     docker: Option<&Docker>,
-    remote: bool,
 ) -> Result<PoolFacts, Refused> {
     if !runners::pools(here.config)?
         .iter()
@@ -1320,8 +1306,6 @@ fn pool_facts(
     let docker = docker.filter(|_| engine == Engine::Ready);
     let runner = runner_of(here.config, docker, name);
     let sign_ins = match (&runner, docker) {
-        // Not marked as the person's own: no profile of theirs is kept there (ADR 0123 §5).
-        _ if remote => SignIns::NotOwned,
         // Whether it is awake or not: waking it would help nothing.
         (Runner::Running | Runner::Asleep, Some(_))
             if crate::runnertaint::pool_ran_unsandboxed(here.config, name) =>
@@ -1366,8 +1350,13 @@ fn runner_of(config: &Path, docker: Option<&Docker>, name: &str) -> Runner {
 }
 
 fn sign_ins_of(here: &Here<'_>, docker: &Docker, name: &str) -> SignIns {
-    // Only a Docker shown to be on this machine reaches here (`Engine::Ready`).
-    let (Ok(engine), Ok(kept)) = (&here.engine, runners::runner_for(here.config, name)) else {
+    // Only a Docker shown to be on this machine, or a pool's own on another machine through its
+    // pinned forward (#6266), reaches here (`Engine::Ready`).
+    let engine = match docker.forwarded() {
+        Some(socket) => Ok(socket.to_path_buf()),
+        None => here.engine.clone(),
+    };
+    let (Ok(engine), Ok(kept)) = (&engine, runners::runner_for(here.config, name)) else {
         return SignIns::NotAsked;
     };
     let default = here
