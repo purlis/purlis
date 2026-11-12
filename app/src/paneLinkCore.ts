@@ -8,5 +8,5 @@ import type { LinkCore } from "./paneLinks";
  *  by, handed to each pane's link hook (`paneLinks.ts`). */
 export const LINK_CORE: LinkCore = {
   resolve: (from, candidates) => commands.paneLinkResolve(from, candidates),
-  open: (from, candidate, confirmed) => commands.paneLinkOpen(from, candidate, confirmed),
+  open: (from, candidate, token) => commands.paneLinkOpen(from, candidate, token),
 };

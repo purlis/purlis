@@ -182,6 +182,9 @@ import {
 import { Explorer, type SearchKeyHere, type Spot } from "./Explorer";
 import { keptChanged } from "./branchFolders";
 import {
+  isPlaneRoot,
+  outsideFileTitle,
+  outsideFileView,
   pieceFileTitle,
   pieceFileView,
   pieceFilesTitle,
@@ -189,6 +192,7 @@ import {
   workspaceFiles,
   type Place,
 } from "./pieceViews";
+import { useOutsideFileAsks } from "./paneLinkFiles";
 import { searchFromFocus, searchOf, searchView } from "./contentSearch";
 import { ChangesView, reposGap, uncommitted } from "./ChangesView";
 import { SearchTab } from "./SearchTab";
@@ -5448,6 +5452,13 @@ export const PlaneView = memo(function PlaneView({
     if (opened && inFront) rereadAlerts?.();
   }, [noticesShown, inFront, rereadAlerts]);
 
+  /** A file outside the project a pane's link opened (#6216), in a read-only tab of its own. */
+  const outsideFile = useCallback(
+    ({ path }: { path: string }) => showView(outsideFileView(path), outsideFileTitle(path)),
+    [showView],
+  );
+  useOutsideFileAsks(plane, outsideFile);
+
   /** A file ⌘P found here (FM-7), opened in its file tab the way the explorer opens one. */
   const fileHandled = useRef(fileAsked?.at);
   useEffect(() => {
@@ -5456,7 +5467,8 @@ export const PlaneView = memo(function PlaneView({
     // A jump to a line (a search hit) opens the branch's file tab, which picks the file and
     // lands on the line (`fileJump.ts`); a file ⌘P found opens in a tab of its own.
     const { place, path } = fileAsked;
-    const jump = fileAsked.line !== undefined;
+    // The plane root has no branch's file tab to land in: its file opens in a tab of its own.
+    const jump = fileAsked.line !== undefined && !isPlaneRoot(place);
     showView(
       jump ? pieceFilesView(place) : pieceFileView(place, path),
       jump ? pieceFilesTitle(place) : pieceFileTitle(place, path),

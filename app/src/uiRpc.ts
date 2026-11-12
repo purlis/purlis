@@ -51,6 +51,7 @@ export const commands = {
 	artifactLinkOpen: __WINDOW_ONLY_RESULT,
 	paneLinkResolve: __WINDOW_ONLY,
 	paneLinkOpen: __WINDOW_ONLY,
+	paneLinkFile: __WINDOW_ONLY_RESULT,
 	artifactSearch: __WINDOW_ONLY_RESULT,
 	artifactDiscuss: __WINDOW_ONLY_START_REFUSED,
 	/**  What the window says about this launch and the session bus: nothing, on a launch with it. */
@@ -7823,7 +7824,7 @@ export type KeyAct = "down" | "up";
  *  **What the pane's pattern took a candidate for**: a hint, never trusted for more. The wire's
  *  half of the core's [`Kind`]; a kind's resolver is the core's `LinkKind`.
  */
-export type KindHint = "url";
+export type KindHint = "url" | "file";
 
 /**  One context of the person's kubeconfig, as Point kubectl at it lists it. */
 export type KubeContext = {
@@ -8053,6 +8054,16 @@ export type LinesShown = {
 	shown: string[],
 };
 
+/**  **What an ask is about**, which picks the window's question. */
+export type LinkAsk = 
+/**  A link, asked about in general words. */
+{ about: "link" } | 
+/**
+ *  A file outside the chat's workspace (the prototype's S7): what the chat counts as its own
+ *  (a workspace's name, or "the project") and that folder.
+ */
+{ about: "file-outside"; within: string; folder: string };
+
 /**  **Text a pane found that may be a link**: the words as printed, and the pattern's hint. */
 export type LinkCandidate = {
 	kind: KindHint,
@@ -8069,6 +8080,20 @@ export type LinkDoes =
 { does: "refused"; reason: string };
 
 /**
+ *  **Where the window reads a file a link opens**: the place its light editor reads it by and
+ *  its path there, or, outside the project, its path in full ([`pane_link_file`]).
+ */
+export type LinkFileAt = 
+/**  A branch's folder, or with no piece the repo's own folder. */
+{ in: "branch"; workspace: string; repo: string; piece: string | null; path: string } | 
+/**  A workspace's own files. */
+{ in: "workspace"; workspace: string; path: string } | 
+/**  The project's own files. */
+{ in: "project"; path: string } | 
+/**  Not in the project. */
+{ in: "outside"; path: string };
+
+/**
  *  **Where a candidate was found**: the pane's project and the chat it draws, where it has them
  *  (a saved chat's read-only terminal has neither).
  */
@@ -8082,10 +8107,15 @@ export type LinkOpened =
 /**  Opened: `target` is what was opened. */
 { answer: "opened"; kind: KindHint; target: string } | 
 /**
- *  Not opened yet: the person is asked, shown its text and where it goes. Accepted, the
- *  same candidate is sent again with `target` as what was confirmed.
+ *  A file, for the window to show in an editor tab at its line and column: never handed to
+ *  the system, so nothing runs.
  */
-{ answer: "ask"; reason: string; shown: string; target: string } | 
+{ answer: "file"; target: string; at: LinkFileAt; line: number | null; column: number | null } | 
+/**
+ *  Not opened yet: the person is asked, shown its text and where it goes. Accepted, the
+ *  same candidate is sent again with `token`, which opens it once.
+ */
+{ answer: "ask"; reason: string; shown: string; target: string; token: string; about: LinkAsk } | 
 /**  Not opened, and the sentence the window shows. */
 { answer: "refused"; reason: string };
 

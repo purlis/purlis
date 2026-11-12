@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import type { LinkCandidate, LinkFrom, LinkOpened, LinkSeen } from "./bindings";
 import { onAMac } from "./mac";
 import { UNASKED, openLink, type HoveredLink, type LinkCore, type LinkHands } from "./paneLinks";
+import { openFileLink } from "./paneLinkFiles";
+import { Fact, Facts } from "./ui/card/Facts";
 import { CodeBlock } from "./ui/code/CodeBlock";
 import { Dialog } from "./ui/dialog/Dialog";
 import {
@@ -31,14 +33,18 @@ import {
 /** The modifier word a link opens with, in the window's words (D12). */
 export const modifierSaid = (mac: boolean) => (mac ? "⌘-click" : "Ctrl-click");
 
-/** **What ⌘-click on a link does**, the tooltip's second line. */
+/** **What ⌘-click on a link does**, the tooltip's second line. A file says where it is first
+ *  (D2): "Outside smart-ide · ⌘-click asks first". */
 export function linkDoesSaid(seen: LinkSeen, mac: boolean): string {
   const click = modifierSaid(mac);
+  const file = seen.kind === "file";
   switch (seen.does.does) {
     case "opens":
-      return `${click} opens it in your browser`;
+      return file ? `${click} opens it in an editor tab` : `${click} opens it in your browser`;
     case "asks":
-      return `${click} asks first: ${seen.does.reason}`;
+      return file
+        ? `${sentence(seen.does.reason)} · ${click} asks first`
+        : `${click} asks first: ${seen.does.reason}`;
     case "refused":
       return `${sentence(seen.does.reason)}.`;
   }
@@ -99,6 +105,13 @@ export function usePaneLinks({
   }, []);
   const answered = useCallback((answer: LinkOpened, candidate: LinkCandidate) => {
     if (answer.answer === "opened") return;
+    // A file opens in an editor tab of the pane's project (#6216); with none, it cannot.
+    if (answer.answer === "file") {
+      const plane = now.current.from.plane;
+      if (plane !== null) return openFileLink(plane, answer);
+      setAnswering({ answer: { answer: "refused", reason: UNASKED }, candidate });
+      return;
+    }
     setAnswering({ answer, candidate });
   }, []);
   const hands = useMemo(
@@ -151,9 +164,9 @@ export function usePaneLinks({
         <LinkAnswer
           answering={answering}
           onClose={() => setAnswering(null)}
-          onConfirm={(target) => {
+          onConfirm={(token) => {
             setAnswering(null);
-            if (hands !== undefined) void openLink(answering.candidate, hands, target);
+            if (hands !== undefined) void openLink(answering.candidate, hands, token);
           }}
         />
       )}
@@ -162,7 +175,8 @@ export function usePaneLinks({
   return { hands, surfaces };
 }
 
-/** **The window's answer to a link that did not open**: why not, or the question first. */
+/** **The window's answer to a link that did not open**: why not, or the question first. An
+ *  accepted ask is answered with the token the core issued with it (#6216). */
 export function LinkAnswer({
   answering: { answer, candidate },
   onClose,
@@ -170,14 +184,24 @@ export function LinkAnswer({
 }: {
   answering: Answering;
   onClose: () => void;
-  onConfirm: (target: string) => void;
+  onConfirm: (token: string) => void;
 }) {
+  if (answer.answer === "ask" && answer.about.about === "file-outside")
+    return (
+      <FileOutsideAsk
+        target={answer.target}
+        within={answer.about.within}
+        folder={answer.about.folder}
+        onClose={onClose}
+        onOpen={() => onConfirm(answer.token)}
+      />
+    );
   if (answer.answer === "ask")
     return (
       <Dialog
         title="Open this link?"
         description={`${sentence(answer.reason)}.`}
-        main={{ children: "Open link", onPress: () => onConfirm(answer.target) }}
+        main={{ children: "Open link", onPress: () => onConfirm(answer.token) }}
         initialFocus="cancel"
         onClose={onClose}
         data-testid="pane-link-asks"
@@ -197,6 +221,56 @@ export function LinkAnswer({
       data-testid="pane-link-refused"
     >
       <CodeBlock label="The link" text={candidate.text} />
+    </Dialog>
+  );
+}
+
+/**
+ * **The ask for a file outside the workspace** (#6216, the prototype's S7, D9): the file and the
+ * workspace, and *Don't open*, *Copy path* and *Open file*. It starts on *Open file*, and Return
+ * opens it: opening only shows it in an editor tab, so the ask is a notice more than a guard.
+ * `within` is the workspace's name, or "the project" for a chat at its root.
+ */
+export function FileOutsideAsk({
+  target,
+  within,
+  folder,
+  onClose,
+  onOpen,
+}: {
+  target: string;
+  within: string;
+  folder: string;
+  onClose: () => void;
+  onOpen: () => void;
+}) {
+  const workspace = within !== "the project";
+  return (
+    <Dialog
+      title={workspace ? "Open a file outside this workspace?" : "Open a file outside the project?"}
+      description={`This chat's output names a file that is not in ${within}.`}
+      cancel={{ children: "Don't open" }}
+      alternative={{
+        children: "Copy path",
+        onPress: () => {
+          void navigator.clipboard?.writeText(target).catch(() => undefined);
+          onClose();
+        },
+      }}
+      main={{ children: "Open file", onPress: onOpen }}
+      initialFocus="main"
+      onClose={onClose}
+      data-testid="pane-link-file-outside"
+    >
+      <Facts aria-label="The file">
+        <Fact label="File">
+          <span className="pane-link-path">{target}</span>
+        </Fact>
+        <Fact label={workspace ? "Workspace" : "Project"}>
+          <span className="pane-link-path">{folder}</span>
+        </Fact>
+      </Facts>
+      <p className="ui-text-secondary">It opens in an editor tab. Nothing is run.</p>
     </Dialog>
   );
 }

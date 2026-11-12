@@ -1514,6 +1514,8 @@ const DIALOGS: Opened[] = [
               reason: "its text names another address",
               shown: "docs.purlis.dev/setup",
               target: "https://purlis-setup.example.net/s",
+              token: "a-one-use-token",
+              about: { about: "link" },
             },
             candidate: { kind: "url", text: "docs.purlis.dev/setup" },
           }}

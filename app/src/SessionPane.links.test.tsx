@@ -206,7 +206,7 @@ describe("a link in a chat's pane", () => {
     expect(asked("pane_link_open")[0].args).toEqual({
       from: { plane: "/planes/one", session: 1 },
       candidate: { kind: "url", text: ADDRESS },
-      confirmed: null,
+      token: null,
     });
     // Opened, the window says nothing more.
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -253,12 +253,14 @@ describe("a link in a chat's pane", () => {
     );
   });
 
-  it("asks first when the core says so, and sends back the target it showed", async () => {
+  it("asks first when the core says so, and answers with the ask's token", async () => {
     opens = {
       answer: "ask",
       reason: "its text names another address",
       shown: "docs.purlis.dev/setup",
       target: "https://purlis-setup.example.net/s",
+      token: "a-one-use-token",
+      about: { about: "link" },
     };
     const { drawn } = await hovered();
 
@@ -272,7 +274,7 @@ describe("a link in a chat's pane", () => {
     expect(asked("pane_link_open")[1].args).toEqual({
       from: { plane: "/planes/one", session: 1 },
       candidate: { kind: "url", text: ADDRESS },
-      confirmed: "https://purlis-setup.example.net/s",
+      token: "a-one-use-token",
     });
   });
 

@@ -19,6 +19,10 @@ import { ReadOnlyTerminal } from "./ReadOnlyTerminal";
 import { expectFocusInSight, pictureNow, untilFocused } from "./stories.testkit";
 
 const ADDRESS = "https://github.com/purlis/purlis/pull/6148";
+/** A file a harness named, and the core's reading of it (#6216). */
+const FILE = "app/src/paneLinks.test.ts:18";
+const FILE_IN_FULL =
+  "/Users/you/projects/charter/workspaces/smart-ide/purlis/app/src/paneLinks.test.ts:18";
 
 /** A harness's turn, as the prototype's pane holds it. */
 const TURN = [
@@ -30,11 +34,18 @@ const TURN = [
 const COLS = 72;
 const ROWS = 5;
 
-function Pane() {
+/** A harness's turn naming a file at a line. */
+const FILE_TURN = [
+  "\u001b[1m● Added the test.\u001b[0m",
+  `  See ${FILE} for the case.`,
+  "\u001b[2m  ⎿ 1 test, 0 failed\u001b[22m",
+].join("\r\n");
+
+function Pane({ screen = TURN }: { screen?: string }) {
   return (
     <div style={{ inlineSize: 640, paddingBlockEnd: "var(--space-8)" }}>
       <ReadOnlyTerminal
-        screen={TURN}
+        screen={screen}
         label="A saved chat's last screen"
         cols={COLS}
         rows={ROWS}
@@ -53,12 +64,14 @@ const meta = {
   beforeEach: () => {
     mockIPC((cmd, args) => {
       if (cmd === "pane_link_resolve") {
-        const { candidates } = args as { candidates: { text: string }[] };
-        return candidates.map((one) => ({
-          kind: "url",
-          target: one.text,
-          does: { does: "opens" },
-        }));
+        const { candidates } = args as { candidates: { kind: string; text: string }[] };
+        return candidates.map((one) =>
+          one.kind === "file"
+            ? one.text === FILE
+              ? { kind: "file", target: FILE_IN_FULL, does: { does: "opens" } }
+              : null
+            : { kind: "url", target: one.text, does: { does: "opens" } },
+        );
       }
       if (cmd === "pane_link_open") return { answer: "opened", kind: "url", target: ADDRESS };
       return null;
@@ -110,6 +123,24 @@ export const HoverAUrl: StoryObj<typeof meta> = {
   },
 };
 
+/** **Hovering a file at a line** (#6216, the prototype's `HoverAFileLine`): underlined, the file
+ *  in full with its line, and that ⌘-click opens it in an editor tab. */
+export const HoverAFileLine: StoryObj<typeof meta> = {
+  render: () => <Pane screen={FILE_TURN} />,
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement.ownerDocument.body);
+    await waitFor(() =>
+      expect(canvasElement.querySelector(".xterm-screen")?.textContent ?? "").toContain(FILE),
+    );
+    // On the path: row 1, past "  See ".
+    const { screen, init } = cellOf(canvasElement, 12, 1);
+    screen.dispatchEvent(new MouseEvent("mousemove", init));
+    const tip = await page.findByRole("tooltip", {}, { timeout: 3000 });
+    await expect(tip).toHaveTextContent(FILE_IN_FULL);
+    await expect(tip).toHaveTextContent(/-click opens it in an editor tab/);
+  },
+};
+
 /** The window's answer to a link ⌘-clicked, up until it is closed (Esc, or an answer). */
 function Answer({ answer, candidate }: { answer: LinkOpened; candidate: LinkCandidate }) {
   const [up, setUp] = useState(true);
@@ -151,7 +182,7 @@ export const Refused: StoryObj<typeof meta> = {
 };
 
 /**
- * **A link the core asks about first** (the file and OSC 8 kinds, #6216 and #6218): its text
+ * **A link the core asks about first** (the OSC 8 kind, #6218, in general words): its text
  * and where it really goes, Cancel first and Open link beside it.
  */
 export const Asks: StoryObj<typeof meta> = {
@@ -162,6 +193,8 @@ export const Asks: StoryObj<typeof meta> = {
         reason: "its text names another address than the one it goes to",
         shown: "docs.purlis.dev/setup",
         target: "https://purlis-setup.example.net/s",
+        token: "a-one-use-token",
+        about: { about: "link" },
       }}
       candidate={{ kind: "url", text: "docs.purlis.dev/setup" }}
     />
@@ -180,6 +213,62 @@ export const Asks: StoryObj<typeof meta> = {
     await untilFocused(
       () => within(dialog).getByRole("button", { name: "Open link" }),
       "Tab reaches Open link",
+    );
+    expectFocusInSight();
+
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(page.queryByRole("dialog")).toBeNull());
+  },
+};
+
+/**
+ * **A file outside the workspace** (#6216, the prototype's S7 `FileOutsideTheWorkspace`, D9): the
+ * file and the workspace, *Don't open*, *Copy path* and *Open file*. It starts on *Open file*,
+ * since opening only shows the file in an editor tab, and Return opens it.
+ */
+export const FileOutsideTheWorkspace: StoryObj<typeof meta> = {
+  render: () => (
+    <Answer
+      answer={{
+        answer: "ask",
+        reason: "outside smart-ide",
+        shown: "/etc/hosts:3",
+        target: "/etc/hosts:3",
+        token: "a-one-use-token",
+        about: {
+          about: "file-outside",
+          within: "smart-ide",
+          folder: "/Users/you/projects/charter/workspaces/smart-ide",
+        },
+      }}
+      candidate={{ kind: "file", text: "/etc/hosts:3" }}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement.ownerDocument.body);
+    const dialog = await page.findByRole("dialog", {
+      name: "Open a file outside this workspace?",
+    });
+    await expect(dialog).toHaveTextContent(
+      "This chat's output names a file that is not in smart-ide.",
+    );
+    await expect(dialog).toHaveTextContent("/etc/hosts:3");
+    await expect(dialog).toHaveTextContent("It opens in an editor tab. Nothing is run.");
+    const open = within(dialog).getByRole("button", { name: "Open file" });
+    await untilFocused(() => open, "It starts on Open file (D9)");
+    expectFocusInSight();
+    await pictureNow();
+
+    await userEvent.tab({ shift: true });
+    await untilFocused(
+      () => within(dialog).getByRole("button", { name: "Copy path" }),
+      "Shift+Tab reaches Copy path",
+    );
+    expectFocusInSight();
+    await userEvent.tab({ shift: true });
+    await untilFocused(
+      () => within(dialog).getByRole("button", { name: "Don't open" }),
+      "and then Don't open",
     );
     expectFocusInSight();
 

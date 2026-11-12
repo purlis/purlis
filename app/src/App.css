@@ -872,6 +872,13 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* The ask for a file outside the workspace (#6216, the prototype's S7): the paths in the code
+   face, broken anywhere so a long one stays in the dialog. */
+.pane-link-path {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
 /* **A read-only terminal** (#3676, `ReadOnlyTerminal.tsx`): the words that say it is read-only,
    then the screen, one Tab stop with the ring on its edge, and the find bar over its corner. The
    grid's ground is the terminal's own, so the screen reads as a terminal that is over. */

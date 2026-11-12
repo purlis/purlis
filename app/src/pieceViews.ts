@@ -71,6 +71,28 @@ const FILE = "piece-file";
 const DIFF = "piece-diff";
 /** One file of the plane root, keyed by its path. */
 export const PLANE_FILE = "plane-file";
+/**
+ * **A file outside the project** (#6216), keyed by its absolute path: one a pane's link opened
+ * after the person answered its ask. The core reads it only then (`pane_link_file`).
+ */
+export const OUTSIDE_FILE = "outside-file";
+
+/** A file outside the project, in a tab of its own. */
+export function outsideFileView(path: string): ViewRef {
+  return { from: null, view: OUTSIDE_FILE, key: path };
+}
+
+/** What a file outside the project's tab is called: its name, and that it is outside. */
+export function outsideFileTitle(path: string): string {
+  return `${path.slice(path.lastIndexOf("/") + 1)} · Outside the project`;
+}
+
+/** The absolute path a file outside the project's view is about; `undefined` for every other. */
+export function outsideFileOf(view: ViewRef): string | undefined {
+  return view.from === null && view.view === OUTSIDE_FILE && view.key.startsWith("/")
+    ? view.key
+    : undefined;
+}
 
 /** The view listing a piece's files, with the light editor beside the list. */
 export function pieceFilesView(place: Place): ViewRef {
@@ -107,7 +129,11 @@ export function pieceDiffOf(view: ViewRef): { place: Place; path: string } | und
  */
 export function isFileView(view: ViewRef): boolean {
   return (
-    view.from === null && (view.view === FILE || view.view === DIFF || view.view === PLANE_FILE)
+    view.from === null &&
+    (view.view === FILE ||
+      view.view === DIFF ||
+      view.view === PLANE_FILE ||
+      view.view === OUTSIDE_FILE)
   );
 }
 
