@@ -195,3 +195,62 @@ pub(crate) async fn chat_screen(
     })
     .await
 }
+
+/// **Whether this machine keeps a task's last screen in a project, and how many it holds**
+/// (#6306): what the row Settings › Project › Dispatch › Keep task screens draws.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub(crate) struct TaskScreens {
+    /// `[task_screens] keep` in the project's local file, `true` where it is not set.
+    pub keep: bool,
+    /// How many screens are kept now: none where `keep` is off.
+    pub kept: u32,
+}
+
+/// The project at `root`'s [`TaskScreens`], deleting every kept screen where keeping is off.
+pub(crate) fn task_screens_at(root: &std::path::Path) -> TaskScreens {
+    let (kept, _) = purlis_core::chatscreens::held(root);
+    TaskScreens {
+        keep: purlis_core::chatscreens::keeps(root),
+        kept: u32::try_from(kept).unwrap_or(u32::MAX),
+    }
+}
+
+/// Sets keeping in the project at `root`, which off deletes every kept screen at once
+/// (`purlis_core::chatscreens::set_keep`), and answers what is in force then.
+pub(crate) fn set_task_screens_at(
+    root: &std::path::Path,
+    keep: bool,
+) -> Result<TaskScreens, String> {
+    purlis_core::chatscreens::set_keep(root, keep)?;
+    Ok(task_screens_at(root))
+}
+
+/// **Whether tasks' screens are kept in project `plane`, and how many are** (#6306).
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn task_screens(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<TaskScreens, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading whether task screens are kept", move || {
+        Ok(task_screens_at(held.root()))
+    })
+    .await
+}
+
+/// **Turns keeping tasks' screens on or off in project `plane`** (#6306), in its local file
+/// alone; off deletes every kept screen. The window asks the person before it turns it off.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn set_task_screens(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    keep: bool,
+) -> Result<TaskScreens, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("setting whether task screens are kept", move || {
+        set_task_screens_at(held.root(), keep)
+    })
+    .await
+}

@@ -1213,6 +1213,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // served to anything else.
     "chat_by_number",
     "chat_screen",
+    // Whether this machine keeps tasks' screens, and turning it off, which deletes them (#6306):
+    // Settings' row alone. A chat never reads how many are kept nor deletes them.
+    "task_screens",
+    "set_task_screens",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on
