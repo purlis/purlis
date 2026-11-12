@@ -33,6 +33,12 @@ vi.mock("./SessionPane", async () => ({
   SessionPane: (await import("./countedPane.testkit")).CountedPane,
 }));
 
+/** What a move of the git standing draws, not when each read starts after it: the reads' own
+ *  turns (`afterGitMoved.ts`) are `StaleCloneNotices.test.tsx`'s to pin. */
+vi.mock("./afterGitMoved", () => ({
+  AFTER_GIT_MOVED_MS: { planeSaving: 0, workspaceSaving: 0, alerts: 0, staleClones: 0 },
+}));
+
 /** The window's beats, held here and run by the test (`beat`), never on the wall clock. */
 const beats = vi.hoisted(() => new Map<number, Set<() => void>>());
 vi.mock("./whileShown", async (actual) => ({
