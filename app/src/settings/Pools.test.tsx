@@ -1207,13 +1207,13 @@ describe("The guide to setting a pool up on a cluster (#4537)", () => {
     expect(within(dialog).getByRole("button", { name: "Here's how" })).toBeInTheDocument();
   });
 
-  it("opens from the pools settings", async () => {
+  it("is no longer offered in the pools settings, where Add a cluster pool… leads to Pool setup (#4492)", async () => {
     render(<App />);
     const nav = await yourSettings();
     await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
     const group = await screen.findByRole("region", { name: "Pools" });
-    await userEvent.click(await within(group).findByRole("button", { name: "Here's how" }));
-    await waitFor(() => expect(opened).toEqual([GUIDE]));
+    await within(group).findByRole("button", { name: "Add a cluster pool…" });
+    expect(within(group).queryByRole("button", { name: "Here's how" })).toBeNull();
   });
 });
 

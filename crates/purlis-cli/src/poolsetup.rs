@@ -16,11 +16,14 @@ pub fn answered(name: Option<&str>, json: bool) -> Result<(), String> {
         .ok()
         .and_then(|cwd| purlis_core::plane::find_root(&cwd).ok());
     let docker = poolsetup::docker_here();
+    // A cluster is asked through the person's own kubectl, as the window asks it (#4492).
+    let kubectl = poolsetup::cluster::kubectl_here();
     let here = Here {
         config: &config,
         plane: plane.as_deref(),
         docker: docker.as_ref(),
         engine: Docker::engine_on_this_machine(),
+        kubectl: kubectl.as_ref().map_err(String::as_str),
     };
     let setup = poolsetup::read(&here, name).map_err(|why| why.to_string())?;
     if json {
@@ -65,6 +68,12 @@ fn said(setup: &Setup) -> String {
                 .and_then(|word| word.as_str().map(str::to_owned))
                 .unwrap_or_default();
             let _ = writeln!(out, "             {word:<8} {}", check.title);
+            // Doctor's next step, beside its line, as the window shows it (#4492).
+            if let (purlis_core::poolsetup::CheckOf::Cluster, Some(more)) =
+                (check.about, &check.more)
+            {
+                let _ = writeln!(out, "                      {more}");
+            }
         }
     }
     let next = setup

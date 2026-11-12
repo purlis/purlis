@@ -19,6 +19,9 @@ const step = (id: string, name: string, state: string, more: Partial<PoolSetupSt
     skippable: false,
     see: null,
     checks: [],
+    also: null,
+    parts: [],
+    undo: null,
     ...more,
   }) as PoolSetupStep;
 
@@ -38,6 +41,8 @@ const setup = (at: string, steps: PoolSetupStep[], pool: string | null = null): 
   noticed: false,
   recommended: "docker",
   others: [],
+  kind: "docker",
+  contexts: { names: [], recommended: null, chosen: null, pools: [] },
 });
 
 const READY = setup("where", [
@@ -530,5 +535,71 @@ describe("work done elsewhere (#4481)", () => {
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: "See what this does" })).toBeNull(),
     );
+  });
+});
+
+describe("Where, on a cluster (#4492)", () => {
+  const onACluster = (): PoolSetupShown => ({
+    ...setup("where", [
+      step("where", "Where chats run", "current", {
+        findings: ["Your kubeconfig reaches a cluster through context kind-team."],
+        next: action("use-cluster", "Continue with this cluster"),
+        also: action("use-docker", "Use Docker on this machine instead"),
+      }),
+      step("check", "Check the cluster", "later"),
+    ]),
+    kind: "cluster",
+    contexts: {
+      names: ["kind-team", "prod-eu"],
+      recommended: "kind-team",
+      chosen: null,
+      pools: [],
+    },
+  });
+
+  const asking = () => {
+    const sent: { cmd: string; args: unknown }[] = [];
+    mockIPC((cmd, args) => {
+      sent.push({ cmd, args });
+      return cmd === "pool_setup" ? onACluster() : null;
+    });
+    return sent;
+  };
+
+  it("keeps the recommended context's name when the person continues", async () => {
+    const sent = asking();
+    render(<PoolSetupTab plane="p" />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Continue with this cluster" }),
+    );
+    await waitFor(() =>
+      expect(sent).toContainEqual({
+        cmd: "pool_setup_choose_cluster",
+        args: { context: "kind-team" },
+      }),
+    );
+  });
+
+  it("keeps the context chosen under Options instead", async () => {
+    const sent = asking();
+    render(<PoolSetupTab plane="p" />);
+    await userEvent.click(await screen.findByRole("button", { name: "Options" }));
+    await userEvent.click(screen.getByRole("radio", { name: "prod-eu" }));
+    await userEvent.click(screen.getByRole("button", { name: "Continue with this cluster" }));
+    await waitFor(() =>
+      expect(sent).toContainEqual({
+        cmd: "pool_setup_choose_cluster",
+        args: { context: "prod-eu" },
+      }),
+    );
+  });
+
+  it("offers Docker as the place purlis didn't recommend", async () => {
+    const sent = asking();
+    render(<PoolSetupTab plane="p" />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Use Docker on this machine instead" }),
+    );
+    await waitFor(() => expect(sent.map((one) => one.cmd)).toContain("pool_setup_choose_docker"));
   });
 });

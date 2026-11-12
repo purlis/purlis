@@ -1360,6 +1360,14 @@ const STATES: State[] = [
     answers: { devices: DEVICES_SHOWN, device_runner: answer },
     drawn,
   })),
+  // A kept screen is drawn by xterm, which this window cannot run: its picture is the
+  // terminal's own stories' (`ReadOnlyTerminal.stories.tsx`).
+  {
+    name: "a closed task whose screen was not kept (#6214)",
+    view: { from: null, view: "chat-screen", key: "01K6W0RKER000000000000000B" },
+    answers: { chat_screen: null },
+    drawn: /screen is not kept/,
+  },
   {
     name: "a pinned artifact, its bar naming who pinned it",
     view: { from: null, view: "artifact", key: "alpha/backlog-state" },

@@ -1561,6 +1561,8 @@ export const commands = {
 	 *  resolved on the disk (H6b).
 	 */
 	taskFolderShared: (plane: PlaneId, session: number, place: string | null) => typedError<string | null, string>(__TAURI_INVOKE("task_folder_shared", { plane, session, place })),
+	chatByNumber: __WINDOW_ONLY_RESULT,
+	chatScreen: __WINDOW_ONLY_RESULT,
 	/**
 	 *  The finished tasks of the project's open chats, oldest first, for the rows under each
 	 *  (#1485). On a blocking thread, as it reads every record.
@@ -1940,6 +1942,10 @@ export const commands = {
 	dockerPools: __WINDOW_ONLY_RESULT,
 	poolSetup: __WINDOW_ONLY_RESULT,
 	poolSetupChooseDocker: __WINDOW_ONLY_RESULT,
+	poolSetupChooseCluster: __WINDOW_ONLY_RESULT,
+	poolSetupInstall: __WINDOW_ONLY_RESULT,
+	poolSetupOperatorImage: __WINDOW_ONLY_RESULT,
+	poolSetupClusterPool: __WINDOW_ONLY_RESULT,
 	poolSetupName: __WINDOW_ONLY_RESULT,
 	poolSetupPool: __WINDOW_ONLY_RESULT,
 	poolSetupAdd: __WINDOW_ONLY_RESULT,
@@ -4493,6 +4499,31 @@ export type ChatBrowser = {
 };
 
 /**
+ *  **A closed or finished chat's card** (#6214, the prototype's S6): "#641 · <title>", how and
+ *  when it ended, who started it, where it ran, its report, and whether *Read it* and *Reopen*
+ *  can do anything.
+ */
+export type ChatCard = {
+	/**  The number it was looked up by: the chat's when it worked. */
+	number: number,
+	/**  Its ULID: what *Read it* asks for its screen by. */
+	chat: string,
+	/**
+	 *  Its task as its finished row has it: its name, how it ended and when, its report
+	 *  (masked), where it ran, and whether it reopens. `id` is its dispatch record's, which
+	 *  *Reopen* names.
+	 */
+	task: FinishedTask,
+	/**
+	 *  Who started it: "you" where the person dispatched it, else the asking chat's name as
+	 *  the person saw it then.
+	 */
+	started_by: string,
+	/**  Whether its last screen was kept: *Read it* is disabled where it was not. */
+	screen_kept: boolean,
+};
+
+/**
  *  What a `chat-events` batch carries of a chat's doing, and what `chat_doings` answers a list
  *  of: one chat's line, or that it has none. It travels in memory only.
  */
@@ -4535,6 +4566,17 @@ export type ChatHeld = {
 	plane: PlaneId,
 	session: number,
 };
+
+/**  What a number names, as the window is sent it. */
+export type ChatLookup = 
+/**  An open chat answers to it: the window shows that chat. */
+{ is: "open"; number: number } | 
+/**  The chat it was is open now under `now`: started again, or reopened. */
+{ is: "restarted"; now: number } | 
+/**  The chat has ended: its card, boxed as it is the one large answer. */
+{ is: "ended"; card: ChatCard } | 
+/**  No chat had it, or none purlis kept a record of. */
+{ is: "no_chat" };
 
 /**
  *  **A chat's move as the window draws it** (#2048): what `chat-move` tells, and each row of
@@ -4711,11 +4753,12 @@ export type ChatSkills = {
 	 */
 	repos: string[],
 	/**
-	 *  Why the chat gets no skills, where its harness is a declared one skills are not supported
-	 *  on (SK-30), or where it is not running now (#6196): said in place of the words for a tool
-	 *  purlis does not know.
+	 *  Why the chat is offered no skills, where that is not that it runs a tool purlis does not
+	 *  know: its harness is a declared one skills are not supported on (SK-30), its runner said
+	 *  none (#4218), or it is not running now (#6196). Said in place of the words for a tool purlis
+	 *  does not know, which are what the list says where this is null (#6302).
 	 */
-	not_supported: string | null,
+	none_because: string | null,
 	/**
 	 *  How its router extension did at its start (SK-15b): null for a chat routed by the
 	 *  built-in router, which is asked nothing.
@@ -10567,6 +10610,15 @@ export type PoolSetupCheck = {
 	more: string | null,
 };
 
+/**  The kubeconfig's contexts, by name alone, for Where's Options on a cluster (#4492). */
+export type PoolSetupContexts = {
+	names: string[],
+	recommended: string | null,
+	chosen: string | null,
+	/**  The chosen cluster's Pools, by name, where its operator runs (#4494). */
+	pools: string[],
+};
+
 /**
  *  What the Pool step's button did: nothing made, and why, where a team's image breaks the
  *  contract; none where the pool was made.
@@ -10592,6 +10644,18 @@ export type PoolSetupOver = {
 	raise_to: number | null,
 	/**  What its runner's older purlis holds it to, and what helps, where only that does (#5175). */
 	older_runner: OlderRunner | null,
+};
+
+/**
+ *  One part of a cluster's install (#4493): `upstream`, `definitions`, `signing-key` or
+ *  `operator`.
+ */
+export type PoolSetupPart = {
+	id: string,
+	name: string,
+	done: boolean,
+	line: string,
+	next: PoolSetupAction | null,
 };
 
 /**  One of this machine's profiles against a pool's limit (#4482). */
@@ -10629,6 +10693,9 @@ export type PoolSetupShown = {
 	others: string[],
 	/**  The name a new pool is recommended, which no pool here has (#6256). */
 	recommended: string,
+	/**  `docker` or `cluster`: the kind of pool this setup makes. */
+	kind: string,
+	contexts: PoolSetupContexts,
 };
 
 /**  This machine's profiles against pool `pool`'s limits (#4482). */
@@ -10649,6 +10716,12 @@ export type PoolSetupStep = {
 	skippable: boolean,
 	see: PoolSetupSee | null,
 	checks: PoolSetupCheck[],
+	/**  The choice purlis didn't recommend, where there is one (Where's other place, #4492). */
+	also: PoolSetupAction | null,
+	/**  Install's parts, each with its own button (#4493). */
+	parts: PoolSetupPart[],
+	/**  How the step is undone by hand, never by a button: uninstalling from a cluster. */
+	undo: PoolSetupSee | null,
 };
 
 /**  What Try it found. */

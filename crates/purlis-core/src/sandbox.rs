@@ -2327,6 +2327,13 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             app.join(crate::dispatchrecord::DIR_NAME),
             Access::ReadWrite,
         );
+        // Every dispatched task's kept last screen (#6214), neither read nor written: what its
+        // work showed is the person's to read in the window, not a chat's running as another.
+        deny(
+            Class::Integrity,
+            app.join(crate::chatscreens::DIR_NAME),
+            Access::ReadWrite,
+        );
         // What a look found in each chat's folders, and what it knows of them, neither read nor
         // written: it decides what the person is told, and only the app needs it ([`arrived`]).
         deny(Class::Integrity, app.join(arrived::DIR), Access::ReadWrite);

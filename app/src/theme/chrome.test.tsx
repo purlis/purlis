@@ -24,7 +24,7 @@
 /// <reference types="node" />
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
@@ -45,7 +45,9 @@ import { LinkAnswer } from "../PaneLinkSurfaces";
 import { OfferAsks } from "../ArtifactOffers";
 import { AskPersona } from "../AskPersona";
 import { UseSkill } from "../UseSkill";
-import type { LandQuestion, PlaneId, StudioSkill, VaultContents } from "../bindings";
+import type { ChatCard, LandQuestion, PlaneId, StudioSkill, VaultContents } from "../bindings";
+import { ClosedChatCardPopover } from "../ClosedChatCard";
+import { Button } from "../ui/button/Button";
 import { BriefPanel } from "../Brief";
 import { LandAsk, PushAsk } from "../ChangeActions";
 import { ChatAsk } from "../ChatAsk";
@@ -369,6 +371,34 @@ describe.each(Object.keys(BUILT_IN))("the window's chrome in %s", (theme) => {
 
 const P = PLANE as unknown as PlaneId;
 const nothing = () => {};
+
+/** A finished task's card (#6214), as the palette's finished row opens it. */
+const CLOSED_CHAT_CARD: ChatCard = {
+  number: 641,
+  chat: "01K6W0RKER000000000000000B",
+  started_by: "steward 4",
+  screen_kept: true,
+  task: {
+    id: "01K9DISPATCH0000000000000A",
+    asker: 0,
+    name: "Signed commits 5607",
+    chat: null,
+    persona: null,
+    how: "done",
+    outcome: "done",
+    folds: true,
+    report: "Done.",
+    changed: null,
+    ended: "2026-11-11T11:08:00",
+    place: "smart-ide",
+    branch: null,
+    reopens: true,
+    not_reopened: null,
+    did_not_start: false,
+    attempts: 0,
+    waits: null,
+  },
+};
 
 /** A chat as the quit warning and the questions that end chats list it. */
 const ENDING: Ending = {
@@ -874,7 +904,7 @@ const DIALOGS: Opened[] = [
               warns: "both",
             },
             repos: [],
-            not_supported: null,
+            none_because: null,
             routing: null,
             missing: null,
           }}
@@ -1382,6 +1412,34 @@ const DIALOGS: Opened[] = [
     open: async () => {
       render(<Palette offers={[]} onRun={() => ({ ok: true }) as const} />);
       await userEvent.keyboard("{F2}");
+    },
+  },
+  {
+    name: "a closed chat's card (#6214)",
+    file: "ClosedChatCard.tsx",
+    open: async () => {
+      function Card() {
+        const row = useRef<HTMLButtonElement>(null);
+        const [open, setOpen] = useState(false);
+        return (
+          <>
+            <Button ref={row} onPress={() => setOpen(true)}>
+              Finished chat
+            </Button>
+            <ClosedChatCardPopover
+              card={CLOSED_CHAT_CARD}
+              triggerRef={row}
+              isOpen={open}
+              onOpenChange={setOpen}
+              onRead={nothing}
+              onReopen={nothing}
+            />
+          </>
+        );
+      }
+      render(<Card />);
+      await userEvent.click(screen.getByRole("button", { name: "Finished chat" }));
+      await screen.findByRole("dialog", { name: /Signed commits/ });
     },
   },
   {

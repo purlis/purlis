@@ -61,6 +61,11 @@ on:
       - crates/purlis-core/src/forge/mintport*
       - crates/purlis-cli/src/bridge.rs
       - fixtures/runner-link-key/**
+      # Pool setup's cluster path, which the kind run walks on a bare cluster (#4492), and the
+      # doctor's checks the operator and Pool setup share.
+      - crates/cluster-doctor/**
+      - crates/purlis-core/src/poolsetup*
+      - crates/purlis-core/tests/it/pool_setup_on_a_kind_cluster.rs
   push:
     branches: [main]
     paths:
@@ -103,6 +108,11 @@ on:
       - crates/purlis-core/src/forge/mintport*
       - crates/purlis-cli/src/bridge.rs
       - fixtures/runner-link-key/**
+      # Pool setup's cluster path, which the kind run walks on a bare cluster (#4492), and the
+      # doctor's checks the operator and Pool setup share.
+      - crates/cluster-doctor/**
+      - crates/purlis-core/src/poolsetup*
+      - crates/purlis-core/tests/it/pool_setup_on_a_kind_cluster.rs
   # Nightly, so a new advisory against the operator's own lock, or a change elsewhere that
   # breaks the runner image the kind run builds, is reported though nothing here changed.
   schedule:
@@ -154,8 +164,10 @@ jobs:
   kind:
     name: operator on a kind cluster
     runs-on: ubuntu-24.04
-    # It also builds and runs the desktop's side of a cluster runner from the root workspace.
-    timeout-minutes: 60
+    # It also builds and runs the desktop's side of a cluster runner from the root workspace, and
+    # Pool setup's cluster path on a second, bare cluster (#4492): about 50 minutes on main before
+    # that stage, which adds a cluster, an install and a Claim.
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

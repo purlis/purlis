@@ -75,6 +75,21 @@ export function shownOf(task: Pick<FinishedTask, "how">): Shown | undefined {
   });
 }
 
+/** Why a finished task has no Reopen, where its record names no conversation. */
+export const NO_CONVERSATION =
+  "It cannot be reopened: its harness named no conversation to resume.";
+
+/**
+ * **Why Reopen does nothing for `task`**, or nothing where it reopens: the core's word on its
+ * last Reopen, else that it names no conversation. What a finished row and a closed chat's card
+ * (#6214) both say, on the button and beside it.
+ */
+export function whyNoReopen(
+  task: Pick<FinishedTask, "reopens" | "not_reopened">,
+): string | undefined {
+  return task.reopens ? undefined : (task.not_reopened ?? NO_CONVERSATION);
+}
+
 /**
  * The core's own words for how a task ended (`FinishedTask.outcome`), where they say more
  * than its state's word does (a blocked task): what a row draws beside the state. Nothing

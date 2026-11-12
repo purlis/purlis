@@ -7,7 +7,7 @@ import type { FinishedTask } from "./bindings";
 import type { Catalogued, Offer } from "./actions";
 import { catalogueMenu } from "./Menus";
 import { briefTitle, useOpenBrief } from "./Brief";
-import { firstLine, foldedOf, qualifierOf, shownOf } from "./finished";
+import { firstLine, foldedOf, qualifierOf, shownOf, whyNoReopen } from "./finished";
 import { PersonaMark } from "./PersonaMark";
 import { StateShown } from "./StateShown";
 import { useTokensOnHover } from "./tasksUsed";
@@ -200,9 +200,6 @@ export function isFinishedLineId(key: unknown): key is string {
 
 const FINISHED_LINE = "finished:";
 
-/** Why a finished task has no Reopen. */
-const NO_CONVERSATION = "It cannot be reopened: its harness named no conversation to resume.";
-
 /** One finished task: its name and how it ended, its report on a press, and Reopen. A row
  *  that stands alone has a Clear of its own; a folded one is cleared with its fold. */
 function FinishedRow({
@@ -238,7 +235,7 @@ function FinishedRow({
   /** Why Reopen does nothing, where it does nothing: said to a screen reader on the button,
    *  which stays in the Tab order, and in the opened row. A disabled button takes no focus,
    *  so its reason would reach nobody on a keyboard. */
-  const cannot = task.reopens ? undefined : (task.not_reopened ?? NO_CONVERSATION);
+  const cannot = whyNoReopen(task);
   // What it used, kept when it ended (#1500): on its name's hover, read as the pointer comes
   // on. A task still waiting to start has no record to read.
   const used = useTokensOnHover({ finished: task.id });
