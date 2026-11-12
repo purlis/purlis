@@ -10,6 +10,7 @@ import { ImportCliLogin } from "../ImportCliLogin";
 import type { LiveSetting, SettingsGroup } from "./groups";
 import { Button } from "../ui/button/Button";
 import { Badge } from "../ui/badge/Badge";
+import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "../ui/table/Table";
 import { signedCommits } from "./signing";
 
 /**
@@ -176,22 +177,47 @@ const forgeAccounts: LiveSetting = {
             (now.read.accounts.length === 0 ? (
               <p className="ui-setting-help">No forge account is signed in on this machine.</p>
             ) : (
-              <ul className="ui-machine-list">
-                {now.read.accounts.map((account) => (
-                  <li key={account.id} className="ui-machine-entry">
-                    <span className="ui-machine-name">{account.login}</span>
-                    <span className="ui-machine-path">{account.host}</span>
-                    <Badge variant="accent">{note(account)}</Badge>
-                    <Button
-                      size="sm"
-                      aria-label={`Sign out of ${account.login} on ${account.host}`}
-                      onPress={() => void signOut(account)}
-                    >
-                      Sign out
-                    </Button>
-                  </li>
-                ))}
-              </ul>
+              // **A table of the accounts** (#6301, as Your hosts is, #2919 R65, R67): a row
+              // an account, its login heading it, and Sign out in one place on every row.
+              <Table
+                className="ui-record-table"
+                aria-label="Forge accounts"
+                aria-describedby={ids.describedBy}
+                stacks
+              >
+                <TableHeader>
+                  <TableColumn id="login" isRowHeader>
+                    Account
+                  </TableColumn>
+                  <TableColumn id="host">Host</TableColumn>
+                  <TableColumn id="how">Signed in with</TableColumn>
+                  <TableColumn id="out" align="end" hideName>
+                    Sign out
+                  </TableColumn>
+                </TableHeader>
+                <TableBody>
+                  {now.read.accounts.map((account) => (
+                    <TableRow key={account.id} id={account.id} textValue={account.login}>
+                      <TableCell>{account.login}</TableCell>
+                      <TableCell heading="Host">
+                        <span className="ui-record-where">{account.host}</span>
+                      </TableCell>
+                      <TableCell heading="Signed in with">
+                        <Badge variant="accent">{note(account)}</Badge>
+                      </TableCell>
+                      <TableCell align="end">
+                        <Button
+                          size="sm"
+                          aria-label={`Sign out of ${account.login} on ${account.host}`}
+                          onPress={() => void signOut(account)}
+                        >
+                          Sign out
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             ))}
           {now.said !== undefined && (
             <p className="ui-setting-help" role="status">

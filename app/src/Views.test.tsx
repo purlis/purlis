@@ -25,6 +25,7 @@ import type {
 import type { ViewRef } from "./tabs";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
 import { selectNamed } from "./ui/select/select.testkit";
+import { findGrid } from "./ui/table/table.testkit";
 
 /**
  * A view in a pane (`Views.tsx`): charter's persona view and an extension's statistics, drawn
@@ -200,7 +201,7 @@ describe("the persona view", () => {
 
     expect(await screen.findByText("It remembers 2 things.")).toBeInTheDocument();
     // The list's rows are React Aria's collection, filled a commit after the note above it.
-    const memories = await screen.findByRole("grid", { name: "steward" });
+    const memories = await findGrid(screen, "steward");
     expect(await within(memories).findAllByRole("row")).toHaveLength(2);
     // A memory's row opens its whole body, as every row of the list primitive does.
     await userEvent.click(within(memories).getByRole("row", { name: /Charter defects/ }));

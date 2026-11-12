@@ -34,7 +34,8 @@ import { SearchAddon } from "@xterm/addon-search";
 import { FindBar } from "./FindBar";
 import { opensFindInAFile } from "./keys/findKeys";
 import { onAMac } from "./mac";
-import { linkPane, type LinkCore } from "./paneLinks";
+import { opensTheLinksList } from "./paneLinksKey";
+import { linkPane, type LinkCore, type LinkedPane } from "./paneLinks";
 import { usePaneLinks } from "./PaneLinkSurfaces";
 import {
   drawnFont,
@@ -146,10 +147,17 @@ export function ReadOnlyTerminal({
   const [copy, setCopy] = useState<string>();
   const [finding, setFinding] = useState<{ search: SearchAddon; asked: number } | null>(null);
   /** Its links' surfaces: a hovered link's tooltip, and the answer to one that did not open. */
-  const { hands: linkHands, surfaces: linkSurfaces } = usePaneLinks({
+  /** Its link hook, while its screen is drawn: what *Links in this pane…* reads (#6220). */
+  const linkedNow = useRef<LinkedPane | undefined>(undefined);
+  const {
+    hands: linkHands,
+    surfaces: linkSurfaces,
+    list: openLinksList,
+  } = usePaneLinks({
     from: NOWHERE,
     core: links,
     colour: () => linkColour(theme ?? inForce()),
+    onScreen: () => linkedNow.current?.onScreen() ?? Promise.resolve([]),
   });
   // Read once, as it is drawn: a later write of the same screen is the same picture.
   const told = useRef(onWriting);
@@ -185,6 +193,7 @@ export function ReadOnlyTerminal({
     pane.textarea?.setAttribute("tabindex", "-1");
     drawn.current = { pane, search };
     const linked = still || linkHands === undefined ? undefined : linkPane(pane, linkHands);
+    linkedNow.current = linked;
     let live = true;
     // No cursor: what it showed is over.
     const written = new Promise<void>((done) =>
@@ -199,6 +208,7 @@ export function ReadOnlyTerminal({
       drawn.current = null;
       setFinding(null);
       linked?.dispose();
+      linkedNow.current = undefined;
       pane.dispose();
     };
   }, [screen, cols, rows, theme, fontSize, still, linkHands]);
@@ -207,7 +217,11 @@ export function ReadOnlyTerminal({
     const now = drawn.current;
     if (!now || event.defaultPrevented) return;
     const mac = onAMac();
-    if (opensFindInAFile(event, mac)) {
+    // **Links in this pane…** (#6220): ⇧⌘L, Ctrl+Shift+L off a Mac, on a screen that links.
+    if (linkedNow.current !== undefined && opensTheLinksList(event, mac)) {
+      event.preventDefault();
+      openLinksList?.();
+    } else if (opensFindInAFile(event, mac)) {
       event.preventDefault();
       setFinding((open) => ({ search: now.search, asked: (open?.asked ?? 0) + 1 }));
     } else if (chord(event, "a", mac)) {

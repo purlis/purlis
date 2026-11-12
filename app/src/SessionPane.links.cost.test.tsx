@@ -72,7 +72,12 @@ beforeEach(() => {
       return { view: 1, columns: 80, rows: 24, scrollback: 5000, newline: null };
     if (cmd === "pane_link_resolve") {
       const { candidates } = args as { candidates: { text: string }[] };
-      return candidates.map((one) => ({ kind: "url", target: one.text, does: { does: "opens" } }));
+      return candidates.map((one) => ({
+        kind: "url",
+        target: one.text,
+        shown: one.text,
+        does: { does: "opens", into: "browser" },
+      }));
     }
     return null;
   });

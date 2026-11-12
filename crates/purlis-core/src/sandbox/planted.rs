@@ -168,85 +168,166 @@ pub fn clones_purlis_works_in(folder: &Path) -> Vec<PathBuf> {
     clones(&found)
 }
 
-/// How many directory entries the search for repositories below a folder looks at in all
-/// ([`repositories_below`]): more than [`LOOKED_AT`], since it never looks inside a repository
-/// until every other folder in reach has been read.
+/// How many folders the search for repositories below a folder looks at outside every
+/// repository ([`repositories_below`]): a file is never a repository, so only a folder counts
+/// against it (#6280).
 pub const REPOSITORIES_LOOKED_AT: usize = 50_000;
+
+/// How many directory entries, files included, the search for repositories reads outside every
+/// repository at most ([`repositories_below`]): only a guard on how long it takes at a chat's
+/// start, above the 365,087 entries in 7,382 folders of a project measured in #6280.
+pub const REPOSITORY_ENTRIES_READ: usize = 500_000;
+
+/// How many directory entries the search for repositories reads inside the repositories it
+/// found, for one nested in another's work tree ([`repositories_below`]): never more than the
+/// whole search read before #6280, so it takes no longer than it did.
+pub const NESTED_ENTRIES_READ: usize = 50_000;
+
+/// The search for repositories read more entries than it may.
+struct Overread;
+
+/// The folders in `dir`, no link and no [`SKIPPED`] one, each entry read counted in `read`; none
+/// where `dir` cannot be read; [`Overread`] past `entries` read in all.
+fn folders_to_search(
+    dir: &Path,
+    read: &mut usize,
+    entries: usize,
+) -> Result<Vec<PathBuf>, Overread> {
+    let Ok(listed) = std::fs::read_dir(dir) else {
+        return Ok(Vec::new());
+    };
+    let mut found = Vec::new();
+    for entry in listed.flatten() {
+        *read += 1;
+        if *read > entries {
+            return Err(Overread);
+        }
+        if entry.file_type().is_ok_and(|kind| kind.is_dir())
+            && !SKIPPED.iter().any(|skipped| entry.file_name() == *skipped)
+        {
+            found.push(entry.path());
+        }
+    }
+    Ok(found)
+}
 
 /// What the search for repositories below a folder found ([`repositories_below`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Repositories {
     /// Each folder found with a `.git`, the folder searched among them where it has one.
     pub clones: Vec<PathBuf>,
-    /// Where the folders outside every repository held more entries than the search looks at
-    /// before it had read them all, the folder that held the most: a repository beyond it may
-    /// not have been found.
+    /// Where the folders outside every repository were more than the search looks at before it
+    /// had read them all, the folder in the one searched whose tree held the most of what ran
+    /// out, folders or entries (the folder searched itself, where its own were the most or as
+    /// many): a repository beyond it may not have been found.
     pub crowded: Option<PathBuf>,
 }
 
 /// **The repositories below `folder`**, to [`CLONE_DEPTH`], no link followed and no
-/// [`SKIPPED`] folder entered, read in two passes within [`REPOSITORIES_LOOKED_AT`] entries in
-/// all. First every folder that is in no repository below `folder` (`folder` itself is entered
-/// whatever it is), finding each repository there without looking inside it: if those alone hold
-/// more entries than the search looks at, it stops and says which folder held the most
-/// ([`Repositories::crowded`]), since a repository it did not reach is not held. Then inside the
-/// repositories found, for one nested in another's work tree, with what is left of the bound.
+/// [`SKIPPED`] folder entered, read in two passes. First every folder that is in no repository
+/// below `folder` (`folder` itself is entered whatever it is), finding each repository there
+/// without looking inside it, within [`REPOSITORIES_LOOKED_AT`] folders and
+/// [`REPOSITORY_ENTRIES_READ`] entries: if those alone are more, it stops and says which folder
+/// in `folder` held the most ([`Repositories::crowded`]), since a repository it did not reach is
+/// not held. Then inside the repositories found, for one nested in another's work tree, within
+/// [`NESTED_ENTRIES_READ`] entries of its own.
+///
+/// No folder is skipped for what it says of itself, such as a cache's `CACHEDIR.TAG`: a chat
+/// can write one beside a repository, and the search must never stop holding a git folder on
+/// a chat's word (#6280).
 pub fn repositories_below(folder: &Path) -> Repositories {
     repositories_below_within(folder, REPOSITORIES_LOOKED_AT)
 }
 
-/// [`repositories_below`], looking at `bound` entries at most.
-pub fn repositories_below_within(folder: &Path, bound: usize) -> Repositories {
+/// [`repositories_below`], looking at `folders` folders at most outside every repository.
+pub fn repositories_below_within(folder: &Path, folders: usize) -> Repositories {
+    repositories_below_bounded(
+        folder,
+        folders,
+        REPOSITORY_ENTRIES_READ,
+        NESTED_ENTRIES_READ,
+    )
+}
+
+/// What one folder in the one searched held of what the search read, its own entries for the
+/// folder searched.
+struct Held {
+    folder: PathBuf,
+    folders: usize,
+    entries: usize,
+}
+
+/// [`repositories_below`], looking at `folders` folders and reading `entries` entries at most
+/// outside every repository, and `nested` entries inside them.
+fn repositories_below_bounded(
+    folder: &Path,
+    folders: usize,
+    entries: usize,
+    nested: usize,
+) -> Repositories {
     let mut clones = Vec::new();
     if folder.join(".git").exists() {
         clones.push(folder.to_path_buf());
     }
-    let wanted = |entry: &std::fs::DirEntry| {
-        entry.file_type().is_ok_and(|kind| kind.is_dir())
-            && !SKIPPED.iter().any(|skipped| entry.file_name() == *skipped)
+    let mut seen = 0;
+    let mut read = 0;
+    let mut held = vec![Held {
+        folder: folder.to_path_buf(),
+        folders: 0,
+        entries: 0,
+    }];
+    // The folder that held the most of what ran out, the first of those that held as many.
+    let crowded = |clones: Vec<PathBuf>, held: &[Held], by_folders: bool| {
+        let count = |it: &Held| if by_folders { it.folders } else { it.entries };
+        let mut fullest = &held[0];
+        for it in held {
+            if count(it) > count(fullest) {
+                fullest = it;
+            }
+        }
+        Repositories {
+            clones,
+            crowded: Some(fullest.folder.clone()),
+        }
     };
-    let mut looked = 0;
-    let mut fullest: (usize, PathBuf) = (0, folder.to_path_buf());
     let mut inside: Vec<(PathBuf, usize)> = Vec::new();
-    let mut level = vec![folder.to_path_buf()];
+    // Each folder to read, with the one in `folder` whose tree it is in.
+    let mut level = vec![(folder.to_path_buf(), 0)];
     for depth in 1..=CLONE_DEPTH {
         let mut next = Vec::new();
-        for dir in level {
-            let Ok(entries) = std::fs::read_dir(&dir) else {
-                continue;
+        for (dir, tree) in level {
+            let before = read;
+            let listed = folders_to_search(&dir, &mut read, entries);
+            held[tree].entries += read - before;
+            let Ok(found) = listed else {
+                return crowded(clones, &held, false);
             };
-            let mut here = 0;
-            for entry in entries.flatten() {
-                looked += 1;
-                here += 1;
-                if looked > bound {
-                    if here > fullest.0 {
-                        fullest = (here, dir);
-                    }
-                    return Repositories {
-                        clones,
-                        crowded: Some(fullest.1),
-                    };
-                }
-                if !wanted(&entry) {
-                    continue;
-                }
-                let path = entry.path();
+            held[tree].folders += found.len();
+            seen += found.len();
+            if seen > folders {
+                return crowded(clones, &held, true);
+            }
+            for path in found {
                 if path.join(".git").exists() {
                     clones.push(path.clone());
                     inside.push((path, depth));
+                } else if depth == 1 {
+                    held.push(Held {
+                        folder: path.clone(),
+                        folders: 0,
+                        entries: 0,
+                    });
+                    next.push((path, held.len() - 1));
                 } else {
-                    next.push(path);
+                    next.push((path, tree));
                 }
-            }
-            if here > fullest.0 {
-                fullest = (here, dir);
             }
         }
         level = next;
     }
-    // Inside the repositories found, with what is left: a repository nested in another's work
-    // tree, as far as the bound reaches.
+    // Inside the repositories found, with a count of its own: a repository nested in another's
+    // work tree, as far as `nested` entries reach.
+    let mut read = 0;
     let mut level = inside;
     while !level.is_empty() {
         let mut next = Vec::new();
@@ -254,21 +335,13 @@ pub fn repositories_below_within(folder: &Path, bound: usize) -> Repositories {
             if depth >= CLONE_DEPTH {
                 continue;
             }
-            let Ok(entries) = std::fs::read_dir(&dir) else {
-                continue;
+            let Ok(found) = folders_to_search(&dir, &mut read, nested) else {
+                return Repositories {
+                    clones,
+                    crowded: None,
+                };
             };
-            for entry in entries.flatten() {
-                looked += 1;
-                if looked > bound {
-                    return Repositories {
-                        clones,
-                        crowded: None,
-                    };
-                }
-                if !wanted(&entry) {
-                    continue;
-                }
-                let path = entry.path();
+            for path in found {
                 if path.join(".git").exists() {
                     clones.push(path.clone());
                 }
@@ -283,8 +356,8 @@ pub fn repositories_below_within(folder: &Path, bound: usize) -> Repositories {
     }
 }
 
-/// [`git_folder_pins`], or the folder that held more entries than the search for repositories
-/// looks at ([`Repositories::crowded`]), where one did: then not every repository is known.
+/// [`git_folder_pins`], or the folder that held the most where the search for repositories was
+/// crowded out ([`Repositories::crowded`]): then not every repository is known.
 pub fn git_folder_pins_whole(folders: &[PathBuf]) -> Result<Vec<PathBuf>, PathBuf> {
     let (pins, crowded) = git_folders_found(folders);
     match crowded {
@@ -298,8 +371,8 @@ pub fn git_folders_kept(folders: &[PathBuf]) -> Vec<(PathBuf, PathBuf)> {
     git_folders_found(folders).0
 }
 
-/// [`git_folders_kept`], and the first folder that held more entries than the search looks at
-/// ([`Repositories::crowded`]).
+/// [`git_folders_kept`], and the folder that held the most in the first search for repositories
+/// that was crowded out ([`Repositories::crowded`]).
 fn git_folders_found(folders: &[PathBuf]) -> (Vec<(PathBuf, PathBuf)>, Option<PathBuf>) {
     let mut crowded: Option<PathBuf> = None;
     let mut pins: Vec<(PathBuf, PathBuf)> = Vec::new();
@@ -2923,6 +2996,129 @@ mod tests {
         let found = repositories_below_within(plane.path(), 1_000);
         assert_eq!(found.crowded, None);
         assert!(found.clones.contains(&at("zzz/repo")), "{found:?}");
+    }
+
+    /// `files` empty files in each of `folders` folders under `dir`, fanned as a build cache
+    /// keeps them (#6280).
+    fn fanned(dir: &Path, folders: usize, files: usize) {
+        for folder in 0..folders {
+            let folder = dir.join(format!("{folder:02x}"));
+            std::fs::create_dir_all(&folder).expect("a fan folder");
+            for file in 0..files {
+                std::fs::write(folder.join(file.to_string()), "").expect("a cached file");
+            }
+        }
+    }
+
+    #[test]
+    fn a_repository_holding_many_files_in_few_folders_is_searched_whole() {
+        // The project is itself a repository, so its work tree is the first pass: a fanned
+        // tree of 400 files in 16 folders, no cache tag, is far more entries than the bound
+        // but far fewer folders, and a file is never a repository (#6280).
+        let project = tempfile::tempdir().expect("a project");
+        let at = |rel: &str| project.path().join(rel);
+        git_dir_at(project.path());
+        fanned(&at("build/objects"), 16, 25);
+        git_dir_at(&at("zzz/repo"));
+        let found = repositories_below_within(project.path(), 50);
+        assert_eq!(found.crowded, None, "{found:?}");
+        assert!(found.clones.contains(&at("zzz/repo")), "{found:?}");
+    }
+
+    #[test]
+    fn a_search_crowded_out_names_the_subtree_that_holds_the_most_not_the_fullest_folder() {
+        // `flat` is the one folder with the most entries of its own; `deep` holds more in all,
+        // spread across many folders, and is what crowds the search out (#6280).
+        let project = tempfile::tempdir().expect("a project");
+        let at = |rel: &str| project.path().join(rel);
+        std::fs::create_dir_all(at("flat")).expect("a flat folder");
+        for n in 0..30 {
+            std::fs::write(at("flat").join(n.to_string()), "").expect("a log");
+        }
+        for outer in 0..10 {
+            for inner in 0..10 {
+                std::fs::create_dir_all(at(&format!("deep/{outer}/{inner}"))).expect("a folder");
+            }
+        }
+        let found = repositories_below_within(project.path(), 50);
+        assert_eq!(found.crowded, Some(at("deep")), "{found:?}");
+    }
+
+    #[test]
+    fn a_search_reading_more_entries_than_its_guard_stops_and_names_where() {
+        // Files never count as folders, but reading them takes time: past the guard on
+        // entries the search stops as it does past the folders it looks at.
+        let project = tempfile::tempdir().expect("a project");
+        let at = |rel: &str| project.path().join(rel);
+        fanned(&at("logs"), 4, 25);
+        git_dir_at(&at("zzz/repo"));
+        let found = repositories_below_bounded(project.path(), 1_000, 50, 1_000);
+        assert_eq!(found.crowded, Some(at("logs")), "{found:?}");
+        let found = repositories_below_bounded(project.path(), 1_000, 1_000, 1_000);
+        assert_eq!(found.crowded, None, "{found:?}");
+    }
+
+    #[test]
+    fn the_search_s_bounds_reach_the_project_measured_in_6280() {
+        // 365,087 entries, 7,382 of them folders, outside every cache (2026-11-11).
+        const _: () = assert!(REPOSITORIES_LOOKED_AT > 7_382);
+        const _: () = assert!(REPOSITORY_ENTRIES_READ > 365_087);
+    }
+
+    #[test]
+    fn a_heavy_first_pass_leaves_the_search_inside_repositories_its_own_reach() {
+        // More entries outside every repository than the search reads inside them: a repository
+        // nested in another's work tree is still found.
+        let project = tempfile::tempdir().expect("a project");
+        let at = |rel: &str| project.path().join(rel);
+        fanned(&at("logs"), 2, 100);
+        git_dir_at(&at("zzz/repo"));
+        git_dir_at(&at("zzz/repo/third_party/lib"));
+        let found = repositories_below_bounded(project.path(), 1_000, 1_000, 50);
+        assert_eq!(found.crowded, None, "{found:?}");
+        assert!(
+            found.clones.contains(&at("zzz/repo/third_party/lib")),
+            "{found:?}"
+        );
+    }
+
+    #[test]
+    fn a_search_out_of_folders_names_the_subtree_of_most_folders_not_most_files() {
+        // `media` holds the most entries, all files; `deep` the folders that ran the bound out.
+        let project = tempfile::tempdir().expect("a project");
+        let at = |rel: &str| project.path().join(rel);
+        std::fs::create_dir_all(at("media")).expect("a folder");
+        for n in 0..200 {
+            std::fs::write(at("media").join(n.to_string()), "").expect("a file");
+        }
+        for outer in 0..10 {
+            for inner in 0..10 {
+                std::fs::create_dir_all(at(&format!("deep/{outer}/{inner}"))).expect("a folder");
+            }
+        }
+        let found = repositories_below_within(project.path(), 50);
+        assert_eq!(found.crowded, Some(at("deep")), "{found:?}");
+    }
+
+    #[test]
+    fn a_folder_that_says_it_is_a_cache_is_searched_all_the_same() {
+        // A chat can write a cache's tag beside a repository: it never hides one.
+        let project = tempfile::tempdir().expect("a project");
+        let at = |rel: &str| project.path().join(rel);
+        std::fs::create_dir_all(at("vendor")).expect("a folder");
+        std::fs::write(
+            at("vendor/CACHEDIR.TAG"),
+            "Signature: 8a477f597d28d172789f06886806bc55\n",
+        )
+        .expect("a tag");
+        std::fs::write(
+            at("vendor/README"),
+            "This directory holds cached build artifacts from the Go build system.\n",
+        )
+        .expect("a README");
+        git_dir_at(&at("vendor/foo"));
+        let found = repositories_below_within(project.path(), 50);
+        assert!(found.clones.contains(&at("vendor/foo")), "{found:?}");
     }
 
     /// A clone at `dir`: a `.git` directory holding a `HEAD`.

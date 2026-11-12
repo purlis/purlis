@@ -286,7 +286,7 @@ fn a_runners_chat_is_offered_what_its_runner_said_or_told_its_runner_said_nothin
     assert!(!not_said.known);
     assert!(not_said.skills.is_empty());
     assert_eq!(
-        not_said.not_supported.as_deref(),
+        not_said.none_because.as_deref(),
         Some(NOT_SAID_BY_ITS_RUNNER)
     );
 }
@@ -319,5 +319,5 @@ fn a_chat_no_longer_open_is_told_it_is_not_running_never_that_it_runs_no_tool_61
     let shown = skills_shown(&held, ended);
     assert!(shown.on && !shown.known);
     // Nothing is picked yet where the list says it: it says nothing of what was typed.
-    assert_eq!(shown.not_supported.as_deref(), Some(NOT_RUNNING_LISTED));
+    assert_eq!(shown.none_because.as_deref(), Some(NOT_RUNNING_LISTED));
 }

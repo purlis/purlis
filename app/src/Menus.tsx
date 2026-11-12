@@ -420,8 +420,9 @@ function Row({ row, onPress }: { row: RowDrawn; onPress: (offer: Offer) => void 
   );
   const said = state === "running" && row.midTurn !== undefined ? row.midTurn : row.said;
   const note = noteOf(offer, state === "unknown");
-  // Under its words: why it cannot run, or what it costs where that cannot be undone.
-  const under = offer.available ? row.warns : offer.reason;
+  // Under its words: why it cannot run, or what it costs where that cannot be undone, or else
+  // what it acts on (a link's target).
+  const under = offer.available ? (row.warns ?? row.target) : offer.reason;
   // Its tooltip: the catalogue's note, for a row that can run and is not one of a submenu that
   // says it once. A row that cannot run says why under its words, and as its description.
   const tip = offer.available && !row.untipped ? note : undefined;
@@ -436,8 +437,9 @@ function Row({ row, onPress }: { row: RowDrawn; onPress: (offer: Offer) => void 
       // (D-1719-3), which a migrating control keeps beside its look (DS-2).
       variant={row.danger ? "danger" : "default"}
       className={row.danger ? "ends-it" : undefined}
-      keys={row.keys}
-      // The key as a reader hears it, where no registry entry answers for the row (#6043).
+      keys={row.keys ?? row.gesture}
+      // The key as a reader hears it, where no registry entry answers for the row (#6043). A
+      // gesture is the pointer's, and names none.
       aria-keyshortcuts={row.keys === undefined ? undefined : ariaKeysOfSaid(row.keys)}
       shortcut={offer.id}
       isDisabled={!offer.available}

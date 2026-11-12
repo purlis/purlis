@@ -78,11 +78,13 @@ fn just_reading(family: &str, wash: &str, parts: &Value) -> Option<u8> {
     Some(high)
 }
 
-#[test]
-fn a_part_that_only_reads_untinted_falls_in_every_family() {
+/// **Each part of the families `of` names whose words only read untinted**, on a see-through
+/// fill over a turned ground: the ones that fall in some tint, held where the theme as written is
+/// measured (`caught`), and any that are not (`missed`).
+fn untinted_readers(of: impl Fn(usize) -> bool) -> (Vec<String>, Vec<String>) {
     let mut caught = Vec::new();
     let mut missed = Vec::new();
-    for family in MANIFEST {
+    for (_, family) in MANIFEST.iter().enumerate().filter(|(at, _)| of(*at)) {
         let root = family.parts[0];
         for part in family.parts {
             if !part.properties.contains(&Prop::Text) {
@@ -121,9 +123,35 @@ fn a_part_that_only_reads_untinted_falls_in_every_family() {
             }
         }
     }
-    assert!(missed.is_empty(), "not held in a tint: {missed:?}");
-    // The sweep found cases to hold: an empty one proves nothing.
-    assert!(caught.len() > 20, "{caught:?}");
+    (caught, missed)
+}
+
+/// The sweep in three thirds of [`MANIFEST`], one test a third so they run side by side (#3597).
+/// Each holds every case it finds and finds more than 7, so the whole sweep finds more than 20:
+/// an empty one proves nothing.
+mod a_part_that_only_reads_untinted_falls_in_every_family {
+    use super::{MANIFEST, untinted_readers};
+
+    fn holds_every_one(from: usize, to: usize) {
+        let (caught, missed) = untinted_readers(|at| (from..to).contains(&at));
+        assert!(missed.is_empty(), "not held in a tint: {missed:?}");
+        assert!(caught.len() > 7, "{caught:?}");
+    }
+
+    #[test]
+    fn the_first_third() {
+        holds_every_one(0, 17);
+    }
+
+    #[test]
+    fn the_second_third() {
+        holds_every_one(17, 34);
+    }
+
+    #[test]
+    fn the_last_third() {
+        holds_every_one(34, MANIFEST.len());
+    }
 }
 
 /// The lowest contrast of the count's default colours, over its ground: the pair the token check

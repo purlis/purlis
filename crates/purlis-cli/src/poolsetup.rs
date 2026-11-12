@@ -16,11 +16,14 @@ pub fn answered(name: Option<&str>, json: bool) -> Result<(), String> {
         .ok()
         .and_then(|cwd| purlis_core::plane::find_root(&cwd).ok());
     let docker = poolsetup::docker_here();
+    // A cluster is asked through the person's own kubectl, as the window asks it (#4492).
+    let kubectl = poolsetup::cluster::kubectl_here();
     let here = Here {
         config: &config,
         plane: plane.as_deref(),
         docker: docker.as_ref(),
         engine: Docker::engine_on_this_machine(),
+        kubectl: kubectl.as_ref().map_err(String::as_str),
     };
     let setup = poolsetup::read(&here, name).map_err(|why| why.to_string())?;
     if json {
@@ -59,12 +62,42 @@ fn said(setup: &Setup) -> String {
         for finding in &step.findings {
             let _ = writeln!(out, "             {finding}");
         }
+        // The machine, as Connect shows it: the key to check, or the one trusted.
+        if let Some(machine) = &step.machine {
+            if let Some(key) = &machine.key {
+                let _ = writeln!(
+                    out,
+                    "             shows {} ({})",
+                    key.fingerprint, key.algorithm
+                );
+            }
+            if let Some(key) = &machine.trusted {
+                let _ = writeln!(
+                    out,
+                    "             trusted {} ({})",
+                    key.fingerprint, key.algorithm
+                );
+            }
+            if let Some(key) = &machine.now {
+                let _ = writeln!(
+                    out,
+                    "             shows now {} ({})",
+                    key.fingerprint, key.algorithm
+                );
+            }
+        }
         for check in &step.checks {
             let word = serde_json::to_value(check.verdict)
                 .ok()
                 .and_then(|word| word.as_str().map(str::to_owned))
                 .unwrap_or_default();
             let _ = writeln!(out, "             {word:<8} {}", check.title);
+            // Doctor's next step, beside its line, as the window shows it (#4492).
+            if let (purlis_core::poolsetup::CheckOf::Cluster, Some(more)) =
+                (check.about, &check.more)
+            {
+                let _ = writeln!(out, "                      {more}");
+            }
         }
     }
     let next = setup
@@ -76,6 +109,13 @@ fn said(setup: &Setup) -> String {
         if let Some(command) = &next.command {
             let _ = writeln!(out, "  {command}");
         }
+    }
+    let other = setup
+        .at
+        .and_then(|at| setup.step(at))
+        .and_then(|step| step.other.as_ref());
+    if let Some(other) = other {
+        let _ = writeln!(out, "Or: {}. {}", other.label, other.does);
     }
     out
 }

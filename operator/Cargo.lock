@@ -1207,6 +1207,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "purlis-cluster-doctor"
+version = "0.5.2"
+
+[[package]]
 name = "purlis-cluster-operator"
 version = "0.1.0"
 dependencies = [
@@ -1219,6 +1223,7 @@ dependencies = [
  "hyper-util",
  "k8s-openapi",
  "kube",
+ "purlis-cluster-doctor",
  "ring",
  "rustls",
  "schemars",

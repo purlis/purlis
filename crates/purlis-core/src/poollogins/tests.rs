@@ -395,3 +395,31 @@ fn a_pool_not_ready_for_a_new_chat_says_which_way_it_is_not() {
         Err(Unbound::Unread(_))
     ));
 }
+
+/// **A pool on another machine is never sent a vault value** (#6266, ADR 0123 §5): whatever this
+/// machine's own engine is, until the person's mark (#6271). Its chats still move there, as a
+/// Docker pool's do (§1).
+#[test]
+fn a_pool_on_another_machine_is_sent_no_vault_value_and_chats_still_move_there() {
+    let config = a_pool_with_a_runner_draining();
+    change_runners(config.path(), |text| {
+        let pool = &mut text["pools"][0];
+        pool["kind"] = "remote-docker".into();
+        pool["route"] = "ssh://me@build-box/var/run/docker.sock".into();
+        pool["pin"] = serde_json::json!({
+            "hostKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINiGzfjDDJsgYLYCmdkf8Fel9sE6Ma14Y2+c33Y/qZ2n",
+            "engine": "ABCD",
+        });
+    });
+    let sent = Bound::over_the_link_with(
+        Ok("/var/run/docker.sock".into()),
+        config.path(),
+        "first",
+        None,
+    );
+    assert!(
+        matches!(&sent, Err(why) if why.contains("on another machine") && why.contains("no vault value")),
+        "{sent:?}"
+    );
+    assert!(Bound::read_with(Ok("/var/run/docker.sock".into()), config.path(), "first").is_ok());
+}

@@ -383,7 +383,13 @@ export function PoolStep({
   // An empty box is the recommended name, one no pool here has (#6256), as an empty limit is its own.
   const recommended = shown.recommended ?? "";
   const naming = name.trim() === "" ? recommended : name;
-  const wanted = asked(naming, using, chosen);
+  // A pool on another machine is made there, with the key trusted at Connect (#6266).
+  const machine = shown.steps.find((one) => one.id === "connect")?.machine;
+  const plain = asked(naming, using, chosen);
+  const wanted =
+    plain && machine?.trusted && machine.route
+      ? { ...plain, on: machine.route, trust: machine.trusted.fingerprint }
+      : plain;
   const wantedKey = JSON.stringify(wanted);
 
   // What See what this does shows is the core's spelling of what Create would send (Q30).

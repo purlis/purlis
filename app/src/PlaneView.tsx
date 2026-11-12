@@ -182,6 +182,9 @@ import {
 import { Explorer, type SearchKeyHere, type Spot } from "./Explorer";
 import { keptChanged } from "./branchFolders";
 import {
+  isPlaneRoot,
+  outsideFileTitle,
+  outsideFileView,
   pieceFileTitle,
   pieceFileView,
   pieceFilesTitle,
@@ -189,6 +192,7 @@ import {
   workspaceFiles,
   type Place,
 } from "./pieceViews";
+import { useOutsideFileAsks } from "./paneLinkFiles";
 import { searchFromFocus, searchOf, searchView } from "./contentSearch";
 import { ChangesView, reposGap, uncommitted } from "./ChangesView";
 import { SearchTab } from "./SearchTab";
@@ -5447,6 +5451,14 @@ export const PlaneView = memo(function PlaneView({
     if (opened && inFront) rereadAlerts?.();
   }, [noticesShown, inFront, rereadAlerts]);
 
+  /** A file outside the project a pane's link opened (#6216), in a read-only tab of its own. */
+  const outsideFile = useCallback(
+    ({ session, path }: { session: number | null; path: string }) =>
+      showView(outsideFileView(session, path), outsideFileTitle(path)),
+    [showView],
+  );
+  useOutsideFileAsks(plane, outsideFile);
+
   /** A file ⌘P found here (FM-7), opened in its file tab the way the explorer opens one. */
   const fileHandled = useRef(fileAsked?.at);
   useEffect(() => {
@@ -5455,7 +5467,8 @@ export const PlaneView = memo(function PlaneView({
     // A jump to a line (a search hit) opens the branch's file tab, which picks the file and
     // lands on the line (`fileJump.ts`); a file ⌘P found opens in a tab of its own.
     const { place, path } = fileAsked;
-    const jump = fileAsked.line !== undefined;
+    // The plane root has no branch's file tab to land in: its file opens in a tab of its own.
+    const jump = fileAsked.line !== undefined && !isPlaneRoot(place);
     showView(
       jump ? pieceFilesView(place) : pieceFileView(place, path),
       jump ? pieceFilesTitle(place) : pieceFileTitle(place, path),
@@ -7505,10 +7518,10 @@ export const PlaneView = memo(function PlaneView({
    * and it takes the focused pane as any chat started does (#4758). It is an ordinary chat from then on. A
    * refusal is the row's to say.
    */
-  const reopenFinished = useCallback(
-    async (task: FinishedTask): Promise<string | undefined> => {
+  const reopenById = useCallback(
+    async (id: string): Promise<string | undefined> => {
       const said = await commands
-        .reopenFinishedTask(plane, task.id, STARTING_SIZE.columns, STARTING_SIZE.rows)
+        .reopenFinishedTask(plane, id, STARTING_SIZE.columns, STARTING_SIZE.rows)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
       if (said.status === "error") return said.error;
       const chat = said.data;
@@ -7526,6 +7539,11 @@ export const PlaneView = memo(function PlaneView({
       return undefined;
     },
     [focused, noteStarted, plane, rereadFinished, showResumed],
+  );
+  /** The same, from a finished task's row. */
+  const reopenFinished = useCallback(
+    (task: FinishedTask): Promise<string | undefined> => reopenById(task.id),
+    [reopenById],
   );
   /**
    * **Resume, on the band of a pane left on a task that ended** (#4757, #4756): its finished row
@@ -8910,6 +8928,10 @@ export const PlaneView = memo(function PlaneView({
       removeWorkspace,
       // The verb is only ever a needs-you item's Go, or the palette's row for one.
       showChat: showNeeding,
+      reopenTask: async (id) => {
+        const why = await reopenById(id);
+        return why === undefined ? { ok: true } : { ok: false, refused: why };
+      },
       paneBack: goBack,
       ownTab,
       beside: besideOf,
@@ -9089,6 +9111,7 @@ export const PlaneView = memo(function PlaneView({
       runAction,
       sendKey,
       showNeeding,
+      reopenById,
       goBack,
       ownTab,
       besideOf,
