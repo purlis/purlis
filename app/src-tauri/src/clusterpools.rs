@@ -443,22 +443,23 @@ pub fn key_with(
     let pointed = kubectl.clone().pointed_at(kubeconfig, context);
     let said =
         |why: purlis_core::clusterpool::Refused| crate::devices::shown_safely(&why.to_string());
-    let key = pointed.pool_pin(pool.trim()).map_err(said)?.key;
+    let pin = pointed.pool_pin(pool.trim()).map_err(said)?;
     let namespace = pointed.namespace().map_err(said)?;
-    Ok(key_shown(config, context, &key, pasted, namespace))
+    Ok(key_shown(config, context, &pin, pasted, namespace))
 }
 
-/// **What Check its key says of `key`, the one the Pool names** (#4495): the key itself only once
-/// it is confirmed, by `pasted` or as the one this setup made on `context`, so the box for the
-/// admin's key is never filled from the cluster's own word.
+/// **What Check its key says of the key the Pool names (`pin`, with its cluster)** (#4495): the
+/// key itself only once it is confirmed, by `pasted` or as the one this setup made on `context`
+/// in that cluster, so the box for the admin's key is never filled from the cluster's own word.
 fn key_shown(
     config: &Path,
     context: &str,
-    key: &purlis_core::clusterpool::OperatorKey,
+    pin: &purlis_core::clusterpool::PoolPin,
     pasted: Option<&str>,
     namespace: String,
 ) -> ClusterPoolKey {
-    let made_here = purlis_core::poolsetup::made_here(config, context.trim(), key);
+    let key = &pin.key;
+    let made_here = purlis_core::poolsetup::made_here(config, context.trim(), pin);
     let matches = pasted
         .filter(|pasted| !pasted.trim().is_empty())
         .map(|pasted| {
@@ -567,7 +568,7 @@ pub fn add_on(
     let confirmed = purlis_core::poolsetup::confirm_key(
         config,
         adding.context.trim(),
-        &pin.key,
+        &pin,
         adding.pasted.as_deref(),
     )
     .map_err(|why| crate::devices::shown_safely(&why.to_string()))?;

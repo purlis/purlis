@@ -279,14 +279,19 @@ fn a_release_that_failed_says_its_work_is_here_only_on_proof() {
 }
 
 /// Keeps, in Pool setup's choices, that this machine made the signing key named `key` on context
-/// `context` (#4495), as Install's Signing key does.
+/// `context`, in the cluster [`CLUSTER`] (#4495), as Install's Signing key does.
 fn made_here_on(config: &Path, context: &str, key: &str) {
+    made_here_in(config, context, CLUSTER, key);
+}
+
+/// [`made_here_on`], in the cluster whose `kube-system` uid is `cluster`.
+fn made_here_in(config: &Path, context: &str, cluster: &str, key: &str) {
     let folder =
         purlis_same_user::PrivateDirectory::open(&purlis_core::machine::dir(config)).unwrap();
     folder
         .replace_file(
             "pool-setup.json",
-            serde_json::json!({"version": 1, "made": {"context": context, "key": key}})
+            serde_json::json!({"version": 1, "made": {"context": context, "cluster": cluster, "key": key}})
                 .to_string()
                 .as_bytes(),
         )
@@ -298,8 +303,11 @@ fn made_here_on(config: &Path, context: &str, key: &str) {
 #[test]
 fn check_its_key_shows_the_pools_key_only_once_confirmed() {
     let config = tempfile::tempdir().unwrap();
-    let key = purlis_core::clusterpool::OperatorKey::from_spelled(OPERATOR).unwrap();
-    let shown = |pasted: Option<&str>| key_shown(config.path(), "team", &key, pasted, "ada".into());
+    let pin = purlis_core::clusterpool::PoolPin {
+        key: purlis_core::clusterpool::OperatorKey::from_spelled(OPERATOR).unwrap(),
+        cluster: CLUSTER.to_owned(),
+    };
+    let shown = |pasted: Option<&str>| key_shown(config.path(), "team", &pin, pasted, "ada".into());
     let none = shown(None);
     assert_eq!(
         (none.key, none.made_here, none.matches),
@@ -315,6 +323,8 @@ fn check_its_key_shows_the_pools_key_only_once_confirmed() {
 
     made_here_on(config.path(), "other", OPERATOR);
     assert_eq!(shown(None).key, None, "made on another context");
+    made_here_in(config.path(), "team", "another-cluster-uid", OPERATOR);
+    assert_eq!(shown(None).key, None, "made in another cluster");
     made_here_on(config.path(), "team", OPERATOR);
     let made = shown(None);
     assert_eq!(

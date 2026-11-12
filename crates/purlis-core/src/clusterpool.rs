@@ -1348,6 +1348,21 @@ impl Kubectl {
         Ok(kept)
     }
 
+    /// **The cluster this kubectl's context reaches**, by the uid of its `kube-system` namespace:
+    /// what a Pool's `status.cluster` names, and so what a pin holds (#3305, #4495).
+    pub fn cluster_uid(&self) -> Result<String, Refused> {
+        let answer = self.json(
+            &["get", "namespace", "kube-system", "--output", "json"],
+            None,
+        )?;
+        answer
+            .pointer("/metadata/uid")
+            .and_then(serde_json::Value::as_str)
+            .filter(|uid| !uid.is_empty() && plain(uid))
+            .map(str::to_owned)
+            .ok_or_else(|| Refused::Other("the cluster did not say which cluster it is".into()))
+    }
+
     /// **The namespace this kubectl's context names**, where a cluster pool's claims are made
     /// (#3292): kubectl's own `default` where it names none.
     pub fn namespace(&self) -> Result<String, Refused> {

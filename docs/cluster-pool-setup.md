@@ -213,8 +213,9 @@ in `a_chat_runs_on_a_cluster_runner_through_kubectl_exec`._
    admin**.
 4. Press **Check its key**. purlis compares the key you pasted with the one the pool names, and
    shows it only if they are the same. If they aren't, stop: you may be talking to another
-   cluster. In Pool setup, where this machine made the signing key in the same setup, no paste
-   is needed.
+   cluster. Where this machine made the signing key in the same Pool setup, through the same
+   context and in the same cluster, no paste is needed, in Pool setup or here; on any other
+   machine, context or cluster, it is.
 5. Press **Add pool**. Its runner is claimed and paired, which can take a few minutes while the
    node pulls the image.
 6. Sign your profiles in when the dialog offers it. A chat on the runner needs a profile signed in

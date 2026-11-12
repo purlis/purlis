@@ -227,8 +227,7 @@ fn a_bare_cluster_passes_the_check_then_is_installed_a_part_at_a_time() {
         .clone()
         .with_context(&context)
         .pool_pin("setup-team")
-        .unwrap()
-        .key;
+        .unwrap();
     assert_eq!(
         poolsetup::confirm_key(config.path(), &context, &named, None).unwrap(),
         purlis_core::clusterpool::Confirmed::MadeHere
@@ -415,9 +414,9 @@ subjects:
         read.key
     );
     // The teammate's machine made no key: nothing is pinned without the admin's, pasted (#4495).
-    assert!(poolsetup::confirm_key(config.path(), "teammate", &read.key, None).is_err());
+    assert!(poolsetup::confirm_key(config.path(), "teammate", &read, None).is_err());
     assert_eq!(
-        poolsetup::confirm_key(config.path(), "teammate", &read.key, Some(&pasted)).unwrap(),
+        poolsetup::confirm_key(config.path(), "teammate", &read, Some(&pasted)).unwrap(),
         purlis_core::clusterpool::Confirmed::Pasted
     );
 }

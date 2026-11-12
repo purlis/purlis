@@ -1991,8 +1991,13 @@ pub fn install_part(
         part,
         choices.operator_image.as_deref(),
     )?;
-    // The signing key this setup made (#4495): its own Pools' key is then pinned without a paste.
+    // The signing key this setup made (#4495): its own Pools' key is then pinned without a paste,
+    // in this cluster only. Where the cluster can't be told, nothing is kept, and a paste is
+    // asked for as on every other path.
     let Some(key) = made else {
+        return Ok(());
+    };
+    let Ok(cluster) = kubectl.clone().with_context(context).cluster_uid() else {
         return Ok(());
     };
     let context = context.to_owned();
@@ -2000,34 +2005,40 @@ pub fn install_part(
     let mut choices = read_choices(config)?;
     choices.made = Some(MadeKey {
         context,
+        cluster,
         key: key.spelled(),
     });
     write_choices(config, choices)
 }
 
-/// **The signing key this setup made** (#4495): on which context, and its public half, as
+/// **The signing key this setup made** (#4495): on which context, in which cluster (the uid of
+/// its `kube-system` namespace, as a Pool's `status.cluster` names it), and its public half, as
 /// `ed25519:` and 64 hex digits. Only the public half: the key itself went to the cluster alone.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MadeKey {
     pub context: String,
+    /// Empty where it was kept before the cluster was: then it confirms nothing.
+    #[serde(default)]
+    pub cluster: String,
     pub key: String,
 }
 
-/// **How the cluster operator key `named` is confirmed before it is pinned** (#4495): by the key
-/// the person `pasted`, as their cluster's admin gave it, which must be the same; or, with
-/// nothing pasted, only where this machine made the signing key in this setup, on `context`, and
-/// `named` is its public half. Anything else pins nothing.
+/// **How the cluster operator key a Pool names (`named`, with its cluster) is confirmed before it
+/// is pinned** (#4495): by the key the person `pasted`, as their cluster's admin gave it, which
+/// must be the same; or, with nothing pasted, only where this machine made the signing key in
+/// this setup, on `context`, in the same cluster, and `named` names its public half
+/// ([`made_here`]). Anything else pins nothing.
 pub fn confirm_key(
     config: &Path,
     context: &str,
-    named: &crate::clusterpool::OperatorKey,
+    named: &crate::clusterpool::PoolPin,
     pasted: Option<&str>,
 ) -> Result<crate::clusterpool::Confirmed, Refused> {
     use crate::clusterpool::{Confirmed, OperatorKey};
     if let Some(pasted) = pasted.filter(|pasted| !pasted.trim().is_empty()) {
         let pasted =
             OperatorKey::from_pasted(pasted).map_err(|why| Refused::Other(why.to_string()))?;
-        return if &pasted == named {
+        return if pasted == named.key {
             Ok(Confirmed::Pasted)
         } else {
             Err(Refused::Other(
@@ -2048,17 +2059,22 @@ pub fn confirm_key(
     ))
 }
 
-/// **Whether this machine made the signing key whose public half is `named`, in this setup, on
-/// `context`** (#4495): then no paste is asked for.
+/// **Whether this machine made the signing key the Pool names (`named`), in this setup, on
+/// `context`, in the cluster it names** (#4495): then no paste is asked for. The context's name
+/// alone is not enough: a context renamed, or pointed at another cluster since, names another
+/// cluster's `kube-system` uid, and confirms nothing. Pool setup's Pool step, Settings' Add a
+/// pool and [`crate::pools::add_cluster`] all ask this, through [`confirm_key`].
 #[must_use]
-pub fn made_here(config: &Path, context: &str, named: &crate::clusterpool::OperatorKey) -> bool {
+pub fn made_here(config: &Path, context: &str, named: &crate::clusterpool::PoolPin) -> bool {
     read_choices(config)
         .ok()
         .and_then(|choices| choices.made)
         .is_some_and(|made| {
             made.context == context
+                && !made.cluster.is_empty()
+                && made.cluster == named.cluster
                 && crate::clusterpool::OperatorKey::from_spelled(&made.key)
-                    .is_ok_and(|key| &key == named)
+                    .is_ok_and(|key| key == named.key)
         })
 }
 
