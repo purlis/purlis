@@ -61,17 +61,68 @@ pub fn docker_through(
         engine_links,
         settings_in,
     };
-    let socket =
-        forward::hold(&opening).map_err(|said| diagnosed(ssh, remote, pool, settings_in, said))?;
+    let (socket, opened) = forward::hold_noting(&opening)
+        .map_err(|said| diagnosed(ssh, remote, pool, settings_in, said))?;
     let through = docker.clone().through(socket);
-    if let Err(finding) = connect::engine_holds(&through, &remote.route, &remote.pin) {
-        // Nothing more goes over a forward to an engine that isn't the pinned one.
-        if matches!(finding, Finding::EngineChanged { .. }) {
-            forward::let_go(pool);
+    if opened || !checked_lately(pool, &remote.pin) {
+        if let Err(finding) = connect::engine_holds(&through, &remote.route, &remote.pin) {
+            // Nothing more goes over a forward to an engine that isn't the pinned one.
+            forget_checked(pool);
+            if matches!(finding, Finding::EngineChanged { .. }) {
+                forward::let_go(pool);
+            }
+            return Err(finding);
         }
-        return Err(finding);
+        note_checked(pool, &remote.pin);
     }
     Ok(through)
+}
+
+/// **How long an engine found to be the pinned one is taken as it, over the same forward**: a
+/// pool's surfaces ask after its runner often, and each ask would otherwise be a `docker info`
+/// over SSH. A forward opened again is checked again at once.
+pub const ENGINE_CHECKED_FOR: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// When each pool's engine was last found to be its pin's, in this process.
+type Checked = std::collections::BTreeMap<String, (crate::sshroute::Pin, std::time::Instant)>;
+static CHECKED: std::sync::Mutex<Checked> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
+
+fn checked_lately(pool: &str, pin: &crate::sshroute::Pin) -> bool {
+    CHECKED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(pool)
+        .is_some_and(|(checked, at)| checked == pin && at.elapsed() < ENGINE_CHECKED_FOR)
+}
+
+fn note_checked(pool: &str, pin: &crate::sshroute::Pin) {
+    CHECKED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .insert(pool.to_owned(), (pin.clone(), std::time::Instant::now()));
+}
+
+fn forget_checked(pool: &str) {
+    CHECKED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .remove(pool);
+}
+
+/// **Whether the pool named `name` under `config` is on another machine.**
+#[must_use]
+pub fn is_remote(config: &Path, name: &str) -> bool {
+    crate::runners::pools(config)
+        .ok()
+        .and_then(|pools| pools.into_iter().find(|pool| pool.name() == name))
+        .is_some_and(|pool| pool.remote().is_some())
+}
+
+/// **Where pool `pool`'s forward has its socket on this machine**, whether or not it is open.
+pub fn socket_for(pool: &str) -> Result<PathBuf, Finding> {
+    let (engine_links, _) = folders()?;
+    super::socket_of(&engine_links, pool).map_err(Finding::Here)
 }
 
 /// **[`docker_of`] for the pool named `name`** under `config`, in words: what a link, a check or

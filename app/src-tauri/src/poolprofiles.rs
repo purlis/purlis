@@ -739,6 +739,8 @@ pub fn yours(config: &Path, pool: &str) -> Result<Yours, String> {
     let Some((cluster, kept)) =
         purlis_core::runners::cluster_runner_for(config, pool).map_err(|why| why.to_string())?
     else {
+        // A pool on another machine is not this machine's, whatever this machine's engine is.
+        purlis_core::poollogins::refused_on_another_machine(config, pool)?;
         return owned().map(Yours::Docker);
     };
     yours_on_a_cluster(

@@ -77,7 +77,11 @@ impl Machine {
         &self,
         kept: &Kept,
     ) -> Result<purlis_core::dockerpool::Ran, purlis_core::dockerpool::Refused> {
-        let ran = self.docker.ran(&kept.made)?;
+        let ran = self
+            .for_pool(kept.pool())
+            .map_err(purlis_core::dockerpool::Refused)?
+            .docker
+            .ran(&kept.made)?;
         hours_seen(&self.config, kept, ran);
         Ok(ran)
     }
@@ -85,6 +89,17 @@ impl Machine {
     /// This desktop as a pool is added: its key made where it keeps none.
     pub fn desktop_made(&self) -> Result<purlis_core::linkkey::Desktop, String> {
         purlis_core::linkkey::desktop(&self.config, &*self.keyring)
+    }
+
+    /// **This machine, its `docker` pointed at pool `pool`'s engine** (#6266): itself for a pool
+    /// on this machine; for a pool on another machine, through its SSH forward, opened again
+    /// where it dropped, once its engine answers with the pinned id. Refused in Pool setup's
+    /// words where it doesn't.
+    pub fn for_pool(&self, pool: &str) -> Result<Machine, String> {
+        Ok(Machine {
+            docker: purlis_core::sshroute::pool::docker_of_named(&self.config, &self.docker, pool)?,
+            ..self.clone()
+        })
     }
 }
 
@@ -163,10 +178,23 @@ impl ToARunner {
     }
 
     fn kept(kept: &Kept, machine: &Machine, desktop: Identity, resumes: bool) -> ToARunner {
-        let docker = machine.docker.clone();
+        // A pool on another machine is reached through its own SSH forward (#6266): each run of
+        // `docker` for it is pointed at the forward's socket, which the check before every
+        // connection opens again where it dropped, its engine checked against the pin first
+        // (ADR 0123 §8). A dropped forward drops the link, and the reconnect comes back here.
+        let remote = purlis_core::sshroute::pool::is_remote(&machine.config, kept.pool());
+        let local = machine.docker.clone();
+        let docker = match remote
+            .then(|| purlis_core::sshroute::pool::socket_for(kept.pool()).ok())
+            .flatten()
+        {
+            Some(socket) => local.clone().through(socket),
+            None => local.clone(),
+        };
         let made = kept.made.clone();
         let checking = docker.clone();
         let preparing = docker.clone();
+        let forwarding = remote.then(|| (local, kept.pool().to_owned()));
         let (config, of) = (machine.config.clone(), kept.clone());
         let connector = CommandConnector::checked(
             docker.program().to_path_buf(),
@@ -174,6 +202,10 @@ impl ToARunner {
             // The container is checked as it was made before every connection (ADR 0078 as
             // amended 2026-10-17, item 2): anything else refuses the link and runs nothing.
             Arc::new(move || {
+                if let Some((local, pool)) = &forwarding {
+                    purlis_core::sshroute::pool::docker_of_named(&config, local, pool)
+                        .map_err(NotChecked::Refused)?;
+                }
                 let checked = checked_or_woken(&checking, &config, &of, resumes);
                 // A refusal of a container Docker no longer lists is a runner removed outside
                 // purlis, never linked to again on its own (#4149).
@@ -561,7 +593,13 @@ pub fn version_of(machine: &Machine, kept: &Kept) -> Result<String, String> {
     once_for(
         kept.made.container.as_str(),
         kept.made.runner.image().as_str(),
-        || machine.docker.version_of(&kept.made).map_err(|why| why.0),
+        || {
+            machine
+                .for_pool(kept.pool())?
+                .docker
+                .version_of(&kept.made)
+                .map_err(|why| why.0)
+        },
     )
 }
 

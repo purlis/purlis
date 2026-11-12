@@ -208,6 +208,11 @@ static HELD_HERE: Mutex<BTreeMap<String, Held>> = Mutex::new(BTreeMap::new());
 /// **Pool `pool`'s forward, opened where it isn't, or opened again where it dropped**: the
 /// socket each run of `docker` for the pool is pointed at.
 pub fn hold(from: &Opening<'_>) -> Result<PathBuf, String> {
+    hold_noting(from).map(|(socket, _)| socket)
+}
+
+/// [`hold`], and whether it opened the forward now (it was not held, or it had dropped).
+pub fn hold_noting(from: &Opening<'_>) -> Result<(PathBuf, bool), String> {
     let mut held = HELD_HERE
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -220,14 +225,14 @@ pub fn hold(from: &Opening<'_>) -> Result<PathBuf, String> {
             }
         };
         if alive {
-            return Ok(kept.socket().to_path_buf());
+            return Ok((kept.socket().to_path_buf(), false));
         }
         held.remove(from.pool);
     }
     let opened = open(from)?;
     let socket = opened.socket().to_path_buf();
     held.insert(from.pool.to_owned(), opened);
-    Ok(socket)
+    Ok((socket, true))
 }
 
 /// Whether another process holds the lock beside `socket`.

@@ -615,6 +615,51 @@ pub fn key_met(scratch: &str) -> Option<HostKey> {
     })
 }
 
+/// **The machines the person's SSH settings name** (`Host` lines of `~/.ssh/config`), each
+/// once, in order: what Connect offers to pick from (#6265, choice 3). A pattern (`*`, `?`, `!`)
+/// names no one machine and is left out, and so is a name no route could hold.
+#[must_use]
+pub fn hosts_in(config: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for line in config.lines() {
+        let line = line.trim();
+        let Some((key, rest)) = line.split_once(|c: char| c.is_whitespace() || c == '=') else {
+            continue;
+        };
+        if !key.eq_ignore_ascii_case("host") {
+            continue;
+        }
+        for name in rest.split_whitespace() {
+            let name = name.trim_matches('"');
+            if name.contains(['*', '?', '!'])
+                || !a_host(name)
+                || out.iter().any(|kept| kept == name)
+            {
+                continue;
+            }
+            out.push(name.to_owned());
+        }
+    }
+    out
+}
+
+/// [`hosts_in`] the person's `~/.ssh/config`, read up to 256 KiB; none where there is none.
+#[must_use]
+pub fn hosts_here(home: Option<&Path>) -> Vec<String> {
+    use std::io::Read as _;
+    let Some(home) = home else {
+        return Vec::new();
+    };
+    let Ok(file) = std::fs::File::open(home.join(".ssh/config")) else {
+        return Vec::new();
+    };
+    let mut text = String::new();
+    if file.take(256 * 1024).read_to_string(&mut text).is_err() {
+        return Vec::new();
+    }
+    hosts_in(&text)
+}
+
 pub mod connect;
 pub mod forward;
 pub mod pool;

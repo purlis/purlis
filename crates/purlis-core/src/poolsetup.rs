@@ -1765,10 +1765,15 @@ pub struct Resumed {
 ///
 /// A name typed never picks a pool that was already there: only one that came after it does.
 pub fn resumed(here: &Here<'_>) -> Result<Resumed, Refused> {
+    resumed_pressed(here, None)
+}
+
+/// **[`resumed`], with what a press of Connect just found** laid over Connect's facts (#6266).
+pub fn resumed_pressed(here: &Here<'_>, pressed: Option<Pressed>) -> Result<Resumed, Refused> {
     let choices = read_choices(here.config)?;
     let kept = runners::pools(here.config)?;
     let on = pool_of(&choices, &kept);
-    let mut setup = read(here, on)?;
+    let mut setup = read_pressed(here, on, pressed)?;
     let noticed = on.is_some() && on != choices.pool.as_deref();
     setup.others = kept
         .iter()

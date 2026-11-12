@@ -94,10 +94,7 @@ fn a_machine_picked_is_contacted_only_when_the_person_presses_connect_to_it() {
     assert_eq!(next.id, ActionId::ConnectMachine);
     assert_eq!(next.label, "Connect to build-box");
     assert!(next.does.contains("keeps nothing"), "{}", next.does);
-    assert_eq!(
-        connect.machine.unwrap().host.as_deref(),
-        Some("build-box")
-    );
+    assert_eq!(connect.machine.unwrap().host.as_deref(), Some("build-box"));
 }
 
 #[test]

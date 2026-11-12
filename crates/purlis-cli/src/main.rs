@@ -4691,6 +4691,7 @@ fn pool_sign_in(
         return cluster_pool_sign_in(config, &record, pool, provider, &cluster, &kept);
     }
     // Nothing reaches a runner, nor is read of one, before its engine is shown to be yours.
+    purlis_core::poollogins::refused_on_another_machine(config, pool)?;
     let engine = Docker::engine_on_this_machine();
     purlis_core::poollogins::owned(engine.clone())?;
     let engine = engine?;
@@ -4842,6 +4843,7 @@ fn pool_sign_in_in_terminal(
             .flatten()
     } else {
         // Nothing reaches a runner, nor is read of one, before its engine is shown to be yours.
+        purlis_core::poollogins::refused_on_another_machine(config, pool)?;
         let engine = Docker::engine_on_this_machine();
         purlis_core::poollogins::owned(engine.clone())?;
         let engine = engine?;

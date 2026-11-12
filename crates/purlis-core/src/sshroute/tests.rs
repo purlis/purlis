@@ -262,3 +262,10 @@ fn ssh_settings_are_read_from_what_ssh_g_prints() {
     let jumped = connect::resolved_from("hostname box\nproxyjump bastion\n").unwrap();
     assert!(jumped.proxied);
 }
+
+#[test]
+fn the_machines_ssh_settings_name_are_offered_once_each_and_patterns_never() {
+    let config = "Host build-box gpu\n  User me\nHost *.internal !bad\nhost=nas\n\
+                  Host build-box\nHost -oProxyCommand=x\nMatch host foo\n";
+    assert_eq!(hosts_in(config), ["build-box", "gpu", "nas"]);
+}

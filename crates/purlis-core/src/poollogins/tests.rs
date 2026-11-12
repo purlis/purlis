@@ -395,3 +395,26 @@ fn a_pool_not_ready_for_a_new_chat_says_which_way_it_is_not() {
         Err(Unbound::Unread(_))
     ));
 }
+
+/// **A pool on another machine is never the person's own here** (#6266, ADR 0123 §5): its
+/// runner gets no vault value and no profile, whatever this machine's own engine is.
+#[test]
+fn a_pool_on_another_machine_is_never_bound_even_with_this_machines_engine_yours() {
+    let config = a_pool_with_a_runner_draining();
+    change_runners(config.path(), |text| {
+        let pool = &mut text["pools"][0];
+        pool["kind"] = "remote-docker".into();
+        pool["route"] = "ssh://me@build-box/var/run/docker.sock".into();
+        pool["pin"] = serde_json::json!({
+            "hostKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINiGzfjDDJsgYLYCmdkf8Fel9sE6Ma14Y2+c33Y/qZ2n",
+            "engine": "ABCD",
+        });
+    });
+    let bound = Bound::read_with(Ok("/var/run/docker.sock".into()), config.path(), "first");
+    assert!(
+        matches!(&bound, Err(Unbound::NotYours(why)) if why.contains("on another machine")),
+        "{bound:?}"
+    );
+    let refused = refused_on_another_machine(config.path(), "first").unwrap_err();
+    assert!(refused.contains("sends it no vault value"), "{refused}");
+}
