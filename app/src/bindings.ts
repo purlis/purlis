@@ -4158,8 +4158,39 @@ export const commands = {
 	dockerPools: () => typedError<PoolsShown, string>(__TAURI_INVOKE("docker_pools")),
 	/**  **Each step's state, read now**: the pool this setup made, else a new one's. */
 	poolSetup: (plane: PlaneId) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup", { plane })),
+	/**
+	 *  **Check again** (#6266): [`pool_setup`], with every pool on another machine whose forward
+	 *  has been failing tried again and looked at again now, not after its wait.
+	 */
+	poolSetupCheckAgain: (plane: PlaneId) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup_check_again", { plane })),
 	/**  **Keeps that the person chose Docker on Where.** Nothing else changes. */
 	poolSetupChooseDocker: () => typedError<null, string>(__TAURI_INVOKE("pool_setup_choose_docker")),
+	/**
+	 *  **Keeps that the person chose Docker on another machine on Where** (#6266). Nothing else
+	 *  changes, here or there.
+	 */
+	poolSetupChooseRemoteDocker: () => typedError<null, string>(__TAURI_INVOKE("pool_setup_choose_remote_docker")),
+	/**
+	 *  **Keeps the machine picked or typed on Connect**, or forgets it (#6266). It contacts
+	 *  nothing.
+	 */
+	poolSetupMachine: (route: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_machine", { route })),
+	/**
+	 *  **The machines the person's SSH settings name**, for Connect to offer (#6266). It contacts
+	 *  nothing.
+	 */
+	poolSetupSshHosts: () => typedError<string[], string>(__TAURI_INVOKE("pool_setup_ssh_hosts")),
+	/**
+	 *  **Connect to <machine>** (#6266, ADR 0123 §3): the key the machine Connect keeps shows, met
+	 *  with nothing signed in, and what is read, with it laid over Connect. Nothing is kept.
+	 */
+	poolSetupConnect: (plane: PlaneId) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup_connect", { plane })),
+	/**
+	 *  **Trust this machine** (#6266, ADR 0123 §3): the machine met again, its key held to
+	 *  `fingerprint`, the one the person saw, the sign-in and the engine checked, and the pin kept
+	 *  for the Pool step. What went wrong is laid over Connect, and nothing is kept then.
+	 */
+	poolSetupTrust: (plane: PlaneId, fingerprint: string) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup_trust", { plane, fingerprint })),
 	/**
 	 *  **Keeps that the person chose their team's cluster on Where**, through kubeconfig context
 	 *  `context` (#4492): its name alone. Nothing on the cluster changes. With no context, only the
@@ -13380,6 +13411,10 @@ export type PoolAdding = {
 	frames: number | null,
 	/**  The widest frame its runner's browsers are watched at over the link, in pixels (#3297). */
 	width: number | null,
+	/**  The machine its engine is on, for a pool on another machine (#6266): Connect's route. */
+	on?: string | null,
+	/**  The fingerprint of the host key trusted at Connect for that machine (#6266). */
+	trust?: string | null,
 };
 
 /**
@@ -13688,6 +13723,28 @@ export type PoolSetupFailed = {
 	step: string | null,
 };
 
+/**  A host key, as Connect shows it (#6266). */
+export type PoolSetupKey = {
+	algorithm: string,
+	fingerprint: string,
+};
+
+/**  The machine of a pool on another machine, as Connect shows it (#6266). */
+export type PoolSetupMachine = {
+	route: string | null,
+	host: string | null,
+	/**  The key it showed at Connect to, to confirm. */
+	key: PoolSetupKey | null,
+	/**  Whether the person's own ssh knows that key for it; null where it knows none. */
+	known: boolean | null,
+	/**  The key trusted for it. */
+	trusted: PoolSetupKey | null,
+	/**  The key it shows now, where that isn't the one trusted. */
+	now: PoolSetupKey | null,
+	/**  The engine's id trusted for it. */
+	engine: string | null,
+};
+
 /**  A limit a profile is over. */
 export type PoolSetupOver = {
 	/**  The limit's key, as `pool_limit_set` takes it. */
@@ -13733,6 +13790,8 @@ export type PoolSetupSee = {
 
 /**  What the tab draws. */
 export type PoolSetupShown = {
+	/**  The kind of pool this setup makes: `docker`, `cluster` (#4492) or `remote-docker` (#6266). */
+	kind: string,
 	/**  The pool this setup made. */
 	pool: string | null,
 	/**  The name typed on the Pool step, for the box to hold. */
@@ -13746,8 +13805,6 @@ export type PoolSetupShown = {
 	others: string[],
 	/**  The name a new pool is recommended, which no pool here has (#6256). */
 	recommended: string,
-	/**  `docker` or `cluster`: the kind of pool this setup makes. */
-	kind: string,
 	contexts: PoolSetupContexts,
 };
 
@@ -13769,6 +13826,12 @@ export type PoolSetupStep = {
 	skippable: boolean,
 	see: PoolSetupSee | null,
 	checks: PoolSetupCheck[],
+	/**  A second way on, beside `next`: on Where, the other kind (ADR 0123 §6). */
+	other: PoolSetupAction | null,
+	/**  The machine, on Connect (#6266). */
+	machine: PoolSetupMachine | null,
+	/**  What a finding is, by its key (`pool-pin-changed`, `plain-tcp`, …). */
+	cause: string | null,
 	/**  The choice purlis didn't recommend, where there is one (Where's other place, #4492). */
 	also: PoolSetupAction | null,
 	/**  Install's parts, each with its own button (#4493). */

@@ -2525,6 +2525,33 @@ fn is_no_new_privileges(option: &str) -> bool {
     )
 }
 
+/// **The engine's id in what `docker info --format '{{json .}}'` printed** (#6266), or why there
+/// is none: the server's own errors where it printed some, shown escaped.
+pub fn engine_id_in(printed: &str) -> Result<String, Refused> {
+    let info: serde_json::Value = serde_json::from_str(printed.trim())
+        .map_err(|_| refused("docker info did not answer JSON"))?;
+    let errors: Vec<String> = info
+        .get("ServerErrors")
+        .and_then(serde_json::Value::as_array)
+        .map(|errors| {
+            errors
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(crate::shown::short)
+                .collect()
+        })
+        .unwrap_or_default();
+    if !errors.is_empty() {
+        return Err(refused(errors.join("; ")));
+    }
+    info.get("ID")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|id| crate::runners::usable_noted(id))
+        .map(str::to_owned)
+        .ok_or_else(|| refused("the engine there prints no id"))
+}
+
 /// The `docker` command this machine runs (or a command that answers as it does, such as
 /// Podman's), by its path. purlis runs it directly, never through a shell, and never with the
 /// person's own Docker settings: each run is given a checked copy of them and the engine pinned
@@ -2539,6 +2566,9 @@ pub struct Docker {
     /// unless a caller holds it to another time ([`Docker::within`]). A run that changes
     /// something (a pull, a make, a start, a removal) takes as long as it takes.
     reads_within: std::time::Duration,
+    /// The socket of a pool's forward to an engine on another machine (#6266), where this
+    /// `docker` is that pool's: each run's engine.
+    forwarded: Option<std::path::PathBuf>,
 }
 
 /// **How long each `docker` run that only reads may take** (#3546): an inspect, an `info`, a
@@ -2688,6 +2718,7 @@ impl Docker {
             program: program.into(),
             settings_in: None,
             reads_within: READS_WITHIN,
+            forwarded: None,
         }
     }
 
@@ -2738,7 +2769,41 @@ impl Docker {
             tmp: tmp.as_deref(),
             runtime: runtime.as_deref(),
             system: std::path::Path::new(settings::SYSTEM_SOCKET),
+            forwarded: self.forwarded.as_deref(),
         })
+    }
+
+    /// **This `docker`, pointed at the forward of a pool on another machine** (#6266): each of
+    /// its runs reaches the engine at `socket` alone ([`crate::sshroute`]), never the window's
+    /// `DOCKER_HOST` or a context.
+    #[must_use]
+    pub fn through(mut self, socket: impl Into<std::path::PathBuf>) -> Docker {
+        self.forwarded = Some(socket.into());
+        self
+    }
+
+    /// The folder each run's copy of Docker's settings is made in, where one was named
+    /// ([`Docker::with_settings_in`]): a test's. `None` is `<data>/docker-settings`.
+    pub fn settings_folder(&self) -> Option<&std::path::Path> {
+        self.settings_in.as_deref()
+    }
+
+    /// The forward's socket this `docker` is pointed at, where it is a pool's on another machine.
+    pub fn forwarded(&self) -> Option<&std::path::Path> {
+        self.forwarded.as_deref()
+    }
+
+    /// **A bare command of this `docker`**, for a test or a tool that runs it by hand: the
+    /// program, pointed at the forward's socket where this is a pool's on another machine, and
+    /// otherwise inheriting what its caller has. Never what a pool's own runs are given, which is
+    /// [`Docker::prepared`].
+    pub fn command(&self) -> std::process::Command {
+        let mut command = std::process::Command::new(&self.program);
+        if let Some(socket) = &self.forwarded {
+            command.env("DOCKER_HOST", format!("unix://{}", socket.display()));
+            command.env_remove("DOCKER_CONTEXT");
+        }
+        command
     }
 
     /// **The socket of the Docker engine this machine's pools run on, where it is on this
@@ -3710,6 +3775,18 @@ impl Docker {
             MOST_INSPECTED,
         )?;
         Ok(Some(printed.trim().to_owned()).filter(|id| crate::runners::usable_noted(id)))
+    }
+
+    /// **Which engine this `docker` reaches, or why it can't say** (#6266): the id `docker info`
+    /// prints, refused with what Docker said where the engine did not answer. `docker info`
+    /// prints its client's half and exits 0 when the server half fails, so an empty id is read
+    /// with the server's own errors, never taken as an engine.
+    pub fn engine_id_said(&self) -> Result<String, Refused> {
+        let printed = self.read(
+            &["info".into(), "--format".into(), "{{json .}}".into()],
+            MOST_INSPECTED,
+        )?;
+        engine_id_in(&printed)
     }
 
     /// **`made`'s home volume's `CreatedAt`, exactly as Docker printed it** (#4167): the same

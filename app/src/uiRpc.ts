@@ -1940,7 +1940,13 @@ export const commands = {
 	useThisMachinesChrome: __WINDOW_ONLY_RESULT,
 	dockerPools: __WINDOW_ONLY_RESULT,
 	poolSetup: __WINDOW_ONLY_RESULT,
+	poolSetupCheckAgain: __WINDOW_ONLY_RESULT,
 	poolSetupChooseDocker: __WINDOW_ONLY_RESULT,
+	poolSetupChooseRemoteDocker: __WINDOW_ONLY_RESULT,
+	poolSetupMachine: __WINDOW_ONLY_RESULT,
+	poolSetupSshHosts: __WINDOW_ONLY_RESULT,
+	poolSetupConnect: __WINDOW_ONLY_RESULT,
+	poolSetupTrust: __WINDOW_ONLY_RESULT,
 	poolSetupChooseCluster: __WINDOW_ONLY_RESULT,
 	poolSetupInstall: __WINDOW_ONLY_RESULT,
 	poolSetupOperatorImage: __WINDOW_ONLY_RESULT,
@@ -10282,6 +10288,10 @@ export type PoolAdding = {
 	frames: number | null,
 	/**  The widest frame its runner's browsers are watched at over the link, in pixels (#3297). */
 	width: number | null,
+	/**  The machine its engine is on, for a pool on another machine (#6266): Connect's route. */
+	on?: string | null,
+	/**  The fingerprint of the host key trusted at Connect for that machine (#6266). */
+	trust?: string | null,
 };
 
 /**
@@ -10590,6 +10600,28 @@ export type PoolSetupFailed = {
 	step: string | null,
 };
 
+/**  A host key, as Connect shows it (#6266). */
+export type PoolSetupKey = {
+	algorithm: string,
+	fingerprint: string,
+};
+
+/**  The machine of a pool on another machine, as Connect shows it (#6266). */
+export type PoolSetupMachine = {
+	route: string | null,
+	host: string | null,
+	/**  The key it showed at Connect to, to confirm. */
+	key: PoolSetupKey | null,
+	/**  Whether the person's own ssh knows that key for it; null where it knows none. */
+	known: boolean | null,
+	/**  The key trusted for it. */
+	trusted: PoolSetupKey | null,
+	/**  The key it shows now, where that isn't the one trusted. */
+	now: PoolSetupKey | null,
+	/**  The engine's id trusted for it. */
+	engine: string | null,
+};
+
 /**  A limit a profile is over. */
 export type PoolSetupOver = {
 	/**  The limit's key, as `pool_limit_set` takes it. */
@@ -10635,6 +10667,8 @@ export type PoolSetupSee = {
 
 /**  What the tab draws. */
 export type PoolSetupShown = {
+	/**  The kind of pool this setup makes: `docker`, `cluster` (#4492) or `remote-docker` (#6266). */
+	kind: string,
 	/**  The pool this setup made. */
 	pool: string | null,
 	/**  The name typed on the Pool step, for the box to hold. */
@@ -10648,8 +10682,6 @@ export type PoolSetupShown = {
 	others: string[],
 	/**  The name a new pool is recommended, which no pool here has (#6256). */
 	recommended: string,
-	/**  `docker` or `cluster`: the kind of pool this setup makes. */
-	kind: string,
 	contexts: PoolSetupContexts,
 };
 
@@ -10671,6 +10703,12 @@ export type PoolSetupStep = {
 	skippable: boolean,
 	see: PoolSetupSee | null,
 	checks: PoolSetupCheck[],
+	/**  A second way on, beside `next`: on Where, the other kind (ADR 0123 §6). */
+	other: PoolSetupAction | null,
+	/**  The machine, on Connect (#6266). */
+	machine: PoolSetupMachine | null,
+	/**  What a finding is, by its key (`pool-pin-changed`, `plain-tcp`, …). */
+	cause: string | null,
 	/**  The choice purlis didn't recommend, where there is one (Where's other place, #4492). */
 	also: PoolSetupAction | null,
 	/**  Install's parts, each with its own button (#4493). */
