@@ -94,6 +94,26 @@ fn a_project_that_has_not_turned_the_sandbox_on_starts_its_chats_at_the_floor() 
     );
 }
 
+/// R-013 (Q201, Q215): with no `mode` in `charter.toml`, a chat starts at the floor (Basic
+/// sandbox), whether the file has no `[sandbox]` at all or the block a new project is
+/// scaffolded with, which names the egress and no `mode`.
+#[test]
+fn a_chat_with_no_mode_starts_at_the_floor() {
+    let bin = tempfile::tempdir().expect("a bin");
+    let machine = machine_with(bin.path());
+    for body in [
+        "schema = 1\n".to_owned(),
+        crate::scaffold::planefile::render("github", "acme", None),
+    ] {
+        let (_dir, root) = project();
+        std::fs::write(root.join("charter.toml"), &body).expect("charter.toml");
+        for harness in [Harness::ClaudeCode, Harness::Codex] {
+            let applied = floor_of(decided(harness, &root, &machine));
+            assert_eq!(applied.level(), Level::Floor, "{harness:?} with {body}");
+        }
+    }
+}
+
 #[test]
 fn the_floor_still_denies_the_vaults_and_what_a_later_program_runs() {
     let (_dir, root) = project();

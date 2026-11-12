@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useId, useRef, type KeyboardEvent, type ReactNode } from "react";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, FileText } from "lucide-react";
 import type { KindHint } from "./bindings";
 import { sentence } from "./coreSentence";
 import { onAMac } from "./mac";
@@ -27,11 +27,14 @@ import { RowBelow, RowDescription, RowLabel, RowLead } from "./ui/list/Row";
  */
 
 /** What each kind of link is called in the list. A new kind says its word here. */
-export const KIND_SAID: Record<KindHint, string> = { url: "Web address" };
+export const KIND_SAID: Record<KindHint, string> = { url: "Web address", file: "File" };
 
 /** Each kind's icon, at the row's lead (the prototype's S5). Its word is the row's description,
  *  so the icon is not heard. */
-const KIND_ICON: Record<KindHint, ReactNode> = { url: <ExternalLink aria-hidden="true" /> };
+const KIND_ICON: Record<KindHint, ReactNode> = {
+  url: <ExternalLink aria-hidden="true" />,
+  file: <FileText aria-hidden="true" />,
+};
 
 /** What the list's items are called. */
 const LINKS = { one: "link", many: "links" };

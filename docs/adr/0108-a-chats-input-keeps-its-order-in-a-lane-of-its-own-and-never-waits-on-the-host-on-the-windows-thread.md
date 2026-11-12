@@ -85,3 +85,10 @@ window, every project in it, for as long as that took.
   under a frame, so the worker is not kept waiting for more.
 - A turn taken on a free lane hands the lane on however it ends, a panic included, so a turn
   that fails never leaves its chat's keys waiting for good.
+
+## Amendments
+
+The amendments to this decision are files of their own in [`0108/`](0108/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
+section added to this record, so two pull requests that amend it do not touch the same lines
+(#1982).

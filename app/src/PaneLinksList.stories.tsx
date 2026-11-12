@@ -55,8 +55,18 @@ const meta = {
         const { candidates } = args as { candidates: { text: string }[] };
         return candidates.map((one) =>
           one.text.startsWith("ftp://")
-            ? { kind: "url", target: one.text, does: { does: "refused", reason: FTP } }
-            : { kind: "url", target: one.text, does: { does: "opens" } },
+            ? {
+                kind: "url",
+                target: one.text,
+                shown: one.text,
+                does: { does: "refused", reason: FTP },
+              }
+            : {
+                kind: "url",
+                target: one.text,
+                shown: one.text,
+                does: { does: "opens", into: "browser" },
+              },
         );
       }
       if (cmd === "pane_link_open")

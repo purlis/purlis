@@ -34,6 +34,7 @@ fn the_command_says_every_setting_the_person_set() {
         suspend_after: Some("12h".into()),
         frames: Some(5),
         width: Some(1280),
+        ..Asked::default()
     };
     assert_eq!(
         asked.command(),
@@ -134,5 +135,40 @@ fn a_team_s_image_that_breaks_the_contract_makes_nothing() {
         !fake.file("log").contains("run -d"),
         "no runner was made: {}",
         fake.file("log")
+    );
+}
+
+#[test]
+fn a_pool_on_another_machine_names_it_and_the_key_trusted_in_the_command() {
+    let asked = Asked {
+        name: "build-box".into(),
+        image: image(),
+        on: Some("ssh://me@build-box/var/run/docker.sock".into()),
+        trust: Some("SHA256:dmeCC9oOb+c7VYVBSUAdgQchZHZQyXKWgKnGQxfh2rA".into()),
+        ..Asked::default()
+    };
+    assert_eq!(
+        asked.command(),
+        format!(
+            "purlis pool add build-box --image {} --on \
+             ssh://me@build-box/var/run/docker.sock --trust \
+             SHA256:dmeCC9oOb+c7VYVBSUAdgQchZHZQyXKWgKnGQxfh2rA",
+            image()
+        )
+    );
+}
+
+#[test]
+fn a_route_or_fingerprint_that_isnt_one_never_reaches_the_command() {
+    let asked = Asked {
+        name: "build-box".into(),
+        image: image(),
+        on: Some("ssh://-oProxyCommand=x".into()),
+        trust: Some("SHA256:$(id)".into()),
+        ..Asked::default()
+    };
+    assert_eq!(
+        asked.command(),
+        format!("purlis pool add build-box --image {}", image())
     );
 }

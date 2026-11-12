@@ -9,6 +9,7 @@ import { OpenVault, Vaults, useVaults } from "./Vaults";
 import { catalogue, catalogued, type Offer } from "./actions";
 import { noTabs } from "./tabs";
 import type { VaultSummary } from "./bindings";
+import { findGrid } from "./ui/table/table.testkit";
 
 afterEach(() => {
   cleanup();
@@ -79,7 +80,7 @@ describe("the Vaults section", () => {
 
     draw();
 
-    const list = await screen.findByRole("grid", { name: "Vaults" });
+    const list = await findGrid(screen, "Vaults");
     // React Aria draws the grid before its rows (its collection is built in a pass of its own):
     // the last vault's row is when the list is there to be read.
     await within(list).findByRole("row", { name: /files/ });
@@ -117,7 +118,7 @@ describe("the Vaults section", () => {
   it("opens a vault's tab when its row is pressed, by the catalogue's own row", async () => {
     core([vault("ops")]);
     const { pressed } = draw();
-    const list = await screen.findByRole("grid", { name: "Vaults" });
+    const list = await findGrid(screen, "Vaults");
 
     await userEvent.click(await within(list).findByRole("row", { name: /ops/ }));
 
@@ -148,7 +149,7 @@ describe("the Vaults section", () => {
       }),
     ]);
     draw();
-    const list = await screen.findByRole("grid", { name: "Vaults" });
+    const list = await findGrid(screen, "Vaults");
     const row = await within(list).findByRole("row", { name: "team" });
     expect(row).toHaveClass("is-trouble");
     // No card: the tab says why, at the top, where the operator is looking when it matters.
@@ -169,7 +170,7 @@ describe("the Vaults section", () => {
   it("is one Tab stop, and Up and Down move between vaults (charter-app#189)", async () => {
     core([vault("files", { provider: "plain-file", count: 1 }), vault("ops")]);
     draw();
-    const list = await screen.findByRole("grid", { name: "Vaults" });
+    const list = await findGrid(screen, "Vaults");
     await within(list).findByRole("row", { name: /ops/ });
     // The vaults' own rows, not their providers' names (#3341).
     const [first, second] = [...list.querySelectorAll<HTMLElement>(".panel-row")];

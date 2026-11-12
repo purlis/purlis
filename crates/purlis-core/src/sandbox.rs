@@ -393,17 +393,26 @@ impl CertificateChecks {
 }
 
 /// The `[sandbox]` block that turns the sandbox on with the default egress, as charter writes it
-/// into a new project's `charter.toml` and into an existing one whose operator took the offer
-/// (ADR 0067 §1, ruling V21 1 and 5). It ends with a newline.
+/// into a project's `charter.toml` whose operator took the offer (ADR 0067 §1, ruling V21 1 and 5).
+/// A new project is scaffolded with [`scaffold_block`] instead. It ends with a newline.
 pub fn on_block() -> String {
+    format!("[{TABLE}]\nmode = \"on\"\n{}", default_egress_line())
+}
+
+/// The `[sandbox]` block a new project's `charter.toml` is scaffolded with: the default egress
+/// and no `mode`, so its chats start at the person's own default, Basic sandbox (the floor),
+/// rather than at a level nobody chose (Q114, Q201). It ends with a newline.
+pub fn scaffold_block() -> String {
+    format!("[{TABLE}]\n{}", default_egress_line())
+}
+
+/// `egress = [...]` with the default presets, and a newline.
+fn default_egress_line() -> String {
     let egress: Vec<String> = Preset::DEFAULT
         .iter()
         .map(|preset| format!("\"{}\"", preset.word()))
         .collect();
-    format!(
-        "[{TABLE}]\nmode = \"on\"\negress = [{}]\n",
-        egress.join(", ")
-    )
+    format!("egress = [{}]\n", egress.join(", "))
 }
 
 /// A plane's `charter.toml`, read and parsed once for everything the sandbox asks of it: the
@@ -452,6 +461,16 @@ impl Plane {
     /// Whether there is no file at all.
     pub fn missing(&self) -> bool {
         self.missing
+    }
+
+    /// Whether it has a `[sandbox]` table that names no `mode`: the shape [`scaffold_block`]
+    /// writes, and that no project made before the sandbox existed has (Q231).
+    pub fn leaves_the_level_to_each_person(&self) -> bool {
+        self.top
+            .as_ref()
+            .and_then(|top| top.get(TABLE))
+            .and_then(toml::Value::as_table)
+            .is_some_and(|table| !table.contains_key("mode"))
     }
 
     /// What it says about the sandbox.
@@ -1753,8 +1772,8 @@ pub fn git_folder_pins_of(root: &Path) -> Vec<PathBuf> {
     planted::git_folder_pins(&git_folders_searched(root))
 }
 
-/// [`git_folder_pins_of`], or the folder that held more entries than the search for
-/// repositories looks at, where one did ([`planted::Repositories::crowded`]).
+/// [`git_folder_pins_of`], or the folder that held the most where the search for repositories
+/// was crowded out ([`planted::Repositories::crowded`]).
 pub fn git_folder_pins_whole_of(root: &Path) -> Result<Vec<PathBuf>, PathBuf> {
     planted::git_folder_pins_whole(&git_folders_searched(root))
 }
@@ -2544,6 +2563,13 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
         deny(
             Class::HumanPowers,
             data.join(crate::dockerpool::settings::DIR),
+            Access::ReadWrite,
+        );
+        // The local ends of the SSH forwards of pools on other machines (#6266, ADR 0123 §2):
+        // each is a Docker engine there, held from every chat as Docker's own sockets are.
+        deny(
+            Class::HumanPowers,
+            data.join(crate::sshroute::DIR),
             Access::ReadWrite,
         );
         // Which sign-ins this runner's logins wait for (#4044): a read could lock a record, so a
@@ -6698,9 +6724,10 @@ pub enum NotStarted {
     /// ([`PATTERN_CHARACTERS`]), so no rule purlis writes holds it as written.
     GitFolderUnheld(PathBuf),
     /// The folders a Claude Code chat's sandbox searches for repositories, to hold each one's git
-    /// folder as a whole ([`Denied::git_folder_pins`]), held more entries outside every
-    /// repository than the search looks at ([`planted::REPOSITORIES_LOOKED_AT`]): a repository
-    /// beyond them would not be held. The folder that held the most.
+    /// folder as a whole ([`Denied::git_folder_pins`]), held more folders (or entries) outside
+    /// every repository than the search looks at ([`planted::REPOSITORIES_LOOKED_AT`]): a
+    /// repository beyond them would not be held. The folder in the one searched whose tree held
+    /// the most ([`planted::Repositories::crowded`]).
     RepositoriesUnfound(PathBuf),
     /// What purlis keeps from a chat could not be told whole ([`Denied::untold`]), and why:
     /// a sandbox compiled from a list that may be short would keep less than purlis means to,
@@ -6914,9 +6941,9 @@ impl NotStarted {
                 }
             ),
             Self::RepositoriesUnfound(path) => format!(
-                "{lead}, and {} holds more files and folders than purlis looks through to find \
-                 every repository in the project, so it cannot hold each one's git folder, and \
-                 nothing was started. Move what fills that folder out of the project{}",
+                "{lead}, and {} holds more than purlis looks through to find every repository \
+                 in the project, so it cannot hold each one's git folder, and nothing \
+                 was started. Move some of what that folder holds out of the project{}",
                 path.display(),
                 if opt_out {
                     ", or start this chat without the sandbox from the new-chat picker."

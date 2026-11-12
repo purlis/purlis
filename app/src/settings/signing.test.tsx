@@ -8,6 +8,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { SigningAccountKeys, SigningState } from "../bindings";
 import type { LiveSetting } from "./groups";
 import { signedCommits } from "./signing";
+import { findGrid } from "../ui/table/table.testkit";
 
 /**
  * **You › Accounts › Signed commits, its lists as tables** (#6301, after Your hosts in #2919):
@@ -93,7 +94,7 @@ const names = (table: HTMLElement, role: "columnheader" | "rowheader") =>
 describe("You › Accounts › Signed commits", () => {
   it("draws each account's signing as a table, a row an account", async () => {
     render(<Card />);
-    const table = await screen.findByRole("grid", { name: "Signing on your accounts" });
+    const table = await findGrid(screen, "Signing on your accounts");
     expect(names(table, "columnheader")).toEqual(["Account", "Host", "Signing"]);
     expect(names(table, "rowheader")).toEqual(["octocat", "sam"]);
     await waitFor(() =>
@@ -106,7 +107,7 @@ describe("You › Accounts › Signed commits", () => {
 
   it("draws the other devices' keys as a table, each Remove… at its row's end", async () => {
     render(<Card />);
-    const table = await screen.findByRole("grid", { name: "Signing keys of your other devices" });
+    const table = await findGrid(screen, "Signing keys of your other devices");
     expect(names(table, "columnheader")).toEqual(["Device", "Account", "Added", "Remove"]);
     expect(names(table, "rowheader")).toEqual(["Studio Mac mini", "MacBook AirOlder setup"]);
     const remove = within(table).getByRole("button", {

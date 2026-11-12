@@ -49,6 +49,9 @@ const plane = (process.env.PURLIS_POOL_PLANE ??= copyFixturePlane());
 const environment = theRunsEnvironment(plane, {
   CHARTER_PANIC_LOG: PANIC_LOG,
   PURLIS_NO_BACKGROUND_CHECKS: "1",
+  // The agent the job's ssh signs in to the other machine with (#6266, tests/remote-docker/up.sh),
+  // as a person's window has their own.
+  ...(process.env.SSH_AUTH_SOCK ? { SSH_AUTH_SOCK: process.env.SSH_AUTH_SOCK } : {}),
 });
 const programs = declarePoolsClaudeProfile(
   plane,

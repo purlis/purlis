@@ -36,13 +36,13 @@ const action = (id: string, label: string) => ({
 
 /** Setup ended on dev-box: every step done, as the core reads it once Try it passed. */
 const FINISHED: PoolSetupShown = {
+  kind: "docker",
   pool: "dev-box",
   name: null,
   at: null,
   noticed: false,
   others: [],
   recommended: "docker",
-  kind: "docker",
   contexts: { names: [], recommended: null, chosen: null, pools: [] },
   steps: [
     step("where", "Where chats run", "done", { line: "Docker on this Mac" }),
@@ -55,13 +55,13 @@ const FINISHED: PoolSetupShown = {
 
 /** A new pool's setup, from its first step, with dev-box kept. */
 const NEW: PoolSetupShown = {
+  kind: "docker",
   pool: null,
   name: null,
   at: "where",
   noticed: false,
   others: ["dev-box"],
   recommended: "docker-2",
-  kind: "docker",
   contexts: { names: [], recommended: null, chosen: null, pools: [] },
   steps: [
     step("where", "Where chats run", "current", {
