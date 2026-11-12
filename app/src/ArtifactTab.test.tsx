@@ -26,6 +26,15 @@ const ABOUT: ArtifactAbout = {
   fresh: null,
 };
 
+const OPENED: ArtifactOpened = {
+  label: "artifact-7",
+  standing: "script-free",
+  changed_by: null,
+  generated: true,
+  queries: [],
+  plane_granted: false,
+};
+
 type Call = { cmd: string; args: Record<string, unknown> };
 
 /** The core, answering an artifact's commands, with what each was asked. `about` is read at
@@ -47,16 +56,7 @@ function core(
         return null;
       }
       if (cmd === "artifact_about") return typeof now === "function" ? now() : now;
-      if (cmd === "artifact_open" || cmd === "artifact_reload")
-        return {
-          label: "artifact-7",
-          standing: "script-free",
-          changed_by: null,
-          generated: true,
-          queries: [],
-          plane_granted: false,
-          ...opened,
-        };
+      if (cmd === "artifact_open" || cmd === "artifact_reload") return { ...OPENED, ...opened };
       return null;
     },
     { shouldMockEvents: true },
@@ -94,6 +94,27 @@ async function changed(workspace: string, ...paths: string[]) {
   await act(async () => {
     await emit("plane-changed", told);
   });
+}
+
+/** What the core answers an artifact's tab that reads and opens it, and nothing more. */
+function answering(cmd: string): unknown {
+  if (cmd === "artifact_about") return ABOUT;
+  if (cmd === "artifact_open") return OPENED;
+  return null;
+}
+
+/** The rejections nobody handled while `act` ran, and as its last promises settled. */
+async function unhandledDuring(act: () => Promise<void>): Promise<unknown[]> {
+  const unhandled: unknown[] = [];
+  const heard = (reason: unknown) => unhandled.push(reason);
+  process.on("unhandledRejection", heard);
+  try {
+    await act();
+    await new Promise((settled) => setTimeout(settled, 0));
+  } finally {
+    process.off("unhandledRejection", heard);
+  }
+  return unhandled;
 }
 
 afterEach(() => {
@@ -283,6 +304,38 @@ describe("an artifact's tab", () => {
     await waitFor(() =>
       expect(screen.getByTestId("artifact-bar")).toHaveTextContent("Updated 3 hours ago"),
     );
+  });
+
+  it("stops listening without an unhandled error when its listens answer after it went and the window's event bridge went too (#6194)", async () => {
+    const unhandled = await unhandledDuring(async () => {
+      const answers: ((id: number) => void)[] = [];
+      mockIPC((cmd) => {
+        if (cmd === "plugin:event|listen") return new Promise<number>((r) => answers.push(r));
+        return answering(cmd);
+      });
+      const { unmount } = render(<Tab />);
+      await waitFor(() => expect(answers.length).toBeGreaterThanOrEqual(2));
+      unmount();
+      clearMocks();
+      answers.forEach((answer, id) => answer(id));
+    });
+    expect(unhandled).toEqual([]);
+  });
+
+  it("stops listening without an unhandled error when the window's event bridge went before it did (#6194)", async () => {
+    const unhandled = await unhandledDuring(async () => {
+      let listened = 0;
+      mockIPC((cmd) => {
+        if (cmd === "plugin:event|listen") return ++listened;
+        return answering(cmd);
+      });
+      const { unmount } = render(<Tab />);
+      await waitFor(() => expect(listened).toBeGreaterThanOrEqual(2));
+      await act(async () => {});
+      clearMocks();
+      unmount();
+    });
+    expect(unhandled).toEqual([]);
   });
 
   it("says it cannot be opened once its pin goes, and closes its page", async () => {
