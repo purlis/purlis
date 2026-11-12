@@ -306,17 +306,16 @@ impl LinkKind for LocalFile {
             .project
             .as_ref()
             .and_then(|project| std::fs::canonicalize(project).ok());
-        let allowed: Vec<PathBuf> = project.iter().chain(pane.folder.iter()).cloned().collect();
-        if let Some(source) = &within
-            && self.walked(source, &allowed).as_ref() != Some(source)
-        {
-            // The mount's folder is not its own real path: it may lead elsewhere now.
-            return Resolved::Quiet;
-        }
+        // A runner chat's folder is its runner's, so only this machine's own chat folder is let
+        // past the guarded folders.
+        let own_folder = pane.folder.iter().filter(|_| pane.runs == Runs::Here);
+        let allowed: Vec<PathBuf> = project.iter().chain(own_folder).cloned().collect();
         let Some(path) = self.walked(&named, &allowed) else {
             return Resolved::Quiet;
         };
-        // A link in a mount that leads out of it names no file the container sees there.
+        // The walk followed every link, so it ends under the mount's folder as recorded only
+        // where nothing led out of it: not a link in the mount, and not a mount whose recorded
+        // folder is itself a link or reached through one (it may lead elsewhere now).
         if within
             .as_ref()
             .is_some_and(|source| !path.starts_with(source))

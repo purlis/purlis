@@ -54,7 +54,8 @@ pub struct Candidate {
 pub struct Pane {
     pub project: Option<PathBuf>,
     pub session: Option<u32>,
-    /// The folder the chat works in, which a relative path starts from.
+    /// The folder the chat works in, which a relative path starts from: on its runner, for a
+    /// chat whose paths are [`Runs::Mapped`].
     pub folder: Option<PathBuf>,
     /// Whose filesystem the chat's paths name.
     pub runs: Runs,

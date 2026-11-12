@@ -268,21 +268,53 @@ fn a_mount_of_a_guarded_folder_is_never_looked_in() {
     let pane = here.docker(vec![bind("/data", &here.top.join("guarded/mounted"))]);
 
     assert_eq!(here.resolve("/data/a.md", &pane), Resolved::Quiet);
+    // A runner chat's folder is the runner's, so one spelled as the guarded folder lets
+    // nothing past it.
+    let guarded = here.top.join("guarded/mounted");
+    let pane = Pane {
+        folder: Some(guarded.clone()),
+        ..here.docker(vec![bind(&guarded.display().to_string(), &guarded)])
+    };
+    assert_eq!(here.resolve("a.md", &pane), Resolved::Quiet);
 }
 
 #[test]
-fn a_runner_chat_s_home_and_relative_paths_are_quiet() {
+fn a_runner_chat_s_home_is_its_runner_s_and_never_this_machine_s() {
     let here = fixture();
-    write(&here.top.join("home/notes.md"), "notes\n");
+    let home = here.top.join("home");
+    write(&home.join("notes.md"), "notes\n");
+    // Even where a mount sits at this machine's home's path, `~/` is the runner's home.
+    let pane = here.docker(vec![bind(
+        &home.display().to_string(),
+        &here.top.join("srv"),
+    )]);
+
+    assert_eq!(here.resolve("~/notes.md", &pane), Resolved::Quiet);
+    assert_eq!(
+        mapped(&here, &home.join("notes.md").display().to_string(), &pane).path,
+        here.top.join("srv/notes.md")
+    );
+}
+
+#[test]
+fn a_runner_chat_s_relative_path_starts_from_its_folder_in_the_container() {
+    let here = fixture();
     let pane = Pane {
-        // Even with a folder, a relative path names the runner's folder, not this one.
-        folder: Some(here.app.clone()),
+        folder: Some(PathBuf::from("/work/src")),
         ..here.work()
     };
 
-    for text in ["~/notes.md", "src/main.rs", "./src/main.rs"] {
-        assert_eq!(here.resolve(text, &pane), Resolved::Quiet, "{text}");
-    }
+    assert_eq!(
+        mapped(&here, "main.rs:2", &pane).path,
+        here.app.join("src/main.rs")
+    );
+    assert_eq!(
+        here.resolve("../Cargo.toml", &pane),
+        Resolved::Quiet,
+        "no `..`"
+    );
+    // With no folder, a relative path starts nowhere.
+    assert_eq!(here.resolve("src/main.rs", &here.work()), Resolved::Quiet);
 }
 
 #[test]

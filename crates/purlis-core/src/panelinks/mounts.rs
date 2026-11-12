@@ -14,10 +14,10 @@
 //! - **A path that maps to nothing is not a link.** The same goes for a relative one, one with
 //!   `..`, and one two mounts claim alike.
 //! - **A mapped path never leaves its mount's folder.** The file kind walks it on this machine,
-//!   following every link, and keeps it only where the walk ends inside the mount's folder.
-//!   A mount whose recorded folder is not its own real path (a link, or a folder a link leads
-//!   through) maps nothing. Docker resolved it when the container was made, and it may lead
-//!   elsewhere now.
+//!   following every link, and keeps it only where the walk ends inside the mount's folder as
+//!   recorded. So a mount whose recorded folder is not its own real path (a link, or a folder a
+//!   link leads through) maps nothing: Docker resolved it when the container was made, and it
+//!   may lead elsewhere now.
 
 use std::path::{Component, Path, PathBuf};
 
