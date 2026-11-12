@@ -337,7 +337,12 @@ describe("Links in this pane… on the terminal's menu", () => {
   it("follows the terminal's rows over a link, the link rows first", async () => {
     drawn({
       candidate: { kind: "url", text: TEXT },
-      seen: { kind: "url", target: TARGET, does: { does: "opens" } },
+      seen: {
+        kind: "url",
+        target: TARGET,
+        shown: TARGET,
+        does: { does: "opens", into: "browser" },
+      },
     });
 
     const menu = await screen.findByRole("menu", { name: "Terminal" });
