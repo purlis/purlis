@@ -6692,7 +6692,7 @@ pub enum NotStarted {
     GitFolderUnheld(PathBuf),
     /// The folders a Claude Code chat's sandbox searches for repositories, to hold each one's git
     /// folder as a whole ([`Denied::git_folder_pins`]), held more folders (or entries) outside
-    /// every repository and cache than the search looks at ([`planted::REPOSITORIES_LOOKED_AT`]): a
+    /// every repository than the search looks at ([`planted::REPOSITORIES_LOOKED_AT`]): a
     /// repository beyond them would not be held. The folder in the one searched whose tree held
     /// the most ([`planted::Repositories::crowded`]).
     RepositoriesUnfound(PathBuf),
@@ -6910,8 +6910,7 @@ impl NotStarted {
             Self::RepositoriesUnfound(path) => format!(
                 "{lead}, and {} holds more than purlis looks through to find every repository \
                  in the project, so it cannot hold each one's git folder, and nothing \
-                 was started. Move what fills that folder out of the project, or mark a cache in \
-                 it with a CACHEDIR.TAG file{}",
+                 was started. Move some of what that folder holds out of the project{}",
                 path.display(),
                 if opt_out {
                     ", or start this chat without the sandbox from the new-chat picker."
