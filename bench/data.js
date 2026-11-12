@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794473161684,
+  "lastUpdate": 1794477612958,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -47208,6 +47208,48 @@ window.BENCHMARK_DATA = {
             "value": 101.414174,
             "unit": "ms",
             "extra": "median of 5 runs: 100.147, 101.212, 101.414, 102.051, 102.132 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3c512124fdfa05791ff89caa62ed6260ce13b4f7",
+          "message": "Chat numbers in the window: #641 on the tab and the head, and the palette finds it (#6212, #6213) (#6228)\n\n* A chat's number on its tab's hover and its pane's head (#6212)\n\nThe tab's tooltip leads with \"#641 · <its name>\", and the pane's head\nsays \"#641\" beside the chat's name, or beside the path to the task it\nshows. Both read the number off the pane's content, the one source, so\na chat started again says its new number.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M74SSZ9QKR1WK02AQ4JHZRWZ\nPurlis-Persona: steward\n\n* The palette finds a chat by its number, 641 or #641 (#6213)\n\nThe rows that bring a chat on screen, Switch to tab and Show task,\ncarry the number of the chat they reach. A query that is a whole\nnumber, bare or after #, finds that chat's row in any workspace and\nranks it above every other match, so a title that merely holds the\ndigits comes after it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M74SSZ9QKR1WK02AQ4JHZRWZ\nPurlis-Persona: steward\n\n* A narrow pane drops the chat's number first (#6212)\n\nThe longest pane head ran 14 px over at 470 px with the number beside\nits name. The number is now a part of the head's line, and the first\na narrow pane drops, under 500 px; its tab's hover still says it. The\nhandoff tests read the tab's hover with its number line.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M74SSZ9QKR1WK02AQ4JHZRWZ\nPurlis-Persona: steward\n\n* Guards know the chat's number: its chip, and a test free of colour-like literals (#6212, #6213)\n\nThe pane line's guard maps PaneNumber to its chip, pane-number. The\npalette's number test uses two-digit chats: the literals guard reads a\nthree-digit #641 as a colour.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M74SSZ9QKR1WK02AQ4JHZRWZ\nPurlis-Persona: steward\n\n* Baselines: the chat's number on the pane head (#6212)\n\nDrawn by PR #6228's stories run on its merged head and reviewed: the\nnumber beside the name on ChatFoot's heads (gone under 500 px), beside\nthe task's path on PaneLine, and beside the name on TabChip's head.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M74SSZ9QKR1WK02AQ4JHZRWZ\nPurlis-Persona: steward\n\n* Find a tabless chat by number, number a split's tooltip, number-match the Chats list (#6212, #6213 review)\n\n- palette: a plain chat of any workspace with no tab here gets a Show chat row found by its number\n- a split tab's tooltip starts #N · name, panes on the next line\n- Chats list filter: a whole number a listed chat has finds only that chat\n- one chatShownBy in tabs.ts; PaneNumber moved off PaneHead's doc; pane-number comment says where it drops; import order\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M74SSZ9QKR1WK02AQ4JHZRWZ\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-12T08:49:05Z",
+          "tree_id": "0d9a07f5dfb50de5d5e08272221d99627bb228b1",
+          "url": "https://github.com/purlis/purlis/commit/3c512124fdfa05791ff89caa62ed6260ce13b4f7"
+        },
+        "date": 1794477606864,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3541845,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.346, 0.348, 0.354, 0.357, 0.365 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.344452500000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.268, 16.313, 16.344, 16.826, 16.871 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.5254975,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.053, 101.081, 101.525, 102.338, 102.383 ms"
           }
         ]
       }
