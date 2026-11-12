@@ -346,6 +346,8 @@ pub struct Held {
     noticed: Arc<crate::stuck::Noticed>,
     /// Its chats paused at their budget or as looping, each a Blocking ask (#6015).
     pauses: crate::pausing::Pauses,
+    /// The personas whose Allow the person said Not now to while it is open (ADR 0121).
+    persona_later: crate::asking::PersonaLater,
     /// Told each Update a task's question makes (#4556, #4557).
     question_updates: crate::dispatched::UpdateTeller,
     /// The Asks that wait on the person to take a chat's browser over (#2015).
@@ -714,6 +716,11 @@ impl Held {
     /// Its chats paused at their budget or as looping (#6015).
     pub fn pauses(&self) -> &crate::pausing::Pauses {
         &self.pauses
+    }
+
+    /// The personas whose Allow was put away with Not now while it is open (ADR 0121).
+    pub fn persona_later(&self) -> &crate::asking::PersonaLater {
+        &self.persona_later
     }
 
     /// [`Self::tasks`], for a wait that outlives its hold on the project.
@@ -5394,6 +5401,7 @@ impl Planes {
             me,
             noticed,
             pauses: crate::pausing::Pauses::default(),
+            persona_later: crate::asking::PersonaLater::default(),
         }
     }
 

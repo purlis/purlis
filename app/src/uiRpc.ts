@@ -393,6 +393,7 @@ export const commands = {
 	allowPersonaHosts: __WINDOW_ONLY_RESULT,
 	allowProjectExpects: __WINDOW_ONLY_RESULT,
 	declineProjectExpects: __WINDOW_ONLY_RESULT,
+	personaAllowNotNow: __WINDOW_ONLY_RESULT,
 	answerTeamSandboxOff: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Whether chat `session` holds the asking chat's persona grants instead of its own, and whose
@@ -3122,6 +3123,12 @@ export type AnswerPath =
  *  now, each sent `items` as its Notice sends them (#6000).
  */
 { via: "sandbox-expects"; items: ExpectedItem[] } | 
+/**
+ *  `allow_persona_hosts` for Allow, sent `digest`, the list the row showed, as its Notice
+ *  sends it; and `persona_allow_not_now` for Not now, which puts it away while the project
+ *  is open and the list stands (ADR 0121, amended 2026-11-12).
+ */
+{ via: "persona-allow"; persona: string; digest: string } | 
 /**  `answer_pool_sign_in` for confirmation `id`, yes or no, as its dialog answers (#6000). */
 { via: "confirmation"; id: number } | 
 /**
@@ -3598,6 +3605,12 @@ export type AskSource =
  *  sandboxed chats are refused it until the person allows it on this machine.
  */
 "sandbox-expects" | 
+/**
+ *  **A persona whose hosts or tools wait for an Allow on this machine** (ADR 0121, amended
+ *  2026-11-12): its chats reach none of its hosts and run none of its tools until the
+ *  person allows them as shown. One per persona.
+ */
+"persona-allow" | 
 /**
  *  **A `purlis` command's confirmation in the window** (#6000): a pool sign-in, a profile
  *  taken off a pool, a signing check, each waiting on the person's yes.

@@ -53,6 +53,7 @@ import {
 } from "./signingAsked";
 import { refusalsAnswered } from "./vaultRefusals";
 import { asDrawn, asNamed } from "./projectExpects";
+import { followPlaneChanged, SETTINGS } from "./planeChanged";
 
 /** The event the core sends each time a command's confirmation comes or goes (`poolsignin_confirm`). */
 export const POOL_SIGN_IN_CONFIRM = "pool-sign-in-confirm";
@@ -142,6 +143,21 @@ export function useAsks(planes: readonly string[]): {
     const wanted = new Set(key === "" ? [] : key.split("\n"));
     reader.watch(wanted);
     for (const plane of wanted) reader.read(plane);
+  }, [key, reader]);
+  useEffect(() => {
+    // **A project's settings changed on disk** (a pull, a branch switched, a hand's edit): what
+    // its personas wait for, and what it expects of this machine, may read differently, and no
+    // event of the asks says so (ADR 0121, amended 2026-11-12).
+    const stops = (key === "" ? [] : key.split("\n")).map((plane) =>
+      followPlaneChanged(
+        [plane],
+        () => SETTINGS,
+        () => reader.soon(plane),
+      ),
+    );
+    return () => {
+      for (const stop of stops) stop();
+    };
   }, [key, reader]);
   useEffect(() => {
     // Listening again after a cleanup (React's StrictMode runs every effect twice) reads what it
@@ -788,6 +804,22 @@ export async function answerTaken(
         if (answered === undefined) break;
         const done = await answered;
         if (done.status === "ok") sandboxCommandReturned();
+        return done.status === "ok" ? { status: "ok" } : done;
+      }
+      case "persona-allow": {
+        // A persona's hosts and tools waiting for an Allow here (ADR 0121, amended 2026-11-12):
+        // its Notice's own Allow, sent the digest the row showed, so a list changed since is
+        // refused and asks anew; Not now puts it away while the project is open. Either way its
+        // Notice, drawn from this same ask, goes with it.
+        const answered =
+          option === "allow"
+            ? commands.allowPersonaHosts(plane, path.persona, path.digest)
+            : option === "not-now"
+              ? commands.personaAllowNotNow(plane, path.persona, path.digest)
+              : undefined;
+        if (answered === undefined) break;
+        const done = await answered;
+        if (done.status === "ok" && option === "allow") sandboxCommandReturned();
         return done.status === "ok" ? { status: "ok" } : done;
       }
       case "paused":

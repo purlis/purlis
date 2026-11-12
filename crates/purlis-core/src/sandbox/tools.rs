@@ -1245,13 +1245,19 @@ pub fn not_in_the_image(persona: &str, name: &str, image: Option<&str>) -> Strin
     )
 }
 
+/// **Where a persona's Allow is asked, as a refusal names it** (ADR 0121, amended 2026-11-12):
+/// its row in Asks, which the ✋ counts, and Settings › Sandbox. A chat refused a tool for the
+/// want of it says so, and the person finds it from the ✋ alone.
+pub const ALLOW_IS_ASKED: &str = "\
+    the persona's row in Asks, under the ✋ in the purlis window, or Settings › Sandbox";
+
 /// **What a persona's tool nobody allowed says on a runner whose image has no such program**
 /// (#4373): [`not_in_the_image`], and that it runs only once the persona's hosts and tools are
 /// allowed on the desktop that starts the chat, as the window names that Allow.
 pub fn neither_allowed_nor_in_the_image(persona: &str, name: &str, image: Option<&str>) -> String {
     format!(
         "{} It also runs only once {persona}'s hosts and tools are allowed on the desktop that \
-         starts the chat (the project's Notice, or Settings › Sandbox).",
+         starts the chat ({ALLOW_IS_ASKED}).",
         not_in_the_image(persona, name, image)
     )
 }
@@ -1620,8 +1626,8 @@ pub fn declared<'a>(
         if let Some(tool) = listed.iter().find(|tool| tool.name == named) {
             return Err(format!(
                 "{named} is {persona}'s tool, and it is not armed in this chat: it runs only once \
-                 {persona}'s hosts and tools are allowed on this machine (the project's Notice, \
-                 or Settings › Sandbox), policy allows persona tools, and {named} is found \
+                 {persona}'s hosts and tools are allowed on this machine ({ALLOW_IS_ASKED}), \
+                 policy allows persona tools, and {named} is found \
                  outside every folder a chat may write. Start the chat again once it is ({}), {terminal}.",
                 tool.whole()
             ));

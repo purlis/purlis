@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { commands, type PersonaHosts, type PlaneId, type SandboxState } from "./bindings";
+import { asksMoved } from "./asks";
 
 /**
  * **Whether this page can make a window-only call** (`WINDOW_ONLY` in the session protocol): the
@@ -79,6 +80,7 @@ export const FROM_NEXT_START =
 /**
  * **Allows `one`'s hosts on this machine** as they were shown (`allow_persona_hosts`, the digest
  * of that list): the answer is the project's sandbox state now, or the core's sentence why not.
+ * Allowed from its Notice or Settings, its ask in Asks goes too (ADR 0121, amended 2026-11-12).
  */
 export async function allowPersonaHosts(
   plane: PlaneId,
@@ -86,6 +88,7 @@ export async function allowPersonaHosts(
 ): Promise<{ state: SandboxState } | { refused: string }> {
   try {
     const answer = await commands.allowPersonaHosts(plane, one.persona, one.digest);
+    if (answer.status === "ok") asksMoved(plane);
     return answer.status === "ok" ? { state: answer.data } : { refused: answer.error };
   } catch (err: unknown) {
     return { refused: String(err) };

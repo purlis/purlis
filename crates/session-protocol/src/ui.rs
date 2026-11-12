@@ -547,6 +547,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // answers the question before it is asked.
     "allow_project_expects",
     "decline_project_expects",
+    // Not now on a persona's Allow (ADR 0121, amended 2026-11-12): the person's answer to it,
+    // as its Allow is, so no chat puts the question away before it is seen.
+    "persona_allow_not_now",
     // The person's answer to the project's sandbox off (#2071, SO-8): theirs alone, so no chat
     // turns its own sandbox off through a link.
     "answer_team_sandbox_off",

@@ -11559,6 +11559,13 @@ export const PlaneView = memo(function PlaneView({
    * its chat in a new session, and the pane moves on to it before the ask is read as gone.
    */
   const touchOnPane = useAnsweredWhenGone(plane, waiting);
+  /** **The personas whose Allow the project's asks list** (ADR 0121, amended 2026-11-12): their
+   *  Notice is drawn from that ask, so one answer settles both. Nothing before the first read. */
+  const personasAsked = useMemo(
+    () =>
+      waiting?.flatMap((ask) => (ask.answer.via === "persona-allow" ? [ask.answer.persona] : [])),
+    [waiting],
+  );
   /** The ✋'s count: every open project's asks, and how many are outside this one (#5999). */
   const hand = handCount(plane, waiting?.length ?? 0, elsewhere);
   /** **A Blocking ask arriving** (ADR 0121 decisions 24 and 25, #6020): said once, politely,
@@ -11838,8 +11845,9 @@ export const PlaneView = memo(function PlaneView({
       {/* **The project turned the sandbox off** (#2071, SO-8): reaches each person only on
           their one Accept. */}
       <TeamSandboxOffNotice plane={plane} />
-      {/* **A persona's hosts wait for you** (#1362): asked on each machine, never told. */}
-      <PersonaHostsNotice plane={plane} />
+      {/* **A persona's hosts wait for you** (#1362): asked on each machine, never told. A
+          Blocking ask too (ADR 0121, amended 2026-11-12), and drawn from that ask. */}
+      <PersonaHostsNotice plane={plane} asked={personasAsked} />
       {/* The doctor's findings that stand as Notices, each with its fix (#1250). */}
       <DoctorNotices
         doctor={doctor}
