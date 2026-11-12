@@ -90,6 +90,16 @@ async function pressSetHere(to: "true" | "false"): Promise<void> {
   });
 }
 
+/** Where the keyboard is, in words, for a step that missed. */
+async function keyboardAt(): Promise<string> {
+  return browser.execute(() => {
+    const at = document.activeElement;
+    if (at === null) return "nothing";
+    const row = at.closest<HTMLElement>("[data-setting]")?.dataset.setting;
+    return `${at.tagName.toLowerCase()} "${(at.getAttribute("aria-label") ?? at.textContent ?? "").trim().slice(0, 40)}"${row ? ` in ${row}` : ""}`;
+  });
+}
+
 /** Types `words` into the search box, from empty. */
 async function search(words: string): Promise<void> {
   const box = await $(BOX);
@@ -157,9 +167,17 @@ describe("one settings search across every level, in the real WebView", () => {
       "settings.setting:project.saving.plane.branch",
     );
 
-    await browser.waitUntil(
-      async () => (await focusedSetting()) === "project.saving.plane.branch",
-      { timeout: 20_000, timeoutMsg: "the palette's row never landed on Target branch" },
-    );
+    let last = "";
+    await browser
+      .waitUntil(
+        async () => {
+          last = await keyboardAt();
+          return (await focusedSetting()) === "project.saving.plane.branch";
+        },
+        { timeout: 20_000, timeoutMsg: "the palette's row never landed on Target branch" },
+      )
+      .catch((missed: unknown) => {
+        throw new Error(`${String(missed)}; the keyboard was on ${last}`);
+      });
   });
 });

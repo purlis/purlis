@@ -224,6 +224,31 @@ describe("every way into Settings leaves the keyboard on the nav's current group
     );
   });
 
+  it("a setting's own row, with the keyboard already in Settings, on that setting's field (#2920)", async () => {
+    core(PLANE);
+    render(<App />);
+    await screen.findByRole("tab", { name: /plane/ });
+    await palette("Project settings…");
+    await waitFor(() => expect(level("Project")).toBeChecked());
+    // The keyboard is in Settings, where the palette hands it back as it closes.
+    const toggle = await screen.findByRole("button", { name: "Set here" });
+    toggle.focus();
+
+    await palette("Saving › Target branch");
+
+    await waitFor(() =>
+      expect(document.activeElement?.closest("[data-setting]")).toHaveAttribute(
+        "data-setting",
+        "project.saving.plane.branch",
+      ),
+    );
+    await settled();
+    expect(document.activeElement?.closest("[data-setting]")).toHaveAttribute(
+      "data-setting",
+      "project.saving.plane.branch",
+    );
+  });
+
   it("the palette's Your settings…", async () => {
     core(PLANE);
     render(<App />);

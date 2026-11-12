@@ -50,13 +50,11 @@ import {
   type SettingsFileId,
   type SettingsGroup,
 } from "./groups";
-import { reveal } from "../ui/reveal";
 import { everySetting, found, isSetHere, narrowed } from "./search";
 import { useFolds } from "./navGroups";
 import {
   askSettingsAction,
   chooseGroup,
-  focusedSetting,
   levelOf,
   linkToGroup,
   PICK_VAULT,
@@ -69,7 +67,7 @@ import { named, RawEditor, RawLinks, type RawDraft, type RawFile } from "./RawTo
 import { useWorkspaceLevel, workspaceGroups } from "./workspace";
 import { youGroups } from "./you";
 import { CollectionView, type Asked } from "./Collection";
-import { useEnteringFocus } from "./entering";
+import { landOnTheSetting, useEnteringFocus } from "./entering";
 import { OutLink } from "./OutLink";
 import { standingIn, type Standing } from "./standing";
 import {
@@ -524,18 +522,7 @@ function Shown({
   const target = shown?.setting;
   const own = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (target === undefined) return;
-    const rows = own.current?.querySelectorAll<HTMLElement>("[data-setting]") ?? [];
-    const row = [...rows].find((one) => one.dataset.setting === target);
-    if (row === undefined) return;
-    // A setting in a rarely used group of its page: the group opens first (R61).
-    reveal(row);
-    row.scrollIntoView?.({ block: "nearest" });
-    // The control, never the label's info mark or badge, which come before it (DS-8).
-    (row.querySelector(".ui-setting-control") ?? row)
-      .querySelector<HTMLElement>("input, select, textarea, button, [tabindex]")
-      ?.focus({ preventScroll: true });
-    focusedSetting(place);
+    if (target !== undefined) landOnTheSetting(place, own.current);
   }, [linked, place, target, drawn, declared]);
   /** Every way into Settings leaves the keyboard on the nav's current group (#1206). */
   useEnteringFocus(place, own);
