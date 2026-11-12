@@ -468,7 +468,13 @@ export type Does =
    *  second press on a sentence the operator has read. A `force` here would be a row that
    *  discards work with nobody warned — the same objection `worktree.discard` records. */
   | { verb: "removeWorkspace"; workspace: string }
+  /** A needs-you item's Go (and the palette's row for one): a chat whose task failed goes to
+   *  that task, and the failure is looked at as it is shown. */
   | { verb: "showChat"; session: number }
+  /** **Shows chat `session`**, in its tab or the workspace it is in, and nothing more: a pane's
+   *  `chat 641` link (#6217). Never a needs-you item's Go, so a failure the chat is flagged for
+   *  is neither gone to nor taken as looked at. */
+  | { verb: "focusChat"; session: number }
   /** **Reopen** on a closed chat's card (#6214): finished task `id`'s conversation started
    *  again as an ordinary chat, as Reopen on its finished row does (#1485). */
   | { verb: "reopenTask"; id: string }
@@ -1225,6 +1231,8 @@ export type Doing = {
    *  core's guard. */
   removeWorkspace: (workspace: string) => void;
   showChat: (session: number) => void;
+  /** Shows chat `session` and does nothing more (#6217): no needs-you item is gone to. */
+  focusChat: (session: number) => void;
   /** Reopens finished task `id` (#6214): a refusal is the core's sentence. */
   reopenTask: (id: string) => Promise<Ran>;
   /** The focused pane goes back to the chat it showed before, or to where that chat is. */
@@ -3827,6 +3835,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return DID;
     case "showChat":
       doing.showChat(does.session);
+      return DID;
+    case "focusChat":
+      doing.focusChat(does.session);
       return DID;
     case "reopenTask":
       return doing.reopenTask(does.id);
@@ -6686,6 +6697,12 @@ export function readItOffer(card: ChatCard): Offer {
     view: chatScreenView(card),
     title,
   });
+}
+
+/** **A pane's `chat 641` link, ⌘-clicked** (#6217): the chat open under `session`, shown in its
+ *  tab or the workspace it is in. */
+export function showLinkedChatOffer(session: number): Offer {
+  return can(`chat.link:${session}`, `Show chat #${session}`, { verb: "focusChat", session });
 }
 
 /** ***Reopen* on a closed chat's card** (#6214): its task's conversation started again as an

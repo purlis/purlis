@@ -1597,6 +1597,7 @@ const DIALOGS: Opened[] = [
                 target: "https://purlis.dev/setup",
                 shown: "https://purlis.dev/setup",
                 does: { does: "opens", into: "browser" },
+                chat: null,
               },
             },
             {
@@ -1606,6 +1607,7 @@ const DIALOGS: Opened[] = [
                 target: "ftp://purlis.dev/old",
                 shown: "ftp://purlis.dev/old",
                 does: { does: "refused", reason: "purlis opens only http and https addresses" },
+                chat: null,
               },
             },
           ]}

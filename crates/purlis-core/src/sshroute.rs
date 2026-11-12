@@ -69,6 +69,9 @@ pub struct Route {
     host: String,
     port: Option<u16>,
     socket: Option<String>,
+    /// The key file ssh signs in with, where a Podman connection names one (#6269): kept beside
+    /// the route, never in Docker's spelling, which has no place for it.
+    identity: Option<PathBuf>,
 }
 
 impl Route {
@@ -126,6 +129,7 @@ impl Route {
             host: host.to_owned(),
             port,
             socket,
+            identity: None,
         })
     }
 
@@ -166,6 +170,35 @@ impl Route {
         })
     }
 
+    /// **This route, signing in with the key file `identity`** (#6269): what a Podman connection
+    /// names. Refused for a path that is not absolute, or that holds what ssh would read as one of
+    /// its own tokens (`%`), an environment variable (`${`, which OpenSSH 8.4 and later expand in
+    /// a key file's path) or a line of its settings.
+    pub fn with_identity(self, identity: &Path) -> Result<Route, String> {
+        let text = identity.to_str().unwrap_or_default();
+        if !identity.is_absolute()
+            || text.is_empty()
+            || text.len() > 1024
+            || text.chars().any(|c| c.is_control() || c == '%')
+            || text.contains("${")
+        {
+            return Err(format!(
+                "{} isn't a key file's path ssh can sign in with",
+                crate::shown::short(&identity.display().to_string())
+            ));
+        }
+        Ok(Route {
+            identity: Some(identity.to_path_buf()),
+            ..self
+        })
+    }
+
+    /// The key file ssh signs in with, where one is named.
+    #[must_use]
+    pub fn identity(&self) -> Option<&Path> {
+        self.identity.as_deref()
+    }
+
     /// The machine, as the person named it (a host alias of their SSH settings, a name or an
     /// address).
     #[must_use]
@@ -199,11 +232,17 @@ impl Route {
         }
     }
 
-    /// The options that say where: the port, where one was named.
+    /// The options that say where and as whom: the port, where one was named, and the key file
+    /// to sign in with, where one is (beside the agent's keys and the person's own settings).
     fn where_options(&self) -> Vec<String> {
-        self.port
-            .map(|port| vec!["-p".to_owned(), port.to_string()])
-            .unwrap_or_default()
+        let mut out = Vec::new();
+        if let Some(port) = self.port {
+            out.extend(["-p".to_owned(), port.to_string()]);
+        }
+        if let Some(identity) = &self.identity {
+            out.extend(["-i".to_owned(), identity.display().to_string()]);
+        }
+        out
     }
 }
 
@@ -269,6 +308,12 @@ pub(crate) fn a_host(host: &str) -> bool {
             || host
                 .parse::<std::net::Ipv6Addr>()
                 .is_ok_and(|address| !address.is_unspecified()))
+}
+
+/// `path`, owned, where it is one [`a_socket_path`] lets through: a path of the other machine's
+/// that a pin keeps.
+fn plain_path(path: &str) -> Option<String> {
+    a_socket_path(path).then(|| path.to_owned())
 }
 
 /// An absolute path of the other machine's, with nothing a forward's `local:remote` spelling or
@@ -359,11 +404,108 @@ fn base64_decode(text: &str) -> Option<Vec<u8>> {
 }
 
 /// **What a pool on another machine is pinned to** (ADR 0123 §3): the host key the person
-/// confirmed, and the id `docker info` printed for the engine.
+/// confirmed, and the engine.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pin {
     pub host_key: HostKey,
-    pub engine: String,
+    pub engine: EnginePin,
+}
+
+/// **The engine part of a pin** (ADR 0123 §3): Docker's id, or, for a Podman, which prints no
+/// id that holds (#6269), the socket's path and the store's graph root as `podman info` says
+/// them. A different graph root under the same host key is a different engine.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EnginePin {
+    /// `docker info`'s `.ID`.
+    Docker(String),
+    /// `podman info`'s `.Host.RemoteSocket.Path` and `.Store.GraphRoot`.
+    Podman { socket: String, graph_root: String },
+}
+
+impl Pin {
+    /// **The pin as `runners.json` and `pool-setup.json` keep it**: `{"hostKey", "engine"}` for
+    /// a Docker, `{"hostKey", "podman": {"socket", "graphRoot"}}` for a Podman (#6269).
+    #[must_use]
+    pub fn to_json(&self) -> serde_json::Value {
+        match &self.engine {
+            EnginePin::Docker(id) => serde_json::json!({
+                "hostKey": self.host_key.spelled(),
+                "engine": id,
+            }),
+            EnginePin::Podman { socket, graph_root } => serde_json::json!({
+                "hostKey": self.host_key.spelled(),
+                "podman": {"socket": socket, "graphRoot": graph_root},
+            }),
+        }
+    }
+
+    /// **[`Pin::to_json`] read back**: exactly its two keys, each as purlis writes it, or `None`.
+    #[must_use]
+    pub fn from_json(pin: &serde_json::Map<String, serde_json::Value>) -> Option<Pin> {
+        if pin.len() != 2 {
+            return None;
+        }
+        let host_key = HostKey::parse(pin.get("hostKey")?.as_str()?).ok()?;
+        let engine = match (pin.get("engine"), pin.get("podman")) {
+            (Some(id), None) => {
+                let id = id.as_str()?;
+                crate::runners::usable_noted(id).then(|| EnginePin::Docker(id.to_owned()))?
+            }
+            (None, Some(podman)) => {
+                let podman = podman.as_object()?;
+                if podman.len() != 2 {
+                    return None;
+                }
+                let path = |key: &str| plain_path(podman.get(key)?.as_str()?);
+                EnginePin::Podman {
+                    socket: path("socket")?,
+                    graph_root: path("graphRoot")?,
+                }
+            }
+            _ => return None,
+        };
+        Some(Pin { host_key, engine })
+    }
+}
+
+impl EnginePin {
+    /// **The pin in a sentence's words**: the id, or the Podman's store and socket.
+    #[must_use]
+    pub fn shown(&self) -> String {
+        match self {
+            EnginePin::Docker(id) => id.clone(),
+            EnginePin::Podman { socket, graph_root } => {
+                format!("Podman, its store at {graph_root}, at {socket}")
+            }
+        }
+    }
+
+    /// Whether the engine is a Podman, reached with Podman's own client.
+    #[must_use]
+    pub fn is_podman(&self) -> bool {
+        matches!(self, EnginePin::Podman { .. })
+    }
+
+    /// **A Podman's pin, from what `podman info --format '{{json .}}'` printed** (`info`), or
+    /// why not: both paths absolute and plain, as no other answer could be taken for them.
+    /// `None` where `info` is not a Podman's (it names no store), as Docker's is not.
+    #[must_use]
+    pub fn podman_in(info: &serde_json::Value) -> Option<Result<EnginePin, String>> {
+        let graph_root = info.pointer("/store/graphRoot")?;
+        let plain = |value: Option<&serde_json::Value>, what: &str| {
+            value
+                .and_then(serde_json::Value::as_str)
+                .map(|path| path.strip_prefix("unix://").unwrap_or(path))
+                .and_then(plain_path)
+                .ok_or_else(|| format!("Podman there didn't say its {what}"))
+        };
+        Some((|| {
+            Ok(EnginePin::Podman {
+                socket: plain(info.pointer("/host/remoteSocket/path"), "socket's path")?,
+                graph_root: plain(Some(graph_root), "store's graph root")?,
+            })
+        })())
+    }
 }
 
 /// **The name the forward calls the machine by, for its host key alone** (`HostKeyAlias`): the
@@ -573,6 +715,110 @@ pub fn probe_args(route: &Route, pool: &str, known_hosts: &Path) -> Vec<String> 
     args
 }
 
+/// **A file read on the other machine** (#6269): [`sign_in_args`]'s, printing `path` there where
+/// it is a plain file, and failing where it is not, so nothing waits on a FIFO in its place.
+/// Refused for a path that isn't plain, which no Podman's own file would be.
+pub fn read_args(
+    route: &Route,
+    pool: &str,
+    known_hosts: &Path,
+    path: &str,
+) -> Result<Vec<String>, String> {
+    if !a_socket_path(path) {
+        return Err(format!(
+            "{} isn't a file's path purlis reads on the other machine",
+            crate::shown::short(path)
+        ));
+    }
+    let mut args = sign_in_args(route, pool, known_hosts);
+    args.pop();
+    // Checked only: the path is one [`a_socket_path`] lets through, so it is a plain word.
+    args.push(format!("test -f {path} && exec cat -- {path}"));
+    Ok(args)
+}
+
+/// **Whether a file is there, on the other machine** (#6269): [`sign_in_args`]'s, succeeding
+/// only where `path` is a regular file there. Refused for a path that isn't plain, as
+/// [`read_args`] refuses it.
+pub fn is_file_args(
+    route: &Route,
+    pool: &str,
+    known_hosts: &Path,
+    path: &str,
+) -> Result<Vec<String>, String> {
+    if !a_socket_path(path) {
+        return Err(format!(
+            "{} isn't a file's path purlis looks for on the other machine",
+            crate::shown::short(path)
+        ));
+    }
+    let mut args = sign_in_args(route, pool, known_hosts);
+    args.pop();
+    // Checked only: the path is one [`a_socket_path`] lets through, so it is a plain word.
+    args.push(format!("test -f {path}"));
+    Ok(args)
+}
+
+/// The name of a folder purlis keeps a file in on the other machine ([`keep_args`]), before
+/// what `mktemp` makes it unique with.
+const KEPT: &str = "purlis-kept.";
+
+/// **A file kept on the other machine** (#6269): [`sign_in_args`]'s, making a folder of this
+/// user's alone beside `beside` (the engine's socket's folder, which its engine reads), writing
+/// standard input to `name` in it, and printing that file's path. Refused for a folder or a name
+/// that isn't plain.
+pub fn keep_args(
+    route: &Route,
+    pool: &str,
+    known_hosts: &Path,
+    beside: &str,
+    name: &str,
+) -> Result<Vec<String>, String> {
+    let plain_name = !name.is_empty()
+        && name.len() <= 255
+        && !name.starts_with('.')
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'));
+    if !a_socket_path(beside) || !plain_name {
+        return Err(format!(
+            "{} isn't a place purlis keeps a file on the other machine",
+            crate::shown::short(&format!("{beside}/{name}"))
+        ));
+    }
+    let mut args = sign_in_args(route, pool, known_hosts);
+    args.pop();
+    // Checked only: both are plain words, as checked above.
+    args.push(format!(
+        "umask 077 && d=$(mktemp -d -p {beside} {KEPT}XXXXXXXX) && cat > \"$d/{name}\" && \
+         printf '%s\\n' \"$d/{name}\""
+    ));
+    Ok(args)
+}
+
+/// **A folder [`keep_args`] made, removed** with what is in it. Refused for any other path.
+pub fn let_go_args(
+    route: &Route,
+    pool: &str,
+    known_hosts: &Path,
+    folder: &str,
+) -> Result<Vec<String>, String> {
+    let kept = Path::new(folder)
+        .file_name()
+        .and_then(std::ffi::OsStr::to_str)
+        .is_some_and(|name| name.starts_with(KEPT) && name.len() > KEPT.len());
+    if !a_socket_path(folder) || !kept {
+        return Err(format!(
+            "{} isn't a folder purlis kept on the other machine",
+            crate::shown::short(folder)
+        ));
+    }
+    let mut args = sign_in_args(route, pool, known_hosts);
+    args.pop();
+    args.push(format!("rm -rf -- {folder}"));
+    Ok(args)
+}
+
 /// **The `ssh` this machine runs**: the system's own, in a folder only root writes, never one a
 /// `PATH` names. Refused where there is none.
 pub fn ssh_here() -> Result<PathBuf, String> {
@@ -618,11 +864,25 @@ pub struct Ran {
 
 /// **Runs `ssh` with `args`**, bounded in time and in what is read, and answers how it ended.
 pub fn run(ssh: &Path, args: &[String]) -> Result<Ran, String> {
+    run_reading(ssh, args, MOST_SAID)
+}
+
+/// [`run`], reading up to `most` bytes of what it prints: a file read there ([`read_args`]).
+pub fn run_reading(ssh: &Path, args: &[String], most: u64) -> Result<Ran, String> {
+    run_giving(ssh, args, None, most)
+}
+
+/// [`run_reading`], with `input` on its standard input: a file kept there ([`keep_args`]).
+pub fn run_giving(
+    ssh: &Path,
+    args: &[String],
+    input: Option<&str>,
+    most: u64,
+) -> Result<Ran, String> {
     let mut command = std::process::Command::new(ssh);
     command.args(args);
-    let ran =
-        crate::boundedrun::run_within(&mut command, None, MOST_SAID, MOST_SAID, Some(RUN_WITHIN))
-            .map_err(|why| match why {
+    let ran = crate::boundedrun::run_within(&mut command, input, most, MOST_SAID, Some(RUN_WITHIN))
+        .map_err(|why| match why {
             crate::boundedrun::Unanswered::NotStarted(why) => {
                 format!("{} could not be run: {why}", ssh.display())
             }
@@ -693,6 +953,226 @@ pub fn hosts_here(home: Option<&Path>) -> Vec<String> {
         return Vec::new();
     }
     hosts_in(&text)
+}
+
+/// **How a file of the other machine's is read** (#6269): over ssh, pinned to the pool's key, as
+/// a sign-in is ([`read_args`]). What a rootless Podman's check reads its runtime config with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reach {
+    pub ssh: PathBuf,
+    pub route: Route,
+    pub pool: String,
+    pub key: HostKey,
+    /// `<data>/docker-settings`, where the pinned `known_hosts` is kept for the read.
+    pub settings_in: PathBuf,
+}
+
+impl Reach {
+    /// The pinned `known_hosts` for one of this reach's runs, in a run folder of its own.
+    fn known_hosts(&self) -> Result<(crate::dockerpool::settings::RunFolder, PathBuf), String> {
+        let folder =
+            crate::dockerpool::settings::run_folder(&self.settings_in).map_err(|why| why.0)?;
+        let known_hosts = folder
+            .keep("known_hosts", known_hosts(&self.pool, &self.key).as_bytes())
+            .map_err(|why| format!("purlis could not write the host key: {why}"))?;
+        Ok((folder, known_hosts))
+    }
+
+    /// **Whether `path` is a regular file there**, or why that could not be asked; at most
+    /// `most` bytes of what ssh says are read.
+    pub fn is_file(&self, path: &Path, most: u64) -> Result<bool, String> {
+        let (_folder, known_hosts) = self.known_hosts()?;
+        let path = path.to_str().unwrap_or_default();
+        let ran = run_reading(
+            &self.ssh,
+            &is_file_args(&self.route, &self.pool, &known_hosts, path)?,
+            most,
+        )?;
+        match ran.code {
+            Some(0) => Ok(true),
+            Some(1) => Ok(false),
+            _ => Err(if ran.said.is_empty() {
+                format!("{} did not say", self.route.host())
+            } else {
+                ran.said
+            }),
+        }
+    }
+
+    /// **`contents` kept there as `name`**, in a folder of its own beside the engine's socket,
+    /// which that engine reads: the file's path there, or why not. [`Reach::let_go`] removes it.
+    pub fn keep(&self, name: &str, contents: &str) -> Result<PathBuf, String> {
+        let beside = self
+            .route
+            .socket()
+            .and_then(|socket| Path::new(socket).parent())
+            .and_then(Path::to_str)
+            .ok_or_else(|| {
+                format!(
+                    "{} has no engine's socket to keep a file beside",
+                    self.route.host()
+                )
+            })?
+            .to_owned();
+        let (_folder, known_hosts) = self.known_hosts()?;
+        let ran = run_giving(
+            &self.ssh,
+            &keep_args(&self.route, &self.pool, &known_hosts, &beside, name)?,
+            Some(contents),
+            MOST_SAID,
+        )?;
+        let kept = PathBuf::from(ran.printed.trim_end_matches('\n'));
+        let in_its_folder = kept.parent().is_some_and(|folder| {
+            folder.parent() == Some(Path::new(&beside))
+                && folder
+                    .file_name()
+                    .and_then(std::ffi::OsStr::to_str)
+                    .is_some_and(|it| it.starts_with(KEPT))
+        });
+        if ran.code != Some(0)
+            || !a_socket_path(ran.printed.trim_end_matches('\n'))
+            || !in_its_folder
+            || kept.file_name().and_then(std::ffi::OsStr::to_str) != Some(name)
+        {
+            return Err(if ran.said.is_empty() {
+                format!("{} did not keep {name}", self.route.host())
+            } else {
+                ran.said
+            });
+        }
+        Ok(kept)
+    }
+
+    /// **The folder [`Reach::keep`] kept `kept` in, removed** there.
+    pub fn let_go(&self, kept: &Path) -> Result<(), String> {
+        let folder = kept
+            .parent()
+            .and_then(Path::to_str)
+            .ok_or_else(|| "no folder kept there".to_owned())?;
+        let (_folder, known_hosts) = self.known_hosts()?;
+        let ran = run(
+            &self.ssh,
+            &let_go_args(&self.route, &self.pool, &known_hosts, folder)?,
+        )?;
+        if ran.code == Some(0) {
+            Ok(())
+        } else {
+            Err(ran.said)
+        }
+    }
+
+    /// **The file at `path` there**, up to `most` bytes, or why not.
+    pub fn read(&self, path: &Path, most: u64) -> Result<String, String> {
+        let (_folder, known_hosts) = self.known_hosts()?;
+        let path = path.to_str().unwrap_or_default();
+        let ran = run_reading(
+            &self.ssh,
+            &read_args(&self.route, &self.pool, &known_hosts, path)?,
+            most,
+        )?;
+        if ran.code != Some(0) {
+            return Err(if ran.said.is_empty() {
+                format!("{} has no such file", self.route.host())
+            } else {
+                ran.said
+            });
+        }
+        Ok(ran.printed)
+    }
+}
+
+/// **A connection of Podman's own** (`podman system connection list`, #6269): its name and the
+/// SSH route to that machine's Podman socket, with the key file it signs in with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PodmanConnection {
+    pub name: String,
+    pub route: Route,
+}
+
+/// **The connections `podman system connection list --format json` printed**, each read once
+/// into its route (ADR 0123 §2): a connection to a Podman machine of this machine's own
+/// (`IsMachine`) is this machine, and one that is no `ssh://` route (a `unix://` socket here),
+/// or whose key file isn't a path ssh can take, is left out. In the order Podman lists them.
+#[must_use]
+pub fn podman_connections_in(printed: &str) -> Vec<PodmanConnection> {
+    let Ok(serde_json::Value::Array(listed)) = serde_json::from_str(printed.trim()) else {
+        return Vec::new();
+    };
+    let field = |one: &serde_json::Value, key: &str| {
+        one.get(key)
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+    };
+    let mut out: Vec<PodmanConnection> = Vec::new();
+    for one in &listed {
+        if one.get("IsMachine").and_then(serde_json::Value::as_bool) == Some(true) {
+            continue;
+        }
+        let (Some(name), Some(uri)) = (field(one, "Name"), field(one, "URI")) else {
+            continue;
+        };
+        if name.len() > 128
+            || name.chars().any(char::is_control)
+            || out.iter().any(|kept| kept.name == name)
+        {
+            continue;
+        }
+        let Ok(route) = Route::parse(&uri) else {
+            continue;
+        };
+        let route = match field(one, "Identity") {
+            Some(identity) => match route.with_identity(Path::new(&identity)) {
+                Ok(route) => route,
+                Err(_) => continue,
+            },
+            None => route,
+        };
+        out.push(PodmanConnection { name, route });
+    }
+    out
+}
+
+/// **Where this machine's `podman` is looked for**: the places Podman's installers put it
+/// (Podman's own for macOS, Homebrew's, `/usr/local`'s and the system's), as `docker` is looked
+/// for in Docker's ([`crate::dockerpool::Docker::on_this_machine`]), never a `PATH`'s.
+pub const PODMAN_INSTALLED: &[&str] = &[
+    "/opt/podman/bin/podman",
+    "/opt/homebrew/bin/podman",
+    "/usr/local/bin/podman",
+    "/usr/bin/podman",
+];
+
+/// **This machine's `podman`**: [`PODMAN_INSTALLED`]'s first that is there.
+#[must_use]
+pub fn podman_here() -> Option<PathBuf> {
+    PODMAN_INSTALLED
+        .iter()
+        .map(PathBuf::from)
+        .find(|at| crate::secrets::run::which(&at.display().to_string(), None).is_some())
+}
+
+/// **The person's Podman connections** ([`podman_connections_in`]), as this machine's `podman`
+/// lists them: none where there is no `podman`, or it lists none.
+#[must_use]
+pub fn podman_connections_here() -> Vec<PodmanConnection> {
+    let Some(podman) = podman_here() else {
+        return Vec::new();
+    };
+    let mut command = std::process::Command::new(podman);
+    command.args(["system", "connection", "list", "--format", "json"]);
+    crate::boundedrun::run_within(
+        &mut command,
+        None,
+        MOST_SAID * 16,
+        MOST_SAID,
+        Some(RUN_WITHIN),
+    )
+    .ok()
+    .filter(|ran| ran.status.success())
+    .map(|ran| podman_connections_in(&String::from_utf8_lossy(&ran.printed)))
+    .unwrap_or_default()
 }
 
 pub mod connect;

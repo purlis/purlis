@@ -14,7 +14,7 @@ use std::net::ToSocketAddrs as _;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use super::{HostKey, Pin, Route};
+use super::{EnginePin, HostKey, Pin, Route};
 
 /// **What a check of the route found wrong** (ADR 0123 §7, its SSH rows), each with what the
 /// sentence names.
@@ -45,12 +45,16 @@ pub enum Finding {
     },
     /// The engine at the socket didn't answer through the forward: what was said.
     EngineSilent { host: String, said: String },
-    /// The engine answers with another id than the pinned one.
+    /// The engine answers with another id than the pinned one, or, for a Podman, another socket
+    /// or graph root (#6269).
     EngineChanged {
         host: String,
         pinned: String,
         now: String,
+        podman: bool,
     },
+    /// The engine there is a Podman, and this machine has no `podman` to reach it with (#6269).
+    NeedsPodman { host: String },
     /// **Over Docker's TLS API** (#6267, ADR 0123 §7): a file the pool names can't be used.
     TlsFile {
         host: String,
@@ -160,7 +164,8 @@ pub fn not_carried(printed: &str) -> Vec<&'static str> {
 #[must_use]
 pub fn carried_refused(host: &str, settings: &[&str]) -> String {
     format!(
-        "Your SSH settings for {host} add {}, which purlis won't carry on its connection to          Docker there. Give the machine a Host entry without {}.",
+        "Your SSH settings for {host} add {}, which purlis won't carry on its connection to \
+         Docker there. Give the machine a Host entry without {}.",
         settings.join(", "),
         if settings.len() == 1 { "it" } else { "them" },
     )
@@ -344,43 +349,70 @@ pub fn probe(
     }
 }
 
-/// **The engine's id, read through a forward opened against `key`** (`docker info`'s `.ID`): what
-/// the pin keeps. The forward is ended once read; the pool holds its own once it is added.
-pub fn engine_id(
+/// **The engine's pin, read through a forward opened against `key`** (ADR 0123 §3): Docker's id,
+/// or a Podman's socket and graph root, read with this machine's `podman` where Docker's client
+/// finds a Podman there (#6269). The forward is ended once read; the pool holds its own once it
+/// is added.
+pub fn engine_pin(
     docker: &crate::dockerpool::Docker,
     opening: &super::forward::Opening<'_>,
-) -> Result<String, Finding> {
+) -> Result<EnginePin, Finding> {
     let host = || opening.route.host().to_owned();
     let held = super::forward::open(opening)
         .map_err(|said| Finding::EngineSilent { host: host(), said })?;
-    let read = docker.clone().through(held.socket()).engine_id_said();
+    let through = docker.clone().through(held.socket());
+    let read = match through.engine_pin_said() {
+        Ok(crate::dockerpool::EngineSaid::PodmanOverDocker) => match super::podman_here() {
+            Some(podman) => through.as_program(podman).engine_pin_said(),
+            None => return Err(Finding::NeedsPodman { host: host() }),
+        },
+        read => read,
+    };
     drop(held);
-    read.map_err(|why| Finding::EngineSilent {
-        host: host(),
-        said: why.0,
-    })
+    match read {
+        Ok(crate::dockerpool::EngineSaid::Pin(pin)) => Ok(pin),
+        // Podman's own client answers as a Podman, never as Docker's over it.
+        Ok(crate::dockerpool::EngineSaid::PodmanOverDocker) => {
+            Err(Finding::NeedsPodman { host: host() })
+        }
+        Err(why) => Err(Finding::EngineSilent {
+            host: host(),
+            said: why.0,
+        }),
+    }
 }
 
 /// **Whether `pin` still holds for the engine `docker` reaches through the pool's forward**: the
 /// check made before every runner is made, checked or linked (ADR 0123 §3). The host key is
-/// ssh's to refuse as the forward opens.
+/// ssh's to refuse as the forward opens. A Podman's is its socket and graph root: another graph
+/// root under the same key is another engine (#6269).
 pub fn engine_holds(
     docker: &crate::dockerpool::Docker,
     route: &Route,
     pin: &Pin,
 ) -> Result<(), Finding> {
-    let now = docker
-        .engine_id_said()
-        .map_err(|why| Finding::EngineSilent {
-            host: route.host().to_owned(),
-            said: why.0,
-        })?;
+    let silent = |why: crate::dockerpool::Refused| Finding::EngineSilent {
+        host: route.host().to_owned(),
+        said: why.0,
+    };
+    let now = match &pin.engine {
+        EnginePin::Docker(_) => EnginePin::Docker(docker.engine_id_said().map_err(silent)?),
+        EnginePin::Podman { .. } => match docker.engine_pin_said().map_err(silent)? {
+            crate::dockerpool::EngineSaid::Pin(now) => now,
+            crate::dockerpool::EngineSaid::PodmanOverDocker => {
+                return Err(Finding::NeedsPodman {
+                    host: route.host().to_owned(),
+                });
+            }
+        },
+    };
     if now == pin.engine {
         return Ok(());
     }
     Err(Finding::EngineChanged {
         host: route.host().to_owned(),
-        pinned: pin.engine.clone(),
-        now,
+        pinned: pin.engine.shown(),
+        now: now.shown(),
+        podman: pin.engine.is_podman(),
     })
 }

@@ -38,6 +38,30 @@ pub struct Seen {
     pub before_a_view: Vec<u8>,
     watching: Vec<mpsc::UnboundedSender<Bytes>>,
     ends: Option<Box<dyn FnOnce(Exit) + Send>>,
+    /// What a note of its strays and a hold wait on before they return ([`StandIn::waits`]).
+    gate: Option<Latch>,
+    /// How many notes of its strays and holds have begun waiting on the gate.
+    pub waiting: usize,
+}
+
+/// What a stand-in's note of its strays and its hold wait on until it is opened: as a terminal's
+/// program waits on `ps`, or on the lock its end holds while it hangs up and reaps (#6437).
+#[derive(Clone, Default)]
+pub struct Latch(Arc<(Mutex<bool>, std::sync::Condvar)>);
+
+impl Latch {
+    /// Lets every wait on it go, now and from now on.
+    pub fn open(&self) {
+        *self.0.0.lock().unwrap() = true;
+        self.0.1.notify_all();
+    }
+
+    fn wait(&self) {
+        let mut open = self.0.0.lock().unwrap();
+        while !*open {
+            open = self.0.1.wait(open).unwrap();
+        }
+    }
 }
 
 /// A program that echoes what is typed to it, and ends with code 0 when stopped.
@@ -57,6 +81,23 @@ impl StandIn {
         let bytes = Bytes::copy_from_slice(bytes);
         seen.watching
             .retain(|view| view.send(bytes.clone()).is_ok());
+    }
+
+    /// Its notes of its strays and its holds wait from now on until `gate` is opened.
+    pub fn waits(&self, gate: &Latch) {
+        self.seen().gate = Some(gate.clone());
+    }
+
+    /// Waits on its gate, where it has one, counted in [`Seen::waiting`].
+    fn at_the_gate(&self) {
+        let gate = {
+            let mut seen = self.seen();
+            seen.waiting += 1;
+            seen.gate.clone()
+        };
+        if let Some(gate) = gate {
+            gate.wait();
+        }
     }
 
     /// It ends with `exit`: its views' live bytes end, and whoever asked is told.
@@ -146,6 +187,14 @@ impl Running for StandIn {
         if !holds_on {
             self.ends(Exit::Signal("Interrupt".into()));
         }
+    }
+
+    fn note_strays(&self) {
+        self.at_the_gate();
+    }
+
+    fn hold(&self, _still: bool) {
+        self.at_the_gate();
     }
 
     fn process(&self) -> Option<u32> {

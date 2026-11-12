@@ -48,6 +48,7 @@ const step = (more: Partial<PoolSetupStep>): PoolSetupStep => ({
   other: null,
   machine: {
     route: "ssh://sam@build-box",
+    identity: null,
     host: "build-box",
     key: null,
     known: null,
@@ -85,6 +86,7 @@ function core(more: Record<string, (args: unknown) => unknown> = {}) {
     calls.push({ cmd, args });
     if (cmd in more) return more[cmd]?.(args);
     if (cmd === "pool_setup_ssh_hosts") return [];
+    if (cmd === "pool_setup_podman_connections") return [];
     return null;
   });
   return calls;
@@ -118,6 +120,7 @@ describe("ConnectStep", () => {
       step({
         machine: {
           route: "ssh://build-box",
+          identity: null,
           host: "build-box",
           key: null,
           known: null,
@@ -140,10 +143,93 @@ describe("ConnectStep", () => {
     const props = draw(step({ machine: null }));
     await userEvent.type(await screen.findByRole("textbox", { name: "Its address" }), "me@gpu");
     await waitFor(() =>
-      expect(calls).toContainEqual({ cmd: "pool_setup_machine", args: { route: "ssh://me@gpu" } }),
+      expect(calls).toContainEqual({
+        cmd: "pool_setup_machine",
+        args: { route: "ssh://me@gpu", identity: null },
+      }),
     );
     expect(props.changed).toHaveBeenCalled();
     expect(calls.some((call) => call.cmd === "pool_setup_connect")).toBe(false);
+  });
+
+  it("keeps a Podman connection picked as its route and its key file, and contacts nothing", async () => {
+    const calls = core({
+      pool_setup_ssh_hosts: () => ["gpu"],
+      pool_setup_podman_connections: () => [
+        {
+          name: "build-box",
+          route: "ssh://me@build-box:22/run/user/1000/podman/podman.sock",
+          identity: "/home/me/.ssh/id_ed25519",
+        },
+      ],
+    });
+    draw(step({ machine: null }));
+    await userEvent.click(await screen.findByRole("radio", { name: /build-box/ }));
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "pool_setup_machine",
+        args: {
+          route: "ssh://me@build-box:22/run/user/1000/podman/podman.sock",
+          identity: "/home/me/.ssh/id_ed25519",
+        },
+      }),
+    );
+    expect(screen.getByText("From your Podman connections")).toBeVisible();
+    expect(calls.some((call) => call.cmd === "pool_setup_connect")).toBe(false);
+  });
+
+  it("keeps a Podman connection's key file even where its route was kept without one", async () => {
+    const route = "ssh://me@build-box/run/podman/podman.sock";
+    const calls = core({
+      pool_setup_podman_connections: () => [
+        { name: "build-box", route, identity: "/home/me/.ssh/id_ed25519" },
+      ],
+    });
+    draw(
+      step({
+        machine: {
+          route,
+          identity: null,
+          host: "build-box",
+          key: null,
+          known: null,
+          trusted: null,
+          now: null,
+          engine: null,
+        },
+      }),
+    );
+    await userEvent.click(await screen.findByRole("radio", { name: /build-box/ }));
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "pool_setup_machine",
+        args: { route, identity: "/home/me/.ssh/id_ed25519" },
+      }),
+    );
+  });
+
+  it("picks the Podman connection kept once Podman lists it", async () => {
+    core({
+      pool_setup_podman_connections: () => [
+        { name: "other", route: "ssh://me@other/run/podman/podman.sock", identity: null },
+        { name: "build-box", route: "ssh://me@build-box/run/podman/podman.sock", identity: null },
+      ],
+    });
+    draw(
+      step({
+        machine: {
+          route: "ssh://me@build-box/run/podman/podman.sock",
+          identity: null,
+          host: "build-box",
+          key: null,
+          known: null,
+          trusted: null,
+          now: null,
+          engine: null,
+        },
+      }),
+    );
+    await waitFor(() => expect(screen.getByRole("radio", { name: /build-box/ })).toBeChecked());
   });
 
   it("trusts exactly the fingerprint it showed", async () => {
@@ -159,6 +245,7 @@ describe("ConnectStep", () => {
         },
         machine: {
           route: "ssh://sam@build-box",
+          identity: null,
           host: "build-box",
           key: { algorithm: "ssh-ed25519", fingerprint: FINGERPRINT },
           known: null,

@@ -21,7 +21,7 @@ use std::time::{Duration, Instant};
 use purlis_core::dockerpool::Docker;
 use purlis_core::runners::Remote;
 use purlis_core::sshroute::connect::{self, Finding};
-use purlis_core::sshroute::{self, HostKey, Pin, Route, forward, pool};
+use purlis_core::sshroute::{self, EnginePin, HostKey, Pin, Route, forward, pool};
 
 struct Fixture {
     route: Route,
@@ -101,7 +101,7 @@ fn trusted(fixture: &Fixture, pool: &str) -> Remote {
         engine_links: &fixture.engine_links(),
         settings_in: &fixture.settings_in(),
     };
-    let engine = connect::engine_id(&fixture.docker, &opening).expect("its engine answers");
+    let engine = connect::engine_pin(&fixture.docker, &opening).expect("its engine answers");
     Remote {
         route: found,
         pin: Pin {
@@ -131,7 +131,7 @@ fn a_machine_is_met_by_the_key_its_sshd_holds_and_trusted_with_its_engine() {
     assert_eq!(remote.route.socket(), Some("/var/run/docker.sock"));
     assert_eq!(
         remote.pin.engine,
-        exec_in(&fixture.dind, "docker info --format '{{.ID}}'")
+        EnginePin::Docker(exec_in(&fixture.dind, "docker info --format '{{.ID}}'"))
     );
     let docker = through(&fixture, "met", &remote).expect("the forward opens");
     assert!(docker.answers().is_ok(), "the engine answers through it");
@@ -209,7 +209,7 @@ fn an_engine_other_than_the_pinned_one_is_refused_before_anything_runs() {
     let Some(fixture) = fixture() else { return };
     let mut remote = trusted(&fixture, "engine");
     forward::let_go("engine");
-    remote.pin.engine = "NOT:THE:ENGINE".to_owned();
+    remote.pin.engine = EnginePin::Docker("NOT:THE:ENGINE".to_owned());
     assert!(matches!(
         through(&fixture, "engine", &remote),
         Err(Finding::EngineChanged { .. })

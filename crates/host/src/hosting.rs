@@ -3196,31 +3196,26 @@ impl Hosting {
     }
 
     /// Notes what `program` has started outside its group so far (1.80, #5806). The listing
-    /// runs a process on macOS, so off the runtime.
-    async fn note_strays(&self, program: &str) -> Result<Answer, Refusal> {
-        let running = {
-            let state = self.state();
-            let hosted = state
-                .programs
-                .get(program)
-                .ok_or_else(|| no_such_program(program))?;
-            Arc::clone(&hosted.running)
-        };
-        let _ = tokio::task::spawn_blocking(move || running.note_strays()).await;
+    /// runs a process on macOS, so off the runtime, and **answered as it begins**: `ps` on a
+    /// loaded machine can take seconds, and the program's lane must not wait on it (#6437), or a
+    /// close sent after it does. Nothing after it needs it done: a stop or a close lists the
+    /// strays again as it ends the program, and a listing that finds the program ended ends what
+    /// it found itself.
+    fn note_strays(&self, program: &str) -> Result<Answer, Refusal> {
+        let running = self.running(program)?;
+        tokio::task::spawn_blocking(move || running.note_strays());
         Ok(Answer::Done)
     }
 
-    /// Holds `program` still, or lets it go on (1.85, #6015).
-    fn hold_still(&self, program: &str, still: bool) -> Result<Answer, Refusal> {
-        let running = {
-            let state = self.state();
-            let hosted = state
-                .programs
-                .get(program)
-                .ok_or_else(|| no_such_program(program))?;
-            Arc::clone(&hosted.running)
-        };
-        running.hold(still);
+    /// Holds `program` still, or lets it go on (1.85, #6015). Off the runtime: a hold takes the
+    /// lock a program's end holds while it hangs up and reaps, and this host's runtime is one
+    /// thread, which a hold waiting there would take from every link (#6437). Answered once it
+    /// is done, so a stop after it keeps its order.
+    async fn hold_still(&self, program: &str, still: bool) -> Result<Answer, Refusal> {
+        let running = self.running(program)?;
+        tokio::task::spawn_blocking(move || running.hold(still))
+            .await
+            .map_err(|why| not_started(why.to_string()))?;
         Ok(Answer::Done)
     }
 
@@ -4030,6 +4025,11 @@ impl Hosting {
 }
 
 impl session::Host for Hosting {
+    /// Said in this host's log where it came late (#6437).
+    fn answered(&self, word: &'static str, waited: Duration, ran: Duration) {
+        crate::lateness::say_if_late(word, waited, ran);
+    }
+
     async fn call(&self, command: Command, peer: &Peer) -> Result<Answer, Refusal> {
         self.inner.unattended.heard(peer);
         if let Some(program) = browser_acted_on(&command) {
@@ -4297,8 +4297,8 @@ impl session::Host for Hosting {
             // Only the window's link reaches this: the grants refuse every other.
             Command::NoteProgram { program, note } => self.note_program(&program, note, peer),
             // Only the window's link reaches this: the grants refuse every other.
-            Command::NoteStrays { program } => self.note_strays(&program).await,
-            Command::Hold { program, still } => self.hold_still(&program, still),
+            Command::NoteStrays { program } => self.note_strays(&program),
+            Command::Hold { program, still } => self.hold_still(&program, still).await,
             // Only the window's link reaches this: the grants refuse every other.
             Command::Quit => Ok(self.quit().await),
             // The person's own (#2014): each may wait on the engine (a take-over on an act's

@@ -22,6 +22,7 @@ import {
   type PlaneId,
 } from "./bindings";
 import { qualifierOf, shownOf } from "./finished";
+import { capitalised, endedAt } from "./chatEnded";
 import { chatNumberIn, chatNumberSaid, numberedName } from "./chatNumber";
 import type { ViewRef } from "./tabs";
 import type { Offer } from "./actions";
@@ -50,18 +51,6 @@ export function outcomeOf(task: Pick<FinishedTask, "how" | "outcome">): CardOutc
     variant,
     said: capitalised(more === undefined ? word : `${word} (${more})`),
   };
-}
-
-function capitalised(words: string): string {
-  return words.charAt(0).toUpperCase() + words.slice(1);
-}
-
-/** When it ended, as a clock says it: `11:08`. Nothing where the record keeps no end. */
-export function endedAt(ended: string | null): string | undefined {
-  if (ended === null) return undefined;
-  const at = new Date(ended);
-  if (Number.isNaN(at.getTime())) return undefined;
-  return at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
 /** The card's title: `#641 · Signed commits #5607`. */
@@ -182,7 +171,8 @@ export function numberRows(byNumber: ByNumber | undefined): Offer[] {
         title: restartedRowTitle(number, lookup.now),
         available: true,
         reason: "",
-        does: { verb: "showChat", session: lookup.now },
+        // That chat, and nothing a needs-you item's Go does (#6217).
+        does: { verb: "focusChat", session: lookup.now },
         chat: number,
       },
     ];

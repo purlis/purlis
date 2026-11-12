@@ -72,6 +72,10 @@ pub enum PoolCommand {
         /// `openssl x509 -noout -fingerprint -sha256` prints it).
         #[arg(long, value_name = "FINGERPRINT", requires = "on")]
         trust: Option<String>,
+        /// The key file ssh signs in to that machine with, as a Podman connection names it
+        /// (`podman system connection list`). Without it, your SSH agent and settings.
+        #[arg(long, value_name = "FILE", requires = "on")]
+        identity: Option<String>,
         /// The files Docker's TLS API is reached with (#6267).
         #[command(flatten)]
         tls: Box<TlsArgs>,
@@ -202,6 +206,7 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
             width,
             on,
             trust,
+            identity,
             tls,
         } => {
             let tls = tls_files(&tls.tls_ca, &tls.tls_cert, &tls.tls_key, &tls.tls_key_in)?;
@@ -217,6 +222,7 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
                 width: *width,
                 on: on.clone(),
                 trust: trust.clone(),
+                identity: identity.clone(),
                 tls,
             };
             added(&config()?, &asked)

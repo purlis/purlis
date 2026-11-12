@@ -655,6 +655,7 @@ macro_rules! app_commands {
                 poolsetuptab::pool_setup_choose_remote_docker,
                 poolsetuptab::pool_setup_machine,
                 poolsetuptab::pool_setup_ssh_hosts,
+                poolsetuptab::pool_setup_podman_connections,
                 poolsetuptab::pool_setup_connect,
                 poolsetuptab::pool_setup_trust,
                 poolsetuptab::pool_setup_tls_files,

@@ -161,15 +161,6 @@ impl RemoteEngine {
             RemoteEngine::Tls(remote) => remote.route.host(),
         }
     }
-
-    /// The engine's pinned id.
-    #[must_use]
-    pub fn engine(&self) -> &str {
-        match self {
-            RemoteEngine::Ssh(remote) => &remote.pin.engine,
-            RemoteEngine::Tls(remote) => &remote.pin.engine,
-        }
-    }
 }
 
 /// The kind of a pool on another machine, in its row (#6266).
@@ -1963,10 +1954,10 @@ fn pool_to_row(pool: &Pool) -> serde_json::Value {
         Some(RemoteEngine::Ssh(remote)) => {
             row["kind"] = REMOTE_DOCKER.into();
             row["route"] = remote.route.spelled().into();
-            row["pin"] = serde_json::json!({
-                "hostKey": remote.pin.host_key.spelled(),
-                "engine": remote.pin.engine,
-            });
+            if let Some(identity) = remote.route.identity() {
+                row["identity"] = identity.display().to_string().into();
+            }
+            row["pin"] = remote.pin.to_json();
         }
         Some(RemoteEngine::Tls(remote)) => {
             row["kind"] = REMOTE_DOCKER.into();
@@ -2101,6 +2092,7 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         "width",
         "profiles",
         "route",
+        "identity",
         "pin",
         "tls",
     ];
@@ -2115,6 +2107,7 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         "docker"
             if !fields.contains_key("route")
                 && !fields.contains_key("pin")
+                && !fields.contains_key("identity")
                 && !fields.contains_key("tls") =>
         {
             None
@@ -2173,8 +2166,10 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         })
 }
 
-/// A `remote-docker` row's `route` and `pin` (#6266): a route that names its socket, and both
-/// halves of the pin. Anything else is not as purlis writes it.
+/// A `remote-docker` row's `route`, `identity` and `pin` (#6266, #6269), or over Docker's TLS API
+/// its `route`, `tls` and `pin` (#6267): a route that names its socket, the key file a Podman
+/// connection named where there is one, and both halves of the pin. Anything else is not as purlis
+/// writes it.
 fn remote_from_row(fields: &serde_json::Map<String, serde_json::Value>) -> Option<RemoteEngine> {
     let spelled = fields.get("route")?.as_str()?;
     if crate::tlsroute::is_tcp(spelled) {
@@ -2183,33 +2178,28 @@ fn remote_from_row(fields: &serde_json::Map<String, serde_json::Value>) -> Optio
     if fields.contains_key("tls") {
         return None;
     }
-    let route = crate::sshroute::Route::parse(fields.get("route")?.as_str()?).ok()?;
+    let route = crate::sshroute::Route::parse(spelled).ok()?;
     route.socket()?;
-    let pin = fields.get("pin")?.as_object()?;
-    if pin.len() != 2 {
-        return None;
-    }
-    let host_key = crate::sshroute::HostKey::parse(pin.get("hostKey")?.as_str()?).ok()?;
-    let engine = pin.get("engine")?.as_str()?;
-    if !usable_noted(engine) {
-        return None;
-    }
-    Some(RemoteEngine::Ssh(Remote {
-        route,
-        pin: crate::sshroute::Pin {
-            host_key,
-            engine: engine.to_owned(),
-        },
-    }))
+    let route = match fields.get("identity") {
+        None => route,
+        Some(identity) => route
+            .with_identity(std::path::Path::new(identity.as_str()?))
+            .ok()?,
+    };
+    let pin = crate::sshroute::Pin::from_json(fields.get("pin")?.as_object()?)?;
+    Some(RemoteEngine::Ssh(Remote { route, pin }))
 }
 
 /// **A `remote-docker` row over Docker's TLS API** (#6267): a `tcp://` route, its `tls` files and
-/// a pin of the CA and the engine. Plain `tcp://` (no `tls`) and a `tls` without its CA are not
-/// as purlis writes it, and refuse the row.
+/// a pin of the CA and the engine. Plain `tcp://` (no `tls`), a `tls` without its CA, and an SSH
+/// key file are not as purlis writes it, and refuse the row.
 fn tls_remote_from_row(
     spelled: &str,
     fields: &serde_json::Map<String, serde_json::Value>,
 ) -> Option<crate::tlsroute::Remote> {
+    if fields.contains_key("identity") {
+        return None;
+    }
     let route = crate::tlsroute::Route::parse(spelled).ok()?;
     let files = tls_from_row(fields.get("tls")?)?;
     let pin = fields.get("pin")?.as_object()?;

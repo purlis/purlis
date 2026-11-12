@@ -3,7 +3,13 @@
 
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { KeyRound } from "lucide-react";
-import { commands, type PlaneId, type PoolSetupShown, type PoolSetupStep } from "../bindings";
+import {
+  commands,
+  type PlaneId,
+  type PoolSetupPodmanConnection,
+  type PoolSetupShown,
+  type PoolSetupStep,
+} from "../bindings";
 import { Badge } from "../ui/badge/Badge";
 import { Button } from "../ui/button/Button";
 import { Card } from "../ui/card/Card";
@@ -22,9 +28,11 @@ import { Action, Busy, Options, Recommended, Say, SeeWhat, StepHead } from "./pa
  * its line of the check list with one trouble card. Every sentence of a state is the core's
  * (`purlis_core::poolsetup::connecting`), so this and `purlis pool setup` say the same.
  *
- * **Two routes** (#6267): SSH, recommended, and Docker's API over TLS, whose CA, client certificate
- * and key are named under Options, the key a file or a vault entry. Contexts and Podman are later
- * tickets of #6257, so they aren't offered.
+ * The machines offered are the person's SSH hosts and their Podman connections (#6269), each
+ * read into an SSH route: a Podman connection's carries its key file, which the core keeps beside
+ * the route. **Two routes** (#6267): SSH, recommended, and Docker's API over TLS, whose CA, client
+ * certificate and key are named under Options, the key a file or a vault entry. Contexts are a
+ * later ticket of #6257, so they aren't offered.
  */
 
 /** What the person may be doing on the page, beside what the core read. */
@@ -54,7 +62,10 @@ const SSH_CHECKS: readonly Check[] = [
     causes: ["pool-pin-changed"],
   },
   { title: () => "It accepts your sign-in", causes: ["sign-in-refused"] },
-  { title: () => "Docker answers there", causes: ["no-engine", "engine-silent"] },
+  {
+    title: () => "Docker answers there",
+    causes: ["no-engine", "engine-silent", "needs-podman"],
+  },
   { title: () => "Your account may use Docker", causes: ["not-allowed"] },
   { title: () => "Its Docker is the one you trusted", causes: ["pool-engine-changed"] },
 ];
@@ -82,6 +93,7 @@ const TITLES: Record<string, string> = {
   "engine-silent": "Docker didn't answer there",
   "not-allowed": "Your account can't use Docker there",
   "pool-engine-changed": "Docker there isn't the one you trusted",
+  "needs-podman": "purlis needs Podman on this machine too",
   "tls-not-signed": "Its certificate is from another authority",
   "tls-expired": "Its certificate has expired",
   "tls-wrong-name": "Its certificate is for another name",
@@ -218,46 +230,75 @@ function Chosen({ step, onChange }: { step: PoolSetupStep; onChange?: () => void
   );
 }
 
-/** **The pick**: the machines the person's SSH settings name, and another one typed. */
+/** A Podman connection's choice, apart from any SSH host's name. */
+const PODMAN = "podman:";
+
+/** **The pick**: the machines the person's SSH settings and Podman connections name, and another
+ * one typed. */
 function Pick({
   step,
   hosts,
+  podmans,
   busy,
   onPick,
   onConnect,
 }: {
   step: PoolSetupStep;
   hosts: readonly string[];
+  podmans: readonly PoolSetupPodmanConnection[];
   busy: boolean;
-  onPick: (route: string | null) => void;
+  onPick: (route: string | null, identity: string | null) => void;
   onConnect: () => void;
 }) {
   const kept = step.machine?.route ?? "";
-  const keptHost = hosts.find((host) => routeOf(host) === kept);
-  // Until the person picks, the pick follows what is kept and what the SSH settings name, which
-  // are read after the step is drawn.
+  const keptIdentity = step.machine?.identity ?? null;
+  const keptHost = keptIdentity === null ? hosts.find((host) => routeOf(host) === kept) : undefined;
+  const keptPodman = podmans.find(
+    (one) => one.route === kept && (one.identity ?? null) === keptIdentity,
+  );
+  const offered = [...hosts, ...podmans.map((one) => PODMAN + one.name)];
+  // Until the person picks, the pick follows what is kept and what the SSH settings and Podman
+  // name, which are read after the step is drawn.
   const [chosen, setPicked] = useState<string>();
   const picked =
-    chosen ?? keptHost ?? (kept === "" && hosts.length > 0 ? (hosts[0] ?? "typed") : "typed");
+    chosen ??
+    keptHost ??
+    (keptPodman ? PODMAN + keptPodman.name : undefined) ??
+    (kept === "" && offered.length > 0 ? (offered[0] ?? "typed") : "typed");
   const [typed, setTyped] = useState(
-    hosts.some((host) => routeOf(host) === kept) ? "" : kept.replace(/^ssh:\/\//, ""),
+    keptHost !== undefined || keptPodman !== undefined ? "" : kept.replace(/^ssh:\/\//, ""),
   );
-  const route = picked === "typed" ? routeOf(typed) : routeOf(picked);
-  // What is picked is kept as it is picked, so coming back finds it. Nothing is contacted.
+  const podman = picked.startsWith(PODMAN)
+    ? podmans.find((one) => PODMAN + one.name === picked)
+    : undefined;
+  const route = podman ? podman.route : picked === "typed" ? routeOf(typed) : routeOf(picked);
+  const identity = podman?.identity ?? null;
+  // What is picked is kept as it is picked, so coming back finds it: the route and the key file
+  // it signs in with, either of which may change alone. Nothing is contacted.
+  const asKept = route === kept && identity === keptIdentity;
   useEffect(() => {
-    if (route === kept) return;
-    const later = setTimeout(() => onPick(route === "" ? null : route), 400);
+    if (asKept) return;
+    const later = setTimeout(() => onPick(route === "" ? null : route, identity), 400);
     return () => clearTimeout(later);
-  }, [route, kept, onPick]);
+  }, [asKept, route, identity, onPick]);
   const next = step.next;
   const host = step.machine?.host;
   return (
     <>
-      {hosts.length > 0 ? (
+      {offered.length > 0 ? (
         <Asked label="Which machine?" value={picked} onChange={setPicked}>
           {hosts.map((one) => (
             <Radio key={one} value={one} description="From your SSH settings">
               {one}
+            </Radio>
+          ))}
+          {podmans.map((one) => (
+            <Radio
+              key={PODMAN + one.name}
+              value={PODMAN + one.name}
+              description="From your Podman connections"
+            >
+              {one.name}
             </Radio>
           ))}
           <Radio value="typed" description="A machine that isn't in your SSH settings.">
@@ -265,7 +306,7 @@ function Pick({
           </Radio>
         </Asked>
       ) : null}
-      {(hosts.length === 0 || picked === "typed") && (
+      {(offered.length === 0 || picked === "typed") && (
         <TextField
           label="Its address"
           value={typed}
@@ -279,7 +320,7 @@ function Pick({
         does={next?.does}
         main={route !== "" && route === kept && host ? `Connect to ${host}` : "Connect"}
         onMain={onConnect}
-        busy={busy || route === "" || route !== kept}
+        busy={busy || route === "" || !asKept}
       />
     </>
   );
@@ -578,12 +619,16 @@ export function ConnectStep({
   onNext: () => void;
 }) {
   const [hosts, setHosts] = useState<readonly string[]>([]);
+  const [podmans, setPodmans] = useState<readonly PoolSetupPodmanConnection[]>([]);
   const [pressing, setPressing] = useState<Pressing>();
   const [trouble, setTrouble] = useState<string>();
   useEffect(() => {
     let live = true;
     void commands.poolSetupSshHosts().then((answer) => {
       if (live && answer.status === "ok") setHosts(answer.data);
+    });
+    void commands.poolSetupPodmanConnections().then((answer) => {
+      if (live && answer.status === "ok") setPodmans(answer.data);
     });
     return () => {
       live = false;
@@ -593,8 +638,8 @@ export function ConnectStep({
   // The route chosen: a kept tcp:// machine is reached over TLS, until the person picks another.
   const [chosenOver, setOver] = useState<Over>();
   const over = chosenOver ?? overOf(step.machine);
-  const pick = (route: string | null) => {
-    void commands.poolSetupMachine(route).then((answer) => {
+  const pick = (route: string | null, identity: string | null = null) => {
+    void commands.poolSetupMachine(route, identity).then((answer) => {
       if (answer.status === "error") setTrouble(answer.error);
       else changed();
     });
@@ -692,6 +737,7 @@ export function ConnectStep({
         <Pick
           step={step}
           hosts={hosts}
+          podmans={podmans}
           busy={pressing !== undefined}
           onPick={pick}
           onConnect={connect}

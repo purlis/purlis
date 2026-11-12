@@ -149,7 +149,7 @@ fn a_trusted_machine_is_done_with_its_key_and_pool_makes_its_runner_there() {
     let facts = remote_facts(Connecting {
         trusted: Some(Pin {
             host_key: key(KEY),
-            engine: "ABCD".to_owned(),
+            engine: crate::sshroute::EnginePin::Docker("ABCD".to_owned()),
         }),
         ..routed("ssh://me@build-box/var/run/docker.sock")
     });
@@ -228,10 +228,30 @@ fn each_finding_is_said_in_its_own_words_with_its_cause() {
                 host: "build-box".into(),
                 pinned: "OLD".into(),
                 now: "NEW".into(),
+                podman: false,
             },
             "pool-engine-changed",
             "The Docker engine on build-box isn't the one you trusted",
             ActionId::CheckAndTrustAgain,
+        ),
+        (
+            Finding::EngineChanged {
+                host: "build-box".into(),
+                pinned: "OLD".into(),
+                now: "NEW".into(),
+                podman: true,
+            },
+            "pool-engine-changed",
+            "Podman on build-box isn't the one you trusted: its store is somewhere else now",
+            ActionId::CheckAndTrustAgain,
+        ),
+        (
+            Finding::NeedsPodman {
+                host: "build-box".into(),
+            },
+            "needs-podman",
+            "build-box runs Podman, and purlis reaches Podman with Podman's own client",
+            ActionId::CheckAgain,
         ),
     ];
     for (finding, cause, words, next) in cases {
@@ -353,7 +373,7 @@ fn a_pool_on_another_machines_sign_ins_are_a_docker_pools() {
         ..remote_facts(Connecting {
             trusted: Some(Pin {
                 host_key: key(KEY),
-                engine: "ABCD".to_owned(),
+                engine: crate::sshroute::EnginePin::Docker("ABCD".to_owned()),
             }),
             ..routed("ssh://me@build-box/var/run/docker.sock")
         })
@@ -380,12 +400,13 @@ fn connects_by_hand_print_the_key_on_the_machine_and_ask_docker_there_for_its_id
 #[test]
 fn the_machine_connect_reads_is_kept_and_a_pin_only_once_trusted() {
     let config = tempfile::tempdir().unwrap();
-    choose_machine(config.path(), Some("ssh://me@build-box")).unwrap();
+    choose_machine(config.path(), Some("ssh://me@build-box"), None).unwrap();
     let kept = read_choices(config.path()).unwrap();
     assert_eq!(kept.kind, Some(Kind::RemoteDocker));
     assert_eq!(
         kept.connect,
         Some(Chosen {
+            identity: None,
             route: "ssh://me@build-box".into(),
             trusted: None,
             tls: None,
@@ -396,7 +417,7 @@ fn the_machine_connect_reads_is_kept_and_a_pin_only_once_trusted() {
         route: Route::parse("ssh://me@build-box/var/run/docker.sock").unwrap(),
         pin: Pin {
             host_key: key(KEY),
-            engine: "ABCD".to_owned(),
+            engine: crate::sshroute::EnginePin::Docker("ABCD".to_owned()),
         },
     };
     trusted(config.path(), &remote).unwrap();
@@ -417,6 +438,43 @@ fn the_machine_connect_reads_is_kept_and_a_pin_only_once_trusted() {
     // Another kind on Where forgets the machine.
     choose_kind(config.path(), Kind::Docker).unwrap();
     assert_eq!(read_choices(config.path()).unwrap().connect, None);
+}
+
+/// A machine picked from a Podman connection keeps its key file, and a Podman's pin, socket and
+/// graph root, is kept as trusted and read back whole (#6269), as the Pool step makes the pool
+/// with it.
+#[test]
+fn a_podman_connections_key_file_and_a_podmans_pin_are_kept_and_read_back() {
+    let config = tempfile::tempdir().unwrap();
+    let identity = std::path::Path::new("/home/me/.ssh/id_ed25519");
+    let route = "ssh://me@build-box/run/user/1000/podman/podman.sock";
+    choose_machine(config.path(), Some(route), Some(identity)).unwrap();
+    let kept = read_choices(config.path()).unwrap().connect.unwrap();
+    assert_eq!(kept.identity.as_deref(), Some(identity));
+    assert_eq!(kept.route_read().unwrap().identity(), Some(identity));
+    let remote = crate::runners::Remote {
+        route: kept.route_read().unwrap(),
+        pin: Pin {
+            host_key: key(KEY),
+            engine: crate::sshroute::EnginePin::Podman {
+                socket: "/run/user/1000/podman/podman.sock".into(),
+                graph_root: "/home/me/.local/share/containers/storage".into(),
+            },
+        },
+    };
+    crate::poolsetup::trusted(config.path(), &remote).unwrap();
+    let kept = read_choices(config.path()).unwrap().connect.unwrap();
+    assert_eq!(kept.trusted.as_ref(), Some(&remote.pin));
+    assert_eq!(kept.route_read().unwrap(), remote.route);
+    // A key file no route can sign in with is never kept.
+    assert!(
+        choose_machine(
+            config.path(),
+            Some(route),
+            Some(std::path::Path::new("keys/%h"))
+        )
+        .is_err()
+    );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -621,15 +679,15 @@ fn the_tls_files_are_kept_with_a_tcp_machine_and_its_ca_pin_only_once_trusted() 
         choose_tls_files(config.path(), Some(files())).is_err(),
         "no machine yet"
     );
-    choose_machine(config.path(), Some("tcp://build-box:2376")).unwrap();
+    choose_machine(config.path(), Some("tcp://build-box:2376"), None).unwrap();
     choose_tls_files(config.path(), Some(files())).unwrap();
     // Another tcp:// machine typed keeps the files; an ssh:// one doesn't take them.
-    choose_machine(config.path(), Some("tcp://other-box")).unwrap();
+    choose_machine(config.path(), Some("tcp://other-box"), None).unwrap();
     assert_eq!(
         read_choices(config.path()).unwrap().connect.unwrap().tls,
         Some(files())
     );
-    choose_machine(config.path(), Some("ssh://me@box")).unwrap();
+    choose_machine(config.path(), Some("ssh://me@box"), None).unwrap();
     assert_eq!(
         read_choices(config.path()).unwrap().connect.unwrap().tls,
         None

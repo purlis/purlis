@@ -165,7 +165,7 @@ describe("a pane's link candidates", () => {
     expect(candidatesIn("https://en.wikipedia.org/wiki/Foo_(bar)")[0].text).toBe(
       "https://en.wikipedia.org/wiki/Foo_(bar)",
     );
-    expect(candidatesIn("no links here, nor #5820 nor chat 641")).toEqual([]);
+    expect(candidatesIn("no links here, nor #5820")).toEqual([]);
   });
 });
 

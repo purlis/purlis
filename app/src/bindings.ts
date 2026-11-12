@@ -4180,12 +4180,17 @@ export const commands = {
 	 *  **Keeps the machine picked or typed on Connect**, or forgets it (#6266). It contacts
 	 *  nothing.
 	 */
-	poolSetupMachine: (route: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_machine", { route })),
+	poolSetupMachine: (route: string | null, identity: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_machine", { route, identity })),
 	/**
 	 *  **The machines the person's SSH settings name**, for Connect to offer (#6266). It contacts
 	 *  nothing.
 	 */
 	poolSetupSshHosts: () => typedError<string[], string>(__TAURI_INVOKE("pool_setup_ssh_hosts")),
+	/**
+	 *  **The person's Podman connections** (`podman system connection list`), for Connect to offer
+	 *  (#6269). It contacts no machine: this machine's `podman` lists what it keeps.
+	 */
+	poolSetupPodmanConnections: () => typedError<PoolSetupPodmanConnection[], string>(__TAURI_INVOKE("pool_setup_podman_connections")),
 	/**
 	 *  **Connect to <machine>** (#6266, ADR 0123 §3): the key the machine Connect keeps shows, met
 	 *  with nothing signed in, and what is read, with it laid over Connect. Nothing is kept.
@@ -7702,6 +7707,15 @@ export type ChatEvents = {
 	events: ChatEvent[],
 };
 
+/**  **What the window shows for a chat link opened.** */
+export type ChatGo = 
+/**  The pane's own chat: nothing more. */
+{ to: "this_chat" } | 
+/**  Chat `session`, in its tab or its workspace. */
+{ to: "chat"; session: number } | 
+/**  An ended chat's card, beside the link. */
+{ to: "card"; card: ChatCard };
+
 /**  A chat the window has open, by its plane and its session. */
 export type ChatHeld = {
 	plane: PlaneId,
@@ -7828,6 +7842,15 @@ export type ChatRestart = {
 	notices: string[],
 	not_yet: string | null,
 };
+
+/**  **What the chat a `chat 641` link names is**, for its hover's second line. */
+export type ChatSeen = 
+/**  The pane's own chat: ⌘-click does nothing more. */
+{ is: "this_chat"; number: number } | 
+/**  Open under `number`; `workspace` where that is another workspace than the pane's chat's. */
+{ is: "open"; number: number; workspace: string | null } | 
+/**  Ended: its card, which ⌘-click shows. */
+{ is: "ended"; card: ChatCard };
 
 /**  One skill Use skill… offers a chat. */
 export type ChatSkill = {
@@ -11010,7 +11033,7 @@ export type KeyAct = "down" | "up";
  *  **What the pane's pattern took a candidate for**: a hint, never trusted for more. The wire's
  *  half of the core's [`Kind`]; a kind's resolver is the core's `LinkKind`.
  */
-export type KindHint = "url" | "file";
+export type KindHint = "url" | "file" | "chat";
 
 /**  One context of the person's kubeconfig, as Point kubectl at it lists it. */
 export type KubeContext = {
@@ -11298,6 +11321,8 @@ export type LinkHome = { is: "workspace"; name: string; folder: string } | { is:
 export type LinkOpened = 
 /**  Opened: `target` is what was opened. */
 { answer: "opened"; kind: KindHint; target: string } | 
+/**  A chat link: what the window shows for it. */
+{ answer: "chat"; go: ChatGo } | 
 /**
  *  A file, for the window to show in an editor tab at its line and column: never handed to
  *  the system, so nothing runs.
@@ -11314,13 +11339,16 @@ export type LinkOpened =
 /**
  *  **What a hover over a candidate shows**: its kind, its target in full (its own text, where it
  *  is no link), what the hover's first line says (`shown`: a file in the chat's workspace from
- *  the workspace, D2) and what opening it does.
+ *  the workspace, D2; a chat as "#641 · <title>") and what opening it does. A chat link says
+ *  what the chat is too.
  */
 export type LinkSeen = {
 	kind: KindHint,
 	target: string,
 	shown: string,
 	does: LinkDoes,
+	/**  What the chat a chat link names is: none for every other kind. */
+	chat: ChatSeen | null,
 };
 
 /**  One repo the person can get. */
@@ -12511,7 +12539,9 @@ export type OpensIn =
 /**  The person's browser. */
 "browser" | 
 /**  One of purlis's editor tabs. */
-"editor-tab";
+"editor-tab" | 
+/**  purlis's window itself: a chat shown in its tab, or a closed chat's card. */
+"window";
 
 /**  One file that goes. */
 export type OutgoingFile = {
@@ -13796,6 +13826,8 @@ export type PoolSetupKey = {
 /**  The machine of a pool on another machine, as Connect shows it (#6266). */
 export type PoolSetupMachine = {
 	route: string | null,
+	/**  The key file the route signs in with, where a Podman connection names one (#6269). */
+	identity: string | null,
 	host: string | null,
 	/**  The key it showed at Connect to, to confirm. */
 	key: PoolSetupKey | null,
@@ -13840,6 +13872,16 @@ export type PoolSetupPart = {
 	done: boolean,
 	line: string,
 	next: PoolSetupAction | null,
+};
+
+/**
+ *  A connection of Podman's own, as Connect offers it (#6269): its name, the route to that
+ *  machine's Podman socket, and the key file it signs in with, where it names one.
+ */
+export type PoolSetupPodmanConnection = {
+	name: string,
+	route: string,
+	identity: string | null,
 };
 
 /**  One of this machine's profiles against a pool's limit (#4482). */

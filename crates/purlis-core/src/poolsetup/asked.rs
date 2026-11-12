@@ -34,6 +34,9 @@ pub struct Asked {
     /// The fingerprint of the host key the person confirmed for that machine (`SHA256:…`), or,
     /// over Docker's TLS API, of its CA (`sha256:…`, #6267).
     pub trust: Option<String>,
+    /// The key file ssh signs in to that machine with, where a Podman connection names one
+    /// (#6269).
+    pub identity: Option<String>,
     /// **The files Docker's `--tlsverify` takes**, for a machine at a `tcp://` address (#6267).
     pub tls: Option<crate::tlsroute::Files>,
 }
@@ -234,14 +237,28 @@ pub fn remote_of(
     if crate::tlsroute::is_tcp(on) {
         return tls_remote_of(config, docker, on, asked).map(|remote| Some(remote.into()));
     }
-    let route = crate::sshroute::Route::parse(on).map_err(Refused::Other)?;
+    let identity = asked
+        .identity
+        .as_deref()
+        .map(str::trim)
+        .filter(|identity| !identity.is_empty());
+    let route = super::connecting::route_of(on, identity.map(Path::new))
+        .map_err(|finding| Refused::Other(super::connect_said(&finding)))?;
     let trust = asked.trust.as_deref().map(str::trim);
     let kept = super::read_choices(config)?.connect.and_then(|chosen| {
+        let kept = chosen.route_read().ok()?;
         let pin = chosen.trusted?;
-        let kept = crate::sshroute::Route::parse(&chosen.route).ok()?;
-        let same = kept == route
-            || (route.socket().is_none()
-                && route.clone().with_socket(kept.socket()?).ok()? == kept);
+        // The same machine, as the same user and port; a socket or a key file asked for must be
+        // the kept one's, and one left out is the kept one's.
+        let same = kept.host() == route.host()
+            && kept.user() == route.user()
+            && kept.port() == route.port()
+            && route
+                .socket()
+                .is_none_or(|socket| kept.socket() == Some(socket))
+            && route
+                .identity()
+                .is_none_or(|identity| kept.identity() == Some(identity));
         let confirmed = trust.is_none_or(|trust| trust == pin.host_key.fingerprint());
         (same && confirmed).then_some(crate::runners::Remote { route: kept, pin })
     });
@@ -251,7 +268,7 @@ pub fn remote_of(
     let said =
         |finding: crate::sshroute::connect::Finding| Refused::Other(super::connect_said(&finding));
     let Some(trust) = trust else {
-        let met = super::connecting::meet(docker, on).map_err(said)?;
+        let met = super::connecting::meet(docker, &route).map_err(said)?;
         return Err(Refused::Other(format!(
             "{} shows the key {} ({}). Check it on {}: ssh-keygen -lf \
              /etc/ssh/ssh_host_ed25519_key.pub prints it there. If it is the same, run this \
@@ -263,7 +280,7 @@ pub fn remote_of(
             met.key.fingerprint()
         )));
     };
-    super::connecting::trust(docker, on, trust)
+    super::connecting::trust(docker, &route, trust)
         .map(|remote| Some(remote.into()))
         .map_err(said)
 }

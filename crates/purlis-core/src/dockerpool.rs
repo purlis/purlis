@@ -2209,14 +2209,16 @@ pub fn podman_store(store: &serde_json::Value) -> Result<PodmanStore, Refused> {
 /// container's own (`<graph root>/overlay-containers/<container>/userdata/config.json`); no
 /// device for the runtime; and every mount one of the runtime's own file systems where Podman
 /// puts it, one of the container's own files from exactly its own folder of Podman's storage or
-/// run state, or the home's volume from exactly Podman's own volumes. Anything else, a field
-/// missing included, is refused.
+/// run state, the home's volume from exactly Podman's own volumes, or Podman's init, a file on
+/// the engine's machine as `is_file_there` judges it there ([`is_file_here`] for this one).
+/// Anything else, a field missing included, is refused.
 pub fn check_oci(
     oci: &serde_json::Value,
     made: &Made,
     config: &std::path::Path,
     store: &PodmanStore,
     seccomp: Seccomp,
+    is_file_there: &dyn Fn(&std::path::Path) -> bool,
 ) -> Result<(), Refused> {
     let not = |what: &str| {
         refused(format!(
@@ -2278,7 +2280,7 @@ pub fn check_oci(
             || (to == "/dev/shm" && kind == "tmpfs")
             || (kind == "bind" && own_file)
             || (kind == "bind" && to == made.runner.home && from_path == home_volume)
-            || is_podmans_init(mount);
+            || is_podmans_init(mount, is_file_there);
         if !own {
             return Err(not(&format!(
                 "has {to} mounted from {from}, which is not the pool's own"
@@ -2289,17 +2291,27 @@ pub fn check_oci(
 }
 
 /// **Whether `mount` is Podman's own init, as `--init` binds it** (#3702): its `catatonit`, from
-/// where the machine's Podman keeps it (a regular file there), bound read-only at `/run/podman-init`, the runner's PID 1
-/// that reaps what a chat's programs leave behind. Measured on rootless Podman 2026-10-29.
-fn is_podmans_init(mount: &serde_json::Value) -> bool {
+/// where the engine's machine keeps it (a regular file there, as `is_file_there` judges on that
+/// machine, #6269), bound read-only at `/run/podman-init`, the runner's PID 1 that reaps what a
+/// chat's programs leave behind. Measured on rootless Podman 2026-10-29.
+fn is_podmans_init(
+    mount: &serde_json::Value,
+    is_file_there: &dyn Fn(&std::path::Path) -> bool,
+) -> bool {
     let field = |name: &str| mount.get(name).and_then(serde_json::Value::as_str);
     let from = std::path::Path::new(field("source").unwrap_or_default());
     field("destination") == Some("/run/podman-init")
         && field("type") == Some("bind")
         && from.is_absolute()
         && from.file_name().is_some_and(|name| name == "catatonit")
-        && std::fs::metadata(from).is_ok_and(|found| found.is_file())
         && mount.get("options") == Some(&serde_json::json!(["bind", "ro", "rprivate"]))
+        && is_file_there(from)
+}
+
+/// **Whether `path` is a regular file on this machine**: where a local engine's runtime binds
+/// from.
+pub fn is_file_here(path: &std::path::Path) -> bool {
+    std::fs::metadata(path).is_ok_and(|found| found.is_file())
 }
 
 /// Where Podman keeps its default seccomp profile, as `podman info` names it.
@@ -2525,6 +2537,30 @@ fn is_no_new_privileges(option: &str) -> bool {
     )
 }
 
+/// **What [`Docker::engine_pin_said`] found.**
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EngineSaid {
+    /// The engine's pin.
+    Pin(crate::sshroute::EnginePin),
+    /// A Podman, answering Docker's client: it is reached with Podman's own.
+    PodmanOverDocker,
+}
+
+/// **Whether `components`, what `docker version --format '{{json .Server.Components}}'`
+/// printed, names Podman's engine**: Podman's Docker API says `Podman Engine` there.
+#[must_use]
+pub fn is_podman_engine(components: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(components.trim())
+        .ok()
+        .as_ref()
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|all| {
+            all.iter().any(|one| {
+                one.get("Name").and_then(serde_json::Value::as_str) == Some("Podman Engine")
+            })
+        })
+}
+
 /// **The engine's id in what `docker info --format '{{json .}}'` printed** (#6266), or why there
 /// is none: the server's own errors where it printed some, shown escaped.
 pub fn engine_id_in(printed: &str) -> Result<String, Refused> {
@@ -2569,6 +2605,9 @@ pub struct Docker {
     /// The socket of a pool's forward to an engine on another machine (#6266), where this
     /// `docker` is that pool's: each run's engine.
     forwarded: Option<std::path::PathBuf>,
+    /// How a file of that machine's is read, pinned, where the check must read one (a rootless
+    /// Podman's runtime config, #6269).
+    reach: Option<crate::sshroute::Reach>,
     /// **The engine of a pool on another machine reached over Docker's TLS API** (#6267), where
     /// this `docker` is that pool's: each run's engine, with the files it is handed checked first.
     tls: Option<Box<crate::tlsroute::Through>>,
@@ -2722,8 +2761,25 @@ impl Docker {
             settings_in: None,
             reads_within: READS_WITHIN,
             forwarded: None,
+            reach: None,
             tls: None,
         }
+    }
+
+    /// **This `docker`, run as `program`** (a Podman pool's `podman`, #6269), with the settings
+    /// folder, time and forward it had.
+    #[must_use]
+    pub fn as_program(mut self, program: impl Into<std::path::PathBuf>) -> Docker {
+        self.program = program.into();
+        self
+    }
+
+    /// **This `docker`, reading a file of the other machine's through `reach`** where its check
+    /// must (#6269).
+    #[must_use]
+    pub fn reaching(mut self, reach: crate::sshroute::Reach) -> Docker {
+        self.reach = Some(reach);
+        self
     }
 
     /// **This `docker`, each of its runs that only reads held to `within`** rather than
@@ -2795,6 +2851,7 @@ impl Docker {
     pub fn over_tls(mut self, tls: crate::tlsroute::Through) -> Docker {
         self.tls = Some(Box::new(tls));
         self.forwarded = None;
+        self.reach = None;
         self
     }
 
@@ -2822,7 +2879,9 @@ impl Docker {
         let mut command = std::process::Command::new(&self.program);
         if let Some(socket) = &self.forwarded {
             command.env("DOCKER_HOST", format!("unix://{}", socket.display()));
+            command.env("CONTAINER_HOST", format!("unix://{}", socket.display()));
             command.env_remove("DOCKER_CONTEXT");
+            command.env_remove("CONTAINER_CONNECTION");
         }
         // Over TLS, the files where they are, named on the line: a bare command holds no run's
         // folder to copy them into, so a key kept in a vault is not reached by one.
@@ -3209,14 +3268,30 @@ impl Docker {
                 "purlis could not keep the runner's seccomp profile for docker: {why}"
             ))
         })?;
+        // Podman's client sends the profile's path, which its engine reads on its own machine:
+        // on another machine, the profile is kept there for the run, and let go once it is read
+        // (#6269). Docker's client sends the profile itself.
+        let there = match &self.reach {
+            Some(reach) => Some(reach.keep(file, profile).map_err(|why| {
+                refused(format!(
+                    "purlis could not keep the runner's seccomp profile on {}: {why}",
+                    reach.route.host()
+                ))
+            })?),
+            None => None,
+        };
         let made = self.run_prepared(
             &prepared,
-            &runner.create_args_for(desktop, &seccomp),
+            &runner.create_args_for(desktop, there.as_deref().unwrap_or(&seccomp)),
             None,
             MOST_INSPECTED,
             None,
         );
         drop(prepared);
+        if let (Some(reach), Some(there)) = (&self.reach, &there) {
+            // Read as the container was made; what is left there is only a copy of it.
+            let _ = reach.let_go(there);
+        }
         let out = match made {
             Ok(out) => out,
             Err(why) => return Err(self.and_removed(full_disk_or(why), &container, &volume)),
@@ -3725,8 +3800,27 @@ impl Docker {
                 .ok_or_else(|| refused("podman did not say where its runtime's config is"))?;
             let store = self.json(&["info", "--format", "{{json .Store}}"], "podman info")?;
             let config = std::path::Path::new(path);
-            let (oci, store) = (read_oci(config)?, podman_store(&store)?);
-            check_oci(&oci, made, config, &store, seccomp)?;
+            let store = podman_store(&store)?;
+            match &self.reach {
+                // On another machine, its files are that machine's: its runtime config read
+                // there, over the pool's pinned SSH, and only the container's own, and Podman's
+                // init judged a file there too (#6269).
+                Some(reach) => {
+                    let oci = read_oci_there(reach, config, made, &store)?;
+                    let is_file_there = |path: &std::path::Path| {
+                        reach.is_file(path, MOST_INSPECTED).unwrap_or(false)
+                    };
+                    check_oci(&oci, made, config, &store, seccomp, &is_file_there)?;
+                }
+                None => check_oci(
+                    &read_oci(config)?,
+                    made,
+                    config,
+                    &store,
+                    seccomp,
+                    &is_file_here,
+                )?,
+            }
         }
         let volume = made.runner.volume();
         let inspected = self.json(&["volume", "inspect", &volume], "docker volume inspect")?;
@@ -3872,6 +3966,36 @@ impl Docker {
             MOST_INSPECTED,
         )?;
         engine_id_in(&printed)
+    }
+
+    /// **Which engine this `docker` reaches, for a pin** (#6269, ADR 0123 §3): a Podman (this
+    /// `docker` is Podman's own client) by its socket and graph root; a Docker by its id; and a
+    /// Podman reached by Docker's client said as such, since its id is drawn anew at every ask
+    /// and its containers are not written as the check measured Podman's.
+    pub fn engine_pin_said(&self) -> Result<EngineSaid, Refused> {
+        let printed = self.read(
+            &["info".into(), "--format".into(), "{{json .}}".into()],
+            MOST_INSPECTED,
+        )?;
+        let info: serde_json::Value = serde_json::from_str(printed.trim())
+            .map_err(|_| refused("docker info did not answer JSON"))?;
+        if let Some(podman) = crate::sshroute::EnginePin::podman_in(&info) {
+            return podman.map(EngineSaid::Pin).map_err(refused);
+        }
+        let id = engine_id_in(&printed)?;
+        // Asked, not guessed: a Docker pin taken from a Podman would hold for no ask after.
+        let components = self.read(
+            &[
+                "version".into(),
+                "--format".into(),
+                "{{json .Server.Components}}".into(),
+            ],
+            MOST_INSPECTED,
+        )?;
+        if is_podman_engine(&components) {
+            return Ok(EngineSaid::PodmanOverDocker);
+        }
+        Ok(EngineSaid::Pin(crate::sshroute::EnginePin::Docker(id)))
     }
 
     /// **`made`'s home volume's `CreatedAt`, exactly as Docker printed it** (#4167): the same
@@ -4324,6 +4448,42 @@ impl Docker {
         );
         container.and(volume).map(drop)
     }
+}
+
+/// **A rootless Podman's runtime config for `made`, read on the other machine** (#6269): only
+/// the container's own (`<graph root>/overlay-containers/<container>/userdata/config.json`, as
+/// [`check_oci`] holds it), checked before anything is read there.
+fn read_oci_there(
+    reach: &crate::sshroute::Reach,
+    path: &std::path::Path,
+    made: &Made,
+    store: &PodmanStore,
+) -> Result<serde_json::Value, Refused> {
+    let own = store
+        .graph_root
+        .join("overlay-containers")
+        .join(made.container.as_str())
+        .join("userdata")
+        .join("config.json");
+    if path != own {
+        return Err(refused(format!(
+            "runner {}'s container has a runtime config that is not its own, so purlis does not \
+             link to it; {ADD_AGAIN}",
+            made.runner.name
+        )));
+    }
+    let text = reach.read(path, MOST_INSPECTED).map_err(|why| {
+        refused(format!(
+            "podman's runtime config {} could not be read there: {why}",
+            path.display()
+        ))
+    })?;
+    serde_json::from_str(&text).map_err(|_| {
+        refused(format!(
+            "podman's runtime config {} is not JSON",
+            path.display()
+        ))
+    })
 }
 
 /// What rootless Podman asked its runtime for, read up to [`MOST_INSPECTED`].

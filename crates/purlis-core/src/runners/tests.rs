@@ -1842,7 +1842,7 @@ fn remote() -> Remote {
         route: crate::sshroute::Route::parse("ssh://me@build-box/var/run/docker.sock").unwrap(),
         pin: crate::sshroute::Pin {
             host_key: crate::sshroute::HostKey::parse(HOST_KEY).unwrap(),
-            engine: "ABCD:EFGH:IJKL".to_owned(),
+            engine: crate::sshroute::EnginePin::Docker("ABCD:EFGH:IJKL".to_owned()),
         },
     }
 }

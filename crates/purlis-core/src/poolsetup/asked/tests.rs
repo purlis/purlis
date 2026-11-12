@@ -173,6 +173,49 @@ fn a_route_or_fingerprint_that_isnt_one_never_reaches_the_command() {
     );
 }
 
+/// The machine Connect kept is the one `--on` names whether or not the socket or the key file is
+/// named again (#6269): the kept route, with both, is what the pool is made with, and nothing is
+/// contacted.
+#[test]
+fn the_machine_connect_kept_is_taken_with_its_socket_and_key_file_wherever_the_ask_leaves_them_out()
+{
+    let config = tempfile::tempdir().unwrap();
+    let identity = std::path::Path::new("/home/me/.ssh/id_ed25519");
+    let kept = crate::sshroute::Route::parse("ssh://me@build-box:2222/run/podman/podman.sock")
+        .unwrap()
+        .with_identity(identity)
+        .unwrap();
+    let remote = crate::runners::Remote {
+        route: kept.clone(),
+        pin: crate::sshroute::Pin {
+            host_key: crate::sshroute::HostKey::parse(
+                "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINiGzfjDDJsgYLYCmdkf8Fel9sE6Ma14Y2+c33Y/qZ2n",
+            )
+            .unwrap(),
+            engine: crate::sshroute::EnginePin::Podman {
+                socket: "/run/podman/podman.sock".into(),
+                graph_root: "/var/lib/containers/storage".into(),
+            },
+        },
+    };
+    super::super::trusted(config.path(), &remote).unwrap();
+    // A docker that is never run: nothing is contacted for a machine already trusted.
+    let docker = Docker::at("/nonexistent/docker");
+    for (on, with) in [
+        ("ssh://me@build-box:2222", None),
+        ("ssh://me@build-box:2222/run/podman/podman.sock", None),
+        ("ssh://me@build-box:2222", Some("/home/me/.ssh/id_ed25519")),
+    ] {
+        let asked = Asked {
+            on: Some(on.into()),
+            identity: with.map(str::to_owned),
+            ..Asked::default()
+        };
+        let found = remote_of(config.path(), &docker, &asked).unwrap().unwrap();
+        assert_eq!(found, remote.clone().into(), "{on} {with:?}");
+    }
+}
+
 fn tls_files(key: crate::tlsroute::KeyFrom) -> crate::tlsroute::Files {
     crate::tlsroute::Files::new(
         "/home/me/.docker/ca.pem".into(),
