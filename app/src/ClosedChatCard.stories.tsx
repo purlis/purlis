@@ -13,6 +13,7 @@ import { useRef, useState } from "react";
 import { expect, screen, userEvent, waitFor, within } from "storybook/test";
 import type { ChatCard } from "./bindings";
 import { ClosedChatCard, ClosedChatCardPopover } from "./ClosedChatCard";
+import { cardRowTitle } from "./closedChat";
 import { Button } from "./ui/button/Button";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
 
@@ -86,7 +87,7 @@ function FromTheRow({ card }: { card: ChatCard }) {
   return (
     <div style={{ display: "grid", gap: "var(--space-4)", justifyItems: "start" }}>
       <Button ref={row} onPress={() => setOpen(true)}>
-        Finished chat #641 · Signed commits #5607
+        {cardRowTitle(card)}
       </Button>
       <p data-testid="said" style={{ margin: 0 }}>
         {said}
@@ -126,11 +127,11 @@ export const FromTheSwitchersRow: Story = {
   args: { card: FINISHED },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const row = canvas.getByRole("button", { name: /Finished chat #641/ });
+    const row = canvas.getByRole("button", { name: /Show closed chat #641/ });
     await userEvent.click(row);
     const card = await screen.findByRole("dialog", { name: "#641 · Signed commits #5607" });
     // Drawn once the popover has come in.
-    await waitFor(() => expect(within(card).getByText("Finished")).toBeVisible());
+    await waitFor(() => expect(within(card).getByText("Done")).toBeVisible());
     await expect(within(card).getByText("steward 4")).toBeVisible();
     await userEvent.tab();
     const read = within(card).getByRole("button", { name: "Read it" });
@@ -155,7 +156,9 @@ export const FromTheSwitchersRow: Story = {
 export const ScreenNotKept: Story = {
   args: { card: CLOSED },
   play: async ({ canvasElement }) => {
-    await userEvent.click(within(canvasElement).getByRole("button", { name: /Finished chat/ }));
+    await userEvent.click(
+      within(canvasElement).getByRole("button", { name: /Show closed chat #629/ }),
+    );
     const card = await screen.findByRole("dialog", { name: "#629 · talk" });
     // The family keeps a disabled button focusable, so its reason is heard: aria-disabled.
     await expect(within(card).getByRole("button", { name: "Read it" })).toHaveAttribute(
