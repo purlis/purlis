@@ -6,7 +6,7 @@
 //! A pool of kind `remote-docker` names its engine in Docker's own spelling,
 //! `ssh://[user@]host[:port]/<socket>` ([`Route`]), and is pinned to the host key the person
 //! confirmed ([`HostKey`]) and the engine's id ([`Pin`]). purlis reaches the engine with
-//! OpenSSH, never with Docker's own `ssh://` helper: one `ssh -N -L` per pool in use
+//! OpenSSH, never with Docker's own `ssh://` helper: one `ssh -L` per pool in use, held by a pipe from purlis
 //! ([`Forward`]) forwards the remote socket to `<data>/engine-links/<pool>/docker.sock`, and each
 //! run of `docker` for the pool is pointed there.
 //!
@@ -445,8 +445,16 @@ fn common_options() -> Vec<String> {
         .collect()
 }
 
-/// **The forward's arguments** (D-6257-1): `ssh -N -L <local>:<remote socket>`, pinned, and
-/// with the forward required to succeed. Refused for a route whose socket isn't known yet.
+/// **What the forward's session runs on the other machine**: it waits on a line from purlis, which
+/// never sends one. When the process holding the forward goes, however it goes, its end of the
+/// pipe closes, `read` returns, the session ends and ssh with it, so no forward outlives what
+/// opened it (`-N` would: nothing but a kill ends it). POSIX `sh`, `bash`, `zsh` and `fish` read
+/// it alike.
+pub const HELD_BY: &str = "read line";
+
+/// **The forward's arguments** (D-6257-1): `ssh -T -L <local>:<remote socket> -- <machine>
+/// read line`, pinned, with the forward required to succeed, held by a pipe from purlis
+/// ([`HELD_BY`]). Refused for a route whose socket isn't known yet.
 pub fn forward_args(
     route: &Route,
     pool: &str,
@@ -458,7 +466,7 @@ pub fn forward_args(
             "the pool's route names no socket on the other machine: connect it again".to_owned(),
         );
     };
-    let mut args = vec!["-N".to_owned()];
+    let mut args = vec!["-T".to_owned()];
     args.extend(pinned_options(known_hosts, &alias(pool)));
     for option in [
         "ExitOnForwardFailure=yes",
@@ -473,6 +481,7 @@ pub fn forward_args(
     args.push(format!("{}:{remote}", local.display()));
     args.push("--".to_owned());
     args.push(route.destination());
+    args.push(HELD_BY.to_owned());
     Ok(args)
 }
 

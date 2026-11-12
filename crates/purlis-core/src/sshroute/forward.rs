@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **A pool's one SSH forward** (D-6257-1, ADR 0123 §8): `ssh -N -L` held for as long as the pool
+//! **A pool's one SSH forward** (D-6257-1, ADR 0123 §8): `ssh -T -L` held for as long as the pool
 //! is in use, its local socket in `<data>/engine-links/<pool>/`, its pinned `known_hosts` in a run
 //! folder of its own under `<data>/docker-settings/`, both removed when it ends.
 //!
@@ -23,6 +23,9 @@ use super::{FORWARD_WITHIN, HELD, HostKey, Route};
 /// **One running forward.** Ending it (dropping it) ends ssh and removes its socket.
 pub struct Forward {
     child: Child,
+    /// purlis's end of the pipe the forward's session waits on ([`super::HELD_BY`]): closed as
+    /// this process goes, which ends the forward.
+    _held_by: Option<std::process::ChildStdin>,
     socket: PathBuf,
     /// The lock that says this process holds the pool's forward.
     _held: std::fs::File,
@@ -125,7 +128,7 @@ pub fn open(from: &Opening<'_>) -> Result<Held, String> {
     let mut command = std::process::Command::new(from.ssh);
     command
         .args(&args)
-        .stdin(Stdio::null())
+        .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::piped());
     let mut child = crate::forklock::spawn(&mut command)
@@ -147,8 +150,10 @@ pub fn open(from: &Opening<'_>) -> Result<Held, String> {
             }
         });
     }
+    let held_by = child.stdin.take();
     let mut forward = Forward {
         child,
+        _held_by: held_by,
         socket: socket.clone(),
         _held: held,
         _settings: settings,

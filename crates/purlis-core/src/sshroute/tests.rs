@@ -111,7 +111,9 @@ fn the_forward_trusts_the_pinned_key_alone_under_the_pools_alias() {
         Path::new("/data/engine-links/build/docker.sock"),
     )
     .unwrap();
-    assert_eq!(args[0], "-N");
+    // Held by a pipe from purlis, never left behind (`-N` would outlive it): see HELD_BY.
+    assert_eq!(args[0], "-T");
+    assert!(!args.contains(&"-N".to_owned()));
     assert_eq!(option(&args, "StrictHostKeyChecking"), Some("yes"));
     assert_eq!(
         option(&args, "UserKnownHostsFile"),
@@ -174,7 +176,7 @@ fn the_forward_ends_with_the_socket_pair_and_the_destination_after_its_options()
         Path::new("/data/engine-links/build/docker.sock"),
     )
     .unwrap();
-    let tail = &args[args.len() - 6..];
+    let tail = &args[args.len() - 7..];
     assert_eq!(
         tail,
         [
@@ -184,6 +186,7 @@ fn the_forward_ends_with_the_socket_pair_and_the_destination_after_its_options()
             "/data/engine-links/build/docker.sock:/run/user/1000/docker.sock",
             "--",
             "me@box",
+            HELD_BY,
         ]
     );
 }
