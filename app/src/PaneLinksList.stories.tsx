@@ -68,6 +68,7 @@ const meta = {
                 target: one.target,
                 shown: one.target,
                 does: { does: "asks", reason: "its text says docs.purlis.dev" },
+                its_text: one.text,
               }
             : one.text.startsWith("ftp://")
               ? {

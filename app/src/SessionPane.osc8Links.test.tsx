@@ -6,6 +6,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { Terminal } from "@xterm/xterm";
 import { letGoOfKeptTerminals } from "./keptTerminals";
+import { MOST_TARGET } from "./paneLinks";
 import { SessionPane } from "./SessionPane";
 
 /**
@@ -49,7 +50,7 @@ let opens: unknown = null;
 const WORDS = "github.com/login";
 const TARGET = "https://evil.example/login";
 const SAYS = "its text says github.com";
-const JS = "purlis opens only http, https and file links, so it will not open this javascript: one";
+const JS = "purlis opens only http, https and file links, not javascript: links";
 
 /** `words` marked as a link to `target`, as a program writes it (OSC 8, ST-terminated). */
 const osc8 = (target: string, words: string) =>
@@ -86,14 +87,14 @@ beforeEach(() => {
             shown: one.target,
             does: { does: "refused", reason: JS },
           };
+        // The stand-in core asks where the words name github.com, as the real one does.
+        const asks = one.text.includes("github.com");
         return {
           kind: "url",
           target: one.target,
           shown: one.target,
-          does:
-            one.text === WORDS
-              ? { does: "asks", reason: SAYS }
-              : { does: "opens", into: "browser" },
+          does: asks ? { does: "asks", reason: SAYS } : { does: "opens", into: "browser" },
+          ...(asks ? { its_text: one.text } : {}),
         };
       });
     }
@@ -247,7 +248,7 @@ describe("a link a program marked (OSC 8)", () => {
     click(drawn, 8, 0, { ctrlKey: true });
 
     const said = await screen.findByRole("dialog", { name: "Link not opened" });
-    expect(said).toHaveTextContent("will not open this javascript: one.");
+    expect(said).toHaveTextContent("not javascript: links.");
   });
 
   it("is read whole where its words wrap over two rows", async () => {
@@ -289,9 +290,74 @@ describe("a link a program marked (OSC 8)", () => {
     await waitFor(() => expect(within(dialog).getAllByRole("option")).toHaveLength(2));
     const [newest, first] = within(dialog).getAllByRole("option");
     expect(newest).toHaveAccessibleName("https://purlis.dev/");
-    expect(newest).toHaveTextContent("Its text: Click here");
+    // Words that name no other target are not said again.
+    expect(newest).not.toHaveTextContent("Its text");
     expect(first).toHaveAccessibleName(TARGET);
     expect(first).toHaveTextContent(`Its text: ${WORDS}`);
     expect(first).toHaveTextContent("asks first");
+  });
+
+  it("is asked about with what its cells show, where the program printed outside its span", async () => {
+    const { term, drawn } = await opened();
+    // Opened at column 10, the cursor taken back to the start to print an address there, then
+    // on past the span's middle to print plain words: xterm links both, the span holds the
+    // plain words only.
+    await write(
+      term,
+      `          \u001b]8;;${TARGET}\u001b\\\u001b[10D${WORDS}\u001b[10CClick here\u001b]8;;\u001b\\`,
+    );
+
+    hover(drawn, 3, 0);
+
+    await waitFor(() =>
+      expect(
+        asked("pane_link_resolve").some((one) =>
+          (one.args.candidates as { kind: string; text: string }[]).some(
+            (candidate) => candidate.kind === "osc8" && candidate.text.includes(WORDS),
+          ),
+        ),
+      ).toBe(true),
+    );
+    const tip = await screen.findByRole("tooltip", {}, { timeout: 2000 });
+    expect(tip).toHaveTextContent("Its text says github.com");
+  });
+
+  it("is listed with its whole rows where the program moved the cursor inside it", async () => {
+    Object.defineProperty(navigator, "platform", { configurable: true, get: () => "MacIntel" });
+    const { term } = await opened();
+    await write(
+      term,
+      `          \u001b]8;;${TARGET}\u001b\\\u001b[10D${WORDS}\u001b[10CClick here\u001b]8;;\u001b\\`,
+    );
+    const textarea = document.querySelector<HTMLElement>(".xterm-helper-textarea");
+    if (!textarea) throw new Error("the pane has no terminal textarea");
+    textarea.focus();
+    textarea.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "L",
+        code: "KeyL",
+        metaKey: true,
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+
+    const dialog = await screen.findByRole("dialog", { name: "Links in this pane" });
+    const [row] = await within(dialog).findAllByRole("option");
+    expect(row).toHaveTextContent("asks first");
+    expect(row).toHaveTextContent(`Its text: ${WORDS}`);
+  });
+
+  it("is handed on with a target cut one past the most, which the core refuses unread", async () => {
+    const long = `https://purlis.dev/${"a".repeat(MOST_TARGET * 2)}`;
+    await hovered(long, "Click here");
+
+    await waitFor(() => {
+      const sent = asked("pane_link_resolve")
+        .flatMap((one) => one.args.candidates as { kind: string; target?: string }[])
+        .find((one) => one.kind === "osc8");
+      expect(sent?.target).toHaveLength(MOST_TARGET + 1);
+    });
   });
 });

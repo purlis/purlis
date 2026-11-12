@@ -7,6 +7,7 @@ use super::super::{
     Asking, Asks, Candidate, Hover, Kind, LocalFile, Opening, Pane, Resolved, Resolver, Runs,
     Target, WebAddress,
 };
+use super::{MOST_TARGET, MOST_TEXT};
 
 /// A link a program marked (OSC 8): the words it printed, and the target it named.
 fn marked(text: &str, target: &str) -> Candidate {
@@ -253,7 +254,7 @@ fn every_other_scheme_is_refused_naming_it_and_says_so_on_hover() {
         ("javascript:alert(1)", "javascript:"),
         ("vscode://file/etc/hosts", "vscode:"),
         ("ftp://mirror.example.org/pub", "ftp:"),
-        ("mailto:someone@example.org", "mailto:"),
+        ("mailto:someone", "mailto:"),
         ("ssh://host/x", "ssh:"),
     ] {
         let link = marked("Click here", target);
@@ -376,15 +377,223 @@ fn a_path_naming_the_same_file_is_no_mismatch_and_another_file_asks() {
     }
 }
 
-#[test]
-fn a_web_address_named_by_a_file_s_name_is_no_mismatch() {
-    let links = links();
-    let blob = "https://github.com/purlis/purlis/blob/main/README.md";
+/// The reason the ask for `text` marked as a link to `target` gives, or a panic saying it opened.
+fn asks_saying(text: &str, target: &str) -> String {
+    match links().open(&marked(text, target), &here(), &Asks::default(), None) {
+        Opening::Ask {
+            reason,
+            about: Asking::Misleading,
+            ..
+        } => reason,
+        other => panic!("{text:?} → {target}: expected the mismatch ask, got {other:?}"),
+    }
+}
 
+/// Whether `text` marked as a link to `target` opens without asking.
+fn opens(text: &str, target: &str) -> bool {
+    matches!(
+        links().open(&marked(text, target), &here(), &Asks::default(), None),
+        Opening::Open(_)
+    )
+}
+
+#[test]
+fn a_name_names_a_web_address_by_its_host_alone_never_its_path() {
     assert_eq!(
-        links.open(&marked("README.md", blob), &here(), &Asks::default(), None),
-        Opening::Open(web(blob))
+        asks_saying("paypal.com", "https://evil.example/paypal.com"),
+        "its text says paypal.com"
     );
+    assert_eq!(
+        asks_saying(
+            "README.md",
+            "https://github.com/purlis/purlis/blob/main/README.md"
+        ),
+        "its text says README.md"
+    );
+    assert!(opens("purlis.dev", "https://purlis.dev/docs/setup"));
+}
+
+#[test]
+fn characters_that_draw_nothing_are_read_as_the_reader_sees_the_words() {
+    for hidden in [
+        '\u{200B}', '\u{200C}', '\u{200D}', '\u{00AD}', '\u{2060}', '\u{2066}', '\u{2068}',
+        '\u{2069}', '\u{202E}', '\u{FEFF}',
+    ] {
+        let text = format!("pay{hidden}pal.com");
+        assert_eq!(
+            asks_saying(&text, "https://evil.example/"),
+            "its text says paypal.com",
+            "U+{:04X}",
+            u32::from(hidden)
+        );
+        let around = format!("{hidden}paypal.com{hidden}");
+        assert_eq!(
+            asks_saying(&around, "https://evil.example/"),
+            "its text says paypal.com",
+            "U+{:04X} around",
+            u32::from(hidden)
+        );
+    }
+}
+
+#[test]
+fn look_alike_dots_and_wide_letters_are_read_as_the_dots_and_letters_they_look_like() {
+    for dot in ['\u{3002}', '\u{FF0E}', '\u{FF61}', '\u{FE52}', '\u{2024}'] {
+        let text = format!("paypal{dot}com");
+        assert_eq!(
+            asks_saying(&text, "https://evil.example/"),
+            "its text says paypal.com",
+            "U+{:04X}",
+            u32::from(dot)
+        );
+    }
+    assert_eq!(
+        asks_saying("ｐａｙｐａｌ．ｃｏｍ", "https://evil.example/"),
+        "its text says paypal.com"
+    );
+    // Folded, the same host is no mismatch.
+    assert!(opens("ｐｕｒｌｉｓ．ｄｅｖ", "https://purlis.dev/"));
+}
+
+#[test]
+fn every_wrapper_a_sentence_puts_around_a_word_is_taken_off() {
+    for text in [
+        "*paypal.com*",
+        "**paypal.com**",
+        "_paypal.com_",
+        "—paypal.com—",
+        "paypal.com…",
+        "…paypal.com",
+        "「paypal.com」",
+        "『paypal.com』",
+        "paypal.com's login",
+        "paypal.com’s login",
+        "“paypal.com”",
+        "‘paypal.com’",
+        "«paypal.com»",
+        "(paypal.com)",
+        "[paypal.com]",
+        "<paypal.com>",
+        "\"paypal.com\"",
+        "`paypal.com`",
+        "paypal.com.",
+        ".paypal.com",
+        "¡paypal.com!",
+        "paypal.com?",
+        "paypal.com—log in",
+    ] {
+        assert_eq!(
+            asks_saying(text, "https://evil.example/"),
+            "its text says paypal.com",
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn an_https_address_marked_as_a_link_to_http_asks() {
+    assert_eq!(
+        asks_saying("https://purlis.dev/login", "http://purlis.dev/login"),
+        "its text says https://purlis.dev"
+    );
+    // The other way round is no weaker.
+    assert!(opens("http://purlis.dev/", "https://purlis.dev/"));
+}
+
+#[test]
+fn another_port_asks() {
+    assert_eq!(
+        asks_saying("localhost.test:5173/x", "http://localhost.test:3000/x"),
+        "its text says localhost.test:5173"
+    );
+    assert_eq!(
+        asks_saying("https://purlis.dev/", "https://purlis.dev:8443/"),
+        "its text says purlis.dev"
+    );
+    assert_eq!(
+        asks_saying("purlis.dev", "https://purlis.dev:8443/"),
+        "its text says purlis.dev"
+    );
+    assert!(opens("https://purlis.dev:443/", "https://purlis.dev/"));
+    assert!(opens("purlis.dev:8443/a", "https://purlis.dev:8443/b"));
+}
+
+#[test]
+fn a_name_before_an_at_asks_for_the_reader_takes_it_for_the_host() {
+    assert_eq!(
+        asks_saying("https://paypal.com@evil.example/", "https://evil.example/"),
+        "its text says paypal.com"
+    );
+    assert_eq!(
+        asks_saying("paypal.com@evil.example", "https://evil.example/"),
+        "its text says paypal.com"
+    );
+    assert_eq!(
+        asks_saying(
+            "paypal.com@evil.example/login",
+            "https://evil.example/login"
+        ),
+        "its text says paypal.com"
+    );
+}
+
+#[test]
+fn an_email_address_names_its_domain() {
+    assert_eq!(
+        // Made-up addresses, spelled in parts so the commit scan does not take them for real ones.
+        asks_saying(
+            &["Write to help", "@paypal.com"].concat(),
+            "https://evil.example/"
+        ),
+        "its text says paypal.com"
+    );
+    assert!(opens(
+        &["help", "@purlis.dev"].concat(),
+        "https://purlis.dev/contact"
+    ));
+}
+
+#[test]
+fn a_target_past_the_most_is_refused_unread_and_long_words_ask() {
+    let links = links();
+    let long = format!("https://purlis.dev/{}", "a".repeat(MOST_TARGET));
+    let why = refused(links.open(
+        &marked("Click here", &long),
+        &here(),
+        &Asks::default(),
+        None,
+    ));
+    assert!(why.contains("longer than purlis reads"), "{why}");
+    let just = format!(
+        "https://purlis.dev/{}",
+        "a".repeat(MOST_TARGET - "https://purlis.dev/".len())
+    );
+    assert!(opens("Click here", &just));
+
+    let text = "word ".repeat(MOST_TEXT);
+    assert!(matches!(
+        links.open(
+            &marked(&text, "https://purlis.dev/"),
+            &here(),
+            &Asks::default(),
+            None
+        ),
+        Opening::Ask {
+            about: Asking::Misleading,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn a_file_address_in_capitals_on_another_host_is_refused() {
+    let why = refused(links().open(
+        &marked("README.md", "FILE://build-box/home/me/README.md"),
+        &here(),
+        &Asks::default(),
+        None,
+    ));
+    assert!(why.contains("build-box"), "{why}");
 }
 
 #[test]

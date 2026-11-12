@@ -281,15 +281,20 @@ impl LinkKind for LocalFile {
             return Resolved::Quiet;
         }
         let (words, line, column) = at_line(text);
-        let named = match words.strip_prefix("file:") {
-            Some(_) => match on_this_machine(words) {
+        // `FILE:` is the same scheme as `file:`: one naming another host is refused either way.
+        let addressed = words
+            .get(..5)
+            .is_some_and(|scheme| scheme.eq_ignore_ascii_case("file:"));
+        let named = if addressed {
+            match on_this_machine(words) {
                 Ok(path) => path,
                 Err(why) => return why,
-            },
-            None => match self.joined(words, pane) {
+            }
+        } else {
+            match self.joined(words, pane) {
                 Some(path) => path,
                 None => return Resolved::Quiet,
-            },
+            }
         };
         // A chat on a runner, or one purlis cannot place, names its own machine's files: mapped
         // through its mounts (#6221), never read as this one's.
@@ -397,7 +402,7 @@ fn at_suffix(line: Option<u32>, column: Option<u32>) -> String {
 
 /// `text` without its `:line[:col]`, and the line and column it named. A line of 0 is none, and
 /// so is a column without one.
-fn at_line(text: &str) -> (&str, Option<u32>, Option<u32>) {
+pub(super) fn at_line(text: &str) -> (&str, Option<u32>, Option<u32>) {
     let number = |part: &str| {
         (!part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
             .then(|| part.parse::<u32>().ok())
