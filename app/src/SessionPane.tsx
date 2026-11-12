@@ -28,6 +28,9 @@ import { draw } from "./renderer";
 import { onScreenReaderMode, screenReaderMode } from "./screenReader";
 import { onAMac } from "./tabKeys";
 import { opensFind } from "./keys/findKeys";
+import { LINK_CORE } from "./paneLinkCore";
+import { linkPane, relayed, type LinkHands } from "./paneLinks";
+import { usePaneLinks } from "./PaneLinkSurfaces";
 import { isKey } from "./keys/registry";
 import { moveAlong } from "./tabSequence";
 import { TerminalMenu, type PaneMenu } from "./TerminalMenu";
@@ -45,6 +48,7 @@ import {
 import { onTextSizes, textSizes } from "./textSize";
 import {
   inForce,
+  linkColour,
   onDrawn,
   onTerminalFont,
   terminalFont,
@@ -135,6 +139,14 @@ export function SessionPane({
   /** While the menu is being asked for from the keyboard, which the program's hold on the
    *  mouse does not stand in the way of. */
   const fromKeys = useRef(false);
+  /** **Its links' surfaces** (`PaneLinkSurfaces.tsx`, #6215): a hovered link's tooltip, and the
+   *  window's answer to one ⌘-clicked that did not simply open. An ask accepted opens the
+   *  target it showed, resolved again by the core. */
+  const { hands: linkHands, surfaces: linkSurfaces } = usePaneLinks({
+    from: { plane, session },
+    core: LINK_CORE,
+    colour: () => linkColour(inForce()),
+  });
   /** Says something in the pane, in the terminal's own hand, while it is up. */
   const saying = useRef<(trouble: string) => void>(() => {});
   /** The find bar, while it is open: the terminal's search, and how many times it has been
@@ -238,6 +250,7 @@ export function SessionPane({
     live.owner = {
       holder: where,
       fromKeys,
+      links: linkHands,
       find: (search) => setFinding((open) => ({ search, asked: (open?.asked ?? 0) + 1 })),
       startAgain: () => {
         lettingGo.current = true;
@@ -311,7 +324,7 @@ export function SessionPane({
       if (!lettingGoOf && keepTerminal(key, live)) pane.element?.remove();
       else live.release();
     };
-  }, [plane, session, started]);
+  }, [plane, session, started, linkHands]);
   // **An ended chat's last screen takes no input** (#4756): xterm sends nothing typed, and the
   // screen is read, scrolled, found in and copied from as before. After the effect above, which
   // made the terminal it is set on.
@@ -356,6 +369,7 @@ export function SessionPane({
         </span>
       </div>
       {finding && <FindBar search={finding.search} asked={finding.asked} onClose={closeFind} />}
+      {linkSurfaces}
     </>
   );
 }
@@ -392,6 +406,8 @@ type Owner = {
   find: (search: SearchAddon) => void;
   /** Lets go of the terminal and its view and starts both again (`noEcho.ts`). */
   startAgain: () => void;
+  /** What its links' hover and answers are drawn by (`PaneLinkSurfaces.tsx`). */
+  links: LinkHands | undefined;
 };
 
 /**
@@ -460,6 +476,12 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
   };
   const search = new SearchAddon();
   pane.loadAddon(search);
+  // **Its links** (#6215, `paneLinks.ts`): found under the pointer, decided by the core, drawn
+  // by the pane showing it, whichever that is now.
+  const links = linkPane(
+    pane,
+    relayed(() => live.owner?.links),
+  );
   /** What Shift+Enter sends, once the view says which harness this is — none for a shell,
    *  which keeps the terminal's own Enter (`Harness::newline`). */
   let newline: string | undefined;
@@ -730,6 +752,7 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
     writes.dispose();
     watched.dispose();
     altScreenKept.dispose();
+    links.dispose();
     echo.dispose();
     pane.dispose();
     bench.paneClosed(session, pane);

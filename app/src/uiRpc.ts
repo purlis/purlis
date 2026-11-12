@@ -49,6 +49,8 @@ export const commands = {
 	artifactRegenerateApprove: __WINDOW_ONLY_RESULT,
 	artifactRegenerate: __WINDOW_ONLY_RESULT,
 	artifactLinkOpen: __WINDOW_ONLY_RESULT,
+	paneLinkResolve: __WINDOW_ONLY,
+	paneLinkOpen: __WINDOW_ONLY,
 	artifactSearch: __WINDOW_ONLY_RESULT,
 	artifactDiscuss: __WINDOW_ONLY_START_REFUSED,
 	/**  What the window says about this launch and the session bus: nothing, on a launch with it. */
@@ -7817,6 +7819,12 @@ export type KeptMark =
 /**  What the person's key did (#2014). */
 export type KeyAct = "down" | "up";
 
+/**
+ *  **What the pane's pattern took a candidate for**: a hint, never trusted for more. The wire's
+ *  half of the core's [`Kind`]; a kind's resolver is the core's `LinkKind`.
+ */
+export type KindHint = "url";
+
 /**  One context of the person's kubeconfig, as Point kubectl at it lists it. */
 export type KubeContext = {
 	/**  Its name, as kubectl knows it. */
@@ -8043,6 +8051,52 @@ export type LinesShown = {
 	 *  that way; the row then says only the count.
 	 */
 	shown: string[],
+};
+
+/**  **Text a pane found that may be a link**: the words as printed, and the pattern's hint. */
+export type LinkCandidate = {
+	kind: KindHint,
+	text: string,
+};
+
+/**  **What ⌘-click on a link would do**, said on its hover. */
+export type LinkDoes = 
+/**  It opens, without asking. */
+{ does: "opens" } | 
+/**  It asks first, and why. */
+{ does: "asks"; reason: string } | 
+/**  It will not open, and the sentence that says why. */
+{ does: "refused"; reason: string };
+
+/**
+ *  **Where a candidate was found**: the pane's project and the chat it draws, where it has them
+ *  (a saved chat's read-only terminal has neither).
+ */
+export type LinkFrom = {
+	plane: PlaneId | null,
+	session: number | null,
+};
+
+/**  **The open command's answer.** */
+export type LinkOpened = 
+/**  Opened: `target` is what was opened. */
+{ answer: "opened"; kind: KindHint; target: string } | 
+/**
+ *  Not opened yet: the person is asked, shown its text and where it goes. Accepted, the
+ *  same candidate is sent again with `target` as what was confirmed.
+ */
+{ answer: "ask"; reason: string; shown: string; target: string } | 
+/**  Not opened, and the sentence the window shows. */
+{ answer: "refused"; reason: string };
+
+/**
+ *  **What a hover over a candidate shows**: its kind, its target in full (its own text, where it
+ *  is no link) and what opening it does.
+ */
+export type LinkSeen = {
+	kind: KindHint,
+	target: string,
+	does: LinkDoes,
 };
 
 /**  One repo the person can get. */

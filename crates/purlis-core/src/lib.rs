@@ -174,6 +174,7 @@ pub mod opencode;
 pub mod openfiles;
 pub mod ownwork;
 pub mod panel;
+pub mod panelinks;
 pub mod panicend;
 pub mod personacmd;
 pub mod personagate;

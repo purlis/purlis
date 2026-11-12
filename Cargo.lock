@@ -6437,6 +6437,7 @@ dependencies = [
  "unicode-segmentation",
  "unicode-width",
  "ureq",
+ "url",
  "uuid",
  "wiremock",
  "xattr",
