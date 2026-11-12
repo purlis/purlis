@@ -1358,6 +1358,7 @@ export const PlaneView = memo(function PlaneView({
    *  its workspace's chip in the title bar too (#3650), with one dismissal. */
   const staleClones = useStaleClones({
     plane,
+    shown: inFront,
     dismissed,
     dismiss,
     settle: settleNotices,
