@@ -229,7 +229,8 @@ function EntryButton({ action, label, onAction }: EntryAction) {
   );
 }
 
-/** One entry of a list: what it is, what is said about it, and its action (or two). */
+/** One entry of a list, a row of its table: what it is, what is said about it, and its action
+ *  (or two). */
 type Entry = {
   /** What tells it from the others: React's key and the table's row id. */
   key: string;
@@ -240,7 +241,8 @@ type Entry = {
   before?: EntryAction;
 } & EntryAction;
 
-/** A list's columns: what its rows are, whether it says a status, and its actions' names. */
+/** A list's table's columns: what its rows are, whether it says a status, and its actions'
+ *  names. */
 type Columns = {
   /** What each row is: its column's name ("Project", "Pin"). */
   what: string;
@@ -313,7 +315,7 @@ function EntryTable({
   );
 }
 
-/** A list setting: its entries, or what it says when there are none. */
+/** A list setting: its entries as a table, or what it says when there are none. */
 function list(
   id: string,
   label: string,

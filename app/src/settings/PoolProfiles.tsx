@@ -64,8 +64,8 @@ export function standingOnPool(pool: string, row: PoolProfileRow): string {
  * in there. Add a profile… adds another of this machine's, and Remove, asked first, takes one
  * off, its sign-in there with it; neither is offered while a sign-in runs on the pool.
  * Sign in on a Claude Code or Codex profile, or an opencode profile's Copilot or ChatGPT plan,
- * opens a sign-in strip under the list, its line saying where it stands, that drives the harness's own login with no
- * terminal ({@link PoolSignIn}, #4042, #4044, #4045). Another opens a shell tab in the project
+ * opens a sign-in strip under the list, which drives the harness's own login with no terminal
+ * while the profile's line says where it stands ({@link PoolSignIn}, #4042, #4044, #4045). Another opens a shell tab in the project
  * `plane`'s window, where the core types the runner's own sign-in, which the person drives; with
  * no project open, it says how to sign in from a terminal instead.
  * Nothing of this machine's sign-in goes to the runner. Each line says where it stands, and a
@@ -218,9 +218,9 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
   }
   /** What a row offers, at its end, and what it says under its words (a question asked, or
    *  why it offers nothing here). */
-  const offers = (row: PoolProfileRow): { trail: ReactNode; below: ReactNode } => {
+  const offers = (row: PoolProfileRow): { trail: ReactNode; below: string | null } => {
     let trail: ReactNode = null;
-    let below: ReactNode = null;
+    let below: string | null = null;
     // A sign-in's strip, a limit's form: drawn under the list, which they would not fit in.
     if (signing === row.name) return { trail, below };
     if (row.not_kept === null && row.standing !== "signed-in") {
@@ -326,7 +326,13 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
     }
     if (out?.name !== row.name) {
       if (removing === row.name) {
-        below = `Remove ${row.name} from pool ${pool}? Its runner forgets it, and its sign-in there goes with it.`;
+        // Asked after what the row already says, which stays (how to sign it in).
+        below = [
+          below,
+          `Remove ${row.name} from pool ${pool}? Its runner forgets it, and its sign-in there goes with it.`,
+        ]
+          .filter(Boolean)
+          .join(" ");
         trail = (
           <>
             {trail}
@@ -395,15 +401,22 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
       </List>
       {/* Where a limit kept a profile off the runner, its form, which asks again (#4397). */}
       {rows.kept
-        .filter((row) => row.not_kept !== null && row.limit !== null && signing !== row.name)
+        .filter((row) => row.not_kept !== null && row.limit !== null)
         .map((row) =>
           row.limit === null ? null : (
-            <OfferToRaise
+            // Named by its profile, as it stands apart from its row.
+            <section
               key={`${row.name}:${row.not_kept}`}
-              offer={row.limit}
-              action="Save to the pool and ask again"
-              onRaised={() => void askProfiles(pool, plane)}
-            />
+              className="pool-profile-raise"
+              aria-label={`${row.name}'s limit on pool ${pool}`}
+            >
+              <p className="ui-setting-help">{`${row.name}: ${row.not_kept}.`}</p>
+              <OfferToRaise
+                offer={row.limit}
+                action="Save to the pool and ask again"
+                onRaised={() => void askProfiles(pool, plane)}
+              />
+            </section>
           ),
         )}
       {signingRow !== undefined && (

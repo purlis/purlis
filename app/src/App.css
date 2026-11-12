@@ -7877,8 +7877,6 @@ nav.piece-files-head {
   margin: 0;
 }
 
-/* A signing table's cell of words and a mark side by side (#6301): a device and its Older
-   setup, a Verified badge and who it commits as. */
 /* **The pools, a table of controls** (#6301): under each pool's heading row, what is said and
    set about it, one thing under another across the table. */
 .pools-about {
@@ -7891,9 +7889,9 @@ nav.piece-files-head {
   inline-size: 100%;
 }
 
-/* **This machine's profiles, a table of controls** (#6301): a cell's lines one under another
-   (how it signs in, where, its buttons), each as wide as its words; the profile's icon beside
-   its name. */
+/* **A record's lines in a table's cell** (#6301): one under another (a name and where it is,
+   how a profile signs in, its buttons), each as wide as its words. A profile's icon stands
+   beside its name. */
 .ui-record-lines {
   display: grid;
   justify-items: start;
@@ -7906,6 +7904,8 @@ nav.piece-files-head {
   gap: var(--space-3);
 }
 
+/* A signing table's cell of words and a mark side by side (#6301): a device and its Older
+   setup, a Verified badge and who it commits as. */
 .signing-device,
 .signing-verified {
   display: inline-flex;
