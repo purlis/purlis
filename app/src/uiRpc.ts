@@ -4700,7 +4700,8 @@ export type ChatSkills = {
 	repos: string[],
 	/**
 	 *  Why the chat gets no skills, where its harness is a declared one skills are not supported
-	 *  on (SK-30): said in place of the words for a tool purlis does not know.
+	 *  on (SK-30), or where it is not running now (#6196): said in place of the words for a tool
+	 *  purlis does not know.
 	 */
 	not_supported: string | null,
 	/**
