@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794469564142,
+  "lastUpdate": 1794473161684,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -47166,6 +47166,48 @@ window.BENCHMARK_DATA = {
             "value": 102.63071649999999,
             "unit": "ms",
             "extra": "median of 5 runs: 102.343, 102.627, 102.631, 102.880, 103.069 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "901eff39d49e6b16792193f1d6edd199c59f1ee9",
+          "message": "felt speed 2: saving rows, alerts and stale clones answer at once (#6285)\n\n* The Saving rows, the alerts and the stale repos answer without waiting on git (H6c)\n\nA reader of the plane's git standing (the Saving tab, the alerts) is answered at\nonce from the last standing while a newer one is read behind it, no sooner than\n2 s after the last read, so a burst of watcher batches costs one read; the window\nis told through its git plane-changed when the newer standing differs. Once\ngit's own files moved (a commit, a save, a fetch) the reader waits, so what the\nperson did is what the answer shows. alertsEverywhere reads each project on its\nown thread; staleClones reads each clone's shared standing, four at a time,\nwith no status of its own.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M75BMBK6MJSR5WGHX3QYB25P\nPurlis-Persona: steward\n\n* The window's bindings say alertsEverywhere reads each project from its kept standing (H6c)\n\nRegenerated with `cargo test -p purlis-app -- --ignored regenerate_the_typescript_the_ui_imports`\non current main; only the command's doc comment moved.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M75BMBK6MJSR5WGHX3QYB25P\nPurlis-Persona: steward\n\n* The stale-clone fixture commits as its own author, so a runner with no git identity can run it (H6c)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M770E80016NB8F6D0WCP79AD\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-12T07:05:11Z",
+          "tree_id": "50d5214eda2dcd55323380410f8a13d3b8eaaea8",
+          "url": "https://github.com/purlis/purlis/commit/901eff39d49e6b16792193f1d6edd199c59f1ee9"
+        },
+        "date": 1794473156195,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5437430000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.534, 0.543, 0.544, 0.551, 0.553 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.1347615,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.017, 16.116, 16.135, 16.329, 16.569 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.414174,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.147, 101.212, 101.414, 102.051, 102.132 ms"
           }
         ]
       }
