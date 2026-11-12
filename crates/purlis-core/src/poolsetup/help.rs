@@ -45,6 +45,7 @@ pub fn opening(setup: &Setup, step: StepId, error: Option<&str>) -> Result<Strin
     let kind = match setup.kind {
         super::Kind::Docker => "on this machine's Docker",
         super::Kind::Cluster => "on a team's Kubernetes cluster",
+        super::Kind::RemoteDocker => "on Docker on another machine, over SSH",
     };
     let mut quoted: Vec<String> = Vec::new();
     let mut quote = |title: &str, lines: &mut dyn Iterator<Item = String>| {
