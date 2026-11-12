@@ -43,10 +43,16 @@ const ran: string[] = [];
 vi.mock("./SessionPane", async () => {
   const { useContext, useEffect } = await import("react");
   const { PaneTerminalAt } = await import("./paneTerminal");
+  const { listsLinks } = await import("./paneLinksOpen");
   return {
     // A terminal with something selected, which says to its pane's head what it can do.
-    SessionPane: ({ session }: { session: number }) => {
+    SessionPane: ({ plane, session }: { plane: string; session: number }) => {
       const at = useContext(PaneTerminalAt);
+      // Its Links in this pane… (#6332), which the window's rows open.
+      useEffect(
+        () => listsLinks(plane, session, () => ran.push(`links:${session}`)),
+        [plane, session],
+      );
       useEffect(() => {
         if (at === null) return;
         at.current = { selected: () => true, run: (id) => ran.push(id) };
@@ -288,6 +294,57 @@ describe("a chat's pane head", () => {
 
     fireEvent.click(within(menu).getByRole("menuitem", { name: "Copy" }));
     await waitFor(() => expect(ran).toEqual(["terminal.copy"]));
+  });
+});
+
+describe("Links in this pane… from the pane's head, its ⋯ and the palette (#6332)", () => {
+  /** The row's name, as a reader hears it, and the key it says. */
+  const linksRow = async (menu: HTMLElement) => {
+    const row = within(menu).getByRole("menuitem", { name: "Links in this pane…" });
+    // The key is the registry's `pane.links`, drawn and said (Ctrl+Shift+L off a Mac).
+    expect(row).toHaveAttribute("aria-keyshortcuts", "Control+Shift+L");
+    expect(row.querySelector('[data-part="shortcut"]')).toHaveAttribute("data-key", "Ctrl+Shift+L");
+    return row;
+  };
+
+  it("is on the head's right-click, and opens this pane's list", async () => {
+    await aPane();
+    await waitFor(() => expect(controls()[1]).toMatch(/^More for /));
+    ran.length = 0;
+    fireEvent.contextMenu(head().querySelector(".pane-chips") as HTMLElement);
+    fireEvent.click(await linksRow(await screen.findByRole("menu")));
+    await waitFor(() => expect(ran).toEqual(["links:4"]));
+  });
+
+  it("is on the head's ⋯, and opens this pane's list", async () => {
+    await aPane();
+    await waitFor(() => expect(controls()[1]).toMatch(/^More for /));
+    ran.length = 0;
+    fireEvent.click(within(head()).getByRole("button", { name: `More for ${NAME}` }));
+    fireEvent.click(await linksRow(await screen.findByRole("menu")));
+    await waitFor(() => expect(ran).toEqual(["links:4"]));
+  });
+
+  it("is on a shell's pane too, whose links are a pane's as a chat's are", async () => {
+    await aPane(SHELL);
+    await waitFor(() => expect(controls()).toContainEqual(expect.stringMatching(/^More for /)));
+    ran.length = 0;
+    fireEvent.contextMenu(head().querySelector(".pane-chips") as HTMLElement);
+    fireEvent.click(await linksRow(await screen.findByRole("menu")));
+    await waitFor(() => expect(ran).toEqual(["links:4"]));
+  });
+
+  it("is a palette row, for the pane with the keyboard", async () => {
+    await aPane();
+    ran.length = 0;
+    fireEvent.keyDown(window, { key: "F2" });
+    const dialog = await screen.findByRole("dialog", { name: "Command palette" });
+    fireEvent.change(within(dialog).getByRole("combobox"), {
+      target: { value: "links in this pane" },
+    });
+    const list = await within(dialog).findByRole("listbox", { name: "Actions" });
+    fireEvent.click(await within(list).findByRole("option", { name: /^Links in this pane…/ }));
+    await waitFor(() => expect(ran).toEqual(["links:4"]));
   });
 });
 

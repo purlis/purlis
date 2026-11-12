@@ -2089,6 +2089,7 @@ function App() {
       endChat: () => undefined,
       askPersona: () => undefined,
       useSkill: () => undefined,
+      listLinks: () => undefined,
       showChatSkills: () => undefined,
       openStudioChat: () => undefined,
       unlinkWorkItem: async () => nowhere(),

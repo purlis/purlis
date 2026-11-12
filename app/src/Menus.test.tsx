@@ -139,6 +139,7 @@ describe("what a menu lists", () => {
     expect(chat.above).toEqual([
       "Rename chat 3 steward…",
       "Move chat 3 steward…",
+      "Links in this pane…",
       "Activity of 3 steward",
       "Network of 3 steward",
     ]);
@@ -355,6 +356,8 @@ describe("a menu on screen", () => {
       "Ask",
       // Where it is drawn, by the keys (#4764).
       "Move…",
+      // The links on its pane's screen (#6332).
+      "Links in this pane…",
       "Open",
       "Restart",
       "Stop",

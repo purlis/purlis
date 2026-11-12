@@ -764,6 +764,7 @@ import {
   type SeenRows,
 } from "./seen";
 import { SeenRowsOf } from "./seenRows";
+import { listLinksOf } from "./paneLinksOpen";
 
 /** Whether two lists of the right side's extension panels draw the same tabs. */
 const samePanels = (a: readonly PanelTab[], b: readonly PanelTab[]) =>
@@ -8911,6 +8912,8 @@ export const PlaneView = memo(function PlaneView({
       // A chat's Ask {persona}… and Use skill… open their dialogs: the one way in to each.
       askPersona: openAskPersona,
       useSkill: openUseSkill,
+      // The pane's own list (#6332): the pane drawing the chat says how to open it.
+      listLinks: (session) => void listLinksOf(plane, session),
       showChatSkills: (session) => askChatSkills(plane, session),
       openStudioChat: (session) => {
         const link = studioLinks[session];

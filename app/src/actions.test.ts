@@ -71,7 +71,7 @@ import {
   ownTabId,
   besideId,
 } from "./actions";
-import { ASK_LOCKED_ID, askId, askRows, inPalette, usingSkillId } from "./actions";
+import { ASK_LOCKED_ID, askId, askRows, chatLinksId, inPalette, usingSkillId } from "./actions";
 import { NO_LINK_FOLLOWED, listedMemoryOffers, memoryMoveId, moveRows } from "./actions";
 import { PUBLISHED_WITH_THE_PROJECT } from "./memoryMoves";
 import { sessionOffers } from "./actions";
@@ -149,6 +149,7 @@ function doing(): Doing & { calls: string[] } {
     endChat: note("endChat"),
     askPersona: note("askPersona"),
     useSkill: note("useSkill"),
+    listLinks: note("listLinks"),
     showChatSkills: note("showChatSkills"),
     openStudioChat: note("openStudioChat"),
     unlinkWorkItem: async (...args: unknown[]) => {
@@ -2117,6 +2118,9 @@ describe("carrying out a row", () => {
         "openSettingsTab",
         "openYourSettings",
         "installCli",
+        // Links in this pane… (#6332): the palette's, the focused pane's, and each pane's own.
+        "listLinks:7",
+        "listLinks:8",
         "createWorkspace",
         "removeWorkspace:alpha",
         "removeWorkspace:beta",
@@ -2516,6 +2520,8 @@ describe("the catalogue as the tabs change", () => {
     // **A chat's rows are the chat's, by its number** (#4753): Rename… and Activity are
     // arrangements and reads, above the line; End… ends it, and is its own row.
     expect(offers.filter((id) => id.startsWith("chat.") && id.endsWith(":7"))).toEqual([
+      // Its pane's Links in this pane… (#6332), offered with the palette's own.
+      "chat.links:7",
       "chat.rename:7",
       "chat.moveto:7",
       "chat.activity:7",
@@ -2897,8 +2903,10 @@ describe("the palette at fifty chats", () => {
     // behind are menu-only. 1275 since #5644: Show the Asks view and Show the Updates view, where
     // Show the Inbox view was. 1276 since #5645: Show the Notices view. 1277 since #5688: Your
     // settings: Reports. 1278 since #6017: Quiet now. 1382 since #2920: one row per setting of
-    // You's and the project's (104), whatever the number of chats.
-    expect(offers).toHaveLength(1382);
+    // You's and the project's (104), whatever the number of chats. 1433 since #6332: Links in
+    // this pane…, each of the fifty panes' own row, menu-only, and the focused pane's in the
+    // palette.
+    expect(offers).toHaveLength(1433);
     // Fifty tabs of one chat each: the palette has their chats' Rename chat rows instead.
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.rename:"))).toHaveLength(0);
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.closeOthers:"))).toHaveLength(
@@ -5226,5 +5234,47 @@ describe("a pin's Move left and Move right (#3128)", () => {
       "workspace.pin-left:beta",
       "workspace.pin-right:beta",
     ]);
+  });
+});
+
+describe("Links in this pane… on the ⋯ menu and in the palette (#6332)", () => {
+  const tabs = openTab(openTab(noTabs(), 7, "3", "steward"), 8, "sh");
+
+  it("is on every drawn pane's ⋯ list, a chat's and a shell's, and opens that pane's list", async () => {
+    const offers = catalogue(now({ tabs, askable: (s) => s === 7 }));
+    for (const session of [7, 8]) {
+      expect(menuOn({ on: "chat", session }).above).toContain(chatLinksId(session));
+      expect(by(offers, chatLinksId(session))).toMatchObject({
+        available: true,
+        menuOnly: true,
+        does: { verb: "listLinks", session },
+      });
+    }
+    const hands = doing();
+    await run(offers, chatLinksId(8), hands);
+    expect(hands.calls).toEqual(["listLinks:8"]);
+  });
+
+  it("is one palette row, for the pane with the keyboard", async () => {
+    const offers = inPalette(catalogue(now({ tabs })));
+    const rows = offers.filter((offer) => offer.does.verb === "listLinks");
+    expect(rows).toHaveLength(1);
+    // The focused pane is the tab in front's: the shell opened last.
+    expect(rows[0]).toMatchObject({
+      id: "pane.links",
+      title: "Links in this pane…",
+      available: true,
+      does: { verb: "listLinks", session: 8 },
+    });
+    const hands = doing();
+    await run(offers, "pane.links", hands);
+    expect(hands.calls).toEqual(["listLinks:8"]);
+  });
+
+  it("says why it cannot run with no pane in front", () => {
+    expect(by(catalogue(now()), "pane.links")).toMatchObject({
+      available: false,
+      reason: "No pane is in front, so there are no links to list.",
+    });
   });
 });

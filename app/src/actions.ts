@@ -275,6 +275,8 @@ export const PASS_THROUGH_KEY = "F2";
 
 /** The row that sends it, looked up by id wherever the keystroke is handled. */
 export const PASS_THROUGH_ID = "pane.sendkey";
+/** The palette's *Links in this pane…*, for the pane with the keyboard (#6332). */
+export const PANE_LINKS_ID = "pane.links";
 
 /** The row that turns screen-reader mode on or off (DS-6, #629). Its id names what it changes,
  *  every terminal's mode, after the colon: it is no row about what is in front
@@ -424,6 +426,9 @@ export type Does =
   /** Opens **Use skill…** for a chat (#2775): its skills, to type one into it unsent. It types
    *  nothing by itself: the pick does, through `use_skill`. */
   | { verb: "useSkill"; session: number }
+  /** Opens **Links in this pane…** on chat or shell `session`'s pane (#6332): the links on its
+   *  screen, to pick from. Opens nothing where no pane draws it. */
+  | { verb: "listLinks"; session: number }
   /** Shows the chat's skills in the sidebar's Skills view (S8, #5204). */
   | { verb: "showChatSkills"; session: number }
   /** Opens the skill the Skill studio started the chat for (#5185, #5204). */
@@ -1196,6 +1201,8 @@ export type Doing = {
   askPersona: (session: number, persona: string) => void;
   /** Opens Use skill… for the chat (#2775). */
   useSkill: (session: number) => void;
+  /** Opens Links in this pane… on the pane that draws `session` (#6332). */
+  listLinks: (session: number) => void;
   /** Shows the chat's skills in the sidebar's Skills view (S8, #5204). */
   showChatSkills: (session: number) => void;
   /** Opens what the Skill studio started the chat for (#5185, #5204). */
@@ -1743,6 +1750,8 @@ export const askerId = (session: number) => `chat.asker:${session}`;
 export const chatSkillsId = (session: number) => `chat.skills:${session}`;
 /** The id of the row that opens what the Skill studio started chat `session` for (#5204). */
 export const chatStudioId = (session: number) => `chat.studio:${session}`;
+/** The id of the row that opens Links in this pane… on chat or shell `session`'s pane (#6332). */
+export const chatLinksId = (session: number) => `chat.links:${session}`;
 /** The id of the row that opens Use skill… for chat `session` (#2775). */
 export const usingSkillId = (session: number) => `chat.useskill:${session}`;
 /** The id of Rename chat… for chat `session`. */
@@ -2353,6 +2362,32 @@ export function catalogue(now: Now): Offer[] {
       });
     }
   }
+
+  // **Links in this pane…** (#6332, spec #6208 D10): the links on a pane's screen, to pick from by
+  // the keyboard. The palette's row is the focused pane's, as ⇧⌘L is; each pane's ⋯ list and its
+  // head's right-click have their own (`chatLinksId`), menu-only.
+  offers.push(
+    focusedOn?.kind === "session"
+      ? can(PANE_LINKS_ID, SAID.linksInThisPane, {
+          verb: "listLinks",
+          session: focusedOn.session,
+        })
+      : cannot(
+          PANE_LINKS_ID,
+          SAID.linksInThisPane,
+          front === undefined
+            ? "No pane is in front, so there are no links to list."
+            : "The pane in focus shows no terminal, so there are no links to list.",
+        ),
+  );
+  const drawn = new Set(
+    now.tabs.order.flatMap((tab) => panesOf(now.tabs, tab).map((one) => one.session)),
+  );
+  for (const session of drawn)
+    offers.push({
+      ...can(chatLinksId(session), SAID.linksInThisPane, { verb: "listLinks", session }),
+      menuOnly: true,
+    });
 
   // The key the palette claimed, handed back. Not destructive and not below the line: it is
   // how an operator whose harness binds `F2` types `F2` at all (charter-app#47).
@@ -3790,6 +3825,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return DID;
     case "useSkill":
       doing.useSkill(does.session);
+      return DID;
+    case "listLinks":
+      doing.listLinks(does.session);
       return DID;
     case "showChatSkills":
       doing.showChatSkills(does.session);
@@ -5998,6 +6036,8 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
           // Where it is drawn, by the keys (#4764).
           moveToChatId(at),
           briefId(at),
+          // The links on its pane's screen (#6332), in its ⋯ list and its head's right-click.
+          chatLinksId(at),
           // What its pane foot presses (#5204), then what it said and reached.
           chatHarnessId(at),
           chatWorkspaceId(at),

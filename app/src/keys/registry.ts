@@ -769,7 +769,9 @@ export const SHORTCUTS: readonly Shortcut[] = [
     chords: { mac: [PANE_LINKS.mac], other: [PANE_LINKS.other] },
     said: linksListKeySaid,
     // The terminal's menu row that opens the list (#6219) says this key, drawn and to a reader.
-    rows: ["terminal.links"],
+    // So does each pane's ⋯ and head row (#6332). The palette's draws no key: ⇧⌘L is the
+    // focused terminal's, not the window's, and the palette shows only the window's.
+    rows: ["terminal.links", "chat.links:"],
     yields: [],
     matches: opensTheLinksList,
   },

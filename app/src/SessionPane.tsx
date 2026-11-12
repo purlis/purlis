@@ -39,6 +39,7 @@ import {
 } from "./paneLinks";
 import { usePaneLinks } from "./PaneLinkSurfaces";
 import { usePaneLinkChats } from "./PaneLinkChats";
+import { listsLinks } from "./paneLinksOpen";
 import { isKey } from "./keys/registry";
 import { moveAlong } from "./tabSequence";
 import { TerminalMenu, type PaneMenu } from "./TerminalMenu";
@@ -265,6 +266,12 @@ export function SessionPane({
     },
     [runLinkRow],
   );
+
+  // **The window's rows open its list** (#6332): the palette's, its ⋯'s and its head's.
+  useEffect(() => {
+    if (openLinksList === undefined) return;
+    return listsLinks(plane, session, openLinksList);
+  }, [plane, session, openLinksList]);
 
   // **Its pane's head reaches it** (#4760): Copy and Paste on a right-click of the head run
   // here, as its own menu's do.
