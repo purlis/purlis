@@ -49,6 +49,8 @@ export const commands = {
 	artifactRegenerateApprove: __WINDOW_ONLY_RESULT,
 	artifactRegenerate: __WINDOW_ONLY_RESULT,
 	artifactLinkOpen: __WINDOW_ONLY_RESULT,
+	paneLinkResolve: __WINDOW_ONLY,
+	paneLinkOpen: __WINDOW_ONLY,
 	artifactSearch: __WINDOW_ONLY_RESULT,
 	artifactDiscuss: __WINDOW_ONLY_START_REFUSED,
 	/**  What the window says about this launch and the session bus: nothing, on a launch with it. */
@@ -1542,6 +1544,9 @@ export const commands = {
 	 *  another open task, of that chat or of any other (#1511, #1534, V100-68): what its tab warns
 	 *  about, by every task's name. There are no file locks between tasks, so a file two of them
 	 *  change cannot be told apart afterwards.
+	 * 
+	 *  Off the window's thread: every open task's folder is resolved on the disk, once for each
+	 *  folder shared (H6b).
 	 */
 	tasksSharingAFolder: (plane: PlaneId, session: number) => typedError<SharedFolder[], string>(__TAURI_INVOKE("tasks_sharing_a_folder", { plane, session })),
 	/**
@@ -1550,6 +1555,9 @@ export const commands = {
 	 *  name, or `null` where none is. `place` is the dialog's word for where it works: `null` for
 	 *  that chat's folder, `workspace:<name>` for another workspace, `worktree` for a branch of its
 	 *  own, of which nothing is said. It starts nothing and changes nothing.
+	 * 
+	 *  Off the window's thread: the place is read from the workspace and the open tasks' folders
+	 *  resolved on the disk (H6b).
 	 */
 	taskFolderShared: (plane: PlaneId, session: number, place: string | null) => typedError<string | null, string>(__TAURI_INVOKE("task_folder_shared", { plane, session, place })),
 	/**
@@ -1727,7 +1735,8 @@ export const commands = {
 	 *  mistake.
 	 * 
 	 *  On a blocking thread, because the plane-root alert asks git for a status per project and a
-	 *  window that waited on eight of them would miss its frame.
+	 *  window that waited on eight of them would miss its frame; each project read beside the
+	 *  others, from its kept standing (H6c).
 	 */
 	alertsEverywhere: () => typedError<PlaneAlerts[], string>(__TAURI_INVOKE("alerts_everywhere")),
 	/**
@@ -1932,6 +1941,8 @@ export const commands = {
 	poolSetupChooseDocker: __WINDOW_ONLY_RESULT,
 	poolSetupName: __WINDOW_ONLY_RESULT,
 	poolSetupPool: __WINDOW_ONLY_RESULT,
+	poolSetupAdd: __WINDOW_ONLY_RESULT,
+	poolSetupStartOver: __WINDOW_ONLY_RESULT,
 	poolSetupCommand: __WINDOW_ONLY_RESULT,
 	poolSetupCreate: __WINDOW_ONLY_RESULT,
 	poolSetupSignInsByHand: __WINDOW_ONLY_RESULT,
@@ -2572,7 +2583,6 @@ export const commands = {
 } | null, string>(__TAURI_INVOKE("chat_usage", { plane, session })),
 	recordSlow: __WINDOW_ONLY_RESULT,
 	slowLogRecent: __WINDOW_ONLY_RESULT,
-	debug5478Log: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **What the chats of a tab used** (#1500). `scope` says what for: a row's hover reads its
 	 *  one figure; a tab's menu reads every line, each task's time and the total. `own` is the
@@ -4701,7 +4711,8 @@ export type ChatSkills = {
 	repos: string[],
 	/**
 	 *  Why the chat gets no skills, where its harness is a declared one skills are not supported
-	 *  on (SK-30): said in place of the words for a tool purlis does not know.
+	 *  on (SK-30), or where it is not running now (#6196): said in place of the words for a tool
+	 *  purlis does not know.
 	 */
 	not_supported: string | null,
 	/**
@@ -7810,6 +7821,12 @@ export type KeptMark =
 /**  What the person's key did (#2014). */
 export type KeyAct = "down" | "up";
 
+/**
+ *  **What the pane's pattern took a candidate for**: a hint, never trusted for more. The wire's
+ *  half of the core's [`Kind`]; a kind's resolver is the core's `LinkKind`.
+ */
+export type KindHint = "url";
+
 /**  One context of the person's kubeconfig, as Point kubectl at it lists it. */
 export type KubeContext = {
 	/**  Its name, as kubectl knows it. */
@@ -8036,6 +8053,52 @@ export type LinesShown = {
 	 *  that way; the row then says only the count.
 	 */
 	shown: string[],
+};
+
+/**  **Text a pane found that may be a link**: the words as printed, and the pattern's hint. */
+export type LinkCandidate = {
+	kind: KindHint,
+	text: string,
+};
+
+/**  **What ⌘-click on a link would do**, said on its hover. */
+export type LinkDoes = 
+/**  It opens, without asking. */
+{ does: "opens" } | 
+/**  It asks first, and why. */
+{ does: "asks"; reason: string } | 
+/**  It will not open, and the sentence that says why. */
+{ does: "refused"; reason: string };
+
+/**
+ *  **Where a candidate was found**: the pane's project and the chat it draws, where it has them
+ *  (a saved chat's read-only terminal has neither).
+ */
+export type LinkFrom = {
+	plane: PlaneId | null,
+	session: number | null,
+};
+
+/**  **The open command's answer.** */
+export type LinkOpened = 
+/**  Opened: `target` is what was opened. */
+{ answer: "opened"; kind: KindHint; target: string } | 
+/**
+ *  Not opened yet: the person is asked, shown its text and where it goes. Accepted, the
+ *  same candidate is sent again with `target` as what was confirmed.
+ */
+{ answer: "ask"; reason: string; shown: string; target: string } | 
+/**  Not opened, and the sentence the window shows. */
+{ answer: "refused"; reason: string };
+
+/**
+ *  **What a hover over a candidate shows**: its kind, its target in full (its own text, where it
+ *  is no link) and what opening it does.
+ */
+export type LinkSeen = {
+	kind: KindHint,
+	target: string,
+	does: LinkDoes,
 };
 
 /**  One repo the person can get. */
@@ -10519,6 +10582,8 @@ export type PoolSetupShown = {
 	noticed: boolean,
 	/**  Pools this machine keeps that this setup isn't on. */
 	others: string[],
+	/**  The name a new pool is recommended, which no pool here has (#6256). */
+	recommended: string,
 };
 
 /**  This machine's profiles against pool `pool`'s limits (#4482). */
@@ -12054,7 +12119,11 @@ export type ReviewedSkill = {
 };
 
 /**  Which risk an ask carries ([`RiskShown`]). */
-export type RiskClass = "protected-push" | "production-host" | "outside-project";
+export type RiskClass = "protected-push" | "production-host" | "outside-project" | 
+/**  A delete its command or tool plainly says (#6178). */
+"delete" | 
+/**  A credential handed from a purlis vault to a chat's program, a page or a runner (#6178). */
+"vault-use";
 
 /**  A risk, and the core's words for it. */
 export type RiskMark = {
@@ -15028,7 +15097,18 @@ export type SlowMoment =
  *  A gap of `ms` between two of the window's frames, seen at `at`, while `hot` chats were
  *  working, with the tab in front (`front`) and whether a view of a chat was opening.
  */
-{ kind: "stall"; ms: number; at: number | null; hot: number; front: string | null; opening: boolean };
+{ kind: "stall"; ms: number; at: number | null; hot: number; front: string | null; opening: boolean } | 
+/**
+ *  The core's main thread ran a ping `ms` after it was asked to at `at`, busy with the
+ *  command `running` when the wait was noticed (`crate::mainwatch`). The core writes it; the
+ *  window only reads it back.
+ */
+{ kind: "core_stall"; ms: number; at: number | null; running: string | null } | 
+/**
+ *  The command `command`, received on the core's main thread at `at`, held it for `ms`
+ *  (`crate::mainwatch`). The core writes it; the window only reads it back.
+ */
+{ kind: "core_command"; command: string; ms: number; at: number | null };
 
 /**  What the window says about a slow launch: its line, and the relaunch that line suggests. */
 export type SlowStart = {

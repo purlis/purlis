@@ -49,6 +49,22 @@ describe("the scenario specs a part runs", () => {
     expect(specsOfPart(FILES, "4/4")).toEqual(["tab-chip.e2e.ts", "your-repos.e2e.ts"]);
   });
 
+  it("cuts Linux's three parts at the names chosen by measured time", () => {
+    expect(specsOfPart(FILES, "1/3")).toEqual(["activity.e2e.ts", "palette.e2e.ts"]);
+    expect(specsOfPart(FILES, "2/3")).toEqual([
+      "pane-notices.e2e.ts",
+      "panes.e2e.ts",
+      "project-switch.e2e.ts",
+    ]);
+    expect(specsOfPart(FILES, "3/3")).toEqual([
+      "projects.e2e.ts",
+      "skill-studio-drafts.e2e.ts",
+      "skill-studio.e2e.ts",
+      "tab-chip.e2e.ts",
+      "your-repos.e2e.ts",
+    ]);
+  });
+
   it("cuts two parts where the second starts at projects, as WebdriverIO's halves did", () => {
     expect(specsOfPart(FILES, "1/2")).toEqual([
       "activity.e2e.ts",
@@ -76,7 +92,7 @@ describe("the scenario specs a part runs", () => {
   });
 
   it("refuses a split it has no cuts for, rather than run a wrong share", () => {
-    expect(() => specsOfPart(FILES, "1/3")).toThrow(/no cuts for 3 parts/);
+    expect(() => specsOfPart(FILES, "1/5")).toThrow(/no cuts for 5 parts/);
     expect(() => specsOfPart(FILES, "5/4")).toThrow(/part 5 of 4/);
     expect(() => specsOfPart(FILES, "half")).toThrow(/k\/n/);
   });

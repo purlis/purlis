@@ -514,6 +514,7 @@ fn a_login_is_filled_on_its_addresss_origin_and_bound_to_its_site() {
         identity: None,
         suggested: false,
         form: None,
+        start: None,
     })
     .unwrap();
     assert_eq!(login.origin, "https://shop.example.test");
@@ -528,6 +529,7 @@ fn a_login_is_filled_on_its_addresss_origin_and_bound_to_its_site() {
         identity: None,
         suggested: false,
         form: None,
+        start: None,
     })
     .unwrap();
     assert_eq!(local.0.origin, "http://127.0.0.1:8123");
@@ -540,6 +542,7 @@ fn a_login_is_filled_on_its_addresss_origin_and_bound_to_its_site() {
         identity: None,
         suggested: false,
         form: None,
+        start: None,
     })
     .unwrap_err();
     assert!(refused.contains("not one a browser opens"), "{refused}");
@@ -558,6 +561,7 @@ fn a_login_is_refused_on_plain_http_but_this_machines_loopback() {
         identity: None,
         suggested: false,
         form: None,
+        start: None,
     })
     .unwrap_err();
     assert!(refused.contains("plain http"), "{refused}");
@@ -569,6 +573,7 @@ fn a_login_is_refused_on_plain_http_but_this_machines_loopback() {
         identity: None,
         suggested: false,
         form: None,
+        start: None,
     })
     .unwrap();
     assert_eq!(login.origin, "https://xn--bcher-kva.example");
@@ -592,6 +597,7 @@ fn a_login_whose_form_is_elsewhere_fills_there_and_is_held_to_both_sites() {
         identity: None,
         suggested: true,
         form: Some(form.into()),
+        start: None,
     };
     let (driven, sites) = super::login_of(&login("https://auth.example.test")).unwrap();
     assert_eq!(driven.origin, "https://auth.example.test");
@@ -609,6 +615,43 @@ fn a_login_whose_form_is_elsewhere_fills_there_and_is_held_to_both_sites() {
     for refused in [
         "http://auth.example.test",
         "https://auth.example.test/realm",
+    ] {
+        assert!(super::login_of(&login(refused)).is_err(), "{refused}");
+    }
+}
+
+/// #6291 (the operator's ruling of 2026-11-12): a login's sign-in starts where the chat named it,
+/// its query as written, while it fills on its form's origin and is held to its page's site and
+/// its form's as before. Judged again by the host, whatever the window sent.
+#[test]
+fn a_login_with_a_start_opens_it_as_written_and_is_held_to_its_sites_as_before() {
+    use purlis_host::protocol::browsing::{LogIn, Secret};
+    let start = "https://auth.example.test/authorize?client_id=app\
+                 &redirect_uri=https%3A%2F%2Fapp.example.test%2Fcb&state=x%2By#f";
+    let login = |start: &str| LogIn {
+        address: "https://app.example.test/".into(),
+        user: None,
+        password: Secret::new("fixture-word".into()),
+        keep: None,
+        identity: None,
+        suggested: false,
+        form: Some("https://auth.example.test".into()),
+        start: Some(start.into()),
+    };
+    let (driven, sites) = super::login_of(&login(start)).unwrap();
+    assert_eq!(driven.address.as_str(), start);
+    assert_eq!(driven.origin, "https://auth.example.test");
+    assert_eq!(driven.back_to.as_deref(), Some("https://app.example.test"));
+    assert_eq!(
+        sites,
+        LoginSites {
+            page: Site::of("app.example.test", 443),
+            form: Some(Site::of("auth.example.test", 443)),
+        }
+    );
+    for refused in [
+        "https://elsewhere.example.test/authorize",
+        "https://auth.example.test/authorize?redirect_uri=https%3A%2F%2Fevil.test%2Fcb",
     ] {
         assert!(super::login_of(&login(refused)).is_err(), "{refused}");
     }
@@ -960,6 +1003,7 @@ fn a_logins_address_says_nothing_of_whether_it_is_clean_already() {
         identity: None,
         suggested: false,
         form: None,
+        start: None,
     })
     .unwrap();
     assert!(!login.clean_already);

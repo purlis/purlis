@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { appendFileSync } from "node:fs";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 import { clearMocks } from "@tauri-apps/api/mocks";
 import { switches, type Shape, type Switch } from "./projectSwitch.testkit";
@@ -43,16 +43,33 @@ vi.mock("./SessionPane", async () => ({
 // A read on a wall-clock beat (`everyWhileShown`: the saving rows every 10 s, the alerts, the
 // state clock, a running chat's gauge) is not what a switch costs, and on a slow runner one
 // landed inside a measured switch and drew the window again: 8 commits where a switch makes 5.
-// No beat runs here. What a switch reads as its project comes back is read after the paint
-// (`useOnShownAgain`), not on a beat, and is still counted.
+// No beat runs here, and none passes: a slow runner spends more than a beat between a project's
+// first read and its switch, and the save standing was then read again behind the paint, as a
+// beat would have read it (23 commands where a switch sends 22). What a switch reads as its
+// project comes back is read after the paint (`useOnShownAgain`), not on a beat, and is still
+// counted.
 vi.mock("./whileShown", async (actual) => ({
   ...(await actual<typeof import("./whileShown")>()),
   everyWhileShown: () => () => {},
+  aBeatSince: () => false,
 }));
+
+// Nor does a beat's catch-up: a project whose save standing was asked a beat ago or more is
+// read again as it comes back (`plane_saving`, `useSaving`'s `catchUp` in `saving.ts`), for what
+// the beat would have read meanwhile. That is measured on the window's monotonic clock, so on a
+// runner slow enough that a switch came 10 s after its project's last read, it read once more:
+// 23 commands where a switch sends 22. The window's clock is held still here, so each switch is
+// the one this test is about, to a project read a moment ago. The testkit times `syncMs` on a
+// clock of its own.
+beforeEach(() => {
+  const now = performance.now();
+  vi.spyOn(performance, "now").mockReturnValue(now);
+});
 
 afterEach(() => {
   cleanup();
   clearMocks();
+  vi.restoreAllMocks();
 });
 
 const line = (shape: Shape, one: Switch) =>
@@ -77,8 +94,11 @@ const COMMANDS_AT_ONCE = 10;
  *  is painted. It sends 22: since #5375 the project in front draws its workspace's own folder,
  *  so that folder is read again (`workspace_tree`) and watched (`files_watch`, one for every
  *  tree the switch changed) behind the paint, as a one-repo workspace's tree always was. With
- *  more panes it sends more, after the paint: two reads a pane. */
-const COMMANDS = 22;
+ *  more panes it sends more, after the paint: two reads a pane. And one more where the switches
+ *  took longer than a beat (`SAVING_REREAD_MS`, 10 s): a project that comes to the front with a
+ *  save standing older than that reads it once (`plane_saving`, #6246), which a slow runner's run
+ *  of switches always reaches (#6264). */
+const COMMANDS = 23;
 /** The most times React may commit for it, the reads' answers among them. It commits 5 times
  *  now, two of them small ones after the paint. */
 const COMMITS = 6;

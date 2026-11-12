@@ -15,8 +15,10 @@ import {
   checkClusterPoolKey,
   choosePoolKind,
   doneWithTheAddedPool,
+  goOnWithPoolSetupOf,
   readClusterContexts,
   readReleaseImage,
+  startANewPoolSetup,
   stopAddingAPool,
   usePools,
   type PoolKind,
@@ -69,11 +71,15 @@ export function AddDockerPoolHost({
   const pools = usePools();
   const toPoolSetup =
     pools.adding && pools.kind === "docker" && plane !== undefined && onPoolSetup !== undefined;
+  // Add starts a new pool's setup, and a pool's Open setup its own (#6256), before the tab shows.
+  const setupOf = pools.setupOf;
   useEffect(() => {
     if (!toPoolSetup) return;
     stopAddingAPool();
-    onPoolSetup(plane);
-  }, [toPoolSetup, onPoolSetup, plane]);
+    void (setupOf === undefined ? startANewPoolSetup() : goOnWithPoolSetupOf(setupOf)).then(() =>
+      onPoolSetup(plane),
+    );
+  }, [toPoolSetup, onPoolSetup, plane, setupOf]);
   // What was typed is kept while the dialog is open, across a change of Kind, and no longer.
   useEffect(() => {
     if (!pools.adding) drafts.clear();

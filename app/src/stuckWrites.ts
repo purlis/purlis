@@ -34,7 +34,7 @@ export const AT_MOST_EVERY_MS = 30_000;
 /** How often the watch looks. */
 const LOOK_EVERY_MS = 1_000;
 
-/** What the watch says of a stuck terminal, for the log. */
+/** What the watch saw of a stuck terminal. */
 export type StuckWrite =
   { by: "threw"; error: string } | { by: "unparsed"; waitedMs: number; unparsed: number };
 

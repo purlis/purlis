@@ -69,6 +69,19 @@ afterEach(() => {
   drawIn(DEFAULT_THEME);
 });
 
+describe("what is said about this machine", () => {
+  it("is not said again, and redraws nothing, when it is said the same way", () => {
+    const row = { severity: "warn" as const, detail: "a detail", remedy: "fix it" };
+    sayAboutThisMachine("theme", row);
+    const first = aboutThisMachine();
+    sayAboutThisMachine("theme", { ...row });
+    expect(aboutThisMachine()).toBe(first);
+    sayAboutThisMachine("theme", { ...row, detail: "another detail" });
+    expect(aboutThisMachine()).not.toBe(first);
+    expect(aboutThisMachine()[0].detail).toBe("another detail");
+  });
+});
+
 describe("what the window was handed as it was created", () => {
   it("is nothing at all when it was handed nothing", () => {
     expect(atCreation()).toEqual({ layout: NONE, theme: NO_THEME, first: null });

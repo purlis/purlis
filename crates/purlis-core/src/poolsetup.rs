@@ -1393,6 +1393,8 @@ pub struct Resumed {
     pub name: Option<String>,
     /// The pool was made by hand, from the name typed, and purlis noticed.
     pub noticed: bool,
+    /// The name a new pool is recommended: one no pool here has.
+    pub recommended: String,
 }
 
 /// **Where the person stopped**: the setup of the pool it made where that is still kept, else of a
@@ -1402,15 +1404,9 @@ pub struct Resumed {
 pub fn resumed(here: &Here<'_>) -> Result<Resumed, Refused> {
     let choices = read_choices(here.config)?;
     let kept = runners::pools(here.config)?;
-    let is_kept = |name: &&str| kept.iter().any(|pool| pool.name() == *name);
-    let chosen = choices.pool.as_deref().filter(is_kept);
-    let by_hand = choices
-        .name
-        .as_deref()
-        .filter(|_| chosen.is_none() && choices.name_free)
-        .filter(is_kept);
-    let mut setup = read(here, chosen.or(by_hand))?;
-    let noticed = by_hand.is_some();
+    let on = pool_of(&choices, &kept);
+    let mut setup = read(here, on)?;
+    let noticed = on.is_some() && on != choices.pool.as_deref();
     setup.others = kept
         .iter()
         .map(|pool| pool.name().to_owned())
@@ -1420,7 +1416,88 @@ pub fn resumed(here: &Here<'_>) -> Result<Resumed, Refused> {
         setup,
         name: choices.name,
         noticed,
+        recommended: recommended_name(&kept),
     })
+}
+
+/// **What Add a pool found** ([`start_adding`], #6256).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Adding {
+    /// Nothing unfinished: setup starts at its first step, nothing filled in.
+    New,
+    /// A new pool's setup was started and not finished: setup goes on with it, and says so.
+    Continuing,
+}
+
+/// The pool a setup is on, from what was chosen: the one it made where that is still kept, else
+/// one made since, by hand, under the name typed ([`resumed`]).
+fn pool_of<'a>(choices: &'a Choices, kept: &[runners::Pool]) -> Option<&'a str> {
+    let is_kept = |name: &&str| kept.iter().any(|pool| pool.name() == *name);
+    let chosen = choices.pool.as_deref().filter(is_kept);
+    chosen.or_else(|| {
+        choices
+            .name
+            .as_deref()
+            .filter(|_| choices.name_free)
+            .filter(is_kept)
+    })
+}
+
+/// **Add a pool: a new pool's setup, unless one was started and not finished** (#6256). A setup
+/// is finished once a real chat started on its pool (Try it's proof, [`tried`]): that pool's
+/// setup is then reached from its own Open setup, never from Add. Read from what is kept alone,
+/// so Docker being down never makes a finished setup look unfinished.
+///
+/// Starting new forgets what this setup chose, and nothing of any pool's: each pool keeps its
+/// skips and its proof.
+pub fn start_adding(config: &Path) -> Result<Adding, Refused> {
+    let _locked = runners::lock(config);
+    let choices = read_choices(config)?;
+    let kept = runners::pools(config)?;
+    let unfinished = match pool_of(&choices, &kept) {
+        Some(pool) => !choices.tried.contains_key(pool),
+        None => choices.name.is_some(),
+    };
+    if unfinished {
+        return Ok(Adding::Continuing);
+    }
+    forget_the_new_one(config, choices)?;
+    Ok(Adding::New)
+}
+
+/// **Start over**: forgets the unfinished setup, so the next read is a new pool's from its first
+/// step. A pool it made stays, with what was chosen for it.
+pub fn start_over(config: &Path) -> Result<(), Refused> {
+    let _locked = runners::lock(config);
+    let choices = read_choices(config)?;
+    forget_the_new_one(config, choices)
+}
+
+/// Forgets the kind, the name and the pool this setup chose, writing only where one was.
+fn forget_the_new_one(config: &Path, choices: Choices) -> Result<(), Refused> {
+    if choices.kind.is_none() && choices.name.is_none() && choices.pool.is_none() {
+        return Ok(());
+    }
+    write_choices(
+        config,
+        Choices {
+            kind: None,
+            name: None,
+            name_free: false,
+            pool: None,
+            ..choices
+        },
+    )
+}
+
+/// **The name a new pool is recommended** (#6256): `docker`, else the first `docker-<n>` no pool
+/// here has.
+fn recommended_name(kept: &[runners::Pool]) -> String {
+    let taken = |name: &str| kept.iter().any(|pool| pool.name() == name);
+    std::iter::once("docker".to_owned())
+        .chain((2..).map(|n| format!("docker-{n}")))
+        .find(|name| !taken(name))
+        .unwrap_or_default()
 }
 
 /// **This machine's `docker`**, where it has one, found as a pool's is.

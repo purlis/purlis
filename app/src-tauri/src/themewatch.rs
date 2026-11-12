@@ -18,6 +18,10 @@
 //!   sent.
 //! - **One event per burst, at most one redraw per gap** ([`purlis_core::theme::reload::Pace`]),
 //!   whatever a chat writes.
+//! - **A burst the platform could not name only asks what differs**
+//!   ([`purlis_core::theme::reload::Watched::decide_unnamed`]): a rescan (FSEvents drops events
+//!   under a build's load) is compared with the look taken when the window last asked, and a
+//!   theme nobody saved is not drawn again.
 //! - **Each folder non-recursively, never through a link**, at most
 //!   [`purlis_core::theme::reload::MOST_WATCHED`] for a window.
 //! - **When the platform will not watch, it looks instead**: every
@@ -121,7 +125,8 @@ struct Inner<W: notify::Watcher> {
     refused: HashSet<PathBuf>,
     /// Each window's target, and what it watches.
     windows: HashMap<String, (Target, Watched)>,
-    /// Each window's last look, while anything of it is looked at.
+    /// Each window's last look: what a look at a folder the platform refused, and a burst it
+    /// could not name, compare with.
     looks: HashMap<String, Look>,
     /// Each window's pace.
     paces: HashMap<String, Pace>,
@@ -167,7 +172,18 @@ impl<W: notify::Watcher> Inner<W> {
     fn heard(&mut self, paths: &HashSet<PathBuf>, everything: bool) -> bool {
         let mut again = everything;
         for (label, (target, watched)) in &self.windows {
-            let asked = watched.decide(paths.iter().map(PathBuf::as_path), everything);
+            // A burst the platform could not name is compared with the look held, and asks
+            // only for what differs: a rescan under a build's load is not a redraw.
+            let asked = if everything {
+                let mut held = self.looks.remove(label);
+                let asked = watched.decide_unnamed(&mut held);
+                if let Some(now) = held {
+                    self.looks.insert(label.clone(), now);
+                }
+                asked
+            } else {
+                watched.decide(paths.iter().map(PathBuf::as_path), false)
+            };
             let why = match asked {
                 Reload::Nothing => ": none of them is inside a themes/ it holds",
                 Reload::Redraw { .. } => "",
@@ -268,8 +284,9 @@ impl<W: notify::Watcher + Send + 'static> ThemeWatch<W> {
             counted(watched.folders().count(), "folder", "folders"),
             held.join(", ")
         );
+        // The look a burst the platform could not name is compared with.
+        inner.looks.insert(label.to_owned(), Look::of(&watched));
         inner.windows.insert(label.to_owned(), (target, watched));
-        inner.looks.remove(label);
         inner.follow();
     }
 

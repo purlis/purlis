@@ -12,11 +12,13 @@ import {
   type PoolSetupStep,
 } from "./bindings";
 import { Notice } from "./Notice";
-import { Action, SeeWhat, StepHead } from "./poolsetup/parts";
+import { Action, Say, SeeWhat, StepHead } from "./poolsetup/parts";
 import { IdentityStep } from "./poolsetup/IdentityStep";
 import { NOTHING_CHOSEN, PoolStep, type Chosen } from "./poolsetup/PoolStep";
 import { SignInsStep } from "./poolsetup/SignInsStep";
 import { TryStep } from "./poolsetup/TryStep";
+import { startANewPoolSetup, startPoolSetupOver, usePoolSetupStart } from "./pools";
+import { Button } from "./ui/button/Button";
 import { Card } from "./ui/card/Card";
 import { STEP_STATES, StepList, type StepState } from "./ui/steps/Steps";
 
@@ -36,6 +38,12 @@ import { STEP_STATES, StepList, type StepState } from "./ui/steps/Steps";
  * **Each step has two more levels** (#4481, Q30): Options, with every setting and the recommended
  * value marked, and See what this does, with the commands the button runs ({@link SeeWhat}). A pool
  * made by hand under the name typed is noticed, and setup follows it.
+ *
+ * **Add a pool… starts a new pool's setup** (#6256): from its first step, the name empty and one
+ * no pool has recommended. A new pool's setup started and not finished is gone on with instead,
+ * and the tab says so, with Start over. A finished pool's setup is reached only from its own Open
+ * setup, and its last screen offers Add another pool. Each start draws the tab from its first
+ * read ({@link usePoolSetupStart}).
  *
  * Every step has its screen. Agent identity sets one up with the flow the Agent identity tab uses
  * (#4490). Try it ends setup on a real chat started on the pool (#4483), and its last screen opens
@@ -171,13 +179,7 @@ function Found({ step, onRecheck }: { step: PoolSetupStep; onRecheck: () => void
   );
 }
 
-export function PoolSetupTab({
-  plane,
-  workspace,
-  onOpenChat,
-  onOpenIdentity,
-  onOpenSettings,
-}: {
+type TabProps = {
   plane: PlaneId;
   /** The workspace the tab is filed in, where it is in one: where Try it starts its chat. */
   workspace?: string;
@@ -187,6 +189,23 @@ export function PoolSetupTab({
   onOpenIdentity?: () => void;
   /** Opens the project's Settings, where a persona's tool is allowed. */
   onOpenSettings?: () => void;
+};
+
+export function PoolSetupTab(props: TabProps) {
+  const start = usePoolSetupStart();
+  return <PoolSetupGuide key={start.count} {...props} continuing={start.continuing} />;
+}
+
+function PoolSetupGuide({
+  plane,
+  workspace,
+  onOpenChat,
+  onOpenIdentity,
+  onOpenSettings,
+  continuing,
+}: TabProps & {
+  /** Add went on with a new pool's unfinished setup: the tab says so, with Start over. */
+  continuing: boolean;
 }) {
   const [read, setRead] = useState<Read>({ state: "reading" });
   const [showing, setShowing] = useState<string>();
@@ -321,6 +340,26 @@ export function PoolSetupTab({
               {trouble}
             </Notice>
           )}
+          {continuing && setup.at !== null && (
+            <Say
+              tone="news"
+              title="Continuing the pool you started"
+              actions={
+                <Button
+                  onPress={() => {
+                    setTrouble(undefined);
+                    void startPoolSetupOver().then((why) => why && setTrouble(why));
+                  }}
+                >
+                  Start over
+                </Button>
+              }
+            >
+              {madePool === null
+                ? "Your choices so far are filled in. Start over to begin a new pool from the first step."
+                : `Start over to begin a new pool from the first step. Pool ${madePool} stays, in Settings, under Pools.`}
+            </Say>
+          )}
           {step?.id === "where" ? (
             <Where
               step={step}
@@ -385,6 +424,7 @@ export function PoolSetupTab({
                 reread();
               }}
               onGo={(id) => setShowing(id)}
+              onAddAnother={() => void startANewPoolSetup()}
               onOpenChat={(triedIn) => onOpenChat?.(madePool, triedIn ?? workspace)}
             />
           ) : (

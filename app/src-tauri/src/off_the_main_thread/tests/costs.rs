@@ -452,8 +452,6 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             "task_ending",
             "all_tasks_ending",
             "stopping_chats",
-            "tasks_sharing_a_folder",
-            "task_folder_shared",
             "vault_refusals",
             // A chat's failed MCP server starts, read and put away (qw381): in memory.
             "mcp_failures",

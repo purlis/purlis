@@ -229,6 +229,12 @@ idna = "1"
 # is compiled in, with no download. Already in the tree through the browser engine.
 psl = "2.1"
 uuid = { version = "1.26.1", features = ["v4"] }
+# **A web address a pane printed** (#6215): read the way the browser reads it, so the address a
+# link opens is the one the person was shown. Already in the tree through `tauri` and `idna`.
+# **Where a login's sign-in starts, where the chat names it** (#6291): the address, and the
+# `redirect_uri` in its query, read as a browser and an identity provider read them (WHATWG URL,
+# form-urlencoded).
+url = "2"
 # RC-20's hand-off to your editor (`youreditor`): a file's path percent-encoded into a
 # `vscode://`, `zed://` or `idea://` URL, and `$VISUAL`/`$EDITOR` split into a program and its
 # arguments the way a shell splits words, with no shell. Both already in this workspace's

@@ -417,14 +417,15 @@ impl Artifacts {
 
     /// **Reads artifact webview `label`'s folder again** (in window `window`), and where it
     /// stands with it (`config` is this machine's config home), so its next load is served the
-    /// bytes on disk now under the CSP their standing allows. Nothing changes when it cannot be
-    /// read: the page keeps what it was served, and the bar says why from the pins.
+    /// bytes on disk now under the CSP their standing allows; and whether anything it is served
+    /// moved. Nothing changes when it cannot be read: the page keeps what it was served, and the
+    /// bar says why from the pins.
     fn read_again(
         &self,
         label: &str,
         window: &str,
         config: Option<&Path>,
-    ) -> Result<(Standing, bool), String> {
+    ) -> Result<(Standing, bool, bool), String> {
         let of = self
             .served()
             .get(label)
@@ -445,14 +446,21 @@ impl Artifacts {
         let declared = declared_by(&snapshot);
         let generated =
             data::generated(&artifact::resolve(&of.dir, &of.folder)?, declared.as_ref());
+        let mut moved = true;
         if let Some(one) = self.served().get_mut(label) {
+            // Whether anything it is served differs: a burst the platform could not name tells
+            // every tab its data may have changed (felt speed round 2).
+            moved = one.snapshot != snapshot
+                || one.of.pin != pin
+                || one.of.standing != standing
+                || one.host != host;
             one.snapshot = snapshot;
             one.declared = declared;
             one.of.pin = pin;
             one.of.standing = standing;
             one.host = host;
         }
-        Ok((standing, generated))
+        Ok((standing, generated, moved))
     }
 
     /// **Draws artifact webview `label` (in window `window`) in `sheet`**: whether it changed.
@@ -1487,29 +1495,34 @@ pub async fn artifact_reload(
     let app = window.app_handle().clone();
     let read_label = label.clone();
     let config = purlis_core::machine::config_root();
-    let (standing, changed_by, generated, (queries, plane_granted), moved) = blocking(move || {
-        let artifacts = app
-            .try_state::<Artifacts>()
-            .ok_or_else(|| "no artifact is open".to_owned())?;
-        let host = |artifacts: &Artifacts| {
-            artifacts
-                .served()
-                .get(&read_label)
-                .map(|one| one.host.clone())
-        };
-        let before = host(&artifacts);
-        let (standing, generated) = artifacts.read_again(&read_label, &owner, config.as_deref())?;
-        let now = host(&artifacts);
-        let moved = now.filter(|now| before.as_ref() != Some(now));
-        let changed_by = (standing == Standing::PinChanged)
-            .then(|| artifacts.served_to(&read_label, &owner))
-            .flatten()
-            .and_then(|(of, _)| artifact::pinned_by(&of.dir, &of.pin));
-        let queries = artifacts.queries_of(&read_label, config.as_deref());
-        Ok((standing, changed_by, generated, queries, moved))
-    })
-    .await?;
+    let (standing, changed_by, generated, (queries, plane_granted), moved, same) =
+        blocking(move || {
+            let artifacts = app
+                .try_state::<Artifacts>()
+                .ok_or_else(|| "no artifact is open".to_owned())?;
+            let host = |artifacts: &Artifacts| {
+                artifacts
+                    .served()
+                    .get(&read_label)
+                    .map(|one| one.host.clone())
+            };
+            let before = host(&artifacts);
+            let (standing, generated, changed) =
+                artifacts.read_again(&read_label, &owner, config.as_deref())?;
+            let now = host(&artifacts);
+            let moved = now.filter(|now| before.as_ref() != Some(now));
+            let changed_by = (standing == Standing::PinChanged)
+                .then(|| artifacts.served_to(&read_label, &owner))
+                .flatten()
+                .and_then(|(of, _)| artifact::pinned_by(&of.dir, &of.pin));
+            let queries = artifacts.queries_of(&read_label, config.as_deref());
+            Ok((standing, changed_by, generated, queries, moved, !changed))
+        })
+        .await?;
     match moved {
+        // Nothing it is served moved (a rescan told every tab its data may have): the page is
+        // left as it is, where it was scrolled and what it drew (felt speed round 2).
+        None if same => {}
         // A new origin is a new page, loaded there: a reload would ask the old one again.
         Some(host) => {
             let url: tauri::Url = format!("{}/", origin(&host))
@@ -2226,6 +2239,23 @@ mod tests {
         assert_eq!(data.response.status(), StatusCode::NOT_FOUND);
     }
 
+    /// Felt speed round 2: a burst the platform could not name tells every artifact tab its
+    /// data may have changed, and the page is loaded again only when something it is served did.
+    #[test]
+    fn a_reload_over_a_folder_nobody_changed_moves_nothing_and_one_after_a_data_write_does() {
+        let dir = workspace("<h1>12 open</h1>");
+        let artifacts = opened(dir.path());
+        let moved =
+            |artifacts: &Artifacts| artifacts.read_again("artifact-1", "main", None).unwrap().2;
+        assert!(
+            !moved(&artifacts),
+            "nothing on disk changed since it was opened"
+        );
+        std::fs::write(dir.path().join("artifacts/page/data.json"), "{\"open\": 9}").unwrap();
+        assert!(moved(&artifacts), "its data changed");
+        assert!(!moved(&artifacts), "and was served at the reload before");
+    }
+
     #[test]
     fn a_reload_that_cannot_read_the_folder_keeps_what_the_page_was_served() {
         let dir = workspace("<h1>12 open</h1>");
@@ -2276,7 +2306,7 @@ mod tests {
             "<h1>9 open</h1><script>steal()</script>",
         )
         .unwrap();
-        let (standing, _) = artifacts.read_again("artifact-1", "main", None).unwrap();
+        let (standing, _, _) = artifacts.read_again("artifact-1", "main", None).unwrap();
 
         assert!(!standing.runs(), "{standing:?}");
         assert_eq!(
@@ -2307,7 +2337,7 @@ mod tests {
         )
         .unwrap();
 
-        let (standing, _) = artifacts
+        let (standing, _, _) = artifacts
             .read_again("artifact-1", "main", Some(config.path()))
             .unwrap();
 

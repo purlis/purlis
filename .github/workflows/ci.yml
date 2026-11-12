@@ -1669,6 +1669,8 @@ jobs:
         run: cargo test --locked -p purlis-cli --test recorded_behaviour
       - name: The blessed file, to check and commit by hand
         if: ${{ needs.changes.outputs.rust != 'false' && (failure()) }}
+        # Evidence only: a failed upload (a runner's DNS, 2026-11-11) never fails the job.
+        continue-on-error: true
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: recorded-behaviour-blessed
@@ -1762,7 +1764,9 @@ jobs:
           shared-key: ${{ matrix.pool && 'scenario-linux' || '' }}
           # The outcome bars build `dev-release` (#4351): a cache of their own, since main's
           # debug one would be an exact hit, and rust-cache writes nothing over an exact hit.
-          key: ${{ matrix.outcome && 'dev-release' || '' }}
+          # `-no-line-tables` since the build below drops them: rust-cache writes nothing over an
+          # exact hit, so the old key's dependencies, built with them, would be rebuilt every run.
+          key: ${{ matrix.outcome && 'dev-release-no-line-tables' || '' }}
       # **sccache for the workspace's own crates, on macOS** (2026-10-12, an experiment kept only
       # if it pays). rust-cache keeps the dependencies but never the workspace's crates, so each
       # macOS part compiled purlis-core and the app afresh: 3.5 to 4 of its minutes on the
@@ -1898,13 +1902,21 @@ jobs:
       # has 16. At 3 it took one `rustc` to 14.4 GB and the runner shut down (#5277).
       - name: Build the app, the harness and the CLI for the scenario tests
         if: ${{ !matrix.sandbox }}
-        # A macOS release build takes 37-39 min; debug builds less. One stalled past an hour
-        # on main (2026-11-11, run 42929397737). Unbounded it holds its Mac for the job's
-        # 6 h default, so it fails here.
-        timeout-minutes: 75
+        # A warm macOS release build takes 37-54 min, and a cold one 70-73. Unbounded, a stalled
+        # build would hold its Mac for the job's 6 h default, so it fails at 110 (#6189).
+        timeout-minutes: 110
         # The outcome bars are judged on a release build (the operator's ruling of 2026-11-03,
         # #4351): `dev-release`, release with thin LTO over sixteen codegen units, what the dev
         # channel ships. Every other leg builds debug.
+        #
+        # Without the line tables the dev channel's own build writes for the crash handler
+        # (`debug`, `split-debuginfo` in Cargo.toml's `release`, #5692): they change no code the
+        # bars time, and since #6165 they cost the build 8 minutes on Linux (16-19 to 24-29) and
+        # more on macOS, where dsymutil packs them. No step of these jobs reads a dSYM. Set on this
+        # step alone, so rust-cache's key, read in its own step, is not moved; `dev` ignores them.
+        env:
+          CARGO_PROFILE_DEV_RELEASE_DEBUG: "false"
+          CARGO_PROFILE_DEV_RELEASE_SPLIT_DEBUGINFO: "off"
         run: >-
           npx tauri build ${{ !matrix.outcome && '--debug' || '' }} --no-bundle --features e2e
           --config src-tauri/tauri.e2e.conf.json -- -p purlis-app -p fake-harness -p purlis-cli
@@ -2190,6 +2202,8 @@ jobs:
       # What a clone looks like in the real window, part way (`specs/clones.e2e.ts`): for a person
       # to look at, on a green run too.
       - if: "!cancelled()"
+        # Evidence only: a failed upload (a runner's DNS, 2026-11-11) never fails the job.
+        continue-on-error: true
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: clone-screenshots-${{ matrix.os }}-${{ matrix.shard }}
@@ -2203,6 +2217,8 @@ jobs:
         run: node ../tools/e2e-annotations.mjs logs/failures.jsonl
         working-directory: app
       - if: failure()
+        # Evidence only: a failed upload (a runner's DNS, 2026-11-11) never fails the job.
+        continue-on-error: true
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: scenario-logs-${{ matrix.os }}-${{ matrix.shard }}
@@ -2228,9 +2244,9 @@ jobs:
           test "$RESULT" = "$want"
 
   # Its own job, not a leg of `scenario`'s matrix, so that `scenario-checks` waits on macOS
-  # alone. Two parts too, since its specs alone took 7.8 minutes of 12.7 (2026-10-12); Linux
-  # runners are not the ones in short supply. Part 2 runs the seven single-app runs (on macOS
-  # they are a leg of their own).
+  # alone. Three parts since 2026-11-11 (two before), cut by measured time in `e2e/parts.ts`: its
+  # first half had grown to 28.6 minutes of specs; Linux runners are not the ones in short
+  # supply. The last part runs the seven single-app runs (on macOS they are a leg of their own).
   scenario-linux:
     name: scenario tests (${{ matrix.os }}, part ${{ matrix.shard }} of ${{ matrix.shards }})
     needs: changes
@@ -2239,8 +2255,8 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04]
-        shard: [1, 2]
-        shards: [2]
+        shard: [1, 2, 3]
+        shards: [3]
         outcome: [false]
         include:
           - shard: 1
@@ -2248,6 +2264,10 @@ jobs:
             specs: true
             sandbox: false
           - shard: 2
+            extras: false
+            specs: true
+            sandbox: false
+          - shard: 3
             extras: true
             specs: true
             sandbox: false
@@ -2280,8 +2300,10 @@ jobs:
     # build had (twice its slowest, 9 to 18 minutes), for the release build (the operator's ruling
     # of 2026-11-03, #4351): cold, with no cache, it ran past 40 twice and was cut off before
     # rust-cache saved anything, so the cache main writes was never warm. Warm, a release run took
-    # 31 minutes.
-    timeout-minutes: 75
+    # 31 minutes. 130 since 2026-11-11: at 75 a cold build (70-73 min) was cut off on every main
+    # run from 05:41 to 10:44, so the cache was never saved, every run ended `cancelled`, and no dev
+    # build shipped. One run that finishes warms the cache again.
+    timeout-minutes: 130
     if: ${{ !cancelled() && (github.event_name == 'push' || (github.event_name == 'pull_request' && needs.changes.outputs.outcome-bars != 'false')) && !github.event.pull_request.draft }}
     # Where the specs find the build: the profile the build step names for `outcome` (one place
     # for the path, so no harness's run can take another build's program).
@@ -2528,6 +2550,8 @@ jobs:
           "exit: $LASTEXITCODE"
       - name: The whole check log, kept
         if: always()
+        # Evidence only: a failed upload (a runner's DNS, 2026-11-11) never fails the job.
+        continue-on-error: true
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-check

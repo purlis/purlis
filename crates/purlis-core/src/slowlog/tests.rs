@@ -113,3 +113,40 @@ fn a_line_that_is_not_an_entry_is_passed_over_when_the_log_is_read() {
 
     assert_eq!(recent_in(&file), vec![answer(1), answer(2)]);
 }
+
+#[test]
+fn a_core_stall_is_written_with_the_command_that_held_the_main_thread() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join(FILE);
+    let stall = Slow::CoreStall {
+        ms: 1_250,
+        at: 1_793_000_000_000,
+        running: Some("chat_order".into()),
+    };
+
+    record_in(&file, &stall).unwrap();
+
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        "{\"kind\":\"core_stall\",\"ms\":1250,\"at\":1793000000000,\"running\":\"chat_order\"}\n"
+    );
+    assert_eq!(recent_in(&file), vec![stall]);
+}
+
+#[test]
+fn a_core_command_is_written_with_when_it_was_received_and_how_long_it_held_the_main_thread() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join(FILE);
+    let held = Slow::CoreCommand {
+        command: "send_input".into(),
+        ms: 140,
+        at: 1_793_000_000_000,
+    };
+
+    record_in(&file, &held).unwrap();
+
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        "{\"kind\":\"core_command\",\"command\":\"send_input\",\"ms\":140,\"at\":1793000000000}\n"
+    );
+}

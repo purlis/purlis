@@ -252,8 +252,15 @@ const said = new Map<string, MachineAlert>();
 let listed: MachineAlert[] = [];
 const listeners = new Set<() => void>();
 
+/** Whether two rows say the same thing: every field of a row is a string or a flag. */
+function sameRow(one: MachineAlert, other: MachineAlert): boolean {
+  const keys = Object.keys(one) as (keyof MachineAlert)[];
+  return keys.length === Object.keys(other).length && keys.every((key) => one[key] === other[key]);
+}
+
 /** Says something about this machine under `subject`, replacing what was said under it before,
- *  or takes it back with `undefined`. */
+ *  or takes it back with `undefined`. Said again the same way, it is not said again: every draw
+ *  of the theme says its rows, and a redraw that changed nothing redraws no row. */
 export function sayAboutThisMachine(
   subject: string,
   row: Omit<MachineAlert, "subject"> | undefined,
@@ -261,7 +268,10 @@ export function sayAboutThisMachine(
   if (row === undefined) {
     if (!said.delete(subject)) return;
   } else {
-    said.set(subject, { ...row, subject });
+    const now = { ...row, subject };
+    const was = said.get(subject);
+    if (was !== undefined && sameRow(was, now)) return;
+    said.set(subject, now);
   }
   listed = [...said.values()];
   for (const listener of listeners) listener();

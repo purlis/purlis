@@ -29,6 +29,17 @@ pub enum SlowMoment {
         front: Option<String>,
         opening: bool,
     },
+    /// The core's main thread ran a ping `ms` after it was asked to at `at`, busy with the
+    /// command `running` when the wait was noticed (`crate::mainwatch`). The core writes it; the
+    /// window only reads it back.
+    CoreStall {
+        ms: u32,
+        at: f64,
+        running: Option<String>,
+    },
+    /// The command `command`, received on the core's main thread at `at`, held it for `ms`
+    /// (`crate::mainwatch`). The core writes it; the window only reads it back.
+    CoreCommand { command: String, ms: u32, at: f64 },
 }
 
 /// Milliseconds since 1970, as the core keeps them: a time before then, or not a number, is 0.
@@ -68,6 +79,24 @@ impl From<SlowMoment> for Slow {
                 front,
                 opening,
             },
+            SlowMoment::CoreStall {
+                ms,
+                at: when,
+                running,
+            } => Slow::CoreStall {
+                ms,
+                at: at(when),
+                running,
+            },
+            SlowMoment::CoreCommand {
+                command,
+                ms,
+                at: when,
+            } => Slow::CoreCommand {
+                command,
+                ms,
+                at: at(when),
+            },
         }
     }
 }
@@ -100,6 +129,16 @@ impl From<Slow> for SlowMoment {
                 hot,
                 front,
                 opening,
+            },
+            Slow::CoreStall { ms, at, running } => SlowMoment::CoreStall {
+                ms,
+                at: ms_of(at),
+                running,
+            },
+            Slow::CoreCommand { command, ms, at } => SlowMoment::CoreCommand {
+                command,
+                ms,
+                at: ms_of(at),
             },
         }
     }
@@ -149,6 +188,16 @@ mod tests {
                 hot: 12,
                 front: Some("steward 3".into()),
                 opening: true,
+            },
+            SlowMoment::CoreStall {
+                ms: 1_250,
+                at: 1_793_000_000_789.0,
+                running: Some("chat_order".into()),
+            },
+            SlowMoment::CoreCommand {
+                command: "send_input".into(),
+                ms: 140,
+                at: 1_793_000_000_999.0,
             },
         ];
         for one in sent {

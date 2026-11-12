@@ -5401,7 +5401,11 @@ fn a_worktree_task_starts_in_a_worktree_the_app_cut_and_its_report_names_that_br
     );
     // And the asking chat's list of its tasks says the branch and how it stands.
     assert_eq!(
-        crate::dispatches::branch_listed(&held, chat),
+        crate::dispatches::branch_listed(
+            &held,
+            &purlis_core::dispatchrecord::ledger(held.root()),
+            chat
+        ),
         Some((branch.clone(), "its worktree is kept".to_owned()))
     );
     // And nothing was merged: `main` is where it was, and the clone does not have the work.

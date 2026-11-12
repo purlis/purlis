@@ -227,9 +227,6 @@ pub const WINDOW_ONLY: &[&str] = &[
     // names the commands this machine's window ran, so no link writes or reads it.
     "record_slow",
     "slow_log_recent",
-    // [DEBUG-5478] The freeze watchdog's line goes to this machine's diagnostic log: a window's
-    // own, as the slow-answer log is, so no link writes it (#5488 removes it).
-    "debug_5478_log",
     // The theme in force for the window that asks, which also points that window's theme watch
     // at the project it answers for (#2324). A link has no window here to watch for: it is
     // served `theme_in_force_at`, the same answer, which watches nothing (#2697).
@@ -970,6 +967,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_setup_choose_docker",
     "pool_setup_name",
     "pool_setup_pool",
+    "pool_setup_add",
+    "pool_setup_start_over",
     "pool_setup_command",
     "pool_setup_create",
     "pool_setup_sign_ins_by_hand",
@@ -1179,6 +1178,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Opening a link an artifact's page followed (#5956, ADR 0122 §5): the person's answer in
     // their own window, to what that window's artifact reported.
     "artifact_link_open",
+    // A link in a pane's output (#6215): read for a hover and opened in the person's browser on
+    // the machine the window is on, so never served on a link, where it would open the host's.
+    "pane_link_resolve",
+    "pane_link_open",
     // A scenario test's stand-ins for the page's click and the browser (#5956): the `e2e` build
     // only, and its window alone.
     "artifact_link_follow",

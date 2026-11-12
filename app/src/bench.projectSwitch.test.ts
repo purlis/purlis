@@ -193,3 +193,89 @@ it("ends with what the window showed when the project switched to never paints i
   // Enough to tell, from the job's log alone, which pane it was and what it had been sent.
   expect(state?.trouble).toMatch(/1 pane of \/switch-3 in the window/);
 });
+
+/** What a project's tab in front draws when it is not a chat (#6200): `view` names a view
+ *  panel, and `undefined` the empty pane a project with no chats shows. */
+function aFrontThatIsNotAChat(view?: string): HTMLElement {
+  const front = document.createElement("div");
+  if (view === undefined) {
+    front.setAttribute("data-testid", "empty-pane");
+  } else {
+    front.setAttribute("role", "tabpanel");
+    front.setAttribute("data-view", view);
+  }
+  return front;
+}
+
+it("ends at once when the project switched to has a view in front, with no pane to paint", async () => {
+  // Its tab in front is a view: nothing in it is a chat, so nothing will ever paint the sentinel.
+  aStripAndARow("/switch-4", () => document.body.append(aFrontThatIsNotAChat("notices")));
+
+  // The job's own patience is its default, a minute: it must end on what the window shows.
+  const from = performance.now();
+  const state = await finished({ kind: "project switch", plane: "/switch-4", sentinel: "ready" });
+
+  expect(state?.running).toBe(false);
+  expect(performance.now() - from).toBeLessThan(2_000);
+  expect(state?.trouble).toMatch(/project \/switch-4 is in front with no pane to open/);
+  expect(state?.trouble).toMatch(/its tab in front is the notices view/);
+});
+
+it("ends at once when the project switched to has no chat, its empty pane in front", async () => {
+  aStripAndARow("/switch-5", () => document.body.append(aFrontThatIsNotAChat()));
+
+  const from = performance.now();
+  const state = await finished({ kind: "project switch", plane: "/switch-5", sentinel: "ready" });
+
+  expect(state?.running).toBe(false);
+  expect(performance.now() - from).toBeLessThan(2_000);
+  expect(state?.trouble).toMatch(/project \/switch-5 is in front with no pane to open/);
+  expect(state?.trouble).toMatch(/its tab in front is an empty pane/);
+});
+
+it("waits for a chat's pane that opens a while after the project's view is drawn, not ending on its empty start", async () => {
+  // The view is drawn with an empty pane for a moment, then the chat's pane takes its place.
+  const lines: string[] = [];
+  const built = aTerminal(lines);
+  aStripAndARow("/switch-6", () => {
+    const empty = aFrontThatIsNotAChat();
+    document.body.append(empty);
+    setTimeout(() => {
+      empty.remove();
+      const pane = document.createElement("div");
+      pane.setAttribute("data-testid", "pane");
+      pane.append(built.element);
+      document.body.append(pane);
+      bench.paneOpened(1, built, "/switch-6");
+      const parsed = bench.paneSent(built, new TextEncoder().encode("\r\nsession ready\r\n"));
+      lines.push("session ready");
+      parsed?.();
+      requestAnimationFrame(() => built.draw());
+    }, 150);
+  });
+
+  const state = await finished({ kind: "project switch", plane: "/switch-6", sentinel: "ready" });
+
+  expect(state?.trouble).toBeUndefined();
+  expect(state).toMatchObject({ running: false, result: { session: 1, built: true } });
+});
+
+it("says what the screen of a pane that never paints its sentinel ends with", async () => {
+  // Its program's output stopped partway (#6237): the screen ends inside the first repaint.
+  const there = aTerminal([
+    "● Reading crates/core/src/session.rs (line 0)",
+    "  ok ok (line 33)",
+    "",
+  ]);
+  bench.paneOpened(1, there, "/switch-7");
+  aStripAndARow("/switch-7", () => document.body.append(there.element));
+
+  const state = await finished(
+    { kind: "project switch", plane: "/switch-7", sentinel: "ready", patienceMs: 300 },
+    2_000,
+  );
+
+  expect(state?.trouble).toMatch(/never painted ready/);
+  // The last line with anything on it, so a log says where the program's output stopped.
+  expect(state?.trouble).toContain('its screen ends "  ok ok (line 33)"');
+});

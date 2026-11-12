@@ -41,6 +41,7 @@ import { ApproveExtension } from "../ApproveExtension";
 import { ApprovePlane } from "../ApprovePlane";
 import { HistoryDialog } from "../ArtifactHistory";
 import { ArtifactLinkDialog } from "../ArtifactLinks";
+import { LinkAnswer } from "../PaneLinkSurfaces";
 import { OfferAsks } from "../ArtifactOffers";
 import { AskPersona } from "../AskPersona";
 import { UseSkill } from "../UseSkill";
@@ -1482,6 +1483,44 @@ const DIALOGS: Opened[] = [
       render(<ProposedPin plane="/x/acme" id={4} onClose={nothing} />);
       await screen.findByRole("alertdialog", { name: "This pin cannot be made" });
     },
+  },
+  {
+    name: "a pane's link, refused",
+    file: "PaneLinkSurfaces.tsx",
+    open: async () =>
+      render(
+        <LinkAnswer
+          answering={{
+            answer: {
+              answer: "refused",
+              reason: "purlis will not open an address that carries a name or a password",
+            },
+            candidate: { kind: "url", text: "https://purlis.dev/account" },
+          }}
+          onClose={nothing}
+          onConfirm={nothing}
+        />,
+      ),
+  },
+  {
+    name: "a pane's link, asked about",
+    file: "PaneLinkSurfaces.tsx",
+    open: async () =>
+      render(
+        <LinkAnswer
+          answering={{
+            answer: {
+              answer: "ask",
+              reason: "its text names another address",
+              shown: "docs.purlis.dev/setup",
+              target: "https://purlis-setup.example.net/s",
+            },
+            candidate: { kind: "url", text: "docs.purlis.dev/setup" },
+          }}
+          onClose={nothing}
+          onConfirm={nothing}
+        />,
+      ),
   },
   {
     name: "an artifact's link, asked about",

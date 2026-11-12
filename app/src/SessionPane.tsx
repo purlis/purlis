@@ -28,6 +28,9 @@ import { draw } from "./renderer";
 import { onScreenReaderMode, screenReaderMode } from "./screenReader";
 import { onAMac } from "./tabKeys";
 import { opensFind } from "./keys/findKeys";
+import { LINK_CORE } from "./paneLinkCore";
+import { linkPane, relayed, type LinkHands } from "./paneLinks";
+import { usePaneLinks } from "./PaneLinkSurfaces";
 import { isKey } from "./keys/registry";
 import { moveAlong } from "./tabSequence";
 import { TerminalMenu, type PaneMenu } from "./TerminalMenu";
@@ -45,6 +48,7 @@ import {
 import { onTextSizes, textSizes } from "./textSize";
 import {
   inForce,
+  linkColour,
   onDrawn,
   onTerminalFont,
   terminalFont,
@@ -54,8 +58,6 @@ import {
 import { drawTerminalFont } from "./theme/terminalFont";
 import { scrollByDistance } from "./wheel";
 import { drawnReports, writePerFrame } from "./paneWrites";
-import { watchForFreeze } from "./freezeWatch5478"; // [DEBUG-5478]
-import { watchForCover } from "./coverWatch5478"; // [DEBUG-5478]
 import { watchForNoEcho } from "./noEcho";
 import { watchWrites } from "./stuckWrites";
 import { keepAltScreenToRows } from "./altScreenRows";
@@ -137,6 +139,14 @@ export function SessionPane({
   /** While the menu is being asked for from the keyboard, which the program's hold on the
    *  mouse does not stand in the way of. */
   const fromKeys = useRef(false);
+  /** **Its links' surfaces** (`PaneLinkSurfaces.tsx`, #6215): a hovered link's tooltip, and the
+   *  window's answer to one ⌘-clicked that did not simply open. An ask accepted opens the
+   *  target it showed, resolved again by the core. */
+  const { hands: linkHands, surfaces: linkSurfaces } = usePaneLinks({
+    from: { plane, session },
+    core: LINK_CORE,
+    colour: () => linkColour(inForce()),
+  });
   /** Says something in the pane, in the terminal's own hand, while it is up. */
   const saying = useRef<(trouble: string) => void>(() => {});
   /** The find bar, while it is open: the terminal's search, and how many times it has been
@@ -240,6 +250,7 @@ export function SessionPane({
     live.owner = {
       holder: where,
       fromKeys,
+      links: linkHands,
       find: (search) => setFinding((open) => ({ search, asked: (open?.asked ?? 0) + 1 })),
       startAgain: () => {
         lettingGo.current = true;
@@ -286,13 +297,6 @@ export function SessionPane({
     const refit = () => live.fit();
     // What a drag reckons the size this terminal would take from (`panePreview.gridIn`).
     const unmeasured = terminalInPane(where, () => ownCells(pane));
-    // [DEBUG-5478] What takes this pane's keys and mouse, if something does, goes to the log.
-    const uncovered = watchForCover(
-      where,
-      session,
-      () => terminal.current,
-      (line) => void commands.debug5478Log(line).catch(() => {}),
-    );
     let unqueue = () => {};
     const watching = new ResizeObserver(() => {
       unqueue = afterTheSlide(refit);
@@ -301,7 +305,6 @@ export function SessionPane({
 
     return () => {
       where.removeEventListener("mousedown", pastTheProgram, true);
-      uncovered(); // [DEBUG-5478]
       unmeasured();
       wheeling.dispose();
       undrawn();
@@ -321,7 +324,7 @@ export function SessionPane({
       if (!lettingGoOf && keepTerminal(key, live)) pane.element?.remove();
       else live.release();
     };
-  }, [plane, session, started]);
+  }, [plane, session, started, linkHands]);
   // **An ended chat's last screen takes no input** (#4756): xterm sends nothing typed, and the
   // screen is read, scrolled, found in and copied from as before. After the effect above, which
   // made the terminal it is set on.
@@ -366,6 +369,7 @@ export function SessionPane({
         </span>
       </div>
       {finding && <FindBar search={finding.search} asked={finding.asked} onClose={closeFind} />}
+      {linkSurfaces}
     </>
   );
 }
@@ -402,6 +406,8 @@ type Owner = {
   find: (search: SearchAddon) => void;
   /** Lets go of the terminal and its view and starts both again (`noEcho.ts`). */
   startAgain: () => void;
+  /** What its links' hover and answers are drawn by (`PaneLinkSurfaces.tsx`). */
+  links: LinkHands | undefined;
 };
 
 /**
@@ -470,6 +476,12 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
   };
   const search = new SearchAddon();
   pane.loadAddon(search);
+  // **Its links** (#6215, `paneLinks.ts`): found under the pointer, decided by the core, drawn
+  // by the pane showing it, whichever that is now.
+  const links = linkPane(
+    pane,
+    relayed(() => live.owner?.links),
+  );
   /** What Shift+Enter sends, once the view says which harness this is — none for a shell,
    *  which keeps the terminal's own Enter (`Harness::newline`). */
   let newline: string | undefined;
@@ -578,40 +590,14 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
       },
       (err: unknown) => say(String(err)),
     );
-  // [DEBUG-5478] Watches the pane for #5478's freeze, and writes one line to the log if so.
-  const freeze = watchForFreeze(
-    pane,
-    session,
-    (line) =>
-      // A line that cannot be written (a link has no log here) is let go.
-      void commands.debug5478Log(line).catch(() => {}),
-  );
-  /** [DEBUG-5478] Pieces of the drawn view that arrived, and that were reported drawn. */
-  const pieces = { arrived: 0, reported: 0 };
   // **Typed into and sent nothing back, its view is stuck** (#5478, `noEcho.ts`): the pane starts
   // its terminal and view again, as falling out of the kept chats does.
   const echo = watchForNoEcho(
     keptKey(plane, session),
     () => pane.element?.isConnected === true,
-    (said) => {
-      // [DEBUG-5478] What the window knew of the view as it was found stuck.
-      void commands
-        .debug5478Log(
-          `pane started again: ${JSON.stringify({
-            session,
-            ...said,
-            view: view ?? null,
-            pieces,
-            programHasTheMouse: programHasTheMouse(pane),
-            shown: live.owner !== undefined,
-          })}`,
-        )
-        .catch(() => {});
-      live.owner?.startAgain();
-    },
+    () => live.owner?.startAgain(),
   );
   const typed = pane.onData((text) => {
-    freeze.input(); // [DEBUG-5478]
     echo.typed(text);
     // The person typing in a chat is Quiet for a while (#6017): no notification breaks in.
     typedInPane(text);
@@ -621,7 +607,6 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
   // the default encoding (`?1000h` without `?1006h`) to `onBinary`, one character per byte.
   // Sent as text, a column or row past 95 — a byte above 127 — would reach the program as two.
   const bytes = pane.onBinary((binary) => {
-    freeze.input(); // [DEBUG-5478]
     sayIfRefused(
       commands.sendInputBytes(
         plane,
@@ -632,7 +617,6 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
   });
   // The terminal decides the size, and the program is told it.
   const resized = pane.onResize(({ cols, rows }) => {
-    freeze.resizeSent(cols, rows); // [DEBUG-5478]
     void commands.resizeSession(plane, session, cols, rows);
   });
 
@@ -656,29 +640,8 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
   // its view would never be reported drawn again, and the host would send it nothing more.
   const watched = watchWrites(
     keptKey(plane, session),
-    (bytes, parsed) => {
-      // [DEBUG-5478] An exception here is noted for #5478's line, then thrown on unchanged.
-      freeze.written();
-      try {
-        pane.write(bytes, parsed);
-      } catch (err) {
-        freeze.threw("write", err);
-        throw err;
-      }
-    },
-    (said) => {
-      // [DEBUG-5478] What the window knew of the terminal as it was found stuck.
-      void commands
-        .debug5478Log(
-          `pane started again, its writes stuck: ${JSON.stringify({
-            session,
-            ...said,
-            view: view ?? null,
-            pieces,
-            shown: live.owner !== undefined,
-          })}`,
-        )
-        .catch(() => {});
+    (bytes, parsed) => pane.write(bytes, parsed),
+    () => {
       // One drawn starts again in its pane; one kept off the window is let go of, and starts
       // again when it is next shown.
       if (live.owner !== undefined) live.owner.startAgain();
@@ -701,10 +664,8 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
     // What the terminal has drawn of this view is told back, one report per write, and the
     // session host paces the view by it (#4733): a pane that falls behind is sent a fresh
     // screen, not a backlog. A view a page has replaced is closed, so it is told nothing.
-    const reported = pieces; // [DEBUG-5478]
     const drawn = drawnReports((told) => {
       if (gone || mine !== drawing || view === undefined) return;
-      reported.reported += told; // [DEBUG-5478]
       void commands.sessionDrawn(plane, session, view, told);
     });
     // Each piece is the bytes the program wrote, a raw body over IPC rather than a string
@@ -715,9 +676,7 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
       if (gone || (mine !== drawing && mine !== asked)) return;
       const bytes = new Uint8Array(buffer);
       if (mine === drawing) {
-        freeze.output(); // [DEBUG-5478]
         echo.output();
-        pieces.arrived += 1; // [DEBUG-5478]
       }
       const benched = bench.paneSent(pane, bytes);
       const written = () => {
@@ -793,7 +752,7 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
     writes.dispose();
     watched.dispose();
     altScreenKept.dispose();
-    freeze.dispose(); // [DEBUG-5478]
+    links.dispose();
     echo.dispose();
     pane.dispose();
     bench.paneClosed(session, pane);
