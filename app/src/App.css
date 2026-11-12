@@ -4383,8 +4383,6 @@ body {
 .welcome-brand {
   margin: 0;
   padding-inline: var(--space-4);
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-strong);
 }
 
 .welcome-pane {
@@ -4400,15 +4398,10 @@ body {
 
 .welcome-pane h1 {
   margin: 0 0 var(--space-3);
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-strong);
 }
 
 .welcome-pane h2 {
   margin: var(--space-7) 0 var(--space-3);
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-strong);
-  color: var(--text-secondary);
 }
 
 /* A heading the keyboard is put on as its page appears is not a stop Tab reaches, so it draws
@@ -4421,7 +4414,6 @@ body {
   margin: 0 0 var(--space-7);
   max-inline-size: 38rem;
   line-height: var(--line-height-body);
-  color: var(--text-secondary);
 }
 
 /* **A first run's next steps**, in the place recent projects will be: three lines, numbered because
@@ -4430,7 +4422,6 @@ body {
   margin: 0 0 var(--space-7);
   padding-inline-start: var(--space-6);
   line-height: var(--line-height-body);
-  color: var(--text-secondary);
 }
 
 .welcome-next li + li {
@@ -4502,8 +4493,6 @@ body {
 
 .welcome-elsewhere {
   margin: var(--space-7) 0 0;
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
 }
 
 /* Back sits above the heading, at the start of the line, where a page's way back is read. */
@@ -4607,9 +4596,7 @@ body {
   margin-block-end: var(--space-3);
   background: none;
   border: 0;
-  font-size: var(--font-size-base);
   line-height: var(--line-height-body);
-  color: var(--text-secondary);
 }
 
 .git-missing h3 {
@@ -4680,14 +4667,6 @@ body {
 
 /* The recent projects are rows of the list family (`ui/list`, #2911); a project's path is its
    description, cut to one line. */
-.recents .where {
-  font-size: var(--font-size-xs);
-}
-
-.recents .value {
-  font-size: var(--font-size-sm);
-  color: var(--text-muted);
-}
 
 /* The first run's list of what this machine has (FR-4): statuses, not controls. */
 .first-run-found {

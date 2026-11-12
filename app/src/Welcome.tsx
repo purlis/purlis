@@ -444,7 +444,7 @@ export function Welcome({
 
   const home = (
     <section className="welcome-home" aria-labelledby={`${ids}-heading`}>
-      <h1 id={`${ids}-heading`}>
+      <h1 id={`${ids}-heading`} className="ui-text-title">
         {adding
           ? "Add another project"
           : here
@@ -452,7 +452,7 @@ export function Welcome({
             : "Welcome to purlis"}
       </h1>
       {adding ? (
-        <p className="welcome-lede">
+        <p className="welcome-lede ui-text-body">
           It opens as another tab in this window, beside the ones already here. Every project keeps
           its own chats, and nothing running in them stops.
         </p>
@@ -460,9 +460,9 @@ export function Welcome({
         // The resolver's own words. Somebody who ran `purlis` in a directory asked a question,
         // and "a project is the nearest directory at or above this one with a purlis.toml" is
         // the answer to it.
-        <p className="welcome-lede">{reason}</p>
+        <p className="welcome-lede ui-text-body">{reason}</p>
       ) : (
-        <p className="welcome-lede">
+        <p className="welcome-lede ui-text-body">
           A project is where purlis keeps your workspaces, personas and memory. Create one, get your
           team&apos;s from GitHub or GitLab, or open one you already have.
         </p>
@@ -477,7 +477,7 @@ export function Welcome({
       {/* Said, not swallowed (#1719): a welcome with no list and no word reads as a machine
           that remembers nothing. A status of its own, as the eye sees it arrive. */}
       {unread !== undefined && (
-        <p className="came-back" role="status">
+        <p className="came-back ui-text-secondary" role="status">
           purlis could not read the recent projects: {unread}
         </p>
       )}
@@ -487,7 +487,9 @@ export function Welcome({
           doors. The welcome is the one screen somebody with no project can reach. */}
       {planes.length > 0 && (
         <section className="welcome-recents" aria-labelledby={`${ids}-recents`}>
-          <h2 id={`${ids}-recents`}>Recent projects</h2>
+          <h2 id={`${ids}-recents`} className="ui-text-label">
+            Recent projects
+          </h2>
           {/* Rows that act (`ui/list`, #2911): a press or Enter opens the project. */}
           <List
             className="recents"
@@ -498,12 +500,12 @@ export function Welcome({
               <ListRow key={plane.path} id={plane.path} textValue={plane.name}>
                 <RowLabel className="tab-name">{plane.name}</RowLabel>
                 <RowDescription>
-                  <code className="where">{plane.path}</code>
+                  <code className="where ui-text-meta ui-text-code">{plane.path}</code>
                 </RowDescription>
                 {/* What the store holds, and nothing more: whether this project still
                     contributes what was approved is asked when it is opened. */}
                 {!plane.approved && (
-                  <RowTrail className="value">purlis will ask about this one</RowTrail>
+                  <RowTrail className="value ui-text-meta">purlis will ask about this one</RowTrail>
                 )}
               </ListRow>
             ))}
@@ -513,7 +515,7 @@ export function Welcome({
       {/* A first run has nothing to list, so it says what comes next rather than what is
           missing. */}
       {nothingRecent && (
-        <ol className="welcome-next" aria-label="What comes next">
+        <ol className="welcome-next ui-text-secondary" aria-label="What comes next">
           <li>Pick a project from the list on the left.</li>
           <li>purlis checks it has what the project needs, and helps you get anything missing.</li>
           <li>Start a chat in it, on the coding harness you use.</li>
@@ -649,7 +651,7 @@ export function Welcome({
             />
           </div>
           {onRunElsewhere && (
-            <div className="welcome-elsewhere">
+            <div className="welcome-elsewhere ui-text-secondary">
               <CardButton
                 variant="row"
                 title="Run chats on another machine"

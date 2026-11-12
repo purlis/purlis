@@ -2068,12 +2068,33 @@ One change each, each checked against a screenshot (#1920):
 4. the tab strips and the status bar (moved: [below](#the-tab-strips-and-the-status-bar-on-the-roles));
 5. Settings (moved: [below](#settings-on-the-roles));
 6. Notices and dialogs (moved: [below](#notices-and-dialogs-on-the-roles));
-7. Welcome;
+7. Welcome (moved: [below](#the-welcome-on-the-roles));
 8. the view tabs (Todos, Memory, a task's changes, the skills' pages): their `.none` and
    `.pending` sentences wear `ui-text-secondary`, and `.view-body`'s muted goes (#3938).
 
 Along the way the section label gets one spelling (`ui-text-label`, which is `.sidebar-title`'s
 type today), and the two largest size tokens are each read by a role or removed.
+
+### The Welcome, on the roles
+
+The Welcome drew its heading and the wordmark at `--font-size-xl` (20px), above the title, and
+its lede, its next steps and its section headings in rules of its own. Now (#1920):
+
+| word                                                                   | role                                | before                    | after                    |
+| ---------------------------------------------------------------------- | ----------------------------------- | ------------------------- | ------------------------ |
+| a door page's heading: "Welcome to purlis", "Add another project", … | `ui-text-title`                     | 20px, strong              | 16px, strong             |
+| the wordmark at the side                                               | `ui-text-title`                     | 20px, strong              | 16px, strong             |
+| the lede under the heading                                             | `ui-text-body`                      | 14px, secondary           | 13px, primary            |
+| a section's heading: "Recent projects", "On this machine", …          | `ui-text-label`                     | 13px, strong, secondary   | 11px, strong, capitals   |
+| a first run's next steps; "Run purlis elsewhere"; a recents refusal    | `ui-text-secondary`                 | 14px or 12px, secondary   | 12px, secondary          |
+| a recent project's path; "purlis will ask about this one"              | `ui-text-meta ui-text-code`; `ui-text-meta` | 11px; 12px muted  | 11px, quiet              |
+
+What it settled:
+
+- **Nothing is above the title.** The Welcome's heading was the one place a page was titled at
+  20px; it is the title every view and dialog wears.
+- **A section of a door page is labelled as any group is**, with the section label, so its
+  headings read as the Explorer's and the Panel's do.
 
 ### Notices and dialogs, on the roles
 
