@@ -152,7 +152,7 @@ export function ReadOnlyTerminal({
   const {
     hands: linkHands,
     surfaces: linkSurfaces,
-    openLinksList,
+    list: openLinksList,
   } = usePaneLinks({
     from: NOWHERE,
     core: links,
@@ -220,7 +220,7 @@ export function ReadOnlyTerminal({
     // **Links in this pane…** (#6220): ⌘⇧L, Ctrl+Shift+L off a Mac, on a screen that links.
     if (linkedNow.current !== undefined && opensTheLinksList(event, mac)) {
       event.preventDefault();
-      openLinksList();
+      openLinksList?.();
     } else if (opensFindInAFile(event, mac)) {
       event.preventDefault();
       setFinding((open) => ({ search: now.search, asked: (open?.asked ?? 0) + 1 }));

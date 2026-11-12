@@ -147,7 +147,7 @@ export function SessionPane({
   const {
     hands: linkHands,
     surfaces: linkSurfaces,
-    openLinksList,
+    list: openLinksList,
   } = usePaneLinks({
     from: { plane, session },
     core: LINK_CORE,
@@ -259,7 +259,7 @@ export function SessionPane({
       holder: where,
       fromKeys,
       links: linkHands,
-      listLinks: openLinksList,
+      listLinks: () => openLinksList?.(),
       find: (search) => setFinding((open) => ({ search, asked: (open?.asked ?? 0) + 1 })),
       startAgain: () => {
         lettingGo.current = true;

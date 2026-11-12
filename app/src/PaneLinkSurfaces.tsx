@@ -71,8 +71,9 @@ type Answering = { answer: LinkOpened; candidate: LinkCandidate };
  * hands, and so no links. The hands are made once per core: `from` and `colour` are read as
  * they are when asked.
  *
- * **`openLinksList` opens *Links in this pane…*** (#6220, `PaneLinksList.tsx`): the links
- * `onScreen` reads, newest first. Its key (`pane.links`) and the terminal menu's row call it.
+ * **`list` opens *Links in this pane…*** (#6220, `PaneLinksList.tsx`): the links `onScreen`
+ * reads, newest first. Its key (`pane.links`) and the terminal menu's row (#6219) call it. A
+ * pane with no core has no links, and so no list (`undefined`).
  */
 export function usePaneLinks({
   from,
@@ -88,8 +89,8 @@ export function usePaneLinks({
 }): {
   hands: LinkHands | undefined;
   surfaces: ReactNode;
-  /** Opens *Links in this pane…*. Stable for the pane's life. */
-  openLinksList: () => void;
+  /** **Opens the pane's *Links in this pane…* list** (#6220), where the pane has one. */
+  list: (() => void) | undefined;
 } {
   const mac = onAMac();
   const now = useRef({ from, colour, onScreen });
@@ -212,7 +213,7 @@ export function usePaneLinks({
       )}
     </>
   );
-  return { hands, surfaces, openLinksList };
+  return { hands, surfaces, list: core === undefined ? undefined : openLinksList };
 }
 
 /** **The window's answer to a link that did not open**: why not, or the question first. */
